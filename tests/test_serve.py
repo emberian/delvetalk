@@ -220,7 +220,7 @@ class Placement(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             group = grp.getgrgid(os.getgid()).gr_name
             sock = str(Path(d) / 'front' / 'host.sock')
-            server = Served(str(Path(d) / 'state'), extra=('--socket', sock, '--root-group', group))
+            server = Served(str(Path(d) / 'state'), host_socket=sock, root_group=group)
             try:
                 self.assertEqual(send(sock, {'op': 'world-status'})['status'], 'world')
                 self.assertFalse((Path(d) / 'state' / 'host.sock').exists())

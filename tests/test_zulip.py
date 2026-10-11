@@ -18,9 +18,11 @@ from pathlib import Path
 
 from tests.host import serve, served
 from tests.test_bridge import CARD, OFFERING
-from transport import bridge, zulip
+from transport import zulip
+from transport.__main__ import main
 from transport.host import HostClient
-from deploy.serve import LIBRARY
+from transport.state import State
+from transport.config import LIBRARY
 from tests.wire import nat, record
 
 OPENER = 'did:plc:' + 'o' * 24
@@ -115,13 +117,16 @@ class ZulipCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
-        self.state, self.zulip = root / 'state', FakeZulip()
+        self.zulip = FakeZulip()
         self.addCleanup(self.zulip.close)
         self.rc = root / 'zuliprc'
         self.rc.write_text(f'[api]\nemail={BOT["email"]}\nkey={KEY}\nsite=http://127.0.0.1:{self.zulip.server.server_port}\n')
         self.server = served(str(root / 'serve'), opener=OPENER, library=LIBRARY)
         self.addCleanup(self.server.stop)
         self.sock = self.server.sock
+        (root / 'state').mkdir()
+        (root / 'state' / 'delvetalk.toml').write_text(f'host_socket = "{self.sock}"\n')
+        self.state = State(root / 'state')
         self.host, self.root = HostClient(self.sock), HostClient(self.server.root)
         for name in ('garden-1', 'commonplace'):
             body = OFFERING.replace('"hello "', f'"{name} says "')
@@ -129,17 +134,20 @@ class ZulipCase(unittest.TestCase):
                                 'modules': [{'name': 'Echo', 'source': CARD % ('', body)}], 'entry': 'initial', 'seed': record(seen=nat(5))})
             self.assertEqual(r['status'], 'created', r)
 
-    def bridge(self):
+    def bridge(self, *topic):
+        """One bridge step on the world opened on the channel (or one topic of it) by its bridge row."""
         out = io.StringIO()
-        bridge.main(['run', '--once', '--state', str(self.state), '--host-socket', str(self.sock), '--source', 'zulip',
-                     '--zuliprc', str(self.rc), '--since', '1970-01-01T00:00:00Z'], out)
+        if not self.state.row.exists():
+            main(['open', '--state', str(self.state.root), '--transport', 'zulip', '--realm', '127.0.0.1', '--channel', 'delvetalk',
+                  '--zuliprc', str(self.rc), *(('--topic', *topic) if topic else ())], io.StringIO())
+        main(['bridge', '--once', '--state', str(self.state.root), '--since', '1970-01-01T00:00:00Z'], out)
         return json.loads(out.getvalue())
 
     def client(self):
         return zulip.Client(self.rc)
 
     def observed(self):
-        return [json.loads(js) for js in (lambda o: (o.poll(), [r[0] for r in o.db.execute('SELECT json FROM observations ORDER BY seq')])[1])(zulip.ZulipObserver(self.state, self.client()))]
+        return [json.loads(js) for js in (lambda o: (o.poll(), [r[0] for r in o.db.execute('SELECT json FROM observations ORDER BY seq')])[1])(zulip.ZulipObserver(self.state, self.client(), 'delvetalk'))]
 
 
 class Observing(ZulipCase):
@@ -148,7 +156,7 @@ class Observing(ZulipCase):
         here = self.observed()[0]['author']['did']
         other = Path(self.tmp.name) / 'other-rc'
         other.write_text(self.rc.read_text().replace('http://127.0.0.1', 'http://localhost'))
-        there = zulip.ZulipObserver(Path(self.tmp.name) / 'other-state', zulip.Client(other), since='1970-01-01T00:00:00Z')
+        there = zulip.ZulipObserver(State(Path(self.tmp.name) / 'other-state'), zulip.Client(other), 'delvetalk', since='1970-01-01T00:00:00Z')
         there.poll()
         them = json.loads(there.db.execute('SELECT json FROM observations').fetchone()[0])['author']['did']
         self.assertEqual((here, them), ('zulip:127.0.0.1:1000', 'zulip:localhost:1000'))  # the same user id, two realms
@@ -164,7 +172,7 @@ class Observing(ZulipCase):
 
     def test_a_bad_credential_is_a_failure_not_a_crash(self):
         self.rc.write_text(self.rc.read_text().replace(KEY, 'wrong'))
-        ob = zulip.ZulipObserver(self.state, self.client())
+        ob = zulip.ZulipObserver(self.state, self.client(), 'delvetalk')
         err = io.StringIO()
         import contextlib
         with contextlib.redirect_stderr(err):
@@ -208,10 +216,7 @@ class Bridging(ZulipCase):
     def test_with_a_topic_the_bridge_reads_and_answers_only_there(self):
         self.zulip.say('mobo', 'Alice', SPELL)
         self.zulip.say('elsewhere', 'Bob', SPELL)
-        out = io.StringIO()
-        bridge.main(['run', '--once', '--state', str(self.state), '--host-socket', str(self.sock), '--source', 'zulip', '--topic', 'mobo',
-                     '--zuliprc', str(self.rc), '--since', '1970-01-01T00:00:00Z'], out)
-        got = json.loads(out.getvalue())
+        got = self.bridge('mobo')
         self.assertEqual((len(got['turns']), len(got['posted'])), (1, 1), got)
         self.assertEqual([m['subject'] for m in self.zulip.mine()], ['mobo'])
 
@@ -243,11 +248,22 @@ class Bridging(ZulipCase):
         got = self.bridge()
         self.assertEqual((got['posted'], [h['reason'] for h in got['held']]), ([], ['zulip_refused']), got)
         self.assertEqual(len(self.zulip.mine()), 1)
-        again = zulip.post_drafts(self.state, self.host, self.client(), 'delvetalk')
+        again = zulip.post_drafts(self.state, self.host, self.client())
         self.assertEqual(len(self.zulip.mine()), 1, 'the lost send is adopted, never repeated')
         self.assertEqual(again['posted'], [zulip.uri_of('delvetalk', 't', self.zulip.mine()[0]['id'])])
         self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': again['posted'][0]})['object'], 'garden-1')
 
+
+    def test_the_hands_post_goes_where_the_world_lives_its_zulip_topic(self):
+        self.zulip.say('t', 'Alice', 'hello there')
+        self.bridge()  # prose addressed to nobody: observed, no draft
+        from transport.hand import Hand
+        hand = Hand(self.state, self.host)
+        uri = self.observed()[0]['uri']
+        name = hand.reply(uri, 'a word by hand', 'garden-1')['drafted']
+        got = hand.post(name)
+        self.assertEqual([(m['subject'], m['content']) for m in self.zulip.mine()], [('t', '@**Alice**\na word by hand')])
+        self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': got['uri']})['object'], 'garden-1')
 
 if __name__ == '__main__':
     unittest.main()

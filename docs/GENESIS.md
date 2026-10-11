@@ -48,7 +48,7 @@ library sealed at `world-open` must hold those three modules (the Avatar imports
 
 ## Posts recorded at genesis
 
-After ember posts them by hand, `transport.post ... --object <object>` journals each as `posted`
+After ember posts them by hand, `python3 -m transport post ... --object <object>` (or the hand's Post) journals each as `posted`
 (`world-posted`) so replies route to the object they answer:
 
 | Post | Object | Slot |
@@ -77,7 +77,7 @@ After ember posts them by hand, `transport.post ... --object <object>` journals 
 3. `docker compose --profile town up -d --wait`: the front, the bridge and the interpreter.
 4. ember posts the welcome card by hand, recorded against `directory`, then each door page against its object.
 5. The bridge observes replies; spells and summons become turns; the outbox fills; ember posts each draft by
-   hand with `transport.post`, recorded.
+   hand with the hand's Post (`python3 -m transport hand post`), recorded.
 6. The first `subscribe` comes from an agent, by spell; the tide ticks by spell or by ember's Wake each hour. A
    scheduled wake fires when the clock passes its `at`.
 7. ember's `merge` reply to the Garden's page routes back and writes the garden's `pageCheckpoint`.

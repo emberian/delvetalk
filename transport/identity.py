@@ -1,21 +1,17 @@
-#!/usr/bin/env python3
 """Claiming a handle. Asked for a challenge, a person or agent posts its word publicly from its
 own account, and we read that post from the fixed PDS (by URI when given, else the account's newest posts). Authenticates an
 account; grants nothing. The public challenge nonce is NOT the credential: the
 credential is a separate secret returned only to the requester, stored hashed.
 """
 import hashlib
-import os
 import re
 import secrets
 import sqlite3
 import threading
 import time
-from pathlib import Path
-
+from transport.config import ORIGIN  # noqa: F401  (deploy/genesis.py reads it here; routed: it should read Config)
 from transport.delve import POST, Failure
 
-ORIGIN = os.environ.get('DELVETALK_ORIGIN') or 'https://gsb.fg-goose.online'  # the one place the portal's origin is named
 HANDLE = re.compile(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+delve\.town\Z')
 DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
 CREDENTIAL = re.compile(r'dt_agent_[A-Za-z0-9_-]{43}\Z')
@@ -53,14 +49,14 @@ def digest(credential):
 
 
 class Identity:
-    def __init__(self, state_dir, client, origin=ORIGIN, clock=time.time):
-        Path(state_dir).mkdir(parents=True, exist_ok=True, mode=0o700)
-        self.db = sqlite3.connect(Path(state_dir) / 'identity.sqlite', isolation_level=None, check_same_thread=False)
+    def __init__(self, st, client, clock=time.time):
+        st.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.db = sqlite3.connect(st.identity, isolation_level=None, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         if 'address' not in {r['name'] for r in self.db.execute('PRAGMA table_info(challenges)')}:
             self.db.execute('ALTER TABLE challenges ADD COLUMN address TEXT')  # a table from before the per-address count
-        self.client, self.origin, self.clock = client, origin.rstrip('/'), clock
+        self.client, self.origin, self.clock = client, st.config.origin.rstrip('/'), clock
         self.lock = threading.Lock()  # the one connection is shared by the front's threads; every use of it holds this
 
     def challenge(self, handle, address=''):

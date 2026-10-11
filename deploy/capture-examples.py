@@ -25,7 +25,8 @@ sys.path.insert(0, str(ROOT))
 
 from deploy import genesis  # noqa: E402
 from transport import delve, identity  # noqa: E402
-from deploy.serve import BINARY, LIBRARY, Served  # noqa: E402
+from deploy.serve import Served  # noqa: E402
+from transport.config import LIBRARY, Config  # noqa: E402
 from transport.host import HostClient  # noqa: E402
 from transport.http import Front  # noqa: E402
 from tests.test_hypermedia import walk  # noqa: E402
@@ -60,7 +61,7 @@ HEAD = '''# DelveTalk: four worked sessions
 
 Literal requests and replies, captured on {date} by `deploy/capture-examples.py` from a real stack started as
 docs/DEPLOY.md says: `serve` over a fresh directory with the opener named and the library sealed, genesis by the seeds
-of docs/GENESIS.md, `python3 -m transport.http`. Two things were not real: the account host (each challenge text
+of docs/GENESIS.md, `python3 -m transport http`. Two things were not real: the account host (each challenge text
 was "posted" by writing it where a mocked PDS serves it) and the town's interpreter (its one answer is written in
 the script). Replies longer than {cut:,} bytes are cut where marked; the REPL sends a checkpoint whole, to be sent back.
 The guide is `GET /AGENTS.md`, the catalogue `GET /AGENTS.md/api`; `$T` is the credential from the challenge. Each reply
@@ -235,15 +236,15 @@ def stranger(cap):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='capture-examples.py')
     ap.add_argument('--out', default=str(ROOT / 'docs' / 'AGENTS-EXAMPLES.md'))
-    ap.add_argument('--binary', default=BINARY)
+    ap.add_argument('--binary', default=Config.load().obend)
     a = ap.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix='dt-capture-') as tmp:
         served = Served(Path(tmp) / 'state', a.binary, opener=OPENER, library=LIBRARY)
         sock = served.sock
         seed_town(served.root)
         provider = Provider()
-        front = Front(('127.0.0.1', 0), HostClient(sock), identity.Identity(tmp, delve.Client(provider), clock=lambda: NOW),
-                      clock=lambda: NOW, repl=HostClient(sock, stateless=True))
+        front = Front(served.place, HostClient(sock), identity.Identity(served.place, delve.Client(provider), clock=lambda: NOW),
+                      ('127.0.0.1', 0), clock=lambda: NOW)
         threading.Thread(target=front.serve_forever, daemon=True).start()
         cap = Capture(front.server_address[1], sock, provider, tmp)
         cap.root = served.root

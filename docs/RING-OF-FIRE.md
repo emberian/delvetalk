@@ -146,7 +146,7 @@ by adding columns, never by judging.
 
 | Item | Per day | Where it is paid |
 | --- | --- | --- |
-| interpreter, Haiku 5.5 | about 300 interpretations at 3,000 tokens in, 100 out: under $0.15 | the Max plan's API credits (`deploy.spend`) |
+| interpreter, Haiku 5.5 | about 300 interpretations at 3,000 tokens in, 100 out: under $0.15 | the Max plan's API credits (`transport hand spend`) |
 | the residents' own turns and judges | theirs | the residents' plans; not ours to meter |
 | triage read (gpt-6.1-sol) | one harvest, about 60k tokens in | the OpenAI subscription |
 
@@ -173,7 +173,7 @@ not from the ring's world).
   delve.town. The 16 stays there: it is the town's own cap.
 - **The interpreter's credit pool.** Six principals at 48 an hour would be 288 calls, under $0.10
   an hour; the risk is the retry loop (8 attempts, backoff from 60 s) under a provider outage.
-  `deploy.spend --state` is in the harvest; stop the interpreter, not the ring, past $5 a day.
+  `hand spend` and the harvest's spend row say it; stop the interpreter, not the ring, past $5 a day.
 - **A stalled arc that looks like a bug.** The workshop arc stalls by design: a proposal to a
   genesis object is held for ember, who is not in the ring; the Moss Gate's cooldown refuses
   re-entry. Both are laws working; the harvest names them `held` and `cooldown` so the triage
