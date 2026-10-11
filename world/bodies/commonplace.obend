@@ -210,6 +210,7 @@ def interpreting(input: Card.Heard, read: Reading, policy: Policies.State, greet
     case proposals(p): folding(p.items, Lists.List.nil(), "", policy, greet, context, state)
     case unclear(u): hobbed(Card.hobNeeds(u.needs, read.forms), input, read, policy, greet, context, state)
     case replied(r): hobbed(Card.hobSaid(r.text), input, read, policy, greet, context, state)
+    case said(r): hobbed(Card.hobSaid(r.text), input, read, policy, greet, context, state)
     case denied(_): refusing("policy", "The policy is not visible to you.", greet, context, state)
     case _: welcomed(greet, "", Card.Replied.silent({}), context, state)
 # hob's answer that is no spell: none is quiet (the hourly menu for a reply to the root itself),

@@ -92,12 +92,19 @@ class ProposalForAnotherCard(Chain):
         state = {f["name"]: f["value"] for f in self.state("g")["fields"]}
         self.assertEqual((state["planted"]["value"], state["last"]["value"]), ("1", "a fern"))
 
-    def test_hobs_three_answers_that_are_no_spell(self):
-        # docs/FLEX.md §4 host 6: `none`, `card`, `ask: <question>` beside the spells.
+    def test_hobs_answers_that_are_no_spell(self):
+        # docs/FLEX.md §4 host 6: `none`, `card`, `ask: <question>`, `say: <answer>` beside the spells; prose
+        # with no prefix and no spell is an answer too (the owner's question on /play/kinds, 2026-10-11).
+        answer = "A kind is a template for a made thing. The make form takes a name and an of."
+        long = ("A kind is a template. " * 40).strip()
         for said, verdict in (("none", {"tag": "unclear", "needs": ["not addressed"]}),
                               ("  None\n", {"tag": "unclear", "needs": ["not addressed"]}),
                               ("card", {"tag": "replied", "text": "card"}),
-                              ("ask: which seed, 1 to 140 characters?", {"tag": "unclear", "needs": ["which seed, 1 to 140 characters?"]})):
+                              ("ask: which seed, 1 to 140 characters?", {"tag": "unclear", "needs": ["which seed, 1 to 140 characters?"]}),
+                              ("say: " + answer, {"tag": "said", "text": answer}),
+                              (answer + "\nIf you tell me the name, I can draft it.", {"tag": "said", "text": answer + "\nIf you tell me the name, I can draft it."}),
+                              (long, {"tag": "said", "text": long[:long.rindex(".", 0, 600) + 1]}),
+                              ("say: " + "x" * 700, {"tag": "said", "text": "x" * 599 + "…"})):
             settled, _ = self.ask(said)
             self.assertEqual(settled["receipt"]["outcome"]["verdict"], verdict, said)
 

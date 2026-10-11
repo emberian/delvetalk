@@ -2711,6 +2711,8 @@ def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M
     respond bounds responseType "proposal" [proposalData target method argument spell]
   | "replied" =>
     respond bounds responseType "replied" [.record [("text", .label (← liftEval (verdict.getObjValAs? String "text")))]]
+  | "said" =>
+    respond bounds responseType "said" [.record [("text", .label (← liftEval (verdict.getObjValAs? String "text")))]]
   | "proposals" =>
     let items ← liftEval ((← liftEval (verdict.getObjVal? "items")).getArr?)
     let proposed ← liftEval (items.toList.mapM proposedData)
@@ -3291,6 +3293,29 @@ def inputTypeOf : Ty → Except String (Option Ty)
 def unclearVerdict (needs : List String) : Json :=
   Json.mkObj [("tag", toJson "unclear"), ("needs", toJson needs)]
 
+/-- hob's answer clipped to `Limits.sayChars`: whole, or up to the last sentence end (`.`, `?`, `!`
+    before a space or a line end) inside the bound, else the bound's last word with `…`. -/
+def sayClip (text : String) : String :=
+  let t := text.trimAscii.toString
+  if t.length ≤ Limits.sayChars then t else
+  let cs := (t.take Limits.sayChars).toString.toList.toArray
+  let ends := (List.range cs.size).filter fun i =>
+    ['.', '?', '!'].contains cs[i]! && (i + 1 == cs.size || [' ', '\n'].contains cs[i + 1]!)
+  match ends.getLast? with
+  | some i => String.ofList (cs.toList.take (i + 1))
+  | none =>
+    let words := String.ofList (cs.toList.take (Limits.sayChars - 1))
+    let cut := (words.toList.reverse.dropWhile (· != ' ')).reverse
+    (String.ofList (if cut.isEmpty then words.toList else cut)).trimAsciiEnd.toString ++ "…"
+
+/-- `said {text}`: hob's answer to a question, when the suspended object's Response carries it. -/
+def saidVerdict (bounds : DataBounds) (responseType : Ty) (text : String) : Json :=
+  let said := sayClip text
+  if said.isEmpty then unclearVerdict ["not addressed"]
+  else if (Data.variant "said" (.record [("text", .label said)])).conformsUnder bounds responseType then
+    Json.mkObj [("tag", toJson "said"), ("text", toJson said)]
+  else unclearVerdict ["the object cannot carry an answer"]
+
 /-- A proposal of `method` with `argument` to the suspended object, or `unclear` with the reason: the
     method must be a method of the object, the argument (its text words read as cases) must conform
     to its input, and the suspended activity's response type must carry the proposal. -/
@@ -3363,9 +3388,10 @@ def spellSegments (text : String) : List String :=
 /-- What a reply says to the suspended object. A JSON reply `{method, argument}` is a proposal
     (`proposalVerdict`: a method of the object, one of the offered actions, with an argument that
     conforms to the method's input type and fits the object's response type) or `unclear` with the
-    reason. Any other reply is the model's text: it is fitted as a spell against the offered forms
-    (`spellVerdict`), and prose is `replied {text}`. An object whose Response
-    cannot carry it hears `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
+    reason. Any other reply is the model's text: `none`, `card` (`replied {text: "card"}`), `ask:`,
+    `say:` (`said {text}`, `saidVerdict`), else it is fitted as a spell against the offered forms
+    (`spellVerdict`), and prose is `said {text}` too. An object whose Response cannot carry it hears
+    `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
 def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
   let some i := interpretationOf w s | throw "not an interpretation"
   let act ← (← s.getObjVal? "outcome").getObjVal? "activity"
@@ -3391,8 +3417,9 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     | match raw with
       | some text =>
         let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
-        -- hob's three answers that are no spell (docs/FLEX.md §4 host 6): `none` (the words ask
-        -- nothing of the card), `card` (the card already says it), `ask: <question>`.
+        -- hob's answers that are no spell (docs/FLEX.md §4 host 6): `none` (the words ask nothing of
+        -- the card), `card` (the card already says it), `ask: <question>`, `say: <answer>` (a question
+        -- answered from the card, forms and pages hob was given).
         let said := text.trimAscii.toString
         if said.toLower == "none" then return (w, unclearVerdict ["not addressed"])
         if said.toLower == "card" then
@@ -3402,6 +3429,8 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
         if (said.take 4).toString.toLower == "ask:" then
           let q := ((said.drop 4).toString.trimAscii.toString)
           if !q.isEmpty && !(q.any (· == '\n')) then return (w, unclearVerdict [q])
+        if (said.take 4).toString.toLower == "say:" then
+          return (w, saidVerdict suspended.bounds responseType (said.drop 4).toString)
         -- Several spells (MENU §2.2): each fitted and checked as one would be, answered in order as
         -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
         let segments := spellSegments text
@@ -3432,10 +3461,8 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
           let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
           return proposalVerdict w target object targetObj suspended.bounds responseType action argument card
         | some (.error needs) => return (w, unclearVerdict needs)
-        | none => pure ()
-        if (Data.variant "replied" (.record [("text", .label text)])).conformsUnder suspended.bounds responseType then
-          return (w, Json.mkObj [("tag", toJson "replied"), ("text", toJson text)])
-        return (w, unclearVerdict ["the reply names no method"])
+        -- Prose with no answer's prefix and no spell is hob answering in words: an answer, not dropped.
+        | none => return (w, saidVerdict suspended.bounds responseType said)
       | none => return (w, unclearVerdict ["the reply names no method"])
   let actions := forms.filterMap fun form =>
     match form with

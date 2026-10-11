@@ -338,6 +338,7 @@ def interpreted(input: Card.Reply, policy: Policies.State, misfit: String, found
     case proposals(p): firstPlanting(Lists.at(p.items, 0n), input, policy, found, context, state)
     case unclear(u): hobbed(Card.hobNeeds(u.needs, offers(context)), input, policy, context, state)
     case replied(r): hobbed(Card.hobSaid(r.text), input, policy, context, state)
+    case said(r): hobbed(Card.hobSaid(r.text), input, policy, context, state)
     case timedOut(_): refused(Why.senseless({}), found)
     case denied(_): refused(Why.policy({}), found)
     case refused(_): refused(Why.senseless({}), found)

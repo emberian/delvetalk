@@ -1469,6 +1469,20 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    ("bump2 needs field n"), one of another type ("bump2's field n is not of its type"); the bare "argument does not
    conform" is left only for an input that is not a record of fields. Test: `tests/test_make.py` `Misfit`.
 
+142. **hob answers a question (host18; the owner on /play/kinds, 2026-10-11).** "what is a kind? what is the things
+   in a cistern?" got the kinds card twice: Haiku answered in prose, and `interpretVerdict` dropped prose that was
+   none of spell, `ask:`, `card`, `none`. A fifth answer, `say: <text>`, is the verdict `said {text}` (World.obend's
+   `Interpreted` gains `said`), clipped to `Limits.sayChars` (600) at the last sentence end (`sayClip`, else the
+   last word and `…`); prose with no prefix and no spell is `said` too (`saidVerdict`; the old prose arm,
+   `replied {text}`, is gone: `replied` is only `card`). A Response that cannot carry it hears `unclear`. Garden
+   and the commonplace take `said` as they took prose until the objects lane renders it as hob's line. The play
+   page waits on the turn and the turns it handed on (`delivered` under the same principal) while any is
+   suspended, polling `world-offers` and stopping when hob offers or settles with nothing; the turn line names
+   the card addressed (`bridge.turn_root(receipt, addressed)`), not the first root (a card that asks the
+   commonplace's `due` first). Tests: `test_interpret_object` (say, prose, both clips), `test_http.Play`
+   (a question to kinds). No replay edition change: the verdict is journaled, not re-derived, and replay's known
+   verdicts gain `said` (an edition-5 journal without one replays as before).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

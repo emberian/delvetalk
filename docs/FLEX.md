@@ -214,8 +214,12 @@ about 150 lines, 8 fixtures):
    `policyPrompt`) carries `{utterance, offers, policy, model, card, held,
    misfit?}`; `Policy.prompt(state, offers, context)`.
 6. `interpretVerdict`: `none` → `unclear {needs: ["not addressed"]}`; `card`
-   → `replied {text: "card"}`; `ask: q` → `unclear {needs: [q]}`; spells as
-   today. The quota reason re-cut (5.60).
+   → `replied {text: "card"}`; `ask: q` → `unclear {needs: [q]}`; `say: a`
+   (hob's answer to a question, grounded in the card, forms and pages it was
+   given) → `said {text: a}`, at most 600 characters, clipped at a sentence
+   end; prose with no prefix and no spell is `say` too, never dropped; spells
+   as today. The card shows `said` as hob's line beside the card, never inside
+   its facts, receipts or refusals. The quota reason re-cut (5.60).
 
 **Objects** (`world/`; objects lane; about +150 / −130 lines):
 

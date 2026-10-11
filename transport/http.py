@@ -164,12 +164,12 @@ CLAIM_LINES = {'no_post_yet': 'No post with that word from {handle} yet. Post it
                'invalid_handle': '{handle} is not a handle this town knows. Check the spelling.'}
 
 
-def turn_line(r):
+def turn_line(r, addressed=None):
     """A turn's receipt in one line: `admitted garden v3, entry 9, receipt <slug>`, `refused owner: <reading>`, `suspended, entry 9`."""
     rc = r.get('receipt') or {}
     out = rc.get('outcome') or {}
     if r.get('status') == 'admitted':
-        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}})
+        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, addressed)
     if r.get('status') == 'refused':
         line = bridge.refusal_line(out, r.get('class'))
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')
@@ -888,17 +888,26 @@ class Handler(BaseHTTPRequestHandler):
             r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent, 'reach': 'direct',
                            'argument': typed(fields if data.get('method') else {'text': str(data.get('text', '')), 'post': ''})})
             self.server.draft_turn(did, intent, r)
-            offers = [o['text'] for o in r.get('offers') or []]
-            for _ in range(WAIT_MAX if r.get('status') == 'suspended' else 0):  # the interpreter answers as an offer to this intent
-                seen = host.send({'op': 'world-offers', 'principal': did, 'after': r['receipt']['height']}).get('offers') or []
-                offers = [o['text'] for o in seen if (o.get('identity') or {}).get('intent') == intent]
-                if offers:
+            # The turn and the turns it handed on (a card handing prose to the commonplace): what they offered at once, and
+            # those that wait on hob, whose answer arrives later as an offer under the same identity.
+            turns = [r] + [d for d in r.get('delivered') or [] if (d.get('receipt') or {}).get('identity', {}).get('principal') == did]
+            offers = [o['text'] for t in turns for o in t.get('offers') or []]
+            waiting = {t['receipt']['identity']['intent'] for t in turns if t.get('status') == 'suspended'}
+            after = max(t['receipt']['height'] for t in turns) if waiting else 0
+            for _ in range(WAIT_MAX if waiting else 0):
+                seen = host.send({'op': 'world-offers', 'principal': did, 'after': after}).get('offers') or []
+                answered = [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in waiting]
+                if answered:
+                    offers += answered
+                    break
+                settled = [((host.send({'op': 'world-receipt', 'principal': did, 'identity': i}).get('receipt') or {}).get('outcome') or {}).get('tag') for i in waiting]
+                if 'suspended' not in settled:  # hob answered with nothing to offer
                     break
                 self.server.sleep(WAIT_STEP)
             if r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
                 said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
             else:
-                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r)),
+                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r, name)),
                                               offers=''.join(pages.framed(t) for t in offers) or pages.T['quiet'])
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it
