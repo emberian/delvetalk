@@ -82,7 +82,7 @@ def refusal(w: Why) -> Card.Refusal:
     case early(_): {clause: "early", reading: "The schedule was answered before its time."}
     case schedulesFull(_): {clause: "schedulesFull", reading: "Eight standing schedules is the most a wake holds."}
     case never(_): {clause: "never", reading: "A schedule needs a time after now: at, or every from now."}
-    case noRows(n): {clause: "noRows", reading: "A wake reads no rows called {n.field} (it reads lines, marks, buffer, greeted, traces and subs)."}
+    case noRows(n): {clause: "noRows", reading: "A wake reads no rows called {n.field} (it reads lines, marks, buffer, greeted, presence and subs)."}
     case unwatched(u): {clause: "unwatched", reading: "{u.object}.{u.field} cannot be watched ({u.clause})."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
@@ -97,7 +97,7 @@ def receiverFor(on: On) -> String:
     case rows(r): rowsReceiver(r.field)
     case _: "changedSensed"
 def rowsReceiver(field: String) -> String:
-  if field == "lines" then "changedLines" else if field == "marks" then "changedMarks" else if field == "buffer" then "changedSensed" else if field == "greeted" then "changedGreetings" else if field == "traces" then "changedTraces" else if field == "subs" then "changedSubscriptions" else ""
+  if field == "lines" then "changedLines" else if field == "marks" then "changedMarks" else if field == "buffer" then "changedSensed" else if field == "greeted" then "changedGreetings" else if field == "presence" then "changedPresence" else if field == "subs" then "changedSubscriptions" else ""
 def watched(event: On, action: Action, context: Abi.Context, state: State) -> Activity<Done>:
   if context.principal != state.owner then notOwner(state) else if Lists.length(state.triggers) >= 32n then refused(Why.full({})) else subscribing(event, action, context, state)
 # A trigger on writes or rows holds only when the subscription does: the subscription first,
@@ -176,8 +176,8 @@ def changedMarks(state: State, input: {object: Plans.Reference, field: String, v
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.markColumns), Lists.List.nil(), context, state)
 def changedGreetings(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Greeting>, retracted: Lists.List<Rows.Greeting>}, context: Abi.Context) -> Activity<Done>:
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.greetingColumns), Lists.List.nil(), context, state)
-def changedTraces(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Trace>, retracted: Lists.List<Rows.Trace>}, context: Abi.Context) -> Activity<Done>:
-  delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.traceColumns), Lists.List.nil(), context, state)
+def changedPresence(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Presence>, retracted: Lists.List<Rows.Presence>}, context: Abi.Context) -> Activity<Done>:
+  delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.presenceColumns), Lists.List.nil(), context, state)
 def changedSubscriptions(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Subscription>, retracted: Lists.List<Rows.Subscription>}, context: Abi.Context) -> Activity<Done>:
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.subscriptionColumns), Lists.List.nil(), context, state)
 def changedSensed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Sensed>, retracted: Lists.List<Rows.Sensed>}, context: Abi.Context) -> Activity<Done>:

@@ -9,6 +9,7 @@ import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Text.obend as Text
+import ./Scenes.obend as Scenes
 # The bell's body, over RECORD (docs/CATALOGUE.md §5): a bell is a record whose lines are rains,
 # 768 of them at 1 to 200 characters (within the host's 256 KiB), and whose one mark is `rung`.
 # `kind/bell` makes a record with the fields colour and seed and grafts this on it. The seventh
@@ -17,7 +18,7 @@ import ./Text.obend as Text
 # that turn was admitted.
 type State = Super.State
 def relations() -> Relations.Decls:
-  Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: 768n}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n})
+  Super.relationsWith(768n)
 form rain:
   text: text 1..200
 form ring:

@@ -50,7 +50,7 @@ class Genesis(unittest.TestCase):
                              'identity': 'door-' + word})
             self.assertEqual(got['status'], 'admitted', got)
             said[word] = got['offers'][0]['text']
-        self.assertTrue(said['ROOMS'].startswith('SCENE The Moss Gate'), said)
+        self.assertTrue(said['ROOMS'].startswith('The Moss Gate (0 here). Enter: delvetalk rooms enter.'), said)
         # The link door has no object: naming it reaches Plan.card on the empty reference (the Directory answers
         # "The door to  opens on nothing yet."), so only the menu carries its URL.
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
@@ -71,13 +71,15 @@ class Genesis(unittest.TestCase):
         self.assertEqual(ticks(), '2')
 
 
-    def test_the_place_law_is_the_package_s_own(self):
+    def test_the_room_kind_carries_the_record_law_and_the_rooms_body(self):
         from tests.test_objects import run_pure
-        # Place declares no law (every kind imports the package it makes); genesis passes it with the `place` kind
-        self.assertEqual(run_pure("Place", "lawText")["value"]["value"], genesis.PLACE_LAW)
-        self.assertIn('place', [name for name, *_ in genesis.KINDS])
-        state = self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/place'})['state']
-        self.assertEqual({f['name']: f['value'] for f in state['fields']}['law']['value'], genesis.PLACE_LAW)
+        # Record declares no law (every kind imports the package it makes); genesis passes it with each record kind
+        self.assertEqual(run_pure("Record", "lawText")["value"]["value"], genesis.RECORD_LAW)
+        self.assertIn('room', [name for name, *_ in genesis.KINDS])
+        state = {f['name']: f['value'] for f in self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/room'})['state']['fields']}
+        self.assertEqual((state['law']['value'], state['body']['value']), (genesis.RECORD_LAW, genesis.body_of('room')))
+        rooms = next(m for m in self.made if m['object'] == 'rooms')
+        self.assertEqual(rooms['body'], 'admitted')
 
     def test_every_door_with_an_object_publishes_its_page_and_the_anthology_card_shows_the_owner_handle(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
@@ -206,7 +208,7 @@ class MenuFromState(unittest.TestCase):
             "Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"))
         self.assertLess(len(later), 1400)
         self.assertGreaterEqual(int(ticks), 3)
-        # A reader whose field line the directory passed to the anthology meets ANTHOLOGY first.
+        # A reader whose field line the directory passed to a door meets that door first.
         greeted = self.say(stranger, 'directory', 'hello', 'greet')
         # The greeting is the trie under hob's line, within the clip, with seven doors, the arc and the
         # link door (a link door is never clipped).
@@ -216,7 +218,8 @@ class MenuFromState(unittest.TestCase):
         self.assertLessEqual(len(greeting), 1400)
         self.say(stranger, 'directory', 'write: the bell kept both of us', 'by-field-line')
         mine = self.menu(stranger)
-        self.assertTrue(mine.startswith(later[:later.index('GARDEN')] + 'ANTHOLOGY · 5 lines, newest #5\n'), mine)
+        # The first door whose card takes `write` is ROOMS (a room is a record), so the line is the room's.
+        self.assertTrue(mine.startswith(later[:later.index('GARDEN')] + 'ROOMS · 1 here\n'), mine)
         self.assertEqual(self.menu().index('GARDEN'), later.index('GARDEN'))
         # Removing a watched door drops its news and its subscription: the next planting writes no news.
         removed = self.host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'directory', 'method': 'remove', 'identity': 'rm-garden',

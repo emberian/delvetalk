@@ -3,8 +3,8 @@ import ./List.obend as Lists
 import ./Text.obend as Text
 import ./Rows.obend as Rows
 # The make form of a kind, as data and as the source of a layer (docs/CATALOGUE.md section 3):
-# a kind's `form` is one `name: kind` line a field, and the layers a kind and a place graft on
-# themselves are generated from those lines. Pure; KIND and PLACE import it.
+# a kind's `form` is one `name: kind` line a field, and the make layer a kind grafts on itself
+# is generated from those lines. Pure; KIND imports it.
 # The form's field lines, one `name: kind` a line (blank lines skipped).
 record Spec:
   name: String
@@ -47,13 +47,13 @@ def spellField(s: Spec) -> String:
   " / {s.name}: <{s.kind}>"
 # Whether a field line is safe to write into generated source: a name of letters and digits
 # that begins with a letter, and a kind of letters, digits, spaces, `.` and `|`. A form comes
-# from a kind's owner, and a place graft runs with the place's authority.
+# from a kind's owner, and its graft runs with the kind's authority.
 def sound(spec: Spec) -> Bool:
   textLength(spec.name) > 0n && textSpan(textTake(spec.name, 1n), letters()) == 1n && textSpan(spec.name, "{letters()}0123456789") == textLength(spec.name) && textSpan(spec.kind, "{letters()}0123456789 .|") == textLength(spec.kind)
 def letters() -> String:
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 # Fields given as text, judged against a form as the host judges a spell (a kind's makeUnder:
-# a place hands it text): the first field the form takes that is missing, outside its bounds,
+# a record hands it text): the first field the form takes that is missing, outside its bounds,
 # or not one of its options, by the host's clause; fields the form does not take are not read.
 record Fault:
   clause: String

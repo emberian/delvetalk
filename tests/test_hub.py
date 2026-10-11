@@ -30,6 +30,8 @@ from tests import test_chain, test_policy
 from tests.test_chain import garden_seed, town_kinds
 from tests.test_laws import anthology_seed
 from tests.test_receive import ROOT_DOORS, door
+from tests.test_rooms import make_room, room_seed
+from tests.wire import field, label, nat, record, rows
 from transport.identity import ORIGIN
 from tests.wire import field, label, nat, record, reference, rows
 from tests.bend import closure
@@ -83,9 +85,9 @@ class Hub(test_chain.Chain):
         return made["seed"], made["colour"]
 
 
-    def test_a_cistern_line_digs_a_cistern_and_one_on_a_taken_id_is_refused_required_absence(self):
+    def test_a_cistern_line_digs_a_cistern_and_one_past_a_taken_id_is_the_next_free(self):
         """Run 5, finding 3: the garden offers a `cistern` form; a `cistern:` line through the hub
-        digs garden/cistern/1 through kind/cistern, and one on an id already taken is the §11 refusal."""
+        digs garden/cistern/1 through kind/cistern, and the host mints the next past an id already taken."""
         self.directory()
         self.greet(KIMI, GLM)
         first = self.say("the basin first:\n\ncistern: a stone cistern for refused proposals", KIMI)
@@ -94,14 +96,8 @@ class Hub(test_chain.Chain):
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="garden/cistern/1")["status"], "viewed")
         self.make("garden/cistern/2", closure("Counter"), record())
         second = self.say("cistern: a cistern for refused proposals (by discovery, Kimi)", GLM)
-        out = second["receipt"]["outcome"]
-        self.assertEqual((second["status"], out["class"], out["object"]), ("refused", "requiredAbsence", "garden/cistern/2"), second)
-        # The refusal names the root it was judged against: the kind that creates, at the version the turn read.
-        kind = self.host.send(op="world-view", principal="ember", object="kind/cistern")
-        self.assertEqual(out["root"], "kind/cistern", out)
-        public = second["public"]
-        self.assertEqual((public["object"], public["root"]["object"], public["root"]["version"]),
-                         ("garden/cistern/2", "kind/cistern", kind["version"]), public)
+        self.assertEqual(second["status"], "admitted", second)
+        self.assertEqual(self.host.send(op="world-view", principal="ember", object="garden/cistern/3")["status"], "viewed")
         usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)
         self.assertIn("delvetalk garden cistern\nname: <text, 0 to 120 characters>\n", usage["text"])
 
@@ -476,12 +472,10 @@ class HandedOnToHob(test_chain.Chain):
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_hob_at_the_root_is_offered_each_doors_forms_and_no_helper_or_protocol_method(self):
-        """Rehearsal run 10, finding 2: `reading` (Scene), `played` (Table) and `publishPage` with
-        its `page` field were learned as words. Only a door's forms are offered; `choose` (a Scene
+        """Rehearsal run 10, finding 2: `reading` (a scene), `played` (Table) and `publishPage` with
+        its `page` field were learned as words. Only a door's forms are offered; `choose` (a room
         form) is."""
-        r = self.host.send(op="world-create", principal="ember", identity="mk-rooms", object="rooms", modules=closure("Scene"),
-                           entry="initial", seed=record(title=label("The Moss Gate")))
-        self.assertEqual(r["status"], "created", r)
+        make_room(self, "rooms", **room_seed("The Moss Gate"))
         self.make("table", closure("Table"), record())
         self.add("ROOMS", "rooms")
         self.add("PLAY", "table")

@@ -147,6 +147,12 @@ def malformed(t, rng):
     return dict(good, fields=good["fields"][:i] + [{"name": good["fields"][i]["name"], "value": swapped}] + good["fields"][i + 1:])
 
 
+
+# Names the host answers on every card whatever the package declares (HOST-HANDOFF 5.62, 5.68: a
+# public card's `publishPage` is the host's default page), so a direct turn naming one is not a helper.
+CONVENTIONAL = {"receive", "render", "blurb", "forms", "lenses", "set", "publishPage", "page", "relations",
+                "methods", "law", "lawReads", "views", "initial"}
+
 class Run:
     """One town and the requests sent to it, checked as they go."""
 
@@ -325,7 +331,7 @@ class Run:
         probed = 0
         for obj in listed["ids"]:
             public = set(listed["methods"].get(obj, []))
-            for helper in self.rng.sample([n for n in names if n not in public], 6):
+            for helper in self.rng.sample([n for n in names if n not in public and n not in CONVENTIONAL], 6):
                 got = self.turn(self.who(), obj, helper, record(), retry=False)
                 probed += 1
                 if (got.get("status"), ((got.get("receipt") or {}).get("outcome") or {}).get("class")) != ("refused", "noMethod"):

@@ -8,9 +8,9 @@ import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
-import ./Places.obend as Places
+import ./Scenes.obend as Scenes
 import ./Text.obend as Text
-type Done = Places.Done
+type Done = Scenes.Done
 type Letter = Rows.Letter
 # A note in the inbox: who it is from (a principal, or the object whose change it tells of),
 # their handle when the host knew it, the line, the height its turn read and `n`, the inbox's
@@ -59,8 +59,7 @@ sum Why:
   notFollowing: {object: String}
   notVisible: {object: String}
   noExit: {label: String}
-  placeHidden: {}
-  placeSilent: {}
+  roomSilent: {}
   nowhere: {}
 def refusal(w: Why) -> Card.Refusal:
   match w:
@@ -72,9 +71,8 @@ def refusal(w: Why) -> Card.Refusal:
     case notFollowing(n): {clause: "notFollowing", reading: "Not following {n.object}"}
     case notVisible(n): {clause: "notVisible", reading: "{n.object} is not yours to follow."}
     case noExit(n): {clause: "noExit", reading: "There is no exit named {n.label}"}
-    case placeHidden(_): {clause: "placeHidden", reading: "The place is not visible."}
-    case placeSilent(_): {clause: "placeSilent", reading: "The place did not answer."}
-    case nowhere(_): {clause: "nowhere", reading: "You are in no place yet; go to one by its id first."}
+    case roomSilent(_): {clause: "roomSilent", reading: "The room did not answer."}
+    case nowhere(_): {clause: "nowhere", reading: "Nowhere yet; go to a room first: delvetalk me go / to: <room>."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
 # A refusal the speaker reads: its line, offered, and nothing written.
@@ -179,8 +177,8 @@ def accepting(thing: Plans.Reference) -> Activity<Done>:
     case _: refused(Why.noAnswer({from: thing.object}))
 def accepted(result: Done, thing: Plans.Reference) -> Activity<Done>:
   match result:
-    case done(_): recorded(thing)
     case refused(_): result
+    case _: recorded(thing)
 def recorded(thing: Plans.Reference) -> Activity<Done>:
   let written(_) = write {holding: append thing}
   Done.done({})
@@ -190,41 +188,40 @@ sum Moved:
   refused: Card.Refusal
 def moveRefused(w: Why) -> Moved:
   Moved.refused(refusal(w))
-# Walk through an exit of the current place: view it, leave it, enter the next place, and
-# record where we are. A refusal before any write leaves nothing changed; the calls into
-# places are the only things staged, and a place's refusal is answered as it gave it.
+# Walk through a door of the room it is in: read the room's doors (`cites`), leave it, enter
+# the room the door cites, and record where it is. A refusal before any write leaves nothing
+# changed; the calls into rooms are the only things staged, and a room's refusal is answered as
+# it gave it.
 def move(state: State, input: {exit: String}, context: Abi.Context) -> Activity<Moved>:
   if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"})) else if Plans.isNobody(state.at) then moveRefused(Why.nowhere({})) else looked(input.exit, state)
 def looked(label: String, state: State) -> Activity<Moved>:
-  match world.view::<Places.State>({object: state.at}):
-    case viewed(v): through(label, Lists.find(v.state.exits, fn(e: Places.Exit) -> Bool: e.label == label), state)
-    case denied(_): moveRefused(Why.placeHidden({}))
-    case refused(_): moveRefused(Why.placeSilent({}))
-def through(label: String, found: Lists.Maybe<Places.Exit>, state: State) -> Activity<Moved>:
+  match world.viewField::<Card.Doorways>({object: state.at, field: "cites"}):
+    case viewed(v): through(label, Lists.find(v.state, fn(e: Card.Doorway) -> Bool: e.label == label), state)
+    case _: moveRefused(Why.noExit({label: label}))
+def through(label: String, found: Lists.Maybe<Card.Doorway>, state: State) -> Activity<Moved>:
   match found:
     case none(_): moveRefused(Why.noExit({label: label}))
     case some(s): leaving(state.at, s.value.to)
 def leaving(from: Plans.Reference, to: Plans.Reference) -> Activity<Moved>:
   match world.call::<Done>({object: from, method: "leave", argument: Plans.nothing()}):
     case returned(r): left(r.result, to)
-    case _: moveRefused(Why.placeSilent({}))
+    case _: moveRefused(Why.roomSilent({}))
 def left(result: Done, to: Plans.Reference) -> Activity<Moved>:
   match result:
-    case done(_): entering(to)
     case refused(r): Moved.refused(r)
+    case _: entering(to)
 def entering(to: Plans.Reference) -> Activity<Moved>:
   match world.call::<Done>({object: to, method: "enter", argument: Plans.nothing()}):
     case returned(r): entered(r.result, to)
-    case _: moveRefused(Why.placeSilent({}))
+    case _: moveRefused(Why.roomSilent({}))
 def entered(result: Done, to: Plans.Reference) -> Activity<Moved>:
   match result:
-    case done(_): arrived(to)
     case refused(r): Moved.refused(r)
-# Go to a place by its id, from anywhere: leave the current place if there is one, enter the
-# named one (the place admits the principal) and record where we are. An avatar from
-# nowhere arrives this way; `move` then walks the exits.
-def go(state: State, input: {place: String}, context: Abi.Context) -> Activity<Moved>:
-  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"})) else if Plans.isNobody(state.at) then entering({world: context.world, object: input.place}) else leaving(state.at, {world: context.world, object: input.place})
+    case _: arrived(to)
+# Go to a room by its id, from anywhere: leave the room it is in if any, enter the named one
+# (that room's `enter`, under its own law) and record where it is: what it last entered.
+def go(state: State, input: {to: String}, context: Abi.Context) -> Activity<Moved>:
+  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"})) else if Plans.isNobody(state.at) then entering({world: context.world, object: input.to}) else leaving(state.at, {world: context.world, object: input.to})
 def arrived(to: Plans.Reference) -> Activity<Moved>:
   let written(_) = write {at: set to}
   Moved.moved({to: to})
@@ -232,7 +229,7 @@ def arrived(to: Plans.Reference) -> Activity<Moved>:
 form move:
   exit: text 1..64
 form go:
-  place: text 1..160
+  to: text 1..160
 form note:
   text: text 1..280
 form accept:
@@ -250,7 +247,7 @@ form unsubscribe:
 def methods() -> Lists.List<String>:
   Text.words("hold release")
 def blurb() -> Card.Door:
-  {word: "avatar", blurb: "You in the world: move through exits, leave notes, follow others and send to your followers."}
+  {word: "avatar", blurb: "You in the town: go to a room, walk its doors, hold things, watch others and send to your followers."}
 # The handle the card shows is a lens, its principal's: `delvetalk <did> set` and `handle: ...`.
 def lenses() -> Lists.List<Form.Field>:
   Lists.List.cons({head: {name: "handle", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.nil()})
@@ -261,10 +258,10 @@ def setHandle(handle: String) -> Activity<Done>:
   Card.tell(Done.done({}), Document.text("Set handle to {handle}.\n"))
 # Scoped resolution: the avatar's own principal's prose with no spell that starts with an
 # action word (`acquire the stone`, `bump counter`, `look`) names its object by the first word
-# that is a thing lying in the avatar's place (by its name, then by its id's last segment),
-# else an object of that name (a door's: garden, rooms, play); the avatar sends the object
-# the matching form as a spell, the rest of the line filling its first field. Several things
-# of that name are answered with their ids; `look` shows the place as its reader sees it.
+# that is a thing lying in the room the avatar last entered (by its name, then by its id's last
+# segment), else an object of that name (garden, rooms); the avatar sends the object the matching
+# form as a spell, the rest of the line filling its first field. Several things of that name are
+# answered with their ids; `look` shows the room as its reader sees it.
 # Anything else is the card default.
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   if mine(context) && Card.quietly(Card.unanswered(input, forms())) then scoped(input, Text.words(firstLine(input.text)), context, state) else answered(input, context, state)
@@ -281,7 +278,7 @@ def scoped(input: Card.Reply, words: Lists.List<String>, context: Abi.Context, s
 def looking(state: State) -> Activity<Card.Replied>:
   match world.card({object: state.at}):
     case carded(c): Card.tell(Card.Replied.done({action: "look"}), c.document)
-    case _: Card.tell(Card.Replied.refused({clause: "nowhere", reading: "You are nowhere to look."}), Document.text("You are nowhere to look.\n"))
+    case _: Card.tell(Card.Replied.refused(refusal(Why.nowhere({}))), Document.text("Not done: {refusal(Why.nowhere({})).reading}\n"))
 record Named:
   object: Plans.Reference
   name: String
@@ -290,8 +287,8 @@ record Asked:
   action: String
   rest: Lists.List<String>
 def placing(input: Card.Reply, action: String, rest: Lists.List<String>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
-  match world.view::<Places.State>({object: state.at}):
-    case viewed(v): naming({input: input, action: action, rest: rest}, Relations.rows(v.state.things), Lists.List.nil(), context, state)
+  match world.viewField::<Relations.Relation<Plans.Reference>>({object: state.at, field: "things"}):
+    case viewed(v): naming({input: input, action: action, rest: rest}, Relations.rows(v.state), Lists.List.nil(), context, state)
     case _: doors({input: input, action: action, rest: rest}, rest, context, state)
 # Each thing lying here by the first line of its card (its name).
 def naming(asked: Asked, things: Lists.List<Plans.Reference>, named: Lists.List<Named>, context: Abi.Context, state: State) -> Activity<Card.Replied>:

@@ -118,11 +118,9 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         again = {f["name"]: f["value"] for f in self.state("k1")["fields"]}
         self.assertEqual(again, kid)
 
-    @unittest.expectedFailure
     def test_bells_are_minted_past_an_id_already_held_and_the_garden_records_the_minted_one(self):
-        """kind/bell names the next bell garden/bell/<count + 1> itself, so an id someone else already holds refuses
-        the planting requiredAbsence (and every planting after it). Host line that fixes it: `create` minting
-        `<under>/<kind>/<n>` past held ids (docs/CATALOGUE.md §3, HOST-HANDOFF 106), which the kind then asks for."""
+        """kind/bell asks the host for the first free garden/bell/<n> (HOST-HANDOFF 5.127), so an id someone else
+        already holds refuses nothing."""
         self.make("garden", closure("Garden"), garden_seed())
         town_kinds(self.host.send)
         self.make("garden/bell/1", closure("Bell"), bell_seed())
@@ -132,14 +130,6 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         children = [field(c, "object")["value"] for c in rows(field(self.state("garden"), "children"))]
         self.assertEqual(children, ["garden/bell/2"])
         self.assertEqual(self.plant(post="at://glm.delve.town/app.bsky.feed.post/3m-plant2")["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/3")
-
-    def test_an_existing_object_makes_the_create_fail_even_if_made_by_world_create(self):
-        self.make("garden", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
-        self.make("garden/cistern/1", closure("Cistern"), record())
-        r = self.turn("garden", "cistern", record(name=label("")), principal="glm")
-        self.assertEqual(r["receipt"]["outcome"]["class"], "requiredAbsence")
-
 
 class Suspend(Await):
     def test_a_strike_before_the_planting_suspends_then_resumes_with_the_receipt_and_rings(self):

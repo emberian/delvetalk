@@ -319,3 +319,24 @@ Not in the three: the Reading Room line, one commit on `world/`, today.
 
 **Decision:** 1, 2, 3 in that order, each green on `make check` and each
 deleting more Bend than it adds Lean.
+
+## 7. After launch: the temporal layer
+
+What the two tiers are, named: the safety fragment of a dynamic logic over
+single-step transitions. The programs are turns (the protocol lines atomic;
+`call`, `send`, delivery, schedule and `await` the composition); a law is
+`[write]φ` with φ over `old`, `new` and the request facts; admission at commit
+is the modality; the receipt is the proof term (clause, roots, height); the
+metarule is the one sentence of meta-logic; replay is the semantics (every
+admitted transition re-judged); `judge` is the modality without the commit; a
+fork at a height is a possible world. What it refuses on purpose: no
+quantification over programs, no liveness (a Wake's job), no laws over reads,
+no two states at once beyond a cited root, no composition beyond conjunction
+and `under`. The step beyond it, when a town's laws want "never twice in a
+day" or "only after X has happened" across more than one step, is a temporal
+layer over the journal: formulas over sequences of heights, checked by replay
+as a proof. `old.F`, `request.clock` and insert-only relations cover the
+one-step cases first; the test suite's properties (replay equals first
+execution; every refusal classed) are that layer checked from outside.
+**Decision:** not before launch; recorded so the one-step atoms are chosen
+with it in view.
