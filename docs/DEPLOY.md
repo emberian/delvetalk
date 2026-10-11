@@ -61,7 +61,8 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
   checkout there; dregg-infra's `edge/anchor/Caddyfile` is its source and had drifted from it on 2026-10-10). Install as
   that file's header says: write `Caddyfile.new`, `caddy validate`, `mv`, `systemctl reload caddy`. Both names answer
   `respond @hand 404` for `path /hand /hand/*`, a belt only: the port Caddy proxies never serves the owner's console,
-  which has its own listener on workhorse's loopback (below). The gsb route as installed:
+  which has its own listener on workhorse's loopback (below). Both cap bodies at 262144 bytes (since 2026-10-10); the
+  deployed front's own `MAX_BODY` is still 65536 and refuses above that. The gsb route as installed:
 
       gsb.fg-goose.online {
       	import baseline_headers
@@ -69,7 +70,7 @@ per-op round trip, 1,000 `world-status` ops and 200 Counter bumps, two runs):
       	@hand path /hand /hand/*
       	respond @hand 404
       	request_body {
-      		max_size 65536
+      		max_size 262144
       	}
       	reverse_proxy 10.10.1.10:8765 {
       		transport http {
