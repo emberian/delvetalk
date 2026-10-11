@@ -12,7 +12,7 @@ open Minidregg.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 /-- The acts of `world-root`. -/
 def rootKinds : List String :=
   ["set", "delete", "as", "settings", "library", "ignore", "unignore", "card", "quiet", "hide", "show",
-   "retire", "unretire", "revoke", "expire"]
+   "retire", "unretire", "revoke", "expire", "unquiet"]
 
 /-- What a backward or forward clock touches: the suspensions whose deadline and the grants whose
     end lie between the two clocks (docs/ROOT.md §1.1). -/
@@ -133,6 +133,9 @@ def rootOp (w : World) (j : Json) : Except String (World × Json) := do
     throw s!"a root act's reason is one line of 1..{Limits.maxReasonBytes} bytes"
   let act ← j.getObjVal? "act"
   let kind ← act.getObjValAs? String "kind"
+  -- `unquiet {principal}` is journaled as the `quiet` of zero hours it is, so replay reads no new kind.
+  let (kind, act) := if kind == "unquiet" then ("quiet", (act.setObjVal! "kind" (toJson "quiet")).setObjVal! "hours" (toJson (0 : Nat)))
+    else (kind, act)
   if kind == "as" then
     let who ← boundedText "principal" Limits.maxPrincipalBytes (← act.getObjValAs? String "principal")
     let turn ← act.getObjVal? "turn"

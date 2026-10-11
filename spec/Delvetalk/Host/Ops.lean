@@ -1932,12 +1932,17 @@ def movedRootAdmits (w : World) (writes : List (String × List Written)) (id : S
          | some fields => !fields.contains e.field
          | none => false)
 
+/-- `principal` acts as the world's opener: it is the opener, and the request did not come on the
+    public socket (`World.resident`). -/
+def openerActs (w : World) (principal : String) : Bool :=
+  !w.opener.isEmpty && principal == w.opener && !w.resident
+
 /-- The widened metarule (docs/ROOT.md §2.1): an amendment (kind 2) by the world's opener is
     admitted by the host whatever the law says. A law cannot name the opener (its grammar has no
     `world`, and a package's law is written before any world exists), so the host holds the rule
     rather than checking every law for a clause no package could write; `world-inspect` shows it as
     the law's first row. -/
-def openerAmends (w : World) (subject : String) : Bool := !w.opener.isEmpty && subject == w.opener
+def openerAmends (w : World) (subject : String) : Bool := openerActs w subject
 
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
@@ -1987,7 +1992,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   for id in p.revokes do
     match w.grants[id]? with
     | some g =>
-      unless g.grantor == p.principal || p.roots.any (·.1 == g.holder) || (!w.opener.isEmpty && p.principal == w.opener) do
+      unless g.grantor == p.principal || p.roots.any (·.1 == g.holder) || openerActs w p.principal do
         throw { cls := "lawRefused", clause := some "notGrantor", object := some g.holder }
     | none => throw { cls := "evaluation", reason := some "a revocation names an unknown grant" }
   let mut out : List (String × Object) := []
@@ -2693,8 +2698,8 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   let owner ← optText j "owner"
   if let some o := owner then
     discard <| boundedText "owner" Limits.maxPrincipalBytes o
-    if w.opener.isEmpty || principal != w.opener then
-      throw s!"only the opener of the world may name an owner{if w.opener.isEmpty then "; this world names no opener" else s!"; that is {w.opener}"}"
+    if !openerActs w principal then
+      throw s!"only the opener of the world{if w.resident && principal == w.opener then ", on the root socket," else ""} may name an owner{if w.opener.isEmpty then "; this world names no opener" else s!"; that is {w.opener}"}"
   if w.objects.contains id then throw s!"object {id} already exists"
   if w.objects.size ≥ Limits.maxObjects then throw "object capacity reached"
   let inputs ← attachLibrary w (← compileInputs j)
@@ -3088,7 +3093,9 @@ def arriveOp (w : World) (j : Json) : Except String (World × Json) := do
     let seed := match ← initialState built with
       | .record fields => given.filter fun (k, _) => fields.any (·.1 == k)
       | _ => []
-    let (w', r) ← create (cacheBuild w inputs built) (request.setObjVal! "seed" (dataJson (.record seed)))
+    -- The host makes a newcomer's things as the opener on whichever socket the arrival came.
+    let (w', r) ← create { cacheBuild w inputs built with resident := false } (request.setObjVal! "seed" (dataJson (.record seed)))
+    let w' := { w' with resident := w.resident }
     if (r.getObjValAs? String "status").toOption != some "created" then
       throw s!"arrival of {did}: {module} {id} was not created: {r.compress}"
     w := w'
@@ -3960,6 +3967,29 @@ def objectOp (w : World) (j : Json) : Except String Json := do
     ("laws", Json.arr (rows.toArray.map fun (n, r, e) => Json.mkObj ([("object", toJson id), ("version", toJson version),
       ("pin", toJson pin), ("name", toJson n), ("clause", toJson e)] ++ (r.map fun r => [("reading", toJson r)]).getD []))),
     ("stateCid", toJson cid)] ++ (library.map fun l => [("library", toJson l)]).getD []))]
+
+/-- `world-dump {principal, object}` (docs/ROOT.md §1.6): what the root console's editor shows beside
+    `world-view`, `world-object` and `world-sources`: the owner, the read policy, the fixed fields, the
+    supervisor, the ledger, and the activities waiting (each suspension's hash, principal, method,
+    what it waits on and its deadline). The opener's, on the root socket. -/
+def dumpOp (w : World) (j : Json) : Except String Json := do
+  let principal ← j.getObjValAs? String "principal"
+  if !openerActs w principal then throw "world-dump is the opener's, on the root socket"
+  let id ← j.getObjValAs? String "object"
+  let some o := w.objects[id]? | return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  let activities := w.suspended.filterMap fun s => do
+    let outcome ← (s.getObjVal? "outcome").toOption
+    let act ← (outcome.getObjVal? "activity").toOption
+    guard ((act.getObjValAs? String "object").toOption == some id)
+    let identity := (s.getObjVal? "identity").toOption.getD Json.null
+    return Json.mkObj ([("hash", (s.getObjVal? "hash").toOption.getD Json.null),
+      ("principal", (identity.getObjVal? "principal").toOption.getD Json.null),
+      ("intent", (identity.getObjVal? "intent").toOption.getD Json.null),
+      ("method", (act.getObjVal? "method").toOption.getD Json.null)] ++
+      (["post", "slot", "deadline", "interpretation"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)))
+  return Json.mkObj [("status", toJson "dump"), ("object", toJson id), ("version", toJson o.version),
+    ("owner", toJson (ownerOf o.state)), ("read", o.read.json), ("fixed", toJson o.fixed),
+    ("supervisor", toJson o.supervisor), ("ledger", o.chain.json), ("activities", Json.arr activities)]
 
 /-- A page of `(height, item)` pairs, ascending by height: after `after` (exclusive), or with
     `reverse: true` descending below `before` (exclusive; from the newest when absent); at most `limit`

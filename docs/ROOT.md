@@ -93,12 +93,17 @@ and reported, never silently re-judged; one edition bump for both layers.
 
 ### 1.4 The root socket
 
-`serve` (FEDERATION 1) opens two sockets: `<dir>/state/host.sock` for the
-front, bridge, interpreter and the public verbs, and `<dir>/root/root.sock`
-(mode 0600, the host's uid) for `world-root` and every op naming the opener
-as principal (`world-create {owner}`, `world-library`, `world-settings`,
-`world-fork`). An opener-principal op on the public socket is a request
-error, "the opener speaks on the root socket". Owner-only by filesystem:
+`serve` (FEDERATION 1) opens two sockets: the public one (`--socket`, default
+`<dir>/state/host.sock`, mode 0600; it may live apart from the journals, so the
+front mounts none) for the front, bridge, interpreter and the public verbs, and
+`<dir>/root/root.sock` (mode 0660, group `--root-group`, so the hand runs under
+its own uid in that group) for the root ops: `world-root`, `world-dump`,
+`world-library`, `world-settings`, `world-fork`, `world-snapshot`. A root op on
+the public socket is a request error, "the opener speaks on the root socket".
+The opener's ordinary turns are the public socket's too (the bridge submits her
+own posts as a resident's); there her privileges are not: amending another's
+thing, revoking any grant, the powers, naming an owner (`World.resident`,
+`openerActs`). Owner-only by filesystem:
 `/data/root/` is a volume mounted into the hand's container
 (`compose.hand.yml`) and `delvetalk-ops`, and into nothing else; on the box
 it is reachable through the ssh forward to the hand's loopback listener and

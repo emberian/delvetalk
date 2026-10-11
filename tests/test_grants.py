@@ -68,7 +68,7 @@ def cancel(state: State, input: {id: String}, context: Abi.Context) -> Activity<
     case refused(r): said(context, r.clause)
     case _: said(context, "other")
 def relay(state: State, input: {other: String, target: String}, context: Abi.Context) -> Activity<String>:
-  match world.call::<String>({object: {world: "", object: input.other}, method: "authorizeBell", argument: Data.of::<Arg>({n: 0n})}):
+  match world.call::<String>({object: {world: "", object: input.other}, method: "authorizeBell", argument: {}}):
     case returned(r): said(context, r.result)
     case refused(r): said(context, r.clause)
     case _: said(context, "other")

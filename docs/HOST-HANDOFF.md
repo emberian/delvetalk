@@ -1250,6 +1250,33 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      Lean.Json.setObjVal!` on stderr, reopening with a queue left). Test: `test_deliveries` Restart
      `test_a_reopen_naming_its_settings_settles_the_queue_without_a_panic`.
 
+131. **`serve` after the transport's switch (host15; ROOT §1.4).**
+   - `--socket PATH` places the public socket (the front then mounts no journal); the root socket is 0660 and
+     `--root-group GROUP` gives it that group (`spec/native/serve.c` `listen_on`, `getgrnam`; an unknown group
+     fails the start).
+   - The opener's ordinary turns are admitted on the public socket. `serve` marks every public world request
+     `resident: true` (stripping any the client sent; the root socket's is stripped too); `Session` sets
+     `World.resident` for that request and erases the field before any digest; the settling pass runs with it
+     false. `openerActs w p` (the opener, not resident) gates `openerAmends`, revoking any grant, the powers
+     and naming an owner at `world-create`; arrival makes a newcomer's things as the opener whatever the socket.
+     Replay never sees it: what a resident turn admitted, the opener's would have. `world-root` acts gain
+     `unquiet {principal}`, journaled as `quiet` of zero hours (no new replay kind).
+   - `world-dump {principal, object}` (root only): `owner`, `read`, `fixed`, `supervisor`, `ledger`, `activities`
+     (each waiting suspension's hash, principal, intent, method, post or slot, deadline, interpretation).
+   - Tests: `tests/test_serve.py` (`Placement`; `test_the_openers_ordinary_turns_are_the_public_sockets_and_its_privileges_the_roots`;
+     `test_unquiet_and_the_dump`); `test_bridge` OpenerPosts now runs the opener's post as a turn. `deploy/serve.py`'s
+     `Served` reads `--socket`/`--root-socket` from `extra`. The bridge's `ON_ROOT` skip is now reached only by a root op.
+
+132. **The input check is exact (host15; the root's decision on EveryMethod).** A method without an input takes
+   only `{}` (`argumentFits`); a record argument with a field the input does not declare is refused `typeMismatch`
+   naming it (`extraField`, `misfitReason`: "<method> takes no field <f>"; a call's or run's reading "<id> <method>
+   takes no field <f>."), for direct turns, spells, calls and deliveries alike (all reach `runFrame` or the call
+   arms). Fixtures that called or sent a no-input method with an argument now pass `{}` (test_grants,
+   test_authority, test_reflection's PROBE); test_principal's `ignored` asserts the refusal by name, then `{}`
+   admitted. Replay never re-runs a method (Snapshot imports Ops, not TurnLoop), so no admitted entry is re-judged:
+   no edition bump. test_properties' `malformed` no longer drops a `receive`'s host-filled `fields`/`misfit`.
+   EveryMethod's one remaining violation is the policy card past the clip (objects lane).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

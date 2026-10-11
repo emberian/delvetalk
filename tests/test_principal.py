@@ -7,8 +7,8 @@ principal (context.principal), and no argument can name another one.
 
 Each object is driven as principal "kimik3"; the forged argument carries the field the
 old objects took (`who`, `by`, `author`, `from`) naming "glm". A method with an input
-refuses it before running ({'class': 'evaluation', 'reason': 'applied package refused by
-Mini type checker'}); a method without one never sees it, and records the principal.
+refuses it before running; a method without one refuses it too, `typeMismatch` naming the
+field (the input check is exact: `{}` alone), and records the principal when asked with `{}`.
 """
 import unittest
 
@@ -34,8 +34,12 @@ class Principal(Chain):
         return r
 
     def ignored(self, obj, method, field):
-        """A method without input: the forged field is not seen; the turn is the principal's."""
+        """A method without input: the forged field is refused by name; with `{}` the turn is the principal's."""
         r = self.turn(obj, method, record(**{field: label(CLAIMED)}), principal=ACTOR)
+        out = r["receipt"]["outcome"]
+        self.assertEqual((r["status"], out["class"]), ("refused", "typeMismatch"), r)
+        self.assertIn(f"{method} takes no field {field}", out["reason"])
+        r = self.turn(obj, method, record(), principal=ACTOR)
         self.assertEqual(r["status"], "admitted", r)
         return r
 

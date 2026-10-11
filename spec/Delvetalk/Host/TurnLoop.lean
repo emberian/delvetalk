@@ -670,15 +670,47 @@ def derivedView (o : Object) (view : String) (context : Data) : M (Except String
 /-- The kernel's refusal of an argument that does not conform to the entry's input type. -/
 def argumentRefusal : String := "turn refused: argument does not conform to its type"
 
-/-- Does `argument` fit the input of a compiled method? A method without an input takes any. At
-    `Data` any well-formed value fits; at a data type the value must conform under the packet's
-    bounds (the check the kernel's `prepareStart` makes). -/
+/-- Does `argument` fit the input of a compiled method? The check is exact: a method without an
+    input takes only `{}` (a field it does not declare is refused by name, `extraField`). At `Data`
+    any well-formed value fits; at a data type the value must conform under the packet's bounds (the
+    check the kernel's `prepareStart` makes). -/
 def argumentFits (compiled : Compiled) (argument : Data) : Bool :=
   match compiled.type with
   | .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) =>
     if domain == .data then argument.wellFormed
     else !(domain.isDataUnder compiled.bounds [] Ty.dataFuel []) || argument.conformsUnder compiled.bounds domain
-  | _ => true
+  | _ => match argument with
+    | .record [] => true
+    | _ => false
+
+/-- The field names of a record row; none for anything else. -/
+def rowNames : Ty → Option (List String)
+  | .field n _ t => (rowNames t).map (n :: ·)
+  | .emptyRow => some []
+  | _ => none
+
+/-- The first field of a record `argument` that the method's input does not declare (every field,
+    for a method without an input); none when the input is not a record row or all are declared. -/
+def extraField (compiled : Compiled) (argument : Data) : Option String :=
+  match argument with
+  | .record fs =>
+    let declared := match compiled.type with
+      | .arrow _ _ _ (.arrow _ _ domain (.arrow _ _ _ _)) => rowNames domain
+      | .arrow _ _ _ (.arrow _ _ _ _) => some []
+      | _ => none
+    declared.bind fun names => (fs.find? fun (k, _) => !names.contains k).map (·.1)
+  | _ => none
+
+#guard rowNames (.field "who" .label (.field "n" .natural .emptyRow)) == some ["who", "n"]
+#guard rowNames .data == none
+
+/-- A refusal's reason for an argument that does not fit: the field the input lacks when there is
+    one, else `argumentRefusal`; a method without an input says it takes `{}`. -/
+def misfitReason (compiled : Compiled) (method : String) (argument : Data) : String :=
+  match extraField compiled argument, compiled.type with
+  | some f, _ => s!"{argumentRefusal}: {method} takes no field {f}"
+  | none, .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ _ _)) => argumentRefusal
+  | none, _ => s!"{argumentRefusal}: {method} takes no input; send an empty record"
 
 /-- The argument of a turn asked from outside with its text words read as cases where the method's
     input has closed sums of empty payloads (`wordsAsCases`). A word naming no case is
@@ -1205,7 +1237,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([obj.state, argument, fitRecord compiled.bounds ct context], r)
     | .arrow _ _ _ (.arrow _ _ ct r) => pure ([obj.state, fitRecord compiled.bounds ct context], r)
     | _ => throw (.request s!"method {method} must take (state, [input,] context)")
-  unless argumentFits compiled argument do throw (.refused "typeMismatch" argumentRefusal (some (← expectedNow)))
+  unless argumentFits compiled argument do throw (.refused "typeMismatch" (misfitReason compiled method argument) (some (← expectedNow)))
   -- A direct turn's argument is held to the card's declared form bounds as a spell is (codex host
   -- 12, agent 3): one advertised action, one bound, whichever way it is asked.
   if depth == 0 && s.direct then
@@ -1460,8 +1492,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
           let some calleeObj := (← get).world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
           let callee ← compiledMethod calleeObj method
           if !argumentFits callee argument then
-            refusedReading bounds responseType "typeMismatch"
-              (callReading "typeMismatch" id (some (Json.mkObj [("method", toJson method)]))) else
+            refusedReading bounds responseType "typeMismatch" (match extraField callee argument with
+              | some f => s!"{id} {method} takes no field {f}."
+              | none => callReading "typeMismatch" id (some (Json.mkObj [("method", toJson method)]))) else
           spendGrant via
           let result ← runMethod (depth + 1) id method argument self subject via heard
           respond bounds responseType "returned" [.record [("result", result)]]
@@ -1484,8 +1517,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         else
           let callee ← compiledMethod calleeObj method
           if !argumentFits callee argument then
-            refusedReading bounds responseType "typeMismatch"
-              (callReading "typeMismatch" id (some (Json.mkObj [("method", toJson method)]))) else
+            refusedReading bounds responseType "typeMismatch" (match extraField callee argument with
+              | some f => s!"{id} {method} takes no field {f}."
+              | none => callReading "typeMismatch" id (some (Json.mkObj [("method", toJson method)]))) else
           modify fun s => { s with handlers := (depth + 1, handler) :: s.handlers }
           let result ← runMethod (depth + 1) id method argument self s.subject
           modify fun s => { s with handlers := s.handlers.drop 1 }
@@ -2237,8 +2271,8 @@ def moderate (w : World) (req : TurnRequest) (id action : String) (value : Strin
     | "quiet" => "who: <a handle>\nhours: <n>\n" | "unquiet" => "who: <a handle>\n"
     | "settings" => "postQuota: <n>\ninterpretQuota: <n>\nmodelQuota: <n>\n"
     | "revoke" => "grant: <a grant id>\n" | _ => "") ++ "reading: <why, for the receipt>\n"
-  if w.opener.isEmpty || req.principal != w.opener then
-    return ← refuseSpell w req id "opener" s!"only the hand that opened the world casts {action}." template
+  if !openerActs w req.principal then
+    return ← refuseSpell w req id "opener" s!"only the hand that opened the world casts {action}, on the root socket." template
   let some reading := value "reading"
     | refuseSpell w req id "missingField" s!"{action} takes reading: why, for the receipt." template
   if reading.utf8ByteSize > Limits.maxReasonBytes || reading.any (fun c => c == '"' || c == '\\' || c == '\n') then

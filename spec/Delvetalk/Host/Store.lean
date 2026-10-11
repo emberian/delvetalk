@@ -453,6 +453,11 @@ structure World where
   /-- Every object change in height order, the inverse of `touches` (height to objects): an admitted
       entry's creations and writes, a `created` entry's object, a root write of state. Derived by `record`. -/
   changes : Array Change := #[]
+  /-- Memory only, set per request: the request came on `serve`'s public socket naming the opener
+      (`resident: true`), so the opener acts as any resident (`openerActs`): an ordinary turn runs,
+      the opener's privileges (amending another's thing, revoking any grant, the powers, naming an
+      owner) are the root socket's (docs/ROOT.md §1.4). Never journaled: replay admits what either did. -/
+  resident : Bool := false
   /-- Standing subscriptions by the object they watch, in the order they were made; derived by
       `record` from entries' `subscribes`/`unsubscribes`. -/
   subscriptions : Std.HashMap String (Array Subscription) := {}
