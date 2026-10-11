@@ -24,7 +24,14 @@ open Lean (Json toJson)
 open Delvetalk.Theory.ObjectiveBendTypes (Ty DataBounds)
 open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
-def edition : String := "delvetalk.snapshot.v3"
+def edition : String := "delvetalk.snapshot.v4"
+
+/-- The edition before (`v3`: no placed rules or wants, no `ruleLog` or `wanting`), which a carry
+    still reads (HOST-HANDOFF §6, "The snapshot body is the carry's contract"); deleted with the next. -/
+def previousEdition : String := "delvetalk.snapshot.v3"
+
+/-- The index keys `previousEdition` does not write: a carry from it starts them empty. -/
+def addedKeys : List String := ["ruleLog", "wanting"]
 
 /-! ## Writing -/
 
@@ -90,6 +97,8 @@ def indexJson (w : World) : Json :=
     ("anchors", mapJson w.anchors fun a => Json.arr #[toJson a.version, toJson a.pin, toJson a.law]),
     ("changes", Json.arr (w.changes.map fun c => Json.arr #[toJson c.height, toJson c.object, toJson c.version, toJson c.principal])),
     ("subscriptions", mapJson w.subscriptions fun xs => Json.arr (xs.map (·.json))),
+    ("ruleLog", mapJson w.ruleLog fun xs => Json.mkObj xs),
+    ("wanting", mapJson w.wanting fun xs => Json.mkObj (xs.map fun (n, h) => (n, toJson h))),
     ("pending", Json.arr w.pending),
     ("suspended", Json.arr w.suspended),
     ("replies", mapJson w.replies fun (p, i) => Json.arr #[toJson p, toJson i]),
@@ -131,6 +140,8 @@ def installIndex (w : World) (j : Json) : Except String World := do
       return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat? } : Anchor)
     changes := ← arrOf (← field "changes") change
     subscriptions := ← mapOf (← field "subscriptions") fun x => arrOf x Subscription.ofJson
+    ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
+    wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
     pending := ← (← field "pending").getArr?
     suspended := ← (← field "suspended").getArr?
     replies := ← mapOf (← field "replies") textPairOf
@@ -180,7 +191,9 @@ def storeJson (w : World) : Except String Json := do
       (if o.relations.isEmpty then [] else [("relations", Json.arr (o.relations.toArray.map fun d =>
         Json.mkObj [("field", toJson d.field), ("key", toJson d.key), ("limit", toJson d.limit)]))]) ++
       (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)]) ++
-      (if o.declares.isEmpty then [] else [("declares", toJson o.declares)])))
+      (if o.declares.isEmpty then [] else [("declares", toJson o.declares)]) ++
+      (if o.rules.isEmpty then [] else [("rules", Json.arr (o.rules.toArray.map (·.json)))]) ++
+      (if o.wants.isEmpty then [] else [("wants", Json.arr (o.wants.toArray.map (·.json)))])))
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
@@ -307,6 +320,7 @@ def install (b : Json) (base : World) : Except String World := do
     let version ← natField o "version"
     let read ← parseRead (some (← o.getObjVal? "read"))
     let chain ← parseChain (some (← o.getObjVal? "chain"))
+    let placedOf := fun (k : String) => (((o.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Placed.ofJson
     let obj : Object :=
       { pin := pin
         law := law
@@ -331,7 +345,9 @@ def install (b : Json) (base : World) : Except String World := do
           | .ok field, .ok key, .ok limit => some { field, key, limit }
           | _, _, _ => none
         fixed := (o.getObjValAs? (List String) "fixed").toOption.getD []
-        declares := (o.getObjValAs? (List String) "declares").toOption.getD [] }
+        declares := (o.getObjValAs? (List String) "declares").toOption.getD []
+        rules := ← placedOf "rules"
+        wants := ← placedOf "wants" }
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do
@@ -378,7 +394,7 @@ def suspendedObject (e : Json) : String :=
     the posts replies answered, posting reservations, model attempts, the quotas' counts, the root acts'
     count, the moderation: cards, quiets, hidden). Every other index names entries of the old chain. -/
 def carriedKeys : List String :=
-  ["subscriptions", "replies", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
+  ["subscriptions", "ruleLog", "wanting", "replies", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
    "hidden", "modelDay", "hour"]
 
 /-- A genesis entry chained to `cid`: `tag` and its origin, the store of `shown` with every source its
@@ -446,12 +462,13 @@ def installGenesis (entries : Entries) (entry : Json) : Except String World := d
 /-! ## Reading -/
 
 /-- The checked body of a snapshot file's bytes, refused by name. -/
-def verifiedBody (bytes : ByteArray) (height : Nat) (entries : Entries) : Except String Json := do
+def verifiedBody (bytes : ByteArray) (height : Nat) (entries : Entries) (editions : List String := [edition]) :
+    Except String Json := do
   if bytes.size > Limits.maxSnapshotBytes then throw "exceeds its byte capacity"
   let (cid, raw) ← split bytes
   unless cid == Delvetalk.Canonical.cid raw do throw "its bytes are not its CID's"
   let b ← Delvetalk.Canonical.decodeJson raw Limits.dataDepth
-  unless (← b.getObjValAs? String "edition") == edition do throw "another snapshot edition"
+  unless editions.contains (← b.getObjValAs? String "edition") do throw "another snapshot edition"
   unless (← natField b "height") == height do throw "its height is not its file name's"
   if height == 0 || height > entries.count then throw "the journal is shorter than its height"
   unless entries.hashAt? (height - 1) == some (← b.getObjValAs? String "head") do

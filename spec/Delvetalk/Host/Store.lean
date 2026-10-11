@@ -39,8 +39,10 @@ def sayChars : Nat := 300
     stays pending, `attempts` and `next` on it, up to `deliveryAttempts`); 7: host19 (a Bend law's context
     names the turn's `sender`, read on replay from the pending delivery the entry consumes); 8: kernel16
     (a card's own refusal is the class `cardRefused`, its reason a term: checkpoint term tag 26 and the
-    packets of every refusing program changed shape). -/
-def replayEdition : Nat := 8
+    packets of every refusing program changed shape); 9: host22 (rules and wants placed on things as
+    kind-4 changes, rules fired and wants posed at commit, journaled `placed`, `fired`, `unfired`,
+    `wanted`, `unwanted` and re-derived; `request.verb` from `act`; the last bump the overhaul plans). -/
+def replayEdition : Nat := 9
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -100,6 +102,15 @@ def deliveryAttempts : Nat := 4
 def sendsPerTurn : Nat := 32
 /-- Subscriptions to one object (`subscribe`, WHOLENESS §3). -/
 def subscribersPerObject : Nat := 64
+/-- Rules placed on one object, and wants (docs/OVERHAUL.md §2 conflict 2): what its text carries and
+    its kind's `under` carries are bounded by `maxLawClauses` in each text. -/
+def rulesPerObject : Nat := 32
+def wantsPerObject : Nat := 32
+/-- Rules one commit fires, over every object it wrote; the rest are journaled `unfired`. -/
+def rulesPerCommit : Nat := 8
+/-- How many rule firings deep a chain goes: a turn a rule's spell delivered fires its own rules one
+    level down, and past this depth a rule is `unfired` (a chain of rules ends sooner than `maxDepth`). -/
+def ruleDepth : Nat := 4
 /-- Undelivered sends held by the world. -/
 def maxPending : Nat := 4096
 /-- Ticks of one turn: the default and the ceiling a request may ask for (the kernel's own cap). -/
@@ -236,6 +247,28 @@ structure Reservation where
   round : Nat := 0
   deriving Inhabited
 
+/-- A rule or a want placed on a thing by a hand (docs/OVERHAUL.md §3; KERNEL-HANDOFF §27 item 1): its
+    name, unique across the thing's text and its placed lines; who placed it (a rule fires under them;
+    they or the thing's owner remove it); the height of the entry that placed it; and the line as the
+    one renderer writes it (`Clause.render`), with its parse. -/
+structure Placed where
+  name : String
+  owner : String
+  since : Nat
+  line : String
+  clause : Delvetalk.Compiler.ObjectiveBendLaw.Clause
+  deriving BEq, Inhabited
+
+def Placed.json (r : Placed) : Json :=
+  Json.mkObj [("name", toJson r.name), ("owner", toJson r.owner), ("since", toJson r.since), ("line", toJson r.line)]
+
+/-- A placed line as a snapshot or a journal holds it; its clause re-parsed by the one parser. -/
+def Placed.ofJson (j : Json) : Except String Placed := do
+  let line ← j.getObjValAs? String "line"
+  let clause ← Delvetalk.Compiler.ObjectiveBendLaw.parseClause line
+  return { name := ← j.getObjValAs? String "name", owner := ← j.getObjValAs? String "owner",
+           since := ← j.getObjValAs? Nat "since", line, clause }
+
 /-- Who may `view` an object; fixed at creation and journaled with it. -/
 inductive ReadPolicy where
   | exposed
@@ -316,6 +349,10 @@ structure Object where
   /-- The conventional definitions its entry module declares, derived ones included (the artifact's
       `declares`). -/
   declares : List String := []
+  /-- The rules and the wants hands placed on it (`world.rule`, `world.want`, the host spells), in the
+      order placed; what its text and its kind carry are read from the texts (`Ops.carried`). -/
+  rules : List Placed := []
+  wants : List Placed := []
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/
@@ -395,6 +432,9 @@ structure Built where
   /-- Whether it declares a Bend law, and whether that law reads (`lawReads`): the top layer's when it
       declares one, else the code's below. -/
   lawShape : Bool × Bool := (false, false)
+  /-- The rules and wants its entry module's text declares: placed on an object made of it with no law
+      text given, owned by its creator (`Ops.makeObject`). -/
+  lines : List Delvetalk.Compiler.ObjectiveBendLaw.Clause := []
 
 /-- A standing subscription (WHOLENESS §3): after every admitted write that touches `field` of
     `object`, `subscriber`'s receiver `method` (`changed` unless the subscription named another) is
@@ -526,6 +566,13 @@ structure World where
   /-- Standing subscriptions by the object they watch, in the order they were made; derived by
       `record` from entries' `subscribes`/`unsubscribes`. -/
   subscriptions : Std.HashMap String (Array Subscription) := {}
+  /-- Per object, each rule's last firing or refusal to fire, by rule name: `{height, id}` (fired: the
+      delivery it staged) or `{height, why}` (unfired), the newest replacing. Derived by `record` from
+      admitted entries' `fired` and `unfired`. -/
+  ruleLog : Std.HashMap String (List (String × Json)) := {}
+  /-- Per object, the wants that held of it after the newest entry that wrote it, each with the height
+      of the entry that made it true (a want's `since`). Derived by `record` from `wanted`/`unwanted`. -/
+  wanting : Std.HashMap String (List (String × Nat)) := {}
   /-- Memory only, never journaled: compiled methods by `inputsKey/method`. -/
   compiled : Std.HashMap String Compiled := {}
   /-- Undelivered sends in journal order, derived from the journal. -/

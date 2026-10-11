@@ -102,7 +102,13 @@ def spell_line(reply, origin=None, handles=None):
     outcome = receipt.get('outcome') or {}
     if outcome.get('tag') == 'refused':
         return refusal_line(outcome, reply.get('class')) + (f"\nreceipt {receipt['slug']}" if receipt.get('slug') else '') + '\n'
-    return receipt_line(receipt, origin, reply.get('object'), handles)
+    return revealed_lines(reply) + receipt_line(receipt, origin, reply.get('object'), handles)
+
+
+def revealed_lines(reply):
+    """The host's lines an admitted reply carries (`revealed`: what it moved, what it opened or closed, where it
+    stands), each on its own line; the host renders them, the transport only places them."""
+    return ''.join(f'{line}\n' for line in reply.get('revealed') or [])
 
 
 def draft_text(reply, origin=None, addressed=None, handles=None):
@@ -120,8 +126,8 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
         lines = [refusal_line(outcome, reply.get('class'))] + ([str(hint)] if hint else []) + ([f"receipt {receipt['slug']}"] if receipt.get('slug') else [])
         return '\n'.join(lines) + '\n'
     offers = [o['text'] for o in reply.get('offers') or []]
-    if offers:  # every reply ends with its receipt's spoken name
-        return '\n'.join(offers).rstrip('\n') + '\n' + receipt_line(receipt, origin, addressed, handles)
+    if offers:  # every reply ends with the host's lines (what it moved, opened, where it stands) and its receipt's spoken name
+        return '\n'.join(offers).rstrip('\n') + '\n' + revealed_lines(reply) + receipt_line(receipt, origin, addressed, handles)
     if receipt.get('offers'):
         return 'reply card offered but not retained by the host; ' + receipt_line(receipt, origin, addressed, handles)
     return ''  # no offer, no draft
