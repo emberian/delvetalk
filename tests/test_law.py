@@ -414,7 +414,7 @@ class Atoms(Reflection):
                               entry="initial", seed=seed or record(), law=law, **extra)
 
     def test_under_judges_by_the_cited_law_as_it_stands_and_reads_it_as_a_root(self):
-        self.assertEqual(self.create("kind/x", KIND_LAW, self.OWNER, record(law=label("law small: new.count <= 2")))["status"], "created")
+        self.assertEqual(self.create("kind/x", KIND_LAW, self.OWNER, record(law=label('law small "two at most": new.count <= 2')))["status"], "created")
         made = self.create("g", PLAIN, 'law kind "as its kind says": under "kind/x"\n' + self.OWNER)
         self.assertEqual(made["status"], "created", made)
         self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="g")["cites"], ["kind/x"])
@@ -423,7 +423,9 @@ class Atoms(Reflection):
             self.assertEqual(ok["status"], "admitted", ok)
         self.assertIn({"object": "kind/x", "version": 0}, ok["receipt"]["roots"])
         refused = self.turn("g", "poke", identity="p2")
-        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "kind"), refused)
+        # The refusal names the kind's clause that failed, with the kind's reading, not the wrapper `kind`.
+        outcome = refused["receipt"]["outcome"]
+        self.assertEqual((refused["status"], outcome["clause"], outcome["reason"]), ("refused", "small", "refused small: two at most"), refused)
         # The kind's law changes, and its instances are judged by the new one.
         self.assertEqual(self.turn("kind/x", "setLaw", record(law=label("law small: new.count <= 3")))["status"], "admitted")
         self.assertEqual(self.turn("g", "poke", identity="p3")["status"], "admitted")

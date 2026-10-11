@@ -1507,6 +1507,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    derives from an existing entry is unchanged; new refused entries carry less). Test: `tests/test_law.py`
    `RefusedOffers`.
 
+145. **A refusal under a kind's law names the clause that failed (host18).** `Law.refusal` follows a refusing
+   clause that is `under "O"` into O's law text (`innermost`, through further `under`s within `lawDepth`) and
+   answers that clause's name and its reading there: `refused small: two at most`, not `refused kind`.
+   `refusedBy` is its name; the judge voices the cited reading, else the object's own (`readingOf`). Tests:
+   `Law.lean`'s `#guard refusal`; `test_law.Atoms` (the kind's clause and reading).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
