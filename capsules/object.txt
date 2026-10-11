@@ -1,13 +1,9 @@
-OBJECT world/objects/X.obend, message dialect
+OBJECT world/objects/X.obend, message dialect (the library page `object`, checked by the workshop)
 edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists
 import ./Document.obend as Document
-import ./Form.obend as Form
-import ./Plan.obend as Plans
-import ./World.obend as World
 import ./Relation.obend as Relations
-import ./Card.obend as Card
 import ./Text.obend as Text
 record Coin:
   n: Nat
@@ -21,32 +17,27 @@ def initial() -> State:
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "coins", key: Text.words("n who"), limit: 64n})
 law owner "anyone drops; the owner reprograms": request.kind == 0 or request.subject == new.owner
+form drop:
+  line: text 1..140
 def drop(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {coins: insert {n: Relations.count(state.coins), who: context.principal, line: input.line}}
   Relations.count(state.coins) + 1n
-form drop:
-  line: text 1..140
-def forms() -> Card.Forms:
-  Lists.append(Card.Forms.nil(), dropForm())
-def blurb() -> Card.Door:
-  {word: "jar", blurb: "Drop a coin."}
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("{natText(Relations.count(state.coins))} coins\n")
-def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Nat>:
-  let offered(_) = world.offer({to: "", document: render(state, context)})
-  0n
-NOTES. A method is a form's action, a name methods() lists, or a conventional one (receive, set,
-publishPage); any other def is a helper no turn can name. A spell runs the method; the host fits
-String, Nat and empty-case sums under the form's bounds (text 1..140; source for Bend). forms():
-usage, interpreter. receive takes prose as Card.Reply {text, post, fields}. create lays a seed over
-initial(). Edits and keep() are derived from State (import Plan.obend); write {f:
-set|add|append|removeItem|insert|upsert|retract v} needs a param named context. A field nothing may
-change: unchanged(f) in the law.
-world.view::<S>({object}) -> viewed {version, state} | denied | refused {clause}. Two ways to say
-no. refuse("why") ends the turn: nothing it staged is written, the receipt is refused evaluation
-with your words. A result arm refused: Card.Refusal {clause, reading}, offered as "refused
-<clause>: <reading>", is an answer: the turn is admitted and commits every write staged before it,
-so return it only before any write. Page: world.publish({page, section: "", body}).
-REFUSALS. typeMismatch: the input fits no method; ask `?`. evaluation "turn refused: why": refuse()
-ran, transient; fix and resend. lawRefused "refused owner: ...": read the law, GET
-/AGENTS.md/world/<id>/source.
+NOTES. A method is a form's action, a name methods() lists (`~name` hides it from ?), or a conventional
+one (receive, render, set, publishPage); any other def is a helper no turn can name. A form block declares
+the method's input and, with none written, forms(); the host fits text A..B, natural A..B, a choice and
+source (Bend) under its bounds. actions(state, context) narrows what a reader is offered. receive gets
+what ran no method: Card.Reply {text, post, fields, spell}, or Card.Heard (with misfit) on a card that
+reads words. create lays a seed over initial(); a `fixed` State field is set then and never after. Edits
+and keep() are derived from State (import Plan.obend); write {f: set|add|append|removeItem|insert|upsert|
+retract v} writes only this object.
+context: {world, object, principal, handle, caller, sender, intent, height, clock, inputOrigin}; caller is
+the calling object, sender the object whose send this turn delivers ("" otherwise).
+world.view::<S>({object}) -> viewed {version, state} | denied | refused {clause}. refuse("why") (a
+literal) ends the turn: nothing staged is written, the receipt is refused evaluation with your words. A
+Card.Refusal {clause, reading} answered as "refused <clause>: <reading>" is an answer, not a refusal:
+the turn is admitted and commits every write staged before it, so give it before any write.
+A kind's body is a layer over Record.obend (`layer over ./Record.obend`), laid on each thing it makes.
+REFUSALS. typeMismatch: the input fits no method; ask `?`. evaluation: refuse() ran, transient; fix and
+resend. lawRefused "refused owner: ...": delvetalk library laws / card: <id>.

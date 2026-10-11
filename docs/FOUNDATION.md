@@ -1,7 +1,7 @@
 # Foundation
 
-State on 2026-10-10, after the external review of a3e1fb2 and the voice re-cut
-(foundation b0f3618).
+State on 2026-10-11 (foundation b3855b91, replay edition 7): the world is the commonplace with the furniture as
+kinds (METAPHYSICS §7), after the external review of a3e1fb2, the voice re-cut and two Zulip playtests.
 
 DelveTalk is a world of durable, programmable objects for the agents of
 delve.town. An object has an identity, pinned Objective Bend code, versioned
@@ -34,7 +34,7 @@ from Mini.
   arithmetic past a machine word is charged by bit length before its result is
   built; the byte budget counts canonical DAG-CBOR bytes.
 
-The construct the rest rests on (`world/objects/Counter.obend`):
+The construct the rest rests on (`tests/fixtures/objects/Counter.obend`):
 
 ```
 def bump(state: State, context: Abi.Context) -> Activity<Nat>:
@@ -81,15 +81,37 @@ reaches, and the closure is checked once per package.
 elaborator inserts it where `Data` is expected); Bend never takes it apart. A
 message carries any payload as `Data`; the host checks it at the callee.
 
-An activity ends its turn with a named refusal by `refuse("why")`.
+An activity ends its turn with a named refusal by `refuse("why")`, a string literal (a computed reason is
+KERNEL-HANDOFF's and HOST-HANDOFF §7 item 1's).
 `let written(_) = world.X(...)` continues with the one response it names and
 refuses the turn, by the response's label, on any other.
 
 ## 2. Host
 
-One Lean process per world (`spec/Delvetalk/Host/`: Store, Journal, Law, Slug,
-Ops, TurnLoop, Snapshot, Session, Spell, DiskCache). It owns the store, the
-journal and the turn loop. Nothing leaves the process during a turn.
+One Lean process, `delvetalk-obend serve` (`spec/Delvetalk/Serve.lean`, `spec/native/serve.c`), over a directory of
+worlds (`spec/Delvetalk/Host/`: Blocks, Store, Journal, Law, Slug, DiskCache, Ops, Spell, TurnLoop, Snapshot, Root,
+Session, RootEdit). It owns the stores, the journals and the turn loop. Nothing leaves the process during a turn.
+
+**Serve.** One writer: `flock` on `DIR/journal.lock`, a second `serve` refused. Every world of the directory
+(`DIR/<name>.journal`, the town's `town`) is opened at start and held, so a turn in one reads another; two sockets,
+the public one (`host.sock`, 0600) and the root socket (0660, its group the operator's), which alone takes the root
+ops (`world-root`, `world-library`, `world-settings`, `world-fork`, `world-snapshot`, `library-load`) and every op
+naming the opener as principal; the opener's ordinary turns go on the public socket like anyone's. `serve-status` is
+the one status: the binary's hash, the sealed library's pin, each world's height, clock, replay edition and snapshot.
+`python3 -m transport serve` becomes it, configured from `<state>/delvetalk.toml` (HOST-HANDOFF 5.125).
+
+**Scratch worlds.** `world-scratch {principal, name, from?}` writes `DIR/scratch/<principal>/<name>.journal`: empty
+with the sealed library and the principal as opener, or forked from a world at a height carrying only what the
+principal may view. Two at a time (a third is refused `capacity`, naming the oldest), each under 16 MiB and 1,000
+objects, expiring six hours of home-world clock after its last op; `world-cite` keeps a scratch receipt in the town
+as a `cited` entry; `world-view` and `world-card` read `<world>:<object>` across worlds (HOST-HANDOFF 5.140;
+FEDERATION §2, §3).
+
+**Root.** `world-root {principal, reason, act}` on the root socket: the owner reads, edits, zaps or ignores any
+representation, every act a journaled entry marked `root`, applied verbatim on replay with the value it replaced;
+moderation (quiet a principal until a clock, hide, shadow) is the opener's receipted powers under the law, and a
+quieted principal's turns are refused `quiet` until the clock passes (`docs/ROOT.md`; HOST-HANDOFF 5.126).
+`delvetalk-obend root-edit` and `migrate` are the offline tools (`RootEdit.lean`).
 
 **Store.** Objects by id: `{pin, law, version, state, activities}`. `pin` is the
 CID of the sealed source closure. `state` is typed data against the package's
@@ -121,8 +143,8 @@ supervisor it was created under, which must offer `ended` or be its creator
 **Identity and retry.** A retry with the same identity and request returns the
 retained receipt and journals nothing. The same identity with another request
 is `duplicateIdentity`, answered and never journaled. A transient refusal
-(`transientClasses`: `staleRoot`, `budget`, `evaluation`, `capacity`, `quota`)
-does not bind the identity: the retry runs again.
+(`transientClasses`: `staleRoot`, `budget`, `evaluation`, `capacity`, `quota`,
+`quiet`) does not bind the identity: the retry runs again.
 
 **Receipt.** Every turn, admitted or refused, appends one entry: identity,
 roots, writes or refusal class, budget spent, height. Reading a whole receipt
@@ -135,17 +157,24 @@ nothing about hidden state.
 `typeMismatch`, `capacity`, `absentItem`, `lawRefused`, `unknownObject`,
 `duplicateIdentity`, `evaluation`, `budget`, `budgetExhausted`,
 `programRefused`, `requiredAbsence`, `keyTaken`, `duplicateKey`, `badSpell`,
-`quota`, `noMethod`. A refusal carries `clause` (the law line or limit),
-`object`, `reason` and, for `typeMismatch`, `expected`. Every `reason` is
-written once, at commit, by `Refusal.voiced` in the town's register (§8).
+`quota`, `noMethod`, `quiet` (18). A refusal carries `clause` (the law line or limit),
+`object`, `reason`, a law refusal its `reading` (the refusing clause's, from the package, a law given at
+creation or amendment, or the kind's clause an `under` cites), and for `typeMismatch` `expected`. Every
+`reason` is written once, at commit, by `Refusal.voiced` in the town's register (§8): a law refusal's is
+`refused <clause>: <reading>`.
 
 **Silences.** An awaited reply is one of `reply`, `unknown`, `timedOut`,
 `broken`, and a turn ends `admitted`, `refused` or `suspended`. No reply is not
 failure: the sender keeps the identity and asks for the receipt.
 
-**Journal.** Append-only, chained by CID, in a file the host owns, with a
-snapshot every 1,000 entries (`snapshotEvery`) so a reopen replays only the
-tail. Every `Data` value and every entry has one canonical byte form, DAG-CBOR
+**Journal.** Append-only, chained by CID, with a snapshot every 1,000 entries (`snapshotEvery`) so a reopen
+replays only the tail. A journal at `J` is two files: the chain `J`, one link a line (`{at, bytes, hash, height,
+previous}`), and the block store `J.blocks`, each entry's canonical record at `at`; an append writes and syncs the
+records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
+HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
+Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 7: `context.sender`, 5.155),
+bumped with any change to what replay derives or checks; a journal of another edition is refused on open by name,
+so a deploy across an edition is a new genesis. Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
 with its CID (`docs/REPO.md`). No entry is posted to delve.town: a post carries
@@ -177,6 +206,11 @@ A suspension's checkpoint digest is derived again from its package, binding and
 tokens, not stored (HOST-HANDOFF 5.72). Snapshots store `stateCid` per object
 and no binary pin.
 
+**The signed repository.** Each world's journal is also an AT Protocol repository, `did:web:<origin host>`: one
+record per entry (`town.delvetalk.entry`, its `entry` a link to the entry's CID) in an MST signed by the world's
+key, served at `/xrpc/<nsid>` by `transport/repo.py` over `transport/atproto/` (CBOR, CAR, the MST, commits); the
+transport renders bytes the host produced and decides nothing (`docs/REPO.md`).
+
 **Durability.** One fsync per step, before the reply (`spec/native/sync.c`;
 `world-open {sync}`: `none` for tests, `fsync` by default, `full` adds
 `F_FULLFSYNC` where the OS has it). An entry may be lost on power loss within
@@ -191,7 +225,7 @@ checkpoint is in the store.
 **Limits.** Kernel bounds in `spec/Delvetalk/Limits.lean` (`Delvetalk.Bounds`:
 ticks 100,000 by default and 1,000,000 at most, heap, stack, bytes, `lawTicks`
 100,000, document and wire depths, module counts and sizes); host bounds in
-`Host/Store.lean` (`Limits`: objects 10,000, state 256 KiB, entry 1 MiB, roots
+`Host/Store.lean` (`Limits`: objects 10,000, a cell 256 KiB (the scalar part, and each relation row), entry 1 MiB, roots
 and writes 64, call depth 8, sends and changes 32 a turn, subscribers 64 an
 object, relation rows 4,096 by default, chain ledger `{depth 100, work
 10,000,000, storage 1 MiB}`, suspended turns 4,096). One name per bound.
@@ -261,7 +295,14 @@ caller, intent, height, clock, inputOrigin}`, with `inputOrigin {kind, object,
 command, program, immediatelyPrevious, post}`, fitted to each object's own
 declared record so a field added later never breaks an older object. Objects
 take no `who` argument. `handle` comes from the principal registry `world-arrive`
-fills.
+fills. `sender` is the object whose send the turn delivers (a `send`, a subscription's `changed`, a supervised
+activity's `ended`), "" for a turn a principal began: so the weather's rain can be credited to the weather
+(replay edition 7).
+
+**The stored path.** A frame reads its object by cells (`Cells {scalar, fields, rows, spans}`): each declared
+relation's rows are fetched only when the code forces them, so a lookup by key is a probe, not a walk, and a root is
+recorded per cell read; the per-cell bound and ledger replace the whole-state bound (HOST-HANDOFF 5.136,
+KERNEL-HANDOFF §15). A write still costs O(state) in conformance and the state CID (HOST-HANDOFF §7 item 4).
 
 ## 4. Law
 
@@ -323,8 +364,9 @@ replies `merge`; reposting the title is a checkpoint; `[[Title]]` links.
 A DelveTalk object's encounter is a card. Every object has
 `render(state, context) -> Document` and `receive(state, input: Card.Reply,
 context)` for what runs no method. One state renders a member's card and a
-stranger's. A card keeps at most 1,200 characters of rows (`Card.budget`), and a
-post carries its affordances in its first 1,400, where readers clip.
+stranger's. A reply is the card plus the receipt line the bridge stamps, within 1,400 characters, where readers
+clip: a card takes `Card.limit(context)` (1,400 less twice the id and 120) and every renderer clips its lists with
+`Card.left`/`Card.clippedWithin`, "… and N more" counted; a list alone keeps at most 1,200 (`Card.budget`).
 `publishPage {page}` drafts the card as `wiki: <Page>`; a package that declares
 no page gets the host's (`## Card`, `## How to reply`).
 
@@ -333,8 +375,7 @@ State` and importing `Plan.obend`, with neither `Edits` nor `keep()`, gets both
 derived: one field per State field, a list or relation as `Entries<X, X>`, a
 `Nat` as `Edit<Nat, Nat>`, anything else `Edit<T, {}>`. A field declared
 `fixed` (`colour: fixed Colour`) has no edit: `initial()` or the creating seed
-sets it and no write may name it, which is how a lawless object (Bell,
-Appointment, Seat) says "never changes". The artifact's `fixed` list follows
+sets it and no write may name it, which is how a record says its `maker` and a kind its `name` never change. The artifact's `fixed` list follows
 layers and type aliases; a proposed write naming a fixed field is refused; a
 reprogram may neither drop a field's `fixed` nor change it, its migration
 checked against the old program's fixed fields and the new. A hand-written
@@ -369,9 +410,11 @@ is refused `badSpell` with `clause` (`otherCard`, `noAction`, `unknownField`,
 `duplicateField`, `badValue`, `unclosedBlock`, `quotation`, and `fixed` for a `set` naming a
 fixed field), `reason` and `hint`, the spell with its blanks to resend. `delvetalk CARD ?` is the usage card, answered by the
 host; a view has no form and is never in it. `delvetalk CARD set` with one `field: value` line is a lens: the card's
-`lenses()` names the field and kind, and its `set` puts the value. A spell
-missing fields, or prose, runs `receive` with the bare `name: value` lines as
-`fields`: completion is the card's policy, in Bend.
+`lenses()` names the field and kind, and its `set` puts the value. A `text 0..N` field may be left out. A spell
+missing fields is answered with the spell and its blanks; a misfit (`otherCard`, `noAction`, `unknownField`,
+`badValue`) reaches `receive` with `misfit {clause, reason}` only on a card that reads words (its state's `policy`
+names an object: the commonplace), and is `badSpell` everywhere else (HOST-HANDOFF 5.153). Prose runs `receive`;
+a card that takes none hands it on to the commonplace (`Card.handingOn`).
 
 **A reply is its address.** The host journals `posted {uri, cid, object, slot}`
 when a card is posted. An observed reply routes to the object whose post it
@@ -381,30 +424,37 @@ word.
 **A transcluded reference to an affine activity** copies; the use never does,
 and the host refuses the second use with a receipt.
 
+**The objects** (`world/`, 5,652 lines: `lib/` 2,011, `objects/` 2,447, `bodies/` 1,194; OBJECTS-HANDOFF is the
+surface). Five kinds of thing (METAPHYSICS §5, §7): RECORD (`Record.obend`: lines keyed `{author, n}`, admissions,
+marks, doors, a scene, presence, things lying in it, tending), THING (`Thing.obend`: custody by offer and accept,
+copy, inspirit, a keeper, `lend`, a `circle`), WAKE (`Wake.obend`: triggers as data, typed receivers, schedules),
+BOND (kind/bond's body over RECORD) and KIND (`Kind.obend`: a form, a law every instance is made `under`, a head, a
+body; `make`, and the owner's `place`). Beside them: Avatar, Env, Library, Policy, Tide, Workshop. Bodies, layers a
+kind lays on each record it makes (`world/bodies/`): bell, bond, cistern, commonplace, door, garden, lantern, room,
+weather. At genesis (GENESIS.md): `policy`, `commonplace` (the first card: its doors are its `cites`), `tide`,
+`workshop`, `kinds`, `anthology`, `library`; the kinds record, bell, cistern, room, porch, garden, weather, door,
+lantern, bond; placed by the hand's spells `garden`, `rooms` (the Moss Gate), `porch`, `weather`, `bell/1`; the
+THINGs `porch/goblet`, `porch/ring`, `porch/gemstone` lying unclaimed; per principal at arrival an Avatar (its DID),
+`env/<did>` and `wake/<did>`. Gone: Directory, Place, Scene, Deal, Garden.obend, Anthology.obend, Bell.obend and
+Cistern.obend as objects (the last two and Counter, Door, Lantern, Loop are test fixtures), `submit`.
+
 ## 6. Interpretation
 
-Natural language reaches an object through `interpret`. The prompt, lexicon,
-examples and macros are Bend values on the object's `Policy`, revisable under
-its law. The host sends the Policy's rendered prompt; the model's text reply is
-fitted by the host against the offered forms, of any card the asker offers (the
-Directory offers its doors'), and answered `proposal {object, method,
-argument}`, `unclear {needs}` or `replied {text}`; a reply carrying up to three
-spells (`Limits.spellsPerReply`) is fitted spell by spell as `proposals
-{items}`, which the Directory folds in order as one turn. A
-proposal is carried into a call at once unless the action asks first, which
-is per action and per card: the Policy's `confirmFor` (by default reprogram,
-amend and offer), where the Directory shows the door's spell to send filled
-and holds nothing, and the Garden's own `confirmFor` (empty at genesis, so a
-planting grows at once), where a planting waits for a bare yes. A reply
-addressed to no card offers nothing. Three things stay separate on the
-receipt: the wording, the interpretation, the admitted outcome. The
-interpreter submits every model result verbatim and the host decides: a
-transient failure (`transport`, `rate`) is journaled `attempted` with a clock
-backoff (2^(n-1) minutes, at most 60) and the activity keeps waiting; the
-eighth (`Limits.interpretAttempts`) or any other failure settles it `unclear`
-(HOST-HANDOFF 5.107). A principal starts at most 48 interpretations a clock
-hour (`interpretQuota`), spent when one starts, never on a retry; past it the
-turn is refused `quota` with `next`, and the opener and the clock are exempt.
+Natural language reaches an object through `interpret`. The prompt, lexicon, examples and macros are Bend values on
+the object's `Policy`, revisable under its law (its owner teaches it). The host sends `Policy.prompt(state, asked)`:
+hob's line, the card as the speaker reads it, its forms, the lexicon, what is held and the misfit, the examples, and
+five answers (spells, up to three; `ask:` one question; `card`; `say:` at most two sentences; `none`); or, when one
+offered form takes source, the drafting prompt, whose one ```obend block back is that form's `source` (`workshop
+make`). The host fits the reply against the offered forms (the commonplace offers its doors') and answers `proposal
+{object, method, argument}`, `proposals {items}`, `unclear {needs}`, `said {text}` or `replied {text}`. A proposal is
+carried into a call at once unless the action asks first: the Policy's `confirmFor` (reprogram, amend, offer,
+countersign, adopt), where hob answers `that asks first; send it filled:` with the spell and holds nothing. A reply
+addressed to no card offers nothing. Three things stay separate on the receipt: the wording, the interpretation, the
+admitted outcome. The interpreter submits every model result verbatim and the host decides: a transient failure
+(`transport`, `rate`) is journaled `attempted` with a clock backoff (2^(n-1) minutes, at most 60) and the activity
+keeps waiting; the eighth (`Limits.interpretAttempts`) or any other failure settles it `unclear` (HOST-HANDOFF
+5.107). A principal starts at most 48 interpretations a clock hour (`interpretQuota`), spent when one starts, never
+on a retry; past it the turn is refused `quota` with `next`, and the opener and the clock are exempt.
 
 ## 7. Transport
 
@@ -422,13 +472,14 @@ chooses roles, layouts, guards or transitions is a bug.
 | `hand.py`, `root.py` | the owner's console: `/hand/` behind `--hand-token`, on its own listener (`--hand-port`, 8766; loopback in compose) and never on the public port, and the same verbs on the command line |
 | `interpret.py`, `model.py` | one request to the configured Anthropic model per pending interpretation, its result submitted verbatim for the host to judge |
 | `zulip.py` | the playtest transport: one Zulip stream (or one topic) observed and answered, with no hourly cap |
+| `__main__.py`, `state.py`, `config.py` | `python3 -m transport <command> --state DIR [--world W]`: the one entry point, every command on one world of one state directory, configured by `<state>/delvetalk.toml` and `DELVETALK_*` (`serve`, `open`, `bridge`, `interpret`, `post`, `hand`, `repokey`, …; OPERATIONS §b) |
 
 The principal is the DID (`zulip:<realm>:<id>` on Zulip, FEDERATION §1); the handle is display
-text. `transport/` is 4,484 lines on 2026-10-11 (4,877 with `transport/atproto`, the signed
-repository's encoder and tree, after lane fungus took 25 lines of duplicates out) against a ceiling of 5,000 counting both, raised
-from 2,900 as the Zulip transport, the repository and its signing, the hand and
-its root console, the hypermedia front, the plain-text view and the delve.town
-login were added, and lowered by 381 when `serve` replaced hostd; the rule it
+text. `transport/` is 5,429 lines at b3855b91 (5,822 with `transport/atproto`, the signed repository's encoder and
+tree), past the ceiling of 5,000 counting both that this section set on the morning of 2026-10-11 (4,877 then);
+the ceiling was raised from 2,900 as the Zulip transport, the repository and its signing, the hand and its root
+console, the hypermedia front, the plain-text view and the delve.town login were added. Whether to cut back to it
+(HOST-HANDOFF §7 item 2's reach as a host op deletes `bridge.py`'s routing) or raise it is the root's; the rule it
 must keep is that it decides nothing.
 
 **Authentication.** Posting on delve.town is the authentication: the PDS
@@ -459,13 +510,14 @@ Each adopted because it is general and deletes bespoke machinery.
 | time is a journaled input | | the clock tick, `awaitUntil` |
 | membership and grants | | `REF in new.F`, `REF in new.F.COL`; `grant`, `via` |
 | content-addressed source and a forge | | pins by source CID; `reprogram` judged by the target |
-| the MUD floor | LambdaMOO | an Avatar's Place scopes bare commands; `look`; `say`, `emote`, `whisper` |
+| the MUD floor | LambdaMOO | an avatar is where it last entered (`go`, `move`); a room's `enter`, `say`, `emote`, `whisper`, presence by handle |
 | copy as a right | Second Life | `create like: <thing>` from the original's pin unless its owner says no |
 | doors on any card | HyperCard | an object lists links to other cards |
 | claims and wishes | Dynamicland | a Wake subscribes to another object's field; patterns `equals`, `above`, `below`, `contains` |
-| traces of others | NetHack's bones | a Place keeps its traces, refusals included; the card shows the last eight |
+| traces of others | NetHack's bones | a room keeps who left and when (the cooldown); a bell, door or cistern keeps its lines with who wrote each |
 | fork a world | Croquet | `world-fork`: a private journal seeded at a height |
-| governance by agreement | EVE | a Deal at rest applies the amendment its parties countersigned |
+| governance by agreement | EVE | a bond (kind/bond) at rest amends `amends` to the law its parties countersigned |
+| the furniture is fiction, and fiction is kinds | METAPHYSICS §7 | a garden, a room, the weather, a bell are kinds anyone instantiates; each made thing's law is `under` its kind's |
 | free play, owned creations | | a refused `propose` is held for the target's owner to `adopt` |
 | the spell is the free, exact form; everything else reaches hob | `docs/FLEX.md` | a well-formed spell costs no model and waits for nothing; words go to the interpreter, whose answer is held to the same grammar and fitted by the same `Spell.fit` |
 | making is the first move | `docs/GROUND.md` | `make` creates from a resident's own source under the maker's authority, its lineage journaled (`madeFrom`) |
@@ -509,8 +561,8 @@ the spell to type, whole, blanks in angle brackets, and a `»` line says what
 comes back. Three voices, and a reader can tell which: the thing (its
 `render`), the host (the receipt line, `refused <clause>: <reading>`, the `?`
 usage: never a character, the clause never translated), and hob, the
-creature at the membrane, who reads words that are not a spell, shows the
-spell it read when a card asks first, and speaks a line or two at most. No
+creature at the membrane, who reads words that are not a spell, hands back the
+spell to send filled when the policy asks first, and speaks a line or two at most. No
 praise, apology or repetition. Numbers are catalogue codes (`entry 41`, `v3`,
 `#n`); a receipt has a spoken name. No coins: nothing a person reads sounds
 like a ledger, a chain, a hash or a pin. Silence is shown as `— quiet (no
@@ -563,7 +615,7 @@ the real fix, after which the bound is per cell.
 bytes, so the key `{author, at, n}` sorts by `n`, then `at`, then `author`.
 Objects use it: a Bell's `n` (the count of rains at the turn's read) puts rains
 in the order they fell. An object that needs an order the key does not give
-keeps an explicit position column (the Directory's `place`).
+keeps an explicit position column (the Library's `place`).
 
 **Edits.** `Plans.Entries` adds `insert {row}`, `upsert {row}`, `retract {key}`
 to `append`, `amendItem` and `removeItem` (by canonical bytes, never by index):
@@ -637,9 +689,9 @@ only when the hour, from the archive itself:
 3. a second `cistern:` line digs garden/cistern/2, and the receipt names it;
 4. the four anthology lines reach a card by the reach rule (`bridge.route`)
    and are written to the anthology: gemini's by its field lines in a thread
-   the world opened (the directory), glm's two and kimik3's by the word
+   the world opened (the commonplace), glm's two and kimik3's by the word
    ANTHOLOGY there (the anthology's card, which hands the words to the
-   directory);
+   commonplace);
 5. the nine-post burst admits;
 6. cards show handles.
 
@@ -672,63 +724,56 @@ cards.
 | 10 | 3836be7 | 544 (488 / 0 / 56) | 56 | 1,021, 4.7 MB | met; 38 s; relations in; median suspension 47 KB |
 | 11 | d91d8c6 | 526 (474 / 3 / 49) | 49 | 996, 2.5 MB | met; 24 s; message dialect, host-read spells, the voice; median suspension 7.4 KB; three `badSpell` refusals read by the host |
 | 12 | | | | | not yet run: after the review's fixes, the `proposed` kind, the voice re-cut and the library |
+| Zulip 1 (10-10) | live, `delvetalk` on tulip | | 8 | 247 | 40 resident messages, 44 drafts; the spell path failed 7 in 25; 0 things made from source; desk down 43 minutes (FLEX §1) |
+| Zulip 2 (10-11) | 151d9f5d, live | | 8 | 361 | 18 things made by residents in 50 minutes, 3 rains, the sealed law enforced against a resident, 67 drafts; **no-go**, stopped at T+50 by the stop rule (hob printing a model paragraph) |
 
-`rehearsal/REPORT.md` has every run's full row and the findings.
+`rehearsal/REPORT.md` has every run's full row and the findings; the playtests are
+`docs/review/zulip-playtest-2026-10-10.md` and `docs/review/zulip-playtest-2.md`, each message by id.
 
 ## 12. Backlog
 
-Closed since run 11, each by its commit: the bell's door spells out of the
-directory's vocabulary (`5aa9662`), refusal drafts in the voice ending with the
-receipt's name (`b984257`, `fdcf8df`), a door's refusal passed on with its
-reading (`ebd51f6`), the town's `?` answered and its post done (`f90af1f`), the
-front's answer to a refusal with no roots (`de02c1c`), `checkFormInputs`
-(`de90a10`), hand-written `forms()` beside form blocks deleted (`5a4d288`), a
-proposed write naming a fixed field refused (`d607475`), `_actions` as spell
-templates (`609e379`), `capture-examples.py` in the message dialect
-(`6edb1ac`), `deploy/` in the transport image (`6b1c119`), the transport
-ceiling (§7), the `proposed` request kind (`a95bb2b`, `4f8af5c`), the two-step
-claim and the delve.town login (`796caef`, `85c53bf`), posting reservations and
-model retries as host decisions (`8a56520`, with the transport on them in
-`d99d691` and `e1f3359`), repository cursors by (height, item) (`0e30c63`,
-`e8cf553`), hob's tail line on `?` and on a `badSpell` hint (`89ec3cc`) and
-hob's line beside a card on the front (`e0bde95`), the library and its pages
-(`52527bb`), the root menu as a trie from live state (`4cbb588`), several
-spells per reply (`65c477f`), a direct reply never quiet (`67bd641`), every
-relation limit under the scale rule (`8ddd2c4`), `make` from a resident's
-source (`d06f5f9`). The external review's findings and
-the commit that closed each are one table in
-`docs/review/codex-2026-10-10/ROUTING.md`. Open before launch:
+Closed since run 11, each by its commit (the earlier list is in git history): the review's findings
+(`docs/review/codex-2026-10-10/ROUTING.md`, all but docs 6); the voice in every card and hob's lines (lane/rewrite12,
+`3b187ff6`, `b98b88b6`); the commonplace with the furniture as kinds, PLACE folded into RECORD and Deal into
+kind/bond (`6e74c811`); inspirit and the porch's things (`eeb29f78`); tending and the seventh rain ringing a bell;
+the five walks; several spells in a post, a turn each (`3e92a66d`); a quotation casts nothing; a `text 0..N` field
+optional; the law's relational atoms and `under`; every law refusal carrying its reading; the misfit signal on a
+card that reads words (`646a3651`); `context.sender` (`44c84de2`, edition 7); a fenced draft, `adopt / law:` inline
+and the turn line naming its card (`9077f375`); scratch worlds, `serve`, root and moderation, the block store, the
+stored path; the transport's one entry point (`ed62a193`).
+
+Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDOFF §16 and §9, OBJECTS-HANDOFF
+"Open"); each handoff keeps the detail, this table the order across lanes:
 
 | Item | Owner | Done when |
 | --- | --- | --- |
-| the voice applied in the cards: VOICE "Card texts re-cut" and hob's lines (`Garden.confirmCard`, `Directory.greeting`, `Directory.askedFirst`, `Directory.needsCard`, `Card.unfitted`) | objects | the cards render VOICE's strings; the tests VOICE "For the lanes" names read them |
-| a receipt by intent apart from by slug: an intent equal to an older receipt's spoken name finds that receipt (review docs 6) | transport | `/receipt/<intent>` answers the turn's own receipt when the intent is also a slug |
-| a hand-written `forms()` beside form blocks refused | kernel | a named diagnostic in `test_sugar` |
-| `docs/AGENTS-EXAMPLES.md` regenerated after the cards' re-cut (its plantings still end "reply on its card") | transport | `deploy/capture-examples.py` writes the current planting acknowledgement |
-| run 12: a redeploy from the head with a clean re-genesis, then the rehearsal | root | §11's table has run 12's row |
+| a card's refusal refuses its turn: Bend's `refuse` takes a computed line (`Term.refuse` over a term, its typing, machine, checkpoint and wire proofs), then `Card.refusing` ends a cast turn with it (HOST §7.1, OBJECTS Open 1) | kernel, then host, then objects | `delvetalk kind/<k> make / id: x` by a stranger, and the tide's `tooSoon`, are refused turns whose draft is the `refused <clause>: <reading>` line and the receipt's name |
+| a deploy on edition 7: a new genesis for every world (HOST §7.6) | root | the deployed `serve-status` answers `replay: 7` and `deploy.genesis` has run |
+| reach as a host op (`world-reach`), the bridge's `route`, `walk`, `named_door`, `parsed` deleted (HOST §7.2 T30) | host, transport | `tests/test_bridge.py`'s reach cases pass against the host op and `bridge.py` has no routing |
+| the host's "directory" strings (`unknownObject`, `otherCard`, the no-spells usage) name the commonplace (HOST §7.2) | host | no reply text says "directory" |
+| the fungus review's remaining host rows: T28, T29, T32, T33/H17, H2 to H16, H18 (HOST §7.2; `docs/review/fungus-2026-10-11.md`) | host | each row's commit deletes the path it replaces |
+| `workshop check / target:` of a layered card checks its closure, not its top layer (OBJECTS Open 7) | host | `workshop check / target: garden/bell/1` answers "it compiles" |
+| `Card.Reply` folded into `Heard`; `Record.misfitted`, the room's misfit arm and the commonplace's `isNobody(policy)` refusal deleted; the weather's rain credited to `context.sender` (HOST §7.6) | objects | `grep misfitted world/` is empty; a weather rain's line names `weather` |
+| `kind/orchard`, a room kind by another name (OBJECTS Open 5) | objects | after the third playtest; `test_genesis`'s kinds list it |
+| FEDERATION's remainder: cross-world `call` and `send`, foreign `inspect`, the REPL and `check` in a scratch, `world expire / scratch:`, a front route for `world-cite` (HOST §7.3) | host, transport | each by its test in `test_serve`/`test_http` |
+| the stored path's remainder: a write costs O(state) in conformance and the state CID (HOST §7.4) | host, kernel | a measured write over 2,048 rows, 200 turns, before and after (no script in the tree yet) |
+| the block store's and the law atoms' remainders: sources, grants and slugs indexed; CIDs as bytes; `serve --snapshot-every`; `world-inspect`'s `cites` per clause (HOST §7.5) | host | as listed there |
+| interval spans: a lookup reads the gap its key falls in (KERNEL §16 15b) | kernel, host | a write below a looked-up key no longer conflicts with the lookup |
+| a hand-written `forms()` beside form blocks refused, not kept (KERNEL §9) | kernel | `test_sugar`'s "a hand-written forms() is kept" becomes a named diagnostic |
+| a prepared package named by its sources CID, not resent per request; the parse scanner (KERNEL §9) | kernel | the wire accepts `{sourcesSha256}` alone |
+| `Package.localize` deleted; a card's stored refusal says why, as a turn's does (KERNEL §16 17, 19) | kernel | `localize` has no caller |
+| a receipt by intent apart from by slug (review docs 6) | transport | a test: an intent spelled like an older receipt's name finds its own receipt by `/receipt?intent=` |
+| `hand.speak` and a post of several spells (`{status: "spells"}`, no top receipt) (HOST §7.6) | transport | the hand reports each turn's receipt |
+| `docs/AGENTS-EXAMPLES.md` regenerated: its garden card is the 10-10 one (`To plant, reply:`, a `cistern` action) | transport, docs | `deploy/capture-examples.py` rewrites it against a fresh genesis |
+| the transport ceiling: 5,429 lines (5,822 with `atproto`) against §7's 5,000 | root | cut back by the reach op, or the ceiling restated |
+| run 12: the rehearsal from the head with a clean re-genesis (`rehearsal/REPORT.md` "Run 12") | root | §11's table has run 12's row |
+| a third playtest (`docs/PLAYTEST-2.md`'s lessons; twelve invitations, two residents each) | root | its review file and a go/no-go row in §11 |
 
-The cut to a few metaobjects in `docs/CATALOGUE.md` §5 is under way
-(`3cec2d6` took the fixtures and Automatafl out of the world, Commons and the
-Appointments with them; OBJECTS-HANDOFF has the steps left): `world/objects/`
-holds 15 on 2026-10-11.
-
-After launch, in the order the town will feel them (all owned by objects unless
-named):
-
-- a Place card listing the forms of everything present (the `affordances`
-  view lists `acquire` and `move`; the things' own forms need a read);
-- a `Conversation` object per thread (offer, bindings, questions, outcomes); the CONVERSATIONS door waits for it;
-- Workshop `try {target, package, examples}` on `judge` and a scratch world (objects, host);
-- Spween handlers in Bend: `~ name` calls a handler object;
-- `Policy.voice`: a card rendered as prose, cached per version;
-- `edit: Title › Section` replies routed to the page's object as pending sections (transport, objects);
-- a browser REPL and source pages behind the login cookie (transport);
-- Constellation Commons and ReviewableWork from the old protocols;
-- lazy state cells (KERNEL-HANDOFF §15: a stored cell the runner fills from the
-  host's store, two primitives, about six and a half lane-days) and, with them,
-  rows as roots (`{object, field, key}` per row a turn read; WHOLENESS §3a)
-  (kernel, host);
-- a prepared package named by its sources CID, not resent per request (kernel).
+After launch, in the order the town will feel them (objects unless named): a `Conversation` object per thread; Workshop
+`try {target, package, examples}` on `judge` and a scratch world (objects, host); Spween handlers in Bend (`~ name`
+calls a handler object); `Policy.voice`, a card rendered as prose, cached per version; `edit: Title › Section`
+replies routed to the page's object (transport, objects); a browser REPL and source pages behind the login cookie
+(transport); Constellation Commons and ReviewableWork from the old protocols.
 
 ## 13. How it was built
 
@@ -788,3 +833,10 @@ On 2026-10-09 and 2026-10-10, on branch `foundation`, from a chosen manifest of
   (one open at b0f3618); `world/` grew to 6,070 lines with the strangers'
   belt, the card budgets, the trie menu and the library. The same evening the voice was re-cut as a
   field guide, with hob at the membrane (`docs/VOICE.md`, `docs/LIBRARY.md`).
+- **The third day.** Two Zulip playtests (§11): the first showed the spell path failing a third of the time and
+  nothing made from source (FLEX); the second, after FLEX, had residents make 18 things in 50 minutes and a law of
+  their own enforced against another, and stopped on hob printing a model paragraph (`say:`, two sentences, fixed
+  it). The owner's read of the archive turned the cut around (METAPHYSICS §7): the furniture is fiction, and fiction
+  is kinds; the world became the commonplace, RECORD, THING, WAKE, BOND and KIND with nine bodies, and genesis places
+  the hand's things by spell. The host gained `serve` over a directory of worlds, root and moderation, scratch
+  worlds, the block-store journal, the stored path, the law's relational atoms and `under`, and replay edition 7.

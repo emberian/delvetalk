@@ -12,12 +12,13 @@ COMMUTE against a moved root: insert always (re-applied to the rows now). upsert
 no admitted write since your read touched their key, else staleRoot. keep, add, append commute too.
 ORDER by canonical DAG-CBOR bytes of the key projection; map keys go SHORTER NAME FIRST, so {author,
 at, n} sorts by n, at, author. Text sorts by length then bytes (garden/bell/9 before /10). Key order
-is not arrival order: keep a position column (Directory's place) when order shows.
+is not arrival order: keep a position column (the Library's place) when order shows.
 ORDINAL A row one author may add twice at one height keys an n = Relations.count at the read:
 {author, at, n}. n sorts first, so key order is arrival order. One author's two turns at one read
 height collide keyTaken; key by context.intent if that matters.
-QUERIES (pure): rows count exists where project lookup(rel, key, keyOf) order(rel, by) group(rel,
-by)->Group{key, rows} fromList(items, keyOf) compare(0<,1=,2>), joinOn(l, r, lk, rk) over sides
+QUERIES (pure): rows count exists where project lookup(rel, key) has(rel, key) order(rel, by) group(rel,
+by)->Group{key, rows} fromList(items, keyOf); count and lookup are host primitives over stored cells
+(a lookup is a probe by key, not a walk) compare(0<,1=,2>), joinOn(l, r, lk, rk) over sides
 already in join-key order (~400 ticks a row: join dozens). insert/upsert/retract(rel, row|key,
 keyOf) mirror the host so a card shows its own write.
 RETRACT leaves no tombstone; laws cannot see it. What must outlive retraction is a second,

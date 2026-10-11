@@ -51,7 +51,7 @@ Mac: 0.2 ms of MST and 0.23 ms of signing a height, so a cold 10,000-entry journ
 read; about 3,300 nodes live per 10,000 entries.
 
 **The key.** One per world: k256, PKCS#8 PEM, `/etc/delvetalk/repo/<world>.key`, mode 0400, owner 10425, in
-a 0700 directory owned by 10425. `deploy/repokey.py` makes it at first start (DEPLOY "First start"), refuses an
+a 0700 directory owned by 10425. `python3 -m transport repokey` makes it at first start (DEPLOY "First start"), refuses an
 existing file, prints only the `did:key`. Compose mounts it as the secret `repo_key` into `delvetalk-http`
 only (`DELVETALK_REPO_KEY_FILE=/run/secrets/repo_key`; `DELVETALK_REPO_KEY_PATH` in `.env` names the file);
 no other service and no backup tarball holds it. The DID document names it as `#atproto`, a `Multikey`.

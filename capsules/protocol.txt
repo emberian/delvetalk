@@ -15,21 +15,22 @@ callVia, sendVia: + via  subject = the grant's grantor
 run<R>{.., handler} -> returned  handle() sees them first
 send{object, method, argument} -> delivery{id}  a later turn
 create{package, seed, law, requireAbsent} -> created{object}  "" names <you>/<package>/<n>
+principal{handle} -> named{principal} | unknown  the principal a handle names
 make{.., madeFrom{object, receipt}} -> created  from a resident's source; the lineage journaled
 createUnder: + supervisor  told ended{receipt}
 reprogram, extend{object, package, migration} -> reprogrammed{pin}  kind 1
 amend{object, law} -> amended{}  kind 2
 await{slot{principal, intent}, patience}, awaitPost{post, patience}, ..Until{.., until} ->
     reply{receipt} | unknown | timedOut | broken
-interpret<R>{utterance, offers, policy, model} -> proposal{object, method, argument: R} |
-    unclear{needs} | replied{text} | timedOut | denied
+interpret<R>{utterance, offers, policy, model} -> proposal{object, method, argument: R, spell} |
+    proposals{items} | unclear{needs} | said{text} | replied{text} | timedOut | denied
 offer{to, document} -> offered{}  to "" = the speaker
 publish{page, section, body} -> published{post}
 grant{to, object, method, until}, grantWith{+ fixed, uses} -> granted{id}; revoke{id} -> revoked{}
 subscribe{object, field, method} -> subscribed{}  method: the receiver; unsubscribe{object,
     field, method}
-CHANGED A write touching F runs each subscriber's receiver later, as its principal, caller = the
-written object: {object, field, version, inserted, retracted}, rows or items added/removed (upsert
+CHANGED A write touching F runs each subscriber's receiver later, as its principal, caller and
+context.sender = the written object: {object, field, version, inserted, retracted}, rows or items added/removed (upsert
 both), a scalar [new]/[old], typed by the receiver (inserted: List<Rain>). <= 32 sends+changes a
 turn (rest: unserved); 64 subscribers an object.
 RECEIPT Plans.Receipt{slot{principal, intent}, height, outcome admitted{} | refused{class, root}}.
