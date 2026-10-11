@@ -111,12 +111,10 @@ class Archive(unittest.TestCase):
         for name, c in cuts.items():
             self.assertEqual((c['snapshot']['resumed'], c['snapshot']['refused'], c['same']), (c['written']['height'], [], True), (name, c))
 
-    @unittest.expectedFailure
     def test_the_runs_own_snapshot_agrees_with_replay(self):
-        """The snapshot written live at height 1,000 carries law readings for the seven objects a turn created
-        with a law text (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3); replay rebuilds
-        them without, because a creation journals `renderLaw`'s text, which drops the readings. `verify`
-        refuses that snapshot, and a reopen from it differs from the straight replay in exactly those readings."""
+        """The snapshot written live at height 1,000 agrees with replay: `verify` refuses none, and a reopen from it
+        holds the straight replay's state, law readings included for the objects a turn created with a law text
+        (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3), which replay once rebuilt without."""
         cases = self.r['snapshotReplay']['cases']
         self.assertEqual((cases['verify']['snapshot']['refused'], cases['run']['same']), ([], True), cases['run']['differs'])
 
@@ -130,10 +128,9 @@ class Archive(unittest.TestCase):
         cut, c = self.settling()
         self.assertTrue(c['same'] and c['written']['openedAt'] > cut and c['snapshot']['resumed'] == c['written']['height'], c)
 
-    @unittest.expectedFailure
     def test_a_reopen_inside_a_settling_prints_no_panic(self):
-        """`world-open {clock}` attaches the settled turns to settingsOp's `null` answer (Session.lean `durable`),
-        and Lean prints `PANIC at Lean.Json.setObjVal!` on stderr."""
+        """`world-open {clock}` finishing a settling writes nothing to stderr (it once attached the settled turns to
+        settingsOp's `null` answer, and Lean printed `PANIC at Lean.Json.setObjVal!`)."""
         self.assertEqual(self.settling()[1]['stderr'], '')
 
     def test_the_reach_rule_returns_the_recorded_posts_and_each_is_asked_at_most_once(self):
