@@ -1,12 +1,11 @@
-/- Generic source-package boundary. Mini owns parsing, elaboration, typing and
-   shared-demand execution. This adapter adds only JSON framing and data IO. -/
-import Delvetalk.Core
+/- The package boundary: compile, check and run requests over the local Objective Bend
+   edition's parser, elaborator, checker and demand machine, with JSON framing and data IO. -/
+import Delvetalk.JsonLine
 import Delvetalk.FrontEnd
 import Compiler.ObjectiveBendFrontEnd
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
 import Delvetalk.PackageData
-import Delvetalk.Reflection
 import Delvetalk.Turn
 import Delvetalk.Document
 import Delvetalk.EvaluateTerm
@@ -75,13 +74,6 @@ def modulesAndAsts (j : Json) :
     asts := asts ++ [ast]
   return (modules, .arr raw, asts)
 
-def modulesOfStructured (j : Json) : Except Diagnostic (List SourceModule × Json) := do
-  let (modules, raw, _) ← modulesAndAsts j
-  return (modules, raw)
-
-def modulesOf (j : Json) : Except String (List SourceModule × Json) :=
-  (modulesOfStructured j).mapError Diagnostic.render
-
 /-- A compiled package: the artifact JSON, the entry's checked type and its laws. -/
 abbrev Compiled := Json × Ty × List (String × Minidregg.Compiler.ObjectiveBendLaw.LawExpr)
 
@@ -110,9 +102,6 @@ def signaturesOf (ast : Minidregg.Compiler.ObjectiveBendSurface.Module) : List (
     | .function signature _ _ _ =>
       some (signature.name, signature.params.map fun p => Minidregg.Compiler.ObjectiveBendElaborate.trimStr p.type)
     | _ => none
-
-def functionSignatures (name source : String) : Except Diagnostic (List (String × List String)) := do
-  return signaturesOf (← FrontEnd.parseSource name source)
 
 open Minidregg.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
 /-- The first `n` parameter types of an elaborated function type and its result. -/
@@ -607,35 +596,6 @@ def DataExecution.wire : DataExecution → Json
        ("status", toJson "finished"), ("value", dataJson value), ("type", typeJson type),
        ("nodesUsed", toJson nodes)] ++ usage.fields)
 
-/-- Explicit recursive-data execution. Full eager materialization and output
-shape checking happen here, before any native consumer sees a Data value.
-Conversion and machine work share the existing whole-execution allowance. -/
-private def executePreparedData (prepared : PackageData.Work (AnnotatedTerm × Ty × Nat))
-    (argumentBytes : Nat) (limits : Json) : Except String DataExecution := do
-  let bytes ← bounded limits "bytes" Bounds.bytesDefault Bounds.bytesMax
-  let inputBytes ← bounded limits "inputBytes" bytes Bounds.bytesMax
-  if argumentBytes > inputBytes then throw "typed data input byte capacity"
-  let ticks ← bounded limits "ticks" Bounds.ticksDefault Bounds.ticksMax
-  let work ← bounded limits "work" ticks Bounds.ticksMax
-  let allowance := min ticks work
-  let ((source, type, _), remaining) ← prepared.run allowance
-  let before := allowance - remaining
-  let heap ← bounded limits "heap" Bounds.heapDefault Bounds.heapMax
-  let stack ← bounded limits "stack" Bounds.stackDefault Bounds.stackMax
-  let nodes ← bounded limits "nodes" Bounds.nodesDefault Bounds.nodesMax
-  let budget : Budget := ⟨nodes, ticks - before, bytes⟩
-  match execute ⟨heap, stack⟩ budget source.term with
-  | .error (failure, state, rest) =>
-      return .refused (reprStr failure) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩
-  | .ok execution =>
-      let result := execution.extraction.result
-      -- Recursive aliases and the complete returned value are checked, including
-      -- payloads which a later source Decision may explicitly refuse.
-      let outputAllowance := min remaining result.remaining.ticks
-      let (_, after) ← (PackageData.validate source.assumptions Bounds.dataWireDepth result.value type).run outputAllowance
-      return .finished result.value type (nodes - result.remaining.nodes)
-        ⟨budget.ticks - result.remaining.ticks, before + outputAllowance - after, result.state.heap.size⟩
-
 /-- Native finite arguments retain lazy demand cells instead of literal syntax.
 Their preparation and extraction still consume the shared execution allowance. -/
 private def executePreparedNativeFrom (prepared : PackageData.Work PackageData.NativePreparation)
@@ -682,10 +642,6 @@ private def executePreparedNative (prepared : PackageData.Work PackageData.Nativ
     (argumentBytes : Nat) (limits : Json) : Except String DataExecution :=
   (executePreparedNativeFrom prepared argumentBytes limits none).map (·.1)
 
-/-- Conformance reference only; no physical operation dispatch selects it. -/
-def executeQuotedDataValue (packet arguments limits : Json) : Except String DataExecution :=
-  executePreparedData (PackageData.prepare packet arguments) arguments.compress.utf8ByteSize limits
-
 def executeDataValue (packet arguments limits : Json) : Except String DataExecution :=
   executePreparedNative (PackageData.prepareNativeWire packet arguments) arguments.compress.utf8ByteSize limits
 
@@ -695,13 +651,6 @@ def executeDataValues (packet : Json) (arguments : Array Data) (limits : Json) :
   let argumentBytes := 2 + arguments.foldl (fun n value => n + dataJsonBytes value) 0
     + (arguments.size - 1)
   executePreparedNative (PackageData.prepareNative packet arguments) argumentBytes limits
-
-/-- A native receiving caller supplies the exact size of its retained physical
-argument frames; it must not replace compact physical bytes with an expanded
-internal DataWire representation when enforcing the transport cap. -/
-def executeDataValuesSized (packet : Json) (arguments : Array Data) (physicalBytes : Nat)
-    (limits : Json) : Except String DataExecution :=
-  executePreparedNative (PackageData.prepareNative packet arguments) physicalBytes limits
 
 /-- Native data execution on a held entry: the packet is neither decoded nor re-checked;
 the arguments are admitted against the entry's checked type (`prepareNativeChecked`). -/
@@ -789,32 +738,6 @@ def executeDataEntryWire (entry : Delvetalk.CheckedEntry) (arguments limits : Js
   return (← executePreparedNative (PackageData.prepareNativeChecked entry.source entry.checked entry.fuel values.toArray)
     arguments.compress.utf8ByteSize limits).wire
 
-/-- All-compact physical package boundary: input and output interpretation is
-bound to the exact checked packet carried by the verified artifact. -/
-def runCompactDataVerified (j : Json) : Except String Json := do
-  let artifact ← j.getObjVal? "artifact"
-  let packet ← artifact.getObjVal? "packet"
-  let arguments ← j.getObjVal? "arguments"
-  let execution ← executePreparedNative (PackageData.prepareNativeCompact packet arguments)
-    arguments.compress.utf8ByteSize (getLimits j)
-  match execution with
-  | .refused _ _ => return execution.wire
-  | .finished value type nodes usage =>
-    let decoded ← decodePacket packet
-    let ticks ← bounded (getLimits j) "ticks" Bounds.ticksDefault Bounds.ticksMax
-    let work ← bounded (getLimits j) "work" ticks Bounds.ticksMax
-    let allowance := min ticks work
-    let available := allowance - (usage.ticksUsed + usage.conversionNodes)
-    let (wire, remaining) ← (PackageData.encodeCompact decoded.source.assumptions Bounds.dataWireDepth type value).run available
-    let usage := { usage with conversionNodes := usage.conversionNodes + available - remaining }
-    return Json.mkObj ([("executionProfile", toJson "delvetalk-package-compact"),
-      ("status", toJson "finished"), ("value", wire), ("type", typeJson type),
-      ("nodesUsed", toJson nodes), ("schemaPacketSha256", ← artifact.getObjVal? "packetSha256")] ++ usage.fields)
-
-def runCompactData (j : Json) : Except String Json := do
-  verifyArtifact (← j.getObjVal? "artifact")
-  runCompactDataVerified j
-
 /-- The external recursive-data wire is unchanged. Native receiving uses the
 same execution function without serializing and decoding its checked result. -/
 def executeDataPacket (packet arguments limits : Json) : Except String Json := do
@@ -827,21 +750,6 @@ def runDataVerified (j : Json) : Except String Json := do
 def runData (j : Json) : Except String Json := do
   verifyArtifact (← j.getObjVal? "artifact")
   runDataVerified j
-
-/-- Observe a source-bound specification's actual metadata without applying its
-    extension. A raw prototype's reflected specification says nothing about how
-    its target was made; this result makes no stronger provenance claim. -/
-def inspectSpecification (j : Json) : Except String Json := do
-  let artifact ← j.getObjVal? "artifact"
-  verifyArtifact artifact
-  let packet ← Reflection.metadataPacket (← artifact.getObjVal? "packet")
-  let result ← executeDataPacket packet (.arr #[]) (getLimits j)
-  let fields ← result.getObj?
-  return Json.mkObj (fields.toArray.toList ++ [
-    ("reflectionProfile", toJson "delvetalk-source-specification-v1"),
-    ("sourceBinding", Json.mkObj [("entry", ← artifact.getObjVal? "entry"),
-      ("sourcesSha256", ← artifact.getObjVal? "sourcesSha256"),
-      ("packetSha256", ← artifact.getObjVal? "packetSha256")])])
 
 def selectedDataType (selection : Json) : Except String (Assumptions × Ty × Json) := do
   let artifact ← selection.getObjVal? "artifact"
@@ -876,41 +784,6 @@ def compactCodec (j : Json) (encode : Bool) : Except String Json := do
     ("value", wire), ("conversionNodes", toJson (work - remaining)),
     ("schemaPacketSha256", ← (← selection.getObjVal? "artifact").getObjVal? "packetSha256")]
 
-def compareDataTypes (j : Json) : Except String Json := do
-  let (left, lt, lp) ← selectedDataType (← j.getObjVal? "left")
-  let (right, rt, rp) ← selectedDataType (← j.getObjVal? "right")
-  let work ← bounded j "work" Bounds.ticksDefault Bounds.ticksMax
-  let action : PackageData.Work Bool := do
-    let a ← PackageData.select left lt lp
-    let b ← PackageData.select right rt rp
-    PackageData.shape left Bounds.dataWireDepth [] a
-    PackageData.shape right Bounds.dataWireDepth [] b
-    PackageData.equivalent left right Bounds.dataWireDepth [] a b
-  let (equal, remaining) ← action.run work
-  return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
-    ("conversionNodes", toJson (work - remaining))]
-
-/-- Validate every typed allocation alternative against the checked source Value
-ABI. Configuration models remain independently typed for receiving admission. -/
-def allocationDataTypes (j : Json) : Except String Json := do
-  let (left, lt, lp) ← selectedDataType (← j.getObjVal? "left")
-  let (right, rt, rp) ← selectedDataType (← j.getObjVal? "right")
-  let work ← bounded j "work" Bounds.ticksDefault Bounds.ticksMax
-  let action : PackageData.Work Bool := do
-    let allocations ← PackageData.select left lt lp
-    let value ← PackageData.select right rt rp
-    PackageData.shape right Bounds.dataWireDepth [] value
-    let head ← PackageData.allocationListType left allocations
-    for leaf in (← PackageData.allocationLeaves left Bounds.dataWireDepth head) do
-      let fields ← PackageData.members Bounds.dataWireDepth leaf
-      for key in ["protocol", "law"] do
-        let some member := fields.lookup key | throw "allocation descriptor field missing"
-        unless (← PackageData.equivalent left right Bounds.dataWireDepth [] member value) do return false
-    return true
-  let (equal, remaining) ← action.run work
-  return Json.mkObj [("status", toJson "compared"), ("equal", toJson equal),
-    ("conversionNodes", toJson (work - remaining))]
-
 def turnStartVerified (j : Json) : Except String Json := do
   let artifact ← j.getObjVal? "artifact"
   Delvetalk.Turn.start (← artifact.getObjVal? "packet") (← j.getObjVal? "arguments") (getLimits j) j
@@ -940,12 +813,6 @@ def job (j : Json) : Except String Json := do
       parsed := parsed.push (Json.mkObj [("name", toJson name),
         ("imports", Json.arr (ast.imports.map (·.json)).toArray)])
     return Json.mkObj [("status", toJson "parsed-imports"), ("modules", Json.arr parsed)]
-  | "template-expand" =>
-    let source ← j.getObjValAs? String "source"
-    if source.utf8ByteSize > Bounds.maxModuleBytes then throw s!"source exceeds maxModuleBytes ({Bounds.maxModuleBytes} bytes)"
-    let expanded ← (FrontEnd.parse "Template" source).mapError (fun d => d.json.compress)
-    return Json.mkObj [("status", toJson "expanded"), ("source", toJson expanded.expandedSource),
-      ("schema", toJson "delvetalk.document-template-expansion.v1")]
   | "check-package" =>
     let raw ← (← j.getObjVal? "modules").getArr?
     let modules ← raw.toList.mapM fun m => do return (← m.getObjValAs? String "name", ← m.getObjValAs? String "source")
@@ -961,12 +828,8 @@ def job (j : Json) : Except String Json := do
   | "turn-start" => turnStart j
   | "turn-resume" => throw Delvetalk.Turn.notIssued
   | "run-data-v1" => runData j
-  | "run-compact" => runCompactData j
   | "encode-compact" => compactCodec j true
   | "decode-compact" => compactCodec j false
-  | "inspect-spec-v1" => inspectSpecification j
-  | "compare-data-types-v1" => compareDataTypes j
-  | "allocation-data-types-v1" => allocationDataTypes j
   | _ => throw "package operation must be compile or run"
 
 end Delvetalk.Package

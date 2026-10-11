@@ -130,22 +130,6 @@ theorem Data.shapeFields_typing (a : Assumptions) :
       exact ⟨_, .cons literal literals, .cons typed typedRest (Data.shapeType_not_computation value)⟩
 end
 
-mutual
-/-- Injection annotations of a closed value checked at its own shape
-(`Data.shapeType`): each variant at the one-label sum naming its label. Paths
-are relative to the value (an injection's payload is child 0, field `i` child `i`). -/
-def shapeAnnotations : Data → List Nat → List (List Nat × LambdaAnnotation)
-  | .variant tag payload, path =>
-    (path, ⟨payload.shapeType, (Data.variant tag payload).shapeType, .unrestricted, .reusable⟩) ::
-      shapeAnnotations payload (path ++ [0])
-  | .record fields, path => shapeFieldAnnotations fields path 0
-  | _, _ => []
-def shapeFieldAnnotations : List (String × Data) → List Nat → Nat → List (List Nat × LambdaAnnotation)
-  | [], _, _ => []
-  | (_, value) :: rest, path, index =>
-    shapeAnnotations value (path ++ [index]) ++ shapeFieldAnnotations rest path (index + 1)
-end
-
 /-- Every finite value, injected by `toData`, has the universal type. -/
 theorem Data.universal_typing (a : Assumptions) (data : Data) :
     ∃ term, Literal term data ∧ PartialTyping a [] term .data [] := by

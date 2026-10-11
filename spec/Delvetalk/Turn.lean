@@ -52,8 +52,8 @@ def bounded (j : Json) (key : String) (fallback cap : Nat) : Except String Nat :
 private instance : Inhabited Term := ⟨.nat 0⟩
 
 mutual
-/-- A value's annotations at its own shape (`shapeAnnotations` as a tree) with that shape
-(`Data.shapeType`), built bottom-up: each node's shape type is made once from its
+/-- A value's injection annotations at its own shape (`Data.shapeType`), each variant at the
+one-label sum naming its label, as a tree, built bottom-up: each node's shape type is made once from its
 children's, so a long list costs linear time and space (recomputing `shapeType` per
 injection was quadratic). -/
 def shapeTree : Data → AnnotationTree × Ty

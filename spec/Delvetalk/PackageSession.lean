@@ -28,8 +28,6 @@ structure Cache where
   held : Std.HashMap String Held := {}
   order : Array String := #[]
   heldBytes : Nat := 0
-  hits : Nat := 0
-  misses : Nat := 0
   /-- Libraries this process sealed (`library-load`), newest first, at most `maxLibraries`. -/
   libraries : List Host.Library := []
   /-- Digests of the checkpoints this process handed out (`turn-start`, `turn-resume`), at most
@@ -128,13 +126,12 @@ def entryOf (cache : Cache) (artifact : Json) : Cache × Except String Delvetalk
     | .obj fields => fields.size == 1
     | _ => false
   match cache.held[pin]? with
-  | some h => if pinOnly || h.artifact == artifact then ({ cache with hits := cache.hits + 1 }, .ok h.entry)
+  | some h => if pinOnly || h.artifact == artifact then (cache, .ok h.entry)
       else recompile pin
-  | none => if pinOnly then ({ cache with misses := cache.misses + 1 },
+  | none => if pinOnly then (cache,
         .error "unknown packetSha256: this process holds no such entry; send the whole artifact")
       else recompile pin
 where recompile (_pin : String) : Cache × Except String Delvetalk.CheckedEntry :=
-  let cache := { cache with misses := cache.misses + 1 }
   if (artifact.getObjValAs? String "schema").toOption != some "delvetalk.obend-package.v1" then
     (cache, .error "unsupported package artifact")
   else
@@ -145,12 +142,6 @@ where recompile (_pin : String) : Cache × Except String Delvetalk.CheckedEntry 
     | (cache, .ok (rebuilt, entry)) =>
       if rebuilt == artifact then (cache, .ok entry)
       else (cache, .error "artifact does not match recompilation of its claimed source")
-
-def status (cache : Cache) : Json :=
-  Json.mkObj [("status", toJson "packet-cache"), ("fronts", toJson cache.fronts.length),
-    ("frontSourceBytes", toJson cache.frontBytes), ("maxFrontSourceBytes", toJson Bounds.frontCacheSourceBytes),
-    ("entries", toJson cache.held.size), ("entryBytes", toJson cache.heldBytes),
-    ("maxEntryBytes", toJson Bounds.entryCacheBytes), ("hits", toJson cache.hits), ("misses", toJson cache.misses)]
 
 /-- Remember the checkpoint a reply hands out, if any. -/
 def noteIssued (cache : Cache) (reply : Json) : Cache :=
@@ -189,7 +180,6 @@ def step (cache : Cache) (request : Json) (world : Option Host.World := none) : 
       match compile cache request with
       | (cache, .ok (artifact, _)) => (cache, .ok (compiledReply artifact))
       | (cache, .error e) => (cache, .error e)
-  | .ok "packet-cache-status" => (cache, .ok (status cache))
   | .ok "spell-parse" => (cache, Host.Spell.op request)
   | .ok operation =>
       if ["run", "run-data-v1", "turn-start", "turn-resume"].contains operation then

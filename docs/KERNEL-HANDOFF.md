@@ -21,7 +21,7 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 
 - Build: `LEAN_NUM_THREADS=2 lake build` (one Lean process). Never rebuild while a run uses the binary: `tests/host.py` copies it per run (`DELVETALK_OBEND` names the source, `DELVETALK_OBEND_COPY` shares one copy across workers; `tests/run.py` is the parallel runner). Builds may run on hbox with `swarm-build lake build`.
 - Run: `DELVETALK_OBEND=$PWD/.lake/build/bin/delvetalk-obend python3 -W ignore -m tests.run [module …]`; whole suite `make check`.
-- Proof-only modules (`Delvetalk.PackageDataAdmission`, `PackageDataNormalization`, `PackageDataSchemaProofs`, `Delvetalk.Typed`, `Theory.ObjectiveBendNativeDataSimulation`) are outside the default target; `make build` builds them. Build them after touching anything they import.
+- Proof-only modules (`Delvetalk.PackageDataAdmission`, `PackageDataNormalization`, `PackageDataSchemaProofs`, `Theory.ObjectiveBendNativeDataSimulation`) are outside the default target; `make build` builds them. Build them after touching anything they import.
 - Lean 4.34: `if_pos`/`if_true` deprecation warnings in old Mini files are noise. A doc comment (`/-- -/`) directly before `mutual` is a parse error; use `/- -/`. In a file that opens `ObjectiveBendTypes`, a pattern variable `label` reads as `Ty.label`. `x.isDataUnder a b c d` puts `x` at the first `Ty`-typed parameter.
 - Host files belong to the host lane (`spec/Delvetalk/Host/*`); `Journal.lean` is shared.
 
@@ -45,9 +45,9 @@ Pipeline for `compile`: source -> (document templates, text) -> `ObjectiveBendPa
 | Data, tariff | `Theory/ObjectiveBendDemandData.lean` | `textStepCost`, `forceHostedFrom` (tick + byte admission before each step), `materializeWith`, `executeStateWith`, `yieldedPlanWith`, `Data.conformsFuel/conformsUnder/size`. `Data` is in `ObjectiveBendFiniteData.lean`. |
 | Checkpoint | `Theory/ObjectiveBendCheckpoint.lean` (v1), `…CheckpointV2.lean`, `…DemandCollect.lean` | See section 7. |
 | Laws | `Compiler/ObjectiveBendLaw.lean`, `Delvetalk/Host/Law.lean` | `law NAME: EXPR` over declared state; the pure profile refuses laws ("host law adapter"). |
-| Typed data/schema | `Delvetalk/PackageData*.lean` | `run-data-v1`, compact codec, schema certificates, `inspect-spec-v1`, `compare-data-types-v1`. Depth is `Bounds.dataWireDepth`. |
+| Typed data/schema | `Delvetalk/PackageData*.lean` | `run-data-v1`, compact codec, schema certificates. Depth is `Bounds.dataWireDepth`. |
 | Package, session | `Delvetalk/Package.lean`, `PackageSession.lean`, `spec/PackageMain.lean` | JSON-lines driver; section 2. |
-| Source evaluator | `Delvetalk/Core.lean`, `Typed.lean` | Older step-by-step evaluator with evidence; not on the turn path. |
+| Line check | `Delvetalk/JsonLine.lean` | a driver line's `\uXXXX` escapes are Unicode scalar values. |
 
 Proof obligations by change:
 - `Term`/`Primitive`/`Step`: the `Step` lemmas in OpenRecursion (`lazy_fixed_function`, `case_selects_injected_arm`, primitive exactness) and `Value` ones; Typing's `PartialTyping` mirrors every constructor; checkpoint codec needs a case (`state_roundTrip` fails the build otherwise).
@@ -67,7 +67,7 @@ Not proved: that `noActivity` is the static guard matching `perform_under_update
 
 ## 2. Ops
 
-Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"error","message":s}`. `PackageSession.step` keeps two per-process caches: prepared closures (bounded by `Bounds.frontCacheSourceBytes`, 8 MiB of source) and held entries indexed by `packetSha256` (bounded by `Bounds.entryCacheBytes`, 64 MiB of artifact); `{"op":"packet-cache-status"}` answers `{fronts, frontSourceBytes, maxFrontSourceBytes, entries, entryBytes, maxEntryBytes, hits, misses}`. `run`, `run-data-v1`, `turn-start`, `turn-resume` take `artifact` as the whole artifact (held if equal to the one this process compiled under that pin, else recompiled and compared) or `{"packetSha256": pin}` alone (held entries only; "unknown packetSha256: …" otherwise). `world-*` ops go to `Host.stepWorld`. `library-load {path}` and `library: <pin>` are in HOST-HANDOFF.
+Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"error","message":s}`. `PackageSession.step` keeps two per-process caches: prepared closures (bounded by `Bounds.frontCacheSourceBytes`, 8 MiB of source) and held entries indexed by `packetSha256` (bounded by `Bounds.entryCacheBytes`, 64 MiB of artifact). `run`, `run-data-v1`, `turn-start`, `turn-resume` take `artifact` as the whole artifact (held if equal to the one this process compiled under that pin, else recompiled and compared) or `{"packetSha256": pin}` alone (held entries only; "unknown packetSha256: …" otherwise). `world-*` ops go to `Host.stepWorld`. `library-load {path}` and `library: <pin>` are in HOST-HANDOFF.
 
 | op | takes | returns |
 |---|---|---|
@@ -79,8 +79,8 @@ Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"e
 | `evaluate-term` | `term` (array wire), `responses?`, `ticks?` | `{schema, result:{status: value\|yield\|exhausted\|stuck, shape, plans}}`. Pure reference for conformance. |
 | `render-document` | `document` (Data wire) | `{status:"rendered", text, lines, bytes}`. |
 | `canonical-encode` / `canonical-decode` | `data` or `json`, `repeat?` / `hex` | `{cid, hex, bytes, checksum}` / `{data, cid}`; decode is canonical-only. |
-| `source-imports-v1`, `template-expand` | modules / source | import edges; expanded document-literal source. |
-| `run-data-v1`, `run-compact`, `encode-compact`, `decode-compact`, `inspect-spec-v1`, `compare-data-types-v1`, `allocation-data-types-v1` | typed-schema family | see `PackageData.lean` headers. |
+| `source-imports-v1` | modules | import edges. |
+| `run-data-v1`, `encode-compact`, `decode-compact` | typed-schema family | see `PackageData.lean` headers. |
 
 `"profile": true` on `run`, `turn-start`, `turn-resume` returns a tick profile (`Delvetalk/Profile.lean`).
 
