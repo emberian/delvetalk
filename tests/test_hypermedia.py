@@ -190,7 +190,8 @@ class Envelope(FrontCase):
         saw('badJson', post(c1, raw_=b'{nope'))
         saw('badJson', post(c1, raw_=b'[' * 60000))
         saw('badJson', post(c1, raw_=b'{"a":' * 300 + b'1' + b'}' * 300))
-        saw('bodyTooLarge', post(c1, raw_=b'{"intent":"' + b'x' * 65536 + b'"}'))
+        saw('bodyTooLarge', post(c1, raw_=b'{"intent":"' + b'x' * 300000 + b'"}'))
+        saw('bodyTooLarge', post('/AGENTS.md/challenge', raw_=b'{"handle":"' + b'x' * 70000 + b'"}', t=None))  # the anonymous bound is unchanged
         saw('badRequest', raw(port, b'POST /AGENTS.md/deliver HTTP/1.1\r\nAuthorization: Bearer ' + tok.encode() + b'\r\nContent-Length: ab\r\n\r\n')[::2])
         saw('badRequest', raw(port, b'GARBAGE\r\n\r\n')[::2])
         saw('httpVersion', raw(port, b'GET / HTTP/2.0\r\n\r\n')[::2])
@@ -210,7 +211,7 @@ class Envelope(FrontCase):
         saw('replRestarted', post('/AGENTS.md/repl', {'modules': [{'name': 'Package', 'source': PURE}], 'entry': 'twice', 'checkpoint': {}, 'response': {}}))
         self.front.repl.send = repl
         saw('unspellable', post('/AGENTS.md/heap/objects', {'object': 'coin box', 'intent': 'mk-cb'}))
-        saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 16385}]}))
+        saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 140000}]}))
         e = saw('hostRequest', post(c1, {'argument': 7, 'intent': 'seven'}))
         self.assertEqual((e['message'], e['_links']['hint']), ('String expected', {'href': f'/AGENTS.md/world/{self.c}/source'}))
         real = self.host.send
@@ -365,7 +366,7 @@ class Catalogue(unittest.TestCase):
         self.assertEqual((s, api['status'], [r['name'] for r in api['routes']]), (200, 'catalogue', [e['name'] for e in CATALOGUE]))
         self.assertEqual(set(api['errors']), set(ERRORS))
         self.assertEqual({k: v['transient'] for k, v in api['refusals'].items()}, {k: v['transient'] for k, v in REFUSALS.items()})
-        self.assertEqual(api['limits']['bodyBytes'], 65536)
+        self.assertEqual(api['limits']['bodyBytes'], 262144)
         s, h, raw = self.call('GET', '/AGENTS.md', {'Accept': 'application/json'})
         self.assertEqual({**json.loads(raw), '_links': None}, {**api, '_links': None})
         s, h, text = self.call('GET', '/AGENTS.md')
@@ -376,10 +377,10 @@ class Catalogue(unittest.TestCase):
         limits = (Path(__file__).resolve().parent.parent / 'spec' / 'Delvetalk' / 'Limits.lean').read_text()
         host = int(re.search(r'def maxPackageBytes : Nat := (\d+)', limits)[1])  # no op answers the bounds yet
         when, front = ERRORS['moduleTooLarge']['when'], transport.http
-        self.assertIn(f'over {front.MAX_SOURCE} bytes', when)
-        self.assertIn(f'up to {host}', when)
+        self.assertEqual(front.MAX_SOURCE, host)  # an agent may send a module up to the kernel's bound
+        self.assertIn(f'over {host} bytes', when)
         self.assertIn(f'{front.MAX_BODY}-byte body', when)
-        self.assertLessEqual(front.MAX_SOURCE, min(host, front.MAX_BODY))  # the front never offers what the host refuses
+        self.assertLess(front.MAX_SOURCE, front.MAX_BODY)  # so moduleTooLarge is reached before bodyTooLarge
 
     def test_the_catalogues_refusals_are_the_hosts_closed_set_and_its_transient_ones(self):
         ops = (Path(__file__).resolve().parent.parent / 'spec' / 'Delvetalk' / 'Host' / 'Ops.lean').read_text()
