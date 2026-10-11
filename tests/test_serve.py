@@ -72,7 +72,7 @@ class Serve(unittest.TestCase):
     def test_the_public_socket_is_private_the_root_socket_its_groups_and_the_pid_file_is_touched_per_op(self):
         self.assertEqual(stat.S_IMODE(os.stat(self.sock).st_mode), 0o600)
         self.assertEqual(stat.S_IMODE(os.stat(self.root).st_mode), 0o660)
-        pid = self.state / 'hostd.pid'
+        pid = self.state / 'serve.pid'
         os.utime(pid, (1, 1))
         self.client.send({'op': 'world-status'})
         self.assertGreater(pid.stat().st_mtime, 1000)
@@ -126,10 +126,13 @@ class Serve(unittest.TestCase):
         self.assertEqual(settings[0]['opener'], OPENER)
 
     def test_the_stateless_session_holds_the_library_and_compiles_by_pin(self):
-        info = self.client.send({'op': 'hostd-info'})
-        self.assertEqual((info['status'], info['pid'], info['replay']), ('hostd', self.server.proc.pid, self.client.send({'op': 'world-status'})['replay']), info)
+        info = self.client.send({'op': 'serve-status'})
+        replay = self.client.send({'op': 'world-status'})['replay']
+        self.assertEqual((info['status'], info['pid'], info['replay']), ('serve', self.server.proc.pid, replay), info)
         self.assertRegex(info['hostSha256'], r'^[0-9a-f]{64}$')
-        self.assertEqual(self.client.send({'op': 'hostd-info'})['hostSha256'], info['hostSha256'])
+        self.assertEqual(self.client.send({'op': 'serve-status'})['hostSha256'], info['hostSha256'])
+        town = next(w for w in info['worlds'] if w['name'] == 'town')
+        self.assertEqual((town['replay'], town['snapshot']), (replay, {'resumed': 0, 'refused': []}), town)
         checked = HostClient(self.sock, stateless=True).send({'op': 'check-package', 'library': info['library'], 'entry': 'initial',
                                                              'modules': [{'name': 'Tally', 'source': TALLY}]})
         self.assertEqual(checked['status'], 'checked', checked)
@@ -245,6 +248,8 @@ class Restart(unittest.TestCase):
                 bump = lambda i: client.send({'op': 'world-turn', 'principal': 'e', 'object': 'c', 'method': 'bump', 'argument': record(), 'identity': 'k%d' % i})
                 first = [bump(i) for i in range(3)]
                 held = client.local.conn[0]
+                self.assertEqual(send(server.root, {'op': 'world-snapshot', 'principal': 'transport'})['status'], 'snapshot')
+                height = client.send({'op': 'world-status'})['height']
             finally:
                 server.stop()
             self.assertFalse(os.path.exists(server.sock))
@@ -254,6 +259,9 @@ class Restart(unittest.TestCase):
                 self.assertIsNot(client.local.conn[0], held)
                 self.assertEqual([a['receipt'] for a in again], [f['receipt'] for f in first])
                 self.assertEqual(client.send({'op': 'world-view', 'principal': 'e', 'object': 'c'})['version'], 3)
+                # The live service says it opened from the snapshot: the height it resumed at.
+                town = client.send({'op': 'serve-status'})['worlds'][0]
+                self.assertEqual((town['name'], town['height'], town['snapshot']['resumed']), ('town', height, height), town)
                 client.close()
             finally:
                 server.stop()
@@ -293,12 +301,12 @@ class Startup(unittest.TestCase):
                 srv.listen(1)
                 conn, _ = srv.accept()
                 conn.makefile('rb').readline()
-                conn.sendall(b'{"status": "hostd"}\n')
+                conn.sendall(b'{"status": "serve"}\n')
                 conn.close()
                 srv.close()
             t = threading.Thread(target=late)
             t.start()
-            self.assertEqual(HostClient(path).send({'op': 'hostd-info'}), {'status': 'hostd'})
+            self.assertEqual(HostClient(path).send({'op': 'serve-status'}), {'status': 'serve'})
             t.join()
             gone = HostClient(Path(d) / 'never.sock').send({'op': 'world-status'})
             self.assertRegex(gone['message'], r'^the host is unavailable at .*/never\.sock after [2-9]\.\d s$')

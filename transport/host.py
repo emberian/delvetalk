@@ -12,7 +12,7 @@ HOST_TIMEOUT, CONNECT_WAIT = 150, 2  # seconds an op may take; seconds to wait f
 CLOCK, ON_ROOT = 'transport', 'the opener speaks on the root socket'  # the clock principal serve opens each world with; its refusal
 # Ops answered the same when sent twice (reads; a turn, by its identity): only these are re-sent after a broken connection.
 IDEMPOTENT = {'world-' + op for op in 'status view card objects offers history receipt resolve inspect entries entry object publications '
-              'grants source sources state-cid addressee turn'.split()} | {'hostd-info', 'serve-status'}
+              'grants source sources state-cid addressee turn'.split()} | {'serve-status'}
 
 
 class HostClient:

@@ -1,5 +1,5 @@
 /- The on-disk compile cache (HOST-HANDOFF 5.66): compiled packages and definitions kept across
-   processes (hostd's heaps), under `$DELVETALK_COMPILE_CACHE/<stamp>`, where the stamp names this
+   processes (a restarted serve, a test's many hosts), under `$DELVETALK_COMPILE_CACHE/<stamp>`, where the stamp names this
    binary (the size and modification time of `IO.appPath`), so a new compiler never reads an old
    one's packets. Off unless the variable names a directory.
 

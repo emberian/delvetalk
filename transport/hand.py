@@ -69,7 +69,7 @@ class Hand:
         return {'journal height': st.get('height'), 'posts this hour': f'{delve.get("used", 0)} of {delve.get("quota", "?")}',
                 f'model spend {month}': f'${spent.get("dollars", 0):.4f} ({spent.get("calls", 0)} calls)',
                 'interpretations pending': f'{len(waiting)} ({len(retrying)} retrying)',
-                'host pid': self.host.send({'op': 'hostd-info'}).get('pid', 'none'), 'shadowed': len(st.get('shadowed') or [])}
+                'host pid': self.host.send({'op': 'serve-status'}).get('pid', 'none'), 'shadowed': len(st.get('shadowed') or [])}
 
     def spend(self, month=None):
         """The model's spend by UTC month, every world's, and `month`'s (default this one) against the monthly grant."""

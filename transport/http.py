@@ -301,9 +301,9 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
-        info = host.send({'op': 'hostd-info'})
+        info = host.send({'op': 'serve-status'})
         self.host_sha256, self.host_timeout = info.get('hostSha256', 'unknown'), getattr(host, 'timeout', HOST_TIMEOUT)
-        self.library, self.hostd_pid = info.get('library'), info.get('pid')  # the pin of the library serve sealed; the REPL compiles against it by name
+        self.library, self.serve_pid = info.get('library'), info.get('pid')  # the pin of the library serve sealed; the REPL compiles against it by name
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):  # every worker is taken: say so at once rather than queue behind them
@@ -360,10 +360,10 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         return self.known
 
     def sync_library(self, force=False):
-        """Re-read hostd-info when serve's pid changed (it restarted, maybe with a new library), or when forced."""
-        info = self.host.send({'op': 'hostd-info'})
-        if force or info.get('pid') != self.hostd_pid:
-            self.library, self.hostd_pid = info.get('library'), info.get('pid')
+        """Re-read serve-status when serve's pid changed (it restarted, maybe with a new library), or when forced."""
+        info = self.host.send({'op': 'serve-status'})
+        if force or info.get('pid') != self.serve_pid:
+            self.library, self.serve_pid = info.get('library'), info.get('pid')
 
     def used(self, credential):
         now = self.clock()
@@ -836,7 +836,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'},
                                links={'repl': link(PREFIX + '/repl')})
         repl = self.server.repl
-        for retry in (False, True):  # once per request: an unknown pin means hostd restarted with another library
+        for retry in (False, True):  # once per request: an unknown pin means serve restarted with another library
             self.server.sync_library(force=retry)
             pin = {'library': self.server.library} if self.server.library else {}
             compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry'), **pin})

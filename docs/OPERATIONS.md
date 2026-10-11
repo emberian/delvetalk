@@ -21,7 +21,7 @@ of Python in 8 files plus 594 of shell and compose. By role:
 
 The state the Python keeps beside the journal is 20 kinds under `<state>/`:
 `access.log`, `awaiting/`, `binary-pin`, `bridges/`, `hand-log.jsonl`,
-`scratch/`, `host.sock`, `hostd.pid`, `identity.sqlite`, `interpretations/`,
+`scratch/`, `host.sock`, `serve.pid`, `identity.sqlite`, `interpretations/`,
 `journal.lock`, `library/`, `mentioned.txt`, `model-spend.jsonl`,
 `observe.sqlite`, `outbox/`, `posting/`, `principals.txt`,
 `publications.after`, `since`, `skipped.txt`, `worlds/`. Configuration is 95
@@ -114,7 +114,7 @@ directory per world for everything that is the world's, the town's included
 (it was the top level, every other world `worlds/<w>/`):
 
     <state>/delvetalk.toml            the config
-    <state>/<world>.journal(.blocks)  serve's, with journal.lock, hostd.pid, binary-pin, library/, scratch/
+    <state>/<world>.journal(.blocks)  serve's, with journal.lock, serve.pid, binary-pin, library/, scratch/
     <state>/host.sock, root/root.sock serve's sockets (host_socket, root_socket move them)
     <state>/identity.sqlite           claims: a principal is global
     <state>/access.log(.1)            the front's, `... <did or -> <world>`
