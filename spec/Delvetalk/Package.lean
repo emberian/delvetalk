@@ -232,6 +232,9 @@ structure EntryCompiled where
   laws : List (String × Delvetalk.Compiler.ObjectiveBendLaw.LawExpr)
   /-- Each law's reading (`law NAME "reading": EXPR`; "" when none), by law name. -/
   readings : List (String × String)
+  /-- The entry module's text, every modality (`Lowering.clauses`): a host places its rules and wants
+      on an object made of it (KERNEL-HANDOFF §27 item 8). -/
+  clauses : List Delvetalk.Compiler.ObjectiveBendLaw.Clause := []
 
 /-- The readings the entry module's source gives its clauses (`law NAME "reading": EXPR`, a rule's,
 a want's), by name: names are unique across the clauses. -/
@@ -374,7 +377,7 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
   let artifact := if readings.isEmpty then artifact else artifact.setObjVal! "laws"
     (Json.arr (readings.toArray.map fun (name, reading) =>
       Json.mkObj [("name", toJson name), ("reading", toJson reading)]))
-  return ⟨artifact, held, lowered.laws, readings⟩
+  return ⟨artifact, held, lowered.laws, readings, lowered.clauses⟩
 
 /-- Compile the request's entry: prepare its closure, then the entry. -/
 def compileEntry (j : Json) : Except Diagnostic EntryCompiled := do
