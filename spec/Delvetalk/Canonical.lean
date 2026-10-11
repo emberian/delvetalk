@@ -20,9 +20,9 @@ import Delvetalk.Limits
 
 namespace Delvetalk.Canonical
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data rowMember)
-open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
-open Minidregg.Compiler.ObjectiveBendDataWire (listItems? listData)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data rowMember)
+open Delvetalk.Theory.ObjectiveBendTypes (Ty DataBounds)
+open Delvetalk.Compiler.ObjectiveBendDataWire (listItems? listData)
 
 /-! ## Writing -/
 
@@ -135,7 +135,7 @@ def encodeJson (j : Json) : Except String ByteArray := writeJson ByteArray.empty
 /-! ## Identity -/
 
 def digestBytes (message : ByteArray) : ByteArray :=
-  ByteArray.mk ((Minidregg.Compiler.Sha256.digest message).toList.flatMap fun w =>
+  ByteArray.mk ((Delvetalk.Compiler.Sha256.digest message).toList.flatMap fun w =>
     [UInt8.ofNat (w.toNat >>> 24 % 256), UInt8.ofNat (w.toNat >>> 16 % 256),
      UInt8.ofNat (w.toNat >>> 8 % 256), UInt8.ofNat (w.toNat % 256)]).toArray
 
@@ -343,7 +343,7 @@ def unhex (s : String) : Except String ByteArray := do
 
 /-! ## Wire ops -/
 
-open Minidregg.Compiler.ObjectiveBendDataWire (decodeData dataJson)
+open Delvetalk.Compiler.ObjectiveBendDataWire (decodeData dataJson)
 
 /-- `canonical-encode {data | json, repeat?}` -> `{cid, hex, bytes}`. `repeat` re-encodes that
 many times (each with a distinct tag so none can be shared) and reports the checksum, so a

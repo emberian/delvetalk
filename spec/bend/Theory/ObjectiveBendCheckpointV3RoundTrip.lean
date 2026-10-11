@@ -5,9 +5,9 @@ depends on how the dictionary's hints were built. -/
 import Theory.ObjectiveBendCheckpointV3
 import Theory.ObjectiveBendCheckpointRoundTrip
 import Theory.AxiomPin
-namespace Minidregg.Theory.ObjectiveBendCheckpointRoundTrip
+namespace Delvetalk.Theory.ObjectiveBendCheckpointRoundTrip
 open ObjectiveBendOpenRecursion ObjectiveBendDemandMachine ObjectiveBendCheckpoint
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
 theorem encodeTerm_injective {a b : Term} (h : encodeTerm a = encodeTerm b) : a = b := by
@@ -416,4 +416,4 @@ theorem stateV3_roundTrip (d : Dictionary) (s : State) :
 #assert_axioms plainV3_roundTrip stateV3_roundTrip
 #assert_axioms cellV3_roundTrip mapCell_inverse absolute_relative
 
-end Minidregg.Theory.ObjectiveBendCheckpointRoundTrip
+end Delvetalk.Theory.ObjectiveBendCheckpointRoundTrip

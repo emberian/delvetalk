@@ -1,6 +1,6 @@
-/- Explicit, bounded data serialization for pure source packages. This does not
-   change Mini's Plan/Activity types or its evaluator. The original checker still
-   accepts every complete application, including generated injection annotations. -/
+/- Explicit, bounded data serialization for pure source packages: the typed wire and compact
+   codecs and the native admission of arguments against a checked entry's type. It changes
+   neither the activity types nor the evaluator; the checker accepts every complete application. -/
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendTyping
 import Theory.ObjectiveBendFiniteDataTyping
@@ -9,11 +9,11 @@ import Std.Data.HashMap
 
 namespace Delvetalk.PackageData
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendTypes
-open Minidregg.Theory.ObjectiveBendTyping
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Compiler.ObjectiveBendDataWire
+open Delvetalk.Theory.ObjectiveBendTypes
+open Delvetalk.Theory.ObjectiveBendTyping
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Compiler.ObjectiveBendDataWire
 
 abbrev Work := StateT Nat (Except String)
 
@@ -530,7 +530,7 @@ def prepareNativeArguments {α : Type} (read : Assumptions → Ty → α → Wor
     let .arrow _ quantity domain codomain := callable type
       | throw "typed package argument requires a function"
     unless argumentAllowed a quantity [] domain [] do
-      throw "applied typed package refused by Mini type checker"
+      throw "applied typed package refused by the type checker"
     let value ← read a domain argument
     let normalized ← normalizeNative a 256 value domain
     let (resultType, values) ← prepareNativeArguments read a codomain rest
@@ -544,7 +544,7 @@ def prepareNativeWith {α : Type} (read : Assumptions → Ty → α → Work Dat
   let decoded ← decodePacket packet
   unless decoded.context.isEmpty do throw "package must have a closed context"
   let source := decoded.source
-  let some initial := check source [] decoded.fuel | throw "typed package refused by Mini type checker"
+  let some initial := check source [] decoded.fuel | throw "typed package refused by the type checker"
   let (type, normalized) ← prepareNativeArguments read source.assumptions initial.type (← arguments).toList
   shape source.assumptions 256 [] type
   return ⟨source, type, normalized.toArray, decoded.fuel⟩

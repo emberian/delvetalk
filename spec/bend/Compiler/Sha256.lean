@@ -1,6 +1,6 @@
 /- SHA-256 (FIPS 180-4) over bytes: the digest of canonical CIDs (`Delvetalk.Canonical`), packet
 and source fingerprints, and the front end's identity. -/
-namespace Minidregg.Compiler.Sha256
+namespace Delvetalk.Compiler.Sha256
 set_option autoImplicit false
 
 def k : Array UInt32 := #[
@@ -76,4 +76,4 @@ def hex (message : ByteArray) : String :=
 
 def hexString (text : String) : String := hex text.toUTF8
 
-end Minidregg.Compiler.Sha256
+end Delvetalk.Compiler.Sha256

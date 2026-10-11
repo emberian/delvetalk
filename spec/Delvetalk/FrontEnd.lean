@@ -7,7 +7,7 @@ import Delvetalk.Generics
 
 namespace Delvetalk.FrontEnd
 open Lean
-open Minidregg.Compiler
+open Delvetalk.Compiler
 open ObjectiveBendFrontEnd
 set_option autoImplicit false
 

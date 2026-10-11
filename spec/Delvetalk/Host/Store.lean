@@ -8,9 +8,9 @@ import Std.Data.HashMap
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Theory.ObjectiveBendTypes (Ty DataBounds)
-open Minidregg.Compiler.ObjectiveBendLaw (LawExpr)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendTypes (Ty DataBounds)
+open Delvetalk.Compiler.ObjectiveBendLaw (LawExpr)
 
 /- Every capacity of the host's world kernel, in one place. A request beyond
     any of them is refused as a request error and journals nothing. -/
@@ -182,7 +182,7 @@ structure Compiled where
   entry : Option Delvetalk.CheckedEntry := none
   /-- The checkpoint dictionary of the entry's program (`Dictionary.ofProgram`), built once with it:
       every yield encodes against it and every resumption decodes against it. -/
-  dictionary : Option Minidregg.Theory.ObjectiveBendCheckpoint.Dictionary := none
+  dictionary : Option Delvetalk.Theory.ObjectiveBendCheckpoint.Dictionary := none
 
 /-- Causal budget carried by a turn and inherited, decremented, by its sends. -/
 structure Ledger where
@@ -362,7 +362,7 @@ structure Built where
   artifact : Json
   ty : Ty
   laws : Law
-  assumptions : Minidregg.Theory.ObjectiveBendTyping.Assumptions
+  assumptions : Delvetalk.Theory.ObjectiveBendTyping.Assumptions
   /-- The relations its entry module's `relations()` declares, unchecked against the state type. -/
   relations : List RelDecl := []
   /-- The methods it declares public (`publicMethods`); its table's other rows are protocol or helpers. -/

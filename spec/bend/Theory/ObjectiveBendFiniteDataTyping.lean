@@ -1,6 +1,6 @@
 import Theory.ObjectiveBendFiniteData
 import Theory.ObjectiveBendTyping
-namespace Minidregg.Theory.ObjectiveBendDemandData
+namespace Delvetalk.Theory.ObjectiveBendDemandData
 open ObjectiveBendTypes ObjectiveBendTyping ObjectiveBendOpenRecursion
 set_option autoImplicit false
 
@@ -258,4 +258,4 @@ theorem finiteRow_lookup (bounds : Bounds) (members : List (String × Ty)) (name
       by_cases h : label = name
       · subst label; simp
       · simp [h, show (name == label) = false from beq_eq_false_iff_ne.mpr (Ne.symm h)]
-end Minidregg.Theory.ObjectiveBendDemandData
+end Delvetalk.Theory.ObjectiveBendDemandData

@@ -6,7 +6,7 @@ import Compiler.ObjectiveBendFrontEnd
 import Delvetalk.DocumentTemplate
 namespace Delvetalk.Generics
 open Lean (Json toJson)
-open Minidregg.Compiler
+open Delvetalk.Compiler
 open ObjectiveBendFrontEnd
 open ObjectiveBendSurface (Span Param Expr Body Signature Decl)
 set_option autoImplicit false
@@ -708,8 +708,8 @@ def instantiate : Nat → Declaration → List GType → M GType
     if let some prior := state.instanceOf[(declarationId, argumentIdentity)]? then
       if let some priorInstance := state.instances[prior]? then
         return .named state.generatedModule priorInstance.name priorInstance.key
-    let argumentId := Minidregg.Compiler.Sha256.hexString argumentIdentity
-    let key := Minidregg.Compiler.Sha256.hexString (toJson [declarationId, argumentId]).compress
+    let argumentId := Delvetalk.Compiler.Sha256.hexString argumentIdentity
+    let key := Delvetalk.Compiler.Sha256.hexString (toJson [declarationId, argumentId]).compress
     if state.instances.size >= maxInstances then
       let (module, name) := state.current
       throw (s!"refused (generic-instances): the package needs more than {maxInstances} generic instances; " ++
@@ -1340,7 +1340,7 @@ def initialState (sources : Array Source) : Except String State := do
     let imports ← source.module.imports.mapM fun edge => do
       let some identity := sealedIdentities[edge.target]? | throw "generic import must target an earlier sealed module"
       return toJson [edge.moduleName, edge.sha256, identity]
-    sealedIdentities := sealedIdentities.push (Minidregg.Compiler.Sha256.hexString
+    sealedIdentities := sealedIdentities.push (Delvetalk.Compiler.Sha256.hexString
       (toJson [toJson source.module.name, toJson source.module.sha256, toJson imports]).compress)
   let byName := declarations.foldl (fun (map : Std.HashMap (String × String) Declaration) d =>
     match sources[d.origin]? with

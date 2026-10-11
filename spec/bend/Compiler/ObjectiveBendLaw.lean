@@ -57,7 +57,7 @@ What each form means (the host's `denote` is the definition; docs/LAW.md §4 the
   depth, refuses a cycle or an absent object when the citing law is accepted (creation, amendment,
   reprogram), and judges an absent, unviewable or unparsable citation as holding nothing. -/
 import Theory.AssertCompiled
-namespace Minidregg.Compiler.ObjectiveBendLaw
+namespace Delvetalk.Compiler.ObjectiveBendLaw
 set_option autoImplicit false
 
 /-! ## Syntax -/
@@ -692,10 +692,10 @@ theorem names_walk :
     (LawExpr.and (.under "kind/bell") (.eq (.fact .subject) (.field "maker"))).fields = ["maker"] := by
   native_decide
 
-end Minidregg.Compiler.ObjectiveBendLaw
+end Delvetalk.Compiler.ObjectiveBendLaw
 
-#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_accepts
-#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.parse_refuses
-#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.render_reads_back
-#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.refusals_name_what_and_why
-#assert_compiled Minidregg.Compiler.ObjectiveBendLaw.names_walk
+#assert_compiled Delvetalk.Compiler.ObjectiveBendLaw.parse_accepts
+#assert_compiled Delvetalk.Compiler.ObjectiveBendLaw.parse_refuses
+#assert_compiled Delvetalk.Compiler.ObjectiveBendLaw.render_reads_back
+#assert_compiled Delvetalk.Compiler.ObjectiveBendLaw.refusals_name_what_and_why
+#assert_compiled Delvetalk.Compiler.ObjectiveBendLaw.names_walk

@@ -48,7 +48,7 @@ def sourceBytes (modules : Json) : Nat :=
 
 /-- The prepared closure of a request: from the cache, or prepared and retained (newest
 first; the oldest leave when the source bytes would exceed the bound). -/
-def front (cache : Cache) (j : Json) : Cache × Except Minidregg.Compiler.ObjectiveBendFrontEnd.Diagnostic Package.PreparedRequest :=
+def front (cache : Cache) (j : Json) : Cache × Except Delvetalk.Compiler.ObjectiveBendFrontEnd.Diagnostic Package.PreparedRequest :=
   let modules := modulesKey j
   let limits := Package.getLimits j
   match cache.fronts.find? (fun f => f.limits == limits && f.modules == modules) with

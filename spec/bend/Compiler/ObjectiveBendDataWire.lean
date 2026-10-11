@@ -6,9 +6,9 @@ differential, which resumes both machines with the same decoded responses). -/
 import Lean.Data.Json
 import Theory.ObjectiveBendDemandData
 
-namespace Minidregg.Compiler.ObjectiveBendDataWire
+namespace Delvetalk.Compiler.ObjectiveBendDataWire
 open Lean (Json toJson)
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
 /-- The elements of a proper list: a chain of `nil` / `cons {head, tail}` variants ending in
@@ -86,4 +86,4 @@ def decodeData : Nat → Json → Except String Data
       return value
     else throw "unknown response data tag"
 
-end Minidregg.Compiler.ObjectiveBendDataWire
+end Delvetalk.Compiler.ObjectiveBendDataWire

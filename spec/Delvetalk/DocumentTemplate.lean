@@ -203,15 +203,15 @@ def Expansion.position (e : Expansion) (byte : Nat) : Position :=
   (e.origins[byte]?).getD ((e.origins.back?).getD ⟨byte, 1⟩)
 
 /-- A span of the expanded source, as a span of the original source. -/
-def Expansion.span (e : Expansion) (span : Minidregg.Compiler.ObjectiveBendSurface.Span) :
-    Minidregg.Compiler.ObjectiveBendSurface.Span :=
+def Expansion.span (e : Expansion) (span : Delvetalk.Compiler.ObjectiveBendSurface.Span) :
+    Delvetalk.Compiler.ObjectiveBendSurface.Span :=
   let a := e.position span.start
   let b := e.position span.stop
   ⟨a.byte, b.byte, a.line⟩
 
 /-- Every span of a module parsed from the expanded source, mapped back to the original. -/
-def Expansion.remap (e : Expansion) (m : Minidregg.Compiler.ObjectiveBendSurface.Module) :
-    Minidregg.Compiler.ObjectiveBendSurface.Module :=
+def Expansion.remap (e : Expansion) (m : Delvetalk.Compiler.ObjectiveBendSurface.Module) :
+    Delvetalk.Compiler.ObjectiveBendSurface.Module :=
   if e.origins.isEmpty then m else m.mapSpans e.span
 
 end Delvetalk.DocumentTemplate

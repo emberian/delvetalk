@@ -9,8 +9,8 @@ import Delvetalk.Canonical
 import Compiler.ObjectiveBendDataWire
 
 namespace Delvetalk.Host.Law
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
-open Minidregg.Compiler.ObjectiveBendLaw (LawExpr LawTerm)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Compiler.ObjectiveBendLaw (LawExpr LawTerm)
 
 structure Facts where
   subject : String
@@ -62,7 +62,7 @@ def rawField (name : String) : Data → Option Data
 def fieldOf (name : String) (d : Data) : Option Int := (rawField name d).bind scalarOf
 
 /-- Canonical form of a value: the compressed wire JSON. -/
-def canon (d : Data) : String := (Minidregg.Compiler.ObjectiveBendDataWire.dataJson d).compress
+def canon (d : Data) : String := (Delvetalk.Compiler.ObjectiveBendDataWire.dataJson d).compress
 
 /-- The items of a `List<T>` on the wire (`nil {} | cons {head, tail}`), as canonical text. -/
 partial def listItems (acc : List String) : Data → Option (List String)
@@ -252,7 +252,7 @@ def refusedBy (law : Law) (facts : Facts) (old : Option Data) (new : Data) : Opt
 /-! Small tests. Parsed laws go through the real parser. -/
 
 private def parsed (text : String) : LawExpr :=
-  match Minidregg.Compiler.ObjectiveBendLaw.parse text with
+  match Delvetalk.Compiler.ObjectiveBendLaw.parse text with
   | .ok e => e
   | .error _ => .or (.eq (.fact .height) (.int 0)) (.not (.eq (.fact .height) (.int 0)))
 
@@ -313,7 +313,7 @@ private def withList (xs : List String) (by_ : String) : Data :=
 #guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, ""⟩ none (withList ["forge"] "x") (parsed "request.caller in new.entries")
 #guard denote ⟨"a", "", 1, 0, "", 0, "ring", [], 0, ""⟩ none (rec1 1) (parsed "request.method == \"ring\"")
 #guard !denote ⟨"a", "", 1, 0, "", 0, "toll", [], 0, ""⟩ none (rec1 1) (parsed "request.method == \"ring\"")
-#guard (Minidregg.Compiler.ObjectiveBendLaw.parse "request.height in new.entries").toBool == false
+#guard (Delvetalk.Compiler.ObjectiveBendLaw.parse "request.height in new.entries").toBool == false
 #guard denote facts none (withList ["a", "x"] "x") (parsed "new.lastBy in new.entries")
 #guard !denote facts none (withList ["a"] "x") (parsed "new.lastBy in new.entries")
 #guard refusedBy [("a", parsed "new.count <= 5"), ("b", parsed "new.count <= 2")] facts none (rec1 3) == some "b"
@@ -354,7 +354,7 @@ private def limited : Facts := { facts with evicted := [("rains", rain "ann" 1 "
 private def tended (t gap : Nat) : Data := .record [("tended", .natural t), ("gap", .natural gap), ("name", .label "fern")]
 private def when (clock : Nat) (method object : String) : Facts := { facts with clock, method, object }
 private def alive : String := "request.method == \"tend\" or request.clock <= old.tended + 1440"
-#guard (Minidregg.Compiler.ObjectiveBendLaw.parse alive).toBool
+#guard (Delvetalk.Compiler.ObjectiveBendLaw.parse alive).toBool
 #guard denote (when 1500 "rain" "bell") (some (tended 100 0)) (tended 100 0) (parsed alive)
 #guard !denote (when 1600 "rain" "bell") (some (tended 100 0)) (tended 100 0) (parsed alive)
 #guard denote (when 1600 "tend" "bell") (some (tended 100 0)) (tended 1600 0) (parsed alive)

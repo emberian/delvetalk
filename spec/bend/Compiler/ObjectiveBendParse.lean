@@ -19,7 +19,7 @@ out is a refusal ("capacity"), never a different parse. -/
 import Lean
 import Compiler.ObjectiveBendLaw
 import Compiler.ObjectiveBendSurface
-namespace Minidregg.Compiler.ObjectiveBendParse
+namespace Delvetalk.Compiler.ObjectiveBendParse
 open Lean (Json toJson)
 open ObjectiveBendSurface (Param Expr Pattern Body Signature Method Claim Field Spec Decl Import Module FormKind FormField FormBlock)
 set_option autoImplicit false
@@ -1308,4 +1308,4 @@ def decodeSource (bytes : ByteArray) : Option String :=
     | '﻿' :: rest => String.ofList rest
     | _ => s
 
-end Minidregg.Compiler.ObjectiveBendParse
+end Delvetalk.Compiler.ObjectiveBendParse

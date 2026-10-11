@@ -23,9 +23,9 @@ that find candidates are unverified accelerators), so the round trip
 every dictionary and every state. Earlier editions do not decode. -/
 import Theory.ObjectiveBendCheckpoint
 import Std.Data.HashMap
-namespace Minidregg.Theory.ObjectiveBendCheckpoint
+namespace Delvetalk.Theory.ObjectiveBendCheckpoint
 open ObjectiveBendOpenRecursion ObjectiveBendDemandMachine
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
 /-- Term equality that answers at once for one object: a checkpoint's closures hold the
@@ -571,4 +571,4 @@ def decodeStateV3 (terms : Array Term) (strings : Array String) (nameLists : Arr
 def decodeCheckpoint (d : Dictionary) (tokens : Tokens) : Option State :=
   decodeStateV3 d.terms d.strings d.nameLists tokens
 
-end Minidregg.Theory.ObjectiveBendCheckpoint
+end Delvetalk.Theory.ObjectiveBendCheckpoint

@@ -16,7 +16,7 @@ its trigger is present where the refusal points:
 - a refusal of the checker on the typed packet, or of the request: never. -/
 import Compiler.ObjectiveBendSurface
 namespace Delvetalk.Hints
-open Minidregg.Compiler.ObjectiveBendSurface (Expr Body Decl Param Span)
+open Delvetalk.Compiler.ObjectiveBendSurface (Expr Body Decl Param Span)
 
 def has (text pattern : String) : Bool := (text.splitOn pattern).length > 1
 
@@ -130,7 +130,7 @@ def bodyFacts : Facts → Body → Facts
   | f, .expr e _ => exprFacts f e
   | f, .cases sc branches _ => branchFacts (exprFacts f sc) branches
   | f, .letB _ t v b _ => bodyFacts (exprFacts { f with types := t :: f.types } v) b
-def branchFacts : Facts → List (Minidregg.Compiler.ObjectiveBendSurface.Pattern × Body × Span) → Facts
+def branchFacts : Facts → List (Delvetalk.Compiler.ObjectiveBendSurface.Pattern × Body × Span) → Facts
   | f, [] => f
   | f, (_, b, _) :: rest => branchFacts (bodyFacts f b) rest
 end
@@ -159,11 +159,11 @@ def bareGeneric (text name : String) : Bool :=
       | none => true
   | [] => false
 
-def declares (m : Minidregg.Compiler.ObjectiveBendSurface.Module) (name : String) : Bool :=
+def declares (m : Delvetalk.Compiler.ObjectiveBendSurface.Module) (name : String) : Bool :=
   m.decls.any fun d => d.name == name && (d matches .sum ..)
 
 /-- The hint a parsed declaration's own triggers give, each with the word that names it. -/
-def declHint (m : Minidregg.Compiler.ObjectiveBendSurface.Module) (d : Decl) : Option (String × String) :=
+def declHint (m : Delvetalk.Compiler.ObjectiveBendSurface.Module) (d : Decl) : Option (String × String) :=
   let f := declFacts d
   let untypedDef := match d with
     | .function sig _ _ _ => sig.resultType == "_" || sig.params.any (·.type == "_")
@@ -185,11 +185,11 @@ def declHint (m : Minidregg.Compiler.ObjectiveBendSurface.Module) (d : Decl) : O
     else none
 
 /-- The declaration of `m` that holds `line`: the last one whose header is at or above it. -/
-def declAt (m : Minidregg.Compiler.ObjectiveBendSurface.Module) (line : Nat) : Option Decl :=
+def declAt (m : Delvetalk.Compiler.ObjectiveBendSurface.Module) (line : Nat) : Option Decl :=
   (m.decls.filter fun d => d.span.line ≤ line).getLast?
 
 /-- A refused module as the hint sees it: its name, source text and, when it parsed, its surface. -/
-abbrev Refused := String × String × Option Minidregg.Compiler.ObjectiveBendSurface.Module
+abbrev Refused := String × String × Option Delvetalk.Compiler.ObjectiveBendSurface.Module
 
 /-- The hint for a refusal at `stage` naming `module` and `line` (1-based) with `message`. -/
 def hintFor (modules : List Refused) (stage message : String) (module : Option String) (line : Option Nat) :

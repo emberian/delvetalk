@@ -10,7 +10,7 @@ ever bear them and a second one cannot be declared. The equality test is an IDEN
 spelling test. Their claim lives in the proof term (via `Lean.reduceBool`), not in the axiom, so
 there is nothing here to re-run — accepting them IS accepting compiler trust, which is exactly
 what this command's label announces. -/
-def Minidregg.Theory.AssertCompiled.isCoreReduceAxiom (a : Lean.Name) : Bool :=
+def Delvetalk.Theory.AssertCompiled.isCoreReduceAxiom (a : Lean.Name) : Bool :=
   a == ``Lean.ofReduceBool || a == ``Lean.ofReduceNat
 
 /-- The Boolean claim a `native_decide`/`bv_decide` oracle axiom makes, if its type has the shape
@@ -21,7 +21,7 @@ just watched evaluate to `true`; this returns that `e`.
 Returning the CLAIM rather than a yes/no about the name is the whole point: it is what lets the
 caller go and re-run `e` for itself. A type that is not of this shape is not a compiled-evaluation
 claim at all and there is nothing to re-run — which is a refusal, not a pass. -/
-def Minidregg.Theory.AssertCompiled.nativeOracleClaim? (type : Lean.Expr) : Option Lean.Expr :=
+def Delvetalk.Theory.AssertCompiled.nativeOracleClaim? (type : Lean.Expr) : Option Lean.Expr :=
   match type.eq? with
   | some (α, lhs, rhs) =>
       if α.isConstOf ``Bool && rhs.isConstOf ``Bool.true then some lhs else none
@@ -43,8 +43,8 @@ elab "#assert_compiled" id:ident : command => do
   let mut candidates : Array (Name × Expr) := #[]
   let mut refusals : Array MessageData := #[]
   for a in axs do
-    if Minidregg.Theory.AssertAxioms.standard.contains a then continue
-    if Minidregg.Theory.AssertCompiled.isCoreReduceAxiom a then
+    if Delvetalk.Theory.AssertAxioms.standard.contains a then continue
+    if Delvetalk.Theory.AssertCompiled.isCoreReduceAxiom a then
       coreOracles := coreOracles.push a
       continue
     match env.find? a with
@@ -52,7 +52,7 @@ elab "#assert_compiled" id:ident : command => do
       refusals := refusals.push m!"{a} — not present in the environment, so its claim cannot be \
         re-run"
     | some info =>
-      match Minidregg.Theory.AssertCompiled.nativeOracleClaim? info.type with
+      match Delvetalk.Theory.AssertCompiled.nativeOracleClaim? info.type with
       | none =>
         refusals := refusals.push m!"{a} : {info.type} — NOT a compiled-evaluation claim. A \
           `native_decide`/`bv_decide` oracle has type `<closed Bool expr> = true`; this axiom \

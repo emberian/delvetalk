@@ -1,7 +1,7 @@
 /- Settling and trimming a checkpoint change no transition. Definitions: `settle`, `trim`,
-`checkpoint` in `Theory.ObjectiveBendDemandCollect`. Ported from Mini's
-ObjectiveBendDemandSettleProofs to this edition's machine (native cells, the hosted
-text tariff `forceHostedFrom`, the compiled `stepRawFast`), and extended to environments.
+`checkpoint` in `Theory.ObjectiveBendDemandCollect`, over this edition's machine (native
+cells, the hosted text tariff `forceHostedFrom`, the compiled `stepRawFast`) and its
+environments.
 
 The machine reads a cached cell's VALUE only (an origin is read only from an `evaluating`
 cell, at its update frame), and a closure reads its environment only at the de Bruijn
@@ -22,16 +22,15 @@ environment slots their closures never read take the same transitions. The relat
   (`executeStateWith`, then the Plan's `yieldedPlanWith` on a yield) from a resumed agreeing
   state agrees with the segment from the original.
 
-Not ported: `typed_settle` (this edition has no state-typing judgment,
-Mini's ObjectiveBendDemandTyping). The `collect` stages of
+No typing transfer (this edition has no state-typing judgment). The `collect` stages of
 `checkpoint = collect ∘ trim ∘ collect ∘ settle` are `Theory.ObjectiveBendDemandCollectProofs`
 (`checkpoint_resume_segment`). -/
 import Theory.ObjectiveBendDemandCollect
 import Theory.ObjectiveBendDemandData
-namespace Minidregg.Theory.ObjectiveBendDemandCollect
-open Minidregg.Theory.ObjectiveBendOpenRecursion
-open Minidregg.Theory.ObjectiveBendDemandMachine
-open Minidregg.Theory.ObjectiveBendDemandData
+namespace Delvetalk.Theory.ObjectiveBendDemandCollect
+open Delvetalk.Theory.ObjectiveBendOpenRecursion
+open Delvetalk.Theory.ObjectiveBendDemandMachine
+open Delvetalk.Theory.ObjectiveBendDemandData
 set_option autoImplicit false
 
 /-! ## Free variables and trimmed environments -/
@@ -1221,4 +1220,4 @@ theorem trim_resume_segment {fetch : Fetch} {state resumed : State} {response : 
 #assert_axioms eraseCell_objectCell fetchable_erase erase_fetchStep Agree.heap_size agree_forceHostedWith
 #assert_axioms materializeWith_record materializeWith_record_gate materializeWith_record_ok
 
-end Minidregg.Theory.ObjectiveBendDemandCollect
+end Delvetalk.Theory.ObjectiveBendDemandCollect

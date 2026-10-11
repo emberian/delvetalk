@@ -11,9 +11,9 @@ round trips of Theory.ObjectiveBendCheckpointRoundTrip. A new constructor here n
 case there, or the build fails. -/
 import Theory.ObjectiveBendDemandMachine
 import Theory.ObjectiveBendDemandData
-namespace Minidregg.Theory.ObjectiveBendCheckpoint
+namespace Delvetalk.Theory.ObjectiveBendCheckpoint
 open ObjectiveBendOpenRecursion ObjectiveBendDemandMachine
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
 inductive Token where
@@ -469,4 +469,4 @@ def decodeControl (fuel : Nat) : Tokens → Option (Control × Tokens)
       | _ => none
   | _ => none
 
-end Minidregg.Theory.ObjectiveBendCheckpoint
+end Delvetalk.Theory.ObjectiveBendCheckpoint

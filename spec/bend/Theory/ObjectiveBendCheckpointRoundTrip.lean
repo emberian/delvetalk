@@ -1,14 +1,14 @@
 /- The checkpoint codec round trip: every machine State, in particular every
 quiescent yielded activity, is restored exactly from its token encoding.
-Fuel is the token count, so no separate depth bound is assumed. Ported from
-Mini and extended to this edition's codec: unary primitives (`Term.unary`,
+Fuel is the token count, so no separate depth bound is assumed. It covers this
+edition's codec whole: unary primitives (`Term.unary`,
 `Frame.unary`), finite Data tokens, native cells (`Cell.native`,
 `Cell.nativeCached`), `Frame.nativeArgument` and `Control.nativeApplication`. -/
 import Theory.ObjectiveBendCheckpoint
 import Theory.AxiomPin
-namespace Minidregg.Theory.ObjectiveBendCheckpointRoundTrip
+namespace Delvetalk.Theory.ObjectiveBendCheckpointRoundTrip
 open ObjectiveBendOpenRecursion ObjectiveBendDemandMachine ObjectiveBendCheckpoint
-open Minidregg.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 set_option autoImplicit false
 
 theorem primitive_roundTrip (primitive : Primitive) : primitiveOf (primitiveCode primitive) = some primitive := by
@@ -273,4 +273,4 @@ theorem control_roundTrip (control : Control) (fuel : Nat) (rest : Tokens)
 #assert_axioms data_roundTrip control_roundTrip
 #assert_axioms stored_roundTrip refusal_roundTrip
 
-end Minidregg.Theory.ObjectiveBendCheckpointRoundTrip
+end Delvetalk.Theory.ObjectiveBendCheckpointRoundTrip

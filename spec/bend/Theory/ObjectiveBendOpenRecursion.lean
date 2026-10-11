@@ -8,7 +8,7 @@ import Lean
 import Theory.AxiomPin
 import Compiler.Sha256
 import Std.Data.HashSet.Lemmas
-namespace Minidregg.Theory.ObjectiveBendOpenRecursion
+namespace Delvetalk.Theory.ObjectiveBendOpenRecursion
 set_option autoImplicit false
 
 /-- The scalar primitives, each one machine transition on unbounded naturals.
@@ -304,7 +304,7 @@ def primitiveResult : Primitive → Term → Term → Option Term
 def unaryResult : UnaryPrimitive → Term → Option Term
   | .natText, .nat n => some (.label (toString n))
   | .textLength, .label s => some (.nat s.length)
-  | .sha256Text, .label s => some (.label (Minidregg.Compiler.Sha256.hexString s))
+  | .sha256Text, .label s => some (.label (Delvetalk.Compiler.Sha256.hexString s))
   | _, _ => none
 
 /-- All String labels, including true/false, are excluded from Boolean operations. -/
@@ -752,4 +752,4 @@ theorem one_turn_interaction (plan : Term) :
   one_turn_interaction subtract_truncated_exact divide_floor_exact order_exact nat_primitives_refuse_labels
   divide_modulo_reconstruct
 
-end Minidregg.Theory.ObjectiveBendOpenRecursion
+end Delvetalk.Theory.ObjectiveBendOpenRecursion
