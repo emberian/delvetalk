@@ -83,6 +83,28 @@ def resolve(method, path):
 
 
 
+def follow(host, principal, intent, reply, sleep=time.sleep):
+    """The texts offered to `principal` by a turn and every turn it handed on (its `sends`, delivered under the same
+    principal with the send's id as intent: a card handing prose to the commonplace, hob's planting sent to the garden),
+    waiting up to WAIT_MAX seconds while any of them is suspended on hob or not yet delivered: the play page's turn and
+    the hand's Speak."""
+    watch = {intent}
+    done = {} if reply.get('status') == 'suspended' else {intent: reply['receipt']}  # the turn as it answered
+    watch |= {s['id'] for r in done.values() for s in r.get('sends') or [] if s.get('id')}
+    after = reply['receipt']['height'] - 1
+    for _ in range(WAIT_MAX + 1):
+        for i in sorted(watch - set(done)):
+            got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': i}).get('receipt') or {}
+            if ((got.get('outcome') or {}).get('tag') or 'suspended') != 'suspended':
+                done[i] = got
+                watch |= {s['id'] for s in got.get('sends') or [] if s.get('id')}
+        if watch <= set(done):
+            break
+        sleep(WAIT_STEP)
+    seen = host.send({'op': 'world-offers', 'principal': principal, 'after': after}).get('offers') or []
+    return [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in watch]
+
+
 def typed(value):
     """Plain JSON as the host's typed data: text is a label, an integer a natural, an object a record."""
     if isinstance(value, dict):
@@ -365,26 +387,6 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         info = self.host.send({'op': 'serve-status'})
         if force or info.get('pid') != self.serve_pid:
             self.library, self.serve_pid = info.get('library'), info.get('pid')
-
-    def follow(self, principal, intent, reply):
-        """The texts offered to `principal` by a turn and every turn it handed on (its `sends`, delivered under the same
-        principal with the send's id as intent: a card handing prose to the commonplace, hob's planting sent to the garden),
-        waiting up to WAIT_MAX seconds while any of them is suspended on hob or not yet delivered."""
-        host, watch = self.host, {intent}
-        done = {} if reply.get('status') == 'suspended' else {intent: reply['receipt']}  # the turn as it answered
-        watch |= {s['id'] for r in done.values() for s in r.get('sends') or [] if s.get('id')}
-        after = reply['receipt']['height'] - 1
-        for _ in range(WAIT_MAX + 1):
-            for i in sorted(watch - set(done)):
-                got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': i}).get('receipt') or {}
-                if ((got.get('outcome') or {}).get('tag') or 'suspended') != 'suspended':
-                    done[i] = got
-                    watch |= {s['id'] for s in got.get('sends') or [] if s.get('id')}
-            if watch <= set(done):
-                break
-            self.sleep(WAIT_STEP)
-        seen = host.send({'op': 'world-offers', 'principal': principal, 'after': after}).get('offers') or []
-        return [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in watch]
 
     def used(self, credential):
         now = self.clock()
@@ -908,7 +910,7 @@ class Handler(BaseHTTPRequestHandler):
             r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent, 'reach': 'direct',
                            'argument': typed(fields if data.get('method') else {'text': str(data.get('text', '')), 'post': ''})})
             self.server.draft_turn(did, intent, r)
-            offers = self.server.follow(did, intent, r) if 'receipt' in r else []
+            offers = follow(host, did, intent, r, self.server.sleep) if 'receipt' in r else []
             if r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
                 said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
             else:

@@ -400,6 +400,9 @@ The same operations have a command-line face for the owner's assistant over ssh:
   `welcome`) or under `--reply-to` a Delve thread. `--seed N` is the plan's seed N (`plan`, config `plan`, default
   docs/PLAYTEST-2.md §2) under an intent of its own, so a second cast is the first receipt; `--invitation MINUTE` drafts
   §3's invitation at T+MINUTE for the bot, its spells quoted, once. The hand's own drafts wait for Post on Zulip too.
+  Words that are no spell go to `--to CARD` (default the commonplace) as a resident's direct reply, the play page's
+  turn (`receive` with `reach: direct`), and the hand follows it and every turn it handed on to hob's answer, waiting
+  while hob reads, and shows it: the operator asks hob as the town would. Nothing is drafted; the hand's log keeps it.
 - `worlds` (`/hand/`, where the hand opens): every world `serve` holds (height, cards, clock, its bridge, drafts waiting,
   replay edition, the snapshot it reopened from) with its pages, and every scratch world with its owner's handle, its
   size, the minutes since its last turn and when it expires by the home clock, each with root's `expire`.
