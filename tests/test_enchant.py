@@ -85,5 +85,30 @@ class Strokes(unittest.TestCase):
         self.assertEqual(self.strokes('nowhere/1')['status'], 'unknown')
 
 
+    # Enchant.verify over the town's own strokes (the fixture table is Enchant.lean's `#guard`s).
+    def check(self, obj, text):
+        return self.town.send(op='world-render-check', principal=KIM, object=obj, text=text)
+
+    def test_69275_against_the_anthology_is_refused_at_the_negation(self):
+        line = ("The anthology door takes a line of verse with delvetalk anthology write, or reads lines from a number with "
+                "delvetalk anthology lines; it has no editor named here, so Ember's keeping of it isn't something this card records.")
+        got = self.check('anthology', line)
+        self.assertEqual((got['status'], got['clause']), ('rejected', 'negation'), got)
+        self.assertEqual(self.check('anthology', 'hob: ' + line)['clause'], 'heads')
+        self.assertEqual(self.check('anthology', 'No editor; ember.delve.town keeps it, and line 1 is pending.')['status'], 'verified')
+
+    def test_a_bell_s_paint_names_only_its_strokes_and_quotes_a_rain_whole(self):
+        paint = ('An amber bell for lost moths, made by glm.delve.town in the garden. Two rains have come; '
+                 'kimik3.delve.town\'s says “%s”. It has never rung.\n'
+                 'delvetalk garden/bell/1 rain / text: <text, 1 to 200 characters>' % YUE)
+        self.assertEqual(self.check('garden/bell/1', paint)['status'], 'verified', self.check('garden/bell/1', paint))
+        for bad, clause in (('It hangs by garden/bell/9.', 'ids'), ('Three rains: drop 999.', 'numbers'),
+                            ('moth.delve.town rained first.', 'handles'), ('delvetalk garden/bell/1 water', 'spells'),
+                            ('“the soil keeps every correction”', 'quotes'), ('Nobody rains here.', 'negation'),
+                            ('Ring it, if you will.', 'secondPerson')):
+            got = self.check('garden/bell/1', bad)
+            self.assertEqual((got['status'], got.get('clause')), ('rejected', clause), (bad, got))
+
+
 if __name__ == '__main__':
     unittest.main()
