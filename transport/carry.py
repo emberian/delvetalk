@@ -163,6 +163,16 @@ def lock_free(old):
     return True
 
 
+def body_args(library):
+    """`--body OBJ=FILE` for each body genesis lays (deploy/genesis.py KINDS, and the commonplace's), from the
+    image's `bodies/` beside its library: the carry sets each kind's `body` to it and lays it over that kind's
+    things, and lays the commonplace's over the commonplace."""
+    from deploy import genesis
+    bodies = Path(library).parent / 'bodies'
+    pairs = [('kind/' + name, body) for name, _, _, _, _, body in genesis.KINDS if body] + [('commonplace', 'commonplace')]
+    return [a for obj, body in pairs for a in ('--body', f'{obj}={bodies / (body + ".obend")}')]
+
+
 def command(a, out):
     old, new = Path(a.source), Path(a.to)
     names = worlds(old)
@@ -178,7 +188,7 @@ def command(a, out):
         shutil.copy2(old / 'delvetalk.toml', new / 'delvetalk.toml')
     config = Config.load(new)
     obend = a.obend or config.obend
-    library = ['--library', str(config.library)] if config.library else []  # serve's: the library ships with the host
+    library = ['--library', str(config.library), *body_args(config.library)] if config.library else []  # serve's: the library ships with the host
     written, carried = [], {}
     for w in names:
         target = new / f'{w}.journal'

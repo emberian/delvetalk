@@ -1647,20 +1647,23 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `--library DIR` seals DIR as serve seals it (`Serve.sealLibrary` into J2's directory) and makes it the
      current library when its pin differs (`carriedFrom.library {from, to}`).
    - *Moves with migrations* (host24). With `--library DIR` the image's packages are that library's modules and
-     `DIR/../objects` (by name, as `deploy/seed.py` names them). `movedInputs`: an object's own modules named as
-     the image names one take its source, a module the new source newly imports comes before it, layers stay
-     above, `library` the new pin. Compiled (`moved`): the same pin keeps the object as it was; another moves it
-     (version + 1, the new type, bounds, methods, relations, fixed, packet). Its state stays when it conforms to
-     the new type; else the package's `migrate` (`Ops.compileMigration`, its argument type read by the state as it
-     was; `Ops.runMigration`, the two shared with reprogram) converts it, checked to conform, canonical under the
-     new relations, within `maxCellBytes`, moving no fixed field. A moved object's suspensions are dropped (the
-     code they waited in is gone), supervisors told. Refused by name: a package not compiling against the
-     image, a non-conforming state with no `migrate`, a `migrate` not reading the old state. Left without being
-     named (`gone`): an object whose package needs a module of its library the image no longer ships (Wake,
-     Env), its reading `left at the carry: its package needs Wake, which this host no longer ships`.
+     `DIR/../objects` (by name, as `deploy/seed.py` names them), and its bodies are `--body OBJ=FILE` (one per
+     `deploy/genesis.py` KINDS row and the commonplace's, passed by transport/carry.py). `movedInputs`: an
+     object's own modules named as the image names one take its source, a module the new source newly imports
+     comes before it, its first layer takes the body its kind names (or its own id names), laid over the module
+     below as extend lays one, later layers stay, `library` the new pin. A kind takes its body as its `body`
+     field. Compiled (`moved`): the same pin and body keep the object as it was; else it moves (version + 1, the
+     new type, bounds, methods, relations, fixed, packet). Its state stays when it conforms to the new type;
+     else the package's `migrate` (`Ops.compileMigration`, its argument type read by the state as it was;
+     `Ops.runMigration`, the two shared with reprogram) converts it, checked to conform, canonical under the new
+     relations, within `maxCellBytes`, moving no fixed field. A moved object's suspensions are dropped (the code
+     they waited in is gone), supervisors told. Left, retired at its old pin with the reason as its reading: an
+     object whose own entry package the image no longer ships (`gone`: Wake, Env), one whose move refuses (no
+     compile, no `migrate` for a state that does not conform, a `migrate` that refuses), and one `--leave`
+     names. Only an object that does not rebuild under its own pin refuses the carry, by name.
      `carryGenesis`: `carriedFrom {world, height, cid, replay, reason, entries, library?, carriedFrom?}` (the old
-     genesis's own when it was a carry), `index`, `left`, `moved [{object, from, to, migration, before, after}]`
-     (pins, `migrate` or "", state CIDs), `dropped`. J2 is replayed from its genesis and every object's state
+     genesis's own when it was a carry), `index`, `left`, `moved [{object, from, to, migration, before, after,
+     body?}]` (pins, `migrate` or "", state CIDs, `body` when it took the image's body), `dropped`. J2 is replayed from its genesis and every object's state
      CID compared with the snapshot's (a moved one's with `after`) before it is written. Prints `{status:
      carried, hash, slug, replay, carriedFrom, library, objects, pending, suspended, grants, posts, receipts,
      left, moved, dropped}`; the transport's check compares a moved object with `after`.
@@ -1684,8 +1687,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      old pins compiling; refusals without the snapshot, over an open journal, into a journal, an unknown
      `--leave`; a journal re-sealed as edition 7 refused on open and carried; a served town carried with its
      transport and served again; `Moves`: an image package changed between two library pins, its plain and
-     layered objects migrated, one changing only methods moved with its state, one with no `migrate` refused by
-     name or left, one whose library module is gone left unnamed), `test_genesis.NoWipe`, `test_replay_edition` (the refusal names the carry).
+     layered objects migrated, one changing only methods moved with its state, a move that refuses left retired
+     at its old pin, a gone package left, a body laid again over the module below), `test_genesis.NoWipe`, `test_replay_edition` (the refusal names the carry).
 
 160. **Rules fire, wants pose, replies reveal (lane/host22; OVERHAUL §5 step 3; KERNEL-HANDOFF §27; replay edition 9,
    snapshot `v4`).** The shapes, for the strokes assembly (lane/enchant) and the objects lane, as built:

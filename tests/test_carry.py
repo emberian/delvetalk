@@ -7,7 +7,8 @@ Evidence for TENURE section 1(b) (layer: host). Refuted by an object whose state
 that no longer resolves by its slug, a carried world that takes no new turn or loses a suspension, a carry that runs
 without a snapshot at the head, over an open journal or into an existing one, an object left that is not retired, or
 a journal of another edition that neither opens nor carries, or a package the image changed whose objects keep the
-code before, lose their state in the move, or carry a state their new package does not hold.
+code before, lose their state in the move, carry a state their new package does not hold, or a move that refuses
+stopping the carry rather than leaving its object retired.
 
     python3 -W error -m unittest tests.test_carry -v
 """
@@ -302,7 +303,7 @@ class Moves(Reflection):
         moved = {m["object"]: m for m in carried["moved"]}
         self.assertEqual(sorted(moved), ["t", "u"], carried)  # c's closure is the image's as it was
         # f's package is gone from the image: it is left, unnamed by the operator, saying why.
-        self.assertEqual(carried["left"], [{"object": "f", "reading": "left at the carry: its package needs Fading, which this host no longer ships"}])
+        self.assertEqual(carried["left"], [{"object": "f", "reading": "left at the carry: its package Fading is no longer shipped"}])
         for i in ("t", "u"):
             self.assertEqual((moved[i]["from"], moved[i]["migration"], moved[i]["before"]),
                              (self.before[i]["pin"], "migrate", self.before[i]["stateCid"]), moved[i])
@@ -331,6 +332,20 @@ class Moves(Reflection):
         self.hosts.remove(new)
         self.assertEqual(self.opened(out).send(op="world-status")["head"], head)
 
+    def test_a_body_is_laid_again_as_the_first_layer_of_the_thing_it_names(self):
+        body = os.path.join(self.image, "layer.obend")
+        with open(body, "w", encoding="utf-8") as f:
+            f.write(LAYER.replace("Super.add(context, 10n)", "Super.add(context, 100n)"))
+        self.ship(TALLY_NOTED)
+        p, out = self.carry("--body", "u=" + body)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        moved = {m["object"]: m for m in carried["moved"]}
+        self.assertEqual((moved.get("u", {}).get("body"), moved["t"].get("body")), (True, None), carried)
+        new = self.opened(out)
+        self.assertEqual(new.send(op="world-turn", principal="ember", object="u", method="bump", argument=record(), identity="b")["status"], "admitted")
+        self.assertEqual(field(new.send(op="world-view", principal="ember", object="u")["state"], "count")["value"], "110")
+
     def test_a_package_that_changes_its_methods_alone_moves_with_its_state(self):
         self.ship(declared(TALLY_SOURCE + "def bump2(state: State, context: Abi.Context) -> Activity<Nat>:\n  add(context, 2n)\n"))
         p, out = self.carry()
@@ -341,20 +356,20 @@ class Moves(Reflection):
         new = self.opened(out)
         self.assertEqual(new.send(op="world-turn", principal="ember", object="t", method="bump2", argument=record(), identity="b2")["status"], "admitted")
 
-    def test_a_state_that_no_longer_conforms_without_migrate_refuses_the_carry_by_name_or_is_left(self):
+    def test_a_move_that_refuses_leaves_its_object_retired_at_its_old_pin_saying_why(self):
         self.ship(TALLY_NOTED.replace("def migrate(", "def unused(", 1))
-        p, _ = self.carry()
-        self.assertEqual(p.returncode, 1, p.stderr)
-        self.assertIn("t: its state does not conform to its package's new state type, and the package defines no migrate", p.stderr)
-        self.assertIn("u: its state does not conform", p.stderr)
-        self.reopen()
-        p, out = self.carry("--leave", "t", "--leave", "u")
+        p, out = self.carry()
         self.assertEqual(p.returncode, 0, p.stderr)
         carried = json.loads(p.stdout)
-        self.assertEqual((carried["moved"], [x["object"] for x in carried["left"]]), ([], ["f", "t", "u"]))
+        left = {x["object"]: x["reading"] for x in carried["left"]}
+        self.assertEqual((carried["moved"], sorted(left)), ([], ["f", "t", "u"]))
+        for i in ("t", "u"):
+            self.assertEqual(left[i], "left at the carry: its state does not conform to its package's new state type, "
+                                      "and the package defines no migrate; a migration is def migrate(old: OldState) -> State")
         new = self.opened(out)
         self.assertEqual({i: new.send(op="world-object", principal="ember", object=i)["record"]["stateCid"] for i in ("t", "u", "c")},
                          {i: self.before[i]["stateCid"] for i in ("t", "u", "c")})
+        self.assertEqual(new.send(op="world-object", principal="ember", object="t")["record"]["pin"], self.before["t"]["pin"])
         bumped = new.send(op="world-turn", principal="ember", object="t", method="bump", argument=record(), identity="after")
         self.assertEqual((bumped["status"], bumped["receipt"]["outcome"]["clause"]), ("refused", "retired"), bumped)
 
