@@ -6,20 +6,17 @@ Every definition whose first parameter is the State used to be callable by anyon
 direct turn, a `call`, a `send`, a `run` or a delivery may name only a method the package
 declares: the action of a form in `forms()`, a name `methods()` returns, a `views()` entry, or a
 conventional name (`receive`, `render`, `set`, ...). Every other State-first definition is a
-helper: refused class `noMethod` by name, absent from `world-inspect`'s methods and forms. A
-change is still delivered to the receiver its subscriber named, helper or not.
+helper: refused class `noMethod` by name, absent from `world-inspect`'s methods and forms. No
+delivery reaches a helper either: a supervisor's `ended` must be offered (test_supervisors).
 
 Refuted by: a stranger declaring a winner with `Table.played`, or resetting a seat with
 `Seat.nextRound`; a helper listed by
-`world-inspect`; a bare package's undeclared method running; a change not reaching a helper
-receiver; a direct turn reaching that receiver.
+`world-inspect`; a bare package's undeclared method running.
 """
 import json
-import re
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_changes import Receivers
 from tests.test_reflection import Reflection
 from tests.test_table import NORTH, OPENING, SOUTH
 from tests.test_turn_world import FIXTURE_HEAD
@@ -102,36 +99,6 @@ class Bare(Chain):
                            modules=closure("World") + [{"name": "Bad", "source": source}], entry="initial", seed=record())
         self.assertNotEqual(r.get("status"), "created", r)
         self.assertIn("methods()", r.get("message", "") + str(r.get("receipt", "")), r)
-
-
-HELPER_RECEIVER_METHODS = """def methods() -> Lists.List<String>:
-  Lists.List::<String>.cons({head: "watch", tail: Lists.List::<String>.nil({})})
-"""
-
-
-class HelperReceivers(Reflection):
-    """A change goes to the receiver its subscriber named even when that is a helper; nobody else
-    may turn it."""
-
-    setUp = Receivers.setUp
-    make2 = Receivers.make2
-    get = Receivers.get
-
-    def test_a_change_reaches_a_helper_receiver_that_no_turn_may_name(self):
-        from tests.test_changes import RECEIVER
-        bare = re.sub(r"\ndef methods\(\)[^\n]*\n  [^\n]*", "", RECEIVER)
-        self.make2("q", bare.rstrip("\n") + "\n" + HELPER_RECEIVER_METHODS)
-        r = self.turn("q", "watch", record(target=label("bell"), field=label("rung"), method=label("rung")))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertEqual(self.turn("bell", "ring", record())["status"], "admitted")
-        self.assertEqual(self.get("q", "heard"), nat(1))
-        refused_no_method(self, self.turn("q", "rung", record(object=reference("bell"), field=label("rung"), version=nat(9),
-                                                                inserted={"tag": "list", "items": []},
-                                                                retracted={"tag": "list", "items": []}), principal=STRANGER), "rung", "q")
-        self.assertEqual(self.get("q", "heard"), nat(1))
-
-
-del Receivers
 
 
 if __name__ == "__main__":
