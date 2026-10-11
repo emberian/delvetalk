@@ -17,11 +17,11 @@ of Python in 8 files plus 594 of shell and compose. By role:
 | the front: routes, pages, the claim, the login, the repository façade | `http.py` 941, `pages.py` 269, `identity.py` 193, `oauth.py` 241, `repo.py` 209 | 1,853 | rate limits per credential and address, body limits, the 30 s deadline, which page renders; the claim's challenge is Python's (identity.sqlite) |
 | the bridge: routing and drafting | `bridge.py` 550, `interpret.py` 86 | 636 | where a post reaches (`route`; the host now checks `reach`), when to draft, the deliver rounds |
 | the hand | `hand.py` 289 | 289 | nothing; every action is a click or a verb |
-| process management (deleted since: `serve` holds the lock, the heaps and both sockets) | `hostd.py` 162, `hostproc.py` 219 | 381 | the lock, the pool of 8 heaps, the socket |
+| process management (deleted since: `serve` holds the lock, every world, the scratch worlds and both sockets) | `hostd.py` 162, `hostproc.py` 219 | 381 | the lock, a pool of 8 per-principal host processes, the socket |
 
 The state the Python keeps beside the journal is 20 kinds under `<state>/`:
 `access.log`, `awaiting/`, `binary-pin`, `bridges/`, `hand-log.jsonl`,
-`heaps/`, `host.sock`, `hostd.pid`, `identity.sqlite`, `interpretations/`,
+`scratch/`, `host.sock`, `hostd.pid`, `identity.sqlite`, `interpretations/`,
 `journal.lock`, `library/`, `mentioned.txt`, `model-spend.jsonl`,
 `observe.sqlite`, `outbox/`, `posting/`, `principals.txt`,
 `publications.after`, `since`, `skipped.txt`, `worlds/`. Configuration is 95
@@ -226,7 +226,7 @@ record; it is on the receipt.
 delvetalk-bridge delvetalk-interpret` (the host keeps answering reads; an
 append whose fsync fails is a refused op, not a lost one). `du -sk` and rank:
 `/var/backups/delvetalk` (same disk; move the target), old image tags,
-`<state>/heaps` (until FEDERATION 2), the access log (16 MB, one
+`<state>/scratch` (scratch worlds, not custody: the hand may `expire` them), the access log (16 MB, one
 generation). Delete only what the puller already holds. Channel: `hob: the host is full; the hand is making
 room. Spells wait.` Record: what was removed and why.
 
