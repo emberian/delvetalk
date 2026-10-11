@@ -1247,7 +1247,7 @@ def declarations (lines : Array Line) :
       decls := decls.push (.law (cap line.text caps 1) text reading line.span)
       continue
     if startsWith line.text "law " || line.text == "law".toList || startsWith line.text "law:" then
-      fail line (ObjectiveBendLaw.refusalPrefix ++ "expected `law NAME: EXPR` (a top-level law has a name and no parameters)")
+      fail line (ObjectiveBendLaw.refusal ("`" ++ String.ofList line.text ++ "`") "a top-level law is law NAME \"reading\": EXPR")
     if let some (_, caps) ← matchAt line genericDefRe line.text then
       let typeParameters ← liftAt line (genericParameters ((capture line.text caps 2).getD []))
       let sig ← signature ((capture line.text caps 1).getD [] ++ (capture line.text caps 3).getD []) line

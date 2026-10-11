@@ -449,8 +449,8 @@ structure Lowering where
   limits : Json
   typeFuel : Nat
   /-- The package's enforced laws: the entry module's top-level `law` declarations (a law in any
-  other module refuses). The artifact commits them; the kernel installs them on every object
-  pinned to the artifact. -/
+  other module refuses). The artifact commits them; the host judges every write of an object
+  pinned to the artifact by them (`Delvetalk.Host.Law.denote`). -/
   laws : List (String × ObjectiveBendLaw.LawExpr)
   /-- The typing proposal for the selected term, or why there is none: built once. -/
   proposal : Except String Json
