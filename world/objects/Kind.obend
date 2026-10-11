@@ -103,8 +103,13 @@ def kindId(name: String) -> String:
 # Makes one: creates it from the package `of` names with the fields as its seed under the kind's
 # law, then lays its body over it in the same turn (a made kind, the make its form generates).
 # Made under a record, the record answers the maker and the kind says nothing.
+# A `spween` field that is not a scene is refused by its reason, never made into a room without one.
 def making(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
-  if valueOf(fields, "id") != "" && context.principal != state.owner then refusedCard(state, context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} names what this kind makes; leave id blank"}) else creating(state, fields, under, context)
+  if valueOf(fields, "id") != "" && context.principal != state.owner then refusedCard(state, context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} names what this kind makes; leave id blank"}) else scened(state, fields, under, context, valueOf(fields, "spween"))
+def scened(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context, spween: String) -> Activity<Done>:
+  match Spween.parse(spween):
+    case refused(r): if Text.blank(spween) then creating(state, fields, under, context) else refusedCard(state, context, {clause: "spween", reading: "The spween is not a scene: {r.reason}"})
+    case parsed(_): creating(state, fields, under, context)
 def creating(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
   match world.create({package: packageOf(state.of), seed: seedOf(state, fields, under, context), law: lawOf(context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
     case created(c): counted(state, c.object.object, under != "", layerOf(state, fields), context)

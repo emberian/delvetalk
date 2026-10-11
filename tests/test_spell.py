@@ -1,7 +1,6 @@
 """The spell grammar: the last delvetalk line at the margin, field lines, slash forms, blocks, fences
-skipped, fitted to a form or refused by name. The host parses (op `spell-parse`); world/lib/
-Spell.obend keeps only the spell line's card, action and inline fields, which a card reads until
-the host's Heard names them (fungus H1).
+skipped, fitted to a form or refused by name. The host alone parses (op `spell-parse`); a card's
+receive is handed the spell it read (`Card.Cast`), and Bend reads no spell itself (fungus H1).
 
 Evidence for FOUNDATION §5 Spell grammar (layer: host).
 
@@ -14,8 +13,6 @@ card without `delvetalk`, values without names, the 128-byte card name, a trimme
 import unittest
 
 from tests.test_host_spell import host, show_fit, show_parsed
-from tests.test_objects import check, compile_job
-from tests.bend import closure
 
 
 def plant_form(card="garden-1"):
@@ -86,57 +83,6 @@ class Grammar(unittest.TestCase):
                 request = {"text": text, **({"form": form} if form else {}), **({"addressee": addressee} if addressee else {})}
                 out = host(request)
                 self.assertEqual(show_fit(out["fit"]) if form else show_parsed(out), expected)
-
-
-PROBE = """edition ObjectiveBend 1
-import ./List.obend as Lists
-import ./Spell.obend as Spell
-def bindings(items: Spell.Bindings) -> String:
-  Lists.fold(items, "", fn(b: Spell.Binding) -> String -> String: fn(rest: String) -> String: textConcat(b.name, textConcat("=", textConcat(b.value, textConcat(";", rest)))))
-def parse(text: String) -> String:
-  match Spell.parse(text):
-    case spell(s): "spell {s.card} {s.action} {bindings(s.fields)}"
-    case notASpell(n): "not a spell: {n.reason}"
-"""
-
-
-def bend_parse(reply):
-    modules = closure("Spell")
-    compiled = compile_job(modules + [{"name": "Probe", "source": PROBE}], "parse")
-    assert compiled["status"] == "compiled", compiled
-    out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [{"tag": "label", "value": reply}]})
-    assert out["status"] == "finished", out
-    return out["value"]["value"]
-
-
-class BendReading(unittest.TestCase):
-    """What a card still reads in Bend: the spell line's card and action (a card answering a
-    spell the host found missing fields), read as the host casts: only at the margin."""
-
-    def test_the_spell_line_and_its_inline_fields_as_the_host_reads_them(self):
-        for reply in ("delvetalk garden plant / colour: violet / seed: a bell for moths",
-                      "delvetalk tide subscribe / every: 1 / note: WC-01, first light",
-                      "delvetalk garden-1 plant seed: a fern, that remembers, colour: silver",
-                      "delvetalk a b x: at://did/p/1 / y: 2",
-                      "delvetalk garden-1 ?",
-                      "Could we plant a fern?",
-                      "delvetalk garden-1 plant now",
-                      "> delvetalk garden-1 plant / seed: fern",
-                      "```json\ndelvetalk garden-1 plant\n```",
-                      "Delvetalk Garden-1 Plant / Seed: fern / colour: silver",
-                      "delvetalk garden-1 plant. / seed: fern",
-                      "delvetalk Is The word"):
-            with self.subTest(reply=reply):
-                self.assertEqual(bend_parse(reply), show_parsed(host({"text": reply})))
-        # The last line at the margin wins; an indented one, alone or not, is an example, as the host has it.
-        post = ("e.g. like this:\n    delvetalk garden plant / colour: amber / seed: x\n"
-                "> delvetalk wake watch\nso here is mine:\ndelvetalk tide subscribe / every: 1 / note: WC-01")
-        self.assertEqual(bend_parse(post), "spell tide subscribe every=1;note=WC-01;")
-        self.assertEqual(bend_parse("delvetalk a first\ndelvetalk b second\nx: 1"), "spell b second ")
-        for quoted in ("quoted:\n    delvetalk garden-1 plant / seed: fern", "like\n  delvetalk garden-1 plant\nthis", "so:\n\tdelvetalk garden-1 plant"):
-            self.assertEqual(bend_parse(quoted), NOT)
-            self.assertEqual(show_parsed(host({"text": quoted})), NOT)
-        self.assertEqual(bend_parse("delvetalk a b\nx: 1\ndelvetalk Is The word"), "spell a b ")
 
 
 if __name__ == "__main__":

@@ -71,7 +71,7 @@ def doneLine(done: Done) -> String:
 def subscribe(state: State, input: {every: Nat, note: String}, context: Abi.Context) -> Activity<Done>:
   if input.every == 0n then told(refused(Why.everyZero({})), render(state, context)) else subscribing({who: context.principal, every: input.every, note: input.note, since: state.ticks, handle: context.handle}, state, context)
 def subscribing(sub: Sub, state: State, context: Abi.Context) -> Activity<Done>:
-  if Relations.count(state.subs) < subsMax() || Relations.exists(state.subs, fn(s: Sub) -> Bool: s.who == sub.who) then subWritten(sub, render(extend(state, {subs: Relations.upsert(state.subs, sub, subKey)}), context)) else told(refused(Why.full({})), render(state, context))
+  if Relations.count(state.subs) < subsMax() || Relations.has(state.subs, {who: sub.who}) then subWritten(sub, render(extend(state, {subs: Relations.upsert(state.subs, sub, subKey)}), context)) else told(refused(Why.full({})), render(state, context))
 def subWritten(sub: Sub, card: Document.Document) -> Activity<Done>:
   let written(_) = write {subs: upsert sub}
   told(Done.subscribed({since: sub.since}), card)

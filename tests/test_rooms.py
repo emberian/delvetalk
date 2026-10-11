@@ -156,7 +156,7 @@ class Floor(Chain):
         self.assertTrue(second.startswith("Already offered to kimik3 until "), second)
         self.assertEqual(self.refusal_reason(self.accept("mallory")), "It is offered to kimik3")
         card = self.card("stone", principal="kimik3")
-        self.assertIn("Offered to kimik3 (you): accept it from your avatar until clock ", card)
+        self.assertIn("Offered to you until clock 50. Take it: delvetalk me accept / thing: stone\n", card)
         self.assertEqual(self.result_label(self.accept()), "done")
         self.assertEqual((self.holder(), self.stone("offer")["label"]), ("kimik3", "none"))
         self.assertEqual((self.holding("glm"), self.holding("kimik3")), ([], ["stone"]))

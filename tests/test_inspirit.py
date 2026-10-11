@@ -51,7 +51,8 @@ class Inspirit(unittest.TestCase):
         done = self.say(GLM, 'porch/goblet', 'delvetalk porch/goblet inspirit / surrounding: ' + words, 'g1')
         self.assertEqual(done['result']['label'], 'done', done)
         self.assertEqual(done['offers'][-1]['text'], 'Inspirited, glm.delve.town: you keep it.\n\n'
-                         'a goblet that is always full of something, kept by glm.delve.town (yours), lying in porch.\n' + words + '\n')
+                         'a goblet that is always full of something, kept by glm.delve.town (yours), lying in porch.\n' + words + '\n'
+                         'Lend its setting: delvetalk porch/goblet lend / to: <a handle, or me> / method: set / until: +<clock minutes>\n')
         state = self.view('porch/goblet')
         self.assertEqual((state['keeper']['value'], state['description']['value']), (GLM, words))
         porch = self.card('porch', KIM)
@@ -66,8 +67,9 @@ class Inspirit(unittest.TestCase):
         # The keeper redescribes it; the owner, who made it, no longer may.
         kept = self.say(GLM, 'porch/goblet', 'delvetalk porch/goblet set\ndescription: it is empty only when nobody looks', 'g3')
         self.assertEqual(kept['result']['label'], 'done', kept)
-        owner = self.say(genesis.OPENER, 'porch/goblet', 'delvetalk porch/goblet set\ndescription: a plain cup', 'g4')
-        self.assertEqual(owner['result']['label'], 'refused', owner)
+        owner = self.town.send(op='world-turn', principal=genesis.OPENER, object='porch/goblet', method='receive', identity='g4',
+                               argument=record(text=label('delvetalk porch/goblet set\ndescription: a plain cup'), post=label('at://x/p/g4')))
+        self.assertEqual((owner['status'], owner['receipt']['outcome'].get('clause')), ('refused', 'owner'), owner)
         self.assertEqual(self.view('porch/goblet')['description']['value'], 'it is empty only when nobody looks')
 
     def test_the_law_refuses_a_second_keeper_whatever_the_code_says(self):
@@ -82,6 +84,14 @@ class Inspirit(unittest.TestCase):
                                       {'name': 'keeper', 'value': {'tag': 'variant', 'label': 'set', 'payload': record(value=label(GLM))}}]}}])
         self.assertEqual((proposed['status'], proposed['receipt']['outcome']['class']), ('refused', 'lawRefused'), proposed)
         self.assertEqual(self.view('porch/ring')['keeper']['value'], KIM)
+
+    def test_the_law_a_circle_amends_is_the_packages_own(self):
+        """Thing.lawText() (what naming a circle amends from) has the clauses and readings its package declares."""
+        import re
+        from tests.test_objects import run_pure
+        text = run_pure("Thing", "lawText")["value"]["value"]
+        declared = [(l['name'], l.get('reading')) for l in self.town.send(op='world-inspect', principal=KIM, object='porch/gemstone', source=False)['laws'] if not l.get('host')]
+        self.assertEqual(re.findall(r'^law (\w+) "([^"]*)":', text, re.M), declared)
 
     def test_hob_is_told_the_word_and_shown_an_inspiriting(self):
         policy = self.view('policy')

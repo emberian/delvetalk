@@ -1,6 +1,7 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
 import ./Relation.obend as Relations
+import ./Event.obend as Events
 # The row types of the relations other objects read (WHOLENESS, root decisions, second set,
 # item 3): a subscriber's typed receiver takes `inserted` and `retracted` as lists of one of
 # these, so a Wake imports this module rather than the object that keeps the rows. Each
@@ -28,17 +29,6 @@ record Mark:
 record Field:
   name: String
   value: String
-# An event an Env took in (world/lib/Event.obend's Event with `n`), keyed {at, actor, uri, n}.
-record Sensed:
-  kind: String
-  actor: String
-  handle: String
-  uri: String
-  cid: String
-  text: String
-  replyTo: String
-  at: Nat
-  n: Nat
 # A bell's colour, and a bell a garden planted (its `children`, keyed {object}).
 sum Colour:
   amber: {}
@@ -93,11 +83,9 @@ record Presence:
 def presenceKey(p: Presence) -> {who: String}:
   {who: p.who}
 def presentAs(presence: Relations.Relation<Presence>, who: String) -> Lists.Maybe<Presence>:
-  Relations.lookup(presence, {who: who}, presenceKey)
+  Relations.lookup(presence, {who: who})
 def isPresent(presence: Relations.Relation<Presence>, who: String) -> Bool:
-  match presentAs(presence, who):
-    case some(_): true
-    case none(_): false
+  Relations.has(presence, {who: who})
 # A row as a rule reads it (a Wake's `On.rows`, RELATIONAL section 7): its columns by name, each
 # a natural or a text (Relations.Cell), since Bend cannot read Data. One projection per row type.
 record Column:
@@ -116,7 +104,7 @@ def none() -> Columns:
   Lists.List.nil({})
 def lineColumns(r: Line) -> Columns:
   one(text("author", r.author), one(text("handle", r.handle), one(text("text", r.text), one(nat("at", r.at), one(nat("n", r.n), none())))))
-def sensedColumns(s: Sensed) -> Columns:
+def sensedColumns(s: Events.Event) -> Columns:
   one(text("kind", s.kind), one(text("actor", s.actor), one(text("handle", s.handle), one(text("uri", s.uri), one(text("cid", s.cid), one(text("text", s.text), one(text("replyTo", s.replyTo), one(nat("at", s.at), one(nat("n", s.n), none())))))))))
 def markColumns(m: Mark) -> Columns:
   one(text("name", m.name), one(text("who", m.who), one(text("handle", m.handle), one(nat("at", m.at), none()))))

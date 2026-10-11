@@ -7,9 +7,9 @@ A `world-propose` write reached an object's law as kind 0 with no method, the ki
 own method writes, so a law that admitted "anyone's kind-0 write" admitted a stranger's forged
 state. The host now judges it as `proposed` (kind 3; HOST-HANDOFF 93), so an owner clause or the
 default law refuses a stranger's proposal (`owner`). The objects keep a belt: every owner law holds
-`unchanged(owner)`, so a migration cannot write the authority that admits it; Deal guards every
-change by party and admits only its two methods' writes, and its new signatures are the
-requester's (`signer`); Tide has an owner who alone reprograms or amends it; Workshop, Avatar,
+`unchanged(owner)`, so a migration cannot write the authority that admits it (a bond's
+countersignatures are the signer's own: tests/test_bond.py); Tide has an owner who alone
+reprograms or amends it; Workshop, Avatar,
 Table, Seat, Thing and Tide refuse a write no method made in their Bend law (`methods`),
 which is what stops their creator's or owner's own proposal.
 
@@ -22,18 +22,14 @@ from deploy import genesis
 from tests.test_chain import Chain, town_garden
 from tests.wire import field, nil, reference, rows
 from tests.bend import MODULES, closure
-from tests.test_rooms import make_room, avatar_seed, room_seed, thing_seed
+from tests.test_rooms import body, make_room, avatar_seed, room_seed, thing_seed
 from tests.test_scene import GATE, choice, passage, scene_fields
 from tests.test_table import NORTH, OPENING, SOUTH
-from tests.wire import field, label, nat, nil, record, reference, relation, rows, variant
+from tests.wire import field, label, listing, nat, nil, record, reference, relation, rows, variant
 from tests.bend import MODULES, closure
 
 OWNER, STRANGER, ALICE, BOB = "did:plc:inkling", "did:plc:kimik3", "did:plc:glm", "did:plc:gemini"
 CREATOR = "ember"  # who made the lawless objects and the Thing below
-
-
-DEAL = record(amendment=record(object=label(""), law=label("")), parties={"tag": "list", "items": [label(ALICE), label(BOB)]},
-              terms=label("t"), piece=label(""), signatures=relation(), withdrawn=label(""), closed=nat(0))
 
 
 def setting(value):
@@ -89,9 +85,14 @@ class Strangers(Forging):
             self.refused(r, "owner")
             self.assertEqual((self.view(obj)["pin"], field(self.view(obj)["state"], "owner")), (before["pin"], label(OWNER)))
 
-    # 2. A non-party cannot amend a Deal; a stranger cannot reprogram or amend a Tide.
-    def test_a_stranger_cannot_amend_a_deal_or_a_tide(self):
-        self.create("deal", "Deal", DEAL, by=ALICE)
+    # 2. A stranger cannot amend a bond (its record's owner clause) nor reprogram or amend a Tide.
+    def test_a_stranger_cannot_amend_a_bond_or_a_tide(self):
+        r = self.host.send(op="world-create", principal=ALICE, identity="mk-deal", object="deal", modules=closure("Record"), entry="initial",
+                           seed=record(owner=label(ALICE), fields=listing([record(name=label("parties"), value=label("glm gemini"))])),
+                           law=genesis.RECORD_LAW + "\n" + genesis.SIGNER_LAW)
+        self.assertEqual(r["status"], "created", r)
+        r = self.host.send(op="world-reprogram", principal=ALICE, identity="body-deal", object="deal", version=0, package=body("bond"), mode="extend")
+        self.assertEqual(r["status"], "admitted", r)
         self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation()))
         law = 'law open: request.kind == 0 or request.subject == "%s"' % STRANGER
         for obj in ("deal", "tide"):
@@ -145,25 +146,7 @@ class Strangers(Forging):
         self.refused(self.propose("stone", {"holder": setting(reference(STRANGER))}), "owner")
         self.refused(self.propose("stone", {"holder": setting(reference(""))}, who=CREATOR), "methods")
 
-    # 7. A party signs only for themselves, and only by countersigning.
-    def test_a_party_cannot_forge_another_partys_signature(self):
-        self.create("deal", "Deal", DEAL, by=ALICE)
-        forged = record(principal=label(BOB), handle=label("gemini"), post=label("at://gemini/p/1"))
-        self.refused(self.propose("deal", {"signatures": inserting(forged)}, who=ALICE), "members")
-        own = record(principal=label(ALICE), handle=label("glm"), post=label("at://glm/p/1"))
-        self.refused(self.propose("deal", {"signatures": inserting(own)}, who=ALICE), "members")
-        # The Bend law refuses the same signature made by a countersign that signs for another.
-        with open(MODULES["Deal"]) as handle:
-            source = handle.read()
-        old = "signing({principal: context.principal, handle: context.handle,"
-        assert source.count(old) == 1, "Deal changed: the variant no longer signs for another"
-        variant_ = closure("Deal", override={"Deal": source.replace(old, 'signing({principal: "%s", handle: context.handle,' % BOB)})
-        r = self.host.send(op="world-create", principal=ALICE, identity="mk-deal2", object="deal2", modules=variant_, entry="initial", seed=DEAL)
-        self.assertEqual(r["status"], "created", r)
-        r = self.turn("deal2", "receive", record(text=label("delvetalk deal2 countersign"), post=label("at://glm/p/2")), principal=ALICE)
-        self.refused(r, "signer")
-
-    # 8. Nobody enters a room's passage but by entering and choosing: the record's law refuses a
+    # 7. Nobody enters a room's passage but by entering and choosing: the record's law refuses a
     # stranger's proposal (`owner`), and the room's methods write presence only for the principal.
     def test_a_stranger_cannot_place_themselves_in_a_room(self):
         secret = GATE + [passage("vault", "The vault.", [choice("Out", "gate")])]

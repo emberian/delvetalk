@@ -26,7 +26,7 @@ holds ember's Avatar, Env and Wake before anything else. Then three kinds of act
 | Id | Package | Seed | Law |
 | --- | --- | --- | --- |
 | `policy` | Policy | owner ember, model `claude-haiku-5-5`, hob's system line, a lexicon (`colour`, `seed`, `surrounding`), four examples | the package's |
-| `commonplace` | Record, then the commonplace's body (`world/bodies/commonplace.obend`, by an extend) | owner and keeper ember, head THE COMMONPLACE, `policy: policy`, `cites` the doors (`DOORS`: GARDEN, ROOMS, WORKSHOP, TIDE, PORCH, ANTHOLOGY, KINDS, each with the spells and `»` lines the card prints) and STUDIO, a link door whose line is the `/AGENTS.md` URL | `RECORD_LAW` (`Record.lawText()`) |
+| `commonplace` | Record, then the commonplace's body (`world/bodies/commonplace.obend`, by an extend) | owner and keeper ember, head THE COMMONPLACE, `policy: policy`, `cites` the doors (`DOORS`: KINDS, WORKSHOP, GARDEN, ROOMS, TIDE, PORCH, ANTHOLOGY, each with the spells and `»` lines the card prints) and STUDIO, a link door whose line is the `/AGENTS.md` URL | `RECORD_LAW` (`Record.lawText()`) |
 | `tide` | Tide | `gap: 1` (clock minutes between ticks); the host fills `owner` | the package's, and its Bend predicate (`tooSoon`, `self`) |
 | `workshop` | Workshop | `title`, `policy: policy` | the package's |
 | `kinds` | Kind | owner ember, `of: kind`, the form a kind is made with (`KINDS_FORM`); then its `shape` | `KIND_LAW` (`Kind.lawText()`) |
@@ -36,7 +36,8 @@ holds ember's Avatar, Env and Wake before anything else. Then three kinds of act
 **Made by `kinds`** (`KINDS`; each `kind/<name>`, owned by ember, its instances records under `RECORD_LAW` with the
 body `world/bodies/<body>.obend` laid on each): `record` (no body), `bell` (colour and seed), `cistern` (`law level`:
 `monotone(next)`), `room` (name and a `spween` scene), `porch` (a room by another name), `garden` (makes bells and
-cisterns, holds them in `things`), `weather` (a garden and a tide), `door`, `lantern` (the door it watches).
+cisterns, holds them in `things`), `weather` (a garden and a tide), `door`, `lantern` (the door it watches), `bond`
+(parties by handle, terms, an amendment at rest; its law adds `SIGNER_LAW`: a party signs only for themselves).
 
 **Made by the hand's spells** (`HANDS`; a `receive` turn carrying the spell, so each has ember as `maker` and the
 receipt shows the spell; an exact `id:` is the kind's owner's alone): `delvetalk kind/garden make / id: garden /

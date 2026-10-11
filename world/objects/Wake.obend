@@ -184,13 +184,13 @@ def changedSubscriptions(state: State, input: {object: Plans.Reference, field: S
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.subscriptionColumns), Lists.List.nil(), context, state)
 def changedThings(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Plans.Reference>, retracted: Lists.List<Plans.Reference>}, context: Abi.Context) -> Activity<Done>:
   delivered(input.object.object, input.field, Lists.map(input.inserted, fn(r: Plans.Reference) -> Rows.Columns: Rows.one(Rows.text("object", r.object), Rows.none())), Lists.List.nil(), context, state)
-def changedSensed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Rows.Sensed>, retracted: Lists.List<Rows.Sensed>}, context: Abi.Context) -> Activity<Done>:
+def changedSensed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Events.Event>, retracted: Lists.List<Events.Event>}, context: Abi.Context) -> Activity<Done>:
   delivered(input.object.object, input.field, Lists.map(input.inserted, Rows.sensedColumns), if input.object.object == state.env.object && input.field == "buffer" then input.inserted else Lists.List.nil(), context, state)
 # Only the watched object's own change counts (the host runs the delivery with it as caller).
-def delivered(object: String, field: String, rows: Lists.List<Rows.Columns>, events: Lists.List<Rows.Sensed>, context: Abi.Context, state: State) -> Activity<Done>:
+def delivered(object: String, field: String, rows: Lists.List<Rows.Columns>, events: Lists.List<Events.Event>, context: Abi.Context, state: State) -> Activity<Done>:
   if context.caller != object then Done.fired({count: 0n}) else sensed(events, object, field, rows, 0n, state)
 # Each event fires the event triggers it matches, then the rows triggers judge the rows.
-def sensed(events: Lists.List<Rows.Sensed>, object: String, field: String, rows: Lists.List<Rows.Columns>, count: Nat, state: State) -> Activity<Done>:
+def sensed(events: Lists.List<Events.Event>, object: String, field: String, rows: Lists.List<Rows.Columns>, count: Nat, state: State) -> Activity<Done>:
   match events:
     case nil(_): ruled(state.triggers, object, field, rows, count, state)
     case cons(c): fire(state.triggers, c.head, c.tail, object, field, rows, count, state)
@@ -420,9 +420,9 @@ def isCall(action: Action) -> Bool:
     case call(_): true
     case _: false
 # The event that woke a trigger, as a line.
-def woke(event: Rows.Sensed) -> String:
+def woke(event: Events.Event) -> String:
   "{event.kind} from {Card.handle(event.actor)}: {event.text}"
-def matches(on: On, event: Rows.Sensed) -> Bool:
+def matches(on: On, event: Events.Event) -> Bool:
   match on:
     case mention(m): event.kind == "mention" && event.actor == m.actor
     case keyword(k): Text.contains(event.text, k.term)
@@ -433,11 +433,11 @@ def matches(on: On, event: Rows.Sensed) -> Bool:
     case rows(_): false
 # Each matching trigger acts, in order, by explicit recursion (a send never sits in a
 # lambda: an activity in a closure is refused); then the next event, then the rows triggers.
-def fire(triggers: Lists.List<Trigger>, event: Rows.Sensed, events: Lists.List<Rows.Sensed>, object: String, field: String, rows: Lists.List<Rows.Columns>, count: Nat, state: State) -> Activity<Done>:
+def fire(triggers: Lists.List<Trigger>, event: Events.Event, events: Lists.List<Events.Event>, object: String, field: String, rows: Lists.List<Rows.Columns>, count: Nat, state: State) -> Activity<Done>:
   match triggers:
     case nil(_): sensed(events, object, field, rows, count, state)
     case cons(c): if matches(c.head.event, event) then acted(c.head.action, c.tail, event, events, object, field, rows, count, state) else fire(c.tail, event, events, object, field, rows, count, state)
-def acted(action: Action, rest: Lists.List<Trigger>, event: Rows.Sensed, events: Lists.List<Rows.Sensed>, object: String, field: String, rows: Lists.List<Rows.Columns>, count: Nat, state: State) -> Activity<Done>:
+def acted(action: Action, rest: Lists.List<Trigger>, event: Events.Event, events: Lists.List<Events.Event>, object: String, field: String, rows: Lists.List<Rows.Columns>, count: Nat, state: State) -> Activity<Done>:
   match world.send({object: target(action, state), method: method(action), argument: {text: woke(event)}}):
     case _: fire(rest, event, events, object, field, rows, count + 1n, state)
 def target(action: Action, state: State) -> Plans.Reference:
@@ -452,7 +452,7 @@ def method(action: Action) -> String:
     case call(c): c.method
 # The owner, in a direct turn, tells the wake what happened.
 def sense(state: State, input: {event: Events.Event}, context: Abi.Context) -> Activity<Done>:
-  if context.principal != state.owner then notOwner(state) else fire(state.triggers, extend(input.event, {n: 0n}), Lists.List.nil(), "", "", Lists.List.nil(), 0n, state)
+  if context.principal != state.owner then notOwner(state) else fire(state.triggers, input.event, Lists.List.nil(), "", "", Lists.List.nil(), 0n, state)
 form mention:
   actor: text 1..128
 form keyword:

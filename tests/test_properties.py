@@ -120,6 +120,9 @@ def outside(form, arg, rng):
     return None
 
 
+HOST_FILLED = ("fields", "spell", "misfit")
+
+
 def malformed(t, rng):
     """A value the method does not take: another shape, a missing field, an extra field, a wrong tag."""
     fields = fields_of(t) if t.get("tag") == "field" else []
@@ -127,8 +130,8 @@ def malformed(t, rng):
     good = value(t, rng)
     if pick == 0 or not fields:
         return rng.choice([label("x"), nat(3), {"tag": "list", "items": []}, record(nonsense=label("x"))])
-    # The host fills `fields` and `misfit` of a `receive` (HOST-HANDOFF 5.121): leaving them out is no misfit.
-    droppable = [i for i, f in enumerate(good["fields"]) if f["name"] not in ("fields", "misfit")]
+    # The host fills `fields`, `spell` and `misfit` of a `receive` (HOST-HANDOFF 5.121, 5.149): leaving them out is no misfit.
+    droppable = [i for i, f in enumerate(good["fields"]) if f["name"] not in HOST_FILLED]
     if pick == 1 and droppable:
         i = droppable[0]
         return dict(good, fields=good["fields"][:i] + good["fields"][i + 1:])
@@ -136,7 +139,7 @@ def malformed(t, rng):
         pick = 2
     if pick == 2:
         return dict(good, fields=good["fields"] + [{"name": "zz", "value": nat(1)}])
-    typed = [i for i, (name, m) in enumerate(fields) if name not in ("fields", "misfit") and m.get("tag") in ("label", "natural", "boolean", "field", "variant", "list")]
+    typed = [i for i, (name, m) in enumerate(fields) if name not in HOST_FILLED and m.get("tag") in ("label", "natural", "boolean", "field", "variant", "list")]
     if not typed:
         return label("x")
     i = rng.choice(typed)
@@ -208,7 +211,9 @@ class Run:
             out = reply["receipt"]["outcome"]
             if out.get("class") not in CLASSES:
                 self.fail("a refusal outside the closed set", request, out)
-            if out["class"] == "lawRefused" and not (out.get("clause") and out.get("reading")):
+            # A Bend law's verdict carries its reading; a text law's is voiced in the reason (`refused <clause>: <reading>`).
+            voiced = out.get("reading") or (out.get("reason") or "").partition("refused %s: " % out.get("clause"))[2]
+            if out["class"] == "lawRefused" and not (out.get("clause") and voiced):
                 self.fail("a law refusal without its clause and reading", request, out)
             if self.height() != before + 1:
                 self.fail("a refused turn did not journal exactly one entry", request, self.height() - before)

@@ -55,7 +55,7 @@ class Genesis(unittest.TestCase):
         self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (7, 7))
         ids = set(genesis.existing(host, o))
         self.assertEqual([l for l, to, _ in genesis.DOORS if to not in ids], [])  # every door with an object resolves
-        self.assertEqual([d[0] for d in genesis.DOORS] + [genesis.STUDIO[0]], ['GARDEN', 'ROOMS', 'WORKSHOP', 'TIDE', 'PORCH', 'ANTHOLOGY', 'KINDS', 'STUDIO'])
+        self.assertEqual([d[0] for d in genesis.DOORS] + [genesis.STUDIO[0]], ['KINDS', 'WORKSHOP', 'GARDEN', 'ROOMS', 'TIDE', 'PORCH', 'ANTHOLOGY', 'STUDIO'])
         self.assertEqual([(m['object'], m['body']) for m in made if 'body' in m], [('commonplace', 'admitted')])
         # the garden cites its weather, which is what lets the weather write the garden's weather line
         self.assertIn('weather', [{f['name']: f['value'] for f in d['fields']}['label']['value'] for d in self.view('garden')['cites']['items']])
@@ -227,6 +227,15 @@ class Commonplace(unittest.TestCase):
             if not self.host.send({'op': 'world-pending'}).get('count'):
                 return
 
+    def test_an_arrivals_own_cards_are_not_what_changed(self):
+        """Playtest 2 D5: arrival makes a principal's avatar, env and wake; the commonplace names none of them,
+        whatever names the principal (a DID, a Zulip id)."""
+        for who, handle in (('did:plc:arriving', 'arriving.delve.town'), ('zulip:tulip.arke.me/77', 'Kestrel')):
+            self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': who, 'handle': handle})
+        card = self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'commonplace'})['text']
+        self.assertNotIn('arriving', card)
+        self.assertNotIn('zulip:', card)
+
     def owner(self, method, ident, **fields):
         got = self.host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'commonplace', 'method': method,
                               'identity': ident, 'argument': record(**{k: label(v) for k, v in fields.items()})})
@@ -256,10 +265,8 @@ class Commonplace(unittest.TestCase):
         self.assertTrue(all(' by ' in c and ', entry ' in c for c in changed), changed)
         self.assertNotIn('commonplace v', blank)  # its own greetings and doors are not news
         self.assertIn('  delvetalk kinds make / name: lamp / of: record\n  » kind/lamp, a kind anyone makes\n  delvetalk garden/bell/1 ?\n', blank)
-        self.assertIn('GARDEN\n  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n'
-                      '  » a bell, garden/bell/N; you hear when it rings\n'
-                      '  delvetalk garden/bell/1 rain / text: it rained here first\n'
-                      '  » it keeps who rained; bell/1 has 2, the seventh rings it\n', blank)
+        # KINDS and WORKSHOP lead (playtest 2, F1): what is clipped is the places, from the end.
+        self.assertIn('\nKINDS\n  delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80\n  » kind/lamp, a kind anyone makes\nWORKSHOP\n', blank)
         self.assertRegex(blank, r'… and \d+ more\n')  # the card is one budget (Card.limit): the doors it has no room for are counted
         self.assertIn('STUDIO · scratch worlds and REPL: ' + ORIGIN + '/AGENTS.md\n', blank)  # a link door is never clipped
         self.assertTrue(blank.endswith('Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n'), blank)

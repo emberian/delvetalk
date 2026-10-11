@@ -64,10 +64,14 @@ def exists<T>(relation: Relation<T>, predicate: T -> Bool) -> Bool:
 # The row with this key: `key` is a record of key columns (`{who: who}`), compared by canonical
 # bytes. A stored relation keyed by exactly those columns is binary-searched, probing its keys and
 # fetching only the row found, when read; any other relation is walked to the first row not
-# below the key. `keyOf` is the projection onto the key's own columns, which relationLookup reads
-# itself: it goes when the callers drop it.
-def lookup<T, K>(relation: Relation<T>, key: K, keyOf: T -> K) -> Lists.Maybe<T>:
+# below the key.
+def lookup<T, K>(relation: Relation<T>, key: K) -> Lists.Maybe<T>:
   relationLookup(relation, key)
+# Whether a row has this key.
+def has<T, K>(relation: Relation<T>, key: K) -> Bool:
+  match relationLookup(relation, key):
+    case some(_): true
+    case none(_): false
 # The rows sorted by another key (stable: rows `by` ties keep their key order).
 def order<T, K>(relation: Relation<T>, by: T -> K) -> Lists.List<T>:
   sorted(rows(relation), by)

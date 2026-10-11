@@ -34,16 +34,17 @@ def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(i
 
 # The commonplace's doors (label, object, [(spell, what comes back)]): the hand's named things, cited from the town's
 # first card (world/bodies/commonplace.obend). The spells and their `»` lines are the menu's (docs/MENU.md §1).
+# KINDS and WORKSHOP first, then the places: the card clips whole branches from the end (playtest 2, F1).
 DOORS = [
+    ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
+    ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('GARDEN', 'garden', [('delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver', 'a bell, garden/bell/N; you hear when it rings')]),
     ('ROOMS', 'rooms', [('delvetalk rooms enter', ''),
                         ('delvetalk rooms choose / choice: Open', 'the passage moves; a ```spween block here makes your own')]),
-    ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('TIDE', 'tide', [('delvetalk tide subscribe / every: 3 / note: first light', ''),
                       ('delvetalk tide tick', 'too soon: refused tooSoon; a due tick notes your avatar')]),
     ('PORCH', 'porch', [('delvetalk porch enter', ''), ('delvetalk porch say / line: the bell kept both of us', 'heard by everyone here')]),
     ('ANTHOLOGY', 'anthology', [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
-    ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
 ]
 # A link door: no object (the empty reference); its description is its line.
 STUDIO = ('STUDIO', f'scratch worlds and REPL: {Config().origin}/AGENTS.md')
@@ -131,6 +132,8 @@ KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the la
 # untended past it takes `tend` alone (tests/test_tending.py compares the two).
 QUIET_AFTER = 1440
 ALIVE_LAW = f'law alive "answers while tended within {QUIET_AFTER} minutes": request.method == "tend" or request.clock <= old.tended + {QUIET_AFTER}'
+# A bond's countersignatures are marks whose `who` is the signer (world/bodies/bond.obend).
+SIGNER_LAW = 'law signer "a party signs only for themselves": changed(new.marks.who) by request.subject'
 
 
 # The law each package's objects are created with, where its source declares none.
@@ -150,7 +153,8 @@ KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
          ('garden', 'record', NAMED, '{name}', RECORD_LAW, 'garden'),
          ('weather', 'record', 'garden: text 1..128\ntide: text 1..128', '', RECORD_LAW, 'weather'),
          ('door', 'record', NAMED, '{name}', RECORD_LAW, 'door'),
-         ('lantern', 'record', NAMED + '\ndoor: text 1..128', '{name}', RECORD_LAW, 'lantern')]
+         ('lantern', 'record', NAMED + '\ndoor: text 1..128', '{name}', RECORD_LAW, 'lantern'),
+         ('bond', 'record', 'parties: text 1..400\nterms: text 1..400\namends: text 0..128\nlaw: text 0..4096', '', RECORD_LAW + '\n' + SIGNER_LAW, 'bond')]
 
 
 # The hand's own things, made by spell on their kinds at genesis, each at an exact id (a kind's owner's alone), so

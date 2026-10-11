@@ -13,6 +13,14 @@ import ./Text.obend as Text
 # (`keeper` ""): anyone inspirits it once (`inspirit / surrounding:`), and their words become what
 # surrounds it (its description) and they its keeper, who alone renames or redescribes it after;
 # the room it lies in gets the line. Before that its lenses are the owner's.
+#
+# Who may change it is its law's alone, never its code's, so what the host lends (`delvetalk <thing>
+# lend / to / method: set / until`) runs: the borrower's `set` is judged with the keeper as subject.
+# A circle is a bond at rest (kind/bond): the owner names one (`set / circle:`), and the thing amends
+# its own law so the bond's signers set it as its keeper does (LAW §4 D: `request.subject in
+# "<bond>".marks.who`). Its law is the package's below; `lawWith(circle)` is that text with a
+# circle's signers in the keeper's disjunct, which naming a circle amends it to (`lawText()`, the
+# package's own, is test-checked equal to the clauses declared here).
 # offer: custody offered to someone, open until a clock time (a card address is a versioned
 # capability, not a durable inbox: giving is offer and accept, never a pointer move).
 sum Offer:
@@ -29,13 +37,21 @@ record State:
   location: Plans.Reference
   offer: Offer
   copyable: Bool
+  circle: String
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", name: "", description: "", holder: Plans.nobody(), holderHandle: "", location: Plans.nobody(), offer: Offer.none({}), copyable: true}
+  {owner: "", keeper: "", keeperHandle: "", name: "", description: "", holder: Plans.nobody(), holderHandle: "", location: Plans.nobody(), offer: Offer.none({}), copyable: true, circle: ""}
 # Anyone moves a thing (its own code checks who holds it); its name, description and copying are
-# its keeper's once it is inspirited, its owner's before; only the owner reprograms it.
-law owner "the owner stays and alone reprograms it; its name, description and copying are its keeper's once it is inspirited, the owner's before; anyone moves it": unchanged(owner) and (request.kind == 0 or request.subject == new.owner) and ((unchanged(name) and unchanged(description) and unchanged(copyable)) or request.subject == new.keeper or (request.subject == new.owner and old.keeper == ""))
+# its keeper's once it is inspirited (and its circle's, when it has one), its owner's before; the
+# owner alone names the circle, amends or reprograms it.
+law owner "the owner stays, names its circle and alone reprograms it; its name, description and copying are its keeper's once it is inspirited, the owner's before; anyone moves it": unchanged(owner) and (request.kind == 0 or request.subject == new.owner) and (unchanged(circle) or request.subject == new.owner) and ((unchanged(name) and unchanged(description) and unchanged(copyable)) or request.subject == new.keeper or (request.subject == new.owner and old.keeper == ""))
 law keeper "it is inspirited once, by whoever does it, and keeps that keeper": writeOnce(keeper) and (unchanged(keeper) or request.subject == new.keeper)
-law methods "Only its own methods write it; a proposed write is refused.": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))
+law methods "only its own methods write it; a proposed write is refused": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))
+def lawText() -> String:
+  lawWith("")
+def lawWith(circle: String) -> String:
+  let circled = if circle == "" then "" else " or request.subject in \"{circle}\".marks.who"
+  let whose = if circle == "" then "its keeper's" else "its keeper's and {circle}'s signers'"
+  "law owner \"the owner stays, names its circle and alone reprograms it; its name, description and copying are {whose} once it is inspirited, the owner's before; anyone moves it\": unchanged(owner) and (request.kind == 0 or request.subject == new.owner) and (unchanged(circle) or request.subject == new.owner) and ((unchanged(name) and unchanged(description) and unchanged(copyable)) or request.subject == new.keeper{circled} or (request.subject == new.owner and old.keeper == \"\"))\nlaw keeper \"it is inspirited once, by whoever does it, and keeps that keeper\": writeOnce(keeper) and (unchanged(keeper) or request.subject == new.keeper)\nlaw methods \"only its own methods write it; a proposed write is refused\": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == \"\"))"
 # The second tier: custody moves from one holder to another only by an accepted offer:
 # the new holder is the offer's `to`, the turn is that avatar's own call (context.caller),
 # and the clock (context.clock) is before `until`. Picking up (from nobody) and putting down (to
@@ -59,8 +75,10 @@ sum Why:
   nothingOffered: {}
   notOffered: {to: String}
   expired: {until: Nat}
-  notOwner: {owner: String}
   inspirited: {by: String}
+  unsettled: {bond: String}
+  noBond: {bond: String}
+  notAmended: {clause: String}
 def refusal(w: Why) -> Card.Refusal:
   match w:
     case alreadyHeld(a): {clause: "alreadyHeld", reading: "Already held by {a.by}"}
@@ -73,8 +91,10 @@ def refusal(w: Why) -> Card.Refusal:
     case nothingOffered(_): {clause: "nothingOffered", reading: "Nothing is offered."}
     case notOffered(n): {clause: "notOffered", reading: "It is offered to {n.to}"}
     case expired(e): {clause: "expired", reading: "The offer ran until clock {natText(e.until)}"}
-    case notOwner(n): {clause: "notOwner", reading: "Only {n.owner} changes it: its keeper, or its owner while it is unclaimed"}
     case inspirited(i): {clause: "keeper", reading: "Inspirited already, by {i.by}, who keeps it"}
+    case unsettled(u): {clause: "unsettled", reading: "{u.bond} is not at rest: a circle is a bond every party signed"}
+    case noBond(n): {clause: "noBond", reading: "{n.bond} is no bond you may read"}
+    case notAmended(n): {clause: n.clause, reading: "Its law did not take the circle: only its owner names one"}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
 # A refusal the speaker reads: its line, offered, and nothing written.
@@ -123,7 +143,7 @@ def offer(state: State, input: {to: String, until: Nat}, context: Abi.Context) -
 def offerFrom(to: Plans.Reference, until: Nat, context: Abi.Context, state: State) -> Activity<Done>:
   match state.offer:
     case open(o): told(Why.alreadyOffered({to: Card.name(o.to.object, context), until: o.until}))
-    case none(_): if until <= context.clock then told(Why.tooLate({now: context.clock})) else if to.object == "" then told(Why.noRecipient({})) else offerWritten(Offer.open({to: to, until: until}), "Offered to {Card.name(to.object, context)} until clock {natText(until)}; custody moves when they accept it from their avatar.\n\n", context, state)
+    case none(_): if until <= context.clock then told(Why.tooLate({now: context.clock})) else if to.object == "" then told(Why.noRecipient({})) else offerWritten(Offer.open({to: to, until: until}), "Offered to {Card.name(to.object, context)} until clock {natText(until)}; custody moves when they take it: delvetalk me accept / thing: {context.object}\n\n", context, state)
 def offerWritten(offer: Offer, line: String, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {offer: set offer}
   Card.tell(Done.done({}), Document.concat(Document.text(line), render(extend(state, {offer: offer}), context)))
@@ -157,18 +177,37 @@ def copying(context: Abi.Context, state: State) -> Activity<Done>:
   match world.create({package: "Thing", seed: {name: state.name, description: state.description, holder: Plans.nobody(), location: Plans.nobody(), copyable: state.copyable}, law: "", requireAbsent: Plans.nobody()}):
     case created(c): Card.tellTo(Done.done({}), context.principal, Document.text("Copied {state.name} as {c.object.object}.\n"))
     case refused(r): Card.tellTo(Done.refused({clause: r.clause, reading: "The world refused the copy ({r.clause})."}), context.principal, Document.text("Not copied: {r.clause}\n"))
-# Its name, description and whether it may be copied are lenses, the owner's: `delvetalk
-# <thing> set` and `name: ...` (the law refuses the same write from anyone else).
+# Its name, description and whether it may be copied are lenses, its keeper's (the owner's before):
+# `delvetalk <thing> set` and `name: ...`; its circle is the owner's. The law refuses anyone else's,
+# and admits whoever the keeper lent `set` to.
 def lenses() -> Lists.List<Form.Field>:
-  Lists.append(Lists.append(Lists.append(Lists.List.nil(), {name: "copyable", kind: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")})}), {name: "name", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "description", kind: Form.Kind.text({min: 0n, max: 400n})})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.List.nil(), {name: "copyable", kind: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")})}), {name: "name", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "description", kind: Form.Kind.text({min: 0n, max: 400n})}), {name: "circle", kind: Form.Kind.text({min: 0n, max: 128n})})
 # The host judged the value against the lens's kind; an unlensed field never reaches here.
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Done>:
-  if context.principal != keeperOf(state) then told(Why.notOwner({owner: keeperName(state, context)})) else setting(input.field, Card.valueText(input.value))
+  if input.field == "circle" then circling(Text.trim(Card.valueText(input.value)), context, state) else setting(input.field, Card.valueText(input.value), context, state)
 def lensEdits(field: String, value: String) -> Edits:
   if field == "copyable" then extend(keep(), {copyable: Plans.Edit.set({value: value == "yes"})}) else if field == "name" then extend(keep(), {name: Plans.Edit.set({value: value})}) else extend(keep(), {description: Plans.Edit.set({value: value})})
-def setting(field: String, value: String) -> Activity<Done>:
+def lensed(field: String, value: String, state: State) -> State:
+  if field == "copyable" then extend(state, {copyable: value == "yes"}) else if field == "name" then extend(state, {name: value}) else extend(state, {description: value})
+def setting(field: String, value: String, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = world.write(lensEdits(field, value))
-  Card.tell(Done.done({}), Document.text("Set {field} to {value}.\n"))
+  Card.tell(Done.done({}), Document.concat(Document.text("Set {field} to {value}.\n\n"), render(lensed(field, value, state), context)))
+# A circle is a bond at rest (its `atRest` view), or "" for none; the thing amends its own law to
+# name it, and the metarule admits that amendment from the owner alone.
+def circling(circle: String, context: Abi.Context, state: State) -> Activity<Done>:
+  if circle == "" then circled(circle, context, state) else bonded(circle, context, state)
+def bonded(circle: String, context: Abi.Context, state: State) -> Activity<Done>:
+  match world.viewDerived::<Bool>({object: {world: context.world, object: circle}, view: "atRest"}):
+    case derived(d): if d.value then circled(circle, context, state) else told(Why.unsettled({bond: circle}))
+    case _: told(Why.noBond({bond: circle}))
+def circled(circle: String, context: Abi.Context, state: State) -> Activity<Done>:
+  match world.amend({object: {world: context.world, object: context.object}, law: lawWith(circle)}):
+    case amended(_): circleWritten(circle, context, state)
+    case refused(r): told(Why.notAmended({clause: r.clause}))
+def circleWritten(circle: String, context: Abi.Context, state: State) -> Activity<Done>:
+  let written(_) = write {circle: set circle}
+  let line = if circle == "" then "No circle now; its keeper alone sets it.\n\n" else "Its circle is {circle}: whoever signed it sets it as its keeper does.\n\n"
+  Card.tell(Done.done({}), Document.concat(Document.text(line), render(extend(state, {circle: circle}), context)))
 # Who sets its lenses: its keeper once it is inspirited, its owner before.
 def keeperOf(state: State) -> String:
   if state.keeper == "" then state.owner else state.keeper
@@ -198,7 +237,14 @@ def inspirited(surrounding: String, context: Abi.Context, state: State) -> Activ
   Card.tell(Done.done({}), Document.concat(Document.text("Inspirited, {Card.name(context.principal, context)}: you keep it.\n\n"), render(extend(state, {keeper: context.principal, keeperHandle: context.handle, description: surrounding}), context)))
 # The card: what it is, who keeps it and where it is; unclaimed, the spell that inspirits it.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.text("{state.name}{kept(state, context)}{whereabouts(state, context)}.\n{surrounding(state, Card.called(context, \"thing\"))}{offerLine(state.offer, context)}")
+  let id = Card.called(context, "thing")
+  Document.text("{state.name}{kept(state, context)}{whereabouts(state, context)}.\n{surrounding(state, id)}{circleLine(state)}{offerLine(state.offer, id, context)}{lendLine(state, id, context)}")
+# Its circle, when it has one; the owner is told how to name one.
+def circleLine(state: State) -> String:
+  if state.circle == "" then "" else "Its circle: whoever signed {state.circle} sets it too.\n"
+# The keeper (the owner before) is shown the host's lend: the borrower sets it as them, until then.
+def lendLine(state: State, id: String, context: Abi.Context) -> String:
+  if context.principal != keeperOf(state) then "" else "Lend its setting: delvetalk {id} lend / to: <a handle, or me> / method: set / until: +<clock minutes>\n"
 def kept(state: State, context: Abi.Context) -> String:
   if state.keeper == "" then " — unclaimed" else ", kept by {Card.shown(state.keeper, state.keeperHandle, context)}{Card.mine(state.keeper, context)}"
 def whereabouts(state: State, context: Abi.Context) -> String:
@@ -206,13 +252,12 @@ def whereabouts(state: State, context: Abi.Context) -> String:
 def surrounding(state: State, id: String) -> String:
   let told = if state.description == "" then "" else "{state.description}\n"
   if state.keeper == "" then "{told}Inspirit it: delvetalk {id} inspirit / surrounding: <1 to 400 characters>\n» your words become what surrounds it, and you its keeper; once.\n" else told
-def offerLine(offer: Offer, context: Abi.Context) -> String:
+def offerLine(offer: Offer, id: String, context: Abi.Context) -> String:
   match offer:
     case none(_): ""
-    case open(o): offeredTo(o.to, o.until, context)
-def offeredTo(to: Plans.Reference, until: Nat, context: Abi.Context) -> String:
-  let yours = if Card.reads(to.object, context) then " (you): accept it from your avatar" else ""
-  "Offered to {Card.name(to.object, context)}{yours} until clock {natText(until)}.\n"
+    case open(o): offeredTo(o.to, o.until, id, context)
+def offeredTo(to: Plans.Reference, until: Nat, id: String, context: Abi.Context) -> String:
+  if Card.reads(to.object, context) then "Offered to you until clock {natText(until)}. Take it: delvetalk me accept / thing: {id}\n" else "Offered to {Card.name(to.object, context)} until clock {natText(until)}.\n"
 form acquire:
 form offer:
   to: text 1..128
@@ -221,9 +266,9 @@ form withdraw:
 form inspirit:
   surrounding: text 1..400
 # What the host offers a reader: inspirit while it is unclaimed, acquire while nobody holds it,
-# offer and withdraw to its holder, its lenses to its keeper (its owner before).
+# offer and withdraw to its holder, its lenses to its keeper (its owner before) and its owner.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Lists.concat(Lists.concat(if state.keeper == "" then Text.words("inspirit") else Text.words(""), if Plans.isNobody(state.holder) then Text.words("acquire") else Text.words("")), if Plans.same(state.holder, person(context)) then Text.words("offer withdraw") else Text.words("")), if context.principal == keeperOf(state) then Text.words("set") else Text.words(""))
+  Lists.concat(Lists.concat(Lists.concat(if state.keeper == "" then Text.words("inspirit") else Text.words(""), if Plans.isNobody(state.holder) then Text.words("acquire") else Text.words("")), if Plans.same(state.holder, person(context)) then Text.words("offer withdraw") else Text.words("")), if context.principal == keeperOf(state) || context.principal == state.owner then Text.words("set") else Text.words(""))
 # An avatar's accept calls transfer, the Workshop's copy sends copy; drop names a place.
 def methods() -> Lists.List<String>:
   Text.words("transfer copy drop")
