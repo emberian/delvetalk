@@ -344,13 +344,41 @@ def quotes (text : String) : Option String := do
   guard (lines.any fun l => isSpellAt (l.trimAsciiStart.toString.toList) 0)
   return s!"This quotes a card ({(header.trimAscii.toString.take 40).toString}): its spells are examples, so none is cast. Write the spell alone, at the start of a line."
 
+/-- A post that is one spell block and nothing else: its non-blank lines (inside one code fence, or
+    bare) are a `delvetalk` line and field lines, every one starting with the first's indent. Dedented,
+    it is cast as written (a Zulip code block, a spell pasted with its indent); an indented spell among
+    other lines stays an example. -/
+def wholeSpell (text : String) : Option String := do
+  let all := text.splitOn "\n"
+  let blank := fun (l : String) => l.trimAscii.isEmpty
+  let opens := fun (l : String) => ["```", "```text", "```delvetalk"].contains l.trimAscii.toString
+  let shut := fun (l : String) => l.trimAscii.toString == "```"
+  let body := all.filter (!blank ·)
+  let fenced := body.length ≥ 3 && opens (body.headD "") && shut (body.getLastD "")
+  let inner := if fenced then
+      let from_ := all.findIdx opens
+      let to := all.length - 1 - (all.reverse.findIdx shut)
+      (all.drop (from_ + 1)).take (to - from_ - 1)
+    else all
+  let lines := inner.filter (!blank ·)
+  let first ← lines.head?
+  let indent := String.ofList (first.toList.takeWhile (fun c => c == ' ' || c == '\t'))
+  guard (fenced || !indent.isEmpty)
+  guard (lines.all (·.startsWith indent))
+  let dedent := fun (l : String) => if l.startsWith indent then (l.drop indent.length).toString else l
+  guard (isSpellAt (dedent first).toList 0)
+  guard ((text.splitOn "<<").length > 1 || (lines.drop 1).all fun l => looksLikeField (dedent l).toList)
+  return "\n".intercalate (inner.map dedent)
+
 /-- The spell a reply means: its `delvetalk <card> <action>` line at the margin with the fields that
     follow (inline after the action, or one per line; a later spell line at the margin replaces it), a
-    quotation of a card (`quotes`), or why there is none. -/
+    quotation of a card (`quotes`), a post that is one spell block (`wholeSpell`), or why there
+    is none. -/
 def parse (text : String) : Parsed :=
-  match quotes text with
-  | some reason => .quotation reason
-  | none => parseFrom text.toList false
+  match quotes text, wholeSpell text with
+  | some reason, _ => .quotation reason
+  | none, some spell => parseFrom spell.toList false
+  | none, none => parseFrom text.toList false
 
 /-- Field lines with no delvetalk line: every `name: value` line outside tagged fences and `>`
     quotation, in order. -/

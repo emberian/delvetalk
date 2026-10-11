@@ -357,8 +357,9 @@ stands, and the card's own `actions(state, context)` leave that reader.
 **The host reads spells** (`Host/Spell.lean`, the grammar in Lean, rule for
 rule). The last line `delvetalk CARD ACTION` at the margin (fields on the line after
 ` / ` or commas, or on `field: value` lines), `<<DELIM` … `DELIM` blocks,
-fences and quotes skipped; an indented `delvetalk` line is an example, never cast (every card prints its spells
-indented), and a text holding a card's header line (`✾ `, `Seven doors.`, `KIND `, a line ending `Make one:`)
+fences and quotes skipped; an indented `delvetalk` line among other lines is an example, never cast (every card
+prints its spells indented), while a post that is one spell block and nothing else (indented, or in one plain fence)
+is dedented and cast; and a text holding a card's header line (`✾ `, `Seven doors.`, `KIND `, a line ending `Make one:`)
 beside a `delvetalk` line quotes that card: refused `badSpell`, clause `quotation`, nothing cast; a `source` field takes the reply's first ```obend
 fence. The host resolves the card, looks the action up in its declared forms,
 builds the typed argument (a word for a case of a closed sum) and runs the

@@ -1494,9 +1494,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    answers `{quotation {reason}}`, and hob's text that quotes a card is `unclear`. Fixtures: the four recorded
    indented rows and the playtest's two indented plantings no longer cast (`tests/fixtures/spells`;
    `test_spell`'s pair moved to the margin); `test_host_spell.Margin` (the owner's post, the root menu v4 preview
-   under a greeting; a margin spell; the same indented by two spaces, four, a tab). Still open: Bend's reduced
-   reader (`world/lib/Spell.obend`, H1) keeps its quoted fallback, and casting up to three literal spells of one
-   post in order (now the last at the margin is cast).
+   under a greeting; a margin spell; the same indented by two spaces, four, a tab, among other lines). A post that
+   is one spell block and nothing else (`wholeSpell`: its non-blank lines a `delvetalk` line and field lines, each
+   starting with the first's indent, bare or inside one ```` ``` ````/```` ```text ```` fence) is dedented and cast:
+   a Zulip code block, a spell pasted with its indent (`Margin`'s block cases). Still open: casting up to three
+   literal spells of one post in order (now the last at the margin is cast); Bend's reduced reader is the objects
+   lane's to delete (H1).
 
 ## 6. Gotchas
 
