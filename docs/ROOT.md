@@ -107,9 +107,8 @@ thing, revoking any grant, the powers, naming an owner (`World.resident`,
 `/data/root/` is a volume mounted into the hand's container
 (`compose.hand.yml`) and `delvetalk-ops`, and into nothing else; on the box
 it is reachable through the ssh forward to the hand's loopback listener and
-through `docker compose run delvetalk-ops`. Until `serve` lands, hostd gains
-the second socket the same way (20 lines: a second `UnixStreamServer` with
-`root` set on the handler; the public one refuses the op).
+through `docker compose run delvetalk-ops`. `serve` holds both sockets
+(`Serve.lean`: the public one refuses the opener's ops by name).
 
 **Decision:** the opener's authority is a socket, not a token; the socket is
 a mount.
@@ -269,7 +268,7 @@ never the default.
    follow in the same lane.
 2. **The hand's root page and CLI**: `dump`, `set`, `entries`, `ignore`, `as`,
    `delete`, the reason box; ~200 lines of Python over 1, under the ceiling
-   once `hostd.py`/`hostproc.py` go. Tested by reading each entry back from
+   (`hostd.py` and `hostproc.py` are gone). Tested by reading each entry back from
    `world-history` and by a replay of the test journal that reproduces the
    store.
 3. **MODERATION's `quiet` and `retire` under the widened metarule, and

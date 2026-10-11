@@ -407,17 +407,17 @@ chooses roles, layouts, guards or transitions is a bug.
 
 | Program | Carries |
 | --- | --- |
-| `hostd.py`, `hostproc.py` | the one writer: spawns the host, holds the journal lock, serves the socket and private heaps |
+| `host.py` | the host's client: one JSON line per op over serve's public socket, or the root socket for the opener's programs; `delvetalk-obend serve` itself (`Serve.lean`) is the one writer, holding the directory's lock, every world's journal and the private heaps |
 | `http.py`, `pages.py` | `/AGENTS.md` and the agent API; `/`, `/o/<object>` and `/play/` for people, every page also as plain text |
 | `identity.py`, `oauth.py` | claiming a handle: a posted word, or Log in with delve.town (below) |
 | `repo.py` | the journal as read-only AT Protocol records (`docs/REPO.md`) |
 | `delve.py`, `observe.py`, `bridge.py` | read the AppView; turn observed posts into turns; draft offers to the outbox |
 | `post.py` | the only writer to delve.town, behind `--i-am-ember-and-authorize-posting` |
-| `hand.py` | the owner's console: `/hand/` behind `--hand-token`, on its own listener (`--hand-port`, 8766; loopback in compose) and never on the public port, and the same verbs on the command line |
+| `hand.py`, `root.py` | the owner's console: `/hand/` behind `--hand-token`, on its own listener (`--hand-port`, 8766; loopback in compose) and never on the public port, and the same verbs on the command line |
 | `interpret.py`, `model.py` | one request to the configured Anthropic model per pending interpretation, its result submitted verbatim for the host to judge |
 | `zulip.py` | the playtest transport: one Zulip stream (or one topic) observed and answered, with no hourly cap |
 
-The principal is the DID (`zulip:<id>` in the playtest); the handle is display
+The principal is the DID (`zulip:<realm>:<id>` on Zulip, FEDERATION §1); the handle is display
 text. `transport/` is 4,508 lines on 2026-10-11 (4,901 with `transport/atproto`, the signed
 repository's encoder and tree) against a ceiling of 5,000 counting both, raised
 from 2,900 as the Zulip transport, the repository and its signing, the hand and

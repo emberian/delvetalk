@@ -2,7 +2,7 @@
 
 What exists in the shared world before the first post, who owns it, and what
 the operator decides once. Everything here is done with `deploy/genesis.py` (one command over
-the hostd socket after `world-open`; `deploy/seed.py` creates a single object); nothing is special-cased in the host.
+serve's root socket; `deploy/seed.py` creates a single object); nothing is special-cased in the host.
 
 ## Principals
 
@@ -44,7 +44,7 @@ absent, the Avatar (id = the DID), the Env (`env/<did>`) and the Wake
 Wake, owned by the DID, as ordinary creates by the opener. A second arrival
 creates nothing. Nothing exists for a town member until they knock. The
 library sealed at `world-open` must hold those three modules (the Avatar imports
-`Places.obend`, which is in world/lib): hostd's `--library` seals world/lib plus world/objects/{Avatar,Env,Wake}.obend.
+`Places.obend`, which is in world/lib): serve's `--library` seals world/lib plus world/objects/{Avatar,Env,Wake}.obend.
 
 ## Posts recorded at genesis
 
@@ -72,7 +72,7 @@ After ember posts them by hand, `transport.post ... --object <object>` journals 
 
 ## The first hour, in order
 
-1. `docker compose up -d --wait delvetalk-hostd`; the healthcheck asks `world-status` for the journal's entry count (the opening entries: settings and the sealed library).
+1. `docker compose up -d --wait delvetalk-host`; the healthcheck asks `world-status` for the journal's entry count (the opening entries: settings and the sealed library).
 2. `deploy.genesis` arrives ember, creates the eleven objects, adds the directory's doors, starts ember's Wake, shelves the library's pages; five door pages are drafted.
 3. `docker compose --profile town up -d --wait`: the front, the bridge and the interpreter.
 4. ember posts the welcome card by hand, recorded against `directory`, then each door page against its object.
