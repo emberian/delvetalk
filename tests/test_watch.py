@@ -1,15 +1,17 @@
-"""deploy/watch.py: the probe against OPERATIONS' thresholds, one line per crossed condition, six hours between two
+"""`watch`: the probe against OPERATIONS' thresholds, one line per crossed condition, six hours between two
 lines for one condition and one hour for the two that page.
 
 Evidence for OPERATIONS section b (layer: transport).
 """
 import io
-import json
 import tempfile
 import unittest
-from pathlib import Path
 
-from deploy import watch
+from unittest import mock
+
+from transport import watch
+from transport.__main__ import main
+from transport.state import State
 
 
 def probe(at=100000, **more):
@@ -44,16 +46,18 @@ class Watch(unittest.TestCase):
 
     def test_one_line_per_condition_per_six_hours_and_the_two_that_page_hourly(self):
         with tempfile.TemporaryDirectory() as d:
-            sent, state = [], Path(d)
-            run = lambda p: ((state / 'p.json').write_text(json.dumps(p)),
-                             watch.main(['--state', d, '--probe', str(state / 'p.json'), '--unhealthy', 'delvetalk-host'], io.StringIO(), sent.append))
+            sent = []
+
+            def run(p):
+                with mock.patch.object(watch, 'probe', lambda st, host: p):
+                    main(['watch', '--state', d, '--unhealthy', 'delvetalk-host'], io.StringIO(), send=sent.append)
             run(probe(front={'5xx5m': 1}))
             self.assertEqual(sent, ['unhealthy: delvetalk-host (playbook A)', 'the front answered 1 5xx in five minutes (playbook A)'])
             run(probe(at=100000 + 3700, front={'5xx5m': 1}))
             self.assertEqual(sent[2:], ['unhealthy: delvetalk-host (playbook A)'])  # the host pages hourly; the 5xx waits six hours
             run(probe(at=100000 + 6 * 3600 + 1, front={'5xx5m': 1}))
             self.assertEqual(len(sent), 5)
-            self.assertEqual(len((state / 'watch.jsonl').read_text().splitlines()), 3)
+            self.assertEqual(len(State(d).watch_log.read_text().splitlines()), 3)
 
 
 if __name__ == '__main__':

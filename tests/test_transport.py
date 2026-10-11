@@ -13,6 +13,9 @@ from pathlib import Path
 from unittest import mock
 
 from transport import delve, identity, observe, post
+from transport.__main__ import main
+from transport.config import Config
+from transport.state import State
 
 FIX = Path(__file__).parent / 'fixtures' / 'delve'
 FEED = json.loads((FIX / 'town.delve.feed.getFeed.json').read_text())
@@ -49,14 +52,18 @@ class Script:
         return status, obj if isinstance(obj, bytes) else json.dumps(obj).encode()
 
 
+def stored(ob, after=0):
+    return [json.loads(js) for (js,) in ob.db.execute('SELECT json FROM observations WHERE seq > ? ORDER BY seq', (after,))]
+
+
 def run_observer(posts, state):
+    """-> (the observations this poll stored, the observer)."""
     t = Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': posts}),
                   'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})
-    ob = observe.Observer(state, delve.Client(t))
+    ob = observe.Observer(State(state), delve.Client(t))
+    before = ob.db.execute('SELECT COALESCE(MAX(seq), 0) FROM observations').fetchone()[0]
     ob.poll()
-    out = []
-    ob.drain(out.append)
-    return [json.loads(x) for x in out], ob
+    return stored(ob, before), ob
 
 
 class Classification(unittest.TestCase):
@@ -101,7 +108,7 @@ class Idempotence(unittest.TestCase):
             second, _ = run_observer(posts, d)
         self.assertEqual((len(first), second), (5, []))
 
-    def test_a_crash_mid_page_or_mid_emit_loses_and_repeats_no_post(self):
+    def test_a_crash_mid_page_loses_and_repeats_no_post(self):
         posts = [mk(i, f'p{i}') for i in range(6)]
         with tempfile.TemporaryDirectory() as d:
             calls = {'n': 0}
@@ -112,20 +119,13 @@ class Idempotence(unittest.TestCase):
                     raise RuntimeError('crash')
                 return 200, {'posts': posts[:3], 'cursor': 'c1'}
             t = Script(**{'town.delve.feed.searchPosts': search, 'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})
-            ob = observe.Observer(d, delve.Client(t))
+            ob = observe.Observer(State(d), delve.Client(t))
             with self.assertRaises(RuntimeError):
                 ob.poll()
-            seen = []
-
-            def die_on_second(js):
-                if len(seen) == 1:
-                    raise RuntimeError('crash during emit')
-                seen.append(js)
-            with self.assertRaises(RuntimeError):
-                ob.drain(die_on_second)
+            seen = stored(ob)
             ob.db.close()
             out, _ = run_observer(posts, d)
-        got = [json.loads(x)['uri'] for x in seen] + [o['uri'] for o in out]
+        got = [o['uri'] for o in seen + out]
         self.assertEqual(sorted(got), sorted(p['uri'] for p in posts))
         self.assertEqual(len(got), len(set(got)))
 
@@ -162,7 +162,7 @@ class Identity(unittest.TestCase):
         self.t = Script(**{
             'com.atproto.identity.resolveHandle': lambda p: (200, {'did': DID}),
             'com.atproto.repo.getRecord': lambda p: self.record['r'](p)})
-        self.id = identity.Identity(self.tmp.name, delve.Client(self.t), clock=lambda: self.now[0])
+        self.id = identity.Identity(State(self.tmp.name), delve.Client(self.t), clock=lambda: self.now[0])
         self.ch = self.id.challenge(self.HANDLE)
         self.uri = f'at://{DID}/town.delve.feed.post/3abc'
 
@@ -295,8 +295,7 @@ class Posting(unittest.TestCase):
             out = io.StringIO()
             with mock.patch.object(urllib.request.OpenerDirector, 'open', side_effect=AssertionError('network')) as op, \
                     mock.patch.object(post, 'send', side_effect=AssertionError('send')):
-                code = post.main(['--state', d, 'post', '--text-file', str(f), '--intent', 'test',
-                                  '--credentials', str(Path(d) / 'absent.json')], out)
+                code = main(['post', '--state', d, '--text-file', str(f), '--intent', 'test'], out)
             self.assertEqual(code, 2)
             self.assertEqual(op.call_count, 0)
             req = json.loads(out.getvalue())
@@ -313,7 +312,7 @@ class Posting(unittest.TestCase):
 
     def dry(self, d, args, client):
         out = io.StringIO()
-        code = post.main(['--state', d, 'post', '--intent', 't', *args], out, client)
+        code = main(['post', '--state', d, '--intent', 't', *args], out, client=client)
         return code, json.loads(out.getvalue())
 
     def test_threaded_reply_record_shape_and_only_gets(self):
@@ -340,8 +339,8 @@ class Posting(unittest.TestCase):
             f = Path(d) / 'b.txt'
             f.write_text('x')
             with mock.patch.object(post, 'send', side_effect=AssertionError('send')):
-                self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--wiki-edit', 'A \u203a B', '--body-file', str(f)], io.StringIO(), client), 1)
-                self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--text-file', str(f), '--reply-to', uri], io.StringIO(), client), 2)
+                self.assertEqual(main(['post', '--state', d, '--intent', 't', '--wiki-edit', 'A \u203a B', '--body-file', str(f)], io.StringIO(), client=client), 1)
+                self.assertEqual(main(['post', '--state', d, '--intent', 't', '--text-file', str(f), '--reply-to', uri], io.StringIO(), client=client), 2)
         self.assertNotIn('POST', {m for m, _ in t.calls})
 
     def test_mention_facets_use_utf8_byte_offsets_and_resolved_dids(self):
@@ -363,17 +362,9 @@ class Posting(unittest.TestCase):
             f.write_text('hello')
             err = io.StringIO()
             with mock.patch.object(post, 'send', side_effect=AssertionError('send')), mock.patch('sys.stderr', err):
-                code = post.main(['--state', d, 'post', '--text-file', str(f), '--intent', 't', '--host-socket', str(Path(d) / 'h.sock'),
-                                  post.FLAG], io.StringIO(), delve.Client(Script()))
+                code = main(['post', '--state', d, '--text-file', str(f), '--intent', 't', post.FLAG], io.StringIO(), client=delve.Client(Script()))
             self.assertEqual((code, json.loads(err.getvalue())['error']), (1, 'live_post_needs_object'))
             self.assertEqual(self.dry(d, ['--text-file', str(f)], delve.Client(Script()))[0], 2)
-        # --object without a journal is refused before anything happens
-        with tempfile.TemporaryDirectory() as d:
-            f = Path(d) / 't.txt'
-            f.write_text('x')
-            with mock.patch.object(post, 'send', side_effect=AssertionError('send')):
-                code = post.main(['--state', d, 'post', '--intent', 't', '--text-file', str(f), '--object', 'directory'], io.StringIO())
-        self.assertEqual(code, 1)
 
 
     def test_a_reply_to_a_post_with_seven_handles_is_quiet_unless_the_card_names_one(self):
@@ -401,12 +392,13 @@ class Posting(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             draft = Path(d) / 'd.json'
             draft.write_text(json.dumps({'text': 'Planted.', 'replyTo': None, 'object': 'garden-1', 'slot': f'{DID}:ask-1', 'posted': False}))
-            code, req = self.dry(d, ['--draft', str(draft), '--host-socket', str(Path(d) / 'nope.sock')], delve.Client(Script()))
+            code, req = self.dry(d, ['--draft', str(draft)], delve.Client(Script()))
             self.assertEqual(code, 2)
             self.assertEqual(req['record'], {'op': 'world-posted', 'object': 'garden-1', 'slot': {'principal': DID, 'intent': 'ask-1'}})
             self.assertEqual(req['request']['body']['record']['text'], 'Planted.')
             draft.write_text(json.dumps({'text': 'x', 'posted': True}))
-            self.assertEqual(post.main(['--state', d, 'post', '--intent', 't', '--draft', str(draft)], io.StringIO()), 1)
+            with mock.patch('sys.stderr', io.StringIO()):
+                self.assertEqual(main(['post', '--state', d, '--intent', 't', '--draft', str(draft)], io.StringIO()), 1)
 
 class Pds:
     """The PDS side of a post: a session, records kept by key, and a reply that can be lost after the write lands."""
@@ -465,25 +457,26 @@ class Idempotent(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.state = Path(self.tmp.name)
-        self.creds = self.state / 'creds.json'
+        self.creds = Path(self.tmp.name) / 'creds.json'
         self.creds.write_text('{"identifier": "a", "password": "b"}')
-        self.draft = self.state / 'outbox' / '7-aaaa.json'
-        self.draft.parent.mkdir()
+        (Path(self.tmp.name) / 'delvetalk.toml').write_text(f'credentials = "{self.creds}"\n')
+        self.state = State(self.tmp.name)
+        self.draft = self.state.outbox / '7-aaaa.json'
+        self.draft.parent.mkdir(parents=True)
         self.draft.write_text(json.dumps({'text': 'Planted.', 'replyTo': None, 'object': 'garden-1', 'slot': None, 'posted': False}))
 
     def test_a_retry_after_the_reply_was_lost_adopts_the_record_and_never_posts_twice(self):
         pds, host = Pds(lose=1), Recorder()
         with self.assertRaises(delve.Failure):
-            post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
-        got = post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
+            post.post_draft(self.draft, self.state, host, reader=pds, client=pds)
+        got = post.post_draft(self.draft, self.state, host, reader=pds, client=pds)
         self.assertEqual((pds.creates, len(pds.records)), (1, 1))
         self.assertEqual(got['uri'], next(iter(pds.records.values()))['uri'])
         self.assertEqual([r['uri'] for r in host.posted], [got['uri']])
 
     def test_a_post_whose_registration_failed_is_registered_apart_from_sending(self):
         pds, host = Pds(), Recorder(fail=1)
-        got = post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
+        got = post.post_draft(self.draft, self.state, host, reader=pds, client=pds)
         d = json.loads(self.draft.read_text())
         self.assertEqual((d['posted'], d['sent']['uri'], d['recorded']['status']), (True, got['uri'], 'error'))
         self.assertEqual(post.record_sent(self.state, host), [self.draft.name])
@@ -494,20 +487,20 @@ class Idempotent(unittest.TestCase):
 
     def test_the_host_reserves_each_post_before_it_leaves_releases_one_that_never_left_and_settles_by_intent(self):
         pds, host = Pds(), Recorder(quota=2)
-        got = post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
+        got = post.post_draft(self.draft, self.state, host, reader=pds, client=pds)
         self.assertEqual([o['op'] for o in host.ops[:1]], ['world-post-reserve'])  # before the network
         self.assertEqual((host.ops[0]['intent'], host.ops[0]['source'], host.ops[0]['principal']), ('draft-7-aaaa', 'delve', 'transport'))
         self.assertEqual((host.posted[0]['intent'], host.posted[0]['uri']), ('draft-7-aaaa', got['uri']))
         request = post.build_request('another', None, None)
-        self.assertEqual(post.send(request, 'draft-7-aaaa', self.state, self.creds, host, client=pds), {k: got[k] for k in ('uri', 'cid')})
+        self.assertEqual(post.send(request, 'draft-7-aaaa', self.state, host, client=pds), {k: got[k] for k in ('uri', 'cid')})
         self.assertEqual((pds.creates, host.quota), (1, 1))  # the same intent: no second post, no second slot
         with self.assertRaises(OSError):  # the credentials are unreadable: the post certainly did not leave
-            post.send(request, 'gone', self.state, self.state / 'absent.json', host, client=pds)
+            post.send(request, 'gone', State(self.tmp.name, config=Config(credentials=self.tmp.name + '/absent.json')), host, client=pds)
         self.assertEqual([(o['op'], o['intent']) for o in host.ops[-2:]], [('world-post-reserve', 'gone'), ('world-post-release', 'gone')])
         self.assertEqual((pds.creates, host.quota), (1, 1))  # it never left: the slot is back
-        post.send(request, 'b', self.state, self.creds, host, client=pds)
+        post.send(request, 'b', self.state, host, client=pds)
         with self.assertRaises(delve.Failure) as e:
-            post.send(request, 'c', self.state, self.creds, host, client=pds)
+            post.send(request, 'c', self.state, host, client=pds)
         self.assertEqual((e.exception.code, pds.creates), ('rate_limited', 2))
 
     def test_a_publication_draft_is_recorded_for_its_publications_object_by_the_hand_and_the_cli(self):
@@ -515,12 +508,11 @@ class Idempotent(unittest.TestCase):
                 'replyTo': None, 'text': 'wiki: Genesis\n\nbody', 'posted': False}
         self.draft.write_text(json.dumps(page))
         pds, host = Pds(), Recorder()
-        got = post.post_draft(self.draft, self.state, host, self.creds, reader=pds, client=pds)
+        got = post.post_draft(self.draft, self.state, host, reader=pds, client=pds)
         self.assertEqual([(r['object'], r['uri'], r['page']) for r in host.posted], [('genesis', got['uri'], 'Genesis')])
         self.draft.write_text(json.dumps(page))
         code, plan = 0, io.StringIO()
-        code = post.main(['--state', str(self.state), 'post', '--intent', 'x', '--draft', str(self.draft),
-                          '--host-socket', str(self.state / 'none.sock')], plan, pds)
+        code = main(['post', '--state', self.tmp.name, '--intent', 'x', '--draft', str(self.draft)], plan, client=pds)
         self.assertEqual((code, json.loads(plan.getvalue())['record']['object']), (2, 'genesis'))
 
 if __name__ == '__main__':

@@ -66,11 +66,14 @@ def summon_post(n, ts):
     return p
 
 
+LOOPBACK = Config(origin='http://127.0.0.1:8765')  # a front only this machine opens: drafts cite no link (bridge.reachable)
+
+
 class BridgeCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.state = State(Path(self.tmp.name) / 'state')
+        self.state = State(Path(self.tmp.name) / 'state', config=LOOPBACK)
 
     @property
     def host(self):
@@ -177,7 +180,7 @@ class Bridging(BridgeCase):
     def test_crash_between_turn_and_draft_recovers_with_the_same_receipt(self):
         self.make('garden-1')
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
-        with mock.patch.object(bridge, 'write_atomic', side_effect=RuntimeError('crash')):
+        with mock.patch.object(State, 'write', side_effect=RuntimeError('crash')):
             with self.assertRaises(RuntimeError):
                 self.run_bridge()
         self.assertEqual(self.drafts(), [])
@@ -483,7 +486,7 @@ class RealOffers(test_outbound.TellerWorld):
         self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")
         self.assertIsInstance(self.host.send(op="world-offers", principal="ann")["offers"][0]["identity"], dict)
         with tempfile.TemporaryDirectory() as d:
-            d = State(d)
+            d = State(d, config=LOOPBACK)
             d.write(bridge.awaiting_path(d, "t-1"), {"uri": "t-1", "principal": "ann", "replyHandle": "ann.delve.town",
                                                                  "object": "teller", "slot": None, "height": 0})
             outer = self

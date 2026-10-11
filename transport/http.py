@@ -5,7 +5,6 @@ well-formedness. Host replies pass through verbatim.
 import html
 import json
 import os
-import re
 import secrets
 import socket
 import threading

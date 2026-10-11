@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -49,9 +50,16 @@ def probe(st, host, clock=time.time):
 
 def healthy(st, service):
     """The compose healthcheck of each long-running service: the host answers its journal height; the front serves the
-    guide and a home page showing `entry <n>` (the height, from the host); a daemon finished a step within three polls."""
+    guide and a home page showing `entry <n>` (the height, from the host); the hand refuses a tokenless page; a daemon
+    finished a step within three polls."""
     if service == 'host':
         return isinstance(st.host().send({'op': 'world-status'}).get('height'), int)
+    if service == 'hand':  # a tokenless /hand/ is 404 and nothing else
+        try:
+            urllib.request.urlopen(f'http://127.0.0.1:{st.config.hand_port}/hand/', timeout=5)
+        except urllib.error.HTTPError as e:
+            return e.code == 404
+        return False
     if service == 'http':
         base = f'http://127.0.0.1:{st.config.http_port}'
         urllib.request.urlopen(base + '/AGENTS.md', timeout=5).read()

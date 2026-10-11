@@ -25,7 +25,7 @@ class State:
         self.config = config or Config.load(self.root)
         c, r = self.config, self.root
         # serve's, read here
-        self.journal = r / f'{world}.journal'
+        self.journal, self.library = r / f'{world}.journal', r / 'library'  # the library serve sealed from config.library
         self.host_socket = Path(c.host_socket) if c.host_socket else r / 'host.sock'
         self.root_socket = Path(c.root_socket) if c.root_socket else r / 'root' / 'root.sock'
         # every world's

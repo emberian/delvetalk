@@ -26,6 +26,7 @@ from transport import interpret, model  # noqa: E402
 from deploy.serve import Pipe, Served  # noqa: E402
 from transport.config import LIBRARY  # noqa: E402
 from transport.host import HostClient  # noqa: E402
+from transport.state import State  # noqa: E402
 from transport import journal as chain  # noqa: E402
 from transport import post as post_py  # noqa: E402
 
@@ -82,7 +83,9 @@ class Run:
         self.mock, self.models = self.out / 'mock-town', self.out / 'mock-model'
         for d in (self.state, self.mock, self.models):
             d.mkdir(parents=True, exist_ok=True)
-        self.env = dict(os.environ, DELVETALK_OBEND=str(Path(a.binary).resolve()), PYTHONPATH=str(ROOT))
+        self.env = dict(os.environ, DELVETALK_OBEND=str(Path(a.binary).resolve()), PYTHONPATH=str(ROOT), DELVETALK_STATE=str(self.state),
+                        DELVETALK_DELVE_MOCK=str(self.mock), DELVETALK_MODEL_MOCK=str(self.models))
+        self.place = State(self.state)
         self.log = open(self.out / 'programs.log', 'a')
         self.errors = []      # every host error, Python exception or failed item, verbatim, with its cause
         self.steps = []       # per window: what each program printed
@@ -198,12 +201,9 @@ class Run:
         self.seen.update(p['uri'] for p in window)
         self.now = datetime.fromtimestamp(now, timezone.utc).isoformat()
         before = self.made()
-        sock = str(self.state / 'host.sock')
-        bridged = self.program('-m', 'transport.bridge', 'run', '--once', '--mock', str(self.mock), '--state', str(self.state),
-                               '--host-socket', sock, '--now', str(now), '--since', '1970-01-01T00:00:00Z', what='bridge')
+        bridged = self.program('-m', 'transport', 'bridge', '--once', '--now', str(now), '--since', '1970-01-01T00:00:00Z', what='bridge')
         pending = self.fixtures_for_pending(texts)
-        interpreted = self.program('-m', 'transport.interpret', 'run', '--once', '--mock', str(self.models), '--state', str(self.state),
-                                   '--host-socket', sock, what='interpret') if pending else []
+        interpreted = self.program('-m', 'transport', 'interpret', '--once', what='interpret') if pending else []
         delivered = 0
         for _ in range(16):
             if not self.host.send({'op': 'world-pending'}).get('count'):
@@ -541,7 +541,7 @@ def main(argv=None):
             results['cards'][obj] = {'status': c.get('status'), 'text': c.get('text'), 'clause': c.get('clause'),
                                      'chars': len(c.get('text') or '')}
         # Offers the host holds for each principal, against what the outbox drafted (by height).
-        drafted = {int(p.name.split('-')[0]) for p in (r.state / 'outbox').glob('*.json')}
+        drafted = {int(p.name.split('-')[0]) for p in r.place.outbox.glob('*.json')}
         held = []
         for principal in sorted({e['identity']['principal'] for e in chain.entries(r.state / 'town.journal') if 'identity' in e}):
             got = r.host.send({'op': 'world-offers', 'principal': principal})
@@ -563,13 +563,13 @@ def main(argv=None):
                           'outcomes': dict(tags), 'refusedByClass': dict(classes), 'refusals': reasons,
                           'bytesByOutcome': journal_stats.sizes, 'suspendedByObject': journal_stats.suspended}
     results['snapshots'] = sorted(str(p.relative_to(r.state)) for p in r.state.rglob('*snapshot*'))
-    obs = [json.loads(js) for (js,) in __import__('sqlite3').connect(r.state / 'observe.sqlite').execute('SELECT json FROM observations ORDER BY seq')]
+    obs = [json.loads(js) for (js,) in __import__('sqlite3').connect(r.place.observed).execute('SELECT json FROM observations ORDER BY seq')]
     results['observed'] = {'count': len(obs), 'kinds': dict(collections.Counter(o['kind'] for o in obs))}
     results['observations'] = {o['uri']: {'kind': o['kind'], 'replyTo': o['replyTo'], 'root': o.get('root'), 'handle': o['author']['handle']} for o in obs}
-    skipped = (r.state / 'skipped.txt').read_text().split() if (r.state / 'skipped.txt').exists() else []
+    skipped = sorted(r.place.words(r.place.skipped))
     results['skipped'] = len(skipped)
     drafts = []
-    for path in sorted((r.state / 'outbox').glob('*.json'), key=lambda p: int(p.name.split('-')[0])):
+    for path in sorted(r.place.outbox.glob('*.json'), key=lambda p: int(p.name.split('-')[0])):
         d = json.loads(path.read_text())
         receipt = d.get('receipt') or {}
         reply_to = d.get('replyTo')
