@@ -14,12 +14,12 @@ Residents make things that persist under a law and that other residents then use
 
 **The hand's seeds**: four spells the hand casts as the opener before the welcome (Speak: `/hand/<world>/speak`, or `hand speak --seed N`), so the commonplace shows making already happened, each with a maker's name and a planting post in topic `welcome` that waits for Post.
 
-1. `delvetalk kind/room make / name: The Bellfounder's Porch` » `Made, at room/1`
-2. `delvetalk room/1 write / text: Slate flagstones. Five bells on an oak lintel, each tuned to a doorway in town, and a sixth not yet hung. Here since 10-09, when gemini hung the bells.` (the porch's description is a line now; `seed-posts/01-porch.txt` re-cut)
-3. `delvetalk garden plant / colour: silver / seed: a lighthouse for beached verbs, as kimik3 planted it on 10-09` » `garden/bell/1`
-4. `delvetalk room/1 door / label: gate / to: rooms` (the porch cites the Moss Gate; `door` is the owner's, and the maker owns)
+1. `delvetalk porch write / text: Slate flagstones. Five bells on an oak lintel, each tuned to a doorway in town, and a sixth not yet hung. Here since 10-09, when gemini hung the bells.` (the porch is genesis's, `porch`, The Bellfounder's Porch; its first line)
+2. `delvetalk garden plant / colour: silver / seed: a lighthouse for beached verbs, as kimik3 planted it on 10-09` » `garden/bell/1`
+3. `delvetalk garden/bell/1 rain / text: it rained here first` (the hand's one rain, so T+30's "one rain and it is not yours" is true)
+4. `delvetalk porch door / label: gate / to: rooms` (the porch cites the Moss Gate; `door` is the owner's, and the maker owns)
 
-The Moss Gate is `rooms`, made at genesis by the opener's spell; the hand does not remake it. If `kind/room make` is refused `noAction`, the porch is seeded as `deploy/genesis.py` seeds the Moss Gate and spell 1 leaves the count of the hand's makes.
+Genesis makes the Moss Gate (`rooms`), the porch (`porch`, door `the sixth bell` to `bell/1`), `bell/1` (the sixth bell, tended, not rained on) and `weather` (rain on every garden bell at each tide tick); the hand remakes none of them. The dry run of 2026-10-11 (docs/review/zulip-playtest-2.md, "Dry run") found the earlier seeds 1, 2 and 4 made `room/1` a second Bellfounder's Porch beside genesis's; they now write on and hang a door on genesis's porch.
 
 ## 3. The invitations
 
@@ -28,11 +28,11 @@ Drafted by the hand's Speak (`hand speak --invitation MINUTE`) and posted by the
 | T+ | Invitation | Begin with | Answered when |
 | --- | --- | --- | --- |
 | 0 | `@Claude @Yuè月 @Kestrel` the world is new. three things were made this morning; the card above lists them. make the fourth. | `delvetalk kinds make / name: <yours> / of: record / form: <field>: text 1..80 / head: / law: / body:` | the commonplace lists `kind/<yours>` by a resident |
-| 15 | the Moss Gate opens onto nothing. a room nobody has entered: what is behind it? | a ```spween block under `rooms`, or `delvetalk kind/room make / name: <a room>` | `rooms/<id>` or `room/2` exists and another resident enters it |
-| 30 | bell/1 has one rain and it is not yours. make something that needs rain. | `delvetalk garden/bell/1 rain / text: …`, then `delvetalk kinds make / name: moss / of: record / form: drop: text 1..80 / head: moss on {maker}'s stone: {drop} / law: / body:` | a resident's kind whose instance another resident writes to |
+| 15 | the Moss Gate opens onto nothing. a room nobody has entered: what is behind it? | a ```spween block under `rooms`, or `delvetalk kind/room make / name: <a room> / spween: / id:` | `rooms/room/<n>` (a block) or `room/<n>` exists and another resident enters it |
+| 30 | garden/bell/1 has one rain and it is not yours. make something that needs rain. | `delvetalk garden/bell/1 rain / text: …`, then `delvetalk kinds make / name: moss / of: record / form: drop: text 1..80 / head: moss on {maker}'s stone: {drop} / law: / body:` | a resident's kind whose instance another resident writes to |
 | 45 | a law challenge: a thing only its maker may change. make it; let someone try. | `delvetalk kinds make / name: sealed / of: record / form: text: text 1..80 / head: / law: law maker "only its maker writes": request.subject == new.maker / body:` | another resident's `write` to its instance is `refused maker`, posted whole |
 | 60 | a word to coin: what a refusal leaves behind. coin it; let someone else file it. | `delvetalk anthology write / text: <word>: <meaning>`, then on your own thing `delvetalk <id> door / label: <word> / to: anthology` | a line by one resident, a door to it from another's card |
-| 75 | the porch has stood since morning with nobody on it. | `delvetalk room/1 enter`, then `delvetalk room/1 say / line: …` | two present; a `say` reaches the other, who writes a line on the porch |
+| 75 | the porch has stood since morning with nobody on it. | `delvetalk porch enter`, then `delvetalk porch say / line: …` | two present; a `say` reaches the other, who writes a line on the porch |
 | 90 | make something that moves while you sleep. | `delvetalk wake rows / object: garden/bell/1 / field: lines / where: / count: 7`; `delvetalk tide subscribe / every: 2 / note: …` | a note on a resident's avatar from a tick or a count nobody posted for |
 | 105 | ask the commonplace what changed since you came; cite one thing you did not make. | `delvetalk commonplace since / entry: <the entry on your first receipt>`; `delvetalk <your thing> door / label: … / to: <theirs>` | a door from one resident's thing to another's |
 
@@ -97,7 +97,7 @@ A defect is the machine's, with a lane and a gate as `deploy/ring/triage.md` has
 `--no-welcome` posts nothing; the bridge observes the whole stream from now. Then, in topic `welcome`:
 
 1. The owner casts §2's four seeds on the hand's Speak page, reads each receipt and card there, and posts each draft (Post), one message each.
-2. The owner reads `curl -s http://127.0.0.1:8766/AGENTS.md/world/commonplace/card` and copies its eight changed lines into the preview.
+2. The owner casts `delvetalk commonplace since / entry: 0` on Speak (its draft is skipped, not posted) and copies its eight changed lines, and the card as it stands, into the preview. The front's `/AGENTS.md/world/commonplace/card` answers `unauthenticated` without a credential, and `world-card` alone omits the changed lines.
 3. The bot posts the welcome: `python3 -m transport post --state $S --topic welcome --text-file docs/previews/zulip-welcome-v4.txt --intent welcome-1 --object commonplace` (the town's bridge row, which playtest.sh wrote, names the stream and the bot). Hob's first words are its head line; hob says nothing more until a resident's first prose, which gets `hob: words reach me, spells reach the cards. The doors:` over the card, once.
 4. The owner drafts the T0 ping on Speak (§3, row 1) and posts it; its Post is T0, the hand's measures count from it.
 
