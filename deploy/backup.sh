@@ -16,7 +16,10 @@ mode=$1 host=$2 data=${3%/} dest=${4%/}
 here="$(cd "$(dirname "$0")" && pwd)"
 [[ -f $data/state/town.journal ]] || { echo "backup: no $data/state/town.journal" >&2; exit 66; }
 mkdir -p "$dest/mirror"
-chmod 700 "$dest"
+# Group 10425 lists it and reads last-verify: the watch's probe runs in the ops container as the stack's uid, which
+# already owns every byte copied here (DEPLOY "Watching"). Nobody else enters.
+chgrp 10425 "$dest" 2>/dev/null || true
+chmod 750 "$dest"
 
 rsync -a --delete --exclude journal.lock --exclude '*.pid' --exclude '*.tmp' --exclude host.sock --exclude /state/library "$data/" "$dest/mirror/"
 
