@@ -571,7 +571,7 @@ def Refusal.voiced (r : Refusal) : Refusal :=
         else if m.startsWith "argument does not conform" || m.isEmpty then some s!"not what {method} takes; {pointer}"
         else some s!"{m}; {pointer}"
       | none => some s!"not what {method} takes; {pointer}"
-    | "unknownObject" => some s!"no card {obj} that you may see; the directory lists the doors."
+    | "unknownObject" => some s!"no card {obj} that you may see; the commonplace lists the doors."
     | "programRefused" =>
       let head := s!"the package was refused at {r.clause.getD "compile"}; the workshop's check shows where"
       -- The compiler's or the migration's diagnostic follows: the proposer sees the cause.
@@ -1581,7 +1581,7 @@ def activityArgument (w : World) (act : Json) : Except String Json := do
   | none => throw "a suspended activity's argument block is not journaled"
 
 /-- An interpretation as journaled: its `offers` (the same forms in every reading of one card) are a
-    one-item block (`offersBlock`), and so is a long `utterance` (`utteranceBlock`; the directory reads
+    one-item block (`offersBlock`), and so is a long `utterance` (`utteranceBlock`; the commonplace reads
     one post's text more than once), so a reading costs only what is new in it. The blocks to
     journal with it are the second component. -/
 def compactInterpretation (i : Json) (argument : Data) : Json × Array (Array Json) :=
@@ -4206,7 +4206,7 @@ def publicRefusal (entry : Json) : Json :=
   Json.mkObj ([("status", toJson "refused"), ("class", toJson cls), ("root", root)] ++
     (slug.map fun x => [("slug", toJson x)]).getD [] ++ law ++
     (if cls == "unknownObject" then
-      [("object", toJson id), ("hint", toJson s!"no card named {id}; reply to the directory for the list")]
+      [("object", toJson id), ("hint", toJson s!"no card named {id}; the commonplace lists the doors")]
     -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.
     else if cls == "badSpell" then
       [("object", toJson named)] ++ ["clause", "reason", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)

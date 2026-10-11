@@ -126,7 +126,7 @@ structure Send where
   via : String := ""
   grantor : String := ""
   /-- A `receive` handed on carries how the original words reached the turn that sent it (a card
-      forwarding a reply to the directory), so the receiver's interpretation is judged by it: "" is
+      forwarding a reply to the commonplace), so the receiver's interpretation is judged by it: "" is
       words that reached nobody, none a send that carries no reach (a delivery). -/
   reach : Option String := none
 
@@ -962,7 +962,7 @@ def lensTemplate (card : String) (lens : Spell.Field) (value : Option String := 
 
 /-- A card's usage (`Card.help`): every form as a template, then every lens. -/
 def spellUsage (card : String) (forms : List Spell.Form) (lenses : List Spell.Field := []) : String :=
-  if forms.isEmpty && lenses.isEmpty then s!"{card} takes no spells; reply in words and the directory places them." else
+  if forms.isEmpty && lenses.isEmpty then s!"{card} takes no spells; reply in words and hob places them." else
   (if forms.isEmpty then "" else "Reply with a spell:\n" ++ String.join (forms.map fun f => "\n" ++ spellTemplate card f)) ++
   (if lenses.isEmpty then "" else
     "\nTo set a field, reply with one of these (one field a spell):\n" ++ String.join (lenses.map fun l => "\n" ++ lensTemplate card l))
@@ -1244,7 +1244,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let shown := card
   -- The answering card's own spells when it has some; else where the doors are listed.
   let here := usageForms w self o principal (spellForms w self o)
-  let unknown := if here.isEmpty then s!"no card named {card}; reply to the directory for the doors"
+  let unknown := if here.isEmpty then s!"no card named {card}; the commonplace lists the doors"
     else spellUsage self here
   -- The opener's powers on `world`, the id the host answers for.
   if id == worldId && !w.objects.contains worldId && worldPowers.contains action && retarget then
@@ -1256,9 +1256,9 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let some target := w.objects[id]?
     | if card == meCard then
         return .refuse self "noAvatar" noAvatarReason unknown
-      else return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
+      else return .refuse self "otherCard" s!"There is no card {card}; the commonplace lists the doors." unknown
   unless target.read.permits principal && (retarget || id == self) do
-    return .refuse self "otherCard" s!"There is no card {card}; the directory lists the doors." unknown
+    return .refuse self "otherCard" s!"There is no card {card}; the commonplace lists the doors." unknown
   let forms := spellForms w id target
   let shownForms := usageForms w id target principal forms
   let lenses := declaredLenses w target

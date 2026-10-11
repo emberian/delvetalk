@@ -331,11 +331,18 @@ where
       | .stands c a tail rest => spelled c a (both (inline tail) (fieldLines rest))
     else seekAfter (text.drop (stop + 1)) otherwise
 
-/-- A card's header line, as cards print them: `✾ <TITLE>`, the commonplace's `Seven doors.`, a kind's
-    `KIND <name>: …`, or a line ending `Make one:`. -/
+/-- The commonplace's head line as `Menu.trieHead` writes it: its first sentence the door count,
+    `One door.` or `<count> doors.` (`Eight doors. Indented lines are typed back whole; …`). -/
+def doorsHead (t : String) : Bool :=
+  match t.splitOn ". " with
+  | first :: _ :: _ => first == "One door" || (match first.splitOn " " with | [_, "doors"] => true | _ => false)
+  | _ => false
+
+/-- A card's header line, as cards print them: `✾ <TITLE>`, the commonplace's door count
+    (`doorsHead`), a kind's `KIND <name>: …`, or a line ending `Make one:`. -/
 def cardHeader (line : String) : Bool :=
   let t := line.trimAscii.toString
-  t.startsWith "✾ " || t.startsWith "Seven doors." || t.startsWith "KIND " || t.endsWith "Make one:"
+  t.startsWith "✾ " || doorsHead t || t.startsWith "KIND " || t.endsWith "Make one:"
 
 /-- A text holding a card's header line beside a `delvetalk` line (at any indent) quotes that card. -/
 def quotes (text : String) : Option String := do

@@ -400,7 +400,7 @@ class Projection(Reflection):
         self.assertEqual([w["object"] for w in mine["receipt"]["outcome"]["writes"]], ["env/ann"])
         theirs = self.turn("env", "stamp", record(text=label("seen")), principal="bob", identity="e-2")
         self.assertEqual((theirs["status"], theirs["public"]["object"]), ("refused", "env/bob"), theirs)
-        self.assertEqual(theirs["public"]["hint"], "no card named env/bob; reply to the directory for the list")
+        self.assertEqual(theirs["public"]["hint"], "no card named env/bob; the commonplace lists the doors")
         wake = self.turn("wake", "stamp", record(text=label("x")), principal="ann", identity="w-1")
         self.assertEqual(wake["public"]["object"], "wake/ann", wake)
         self.assertEqual(self.host.send(op="world-card", principal="ann", object="env")["object"], "env/ann")

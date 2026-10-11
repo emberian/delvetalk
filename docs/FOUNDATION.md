@@ -401,7 +401,7 @@ rule). The last line `delvetalk CARD ACTION` at the margin (fields on the line a
 fences and quotes skipped; an indented `delvetalk` line among other lines is an example, never cast (every card
 prints its spells indented), while a post that is one spell block and nothing else (indented, or in one plain fence)
 is dedented and cast; a post with several spells at a line's start is a turn each (identity `#1` .. `#3`), a
-fourth refused `tooManySpells`; and a text holding a card's header line (`✾ `, `Seven doors.`, `KIND `, a line ending `Make one:`)
+fourth refused `tooManySpells`; and a text holding a card's header line (`✾ `, the commonplace's door count `Eight doors.`, `KIND `, a line ending `Make one:`)
 beside a `delvetalk` line quotes that card: refused `badSpell`, clause `quotation`, nothing cast; a `source` field takes the reply's first ```obend
 fence. The host resolves the card, looks the action up in its declared forms,
 builds the typed argument (a word for a case of a closed sum) and runs the
