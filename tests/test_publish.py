@@ -4,7 +4,7 @@ routes back to its object.
 Evidence for FOUNDATION §5, §7 (layer: transport).
 
 publish end to end: an object's published page reaches the outbox as a
-draft marked like a reply draft and never posted by the bridge; post.py --record records the post's
+draft marked like a reply draft and never posted by the bridge; post.py --object records the post's
 page and section; a `merge` reply to the recorded page post routes to the object by reply-is-address.
 
 Refuted by: a Garden page draft without its eighteen sections in order; the bridge drafting a
@@ -16,7 +16,7 @@ from tests.test_bridge import BridgeCase
 from tests.test_chain import garden_state, town_kinds
 from tests.test_transport import DID, mk
 from tests.test_turn_world import closure, label, record
-from transport import bridge, post
+from transport import bridge, observe, post
 
 
 class Publishing(BridgeCase):
@@ -44,9 +44,9 @@ class Publishing(BridgeCase):
         self.assertEqual(titles, ['Card', 'How to reply'] + [f'garden/bell/{n}' for n in range(20, 4, -1)])
         self.assertNotIn('published', self.run_bridge())               # drafted once
         self.assertEqual(len([d for d in self.drafts() if 'publication' in d]), 1)
-        # A human posts it with post.py --text-file ... --record garden; the record carries page and section.
+        # A human posts it with post.py --text-file ... --object garden; the record carries page and section.
         page_uri = f'at://{DID}/town.delve.feed.post/page1'
-        target = post.wiki_target(draft['text'])
+        target = observe.wiki_target(draft['text'])
         self.assertEqual(target, ('garden', ''))
         reserved = self.host.send({'op': 'world-post-reserve', 'principal': post.CLOCK, 'intent': page_uri, 'source': 'delve'})
         self.assertEqual(reserved['status'], 'reserved', reserved)

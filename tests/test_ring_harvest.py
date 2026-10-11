@@ -1,4 +1,7 @@
-"""deploy/ring/harvest.py reads the front's access log (transport/http.py AccessLog) when the run has one."""
+"""deploy/ring/harvest.py reads the front's access log (transport/http.py AccessLog) when the run has one.
+
+Evidence for FOUNDATION §11 (layer: transport).
+"""
 import importlib.util
 import tempfile
 import unittest

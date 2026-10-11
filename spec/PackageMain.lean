@@ -1,11 +1,13 @@
 import Delvetalk.PackageSession
 import Delvetalk.Serve
+import Delvetalk.Host.RootEdit
 open Lean (Json toJson)
 
 /-- The JSON-lines driver on stdin and stdout; `serve …` holds a directory of worlds behind its
     sockets instead (`Delvetalk.Serve`). -/
 def main (args : List String) : IO UInt32 := do
   if args.head? == some "serve" then return ← Delvetalk.Serve.main args.tail
+  if args.head? == some "root-edit" then return ← Delvetalk.Host.RootEdit.main args.tail
   let input ← IO.getStdin
   let output ← IO.getStdout
   let errors ← IO.getStderr

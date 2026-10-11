@@ -18,12 +18,13 @@ import json
 import re
 import unittest
 
-from tests.test_chain import Chain, reference
+from tests.test_chain import Chain
 from tests.test_changes import Receivers
-from tests.test_objects import closure
 from tests.test_reflection import Reflection
 from tests.test_table import NORTH, OPENING, SOUTH
-from tests.test_turn_world import FIXTURE_HEAD, label, nat, record
+from tests.test_turn_world import FIXTURE_HEAD
+from tests.wire import label, nat, record, reference
+from tests.bend import closure, declared
 
 STRANGER = "did:plc:stranger"
 
@@ -81,8 +82,7 @@ class Bare(Chain):
 
     def setUp(self):
         super().setUp()
-        from tests.test_turn_world import closure as world_closure, declared
-        plan = world_closure("World")
+        plan = closure("World")
         self.make("bare", plan + [{"name": "Bare", "source": BARE}], record())
         self.make("caller", plan + [{"name": "Caller", "source": declared(BARE, "poke", "post")}], record())
 
@@ -97,10 +97,9 @@ class Bare(Chain):
         self.assertEqual(self.host.send(op="world-pending").get("count"), 0)
 
     def test_a_malformed_methods_declaration_refuses_the_package(self):
-        from tests.test_turn_world import closure as world_closure
         source = BARE + "def methods() -> Nat:\n  1n\n"
         r = self.host.send(op="world-create", principal="ember", identity="mk-bad", object="bad",
-                           modules=world_closure("World") + [{"name": "Bad", "source": source}], entry="initial", seed=record())
+                           modules=closure("World") + [{"name": "Bad", "source": source}], entry="initial", seed=record())
         self.assertNotEqual(r.get("status"), "created", r)
         self.assertIn("methods()", r.get("message", "") + str(r.get("receipt", "")), r)
 

@@ -24,8 +24,7 @@ import unittest
 
 from tests.conformance.generate import BINARY, TAGS, UNARY, generate, size, tags
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-from tests.host import binary
+from tests.host import ROOT, binary
 LEAN = binary()
 COUNT = int(os.environ.get("CONFORMANCE_CASES", "400"))
 
@@ -270,13 +269,6 @@ class Conformance(unittest.TestCase):
                 self.assertEqual(unexpected[:3], [])
 
 
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1].isdigit():
-        print(render(report(int(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "impl"))))
-    else:
-        unittest.main()
-
-
 class StoredCells(unittest.TestCase):
     """A state's relation held as stored cells (KERNEL-HANDOFF section 15): the machine run on it
     answers what the machine answers on the state as a literal, and forces only the rows read."""
@@ -307,3 +299,10 @@ class StoredCells(unittest.TestCase):
                 forced = self.reference.evaluate(case)["forced"]
                 self.assertEqual(sorted(j for _, j in forced), case["stored"]["reads"])
                 self.assertTrue(all(f == "r" for f, _ in forced))
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1].isdigit():
+        print(render(report(int(sys.argv[1]), sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "impl"))))
+    else:
+        unittest.main()

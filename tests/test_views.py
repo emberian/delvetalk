@@ -14,10 +14,12 @@ the planter's card lacking "(yours)"; a party's card lacking its countersign spe
 import unittest
 
 from tests import test_chain
-from tests.test_objects import closure
 from tests.test_rooms import avatar_seed
-from tests.test_turn_world import label, nat, record, relation
+from tests.wire import label, nat, record, relation
+from tests.bend import closure
 from tests.test_wakes import event
+from tests.wire import label, nat, record, relation
+from tests.bend import closure
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
 

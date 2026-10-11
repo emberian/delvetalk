@@ -11,7 +11,8 @@ import unittest
 
 from tests.test_chain import Chain
 from tests.test_spell_turns import GARDEN
-from tests.test_turn_world import closure, declared, label, record
+from tests.wire import label, record
+from tests.bend import closure, declared
 
 RELAY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -35,9 +36,7 @@ def handled(state: State, input: {to: String, handler: String}, context: Abi.Con
 
 class CallReading(Chain):
     def modules(self, name, source):
-        seen, out = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out)
+        out = closure(*("Abi", "List", "Form", "Plan", "World"))
         return out + [{"name": name, "source": source}]
 
     def setUp(self):

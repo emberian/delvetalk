@@ -27,14 +27,14 @@ from deploy import genesis
 from tests.host import as_owner
 
 from tests import test_chain, test_policy
-from tests.test_chain import garden_seed, reference, town_kinds
+from tests.test_chain import garden_seed, town_kinds
 from tests.test_laws import anthology_seed
-from tests.test_objects import closure
 from tests.test_receive import ROOT_DOORS, door
-from tests.test_replay import get, rows
 from tests.test_rooms import make_room, room_seed
-from tests.test_turn_world import label, nat, record
+from tests.wire import field, label, nat, record, rows
 from transport.identity import ORIGIN
+from tests.wire import field, label, nat, record, reference, rows
+from tests.bend import closure
 
 POSTS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "rehearsal", "fixtures", "posts.json")
 GLM, GEMINI, KIMI = "did:plc:nmjdxe6fex23zslnnbwgruj3", "did:plc:ubtqb43nq7u6jlibkzlobkuu", "did:plc:j2hnfjwlnm2mau24vnmpir6d"
@@ -77,11 +77,11 @@ class Hub(test_chain.Chain):
                 self.assertEqual(first["result"]["label"], "menu", first)
 
     def children(self):
-        return [get(c, "object")["value"] for c in rows(get(self.state("garden"), "children"))]
+        return [field(c, "object")["value"] for c in rows(field(self.state("garden"), "children"))]
 
     def seed_of(self, bell):
         """A bell's seed and colour: the values kind/bell's form took when it was made."""
-        made = {get(f, "name")["value"]: get(f, "value")["value"] for f in get(self.state(bell), "fields")["items"]}
+        made = {field(f, "name")["value"]: field(f, "value")["value"] for f in field(self.state(bell), "fields")["items"]}
         return made["seed"], made["colour"]
 
 
@@ -125,7 +125,7 @@ class Hub(test_chain.Chain):
         self.assertIn("Planted, ", texts[0])
         self.assertTrue(texts[-1].startswith(GREETING + "✾ DELVETALK · ROOT\n\nSeven doors. "), texts)
         self.assertEqual(texts[-1].split("\n")[4], "GARDEN · 0 planted")  # the menu as the turn read it
-        self.assertEqual(get(rows(get(self.state("root"), "visits"))[0], "door"), label("GARDEN"))
+        self.assertEqual(field(rows(field(self.state("root"), "visits"))[0], "door"), label("GARDEN"))
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("something for moths", "amber"))
         # Greeted once: hob reads the next words, and its none gets no menu.
@@ -254,8 +254,8 @@ class Hub(test_chain.Chain):
             "  (spell 3)\n"
             "  » unclear: colour\n"))
         self.assertEqual(len(self.children()), 1)
-        self.assertEqual([get(p, "text")["value"] for p in rows(get(self.state("anthology"), "lines"))], ["the bell kept both of us"])
-        self.assertEqual(get(rows(get(self.state("root"), "visits"))[0], "door"), label("GARDEN"))
+        self.assertEqual([field(p, "text")["value"] for p in rows(field(self.state("anthology"), "lines"))], ["the bell kept both of us"])
+        self.assertEqual(field(rows(field(self.state("root"), "visits"))[0], "door"), label("GARDEN"))
 
     def test_the_garden_hears_the_first_of_several_spells(self):
         self.policy()
@@ -292,9 +292,6 @@ class Hub(test_chain.Chain):
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class CardsReadFieldLines(test_chain.Chain):
     """Run 5, finding 1: the host reads field lines with no delvetalk line as the spell of
@@ -306,7 +303,7 @@ class CardsReadFieldLines(test_chain.Chain):
                                                   planting=label("at://x/p"), planter=label(GEMINI), planterHandle=label("")))
 
     def rains(self):
-        return [(get(r, "author")["value"], get(r, "text")["value"]) for r in rows(get(self.state("bell"), "rains"))]
+        return [(field(r, "author")["value"], field(r, "text")["value"]) for r in rows(field(self.state("bell"), "rains"))]
 
     def test_the_archived_fenced_rains_are_read_and_held_to_the_rain_bound(self):
         """The host reads a fenced `rain: …` as the bell's rain. Both archived rains (197 and 145
@@ -385,9 +382,9 @@ class HandedToTheDirectory(test_chain.Chain):
             asked = r["receipt"]["identity"]["intent"]
             [offer] = [o for o in self.host.send(op="world-offers", principal=who)["offers"] if o["from"]["post"] == asked and o["identity"]["intent"] != asked]
             self.assertEqual(offer["from"], {"post": asked, "principal": who, "intent": asked}, offer)
-        self.assertEqual([(get(r, "author")["value"], get(r, "text")["value"]) for r in rows(get(self.state("bell"), "rains"))],
+        self.assertEqual([(field(r, "author")["value"], field(r, "text")["value"]) for r in rows(field(self.state("bell"), "rains"))],
                          [(KIMI, lines[KIMI][:100]), (GLM, lines[GLM][:100])])
-        self.assertEqual(rows(get(self.state("anthology"), "lines")), [])
+        self.assertEqual(rows(field(self.state("anthology"), "lines")), [])
 
     def test_prose_that_reached_no_one_handed_on_is_not_addressed_at_the_directory(self):
         """The objects lane's hand-on: the bell's quiet prose is sent to the directory; when the words
@@ -584,3 +581,6 @@ class AnthologyReachable(test_chain.Chain):
         # The owner who admitted is named by the handle stored at admission, to every reader.
         self.assertTrue(card.startswith("THE ANTHOLOGY; keeper ember.delve.town"), card)
         self.assertIn("#2 [admitted] …%s: a splash for every refusal\n" % GEMINI[-8:], card)
+
+if __name__ == "__main__":
+    unittest.main()

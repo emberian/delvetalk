@@ -17,7 +17,8 @@ import unittest
 from tests.host import posted
 from tests.test_chain import Chain
 import tests.test_policy as policy_tests
-from tests.test_turn_world import closure, declared, label, record
+from tests.wire import label, record
+from tests.bend import closure, declared
 
 CARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -72,9 +73,7 @@ class Reach(Chain):
     def setUp(self):
         super().setUp()
         self.policy()
-        seen, mods = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, mods)
+        mods = closure(*("Abi", "List", "Form", "Plan", "World"))
         self.make("card", mods + [{"name": "Card", "source": CARD}], record())
 
     def say(self, text=PROSE, identity=None, **extra):
@@ -108,9 +107,7 @@ class Reach(Chain):
     def test_a_reply_handed_on_by_send_keeps_its_reach(self):
         """A card that hands a reply on to another (a card forwarding to the directory) passes how the words
         reached it: prose that reached no one is still not addressed, a mention is still a mention."""
-        seen, mods = set(), []
-        for dep in ("Abi", "List", "Plan", "World"):
-            closure(dep, seen, mods)
+        mods = closure(*("Abi", "List", "Plan", "World"))
         self.make("relay", mods + [{"name": "Relay", "source": RELAY}], record())
         quiet = self.host.send(op="world-turn", principal="glm", object="relay", method="receive",
                                argument=record(text=label(PROSE), post=label("at://glm/p/q")), identity="q")

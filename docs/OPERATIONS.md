@@ -17,7 +17,7 @@ of Python in 8 files plus 594 of shell and compose. By role:
 | the front: routes, pages, the claim, the login, the repository façade | `http.py` 941, `pages.py` 269, `identity.py` 193, `oauth.py` 241, `repo.py` 209 | 1,853 | rate limits per credential and address, body limits, the 30 s deadline, which page renders; the claim's challenge is Python's (identity.sqlite) |
 | the bridge: routing and drafting | `bridge.py` 550, `interpret.py` 86 | 636 | where a post reaches (`route`; the host now checks `reach`), when to draft, the deliver rounds |
 | the hand | `hand.py` 289 | 289 | nothing; every action is a click or a verb |
-| process management, which FEDERATION 1 deletes | `hostd.py` 162, `hostproc.py` 219 | 381 | the lock, the pool of 8 heaps, the socket |
+| process management (deleted since: `serve` holds the lock, the heaps and both sockets) | `hostd.py` 162, `hostproc.py` 219 | 381 | the lock, the pool of 8 heaps, the socket |
 
 The state the Python keeps beside the journal is 20 kinds under `<state>/`:
 `access.log`, `awaiting/`, `binary-pin`, `bridges/`, `hand-log.jsonl`,

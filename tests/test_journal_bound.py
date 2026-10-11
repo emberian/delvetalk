@@ -13,7 +13,8 @@ import tempfile
 import unittest
 
 from tests.host import Host
-from tests.test_turn_world import counter_modules, nat, record
+from tests.wire import nat, record
+from tests.bend import counter_modules
 
 MIB = 1 << 20
 

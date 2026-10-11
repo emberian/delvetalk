@@ -1,9 +1,9 @@
-"""The Zulip playtest transport against a fake Zulip and a real hostd: topics route as threads, the
+"""The Zulip playtest transport against a fake Zulip and a real `serve`: topics route as threads, the
 hourly quota holds, the welcome is recorded.
 
 Evidence for FOUNDATION §7 (layer: transport).
 
-The Zulip transport against a fake Zulip server (users/me, GET and POST messages) on loopback, and a real hostd.
+The Zulip transport against a fake Zulip server (users/me, GET and POST messages) on loopback, and a real `serve`.
 
     python3 -W ignore -m tests.run test_zulip
 """
@@ -18,10 +18,10 @@ from pathlib import Path
 
 from tests.host import serve, served
 from tests.test_bridge import CARD, OFFERING
-from tests.test_turn_world import nat, record
 from transport import bridge, zulip
 from transport.host import HostClient
 from deploy.serve import LIBRARY
+from tests.wire import nat, record
 
 OPENER = 'did:plc:' + 'o' * 24
 BOT = {'user_id': 99, 'full_name': 'Delve Bot', 'email': 'bot@zulip.test'}
@@ -119,10 +119,10 @@ class ZulipCase(unittest.TestCase):
         self.addCleanup(self.zulip.close)
         self.rc = root / 'zuliprc'
         self.rc.write_text(f'[api]\nemail={BOT["email"]}\nkey={KEY}\nsite=http://127.0.0.1:{self.zulip.server.server_port}\n')
-        self.hostd = served(str(root / 'hostd'), opener=OPENER, library=LIBRARY)
-        self.addCleanup(self.hostd.stop)
-        self.sock = self.hostd.sock
-        self.host, self.root = HostClient(self.sock), HostClient(self.hostd.root)
+        self.server = served(str(root / 'serve'), opener=OPENER, library=LIBRARY)
+        self.addCleanup(self.server.stop)
+        self.sock = self.server.sock
+        self.host, self.root = HostClient(self.sock), HostClient(self.server.root)
         for name in ('garden-1', 'directory'):
             body = OFFERING.replace('"hello "', f'"{name} says "')
             r = self.root.send({'op': 'world-create', 'principal': OPENER, 'identity': 'mk-' + name, 'object': name,

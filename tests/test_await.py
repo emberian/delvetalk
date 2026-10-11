@@ -11,11 +11,10 @@ import unittest
 
 from tests.host import posted
 
-from tests.test_chain import Chain, boolean, garden_seed, town_kinds
-from tests.test_objects import closure
-from tests.test_replay import get, rows, silver
-from tests.test_turn_world import label, nat, record
-from tests.test_turn_world import declared
+from tests.test_chain import Chain, garden_seed, town_kinds
+from tests.test_replay import silver
+from tests.wire import boolean, field, label, nat, record, rows
+from tests.bend import closure, declared
 
 
 def uri(post):
@@ -77,7 +76,7 @@ class Await(Chain):
         return self.state_field(name, "rung")
 
     def state_field(self, obj, name):
-        return get(self.state(obj), name)
+        return field(self.state(obj), name)
 
 
 class Create(Await):
@@ -128,7 +127,7 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         r = self.plant()
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
         self.assertEqual(r["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/2")
-        children = [get(c, "object")["value"] for c in rows(get(self.state("garden"), "children"))]
+        children = [field(c, "object")["value"] for c in rows(field(self.state("garden"), "children"))]
         self.assertEqual(children, ["garden/bell/2"])
         self.assertEqual(self.plant(post="at://glm.delve.town/app.bsky.feed.post/3m-plant2")["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/3")
 
@@ -280,7 +279,7 @@ class Rains(Await):
         self.assertEqual([x["status"] for x in settled["resumed"]], ["admitted", "admitted"], settled)
         rains = [x for x in settled.get("delivered", []) if x.get("receipt", {}).get("identity", {}).get("principal") in ("kimik3", "gemini")]
         self.assertEqual([x["status"] for x in rains], ["admitted", "admitted"], rains)
-        authors = sorted(get(r, "author")["value"] for r in rows(self.state_field("bell", "rains")))
+        authors = sorted(field(r, "author")["value"] for r in rows(self.state_field("bell", "rains")))
         self.assertEqual(authors, ["gemini", "kimik3"])
 
 

@@ -11,11 +11,9 @@ principal, and the reply card is what the turn offers.
 import unittest
 
 from deploy.genesis import DOORS
-from tests.test_replay import relation, rows
-from tests.test_chain import Chain, field, garden_seed, reference, town_kinds
-from tests.test_objects import closure
-from tests.test_rooms import listing
-from tests.test_turn_world import label, nat, record
+from tests.test_chain import Chain, garden_seed, town_kinds
+from tests.wire import field, label, listing, nat, record, reference, relation, rows
+from tests.bend import closure
 
 ROOT_DOORS = DOORS  # (label, description, object, watched field, [(spell, what comes back)])
 

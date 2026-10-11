@@ -14,9 +14,9 @@ import json
 import unittest
 
 from tests.test_reflection import PROBE, Reflection, probe_seed
-from tests.test_turn_world import label, nat, record
 from tests.test_world import COUNTER, WorldCase, put, root, seed, write
-from tests.test_turn_world import declared
+from tests.wire import label, nat, record
+from tests.bend import declared
 
 # Calls PROBE.bump2 (input {n: Nat}) with {m: Nat}, and inspects objects.
 CALLER = declared("""edition ObjectiveBend 1

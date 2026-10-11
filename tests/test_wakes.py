@@ -11,17 +11,12 @@ by the one who installs it, and theirs admit only the owner.
 """
 import unittest
 
-from tests.test_chain import Chain, nil, reference, town_kinds
-from tests.test_objects import closure
+from tests.test_chain import Chain, town_kinds
 from tests.test_rooms import avatar_seed
-from tests.test_replay import get, items, relation, rows
-from tests.test_turn_world import label, nat, record
+from tests.wire import field, label, nat, nil, record, reference, relation, rows, variant
+from tests.bend import closure
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
-
-
-def variant(tag, **fields):
-    return {"tag": "variant", "label": tag, "payload": record(**fields)}
 
 
 def event(kind="mention", actor="did:plc:mimo", text="hello", reply_to=""):
@@ -53,7 +48,7 @@ class Wakes(Chain):
         self.make(did, closure("Avatar"), avatar_seed(Card_handle(did), "porch"))
 
     def inbox(self, did):
-        return [(get(n, "from")["value"], get(n, "text")["value"]) for n in rows(get(self.state(did), "inbox"))]
+        return [(field(n, "from")["value"], field(n, "text")["value"]) for n in rows(field(self.state(did), "inbox"))]
 
     def test_rows_writes_grows_turns_and_remind_are_spells_with_a_where_line(self):
         """GROUND §6 change 5: a watch on another card's field is typed in a post, its row pattern one `column op
@@ -92,9 +87,9 @@ class Wakes(Chain):
         first = self.turn(env, "publish", record(event=event(text="one")), principal=OWNER)
         self.assertEqual(self.label_of(first), "done")
         self.turn(env, "publish", record(event=event(kind="reply", text="two", reply_to="at://x/p/0")), principal=OWNER)
-        buffer = rows(get(self.state(env), "buffer"))
-        self.assertEqual([get(e, "text")["value"] for e in buffer], ["one", "two"])
-        heights = [int(get(e, "at")["value"]) for e in buffer]
+        buffer = rows(field(self.state(env), "buffer"))
+        self.assertEqual([field(e, "text")["value"] for e in buffer], ["one", "two"])
+        heights = [int(field(e, "at")["value"]) for e in buffer]
         self.assertLess(heights[0], heights[1])          # `at` is the host's height, not the client's 0
         before = self.version(env)
         look = self.turn(env, "observe", principal=OTHER)
@@ -112,10 +107,10 @@ class Wakes(Chain):
     def test_an_env_is_named_by_its_did_in_a_spell_and_lives_at_env_slash_did(self):
         env = self.env()
         self.turn(env, "publish", record(event=event(text="one")), principal=OWNER)
-        at = int(get(rows(get(self.state(env), "buffer"))[0], "at")["value"])
+        at = int(field(rows(field(self.state(env), "buffer"))[0], "at")["value"])
         r = self.turn(env, "receive", heard("delvetalk env/%s seen\nat: %d" % (OWNER, at)), principal=OWNER)
         self.assertEqual(self.label_of(r), "done")
-        self.assertEqual(get(self.state(env), "seen"), nat(at))
+        self.assertEqual(field(self.state(env), "seen"), nat(at))
         self.assertIn("    delvetalk env seen\n", self.turn(env, "receive", heard(""), principal=OWNER)["offers"][0]["text"])
         # A stranger's card lists no seen: it is the owner's alone to offer.
         self.assertNotIn("seen", self.turn(env, "receive", heard(""), principal=OTHER)["offers"][0]["text"])
@@ -149,7 +144,7 @@ class Wakes(Chain):
         other = self.host.send(op="world-create", principal="ember", identity="mk-other", object="env/" + OTHER,
                                 modules=closure("Env"), entry="initial", seed=record(), owner=OTHER)
         self.assertEqual(other["status"], "created", other)
-        self.assertEqual(get(self.state("env/" + OTHER), "owner"), label(OTHER))
+        self.assertEqual(field(self.state("env/" + OTHER), "owner"), label(OTHER))
         self.reopen()
         self.assertEqual(self.version("env/" + OWNER), 2)                              # the opener's amendment and the owner's
         self.assertEqual(self.host.send(op="world-open", path=self.path, opener="glm")["status"], "error")
@@ -186,7 +181,7 @@ class Wakes(Chain):
         self.avatar(OWNER)
         # A trigger on an event subscribes the wake to its env's buffer.
         watch = self.turn(wake, "watch", record(event=variant("mention", actor=label("did:plc:mimo")), action=variant("notify")), principal=OWNER)
-        self.assertEqual((self.label_of(watch), get(watch["result"]["payload"], "id")), ("watching", nat(1)))
+        self.assertEqual((self.label_of(watch), field(watch["result"]["payload"], "id")), ("watching", nat(1)))
         self.turn(env, "publish", record(event=event(actor="did:plc:mimo", text="are you awake?")), principal=OWNER)
         self.turn(env, "publish", record(event=event(actor="did:plc:zero", text="not for you")), principal=OWNER)
         self.deliver_all()
@@ -201,7 +196,7 @@ class Wakes(Chain):
             self.turn(wake, "watch", record(event=variant("keyword", term=label(term)), action=variant("notify")), principal=OWNER)
         gone = self.turn(wake, "unwatch", record(id=nat(2)), principal=OWNER)
         self.assertEqual(self.label_of(gone), "watching")
-        ids = [get(t, "id") for t in items(get(self.state(wake), "triggers"))]
+        ids = [field(t, "id") for t in field(self.state(wake), "triggers")["items"]]
         self.assertEqual(ids, [nat(1), nat(3)])
         self.assertEqual(self.label_of(self.turn(wake, "unwatch", record(id=nat(2)), principal=OWNER)), "refused")
         # From a post: the owner's spell adds a trigger; a stranger's is refused.
@@ -222,14 +217,14 @@ class Wakes(Chain):
         self.avatar(OTHER)
         self.turn(wake, "watch", record(event=variant("keyword", term=label("moth")), action=variant("call", card=label(OTHER), method=label("note"))), principal=OWNER)
         fired = self.turn(wake, "sense", record(event=event(kind="post", text="the moths know the way")), principal=OWNER)
-        self.assertEqual((self.label_of(fired), get(fired["result"]["payload"], "count")), ("fired", nat(1)))
+        self.assertEqual((self.label_of(fired), field(fired["result"]["payload"], "count")), ("fired", nat(1)))
         quiet = self.turn(wake, "sense", record(event=event(kind="post", text="mot h")), principal=OWNER)
-        self.assertEqual(get(quiet["result"]["payload"], "count"), nat(0))
+        self.assertEqual(field(quiet["result"]["payload"], "count"), nat(0))
         self.deliver_all()
         self.assertEqual(self.inbox(OTHER), [(OWNER, "post from mimo: the moths know the way")])
 
     def triggers(self, wake):
-        return [get(t, "id")["value"] for t in items(get(self.state(wake), "triggers"))]
+        return [field(t, "id")["value"] for t in field(self.state(wake), "triggers")["items"]]
 
     def test_a_schedule_recurs_every_n_clock_minutes_until_unwatched(self):
         """SEEDING §5: a schedule re-arms itself `every` minutes after it fires; each firing is the
@@ -252,7 +247,7 @@ class Wakes(Chain):
         self.deliver_all()
         self.assertEqual(len(self.inbox(OWNER)), 3)
         # A forged `due` from the owner fires nothing: only the wake's own sends count.
-        self.assertEqual(get(self.turn(wake, "due", record(id=nat(1), at=nat(31)), principal=OWNER)["result"]["payload"], "count"), nat(0))
+        self.assertEqual(field(self.turn(wake, "due", record(id=nat(1), at=nat(31)), principal=OWNER)["result"]["payload"], "count"), nat(0))
 
     def test_a_clock_jump_fires_once_and_rearms_from_now(self):
         """Transport's clock is wall minutes: the first advance jumps by millions. Missed firings
@@ -278,14 +273,14 @@ class Wakes(Chain):
         self.assertEqual(self.inbox(OWNER), [(OWNER, "scheduled at 4")])
         self.assertEqual(self.triggers(wake), [])
         never = self.turn(wake, "schedule", record(at=nat(2), every=nat(0), action=variant("notify")), principal=OWNER)
-        self.assertEqual(get(never["result"]["payload"], "clause"), label("never"))
+        self.assertEqual(field(never["result"]["payload"], "clause"), label("never"))
 
     def test_a_wake_holds_at_most_eight_standing_schedules(self):
         wake = self.wake()
         for n in range(8):
             self.assertEqual(self.label_of(self.turn(wake, "schedule", record(at=nat(0), every=nat(60), action=variant("notify")), principal=OWNER)), "watching")
         ninth = self.turn(wake, "schedule", record(at=nat(0), every=nat(60), action=variant("notify")), principal=OWNER)
-        self.assertEqual(get(ninth["result"]["payload"], "clause"), label("schedulesFull"))
+        self.assertEqual(field(ninth["result"]["payload"], "clause"), label("schedulesFull"))
 
     def test_the_flood_a_wake_hears_the_cistern_pass_a_mark(self):
         """SEEDING §4, the flood: the town pours refusals into a cistern (kind/cistern's: a record whose level is
@@ -332,7 +327,7 @@ class Wakes(Chain):
         r = self.turn(wake, "watch", record(event=writes, action=call), principal=OWNER)
         self.assertEqual(self.label_of(r), "watching")
         self.deliver_all()
-        ticks = lambda: int(get(self.state("tide"), "ticks")["value"])
+        ticks = lambda: int(field(self.state("tide"), "ticks")["value"])
         for i in range(3):
             planted = self.turn("garden", "plant", record(colour=label("amber"), seed=label("bell %d" % i)), principal=OTHER)
             self.assertEqual(self.label_of(planted), "planted")
@@ -353,7 +348,7 @@ class Wakes(Chain):
         call = {"tag": "variant", "label": "call", "payload": record(card=label("tide"), method=label("tick"))}
         self.assertEqual(self.label_of(self.turn(wake, "watch", record(event=rule, action=call), principal=OWNER)), "watching")
         self.deliver_all()
-        ticks = lambda: int(get(self.state("tide"), "ticks")["value"])
+        ticks = lambda: int(field(self.state("tide"), "ticks")["value"])
         for who, expected in ((OWNER, 0), (OTHER, 1)):
             r = self.turn("bell/1", "rain", record(text=label("a drizzle")), principal=who)
             self.assertEqual(r["status"], "admitted", r)
@@ -372,7 +367,7 @@ class Wakes(Chain):
             self.assertEqual(self.label_of(r), "subscribed" if i < 32 else "refused", r)
         tick = self.turn("tide", "tick", principal="did:plc:zero")
         self.assertEqual((tick["status"], self.label_of(tick)), ("admitted", "ticked"), tick)
-        self.assertEqual(get(tick["result"]["payload"], "sent"), nat(32))
+        self.assertEqual(field(tick["result"]["payload"], "sent"), nat(32))
 
     def test_a_subscriber_is_the_turns_principal_and_a_tick_too_soon_is_refused_naming_the_next(self):
         self.tide()
@@ -381,21 +376,21 @@ class Wakes(Chain):
         sub = self.turn("tide", "subscribe", record(every=nat(1), note=label("WC-01, first light")), principal=OTHER)
         self.assertEqual(self.label_of(sub), "subscribed")
         self.turn("tide", "receive", heard("delvetalk tide subscribe\nevery: 2\nnote: inkling's first tide"), principal=OWNER)
-        subs = rows(get(self.state("tide"), "subs"))
-        self.assertEqual([get(s, "who")["value"] for s in subs], [OTHER, OWNER])
+        subs = rows(field(self.state("tide"), "subs"))
+        self.assertEqual([field(s, "who")["value"] for s in subs], [OTHER, OWNER])
         first = self.turn("tide", "tick", principal="did:plc:zero")
-        self.assertEqual((self.label_of(first), get(first["result"]["payload"], "sent")), ("ticked", nat(1)))
+        self.assertEqual((self.label_of(first), field(first["result"]["payload"], "sent")), ("ticked", nat(1)))
         soon = self.turn("tide", "tick", principal="did:plc:zero")
         self.assertEqual(self.label_of(soon), "tooSoon")
-        last = int(get(self.state("tide"), "last")["value"])
-        self.assertEqual(get(soon["result"]["payload"], "next"), nat(last + 3))
+        last = int(field(self.state("tide"), "last")["value"])
+        self.assertEqual(field(soon["result"]["payload"], "next"), nat(last + 3))
         # The gap is in clock units: turns do not move it, world-advance does.
         for _ in range(4):
             self.turn("tide", "receive", heard(""), principal="did:plc:zero")
         self.assertEqual(self.label_of(self.turn("tide", "tick", principal="did:plc:zero")), "tooSoon")
         self.host.send(op="world-advance", height=last + 3)
         second = self.turn("tide", "tick", principal="did:plc:zero")
-        self.assertEqual((self.label_of(second), get(second["result"]["payload"], "sent")), ("ticked", nat(2)))
+        self.assertEqual((self.label_of(second), field(second["result"]["payload"], "sent")), ("ticked", nat(2)))
         self.deliver_all()
         self.assertEqual(self.inbox(OTHER), [("did:plc:zero", "tide 1: WC-01, first light"), ("did:plc:zero", "tide 2: WC-01, first light")])
         self.assertEqual(self.inbox(OWNER), [("did:plc:zero", "tide 2: inkling's first tide")])
@@ -407,9 +402,6 @@ class Wakes(Chain):
 def Card_handle(did):
     return did.split(":")[-1]
 
-
-if __name__ == "__main__":
-    unittest.main()
 
 
 LAW_PROBE = """edition ObjectiveBend 1
@@ -470,10 +462,7 @@ class LawPredicates(unittest.TestCase):
 
     def run_probe(self, entry, argument):
         from tests.test_objects import check, compile_job
-        from tests.test_turn_world import closure as world_closure
-        modules, seen = [], set()
-        for name in ("Tide", "Wake"):
-            world_closure(name, seen, modules)
+        modules = closure("Tide", "Wake")
         compiled = compile_job(modules + [{"name": "Probe", "source": LAW_PROBE}], entry)
         self.assertEqual(compiled["status"], "compiled", compiled)
         out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [argument]})
@@ -489,3 +478,6 @@ class LawPredicates(unittest.TestCase):
         # equals, a missing author, another field, another object; above 0, below 2, the whole
         # word "moth" (case aside; "moths" is another word), and two patterns at once.
         self.assertEqual([self.run_probe("rowsMatched", nat(n)) for n in range(8)], ["2", "0", "0", "0", "2", "2", "1", "1"])
+
+if __name__ == "__main__":
+    unittest.main()

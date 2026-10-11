@@ -9,7 +9,7 @@
 #    on HOST and runs rehearsal/rehearse.py there under swarm-build with a 3 GB memory cap,
 #    printing the cgroup's peak. The run replays the archive, probes, and replays the journal
 #    from snapshots against its straight replay.
-# 3. Brings back results.json, programs.log and hostd.stderr, writes rehearsal/out/summary.md
+# 3. Brings back results.json, programs.log and serve.log, writes rehearsal/out/summary.md
 #    (REPORT.md's measured half), and removes the remote directory unless --keep.
 # remote.log keeps this tree's commit, whether it is clean, and the binary's SHA-256.
 # Fixtures: rehearsal/fixtures/posts.json (rebuilt by rehearsal/fixtures.py from the archive
@@ -44,7 +44,7 @@ ssh "$HOST" "export PATH=\$HOME/.local/bin:\$PATH; cd $DIR && cp ~/$BIN ./delvet
   SWARM_MEM_MAX=3G swarm-build sh -c 'python3 rehearsal/rehearse.py --binary ./delvetalk-obend --out rehearsal/out && \
   echo peak memory \$(cat /sys/fs/cgroup\$(cut -d: -f3 /proc/self/cgroup)/memory.peak) bytes' && du -sh rehearsal/out" \
   | tee -a rehearsal/out/remote.log
-rsync -a "$HOST:$DIR/rehearsal/out/results.json" "$HOST:$DIR/rehearsal/out/programs.log" "$HOST:$DIR/rehearsal/out/hostd.stderr" rehearsal/out/
+rsync -a "$HOST:$DIR/rehearsal/out/results.json" "$HOST:$DIR/rehearsal/out/programs.log" "$HOST:$DIR/rehearsal/out/state/serve.log" rehearsal/out/
 python3 rehearsal/summary.py rehearsal/out/results.json > rehearsal/out/summary.md
 [ "$KEEP" = 1 ] || ssh "$HOST" "rm -rf ~/$DIR"
 echo rehearsal/out/summary.md

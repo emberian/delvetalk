@@ -11,7 +11,8 @@ names an object or receipt the journal does not hold, a lost diagnostic, or a ma
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import declared, label, nat, record
+from tests.wire import label, nat, record
+from tests.bend import declared
 
 MAKER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -148,7 +149,7 @@ def methods()""").replace('cons({head: "dim", tail:', 'cons({head: "dim", tail: 
 
     def test_a_prefix_mints_past_the_ids_already_held(self):
         """`requireAbsent` ending in `/`: the first free `<prefix><n>`, so a squatter of lamp/1 refuses nothing."""
-        squat = self.host.send(op="world-create", principal="mallory", identity="squat", object="lamp/1",
+        self.host.send(op="world-create", principal="mallory", identity="squat", object="lamp/1",
                                modules=[{"name": "Counter", "source": LAMP}], entry="initial", seed=record())
         numbering = KIND.replace("grafted(input.id, input.body)", "grafted(c.object.object, input.body)")
         self.make("numbering", numbering, record(made=nat(0)))

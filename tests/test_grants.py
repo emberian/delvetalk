@@ -15,10 +15,9 @@ import unittest
 
 from tests.host import whole
 
-from tests.test_chain import field
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
-from tests.test_turn_world import declared
+from tests.wire import field, label, nat, record
+from tests.bend import declared
 
 SCHEDULER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -242,9 +241,6 @@ class Grants(Reflection):
         direct = self.turn("scheduler", "authorizeBell", principal="registrar")
         self.assertEqual(len(direct["result"]["value"]), 59, direct)
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 LAMP = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -393,3 +389,5 @@ class Attenuation(Reflection):
         self.assertEqual(self.use("dim", g, level=nat(2))["result"], label("noGrant"))
         self.assertEqual(self.host.send(op="world-revoke", principal="owner", identity="r3", grant="nope")["status"], "error")
 
+if __name__ == "__main__":
+    unittest.main()

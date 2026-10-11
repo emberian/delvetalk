@@ -14,7 +14,7 @@ import base64
 import unittest
 
 from tests.test_reflection import PACKAGE, Reflection, source_seed
-from tests.test_turn_world import nat, record
+from tests.wire import nat, record
 
 CONSONANTS, VOWELS = "bdfghjklmnprstvz", "aiou"
 

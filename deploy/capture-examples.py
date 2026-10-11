@@ -91,8 +91,8 @@ class Provider:
 
 
 class Capture:
-    def __init__(self, port, hostd_socket, provider, tmp):
-        self.port, self.sock, self.provider, self.tmp = port, hostd_socket, provider, str(tmp)
+    def __init__(self, port, socket, provider, tmp):
+        self.port, self.sock, self.provider, self.tmp = port, socket, provider, str(tmp)
         self.out, self.token, self.count = [], '', [0, 0, 0]
 
     def say(self, text=''):

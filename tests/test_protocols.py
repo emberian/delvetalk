@@ -11,7 +11,8 @@ The artifact lists `protocols` and each method row names its protocol.
 """
 import unittest
 
-from tests.test_turn import Host, library_modules
+from tests.bend import closure
+from tests.test_turn import Host
 
 KIT = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -53,7 +54,7 @@ class Protocols(unittest.TestCase):
         cls.h.close()
 
     def modules(self, thing):
-        return library_modules("Abi", "World") + [{"name": "Kit", "source": KIT}, {"name": "Thing", "source": thing}]
+        return closure("Abi", "World") + [{"name": "Kit", "source": KIT}, {"name": "Thing", "source": thing}]
 
     def check(self, thing, entry="render"):
         return self.h.send({"op": "check-package", "entry": entry, "modules": self.modules(thing)})

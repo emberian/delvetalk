@@ -18,8 +18,8 @@ import unittest
 
 from tests import test_chain
 from tests.test_rooms import avatar_seed
-from tests.test_replay import get, items, rows
-from tests.test_turn_world import closure, label, record
+from tests.wire import field, label, record, rows
+from tests.bend import closure
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
 
@@ -45,10 +45,10 @@ class Mailbox(test_chain.Chain):
         return r
 
     def inbox(self, did):
-        return [(get(n, "from")["value"], get(n, "text")["value"]) for n in rows(get(self.state(did), "inbox"))]
+        return [(field(n, "from")["value"], field(n, "text")["value"]) for n in rows(field(self.state(did), "inbox"))]
 
     def following(self, did):
-        return [(get(get(f, "object"), "object")["value"], get(f, "field")["value"]) for f in items(get(self.state(did), "following"))]
+        return [(field(field(f, "object"), "object")["value"], field(f, "field")["value"]) for f in field(self.state(did), "following")["items"]]
 
 
     def test_strangers_neither_send_subscribe_nor_deliver(self):

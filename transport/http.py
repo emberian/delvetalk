@@ -24,7 +24,7 @@ from transport import bridge, oauth, pages
 from transport.bridge import door_rows, plain
 from transport.host import CLOCK, HOST_TIMEOUT, HostClient, add_host_args, connect
 from transport.delve import Client, canonical, http_transport
-from transport.identity import Identity, IdentityError, ORIGIN
+from transport.identity import SLUG, Identity, IdentityError, ORIGIN
 from transport.repo import PUBLIC, Repo
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,7 +34,6 @@ MAX_BODY, MAX_SOURCE, MAX_MODULES = 256 * 1024, 128 * 1024, 16  # MAX_SOURCE: th
 OPEN_BODY = 64 * 1024  # what an unauthenticated request (the challenge, verify) may send
 WAIT_MAX, WAIT_STEP = 30, 1  # seconds an offers long poll may hold a request, and how often it re-asks the host
 RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
-SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz])(?:-[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz])+')
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'

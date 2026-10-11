@@ -15,7 +15,7 @@ MAX_TEXT = 64 * 1024
 AT_URI = re.compile(r'at://did:[a-z0-9]+:[A-Za-z0-9._:-]+/[A-Za-z0-9.]+/[A-Za-z0-9._~:-]+\Z')
 SUMMON_HANDLE, SUMMON_TAG = 'livedelvetalk.delve.town', 'gsb'
 EDIT = re.compile(r'edit:\s*(.+?)\s*›\s*(.+)')
-DECISION = re.compile(r'(merge|reject)\b[:\s]*(.*)')
+DECISION = re.compile(r'(?:merge|reject)\b.*')
 MENTION = re.compile(r'(?<![\w.])@((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})', re.I)
 TAG = re.compile(r'(?<![\w#])#([^\W\d_][\w-]*)')
 SCHEMA = '''
@@ -25,21 +25,28 @@ CREATE TABLE IF NOT EXISTS observations(seq INTEGER PRIMARY KEY AUTOINCREMENT, u
 '''
 
 
-def classify(text, reply_to, mentions, tags, summon=SUMMON_HANDLE):
-    """-> (kind, wiki). Surface form only, first match wins; `summon` is the handle whose mention summons. Whether a
-    post is a spell, and to which card, is the host's parser's answer (bridge.spelled), not this one's."""
+def wiki_target(text):
+    """(page, section) of an agentwiki post, read off its first line: `wiki: <page>` is the whole page (section ""),
+    `edit: <page> › <section>` one section; None for any other text. The one reading of the header: the observer
+    classifies by it and the poster records a post's page by it."""
     first = text.strip().split('\n', 1)[0].strip()
-    if first.startswith('wiki:') and first[5:].strip():
-        return 'wiki-page', {'op': 'page', 'title': first[5:].strip(), 'section': None}
     m = EDIT.fullmatch(first)
     if m:
-        return 'wiki-edit', {'op': 'edit', 'title': m[1], 'section': m[2]}
-    m = DECISION.fullmatch(first)
-    if m and reply_to:
-        return 'wiki-merge', {'op': m[1], 'title': m[2].strip() or None, 'section': None}
+        return m[1], m[2].strip()
+    return (first[5:].strip(), '') if first.startswith('wiki:') and first[5:].strip() else None
+
+
+def classify(text, reply_to, mentions, tags, summon=SUMMON_HANDLE):
+    """-> kind. Surface form only, first match wins; `summon` is the handle whose mention summons. Whether a post is a
+    spell, and to which card, is the host's parser's answer (bridge.parsed), not this one's."""
+    target = wiki_target(text)
+    if target:
+        return 'wiki-edit' if target[1] else 'wiki-page'
+    if reply_to and DECISION.fullmatch(text.strip().split('\n', 1)[0].strip()):
+        return 'wiki-merge'
     if summon in [x['handle'] for x in mentions] or SUMMON_TAG in [t.lower() for t in tags]:
-        return 'summon', None
-    return ('reply' if reply_to else 'post'), None
+        return 'summon'
+    return 'reply' if reply_to else 'post'
 
 
 def mentions_of(text, record):
@@ -79,9 +86,8 @@ def observation(post):
     mentions = mentions_of(text, record)
     text = text.strip()
     tags = list(dict.fromkeys(TAG.findall(text)))
-    kind, wiki = classify(text, parent, mentions, tags)
-    return {'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': created,
-            'text': text, 'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki}
+    return {'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': created, 'text': text,
+            'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': classify(text, parent, mentions, tags)}
 
 
 def posts_of(page):

@@ -6,7 +6,7 @@ under federation (FEDERATION §1) each further world is `did:web:<host>:<world>`
 one world). `transport/repo.py` is mounted by the front (`transport/http.py`) at `/xrpc/<nsid>` and
 `/.well-known/did.json`; the primitives are `transport/atproto/` (DAG-CBOR, CIDs and CAR in `cbor.py`, the
 MST in `mst.py`, keys, TIDs and commits in `sign.py`; standard library and `cryptography`). Record types are
-in `lexicons/`. Tests: `tests/test_repo.py` (the interop vectors, a fake world on loopback, the real hostd).
+in `lexicons/`. Tests: `tests/test_repo.py` (the interop vectors, a fake world on loopback, a real serve).
 
 The transport decides nothing: it renders the journal, and the signature is over bytes the host produced or
 over their CIDs. Two layers: the **signed repository** (below), the same for every reader; and the
@@ -68,7 +68,7 @@ entries would see them disagree. A host-held key would move the signature to the
 would build the MST and sign in the same step that seals and fsyncs an entry, so the front could not forge,
 and the key would leave the internet-facing container. The op it needs (host lane, not stubbed: the
 transport-signed design needs no host change): `world-commit {height?}` → `{status: "commit", height, rev,
-data, prev, sig, bytes}`, the host's own commit for that height under a key `hostd` reads at start, and
+data, prev, sig, bytes}`, the host's own commit for that height under the key the front reads at start (`DELVETALK_REPO_KEY_FILE`), and
 `Signed` would serve those bytes instead of signing. Signing a commit the transport built would add nothing.
 
 | Method | Answers |
@@ -131,7 +131,7 @@ that rule holds; such an id with `~`, `@` or another character record keys forbi
 syntax, and its record cannot be cited until the object is recreated. The old `<object>/<version>` key is gone (400).
 
 Host statuses become XRPC errors carrying the host reply as `reply`: `unknown` is 400 `RecordNotFound`,
-`denied` 403 `Denied`, `ambiguous` 400 `AmbiguousSlug`, hostd not answering 503 `HostUnavailable` or 504
+`denied` 403 `Denied`, `ambiguous` 400 `AmbiguousSlug`, the host not answering 503 `HostUnavailable` or 504
 `HostTimeout`, anything else 400 `InvalidRequest`. The front adds 401 `InvalidToken` for a bad bearer and 429
 `RateLimitExceeded` (with `Retry-After`); the catalogue's `xrpcErrors` lists them all.
 

@@ -31,7 +31,8 @@ class StubHost:
     def send(self, req):
         self.ops.append(req)
         if req['op'] == 'world-status':
-            return {'status': 'status', 'height': 41, 'posts': {'hour': 0, 'sources': [{'source': 'delve', 'used': 3, 'quota': 16, 'next': 60}]}}
+            return {'status': 'status', 'height': 41, 'hour': {'hour': 0, 'turns': 2, 'refused': {'quota': 1}},
+                    'posts': {'hour': 0, 'sources': [{'source': 'delve', 'used': 3, 'quota': 16, 'next': 60}]}}
         if req['op'] == 'world-post-reserve':
             return {'status': 'reserved'}
         if req['op'] == 'world-interpretations':
@@ -231,12 +232,9 @@ class Cli(HandCase):
         backups.mkdir()
         (backups / 'delvetalk-20261011T000000Z.tar.gz').write_bytes(b'x')
         (backups / 'last-verify').write_text('ok 20261011T000000Z\n')
-        real = self.host.send
-        self.host.send = lambda req: {'status': 'entries', 'entries': [{'outcome': {'tag': 'refused', 'class': 'quota'}}, {'outcome': {'tag': 'admitted'}}]} \
-            if req['op'] == 'world-entries' else real(req)
         p = self.js('status', '--journal', str(journal), '--backups', str(backups))
         self.assertEqual(p['front'], {'requests5m': 2, '5xx5m': 1, '5xxHour': 2})
-        self.assertEqual(p['hour'], {'window': '2 newest entries', 'turns': 2, 'refused': {'quota': 1}})
+        self.assertEqual(p['hour'], {'hour': 0, 'turns': 2, 'refused': {'quota': 1}})  # the host's counters, as world-status gives them
         self.assertEqual((p['model']['hour']['calls'], p['model']['day']['calls']), (2, 3))
         self.assertEqual(p['reservations'], {'source': 'delve', 'used': 3, 'quota': 16, 'next': 60})
         self.assertEqual(p['interpretations'], {'pending': 1, 'maxAttempts': 0})

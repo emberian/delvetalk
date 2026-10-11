@@ -21,6 +21,7 @@ from transport.atproto.cbor import CID, block, decode
 from transport.atproto.cbor import car as car_of
 from transport.atproto.mst import Tree
 from transport.atproto.sign import Key, multikey, tid
+from transport.identity import SLUG
 
 NS = 'town.delvetalk.'
 COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law'))
@@ -29,7 +30,6 @@ PUBLIC = 'anonymous'  # the reader an unauthenticated request is; the front's ob
 LIMIT, MAX_LIMIT = 50, 100
 CAR = 'application/vnd.ipld.car'
 OBJECT_KEY = re.compile(r'([A-Za-z0-9._~:-]+)\.([0-9]+)')  # <object with / as ~>.<version>
-SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]-(?:[bdfghjklmnprstvz][aiou]){2}[bdfghjklmnprstvz]')
 # Collections a host op pages by journal height: (op, the reply's list, the item's record key, the item's cid).
 PAGED = {'receipt': ('world-entries', 'entries', 'slug', 'hash'), 'source': ('world-sources', 'sources', 'cid', 'cid'),
          'publication': ('world-publications', 'publications', 'id', 'hash'), 'grant': ('world-grants', 'grants', 'id', 'hash')}

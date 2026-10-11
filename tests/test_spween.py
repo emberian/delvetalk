@@ -22,8 +22,7 @@ from tests import test_chain
 from tests.test_objects import run_pure
 from tests.test_scene import GATE, GLM, heard, plain, scene_fields
 from tests.test_rooms import make_room
-from tests.test_objects import closure
-from tests.test_turn_world import label, record
+from tests.wire import label, record
 
 # The README's running example, verbatim.
 TAVERN = """---

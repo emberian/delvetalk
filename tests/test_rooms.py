@@ -8,10 +8,9 @@ import os
 import unittest
 
 from deploy import genesis
-from tests.test_turn_world import relation
-from tests.test_chain import Chain, boolean, reference
-from tests.test_objects import closure
-from tests.test_turn_world import label, nat, record
+from tests.test_chain import Chain
+from tests.wire import boolean, label, listing, nat, record, reference, relation
+from tests.bend import closure
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NOBODY = reference("")
@@ -301,9 +300,6 @@ class Floor(Chain):
         self.assertIn("Choices:\n  * " + "c" * 60 + "0\n", card)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class Scoped(Chain):
     """Scoped resolution: an avatar's principal says `acquire the stone`, `look`, `bump counter`;
@@ -395,4 +391,5 @@ class Copies(Chain):
         texts = [o["text"] for d in delivered for o in d.get("receipt", d).get("offers", [])]
         self.assertIn("Not copied: stone is not copyable; its owner, ember, decides.\n", texts)
 
-
+if __name__ == "__main__":
+    unittest.main()

@@ -21,9 +21,9 @@ submit being refused; the variants committing once the host runs predicates.
 import unittest
 
 from deploy import genesis
-from tests.test_chain import nil, reference
-from tests.test_replay import get, relation, rows
-from tests.test_turn_world import TurnWorld, closure, label, nat, record
+from tests.test_turn_world import TurnWorld
+from tests.wire import field, label, nat, nil, record, reference, relation, rows
+from tests.bend import closure
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
 
@@ -69,7 +69,7 @@ class Laws(LawWorld):
         self.assertEqual(self.clause(self.turn("dir", "remove", record(door=record(label=label("garden"))), principal=OTHER)), "lawRefused/owner")
         self.assertEqual(self.version("dir"), 1)
         self.assertEqual(self.turn("dir", "remove", record(door=record(label=label("garden"))), principal=OWNER)["status"], "admitted")
-        self.assertEqual(rows(get(self.state("dir"), "doors")), [])
+        self.assertEqual(rows(field(self.state("dir"), "doors")), [])
 
     def test_a_directory_installed_for_someone_else_has_no_amendment_clause(self):
         r = self.host.send(op="world-create", principal="ember", identity="mk-d2", object="d2", modules=closure("Directory"),
@@ -90,7 +90,7 @@ class Laws(LawWorld):
         self.assertEqual((missing["status"], missing["result"]["label"]), ("admitted", "refused"), missing)
         self.assertIn("refused noLine", missing["offers"][0]["text"])
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
-        admitted = [get(p, "n") for p in rows(get(self.state("anthology"), "admitted"))]
+        admitted = [field(p, "n") for p in rows(field(self.state("anthology"), "admitted"))]
         self.assertEqual(admitted, [nat(2)])
         card = self.turn("anthology", "receive", heard(""), principal=OWNER)["offers"][0]["text"]
         self.assertIn("#1 [pending] kimik3: moths\n#2 [admitted] glm: lamps\n", card)
@@ -104,12 +104,12 @@ class Laws(LawWorld):
         for i in range(1, 130):
             r = self.turn("anthology", "write", record(text=label("%04d" % i + "\U0001f319" * 276)), principal=poet)
             self.assertEqual(r["status"], "admitted", (i, r.get("receipt", {}).get("outcome")))
-        lines = rows(get(self.state("anthology"), "lines"))
-        self.assertEqual((len(lines), get(lines[0], "text")["value"][:4]), (128, "0002"))
+        lines = rows(field(self.state("anthology"), "lines"))
+        self.assertEqual((len(lines), field(lines[0], "text")["value"][:4]), (128, "0002"))
         gone = self.turn("anthology", "admit", record(number=nat(1)), principal=OWNER)
         self.assertEqual(gone["result"]["label"], "refused", gone)
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(2)), principal=OWNER)["result"]["label"], "done")
-        self.assertEqual([get(p, "n") for p in rows(get(self.state("anthology"), "admitted"))], [nat(2)])
+        self.assertEqual([field(p, "n") for p in rows(field(self.state("anthology"), "admitted"))], [nat(2)])
 
     def test_the_ninth_line_is_in_its_acknowledgement_and_a_page_reaches_it(self):
         """The card shows eight lines; a write is acknowledged with its own number and line
@@ -200,9 +200,6 @@ class Predicates(LawWorld):
                                                   action={"tag": "variant", "label": "notify", "payload": record()}), principal=OWNER)
         self.assertEqual(mine["status"], "admitted", mine)  # the owner's own write passes both tiers
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class NoStrangerAmends(LawWorld):
     """A law that admits anyone's write leaving the guarded fields unchanged must still admit
@@ -223,3 +220,6 @@ class NoStrangerAmends(LawWorld):
             mine = self.host.send(op="world-amend", principal=OWNER, identity="own-" + obj, object=obj, version=version,
                                   law='law owner: request.subject == new.owner')
             self.assertEqual(mine["status"], "admitted", (obj, mine))
+
+if __name__ == "__main__":
+    unittest.main()
