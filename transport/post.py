@@ -1,8 +1,7 @@
-#!/usr/bin/env python3
-"""The ONLY writer. Without --i-am-ember-and-authorize-posting it prints the exact
-request it would send and exits 2 without reading credentials or touching the network.
+"""The ONLY writer (`python3 -m transport post`). To delve.town, without --i-am-ember-and-authorize-posting it prints the
+exact request it would send and exits 2 without reading credentials or touching the network. A world whose bridge row
+is a Zulip channel, the owner's own, is posted to at once.
 """
-import argparse
 import hashlib
 import json
 import sys
@@ -12,12 +11,11 @@ from pathlib import Path
 
 from transport.atproto.sign import tid
 from transport.delve import POST as COLLECTION, Client, Failure, canonical, http_transport
-from transport.host import CLOCK, HostClient, add_host_args
+from transport.host import CLOCK
 from transport.observe import MENTION, wiki_target
 
 FLAG = '--i-am-ember-and-authorize-posting'
 MAX_TEXT = 64 * 1024
-CREDENTIALS = '~/.config/delvetown/credentials.json'
 
 
 def reply_ref(client, parent_uri):
@@ -49,7 +47,7 @@ def mention_facets(client, text):
 
 def posts(host, source='delve'):
     """This hour's posting for `source` as the host counts it (`world-status.posts`): {source, used, quota?, next?}."""
-    got = host.send({'op': 'world-status'}) if host else {}
+    got = host.send({'op': 'world-status'})
     return next((s for s in (got.get('posts') or {}).get('sources') or [] if s.get('source') == source), {'source': source})
 
 
@@ -105,34 +103,33 @@ def build_request(text, reply=None, facets=None):
             'body': {'repo': '<session did>', 'collection': COLLECTION, 'record': record}}
 
 
-def ledger(state, intent):
+def ledger(st, intent):
     """The posting ledger, one file per intent: what was fixed before the network was touched (the record key, or Zulip's
     anchor) and what came back. A retry reads it, so an intent is posted at most once and its quota slot taken once."""
-    path = Path(state) / 'posting' / (hashlib.sha256(intent.encode()).hexdigest()[:24] + '.json')
+    path = st.posting / (hashlib.sha256(intent.encode()).hexdigest()[:24] + '.json')
     return path, (json.loads(path.read_text()) if path.exists() else None)
 
 
-def send(request, intent, state, credentials, host, client=None, now=time.time):
+def send(request, intent, st, host, client=None, now=time.time):
     """Network write, at most once per intent: the host reserves it first (`delve`, counted against its quota); the record
     key is fixed in the ledger before the first attempt, and a retry that finds a record under it adopts that record. The
     reservation is released only when the post certainly did not leave (the credentials unreadable). Credentials go only to
     the fixed PDS via Client."""
-    from transport.bridge import write_atomic
-    path, got = ledger(state, intent)
+    path, got = ledger(st, intent)
     if got and got.get('result'):
         return got['result']
     client, found, fresh = client or Client(http_transport, allow_write=True), None, got is None
     if fresh:
         reserve(host, intent, 'delve')
     try:
-        cred = json.loads(Path(credentials).expanduser().read_text())
+        cred = json.loads(Path(st.config.credentials).expanduser().read_text())
     except (OSError, ValueError):
         if fresh:
             host.send({'op': 'world-post-release', 'principal': CLOCK, 'intent': intent, 'reason': 'credentials unreadable'})
         raise
     if fresh:
         got = {'intent': intent, 'rkey': tid(int(now() * 1e6), int(hashlib.sha256(intent.encode()).hexdigest()[:4], 16) & 1023)}
-        write_atomic(path, got)
+        st.write(path, got)
     session = client.write('com.atproto.server.createSession',
                            {'identifier': cred['identifier'], 'password': cred['password']})
     if not fresh:  # an earlier attempt may have landed with its reply lost
@@ -145,7 +142,7 @@ def send(request, intent, state, credentials, host, client=None, now=time.time):
         found = client.write('com.atproto.repo.createRecord', dict(request['body'], repo=session['did'], rkey=got['rkey']),
                              token=session['accessJwt'])
     result = {'uri': found['uri'], 'cid': found['cid']}
-    write_atomic(path, dict(got, result=result))
+    st.write(path, dict(got, result=result))
     return result
 
 
@@ -161,22 +158,20 @@ def unsend(uri, credentials, client=None):
     client.write('com.atproto.repo.deleteRecord', {'repo': repo, 'collection': COLLECTION, 'rkey': rkey}, token=session['accessJwt'])
 
 
-def record_sent(state, host):
+def record_sent(st, host):
     """Tell the host of every posted draft it has not confirmed: registration is retried on its own, never by posting
     again. -> the drafts recorded now."""
-    from transport.bridge import write_atomic
     done = []
-    for path in sorted((Path(state) / 'outbox').glob('*.json')):
-        d = json.loads(path.read_text())
+    for path, d in st.drafts():
         obj = draft_object(d)
         if d.get('posted') and d.get('sent') and obj and (d.get('recorded') or {}).get('status') in (None, 'error'):
             got = record_posted(host, d['sent'], obj, slot_record(d['slot']) if d.get('slot') else None, wiki_target(d['text']), d.get('intent'))
-            write_atomic(path, dict(d, recorded=got))
+            st.write(path, dict(d, recorded=got))
             done += [path.name] if got.get('status') != 'error' else []
     return done
 
 
-def post_draft(path, state, host, credentials=CREDENTIALS, text=None, reader=None, client=None, intent=None, object=None):
+def post_draft(path, st, host, text=None, reader=None, client=None, intent=None, object=None):
     """Post a bridge outbox draft (its replyTo, object and slot; `text` replaces its text), record it with the host, and
     mark it posted: what `post --draft ... --i-am-ember-and-authorize-posting` does, callable. -> the post result."""
     path = Path(path)
@@ -188,87 +183,64 @@ def post_draft(path, state, host, credentials=CREDENTIALS, text=None, reader=Non
     slot = slot_record(d['slot']) if d.get('slot') else None
     request = build_request(body, reply_ref(reader, d['replyTo']) if d.get('replyTo') else None, mention_facets(reader, body))
     intent = intent or f'draft-{path.stem}'
-    result = send(request, intent, Path(state), credentials, host, client=client)
-    from transport.bridge import write_atomic
+    result = send(request, intent, st, host, client=client)
     d = dict(d, text=body, posted=True, sent=result, intent=intent, **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
-    write_atomic(path, d)  # sent, whatever the host says next: record_sent retries the registration alone
+    st.write(path, d)  # sent, whatever the host says next: record_sent retries the registration alone
     object = object or draft_object(d)
     if object:
         result = dict(result, recorded=record_posted(host, result, object, slot, wiki_target(body), intent))
-        write_atomic(path, dict(d, recorded=result['recorded']))
+        st.write(path, dict(d, recorded=result['recorded']))
     return result
 
 
-def main(argv=None, out=None, client=None):
-    out = out or sys.stdout
-    ap = argparse.ArgumentParser(prog='post.py')
-    ap.add_argument('--state', required=True)
-    sub = ap.add_subparsers(dest='cmd', required=True)
-    p = sub.add_parser('post')
-    p.add_argument('--text-file')
-    p.add_argument('--draft', metavar='FILE', help='a bridge outbox draft: its text, reply-to, object and slot')
-    p.add_argument('--wiki-page', metavar='TITLE')
-    p.add_argument('--wiki-edit', metavar='"TITLE > SECTION"')
-    p.add_argument('--body-file')
-    p.add_argument('--reply-to', metavar='AT_URI', help='thread under this post (its cid is read with getRecord)')
-    p.add_argument('--intent', required=True)
-    p.add_argument('--credentials', default=CREDENTIALS)
-    p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
-    add_host_args(p)  # serve's socket: reserve, read the quota, record posts
-    p.add_argument('--object', metavar='OBJECT', help='the object this card addresses: after a confirmed post, world-posted {object, intent} records it and settles its reservation; required for a live post (the dry run may omit it)')
-    p.add_argument('--slot', metavar='PRINCIPAL:INTENT', help='the slot the post settles, as principal:intent')
-    p.add_argument(FLAG, dest='authorized', action='store_true', default=False)
-    a = ap.parse_args(argv)
+def command(st, a, out, client=None, zulip=None):
+    """`post`: one post, at most once per its intent, recorded with the host for `--object`."""
     try:
+        d = {}
         if a.draft:
             d = json.loads(Path(a.draft).read_text())
             if d.get('posted'):
                 raise Failure('draft_already_posted')
-            a.reply_to, a.object, a.slot = a.reply_to or d.get('replyTo'), a.object or draft_object(d), a.slot or d.get('slot')
+        reply_to, obj, slot = a.reply_to or d.get('replyTo'), a.object or draft_object(d), a.slot or d.get('slot')
         if bool(a.text_file) + bool(a.wiki_page) + bool(a.wiki_edit) + bool(a.draft) != 1 or (not (a.text_file or a.draft) and not a.body_file):
-            raise Failure('choose_one_of', '--text-file | --wiki-page/--wiki-edit with --body-file')
-        if a.draft:
-            text = d['text']
-        elif a.text_file:
-            text = Path(a.text_file).read_text()
-        else:
-            text = wiki_text('wiki' if a.wiki_page else 'edit', a.wiki_page or a.wiki_edit, Path(a.body_file).read_text())
-        if (a.wiki_edit or (wiki_target(text) or ('', ''))[1]) and not a.reply_to:
-            raise Failure('wiki_edit_needs_reply_to', 'reply to the page post')
+            raise Failure('choose_one_of', '--text-file | --draft | --wiki-page/--wiki-edit with --body-file')
+        text = d['text'] if a.draft else Path(a.text_file).read_text() if a.text_file else \
+            wiki_text('wiki' if a.wiki_page else 'edit', a.wiki_page or a.wiki_edit, Path(a.body_file).read_text())
         for h in a.mention:
             text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
-        if (a.object or a.authorized) and not a.host_socket:
-            raise Failure('record_needs_journal', 'the host reserves every post')
-        if a.authorized and not a.object:
-            raise Failure('live_post_needs_object', 'world-posted {object, intent} settles the reservation; without it the post stays counted')
-        slot = slot_record(a.slot) if a.slot else None
-        reader = client or Client(http_transport)
-        reply = reply_ref(reader, a.reply_to) if a.reply_to else None
-        request = build_request(text, reply, mention_facets(reader, text))
-        host = None
-        if a.host_socket:
-            host = HostClient(a.host_socket, a.world)
+        slot, host, row = slot_record(slot) if slot else None, st.host(), st.bridge()
         try:
-            if not a.authorized:
-                plan = {'dry_run': True, 'intent': a.intent, 'quota': posts(host), 'request': request}
-                if a.object:
-                    plan['record'] = {'op': 'world-posted', 'object': a.object, 'slot': slot}
-                    if wiki_target(text):
-                        plan['record']['page'], plan['record']['section'] = wiki_target(text)
-                out.write(canonical(plan) + '\n')
-                return 2
-            result = send(request, a.intent, Path(a.state), a.credentials, host)
-            if a.object:
-                result['recorded'] = record_posted(host, result, a.object, slot, wiki_target(text), a.intent)
+            if row['transport'] == 'zulip':  # the owner's own Zulip: no flag and no quota, a topic of the world's channel
+                from transport import zulip as z
+                zc = zulip or z.Client(row['zuliprc'])
+                if not a.topic:
+                    raise Failure('zulip_post_needs_topic')
+                result = z.deliver(st, host, zc, row['channel'], a.topic, text.replace('<bot name>', zc.me()['full_name']), a.intent, obj, slot)
+            else:
+                if (a.wiki_edit or (wiki_target(text) or ('', ''))[1]) and not reply_to:
+                    raise Failure('wiki_edit_needs_reply_to', 'reply to the page post')
+                if a.authorized and not obj:
+                    raise Failure('live_post_needs_object', 'world-posted {object, intent} settles the reservation; without it the post stays counted')
+                if a.authorized and a.draft:  # posted, recorded and marked posted in one
+                    out.write(canonical(post_draft(a.draft, st, host, text=text, reader=client, intent=a.intent, object=obj)) + '\n')
+                    return 0
+                reader = client or Client(http_transport)
+                request = build_request(text, reply_ref(reader, reply_to) if reply_to else None, mention_facets(reader, text))
+                if not a.authorized:
+                    plan = {'dry_run': True, 'intent': a.intent, 'quota': posts(host) if st.host_socket.exists() else None, 'request': request}
+                    if obj:
+                        plan['record'] = {'op': 'world-posted', 'object': obj, 'slot': slot}
+                        if wiki_target(text):
+                            plan['record']['page'], plan['record']['section'] = wiki_target(text)
+                    out.write(canonical(plan) + '\n')
+                    return 2
+                result = send(request, a.intent, st, host)
+                if obj:
+                    result['recorded'] = record_posted(host, result, obj, slot, wiki_target(text), a.intent)
         finally:
-            if host:
-                host.close()
+            host.close()
     except (Failure, OSError, KeyError, ValueError) as e:
-        print(canonical({'error': getattr(e, 'code', type(e).__name__)}), file=sys.stderr)
+        print(canonical({'error': getattr(e, 'code', type(e).__name__), 'detail': getattr(e, 'detail', '')}), file=sys.stderr)
         return 1
     out.write(canonical(result) + '\n')
     return 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

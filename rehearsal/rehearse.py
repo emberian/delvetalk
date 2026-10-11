@@ -23,7 +23,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from deploy import genesis  # noqa: E402
 from transport import interpret, model  # noqa: E402
-from deploy.serve import LIBRARY, Pipe, Served  # noqa: E402
+from deploy.serve import Pipe, Served  # noqa: E402
+from transport.config import LIBRARY  # noqa: E402
 from transport.host import HostClient  # noqa: E402
 from transport import journal as chain  # noqa: E402
 from transport import post as post_py  # noqa: E402

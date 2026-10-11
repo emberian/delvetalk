@@ -20,7 +20,7 @@ from tests.host import serve, served
 from tests.test_bridge import CARD, OFFERING
 from transport import bridge, zulip
 from transport.host import HostClient
-from deploy.serve import LIBRARY
+from transport.config import LIBRARY
 from tests.wire import nat, record
 
 OPENER = 'did:plc:' + 'o' * 24

@@ -27,7 +27,7 @@ cd "$here/.."
 PYTHONPATH=. python3 - "$state" "$root" "$opener" "library-$(date -u +%Y%m%dT%H%M%SZ)" <<'PY'
 import json, shutil, sys
 from pathlib import Path
-from deploy.serve import LIBRARY
+from transport.config import LIBRARY
 from transport.host import HostClient
 
 state, root, opener, identity = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4]

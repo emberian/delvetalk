@@ -5,7 +5,7 @@ of the entries' CIDs.
 Mounted by the front (transport/http.py) at /xrpc/<nsid> and /.well-known/did.json. Every record is a host
 reply carried verbatim with `$type` added; the host decides what a reader sees: an unauthenticated request
 reads as PUBLIC, a bearer credential as its principal. The signed repository renders what every reader sees
-(each entry's height and hash) and signs it with the key in DELVETALK_REPO_KEY_FILE. docs/REPO.md says what
+(each entry's height and hash) and signs it with the world's key (`State.repo_key`, made once by `repokey`). docs/REPO.md says what
 is served, what is signed, what is not, and the host ops it reads.
 """
 import base64
@@ -140,12 +140,10 @@ class Repo:
                'com.atproto.sync.subscribeRepos': 'subscribe'}
 
     def __init__(self, origin, key=None):
-        """`key`: a transport.atproto.sign.Key, else the PEM file DELVETALK_REPO_KEY_FILE names, else unsigned."""
+        """`key`: a transport.atproto.sign.Key, or None for an unsigned repository."""
         self.origin = origin.rstrip('/')
         parts = urllib.parse.urlsplit(self.origin)
         self.handle, self.did = parts.hostname, 'did:web:' + parts.netloc.replace(':', '%3A')
-        path = os.environ.get('DELVETALK_REPO_KEY_FILE')
-        key = key or (Key.load(path) if path else None)
         self.signed = Signed(self.did, key) if key else None
 
     def did_document(self):
@@ -347,3 +345,15 @@ class Repo:
         if reply.get('status') != 'object':
             raise refused(reply)
         return reply['record']
+
+
+def make_key(st, curve='secp256k1'):
+    """The world's signing key (docs/REPO.md "The key"), made once: a PKCS#8 PEM at `State.repo_key`, created mode 0400
+    by the running user and never overwritten, since a new key re-signs every commit. -> the did:key it names."""
+    key, path = Key.generate(curve), st.repo_key
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)  # FileExistsError: replacing a key is a deliberate act
+    with os.fdopen(fd, 'wb') as f:
+        f.write(key.pem())
+        f.flush()
+        os.fsync(f.fileno())
+    return key.did_key

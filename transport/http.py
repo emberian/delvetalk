@@ -1,18 +1,13 @@
-#!/usr/bin/env python3
-"""Run as `python3 -m transport.http` (never as a script: this file would shadow stdlib http).
-
-HTTP front on the world host: /AGENTS.md for agents, / and /o/<object> for humans.
+"""HTTP front on the world host (`python3 -m transport http`): /AGENTS.md for agents, / and /o/<object> for humans.
 Carries bytes and a verified principal; it validates nothing but size and JSON
 well-formedness. Host replies pass through verbatim.
 """
-import argparse
 import html
 import json
 import os
 import re
 import secrets
 import socket
-import sys
 import threading
 import time
 import traceback
@@ -21,10 +16,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from transport import bridge, oauth, pages
+from transport.atproto.sign import Key
 from transport.bridge import door_rows, plain
-from transport.host import CLOCK, HOST_TIMEOUT, HostClient, add_host_args, connect
+from transport.host import CLOCK, HOST_TIMEOUT
 from transport.delve import Client, canonical, http_transport
-from transport.identity import SLUG, Identity, IdentityError, ORIGIN
+from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import PUBLIC, Repo
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -266,15 +262,15 @@ BUSY = (b'HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json; ch
 
 
 class AccessLog:
-    """One line per request: time, method, path (no query), status, bytes sent, the principal's DID or `-`. Never a credential
-    or a body. Rotated by size: past `limit` bytes the file becomes `<name>.1` (the previous one is dropped)."""
+    """One line per request: time, method, path (no query), status, bytes sent, the principal's DID or `-`, the world.
+    Never a credential or a body. Rotated by size: past `limit` bytes the file becomes `<name>.1` (the previous one is dropped)."""
     LIMIT = 16 * 1024 * 1024
 
-    def __init__(self, path, limit=LIMIT):
-        self.path, self.limit, self.lock = Path(path), limit, threading.Lock()
+    def __init__(self, path, world, limit=LIMIT):
+        self.path, self.world, self.limit, self.lock = Path(path), world, limit, threading.Lock()
 
     def write(self, when, method, path, status, sent, did):
-        line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'}\n"
+        line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'} {self.world}\n"
         with self.lock:
             try:
                 if self.path.exists() and self.path.stat().st_size + len(line) > self.limit:
@@ -289,16 +285,17 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None, workers=WORKERS,
-                 outbox=None):
-        super().__init__(address, Handler)
+    def __init__(self, st, host, identity, address=None, clock=time.time, sleep=time.sleep, hand=None, workers=WORKERS, repl=None):
+        """The public front over `st`'s world, or with `hand` the hand's console, which logs no access and drafts nothing."""
+        c = st.config
+        super().__init__(address or ((c.hand_bind, c.hand_port) if hand else (c.http_bind, c.http_port)), Handler)
         self.slots, self.receiving, self.receiving_lock = threading.BoundedSemaphore(workers), {}, threading.Lock()
         threading.Thread(target=self.reap, daemon=True).start()
-        self.access, self.outbox, self.known = access, outbox and Path(outbox), {}  # outbox: the hand's, where an HTTP turn's draft waits
-        self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps and Path(heaps), repl, trust_proxy, sleep, hand  # heaps: serve's heaps/ directory
-        self.repo = Repo(origin)  # the journal as AT Protocol records, read only
-        self.oauth = oauth.OAuth(origin)  # log in with delve.town (transport/oauth.py)
+        self.st, self.access, self.known = st, None if hand else AccessLog(st.access_log, st.world), {}
+        self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
+        self.repl, self.trust_proxy, self.sleep, self.hand = repl or st.host(stateless=True), c.trust_proxy, sleep, hand
+        self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None)  # the journal as AT Protocol records, read only
+        self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
@@ -341,12 +338,12 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         the town hears of it is the operator's click."""
         receipt = reply.get('receipt') or {}
         writes = [w['object'] for w in (receipt.get('outcome') or {}).get('writes') or [] if w.get('object')]
-        if self.outbox is None or reply.get('status') != 'admitted' or not writes:
+        if reply.get('status') != 'admitted' or not writes:
             return
         public = [o for o in dict.fromkeys(writes) if self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': o}).get('status') == 'viewed']
-        path = self.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
+        path = self.st.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
         if public and not path.exists():
-            bridge.write_atomic(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
+            self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
                                        'object': public[0], 'slot': None, 'receipt': receipt, 'posted': False,
                                        'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
 
@@ -362,7 +359,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
 
     def heap(self, did, create=True):
         """A principal's private heap over the host's socket; None for one never made, unless `create`."""
-        return self.host.at(did) if create or (self.heaps / f'{did}.journal').exists() else None
+        return self.host.at(did) if create or (self.st.heaps / f'{did}.journal').exists() else None
 
     def sync_library(self, force=False):
         """Re-read hostd-info when serve's pid changed (it restarted, maybe with a new library), or when forced."""
@@ -940,24 +937,12 @@ class Handler(BaseHTTPRequestHandler):
             window *= 4
 
 
-def main(argv=None):
-    ap = argparse.ArgumentParser(prog='http.py')
-    ap.add_argument('--state', required=True)
-    add_host_args(ap)
-    ap.add_argument('--port', type=int, default=8080)
-    ap.add_argument('--bind', default='127.0.0.1')
-    ap.add_argument('--origin', default=ORIGIN)
-    ap.add_argument('--trust-proxy', action='store_true', help='key the unauthenticated limits on the last X-Forwarded-For entry')
-    a = ap.parse_args(argv)
-    host = connect(a)
-    ident = Identity(a.state, Client(http_transport), a.origin)
-    front = Front((a.bind, a.port), host, ident, a.origin, heaps=Path(host.path).parent / 'heaps', repl=HostClient(host.path, stateless=True),
-                  trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'), outbox=Path(a.state) / 'outbox')
+
+def command(st, a, out):
+    """`http`: the public front on the config's address."""
+    front = Front(st, st.host(), Identity(st, Client(http_transport)))
     try:
         front.serve_forever()
     finally:
         front.host.close()
         front.repl.close()
-
-if __name__ == '__main__':
-    sys.exit(main())

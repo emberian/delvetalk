@@ -31,7 +31,7 @@ from tests.host import serve, served
 from tests.test_chain import garden_state, town_kinds
 from tests.test_http import DID, Provider
 from transport import delve, identity
-from deploy.serve import LIBRARY
+from transport.config import LIBRARY
 from transport.atproto import sign
 from transport.atproto.cbor import CID, block, decode, encode, read_car
 from transport.atproto.mst import Tree, common_prefix, layer

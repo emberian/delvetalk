@@ -19,9 +19,10 @@ from pathlib import Path
 from transport.journal import records, size
 from tests.test_bridge import spell_post
 from tests.wire import write_journal
-from transport import delve, hand, identity, observe
-from transport.bridge import write_atomic
+from transport import delve, hand, identity, observe, watch
+from transport.__main__ import main
 from transport.http import Front
+from transport.state import State
 
 TOKEN = 'sekret-token'
 
@@ -48,8 +49,8 @@ class Poster:
     def __init__(self):
         self.calls = []
 
-    def __call__(self, path, state, host, credentials, text=None, object=None):
-        self.calls.append((Path(path).stem, text, str(credentials)) + ((object,) if object else ()))
+    def __call__(self, path, st, host, text=None, object=None):
+        self.calls.append((Path(path).stem, text, st.config.credentials) + ((object,) if object else ()))
         return {'uri': 'at://did:plc:x/town.delve.feed.post/r1', 'cid': 'bafy'}
 
 
@@ -57,7 +58,8 @@ class HandCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        self.state = Path(self.tmp.name)
+        (Path(self.tmp.name) / 'delvetalk.toml').write_text(f'credentials = "{self.tmp.name}/creds.json"\nbackups = "{self.tmp.name}/backups"\n')
+        self.state = State(self.tmp.name)
         posts = [spell_post(1, 'garden-1', '2026-10-09T10:00:01Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:02Z')]
         from tests.test_transport import Script
         ob = observe.Observer(self.state, delve.Client(Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': posts}),
@@ -65,12 +67,12 @@ class HandCase(unittest.TestCase):
         ob.poll()
         ob.db.close()
         self.uri = posts[0]['uri']
-        write_atomic(self.state / 'outbox' / '7-aaaa.json', {
+        self.state.write(self.state.outbox / '7-aaaa.json', {
             'replyTo': self.uri, 'replyHandle': 'talkie.delve.town', 'principal': 'p', 'object': 'garden-1', 'slot': None,
             'receipt': {'slug': 'bofab-lukid', 'height': 7, 'outcome': {'tag': 'admitted'}}, 'text': 'planted <b>a</b>', 'posted': False})
         self.poster, self.host = Poster(), StubHost()
-        self.hand = hand.Hand(self.state, self.host, TOKEN, '/creds.json', poster=self.poster)
-        self.front = Front(('127.0.0.1', 0), self.host, identity.Identity(self.tmp.name, delve.Client(None)), hand=self.hand)
+        self.hand = hand.Hand(self.state, self.host, TOKEN, poster=self.poster)
+        self.front = Front(self.state, self.host, identity.Identity(self.state, delve.Client(None)), ('127.0.0.1', 0), hand=self.hand)
         threading.Thread(target=self.front.serve_forever, daemon=True).start()
         self.addCleanup(lambda: (self.front.shutdown(), self.front.server_close()))
 
@@ -85,7 +87,7 @@ class HandCase(unittest.TestCase):
         return self.req('GET', path, cookie=f'dt_hand={TOKEN}')
 
     def logged(self):
-        return [json.loads(l) for l in (self.state / 'hand-log.jsonl').read_text().splitlines()]
+        return [json.loads(l) for l in self.state.hand_log.read_text().splitlines()]
 
 
 class Hand(HandCase):
@@ -101,7 +103,7 @@ class Hand(HandCase):
     def test_post_calls_the_poster_once_with_the_edited_text_and_logs_it(self):
         code, _, headers = self.req('POST', '/hand/draft/7-aaaa', {'do': 'post', 'text': 'edited words'}, f'dt_hand={TOKEN}')
         self.assertEqual(code, 303)
-        self.assertEqual(self.poster.calls, [('7-aaaa', 'edited words', '/creds.json')])
+        self.assertEqual(self.poster.calls, [('7-aaaa', 'edited words', f'{self.tmp.name}/creds.json')])
         (line,) = self.logged()
         self.assertEqual((line['what'], line['who'], line['draft'], line['edited']), ('post', 'owner', '7-aaaa', True))
 
@@ -111,7 +113,7 @@ class Hand(HandCase):
         self.assertIn('planted', self.get()[1])
         self.req('POST', '/hand/draft/7-aaaa', {'do': 'skip', 'reason': 'off topic'}, f'dt_hand={TOKEN}')
         self.assertEqual(self.poster.calls, [])
-        d = json.loads((self.state / 'outbox' / '7-aaaa.json').read_text())
+        d = json.loads((self.state.outbox / '7-aaaa.json').read_text())
         self.assertEqual((d['posted'], d['skipped'], d['reason']), (False, True, 'off topic'))
         self.assertNotIn('rows="8"', self.get()[1])  # no draft left to edit
         self.assertEqual([l['what'] for l in self.logged()], ['hold', 'skip'])
@@ -120,16 +122,16 @@ class Hand(HandCase):
 class Listener(unittest.TestCase):
     def test_the_hand_is_its_own_listener_and_the_public_front_has_no_hand(self):
         from unittest import mock
-        from transport import hand as console, http as front
         made, stub = [], StubHost()
-        stub.close, stub.path = lambda: None, '/nonexistent/host.sock'
-        with tempfile.TemporaryDirectory() as d, mock.patch.object(front, 'connect', lambda *a, **k: stub), \
-                mock.patch.object(front, 'HostClient', lambda *a, **k: stub), mock.patch.object(Front, 'serve_forever', lambda self, *a: made.append(self)):
-            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
-                front.main(['--state', d, '--port', '0', '--hand-token', TOKEN])  # the front takes no hand
-            front.main(['--state', d, '--bind', '127.0.0.2', '--port', '0'])
+        stub.close = lambda: None
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(State, 'host', lambda self, **k: stub), \
+                mock.patch.object(Front, 'serve_forever', lambda self, *a: made.append(self)):
             (Path(d) / 'token').write_text(TOKEN + '\n')
-            console.main(['serve', '--state', d, '--token-file', str(Path(d) / 'token'), '--port', '0'], host=stub)
+            (Path(d) / 'delvetalk.toml').write_text(f'http_bind = "127.0.0.2"\nhttp_port = 0\nhand_port = 0\nhand_token_file = "{d}/token"\n')
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                main(['http', '--state', d, '--hand-token', TOKEN])  # the front takes no hand
+            main(['http', '--state', d])
+            main(['hand', 'serve', '--state', d], host=stub)
         for f in made:
             self.addCleanup(f.server_close)
             threading.Thread(target=super(Front, f).serve_forever, daemon=True).start()
@@ -145,8 +147,8 @@ class Listener(unittest.TestCase):
 class Unpost(HandCase):
     """`unpost` withdraws a post we made, on Delve or Zulip, and never anyone else's."""
     def posted(self, uri, cid='bafy9'):
-        path = self.state / 'outbox' / '7-aaaa.json'
-        write_atomic(path, dict(json.loads(path.read_text()), posted=True, sent={'uri': uri, 'cid': cid}, intent='draft-7-aaaa'))
+        path = self.state.outbox / '7-aaaa.json'
+        self.state.write(path, dict(json.loads(path.read_text()), posted=True, sent={'uri': uri, 'cid': cid}, intent='draft-7-aaaa'))
         return path
 
     def pds(self, did):
@@ -159,8 +161,7 @@ class Unpost(HandCase):
 
     def test_a_delve_post_of_ours_is_deleted_and_the_host_told_the_draft_and_log_keep_it(self):
         path, pds = self.posted('at://did:plc:me/town.delve.feed.post/r9'), self.pds('did:plc:me')
-        (self.state / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
-        self.hand.credentials = self.state / 'creds.json'
+        (self.state.root / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
         self.assertEqual(self.hand.unpost('7-aaaa', 'wrong card', client=pds), {'unposted': 'at://did:plc:me/town.delve.feed.post/r9'})
         self.assertEqual(pds.sent[1], ('com.atproto.repo.deleteRecord', {'repo': 'did:plc:me', 'collection': 'town.delve.feed.post', 'rkey': 'r9'}))
         told = [o for o in self.host.ops if o['op'] == 'world-posted'][-1]
@@ -172,12 +173,12 @@ class Unpost(HandCase):
 
     def test_anyone_elses_post_and_an_unposted_draft_are_refused_before_any_delete(self):
         self.posted('at://did:plc:someone/town.delve.feed.post/r9')
-        (self.state / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
-        self.hand.credentials, pds = self.state / 'creds.json', self.pds('did:plc:me')
+        (self.state.root / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
+        pds = self.pds('did:plc:me')
         with self.assertRaises(hand.HandError):
             self.hand.unpost('7-aaaa', 'x', client=pds)
         self.assertEqual([n for n, _ in pds.sent], ['com.atproto.server.createSession'])
-        write_atomic(self.state / 'outbox' / '7-aaaa.json', dict(json.loads((self.state / 'outbox' / '7-aaaa.json').read_text()), posted=False))
+        self.state.write(self.state.outbox / '7-aaaa.json', dict(json.loads((self.state.outbox / '7-aaaa.json').read_text()), posted=False))
         with self.assertRaises(hand.HandError):
             self.hand.unpost('7-aaaa', 'x', client=pds)
 
@@ -189,8 +190,8 @@ class Unpost(HandCase):
         self.assertEqual(deleted, [42])
         with self.assertRaises(hand.HandError):
             self.posted('zulip://delvetalk/garden/43', '43')
-            write_atomic(self.state / 'outbox' / '7-aaaa.json', {k: v for k, v in json.loads((self.state / 'outbox' / '7-aaaa.json').read_text()).items() if k != 'unposted'})
-            self.hand.unpost('7-aaaa', 'misread')  # no --zuliprc
+            self.state.write(self.state.outbox / '7-aaaa.json', {k: v for k, v in json.loads((self.state.outbox / '7-aaaa.json').read_text()).items() if k != 'unposted'})
+            self.hand.unpost('7-aaaa', 'misread')  # the world has no Zulip bridge row
 
 
 class Writer:
@@ -210,7 +211,7 @@ class Cli(HandCase):
         with contextlib.ExitStack() as stack:
             if stdin is not None:
                 stack.enter_context(__import__('unittest.mock').mock.patch.object(sys, 'stdin', io.StringIO(stdin)))
-            code = hand.main([*argv, '--state', str(self.state), '--credentials', str(self.state / 'creds.json')], out, self.host, self.poster)
+            code = main(['hand', *argv, '--state', str(self.state.root)], out, host=self.host, poster=self.poster)
         return code, out.getvalue()
 
     def js(self, *argv, **kw):
@@ -225,17 +226,16 @@ class Cli(HandCase):
         import time as t
         now = t.time()
         stamp = lambda ago: t.strftime('%Y-%m-%dT%H:%M:%SZ', t.gmtime(now - ago))
-        (self.state / 'access.log').write_text(f'{stamp(60)} GET / 200 10 -\n{stamp(120)} GET /o/x 500 9 -\n{stamp(1800)} GET / 503 9 -\n{stamp(7200)} GET / 500 9 -\n')
-        (self.state / 'model-spend.jsonl').write_text(''.join(json.dumps({'at': now - ago, 'inputTokens': 1000, 'outputTokens': 50}) + '\n'
+        self.state.access_log.write_text(f'{stamp(60)} GET / 200 10 - town\n{stamp(120)} GET /o/x 500 9 - town\n{stamp(1800)} GET / 503 9 - town\n{stamp(7200)} GET / 500 9 - town\n')
+        self.state.spend.write_text(''.join(json.dumps({'at': now - ago, 'inputTokens': 1000, 'outputTokens': 50}) + '\n'
                                                               for ago in (100, 200, 7200)))
-        journal, backups = self.state / 'j' / 'world.journal', self.state / 'backups'
-        journal.parent.mkdir()
+        journal, backups = self.state.journal, self.state.root / 'backups'
         shown = [{'genesis': 1}] + [{'outcome': {'tag': 'suspended'}, 'pad': 'x' * n} for n in (10, 20, 30)]
         write_journal(journal, [dict(e, height=h, previous='p', hash='h%d' % h) for h, e in enumerate(shown, 1)])
         backups.mkdir()
         (backups / 'delvetalk-20261011T000000Z.tar.gz').write_bytes(b'x')
         (backups / 'last-verify').write_text('ok 20261011T000000Z\n')
-        p = self.js('status', '--journal', str(journal), '--backups', str(backups))
+        p = watch.probe(self.state, self.host)
         self.assertEqual(p['front'], {'requests5m': 2, '5xx5m': 1, '5xxHour': 2})
         self.assertEqual(p['hour'], {'hour': 0, 'turns': 2, 'refused': {'quota': 1}})  # the host's counters, as world-status gives them
         self.assertEqual((p['model']['hour']['calls'], p['model']['day']['calls']), (2, 3))
@@ -250,14 +250,14 @@ class Cli(HandCase):
 
 
     def test_edit_keeps_the_original_and_post_calls_the_poster_once_as_cli(self):
-        f = self.state / 'new.txt'
+        f = self.state.root / 'new.txt'
         f.write_text('first edit')
         self.assertEqual(self.js('edit', '7-aaaa', '--text-file', str(f)), {'edited': '7-aaaa'})
         self.js('edit', '7-aaaa', '--stdin', stdin='second edit')
-        d = json.loads((self.state / 'outbox' / '7-aaaa.json').read_text())
+        d = json.loads((self.state.outbox / '7-aaaa.json').read_text())
         self.assertEqual((d['text'], d['original']), ('second edit', 'planted <b>a</b>'))
         self.js('post', '7-aaaa', '--object', 'garden-1')
-        self.assertEqual(self.poster.calls, [('7-aaaa', 'second edit', str(self.state / 'creds.json'), 'garden-1')])
+        self.assertEqual(self.poster.calls, [('7-aaaa', 'second edit', f'{self.tmp.name}/creds.json', 'garden-1')])
         self.assertEqual([l['what'] for l in self.logged()], ['edit', 'edit', 'post'])
         self.assertEqual(self.logged_who(), {'cli'})
 
@@ -273,8 +273,8 @@ class Cli(HandCase):
     def test_retry_makes_the_bridge_run_the_observation_again(self):
         from tests.test_bridge import Stub
         from transport import bridge
-        (self.state / 'outbox' / '7-aaaa.json').unlink()
-        (self.state / 'skipped.txt').write_text(self.uri + '\n')
+        (self.state.outbox / '7-aaaa.json').unlink()
+        self.state.skipped.write_text(self.uri + '\n')
         stub = Stub()
         self.assertNotIn(self.uri, bridge.run(self.state, stub)['turns'])
         self.assertTrue(next(r for r in self.js('inbox') if r['uri'] == self.uri)['skipped'])
@@ -286,9 +286,9 @@ class Cli(HandCase):
         from functools import partial
         from transport import post
         w = Writer()
-        creds = self.state / 'creds.json'
+        creds = self.state.root / 'creds.json'
         creds.write_text('{"identifier": "a", "password": "b"}')
-        f = self.state / 'mine.txt'
+        f = self.state.root / 'mine.txt'
         f.write_text('a word by hand')
         name = self.js('reply', self.uri, '--text-file', str(f), '--object', 'garden-1')['drafted']
         self.assertIn('-hand-', name)

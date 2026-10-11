@@ -7,7 +7,6 @@ import os
 import socket
 import threading
 import time
-from pathlib import Path
 
 HOST_TIMEOUT, CONNECT_WAIT = 150, 2  # seconds an op may take; seconds to wait for a socket not (yet) there
 CLOCK, ON_ROOT = 'transport', 'the opener speaks on the root socket'  # the clock principal serve opens each world with; its refusal
@@ -85,15 +84,3 @@ class HostClient:
             except OSError:
                 pass
 
-
-def add_host_args(ap, root=False):
-    """--host-socket (default <state>/host.sock), or for the opener's programs --root-socket (DELVETALK_ROOT_SOCKET, else
-    serve's default <state>/root/root.sock); --world."""
-    ap.add_argument('--root-socket' if root else '--host-socket', metavar='PATH', default=os.environ.get('DELVETALK_ROOT_SOCKET') if root else None)
-    ap.add_argument('--world', default=os.environ.get('DELVETALK_WORLD', 'town'), help='the world the ops address (default town, or DELVETALK_WORLD)')
-
-
-def connect(args, **more):
-    if hasattr(args, 'root_socket'):
-        return HostClient(args.root_socket or Path(args.state) / 'root' / 'root.sock', args.world, **more)
-    return HostClient(args.host_socket or Path(args.state) / 'host.sock', args.world, **more)

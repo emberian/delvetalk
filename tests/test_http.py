@@ -98,7 +98,7 @@ class FrontCase(ServeCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         if self.fresh_world:
-            from deploy.serve import LIBRARY
+            from transport.config import LIBRARY
             self.state_dir = tempfile.TemporaryDirectory()
             self.addCleanup(self.state_dir.cleanup)
             self.server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
@@ -422,7 +422,7 @@ class Repl(FrontCase):
         mods = closure('World') + [{'name': 'Package', 'source': PLANS}]
         s, y = self.repl(tok, modules=mods, entry='bump', turn=True, arguments=[nat(3)], **self.BIND)
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
-        from deploy.serve import LIBRARY
+        from transport.config import LIBRARY
         self.server.stop()  # a restart of serve: a new stateless session, which issued nothing
         type(self).server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
         type(self).addClassCleanup(type(self).server.stop)
