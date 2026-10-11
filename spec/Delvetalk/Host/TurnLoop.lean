@@ -951,7 +951,8 @@ def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "checkObject", "grant", "grantWith", "revoke",
-   "objects", "changed", "card", "subscribe", "unsubscribe", "principal"]
+   "objects", "changed", "card", "subscribe", "unsubscribe", "principal",
+   "rule", "unrule", "want", "unwant", "grow", "ungrow", "act", "chronicle"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
     host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
@@ -1929,6 +1930,30 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
                                    programs := s.programs ++ [(id, (source, migration))],
                                    layered := if extend then s.layered ++ [id] else s.layered }
           respond bounds responseType "reprogrammed" [.record [("pin", .label prog.pin)]]
+  -- The placing arms (docs/OVERHAUL.md §3; World.obend): `rule`, `want`, `grow` and their removals, each the
+  -- host spell of that name as a Bend body casts it (a kind's `made` placing its rule), staged under the
+  -- turn's principal and judged now by the target's law (`stagePlacements`).
+  | .variant "rule" (.record f) | .variant "unrule" (.record f) | .variant "want" (.record f)
+  | .variant "unwant" (.record f) | .variant "grow" (.record f) | .variant "ungrow" (.record f) =>
+    let action := match plan with | .variant a _ => a | _ => ""
+    let some id := (f.lookup "object").bind referenceId | refusedReading bounds responseType "foreignWorld" "a placing names an object of this world."
+    let some o := (← get).world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
+    match placementsOf o id action (labelsOf (.record f)) (labelsOf (.record f)) with
+    | .error (clause, reason) => refusedReading bounds responseType clause reason
+    | .ok xs => match ← stagePlacements id xs with
+      | some (clause, reading) => refusedReading bounds responseType clause reading
+      | none => respond bounds responseType "placed" [emptyRecord]
+  -- `act {object, verb, text}`: a use of a grown verb, as its spell is (the target's `act`, `request.verb` the verb).
+  | .variant "act" (.record f) =>
+    let some object := f.lookup "object" | evaluation "malformed act plan"
+    let argument := Data.record [("verb", (f.lookup "verb").getD (.label "")), ("text", (f.lookup "text").getD (.label ""))]
+    answer depth self caller bounds (.variant "call" (.record [("object", object), ("method", .label actMethod), ("argument", argument)])) responseType
+  -- `chronicle {day}`: the day's lines (`Ops.chronicle`), as the turn's subject may read them; derived, no root.
+  | .variant "chronicle" (.record f) =>
+    let s ← get
+    let day := match f.lookup "day" with | some (.natural d) => d | _ => s.world.clock / Limits.clockDay
+    respond bounds responseType "chronicled"
+      [.record [("day", .natural day), ("lines", listData ((chronicle s.world s.subject day).map Data.label))]]
   | .variant "amend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed amend plan"
     let some text := (f.lookup "law").bind labelOf | evaluation "malformed amend plan"
