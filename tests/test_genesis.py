@@ -66,7 +66,7 @@ class Genesis(unittest.TestCase):
         self.assertTrue(said['ROOMS'].startswith('The Moss Gate (0 here). Enter: delvetalk rooms enter.'), said)
         self.assertTrue(said['PORCH'].startswith("The Bellfounder's Porch"), said)
         # The link door has no object: naming it answers its description.
-        self.assertEqual(said['STUDIO'], 'STUDIO\nheap and REPL: ' + ORIGIN + '/AGENTS.md\n')
+        self.assertEqual(said['STUDIO'], 'STUDIO\nscratch worlds and REPL: ' + ORIGIN + '/AGENTS.md\n')
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'commonplace'})['text']
         self.assertIn(ORIGIN + '/AGENTS.md', menu)
 
@@ -222,7 +222,7 @@ class Commonplace(unittest.TestCase):
                       '  delvetalk garden/bell/1 rain / text: it rained here first\n'
                       '  » it keeps who rained; bell/1 has 2, the seventh rings it\n', blank)
         self.assertRegex(blank, r'… and \d+ more\n')  # the card is one budget (Card.limit): the doors it has no room for are counted
-        self.assertIn('STUDIO · heap and REPL: ' + ORIGIN + '/AGENTS.md\n', blank)  # a link door is never clipped
+        self.assertIn('STUDIO · scratch worlds and REPL: ' + ORIGIN + '/AGENTS.md\n', blank)  # a link door is never clipped
         self.assertTrue(blank.endswith('Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n'), blank)
         # since an entry: only what changed after it
         since = self.host.send({'op': 'world-turn', 'principal': stranger, 'object': 'commonplace', 'method': 'since', 'identity': 'since',

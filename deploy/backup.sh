@@ -16,14 +16,17 @@ mode=$1 host=$2 data=${3%/} dest=${4%/}
 here="$(cd "$(dirname "$0")" && pwd)"
 [[ -f $data/state/town.journal ]] || { echo "backup: no $data/state/town.journal" >&2; exit 66; }
 mkdir -p "$dest/mirror"
-chmod 700 "$dest"
+# Group 10425 lists it and reads last-verify: the watch's probe runs in the ops container as the stack's uid, which
+# already owns every byte copied here (DEPLOY "Watching"). Nobody else enters.
+chgrp 10425 "$dest" 2>/dev/null || true
+chmod 750 "$dest"
 
-rsync -a --delete --exclude journal.lock --exclude '*.pid' --exclude '*.tmp' --exclude host.sock --exclude /state/library "$data/" "$dest/mirror/"
+rsync -a --delete --exclude journal.lock --exclude '*.pid' --exclude '*.tmp' --exclude host.sock --exclude /state/library --exclude /state/scratch "$data/" "$dest/mirror/"
 
 # A torn tail: the host was mid-append when rsync read the chain. rsync copies `<world>.journal` before
 # `<world>.journal.blocks`, and the host writes a record before its link, so every whole link has its record.
 shopt -s nullglob
-for j in "$dest"/mirror/state/*.journal "$dest"/mirror/state/heaps/*.journal; do
+for j in "$dest"/mirror/state/*.journal; do
   if [[ -s $j && $(tail -c 1 "$j" | od -An -c | tr -d ' ') != '\n' ]]; then
     keep=$(( $(wc -c < "$j") - $(tail -n 1 "$j" | wc -c) ))
     echo "backup: ${j#"$dest"/mirror/}: cut a torn final line at byte $keep" >&2

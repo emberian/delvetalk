@@ -117,7 +117,7 @@ class Repository(unittest.TestCase):
         cls.now, cls.token = [1000.0], None
         ident = identity.Identity(cls.tmp.name, delve.Client(cls.provider), clock=lambda: cls.now[0])
         cls.front = Front(('127.0.0.1', 0), cls.host, ident, clock=lambda: cls.now[0],
-                          heaps=Path(cls.tmp.name) / 'heaps', repl=HostClient(sock, stateless=True))
+                          repl=HostClient(sock, stateless=True))
         cls.port = cls.front.server_address[1]
         serve(cls.front)
         send = cls.host.send

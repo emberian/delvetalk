@@ -193,10 +193,11 @@ def forger(cap):
     did = cap.login('smith.delve.town')
     cap.step('POST', '/check', {'entry': 'flip', 'source': FLIP})
     cap.step('POST', '/check', {'entry': 'bump', 'source': TALLY})
-    cap.step('POST', '/heap/objects', {'intent': 'mk-tally', 'object': 'tally', 'modules': [{'name': 'Tally', 'source': TALLY}], 'entry': 'initial', 'seed': {'count': 40}})
-    cap.step('POST', '/heap/world/tally/bump', {'intent': 'bump-1'})
-    cap.step('GET', '/heap/world/tally')
-    cap.step('POST', '/heap/world/tally/lend', {'intent': 'lend-1', 'fields': {'to': 'did:plc:bbbbbbbbbbbbbbbbbbbbbbbb'}})
+    cap.step('POST', '/scratch', {'name': 'try'})
+    cap.step('POST', '/scratch/try/objects', {'intent': 'mk-tally', 'object': 'tally', 'modules': [{'name': 'Tally', 'source': TALLY}], 'entry': 'initial', 'seed': {'count': 40}})
+    cap.step('POST', '/scratch/try/world/tally/bump', {'intent': 'bump-1'})
+    cap.step('GET', '/scratch/try/world/tally')
+    cap.step('POST', '/scratch/try/world/tally/lend', {'intent': 'lend-1', 'fields': {'to': 'did:plc:bbbbbbbbbbbbbbbbbbbbbbbb'}})
     bind = {'object': 'tally', 'intent': 'repl-1', 'roots': [{'object': 'tally', 'version': 0}]}
     yielded = cap.step('POST', '/repl', {'source': TALLY, 'entry': 'bump', 'arguments': [record(count={'tag': 'natural', 'value': '41'})], **bind})
     cap.step('POST', '/repl', {'source': TALLY, 'entry': 'bump', 'checkpoint': cap.whole(yielded), 'response': {'tag': 'variant', 'label': 'written', 'payload': record()}, **bind})
@@ -219,7 +220,7 @@ def forger(cap):
 def stranger(cap):
     cap.say('## A stranger, by the controls alone')
     cap.say('Only `GET /AGENTS.md/api` and the `_links` and `_actions` of each reply, as `tests/test_hypermedia.py` `walk` follows them:\n'
-            'the first object offering `plant`, its card for the colours, the receipt by slug, a counter in the heap, a REPL entry.')
+            'the first object offering `plant`, its card for the colours, the receipt by slug, a counter in a scratch world, a REPL entry.')
     did, cap.count = PEOPLE['wren.delve.town'], [0, 0, 0]
 
     def prove(text):
@@ -242,7 +243,7 @@ def main(argv=None):
         seed_town(served.root)
         provider = Provider()
         front = Front(('127.0.0.1', 0), HostClient(sock), identity.Identity(tmp, delve.Client(provider), clock=lambda: NOW),
-                      clock=lambda: NOW, heaps=Path(tmp) / 'state' / 'heaps', repl=HostClient(sock, stateless=True))
+                      clock=lambda: NOW, repl=HostClient(sock, stateless=True))
         threading.Thread(target=front.serve_forever, daemon=True).start()
         cap = Capture(front.server_address[1], sock, provider, tmp)
         cap.root = served.root

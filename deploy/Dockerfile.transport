@@ -13,7 +13,10 @@ RUN pip install --no-cache-dir --require-hashes --only-binary=:all: -r deploy/re
 COPY transport ./transport
 COPY docs/AGENTS-API.md docs/AGENTS-EXAMPLES.md ./docs/
 COPY world ./world
-COPY deploy ./deploy
+COPY capsules/pages ./capsules/pages
+# The operator's scripts by name, never deploy/out (build.sh's extracted 125 MB binary, which the legacy builder,
+# blind to Dockerfile.transport.dockerignore, would copy in a second time).
+COPY deploy/*.py deploy/*.sh ./deploy/
 ENV DELVETALK_OBEND=/usr/local/bin/delvetalk-obend HOME=/tmp \
     PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 LEAN_NUM_THREADS=1
 USER 10425:10425

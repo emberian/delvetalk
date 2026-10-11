@@ -1,5 +1,5 @@
 """The agent API at /AGENTS.md over a real `serve`: proof-of-control login, turns and receipts, the
-REPL, private heaps, pages for people, limits.
+REPL, scratch worlds, pages for people, limits.
 
 Evidence for FOUNDATION §7 (layer: transport).
 """
@@ -110,7 +110,7 @@ class FrontCase(ServeCase):
         ident = identity.Identity(self.tmp.name, delve.Client(self.provider), clock=lambda: self.now[0])
         self.outbox = Path(self.tmp.name) / 'outbox'  # the hand's: an HTTP turn that writes a public object drafts here
         self.front = serve(Front(('127.0.0.1', 0), self.host, ident, clock=lambda: self.now[0],
-                                 heaps=Path(self.state_dir.name) / 'heaps', repl=HostClient(self.socket, stateless=True), outbox=self.outbox))
+                                 repl=HostClient(self.socket, stateless=True), outbox=self.outbox))
         self.addCleanup(self.front.server_close)
         self.addCleanup(self.front.shutdown)
         self.port = self.front.server_address[1]
@@ -120,9 +120,13 @@ class FrontCase(ServeCase):
                             'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0))})
         self.assertEqual(r['status'], 'created', r)
 
-    def heap_create(self, tok, name='h1'):
+    def scratch_open(self, tok, name='try', **more):
+        return self.call('POST', '/AGENTS.md/scratch', {'name': name, **more}, tok)
+
+    def scratch_create(self, tok, name='h1', scratch='try'):
         # A bare counter: Counter's closure with Card and Spell (about 67 KB) exceeds the front's 64 KiB body.
-        return self.call('POST', '/AGENTS.md/heap/objects', {'object': name, 'modules': closure('World') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
+        self.scratch_open(tok, scratch)  # already open is an error the create below does not need
+        return self.call('POST', f'/AGENTS.md/scratch/{scratch}/objects', {'object': name, 'modules': closure('World') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
                                                              'seed': record(count=nat(0)), 'intent': 'mk-' + name}, tok)
 
     @property
@@ -216,11 +220,11 @@ class Arrival(FrontCase):
 
     def test_me_reports_principal_and_rate_limit_and_revoke_ends_the_credential(self):
         tok = self.login()
-        self.heap_create(tok)
+        self.scratch_create(tok)
         s, me = self.call('GET', '/AGENTS.md/me', token=tok)
-        self.assertEqual((s, me['principal'], me['handle'], me['did'], me['heapObjects']), (200, DID, HANDLE, DID, 1), me)
+        self.assertEqual((s, me['principal'], me['handle'], me['did'], [r['world'] for r in me['scratches']]), (200, DID, HANDLE, DID, ['scratch/try']), me)
         self.assertEqual(me['verified'], 1000.0)
-        self.assertEqual(me['rateLimit'], {'limit': 32, 'windowSeconds': 60, 'remaining': 30})
+        self.assertEqual(me['rateLimit'], {'limit': 32, 'windowSeconds': 60, 'remaining': 29})
         does = next(e['does'] for e in CATALOGUE if e['name'] == 'me')
         self.assertEqual([k for k in bare(me) if f'`{k}`' not in does and k != 'status'], [])  # the catalogue names what /me answers
         self.assertEqual(bare(self.call('POST', '/AGENTS.md/revoke', {}, tok)[1]), {'status': 'revoked'})
@@ -329,7 +333,7 @@ class HttpDrafts(FrontCase):
         self.assertEqual(s, 200)
         self.assertEqual([d['object'] for d in self.drafts()], [self.c])
 
-    def test_a_private_object_a_refusal_and_a_heap_draft_nothing(self):
+    def test_a_private_object_a_refusal_and_a_scratch_turn_draft_nothing(self):
         tok = self.login()
         r = self.host.send({'op': 'world-create', 'principal': DID, 'identity': 'mk-p-' + self.c, 'object': 'p-' + self.c, 'modules': counter_modules(),
                             'entry': 'initial', 'seed': record(count=nat(0)), 'read': {'principals': [DID]}})
@@ -338,8 +342,8 @@ class HttpDrafts(FrontCase):
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', {'argument': 7, 'intent': 'bad-1'}, tok)
         self.assertEqual(s, 400, e)
-        self.assertEqual(self.heap_create(tok)[1]['status'], 'created')
-        s, t = self.call('POST', '/AGENTS.md/heap/world/h1/bump', {'argument': record(), 'intent': 'heap-1'}, tok)
+        self.assertEqual(self.scratch_create(tok)[1]['status'], 'created')
+        s, t = self.call('POST', '/AGENTS.md/scratch/try/world/h1/bump', {'argument': record(), 'intent': 'scratch-1'}, tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         self.assertEqual(self.drafts(), [])
 
@@ -472,42 +476,75 @@ class Repl(FrontCase):
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
 
 
-class Heaps(FrontCase):
+class Scratch(FrontCase):
+    fresh_world = True  # a principal holds two scratch worlds at most: each test opens its own
     def test_a_created_reply_shows_one_hash_by_default_and_all_of_them_with_full(self):
         import re
         tok = self.login()
         body = {'intent': 'mk-hash', 'object': 'hash1', 'modules': [{'name': 'Tally', 'source': REPL_COUNTER}], 'entry': 'initial', 'seed': {'count': 1}}
-        s, _, raw = self.request('POST', '/AGENTS.md/heap/objects', body, tok)
+        self.scratch_open(tok)
+        s, _, raw = self.request('POST', '/AGENTS.md/scratch/try/objects', body, tok)
         self.assertEqual(s, 200, raw)
         self.assertEqual(re.findall(rb'bafy\w+', raw), [json.loads(raw)['receipt']['hash'].encode()], raw)
         body['intent'], body['object'] = 'mk-hash-2', 'hash2'
-        s, _, raw = self.request('POST', '/AGENTS.md/heap/objects?full=1', body, tok)
+        s, _, raw = self.request('POST', '/AGENTS.md/scratch/try/objects?full=1', body, tok)
         self.assertGreater(len(re.findall(rb'bafy\w+', raw)), 3)
-        s, v = self.call('GET', '/AGENTS.md/heap/world/hash1', token=tok)
+        s, v = self.call('GET', '/AGENTS.md/scratch/try/world/hash1', token=tok)
         self.assertNotIn('pin', v)
-        self.assertIn('pin', self.call('GET', '/AGENTS.md/heap/world/hash1/source', token=tok)[1])
+        self.assertIn('pin', self.call('GET', '/AGENTS.md/scratch/try/world/hash1/source', token=tok)[1])
 
-    def test_a_heap_object_no_spell_can_address_is_refused_before_it_is_created(self):
+    def test_a_scratch_object_no_spell_can_address_is_refused_before_it_is_created(self):
         tok = self.login()
         for name in ('coin box', 'c' * 129):  # a space splits the spell's card from its action; past 128 bytes no card is read
-            s, e = self.heap_create(tok, name)
+            s, e = self.scratch_create(tok, name)
             self.assertEqual((s, e['class']), (400, 'unspellable'), e)
             self.assertIn(f'delvetalk {name} ?', e['message'])
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/coin%20box', token=tok)[0], 404)
-        self.assertEqual(self.heap_create(tok, 'Coin_box')[0], 200)  # one rule names objects and spell cards
+        self.assertEqual(self.call('GET', '/AGENTS.md/scratch/try/world/coin%20box', token=tok)[0], 404)
+        self.assertEqual(self.scratch_create(tok, 'Coin_box')[0], 200)  # one rule names objects and spell cards
 
 
-    def test_a_heap_is_private_and_missing_is_404_not_403(self):
+    def test_a_scratch_world_is_private_and_missing_is_404_not_403(self):
         a, b = self.login(), self.login('glm.delve.town')
-        s, r = self.heap_create(a)
+        s, r = self.scratch_create(a)
         self.assertEqual((s, r['status']), (200, 'created'), r)
-        s, t = self.call('POST', '/AGENTS.md/heap/world/h1/bump', {'argument': record(), 'intent': 't1'}, a)
+        s, t = self.call('POST', '/AGENTS.md/scratch/try/world/h1/bump', {'argument': record(), 'intent': 't1'}, a)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/world/h1', token=a)[1]['version'], 1)
-        s, v = self.call('GET', '/AGENTS.md/heap/world/h1', token=b)
+        self.assertEqual(self.call('GET', '/AGENTS.md/scratch/try/world/h1', token=a)[1]['version'], 1)
+        self.assertEqual(self.scratch_open(b)[1]['status'], 'scratch')
+        s, v = self.call('GET', '/AGENTS.md/scratch/try/world/h1', token=b)
         self.assertEqual((s, v['status'], v['class']), (404, 'refused', 'unknown'))
         self.assertEqual(self.call('GET', '/AGENTS.md/world/h1', token=a)[0], 404)  # the shared world never sees it
-        self.assertEqual(self.call('GET', '/AGENTS.md/heap/receipt/t1', token=b)[1].get('class'), 'unknown')
+        self.assertEqual(self.call('GET', '/AGENTS.md/scratch/try/receipt/t1', token=b)[1].get('class'), 'unknown')
+
+    def test_opening_a_scratch_world_forking_the_town_and_the_limit_of_two(self):
+        tok = self.login()
+        s, e = self.call('GET', '/AGENTS.md/scratch/nope/world', token=tok)
+        self.assertEqual((s, e['class']), (400, 'hostRequest'), e)
+        self.assertIn('open one with world-scratch', e['message'])
+        s, r = self.scratch_open(tok, 'try', **{'from': {'world': 'town'}})
+        self.assertEqual((s, r['status'], r['world']), (200, 'scratch', 'scratch/try'), r)
+        self.assertEqual(r['_links']['world']['href'], '/AGENTS.md/scratch/try/world')
+        self.assertIn(self.c, json.dumps(self.call('GET', '/AGENTS.md/scratch/try/world', token=tok)[1]))
+        self.assertEqual(self.scratch_open(tok, 'try')[0], 400)  # it exists
+        s, e = self.scratch_open(tok, 'Bad')  # the name is the host's to judge
+        self.assertEqual(s, 400, e)
+        self.assertIn('a scratch name is', e['message'])
+        self.assertEqual(self.scratch_open(tok, 'two')[1]['status'], 'scratch')
+        s, r = self.scratch_open(tok, 'three')
+        self.assertEqual(r['status'], 'refused', r)
+        self.assertEqual(r['class'], 'capacity', r)
+        self.assertEqual([x['world'] for x in self.call('GET', '/AGENTS.md/me', token=tok)[1]['scratches']], ['scratch/try', 'scratch/two'])
+
+    def test_a_scratch_route_is_named_by_the_router_and_described_by_options(self):
+        from transport.http import resolve
+        self.assertEqual(resolve('POST', '/AGENTS.md/scratch')[0], 'scratch')
+        self.assertEqual(resolve('GET', '/AGENTS.md/scratch/try/world/x/card')[1]['scratch'], 'try')
+        self.assertEqual(resolve('POST', '/AGENTS.md/scratch/try/objects')[0], 'create')
+        self.assertEqual(resolve('POST', '/AGENTS.md/objects')[0], None)
+        self.assertEqual(resolve('POST', '/AGENTS.md/scratch/try/repl')[0], None)
+        s, _, raw = self.request('OPTIONS', '/AGENTS.md/scratch/try/objects')
+        self.assertEqual((s, [e['name'] for e in json.loads(raw)['routes']]), (200, ['create']))
+
 
 class Pages(FrontCase):
     def test_page_uses_world_card_without_journaling_and_history_is_newest_first(self):

@@ -88,7 +88,7 @@ span the ten tokenizers.
 | card: bell | 55 to 59 | 272 to 308 | 680 to 774 |
 | card: own wake (first; last) | 57 to 59; 72 to 75 | 354 to 408; 369 to 425 | 1,630 to 1,807; 1,645 to 1,822 |
 | receipt: planting, by slug (line; slug) | 9 to 10; 4 to 5 | 1,102 to 1,247 | 1,101 to 1,253 |
-| receipt: heap bump | 9 | 130 to 162 | 331 to 396 |
+| receipt: scratch bump | 9 | 130 to 162 | 331 to 396 |
 | refusal: check (the hint) | 27 to 28 | 148 to 166 | 148 to 166 |
 | refusal: turn (`§ refused badValue: …`) | 15 | 140 to 172 | 457 to 521 |
 | usage block (`garden ?`) | 80 to 88 | 161 to 181 | 161 to 181 |
@@ -125,7 +125,7 @@ A unit of agency: one act taken or one fact needed, by the documented route.
    lines (16 to 19 tokens), about 375x; a bell's, 2,188 to 2,381 for 34 to 37
    tokens, about 63x.
 3. **The stranger's walk**: 9,617 to 10,779 tokens for four acts (plant,
-   receipt, heap, REPL), about 2,500 an act. `/api` alone is 3,668 to 4,061 of
+   receipt, scratch world, REPL), about 2,500 an act. `/api` alone is 3,668 to 4,061 of
    it and the world listing 1,283 to 1,479, of which the 13 ids are 138 to 150
    and mostly DIDs.
 4. **The receipt by slug**: 1,102 to 1,247 tokens to confirm a 9-token line

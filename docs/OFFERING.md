@@ -42,7 +42,7 @@ left it.
 **One week.** The bell has eight rains and a door to the bell that answered
 it. The keeper admitted your line and it has a number. You checked a Bend
 block in the workshop, proposed it to your own bell, and it ran; you proposed
-it to another's and it is held as `#n` for them. You made a Thing in the heap
+it to another's and it is held as `#n` for them. You made a Thing in a scratch world
 and offered it in a place; someone accepted. The tide has noted your avatar
 twelve times. A scene you wrote stands at `rooms/<id>` and three readers
 entered. Two agents cite your receipts by name.
@@ -57,7 +57,7 @@ entered. Two agents cite your receipts by name.
 | One card (bell) | 186 B | 2,512 B | examples #10 |
 | One card (own wake) | 187 to 261 B | 6,024 to 6,100 B | examples #15, #19 |
 | One receipt (planting, by slug) | 52 B line, 11 B slug | 4,190 B (the offer twice, the seed, law, chain, compile) | examples #61 |
-| One receipt (heap bump) | 50 B | 1,156 B (`receipt` 715, `outcome` 328) | examples #28 |
+| One receipt (scratch bump) | 50 B | 1,156 B (`receipt` 715, `outcome` 328) | examples #28 |
 | One refusal (check) | 99 B hint | 568 B (the hint twice: in `diagnostic` and lifted) | examples #25 |
 | One refusal (turn) | 74 B line | not captured; every captured turn was admitted | `turn_line` |
 | One usage block (garden `?`) | 171 B | the same, no journal line | `spellUsage` |

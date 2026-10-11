@@ -55,8 +55,11 @@ def resolve(method, path):
         rest = parts[1:]
         if (method, tuple(rest)) in FIXED:
             return FIXED[method, tuple(rest)], {}
-        heap = rest[:1] == ['heap']
-        rest = rest[1:] if heap else rest
+        scratch = None
+        if rest[:1] == ['scratch']:
+            if len(rest) == 1:
+                return ('scratch', {'scratch': None, 'object': '', 'method': ''}) if method == 'POST' else (None, None)
+            scratch, rest = rest[1], rest[2:]  # its name is the host's to judge
         head, obj, tail = (rest[0] if rest else ''), '/'.join(rest[1:]), ''
         if head == 'world':  # an object id may hold slashes: the last segment names the method, or card/source
             if method == 'POST' or (len(rest) > 2 and rest[-1] in ('card', 'source')):
@@ -65,8 +68,8 @@ def resolve(method, path):
             name = name if (obj or name == 'world') and method in ('GET', 'POST') else None
         else:
             name = ROUTES.get((method, head, bool(obj)))
-            name = None if name in (('create',) if not heap else TOP_ONLY) else name
-        return (name, {'heap': heap, 'object': obj, 'method': tail}) if name else (None, None)
+            name = None if name in (('create',) if scratch is None else TOP_ONLY) else name
+        return (name, {'scratch': scratch, 'object': obj, 'method': tail}) if name else (None, None)
     if parts[:1] == ['oauth'] and len(parts) == 2 and method == 'GET':  # answered by oauth.route; named here so OPTIONS describes them
         name = {'start': 'oauthStart', 'callback': 'oauthCallback', 'client-metadata.json': 'oauthClient'}.get(parts[1])
         return (name, {}) if name else (None, None)
@@ -289,14 +292,14 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, heaps=None, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None, workers=WORKERS,
+    def __init__(self, address, host, identity, origin=ORIGIN, clock=time.time, repl=None, trust_proxy=False, sleep=time.sleep, hand=None, access=None, workers=WORKERS,
                  outbox=None):
         super().__init__(address, Handler)
         self.slots, self.receiving, self.receiving_lock = threading.BoundedSemaphore(workers), {}, threading.Lock()
         threading.Thread(target=self.reap, daemon=True).start()
         self.access, self.outbox, self.known = access, outbox and Path(outbox), {}  # outbox: the hand's, where an HTTP turn's draft waits
         self.host, self.identity, self.origin, self.clock = host, identity, origin, clock
-        self.heaps, self.repl, self.trust_proxy, self.sleep, self.hand = heaps and Path(heaps), repl, trust_proxy, sleep, hand  # heaps: serve's heaps/ directory
+        self.repl, self.trust_proxy, self.sleep, self.hand = repl, trust_proxy, sleep, hand
         self.repo = Repo(origin)  # the journal as AT Protocol records, read only
         self.oauth = oauth.OAuth(origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
@@ -359,10 +362,6 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             if isinstance(handle, str) and handle:
                 self.known[did] = handle
         return self.known
-
-    def heap(self, did, create=True):
-        """A principal's private heap over the host's socket; None for one never made, unless `create`."""
-        return self.host.at(did) if create or (self.heaps / f'{did}.journal').exists() else None
 
     def sync_library(self, force=False):
         """Re-read hostd-info when serve's pid changed (it restarted, maybe with a new library), or when forced."""
@@ -623,7 +622,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.play(p['object'] or 'commonplace', name == 'reply')
         if name == 'page':
             return self.object_page(p['object'])
-        return self.agents(name, p['heap'], p['object'], p['method'])
+        return self.agents(name, p['scratch'], p['object'], p['method'])
 
     def options(self):
         """The catalogue entries of the routes at this path, one per method."""
@@ -638,7 +637,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- agents
 
-    def agents(self, kind, heap, obj, tail):
+    def agents(self, kind, scratch, obj, tail):
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else self.cookie() if self.browser() and self.command == 'GET' else ''
         who = self.principal(credential)
@@ -657,10 +656,12 @@ class Handler(BaseHTTPRequestHandler):
                               headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
         if kind in ('repl', 'check'):
             return self.run_repl(who['did'], kind)
-        host = self.server.heap(who['did']) if heap else self.server.host
         principal = who['did']  # the principal the host sees; the handle is display only
-        base = PREFIX + ('/heap' if heap else '')
-        if self.browser() and kind in ('object', 'card', 'source') and not heap:
+        if kind == 'scratch':
+            return self.open_scratch(principal)
+        host = self.server.host.at(f'scratch/{scratch}') if scratch else self.server.host  # the principal in the request decides whose scratch
+        base = PREFIX + (f'/scratch/{scratch}' if scratch else '')
+        if self.browser() and kind in ('object', 'card', 'source') and not scratch:
             return self.object_page(obj, who)
         at = lambda o: {'object': link(f'{base}/world/{oid(o)}'), 'card': link(f'{base}/world/{oid(o)}/card'),
                         'source': link(f'{base}/world/{oid(o)}/source')}
@@ -723,7 +724,7 @@ class Handler(BaseHTTPRequestHandler):
             return send({'op': 'world-deliver', 'limit': DELIVER_LIMIT}, {'pending': link(base + '/pending')})
         if kind == 'create':  # a name no spell can address would publish spells nobody can cast: the host's parser says
             name = data.get('object')
-            read = host.send({'op': 'spell-parse', 'text': f'delvetalk {name} ?'}) if isinstance(name, str) else {}
+            read = self.server.host.send({'op': 'spell-parse', 'text': f'delvetalk {name} ?'}) if isinstance(name, str) else {}
             if read.get('status') == 'parsed' and (read.get('spell') or {}).get('card') != name:
                 return self.fail('unspellable', f'the host does not read `delvetalk {name} ?` as a spell; choose a name a spell can address')
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
@@ -731,7 +732,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.answer(reply, links=receipt_links(base, reply))
         reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,  # asked on the card itself
                            'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct'})
-        if not heap:
+        if not scratch:  # a scratch turn drafts nothing for the town
             self.server.draft_turn(principal, data.get('intent'), reply)
         links, acts = {**at(obj), **receipt_links(base, reply, data.get('intent'))}, None
         if reply.get('status') in ('refused', 'error'):  # the usage action: the method as the host's table shows it
@@ -807,11 +808,22 @@ class Handler(BaseHTTPRequestHandler):
         self.reply(200, canonical({**terse(out), '_links': links}), headers=keep)
 
     def me(self, credential, who):
-        heap = self.server.heap(who['did'], create=False)
-        count = heap.send({'op': 'world-status'}).get('objects') if heap else 0
-        self.answer({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'], 'heapObjects': count,
+        rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []
+        mine = [r for r in rows if r.get('principal') == who['did']]
+        self.answer({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'], 'scratches': mine,
                      'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))}},
-                    links={'world': link(PREFIX + '/world'), 'heap': link(PREFIX + '/heap/world'), 'offers': link(PREFIX + '/offers'), 'revoke': link(PREFIX + '/revoke')})
+                    links={'world': link(PREFIX + '/world'), 'scratch': link(PREFIX + '/scratch'), 'offers': link(PREFIX + '/offers'), 'revoke': link(PREFIX + '/revoke')})
+
+    def open_scratch(self, principal):
+        """POST /scratch {name, from?}: the caller's scratch world (`world-scratch`), empty or a fork of a world as it stood."""
+        data = self.body()
+        if data is None:
+            return
+        name = data.get('name')
+        reply = self.server.host.send({'op': 'world-scratch', 'principal': principal, 'name': name, **({'from': data['from']} if 'from' in data else {})})
+        base = f'{PREFIX}/scratch/{name}'
+        self.answer(reply, links={'world': link(base + '/world'), 'objects': link(base + '/objects'), 'offers': link(base + '/offers'), 'me': link(PREFIX + '/me')}
+                    if reply.get('status') == 'scratch' else {'me': link(PREFIX + '/me')})
 
     def run_repl(self, principal, kind='repl'):
         data = self.body()
@@ -951,7 +963,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     host = connect(a)
     ident = Identity(a.state, Client(http_transport), a.origin)
-    front = Front((a.bind, a.port), host, ident, a.origin, heaps=Path(host.path).parent / 'heaps', repl=HostClient(host.path, stateless=True),
+    front = Front((a.bind, a.port), host, ident, a.origin, repl=HostClient(host.path, stateless=True),
                   trust_proxy=a.trust_proxy, access=AccessLog(Path(a.state) / 'access.log'), outbox=Path(a.state) / 'outbox')
     try:
         front.serve_forever()

@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host17 from 5.137 to 5.138; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -62,6 +62,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
 - Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-addressee`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
+- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (worlds and scratches); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
 
 Rules:
@@ -133,8 +134,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 
 ### 5.1 Authority and laws
 
-- `Facts {subject, caller, height, turn, pin, kind, method, relations}` (`relations`: the object's declarations, for `insertOnly`, 5.74). `caller` is the object whose method wrote ("" for the turn's own method and client proposals; for a delivered turn, the sending object). `method` is the method whose run made the change ("" for ops).
-- Fragment (grammar in `ObjectiveBendLaw.lean`): `and`, `or`, `not`, `implies`; `request.subject`, `request.caller`, `request.height`, `request.turn`, `request.pin`, `request.kind`, `request.method`, `request.clock` (the world clock the turn read, `Facts.clock`), `request.object` (the written object's id, `Facts.object`; text-comparable), `old.F` (the field before the write; at creation its kind's empty value, `emptyReading`), the three-slot bound `REF <= REF + REF` (`leRSum`), integer and text constants, `monotone(F)`, `writeOnce(F)`, `appendOnly(F)`, `unchanged(F)`, `x in new.F` (`member`), and for relations `insertOnly(F)`, `count(new.F) <= N`, `count(new.F) <= count(old.F) + N`, `x in new.F.COL`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
+- `Facts {subject, caller, height, turn, pin, kind, method, evicted, clock, object, reads}` (`reads`: the states of the objects the law cites, 5.139) (`relations`: the object's declarations, for `insertOnly`, 5.74). `caller` is the object whose method wrote ("" for the turn's own method and client proposals; for a delivered turn, the sending object). `method` is the method whose run made the change ("" for ops).
+- Fragment (grammar in `ObjectiveBendLaw.lean`): `and`, `or`, `not`, `implies`; `request.subject`, `request.caller`, `request.height`, `request.turn`, `request.pin`, `request.kind`, `request.method`, `request.clock` (the world clock the turn read, `Facts.clock`), `request.object` (the written object's id, `Facts.object`; text-comparable), `old.F` (the field before the write; at creation its kind's empty value, `emptyReading`), the three-slot bound `REF <= REF + REF` (`leRSum`), integer and text constants, `monotone(F)`, `writeOnce(F)`, `appendOnly(F)`, `unchanged(F)`, `x in new.F` (`member`), and for relations `insertOnly(F)`, `count(new.F) <= N`, `count(new.F) <= count(old.F) + N`, `x in new.F.COL`; and the relational atoms (5.139): `count(SIDE.F where COL == TERM)` as a reference, `changed(new.F.COL) by TERM`, `TERM in "O".F.COL`, `under "O"`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
 - `judge` judges every distinct (caller, kind) of an object's changes. Default law `owner: request.kind == 0 or request.subject == "<creator>"`: anyone may invoke methods, only the creator may reprogram or amend (`defaultLaw`). Metarule: an amendment must be admitted by the existing law for its proposer; message "law does not admit an amendment by its proposer <p>: <name>: <expr>".
 - `Object.readings` holds the package's law readings for clauses that are still the package's; `makeObject` keeps those the effective law leaves equal, an amendment keeps those it leaves equal, a reprogram keeps all. `parseLawTextReadings` reads `law NAME "reading": EXPR`; a malformed reading is `law syntax`.
 - Context (`contextData`, also the Bend law's request context): `{world, object, principal, handle, caller, intent, height, clock, inputOrigin {kind, object, command, program, immediatelyPrevious, post}}` (`post`: 5.71). The host fits each Context to the receiving code's own declared record (`fitRecord`), so a field added to the library later never breaks an older object.
@@ -1107,9 +1108,9 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      a world opens it with the clock, opener, library (librarian the opener), sync and `name`; `world-open
      {name}` journals `named {name}` once (`nameOp`; replay sets `World.name`, the snapshot carries it; no
      replay edition change: journals without it replay as before) and refuses a journal that holds
-     another ("this journal is the world ring, not moor"). A world idle 10 minutes is dropped (store and
-     file lock) and reopened by replay. `heap: <did>` is `DIR/heaps/<did>.journal` until scratch worlds;
-     `stateless: true` the journal-less session. `serve-status` lists the open worlds; `world-open` over a
+     another ("this journal is the world ring, not moor"). Every world of the directory is opened at start
+     and held (5.137 made a held world its live state), so a turn in one reads another (5.140); `world:
+     scratch/<name>` is the request principal's scratch world; `stateless: true` the journal-less session. `serve-status` lists the open worlds; `world-open` over a
      socket is refused ("serve opens its worlds").
    - *Sockets.* `DIR/host.sock` and the root socket (default `DIR/root/root.sock`; deploy passes the
      `/data/root` volume's path), the public socket 0600 and the root socket 0660 (its group `--root-group`, 5.131) under umask 0177, backlog 128. The C shim accepts every
@@ -1195,8 +1196,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      squatted `garden/bell/3` refuses nothing; the creation's `object` names the id taken (a kind grafts
      `c.object.object`). Test: `test_a_prefix_mints_past_the_ids_already_held`.
    - *An await's receipt carries `hash`:* `Plan.obend` `Receipt` gains `hash: String` (the entry's CID;
-     `receiptData`); a call site compiled against the older Receipt gets the shape without it
-     (`receiptReplies`); the `ended` receipt carries "" (its entry is the one being sealed). Pins re-recorded.
+     `receiptData`, `receiptReply`: one shape, 5.141); the `ended` receipt carries "" (its entry is the one being sealed). Pins re-recorded.
      Test: `ReceiptHash`.
    - *A handed-on reply keeps its reach:* a `send` of `receive` from a turn whose reach is not `delivery`
      carries that reach (`Send.reach`, journaled on the send and across a suspension; `TurnMeta.reach`), so
@@ -1209,9 +1209,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    - *`spell` on a proposal:* `World.Proposed` and `Interpreted`'s `proposal` gain `spell: String`, the spell the
      proposal stands for (`proposalSpell`: `delvetalk <card> <method>` as the form names the card, a line per
      argument field, text with a line break as a `<<END` block, a case as its word; "" when a field has no
-     spell form), journaled on the verdict, so a card that asks first can hold it and print it back. A call
-     site compiled against the older shape hears it without `spell` (`proposalShapes`, as `receiptReplies`).
-     Replay reads the journaled verdict, so no edition bump. Tests: `test_reflection` Interpret,
+     spell form), journaled on the verdict, so a card that asks first can hold it and print it back
+     (`proposalData`, one shape, 5.141). Replay reads the journaled verdict, so no edition bump. Tests: `test_reflection` Interpret,
      `test_hub` HandedToTheDirectory.
    - *The hand-on:* the objects lane's "still costs a model call" was reported before 5.127 landed. Through
      the real Bell and Directory, prose with no reach handed on by `Card.handingOn` is heard `silent` at the
@@ -1260,7 +1259,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 132. **The input check is exact (host15; the root's decision on EveryMethod).** A method without an input takes
    only `{}` (`argumentFits`); a record argument with a field the input does not declare is refused `typeMismatch`
-   naming it (`extraField`, `misfitReason`: "<method> takes no field <f>"; a call's or run's reading "<id> <method>
+   naming it (`extraField`, `misfitReason`: "<method> takes no field <f>"; a field it needs and lacks or holds
+   of another type is named too, 5.141; a call's or run's reading "<id> <method>
    takes no field <f>."), for direct turns, spells, calls and deliveries alike (all reach `runFrame` or the call
    arms). Fixtures that called or sent a no-input method with an argument now pass `{}` (test_grants,
    test_authority, test_reflection's PROBE); test_principal's `ignored` asserts the refusal by name, then `{}`
@@ -1403,6 +1403,69 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    same-turn body's methods and forms equal a later extend's, a reopen); the objects lane's `Kind` with the
    body laid in the turn (its scratch `Kind-inturn.obend`) passes all of `test_kinds`.
 
+139. **The law's relational atoms (host17; KERNEL-HANDOFF §25 item M; LAW §4 B, C, D, F; edition 5).** The kernel's
+   grammar (lane/kernel14) is denoted in `Host/Law.lean`, the fail-closed arms gone:
+   - `count(SIDE.F where COL == TERM)`: the rows whose column canons to the term's value; a reference, so the
+     quorum `count(new.G) <= count(new.F where C == V) + N` is a comparison. `memberData` reads every term
+     (a numeric reading as a natural) and serves the filter, membership and `changed`.
+   - `changed(new.F.COL) by TERM`: every row the write changed (`changedRows`: gone by canonical bytes less
+     what retention evicted, and new) carries the term in its column.
+   - `TERM in "O".F.COL` and `under "O"` read `Facts.reads`, the states of the cited objects (`citedStates`,
+     closed under the citations of each cited object's `law` text, `lawCitations`, `Limits.lawDepth` 4).
+     `under "O"` judges the write by every clause of O's `law` field at depth − 1; depth 0, an absent object,
+     a non-text or unparsable law is false. The law-text parser (`parseLawText`, `renderLaw`) moved into
+     `Law.lean` beside `denote`.
+   - *Roots.* `withLawReads` adds every citation to the write's roots at the version read (so a cited
+     object moved since is `staleRoot`, and replay re-judges from them), within `maxRoots`; a cited object
+     the subject may not view refuses the write `lawRefused`, clause `lawReads`.
+   - *Acceptance* (creation in `makeObject`, amendment in `judge`): `citationRefusal` refuses an `under` of
+     a missing object, of one whose `law` does not parse, or a cycle within `lawDepth` ("under: a cycle of
+     citations: a -> b -> a"); the metarule (`amendable`) judges with the cited states. `world-inspect`
+     answers `cites`.
+   - Tests: `Law.lean`'s `#guard`s (filter, quorum, changed by with eviction, cited membership, under at
+     depth, a cycle, a non-law); `tests/test_law.py` `Atoms` (an instance judged by its kind's law as it
+     changes, the kind a root, a reopen; a missing citation refused; a private kind refusing `lawReads`;
+     rows changed by whom, a cited roster, a quorum, a reopen). The objects lane may now delete the Tide's
+     and Deal's predicates (KERNEL-HANDOFF §25 M, last item).
+
+140. **Scratch worlds and references across worlds (host17; docs/FEDERATION.md §2, §3; edition 5).** The private
+   heap is gone: no `heap` envelope, no `DIR/heaps/`, no front route under `/heap/`.
+   - *A scratch* (`Serve.scratchOp`): `world-scratch {principal, name, from?: {world, height?}}` writes
+     `DIR/scratch/<principal>/<name>.journal`: empty with the sealed library and the principal its opener, clock
+     and librarian, or `from` a world (or the principal's other scratch) by `world-fork` at a height, carrying
+     what the principal may view. Its turns name `world: scratch/<name>` beside the principal. At most
+     `Limits.scratchPerPrincipal` (2) at once (a third is refused `capacity`, naming the oldest), each under
+     `scratchJournalBytes` (16 MiB) and `scratchObjects` (1,000; `world-open {maxObjects}`, `World.objectBound`).
+   - *Expiry*: `serve` keeps each scratch's home-world clock at its last op (`Server.scratches`; at start, now)
+     and, on the home world's `world-advance`, discards each `Limits.scratchMinutes` (360) past it: session,
+     journal, block store, snapshots (`discard`, the one deletion; a scratch is not custody). An op on it then
+     is "scratch/<name> expired at clock N; open it again with world-scratch". The root act `expire {principal,
+     scratch}` (root socket) discards one now, logged by the hand only. `serve-status.scratches [{principal,
+     world, lastTurn, expires}]`; the home `world-status.scratches {open, expiring}` (within 60 minutes).
+   - *An exit*: `world-cite {principal, scratch, receipt, identity?}` reads the scratch entry and journals it
+     whole in the home world as `cited {world, receipt, entry}` (`Ops.citeOp`, identity `cite:<hash>`; the entry
+     must be its hash's). `make` into a shared world is the client's, from its checked source.
+   - *References* (FEDERATION §2): a `Reference {world, object}` with a world names that world's object (a
+     scratch as `scratch/<name>`, the reader's own). `view` and `card` of one read the other world's own
+     answer under the reader (`World.foreign : Foreign`, a closure `serve` builds per request over its held
+     worlds, `foreignFor`; cleared after the step), and the entry journals `cites [{world, object, version,
+     stateCid, height, head}]` (`TurnState.cites`), not roots: a foreign read can go stale without refusing the
+     turn, and replay, which never re-runs a method, reads nothing foreign. A world not served here is
+     `refused {clause: foreignWorld}`. `world-view`/`world-card` of `<world>:<object>` (the text before the first
+     `:` a world served here) answer that world's reply with `asOf`.
+   - Tests: `tests/test_scratch.py` (a scratch apart from the town and from another principal's, the limit and
+     the root act; a fork carrying only what its principal may view; expiry by the town clock, files gone, a
+     citation kept; a turn reading another world's object and citing it; the ops' `asOf`); `test_serve`'s
+     scratch and stateless worlds; the front's scratch routes in `test_http`.
+
+141. **One shape per answer (host17; §7 item 5 of host16's queue).** Every object compiles from `world/lib`, so no
+   call site holds an older `Receipt`, `Proposed` or `Interpreted`: an await's reply is `receiptReply` (the receipt
+   with its `hash`), a proposal `proposalData` (with its `spell`), a `proposals` verdict its items, and a reply of
+   several spells is always `proposals` (the first-item fallback for a Response without that arm is gone).
+   `misfitReason` names the field that does not fit: one the input does not declare, one it needs and lacks
+   ("bump2 needs field n"), one of another type ("bump2's field n is not of its type"); the bare "argument does not
+   conform" is left only for an input that is not a record of fields. Test: `tests/test_make.py` `Misfit`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1415,7 +1478,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   (evictions and changes owed as facts, lineage, reservations, attempts); 3 is host14 (root, ignore and
   shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126); 4 is host16 (roots
   read by their cells, the per-cell bound and ledger; 5.136); 5 is host17 (a layered package's shape is
-  its stack's, 5.138). Test:
+  its stack's, 5.138; the relational atoms judged and their citations roots, 5.139). Test:
   `tests/test_replay_edition.py`.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -1432,51 +1495,63 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host17's item 5.137, in order (numbers kept as the coordinator named them). The owner's standing order binds every item: "maturify and take forward
-everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
-together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things',
-no scar and growth tissue." So each replacement deletes what it replaces in the same commit, and this file
-describes only what is.
+The queue after host17 (5.137 to 5.141; host16's items 2, 3, 4, 5 and 6 are done), in order. The owner's standing
+order binds every item: "maturify and take forward everything that we've started and bring it to its full
+sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
+called for); let's not leave behind 'old things', no scar and growth tissue." So each replacement deletes what it
+replaces in the same commit, and this file describes only what is.
 
-3. **FEDERATION** in its order: scratch worlds (§3, with the `expire` power and root act, now a request error),
-   and in the same commit the `heap:` envelope, `world-fork` into heaps and every heap op go (`world:` the one
-   way); `<world>:<object>` references (§2); `zulip:<realm>:<id>` principals (§1).
-4. **The law atoms of lane/kernel14** (changed-by, filtered counts, cross-object membership as a root, `under
-   "<object>"`) when the coordinator says its grammar is in foundation, as 5.133 took LAW §4 A, E, H.
-5. **Scar tissue to remove now:** `proposalShapes`' second shape and `proposedData`'s `spelled := false` (5.128:
-   every object compiles from `world/lib`, so no call site has the older `Proposed`); `receiptReplies`' older
-   `Receipt` shape (5.127) likewise; `misfitReason`'s fallback once `extraField` covers every input row.
-7. **Routed by the fungus review** (docs/review/fungus-2026-10-11.md §1, §3), folded into the items above
-   where they touch the same code, else after item 3, each deleting the old path in its commit: `world-history`
-   takes `reverse` (T28); a host reach rule, `reach-of {text, replyTo, thread}`, so the bridge relays the
-   host's answer (T30); `hostd-info` folded into `serve-status` and `hostd.pid` renamed (T25); REPL refusals as
-   classes, never text the front matches (T29, `replRestarted`); `serve-status` answers the kernel and host
-   bounds so the front and tests stop restating them (T27, S12); TurnLoop's older payload-shape ladders (H2,
-   with item 5); the JSON model-reply branch beside spell text (H3); root acts and moderation powers as one
-   table (H7); `Store.lean` literals that repeat `Limits.lean` (H12); reads of older journals (H16: a journal
-   below the edition is refused by name and nothing else reads it).
-8. **The stored path's remainder (5.136):** a write still costs O(state): `conformsUnder` of the whole written
-   state (check the scalar part and the rows it changed), `stateCid` of the whole state (a state CID composed
-   from cell CIDs), `storeOf`'s walk per frame (rows as an array per version on the object). The two kernel
-   primitives (KERNEL-HANDOFF §16 item 15) give `rows` roots meaning; until then a spine walk records a span.
-8a. **The block store's remainder (5.137):** `world-sources`, `world-grants` and `world-resolve` (`slugTargets`) read
-   every record per call: index sources, grants by height and slugs (as `anchors` is) so they read only what they
-   answer; about 1.4 KB a held entry at open (the chain's CIDs as text, the receipt and change indexes, the
-   snapshot's index decoded whole): CIDs as bytes and a streamed index decode; a record is encoded twice (its hash,
-   then the store): keep the bytes `sealEntry` hashed; `maxJournalEntries` against 4 GiB; `serve` has no
-   `--snapshot-every` (only `world-open` does).
-9. Smaller, standing:
-   - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new
-     `root:<n>`; `set pin` stores the pin alone (ROOT wants `programRefused: no sources for pin`); `as` runs the
-     method as named. `root-edit` does not rewrite CIDs quoted inside checkpoints and states (an await's
-     `Receipt.hash`).
+1. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1 T25 to T33, §3 H1 to H19; H9 and H19 are
+   done by 5.140 and 5.136, H2's older shapes by 5.141), one commit each, each deleting the old path:
+   - T25 with the coordinator's request: `serve-status` answers what `hostd-info` answers (sha, pid, replay,
+     library) and, per world, its `replay` edition and `snapshot {resumed}` (the height it reopened from, so the
+     live service shows a snapshot open); `hostd-info` deleted, `hostd.pid` becomes `serve.pid`, and the readers
+     (`http.py` `sync_library`, `hand.py`, `deploy/serve.py`, `deploy/playtest.sh`) move in the same commit.
+   - T27/S12: `serve-status` answers the kernel's and the host's bounds (`maxPackageBytes`, `maxModules`, frame,
+     entry); the front's `MAX_SOURCE`/`MAX_MODULES` and the catalogue read them.
+   - T28: `world-history` through `pageByHeight` (`reverse`, `cursor`); the front's widening loop goes.
+   - T29: the REPL's two prose refusals (`unknown library pin`, `not issued by this process`) as classes.
+   - T30: `world-reach {post, parent, root, text, mentions}` answering `{object, slot, how}`; `bridge.py`'s
+     `route`, `walk`, `named_door` go.
+   - T32: `world-status.suspendedBytes {median}` (the hand's probe now reads the block store's tail, 5.137).
+   - T33/H17: `world-inspect` answers each form's usage text; the front's `actions` and Card's templates copy it.
+   - H2's remainder: `respond` with one payload per method (the `refused` and `inspected` ladders).
+   - H3: the model's JSON `{method, argument}` reply branch and `model.extract`.
+   - H4: `reprogram {mode: "extend"}` beside `extend`.
+   - H5/H6 with the kernel: dispatch on `(method, argument)`; the `plan` wire names.
+   - H7/H8: root acts and moderation powers as one table; settings reach the journal one way (`settingsChange`).
+   - H10: `sealLibrary` reads `Ops.arrivals`. H11: `serve.c` says root; the frame bound checked once.
+   - H12/H13/H14/H15: `Limits` reference `Bounds`; `compressedSize`; `statusOf`; one list codec.
+   - H16: reads of older journals (an edition below 5 is refused by name, nothing else reads it).
+   - H1/H18 with the objects lane: the host's spell grammar the one reader; a host `fit {form, fields}`.
+2. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (§2, a suspension resumed by the target's
+   receipt; row 6); `inspect` and `viewField` of a foreign object (only `view` and `card` cross now); the REPL and
+   `check` in a scratch (`/scratch/<name>/repl`; they still run in the stateless session); the `delvetalk world
+   expire / scratch:` spell (only the root act exists); `world-history` and receipts across worlds; the hand's
+   SCRATCHES page; `world-cite` has no front route.
+3. **The stored path's remainder (5.136):** a write still costs O(state): `conformsUnder` of the whole written
+   state (check the scalar part and the rows it changed), `stateCid` of the whole state (a state CID composed from
+   cell CIDs), `storeOf`'s walk per frame (rows as an array per version on the object). The two kernel primitives
+   (KERNEL-HANDOFF §16 item 15) give `rows` roots meaning; until then a spine walk records a span.
+4. **The block store's remainder (5.137):** `world-sources`, `world-grants` and `world-resolve` (`slugTargets`)
+   read every record per call: index sources, grants by height and slugs (as `anchors` is) so they read only what
+   they answer; about 1.4 KB a held entry at open (the chain's CIDs as text, the receipt and change indexes, the
+   snapshot's index decoded whole): CIDs as bytes and a streamed index decode; a record is encoded twice (its
+   hash, then the store): keep the bytes `sealEntry` hashed; `maxJournalEntries` (1,000,000) binds before 4 GiB
+   for small entries; `serve` has no `--snapshot-every` (only `world-open` does); a held world is never closed now
+   (5.140), so memory grows with the worlds and scratches served.
+5. **The law atoms' remainder (5.139):** `world-inspect`'s `cites` lists the closure, not per clause; the objects
+   lane's Tide, Deal, Record and Kind laws move to the atoms (KERNEL-HANDOFF §25 M, last item) once this binary
+   is deployed.
+6. Smaller, standing:
+   - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new `root:<n>`;
+     `set pin` stores the pin alone (ROOT wants `programRefused: no sources for pin`); `as` runs the method as
+     named. `root-edit` does not rewrite CIDs quoted inside checkpoints and states (an await's `Receipt.hash`).
    - `openerActs` (5.131): the opener's interpret-quota exemption (TurnLoop ~1425) ignores `resident`; decide.
-   - Not the host's, found here: the policy card renders past the clip (1,889 characters; EveryMethod's
-     only remaining finding before foundation fixed it: re-check), Card.obend's and Policy.obend's "1 to 16384
-     characters" (objects lane, 5.134), the front's `moduleTooLarge` 16,384 in catalogue.json (transport).
-   - `test_zulip.Bridging` once saw "hostd unavailable" in `setUp` under a loaded full run; it passed alone
+   - `test_zulip.Bridging` once saw "host unavailable" in `setUp` under a loaded full run; it passed alone
      twice. Watch it.
-   - Deploy: edition 3 needs a new genesis for every world.
+   - Deploy: edition 5 and the block store need a new genesis for every world (or `delvetalk-obend migrate` of an
+     edition-5 line journal).
    - `readerActions` compiles `actions` per read; warm it as `warmLaws` warms `law` if it shows in
      `DELVETALK_TIMING`. `methodAdmits` judges on the state as it stands. hob's tail line always names
      `page: spells`. A `call` or `write` to an object created in the same turn is `unknownObject` (5.122 covers

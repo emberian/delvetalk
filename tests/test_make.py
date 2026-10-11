@@ -233,5 +233,20 @@ class ReceiptHash(Reflection):
         self.assertEqual(r.get("result"), label(first["receipt"]["hash"]), r)
 
 
+class Misfit(Reflection):
+    """A turn's argument that does not fit is refused naming the field: one the input does not declare, one it
+    needs and lacks, one of another type (HOST-HANDOFF 5.132, 5.141)."""
+
+    def test_the_refusal_names_the_field_that_does_not_fit(self):
+        from tests.test_reflection import PROBE, probe_seed
+        self.open_library()
+        self.make("probe", PROBE, probe_seed())
+        reason = lambda argument: self.turn("probe", "bump2", argument)["receipt"]["outcome"]["reason"]
+        self.assertIn("bump2 takes no field m", reason(record(n=nat(1), m=nat(2))))
+        self.assertIn("bump2 needs field n", reason(record()))
+        self.assertIn("bump2's field n is not of its type", reason(record(n=label("one"))))
+        self.assertEqual(self.turn("probe", "bump2", record(n=nat(1)))["status"], "admitted")
+
+
 if __name__ == "__main__":
     unittest.main()

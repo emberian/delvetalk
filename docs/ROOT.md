@@ -243,7 +243,7 @@ socket under the opener, one page per power as a form:
 | `hide OBJ --reading R`, `show OBJ` | `world-turn` on `world`, `hide` | same row |
 | `amend OBJ --law-file F --reading R`, `adopt OBJ --law ID` | `world-amend` | the law in a textarea beside its rows |
 | `revoke GRANT --reading R` | `world-revoke` widened | GRANTS |
-| `expire SCRATCH --reading R` | `world-scratch-expire` | SCRATCHES |
+| `expire SCRATCH --reading R` | `world-root {act: {kind: expire, principal, scratch}}` | SCRATCHES |
 | `unpost URI --reason R` | transport delete, `world-unposted` | the inbox row |
 | `settings --post N --interpret N --model N --reading R` | `world-settings` | the strip's quotas |
 | `log [--tail N]` | `world-entries` filtered to the opener's and root entries | MODERATION, newest first, root entries stamped |

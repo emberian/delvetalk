@@ -29,14 +29,21 @@ services:
       DELVETALK_HAND_TOKEN_FILE: /run/secrets/hand_token
       DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
     ports:
-      - "127.0.0.1:8766:8766/tcp"
+      - "127.0.0.1:${DELVETALK_HAND_PORT:-8766}:8766/tcp"
     secrets: [hand_token]
     volumes:
       - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}/state:/data/state
       - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
-      - /etc/delvetalk/delve:/run/delve:ro
+      - ${DELVETALK_DELVE_DIR:-/etc/delvetalk/delve}:/run/delve:ro
     depends_on:
       delvetalk-host: { condition: service_healthy }
+    healthcheck:
+      # The hand answers a tokenless /hand/ with 404 and nothing else; any other answer, or none, is unhealthy.
+      test: ["CMD", "python3", "-c", "import http.client as h; c = h.HTTPConnection('127.0.0.1', 8766, timeout=5); c.request('GET', '/hand/'); exit(c.getresponse().status != 404)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     mem_limit: 256m
     cpus: 0.5
     pids_limit: 64

@@ -47,14 +47,16 @@ structure Config where
   /-- The world an envelope without `world` addresses. -/
   home : String := "town"
 
-/-- A world this process holds open, and when it last served an op (monotonic ms). -/
-structure Held where
-  session : PackageSession.Session
-  used : Nat
-
 structure Server where
   config : Config
-  worlds : Std.HashMap String Held := {}
+  /-- Every world and scratch world this process has opened, held until it stops (a world opened
+      over its block store holds its live state and indexes, not its journal: HOST-HANDOFF 5.137), so a
+      turn in one may read another (`Host.Foreign`). -/
+  worlds : Std.HashMap String PackageSession.Session := {}
+  /-- Each scratch world (`scratch/<principal>/<name>`) and the home world's clock at its last op. -/
+  scratches : Std.HashMap String Nat := {}
+  /-- Scratch worlds discarded, and the home clock they expired at, for the refusal that says so. -/
+  expired : Std.HashMap String Nat := {}
   /-- The journal-less session: compile, check and run against the sealed library. -/
   stateless : PackageSession.Session := {}
   sealed : Option String := none
@@ -62,9 +64,6 @@ structure Server where
   sha : String := ""
   /-- The directory's lock, held for the life of the process (dropping the handle would release it). -/
   lock : Option IO.FS.Handle := none
-
-/-- A world idle this long is closed; its next op reopens it by replay. -/
-def idleMs : Nat := 600000
 
 /-- The packages `world-arrive` creates from; the sealed library holds them beside the library. -/
 def arrival : List String := ["Avatar", "Env", "Wake"]
@@ -110,54 +109,229 @@ def sealLibrary (library target : System.FilePath) : IO Unit := do
   for name in arrival do
     IO.FS.writeBinFile (target / s!"{name}.obend") (← IO.FS.readBinFile (objects / s!"{name}.obend"))
 
-/-- A principal's private heap until scratch worlds replace it: `did:plc:` and 24 base32 letters. -/
-def isHeapDid (did : String) : Bool :=
-  let rest := (did.drop 8).toString
-  did.startsWith "did:plc:" && rest.length == 24 && rest.all fun c => c.isLower || ('2' ≤ c && c ≤ '7')
+/-- A principal as a directory name under `scratch/`: 1..128 bytes, no `/`, not `.` or `..`. -/
+def scratchOwner (principal : String) : Bool :=
+  !principal.isEmpty && principal.utf8ByteSize ≤ Host.Limits.maxPrincipalBytes && !principal.contains '/' &&
+    principal != "." && principal != ".." && principal.all fun (c : Char) => c.toNat ≥ 32
 
-/-- Where a world's journal is and how it is opened. A world: `DIR/<name>.journal`, its clock, opener
-    and library as configured, its name journaled. A heap: `DIR/heaps/<did>.journal`, its library
-    sealed as the DID's. -/
+/-- The key of `principal`'s scratch world `name` (`scratch/<principal>/<name>`). -/
+def scratchKey (principal name : String) : Except String String :=
+  if !Host.validWorldName name then .error s!"a scratch name is {"[a-z][a-z0-9-]{0,31}"}: {name} is not one"
+  else if !scratchOwner principal then .error "a scratch world is a principal's: name the principal"
+  else .ok s!"scratch/{principal}/{name}"
+
+/-- The journal of world `key`: `DIR/<name>.journal`, or `DIR/scratch/<principal>/<name>.journal`. -/
+def journalOf (srv : Server) (key : String) : System.FilePath := srv.config.state / s!"{key}.journal"
+
+/-- How world `key` is opened. A world: its clock, opener and library as configured, its name journaled.
+    A scratch: its own settings, journaled when it was made (`scratchOp`), under the scratch bounds. -/
 def openRequest (srv : Server) (key : String) : Json :=
   let c := srv.config
-  let lib := fun (librarian : String) => match srv.sealed with
-    | some path => if librarian.isEmpty then [] else [("library", toJson path), ("principal", toJson librarian)]
-    | none => []
-  if key.startsWith "heaps/" then
-    let did := (key.drop 6).toString
-    Json.mkObj ([("op", toJson "world-open"), ("path", toJson (c.state / "heaps" / s!"{did}.journal").toString),
-      ("sync", toJson c.sync)] ++ lib did)
+  let base := [("op", toJson "world-open"), ("path", toJson (journalOf srv key).toString), ("sync", toJson c.sync)]
+  if key.startsWith "scratch/" then
+    Json.mkObj (base ++ [("maxJournalBytes", toJson Host.Limits.scratchJournalBytes), ("maxObjects", toJson Host.Limits.scratchObjects)])
   else
-    Json.mkObj ([("op", toJson "world-open"), ("path", toJson (c.state / s!"{key}.journal").toString),
-      ("sync", toJson c.sync), ("clock", toJson c.clock), ("name", toJson key)] ++
-      (if c.opener.isEmpty then [] else [("opener", toJson c.opener)]) ++ lib c.opener)
+    Json.mkObj (base ++ [("clock", toJson c.clock), ("name", toJson key)] ++
+      (if c.opener.isEmpty then [] else [("opener", toJson c.opener)]) ++
+      (match srv.sealed with
+        | some path => if c.opener.isEmpty then [] else [("library", toJson path), ("principal", toJson c.opener)]
+        | none => []))
 
-/-- The open session of world `key`, opening it by replay when it is not held. -/
-def world (srv : Server) (key : String) (now : Nat) : IO (Server × Except String PackageSession.Session) := do
+/-- The open session of world `key`, opened by replay when it is not held. A scratch that is not there is
+    refused, naming when it expired. -/
+def world (srv : Server) (key : String) : IO (Server × Except String PackageSession.Session) := do
   match srv.worlds[key]? with
-  | some h => return ({ srv with worlds := srv.worlds.insert key { h with used := now } }, .ok h.session)
+  | some session => return (srv, .ok session)
   | none =>
-    if key.startsWith "heaps/" then IO.FS.createDirAll (srv.config.state / "heaps")
+    if key.startsWith "scratch/" && !(← (journalOf srv key).pathExists) then
+      let name := (key.splitOn "/").getLastD ""
+      return (srv, .error (match srv.expired[key]? with
+        | some at_ => s!"scratch/{name} expired at clock {at_}; open it again with world-scratch"
+        | none => s!"no scratch/{name}; open one with world-scratch"))
     let (session, r) ← PackageSession.stepIO {} (openRequest srv key)
     match r with
     | .ok j =>
       if (j.getObjValAs? String "status").toOption == some "opened" then
-        return ({ srv with worlds := srv.worlds.insert key ⟨session, now⟩ }, .ok session)
+        return ({ srv with worlds := srv.worlds.insert key session }, .ok session)
       return (srv, .error s!"world {key} did not open: {j.compress}")
     | .error e => return (srv, .error s!"world {key} did not open: {e}")
 
-/-- Close every world idle past `idleMs` but `keep`; its store goes and its file lock with it. -/
-def sweep (srv : Server) (keep : String) (now : Nat) : Server :=
-  { srv with worlds := srv.worlds.filter fun k h => k == keep || now < h.used + idleMs }
+/-- The home world's clock, which scratch worlds expire by (none when it does not open). -/
+def homeClock (srv : Server) : IO (Server × Nat) := do
+  let (srv, home) ← world srv srv.config.home
+  return (srv, match home with
+    | .ok session => (session.world.map fun (o : Host.Open) => o.world.clock).getD 0
+    | .error _ => 0)
+
+/-- Discard scratch world `key` at home clock `clock`: its session, its journal, block store and
+    snapshots. The one deletion in the system: a scratch is not custody (docs/FEDERATION.md §3). -/
+def discard (srv : Server) (key : String) (clock : Nat) : IO Server := do
+  let path := (journalOf srv key).toString
+  for f in [path, Host.Snapshot.storeOf path] ++ (← Host.Snapshot.files path).map (·.2) do
+    try IO.FS.removeFile f catch _ => pure ()
+  return { srv with worlds := srv.worlds.erase key, scratches := srv.scratches.erase key, expired := srv.expired.insert key clock }
+
+/-- Discard every scratch world whose last op was `Limits.scratchMinutes` or more before `clock`. -/
+def expire (srv : Server) (clock : Nat) : IO Server := do
+  let mut srv := srv
+  for (key, last) in srv.scratches.toList do
+    if last + Host.Limits.scratchMinutes ≤ clock then srv ← discard srv key clock
+  return srv
+
+/-- The scratch worlds on disk at start, each as if its last op were now. -/
+def findScratches (srv : Server) (clock : Nat) : IO Server := do
+  let dir := srv.config.state / "scratch"
+  unless ← dir.pathExists do return srv
+  let mut srv := srv
+  for owner in ← dir.readDir do
+    unless ← owner.path.isDir do continue
+    for f in ← owner.path.readDir do
+      if f.fileName.endsWith ".journal" then
+        srv := { srv with scratches := srv.scratches.insert s!"scratch/{owner.fileName}/{(f.fileName.dropEnd 8).toString}" clock }
+  return srv
+
+/-- A scratch world's row: who, its name, the home clock of its last op and when it expires. -/
+def scratchRow (key : String) (last : Nat) : Json :=
+  let parts := key.splitOn "/"
+  Json.mkObj [("principal", toJson (parts.getD 1 "")), ("world", toJson s!"scratch/{parts.getD 2 ""}"),
+    ("lastTurn", toJson last), ("expires", toJson (last + Host.Limits.scratchMinutes))]
+
+/-- `world-scratch {principal, name, from?: {world, height?}}`: a world of the principal's own (docs/FEDERATION.md
+    §3): empty with the sealed library, its opener, clock and librarian the principal; or `from` a world it may
+    read, forked at `height` (default its head) with what the principal may view (`world-fork`). At most
+    `Limits.scratchPerPrincipal` at once; it expires `Limits.scratchMinutes` home clock minutes after its last op. -/
+def scratchOp (srv : Server) (request : Json) : IO (Server × Json) := do
+  let principal := (request.getObjValAs? String "principal").toOption.getD ""
+  let name := (request.getObjValAs? String "name").toOption.getD ""
+  let key ← match scratchKey principal name with
+    | .ok k => pure k
+    | .error e => return (srv, errorJson e)
+  let path := journalOf srv key
+  if ← path.pathExists then return (srv, errorJson s!"scratch/{name} exists; its turns name world scratch/{name}")
+  let mine := srv.scratches.toList.filter (·.1.startsWith s!"scratch/{principal}/")
+  if mine.length ≥ Host.Limits.scratchPerPrincipal then
+    let oldest := (mine.toArray.qsort (·.2 < ·.2))[0]!
+    return (srv, Json.mkObj [("status", toJson "refused"), ("class", toJson "capacity"),
+      ("reason", toJson s!"a principal holds at most {Host.Limits.scratchPerPrincipal} scratch worlds; the oldest is {(scratchRow oldest.1 oldest.2).getObjValAs? String "world" |>.toOption.getD ""}"),
+      ("oldest", scratchRow oldest.1 oldest.2)])
+  if let some parent := path.parent then IO.FS.createDirAll parent
+  let (srv, clock) ← homeClock srv
+  let mut srv := srv
+  match request.getObjVal? "from" with
+  | .ok from_ =>
+    let source := (from_.getObjValAs? String "world").toOption.getD srv.config.home
+    let sourceKey ← match (source.dropPrefix? "scratch/").map (·.toString) with
+      | some n => match scratchKey principal n with
+        | .ok k => pure k
+        | .error e => return (srv, errorJson e)
+      | none => if Host.validWorldName source then pure source else return (srv, errorJson s!"no world {source} here")
+    let (next, opened) ← world srv sourceKey
+    srv := next
+    let .ok session := opened | return (srv, errorJson (match opened with | .error e => e | .ok _ => ""))
+    let fork := Json.mkObj ([("op", toJson "world-fork"), ("principal", toJson principal), ("into", toJson path.toString)] ++
+      ((from_.getObjVal? "height").toOption.map fun h => [("height", h)]).getD [])
+    let (session, r) ← PackageSession.stepIO session fork
+    srv := { srv with worlds := srv.worlds.insert sourceKey session }
+    match r with
+    | .ok j => unless (j.getObjValAs? String "status").toOption == some "forked" do return (srv, j)
+    | .error e => return (srv, errorJson e)
+  | .error _ =>
+    let opening := Json.mkObj ([("op", toJson "world-open"), ("path", toJson path.toString), ("sync", toJson srv.config.sync),
+      ("clock", toJson principal), ("opener", toJson principal), ("principal", toJson principal),
+      ("maxJournalBytes", toJson Host.Limits.scratchJournalBytes), ("maxObjects", toJson Host.Limits.scratchObjects)] ++
+      ((srv.sealed.map fun p => [("library", toJson p)]).getD []))
+    let (session, r) ← PackageSession.stepIO {} opening
+    match r with
+    | .ok j =>
+      unless (j.getObjValAs? String "status").toOption == some "opened" do return (srv, j)
+      srv := { srv with worlds := srv.worlds.insert key session }
+    | .error e => return (srv, errorJson e)
+  let (next, opened) ← world srv key
+  let height := match opened with
+    | .ok session => (session.world.map fun (o : Host.Open) => o.world.height).getD 0
+    | .error _ => 0
+  srv := { next with scratches := srv.scratches.insert key clock, expired := srv.expired.erase key }
+  return (srv, Json.mkObj [("status", toJson "scratch"), ("world", toJson s!"scratch/{name}"), ("height", toJson height),
+    ("expires", toJson (clock + Host.Limits.scratchMinutes))])
+
+/-- `world-cite {principal, scratch, receipt, identity?}`: the scratch entry `receipt` (its hash) kept in the
+    home world as a `cited` entry under the principal (`Host.citeOp`), read here from the scratch itself. -/
+def citeOp (srv : Server) (request : Json) : IO (Server × Json) := do
+  let principal := (request.getObjValAs? String "principal").toOption.getD ""
+  let name := (request.getObjValAs? String "scratch").toOption.getD ""
+  let key ← match scratchKey principal name with
+    | .ok k => pure k
+    | .error e => return (srv, errorJson e)
+  let (srv, opened) ← world srv key
+  let .ok scratch := opened | return (srv, errorJson (match opened with | .error e => e | .ok _ => ""))
+  let receipt := (request.getObjValAs? String "receipt").toOption.getD ""
+  let some w := scratch.world.map fun (o : Host.Open) => o.world | return (srv, errorJson s!"scratch/{name} is not open")
+  let some entry := (w.entries.indexOf? receipt).bind w.entries.get?
+    | return (srv, errorJson s!"no entry {receipt} in scratch/{name}")
+  let (srv, home) ← world srv srv.config.home
+  let .ok session := home | return (srv, errorJson (match home with | .error e => e | .ok _ => ""))
+  let cite := Json.mkObj ([("op", toJson "world-cite"), ("principal", toJson principal), ("world", toJson s!"scratch/{name}"),
+    ("entry", entry), ("resident", Json.bool true)] ++ ((request.getObjVal? "identity").toOption.map fun i => [("identity", i)]).getD [])
+  let (session, r) ← PackageSession.stepIO session cite
+  return ({ srv with worlds := srv.worlds.insert srv.config.home session }, match r with
+    | .ok j => j
+    | .error e => errorJson e)
 
 def serveStatus (srv : Server) : Json :=
-  let rows := srv.worlds.toList.map fun (k, h) =>
-    let w := h.session.world.map (·.world)
+  let rows := srv.worlds.toList.filter (!·.1.startsWith "scratch/") |>.map fun (k, h) =>
+    let w := h.world.map fun (o : Host.Open) => o.world
     Json.mkObj [("name", toJson k), ("height", toJson ((w.map (·.height)).getD 0)),
       ("objects", toJson ((w.map (·.objects.size)).getD 0)), ("clock", toJson ((w.map (·.clock)).getD 0)),
       ("open", toJson true)]
-  Json.mkObj [("status", toJson "serve"), ("worlds", Json.arr (rows.toArray.qsort fun a b =>
-    (a.getObjValAs? String "name").toOption.getD "" < (b.getObjValAs? String "name").toOption.getD ""))]
+  let byName := fun (a b : Json) => decide ((a.getObjValAs? String "name").toOption.getD "" < (b.getObjValAs? String "name").toOption.getD "")
+  Json.mkObj [("status", toJson "serve"), ("worlds", Json.arr (rows.toArray.qsort byName)),
+    ("scratches", Json.arr ((srv.scratches.toList.toArray.qsort (·.1 < ·.1)).map fun (k, t) => scratchRow k t))]
+
+/-- The world a reference names, read by `reader`: a world of the directory, or `scratch/<name>` the
+    reader's own scratch world. -/
+def referenceKey (world reader : String) : Option String :=
+  match (world.dropPrefix? "scratch/").map (·.toString) with
+  | some n => (scratchKey reader n).toOption
+  | none => if Host.validWorldName world then some world else none
+
+/-- Another held world's answer to `world-view` or `world-card` of `object` as `reader`, and its citation. -/
+def readForeign (srv : Server) (world op object reader : String) : Option (Json × Json) := do
+  let key ← referenceKey world reader
+  let session ← srv.worlds[key]?
+  let o ← session.world
+  let w := o.world
+  let request := Json.mkObj [("principal", toJson reader), ("object", toJson object)]
+  let reply ← (match op with
+    | "view" => Host.view w request
+    | "card" => (Host.cardOp w request).map fun (p : Host.World × Json) => p.2
+    | _ => .error "no such read").toOption
+  let target := w.objects[object]?
+  let cite := Json.mkObj ([("world", toJson world), ("object", toJson object), ("height", toJson w.height), ("head", toJson w.head)] ++
+    ((target.map fun t => [("version", toJson t.version), ("stateCid", toJson (Host.stateCid t.state))]).getD []))
+  return (reply, cite)
+
+/-- What a request on world `self` may read of the others (`Host.Foreign`). -/
+def foreignFor (srv : Server) (self : String) : Host.Foreign :=
+  { read := fun world op object reader =>
+      if referenceKey world reader == some self then none else readForeign srv world op object reader }
+
+/-- `<world>:<object>`: an object id naming another world's object, when the text before the first `:`
+    is a world served here (a world name never is `did`, `zulip` or `at`, so no local id is mistaken). -/
+def splitReference (srv : Server) (id reader : String) : Option (String × String) := do
+  let world := (id.splitOn ":").headD ""
+  let key ← referenceKey world reader
+  unless srv.worlds.contains key do none
+  return (world, (id.drop (world.length + 1)).toString)
+
+/-- The world an envelope names: `world: <name>` a world of the directory, `world: scratch/<name>` the
+    principal's scratch world, none the home world. -/
+def keyOf (srv : Server) (request : Json) : Except String String :=
+  match request.getObjVal? "world" with
+  | .ok (.str name) => match (name.dropPrefix? "scratch/").map (·.toString) with
+    | some n => scratchKey ((request.getObjValAs? String "principal").toOption.getD "") n
+    | none => if Host.validWorldName name then .ok name else .error s!"no world {name} here"
+  | .ok _ => .error "world must be a name"
+  | .error _ => .ok srv.config.home
 
 /-- One request, as the socket it came on may ask it. -/
 def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) := do
@@ -171,30 +345,56 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
   if op == "world-open" then return (srv, errorJson "serve opens its worlds; name one with `world`")
   if !root && rootOps.contains op then
     return (srv, errorJson "the opener speaks on the root socket")
+  if op == "world-scratch" then return ← scratchOp srv request
+  -- `world-root {act: {kind: expire, principal, scratch}}`: a scratch is serve's, not a journal's, so its
+  -- expiry is the hand's log only (docs/ROOT.md §2.2).
+  if op == "world-root" && ((request.getObjVal? "act").toOption.bind (·.getObjValAs? String "kind" |>.toOption)) == some "expire" then
+    let act := (request.getObjVal? "act").toOption.getD Json.null
+    match scratchKey ((act.getObjValAs? String "principal").toOption.getD "") ((act.getObjValAs? String "scratch").toOption.getD "") with
+    | .error e => return (srv, errorJson e)
+    | .ok key =>
+      unless srv.scratches.contains key do return (srv, errorJson s!"no {key}")
+      let (srv, clock) ← homeClock srv
+      let srv ← discard srv key clock
+      return (srv, Json.mkObj [("status", toJson "expired"), ("scratch", scratchRow key clock)])
+  if op == "world-cite" then return ← citeOp srv request
   -- Every public request is a resident's, whoever it names: the opener's privileges are the root socket's.
-  let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "heap" && k != "stateless" && k != "resident")
+  let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "stateless" && k != "resident")
   if (request.getObjVal? "stateless").toOption == some (Json.bool true) then
     let (stateless, r) ← PackageSession.stepIO srv.stateless bare
     return ({ srv with stateless }, r.toOption.getD (errorJson (match r with | .error e => e | .ok _ => "")))
-  let key : Except String String := match request.getObjVal? "heap", request.getObjVal? "world" with
-    | .ok (.str did), _ => if isHeapDid did then .ok s!"heaps/{did}" else .error "heap must be a DID"
-    | .ok _, _ => .error "heap must be a DID"
-    | _, .ok (.str name) => if Host.validWorldName name then .ok name else .error s!"no world {name} here"
-    | _, .ok _ => .error "world must be a name"
-    | _, .error _ => .ok srv.config.home
-  match key with
+  match keyOf srv request with
   | .error e => return (srv, errorJson e)
   | .ok key =>
-    let now ← IO.monoMsNow
-    let (srv, opened) ← world srv key now
+    -- `world-view` and `world-card` of `<world>:<object>` are that world's, answered as of its height.
+    if op == "world-view" || op == "world-card" then
+      let reader := (request.getObjValAs? String "principal").toOption.getD ""
+      if let some (world, object) := splitReference srv ((request.getObjValAs? String "object").toOption.getD "") reader then
+        return (srv, match readForeign srv world (if op == "world-view" then "view" else "card") object reader with
+          | some (r, cite) => r.setObjVal! "asOf" cite
+          | none => errorJson s!"{world} is not a world served here")
+    let (srv, opened) ← world srv key
     match opened with
     | .error e => return (srv, errorJson e)
     | .ok session =>
       let (session, r) ← PackageSession.stepIO session (if root then bare else bare.setObjVal! "resident" (Json.bool true))
-      let srv := { srv with worlds := srv.worlds.insert key ⟨session, now⟩ }
-      return (sweep srv key now, match r with
+        (foreignFor srv key)
+      let mut srv := { srv with worlds := srv.worlds.insert key session }
+      let clock := (session.world.map fun (o : Host.Open) => o.world.clock).getD 0
+      let mut out := match r with
         | .ok j => j
-        | .error e => errorJson e)
+        | .error e => errorJson e
+      if key.startsWith "scratch/" then
+        let (next, home) ← homeClock srv
+        srv := { next with scratches := next.scratches.insert key home }
+      else if key == srv.config.home then
+        -- The home clock moving is what expires scratch worlds.
+        if op == "world-advance" then srv ← expire srv clock
+        if op == "world-status" && (out.getObjValAs? String "status").toOption == some "world" then
+          let open_ := srv.scratches.size
+          let expiring := (srv.scratches.toList.filter fun (_, t) => t + Host.Limits.scratchMinutes ≤ clock + 60).length
+          out := out.setObjVal! "scratches" (Json.mkObj [("open", toJson open_), ("expiring", toJson expiring)])
+      return (srv, out)
 
 def usage : String :=
   "usage: delvetalk-obend serve --state DIR [--socket PATH] [--root-socket PATH] [--root-group GROUP] [--opener DID] [--library DIR] [--sync none|fsync|full] [--clock P] [--home NAME]"
@@ -240,6 +440,13 @@ def main (args : List String) : IO UInt32 := do
     let (stateless, r) ← PackageSession.stepIO {} (Json.mkObj [("op", toJson "library-load"), ("path", toJson target.toString)])
     srv := { srv with stateless, libraryPin := r.toOption.bind (·.getObjValAs? String "pin" |>.toOption) }
   srv := { srv with sha := ← binaryPin (config.state / "binary-pin") (← IO.appPath) }
+  -- Every world of the directory is held from the start, so a turn in one may read another.
+  for f in ← config.state.readDir do
+    if f.fileName.endsWith ".journal" then
+      let name := (f.fileName.dropEnd 8).toString
+      if Host.validWorldName name then srv := (← world srv name).1
+  let (opened, clock) ← homeClock srv
+  srv ← findScratches opened clock
   let pidfile := config.state / "hostd.pid"
   IO.FS.writeFile pidfile (toString (← IO.Process.getPID))
   for p in [config.socket, config.rootSocket] do
