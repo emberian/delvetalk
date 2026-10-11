@@ -1,4 +1,4 @@
-"""Sends ring a bell that opens a door that lights a lantern, delivered in the settling pass.
+"""Rules ring a bell that opens a door that lights a lantern, delivered in the settling pass.
 
 Evidence for FOUNDATION §3 Delivery (layer: host).
 
@@ -7,14 +7,48 @@ The message chain: bell rings, door opens, lantern lights.
 This drives the host's `send` machinery: `world-turn` answers a send with a
 delivery id, and the settling pass after every durable op runs pending deliveries
 (up to 64 per op; the reply carries them as `delivered`). `world-deliver {limit}`
-runs any that remain; `world-pending` lists them. The chain is wired with
-subscriptions.
+runs any that remain; `world-pending` lists them. The chain is wired with rules
+(HOST-HANDOFF 5.160): a rule on the bell knocks on the door, one on the door lights the lantern, each
+fired delivery a turn of the rule's owner whose `context.sender` is the rule's object.
 """
 import unittest
 
 from tests.test_turn_world import TurnWorld
-from tests.wire import boolean, empty, field, label, nat, nil, record, reference, relation
-from tests.bend import closure
+from tests.wire import boolean, field, label, record
+from tests.bend import closure, declared
+
+# Writes down who ran its `note` and which object's send delivered it.
+WITNESS = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Form.obend as Form
+import ./Card.obend as Card
+import ./Document.obend as Document
+record State:
+  by: String
+  sender: String
+def initial() -> State:
+  {by: "", sender: ""}
+def note(state: State, context: Abi.Context) -> Activity<Bool>:
+  noted(context.principal, context.sender)
+def noted(who: String, origin: String) -> Activity<Bool>:
+  let written(_) = write {by: set who, sender: set origin}
+  true
+form note:
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), Document.text("A witness."))
+""")
+
+
+def silver():
+    return {"tag": "variant", "label": "silver", "payload": record()}
+
+
+def bell_seed():
+    """A Bell fixture's Seed (tests/fixtures/objects/Bell.obend): the planting post and its planter."""
+    return record(colour=silver(), seed=label("a bell for lost moths"), planting=label("at://glm.delve.town/app.bsky.feed.post/3m-plant"),
+                  planter=label("glm"), planterHandle=label(""))
 
 
 def town_kinds(send, owner="ember", names=("bell", "cistern")):
@@ -70,37 +104,33 @@ class Chain(TurnWorld):
 
 
 class Chains(Chain):
+    def place(self, card, name, when, then, who="ember"):
+        spell = "delvetalk %s rule\nname: %s\nwhen: %s\nthen: %s" % (card, name, when, then)
+        placed = self.turn(card, "receive", record(text=label(spell), post=label("")), principal=who, identity="rule-" + name)
+        self.assertEqual(placed["status"], "admitted", placed)
+
     def test_ring_then_open_then_light(self):
         self.make("lantern", closure("Lantern"), record())
         self.make("door", closure("Door"), record())
-        silver = {"tag": "variant", "label": "silver", "payload": empty()}
-        self.make("bell", closure("Bell"), record(
-            colour=silver, seed=label("s"), planting=label("p"), planter=label("glm"), planterHandle=label("")))
-        # The chain is wired by subscriptions: the door watches the bell's `rung`, the lantern
-        # the door's `open`; each write is delivered to the watcher's `changed`.
-        for watcher, obj in (("lantern", "door"), ("door", "bell")):
-            w = self.turn(watcher, "watch", record(object=label(obj)))
-            self.assertEqual((w["status"], w["result"]), ("admitted", label("watching")), w)
-        self.assertEqual(self.turn("door", "watch", record(object=label("bell")))["result"], label("watching"))  # a repeat is idempotent
+        self.make("bell", closure("Bell"), bell_seed())
+        self.make("witness", closure("Lantern")[:-1] + [{"name": "Witness", "source": WITNESS}], record())  # the lantern's imports
+        # The chain is wired by rules: kim's on the bell knocks on the door, ember's on the door lights the lantern.
+        self.place("bell", "opens", 'request.method == "ring"', "delvetalk door knock", who="kim")
+        self.place("door", "lights", 'request.method == "knock"', "delvetalk lantern light")
+        self.place("bell", "told", 'request.method == "ring"', "delvetalk witness note", who="kim")
         ring = self.turn("bell", "ring", principal="gemini")
-        self.assertEqual(ring["status"], "admitted", ring)
-        self.assertEqual(ring["result"], boolean(True))  # rung; the host tells the subscribers
-        self.assertEqual(field(self.state("bell"), "rung"), boolean(True))
-        # Deliveries run in the settling pass of the same durable op: the ring's reply carries them.
-        self.assertEqual([d["status"] for d in ring["delivered"]], ["admitted", "admitted"], ring)
+        self.assertEqual((ring["status"], ring["result"]), ("admitted", boolean(True)), ring)
+        # Deliveries run in the settling pass of the same durable op: the ring's reply carries them, each the
+        # turn of its rule's owner, the door's own firing among them.
+        h = ring["receipt"]["height"]
+        self.assertEqual([(d["receipt"]["identity"]["principal"], d["receipt"]["identity"]["intent"], d["status"]) for d in ring["delivered"]],
+                         [("kim", "rule:bell:opens:%d" % h, "admitted"), ("kim", "rule:bell:told:%d" % h, "admitted"),
+                          ("ember", "rule:door:lights:%d" % (h + 1), "admitted")], ring)
         self.assertEqual(self.host.send(op="world-pending")["count"], 0)
-        self.assertEqual(field(self.state("door"), "open"), boolean(True))
-        self.assertEqual(field(self.state("door"), "openedBy"), label("bell"))  # opened by the change, not a turn
-        self.assertEqual(field(self.state("lantern"), "lit"), boolean(True))
-        self.assertEqual(field(self.state("lantern"), "litBy"), label("door"))
-        # The receiver is a helper: no turn may name it, so a forged `changed` opens nothing.
-        self.make("door2", closure("Door"), record())
-        self.turn("door2", "watch", record(object=label("bell")))
-        forged = record(object=reference("bell"), field=label("rung"), version=nat(9), inserted={"tag": "list", "items": [boolean(True)]},
-                        retracted={"tag": "list", "items": []})
-        refused = self.turn("door2", "changed", forged, principal="gemini")
-        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["class"]), ("refused", "noMethod"), refused)
-        self.assertEqual(field(self.state("door2"), "open"), boolean(False))
+        self.assertEqual((field(self.state("door"), "open"), field(self.state("door"), "openedBy")), (boolean(True), label("kim")))
+        self.assertEqual((field(self.state("lantern"), "lit"), field(self.state("lantern"), "litBy")), (boolean(True), label("ember")))
+        # A fired delivery runs as the rule's owner, sent by the rule's object.
+        self.assertEqual((field(self.state("witness"), "by"), field(self.state("witness"), "sender")), (label("kim"), label("bell")))
 
 if __name__ == "__main__":
     unittest.main()

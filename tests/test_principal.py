@@ -14,9 +14,8 @@ import unittest
 
 from deploy import genesis
 from tests.test_laws import anthology_seed
-from tests.test_chain import Chain, town_garden
+from tests.test_chain import Chain, bell_seed, town_garden
 from tests.test_rooms import make_room, avatar_seed, room_seed
-from tests.test_replay import bell_seed
 from tests.wire import field, label, record, rows
 from tests.bend import closure
 

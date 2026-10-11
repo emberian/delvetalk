@@ -1870,7 +1870,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 - A suspended identity has a `suspended` entry; `retained` ignores it so the final commit can reuse the identity.
 - Settling runs inside `durable`, after the triggering op, and appends to the same write.
 - `Handle.flush` is not durable; `sync.c` does `fflush` + `fsync` (or `F_FULLFSYNC`). One sync per `durable` call. The build needs `lakefile.lean` for `extern_lib`.
-- `python3 -W error` turns leaked subprocess warnings into failures; close hosts in `tearDown`. `tests.test_replay` and `test_await` are slow because every `world-create` compiles.
+- `python3 -W error` turns leaked subprocess warnings into failures; close hosts in `tearDown`. `test_await` is slow because every `world-create` compiles.
 - Never run an unfiltered package suite on a loop.
 
 ## 7. Open
@@ -1888,7 +1888,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
    (`test_hub`, `test_interpret_object`, `test_interpret_text`, `test_genesis`); sweep the remaining Wake cases
    of the host's tests (`test_await`'s awaitPost cases, `test_outbound`'s `env/` and awaitPost cases,
    `test_public_methods`' receiver case (now the supervisor's alone), `test_chain`'s subscription-wired chain (as
-   rules), `test_replay`'s strike, `test_serve`'s arrival list, `test_zulip`'s `env/` arrivals, `test_bridge`'s
+   rules), `test_serve`'s arrival list, `test_zulip`'s `env/` arrivals, `test_bridge`'s
    mention route (now `<did>` `receive`, identity `#mention:<did>`, reach `mentioned`) and its awaitPost case,
    `test_theme`'s env/wake kinds with the objects lane); test the Bend arms from a body (`world.rule` from a
    `made`, `world.grow`, `world.act`, `world.chronicle`) and a rule-fired delivery's `context.sender`; the full run

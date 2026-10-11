@@ -192,8 +192,8 @@ class Bridging(ZulipCase):
         self.assertTrue(all(f"garden-1 says zulip:127.0.0.1:{ {'alice': '1000', 'bob': '1001'}[m['subject'].split()[0]]}\n● admitted " in m['content'] for m in mine), mine)
         self.assertTrue(mine[0]['content'].startswith('@**Alice**\n'))
         arrivals = self.root.send({'op': 'world-objects', 'principal': OPENER})['ids']
-        self.assertIn('env/zulip:127.0.0.1:1000', arrivals)
-        self.assertIn('env/zulip:127.0.0.1:1001', arrivals)
+        self.assertIn('zulip:127.0.0.1:1000', arrivals)
+        self.assertIn('zulip:127.0.0.1:1001', arrivals)
         for uri in got['posted']:  # every posted draft is recorded, so the host knows who it addresses
             self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': uri})['object'], 'garden-1')
         self.assertEqual(self.bridge()['posted'], [], 'nothing is posted twice')
@@ -231,7 +231,7 @@ class Bridging(ZulipCase):
         self.zulip.say('new', 'Carol', 'thanks, Dana')  # under Dana's: answers her, reaches nothing
         from unittest import mock
         real, turns = HostClient.send, []
-        with mock.patch.object(HostClient, 'send', lambda h, req: (turns.append(req) if req.get('method') == 'receive' else None) or real(h, req)):
+        with mock.patch.object(HostClient, 'send', lambda h, req: (turns.append(req) if req.get('method') == 'receive' and req.get('reach') != 'mentioned' else None) or real(h, req)):
             self.assertEqual(len(self.bridge()['turns']), 1)
         self.assertEqual(turns[0]['replyTo'], zulip.uri_of('delvetalk', 'new', self.zulip.mine()[0]['id']))
 

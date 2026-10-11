@@ -1,4 +1,4 @@
-"""Objects are born in turns by create, and a turn suspended on another turn's receipt or a post
+"""Objects are born in turns by create, and a turn suspended on another turn's receipt (`await` on its slot)
 resumes when it lands, times out by the clock, and survives restart.
 
 Evidence for FOUNDATION §3 (layer: host).
@@ -12,10 +12,8 @@ import unittest
 
 from transport.journal import entries as journal_entries
 from tests.wire import write_journal
-from tests.host import posted
 
-from tests.test_chain import Chain, town_garden
-from tests.test_replay import silver
+from tests.test_chain import Chain, silver, town_garden
 from tests.wire import boolean, field, label, nat, record, rows
 from tests.bend import closure, declared
 
@@ -28,8 +26,7 @@ def bell_seed(post="post-1"):
     return record(colour=silver(), seed=label("a bell for lost moths"), planting=label(uri(post)), planter=label("glm"), planterHandle=label(""))
 
 
-# The object the planting posts are recorded for: a reply to one runs here (its receive
-# refuses, by its law, when the reply says "no"), and that turn answers the post.
+# The object the awaited turns run on: its receive refuses, by its law, when the text says "no".
 HUB = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
@@ -46,10 +43,38 @@ def refusing(context: Abi.Context) -> Activity<Nat>:
     case _: 1n
 """)
 
+# The strike awaits the receipt of one turn (its slot: principal and intent) and rings if that turn was
+# admitted; a rain counts, touching nothing the strike writes.
+STRIKER = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  principal: String
+  intent: String
+  rung: Bool
+  rains: Nat
+def initial() -> State:
+  {principal: "", intent: "", rung: false, rains: 0n}
+def strike(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.await({slot: {principal: state.principal, intent: state.intent}, patience: 8n}):
+    case reply(r): ringOn(r.receipt.outcome, state.rung, context)
+    case _: state.rung
+def ringOn(outcome: Plans.Outcome, rung: Bool, context: Abi.Context) -> Activity<Bool>:
+  match outcome:
+    case admitted(_): rang(context)
+    case _: rung
+def rang(context: Abi.Context) -> Activity<Bool>:
+  match world.write(extend(keep(), {rung: Plans.Edit::<Bool, {}>.set({value: true})})):
+    case _: true
+def rain(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {rains: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
+    case _: state.rains + 1n
+""", "strike", "rain")
+
 
 class Await(Chain):
-    """A bell's strike awaits the planting post's answer (awaitPost): the first turn on the
-    post's recorded object whose replyTo names it. The posts are recorded for a hub."""
+    """A striker's strike awaits one turn's receipt on the hub, named by its slot (glm's intent)."""
 
     def setUp(self):
         super().setUp()
@@ -57,23 +82,20 @@ class Await(Chain):
         r = self.host.send(op="world-create", principal="ember", identity="mk-hub", object="hub",
                            modules=closure("World") + [{"name": "Hub", "source": HUB}], entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
-        self.recorded = set()
 
-    def bell(self, name="bell", post="post-1"):
-        self.make(name, closure("Bell"), bell_seed(post))
+    def bell(self, name="bell", intent="answer-1"):
+        r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
+                           modules=closure("World") + [{"name": "Striker", "source": STRIKER}], entry="initial",
+                           seed=record(principal=label("glm"), intent=label(intent)))
+        self.assertEqual(r["status"], "created", r)
 
     def strike(self, name="bell", ident=None, who="gemini"):
         return self.turn(name, "strike", principal=who, identity=ident or f"strike-{name}")
 
-    def settle(self, post="post-1", who="glm", text="yes"):
-        """The reply that answers the post: a turn on the hub with replyTo = post."""
-        post = uri(post)
-        if post not in self.recorded:
-            r = posted(self.host, principal="transport", uri=post, cid="c", object="hub")
-            self.assertEqual(r["status"], "posted", r)
-            self.recorded.add(post)
+    def settle(self, intent="answer-1", who="glm", text="yes"):
+        """The awaited turn: glm's turn on the hub under the slot's intent."""
         return self.host.send(op="world-turn", principal=who, object="hub", method="receive",
-                              argument=record(text=label(text), post=label(post + "/reply")), identity=post + "/reply", replyTo=post)
+                              argument=record(text=label(text), post=label("")), identity=intent)
 
     def rung(self, name="bell"):
         return self.state_field(name, "rung")
@@ -134,11 +156,10 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         self.assertEqual(self.plant(post="at://glm.delve.town/app.bsky.feed.post/3m-plant2")["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/3")
 
 class Suspend(Await):
-    def test_a_strike_before_the_planting_suspends_then_resumes_with_the_receipt_and_rings(self):
+    def test_a_strike_before_the_awaited_turn_suspends_then_resumes_with_its_receipt_and_rings(self):
         self.bell()
         s = self.strike()
         self.assertEqual(s["status"], "suspended", s)
-        self.assertEqual(s["receipt"]["outcome"]["post"], uri("post-1"))
         self.assertEqual(s["deadline"], 8)                       # clock 0 + patience 8
         self.assertEqual(self.rung(), boolean(False))
         settled = self.settle()
@@ -151,14 +172,14 @@ class Suspend(Await):
         self.assertEqual(final["receipt"]["identity"], {"principal": "gemini", "intent": "strike-bell"})
         self.assertIn("resumes", final["receipt"])
 
-    def test_an_await_on_a_committed_reply_answers_at_once_and_on_a_refused_one_resumes_silent(self):
+    def test_an_await_on_a_committed_turn_answers_at_once_and_on_a_refused_one_resumes_silent(self):
         self.bell()
         self.settle()
         self.assertEqual(self.strike()["status"], "admitted")
         self.assertEqual(self.rung(), boolean(True))
-        self.bell("other", post="post-2")
+        self.bell("other", intent="answer-2")
         self.strike("other")
-        refused = self.settle(post="post-2", text="no")
+        refused = self.settle(intent="answer-2", text="no")
         self.assertEqual(refused["status"], "refused", refused)
         # The strike heard the refusal: its own turn is admitted and the bell stays silent.
         self.assertEqual(refused["resumed"][0]["status"], "admitted")
@@ -176,25 +197,25 @@ class Suspend(Await):
         self.assertEqual([x["status"] for x in b["resumed"]], ["admitted"])
         self.assertEqual(self.rung(), boolean(False))                # timedOut -> unchanged
         self.assertEqual(self.host.send(op="world-view", principal="e", object="bell")["version"], 0)
-        # The slot arriving later changes nothing: the strike is over.
+        # The awaited turn arriving later changes nothing: the strike is over.
         self.assertNotIn("resumed", self.settle())
         self.assertEqual(self.rung(), boolean(False))
 
     def test_a_suspended_turn_whose_bell_was_rained_on_meanwhile_is_rebased_on_resume(self):
-        # The rain appended to `rains`; the strike sets only `rung`, which nothing else changed, so
+        # The rain added to `rains`; the strike sets only `rung`, which nothing else changed, so
         # the resumed strike commits on the bell as it is now (a resumed turn's own object re-bases).
         self.bell()
-        self.strike()
+        self.strike(who="glm")  # glm's own resumption: glm's reply carries its result
         rain = self.turn("bell", "rain", record(text=label("drip")), principal="kimik3")
         self.assertEqual(rain["status"], "admitted")
-        settled = self.settle(who="gemini")
+        settled = self.settle()
         [resumed] = settled["resumed"]
         self.assertEqual((resumed["status"], resumed["result"]), ("admitted", boolean(True)), resumed)
         self.assertNotIn("rerunOf", resumed)
         self.assertEqual(self.rung(), boolean(True))
 
     def test_a_settling_turn_sees_another_principals_resumption_only_as_its_projection(self):
-        # codex host 1: glm's reply releases gemini's strike; glm's reply carries gemini's receipt as
+        # codex host 1: glm's turn releases gemini's strike; glm's reply carries gemini's receipt as
         # glm may read it, never its result or the journaled resumption.
         self.bell()
         self.strike()
@@ -207,7 +228,7 @@ class Suspend(Await):
 
     def test_restart_between_suspend_and_resume_rebuilds_the_activity_and_its_deadline(self):
         self.bell()
-        self.bell("late", post="post-2")
+        self.bell("late", intent="answer-2")
         self.strike()
         self.strike("late")
         self.host.send(op="world-advance", principal="transport", height=4)
@@ -242,10 +263,10 @@ class Suspend(Await):
         h = self.spawn()
         r = h.send(op="world-open", path=self.path)
         self.assertEqual(r["status"], "error")
-        self.assertIn("height 4", r["message"])  # the strike's entry: after the clock setting, the hub and the bell
+        self.assertIn("height 4", r["message"])  # the strike's entry: after the clock setting, the hub and the striker
 
 
-# Waits on a post, then sends the bell a rain under the waiting turn's principal.
+# Waits on glm's turn, then sends the bell a rain under the waiting turn's principal.
 RELAY = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
@@ -254,8 +275,8 @@ record State:
   count: Nat
 def initial() -> State:
   {count: 0n}
-def wait(state: State, input: {post: String, text: String}, context: Abi.Context) -> Activity<Nat>:
-  match world.awaitPost({post: input.post, patience: 8n}):
+def wait(state: State, input: {intent: String, text: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.await({slot: {principal: "glm", intent: input.intent}, patience: 8n}):
     case reply(_): sent(input.text, context)
     case _: 0n
 def sent(text: String, context: Abi.Context) -> Activity<Nat>:
@@ -267,15 +288,15 @@ def sent(text: String, context: Abi.Context) -> Activity<Nat>:
 
 class Rains(Await):
     def test_two_agents_raining_in_one_settle_pass_are_both_admitted(self):
-        """Two agents' turns wait on one post; the reply resumes both in one settling pass and
+        """Two agents' turns wait on one turn; its receipt resumes both in one settling pass and
         their two rains reach the bell as two deliveries of that pass: two inserts of
         different keys, both admitted, both kept in key order."""
-        self.bell()
+        self.make("bell", closure("Bell"), bell_seed())
         r = self.host.send(op="world-create", principal="ember", identity="mk-relay", object="relay",
                            modules=closure("World") + [{"name": "Relay", "source": RELAY}], entry="initial", seed=record(count=nat(0)))
         self.assertEqual(r["status"], "created", r)
         for who, text in (("kimik3", "a drizzle"), ("gemini", "a squall")):
-            w = self.turn("relay", "wait", record(post=label(uri("post-1")), text=label(text)), principal=who, identity="wait-" + who)
+            w = self.turn("relay", "wait", record(intent=label("answer-1"), text=label(text)), principal=who, identity="wait-" + who)
             self.assertEqual(w["status"], "suspended", w)
         settled = self.settle()
         self.assertEqual([x["status"] for x in settled["resumed"]], ["admitted", "admitted"], settled)
