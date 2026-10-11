@@ -19,7 +19,7 @@ import unittest
 
 from deploy import genesis
 
-from tests.test_chain import Chain, garden_state
+from tests.test_chain import Chain, town_garden
 from tests.wire import field, nil, reference, rows
 from tests.bend import MODULES, closure
 from tests.test_rooms import make_room, avatar_seed, room_seed, thing_seed
@@ -81,9 +81,8 @@ class Strangers(Forging):
     def test_a_strangers_migration_cannot_make_them_the_owner(self):
         self.create("policy", "Policy", record(owner=label(OWNER), model=label("m"), system=label("s"), lexicon=nil(), examples=nil(),
                                               escalate=label(""), escalateTo=label(""), macros=nil(), confirmFor=nil()))
-        self.create("garden", "Garden", garden_state(owner=OWNER))
         self.create("commonplace", "Record", record(owner=label(OWNER), keeper=label(OWNER)), law=genesis.RECORD_LAW)
-        for obj, module in (("policy", "Policy"), ("garden", "Garden"), ("commonplace", "Record")):
+        for obj, module in (("policy", "Policy"), ("commonplace", "Record")):
             before = self.view(obj)
             r = self.host.send(op="world-reprogram", principal=STRANGER, identity="take-" + obj, object=obj,
                                version=before["version"], package=migrated(module, STRANGER), migration="migrate")
@@ -175,14 +174,14 @@ class Strangers(Forging):
         self.assertEqual(rows(field(self.view("scene")["state"], "presence")), [])
 
     # And a law that admits anyone's kind-0 write, or a lawless object's default law, admits only its methods' writes.
-    def test_a_stranger_cannot_forge_a_gardens_children_a_rooms_presence_or_a_bells_rain(self):
-        self.create("garden", "Garden", garden_state(owner=OWNER))
+    def test_a_stranger_cannot_forge_a_gardens_things_a_rooms_presence_or_a_bells_rain(self):
+        town_garden(self.host.send, owner=OWNER)
         make_room(self, "porch", **room_seed("porch"))
         self.make("bell", closure("Bell"), record(colour=variant("silver"), seed=label("s"), planting=label(""), planter=label(ALICE), planterHandle=label("glm")))
-        child = record(world=label(""), object=label("garden/bell/forged"), colour=variant("silver"))
+        thing = record(world=label(""), object=label("garden/bell/forged"))
         presence = record(who=label(ALICE), at=label(""))
         rain = record(author=label(ALICE), handle=label("glm"), text=label("forged"), at=nat(0), n=nat(0))
-        for obj, edits in (("garden", {"children": inserting(child), "planted": variant("add", delta=nat(1))}),
+        for obj, edits in (("garden", {"things": inserting(thing)}),
                            ("porch", {"presence": inserting(presence)}), ("bell", {"rains": inserting(rain)})):
             self.refused(self.propose(obj, edits), "owner")
 

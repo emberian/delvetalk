@@ -176,8 +176,8 @@ class Arrived(HostCase):
 
 class ToldWithoutPosting(HostCase):
     """OFFERING §4: the world moves when nobody posts. A newcomer's Wake, in the turn arrival
-    runs as theirs (`Wake.arrived`), subscribes to every planting in the garden; a planting
-    calls the planter's `Wake.watchBell`, so the planter hears when that bell rings. Each
+    runs as theirs (`Wake.arrived`), subscribes to every thing the garden grows (a row of its `things`); the bell
+    its kind finishes calls the planter's `Wake.watchBell`, so the planter hears when that bell rings. Each
     reaches the avatar's inbox as a note in the settle pass of the turn that wrote it."""
 
     arrive, view = Arrive.arrive, Arrive.view
@@ -185,11 +185,8 @@ class ToldWithoutPosting(HostCase):
     def setUp(self):
         super().setUp()
         opened(self)
-        r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden", modules=closure("Garden"),
-                           entry="initial", seed=record(owner={"tag": "label", "value": "ember"}))
-        self.assertEqual(r["status"], "created", r)
-        from tests.test_chain import town_kinds
-        town_kinds(self.host.send)
+        from tests.test_chain import town_garden
+        town_garden(self.host.send)
 
     def inbox(self, did=DID):
         return [field(n, "text")["value"] for n in rows(field(self.view(did), "inbox"))]
@@ -197,7 +194,8 @@ class ToldWithoutPosting(HostCase):
     def plant(self, who, seed, ident):
         r = self.host.send(op="world-turn", principal=who, object="garden", method="receive", identity=ident,
                            argument=record(text={"tag": "label", "value": "delvetalk garden plant\nseed: %s\ncolour: silver" % seed}, post={"tag": "label", "value": "at://x/" + ident}))
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertIn("Planted, ", r["offers"][0]["text"])
         return r
 
     def test_a_newcomer_hears_each_planting_and_its_own_bell_ring(self):
@@ -205,12 +203,12 @@ class ToldWithoutPosting(HostCase):
         self.assertEqual((arrived["arrivedTurn"]["status"], arrived["arrivedTurn"]["result"]["label"]), ("admitted", "watching"), arrived)
         self.assertEqual(self.arrive().get("arrivedTurn"), None)
         self.plant("ember", "a lamp", "p1")
-        self.assertEqual(self.inbox(), ["garden.planted is 1"])
+        self.assertEqual(self.inbox(), ["garden.things: 1 new row matched"])
         self.plant(DID, "a fern", "p2")
-        self.assertEqual(self.inbox(), ["garden.planted is 1", "garden.planted is 2"])
+        self.assertEqual(self.inbox(), ["garden.things: 1 new row matched", "garden.things: 1 new row matched"])
         rung = self.host.send(op="world-turn", principal="ember", object="garden/bell/2", method="ring", argument=record(), identity="r1")
         self.assertEqual(rung["status"], "admitted", rung)
-        self.assertEqual(self.inbox(), ["garden.planted is 1", "garden.planted is 2", "garden/bell/2.marks: 1 new row matched"])
+        self.assertEqual(self.inbox(), ["garden.things: 1 new row matched", "garden.things: 1 new row matched", "garden/bell/2.marks: 1 new row matched"])
         # Ember has no wake: the planting stands, and nobody hears bell 1 ring.
         self.assertEqual(self.host.send(op="world-turn", principal="ember", object="garden/bell/1", method="ring", argument=record(), identity="r2")["status"], "admitted")
         self.assertEqual(len(self.inbox()), 3)

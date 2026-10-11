@@ -9,7 +9,6 @@ import secrets
 import sqlite3
 import threading
 import time
-from transport.config import ORIGIN  # noqa: F401  (deploy/genesis.py reads it here; routed: it should read Config)
 from transport.delve import POST, Failure
 
 HANDLE = re.compile(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+delve\.town\Z')

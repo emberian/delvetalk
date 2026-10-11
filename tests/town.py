@@ -22,7 +22,7 @@ class Town:
         self.made, self.refusal = [], None
         if run_genesis:
             self.made, self.refusal = genesis.run(self.client)
-            assert self.refusal is None and all(m["status"] == "created" for m in self.made), (self.refusal, self.made)
+            assert self.refusal is None and all(m["status"] in ("created", "admitted") for m in self.made), (self.refusal, self.made)
 
     def send(self, **request):
         return self.client.send(request)

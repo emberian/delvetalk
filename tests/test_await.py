@@ -14,7 +14,7 @@ from transport.journal import entries as journal_entries
 from tests.wire import write_journal
 from tests.host import posted
 
-from tests.test_chain import Chain, garden_seed, town_kinds
+from tests.test_chain import Chain, town_garden
 from tests.test_replay import silver
 from tests.wire import boolean, field, label, nat, record, rows
 from tests.bend import closure, declared
@@ -121,17 +121,16 @@ def make(state: State, input: {kid: String, bad: Bool}, context: Abi.Context) ->
         again = {f["name"]: f["value"] for f in self.state("k1")["fields"]}
         self.assertEqual(again, kid)
 
-    def test_bells_are_minted_past_an_id_already_held_and_the_garden_records_the_minted_one(self):
+    def test_bells_are_minted_past_an_id_already_held_and_the_garden_holds_the_minted_one(self):
         """kind/bell asks the host for the first free garden/bell/<n> (HOST-HANDOFF 5.127), so an id someone else
         already holds refuses nothing."""
-        self.make("garden", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
+        town_garden(self.host.send)
         self.make("garden/bell/1", closure("Bell"), bell_seed())
         r = self.plant()
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "planted"), r)
+        self.assertEqual(r["status"], "admitted", r)
         self.assertEqual(r["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/2")
-        children = [field(c, "object")["value"] for c in rows(field(self.state("garden"), "children"))]
-        self.assertEqual(children, ["garden/bell/2"])
+        things = [field(c, "object")["value"] for c in rows(field(self.state("garden"), "things"))]
+        self.assertEqual(things, ["garden/bell/2"])
         self.assertEqual(self.plant(post="at://glm.delve.town/app.bsky.feed.post/3m-plant2")["receipt"]["outcome"]["creates"][0]["object"], "garden/bell/3")
 
 class Suspend(Await):

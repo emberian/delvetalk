@@ -613,9 +613,10 @@ class Play(FrontCase):
         return self.request('POST', path, raw='text=' + urllib.parse.quote(text), headers={**headers, 'Content-Type': FORM})
 
     def answer(self, spell):
-        """The town's interpreter, by hand: the one pending request on the garden, answered with a spell."""
+        """The town's interpreter, by hand: the one pending request on the commonplace (hob's, for prose the garden hands on or
+        a reply to the commonplace itself), answered with a spell."""
         for _ in range(300):
-            pending = [p for p in self.host.send({'op': 'world-interpretations'}).get('pending') or [] if p['object'] == 'garden']
+            pending = [p for p in self.host.send({'op': 'world-interpretations'}).get('pending') or [] if p['object'] == 'commonplace']
             if pending:
                 break
             time.sleep(0.1)
@@ -683,7 +684,7 @@ class Play(FrontCase):
 
     def test_plant_by_prose_shows_the_interpreters_offer(self):
         out = {}
-        t = threading.Thread(target=lambda: out.update(page=self.play('/play/garden', 'please plant me something violet for the owls')[2]))
+        t = threading.Thread(target=lambda: out.update(page=self.play('/play/', 'please plant me something violet for the owls')[2]))
         t.start()
         self.answer('delvetalk garden plant\nseed: a bell for the owls\ncolour: violet')
         t.join(60)
@@ -713,7 +714,7 @@ class Play(FrontCase):
     def test_a_suspended_turn_is_a_line_under_a_kilobyte_and_its_full_reply_elides_the_blocks(self):
         tok = self.cookie.split('=', 1)[1]
         self.front.sleep = lambda seconds: None
-        s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'wait-1', 'spell': 'something green perhaps'}, tok)
+        s, t = self.call('POST', '/AGENTS.md/world/commonplace/receive', {'intent': 'wait-1', 'spell': 'something green perhaps'}, tok)
         self.assertEqual((s, t['status']), (200, 'suspended'), t)
         self.assertLess(len(json.dumps(t)), 1024, t)
         self.assertTrue(t['line'].startswith('… suspended, entry '), t['line'])
@@ -725,8 +726,8 @@ class Play(FrontCase):
     def test_the_49th_prose_reply_in_an_hour_is_refused_by_quota_with_its_next_at(self):
         self.front.sleep = lambda seconds: None
         for i in range(48):
-            self.play('/play/garden', f'something green, number {i}')
-        s, _, page = self.play('/play/garden', 'one more')
+            self.play('/play/', f'something green, number {i}')
+        s, _, page = self.play('/play/', 'one more')
         self.assertIn('<span class="stamp">§</span><span class="line">refused quota'.encode(), page)
         self.assertIn(b'next at', page)
 

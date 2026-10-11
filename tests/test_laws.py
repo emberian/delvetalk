@@ -214,8 +214,8 @@ class NoStrangerAmends(LawWorld):
     only the owner's reprogram and amendment (kind 1 and 2 change no field)."""
 
     def test_garden_thing_and_commonplace_refuse_a_strangers_amendment(self):
-        from tests.test_chain import garden_state
-        self.create("garden", closure("Garden"), garden_state(owner=OWNER))
+        from tests.test_chain import town_garden
+        town_garden(self.host.send, owner=OWNER)
         self.create("stone", closure("Thing"), record(owner=label(OWNER), name=label("stone"), description=label(""),
                                                       holder=reference(""), location=reference(""),
                                                       offer={"tag": "variant", "label": "none", "payload": record()}))

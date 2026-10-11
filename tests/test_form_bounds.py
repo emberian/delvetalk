@@ -9,7 +9,7 @@ the method; a form's bounds not shown by world-inspect.
 """
 import unittest
 
-from tests.test_chain import Chain, town_kinds
+from tests.test_chain import Chain, town_garden
 from tests.wire import label, nat, record
 from tests.bend import closure, declared
 
@@ -83,13 +83,11 @@ class WorkshopSource(Chain):
 
 
 class ExpectedForm(Chain):
-    """A typeMismatch's `expected.form` is the card's declared form (the Garden's `seed: text 1..80`),
+    """A typeMismatch's `expected.form` is the card's declared form (the garden's `seed: text 1..80`),
     the bounds the spell path and the front's actions use, not the input type's default 0..1400."""
 
     def test_the_expected_form_carries_the_declared_bounds(self):
-        from tests.test_chain import garden_seed
-        self.make("garden", closure("Garden"), garden_seed())
-        town_kinds(self.host.send)
+        town_garden(self.host.send)
         r = self.turn("garden", "plant", record(colour=label("amber"), seed=nat(3)), principal="glm")
         out = r["receipt"]["outcome"]
         self.assertEqual(out["class"], "typeMismatch", r)

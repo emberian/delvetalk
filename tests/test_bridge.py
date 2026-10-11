@@ -14,7 +14,7 @@ from deploy import genesis
 from deploy.genesis import DOORS, STUDIO
 from tests import test_outbound
 from tests.test_receive import door
-from tests.test_chain import garden_state, town_kinds
+from tests.test_chain import town_garden
 from tests.test_transport import DID, Script, mk
 from transport import bridge, delve, observe
 from tests.host import served
@@ -216,10 +216,7 @@ class Bridging(BridgeCase):
 
 
     def test_a_spell_post_to_a_real_garden_is_bridged_into_a_draft_saying_planted(self):
-        r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk', 'object': 'garden-1',
-                            'modules': closure('Garden'), 'entry': 'initial', 'seed': garden_state(0)})
-        self.assertEqual(r['status'], 'created', r)
-        town_kinds(lambda **q: self.host.send(q))
+        town_garden(lambda **q: self.host.send(q), id='garden-1')
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
         self.assertEqual(self.run_bridge()['failed'], [])
         (d,) = self.drafts()

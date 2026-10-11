@@ -286,7 +286,7 @@ class Wakes(Chain):
         """SEEDING §4, the flood: the town pours refusals into a cistern (kind/cistern's: a record whose level is
         its count of lines, `next` less one, which only rises), and a wake watching `next` pass a mark acts once."""
         town_kinds(self.host.send)
-        self.assertEqual(self.turn("kind/cistern", "make", principal=OWNER)["status"], "admitted")
+        self.assertEqual(self.turn("kind/cistern", "make", record(id=label("")), principal=OWNER)["status"], "admitted")
         wake = self.wake()
         self.avatar(OWNER)
         w = self.turn(wake, "watch", record(event=variant("writes", object=label("cistern/1"), field=label("next"), above=nat(4)), action=variant("notify")), principal=OWNER)
@@ -314,33 +314,31 @@ class Wakes(Chain):
     def tide(self, gap=3):
         self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(gap), subs=relation()))
 
-    def test_when_garden_planted_passes_10_the_wake_ticks_the_tide(self):
-        """A Wake watches another object's writes: it subscribes to the garden's count, and the
-        trigger fires once, as the count passes 10."""
-        from tests.test_chain import garden_state
-        self.tide()
-        self.create("garden", "Garden", garden_state(planted=9))
-        town_kinds(self.host.send)
+    def test_a_rows_rule_on_the_gardens_things_ticks_the_tide_as_each_bell_is_planted(self):
+        """A Wake watches another object's rows: it subscribes to the garden's `things`, and the rule fires once for each
+        planting, the new row being what the garden gained."""
+        from tests.test_chain import town_garden
+        self.tide(gap=0)
+        town_garden(self.host.send, owner=OWNER)
         wake = self.wake()
-        writes = {"tag": "variant", "label": "writes", "payload": record(object=label("garden"), field=label("planted"), above=nat(10))}
+        rule = {"tag": "variant", "label": "rows", "payload": record(object=label("garden"), field=label("things"), where={"tag": "list", "items": []}, atLeast=nat(1))}
         call = {"tag": "variant", "label": "call", "payload": record(card=label("tide"), method=label("tick"))}
-        r = self.turn(wake, "watch", record(event=writes, action=call), principal=OWNER)
+        r = self.turn(wake, "watch", record(event=rule, action=call), principal=OWNER)
         self.assertEqual(self.label_of(r), "watching")
         self.deliver_all()
         ticks = lambda: int(field(self.state("tide"), "ticks")["value"])
         for i in range(3):
             planted = self.turn("garden", "plant", record(colour=label("amber"), seed=label("bell %d" % i)), principal=OTHER)
-            self.assertEqual(self.label_of(planted), "planted")
+            self.assertEqual(planted["status"], "admitted", planted)
             self.deliver_all()
-            # 10 does not pass 10; 11 does, once; 12 does not fire again.
-            self.assertEqual(ticks(), [0, 1, 1][i], i)
+            self.assertEqual(ticks(), i + 1, i)
 
     def test_a_rows_rule_on_a_bells_rains_ticks_the_tide_when_its_author_rains(self):
         """A Wake as a rule: When a row inserted into a bell's lines (its rains) has author OTHER, Wish a tick.
         The wake subscribes to the bell's lines; the host delivers each rain to its typed receiver."""
         self.tide()
         town_kinds(self.host.send, names=("bell",))
-        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell")), principal=OWNER)
+        made = self.turn("kind/bell", "make", record(colour={"tag": "variant", "label": "silver", "payload": record()}, seed=label("a bell"), id=label("")), principal=OWNER)
         self.assertEqual(made["status"], "admitted", made)
         wake = self.wake()
         where = {"tag": "list", "items": [{"tag": "variant", "label": "equals", "payload": record(column=label("author"), equals={"tag": "variant", "label": "text", "payload": record(value=label(OTHER))})}]}

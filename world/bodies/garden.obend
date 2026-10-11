@@ -1,0 +1,102 @@
+layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+import ./Text.obend as Text
+import ./Scenes.obend as Scenes
+# The garden's body, over RECORD (docs/METAPHYSICS.md §7.2): a record that makes bells and
+# cisterns under itself (`makes`: kind/bell, kind/cistern) and holds what it made among its
+# `things`, newest first on its card. `plant` and `dig` are make by another word: each hands its
+# fields to the kind (Record.making), which makes garden/<kind>/<n> with a door home. The weather
+# the garden cites writes its `weather` line, shown under the head. It reads no words of its own:
+# prose goes on to the commonplace, whose hob is shown the garden's spells.
+type State = Super.State
+form plant:
+  colour: Rows.Colour
+  seed: text 1..80
+form dig:
+  name: text 0..120
+form write:
+  text: text 1..280
+form lines:
+  from: natural 1..1000000000
+form door:
+  label: text 1..32
+  to: text 1..128
+form undoor:
+  label: text 1..32
+form example:
+  label: text 1..32
+  spell: text 1..280
+  comes: text 0..200
+def makes(state: State) -> Lists.List<String>:
+  Text.words("kind/bell kind/cistern")
+def colourName(c: Rows.Colour) -> String:
+  match c:
+    case amber(_): "amber"
+    case violet(_): "violet"
+    case silver(_): "silver"
+def fieldOf(name: String, value: String) -> Rows.Field:
+  {name: name, value: value}
+# The planter is the turn's principal and its post the one the bell's strike awaits (the kind
+# seeds both); the card says where it grew and how to rain on it.
+def plant(state: State, input: PlantInput, context: Abi.Context) -> Activity<Super.Made>:
+  Super.making(state, "kind/bell", Lists.append(Lists.append(Lists.List.nil(), fieldOf("colour", colourName(input.colour))), fieldOf("seed", input.seed)), context, fn(m: Super.Made) -> Document.Document: planted(m, colourName(input.colour), input.seed, Relations.count(state.things) + 1n, context), fn(m: Super.Made) -> Super.Made: m)
+def dig(state: State, input: DigInput, context: Abi.Context) -> Activity<Super.Made>:
+  Super.making(state, "kind/cistern", Lists.List.nil(), context, dug, fn(m: Super.Made) -> Super.Made: m)
+def planted(made: Super.Made, colour: String, seed: String, count: Nat, context: Abi.Context) -> Document.Document:
+  match made:
+    case made(m): Document.text("Planted, {Card.name(context.principal, context)}: {if colour == \"amber\" then \"an\" else \"a\"} {colour} bell, “{seed}”, at {m.object}; {natText(count)} planted.\nRain on it:\n\n    delvetalk {m.object} rain\n    text: <1 to 200 characters>\n\nAnother:\n\n{plantSpell(Card.called(context, \"garden\"))}")
+    case refused(r): Document.text("Not planted, refused {r.clause}: {r.reading}\n")
+def dug(made: Super.Made) -> Document.Document:
+  match made:
+    case made(m): Document.text("The cistern is dug at {m.object}; it takes refusals.\n")
+    case refused(r): Document.text("Not dug, refused {r.clause}: {r.reading}\n")
+def plantSpell(id: String) -> String:
+  "    delvetalk {id} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n"
+def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:
+  Super.write(state, {text: input.text}, context)
+def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.lines(state, {from: input.from}, context)
+def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.door(state, {label: input.label, to: input.to}, context)
+def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.undoor(state, {label: input.label}, context)
+def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  if context.principal == state.owner then Text.words("plant dig lines door undoor example") else Text.words("plant dig lines")
+def blurb() -> Card.Door:
+  {word: "garden", blurb: "Plant a bell; rain on another's. What grows here has who helped it."}
+# Derived views (`viewDerived {object, view}`): what grows here, by kind, one row a kind.
+def views() -> Lists.List<String>:
+  Text.words("byKind")
+record Tally:
+  kind: String
+  count: Nat
+def byKind(state: State, context: Abi.Context) -> Relations.Relation<Tally>:
+  Relations.Relation.rows({items: Lists.map(Relations.group(state.things, fn(t: Plans.Reference) -> String: kindIn(t.object)), fn(g: Relations.Group<Plans.Reference, String>) -> Tally: {kind: Relations.groupKey(g), count: Lists.length(Relations.groupRows(g))})})
+# garden/bell/3 is a bell: the segment before the number.
+def kindIn(id: String) -> String:
+  let rest = textDrop(id, textBreak(id, "/") + 1n)
+  textTake(rest, textBreak(rest, "/"))
+# The head: the garden's name, its weather, the count, the plant spell and what comes back; then
+# what grows here, newest first, within the card's room.
+def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
+  let title = if state.head == "" then "A GARDEN" else state.head
+  let weather = if state.weather == "" then "" else "Weather: {state.weather}\n"
+  Document.text("✾ {title}\n\n{weather}{natText(Relations.count(state.things))} planted. Plant one:\n\n{plantSpell(id)}\n» a bell, {id}/bell/N. Or words; what is read is planted.\n\nNewest first:\n")
+def thingLine(t: Plans.Reference) -> Document.Document:
+  Document.text("- {t.object}\n")
+def render(state: State, context: Abi.Context) -> Document.Document:
+  let id = Card.called(context, "garden")
+  let head = headLine(state, context, id)
+  let doors = Card.doorLines(state.cites)
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(Card.clippedWithin(Lists.map(Lists.reverse(Relations.rows(state.things)), thingLine), 8n, Card.left(context, Document.size(head) + Document.size(Document.Document.sequence({items: doors})))), doors)})})

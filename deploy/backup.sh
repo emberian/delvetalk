@@ -15,7 +15,16 @@ usage() { echo "usage: $0 (--binary PATH | --image IMAGE) DATA DEST" >&2; exit 6
 mode=$1 host=$2 data=${3%/} dest=${4%/}
 here="$(cd "$(dirname "$0")" && pwd)"
 [[ -f $data/state/town.journal ]] || { echo "backup: no $data/state/town.journal" >&2; exit 66; }
+# The mirror is one data directory's copy: rsync --delete below would erase another's. A mirror made from another
+# directory (a fresh genesis into a new one) is moved aside, never deleted; one with no record is adopted.
+src=$(cd "$data" && pwd -P)
+if [[ -d $dest/mirror && -f $dest/mirror.source && $(cat "$dest/mirror.source") != "$src" ]]; then
+  aside="$dest/mirror.$(basename "$(cat "$dest/mirror.source")")-$(date -u +%Y%m%dT%H%M%SZ)"
+  mv "$dest/mirror" "$aside"
+  echo "backup: the mirror was $(cat "$dest/mirror.source")'s; kept at $aside" >&2
+fi
 mkdir -p "$dest/mirror"
+printf '%s\n' "$src" > "$dest/mirror.source"
 # Group 10425 lists it and reads last-verify: the watch's probe runs in the ops container as the stack's uid, which
 # already owns every byte copied here (DEPLOY "Watching"). Nobody else enters.
 chgrp 10425 "$dest" 2>/dev/null || true
