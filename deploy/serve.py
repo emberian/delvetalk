@@ -29,7 +29,9 @@ def pin_cache(state, binary):
 class Served:
     def __init__(self, state, binary=BINARY, opener=None, library=None, sync='none', extra=()):
         self.state = Path(state).resolve()
-        self.sock, self.root = str(self.state / 'host.sock'), str(self.state / 'root' / 'root.sock')
+        given = dict(zip(extra[::2], extra[1::2])) if len(extra) % 2 == 0 else {}
+        self.sock = given.get('--socket', str(self.state / 'host.sock'))
+        self.root = given.get('--root-socket', str(self.state / 'root' / 'root.sock'))
         for p in (self.sock, self.root):
             if os.path.exists(p):
                 os.unlink(p)

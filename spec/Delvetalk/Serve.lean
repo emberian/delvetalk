@@ -9,7 +9,7 @@ namespace Delvetalk.Serve
 open Lean (Json toJson)
 
 @[extern "delvetalk_serve_listen"]
-opaque listen (host root : @& String) : IO Unit
+opaque listen (host root group : @& String) : IO Unit
 
 /-- `"<connection> <1 if the root socket> <line>"`, the next request; "" once the loop must stop. -/
 @[extern "delvetalk_serve_next"]
@@ -32,7 +32,13 @@ def timingLine (request : Json) (reply : Json) (ms : Nat) : String :=
 /-- How `serve` was started. -/
 structure Config where
   state : System.FilePath
+  /-- The public socket (`--socket`; default `<state>/host.sock`): it may live outside the state
+      directory, so the front mounts no journal. -/
+  socket : System.FilePath := ""
   rootSocket : System.FilePath
+  /-- The root socket's group (`--root-group`; "" keeps serve's own): the socket is 0660, so the hand
+      may run under its own uid in that group (docs/ROOT.md §1.4). -/
+  rootGroup : String := ""
   opener : String := ""
   /-- The library directory to seal (with arrival's packages beside it, `../objects`). -/
   library : Option System.FilePath := none
@@ -63,8 +69,10 @@ def idleMs : Nat := 600000
 /-- The packages `world-arrive` creates from; the sealed library holds them beside the library. -/
 def arrival : List String := ["Avatar", "Env", "Wake"]
 
-/-- The ops only the root socket takes (docs/ROOT.md §1.4), beside every op naming the opener. -/
-def rootOps : List String := ["world-root", "world-library", "world-settings", "world-fork", "world-snapshot", "library-load"]
+/-- The ops only the root socket takes (docs/ROOT.md §1.4). The opener's ordinary turns are the public
+    socket's too; there its privileges are not (`resident`, `Host.openerActs`). -/
+def rootOps : List String := ["world-root", "world-library", "world-settings", "world-fork", "world-snapshot", "library-load",
+  "world-dump"]
 
 def errorJson (message : String) : Json :=
   Json.mkObj [("status", toJson "error"), ("message", toJson message)]
@@ -161,10 +169,10 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
       ((srv.libraryPin.map fun p => [("library", toJson p)]).getD [])))
   if op == "serve-status" then return (srv, serveStatus srv)
   if op == "world-open" then return (srv, errorJson "serve opens its worlds; name one with `world`")
-  let principal := (request.getObjValAs? String "principal").toOption.getD ""
-  if !root && (rootOps.contains op || (!srv.config.opener.isEmpty && principal == srv.config.opener)) then
+  if !root && rootOps.contains op then
     return (srv, errorJson "the opener speaks on the root socket")
-  let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "heap" && k != "stateless")
+  -- Every public request is a resident's, whoever it names: the opener's privileges are the root socket's.
+  let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "heap" && k != "stateless" && k != "resident")
   if (request.getObjVal? "stateless").toOption == some (Json.bool true) then
     let (stateless, r) ← PackageSession.stepIO srv.stateless bare
     return ({ srv with stateless }, r.toOption.getD (errorJson (match r with | .error e => e | .ok _ => "")))
@@ -182,20 +190,22 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
     match opened with
     | .error e => return (srv, errorJson e)
     | .ok session =>
-      let (session, r) ← PackageSession.stepIO session bare
+      let (session, r) ← PackageSession.stepIO session (if root then bare else bare.setObjVal! "resident" (Json.bool true))
       let srv := { srv with worlds := srv.worlds.insert key ⟨session, now⟩ }
       return (sweep srv key now, match r with
         | .ok j => j
         | .error e => errorJson e)
 
 def usage : String :=
-  "usage: delvetalk-obend serve --state DIR [--root-socket PATH] [--opener DID] [--library DIR] [--sync none|fsync|full] [--clock P] [--home NAME]"
+  "usage: delvetalk-obend serve --state DIR [--socket PATH] [--root-socket PATH] [--root-group GROUP] [--opener DID] [--library DIR] [--sync none|fsync|full] [--clock P] [--home NAME]"
 
 def parseArgs (args : List String) (c : Config) : Except String Config :=
   match args with
   | [] => pure c
   | "--state" :: v :: rest => parseArgs rest { c with state := v, rootSocket := (v : System.FilePath) / "root" / "root.sock" }
   | "--root-socket" :: v :: rest => parseArgs rest { c with rootSocket := v }
+  | "--socket" :: v :: rest => parseArgs rest { c with socket := v }
+  | "--root-group" :: v :: rest => parseArgs rest { c with rootGroup := v }
   | "--opener" :: v :: rest => parseArgs rest { c with opener := v }
   | "--library" :: v :: rest => parseArgs rest { c with library := if v.isEmpty then none else some v }
   | "--sync" :: v :: rest =>
@@ -214,6 +224,7 @@ def main (args : List String) : IO UInt32 := do
   if config.state.toString.isEmpty then errors.putStrLn usage; return 64
   let given := args.contains "--root-socket"
   let config := if given then config else { config with rootSocket := config.state / "root" / "root.sock" }
+  let config := if args.contains "--socket" then config else { config with socket := config.state / "host.sock" }
   IO.FS.createDirAll config.state
   -- The directory's lock before anything else is touched (deploy/one-writer.sh's contract).
   let lockPath := config.state / "journal.lock"
@@ -231,8 +242,9 @@ def main (args : List String) : IO UInt32 := do
   srv := { srv with sha := ← binaryPin (config.state / "binary-pin") (← IO.appPath) }
   let pidfile := config.state / "hostd.pid"
   IO.FS.writeFile pidfile (toString (← IO.Process.getPID))
-  if let some dir := config.rootSocket.parent then IO.FS.createDirAll dir
-  listen (config.state / "host.sock").toString config.rootSocket.toString
+  for p in [config.socket, config.rootSocket] do
+    if let some dir := p.parent then IO.FS.createDirAll dir
+  listen config.socket.toString config.rootSocket.toString config.rootGroup
   let timing := (← IO.getEnv "DELVETALK_TIMING") == some "1"
   repeat
     let got ← next
@@ -257,7 +269,7 @@ def main (args : List String) : IO UInt32 := do
       errors.flush
   closeAll
   if let some held := srv.lock then held.unlock
-  for p in [config.state / "host.sock", config.rootSocket, pidfile] do
+  for p in [config.socket, config.rootSocket, pidfile] do
     try IO.FS.removeFile p catch _ => pure ()
   return 0
 

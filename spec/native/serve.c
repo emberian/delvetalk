@@ -8,6 +8,7 @@
 #include <lean/lean.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <poll.h>
 #include <signal.h>
 #include <stdint.h>
@@ -55,7 +56,9 @@ static int nonblocking(int fd) {
   return flags < 0 ? -1 : fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-static int listen_on(const char *path) {
+/* A listener at `path`, mode `mode` (0600 the public socket, 0660 the root socket), its group `gid`
+   when not -1 (`--root-group`: the hand runs under its own uid in that group, ROOT §1.4). */
+static int listen_on(const char *path, mode_t mode, gid_t gid) {
   struct sockaddr_un addr;
   if (strlen(path) >= sizeof(addr.sun_path)) { errno = ENAMETOOLONG; return -1; }
   unlink(path);
@@ -67,7 +70,8 @@ static int listen_on(const char *path) {
   mode_t old = umask(0177);
   int bound = bind(fd, (struct sockaddr *)&addr, sizeof(addr));
   umask(old);
-  if (bound < 0 || chmod(path, 0600) < 0 || listen(fd, BACKLOG) < 0 || nonblocking(fd) < 0) {
+  if (bound < 0 || (gid != (gid_t)-1 && chown(path, (uid_t)-1, gid) < 0) || chmod(path, mode) < 0 ||
+      listen(fd, BACKLOG) < 0 || nonblocking(fd) < 0) {
     int e = errno;
     close(fd);
     errno = e;
@@ -76,7 +80,7 @@ static int listen_on(const char *path) {
   return fd;
 }
 
-lean_obj_res delvetalk_serve_listen(b_lean_obj_arg host, b_lean_obj_arg owner, lean_obj_arg world) {
+lean_obj_res delvetalk_serve_listen(b_lean_obj_arg host, b_lean_obj_arg owner, b_lean_obj_arg group, lean_obj_arg world) {
   (void)world;
   struct sigaction sa;
   memset(&sa, 0, sizeof(sa));
@@ -85,9 +89,16 @@ lean_obj_res delvetalk_serve_listen(b_lean_obj_arg host, b_lean_obj_arg owner, l
   sigaction(SIGTERM, &sa, NULL);  /* no SA_RESTART: poll returns EINTR */
   sigaction(SIGINT, &sa, NULL);
   signal(SIGPIPE, SIG_IGN);       /* a client gone mid-reply is an EPIPE, not a death */
-  listeners[0] = listen_on(lean_string_cstr(host));
+  gid_t gid = (gid_t)-1;
+  const char *name = lean_string_cstr(group);
+  if (*name) {
+    struct group *g = getgrnam(name);
+    if (!g) { errno = errno ? errno : ENOENT; return io_error(); }
+    gid = g->gr_gid;
+  }
+  listeners[0] = listen_on(lean_string_cstr(host), 0600, (gid_t)-1);
   if (listeners[0] < 0) return io_error();
-  listeners[1] = listen_on(lean_string_cstr(owner));
+  listeners[1] = listen_on(lean_string_cstr(owner), 0660, gid);
   if (listeners[1] < 0) return io_error();
   return lean_io_result_mk_ok(lean_box(0));
 }

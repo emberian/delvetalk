@@ -103,6 +103,8 @@ def durable (s : Open) (reader : String) (step : World → Except String (World 
   let settled := fun (w : World) => w.suspended.isEmpty && w.pending.isEmpty
   match (do
       let (w', r) ← step s.world
+      -- What the settling pass runs is no request's: no turn of it is the public socket's.
+      let w' := { w' with resident := false }
       if settled w' then return (w', r, #[], #[])
       let (w'', resumed, delivered) ← settleAll w'
       return (w'', r, resumed, delivered) : Except String (World × Json × Array Json × Array Json)) with
@@ -281,6 +283,10 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
   else match session with
     | none => return (none, .error "no world is open; send world-open first")
     | some s =>
+      -- `serve` marks a public-socket request naming the opener (`World.resident`); every request sets it.
+      let s := { s with world := { s.world with resident := (request.getObjValAs? Bool "resident").toOption == some true } }
+      -- The mark is the socket's, not the request's: no digest or field reading sees it.
+      let request := Json.mkObj (((request.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "resident"))
       match op with
       | "world-create" => durable s reader (fun w => create w request)
       | "world-turn" => durable s reader (fun w => do runTurn w (← parseTurn request))
@@ -325,6 +331,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
       | "world-entry" => return (session, entryOp s.world request)
       | "world-entries" => return (session, entriesOp s.world request)
       | "world-object" => return (session, objectOp s.world request)
+      | "world-dump" => return (session, dumpOp s.world request)
       | "world-source" => return (session, sourceOp s.world request)
       | "world-sources" => return (session, sourcesOp s.world request)
       | "world-grants" => return (session, grantsOp s.world request)

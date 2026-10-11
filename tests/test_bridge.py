@@ -126,8 +126,8 @@ class DirectReplies(BridgeCase):
 
 
 class OpenerPosts(BridgeCase):
-    """The opener's authority is the root socket, which the bridge never holds (HOST-HANDOFF 5.125): a post by the
-    opener is refused on the public socket and skipped, not retried every run and not drafted."""
+    """The opener's privileges are the root socket's, which the bridge never holds (HOST-HANDOFF 5.125, 5.131); her
+    ordinary turns are the public socket's: a post by the opener runs as a resident's turn, not skipped."""
 
     @property
     def host(self):
@@ -137,14 +137,15 @@ class OpenerPosts(BridgeCase):
             self._host = HostClient(hostd.sock)
         return self._host
 
-    def test_a_post_by_the_opener_is_skipped_with_no_draft_and_no_retry(self):
+    def test_a_post_by_the_opener_runs_as_a_residents_turn(self):
         self.make('garden-1')
         post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
         self.observe([post])
         got = self.run_bridge()
-        self.assertEqual((got['turns'], got['failed'], self.drafts()), ([], [], []), got)
-        self.assertIn(post['uri'], (self.state / 'skipped.txt').read_text().split())
-        self.assertEqual(self.run_bridge()['failed'], [])
+        self.assertEqual((got['turns'], got['failed']), ([post['uri']], []), got)
+        skipped = self.state / 'skipped.txt'
+        self.assertFalse(skipped.exists() and post['uri'] in skipped.read_text().split())
+        self.assertEqual(self.run_bridge()['turns'], [])
 
 
 class Bridging(BridgeCase):

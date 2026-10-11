@@ -67,9 +67,9 @@ class Serve(unittest.TestCase):
     def turn(self, client, intent):
         return client.send({'op': 'world-turn', 'principal': 'e', 'object': self.c, 'method': 'bump', 'argument': record(), 'identity': self.c + intent})
 
-    def test_both_sockets_are_private_and_the_pid_file_is_touched_per_op(self):
-        for sock in (self.sock, self.root):
-            self.assertEqual(stat.S_IMODE(os.stat(sock).st_mode), 0o600)
+    def test_the_public_socket_is_private_the_root_socket_its_groups_and_the_pid_file_is_touched_per_op(self):
+        self.assertEqual(stat.S_IMODE(os.stat(self.sock).st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(os.stat(self.root).st_mode), 0o660)
         pid = self.state / 'hostd.pid'
         os.utime(pid, (1, 1))
         self.client.send({'op': 'world-status'})
@@ -159,8 +159,9 @@ class Serve(unittest.TestCase):
         self.assertIn('town', names)
         self.assertEqual(send(self.sock, {'op': 'world-open', 'path': '/tmp/x.journal'})['status'], 'error')
 
-    def test_the_opener_and_the_root_ops_speak_on_the_root_socket_only(self):
-        for request in ({'op': 'world-status', 'principal': OPENER},
+    def test_the_root_ops_speak_on_the_root_socket_only(self):
+        for request in ({'op': 'world-root', 'principal': OPENER, 'reason': 'r', 'act': {'kind': 'unquiet', 'principal': 'e'}},
+                        {'op': 'world-dump', 'principal': OPENER, 'object': self.c},
                         {'op': 'world-library', 'principal': 'e', 'path': WORLD_LIBRARY},
                         {'op': 'world-fork', 'principal': 'e', 'into': str(self.state.parent / 'f.journal')},
                         {'op': 'world-snapshot'}):
@@ -169,6 +170,61 @@ class Serve(unittest.TestCase):
         self.assertEqual(send(self.root, {'op': 'world-status', 'principal': OPENER})['status'], 'world')
         snap = send(self.root, {'op': 'world-snapshot'})
         self.assertNotEqual(snap['status'], 'error', snap)
+
+    def test_the_openers_ordinary_turns_are_the_public_sockets_and_its_privileges_the_roots(self):
+        """The bridge submits the owner's own posts as resident turns without holding root (ROOT §1.4)."""
+        bumped = send(self.sock, {'op': 'world-turn', 'principal': OPENER, 'object': self.c, 'method': 'bump',
+                                  'argument': record(), 'identity': self.c + '-opener'})
+        self.assertEqual(bumped['status'], 'admitted', bumped)
+        # Amending another's thing is the opener's privilege: refused on the public socket, admitted on the root.
+        amend = lambda sock, intent: send(sock, {'op': 'world-amend', 'principal': OPENER, 'identity': intent, 'object': self.c,
+                                                 'version': send(sock, {'op': 'world-view', 'principal': 'e', 'object': self.c})['version'],
+                                                 'law': 'law closed: request.kind == 2'})
+        public = amend(self.sock, self.c + '-am1')
+        self.assertEqual((public['status'], public['receipt']['outcome']['class']), ('refused', 'lawRefused'), public)
+        self.assertEqual(amend(self.root, self.c + '-am2')['status'], 'admitted')
+        # Naming an owner, and a forged mark on the root socket changes nothing there.
+        owned = send(self.sock, {'op': 'world-create', 'principal': OPENER, 'identity': 'mk-own-' + self.c, 'object': self.c + 'o',
+                                 'owner': 'e', 'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0))})
+        self.assertEqual(owned['status'], 'error', owned)
+        self.assertIn('root socket', owned['message'])
+        owned = send(self.root, {'op': 'world-create', 'principal': OPENER, 'identity': 'mk-own-' + self.c, 'object': self.c + 'o',
+                                 'owner': 'e', 'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0)),
+                                 'resident': True})
+        self.assertEqual(owned['status'], 'created', owned)
+
+    def test_unquiet_and_the_dump(self):
+        quiet = send(self.root, {'op': 'world-root', 'principal': OPENER, 'reason': 'cool off', 'act': {'kind': 'quiet', 'principal': 'm', 'hours': 2}})
+        self.assertEqual(quiet['status'], 'root', quiet)
+        loud = send(self.root, {'op': 'world-root', 'principal': OPENER, 'reason': 'back', 'act': {'kind': 'unquiet', 'principal': 'm'}})
+        self.assertEqual((loud['status'], loud['receipt']['outcome']['kind'], loud['receipt']['outcome']['after']), ('root', 'quiet', None), loud)
+        bumped = send(self.sock, {'op': 'world-turn', 'principal': 'm', 'object': self.c, 'method': 'bump', 'argument': record(),
+                                  'identity': self.c + '-m'})
+        self.assertEqual(bumped['status'], 'admitted', bumped)
+        dump = send(self.root, {'op': 'world-dump', 'principal': OPENER, 'object': self.c})
+        self.assertEqual({k: dump[k] for k in ('status', 'object', 'owner', 'read', 'fixed', 'supervisor', 'activities')},
+                         {'status': 'dump', 'object': self.c, 'owner': '', 'read': 'public', 'fixed': [], 'supervisor': '', 'activities': []}, dump)
+        self.assertEqual(set(dump['ledger']), {'depth', 'work', 'storage'}, dump)
+        self.assertEqual(send(self.root, {'op': 'world-dump', 'principal': 'e', 'object': self.c})['status'], 'error')
+
+
+class Placement(unittest.TestCase):
+    def test_the_public_socket_may_live_apart_and_the_root_socket_takes_a_group(self):
+        import grp
+        with tempfile.TemporaryDirectory() as d:
+            group = grp.getgrgid(os.getgid()).gr_name
+            sock = str(Path(d) / 'front' / 'host.sock')
+            server = Served(str(Path(d) / 'state'), extra=('--socket', sock, '--root-group', group))
+            try:
+                self.assertEqual(send(sock, {'op': 'world-status'})['status'], 'world')
+                self.assertFalse((Path(d) / 'state' / 'host.sock').exists())
+                self.assertEqual(os.stat(server.root).st_gid, os.getgid())
+            finally:
+                server.stop()
+            self.assertFalse(os.path.exists(sock))
+            p = subprocess.run([binary(), 'serve', '--state', str(Path(d) / 'other'), '--root-group', 'no-such-group-here'],
+                               capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(p.returncode, 0)
 
 
 class Restart(unittest.TestCase):

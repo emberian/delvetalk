@@ -2237,8 +2237,8 @@ def moderate (w : World) (req : TurnRequest) (id action : String) (value : Strin
     | "quiet" => "who: <a handle>\nhours: <n>\n" | "unquiet" => "who: <a handle>\n"
     | "settings" => "postQuota: <n>\ninterpretQuota: <n>\nmodelQuota: <n>\n"
     | "revoke" => "grant: <a grant id>\n" | _ => "") ++ "reading: <why, for the receipt>\n"
-  if w.opener.isEmpty || req.principal != w.opener then
-    return ← refuseSpell w req id "opener" s!"only the hand that opened the world casts {action}." template
+  if !openerActs w req.principal then
+    return ← refuseSpell w req id "opener" s!"only the hand that opened the world casts {action}, on the root socket." template
   let some reading := value "reading"
     | refuseSpell w req id "missingField" s!"{action} takes reading: why, for the receipt." template
   if reading.utf8ByteSize > Limits.maxReasonBytes || reading.any (fun c => c == '"' || c == '\\' || c == '\n') then
