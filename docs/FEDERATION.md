@@ -24,8 +24,9 @@ socket and `hostd.py`/`hostproc.py` (381 lines) going, becomes `serve
 `<directory>/<name>.journal` opened by `world-open` at start, the envelope
 field `world: <name>` in place of `heap: <did>`. An op naming a world the
 directory does not hold is a request error, "no world <name> here". Memory is
-one store per world (run 11's world: 996 entries, 2.5 MB journal); a world
-idle past ten minutes is closed and reopened by replay, as a heap is today.
+one store per world (run 11's world: 996 entries, 2.5 MB journal), held while
+the host runs: a world over its block store holds its live state, not its
+journal (HOST-HANDOFF 5.137), so every world stays readable from every other.
 The one-writer rule holds per journal; the lock is per directory. Cost: the
 hostd socket round trip stays (0.21 ms `world-status`, 1.0 ms a bump,
 DEPLOY "Costs") and the daemon's 0.07 ms goes.
@@ -167,9 +168,9 @@ with hostd, `replRestarted`), and the stateless process goes.
 (`scratchPerPrincipal`); a third is refused `capacity` naming the oldest. Each at most
 16 MiB of journal and 1,000 objects (`scratchJournalBytes`,
 `scratchObjects`); past them the scratch refuses `capacity` and expires on
-schedule. One store in memory per open scratch, closed after ten idle
-minutes and reopened by replay, so 40 residents with two each is 80 files
-and a handful of live stores, not 80 processes. The sweep is the host's,
+schedule. One store in memory per open scratch, held until it expires (a
+store is its live state, HOST-HANDOFF 5.137), so 40 residents with two each is
+80 files and 80 small stores in one process, not 80 processes. The sweep is the host's,
 inside the home world's `world-advance`, so the clock principal already runs
 it and no transport route is added; a `world-status.scratches {open,
 expiring}` line lets the hand see it.
@@ -304,9 +305,10 @@ expiry refusals that say where to start again; foreign facts dated on cards.
 Where the work stands (lane fungus, 2026-10-11): 1 landed (`delvetalk-obend serve`, `Serve.lean`; hostd.py and
 hostproc.py are gone); 3 landed in part (`deploy/open.py` writes the world's row, `<state>/bridges/<world>.json`, and
 prints its commands; genesis and the welcome stay the operator's step); of 4, the Zulip principal with its realm
-(`transport/zulip.py` `principal`) and the hand's `--world` landed. 2 is not built: private heaps still serve
-(`heap: <did>` on the envelope, `<state>/heaps/<did>.journal`, the front's `/AGENTS.md/heap/` routes), so sections
-3 and 7's scratch rows describe the design, not the tree. 5 to 8 are not built.
+(`transport/zulip.py` `principal`) and the hand's `--world` landed. 2 landed (host17, HOST-HANDOFF 5.140):
+scratch worlds, their expiry, `world-cite`, the root act `expire`, and the front's `/AGENTS.md/scratch/<name>/`
+routes; private heaps are gone. 5 landed for `view` and `card` (citations journaled as `cites`, the ops'
+`asOf`); a held world is no longer closed when idle, so every world is readable. 6 to 8 are not built.
 
 Ops added: `world-scratch`, `world-cite`, `serve-status`; `world-fork` stays
 as the operator's copy. Ops changed: every op takes `world`; `world-advance`

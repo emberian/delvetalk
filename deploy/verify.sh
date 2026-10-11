@@ -6,7 +6,7 @@
 #   deploy/verify.sh --binary PATH DIR       a host binary on this machine
 #   deploy/verify.sh --image IMAGE DIR       the host image, with no network
 #
-# DIR holds state/<world>.journal (town.journal at least) and state/heaps/*.journal, serve's layout in the compose volume.
+# DIR holds state/<world>.journal (town.journal at least), serve's layout in the compose volume. <state>/scratch/ holds scratch worlds, which are not custody: not backed up, not verified.
 set -euo pipefail
 usage() { echo "usage: $0 (--binary PATH | --image IMAGE) DIR" >&2; exit 64; }
 [[ $# == 3 ]] || usage
@@ -17,7 +17,7 @@ mode=$1 host=$2 dir=$3
 work=$(mktemp -d "${TMPDIR:-/tmp}/delvetalk-verify.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 shopt -s nullglob
-journals=("$dir"/state/*.journal "$dir"/state/heaps/*.journal)
+journals=("$dir"/state/*.journal)
 requests=""
 i=0
 for j in "${journals[@]}"; do

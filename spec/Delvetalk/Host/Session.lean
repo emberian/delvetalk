@@ -245,7 +245,7 @@ def interpretStatus (w : World) (r : Json) (principal : Option String) : Json :=
     r.setObjVal! "interpretations" (Json.mkObj [("remaining", toJson (w.interpretQuota - used)),
       ("next", toJson ((hour + 1) * 60))])
 
-def stepWorldCore (session : Session) (request : Json) : IO (Session × Except String Json) := do
+def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {}) : IO (Session × Except String Json) := do
   let op ← match request.getObjValAs? String "op" with
     | .ok op => pure op
     | .error _ => return (session, .error "missing op")
@@ -272,6 +272,14 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
             return (session, .error s!"maxJournalBytes may lower the bound ({Limits.maxJournalBytes}), never raise it")
           pure b
         | .error e => return (session, .error e)
+      -- A lower object bound for this process (a scratch world's); never a higher one.
+      let objectBound ← match optNat request "maxObjects" with
+        | .ok none => pure Limits.maxObjects
+        | .ok (some n) =>
+          if n > Limits.maxObjects then
+            return (session, .error s!"maxObjects may lower the bound ({Limits.maxObjects}), never raise it")
+          pure n
+        | .error e => return (session, .error e)
       -- How many entries apart this process writes snapshots.
       let every ← match optNat request "snapshotEvery" with
         | .ok none => pure Limits.snapshotEvery
@@ -283,7 +291,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
       match ← openWorld path held verify ((session.map (·.world.caches)).getD {}) bound with
       | .error e => return (session, .error e)
       | .ok o =>
-        let o := { o with sync, every }
+        let o := { o with sync, every, world := { o.world with objectBound } }
         -- The first open naming a clock principal or a posting quota journals them.
         let o ← match (do
             let quota ← match request.getObjVal? "postQuota" with
@@ -343,7 +351,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
     | none => return (none, .error "no world is open; send world-open first")
     | some s =>
       -- `serve` marks a public-socket request naming the opener (`World.resident`); every request sets it.
-      let s := { s with world := { s.world with resident := (request.getObjValAs? Bool "resident").toOption == some true } }
+      let s := { s with world := { s.world with resident := (request.getObjValAs? Bool "resident").toOption == some true, foreign } }
       -- The mark is the socket's, not the request's: no digest or field reading sees it.
       let request := Json.mkObj (((request.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "resident"))
       match op with
@@ -390,7 +398,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
             | .error e => return .error e
             | .ok (w3, _) =>
               let w3 := w3.withCachesOf w2
-              return .ok ({ w3 with entries := w2.entries }, if w3.shadowed.isEmpty then r else r.setObjVal! "shadowed" (Json.arr w3.shadowed)))
+              return .ok ({ w3 with entries := w2.entries, objectBound := w2.objectBound }, if w3.shadowed.isEmpty then r else r.setObjVal! "shadowed" (Json.arr w3.shadowed)))
       | "world-settings" => durable s reader (fun w => worldSettingsOp w request)
       | "world-advance" => durable s reader (fun w => advance w request)
       | "world-propose" => durable s reader (fun w => do return commit w (← parseProposal request))
@@ -423,6 +431,7 @@ def stepWorldCore (session : Session) (request : Json) : IO (Session × Except S
             | some f => r.setObjVal! "forkedFrom" f
             | none => r) |> fun r => interpretStatus s.world r (request.getObjValAs? String "principal").toOption))
       | "world-posted" => durable s reader (fun w => postedOp w request)
+      | "world-cite" => durable s reader (fun w => citeOp w request)
       | "world-post-reserve" => durable s reader (fun w => postReserveOp w request)
       | "world-post-release" => durable s reader (fun w => postReleaseOp w request)
       | "world-principal" => durable s reader (fun w => principalOp w request)
@@ -446,8 +455,10 @@ def persistCaches (w : World) : IO Unit := do
 
 /-- One op (`stepWorldCore`), then the compile cache written to disk; `world-status` reports it as
     `compileCache {dir, hits, known}` (null when off). -/
-def stepWorld (session : Session) (request : Json) : IO (Session × Except String Json) := do
-  let (session, r) ← stepWorldCore session request
+def stepWorld (session : Session) (request : Json) (foreign : Foreign := {}) : IO (Session × Except String Json) := do
+  let (session, r) ← stepWorldCore session request foreign
+  -- The other worlds were this request's to read; the session does not keep them.
+  let session := session.map fun s => { s with world := { s.world with foreign := {} } }
   if let some s := session then persistCaches s.world
   if (request.getObjValAs? String "op").toOption == some "world-status" then
     if let .ok j := r then return (session, .ok (j.setObjVal! "compileCache" (← DiskCache.status)))

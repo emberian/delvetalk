@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host17 from 5.137 to 5.139; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host17 from 5.137 to 5.140; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -62,6 +62,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
 - Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-addressee`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
+- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (worlds and scratches); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
 
 Rules:
@@ -1107,9 +1108,9 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      a world opens it with the clock, opener, library (librarian the opener), sync and `name`; `world-open
      {name}` journals `named {name}` once (`nameOp`; replay sets `World.name`, the snapshot carries it; no
      replay edition change: journals without it replay as before) and refuses a journal that holds
-     another ("this journal is the world ring, not moor"). A world idle 10 minutes is dropped (store and
-     file lock) and reopened by replay. `heap: <did>` is `DIR/heaps/<did>.journal` until scratch worlds;
-     `stateless: true` the journal-less session. `serve-status` lists the open worlds; `world-open` over a
+     another ("this journal is the world ring, not moor"). Every world of the directory is opened at start
+     and held (5.137 made a held world its live state), so a turn in one reads another (5.140); `world:
+     scratch/<name>` is the request principal's scratch world; `stateless: true` the journal-less session. `serve-status` lists the open worlds; `world-open` over a
      socket is refused ("serve opens its worlds").
    - *Sockets.* `DIR/host.sock` and the root socket (default `DIR/root/root.sock`; deploy passes the
      `/data/root` volume's path), the public socket 0600 and the root socket 0660 (its group `--root-group`, 5.131) under umask 0177, backlog 128. The C shim accepts every
@@ -1428,6 +1429,36 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      rows changed by whom, a cited roster, a quorum, a reopen). The objects lane may now delete the Tide's
      and Deal's predicates (KERNEL-HANDOFF §25 M, last item).
 
+140. **Scratch worlds and references across worlds (host17; docs/FEDERATION.md §2, §3; edition 5).** The private
+   heap is gone: no `heap` envelope, no `DIR/heaps/`, no front route under `/heap/`.
+   - *A scratch* (`Serve.scratchOp`): `world-scratch {principal, name, from?: {world, height?}}` writes
+     `DIR/scratch/<principal>/<name>.journal`: empty with the sealed library and the principal its opener, clock
+     and librarian, or `from` a world (or the principal's other scratch) by `world-fork` at a height, carrying
+     what the principal may view. Its turns name `world: scratch/<name>` beside the principal. At most
+     `Limits.scratchPerPrincipal` (2) at once (a third is refused `capacity`, naming the oldest), each under
+     `scratchJournalBytes` (16 MiB) and `scratchObjects` (1,000; `world-open {maxObjects}`, `World.objectBound`).
+   - *Expiry*: `serve` keeps each scratch's home-world clock at its last op (`Server.scratches`; at start, now)
+     and, on the home world's `world-advance`, discards each `Limits.scratchMinutes` (360) past it: session,
+     journal, block store, snapshots (`discard`, the one deletion; a scratch is not custody). An op on it then
+     is "scratch/<name> expired at clock N; open it again with world-scratch". The root act `expire {principal,
+     scratch}` (root socket) discards one now, logged by the hand only. `serve-status.scratches [{principal,
+     world, lastTurn, expires}]`; the home `world-status.scratches {open, expiring}` (within 60 minutes).
+   - *An exit*: `world-cite {principal, scratch, receipt, identity?}` reads the scratch entry and journals it
+     whole in the home world as `cited {world, receipt, entry}` (`Ops.citeOp`, identity `cite:<hash>`; the entry
+     must be its hash's). `make` into a shared world is the client's, from its checked source.
+   - *References* (FEDERATION §2): a `Reference {world, object}` with a world names that world's object (a
+     scratch as `scratch/<name>`, the reader's own). `view` and `card` of one read the other world's own
+     answer under the reader (`World.foreign : Foreign`, a closure `serve` builds per request over its held
+     worlds, `foreignFor`; cleared after the step), and the entry journals `cites [{world, object, version,
+     stateCid, height, head}]` (`TurnState.cites`), not roots: a foreign read can go stale without refusing the
+     turn, and replay, which never re-runs a method, reads nothing foreign. A world not served here is
+     `refused {clause: foreignWorld}`. `world-view`/`world-card` of `<world>:<object>` (the text before the first
+     `:` a world served here) answer that world's reply with `asOf`.
+   - Tests: `tests/test_scratch.py` (a scratch apart from the town and from another principal's, the limit and
+     the root act; a fork carrying only what its principal may view; expiry by the town clock, files gone, a
+     citation kept; a turn reading another world's object and citing it; the ops' `asOf`); `test_serve`'s
+     scratch and stateless worlds; the front's scratch routes in `test_http`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1463,9 +1494,11 @@ together' (no seams or welds where rich semantic braiding is called for); let's 
 no scar and growth tissue." So each replacement deletes what it replaces in the same commit, and this file
 describes only what is.
 
-3. **FEDERATION** in its order: scratch worlds (§3, with the `expire` power and root act, now a request error),
-   and in the same commit the `heap:` envelope, `world-fork` into heaps and every heap op go (`world:` the one
-   way); `<world>:<object>` references (§2); `zulip:<realm>:<id>` principals (§1).
+3a. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (§2, a suspension resumed by the target's
+   receipt; row 6); `inspect` and `viewField` of a foreign object (only `view` and `card` cross now); the REPL
+   and `check` in a scratch (`/scratch/<name>/repl`; they still run in the stateless session, `replRestarted`);
+   the `delvetalk world expire / scratch:` spell (only the root act exists); `world-history` and receipts
+   across worlds; the hand's SCRATCHES page.
 5. **Scar tissue to remove now:** `proposalShapes`' second shape and `proposedData`'s `spelled := false` (5.128:
    every object compiles from `world/lib`, so no call site has the older `Proposed`); `receiptReplies`' older
    `Receipt` shape (5.127) likewise; `misfitReason`'s fallback once `extraField` covers every input row.

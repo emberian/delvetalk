@@ -28,14 +28,15 @@ the chain ("journal broken at height N: height out of sequence"). So exactly one
 process, `delvetalk-host` (`delvetalk-obend serve`, HOST-HANDOFF 5.125), opens the journals. It holds
 `/data/state/journal.lock` for its life (exit 75, "refusing to start a second writer", if taken), keeps every world's
 journal in `/data/state` (`town.journal`; another world's `<name>.journal`, opened at the first op that names it with
-`world: <name>`; private heaps in `heaps/`, addressed by `heap: <did>`), and serves the front, the bridge, the
+`world: <name>`; a principal's scratch worlds in `scratch/<principal>/<name>.journal`, addressed by `world: scratch/<name>` beside `principal`, are not custody: backups leave them out and verification skips them), and serves the front, the bridge, the
 interpreter and `post --object` over `/data/state/host.sock` (mode 0600). The opener's ops, `world-root` and the root
 ops (`world-library`, `world-settings`, `world-fork`, `world-snapshot`) take the root socket,
 `/run/delvetalk-root/root.sock` on the host directory `/var/lib/delvetalk/root` (`DELVETALK_ROOT`), mounted into
 `delvetalk-host`, `delvetalk-ops` and the hand and into nothing else. At start serve rebuilds `<state>/library` from
 `--library` (the image's `world/lib`) and `world/objects/{Avatar,Env,Wake}.obend` (the packages `world-arrive` creates
-from) and seals it into each world at its first open (the opener may change it, each heap's owner theirs), so packages
-import `./Plan.obend` and the rest by name. A world idle ten minutes is closed and reopened by replay at its next op.
+from) and seals it into each world at its first open (the opener may change it; a scratch world starts with it sealed), so packages
+import `./Plan.obend` and the rest by name. Every world of the directory is opened at start and held (a held world is
+its live state, not its journal), so a turn in one may read another's objects.
 The other programs are clients (`transport/host.py`, 99 lines): stop, start or run them at any time without touching
 the world.
 The lock holds where one kernel sees the file: a local Linux
@@ -299,7 +300,7 @@ model failure is submitted to the host, which retries a transient one with backo
 A turn made over HTTP (`/AGENTS.md/world/<o>/<method>` or the play page) that the host admits with a write on an object
 the public reads (`world-view` as `anonymous` answers it) is drafted here as a town reply is (`<height>-http-<hash>.json`,
 `http: {intent}`, no `replyTo`, the turn's offers or else its receipt line), once per receipt, so the owner chooses
-whether the town hears of it; a heap turn, a refusal and a write to a private object draft nothing. On Zulip the bridge
+whether the town hears of it; a scratch turn, a refusal and a write to a private object draft nothing. On Zulip the bridge
 never posts such a draft itself (it answers no message); Post sends it to Delve.
 The same operations have a command-line face for the owner's assistant over ssh: `python3 -m transport.hand <verb>
 --state /data/state [--root-socket PATH] [--world W] [--credentials FILE] [--json]` (`DELVETALK_STATE`,
@@ -436,7 +437,7 @@ file sharing on a Mac is for testing, not custody.
     deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v2 /var/backups/delvetalk
 
 It rsyncs into `mirror/`, cuts a torn final line if a write was in flight,
-copies SQLite through its backup API, replays every journal (`state/*.journal` and `state/heaps/`)
+copies SQLite through its backup API, replays every journal (`state/*.journal`; `state/scratch/` is not custody and is left out of the backup)
 in a throwaway host with no network, and only then writes a dated tarball
 and its `.sha256`, and records `ok <stamp>` or `broken <stamp>` in `last-verify` (the watch reads it). Exit 1 means a
 journal is broken: the tarball is not made. The timer installed on the workhorse:
@@ -637,7 +638,7 @@ Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on 
 
     df -h /var/lib/delvetalk /var/backups
     docker compose stop delvetalk-bridge delvetalk-interpret     # the host keeps answering reads
-    du -sk /var/backups/delvetalk /var/lib/delvetalk/v2/state/heaps /var/lib/delvetalk/v2/state/access.log* | sort -n
+    du -sk /var/backups/delvetalk /var/lib/delvetalk/v2/state/scratch /var/lib/delvetalk/v2/state/access.log* | sort -n
     docker image ls 'delvetalk*'
 
 Remove only what the puller already holds: compare `ls /var/backups/delvetalk` with hbox's

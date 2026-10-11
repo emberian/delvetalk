@@ -15,7 +15,7 @@
 # ONE WRITER PER DIRECTORY. `delvetalk-host` is `delvetalk-obend serve`, the
 # only process that opens a journal. It holds /data/state/journal.lock for its
 # life (exit 75 if taken), keeps every world's journal in /data/state
-# (`town.journal`, `<world>.journal`, heaps/) and serves the HTTP front, the
+# (`town.journal`, `<world>.journal`, scratch/) and serves the HTTP front, the
 # bridge and the interpreter over /data/state/host.sock, so they are plain
 # clients and may start, stop and restart without touching the world. The
 # opener's ops and world-root take the root socket, /run/delvetalk-root/root.sock,
@@ -41,7 +41,7 @@ x-service: &service
     DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}  # .env names the portal for every program (transport/identity.py ORIGIN)
   volumes:
     # The clients (front, bridge, interpreter) mount state/ only: serve's
-    # directory (town.journal, journal.lock, heaps/, library/, host.sock) and
+    # directory (town.journal, journal.lock, scratch/, library/, host.sock) and
     # their own files (identity.sqlite, outbox/, observe.sqlite, interpretations/,
     # pid files). The host and ops mount all of /data. A host path, not a named
     # volume, as the edge keeps /var/lib/dregg/<service>: it is what
@@ -52,7 +52,7 @@ x-service: &service
     options: { max-size: "10m", max-file: "5" }
 
 services:
-  # The single writer: every world's journal and every private heap, in one process.
+  # The single writer: every world's journal and every principal's scratch worlds, in one process.
   delvetalk-host:
     <<: *service
     command: ["delvetalk-obend", "serve", "--state", "/data/state", "--root-socket", "/run/delvetalk-root/root.sock",
