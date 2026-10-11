@@ -102,7 +102,7 @@ services:
       DELVETALK_REPO_KEY_FILE: /run/secrets/repo_key  # the town's signing key (docs/REPO.md "The key")
     secrets: [repo_key]
     ports:
-      - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:8765:8765/tcp"
+      - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_PORT:-8765}:8765/tcp"  # DELVETALK_PORT: a drill or rehearsal beside a live stack
     depends_on:
       delvetalk-host: { condition: service_healthy }
     mem_limit: 512m

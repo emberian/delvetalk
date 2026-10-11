@@ -3,5 +3,7 @@
 !docs/AGENTS-API.md
 !docs/AGENTS-EXAMPLES.md
 !world/
+!capsules/pages/
 !deploy/
+deploy/out/
 **/__pycache__
