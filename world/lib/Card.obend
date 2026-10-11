@@ -25,7 +25,7 @@ def refusalLine(refusal: Refusal) -> String:
   "refused {refusal.clause}: {refusal.reading}"
 # What receive answers when no method was acted on: the card's own (done, usage, unclear,
 # refused, silent), or, at the commonplace, where the words went: passed to a card (its spell
-# ran there, or the card took the words), asked first of the speaker, several spells in order.
+# ran there), asked first of the speaker, several spells in order.
 sum Replied:
   done: {action: String}
   usage: {}
@@ -52,19 +52,6 @@ def template(card: String, form: Form.Form) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\n    delvetalk {card} {form.action}\n"), tail: Lists.map(form.fields, fn(field: Form.Field) -> Document.Document: Document.text("    {field.name}: {hint(field.kind)}\n"))})})
 def usage(card: String, forms: Forms) -> Document.Document:
   if Lists.length(forms) == 0n then Document.text("") else Document.Document.sequence({items: Document.Documents.cons({head: Document.text("\nReply with a spell:\n"), tail: Lists.map(forms, fn(form: Form.Form) -> Document.Document: template(card, form))})})
-# The commonplace (the town's first card, world/bodies/commonplace.obend) reads prose a card
-# without a policy could not place: the card sends it the reply (`receive {text, post}`, under
-# the speaker) and offers nothing itself, so an anthology line posted under a bell still reaches
-# the anthology. A turn some object started (context.caller) forwards nothing: the commonplace
-# itself passes replies on.
-def hub(context: Abi.Context) -> Plans.Reference:
-  {world: context.world, object: "commonplace"}
-# A turn some object started, and the commonplace itself, hand nothing on. Whether the prose
-# names anything is the commonplace's to judge from what it learned of its doors (`mentions`),
-# before any model call: a card holds no word list (rehearsal run 7 counted 127 of 132
-# hand-ons "not addressed"), and a new door needs no edit here.
-def handsOn(text: String, context: Abi.Context) -> Bool:
-  context.caller == "" && context.object != hub(context).object
 # A word without one run of marks at its end and one at its start ("anthology," "(play").
 def stripped(word: String, n: Nat) -> String:
   let core = textTake(word, n - textSpan(textDrop(word, n - 1n), marks()))
@@ -85,13 +72,13 @@ def stranger() -> Abi.Context:
 # rendered outside the world (a probe, a page).
 def called(context: Abi.Context, word: String) -> String:
   if context.object == "" then word else spellName(context.object, context)
-# The name a spell uses for a card: the reader's own avatar, env and wake are `me`, `env` and
-# `wake` (the host resolves them to the speaker's), so a card never prints a DID to its owner.
+# The name a spell uses for a card: the reader's own avatar is `me` (the host resolves it to the
+# speaker's), so a card never prints a DID to its owner.
 def spellName(card: String, context: Abi.Context) -> String:
-  if card != "" && card == context.principal then "me" else if card == "wake/{context.principal}" then "wake" else if card == "env/{context.principal}" then "env" else card
-# Whether a name can be printed: another's avatar, env or wake is named by a DID, never shown.
+  if card != "" && card == context.principal then "me" else card
+# Whether a name can be printed: another's avatar is named by a DID, never shown.
 def printable(name: String) -> Bool:
-  (Text.starts(name, "did:") || Text.starts(name, "env/did:") || Text.starts(name, "wake/did:")) == false
+  Text.starts(name, "did:") == false
 def reads(principal: String, context: Abi.Context) -> Bool:
   principal != "" && principal == context.principal
 def mine(principal: String, context: Abi.Context) -> String:
@@ -150,8 +137,8 @@ def more(left: Nat) -> String:
 # Doorway> its edits), offers the `door {label, to}` and `undoor {label}` forms to its owner
 # (`doorAdd`, `doorRemove`: refused by name to anyone else, and by its owner law), and lists
 # them on its card as one line of door words (`doorLines`: `Doors: garden · rooms`). A door may
-# carry the spells a menu prints under it (`examples`: typed back whole, and `comes`, the
-# owner's words for what comes back, "" for none; never the model's); one whose `to` is nobody
+# carry the spells a menu prints under it (`examples`, seeded when the world is made: typed back
+# whole, and `comes`, the maker's words for what comes back, "" for none; never the model's); one whose `to` is nobody
 # is a link door, its `description` its line (the commonplace's STUDIO).
 record Example:
   example: String
@@ -177,13 +164,6 @@ def added(doors: Doorways, door: Doorway) -> DoorEdit:
 def removed(doors: Doorways, label: String) -> DoorEdit:
   match Lists.find(doors, fn(d: Doorway) -> Bool: d.label == label):
     case some(d): DoorEdit.edit({entries: Plans.Entries.removeItem({item: d.value})})
-    case none(_): DoorEdit.refused({clause: "noDoor", reading: "There is no door called {label}"})
-# The owner gives a door a spell its card prints under it (and `comes`, what comes back).
-def doorExample(doors: Doorways, owner: String, label: String, example: Example, context: Abi.Context) -> DoorEdit:
-  if context.principal != owner then notDoorOwner(owner, context) else exampled(doors, label, example)
-def exampled(doors: Doorways, label: String, example: Example) -> DoorEdit:
-  match Lists.find(doors, fn(d: Doorway) -> Bool: d.label == label):
-    case some(d): if Lists.length(d.value.examples) >= 4n then DoorEdit.refused({clause: "examplesFull", reading: "A door prints four spells"}) else DoorEdit.edit({entries: Plans.Entries.amendItem({item: d.value, change: extend(d.value, {examples: Lists.append(d.value.examples, example)})})})
     case none(_): DoorEdit.refused({clause: "noDoor", reading: "There is no door called {label}"})
 def doorLines(doors: Doorways) -> Document.Documents:
   match doors:
@@ -219,18 +199,17 @@ def pageText(page: Page) -> String:
 # Interpretation (docs/FLEX.md §2): a card with a policy views it (Policies.State) and asks
 # `world.interpret` with `interpretation`, offering its forms, what it holds for the speaker and
 # the misfit spell it was handed. hob answers once, with no second attempt: the spell meant (the
-# host fits it: a proposal), `ask: <one question>` (the host's `unclear {needs: [question]}`; a
-# spell of hob's that does not fit reads the same, the fields it lacks), `card` (`replied {text:
-# "card"}`) or `none` (`unclear {needs: ["not addressed"]}`: silence).
+# host fits it: a proposal), `grow: NAME "reading"` followed by the spell that uses the new
+# verb, `ask: <one question>` (the host's `unclear {needs: [question]}`; a spell of hob's that does
+# not fit reads the same, the fields it lacks) or `none` (`unclear {needs: ["not addressed"]}`:
+# silence).
 #
 # hob's lines are VOICE's fixed lines and the card's own field names, never the model's words
 # (a question the model wrote leaked its reasoning onto a miss card, playtest 68746): an ask
 # keeps only the needs that name a field of the forms offered.
 sum Hob:
   none: {}
-  card: {}
   ask: {needs: Form.Names}
-  said: {text: String}
 # "not addressed", nothing, and a model that could not be asked (`model: <reason>`) are none;
 # anything else is an ask, naming the offered fields among the needs (none: a bare ask).
 def hobNeeds(needs: Form.Names, forms: Forms) -> Hob:
@@ -243,62 +222,17 @@ def fieldNames(forms: Forms, seen: Form.Names) -> Form.Names:
   match forms:
     case nil(_): seen
     case cons(c): fieldNames(c.tail, Lists.concat(seen, Lists.filter(Lists.map(c.head.fields, fn(f: Form.Field) -> String: f.name), fn(n: String) -> Bool: Lists.any(seen, fn(m: String) -> Bool: m == n) == false)))
-def hobSaid(text: String) -> Hob:
-  if Text.trim(text) == "card" then Hob.card({}) else Hob.none({})
-# hob's ask over a card's first spell: the fields still needed, or that the words are no spell yet.
-def askLine(needs: Form.Names) -> String:
-  if Lists.length(needs) == 0n then "hob: not a spell as said; the spell is below." else "hob: still needs {Text.joined(needs)}; the spell is below."
-def askCard(needs: Form.Names, card: String, forms: Forms) -> Document.Document:
-  match forms:
-    case nil(_): Document.text("hob: not a spell as said.\n")
-    case cons(c): Document.concat(Document.text("{askLine(needs)}\n"), template(card, c.head))
 # The misfit line hob is shown ("" for none).
 def misfitLine(misfit: Misfit) -> String:
   if misfit.clause == "" then "" else "{misfit.clause}, {misfit.reason}"
 # Whether an interpreted proposal of this action waits for the speaker's yes.
 def confirms(policy: Policies.State, action: String) -> Bool:
   Lists.any(policy.confirmFor, fn(a: String) -> Bool: a == action)
-# Macros (the policy's, checked before the model): `expanded` is the spell text of the first
-# macro whose pattern the utterance matches (blanks and a trailing . ! or ? aside), none when
-# none does. Patterns and utterances are compared word by word; a hole takes the shortest run
-# of words that lets the rest match.
+# A kind's head with each `{hole}` replaced by its capture (an unknown hole stays as written).
 record Capture:
   hole: String
   text: String
 type Captures = Lists.List<Capture>
-def expanded(text: String, policy: Policies.State) -> Lists.Maybe<String>:
-  expandedBy(Text.words(endTrimmed(text)), policy.macros)
-def expandedBy(said: Lists.List<String>, macros: Lists.List<Policies.Macro>) -> Lists.Maybe<String>:
-  match macros:
-    case nil(_): Lists.Maybe.none({})
-    case cons(c): expandedWith(c.head, matched(Text.words(c.head.pattern), said), said, c.tail)
-def expandedWith(macro: Policies.Macro, found: Lists.Maybe<Captures>, said: Lists.List<String>, rest: Lists.List<Policies.Macro>) -> Lists.Maybe<String>:
-  match found:
-    case some(f): Lists.Maybe.some({value: "delvetalk {filled(macro.expansion, f.value)}"})
-    case none(_): expandedBy(said, rest)
-def endTrimmed(text: String) -> String:
-  Text.trimEndOf(text, " \t\r\n.!?")
-def isHole(word: String) -> Bool:
-  textLength(word) > 2n && textTake(word, 1n) == "{{" && textDrop(word, textLength(word) - 1n) == "}}"
-def holeName(word: String) -> String:
-  textTake(textDrop(word, 1n), textLength(word) - 2n)
-def matched(pattern: Lists.List<String>, said: Lists.List<String>) -> Lists.Maybe<Captures>:
-  match pattern:
-    case nil(_): if Lists.length(said) == 0n then Lists.Maybe.some({value: Captures.nil({})}) else Lists.Maybe.none({})
-    case cons(p): if isHole(p.head) then captured(holeName(p.head), "", p.tail, said) else literal(p.head, p.tail, said)
-def literal(word: String, pattern: Lists.List<String>, said: Lists.List<String>) -> Lists.Maybe<Captures>:
-  match said:
-    case nil(_): Lists.Maybe.none({})
-    case cons(s): if s.head == word then matched(pattern, s.tail) else Lists.Maybe.none({})
-def captured(hole: String, sofar: String, pattern: Lists.List<String>, said: Lists.List<String>) -> Lists.Maybe<Captures>:
-  match said:
-    case nil(_): Lists.Maybe.none({})
-    case cons(s): capturedAt(hole, if sofar == "" then s.head else "{sofar} {s.head}", pattern, s.tail)
-def capturedAt(hole: String, text: String, pattern: Lists.List<String>, rest: Lists.List<String>) -> Lists.Maybe<Captures>:
-  match matched(pattern, rest):
-    case some(m): Lists.Maybe.some({value: Captures.cons({head: {hole: hole, text: text}, tail: m.value})})
-    case none(_): captured(hole, text, pattern, rest)
-# The expansion with each `{hole}` replaced by its capture (an unknown hole stays as written).
 def filled(expansion: String, captures: Captures) -> String:
   let open = textBreak(expansion, "{{")
   if open == textLength(expansion) then expansion else holeAt(textTake(expansion, open), textDrop(expansion, open + 1n), captures)
@@ -349,14 +283,16 @@ def tellTo<T>(result: T, to: String, document: Document.Document) -> Activity<T>
   match world.offer({to: to, document: document}):
     case _: result
 # The default receive. Blank text gets the card and its forms; a spell the host found missing
-# fields gets the card with what it still needs; anything else is not addressed to the card
-# (the quiet rule: no offer at all, so the bridge drafts nothing) and is handed on to the
-# commonplace. `answerAs` finishes with the object's own result type: `as` maps the Replied.
+# fields gets the card with what it still needs; prose gets nothing at all: a card hears a verb
+# or nothing, and `?` is how a card is asked for. `answerAs` finishes with the object's own
+# result type: `as` maps the Replied.
 def answer(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document) -> Activity<Replied>:
   answerAs(input, context, forms, card, fn(replied: Replied) -> Replied: replied)
 def answerAs<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, as: Replied -> T) -> Activity<T>:
   let replied = unanswered(input, forms)
-  if quietly(replied) then owed(input, context, forms, card, as(replied)) else offeredCard(as(replied), card, whyNot(replied), context, forms)
+  answered(as(replied), replied, card, context, forms)
+def answered<T>(result: T, replied: Replied, card: Document.Document, context: Abi.Context, forms: Forms) -> Activity<T>:
+  if quietly(replied) == false then offeredCard(result, card, whyNot(replied), context, forms) else result
 # The card, why, and the spells the host offers this reader (inspect's `offered`: the law and the
 # card's `actions` leave them), so a stranger's usage lists no keeper's or owner's spell.
 def offeredCard<T>(result: T, card: Document.Document, why: String, context: Abi.Context, forms: Forms) -> Activity<T>:
@@ -365,24 +301,8 @@ def offeredCard<T>(result: T, card: Document.Document, why: String, context: Abi
     case _: tell(result, answerCard(card, why, context, forms))
 def offeredOnly(forms: Forms, offered: Document.Names) -> Forms:
   Lists.filter(forms, fn(f: Form.Form) -> Bool: Lists.any(offered, fn(n: String) -> Bool: n == f.action))
-# A reply to the card itself (no card handed it on) that fits no form gets the card and its
-# forms, once an hour per speaker across the town (the commonplace's `due` keeps the clock: a
-# conversation in a card's thread costs at most one card); either way the prose is handed on.
-def owed<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
-  if handsOn(input.text, context) then dueCard(input, context, forms, card, result) else result
-def dueCard<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
-  match world.call::<Bool>({object: hub(context), method: "due", argument: {}}):
-    case returned(r): if r.result then dueOffered(input, context, forms, card, result) else handingOn(input, context, result)
-    case _: handingOn(input, context, result)
-def dueOffered<T>(input: Reply, context: Abi.Context, forms: Forms, card: Document.Document, result: T) -> Activity<T>:
-  match world.inspect({object: Plans.self(context), source: false}):
-    case inspected(i): toldOn(input, context, answerCard(card, "", context, offeredOnly(forms, i.offered)), result)
-    case _: toldOn(input, context, answerCard(card, "", context, forms), result)
-def toldOn<T>(input: Reply, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
-  match world.offer({to: "", document: card}):
-    case _: handingOn(input, context, result)
 # A spell in a reply that ran no method is one the host found missing fields (it refuses every
-# other misfit): the card names what it still needs. Prose is silent here.
+# other misfit): the card names what it still needs. Prose is silent here: nothing is offered and nothing handed on.
 def unanswered(input: Reply, forms: Forms) -> Replied:
   if Text.blank(input.text) then Replied.usage({}) else if input.spell.action == "" then Replied.silent({}) else needing(Lists.find(forms, fn(f: Form.Form) -> Bool: f.action == input.spell.action), input.fields)
 def needing(form: Lists.Maybe<Form.Form>, fields: Spell.Bindings) -> Replied:
@@ -415,32 +335,14 @@ def answerCard(card: Document.Document, why: String, context: Abi.Context, forms
 # nothing offered. Called by another object (`context.caller`), the card says the line and gives
 # the refusal back as its result, for the caller to weigh: a record making under itself, an
 # avatar entering a room, a thing taking itself off a floor refuse their own turn with it; a
-# wake's scheduled call and the commonplace's call on a door go on.
+# commonplace's call on a door goes on.
 def refusing<T>(result: T, refusal: Refusal, context: Abi.Context) -> Activity<T>:
   if context.caller == "" then refuse(refusalLine(refusal)) else tell(result, Document.text("{refusalLine(refusal)}\n"))
-# Prose a card does not take is sent to the commonplace (`receive {text, post}`, under the
-# speaker), which judges whether it names any door; the card offers nothing itself. The send
-# keeps this turn's reach (HOST-HANDOFF 5.127), so words that reached no one cost no reading.
-def handingOn<T>(input: Reply, context: Abi.Context, result: T) -> Activity<T>:
-  match world.send({object: hub(context), method: "receive", argument: input}):
-    case _: result
 # Posts an object's page as its door word's wiki page; the post, or the refusal's clause.
 def publishPage(word: String, page: Page) -> Activity<String>:
   match world.publish({page: word, section: "", body: pageText(page)}):
     case published(p): p.post
     case refused(r): r.clause
-# Subscriptions (WHOLENESS section 3; root decisions, second set, item 3): a standing request
-# that the host deliver `changed` to the named receiver of this object after each admitted
-# write of the object's field, with the rows or items inserted and retracted (a scalar's new
-# and old value as one-item lists), typed by the receiver's input. `subscribing` finishes with
-# `result` whatever the host answered; `subscribed` with whether it holds.
-def subscribing<T>(object: Plans.Reference, field: String, method: String, result: T) -> Activity<T>:
-  match world.subscribe({object: object, field: field, method: method}):
-    case _: result
-def subscribed(object: Plans.Reference, field: String, method: String) -> Activity<Bool>:
-  match world.subscribe({object: object, field: field, method: method}):
-    case subscribed(_): true
-    case _: false
 # The `interpret` argument: the utterance, the forms offered, the policy, what the card holds
 # for the speaker and the misfit spell (each "" for none); the policy's own model.
 def interpretation(utterance: String, forms: Forms, reference: Plans.Reference, held: String, misfit: String) -> {utterance: String, offers: Forms, policy: Plans.Reference, model: String, held: String, misfit: String}:

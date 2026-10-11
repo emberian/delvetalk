@@ -1,38 +1,34 @@
-"""An avatar follows another's outbox and is told what it sends; it watches any object's field and
-is told of its changes; the inbox keeps the newest 64.
+"""An avatar's inbox: a post that mentions its resident is a note from the author, answered with
+nothing; its principal marks the entry it has read through; the inbox keeps the newest 64.
 
 Evidence for FOUNDATION §8 claims (layer: objects).
 
-The mailbox on Avatar (ported from main's protocols/resident-library/Mailbox.obend): its
-principal's `send` inserts a letter into the avatar's `outbox` relation; a follower's `subscribe`
-is the host's subscription to that field, delivered to the follower's `mailed` receiver, which
-notes each letter; `watch` subscribes to any field (a bell's `rung`) and notes "news from" it.
-The host serves at most sendsPerTurn (32) subscribers a turn; an avatar follows at most 32; the
-inbox and the outbox are relations the host keeps to 64.
+The bridge addresses a post that mentions a resident to that resident's avatar, as the author's
+turn: `receive {text, post}` from anyone but the avatar's principal. A reply that is prose (no
+spell) and not blank becomes a note in the inbox (the author, their handle, the text cut to 280
+characters, the post as `uri`) and offers nothing. `seen {at}` is the principal's alone, at least
+the current mark; the card shows the notes after the mark, newest first, and the spell that moves it.
 
-Refuted by: a stranger sending from someone's avatar, subscribing it, or delivering to its
-receiver; a 33rd follow admitted; a send to 32 followers not reaching all 32; a 65th note not
-dropping the oldest; a letter reaching a follower that unsubscribed.
+Refuted by: a mention that answers the author or leaves no note; a blank reply that notes; a text
+past 280 characters kept whole; a stranger marking another's inbox read, or moving the mark back; a
+card showing a stranger the notes; a read note still counted new; a 65th note not dropping the oldest.
 """
 import unittest
 
 from tests import test_chain
 from tests.test_rooms import avatar_seed
-from tests.wire import cast_refusal, field, label, record, rows
+from tests.wire import cast_refusal, field, label, nat, record, rows
 from tests.bend import closure
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
+POST = "at://did:plc:kimik3/town.delve.feed.post/3k"
 
 
-def heard(text):
-    return record(text=label(text), post=label(""))
+def heard(text, post=""):
+    return record(text=label(text), post=label(post))
 
 
-def followed(obj, field="outbox"):
-    return record(object=record(world=label(""), object=label(obj)), field=label(field))
-
-
-class Mailbox(test_chain.Chain):
+class Inbox(test_chain.Chain):
 
     def setUp(self):
         super().setUp()
@@ -47,42 +43,80 @@ class Mailbox(test_chain.Chain):
             self.assertEqual(r["status"], "admitted", r)
         return r
 
-    def inbox(self, did):
-        return [(field(n, "from")["value"], field(n, "text")["value"]) for n in rows(field(self.state(did), "inbox"))]
+    def notes(self, did):
+        return rows(field(self.state(did), "inbox"))
 
-    def following(self, did):
-        return [(field(field(f, "object"), "object")["value"], field(f, "field")["value"]) for f in field(self.state(did), "following")["items"]]
+    def card(self, did, who):
+        r = self.turn(did, "receive", heard(""), principal=who)
+        self.assertEqual(r["status"], "admitted", r)
+        return r["offers"][0]["text"]
 
+    def mention(self, text, post=POST, who=KIM):
+        r = self.turn(GLM, "receive", heard(text, post), principal=who)
+        self.assertEqual(r["status"], "admitted", r)
+        return r
 
-    def test_strangers_neither_send_subscribe_nor_deliver(self):
-        r = self.say(GLM, "delvetalk %s send\ntext: forged" % GLM, KIM)
-        self.assertEqual(cast_refusal(r)[1], "Only glm sends from it.")
-        twice = self.say(KIM, "delvetalk %s subscribe\nto: %s" % (KIM, GLM), GLM)
-        self.assertEqual(cast_refusal(twice)[1], "Only kimik3 subscribes it.")
-        self.assertEqual(self.following(KIM), [])
-        # The receiver is a helper: only the host's delivery of a subscribed change reaches it.
-        forged = self.turn(KIM, "mailed", record(object=record(world=label(""), object=label(GLM)), field=label("outbox"), version={"tag": "natural", "value": "1"},
-                                                  inserted={"tag": "list", "items": []}, retracted={"tag": "list", "items": []}), principal="did:plc:mallory")
-        self.assertEqual((forged["status"], forged["receipt"]["outcome"]["class"]), ("refused", "noMethod"), forged)
-        self.assertEqual(self.inbox(KIM), [])
+    def test_a_mention_is_a_note_from_its_author_and_offers_nothing(self):
+        r = self.mention("glm, the garden wants water")
+        self.assertEqual(r.get("offers", []), [], r)
+        (note,) = self.notes(GLM)
+        self.assertEqual([field(note, k)["value"] for k in ("from", "text", "uri")], [KIM, "glm, the garden wants water", POST])
+        self.assertEqual(field(note, "handle")["value"], "")
+        self.mention("x" * 400)
+        self.assertEqual(len(field(self.notes(GLM)[-1], "text")["value"]), 280)
 
-    def test_thirty_two_followers_and_one_send_reaches_all_of_them(self):
-        followers = ["did:plc:p%d" % i for i in range(32)]
-        for did in followers:
-            self.make(did, closure("Avatar"), avatar_seed(did[-3:], "porch"))
-            r = self.say(did, "delvetalk %s subscribe\nto: %s" % (did, GLM), did)
-            self.assertEqual(r["result"]["label"], "followed", r)
-        r = self.turn(GLM, "send", record(text=label("all of you")), principal=GLM)
-        self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "sent"), r)
-        print("\n  a send with 32 followers: %s ticks" % r.get("ticksUsed"))
-        self.deliver_all()
-        self.assertEqual([self.inbox(did) for did in followers], [[(GLM, "all of you")]] * 32)
+    def test_a_blank_reply_and_the_principals_own_prose_are_no_mention(self):
+        self.assertEqual(self.card(GLM, KIM).splitlines()[0], "glm's avatar, in porch.")
+        self.say(GLM, "   ", KIM)
+        self.say(GLM, "hello there", GLM)
+        self.assertEqual(self.notes(GLM), [])
 
-    def test_an_avatar_follows_at_most_thirty_two(self):
-        full = {"tag": "list", "items": [followed("did:plc:f%d" % i) for i in range(32)]}
-        self.make("did:plc:busy", closure("Avatar"), record(handle=label("busy"), at=record(world=label(""), object=label("porch")), following=full))
-        r = self.say("did:plc:busy", "delvetalk did:plc:busy subscribe\nto: %s" % GLM, "did:plc:busy")
-        self.assertEqual(cast_refusal(r)[0], "followingFull", r)
+    def test_a_spell_cast_by_a_stranger_is_no_mention(self):
+        r = self.say(GLM, "delvetalk %s seen\nat: 3" % GLM, KIM)
+        self.assertEqual(cast_refusal(r)[1], "Only glm marks it read.")
+        self.assertEqual(self.notes(GLM), [])
+
+    def test_the_principal_reads_the_new_notes_and_marks_them_seen(self):
+        for text in ("first", "second", "third"):
+            self.mention(text)
+        ats = [int(field(n, "at")["value"]) for n in self.notes(GLM)]
+        self.assertEqual(ats, sorted(ats))
+        mine = self.card(GLM, GLM)
+        self.assertIn("3 new since entry 0:\n", mine)
+        self.assertLess(mine.index("third"), mine.index("first"))  # newest first
+        self.assertIn("#%d " % ats[2], mine)
+        self.assertIn("  delvetalk me seen / at: %d\n" % ats[2], mine)
+        theirs = self.card(GLM, KIM)
+        self.assertIn("3 notes\n", theirs)
+        self.assertNotIn("third", theirs)
+        self.assertNotIn("new since", theirs)
+
+        seen = self.turn(GLM, "seen", record(at=nat(ats[1])), principal=GLM)
+        self.assertEqual(seen["status"], "admitted", seen)
+        text = seen["offers"][0]["text"]
+        self.assertTrue(text.startswith("Read through entry %d; nothing before it is new again.\n" % ats[1]), text)
+        self.assertIn("1 new since entry %d:\n" % ats[1], text)
+        self.assertNotIn("second", text)
+        self.assertIn("third", text)
+
+        behind = self.say(GLM, "delvetalk me seen\nat: %d" % (ats[1] - 1), GLM)
+        self.assertEqual(cast_refusal(behind)[0], "alreadySeen")
+        self.assertIn("Already read through entry %d." % ats[1], cast_refusal(behind)[1])
+        through = self.turn(GLM, "seen", record(at=nat(ats[2])), principal=GLM)
+        self.assertIn("No new notes since entry %d." % ats[2], through["offers"][0]["text"])
+        self.assertEqual(field(self.state(GLM), "seen")["value"], str(ats[2]))
+
+    def test_a_stranger_cannot_mark_an_inbox_read(self):
+        self.mention("hello")
+        r = self.turn(GLM, "seen", record(at=nat(9)), principal=KIM)
+        self.assertEqual(r["status"], "refused", r)
+        self.assertEqual(field(self.state(GLM), "seen")["value"], "0")
+
+    def test_the_inbox_keeps_the_newest_sixty_four(self):
+        for i in range(65):
+            self.mention("note %03d" % i)
+        texts = [field(n, "text")["value"] for n in self.notes(GLM)]
+        self.assertEqual((len(texts), texts[0], texts[-1]), (64, "note 001", "note 064"))
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@ Lenses: an object's exposed scalar fields, listed by `lenses()` as Form.Fields. 
 `delvetalk <card> set` with one `<field>: <value>` line by judging the value against the field's
 kind and running the object's `set {field, value}` (which refuses a stranger by name; the law
 judges the write); `delvetalk <card> ?` answers the usage card: every form, then every lens.
-Policy's model and system and an Avatar's handle are lenses; Policy.setModel is gone.
+Policy's model and an Avatar's handle are lenses; Policy.setModel is gone.
 
 Refuted by: a stranger's set changing the policy, a value outside its kind being written, a set of
 two fields, a field without a lens, or `?` omitting a lens.
@@ -53,29 +53,27 @@ class Lenses(test_chain.Chain):
         self.assertEqual(r["result"]["label"], "done")
         self.assertEqual(r["offers"][0]["text"], "Set model to claude-sonnet.\n")
         self.assertEqual(self.field("model"), "claude-sonnet")
-        self.assertEqual(self.say("delvetalk policy set system: Read the words.")["result"]["label"], "done")
-        self.assertEqual(self.field("system"), "Read the words.")
-        self.assertEqual(self.version(), 2)
+        self.assertEqual(self.version(), 1)
 
-    def test_the_longest_system_is_written_and_one_more_character_is_refused(self):
+    def test_the_longest_model_is_written_and_one_more_character_is_refused(self):
         self.policy()
-        self.assertEqual(self.say("delvetalk policy set\nsystem: " + "s" * 1000)["result"]["label"], "done")
-        self.assertEqual(len(self.field("system")), 1000)
+        self.assertEqual(self.say("delvetalk policy set\nmodel: " + "s" * 64)["result"]["label"], "done")
+        self.assertEqual(len(self.field("model")), 64)
         # The host judges the value against the lens's kind (HOST-HANDOFF 5.54).
-        over = self.turn("policy", "receive", record(text=label("delvetalk policy set\nsystem: " + "s" * 1001), post=label("")), principal="ember")
+        over = self.turn("policy", "receive", record(text=label("delvetalk policy set\nmodel: " + "s" * 65), post=label("")), principal="ember")
         out = over["receipt"]["outcome"]
-        self.assertEqual((over["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "badValue", "system takes 1 to 1000 characters."), over)
+        self.assertEqual((over["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "badValue", "model takes 1 to 64 characters."), over)
         self.assertEqual(self.version(), 1)
 
     def test_a_stranger_a_bad_value_two_fields_and_an_unlensed_field_change_nothing(self):
         self.policy()
         # The owner's guard is the policy's; the value's kind and the lens's name are the host's.
         r = self.say("delvetalk policy set\nmodel: evil", principal="glm")
-        self.assertEqual(why(r), "Only the policy's owner may teach it; that is ember")
-        self.assertEqual(r["receipt"]["outcome"]["reason"], "refused notOwner: Only the policy's owner may teach it; that is ember")
+        self.assertEqual(why(r), "Only the policy's owner may change it; that is ember")
+        self.assertEqual(r["receipt"]["outcome"]["reason"], "refused notOwner: Only the policy's owner may change it; that is ember")
         cases = [
             ("delvetalk policy set\nmodel: " + "m" * 65, "badValue"),
-            ("delvetalk policy set\nmodel: a\nsystem: b", "unknownField"),
+            ("delvetalk policy set\nmodel: a\nowner: b", "unknownField"),
             ("delvetalk policy set\nowner: glm", "unknownField"),
         ]
         for text, clause in cases:

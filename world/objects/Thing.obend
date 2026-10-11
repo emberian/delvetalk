@@ -7,6 +7,8 @@ import ./Form.obend as Form
 import ./World.obend as World
 import ./Card.obend as Card
 import ./Scenes.obend as Scenes
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
 import ./Text.obend as Text
 # THING (docs/METAPHYSICS.md §7): something that lies in a room or is held, and is given by an
 # offer its taker accepts. owner: who made it and alone reprograms it. A thing may lie unclaimed
@@ -21,6 +23,8 @@ import ./Text.obend as Text
 # "<bond>".marks.who`). Its law is the package's below; `lawWith(circle)` is that text with a
 # circle's signers in the keeper's disjunct, which naming a circle amends it to (`lawText()`, the
 # package's own, is test-checked equal to the clauses declared here).
+# lines: what was done to it by a verb a hand grew on it (`act`: a gesture, one line tagged with
+# the verb, and the thing tended), the newest 32; `next` numbers them.
 # offer: custody offered to someone, open until a clock time (a card address is a versioned
 # capability, not a durable inbox: giving is offer and accept, never a pointer move).
 sum Offer:
@@ -38,8 +42,37 @@ record State:
   offer: Offer
   copyable: Bool
   circle: String
+  lines: Relations.Relation<Rows.Line>
+  next: Nat
+  tended: Nat
+  tendedAt: Nat
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", name: "", description: "", holder: Plans.nobody(), holderHandle: "", location: Plans.nobody(), offer: Offer.none({}), copyable: true, circle: ""}
+  {owner: "", keeper: "", keeperHandle: "", name: "", description: "", holder: Plans.nobody(), holderHandle: "", location: Plans.nobody(), offer: Offer.none({}), copyable: true, circle: "", lines: Relations.empty(), next: 1n, tended: 0n, tendedAt: 0n}
+def relations() -> Relations.Decls:
+  Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: 32n})
+want claimed "a thing nobody has inspirited": new.keeper == "" asks delvetalk {request.object} inspirit
+# A thing as edition 8 kept it: no lines yet, never tended.
+record State8:
+  owner: String
+  keeper: String
+  keeperHandle: String
+  name: String
+  description: String
+  holder: Plans.Reference
+  holderHandle: String
+  location: Plans.Reference
+  offer: Offer
+  copyable: Bool
+  circle: String
+def migrate(old: State8) -> State:
+  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, name: old.name, description: old.description, holder: old.holder, holderHandle: old.holderHandle, location: old.location, offer: old.offer, copyable: old.copyable, circle: old.circle, lines: Relations.empty(), next: 1n, tended: 0n, tendedAt: 0n}
+def lineKey(line: Rows.Line) -> {author: String, n: Nat}:
+  {author: line.author, n: line.n}
+# A grown verb used on the thing (the host runs `act` for a row of its verb table): a gesture, one
+# line tagged with the verb, and the thing tended; its card shows the newest three.
+def act(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: input.verb, text: input.text, at: context.height, n: state.next}, next: add 1n, tended: set context.clock, tendedAt: set context.height}
+  Card.tell(state.next, Document.concat(Document.text("#{natText(state.next)} {input.verb}: {input.text}\n\n"), render(extend(state, {lines: Relations.insert(state.lines, {author: context.principal, handle: context.handle, verb: input.verb, text: input.text, at: context.height, n: state.next}, lineKey), next: state.next + 1n}), context)))
 # Anyone moves a thing (its own code checks who holds it); its name, description and copying are
 # its keeper's once it is inspirited (and its circle's, when it has one), its owner's before; the
 # owner alone names the circle, amends or reprograms it.
@@ -241,7 +274,10 @@ def inspirited(surrounding: String, context: Abi.Context, state: State) -> Activ
 # The card: what it is, who keeps it and where it is; unclaimed, the spell that inspirits it.
 def render(state: State, context: Abi.Context) -> Document.Document:
   let id = Card.called(context, "thing")
-  Document.text("{state.name}{kept(state, context)}{whereabouts(state, context)}.\n{surrounding(state, id)}{circleLine(state)}{offerLine(state.offer, id, context)}{lendLine(state, id, context)}")
+  Document.text("{state.name}{kept(state, context)}{whereabouts(state, context)}.\n{surrounding(state, id)}{circleLine(state)}{offerLine(state.offer, id, context)}{lendLine(state, id, context)}{doneLines(state, context)}")
+# The newest three lines a grown verb left, newest first.
+def doneLines(state: State, context: Abi.Context) -> String:
+  textJoin(Lists.map(Lists.take(Lists.reverse(Relations.rows(state.lines)), 3n), fn(l: Rows.Line) -> String: "{Card.shown(l.author, l.handle, context)}{Card.mine(l.author, context)} ({l.verb}): {l.text}\n"), "")
 # Its circle, when it has one; the owner is told how to name one.
 def circleLine(state: State) -> String:
   if state.circle == "" then "" else "Its circle: whoever signed {state.circle} sets it too.\n"
@@ -274,6 +310,6 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Lists.concat(Lists.concat(if state.keeper == "" then Text.words("inspirit") else Text.words(""), if Plans.isNobody(state.holder) then Text.words("acquire") else Text.words("")), if Plans.same(state.holder, person(context)) then Text.words("offer withdraw") else Text.words("")), if context.principal == keeperOf(state) || context.principal == state.owner then Text.words("set") else Text.words(""))
 # An avatar's accept calls transfer, the Workshop's copy sends copy; drop names a place.
 def methods() -> Lists.List<String>:
-  Text.words("transfer copy drop")
+  Text.words("transfer copy drop ~act")
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))

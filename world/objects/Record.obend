@@ -38,8 +38,12 @@ import ./Spween.obend as Spween
 # `request.clock <= old.tended + N` makes things that go quiet untended: they answer `tend` alone.
 #
 # A record that reads words keeps its `policy` (hob's, nobody for none): the commonplace
-# (world/bodies/commonplace.obend) greets each reader once (`greeted`, only added to) and
-# answers words that named nothing at most hourly (`missed`).
+# (world/bodies/commonplace.obend) reads words with it.
+#
+# A line carries the verb that wrote it: `write`, a body's own (a bell's `rain`) or a verb a
+# hand grew on the thing (`act`, docs/COLLABORATOR.md §2 (b)): a grown verb is a gesture, one
+# line tagged with its name and the record tended; a rule on the thing gives it consequence
+# (`when: request.verb == "water"`).
 #
 # The package declares no law: a lawful module cannot be imported, and every kind imports the
 # package it makes. Its creator passes the law (`lawText` is the record's own).
@@ -71,39 +75,89 @@ record State:
   things: Relations.Relation<Plans.Reference>
   weather: String
   policy: Plans.Reference
-  greeted: Relations.Relation<Rows.Greeting>
-  missed: Relations.Relation<Rows.Missed>
   tended: Nat
   tendedAt: Nat
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", policy: Plans.nobody(), greeted: Relations.empty(), missed: Relations.empty(), tended: 0n, tendedAt: 0n}
+  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", policy: Plans.nobody(), tended: 0n, tendedAt: 0n}
+# A record as edition 8 kept it (a carry lays this package over it, `migrate`): lines without their
+# verb, and the commonplace's greetings and misses, which are no longer kept.
+record Line8:
+  author: String
+  handle: String
+  text: String
+  at: Nat
+  n: Nat
+record Greeted8:
+  principal: String
+record Missed8:
+  principal: String
+  at: Nat
+record State8:
+  owner: String
+  keeper: String
+  keeperHandle: String
+  head: String
+  kind: String
+  fields: Lists.List<Rows.Field>
+  maker: String
+  makerHandle: String
+  post: String
+  lines: Relations.Relation<Line8>
+  admitted: Relations.Relation<Rows.Admission>
+  marks: Relations.Relation<Rows.Mark>
+  next: Nat
+  cites: Card.Doorways
+  start: String
+  passages: Lists.List<Scenes.Passage>
+  cooldown: Nat
+  requires: Scenes.Guard
+  presence: Relations.Relation<Presence>
+  vars: Lists.List<Scenes.Var>
+  left: Relations.Relation<Departure>
+  things: Relations.Relation<Plans.Reference>
+  weather: String
+  policy: Plans.Reference
+  greeted: Relations.Relation<Greeted8>
+  missed: Relations.Relation<Missed8>
+  tended: Nat
+  tendedAt: Nat
+# A line carried from edition 8 has no verb ("": written before verbs were kept).
+def migrate(old: State8) -> State:
+  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: Relations.Relation.rows({items: Lists.map(Relations.rows(old.lines), fn(l: Line8) -> Line: {author: l.author, handle: l.handle, verb: "", text: l.text, at: l.at, n: l.n})}), admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, policy: old.policy, tended: old.tended, tendedAt: old.tendedAt}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
 # A body that keeps shorter lines keeps more of them (`relationsWith`).
 def relations() -> Relations.Decls:
   relationsWith(128n)
 def relationsWith(lines: Nat) -> Relations.Decls:
-  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n}), {field: "greeted", key: Text.words("principal"), limit: 2048n}), {field: "missed", key: Text.words("principal"), limit: 64n})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n})
 # Who may be in a room at once: one turn offers a line to at most 32 (the host's sendsPerTurn).
 def presenceMax() -> Nat:
   32n
 # Departures kept; one still cooling is never dropped for a newer one (the room's `crowded`).
 def leftMax() -> Nat:
   64n
-# The record's law, as a kind passes it: the owner stays and alone changes the keeper, the doors,
-# what it makes, its scene or its code; a line is only added, an admission only added, and only
-# the keeper admits; what the spells keep (lines, admissions, marks, presence, departures,
-# variables, the floor) no proposal writes, the owner's included.
+# The record's text, as a kind passes it: the owner stays and alone changes the keeper, the doors,
+# what it makes, its scene or its code, and anyone places rules, wants and verbs on it; a line is
+# only added, an admission only added, and only the keeper admits; what the spells keep (lines,
+# admissions, marks, presence, departures, variables, the floor) no proposal writes, the owner's
+# included; and a kept record wants its keeper while a line waits.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(policy) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission, a mark or a greeting is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))"
+  "law owner \"the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(policy) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission or a mark is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\nwant pending \"a line waits for its keeper\": not (new.keeper == \"\") and count(new.lines) >= count(new.admitted) + 1 asks delvetalk {{request.object}} admit"
 def lineKey(line: Line) -> {author: String, n: Nat}:
   {author: line.author, n: line.n}
-# A line's author is the turn's principal, never an argument. The writer is answered with the
-# line's number and the record as it now stands; the result is the number.
+# A line's author is the turn's principal, never an argument. A hand's line tends the record; the
+# writer is answered with the line's number and the record as it now stands; the result is the number.
 def write(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
-  let line = {author: context.principal, handle: context.handle, text: input.text, at: context.height, n: state.next}
-  let written(_) = write {lines: insert line, next: add 1n}
+  inscribe(state, "write", input.text, context)
+# A grown verb used on the record (the host runs `act` for a row of its verb table): a gesture,
+# one line tagged with the verb, and the record tended.
+def act(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:
+  inscribe(state, input.verb, input.text, context)
+def inscribe(state: State, verb: String, text: String, context: Abi.Context) -> Activity<Nat>:
+  let line = {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}
+  let written(_) = write {lines: insert line, next: add 1n, tended: set context.clock, tendedAt: set context.height}
   let said = Document.text("#{natText(line.n)} is written: {line.text}\n\n")
-  Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n}), context, 0n, Document.size(said))))
+  Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n, tended: context.clock, tendedAt: context.height}), context, 0n, Document.size(said))))
 # Tending: the clock minute and the entry of this attention, answered with the card.
 def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = write {tended: set context.clock, tendedAt: set context.height}
@@ -148,9 +202,6 @@ def door(state: State, input: {label: String, to: String}, context: Abi.Context)
   doored(Card.doorAdd(state.cites, state.owner, {label: input.label, to: {world: context.world, object: input.to}, description: "", examples: Lists.List.nil()}, context), "door", "Door {input.label} hung: it opens {input.to}. delvetalk {input.to} ?\n", context)
 def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activity<Card.Replied>:
   doored(Card.doorRemove(state.cites, state.owner, input.label, context), "undoor", "Door {input.label} taken down.\n", context)
-# A spell a door's card prints under it (a menu's), the owner's.
-def example(state: State, input: {label: String, spell: String, comes: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  doored(Card.doorExample(state.cites, state.owner, input.label, {example: input.spell, comes: input.comes}, context), "example", "Under {input.label}: {input.spell}\n", context)
 def doored(edit: Card.DoorEdit, action: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
   match edit:
     case refused(r): refused(r, context)
@@ -187,11 +238,12 @@ def madeHere<T>(made: Made, context: Abi.Context, said: String -> Document.Docum
 # The plain card for what was made, for a body that says nothing of its own.
 def madeLine(object: String) -> Document.Document:
   Document.text("Made, at {object}.\n")
+# What is made here tends the record: a garden is tended by its planting.
 def holding<T>(object: String, made: Made, context: Abi.Context, said: String -> Document.Document, as: Made -> T) -> Activity<T>:
-  let written(_) = write {things: insert {world: context.world, object: object}}
+  let written(_) = write {things: insert {world: context.world, object: object}, tended: set context.clock, tendedAt: set context.height}
   Card.tellTo(as(made), context.principal, said(object))
 # What its kind does once the body is laid (Kind's `graft`, the kind as caller): nothing for a
-# plain record; a body that watches something (a weather, a lantern) subscribes here.
+# plain record; a body that reacts to another thing (a weather, a lantern) places its rule there.
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
   false
 # A weather the record cites writes its line here (a garden's head shows it); anyone else's
@@ -202,7 +254,7 @@ def forecastWritten(line: String) -> Activity<Bool>:
   let written(_) = write {weather: set textTake(line, 120n)}
   true
 def methods() -> Lists.List<String>:
-  Text.words("~made ~forecast")
+  Text.words("~made ~forecast ~act")
 form write:
   text: text 1..280
 form admit:
@@ -215,13 +267,9 @@ form door:
   to: text 1..128
 form undoor:
   label: text 1..32
-form example:
-  label: text 1..32
-  spell: text 1..280
-  comes: text 0..200
 # What the host offers a reader (HOST-HANDOFF 103): admit to the keeper, doors to the owner.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor example") else Text.words("")))
+  Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words("")))
 # Words take the record's card by default (Card.answer). A spell that misfit this card's forms
 # reaches here with its clause (FLEX §2): a record that reads words (the commonplace, with a
 # policy) shows hob; any other refuses it by that clause, writing nothing.

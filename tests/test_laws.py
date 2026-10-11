@@ -1,5 +1,5 @@
 """The world's objects carry their laws in source: only owners change a record's doors and admit anthology
-lines, Tide's predicate and Wake's law refuse what their code would.
+lines, and Tide's law refuse what their code would.
 
 Evidence for FOUNDATION §4 (layer: objects).
 
@@ -10,10 +10,9 @@ The commonplace (a Record): only its owner hangs or removes a door. Anthology: a
 Each is made with world-create (a lawful module cannot be imported by a creator) by its owner (a law
 must admit an amendment by its installer).
 
-Tide's Bend predicate `law(old, new, request)`, which the host runs after the law text admits a
-kind-0 write, and Wake's law text. The tests write through a variant of the package whose method
-skips the Bend-side check the real one makes; the refusal's clause is the predicate's ("self",
-"tooSoon") or the law's ("owner").
+Tide's law text (`tooSoon`), which the host runs on a kind-0 write. The test writes through a
+variant of the package whose method skips the Bend-side checks the real one makes; the refusal's
+clause is the law's ("tooSoon").
 
 Refuted by: a stranger's door, undoor or admit committing; an owner's being refused; a stranger's
 submit being refused; the variants committing once the host runs predicates.
@@ -22,7 +21,7 @@ import unittest
 
 from deploy import genesis
 from tests.test_turn_world import TurnWorld
-from tests.wire import cast_refusal, field, label, nat, nil, record, reference, relation, result_label, rows
+from tests.wire import cast_refusal, field, label, nat, record, reference, relation, result_label, rows
 from tests.bend import closure
 
 OWNER, OTHER = "did:plc:inkling", "did:plc:kimik3"
@@ -131,28 +130,18 @@ class Laws(LawWorld):
         self.assertIn("#9 [pending] kimik3: line 9\n", text)
         self.assertNotIn("#8 ", text)
 
-TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation())
+TIDE_SEED = record(ticks=nat(0), last=nat(0), gap=nat(60))
 
 
 def tide_variant():
-    """Tide whose subscribe writes another principal's subscription and whose tick skips the gap."""
+    """Tide whose tick skips its own checks (only the owner's first, and the gap), so only the law stands."""
     with open("world/objects/Tide.obend") as handle:
         source = handle.read()
-    source = source.replace("{who: context.principal, every: input.every,", '{who: "did:plc:someone-else", every: input.every,', 1)
-    source = source.replace("if state.ticks > 0n && context.clock < state.last + state.gap then", "if false then", 1)
-    assert source.count("did:plc:someone-else") == 1 and "if false then" in source, "Tide changed: the variant no longer skips its checks"
+    check = "if context.caller != context.object && (context.principal != state.owner || state.ticks > 0n) then"
+    gap = "else if state.ticks > 0n && context.clock < state.last + state.gap then"
+    assert check in source and gap in source, "Tide changed: the variant no longer skips its checks"
+    source = source.replace(check, "if false then", 1).replace(gap, "else if false then", 1)
     return closure("Tide", override={"Tide": source})
-
-
-def wake_variant():
-    """Wake whose watch skips the owner check, so only its law text stands."""
-    with open("world/objects/Wake.obend") as handle:
-        source = handle.read()
-    source = source.replace("if context.principal != state.owner then notOwner(state) else if Lists.length(state.triggers) >= 32n",
-                            "if Lists.length(state.triggers) >= 32n", 1)
-    assert "notOwner(state) else if Lists.length(state.triggers) >= 32n" not in source, \
-        "Wake changed: the variant no longer skips its checks"
-    return closure("Wake", override={"Wake": source})
 
 
 def record_variant():
@@ -178,16 +167,14 @@ class FixedFields(LawWorld):
 
     def test_a_forged_gap_is_refused_by_the_tides_law(self):
         self.create("tide", closure("Tide"), TIDE_SEED)
-        r = self.forged("tide", ("ticks", "last", "gap", "subs"), {"gap": {"tag": "variant", "label": "set", "payload": record(value=nat(0))}})
+        r = self.forged("tide", ("ticks", "last", "gap"), {"gap": {"tag": "variant", "label": "set", "payload": record(value=nat(0))}})
         self.assertEqual(self.clause(r), "lawRefused/gap", r)
 
 
 class Predicates(LawWorld):
 
-    def test_tides_predicate_refuses_someone_elses_subscription_and_a_tick_too_soon(self):
+    def test_tides_law_refuses_a_tick_too_soon(self):
         self.create("tide", tide_variant(), TIDE_SEED)
-        r = self.turn("tide", "subscribe", record(every=nat(1), note=label("wake me")), principal=OTHER)
-        self.assertEqual(self.clause(r), "lawRefused/self", r)
         self.assertEqual(self.turn("tide", "tick", principal=OTHER)["status"], "admitted")
         self.assertEqual(self.clause(self.turn("tide", "tick", principal=OTHER)), "lawRefused/tooSoon")
 
@@ -196,15 +183,6 @@ class Predicates(LawWorld):
         self.assertEqual(self.turn("anthology", "write", record(text=label("moths")), principal=OTHER)["status"], "admitted")
         self.assertEqual(self.clause(self.turn("anthology", "admit", record(number=nat(1)), principal=OTHER)), "lawRefused/kept")
         self.assertEqual(self.turn("anthology", "admit", record(number=nat(1)), principal=OWNER)["result"]["label"], "done")
-
-    def test_wakes_law_refuses_a_strangers_trigger_and_admits_the_owners(self):
-        self.create("wake/" + OWNER, wake_variant(), record(owner=label(OWNER), env=reference("env/" + OWNER), triggers=nil(), nextId=nat(1)))
-        r = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
-                                               action={"tag": "variant", "label": "notify", "payload": record()}), principal=OTHER)
-        self.assertEqual(self.clause(r), "lawRefused/owner", r)
-        mine = self.turn("wake/" + OWNER, "watch", record(event={"tag": "variant", "label": "keyword", "payload": record(term=label("x"))},
-                                                  action={"tag": "variant", "label": "notify", "payload": record()}), principal=OWNER)
-        self.assertEqual(mine["status"], "admitted", mine)  # the owner's own write passes both tiers
 
 
 class NoStrangerAmends(LawWorld):

@@ -13,7 +13,7 @@ import unittest
 from deploy import genesis
 from deploy.genesis import DOORS, STUDIO
 from tests.test_chain import Chain, town_garden
-from tests.wire import cast_refusal, field, result_label, label, listing, nat, record, reference, relation
+from tests.wire import cast_refusal, field, result_label, label, listing, nat, record, reference
 from tests.bend import closure
 
 ROOT_DOORS = DOORS  # (label, object, [(spell, what comes back)])
@@ -87,7 +87,7 @@ class Cards(Chain):
         commonplace(self)
 
     def test_world_create_lays_a_partial_seed_over_initial_as_the_create_plan_does(self):
-        """Genesis scripts named every field and broke whenever an object gained one (`greeted`)."""
+        """Genesis scripts named every field and broke whenever an object gained one."""
         create = lambda ident, seed: self.host.send(op="world-create", principal="ember", identity=ident, object=ident,
                                                     modules=closure("Record"), entry="initial", seed=seed, law=genesis.RECORD_LAW)
         cites = listing([door("GARDEN", "garden", [], "Plant something.")])
@@ -95,9 +95,8 @@ class Cards(Chain):
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
         names = [f["name"] for f in state["fields"]]
-        self.assertEqual(names[-3:], ["missed", "tended", "tendedAt"])
+        self.assertEqual(names[-2:], ["tended", "tendedAt"])
         self.assertEqual(field(state, "cites"), cites)
-        self.assertEqual(field(state, "greeted"), relation())
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
         # {cites} alone: a seed that does not set `owner` gets the creating principal, so the
         # creator owns what it makes and the law's dry run admits it.
@@ -118,27 +117,6 @@ class Cards(Chain):
         self.reopen()
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="d1")["state"], state)
 
-
-    def test_env_and_wake_spells_reach_the_speakers_own(self):
-        """Rehearsal run 4, finding D: mimo's `delvetalk env subscribe / card: wake` and `delvetalk
-        wake watch / …` got the pointer. A call to the bare `env` is refused unknownObject (the host
-        resolves bare ids for a turn's object, not for a call's). The host reads the spell under the
-        hub and runs it on the speaker's own env/<did> and wake/<did> as this turn."""
-        self.directory()
-        did = "did:plc:l7exgoq5pjijbeoo3jaxnwse"
-        r = self.host.send(op="world-create", principal=did, identity="mk-env", object="env/" + did, modules=closure("Env"),
-                           entry="initial", seed=record(owner=label(did)))
-        self.assertEqual(r["status"], "created", r)
-        observed = self.say("@livedelvetalk\ndelvetalk env observe", obj="commonplace", who=did)
-        self.assertEqual((observed["status"], observed["result"]), ("admitted", nat(0)), observed)  # observe's count
-        self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
-        self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
-        # A speaker without a wake: the spell is a misfit; the commonplace names no policy here, so it
-        # reads no words and the host refuses it badSpell (HOST-HANDOFF 5.153), writing no greeting.
-        missing = self.turn("commonplace", "receive", record(text=label("delvetalk wake watch / event: mention / actor: ember.delve.town"), post=label("")), principal=did)
-        out = missing["receipt"]["outcome"]
-        self.assertEqual((missing["status"], out["class"], out["clause"], out["reason"]),
-                         ("refused", "badSpell", "otherCard", "There is no card wake; the commonplace lists the doors."), missing)
 
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()

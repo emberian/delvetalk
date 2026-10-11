@@ -94,9 +94,9 @@ class Inspirit(unittest.TestCase):
         declared = [(l['name'], l.get('reading')) for l in self.town.send(op='world-inspect', principal=KIM, object='porch/gemstone', source=False)['laws'] if not l.get('host')]
         self.assertEqual(re.findall(r'^law (\w+) "([^"]*)":', text, re.M), declared)
 
-    def test_hob_is_told_the_word_and_shown_an_inspiriting(self):
+    def test_hob_is_shown_an_inspiriting(self):
         policy = self.view('policy')
-        self.assertIn('surrounding', str(policy['lexicon']))
+        self.assertIn('surrounding', str(policy['examples']))
         self.assertIn('porch/goblet inspirit', str(policy['examples']))
 
 

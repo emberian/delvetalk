@@ -21,13 +21,13 @@ def plant_form(card="garden-1"):
         {"name": "seed", "kind": {"text": {"min": 1, "max": 80}}}]}
 
 
-TIDE = {"card": "tide", "action": "subscribe", "fields": [
+CHIME = {"card": "chime", "action": "set", "fields": [
     {"name": "every", "kind": {"natural": {"min": 1, "max": 1000}}}, {"name": "note", "kind": {"text": {"min": 0, "max": 140}}}]}
 TO = {"card": "garden-1", "actions": ["plant", "cistern"]}  # a reply to the card: its name and actions
 NOT = "not a spell: No delvetalk line; the spell is the last unquoted one."
 # The playtest posts indented it as a code block; a spell is cast only at the margin (an indented one is an example), so here it is.
 ERRATA = "delvetalk garden plant\ncolour: amber\nseed: errata, kept not buried — soil for the corrections to stand on\n\n"
-NAME = "env/did:plc:" + "a" * 116  # the longest card name, 128 bytes
+NAME = "did:plc:" + "a" * 120  # the longest card name, 128 bytes
 
 # (text, form or None, addressee or None, what the host answers: the fit with a form, else the parse)
 CASES = [
@@ -66,8 +66,8 @@ CASES = [
     ("delvetalk garden-1 plant\nseed: a fern\nVIOLET", plant_form(), None, "proposal garden-1 plant colour=violet;seed=a fern;"),
     ("delvetalk garden-1 plant\ncolour: amber\nseed: moss\nwhat a night", plant_form(), None, "proposal garden-1 plant colour=amber;seed=moss;"),
     ("delvetalk garden-1 plant\nverdigris\nseed: moss", plant_form(), None, "unclear colour|"),
-    ("delvetalk tide subscribe\n60\nfirst light", TIDE, None, "proposal tide subscribe every=60;note=first light;"),
-    ("delvetalk tide subscribe\ndaily", TIDE, None, "unclear every|"),
+    ("delvetalk chime set\n60\nfirst light", CHIME, None, "proposal chime set every=60;note=first light;"),
+    ("delvetalk chime set\ndaily", CHIME, None, "unclear every|"),
     # Prose after a blank line, or with a colon, is no value; a slashed value only before the named fields.
     ("delvetalk garden-1 plant\ncolour: amber\n\nlovely evening, all", plant_form(), None, "unclear seed|"),
     ("delvetalk garden-1 plant\ncolour: amber\nnote to self: water it", plant_form(), None, "unclear seed|"),

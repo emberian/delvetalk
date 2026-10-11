@@ -5,7 +5,7 @@ Evidence for FOUNDATION §8 invariants 4, 5, 6, 7, 11 and 12 (layer: properties)
 
 Each test builds the town as deploy does (`deploy/genesis.py` through the production host client),
 then drives it with requests drawn from a seeded generator: the archive's own posts and the
-rehearsal's model answers, plantings, rains, rings, subscriptions, proposals, amendments, forks,
+rehearsal's model answers, plantings, rains, rings, rules, proposals, amendments, forks,
 clock ticks, and a well-typed or malformed call of every public method of every object, as its
 owner and as a stranger. The committed runs use fixed seeds; `DELVETALK_SEED=<n>` adds a run of that seed, to replay or to explore.
 
@@ -269,13 +269,11 @@ class Run:
             return self.turn(who, r.choice(self.bells()), "rain", record(text=label(text(r, 1, 200) or "drizzle")))
         if pick == 3 and self.bells():
             return self.turn(who, r.choice(self.bells()), "ring", record())
-        if pick == 4 and self.bells():  # a subscription: a wake watching a bell's rains, calling ring at the seventh
+        if pick == 4 and self.bells():  # a rule on a bell: ring it at its first, third or seventh rain
             bell = r.choice(self.bells())
-            where = {"tag": "list", "items": [{"tag": "variant", "label": "equals", "payload": record(column=label("n"), equals={
-                "tag": "variant", "label": "natural", "payload": record(value=nat(r.choice([1, 3, 7])))})}]}
-            return self.turn(who, "wake/" + who, "watch", record(
-                event={"tag": "variant", "label": "rows", "payload": record(object=label(bell), field=label("lines"), where=where, atLeast=nat(1))},
-                action={"tag": "variant", "label": "call", "payload": record(card=label(bell), method=label("ring"))}))
+            n = r.choice([1, 3, 7])
+            return self.turn(who, bell, "receive", record(text=label(
+                "delvetalk %s rule\nname: at%d\nwhen: count(new.lines) >= %d and count(old.lines) <= %d\nthen: delvetalk %s ring" % (bell, n, n, n - 1, bell)), post=label(post)))
         if pick == 5:  # a proposal through the workshop: the target's own source, re-proposed
             target = r.choice(["anthology", "library", "garden"])
             home = {"anthology": "objects/Record", "library": "objects/Library", "garden": "bodies/garden"}[target]  # the garden's own source is its body
@@ -338,8 +336,8 @@ class Run:
         unoffered = set(re.findall(r"~(\w+)", " ".join(re.findall(r"^  Text\.words\(\"([^\"]*)\"\)", "\n".join(p.read_text() for p in (ROOT / "world").rglob("*.obend")), re.M))))
         probed = 0
         for obj in listed["ids"]:
-            # "~m": declared, callable, not offered; another principal's wake lists none to the opener, and a record
-            # with a body lists its package's (Record's `~made`), not its body's (`~changedNat`), so those are read
+            # "~m": declared, callable, not offered; a record
+            # with a body lists its package's (Record's `~made`), not its body's, so those are read
             # from the sources' `methods()` for every object
             public = {m.lstrip("~") for m in listed["methods"].get(obj, [])} | unoffered
             for helper in self.rng.sample([n for n in names if n not in public and n not in CONVENTIONAL], 6):

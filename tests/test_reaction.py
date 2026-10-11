@@ -48,10 +48,12 @@ class Reaction(Arc):
         rows = self.town.send(op="world-rules", principal=OPENER, object=card)["rows"]
         return next(r for r in rows if r["name"] == name)
 
-    def assertFired(self, reply, card, name, then):
-        """The entry carries a `fired` row naming the rule, the reply reveals it, `rules` shows its height."""
+    def assertFired(self, reply, card, name, then, beside=()):
+        """The entry carries a `fired` row naming the rule (and one for each of the card's rules `beside` it), the
+        reply reveals it, `rules` shows its height."""
         rows = self.fired(reply)
-        self.assertEqual([(f["rule"], f["sender"]) for f in rows], [(name, card)], reply)
+        self.assertEqual(sorted((f["rule"], f["sender"]) for f in rows), sorted((n, card) for n in (name,) + tuple(beside)), reply)
+        rows = [f for f in rows if f["rule"] == name]
         height = reply["receipt"]["height"]
         self.assertEqual(rows[0]["id"], "rule:%s:%s:%d" % (card, name, height))
         self.assertTrue(any(("rule %s of" % name) in line and "fired" in line and then in line for line in reply["revealed"]), reply["revealed"])
@@ -188,7 +190,8 @@ class Quest(Reaction):
         self.place(GLM, first, "next / when: \"rung\" in new.marks.name and not \"rung\" in old.marks.name / then: delvetalk %s door / label: next / to: %s" % (first, second))
         self.assertNotIn("next", self.card(self.say(KIM, first, "")))
         rung = self.admitted(self.say(KIM, first, "delvetalk %s ring" % first))
-        self.assertFired(rung, first, "next", "delvetalk %s door" % first)
+        # kind/bell's own rule `rang` fires in the same commit: it notes the planter that the bell rang.
+        self.assertFired(rung, first, "next", "delvetalk %s door" % first, beside=("rang",))
         self.assertIn("next", self.card(self.say(KIM, first, "")))
         self.assertIn("Doors: garden \u00b7 next", self.card(self.say(KIM, first, "")))
         again = self.admitted(self.say(GLM, first, "delvetalk %s ring" % first))

@@ -43,7 +43,7 @@ class Genesis(unittest.TestCase):
                          (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [(id, 'admitted') for id in hands] + [('garden', 'admitted'), ('porch', 'admitted')]
                           + [(t, 'created') for t, _ in genesis.THINGS]), made)
         o = genesis.OPENER
-        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [t for t, _ in genesis.THINGS] + [o, 'env/' + o, 'wake/' + o]))
+        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [t for t, _ in genesis.THINGS] + [o]))
         # the porch's unclaimed things lie on it, each laid by the opener
         self.assertEqual([m.get('laid') for m in made if m['module'] == 'Thing'], ['admitted'] * len(genesis.THINGS))
         # each hand's thing is a record of its kind whose maker is the opener, who alone named its id
@@ -77,19 +77,22 @@ class Genesis(unittest.TestCase):
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'commonplace'})['text']
         self.assertIn(ORIGIN + '/AGENTS.md', menu)
 
-    def test_the_openers_wake_ticks_the_tide_every_hour_with_nobody_posting(self):
-        """OFFERING §4: genesis gives the opener's wake a schedule every 60 clock minutes that ticks
-        the tide, and its subscription to every thing the garden grows (arrival ran before the garden existed)."""
+    def test_the_tide_ticks_itself_every_hour_with_nobody_posting(self):
+        """OFFERING §4: the opener's first tick starts the tide, which then ticks itself every 60 clock minutes;
+        a clock jump ticks it once, at the clock it wakes to."""
         tide = next(m for m in self.made if m['object'] == 'tide')
-        self.assertEqual(tide['wake'], ['admitted', 'admitted'], tide)
+        self.assertEqual(tide['tick'], 'admitted', tide)
         def ticks():
             state = self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'tide'})['state']
             return {f['name']: f['value'] for f in state['fields']}['ticks']['value']
+        self.assertEqual(ticks(), '1')
         clock = self.host.send({'op': 'world-status'}).get('clock', 0)
+        seen = []
         for minutes in (30, 61, 125):
             self.host.send({'op': 'world-advance', 'principal': 'transport', 'height': clock + minutes})
             self.host.send({'op': 'world-deliver', 'principal': 'transport', 'limit': 64})
-        self.assertEqual(ticks(), '2')
+            seen.append(ticks())
+        self.assertEqual(seen, ['1', '2', '3'])
 
 
     def test_the_room_kind_carries_the_record_law_and_the_rooms_body(self):
@@ -187,46 +190,6 @@ class NoWipe(unittest.TestCase):
         self.assertIn('--towns', err.getvalue())
 
 
-class Rows(unittest.TestCase):
-    """PLAYTEST-2 T+90: a resident's wake counts the rains on someone else's bell (`wake rows`, a bell's `lines`
-    being public) and notes its avatar at the seventh."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.tmp = tempfile.TemporaryDirectory()
-        cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
-        for did, handle in (('did:plc:glm', 'glm.delve.town'), ('did:plc:kim', 'kimik3.delve.town')):
-            cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
-
-    def say(self, who, obj, text, ident):
-        got = self.town.send(op='world-turn', principal=who, object=obj, method='receive',
-                             argument=record(text=label(text), post=label('at://x/p/' + ident)), identity=ident)
-        if got['status'] == 'refused':  # a card's refusal of its own spell refuses the turn
-            cast_refusal(got)
-        else:
-            self.assertEqual(got['status'], 'admitted', got)
-        return got
-
-    def test_a_residents_wake_counts_seven_rains_on_anothers_bell_and_fires(self):
-        glm, kim = 'did:plc:glm', 'did:plc:kim'
-        early = self.say(kim, 'wake', 'delvetalk wake rows / object: garden/bell/1 / field: lines / where: / count: 7', 'too-early')
-        self.assertIn('There is no card garden/bell/1 that you may see (yet): nothing to watch.', json.dumps(early))
-        self.say(glm, 'garden', 'delvetalk garden plant / seed: a bell for lost moths / colour: amber', 'plant')
-        watch = self.say(kim, 'wake', 'delvetalk wake rows / object: garden/bell/1 / field: lines / where: / count: 7', 'rows')
-        self.assertNotIn('cannot be watched', json.dumps(watch), watch)
-        for i in range(7):
-            self.say(glm if i % 2 else genesis.OPENER, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: drop %d' % i, 'rain%d' % i)
-            for _ in range(16):
-                self.town.send(op='world-deliver', principal='transport', limit=64)
-                if not self.town.send(op='world-pending').get('count'):
-                    break
-        avatar = self.town.send(op='world-view', principal=kim, object=kim)
-        inbox = [f for f in avatar['state']['fields'] if f['name'] == 'inbox'][0]
-        self.assertTrue(json.dumps(inbox).count('garden/bell/1') >= 1, inbox)
-
-
-
 class Checked(unittest.TestCase):
     """`workshop check / target:` checks what the card runs, its whole source: a bell and the garden are a
     kind's body layered over Record, so the layer alone names a module below it (`world.checkObject`)."""
@@ -260,8 +223,8 @@ class Checked(unittest.TestCase):
 
 
 class Weather(unittest.TestCase):
-    """docs/METAPHYSICS.md §7.4: the hand's weather watches the tide's ticks and, at each, rains on every bell the garden
-    holds and writes the garden's weather line; the opener's wake ticks the tide every hour with nobody posting."""
+    """docs/METAPHYSICS.md §7.4: the weather's rule on the tide rains, at every twenty-fourth tick while the garden is
+    tended, on every bell the garden holds and writes the garden's weather line."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -288,22 +251,22 @@ class Weather(unittest.TestCase):
         self.assertEqual(self.state('weather')['lines']['payload']['fields'][0]['value']['items'], [])
         self.assertNotIn('Weather:', self.host.send({'op': 'world-card', 'principal': glm, 'object': 'garden'})['text'])
         clock = self.host.send({'op': 'world-status'}).get('clock', 0)
-        self.host.send({'op': 'world-advance', 'principal': 'transport', 'height': clock + 61})
-        self.deliver()
+        for hour in range(1, 24):  # a jump ticks once, so the tide is walked through its day: tick 24 is the 23rd hour on
+            self.host.send({'op': 'world-advance', 'principal': 'transport', 'height': clock + 61 * hour})
+            self.deliver()
         bell = self.host.send({'op': 'world-view', 'principal': glm, 'object': 'garden/bell/1'})['state']
         rains = [next(f['value']['value'] for f in row['fields'] if f['name'] == 'text')
                  for row in next(f['value'] for f in bell['fields'] if f['name'] == 'lines')['payload']['fields'][0]['value']['items']]
-        self.assertEqual(rains, ["weather's rain, tide tick 1"])
-        self.assertIn('Weather: rain at tide tick 1, on 1\n', self.host.send({'op': 'world-card', 'principal': glm, 'object': 'garden'})['text'])
+        self.assertEqual(len(rains), 1, rains)
+        self.assertRegex(rains[0], r"^weather's rain, clock \d+$")
+        self.assertRegex(self.host.send({'op': 'world-card', 'principal': glm, 'object': 'garden'})['text'], r'Weather: rain at clock \d+, on 1\n')
 
 
 class Commonplace(unittest.TestCase):
     """docs/METAPHYSICS.md §5, §7.5: the town's first card is the commonplace, a record the opener keeps. Its
     card says what changed in the town, newest first (World.changed, read when asked: nothing is kept to say
     it), each `<id> v<n> by <handle>, entry N`, then the first spells, then the doors the hand named, each
-    with the spells it prints. A principal's first words get hob's greeting over it, opening on the door
-    the words went through; the owner hangs an arc under a door with `door` and gives it a spell with
-    `example`."""
+    with the spells it prints. The owner hangs an arc under a door with `door`."""
 
     @classmethod
     def setUpClass(cls):
@@ -327,7 +290,7 @@ class Commonplace(unittest.TestCase):
                 return
 
     def test_an_arrivals_own_cards_are_not_what_changed(self):
-        """Playtest 2 D5: arrival makes a principal's avatar, env and wake; the commonplace names none of them,
+        """Playtest 2 D5: arrival makes a principal's avatar; the commonplace names none of it,
         whatever names the principal (a DID, a Zulip id)."""
         for who, handle in (('did:plc:arriving', 'arriving.delve.town'), ('zulip:tulip.arke.me/77', 'Kestrel')):
             self.host.send({'op': 'world-arrive', 'principal': 'transport', 'did': who, 'handle': handle})
@@ -355,14 +318,12 @@ class Commonplace(unittest.TestCase):
         self.assertEqual(result_label(self.owner('door', 'arc-full', label='BELL', to='garden/bell/1')), 'refused')
         self.assertEqual(self.owner('undoor', 'arc-room', label='TIDE')['result']['label'], 'done')
         self.assertEqual(self.owner('door', 'arc-door', label='BELL', to='garden/bell/1')['result']['label'], 'done')
-        self.assertEqual(self.owner('example', 'arc-spell', label='BELL', spell='delvetalk garden/bell/1 rain / text: it rained here first',
-                                    comes='it keeps who rained; bell/1 has 2, the seventh rings it')['result']['label'], 'done')
         blank = self.say(stranger, 'commonplace', '', 'blank')['offers'][-1]['text']
         self.assertLessEqual(len(blank), 1400, blank)
         changed = blank[blank.index('What changed, newest first:\n'):].split('\n')[1:9]
         self.assertEqual(changed[0], 'garden/bell/1 v%s by kimi, entry %d' % (changed[0].split(' v')[1].split(' ')[0], rain['receipt']['height']), changed)
         self.assertTrue(all(' by ' in c and ', entry ' in c for c in changed), changed)
-        self.assertNotIn('commonplace v', blank)  # its own greetings and doors are not news
+        self.assertNotIn('commonplace v', blank)  # its own doors are not news
         self.assertIn('  delvetalk kinds make / name: lamp / of: record\n  » kind/lamp, a kind anyone makes\n  delvetalk garden/bell/1 ?\n', blank)
         # KINDS and WORKSHOP lead (playtest 2, F1): what is clipped is the places, from the end.
         self.assertIn('\nKINDS\n  delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80\n  » kind/lamp, a kind anyone makes\nWORKSHOP\n', blank)
@@ -379,14 +340,10 @@ class Commonplace(unittest.TestCase):
                                   'argument': record(label=label('MINE'), to=label('garden'))})
         self.assertEqual(result_label(refused), 'refused', refused)
 
-    def test_first_words_get_hobs_greeting_once_and_a_field_line_goes_to_its_door(self):
+    def test_a_field_line_goes_to_its_door_and_first_words_get_no_greeting(self):
         reader = 'did:plc:newcomer'
-        greeting = self.say(reader, 'commonplace', 'hello', 'hello')['offers'][-1]['text']
-        self.assertTrue(greeting.startswith('hob: words reach me, spells reach the cards. The doors:\n✾ DELVETALK · THE COMMONPLACE\n\n'), greeting)
-        self.assertIn('What changed, newest first:\n', greeting)
-        self.assertLessEqual(len(greeting), 1400)
-        again = self.say(reader, 'commonplace', 'hello', 'again')
-        self.assertFalse(any(o['text'].startswith('hob: words reach me') for o in again.get('offers') or []), again)
+        hello = self.say(reader, 'commonplace', 'hello', 'hello')
+        self.assertEqual((hello['status'], hello['result']['label'], hello.get('offers', [])), ('admitted', 'silent', []), hello)
         # A field line naming a door's action goes to that door, whose card answers.
         passed = self.say(reader, 'commonplace', 'choose: Open', 'by-field-line')
         self.assertEqual(passed['result']['label'], 'passed', passed)

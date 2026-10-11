@@ -7,39 +7,19 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
 import ./Text.obend as Text
-# watching: the object whose `open` lights the lantern (a door), nobody until `watch`.
 record State:
   lit: Bool
   litBy: String
   litHandle: String
-  watching: Plans.Reference
 def initial() -> State:
-  {lit: false, litBy: "", litHandle: "", watching: Plans.nobody()}
-# Light the lantern and remember who did: the turn's principal, or the object whose change
-# lit it (its id, no handle).
+  {lit: false, litBy: "", litHandle: ""}
+# Light the lantern and remember who did: the turn's principal.
 def light(state: State, context: Abi.Context) -> Activity<Bool>:
   lit(context.principal, context.handle)
 def lit(by: String, handle: String) -> Activity<Bool>:
   let written(_) = write {lit: set true, litBy: set by, litHandle: set handle}
   true
-# Watch an object's `open` (a door's): the host delivers each write of it to `changed`.
-def watch(state: State, input: {object: String}, context: Abi.Context) -> Activity<String>:
-  let object = {world: context.world, object: input.object}
-  match world.subscribe({object: object, field: "open", method: "changed"}):
-    case subscribed(_): watched(object)
-    case denied(_): "denied"
-    case refused(r): r.clause
-def watched(object: Plans.Reference) -> Activity<String>:
-  let written(_) = write {watching: set object}
-  "watching"
-# The watched door opening lights the lantern (the host delivers the change; the door is the
-# caller, so nobody else's turn lights it this way).
-def changed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Bool>, retracted: Lists.List<Bool>}, context: Abi.Context) -> Activity<Bool>:
-  if context.caller == state.watching.object && Plans.same(input.object, state.watching) && input.field == "open" && Lists.any(input.inserted, fn(open: Bool) -> Bool: open) then lit(context.caller, "") else state.lit
 form light:
-# An action without a form: watching names an object.
-def methods() -> Lists.List<String>:
-  Text.words("watch")
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def render(state: State, context: Abi.Context) -> Document.Document:

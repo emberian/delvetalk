@@ -57,9 +57,9 @@ class Walks(unittest.TestCase):
             assert got["status"] == "arrived", got
 
     def card_of(self, who, spell):
-        """The card a spell line names: its second word; me, env and wake are the speaker's own."""
+        """The card a spell line names: its second word; `me` is the speaker's own."""
         word = spell.split()[1]
-        return {"me": who, "env": "env/" + who, "wake": "wake/" + who}.get(word, word)
+        return who if word == "me" else word
 
     def cast(self, who, spell):
         """The spell as a reply to its card, as the bridge hands `receive`; (reply, offered text)."""
@@ -107,27 +107,30 @@ class Walks(unittest.TestCase):
                 self.assertTrue(all(claim for _, _, claim in steps), steps)
                 self.assertTrue(set(re.findall(r"page: (\w+)", body)) <= shelved, body)
 
-    def test_plant_a_bell_rain_on_it_watch_its_rains_and_hear_the_ring(self):
+    def test_plant_a_bell_rain_on_it_place_a_rule_and_hear_the_ring(self):
         W, O = WALKER, OTHER
-        (_, plant, _), (_, rain, _), (_, rows, _), (_, theirs, _), (_, ring, _) = self.steps("plant")
+        (_, plant, _), (_, rain, _), (_, rule, _), (_, theirs, _), (_, ring, _) = self.steps("plant")
         _, text = self.say(W, plant)
         bell = re.search(r"garden/bell/\d+", text).group(0)
         self.assertIn("Planted, walker.test", text)
-        # the made bell asked the planter's wake to watch for its ring (no spell of the walker's)
-        self.assertIn("%s's marks where name = rung" % bell, self.card_text(W, "wake/" + W))
         _, text = self.say(W, self.fill(rain, bell=bell))
         self.assertIn("#1 is written: it rained here first", text)
-        _, text = self.say(W, self.fill(rows, bell=bell))
-        self.assertIn("Watching %s's lines where n > 1: each new row notes your avatar" % bell, text)
-        self.assertNotIn("%s's lines" % bell, self.avatar(W))  # the first rain was not "after the first"
+        _, text = self.say(W, self.fill(rule, bell=bell))
+        self.assertIn("second", text)
+        self.assertEqual([r["name"] for r in self.rules(bell) if r["name"] == "second"], ["second"])
+        self.assertNotIn("a second rain", self.avatar(W))  # one hand's rain does not fire it
         _, text = self.say(O, self.fill(theirs, bell=bell))
         self.assertIn("#2 is written: and here", text)
-        self.assertIn("%s's lines" % bell, self.avatar(W))
+        self.assertTrue(self.rules(bell, "second")["fired"], self.rules(bell))
+        self.assertIn("a second rain", self.avatar(W))
         self.assertNotIn("rung", self.card_text(W, bell))
-        self.assertNotIn("%s's marks" % bell, self.avatar(W))
         self.say(W, self.fill(ring, bell=bell))
         self.assertIn("— rung.", self.card_text(W, bell))
-        self.assertIn("%s's marks" % bell, self.avatar(W))
+        self.assertIn("%s rang" % bell, self.avatar(W))  # the kind's rule `rang` notes the planter
+
+    def rules(self, obj, name=None, who=WALKER):
+        got = self.host.send({"op": "world-rules", "principal": who, "object": obj})
+        return {r["name"]: r for r in got["rows"]}[name] if name else got["rows"]
 
     def card_text(self, who, obj):
         got = self.host.send({"op": "world-card", "principal": who, "object": obj})
@@ -174,25 +177,25 @@ class Walks(unittest.TestCase):
         self.assertIn("* Sit", text)
         self.assertIn(room, self.host.send({"op": "world-objects", "principal": W})["ids"])
 
-    def test_tide_subscribe_tick_too_soon_and_after_the_clock_tick_again(self):
+    def test_tide_rules_place_one_refuse_a_hands_tick_and_hear_it_fire_after_the_clock(self):
         W = WALKER
-        (_, sub, _), (_, tick, _), (_, soon, _), (_, later, _) = self.steps("tide")
-        _, text = self.say(W, sub)
-        self.assertIn("Subscribed, from tick 0.", text)
-        self.assertIn("walker.test (yours) every 1 from tick 0: first light", text)
-        _, text = self.say(W, tick)
-        self.assertIn("Tick 1: 1 note sent.", text)
-        reply, text = self.cast(W, soon)
-        # The refusal refuses the turn: its line is the receipt's reason, and nothing is offered.
-        self.assertEqual((reply["status"], reply["receipt"]["outcome"]["class"], text), ("refused", "cardRefused", ""), reply)
-        clock = re.match(r"refused tooSoon: the next tick may come at clock (\d+)$", reply["receipt"]["outcome"]["reason"])
-        self.assertTrue(clock, reply)
-        self.assertIn("tide 1: first light", self.avatar(W))
-        got = self.host.send({"op": "world-advance", "principal": "transport", "height": int(clock.group(1)) + 1})
+        (_, rules, _), (_, turned, _), (_, tick, _), (_, after, _) = self.steps("tide")
+        _, text = self.say(W, rules)
+        self.assertIn("weather", text)
+        self.assertNotIn("turned", text)
+        self.say(W, turned)
+        self.assertIn("turned", [r["name"] for r in self.rules("tide")])
+        self.assertFalse(self.rules("tide", "turned").get("fired"))
+        reply, _ = self.cast(W, tick)
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertIn("itself", json.dumps(reply["receipt"]["outcome"]), reply)
+        clock = self.host.send({"op": "world-status"})["clock"]
+        got = self.host.send({"op": "world-advance", "principal": "transport", "height": clock + 61})
         self.assertEqual(got["status"], "advanced", got)
-        _, text = self.say(W, later)
-        self.assertIn("Tick 2: 1 note sent.", text)
-        self.assertIn("tide 2: first light", self.avatar(W))
+        _, text = self.say(W, after)
+        self.assertIn("turned", text)
+        self.assertTrue(self.rules("tide", "turned")["fired"], self.rules("tide"))
+        self.assertIn("the tide turned", self.avatar(W))
 
     def test_kind_make_a_kind_and_someone_else_uses_it_under_its_law(self):
         W, O = WALKER, OTHER

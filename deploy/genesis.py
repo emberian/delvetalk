@@ -46,7 +46,7 @@ DOORS = [
     ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('GARDEN', 'garden', [('delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver', 'a bell, garden/bell/N; you hear when it rings')]),
     ('ROOMS', 'rooms', [('delvetalk rooms enter', 'the gate and its choices; a ```spween block here makes your own')]),
-    ('TIDE', 'tide', [('delvetalk tide tick', "tick N, the weather's rain; too soon: refused tooSoon")]),
+    ('TIDE', 'tide', [('delvetalk tide rules', "the weather's rule: rain once a clock day")]),
     ('PORCH', 'porch', [('delvetalk porch enter', 'three unclaimed things lie here; inspirit one')]),
     ('ANTHOLOGY', 'anthology', [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
 ]
@@ -66,11 +66,6 @@ def commonplace(opener):
                policy=ref('policy'), cites=lst(*[door(*d) for d in DOORS], door(STUDIO[0], '', [], STUDIO[1])))
 
 
-# hob's instruction (docs/FLEX.md §2), as Policy.hob() (world/objects/Policy.obend) has it.
-POLICY_SYSTEM = ('hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; '
-                 'the card and its law decide what is admitted, never you.')
-LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters'),
-           ('surrounding', "what surrounds a thing as the one inspiriting it says it, 1 to 400 characters; that one keeps it")]
 # The Moss Gate's scene, as spween (world/lib/Spween.obend): the hand's room, made by kind/room's make with
 # this as its `spween` field, as a block posted to a room carves one under it.
 MOSS_GATE = """---
@@ -96,7 +91,8 @@ EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\n
             ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber'),
             ('inspirit the goblet: it holds whatever the last guest left unsaid',
              'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
-            ('how many have been planted?', 'card')]  # a question the card already answers (docs/FLEX.md §3)
+            ('I water the sixth bell', 'grow: water "poured on by a hand; a line, and the bell is tended"\ndelvetalk bell/1 water / text: I water the sixth bell'),
+            ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/COLLABORATOR.md §4)
 
 
 # The library's stacks (docs/LIBRARY.md): six pages and five walks, (name, kind, title); each body is
@@ -105,12 +101,12 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
          ('laws', 'page', 'one line a clause, its reading; who may; transient and binding refusals'),
          ('object', 'page', 'a card in Bend, one whole example'),
          ('relations', 'page', "rows in a card's state: keys, insert, upsert, retract, order"),
-         ('protocol', 'page', 'what a card asks the world: view, call, send, create, subscribe'),
+         ('protocol', 'page', 'what a card asks the world: view, call, send, create, rule'),
          ('world', 'page', "the doors, every card's spells, the classes of refusal"),
-         ('plant', 'walk', 'plant a bell, rain on it, hear it ring'),
+         ('plant', 'walk', 'plant a bell, rule on it, rain on it, hear it ring'),
          ('check', 'walk', 'check Bend, draft a thing, adopt it, hold another\'s proposal'),
          ('enter', 'walk', 'enter the Moss Gate, choose, say, carve a room of your own'),
-         ('tide', 'walk', 'subscribe, tick, be noted by a due tick'),
+         ('tide', 'walk', 'read the tide\'s rules, write one, be noted at a tick'),
          ('kind', 'walk', 'make a kind under your law; another makes one and meets it')]
 
 
@@ -123,10 +119,11 @@ def page_body(name):
 RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it": '
               'unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(policy) and unchanged(cites) '
               'and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\n'
-              'law kept "a line, an admission, a mark or a greeting is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) '
+              'law kept "a line, an admission or a mark is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) '
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
               'law methods "what was written, admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal": '
-              'request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))')
+              'request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\n'
+              'want pending "a line waits for its keeper": not (new.keeper == "") and count(new.lines) >= count(new.admitted) + 1 asks delvetalk {request.object} admit')
 
 
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
@@ -141,6 +138,17 @@ KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the la
 # untended past it takes `tend` alone (tests/test_tending.py compares the two).
 QUIET_AFTER = 1440
 ALIVE_LAW = f'law alive "answers while tended within {QUIET_AFTER} minutes": request.method == "tend" or request.kind == rule or request.clock <= old.tended + {QUIET_AFTER}'
+# What a bell does of itself and what it wants (docs/OVERHAUL.md §3; SEEDING §4, the seventh rain), carried to every
+# bell by `under` and owned by the kind's owner: it rings at its seventh rain, notes its planter when it rings, and
+# wants a first rain, a rain from a second hand, and tending once it has gone quiet.
+BELL_TEXT = ('rule seven "rings at its seventh rain": count(new.lines) >= 7 and count(old.lines) <= 6 then delvetalk {request.object} ring\n'
+             'rule rang "notes its planter when it rings": "rung" in new.marks.name and not "rung" in old.marks.name then delvetalk {new.maker} note / text: {request.object} rang\n'
+             'want rain "a bell nobody has rained on": count(new.lines) == 0 asks delvetalk {request.object} rain\n'
+             'want second "a bell only its planter has rained on": count(new.lines) >= 1 and count(new.lines where author == new.maker) >= count(new.lines) asks delvetalk {request.object} rain\n'
+             f'want tend "a bell gone quiet, untended a day": request.clock >= new.tended + {QUIET_AFTER + 1} asks delvetalk {{request.object}} tend')
+GARDEN_TEXT = 'want five "a garden of fewer than five bells": count(new.things) <= 4 asks delvetalk {request.object} plant'
+ROOM_TEXT = 'want company "a room nobody is in": count(new.presence) == 0 asks delvetalk {request.object} enter'
+DOOR_TEXT = 'want shut "a door nobody has opened": not ("open" in new.marks.name) asks delvetalk {request.object} knock'
 # A bond's countersignatures are marks whose `who` is the signer (world/bodies/bond.obend).
 SIGNER_LAW = 'law signer "a party signs only for themselves": changed(new.marks.who) by request.subject'
 
@@ -155,13 +163,13 @@ LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
 # Each made thing's law cites its kind's `law` (`under "kind/<name>"`, Kind.lawOf).
 NAMED = 'name: text 1..64'
 KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
-         ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW + '\n' + ALIVE_LAW, 'bell'),
+         ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW + '\n' + ALIVE_LAW + '\n' + BELL_TEXT, 'bell'),
          ('cistern', 'record', '', '', RECORD_LAW + '\nlaw level "the level only rises": monotone(next)', 'cistern'),
-         ('room', 'record', NAMED + '\nspween: text 0..16384', '{name}', RECORD_LAW, 'room'),
-         ('porch', 'record', NAMED, '{name}', RECORD_LAW, 'room'),
-         ('garden', 'record', NAMED, '{name}', RECORD_LAW, 'garden'),
+         ('room', 'record', NAMED + '\nspween: text 0..16384', '{name}', RECORD_LAW + '\n' + ROOM_TEXT, 'room'),
+         ('porch', 'record', NAMED, '{name}', RECORD_LAW + '\n' + ROOM_TEXT, 'room'),
+         ('garden', 'record', NAMED, '{name}', RECORD_LAW + '\n' + GARDEN_TEXT, 'garden'),
          ('weather', 'record', 'garden: text 1..128\ntide: text 1..128', '', RECORD_LAW, 'weather'),
-         ('door', 'record', NAMED, '{name}', RECORD_LAW, 'door'),
+         ('door', 'record', NAMED, '{name}', RECORD_LAW + '\n' + DOOR_TEXT, 'door'),
          ('lantern', 'record', NAMED + '\ndoor: text 1..128', '{name}', RECORD_LAW, 'lantern'),
          ('bond', 'record', 'parties: text 1..400\nterms: text 1..400\namends: text 0..128\nlaw: text 0..4096', '', RECORD_LAW + '\n' + SIGNER_LAW, 'bond')]
 
@@ -199,11 +207,10 @@ def body_of(name):
 
 def seeds(opener):
     """(object, package, partial seed), in the order GENESIS.md creates them."""
-    return [('policy', 'Policy', rec(owner=lab(opener), ownerHandle=lab(HANDLE), model=lab('claude-haiku-5-5'), system=lab(POLICY_SYSTEM),
-                                     lexicon=lst(*[rec(word=lab(w), meaning=lab(m)) for w, m in LEXICON]),
+    return [('policy', 'Policy', rec(owner=lab(opener), ownerHandle=lab(HANDLE), model=lab('claude-haiku-5-5'),
                                      examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
-            ('tide', 'Tide', rec(gap=nat(1))),
+            ('tide', 'Tide', rec()),
             ('workshop', 'Workshop', rec(title=lab('Workshop'), policy=ref('policy'))),
             ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW))),  # shaped, then makes KINDS, each under KIND_LAW
             ('anthology', 'Record', rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE ANTHOLOGY'))),  # created with RECORD_LAW
@@ -296,13 +303,9 @@ def run(host, opener=OPENER):
             made.append({'object': thing, 'module': 'Thing', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
             turned('create ' + thing, reply, 'created')
             made[-1]['laid'] = turned(f'{thing} drop', turn(thing, 'drop', rec(at=ref('porch')), f'genesis-{thing}-drop'))
-        # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
-        # garden existed, hears each thing the garden grows now, and ticks the tide every 60 clock minutes.
-        wake = 'wake/' + opener
-        next(m for m in made if m['object'] == 'tide')['wake'] = [
-            turned('wake ' + method, turn(wake, method, argument, 'genesis-' + method))
-            for method, argument in (('arrived', rec()),
-                                     ('schedule', rec(at=nat(0), every=nat(60), action={'tag': 'variant', 'label': 'call', 'payload': rec(card=lab('tide'), method=lab('tick'))})))]
+        # The world moves when nobody posts (docs/OFFERING.md §4): the opener's first tick starts the tide, which
+        # ticks itself every hour after; the weather's rule on it rains once a clock day.
+        next(m for m in made if m['object'] == 'tide')['tick'] = turned('tide tick', turn('tide', 'tick', rec(), 'genesis-tide-tick'))
         next(m for m in made if m['object'] == 'library')['pages'] = [
             turned('library shelve ' + name, turn('library', 'shelve', rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),
                                                                       body=lab(pages[name])), 'genesis-shelve-' + name))

@@ -2,28 +2,15 @@ edition ObjectiveBend 1
 import ./List.obend as Lists
 # The interpretation policy's state, as data: what a card with a policy views. It lives apart from
 # world/objects/Policy.obend because a module that declares a law cannot be imported.
-record Term:
-  word: String
-  meaning: String
 record Example:
   utterance: String
   spell: String
-# A macro the owner taught: an utterance matching `pattern` (literal words; a `{hole}`
-# captures a run of one or more words) is the spell `expansion` (`<card> <action>` and
-# ` / field: value` pieces) with each `{hole}` filled, dispatched with no model call.
-record Macro:
-  name: String
-  pattern: String
-  expansion: String
-# model: the model the host asks. confirmFor: the actions an interpreted proposal waits for
-# the speaker's yes before (Card.confirms); every other action runs at once and its receipt is
-# the answer.
+# model: the model the host asks. examples: what is said, and the spell it means, in every model
+# call. confirmFor: the actions an interpreted proposal waits for the speaker's yes before
+# (Card.confirms); every other action runs at once and its receipt is the answer.
 record State:
   owner: String
   ownerHandle: String
   model: String
-  system: String
-  lexicon: Lists.List<Term>
   examples: Lists.List<Example>
-  macros: Lists.List<Macro>
   confirmFor: Lists.List<String>

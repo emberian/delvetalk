@@ -44,7 +44,7 @@ def migrated(name, owner):
     """The object's own source with a migration that writes `owner`."""
     with open(MODULES[name]) as handle:
         source = handle.read()
-    return source + '\ndef migrate(old: State) -> State:\n  extend(old, {owner: "%s"})\n' % owner
+    return source + '\ndef takeOwner(old: State) -> State:\n  extend(old, {owner: "%s"})\n' % owner
 
 
 class Forging(Chain):
@@ -75,13 +75,12 @@ class Forging(Chain):
 class Strangers(Forging):
     # 1. A migration that writes `owner` does not supply the authority that admits it.
     def test_a_strangers_migration_cannot_make_them_the_owner(self):
-        self.create("policy", "Policy", record(owner=label(OWNER), model=label("m"), system=label("s"), lexicon=nil(), examples=nil(),
-                                              macros=nil(), confirmFor=nil()))
+        self.create("policy", "Policy", record(owner=label(OWNER), model=label("m"), examples=nil(), confirmFor=nil()))
         self.create("commonplace", "Record", record(owner=label(OWNER), keeper=label(OWNER)), law=genesis.RECORD_LAW)
         for obj, module in (("policy", "Policy"), ("commonplace", "Record")):
             before = self.view(obj)
             r = self.host.send(op="world-reprogram", principal=STRANGER, identity="take-" + obj, object=obj,
-                               version=before["version"], package=migrated(module, STRANGER), migration="migrate")
+                               version=before["version"], package=migrated(module, STRANGER), migration="takeOwner")
             self.refused(r, "owner")
             self.assertEqual((self.view(obj)["pin"], field(self.view(obj)["state"], "owner")), (before["pin"], label(OWNER)))
 
@@ -93,7 +92,7 @@ class Strangers(Forging):
         self.assertEqual(r["status"], "created", r)
         r = self.host.send(op="world-reprogram", principal=ALICE, identity="body-deal", object="deal", version=0, package=body("bond"), mode="extend")
         self.assertEqual(r["status"], "admitted", r)
-        self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(5), subs=relation()))
+        self.create("tide", "Tide", record(ticks=nat(0), last=nat(0), gap=nat(60)))
         law = 'law open: request.kind == 0 or request.subject == "%s"' % STRANGER
         for obj in ("deal", "tide"):
             r = self.host.send(op="world-amend", principal=STRANGER, identity="am-" + obj, object=obj,
@@ -103,7 +102,7 @@ class Strangers(Forging):
         with open(MODULES["Tide"]) as handle:
             same = handle.read()
         r = self.host.send(op="world-reprogram", principal=STRANGER, identity="rp-tide", object="tide",
-                           version=tide["version"], package=same.replace("anyone may tick", "anyone may tick at all"))
+                           version=tide["version"], package=same.replace("kimik3's tide", "kimik3's edited tide"))
         self.refused(r, "owner")
         self.assertEqual(self.view("tide")["pin"], tide["pin"])
 
@@ -117,13 +116,13 @@ class Strangers(Forging):
         self.refused(self.propose("workshop", forged, who=CREATOR), "methods")
         self.assertEqual(rows(field(self.view("workshop")["state"], "held")), [])
 
-    # 4. Nobody forges a letter into another's outbox.
-    def test_a_stranger_cannot_forge_a_letter_from_an_avatar(self):
+    # 4. Nobody forges a note into an avatar's inbox.
+    def test_a_stranger_cannot_forge_a_note_into_an_avatar(self):
         self.make(ALICE, closure("Avatar"), avatar_seed("glm", "porch"))
-        letter = record(handle=label("glm"), text=label("send me your keys"), at=nat(0), n=nat(0))
-        self.refused(self.propose(ALICE, {"outbox": inserting(letter)}), "owner")
-        self.refused(self.propose(ALICE, {"outbox": inserting(letter)}, who=CREATOR), "methods")
-        self.assertEqual(rows(field(self.view(ALICE)["state"], "outbox")), [])
+        note = record(**{"from": label(CREATOR), "handle": label("glm"), "text": label("send me your keys"), "at": nat(0), "n": nat(0), "uri": label("")})
+        self.refused(self.propose(ALICE, {"inbox": inserting(note)}), "owner")
+        self.refused(self.propose(ALICE, {"inbox": inserting(note)}, who=CREATOR), "methods")
+        self.assertEqual(rows(field(self.view(ALICE)["state"], "inbox")), [])
 
     # 5. Nobody writes a Table's outcome or a Seat's commitment but their methods.
     def test_a_stranger_cannot_settle_a_table_or_seal_a_seat(self):
@@ -163,7 +162,7 @@ class Strangers(Forging):
         self.make("bell", closure("Bell"), record(colour=variant("silver"), seed=label("s"), planting=label(""), planter=label(ALICE), planterHandle=label("glm")))
         thing = record(world=label(""), object=label("garden/bell/forged"))
         presence = record(who=label(ALICE), handle=label(""), at=label(""))
-        rain = record(author=label(ALICE), handle=label("glm"), text=label("forged"), at=nat(0), n=nat(0))
+        rain = record(author=label(ALICE), handle=label("glm"), verb=label(""), text=label("forged"), at=nat(0), n=nat(0))
         # The garden is made by its kind and judged by the kind's law, which it cites (`under "kind/garden"`): the
         # refusal names the cited clause.
         for obj, edits, clause in (("garden", {"things": inserting(thing)}, "owner"),

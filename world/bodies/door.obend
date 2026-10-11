@@ -7,14 +7,14 @@ import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
+import ./Scenes.obend as Scenes
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Text.obend as Text
-import ./Scenes.obend as Scenes
 # The door's body, over RECORD (docs/METAPHYSICS.md §7.5; SEEDING §4, the flood's sluice): a
 # record whose knocks are its lines, each with who knocked, and whose one mark is `open`, made by
-# the first knock: anyone's, or a wake's call when a cistern passes its mark, so the card says who
-# opened it. A door opens once; knocks go on.
+# the first knock: anyone's, or a thing's call (a cistern's rule when it passes its mark), so the
+# card says who opened it. A door opens once; knocks go on. A lantern made by it places its rule here.
 type State = Super.State
 form knock:
 form write:
@@ -26,14 +26,10 @@ form door:
   to: text 1..128
 form undoor:
   label: text 1..32
-form example:
-  label: text 1..32
-  spell: text 1..280
-  comes: text 0..200
 def knock(state: State, context: Abi.Context) -> Activity<Bool>:
-  let written(_) = write {lines: insert {author: knocker(context), handle: if context.caller == "" then context.handle else "", text: if Super.marked(state, "open") then "knocked" else "knocked, and it opened", at: context.height, n: state.next}, next: add 1n}
+  let written(_) = write {lines: insert {author: knocker(context), handle: if context.caller == "" then context.handle else "", verb: "knock", text: if Super.marked(state, "open") then "knocked" else "knocked, and it opened", at: context.height, n: state.next}, next: add 1n}
   if Super.marked(state, "open") then false else Super.markWritten({name: "open", who: knocker(context), handle: if context.caller == "" then context.handle else "", at: context.height})
-# Who knocked: the object whose call it was (a wake's), else the principal.
+# Who knocked: the object whose call it was, else the principal.
 def knocker(context: Abi.Context) -> String:
   if context.caller == "" then context.principal else context.caller
 def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:
@@ -44,10 +40,8 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
   Super.door(state, {label: input.label, to: input.to}, context)
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
-def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity<Card.Replied>:
-  Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("knock lines door undoor example") else Text.words("knock lines")
+  if context.principal == state.owner then Text.words("knock lines door undoor") else Text.words("knock lines")
 def openedBy(state: State, context: Abi.Context) -> String:
   match Relations.lookup(state.marks, {name: "open"}):
     case some(m): "open, opened by {Card.shown(m.value.who, m.value.handle, context)}"

@@ -61,7 +61,7 @@ BELL_PROBE = PROBE_HEAD % "Bell" + """import ./Relation.obend as Relations
 def rains(n: Nat) -> Lists.List<O.Rain>:
   match n:
     case 0: Lists.List::<O.Rain>.nil()
-    case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", text: "a line of rain", at: 1n, n: previous}, tail: rains(previous)})
+    case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", verb: "", text: "a line of rain", at: 1n, n: previous}, tail: rains(previous)})
 def sample(rains: Lists.List<O.Rain>) -> O.State:
   {colour: O.Colour.silver({}), seed: "a bell for lost moths", rains: Relations.Relation.rows({items: rains}), rung: false, planting: "p", planter: "did:plc:glm", planterHandle: "", doors: Lists.List::<Card.Doorway>.nil()}
 def many(n: Nat) -> String:
@@ -77,11 +77,11 @@ def long(n: Nat) -> String:
 def longRains(n: Nat) -> Lists.List<O.Rain>:
   match n:
     case 0: Lists.List::<O.Rain>.nil()
-    case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", text: long(56n), at: 1n, n: previous}, tail: longRains(previous)})
+    case 1+previous: Lists.List::<O.Rain>.cons({head: {author: "author", handle: "", verb: "", text: long(56n), at: 1n, n: previous}, tail: longRains(previous)})
 def wide(n: Nat) -> String:
   Document.plain(O.render(sample(longRains(n)), Card.stranger()))
 def two(n: Nat) -> String:
-  Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", text: "first", at: 1n, n: 0n}), {author: "gemini", handle: "", text: "second", at: 2n, n: 1n})), Card.stranger()))
+  Document.plain(O.render(sample(Lists.append::<O.Rain>(Lists.append::<O.Rain>(Lists.List::<O.Rain>.nil(), {author: "kimik3", handle: "", verb: "", text: "first", at: 1n, n: 0n}), {author: "gemini", handle: "", verb: "", text: "second", at: 2n, n: 1n})), Card.stranger()))
 """
 
 POLICY_PROBE = PROBE_HEAD % "Policy" + """import ./Policies.obend as Policies
@@ -93,12 +93,8 @@ def examples(n: Nat) -> Lists.List<Policies.Example>:
   match n:
     case 0: Lists.List::<Policies.Example>.nil()
     case 1+previous: Lists.List::<Policies.Example>.cons({head: {utterance: long(40n), spell: long(40n)}, tail: examples(previous)})
-def macros(n: Nat) -> Lists.List<Policies.Macro>:
-  match n:
-    case 0: Lists.List::<Policies.Macro>.nil()
-    case 1+previous: Lists.List::<Policies.Macro>.cons({head: {name: "m", pattern: long(20n), expansion: long(40n)}, tail: macros(previous)})
 def full(n: Nat) -> String:
-  Document.plain(O.render({owner: "ember", ownerHandle: "", model: "m", system: "s", lexicon: Lists.List::<Policies.Term>.nil(), examples: examples(n), macros: macros(n), confirmFor: Lists.List::<String>.nil()}, extend(Card.stranger(), {principal: "ember"})))
+  Document.plain(O.render({owner: "ember", ownerHandle: "", model: "m", examples: examples(n), confirmFor: Lists.List::<String>.nil()}, extend(Card.stranger(), {principal: "ember"})))
 """
 
 
@@ -118,13 +114,13 @@ class Objects(unittest.TestCase):
         self.assertLess(len(text), 1400)
 
     def test_a_full_policy_card_fits_its_owner(self):
-        """Sixteen examples and sixteen macros under the owner's teaching text stay under 1,400
+        """Sixteen examples under the owner's head stay under 1,400
         characters (WORLD-REVIEW 2: the policy's card had no clip)."""
         reply = run_pure("Policy", "full", nat(16), probe=POLICY_PROBE, limits=BIG)
         self.assertEqual(reply["status"], "finished", reply)
         text = reply["value"]["value"]
         self.assertLess(len(text), 1400, text)
-        self.assertIn("Teach a phrase:", text)
+        self.assertIn("Owner: ember", text)
         self.assertRegex(text, r"… and \d+ more\n$")
 
 NEGATIVE_PRELUDE = """edition ObjectiveBend 1
@@ -191,7 +187,7 @@ CLIPPED_PROBE = BUDGET_HEAD + REPEAT + """def one(n: Nat) -> String:
 BELL_BUDGET_PROBE = BUDGET_HEAD + "import ./Bell.obend as O\n" + REPEAT + """def rains(n: Nat) -> Lists.List<O.Rain>:
   match n:
     case 0: Lists.List::<O.Rain>.nil()
-    case 1+p: Lists.List::<O.Rain>.cons({head: {author: "did:plc:glm", handle: "", text: rep(280n, "r"), at: 1n, n: p}, tail: rains(p)})
+    case 1+p: Lists.List::<O.Rain>.cons({head: {author: "did:plc:glm", handle: "", verb: "", text: rep(280n, "r"), at: 1n, n: p}, tail: rains(p)})
 def doors(n: Nat) -> Card.Doorways:
   match n:
     case 0: Card.Doorways.nil()

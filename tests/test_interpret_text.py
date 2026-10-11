@@ -1,18 +1,16 @@
-"""hob's one answer to prose handed on from the garden: a spell runs, `none` is silence, `ask` one
-question over the plant spell, `card` the garden card; there is no second attempt.
+"""hob's one answer to prose at the commonplace: a spell runs, `none` is silence, `ask` one question
+over the doors; there is no second attempt.
 
 Evidence for FOUNDATION §6 (layer: objects).
 
-The garden reads no words (docs/METAPHYSICS.md §7.2): prose sent to it is handed on to the commonplace,
-whose hob reads it against the garden's forms (docs/FLEX.md §2). The host resumes an interpretation whose
-reply carries no `{method, argument}` json by fitting the words: a spell that fits is the host's
-`proposal`; `ask: <question>` is `unclear {needs: [question]}` (so is a spell that does not fit,
-its reason the need), `card` is `replied {text: "card"}`, and `none` is `unclear: not addressed`.
-Card.hobNeeds / Card.hobSaid classify these: an ask, or none (not addressed, blank, or a
-`model:` need, a model that could not be asked); the text "card" is the card, any other text none.
+The commonplace reads prose with hob against the doors' forms (docs/FLEX.md §2). The host resumes an
+interpretation whose reply carries no `{method, argument}` json by fitting the words: a spell that
+fits is the host's `proposal`; `ask: <question>` is `unclear {needs: [question]}` (so is a spell that
+does not fit, its reason the need), and `none` is `unclear: not addressed`. Card.hobNeeds classifies
+these: an ask, or none (not addressed, blank, or a `model:` need, a model that could not be asked).
 The commonplace answers `ask` with hob's fixed line naming only the offered fields the need names
-(`hob: still needs colour; the spell is below.`, or `hob: not a spell as said; ...`: never the
-model's words) and the plant spell with blanks, `card` with the garden card, `none` with silence, still one attempt.
+(`hob: no door takes that as said; still needs colour. The doors:`, never the model's words) over the
+doors, and `none` with silence, still one attempt.
 
 Refuted by: a spell in the model's text not planting, `none` offering a card, an `ask` asked
 again or answered without its question, or a second interpretation being requested.
@@ -39,14 +37,6 @@ def need(text: String) -> String:
   match Card.hobNeeds(Form.Names.cons({head: text, tail: Form.Names.nil()}), forms()):
     case ask(a): textConcat("ask ", Text.joined(a.needs))
     case none(_): "none"
-    case card(_): "card"
-    case said(_): "said"
-def said(text: String) -> String:
-  match Card.hobSaid(text):
-    case ask(_): "ask"
-    case none(_): "none"
-    case card(_): "card"
-    case said(_): "said"
 """
 
 
@@ -64,18 +54,10 @@ class Classified(unittest.TestCase):
         self.assertEqual(self.back("need", ""), "none")
         self.assertEqual(self.back("need", "model: timed out"), "none")
 
-    def test_the_text_card_is_the_card_and_any_other_text_is_none(self):
-        self.assertEqual(self.back("said", "card"), "card")
-        self.assertEqual(self.back("said", "  card \n"), "card")
-        self.assertEqual(self.back("said", "I think they are just chatting."), "none")
-        self.assertEqual(self.back("said", ""), "none")
-
-
 class Resumed(test_chain.Chain):
     policy = test_policy.PolicyObject.policy
     garden = test_policy.PolicyObject.garden
     say = test_policy.PolicyObject.say
-    handed = test_policy.PolicyObject.handed
     things = test_policy.PolicyObject.things
 
     def text(self, raw):
@@ -89,19 +71,7 @@ class Resumed(test_chain.Chain):
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return item, resumed
 
-    def test_hobs_say_is_its_line_beside_the_card_the_words_were_for(self):
-        """hob's `say:` is `said` (the host's): its line stands above the garden's card, never inside it. Prose with
-        no prefix is silence (the second playtest's stop, D2)."""
-        self.policy()
-        self.garden()
-        self.say("What makes you think anyone needs a portal?")
-        _, said = self.settle("say: A portal here is a door; the garden has none of its own.")
-        [card] = [o["text"] for o in said["receipt"]["offers"]]
-        self.assertEqual((said["status"], said["result"]["label"]), ("admitted", "usage"), said)
-        self.assertTrue(card.startswith("hob: A portal here is a door; the garden has none of its own.\n✾ THE NIGHT GARDEN\n"), card)
-        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
-
-    def test_an_ask_is_one_attempt_whose_question_stands_over_the_plant_spell(self):
+    def test_an_ask_is_one_attempt_whose_question_stands_over_the_doors(self):
         self.policy()
         self.garden()
         self.say("plant something pretty")
@@ -111,9 +81,7 @@ class Resumed(test_chain.Chain):
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         self.assertEqual(first["policy"]["model"], "claude-haiku", first)
         [card] = [o["text"] for o in asked["receipt"]["offers"]]
-        self.assertTrue(card.startswith("hob: still needs colour; the spell is below.\n"), card)
-        self.assertIn("delvetalk garden plant\n", card)
-        self.assertIn("colour: <amber, violet, silver>", card)
+        self.assertEqual(card, "hob: no door takes that as said; still needs colour. The doors:\nGARDEN\n")
         self.assertEqual(self.things(), [])  # and nothing is made
 
     def test_a_spell_that_does_not_fit_is_hobs_question_with_the_reason(self):
@@ -146,8 +114,8 @@ class Resumed(test_chain.Chain):
 
     def test_the_policys_owner_makes_plant_ask_first(self):
         self.policy()
-        taught = self.turn("policy", "receive", record(text=label("delvetalk policy confirm / action: plant / ask: yes"), post=label("")), principal="ember")
-        self.assertEqual(taught["result"]["label"], "taught", taught)
+        changed = self.turn("policy", "receive", record(text=label("delvetalk policy confirm / action: plant / ask: yes"), post=label("")), principal="ember")
+        self.assertEqual(changed["result"]["label"], "changed", changed)
         self.garden()
         self.say("Could we plant a silver fern that remembers?")
         _, asked = self.settle(SPELL)

@@ -8,17 +8,14 @@ card as the reader in the context sees it. A member sees more than a stranger; t
 "(yours)". The card a non-acting reply gets is the reader's, so these drive real world-turns
 with an empty reply by different principals, and through world-card, which renders for its reader.
 
-Refuted by: a stranger's card showing an Env's event text, a Wake's triggers or an Avatar's notes;
+Refuted by: a stranger's card showing an Avatar's notes;
 the planter's card lacking "(yours)"; a party's card lacking its countersign spell.
 """
 import unittest
 
 from tests import test_chain
 from tests.test_rooms import avatar_seed
-from tests.wire import label, nat, record, relation
-from tests.bend import closure
-from tests.test_wakes import event
-from tests.wire import label, nat, record, relation
+from tests.wire import label, record
 from tests.bend import closure
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
@@ -58,29 +55,14 @@ class Views(test_chain.Chain):
         self.assertIn("(yours)", self.world_card("bell", GLM))
         self.assertNotIn("(yours)", self.world_card("bell", KIM))
 
-    def test_an_env_shows_its_events_to_its_owner_only(self):
-        r = self.host.send(op="world-create", principal=GLM, identity="mk-env", object="env/" + GLM, modules=closure("Env"),
-                           entry="initial", seed=record(owner=label(GLM), buffer=relation(), seen=nat(0)))
-        self.assertEqual(r["status"], "created", r)
-        self.assertEqual(self.turn("env/" + GLM, "publish", record(event=event(text="a secret mention")), principal=GLM)["status"], "admitted")
-        mine, theirs = self.card("env/" + GLM, GLM), self.card("env/" + GLM, KIM)
-        self.assertNotIn("Reply with a spell", theirs)  # a stranger is offered neither observe nor seen: no usage
-        self.assertIn("a secret mention", mine)
-        self.assertIn("ENV of glm (yours): 1 new since #0.\n  delvetalk env observe\n» what addressed you since you looked\n  delvetalk env seen / at: <a number>\n» nothing before it is new again\n", mine)
-        self.assertNotIn("a secret mention", theirs)
-        self.assertIn("ENV of glm: 1 new since #0.\n", theirs)
-        self.assertNotIn("a secret mention", self.world_card("env/" + GLM))
-        # observe offers the reader's card too: a stranger looking learns the count only.
-        look = self.turn("env/" + GLM, "observe", principal=KIM)
-        self.assertNotIn("a secret mention", look["offers"][0]["text"])
-
     def test_an_avatars_notes_are_its_principals(self):
         self.make(GLM, closure("Avatar"), avatar_seed("glm", "porch"))
         self.assertEqual(self.turn(GLM, "note", record(text=label("meet at the gate")), principal=KIM)["status"], "admitted")
         mine, theirs = self.card(GLM, GLM), self.card(GLM, KIM)
+        self.assertIn("1 new since entry 0:\n", mine)
         self.assertIn("kimik3: meet at the gate\n", mine)
         self.assertNotIn("meet at the gate", theirs)
-        self.assertIn("glm's avatar, in porch.\n0 sent; follows 0.\n1 note\n", theirs)
+        self.assertIn("glm's avatar, in porch.\n1 note\n", theirs)
 
 
 if __name__ == "__main__":

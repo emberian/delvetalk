@@ -9,8 +9,8 @@ import ./Rows.obend as Rows
 import ./Text.obend as Text
 # The cistern's body, over RECORD (gemini's "a stone cistern for refused proposals"; SEEDING §4,
 # the flood): what the town pours in is a line, the refusal it met; the level is how many lines
-# have been poured, which only rises (`next` counts up), so a watch on `next` passing a mark is
-# the flood.
+# have been poured, which only rises (`next` counts up), so a rule on `next` passing a mark is
+# the flood (`when: new.next >= 41 and old.next <= 40 then: delvetalk sluice knock`).
 type State = Super.State
 form pour:
   text: text 1..280
@@ -21,24 +21,16 @@ form door:
   to: text 1..128
 form undoor:
   label: text 1..32
-form example:
-  label: text 1..32
-  spell: text 1..280
-  comes: text 0..200
 def pour(state: State, input: PourInput, context: Abi.Context) -> Activity<Nat>:
-  Super.write(state, {text: input.text}, context)
+  Super.inscribe(state, "pour", input.text, context)
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.lines(state, {from: input.from}, context)
 def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.door(state, {label: input.label, to: input.to}, context)
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
-def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity<Card.Replied>:
-  Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
-def methods() -> Lists.List<String>:
-  Text.words("write")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("pour lines door undoor example") else Text.words("pour lines")
+  if context.principal == state.owner then Text.words("pour lines door undoor") else Text.words("pour lines")
 def level(state: State) -> Nat:
   state.next - 1n
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:

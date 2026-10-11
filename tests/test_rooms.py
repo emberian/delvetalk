@@ -264,8 +264,8 @@ class Floor(Chain):
         self.assertLess(len(text), 1400)
 
     def test_an_avatar_with_a_full_inbox_describes_under_the_default_budget(self):
-        """The inbox keeps the newest 64 notes (the mailbox's bound): 65 notes leave 64, and the
-        card shows eight of them and counts the rest."""
+        """The inbox keeps the newest 64 notes: 65 notes leave 64, all new, and the card shows
+        eight of them and counts the rest."""
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
         for i in range(64):
             note = self.turn("glm", "note", record(text=label("note %03d" % i)), principal="kimik3")
@@ -275,6 +275,7 @@ class Floor(Chain):
         reply = self.turn("glm", "receive", record(text=label(""), post=label("")), principal="glm")
         self.assertEqual(reply["status"], "admitted", reply)
         text = reply["offers"][0]["text"]
+        self.assertIn("64 new since entry 0:\n", text)
         self.assertEqual(text.count("kimik3: note "), 7)  # and "one too many", the newest
         self.assertLess(text.index("one too many"), text.index("kimik3: note 063"))  # newest first
         self.assertNotIn("note 000", text)
