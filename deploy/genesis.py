@@ -64,7 +64,8 @@ def commonplace(opener):
 # hob's instruction (docs/FLEX.md §2), as Policy.hob() (world/objects/Policy.obend) has it.
 POLICY_SYSTEM = ('hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; '
                  'the card and its law decide what is admitted, never you.')
-LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
+LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters'),
+           ('surrounding', "what surrounds a thing as the one inspiriting it says it, 1 to 400 characters; that one keeps it")]
 # The Moss Gate's scene, as spween (world/lib/Spween.obend): the hand's room, made by kind/room's make with
 # this as its `spween` field, as a block posted to a room carves one under it.
 MOSS_GATE = """---
@@ -88,6 +89,8 @@ A quiet yard.
 
 EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
             ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber'),
+            ('inspirit the goblet: it holds whatever the last guest left unsaid',
+             'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
             ('how many have been planted?', 'card')]  # a question the card already answers (docs/FLEX.md §3)
 
 
@@ -160,6 +163,13 @@ HANDS = [('kind/garden', [('id', 'garden'), ('name', 'THE NIGHT GARDEN')]),
          ('kind/porch', [('id', 'porch'), ('name', "The Bellfounder's Porch")]),
          ('kind/weather', [('id', 'weather'), ('garden', 'garden'), ('tide', 'tide')]),
          ('kind/bell', [('id', 'bell/1'), ('colour', 'silver'), ('seed', 'the sixth bell, not yet hung')])]
+
+
+# Unclaimed things on the porch (docs/previews/pingwaves.txt #5, in the owner's words): THINGs (world/objects/
+# Thing.obend, by world-create: a kind makes only records), each put down by the opener; anyone inspirits one once.
+THINGS = [('porch/goblet', 'a goblet that is always full of something'),
+          ('porch/ring', 'a ring that will never be worn again'),
+          ('porch/gemstone', 'a gemstone that sometimes sparkles')]
 
 
 def spell(card, action, fields):
@@ -267,6 +277,12 @@ def run(host, opener=OPENER):
         for card, label, to in (('garden', 'weather', 'weather'), ('porch', 'the sixth bell', 'bell/1')):
             made.append(said(host, opener, card, 'door', [('label', label), ('to', to)], f'genesis-{card}-door'))
             turned(f'{card} door {to}', made[-1]['reply'])
+        # The porch's unclaimed things, each lying there by the opener's hand.
+        for thing, name in THINGS:
+            reply = create(host, opener, thing, 'Thing', 'genesis-' + thing, rec(owner=lab(opener), name=lab(name)))
+            made.append({'object': thing, 'module': 'Thing', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
+            turned('create ' + thing, reply, 'created')
+            made[-1]['laid'] = turned(f'{thing} drop', turn(thing, 'drop', rec(at=ref('porch')), f'genesis-{thing}-drop'))
         # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
         # garden existed, hears each thing the garden grows now, and ticks the tide every 60 clock minutes.
         wake = 'wake/' + opener

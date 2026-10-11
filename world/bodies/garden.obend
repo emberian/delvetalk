@@ -73,8 +73,6 @@ def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity
   Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner then Text.words("plant dig lines door undoor example") else Text.words("plant dig lines")
-def blurb() -> Card.Door:
-  {word: "garden", blurb: "Plant a bell; rain on another's. What grows here has who helped it."}
 # Derived views (`viewDerived {object, view}`): what grows here, by kind, one row a kind.
 def views() -> Lists.List<String>:
   Text.words("byKind")

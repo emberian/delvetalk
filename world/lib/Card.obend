@@ -12,12 +12,9 @@ import ./World.obend as World
 # The card protocol. Every object has a pure render(state, context) -> Document (its card as
 # the reader in the context sees it: a member may see more than a stranger; the host's
 # `card {object}` passes the reader's context), forms() (the actions its card offers, as
-# data; a form's card is "" there, the object's id in a spell), blurb() (its word) and receive(state, input: Reply, context). The host reads a reply's spell and
+# data; a form's card is "" there, the object's id in a spell) and receive(state, input: Reply, context). The host reads a reply's spell and
 # runs the method it names, answers `?` and `set` (through the object's `lenses()` and its
 # `set` method); what runs no method reaches receive, which `answer` handles by default.
-record Door:
-  word: String
-  blurb: String
 type Forms = Lists.List<Form.Form>
 # A refusal names its clause (an object's `Why` arm, or the protocol's own: notOwner) and gives
 # its reading; a card shows it as `refused <clause>: <reading>`.

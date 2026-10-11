@@ -60,6 +60,38 @@ class Kinds(Chain):
                 self.assertEqual([f["value"]["value"] for f in r["result"]["payload"]["fields"]], [clause, reading], r)
         self.assertEqual(field(self.state("kind/bell"), "count")["value"], "0")
 
+    def test_a_kind_from_a_name_and_what_it_is_of_alone(self):
+        """PLAYTEST-2's first move: `kinds make / name / of`, the rest omitted (optional text fields), makes a kind
+        whose make then makes a thing."""
+        said = lambda who, obj, line: self.turn(obj, "receive", record(text=label(line), post=label("at://x/" + line[-8:])), principal=who)
+        kind = said(KIM, "kinds", "delvetalk kinds make / name: lamp / of: record")
+        self.assertEqual((kind["status"], kind["result"]["label"]), ("admitted", "made"), kind)
+        lamp = said(GLM, "kind/lamp", "delvetalk kind/lamp make")
+        self.assertEqual((lamp["status"], lamp["result"]["label"]), ("admitted", "made"), lamp)
+        self.assertIn("Made, at lamp/1", text(lamp))
+
+    def test_a_kind_is_shaped_once(self):
+        """The live redeploy: `kinds shape` a second time laid a layer over the package's module, which a shaped
+        kind no longer runs, and the compile refused it. A shaped kind, or one `kinds` made, is refused by name."""
+        for target in ("kinds", "kind/key"):
+            if target == "kind/key":
+                self.kind("key", "record", "seed: text 1..80", law=genesis.RECORD_LAW)
+            again = self.turn(target, "shape", record(object=label(target)))
+            self.assertEqual((again["status"], again["result"]["label"]), ("admitted", "refused"), again)
+            self.assertTrue(text(again).startswith("refused shaped: Already shaped; its make stands\n"), text(again))
+
+    def test_making_a_kind_and_its_thing_journals_no_refused_delivery(self):
+        """A made kind has no `made`; only a made record with a body is sent one (the host lane's finding: every
+        kind creation journaled a delivered noMethod)."""
+        def refusals(reply):
+            got = reply.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
+            return [d for d in got if (d.get("receipt", d).get("outcome") or {}).get("class") not in (None, "", "admitted")]
+        made = self.turn("kinds", "make", record(name=label("cairn"), of=label("record"), form=label(""), head=label("A CAIRN"), law=label(genesis.RECORD_LAW),
+                                                body=label(body("cistern"))), principal=KIM)
+        self.assertEqual((made["status"], refusals(made)), ("admitted", []), made)
+        thing = self.turn("kind/cairn", "make", record(id=label("")), principal=GLM)
+        self.assertEqual((thing["status"], thing["result"]["label"], refusals(thing)), ("admitted", "made", []), thing)
+
     def test_a_kind_of_record_makes_a_record_under_its_law_with_its_head(self):
         self.kind("key", "record", "seed: text 1..80", head="THE KEY, begun by {maker}: {seed}", law=genesis.RECORD_LAW)
         made = self.turn("kind/key", "make", record(seed=label("three hands deep"), id=label("")), principal=KIM)

@@ -104,7 +104,7 @@ class Hub(test_chain.Chain):
         self.assertEqual(second["status"], "admitted", second)
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="garden/cistern/3")["status"], "viewed")
         usage = self.turn("garden", "receive", record(text=label("delvetalk garden ?"), post=label("")), principal=GLM)
-        self.assertIn("delvetalk garden dig\nname: <text, 0 to 120 characters>\n", usage["text"])
+        self.assertIn("delvetalk garden dig\nname: <optional text, up to 120 characters>\n", usage["text"])
 
     def interpret(self, raw, first="plant"):
         [pending] = self.host.send(op="world-interpretations")["pending"]

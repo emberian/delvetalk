@@ -182,8 +182,8 @@ class Strangers(Forging):
         presence = record(who=label(ALICE), at=label(""))
         rain = record(author=label(ALICE), handle=label("glm"), text=label("forged"), at=nat(0), n=nat(0))
         # The garden is made by its kind and judged by the kind's law, which it cites (`under "kind/garden"`): the
-        # refusal names the citing clause.
-        for obj, edits, clause in (("garden", {"things": inserting(thing)}, "kind"),
+        # refusal names the cited clause.
+        for obj, edits, clause in (("garden", {"things": inserting(thing)}, "owner"),
                                    ("porch", {"presence": inserting(presence)}, "owner"), ("bell", {"rains": inserting(rain)}, "owner")):
             self.refused(self.propose(obj, edits), clause)
 

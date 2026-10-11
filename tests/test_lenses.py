@@ -123,7 +123,7 @@ class OwnedLenses(test_chain.Chain):
         set_ = {"tag": "variant", "label": "set", "payload": record(value=label("mine now"))}
         for obj, kind, fields in (("stone", "thing", ["name", "description", "holder", "location"]),):
             r = self.say(obj, "delvetalk %s set\nname: renamed" % obj, "glm")
-            self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only the %s's owner changes it; that is ember" % kind))
+            self.assertEqual(r["result"]["payload"]["fields"][1]["value"], label("Only ember changes it: its keeper, or its owner while it is unclaimed"))
             self.assertEqual(self.say(obj, "delvetalk %s set\ndescription: moths" % obj, "ember")["result"]["label"], "done")
             self.assertEqual(self.say(obj, "delvetalk %s set\nname: renamed" % obj, "ember")["result"]["label"], "done")
             self.assertEqual((self.field(obj, "name"), self.field(obj, "description")), ("renamed", "moths"))

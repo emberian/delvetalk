@@ -94,8 +94,6 @@ def methods() -> Lists.List<String>:
   Text.words("strike write")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner then Text.words("rain tend ring strike lines door undoor example") else Text.words("rain tend ring strike lines")
-def blurb() -> Card.Door:
-  {word: "bell", blurb: "A bell: rain on it; the seventh rain rings it."}
 # A rain on the card: who, and what (the record's number is the order, not shown).
 def entry(state: State, context: Abi.Context, line: Rows.Line) -> Document.Document:
   Document.text("{Card.shown(line.author, line.handle, context)}{Card.mine(line.author, context)}: {line.text}\n")

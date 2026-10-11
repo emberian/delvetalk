@@ -339,7 +339,7 @@ class Plan(unittest.TestCase):
         p = hand.plan(Path(__file__).resolve().parent.parent / 'docs' / 'PLAYTEST-2.md')
         self.assertEqual(len(p['seeds']), 4)
         self.assertTrue(all(s.startswith('delvetalk ') for s in p['seeds']))
-        self.assertEqual(p['seeds'][0], "delvetalk kind/room make / name: The Bellfounder's Porch / spween: / id:")
+        self.assertEqual(p['seeds'][0], "delvetalk kind/room make / name: The Bellfounder's Porch")
         self.assertEqual([r['minute'] for r in p['invitations']], [0, 15, 30, 45, 60, 75, 90, 105])
         self.assertTrue(all(r['spells'] and r['answered'] for r in p['invitations']))
         zulip = hand.invitation_text(p['invitations'][0], 'zulip')
@@ -392,7 +392,7 @@ class Speak(unittest.TestCase):
         self.assertIn('Made, at room/1', came['text'])
         _, d = self.hand.draft(came['drafted'])
         self.assertEqual((d['topic'], d['replyTo'], d['object'], d['posted'], d['hand']), ('welcome', None, 'room/1', False, True))
-        self.assertTrue(d['text'].startswith("    delvetalk kind/room make / name: The Bellfounder's Porch / spween: / id:\n\n"), d['text'])
+        self.assertTrue(d['text'].startswith("    delvetalk kind/room make / name: The Bellfounder's Porch\n\n"), d['text'])
         entry = self.town.send(op='world-receipt', principal=self.hand.owner, identity=self.hand.seed_intent(spell))
         self.assertEqual(entry['receipt']['identity']['principal'], self.hand.owner)
         again = self.hand.cast(spell, intent=self.hand.seed_intent(spell))  # the same intent: the first receipt, the first draft

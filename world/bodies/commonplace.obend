@@ -82,8 +82,6 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("since write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor example") else Text.words("")))
 def methods() -> Lists.List<String>:
   Text.words("due")
-def blurb() -> Card.Door:
-  {word: "commonplace", blurb: "What changed in the town, and its doors."}
 def refusing(clause: String, reading: String, greet: Bool, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   toldThen(Document.text("{Menu.title()}\n\nrefused {clause}: {reading}\n"), Card.Replied.refused({clause: clause, reading: reading}), greet, context, state)
 # The hub's reply (a spell naming another card never reaches here: the host runs it there). A
@@ -136,9 +134,10 @@ def fieldsOrProse(input: Card.Heard, context: Abi.Context, state: State) -> Acti
   match input.fields:
     case cons(c): learning(input, Next.fielded({first: c.head}), Lists.List.nil(), doors(state), context, state)
     case nil(_): unaddressed(input, context, state)
-# What is learned of the doors: each door's offered forms, and those of the first card under it
-# (a garden's bell), which field lines and the pruned menu read; hob at the root is offered the
-# doors' own (`Mentions.doorForms`), and for a reply a card handed on, that card's.
+# What is learned of the doors: each door's offered forms, and those of the first three cards under
+# it (a garden's bells, the porch's unclaimed things), which field lines and the pruned menu read;
+# hob at the root is offered the doors' own (`Mentions.doorForms`), and for a reply a card handed
+# on, that card's.
 def learning(input: Card.Heard, next: Next, learned: Learning, doors: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match doors:
     case nil(_): learnedAll(input, next, learned, context, state)
@@ -149,16 +148,16 @@ def doorLearned(input: Card.Heard, next: Next, learned: Learning, door: String, 
     case _: childListed(input, next, learned, door, rest, context, state)
 def childListed(input: Card.Heard, next: Next, learned: Learning, door: String, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.objects({prefix: "{door}/", after: ""}):
-    case listed(l): childLearned(input, next, learned, door, Lists.at(l.ids, 0n), rest, context, state)
+    case listed(l): childLearned(input, next, learned, door, Lists.take(l.ids, 3n), rest, context, state)
     case refused(_): learning(input, next, learned, rest, context, state)
-def childLearned(input: Card.Heard, next: Next, learned: Learning, door: String, child: Lists.Maybe<String>, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
-  match child:
-    case none(_): learning(input, next, learned, rest, context, state)
-    case some(c): childInspected(input, next, learned, door, c.value, rest, context, state)
-def childInspected(input: Card.Heard, next: Next, learned: Learning, door: String, child: String, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
+def childLearned(input: Card.Heard, next: Next, learned: Learning, door: String, children: Lists.List<String>, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
+  match children:
+    case nil(_): learning(input, next, learned, rest, context, state)
+    case cons(c): childInspected(input, next, learned, door, c.head, c.tail, rest, context, state)
+def childInspected(input: Card.Heard, next: Next, learned: Learning, door: String, child: String, children: Lists.List<String>, rest: Lists.List<Door>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.inspect({object: {world: context.world, object: child}, source: false}):
-    case inspected(i): learning(input, next, Lists.concat(learned, Mentions.learnedOf(child, door, true, Card.offeredOnly(i.methods, i.offered))), rest, context, state)
-    case _: learning(input, next, learned, rest, context, state)
+    case inspected(i): childLearned(input, next, Lists.concat(learned, Mentions.learnedOf(child, door, true, Card.offeredOnly(i.methods, i.offered))), door, children, rest, context, state)
+    case _: childLearned(input, next, learned, door, children, rest, context, state)
 def learnedAll(input: Card.Heard, next: Next, learned: Learning, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match next:
     case fielded(f): fielded(input, f.first, Lists.find(learned, fn(l: Learned) -> Bool: l.child == false && (l.form.action == f.first.name || Card.hasField(l.form, f.first.name))), context, state)

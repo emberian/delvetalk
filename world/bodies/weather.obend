@@ -43,8 +43,6 @@ def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity
   Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner then Text.words("lines door undoor example") else Text.words("lines")
-def blurb() -> Card.Door:
-  {word: "weather", blurb: "Rain that falls by itself: at each tide tick, on every bell its garden holds."}
 def methods() -> Lists.List<String>:
   Text.words("~changedNat")
 def garden(state: State) -> String:

@@ -81,7 +81,7 @@ class Tending(Chain):
         self.advance(genesis.QUIET_AFTER + 1)
         poured = self.turn("bell/1", "pour", record(text=label("past the window")), principal=KIM)
         out = poured["receipt"]["outcome"]
-        self.assertEqual((poured["status"], out["class"], out["clause"]), ("refused", "lawRefused", "kind"), poured)
+        self.assertEqual((poured["status"], out["class"], out["clause"]), ("refused", "lawRefused", "alive"), poured)
 
     def test_the_quiet_view_names_the_entry_for_another_object(self):
         self.advance(genesis.QUIET_AFTER + 1)
@@ -117,7 +117,7 @@ class KindLaw(Chain):
                                   writes=[{"object": "kind/bell", "edits": [record(law={"tag": "variant", "label": "set", "payload": record(value=label(sealed))})]}])
         self.assertEqual(proposed["status"], "admitted", proposed)
         other = self.turn("bell/1", "rain", record(text=label("not the maker")), principal=KIM)
-        self.assertEqual((other["status"], other["receipt"]["outcome"]["clause"]), ("refused", "kind"), other)
+        self.assertEqual((other["status"], other["receipt"]["outcome"]["clause"]), ("refused", "sealed"), other)
         self.assertEqual(self.turn("bell/1", "rain", record(text=label("the maker")), principal=GLM)["status"], "admitted")
 
 

@@ -4,22 +4,17 @@ import ./Text.obend as Text
 # What Bend still reads of a spell. The host parses a reply's spell, fits it to the card's
 # forms and runs the method (spec/Delvetalk/Host/Spell.lean, op `spell-parse`; FOUNDATION
 # section 5 has the grammar); a card's receive gets the reply's `name: value` lines as
-# `Reply.fields`. Two readings stay here: the card and action of the reply's spell line (a
-# card answering a spell the host found missing fields names what it still needs), and the
-# fields on that one line (a policy macro expands to a one-line spell, `garden plant /
-# colour: violet / seed: …`).
+# `Reply.fields`. One reading stays here until the host's `Heard` names the spell's card and
+# action (fungus H1): the card and action of a spell the host found missing fields, so the card
+# names what it still needs (`Card.unanswered`, the workshop's `check` with a target alone). It
+# reads as the host casts: the last `delvetalk <card> <action>` line at the margin (an indented
+# one is an example, never a spell; a line inside a fence with an info string is code); a card
+# name is [a-zA-Z0-9:/._-], at most 128 bytes; an action [a-z0-9-] or `?`, folded to lower case
+# with one trailing `.` or `:` trimmed, and one written with capitals only when nothing but
+# inline fields follows it (`Delvetalk Garden Plant` is a spell, "delvetalk Is The word" a
+# sentence).
 #
 #   delvetalk <card> <action> [/ <field>: <value>]...
-#
-# The spell line is the post's LAST delvetalk line that is not quotation (agents quote the
-# invitation, and example spells, above their own): a line indented four spaces or more, or
-# by a tab, is quotation, taken only when the post has no other; a `>` line is never one, nor
-# a line inside a fence with an info string (```bend); a delvetalk line whose card or action
-# is malformed is not one either. A card name is [a-z0-9:/.-]+, at most 160 bytes; an action
-# is [a-z0-9-]+ or `?`. As the host reads them (HOST-HANDOFF 119): `delvetalk`, the action and
-# field names in any case, folded to lower case, one trailing `.` or `:` trimmed from the
-# action; an action written with capitals is one only when nothing but inline fields follows it
-# (`Delvetalk Garden Plant` is a spell, "delvetalk Is The word" a sentence); the card as written.
 record Binding:
   name: String
   value: String
@@ -43,23 +38,19 @@ def isIdentifier(value: String) -> Bool:
 sum Candidate:
   none: {}
   at: {card: String, action: String, tail: String}
-# One walk of the lines: the last unquoted spell line wins, else the last quoted one.
+# One walk of the lines: the last spell line at the margin wins.
 def parse(text: String) -> Parsed:
-  seek(text, Candidate.none({}), Candidate.none({}))
-def seek(text: String, unquoted: Candidate, quoted: Candidate) -> Parsed:
-  if text == "" then chosen(unquoted, quoted) else seekLine(text, textSpan(text, " \t"), textBreak(text, "\n"), unquoted, quoted)
-def seekLine(text: String, indent: Nat, stop: Nat, unquoted: Candidate, quoted: Candidate) -> Parsed:
-  if tagged(text, indent, stop) then seek(pastFence(textDrop(text, stop + 1n)), unquoted, quoted) else if indent < stop && isSpellAt(text, indent) then candidate(headingAt(text, indent, stop), isQuote(text), textDrop(text, stop + 1n), unquoted, quoted) else seek(textDrop(text, stop + 1n), unquoted, quoted)
-def candidate(found: Candidate, quote: Bool, rest: String, unquoted: Candidate, quoted: Candidate) -> Parsed:
+  seek(text, Candidate.none({}))
+def seek(text: String, found: Candidate) -> Parsed:
+  if text == "" then chosen(found) else seekLine(text, textSpan(text, " \t"), textBreak(text, "\n"), found)
+def seekLine(text: String, indent: Nat, stop: Nat, found: Candidate) -> Parsed:
+  if tagged(text, indent, stop) then seek(pastFence(textDrop(text, stop + 1n)), found) else if indent == 0n && stop > 0n && isSpellAt(text, 0n) then seek(textDrop(text, stop + 1n), latest(headingAt(text, 0n, stop), found)) else seek(textDrop(text, stop + 1n), found)
+def latest(line: Candidate, found: Candidate) -> Candidate:
+  match line:
+    case none(_): found
+    case at(_): line
+def chosen(found: Candidate) -> Parsed:
   match found:
-    case none(_): seek(rest, unquoted, quoted)
-    case at(_): if quote then seek(rest, unquoted, found) else seek(rest, found, quoted)
-def chosen(unquoted: Candidate, quoted: Candidate) -> Parsed:
-  match unquoted:
-    case at(a): spelled(a.card, a.action, inline(a.tail))
-    case none(_): fallback(quoted)
-def fallback(quoted: Candidate) -> Parsed:
-  match quoted:
     case at(a): spelled(a.card, a.action, inline(a.tail))
     case none(_): Parsed.notASpell({reason: "No delvetalk line; the spell is the last unquoted one."})
 def isSpellAt(text: String, indent: Nat) -> Bool:
@@ -67,8 +58,6 @@ def isSpellAt(text: String, indent: Nat) -> Bool:
   if textSpan(head, "dD") == 0n then false else spellWord(Text.lower(head))
 def spellWord(head: String) -> Bool:
   head == "delvetalk " || head == "delvetalk\t"
-def isQuote(text: String) -> Bool:
-  textSpan(textTake(text, 4n), " ") == 4n || textTake(text, 1n) == "\t"
 # A fence with an info string (```bend, ```json) opens code: its lines are never a spell. A
 # bare fence is skipped as a line and what it holds is read.
 def tagged(text: String, indent: Nat, stop: Nat) -> Bool:

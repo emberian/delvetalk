@@ -18,8 +18,6 @@ def again(count: Nat, context: Abi.Context) -> Activity<Nat>:
   match world.send({object: Plans.self(context), method: "tick", argument: Plans.nothing()}):
     case _: count
 form tick:
-def blurb() -> Card.Door:
-  {word: "loop", blurb: "Ticks itself until the causal budget runs out."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def render(state: State, context: Abi.Context) -> Document.Document:

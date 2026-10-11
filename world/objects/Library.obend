@@ -42,8 +42,6 @@ form shelve:
   kind: Kind
   title: text 1..80
   body: text 1..1400
-def blurb() -> Card.Door:
-  {word: "library", blurb: "The stacks: pages and walks."}
 def ordered(state: State) -> Lists.List<Page>:
   Relations.order(state.pages, fn(p: Page) -> Nat: p.place)
 def isWalk(page: Page) -> Bool:
@@ -66,15 +64,48 @@ def names(pages: Lists.List<Page>) -> String:
 def missLine(state: State, said: String) -> String:
   "hob: no page called {said}. Pages: {names(Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false))}; walks: {names(Lists.filter(ordered(state), isWalk))}.\n\n"
 # A card's law as the host has it (`inspect` without the source): each clause with its reading,
-# then its expression.
+# then its expression; a clause `under "<object>"` is followed to that object's `law` (a made
+# thing's kind), whose clauses come after, their expressions dropped when the whole would pass
+# the card's clip.
 def laws(state: State, input: {card: String}, context: Abi.Context) -> Activity<Card.Replied>:
   match world.inspect({object: {world: context.world, object: input.card}, source: false}):
-    case inspected(i): Card.tell(Card.Replied.done({action: "laws"}), Document.text("LAW of {input.card}\n{lawLines(i.laws)}"))
-    case _: Card.tell(Card.Replied.refused({clause: "noCard", reading: "No card {input.card} that you may see"}), Document.text("Not done: No card {input.card} that you may see; the directory lists the doors.\n"))
+    case inspected(i): citing(input.card, i.laws, Lists.find(i.laws, fn(r: World.LawRow) -> Bool: Text.starts(r.clause, "under \"")), context)
+    case _: Card.tell(Card.Replied.refused({clause: "noCard", reading: "No card {input.card} that you may see"}), Document.text("Not done: No card {input.card} that you may see; the commonplace lists the doors.\n"))
+def citing(card: String, rows: Lists.List<World.LawRow>, under: Lists.Maybe<World.LawRow>, context: Abi.Context) -> Activity<Card.Replied>:
+  match under:
+    case none(_): lawTold(card, rows, "", "", context)
+    case some(u): cited(card, rows, quoted(u.value.clause), context)
+def cited(card: String, rows: Lists.List<World.LawRow>, object: String, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.viewField::<String>({object: {world: context.world, object: object}, field: "law"}):
+    case viewed(v): lawTold(card, rows, "Under {object}'s law:\n{lawLines(lawRows(v.state))}", "Under {object}'s law:\n{readingLines(lawRows(v.state))}", context)
+    case _: lawTold(card, rows, "", "", context)
+def lawTold(card: String, rows: Lists.List<World.LawRow>, whole: String, readings: String, context: Abi.Context) -> Activity<Card.Replied>:
+  let own = "LAW of {card}\n{lawLines(rows)}"
+  let text = if textLength(own) + textLength(whole) <= Card.limit(context) then "{own}{whole}" else "{own}{readings}"
+  Card.tell(Card.Replied.done({action: "laws"}), Document.text(if textLength(text) > Card.limit(context) then "{textTake(text, Card.limit(context) - 2n)}…\n" else text))
+# The text between the first pair of double quotes (`under "kind/bell"` names kind/bell).
+def quoted(clause: String) -> String:
+  let after = textDrop(clause, textBreak(clause, "\"") + 1n)
+  textTake(after, textBreak(after, "\""))
 def lawLines(rows: Lists.List<World.LawRow>) -> String:
   if Lists.length(rows) == 0n then "  no law text: anyone's write by its spells, the creator's anything\n" else textJoin(Lists.map(rows, clause), "")
 def clause(row: World.LawRow) -> String:
   if row.reading == "" then "  {row.name}\n    {row.clause}\n" else "  {row.name}: {row.reading}\n    {row.clause}\n"
+def readingLines(rows: Lists.List<World.LawRow>) -> String:
+  textJoin(Lists.map(rows, fn(r: World.LawRow) -> String: "  {r.name}: {r.reading}\n"), "")
+# Law text as the grammar writes it, one `law NAME "reading": EXPR` a line, read into rows.
+def lawRows(text: String) -> Lists.List<World.LawRow>:
+  if Text.blank(text) then Lists.List.nil() else lawRowsAt(text, textBreak(text, "\n"))
+def lawRowsAt(text: String, stop: Nat) -> Lists.List<World.LawRow>:
+  let rest = lawRows(textDrop(text, stop + 1n))
+  if Text.starts(Text.trim(textTake(text, stop)), "law ") then Lists.List.cons({head: lawRow(textDrop(Text.trim(textTake(text, stop)), 4n)), tail: rest}) else rest
+def lawRow(body: String) -> World.LawRow:
+  let name = textTake(body, textBreak(body, " :\""))
+  let after = Text.trimStart(textDrop(body, textLength(name)))
+  if Text.starts(after, "\"") then readRow(name, textDrop(after, 1n)) else {name: name, clause: Text.trimStart(textDrop(after, 1n)), reading: ""}
+def readRow(name: String, after: String) -> World.LawRow:
+  let close = textBreak(after, "\"")
+  {name: name, clause: Text.trimStart(textDrop(Text.trimStart(textDrop(after, close + 1n)), 1n)), reading: textTake(after, close)}
 # Only the owner shelves: a page keeps its place when shelved again.
 def shelve(state: State, input: {name: String, kind: Kind, title: String, body: String}, context: Abi.Context) -> Activity<Card.Replied>:
   if context.principal != state.owner then Card.tell(Card.Replied.refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page"}), Document.text("Not done: Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page\n")) else shelved(extend(input, {place: placeOf(input.name, state)}))

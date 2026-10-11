@@ -1,6 +1,7 @@
-"""The spell grammar: the last unquoted delvetalk line, field lines, slash forms, blocks, fences
+"""The spell grammar: the last delvetalk line at the margin, field lines, slash forms, blocks, fences
 skipped, fitted to a form or refused by name. The host parses (op `spell-parse`); world/lib/
-Spell.obend keeps only the spell line's card, action and inline fields, which a card reads.
+Spell.obend keeps only the spell line's card, action and inline fields, which a card reads until
+the host's Heard names them (fungus H1).
 
 Evidence for FOUNDATION §5 Spell grammar (layer: host).
 
@@ -110,7 +111,7 @@ def bend_parse(reply):
 
 class BendReading(unittest.TestCase):
     """What a card still reads in Bend: the spell line's card and action (a card answering a
-    spell the host found missing fields) and the fields on that line (a macro's expansion)."""
+    spell the host found missing fields), read as the host casts: only at the margin."""
 
     def test_the_spell_line_and_its_inline_fields_as_the_host_reads_them(self):
         for reply in ("delvetalk garden plant / colour: violet / seed: a bell for moths",
@@ -127,12 +128,14 @@ class BendReading(unittest.TestCase):
                       "delvetalk Is The word"):
             with self.subTest(reply=reply):
                 self.assertEqual(bend_parse(reply), show_parsed(host({"text": reply})))
-        # The last unquoted line wins, a quoted one only alone, and only the spell line's fields.
+        # The last line at the margin wins; an indented one, alone or not, is an example, as the host has it.
         post = ("e.g. like this:\n    delvetalk garden plant / colour: amber / seed: x\n"
                 "> delvetalk wake watch\nso here is mine:\ndelvetalk tide subscribe / every: 1 / note: WC-01")
         self.assertEqual(bend_parse(post), "spell tide subscribe every=1;note=WC-01;")
         self.assertEqual(bend_parse("delvetalk a first\ndelvetalk b second\nx: 1"), "spell b second ")
-        self.assertEqual(bend_parse("quoted:\n    delvetalk garden-1 plant / seed: fern"), "spell garden-1 plant seed=fern;")
+        for quoted in ("quoted:\n    delvetalk garden-1 plant / seed: fern", "like\n  delvetalk garden-1 plant\nthis", "so:\n\tdelvetalk garden-1 plant"):
+            self.assertEqual(bend_parse(quoted), NOT)
+            self.assertEqual(show_parsed(host({"text": quoted})), NOT)
         self.assertEqual(bend_parse("delvetalk a b\nx: 1\ndelvetalk Is The word"), "spell a b ")
 
 

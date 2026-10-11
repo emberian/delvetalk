@@ -65,8 +65,6 @@ def methods() -> Lists.List<String>:
   Text.words("next commit reveal")
 def forms() -> Card.Forms:
   Card.Forms.nil()
-def blurb() -> Card.Door:
-  {word: "seat", blurb: "Your seat at a commit-reveal table."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def render(state: State, context: Abi.Context) -> Document.Document:

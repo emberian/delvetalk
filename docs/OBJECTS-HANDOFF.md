@@ -1,5 +1,91 @@
 # Objects handoff
 
+## lane/rewrite10 (2026-10-11): H1 cut, inspirit, the silent turns, the library follows `under`
+
+Inherited: the predecessor's tail (`cv show a0d74c0be27d3d607`, last 80 turns) adds nothing the section below lacks
+but the coordinator's two notes, both folded: a refused `sealed/1 write` still offers "#1 is written" (host18's first
+item: the host drops a refused turn's offers), and H1 (the Bend reader disagrees with the cast rule).
+
+persvati went down at 05:06; the suites ran on hbox (`~/scratch/dt-rewrite10/`, the foundation binary rebuilt there
+at 05:33): 834 tests, 4 red classes, each red on pristine foundation too: test_hand's Speak and Measure (the same
+four tests), test_archive (a wake's receipt line names its DID, transport/host), test_pull_backups (date-bound).
+
+Done (67184b62 H1, ad6baf8b inspirit, da3f45cc the silent turns and the library's `laws`; the three were run as one tree):
+
+- **H1, as far as objects can go.** The host passes a spell it found missing fields to `receive` with the bound
+  fields and no action, so a card cannot tell `delvetalk anthology write` (no fields) from prose without reading the
+  spell line. `world/lib/Spell.obend`'s reader is cut to the host's cast rule (the last `delvetalk` line at the
+  margin; the quoted fallback, `isQuote` and the second candidate are gone); `test_spell.BendReading` asserts the
+  indented cases agree with `spell-parse`. **The rest is the host's** (fungus H1: "`Heard` carries card and
+  action"): `heardArgument` (TurnLoop ~995) fills `action` (and `card`) as it fills `fields` and `misfit`, from
+  `castSpell`'s `.unclear` arm (`receiveHeard w id target argument fields` gains the action); then `Card.unanswered`
+  reads `input.action`, Workshop's `completing` too, `Spell.parse` and every helper under it are deleted (Spell.obend
+  keeps `Binding`/`Bindings`/`valueOf`), and `test_spell.BendReading` goes. Host18's uncommitted `wholeSpell` (a post
+  that is one indented spell block is dedented and cast) is the one case the Bend reader still misses: such a spell
+  missing fields reaches the card as prose and is handed on to hob.
+- **inspirit** (pingwaves #5). THING gains `keeper`/`keeperHandle`; `form inspirit / surrounding: text 1..400`:
+  anyone, once, while `keeper` is ""; the surrounding becomes `description`, the caster `keeper`; lying in a room
+  (holder nobody, location set) the thing first calls the room's `~inspirited {line}`, which only a thing lying there
+  may call, writes the line under the caster ("<name>, inspirited by <handle>: <surrounding>", clipped at 280) and a
+  mark `inspirited <id>`. The room card lists unclaimed things first with the spell ("Unclaimed here: …. Inspirit
+  one: delvetalk <first> inspirit / surrounding: <1 to 400 characters>"), then "Lying here:" the claimed. Law:
+  `owner` (the owner stays and alone reprograms; name, description and copying are the keeper's once inspirited,
+  the owner's before: `request.subject == new.keeper or (request.subject == new.owner and old.keeper == "")`) and
+  `keeper` (`writeOnce(keeper) and (unchanged(keeper) or request.subject == new.keeper)`); `actions` offers
+  `inspirit` only while unclaimed, `acquire` while unheld, `offer`/`withdraw` to the holder, `set` to the keeper
+  (owner before). A thing lying nowhere (made, or a copy) is put down by its owner (`drop / at:`), and a room's
+  `put` admits its owner furnishing it. Genesis creates `porch/goblet`, `porch/ring`, `porch/gemstone` (THINGS, the
+  owner's words as names) and lays each on the porch; the lexicon gains `surrounding`, the examples an inspiriting.
+  The commonplace learns the first three cards under each door (was one), so hob is offered all three things'
+  `inspirit`. Tests: tests/test_inspirit.py (porch card, inspirit, the line, a second refused `keeper`, the
+  keeper's lens, the owner's refused, a proposed keeper refused); test_genesis's sequence gains the things.
+- **Silent turns**: Thing (`acquire`, `drop`, `offer`, `withdraw` answer the line and the card; refusals "Not
+  done: …"; a room's refusal told back), Deal (`countersign` "Countersigned, <handle>; N of the parties still to
+  sign." / "…: at rest." / "…, and <object> is amended.", `withdraw`, every refusal as `refused <clause>: <reading>`
+  over the card), Avatar (`note` by spell, `send`, `subscribe`, `watch`, `unsubscribe`, `accept`, `move`/`go`'s
+  refusals; a note an object leaves stays quiet), Env (`seen` "Read through #N; nothing before it is new again.",
+  `publish`, refusals), Kind `shape` ("Shaped. Make one:" and its spell; refusals over the card). Env's mention
+  (`write`) stays quiet by design: a post mentioning a resident is not a reply to the world.
+- **The `blurb()` sweep** (the commit after da3f45cc): `blurb()` and `Card.Door` are gone from every object, body,
+  fixture and automatafl module; the host's default page falls back to the object's id (genesis names every page);
+  Workshop's page is "workshop". The host's `blurbWord` (TurnLoop ~2262) is now dead: the host lane's to delete.
+- **A made kind is sent no `made`** (the host lane's finding): Kind's `finished` sends `made` only to a made record
+  (a kind has no such method, so every kind creation journaled a delivered `noMethod`); test_kinds asserts a
+  resident's `kinds make` and a make on that kind deliver no refusal.
+- **Foundation adbab7d5 merged** (host18's batch: a refused turn offers nothing, refusals under a kind name the
+  inner clause, sums in laws, optional `text 0..N` fields, dedented spell blocks). test_wakes, test_tending and
+  test_strangers now assert the inner clause (`level`, `alive`, `sealed`, `owner`). `kinds make / name / of` alone
+  makes a kind and its make a thing (test_kinds); PLAYTEST-2's room spells drop `/ spween: / id:`.
+- **`kinds shape` once**: a second shape laid a layer over the package's module, which a shaped kind no longer runs
+  (the live redeploy's compile refusal). `shape` is kept for a kind created whole (genesis's `kinds`), is `~shape`
+  (unoffered), and refuses `shaped` ("Already shaped; its make stands") when the kind already has its make.
+- **A wake on a card not there yet** reads "There is no card garden/bell/1 that you may see (yet): nothing to
+  watch." (was "cannot be watched (denied)"): the hand lane's `wake rows` on garden/bell/1 ran before any bell was
+  planted. A bell's `lines` are already subscribable by anyone who may read it: test_genesis.Rows has a resident's
+  wake count seven rains on another's bell and note its avatar.
+- **Library `laws` follows `under`**: a clause `under "<object>"` is followed to that object's `law` field (a made
+  thing's kind), whose clauses follow the card's own ("Under kind/bell's law:"), expressions dropped when the whole
+  passes the clip. The miss line names the commonplace, not the directory.
+
+Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded):
+
+1. THING `me`, `lend`, `circle`; BOND by spell. Design: `kind/bond` over RECORD (a body `bond.obend`; form `parties:`
+   handles, `terms:`, `amends:`, `law:`), a countersignature a `marks` row (`who` the signer: the circle reads
+   `request.subject in "bond/N".marks.who`, LAW §4 D), at rest `world.amend` as Deal does; Deal.obend and
+   test_deal's package path deleted in the same commit. A thing's `circle` lens amends its own law so the owner
+   clause's keeper disjunct reads the bond. `offer / to:` takes a handle the host cannot resolve in Bend: wait for
+   host18's `context.sender`/a handle read, or offer to `me`'s avatar id by the host's `me` resolution.
+2. O3: one Sensed (`Event` gains `n`, `Rows.Sensed` goes, `publish`/`sense` callers pass `n: 0`); `Card.Reply`
+   folds into `Heard` (the host fills `misfit` when the input declares it), `Card.heard` goes.
+3. The hand-on refused `capacity`: a wait inside a call is not supported (`mayWait`, depth > 0), so the hand-on
+   cannot join the card's turn; objects alone cannot fix it. Host: re-deliver a send refused transiently, or route
+   prose a card does not take to the commonplace itself.
+4. Foundation 0e54c215 (kernel15: `Relations.count`/`lookup` force no row / one row) is not merged here: merge it
+   with the rebuilt binary, drop `lookup`'s unused `keyOf` at the call sites KERNEL-HANDOFF §16 item 15a lists, and
+   prefer `count`/`lookup` to scans where a card reads one row or a count (the menu, door counts, a bell's rains).
+5. Step 4 as below. H1's host half: host18's batch did not add `action` to `Heard`; still the host's.
+
+
 ## lane/rewrite9 (2026-10-11): hob's said; step 3, first part
 
 Inherited: the predecessor's tail (`cv show a0a66f925db192fbd`) adds only the `say:` decision, folded below. Its two

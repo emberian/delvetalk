@@ -82,7 +82,7 @@ class Drafts(BridgeCase):
 
 class DefaultPage(BridgeCase):
     """WORLD-REVIEW finding 16: a card that declares no `publishPage` has the host's default page, the card
-    as a stranger sees it and how to reply, under the given page or its door word."""
+    as a stranger sees it and how to reply, under the given page or its id."""
 
     def test_a_card_without_publish_page_gets_the_default_page(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-counter', 'object': 'c',
@@ -92,7 +92,7 @@ class DefaultPage(BridgeCase):
                             'argument': record(page=label('')), 'identity': 'page-1'})
         self.assertEqual(r['status'], 'admitted', r)
         [published] = self.host.send({'op': 'world-publications', 'principal': 'ember'})['publications']
-        self.assertEqual((published['object'], published['page'], published['section']), ('c', 'counter', ''), published)
+        self.assertEqual((published['object'], published['page'], published['section']), ('c', 'c', ''), published)
         self.assertEqual(r['result'], label(published['id']))
         body = published['body']
         self.assertTrue(body.startswith('## Card\n\n'), body)
@@ -102,7 +102,7 @@ class DefaultPage(BridgeCase):
                                 'argument': record(page=label('Counter')), 'identity': 'page-2'})
         self.assertEqual(named['status'], 'admitted', named)
         self.assertEqual([p['page'] for p in self.host.send({'op': 'world-publications', 'principal': 'ember'})['publications']],
-                         ['counter', 'Counter'])
+                         ['c', 'Counter'])
 
     def test_a_card_only_some_may_read_gets_no_default_page(self):
         # codex host 2: the host's page is public, so a card whose read policy names principals has none.

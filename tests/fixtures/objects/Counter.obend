@@ -17,8 +17,6 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {count: add 1n}
   state.count + 1n
 form bump:
-def blurb() -> Card.Door:
-  {word: "counter", blurb: "Bump it; everyone shares the count."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 # The card as the reader in the context sees it: the count is everyone's.
