@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host17 from 5.137 to 5.140; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -1196,8 +1196,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      squatted `garden/bell/3` refuses nothing; the creation's `object` names the id taken (a kind grafts
      `c.object.object`). Test: `test_a_prefix_mints_past_the_ids_already_held`.
    - *An await's receipt carries `hash`:* `Plan.obend` `Receipt` gains `hash: String` (the entry's CID;
-     `receiptData`); a call site compiled against the older Receipt gets the shape without it
-     (`receiptReplies`); the `ended` receipt carries "" (its entry is the one being sealed). Pins re-recorded.
+     `receiptData`, `receiptReply`: one shape, 5.141); the `ended` receipt carries "" (its entry is the one being sealed). Pins re-recorded.
      Test: `ReceiptHash`.
    - *A handed-on reply keeps its reach:* a `send` of `receive` from a turn whose reach is not `delivery`
      carries that reach (`Send.reach`, journaled on the send and across a suspension; `TurnMeta.reach`), so
@@ -1210,9 +1209,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    - *`spell` on a proposal:* `World.Proposed` and `Interpreted`'s `proposal` gain `spell: String`, the spell the
      proposal stands for (`proposalSpell`: `delvetalk <card> <method>` as the form names the card, a line per
      argument field, text with a line break as a `<<END` block, a case as its word; "" when a field has no
-     spell form), journaled on the verdict, so a card that asks first can hold it and print it back. A call
-     site compiled against the older shape hears it without `spell` (`proposalShapes`, as `receiptReplies`).
-     Replay reads the journaled verdict, so no edition bump. Tests: `test_reflection` Interpret,
+     spell form), journaled on the verdict, so a card that asks first can hold it and print it back
+     (`proposalData`, one shape, 5.141). Replay reads the journaled verdict, so no edition bump. Tests: `test_reflection` Interpret,
      `test_hub` HandedToTheDirectory.
    - *The hand-on:* the objects lane's "still costs a model call" was reported before 5.127 landed. Through
      the real Bell and Directory, prose with no reach handed on by `Card.handingOn` is heard `silent` at the
@@ -1261,7 +1259,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 132. **The input check is exact (host15; the root's decision on EveryMethod).** A method without an input takes
    only `{}` (`argumentFits`); a record argument with a field the input does not declare is refused `typeMismatch`
-   naming it (`extraField`, `misfitReason`: "<method> takes no field <f>"; a call's or run's reading "<id> <method>
+   naming it (`extraField`, `misfitReason`: "<method> takes no field <f>"; a field it needs and lacks or holds
+   of another type is named too, 5.141; a call's or run's reading "<id> <method>
    takes no field <f>."), for direct turns, spells, calls and deliveries alike (all reach `runFrame` or the call
    arms). Fixtures that called or sent a no-input method with an argument now pass `{}` (test_grants,
    test_authority, test_reflection's PROBE); test_principal's `ignored` asserts the refusal by name, then `{}`
@@ -1459,6 +1458,14 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      citation kept; a turn reading another world's object and citing it; the ops' `asOf`); `test_serve`'s
      scratch and stateless worlds; the front's scratch routes in `test_http`.
 
+141. **One shape per answer (host17; §7 item 5 of host16's queue).** Every object compiles from `world/lib`, so no
+   call site holds an older `Receipt`, `Proposed` or `Interpreted`: an await's reply is `receiptReply` (the receipt
+   with its `hash`), a proposal `proposalData` (with its `spell`), a `proposals` verdict its items, and a reply of
+   several spells is always `proposals` (the first-item fallback for a Response without that arm is gone).
+   `misfitReason` names the field that does not fit: one the input does not declare, one it needs and lacks
+   ("bump2 needs field n"), one of another type ("bump2's field n is not of its type"); the bare "argument does not
+   conform" is left only for an input that is not a record of fields. Test: `tests/test_make.py` `Misfit`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1499,9 +1506,6 @@ describes only what is.
    and `check` in a scratch (`/scratch/<name>/repl`; they still run in the stateless session, `replRestarted`);
    the `delvetalk world expire / scratch:` spell (only the root act exists); `world-history` and receipts
    across worlds; the hand's SCRATCHES page.
-5. **Scar tissue to remove now:** `proposalShapes`' second shape and `proposedData`'s `spelled := false` (5.128:
-   every object compiles from `world/lib`, so no call site has the older `Proposed`); `receiptReplies`' older
-   `Receipt` shape (5.127) likewise; `misfitReason`'s fallback once `extraField` covers every input row.
 7. **Routed by the fungus review** (docs/review/fungus-2026-10-11.md §1, §3), folded into the items above
    where they touch the same code, else after item 3, each deleting the old path in its commit: `world-history`
    takes `reverse` (T28); a host reach rule, `reach-of {text, replyTo, thread}`, so the bridge relays the
