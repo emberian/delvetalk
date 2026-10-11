@@ -339,7 +339,7 @@ class Plan(unittest.TestCase):
         p = hand.plan(Path(__file__).resolve().parent.parent / 'docs' / 'PLAYTEST-2.md')
         self.assertEqual(len(p['seeds']), 4)
         self.assertTrue(all(s.startswith('delvetalk ') for s in p['seeds']))
-        self.assertEqual(p['seeds'][0], "delvetalk kind/room make / name: The Bellfounder's Porch")
+        self.assertEqual(p['seeds'][0], "delvetalk kind/room make / name: The Bellfounder's Porch / spween: / id:")
         self.assertEqual([r['minute'] for r in p['invitations']], [0, 15, 30, 45, 60, 75, 90, 105])
         self.assertTrue(all(r['spells'] and r['answered'] for r in p['invitations']))
         zulip = hand.invitation_text(p['invitations'][0], 'zulip')
@@ -392,7 +392,7 @@ class Speak(unittest.TestCase):
         self.assertIn('Made, at room/1', came['text'])
         _, d = self.hand.draft(came['drafted'])
         self.assertEqual((d['topic'], d['replyTo'], d['object'], d['posted'], d['hand']), ('welcome', None, 'room/1', False, True))
-        self.assertTrue(d['text'].startswith("    delvetalk kind/room make / name: The Bellfounder's Porch\n\n"), d['text'])
+        self.assertTrue(d['text'].startswith("    delvetalk kind/room make / name: The Bellfounder's Porch / spween: / id:\n\n"), d['text'])
         entry = self.town.send(op='world-receipt', principal=self.hand.owner, identity=self.hand.seed_intent(spell))
         self.assertEqual(entry['receipt']['identity']['principal'], self.hand.owner)
         again = self.hand.cast(spell, intent=self.hand.seed_intent(spell))  # the same intent: the first receipt, the first draft
@@ -492,11 +492,11 @@ class Measure(unittest.TestCase):
         t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 3)
         kind = lambda name, law='': f'delvetalk kinds make / name: {name} / of: record / form: text: text 1..80 / head: {name}: {{text}} / law: {law} / body:'
         for n, (who, text) in enumerate([
-                (cls.A, kind('lamp')), (cls.A, 'delvetalk kind/lamp make / text: a small light'), (cls.B, 'delvetalk lamp/1 write / text: brighter'),
-                (cls.B, kind('sealed', 'law maker "only its maker writes": request.subject == new.maker')), (cls.B, 'delvetalk kind/sealed make / text: mine'),
+                (cls.A, kind('lamp')), (cls.A, 'delvetalk kind/lamp make / text: a small light / id:'), (cls.B, 'delvetalk lamp/1 write / text: brighter'),
+                (cls.B, kind('sealed', 'law maker "only its maker writes": request.subject == new.maker')), (cls.B, 'delvetalk kind/sealed make / text: mine / id:'),
                 (cls.A, 'delvetalk sealed/1 write / text: yours?'), (cls.B, 'delvetalk sealed/1 door / label: lamp / to: lamp/1'),
-                (cls.A, 'delvetalk anthology write / text: seal: what sealed/1 keeps'), (cls.A, 'delvetalk kind/sealed make / text: hers'),
-                (cls.B, 'delvetalk kind/lamp make / text: a second light'), (cls.OWNER, kind('hyphae'))]):
+                (cls.A, 'delvetalk anthology write / text: seal: what sealed/1 keeps'), (cls.A, 'delvetalk kind/sealed make / text: hers / id:'),
+                (cls.B, 'delvetalk kind/lamp make / text: a second light / id:'), (cls.OWNER, kind('hyphae'))]):
             cast(t, who, text, f'post-{n}')
         t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 130)  # the tide's hour: the opener's wake ticks it
         cls.st.interpretations.mkdir(parents=True, exist_ok=True)
@@ -536,7 +536,7 @@ class Measure(unittest.TestCase):
         self.assertEqual(code, 200)
         for text in ('things made by residents', 'by kind: kind 2, lamp 2, sealed 2', 'holds', 'sealed/1 -&gt; lamp/1 by yue'):
             self.assertIn(text, page)
-        refused = next(r for r in hand.Hand(self.st, self.town.client, TOKEN).watch() if r['tag'] == 'refused')
+        refused = next(r for r in hand.Hand(self.st, self.town.client, TOKEN).watch() if r['tag'] == 'refused' and not r['turn'].startswith('↳'))
         self.assertEqual((refused['who'], refused['turn'], refused['outcome']), ('kestrel', 'refused sealed/1', 'lawRefused'))  # whole, from the journal
         from deploy.ring import harvest
         r = harvest.harvest(self.dir.name)

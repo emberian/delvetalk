@@ -2310,8 +2310,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       -- The metarule, widened (docs/ROOT.md §2.1): no law locks out the hand that opened the world.
       -- An amendment by the opener is the host's to admit; every other change is the law's.
       unless kind == 2 && openerAmends w subject do
-        if let some clause := Law.refusedBy o.law facts (some o.state) state then
-          throw { cls := "lawRefused", clause, object := id, reason := readingOf o clause }
+        if let some (clause, cited) := Law.refusal o.law facts (some o.state) state then
+          throw { cls := "lawRefused", clause, object := id,
+                  reason := (cited.map fun r => s!"refused {clause}: {r}") <|> readingOf o clause }
     -- The Bend law, after the text admits: once for each write of edits (the object's own or a
     -- proposed one, its `kind` saying which), with its argument. A migration's state is the text
     -- law's alone: the old code's law does not read the new type.
@@ -2832,6 +2833,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.root.map fun x => [("root", toJson x)]).getD [] ++
         (r.hint.map fun x => [("hint", toJson x)]).getD [] ++
         (r.next.map fun x => [("next", toJson x)]).getD [])
+      -- What the turn offered and published happened only if it is admitted: a refusal carries neither.
+      let base := base.filter fun (k, _) => k != "offers" && k != "publishes"
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onEnd (w.height + 1) outcome) []
       (w', reply entry)
     | .ok judged =>

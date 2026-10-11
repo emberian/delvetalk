@@ -4,6 +4,7 @@ the first of each day eight weeks, the first of each month always; the rest, and
 Evidence for OPERATIONS section b (layer: transport).
 """
 import datetime
+import os
 import subprocess
 import tempfile
 import unittest
@@ -14,7 +15,7 @@ SCRIPT = Path(__file__).resolve().parent.parent / 'deploy' / 'pull-backups.sh'
 
 class Retention(unittest.TestCase):
     def test_seven_days_whole_eight_weeks_daily_and_months_forever(self):
-        now = datetime.datetime.now(datetime.timezone.utc).replace(minute=0, second=0, microsecond=0)
+        now = datetime.datetime(2026, 7, 20, 12, tzinfo=datetime.timezone.utc)  # mid-month: no tarball below is a month's first by the calendar alone
         name = lambda t: f"delvetalk-{t.strftime('%Y%m%dT%H%M%SZ')}.tar.gz"
         made = {}
         for days in (0, 3, 10, 40, 100, 400):
@@ -25,7 +26,7 @@ class Retention(unittest.TestCase):
             for n in made.values():
                 (Path(d) / n).write_bytes(b'x')
                 (Path(d) / (n + '.sha256')).write_text('x')
-            subprocess.run(['bash', str(SCRIPT), '--keep-only', d], check=True, capture_output=True)
+            subprocess.run(['bash', str(SCRIPT), '--keep-only', d], check=True, capture_output=True, env={**os.environ, 'DELVETALK_NOW': now.isoformat()})
             kept = {p.name for p in Path(d).glob('*.tar.gz')}
             self.assertEqual({k for k, n in made.items() if n in kept} >= {(0, 12), (0, 6), (3, 12), (3, 6), (10, 12), (40, 12)}, True)
             self.assertNotIn(made[(10, 6)], kept)  # past a week, not the day's first

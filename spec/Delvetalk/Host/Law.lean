@@ -339,9 +339,29 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
 def admits (facts : Facts) (old : Option Data) (new : Data) (clause : LawExpr) : Bool :=
   clause.fieldsPlain && denote facts old new clause
 
-/-- The first law, in source order, that refuses this write. -/
+/-- Through a clause that is `under "O"`, the first of O's clauses that refuses (and through its own
+    `under`, innermost first), with its reading in O's law text; else the clause itself, no reading. -/
+partial def innermost (facts : Facts) (old : Option Data) (new : Data) (name : String) (reading : Option String)
+    (clause : LawExpr) (depth : Nat) : String × Option String :=
+  match clause with
+  | .under object => match (facts.reads.lookup object).bind (rawField "law") with
+    | some (.label text) => match parseLawTextReadings text with
+      | .ok (law, readings) =>
+        match law.find? fun (_, c) => !(c.fieldsPlain && denote facts old new c (depth - 1)) with
+        | some (n, c) => innermost facts old new n (readings.lookup n) c (depth - 1)
+        | none => (name, reading)
+      | .error _ => (name, reading)
+    | _ => (name, reading)
+  | _ => (name, reading)
+
+/-- The first law, in source order, that refuses this write, as the clause that failed: a kind's
+    `under "kind/x"` names the kind's clause (`level`), with that clause's reading in the kind's law. -/
+def refusal (law : Law) (facts : Facts) (old : Option Data) (new : Data) : Option (String × Option String) :=
+  (law.find? fun (_, clause) => !admits facts old new clause).map fun (name, clause) =>
+    innermost facts old new name none clause Limits.lawDepth
+
 def refusedBy (law : Law) (facts : Facts) (old : Option Data) (new : Data) : Option String :=
-  (law.find? fun (_, clause) => !admits facts old new clause).map Prod.fst
+  (refusal law facts old new).map Prod.fst
 
 /-! Small tests. Parsed laws go through the real parser. -/
 
@@ -482,6 +502,8 @@ private def roster : Facts := { as "kim" with reads := [("roster", rel [rain "ki
 private def kindOf (law : String) : Facts := { facts with reads := [("kind/x", .record [("law", .label law)])] }
 #guard denote (kindOf "law small: new.count <= 2") none (rec1 2) (parsed "under \"kind/x\"")
 #guard !denote (kindOf "law small: new.count <= 2") none (rec1 3) (parsed "under \"kind/x\"")
+#guard refusal [("kind", parsed "under \"kind/x\"")] (kindOf "law small \"two at most\": new.count <= 2") none (rec1 3) ==
+  some ("small", some "two at most")
 #guard !denote (kindOf "law small: new.count <= 2") none (rec1 2) (parsed "under \"kind/x\"") 0
 #guard !denote (kindOf "law loop: under \"kind/x\"") none (rec1 2) (parsed "under \"kind/x\"")
 #guard !denote (kindOf "not a law") none (rec1 2) (parsed "under \"kind/x\"")

@@ -1494,9 +1494,35 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    answers `{quotation {reason}}`, and hob's text that quotes a card is `unclear`. Fixtures: the four recorded
    indented rows and the playtest's two indented plantings no longer cast (`tests/fixtures/spells`;
    `test_spell`'s pair moved to the margin); `test_host_spell.Margin` (the owner's post, the root menu v4 preview
-   under a greeting; a margin spell; the same indented by two spaces, four, a tab). Still open: Bend's reduced
-   reader (`world/lib/Spell.obend`, H1) keeps its quoted fallback, and casting up to three literal spells of one
-   post in order (now the last at the margin is cast).
+   under a greeting; a margin spell; the same indented by two spaces, four, a tab, among other lines). A post that
+   is one spell block and nothing else (`wholeSpell`: its non-blank lines a `delvetalk` line and field lines, each
+   starting with the first's indent, bare or inside one ```` ``` ````/```` ```text ```` fence) is dedented and cast:
+   a Zulip code block, a spell pasted with its indent (`Margin`'s block cases). Still open: casting up to three
+   literal spells of one post in order (now the last at the margin is cast); Bend's reduced reader is the objects
+   lane's to delete (H1).
+
+144. **A refused turn offers nothing (host18; the objects lane's `sealed/1 write`).** A turn's offers and publishes
+   happen only if it is admitted: `commit` drops `offers` and `publishes` from a refused entry, so the resident
+   hears the refusal line and the card as it stood, never "#1 is written". No replay edition change (what replay
+   derives from an existing entry is unchanged; new refused entries carry less). Test: `tests/test_law.py`
+   `RefusedOffers`.
+
+145. **A refusal under a kind's law names the clause that failed (host18).** `Law.refusal` follows a refusing
+   clause that is `under "O"` into O's law text (`innermost`, through further `under`s within `lawDepth`) and
+   answers that clause's name and its reading there: `refused small: two at most`, not `refused kind`.
+   `refusedBy` is its name; the judge voices the cited reading, else the object's own (`readingOf`). Tests:
+   `Law.lean`'s `#guard refusal`; `test_law.Atoms` (the kind's clause and reading).
+
+146. **A sum left of `<=` (host18; the kernel's grammar file, by the coordinator's leave).** `old.last + old.gap <=
+   request.clock` parses: `ATOM ::= … | REF + TERM <= TERM`, a sum whose first part is a reference
+   (`LawTerm.referenceSum`); `==` still starts with a reference and `1 + old.last <= …` still refuses. `denote`
+   already read sums. Proofs: `parse_accepts`, `render_reads_back` (`canonical`), `refusals_name_what_and_why`.
+
+147. **A `text 0..N` field may be left out (host18; the objects lane's `kinds make` and its `id`).** `Spell.fit`
+   needs only the fields that are not `Field.optional` (a text bound starting at 0); one left out reads as the
+   empty text, so `delvetalk kinds make / name: lamp / of: record` makes a kind. The host's usage prints such a
+   field `<optional text, up to N characters>` (`spellHint`; Bend's `Card` hint is the objects lane's). Tests:
+   `Spell.lean`'s `#guard`; `test_host_spell.Clauses`.
 
 ## 6. Gotchas
 
