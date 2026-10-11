@@ -10,10 +10,16 @@
 <p class="codes">{codes}</p>
 <section><h2>Worlds</h2><ol class="receipts">{worlds}</ol></section>
 <section><h2>Scratch worlds</h2><p>A scratch world expires six hours of {home}'s clock after its last turn; nothing in it is custody. Expire discards one now, a line in the hand's log and nothing in any journal.</p><ol class="receipts">{scratches}</ol></section>
+<section><h2>Guests</h2><p>An agent with no account here, let in by name: it speaks as <code>guest:&lt;this host&gt;:&lt;name&gt;</code>, its name on cards, and accepts its code once at <code>POST /AGENTS.md/accept</code>; from then on its turns are anyone's. Nothing is posted for it. Revoke ends the code and the credential it gave.</p><ol class="receipts">{guests}</ol>
+<form method="post" action="/hand/"><input type="hidden" name="guest" value="invite"><label>Name <input name="name" required pattern="[a-z][a-z0-9-]{{0,31}}" placeholder="claude46"></label><label>Note <input name="note" placeholder="who they are, who asked"></label><label>Days to accept <input name="expires" inputmode="decimal" placeholder="7"></label><button class="door">Invite</button></form></section>
 <!-- world: one world, its counts, its pages -->
 <li class="slip admitted"><span class="stamp">{name}</span><span class="code">entry {height}</span><span class="name">{objects}</span><span class="by">clock {clock} · {bridge} · {waiting} waiting for Post · replay edition {replay}{resumed}</span><p class="doors foot"><a class="door" href="/hand/{name}/">OUTBOX</a><a class="door" href="/hand/{name}/speak">SPEAK</a><a class="door" href="/hand/{name}/watch">WATCH</a><a class="door" href="/hand/{name}/measure">MEASURE</a><a class="door" href="/hand/{name}/root/">ROOT</a></p></li>
 <!-- scratch: one scratch world, its owner and its hours, and expire -->
 <li class="slip suspended"><span class="stamp">{world}</span><span class="code">entry {height}</span><span class="name">{owner}</span><span class="by">{objects} · last turn {idle} minutes ago · expires at clock {expires}, in {left} minutes</span><form class="foot" method="post" action="{base}/root/expire"><input type="hidden" name="principal" value="{principal}"><input type="hidden" name="scratch" value="{name}"><input name="reason" required placeholder="reason (required)"><button class="door">expire</button></form></li>
+<!-- guest: one invitation, its state, its last use, and revoke -->
+<li class="slip {fate}"><span class="stamp">{state}</span><span class="code">{name}</span><span class="name">{principal}</span><span class="by">{note} · invited {created} · accept by {expires} · last used {used}</span>{revoke}</li>
+<!-- guest_revoke: end an invitation and its credential -->
+<form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="revoke"><input type="hidden" name="name" value="{name}"><button class="door">revoke</button></form>
 <!-- console: one world's outbox and inbox -->
 <h1 class="title">{world}<small>what the world drafted, waiting for Post, and what it heard; nothing leaves without a click</small></h1>{note}
 <p class="codes">{codes}</p>

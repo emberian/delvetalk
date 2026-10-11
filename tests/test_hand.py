@@ -338,6 +338,54 @@ class Cli(HandCase):
         self.assertEqual(self.cmd('reply', 'at://nope', '--text-file', str(f), '--object', 'x')[0], 1)
 
 
+class Guests(HandCase):
+    """An invitation (transport/identity.py): the operator names a guest with no account here, `guest:<origin host>:<name>`,
+    and hands it a code accepted once; `invites` lists them with their last use, `revoke-invite` ends code and credential.
+    Refuted by a code listed or put in a URL, a second live invitation of one name, or a revoked guest still authenticated."""
+    cmd, js = Cli.cmd, Cli.js
+
+    def ident(self):
+        return identity.Identity(self.state, None)
+
+    def test_invite_names_a_realm_qualified_guest_lists_it_without_its_code_and_revoke_ends_its_credential(self):
+        got = self.js('invite', 'claude46', '--note', 'phencounting, asked by ember', '--expires', '3')
+        self.assertEqual((got['name'], got['handle'], got['principal'], got['note']),
+                         ('claude46', 'claude46', 'guest:gsb.fg-goose.online:claude46', 'phencounting, asked by ember'))
+        self.assertRegex(got['code'], identity.INVITE_CODE)
+        self.assertAlmostEqual(got['expires'] - __import__('time').time(), 3 * 86400, delta=60)
+        self.assertEqual(self.cmd('invite', 'claude46')[0], 1)  # one live invitation a name
+        self.assertEqual(self.cmd('invite', 'Not A Name')[0], 1)
+        (row,) = self.js('invites')
+        self.assertEqual((row['name'], row['state'], row['used']), ('claude46', 'open', None))
+        self.assertNotIn(got['code'], json.dumps(self.js('invites')) + self.state.hand_log.read_text())
+        cred = self.ident().accept(got['code'])['credential']
+        self.assertEqual(self.ident().authenticate(cred)['did'], 'guest:gsb.fg-goose.online:claude46')
+        (row,) = self.js('invites')
+        self.assertEqual(row['state'], 'accepted')
+        self.assertIsNotNone(row['used'])  # the last use is the credential's
+        self.assertEqual(self.js('revoke-invite', 'claude46')['credentials'], 1)
+        with self.assertRaises(identity.IdentityError):
+            self.ident().authenticate(cred)
+        self.assertEqual(self.cmd('revoke-invite', 'claude46')[0], 1)
+        self.assertEqual(self.js('invite', 'claude46')['principal'], 'guest:gsb.fg-goose.online:claude46')  # revoked: invited again, the same guest
+        self.assertEqual([l['what'] for l in self.logged()], ['invite-guest', 'revoke-invite', 'invite-guest'])
+
+    def test_the_worlds_page_invites_and_revokes_showing_the_code_once_on_the_page_never_in_a_url(self):
+        code, page, headers = self.req('POST', '/hand/', {'guest': 'invite', 'name': 'claude46', 'note': 'phencounting'}, f'dt_hand={TOKEN}')
+        self.assertEqual(code, 200)
+        shown = __import__('re').search(r'dt_invite_[A-Za-z0-9_-]{32}', page)[0]
+        self.assertNotIn('Location', headers)
+        self.ident().accept(shown)
+        page = self.get('/hand/')[1]
+        self.assertIn('guest:gsb.fg-goose.online:claude46', page)
+        self.assertIn('phencounting', page)
+        self.assertNotIn(shown, page)
+        self.assertEqual(self.req('POST', '/hand/', {'guest': 'invite', 'name': 'x'})[0], 404)  # without the token, nothing
+        code, page, _ = self.req('POST', '/hand/', {'guest': 'revoke', 'name': 'claude46'}, f'dt_hand={TOKEN}')
+        self.assertIn('revoked claude46: 1 credential ended', page)
+        self.assertEqual(self.js('invites')[0]['state'], 'revoked')
+
+
 class Plan(unittest.TestCase):
     """docs/PLAYTEST-2.md as the hand reads it at its start."""
 

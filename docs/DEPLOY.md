@@ -521,7 +521,7 @@ a run with something to say needs the stream.
 writes the world's bridge row, `<state>/bridges/ring.json` (`{world, transport, realm, channel, zuliprc}` and `topic`
 with `--topic T`, docs/FEDERATION.md section 4), and prints it; it starts nothing. The
 world's journal is serve's `<state>/ring.journal`, opened at the first op naming `world: ring`; its bridge and
-interpreter, `python3 -m transport bridge --world ring` and `python3 -m transport interpret --world ring`, keep their own state under `<state>/worlds/ring/`. A world name is `[a-z][a-z0-9-]{0,31}`, never `did`, `zulip`, `at`, `world`, `me` or `scratch`; a second open of the
+interpreter, `python3 -m transport bridge --world ring` and `python3 -m transport interpret --world ring`, keep their own state under `<state>/worlds/ring/`. A world name is `[a-z][a-z0-9-]{0,31}`, never `did`, `zulip`, `guest`, `at`, `world`, `me` or `scratch`; a second open of the
 same name is refused. Genesis and the welcome follow as for the town.
 
 ## Rotating the Anthropic key
