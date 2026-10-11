@@ -151,8 +151,8 @@ def toldUnless(quiet: Bool, state: State, id: String, context: Abi.Context) -> A
   if quiet then Done.made({object: id}) else told(state, id, context)
 # The layer laid into the making, in the same turn (HOST-HANDOFF 5.122): a made kind's make, or a
 # thing's body, judged by the made thing's law; refused, nothing is made. Then a made record's
-# `made` (a made kind has none), sent so it runs once the turn is committed (a body that watches something subscribes
-# there, which needs its receiver in place).
+# `made` (a made kind has none), sent so it runs once the turn is committed (a body places its rules
+# there, on the thing it answers, which needs the made thing in place).
 def laid(state: State, id: String, quiet: Bool, layer: String, context: Abi.Context) -> Activity<Done>:
   match world.extend({object: {world: context.world, object: id}, package: layer, migration: ""}):
     case reprogrammed(_): finished(state, id, quiet, context)
