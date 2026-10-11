@@ -86,6 +86,81 @@ refactor; no Lean front.
 
 ## b. Production tooling after launch
 
+### One state, one config, one entry point (lane/transport6)
+
+§a's verdict, done now rather than after launch: the 20 state kinds, 95
+flags and 18 variables become one layout, one config and one command.
+
+**`transport/config.py`: one `Config`.** A frozen dataclass; every setting
+the programs share is a field with a default and a one-line description,
+and nothing else holds a default. `Config.load(state)` reads
+`<state>/delvetalk.toml` (`tomllib`; optional; an unknown key or a value of
+the wrong type is refused by name), then the environment: `DELVETALK_<FIELD>`
+overrides `<field>` (`DELVETALK_ORIGIN`, `DELVETALK_ROOT_SOCKET`, …).
+Precedence: default, file, environment. Compose's environment carries only
+what is a fact of the container (mount paths, secret files, the bind address);
+the operator's choices live in the file. Fields: `origin`, `opener`,
+`host_socket`, `root_socket`, `root_group`, `library`, `sync`, `obend`,
+`poll`, `http_bind`, `http_port`, `trust_proxy`, `hand_bind`, `hand_port`,
+`hand_token_file`, `credentials`, `repo_keys`, `backups`,
+`anthropic_key_file`, `model_auth`, `model_thinking`, `model_account`,
+`key_name`, `tokens_toml`, `delve_mock`, `model_mock`, `watch_zuliprc`,
+`watch_stream`, `watch_topic`, `grant`. A world's bridge (Delve or a Zulip
+channel, its rc) is not a field: it is the world's row, which `open` writes.
+
+**`transport/state.py`: one `State(root, world, config)`.** Every path is an
+attribute named once; no other module joins a path under `<state>/`. One
+directory per world for everything that is the world's, the town's included
+(it was the top level, every other world `worlds/<w>/`):
+
+    <state>/delvetalk.toml            the config
+    <state>/<world>.journal(.blocks)  serve's, with journal.lock, hostd.pid, binary-pin, library/, heaps/
+    <state>/host.sock, root/root.sock serve's sockets (host_socket, root_socket move them)
+    <state>/identity.sqlite           claims: a principal is global
+    <state>/access.log(.1)            the front's, `... <did or -> <world>`
+    <state>/hand-log.jsonl            the hand's actions, each with its world
+    <state>/model-spend.jsonl         one line per replied model call, with its world
+    <state>/bridges/<world>.json      a world's bridge row
+    <state>/worlds/<world>/           observe.sqlite, since; outbox/, awaiting/;
+                                      principals.txt, mentioned.txt, skipped.txt,
+                                      publications.after; posting/; interpretations/;
+                                      bridge.pid, interpret.pid; watch.jsonl, alerted.json
+    <repo_keys>/<world>.key           the repository's signing key
+
+`State` also hands out the host clients (`host()`, `root()`, stateless),
+`write` (atomic, the one `write_atomic`), the outbox reads, the daemon loop
+with its pid heartbeat, and the bridge row.
+
+**`python3 -m transport <command> --state DIR --world W`.** `--state`
+defaults to `DELVETALK_STATE`, `--world` to `town`. Commands take only what
+the config does not hold:
+
+| command | its own arguments | replaces |
+| --- | --- | --- |
+| `serve` | none: execs `delvetalk-obend serve` with the config's sockets, opener, library and sync | compose's argv, `DELVETALK_OPENER` in two places |
+| `bridge` | `--once`, `--since ISO`, `--now SECONDS` | `transport.bridge run` and its 13 flags; `--source/--zuliprc/--stream/--topic` come from the row |
+| `interpret` | `--once` | `transport.interpret run` |
+| `post` | what to post (`--draft`, `--text-file`, `--wiki-page/-edit`, `--body-file`), `--intent`, `--object`, `--slot`, `--reply-to`, `--mention`, `--topic`, the authorizing flag | `transport.post post` and `transport.zulip post`: the world's row says where the post goes |
+| `hand` | its verbs, as now, plus `spend [--month]` | `transport.hand`, `deploy.spend` |
+| `http` | none | `transport.http` and its 6 flags |
+| `open` | the row: `--transport`, `--realm`, `--channel`, `--topic`, `--zuliprc` | `deploy.open` |
+| `watch` | `--unhealthy SERVICE…`, `--dry-run`; probes itself | `deploy.watch` and `hand status --json` piped into it |
+| `repokey` | `--curve` | `deploy.repokey` |
+| `status` | `--health host\|http\|bridge\|interpret` (exit status) | `hand status --json`, the four inline healthchecks |
+
+Deleted on the way: `bridge outbox`, `mark-posted` and the printed post
+commands (the hand's `outbox` and `post` are the one way), `zulip observe`
+and `Observer.drain` (the hand's `inbox` reads the same table), the model's
+one-request CLI, `add_host_args`/`connect`, every module-level `os.environ`
+read, the transport's imports of `deploy` (`spend`, `genesis.OPENER`).
+`deploy/` keeps the shell, compose, genesis and seed (the objects lane's),
+`serve.py` (serve as a child for tests and scripts, its argv from `State`)
+and the measurement tools. A data directory from before this moves the
+town's per-world files into `worlds/town/` once (DEPLOY).
+
+**Decision:** one `Config` (file, then `DELVETALK_*`), one `State` that owns
+every path, one `python3 -m transport`; the town is a world like any other.
+
 ### Monitoring
 
 What to watch, its source, and the number that means trouble. One probe,
