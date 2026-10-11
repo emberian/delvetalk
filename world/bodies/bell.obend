@@ -29,6 +29,10 @@ form door:
   to: text 1..128
 form undoor:
   label: text 1..32
+form example:
+  label: text 1..32
+  spell: text 1..280
+  comes: text 0..200
 # A rain is a line on the bell; a write longer than a rain is refused by name.
 def write(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
   if textLength(input.text) > 200n then refuse("A rain is 1 to 200 characters.") else Super.write(state, input, context)
@@ -40,6 +44,8 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
   Super.door(state, {label: input.label, to: input.to}, context)
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
+def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 def ring(state: State, context: Abi.Context) -> Activity<Bool>:
   Super.mark(state, "rung", context)
 # The strike waits for the reply that answers the planting post and rings if that turn was
@@ -57,7 +63,7 @@ def ringOn(outcome: Plans.Outcome, state: State, context: Abi.Context) -> Activi
 def methods() -> Lists.List<String>:
   Text.words("strike write")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("rain ring strike lines door undoor") else Text.words("rain ring strike lines")
+  if context.principal == state.owner then Text.words("rain ring strike lines door undoor example") else Text.words("rain ring strike lines")
 def blurb() -> Card.Door:
   {word: "bell", blurb: "A bell: rain on it; the seventh rain rings it."}
 # A rain on the card: who, and what (the record's number is the order, not shown).

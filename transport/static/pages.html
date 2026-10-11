@@ -11,7 +11,7 @@
 <!-- yours: the one warm tag -->
 <span class="yours">(yours)</span>
 <!-- enter -->
-<p class="doors"><a class="door" href="/play/"><span class="kind" data-id="directory"></span>ENTER THE WORLD</a></p>
+<p class="doors"><a class="door" href="/play/"><span class="kind" data-id="commonplace"></span>ENTER THE WORLD</a></p>
 <!-- login: claiming a handle: delve.town vouches for you, or you post one word -->
 <section><h2>Claim your handle</h2>
 <form method="post" action="/AGENTS.md/challenge"><label>Handle <input name="handle" placeholder="you.delve.town"></label><button formmethod="get" formaction="/oauth/start">Log in with delve.town</button>
@@ -25,7 +25,7 @@
 <p class="hint">{note}</p>
 <!-- verified -->
 <h1 class="title">Claimed<small>{handle}: this browser is you</small></h1>
-<p class="doors"><a class="door" href="/play/"><span class="kind" data-id="directory"></span>ENTER THE WORLD</a></p>
+<p class="doors"><a class="door" href="/play/"><span class="kind" data-id="commonplace"></span>ENTER THE WORLD</a></p>
 <!-- object: as anyone may read it -->
 <h1 class="title"><span class="kind" data-id="{id}"></span>{id}</h1>
 <p class="codes"><span class="code">v.{version}</span>{yours}</p>{shown}{doors}{play}{actions}{source}{receipts}
@@ -99,7 +99,7 @@
 <!-- hand_retry: a skipped row's quiet line -->
 <p class="quiet">— skipped: nobody was addressed —</p><form method="post" action="/hand/retry"><input type="hidden" name="uri" value="{uri}"><button class="door">Retry</button></form>
 <!-- world: the listing, each object a small card with its mark and its door word -->
-<h1 class="title">The world<small>the objects you may read, each with its door word when the directory names one</small></h1>
+<h1 class="title">The world<small>the objects you may read, each with its door word when the commonplace names one</small></h1>
 <ul class="cards">{items}</ul>{more}
 <!-- world_item -->
 <li class="minicard"><a class="kind" data-id="{id}" href="/o/{href}">{id}</a>{word}{yours}</li>

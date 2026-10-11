@@ -32,33 +32,34 @@ def ref(obj): return rec(world=lab(''), object=lab(obj))
 def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(items=lst(*rows))}  # world/lib/Relation.obend
 
 
-# (label, description, object, watched field, [(spell, what comes back)]): every door with an object points at a
-# genesis object. The spells and their `»` lines are the root menu's
-# (docs/previews/gsb-root-menu-v3.txt, docs/MENU.md §1); the watched field is the count on the door line.
+# The commonplace's doors (label, object, [(spell, what comes back)]): the hand's named things, cited from the town's
+# first card (world/bodies/commonplace.obend). The spells and their `»` lines are the menu's (docs/MENU.md §1).
 DOORS = [
-    ('GARDEN', "Plant something; rain on another's planting. Each bell keeps who helped it grow.", 'garden', 'children',
-     [('delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver', 'a bell, garden/bell/N; you hear when it rings')]),
-    ('ROOMS', 'Enter a scene, follow its choices, read what makes it move.', 'rooms', 'presence',
-     [('delvetalk rooms enter', ''),
-      ('delvetalk rooms choose / choice: Open', 'the passage moves; a ```spween block here makes your own')]),
-    ('WORKSHOP', "Read what a thing runs; write Bend; the checker answers; offer the change to its owner's law.", 'workshop', 'held',
-     [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
-    ('TIDE', 'Subscribe yourself to a cadence; anyone may tick; too soon is refused by name.', 'tide', 'ticks',
-     [('delvetalk tide subscribe / every: 3 / note: first light', ''),
-      ('delvetalk tide tick', 'too soon: refused tooSoon; a due tick notes your avatar')]),
-    ('ANTHOLOGY', 'Write a line; the keeper admits; the card numbers them.', 'anthology', 'lines',
-     [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
-    ('KINDS', 'Make a kind; anyone makes one of it.', 'kinds', 'count',
-     [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
-    # A link door: no object (the empty reference); its description is its line.
-    ('STUDIO', f'heap and REPL: {ORIGIN}/AGENTS.md', '', '', []),
+    ('GARDEN', 'garden', [('delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver', 'a bell, garden/bell/N; you hear when it rings')]),
+    ('ROOMS', 'rooms', [('delvetalk rooms enter', ''),
+                        ('delvetalk rooms choose / choice: Open', 'the passage moves; a ```spween block here makes your own')]),
+    ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
+    ('TIDE', 'tide', [('delvetalk tide subscribe / every: 3 / note: first light', ''),
+                      ('delvetalk tide tick', 'too soon: refused tooSoon; a due tick notes your avatar')]),
+    ('ANTHOLOGY', 'anthology', [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
+    ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
 ]
+# A link door: no object (the empty reference); its description is its line.
+STUDIO = ('STUDIO', f'heap and REPL: {ORIGIN}/AGENTS.md')
 
 
-def door(label, description, to, watch, examples):
-    """A Directory `Door` (world/objects/Directory.obend)."""
-    return rec(label=lab(label), description=lab(description), to=ref(to),
-               examples=lst(*[rec(example=lab(e), comes=lab(c)) for e, c in examples]), watch=lab(watch))
+def door(label, to, examples, description=''):
+    """A door as a record cites it (Card.Doorway, world/lib/Card.obend)."""
+    return rec(label=lab(label), to=ref(to), description=lab(description),
+               examples=lst(*[rec(example=lab(e), comes=lab(c)) for e, c in examples]))
+
+
+def commonplace(opener):
+    """The town's first card: a record the opener keeps, reading words with hob's policy, citing the doors."""
+    return rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE COMMONPLACE'),
+               policy=ref('policy'), cites=lst(*[door(*d) for d in DOORS], door(STUDIO[0], '', [], STUDIO[1])))
+
+
 # hob's instruction (docs/FLEX.md §2), as Policy.hob() (world/objects/Policy.obend) has it.
 POLICY_SYSTEM = ('hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; '
                  'the card and its law decide what is admitted, never you.')
@@ -102,10 +103,10 @@ def page_body(name):
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
 # package it makes; its creator passes it (tests/test_genesis.py compares the two).
-RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the doors, what it makes, its scene or its code; anyone else only by its spells": '
-              'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(cites) and unchanged(makes) '
+RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the policy, the doors, what it makes, its scene or its code; anyone else only by its spells": '
+              'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(policy) and unchanged(cites) and unchanged(makes) '
               'and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\n'
-              'law kept "a line is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) '
+              'law kept "a line, an admission, a mark or a greeting is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) '
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
               'law methods "what was written, admitted and marked, who is here, who left, the variables and what lies here change only by their spells, never by a proposal": '
               'request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things))')
@@ -140,7 +141,7 @@ def seeds(opener):
     return [('policy', 'Policy', rec(owner=lab(opener), model=lab('claude-haiku-5-5'), system=lab(POLICY_SYSTEM),
                                      lexicon=lst(*[rec(word=lab(w), meaning=lab(m)) for w, m in LEXICON]),
                                      examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
-            ('directory', 'Directory', rec(owner=lab(opener), policy=ref('policy'))),  # its doors are added once their objects exist
+            ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
             ('garden', 'Garden', rec(owner=lab(opener), ownerHandle=lab(HANDLE), policy=ref('policy'))),
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'), policy=ref('policy'))),
@@ -178,11 +179,7 @@ def run(host, opener=OPENER):
                      'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal'), 'reply': reply})
         if reply.get('status') != 'created':
             return made, None
-    # The directory's doors, added by the opener once every object exists: a door subscribes to the field its
-    # door line counts, as the owner's turn.
-    directory = next(m for m in made if m['object'] == 'directory')
-    directory['doors'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'directory', 'method': 'add',
-                                     'argument': rec(door=door(*d)), 'identity': 'genesis-door-' + d[0]}).get('status') for d in DOORS]    # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
+    # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
     # garden existed, hears each planting now, and ticks the tide every 60 clock minutes.
     wake = 'wake/' + opener
     tide = next(m for m in made if m['object'] == 'tide')
@@ -197,15 +194,15 @@ def run(host, opener=OPENER):
     kinds['made'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'make', 'identity': 'genesis-kind-' + name,
                                 'argument': rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), law=lab(law), body=lab(body_of(body)))}).get('status')
                      for name, of, form, head, law, body in KINDS]
-    rooms = next(m for m in made if m['object'] == 'rooms')
-    rooms['body'] = host.send({'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-rooms-body', 'object': 'rooms', 'version': 0,
-                               'package': body_of('room'), 'mode': 'extend'}).get('status')
+    for name, body in (('commonplace', 'commonplace'), ('rooms', 'room')):
+        next(m for m in made if m['object'] == name)['body'] = host.send({'op': 'world-reprogram', 'principal': opener, 'identity': f'genesis-{name}-body',
+                                                                          'object': name, 'version': 0, 'package': body_of(body), 'mode': 'extend'}).get('status')
     library = next(m for m in made if m['object'] == 'library')
     library['pages'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'library', 'method': 'shelve', 'identity': 'genesis-shelve-' + name,
                                    'argument': rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),
                                                    body=lab(page_body(name)))}).get('status') for name, kind, title in PAGES]
     # One card per door: each door's object publishes its page(), which the bridge drafts as `wiki: <Door>` for the hand to post.
-    for label, _, to, _, _ in DOORS:
+    for label, to, _ in DOORS:
         if to and any(m['object'] == to for m in made):
             page = host.send({'op': 'world-turn', 'principal': opener, 'object': to, 'method': 'publishPage', 'argument': rec(page=lab(label.capitalize())),
                               'identity': 'genesis-page-' + to})

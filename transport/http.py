@@ -620,7 +620,7 @@ class Handler(BaseHTTPRequestHandler):
             found = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('object', [''])[0]
             return self.reply(302, '', 'text/plain', [('Location', '/o/' + urllib.parse.quote(found, safe=''))])
         if name in ('play', 'reply'):
-            return self.play(p['object'] or 'directory', name == 'reply')
+            return self.play(p['object'] or 'commonplace', name == 'reply')
         if name == 'page':
             return self.object_page(p['object'])
         return self.agents(name, p['heap'], p['object'], p['method'])
@@ -672,7 +672,7 @@ class Handler(BaseHTTPRequestHandler):
             nxt = urllib.parse.urlencode({**({'prefix': q['prefix']} if 'prefix' in q else {}), 'after': ids[-1]}) if ids and reply.get('more') else ''
             names = reply.get('methods') or {}  # per id, when the host answers them (host op wanted)
             if self.browser():
-                words = {d['to']['object']: d.get('label', '') for d in door_rows(host.send({'op': 'world-view', 'principal': principal, 'object': 'directory'}))}
+                words = {d['to']['object']: d.get('label', '') for d in door_rows(host.send({'op': 'world-view', 'principal': principal, 'object': 'commonplace'}))}
                 return self.html(200, pages.listing(ids, words, who['handle'], principal, nxt and f'{base}/world?{nxt}'))
             return self.answer(reply, links={'item': [link(f'{base}/world/{oid(i)}', name=i, **({'actions': names[i]} if i in names else {}))
                                                       for i in ids],

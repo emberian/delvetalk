@@ -60,9 +60,14 @@ record Held:
   proposerHandle: String
   name: String
   intent: String
-# A principal the directory's menu has gone to once, keyed {principal}.
+# A principal the commonplace has greeted once, keyed {principal}.
 record Greeting:
   principal: String
+# When a reader was last answered for words that named nothing, keyed {principal}: the
+# commonplace's hourly bound (its `due`).
+record Missed:
+  principal: String
+  at: Nat
 # A line an avatar's principal sent (its `outbox`, which followers subscribe to), keyed {at, n}:
 # `at` the height its turn read, `n` the outbox's count then.
 record Letter:

@@ -9,7 +9,7 @@ import unittest
 
 from deploy import genesis
 from tests.town import Town
-from tests.wire import label, record
+from tests.wire import label, nat, record
 from transport.identity import ORIGIN
 
 
@@ -38,22 +38,22 @@ class Genesis(unittest.TestCase):
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)
-        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (7, 9))
+        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (6, 9))
         made_names = {m['object'] for m in made}
-        self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if to and to not in made_names], [])  # every door with an object resolves
-        self.assertEqual([l for l, _, to, _, _ in genesis.DOORS if not to], ['STUDIO'])
-        self.assertEqual([d[0] for d in genesis.DOORS], ['GARDEN', 'ROOMS', 'WORKSHOP', 'TIDE', 'ANTHOLOGY', 'KINDS', 'STUDIO'])
+        self.assertEqual([l for l, to, _ in genesis.DOORS if to not in made_names], [])  # every door with an object resolves
+        self.assertEqual([d[0] for d in genesis.DOORS] + [genesis.STUDIO[0]], ['GARDEN', 'ROOMS', 'WORKSHOP', 'TIDE', 'ANTHOLOGY', 'KINDS', 'STUDIO'])
+        self.assertEqual([(m['object'], m['body']) for m in made if 'body' in m], [('commonplace', 'admitted'), ('rooms', 'admitted')])
         said = {}
         for word in ('ROOMS', 'STUDIO'):
-            got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'directory', 'method': 'receive',
+            got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'commonplace', 'method': 'receive',
                              'argument': record(text=label(word), post=label('at://x/p/' + word)),
                              'identity': 'door-' + word})
             self.assertEqual(got['status'], 'admitted', got)
             said[word] = got['offers'][0]['text']
         self.assertTrue(said['ROOMS'].startswith('The Moss Gate (0 here). Enter: delvetalk rooms enter.'), said)
-        # The link door has no object: naming it reaches Plan.card on the empty reference (the Directory answers
-        # "The door to  opens on nothing yet."), so only the menu carries its URL.
-        menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'directory'})['text']
+        # The link door has no object: naming it answers its description.
+        self.assertEqual(said['STUDIO'], 'STUDIO\nheap and REPL: ' + ORIGIN + '/AGENTS.md\n')
+        menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'commonplace'})['text']
         self.assertIn(ORIGIN + '/AGENTS.md', menu)
 
     def test_the_openers_wake_ticks_the_tide_every_hour_with_nobody_posting(self):
@@ -104,11 +104,13 @@ class Genesis(unittest.TestCase):
         self.assertNotIn('mine', self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'library'})['text'])
 
 
-class MenuFromState(unittest.TestCase):
-    """docs/MENU.md §1.4: the root menu is rendered from the directory's own state. Genesis adds each door
-    once its object exists, subscribing the directory to the field its door line counts; the counts move
-    as strangers plant, submit, enter and tick; an arc under the garden prints its spell; a reader's
-    menu opens on the door their reply last went through."""
+class Commonplace(unittest.TestCase):
+    """docs/METAPHYSICS.md §5, §7.5: the town's first card is the commonplace, a record the opener keeps. Its
+    card says what changed in the town, newest first (World.changed, read when asked: nothing is kept to say
+    it), each `<id> v<n> by <handle>, entry N`, then the first spells, then the doors the hand named, each
+    with the spells it prints. A principal's first words get hob's greeting over it, opening on the door
+    the words went through; the owner hangs an arc under a door with `door` and gives it a spell with
+    `example`."""
 
     @classmethod
     def setUpClass(cls):
@@ -132,105 +134,60 @@ class MenuFromState(unittest.TestCase):
             if not self.host.send({'op': 'world-pending'}).get('count'):
                 return
 
-    def menu(self, reader='did:plc:reader'):
-        return self.host.send({'op': 'world-card', 'principal': reader, 'object': 'directory'})['text']
+    def owner(self, method, ident, **fields):
+        got = self.host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'commonplace', 'method': method,
+                              'identity': ident, 'argument': record(**{k: label(v) for k, v in fields.items()})})
+        self.assertEqual(got['status'], 'admitted', got)
+        return got
 
-    def advance(self, minutes):
-        clock = self.host.send({'op': 'world-status'}).get('clock', 0)
-        self.host.send({'op': 'world-advance', 'principal': 'transport', 'height': clock + minutes})
-
-    def test_the_counts_follow_the_world_and_a_reader_meets_their_last_door_first(self):
-        directory = next(m for m in self.made if m['object'] == 'directory')
-        self.assertEqual(directory['doors'], ['admitted'] * 7, directory)
+    def test_what_changed_leads_and_the_doors_follow_within_the_clip(self):
         stranger, glm, kimi = 'did:plc:stranger', 'did:plc:glm', 'did:plc:kimi'
-        # Before anything happens: every watched door shows its standing count.
-        fresh = self.menu()
-        for line in ('GARDEN · 0 planted\n', 'ROOMS · 0 here\n', 'WORKSHOP · 0 held\n', 'TIDE · tick 0\n', 'ANTHOLOGY · 0 lines\n', 'KINDS · 4 made\n'):
-            self.assertIn(line, fresh)
-        for n, colour in enumerate(('silver', 'amber', 'violet'), 1):
+        card = self.host.send({'op': 'world-card', 'principal': stranger, 'object': 'commonplace'})['text']
+        self.assertTrue(card.startswith('✾ DELVETALK · THE COMMONPLACE\n\nSeven doors.'), card)
+        self.assertIn('  delvetalk commonplace since / entry: 0\n', card)
+        self.assertIn('ROOMS\n  delvetalk rooms enter\n', card)
+        for n, colour in enumerate(('silver', 'amber'), 1):
             self.say(glm, 'garden', 'delvetalk garden plant / seed: a bell for the %d / colour: %s' % (n, colour), 'plant-%d' % n)
-        self.say(kimi, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: it rained here first', 'rain-1')
-        for n in range(4):
-            self.say(glm, 'anthology', 'delvetalk anthology write / text: line %d of the bell' % n, 'line-%d' % n)
-        self.say(kimi, 'rooms', 'delvetalk rooms enter', 'enter-1')
-        for n in range(3):
-            self.advance(1)
-            self.say(kimi, 'tide', 'delvetalk tide tick', 'tick-%d' % n)
+        rain = self.say(kimi, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: it rained here first', 'rain-1')
         # The owner opens an arc under the garden (SEEDING §4): its spell prints under GARDEN.
-        arc = self.host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'directory', 'method': 'add', 'identity': 'arc-bell-1',
-                              'argument': record(door=genesis.door('BELL', 'The first bell.', 'garden/bell/1', '',
-                                                                        [('delvetalk garden/bell/1 rain / text: it rained here first',
-                                                                          'it keeps who rained; bell/1 has 2, the seventh rings it')]))})
-        self.assertEqual(arc['status'], 'admitted', arc)
-        today = self.menu()
-        self.assertIn('GARDEN · 3 planted, newest garden/bell/3\n', today)
-        self.assertIn('ANTHOLOGY · 4 lines, newest #4\n', today)
-        # Seven doors and an arc fit the clip on the day the newest names show (docs/MENU.md §1.1 rule 4).
-        self.assertLessEqual(len(today), 1400)
-        self.assertIn('KINDS · 4 made\n', today)
-        self.assertIn('STUDIO · heap and REPL', today)
-        # A day later the newest names are gone; the standing counts remain. This is
-        # docs/previews/gsb-root-menu-v3.txt with this world's counts.
-        self.advance(1441)  # the opener's wake ticks the tide on the hour as well
-        self.deliver()
-        later = self.menu()
-        ticks = {f['name']: f['value'] for f in self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'tide'})['state']['fields']}['ticks']['value']
-        self.assertEqual(later, (
-            "✾ DELVETALK · ROOT\n"
-            "\n"
-            "Seven doors. Indented lines are typed back whole; » is what comes back; words reach hob; its spell runs unless the card asks first.\n"
-            "GARDEN · 3 planted\n"
-            "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
-            "  » a bell, garden/bell/N; you hear when it rings\n"
-            "  delvetalk garden/bell/1 rain / text: it rained here first\n"
-            "  » it keeps who rained; bell/1 has 2, the seventh rings it\n"
-            "ROOMS · 1 here\n"
-            "  delvetalk rooms enter\n"
-            "  delvetalk rooms choose / choice: Open\n"
-            "  » the passage moves; a ```spween block here makes your own\n"
-            "WORKSHOP · 0 held\n"
-            "  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n"
-            "  » hob drafts the Bend; checked, held as #n for you to adopt\n"
-            "TIDE · tick " + ticks + "\n"
-            "  delvetalk tide subscribe / every: 3 / note: first light\n"
-            "  delvetalk tide tick\n"
-            "  » too soon: refused tooSoon; a due tick notes your avatar\n"
-            "ANTHOLOGY · 4 lines\n"
-            "  delvetalk anthology write / text: the bell kept both of us\n"
-            "  » numbered, [pending] until the keeper admits\n"
-            "KINDS · 4 made\n"
-            "  delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80\n"
-            "  » kind/lamp, a kind anyone makes\n"
-            "STUDIO · heap and REPL: " + ORIGIN + "/AGENTS.md\n"
-            "\n"
-            "  delvetalk env observe\n"
-            "  » what addressed you since you looked\n"
-            "Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"))
-        self.assertLess(len(later), 1400)
-        self.assertGreaterEqual(int(ticks), 3)
-        # A reader whose field line the directory passed to a door meets that door first.
-        greeted = self.say(stranger, 'directory', 'hello', 'greet')
-        # The greeting is the trie under hob's line, within the clip, with seven doors, the arc and the
-        # link door (a link door is never clipped).
-        greeting = greeted['offers'][-1]['text']
-        self.assertEqual(greeting, 'hob: words reach me, spells reach the cards. The doors:\n'
-                         + later.replace('; words reach hob; its spell runs unless the card asks first.', '.'))
+        self.owner('door', 'arc-door', label='BELL', to='garden/bell/1')
+        self.owner('example', 'arc-spell', label='BELL', spell='delvetalk garden/bell/1 rain / text: it rained here first',
+                   comes='it keeps who rained; bell/1 has 2, the seventh rings it')
+        blank = self.say(stranger, 'commonplace', '', 'blank')['offers'][-1]['text']
+        self.assertLessEqual(len(blank), 1400, blank)
+        changed = blank[blank.index('What changed, newest first:\n'):].split('\n')[1:9]
+        self.assertEqual(changed[0], 'garden/bell/1 v%s by kimi, entry %d' % (changed[0].split(' v')[1].split(' ')[0], rain['receipt']['height']), changed)
+        self.assertTrue(all(' by ' in c and ', entry ' in c for c in changed), changed)
+        self.assertNotIn('commonplace v', blank)  # its own greetings and doors are not news
+        self.assertIn('  delvetalk kinds make / name: lamp / of: record\n  » kind/lamp, a kind anyone makes\n  delvetalk garden/bell/1 ?\n', blank)
+        self.assertIn('GARDEN\n  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n'
+                      '  » a bell, garden/bell/N; you hear when it rings\n'
+                      '  delvetalk garden/bell/1 rain / text: it rained here first\n'
+                      '  » it keeps who rained; bell/1 has 2, the seventh rings it\n', blank)
+        self.assertIn('STUDIO · heap and REPL: ' + ORIGIN + '/AGENTS.md\n', blank)  # a link door is never clipped
+        self.assertTrue(blank.endswith('Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n'), blank)
+        # since an entry: only what changed after it
+        since = self.host.send({'op': 'world-turn', 'principal': stranger, 'object': 'commonplace', 'method': 'since', 'identity': 'since',
+                                'argument': record(entry=nat(rain['receipt']['height'] - 1))})
+        self.assertEqual(since['offers'][-1]['text'].split('What changed, newest first:\n')[1].split('\n')[0].split(' v')[0], 'garden/bell/1')
+        self.assertEqual(since['offers'][-1]['text'].split('What changed, newest first:\n')[1].split('\n')[1], '  delvetalk kinds make / name: lamp / of: record')
+        # A stranger hangs no door.
+        refused = self.host.send({'op': 'world-turn', 'principal': stranger, 'object': 'commonplace', 'method': 'door', 'identity': 'stranger-door',
+                                  'argument': record(label=label('MINE'), to=label('garden'))})
+        self.assertEqual(refused['result']['label'], 'refused', refused)
+
+    def test_first_words_get_hobs_greeting_once_and_a_field_line_goes_to_its_door(self):
+        reader = 'did:plc:newcomer'
+        greeting = self.say(reader, 'commonplace', 'hello', 'hello')['offers'][-1]['text']
+        self.assertTrue(greeting.startswith('hob: words reach me, spells reach the cards. The doors:\n✾ DELVETALK · THE COMMONPLACE\n\n'), greeting)
+        self.assertIn('What changed, newest first:\n', greeting)
         self.assertLessEqual(len(greeting), 1400)
-        self.say(stranger, 'directory', 'write: the bell kept both of us', 'by-field-line')
-        mine = self.menu(stranger)
-        # The first door whose card takes `write` is ROOMS (a room is a record), so the line is the room's.
-        self.assertTrue(mine.startswith(later[:later.index('GARDEN')] + 'ROOMS · 1 here\n'), mine)
-        self.assertEqual(self.menu().index('GARDEN'), later.index('GARDEN'))
-        # Removing a watched door drops its news and its subscription: the next planting writes no news.
-        removed = self.host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'directory', 'method': 'remove', 'identity': 'rm-garden',
-                                  'argument': record(door=record(label=label('GARDEN')))})
-        self.assertEqual(removed['status'], 'admitted', removed)
-        version = self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'directory'})['version']
-        self.say(glm, 'garden', 'delvetalk garden plant / seed: a bell for the fourth / colour: amber', 'plant-4')
-        after = self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'directory'})
-        self.assertEqual(after['version'], version)
-        news = {f['name']: f['value'] for f in after['state']['fields']}['news']['payload']['fields'][0]['value']['items']
-        self.assertEqual(sorted(r['fields'][0]['value']['value'] for r in news), ['anthology', 'kinds', 'rooms', 'tide', 'workshop'])
+        again = self.say(reader, 'commonplace', 'hello', 'again')
+        self.assertFalse(any(o['text'].startswith('hob: words reach me') for o in again.get('offers') or []), again)
+        # A field line naming a door's action goes to that door, whose card answers.
+        passed = self.say(reader, 'commonplace', 'choose: Open', 'by-field-line')
+        self.assertEqual(passed['result']['label'], 'passed', passed)
+        self.assertTrue(passed['offers'][-1]['text'].startswith('The Moss Gate (0 here).'), passed)
 
 
 if __name__ == '__main__':

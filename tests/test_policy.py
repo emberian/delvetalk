@@ -14,6 +14,7 @@ import unittest
 from tests.host import as_owner
 
 from tests.test_chain import Chain, garden_seed, town_kinds
+from tests.test_receive import commonplace
 from tests.test_objects import check, compile_job
 from tests.wire import boolean, label, nil, record, reference, rows
 from tests.bend import closure, declared
@@ -388,17 +389,12 @@ class PolicyObject(Chain):
         self.assertIn("Planted, glm: a silver bell, “a fern that remembers”, at garden/bell/1", resumed["receipt"]["offers"][0]["text"])
 
 
-    def test_a_resumed_interpretation_whose_directory_moved_meanwhile_still_admits(self):
+    def test_a_resumed_interpretation_whose_commonplace_moved_meanwhile_still_admits(self):
         """Rehearsal run 5, finding 6: inkling's prose resumed after another principal's greeting
-        had moved the directory, was refused staleRoot, and nobody retried it."""
+        had moved the commonplace, was refused staleRoot, and nobody retried it."""
         self.policy()
-        made = self.host.send(op="world-create", principal="ember", identity="mk-dir", object="directory",
-                              modules=closure("Directory"), entry="initial",
-                              seed=record(owner=label("ember"), policy=reference("policy")))
-        self.assertEqual(made["status"], "created", made)
-        door = record(label=label("GARDEN"), description=label("Plant something."), to=reference("garden"), examples={"tag": "list", "items": []}, watch=label(""))
-        self.assertEqual(self.turn("directory", "add", record(door=door), principal="ember")["result"]["label"], "done")
-        prose = lambda who, text, ident: self.turn("directory", "receive", record(text=label(text), post=label("at://" + ident)),
+        commonplace(self, "policy", doors=[("GARDEN", "garden", [])])
+        prose = lambda who, text, ident: self.turn("commonplace", "receive", record(text=label(text), post=label("at://" + ident)),
                                                    principal=who, identity=ident, reach="mention")
         # With a policy a first reply is read by hob before the menu (docs/FLEX.md section 2).
         none = lambda utterance: self.host.send(op="world-interpretation", id=[p for p in self.host.send(op="world-interpretations")["pending"]
@@ -409,7 +405,7 @@ class PolicyObject(Chain):
         waiting = prose("inkling", "an env interface card for the garden, perhaps?", "i-2")
         self.assertEqual(waiting["status"], "suspended", waiting)
         self.assertEqual(prose("zero", "what is this portal", "z-1")["status"], "suspended")
-        moved = none("what is this portal")                                                      # greets zero: the directory moves
+        moved = none("what is this portal")                                                      # greets zero: the commonplace moves
         self.assertEqual([r["status"] for r in moved["resumed"]], ["admitted"], moved)
         [item] = self.host.send(op="world-interpretations")["pending"]
         settled = self.host.send(op="world-interpretation", id=item["id"],

@@ -92,7 +92,9 @@ class Bell(Arc):
         # Its watcher's avatar is told: glm watched the bell's marks (a ring is one) before the rains.
         self.assertIn((bell, "news from %s" % bell), self.inbox(GLM))
         long = self.say(GLM, bell, "delvetalk %s rain\ntext: %s" % (bell, "x" * 201))
-        self.assertEqual(self.outcome(long), ("refused", "badSpell"), long)
+        # A bell is a record: it answers the misfit itself, admitted and refused by its clause (FLEX section 2).
+        self.assertEqual((long["status"], long["result"]["label"], long["receipt"]["outcome"]["writes"]), ("admitted", "refused", []), long)
+        self.assertEqual(long["result"]["payload"]["fields"][0]["value"]["value"], "badValue", long)
 
 
 class Garden(Arc):

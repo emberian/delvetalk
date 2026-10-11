@@ -1,17 +1,17 @@
-"""The directory hears the gate's hour from the archived posts: field lines plant, rains and chatter
+"""The commonplace hears the gate's hour from the archived posts: field lines plant, rains and chatter
 get nothing, the model's spell reaches the door.
 
 Evidence for FOUNDATION §11 (layer: rehearsal).
 
-The directory hears the §11 hour (rehearsal run 4, finding A).
+The commonplace hears the §11 hour (rehearsal run 4, finding A).
 
-The seven posts FOUNDATION §11 calls the first integration test reach the directory as
+The seven posts FOUNDATION §11 calls the first integration test reach the commonplace as
 replies under its hub posts. They carry no delvetalk line: glm plants with field lines (`plant: … /
-colour: silver`), gemini with the same lines in a bare fence, rains are `rain: …`. The directory
+colour: silver`), gemini with the same lines in a bare fence, rains are `rain: …`. The commonplace
 reads a post's `name: value` lines; when the first names an action one of its doors offers (the
 door object's method table, read with `inspect`), the lines become that door's spell and go to its
 receive by call. Other prose, from a principal the menu has already reached, is read by the town's
-model under the directory's policy against every door's forms; a spell in its answer that fits a
+model under the commonplace's policy against every door's forms; a spell in its answer that fits a
 door's form goes to that door, `unclear: not addressed` gets no offer, a miss naming an action no
 door offers (a rain) is answered at once with the nearest door's usage card, and any other miss is
 asked once more and then answered with what is still needed.
@@ -24,12 +24,13 @@ import os
 import unittest
 
 from deploy import genesis
+from deploy.genesis import STUDIO
 from tests.host import as_owner
 
 from tests import test_chain, test_policy
 from tests.test_chain import garden_seed, town_kinds
 from tests.test_laws import anthology_seed
-from tests.test_receive import ROOT_DOORS, door
+from tests.test_receive import commonplace as make_commonplace, door
 from tests.test_rooms import make_room, room_seed
 from tests.wire import field, label, nat, record, rows
 from transport.identity import ORIGIN
@@ -51,18 +52,14 @@ def post(rkey):
 class Hub(test_chain.Chain):
     policy = test_policy.PolicyObject.policy
 
-    def directory(self, policy=""):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), policy=reference(policy)))
-        self.assertEqual(r["status"], "created", r)
-        # The garden is made first, so the directory learns its forms when its door is added.
+    def commonplace(self, policy=""):
+        # The garden is made first, so the commonplace learns its forms when a reply reaches a door.
         self.make("garden", closure("Garden"), garden_seed(""))
         town_kinds(self.host.send)
-        for d in ROOT_DOORS:
-            self.assertEqual(self.turn("root", "add", record(door=door(*d)), principal="ember")["result"]["label"], "done")
+        make_commonplace(self, policy)
 
     def say(self, text, who, uri="at://x/post/1"):
-        return self.turn("root", "receive", record(text=label(text), post=label(uri)), principal=who, reach="mention")
+        return self.turn("commonplace", "receive", record(text=label(text), post=label(uri)), principal=who, reach="mention")
 
     def greet(self, *who):
         """Each principal's first reply. With no policy it gets the greeting card at once; with
@@ -74,7 +71,7 @@ class Hub(test_chain.Chain):
                 self.assertEqual(first["result"]["label"], "silent", first)
                 self.assertTrue(first["receipt"]["offers"][-1]["text"].startswith(GREETING), first)
             else:
-                self.assertEqual(first["result"]["label"], "menu", first)
+                self.assertEqual(first["result"]["label"], "usage", first)
 
     def children(self):
         return [field(c, "object")["value"] for c in rows(field(self.state("garden"), "children"))]
@@ -88,7 +85,7 @@ class Hub(test_chain.Chain):
     def test_a_cistern_line_digs_a_cistern_and_one_past_a_taken_id_is_the_next_free(self):
         """Run 5, finding 3: the garden offers a `cistern` form; a `cistern:` line through the hub
         digs garden/cistern/1 through kind/cistern, and the host mints the next past an id already taken."""
-        self.directory()
+        self.commonplace()
         self.greet(KIMI, GLM)
         first = self.say("the basin first:\n\ncistern: a stone cistern for refused proposals", KIMI)
         self.assertEqual((first["status"], first["result"]["label"]), ("admitted", "passed"), first)
@@ -114,7 +111,7 @@ class Hub(test_chain.Chain):
         """A never-greeted principal's prose that asks for something is greeted and then read, not
         discarded for the menu (codex agent 2)."""
         self.policy()
-        self.directory("policy")
+        self.commonplace("policy")
         asked = self.say("please plant something amber for moths", GLM)
         self.assertEqual(asked["status"], "suspended", asked)
         resumed = self.interpret("delvetalk garden plant\nseed: something for moths\ncolour: amber")
@@ -123,9 +120,9 @@ class Hub(test_chain.Chain):
         # on the door the proposal went through.
         texts = [o["text"] for o in resumed["receipt"]["offers"]]
         self.assertIn("Planted, ", texts[0])
-        self.assertTrue(texts[-1].startswith(GREETING + "✾ DELVETALK · ROOT\n\nSeven doors. "), texts)
-        self.assertEqual(texts[-1].split("\n")[4], "GARDEN · 0 planted")  # the menu as the turn read it
-        self.assertEqual(field(rows(field(self.state("root"), "visits"))[0], "door"), label("GARDEN"))
+        self.assertTrue(texts[-1].startswith(GREETING + "✾ DELVETALK · THE COMMONPLACE\n\nSeven doors. "), texts)
+        self.assertIn("\nWhat changed, newest first:\n", texts[-1])  # the card as the turn read it
+        self.assertIn("\nGARDEN\n  delvetalk garden plant", texts[-1])
         [bell] = self.children()
         self.assertEqual(self.seed_of(bell), ("something for moths", "amber"))
         # Greeted once: hob reads the next words, and its none gets no menu.
@@ -142,7 +139,7 @@ class Hub(test_chain.Chain):
         door's forms; there is no mention gate and no second attempt. hob's ask is the question
         over the nearest doors, its card the root menu, its none quiet."""
         self.policy()
-        self.directory("policy")
+        self.commonplace("policy")
         self.greet(GLM, KIMI)
         planted = self.turn("garden", "receive", record(text=label("delvetalk garden plant / colour: silver / seed: a fern"), post=label("at://x/p")), principal=GLM)
         self.assertEqual(planted["result"]["label"], "planted", planted)
@@ -152,15 +149,15 @@ class Hub(test_chain.Chain):
         [card] = [o["text"] for o in asked["receipt"]["offers"]]
         self.assertEqual(card, (
             "hob: no door takes that as said. The nearest:\n"
-            "GARDEN · 1 planted, newest garden/bell/1\n"
+            "GARDEN\n"
             "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
             "  » a bell, garden/bell/N; you hear when it rings\n"))
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # hob's card: the root menu.
         self.assertEqual(self.say("is there a map of the town?", KIMI, uri="at://x/post/4")["status"], "suspended")
         carded = self.interpret("card")
-        self.assertEqual(carded["result"]["label"], "menu", carded)
-        self.assertTrue(carded["receipt"]["offers"][0]["text"].startswith("✾ DELVETALK · ROOT\n\nSeven doors. "), carded)
+        self.assertEqual(carded["result"]["label"], "usage", carded)
+        self.assertTrue(carded["receipt"]["offers"][0]["text"].startswith("✾ DELVETALK · THE COMMONPLACE\n\nSeven doors. "), carded)
         # hob's none is quiet: nothing offered.
         self.assertEqual(self.say("is the garden open on the wiki today?", KIMI, uri="at://x/post/3")["status"], "suspended")
         quiet = self.interpret("none")
@@ -170,7 +167,7 @@ class Hub(test_chain.Chain):
         """The mention gate is gone: prose naming no door is still hob's to read (the host's reach
         decides whether it was addressed at all); hob's `none` is silence."""
         self.policy()
-        self.directory("policy")
+        self.commonplace("policy")
         self.greet(KIMI)
         chatter = self.say("lovely weather on the wiki today", KIMI, uri="at://x/post/2")
         self.assertEqual(chatter["status"], "suspended", chatter)
@@ -179,9 +176,9 @@ class Hub(test_chain.Chain):
 
     def test_a_spell_that_does_not_fit_comes_back_as_hobs_question(self):
         """A rain no door offers is a spell that does not fit: the host answers `unclear` with the
-        reason as the need, and the directory asks it over the nearest doors, once."""
+        reason as the need, and the commonplace asks it over the nearest doors, once."""
         self.policy()
-        self.directory("policy")
+        self.commonplace("policy")
         self.greet(KIMI)
         self.assertEqual(self.say(post("3mxghh4qis22f"), KIMI)["status"], "suspended")
         missed = self.interpret("delvetalk garden rain\ntext: a fine gray drizzle")
@@ -189,18 +186,18 @@ class Hub(test_chain.Chain):
         [card] = [o["text"] for o in missed["receipt"]["offers"]]
         self.assertEqual(card, (
             "hob: no door takes that as said. The nearest:\n"
-            "GARDEN · 0 planted\n"
+            "GARDEN\n"
             "  delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver\n"
             "  » a bell, garden/bell/N; you hear when it rings\n"))
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_prose_in_a_turn_with_no_reach_costs_no_model(self):
         """The host's reach (HOST-HANDOFF 118): an interpret in a turn with no reach answers
-        `unclear: not addressed` at once, so the directory is quiet and nothing is pending."""
+        `unclear: not addressed` at once, so the commonplace is quiet and nothing is pending."""
         self.policy()
-        self.directory("policy")
+        self.commonplace("policy")
         self.greet(KIMI)
-        r = self.turn("root", "receive", record(text=label("what a lovely evening"), post=label("at://x/post/9")), principal=KIMI)
+        r = self.turn("commonplace", "receive", record(text=label("what a lovely evening"), post=label("at://x/post/9")), principal=KIMI)
         self.assertEqual((r["status"], r["result"]["label"], r.get("offers", [])), ("admitted", "silent", []), r)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
@@ -209,7 +206,7 @@ class Hub(test_chain.Chain):
         reasoning: playtest 68746) over the doors whose words, actions or fields the reply touched
         (all when none), to type from. No second attempt follows."""
         self.policy()
-        self.directory("policy")
+        self.commonplace("policy")
         self.greet(KIMI)
         self.assertEqual(self.say("Could the tide wake me every morning?", KIMI)["status"], "suspended")
         missed = self.interpret("ask: how often?")
@@ -225,14 +222,14 @@ class Hub(test_chain.Chain):
         # A reply naming the garden's planting and the anthology gets those two branches.
         self.assertEqual(self.say("I would plant a line in the anthology", KIMI, uri="at://x/post/2")["status"], "suspended")
         two = [o["text"] for o in self.interpret("ask: which?")["receipt"]["offers"]][0]
-        self.assertEqual([l for l in two.split("\n") if l and not l.startswith(" ")][:3], ["hob: no door takes that as said. The nearest:", "GARDEN · 0 planted", "ANTHOLOGY"])
+        self.assertEqual([l for l in two.split("\n") if l and not l.startswith(" ")][:3], ["hob: no door takes that as said. The nearest:", "GARDEN", "ANTHOLOGY"])
 
     def test_several_spells_in_one_reply_each_run_in_order_with_its_result(self):
         """docs/MENU.md §2.2: the model answers each spell a reply holds, one per line starting
-        delvetalk; the host answers `proposals {items}` and the directory runs each as this turn,
+        delvetalk; the host answers `proposals {items}` and the commonplace runs each as this turn,
         listing what came of each (a misfit is named, never run)."""
         self.policy()
-        self.directory("policy")
+        self.commonplace("policy")
         made = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
                               entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(made["status"], "created", made)
@@ -244,7 +241,7 @@ class Hub(test_chain.Chain):
         self.assertEqual((r["status"], r["result"]["label"]), ("admitted", "several"), r)
         texts = [o["text"] for o in r["receipt"]["offers"]]
         self.assertEqual(texts[-1], (
-            "✾ DELVETALK · ROOT\n"
+            "✾ DELVETALK · THE COMMONPLACE\n"
             "\n"
             "Three spells, in the order said:\n"
             "  delvetalk garden plant\n"
@@ -255,7 +252,6 @@ class Hub(test_chain.Chain):
             "  » unclear: colour\n"))
         self.assertEqual(len(self.children()), 1)
         self.assertEqual([field(p, "text")["value"] for p in rows(field(self.state("anthology"), "lines"))], ["the bell kept both of us"])
-        self.assertEqual(field(rows(field(self.state("root"), "visits"))[0], "door"), label("GARDEN"))
 
     def test_the_garden_hears_the_first_of_several_spells(self):
         self.policy()
@@ -268,16 +264,16 @@ class Hub(test_chain.Chain):
         self.assertEqual([self.seed_of(b) for b in self.children()], [("a fern", "silver")])
 
     def test_a_direct_replys_none_is_one_pruned_menu_an_hour_per_speaker(self):
-        """The play page: words typed to the directory itself (no post). Every such reply reaches
+        """The play page: words typed to the commonplace itself (no post). Every such reply reaches
         hob (one attempt); its none gets the menu under "I heard no door, spell or field in that."
         at most once an hour per speaker, then quiet. The first reply's menu is the greeting."""
         self.policy()
-        self.directory("policy")
-        direct = lambda text: self.turn("root", "receive", record(text=label(text), post=label("")), principal=KIMI, reach="direct")
+        self.commonplace("policy")
+        direct = lambda text: self.turn("commonplace", "receive", record(text=label(text), post=label("")), principal=KIMI, reach="direct")
         first = direct("hello there")
         self.assertEqual(first["status"], "suspended", first)
         greeted = self.interpret("none")
-        self.assertTrue(greeted["receipt"]["offers"][-1]["text"].startswith(GREETING + "✾ DELVETALK · ROOT\n"), greeted)  # the greeting: this hour's card
+        self.assertTrue(greeted["receipt"]["offers"][-1]["text"].startswith(GREETING + "✾ DELVETALK · THE COMMONPLACE\n"), greeted)  # the greeting: this hour's card
         for text in ("what a lovely evening", "thank you all", "see you tomorrow"):
             self.assertEqual(direct(text)["status"], "suspended")
             r = self.interpret("none")
@@ -285,9 +281,9 @@ class Hub(test_chain.Chain):
         self.hour_later()
         self.assertEqual(direct("still here")["status"], "suspended")
         later = self.interpret("none")
-        self.assertEqual(later["result"]["label"], "menu", later)
+        self.assertEqual(later["result"]["label"], "usage", later)
         card = later["receipt"]["offers"][0]["text"]
-        self.assertTrue(card.startswith("✾ DELVETALK · ROOT\n\nI heard no door, spell or field in that.\n\nGARDEN · 0 planted\n"), card)
+        self.assertTrue(card.startswith("✾ DELVETALK · THE COMMONPLACE\n\nI heard no door, spell or field in that.\n\nGARDEN\n"), card)
         self.assertIn("\nANTHOLOGY\n", card)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
@@ -324,41 +320,34 @@ class CardsReadFieldLines(test_chain.Chain):
 class LinkDoors(test_chain.Chain):
     """The deploy pass: genesis's STUDIO door names no object; a stranger's "STUDIO" got "The
     door to  opens on nothing yet.". A link door answers with its description (its URL)."""
-    STUDIO = ("STUDIO", "Your authenticated private heap and reflective REPL: " + ORIGIN + "/AGENTS.md", "")
 
     def test_studio_answers_with_its_url_and_field_lines_pass_it_by(self):
-        r = self.host.send(op="world-create", principal="ember", identity="mk-root", object="root", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), policy=reference("")))
-        self.assertEqual(r["status"], "created", r)
-        self.assertEqual(self.turn("root", "add", record(door=door(*self.STUDIO)), principal="ember")["result"]["label"], "done")
-        self.assertEqual(self.turn("root", "add", record(door=door("GARDEN", "Plant something.", "garden")), principal="ember")["result"]["label"], "done")
+        make_commonplace(self, doors=[("GARDEN", "garden", [])])  # the seed cites STUDIO as genesis does: a door with no object
         self.make("garden", closure("Garden"), garden_seed(""))
         town_kinds(self.host.send)
-        say = lambda text: self.turn("root", "receive", record(text=label(text), post=label("at://x/1")), principal=KIMI)
-        self.assertEqual(say("hello")["result"]["label"], "menu")
+        say = lambda text: self.turn("commonplace", "receive", record(text=label(text), post=label("at://x/1")), principal=KIMI)
+        self.assertEqual(say("hello")["result"]["label"], "usage")
         studio = say("STUDIO")
-        self.assertEqual(studio["offers"][0]["text"], "STUDIO\nYour authenticated private heap and reflective REPL: " + ORIGIN + "/AGENTS.md\n")
+        self.assertEqual(studio["offers"][0]["text"], "STUDIO\n" + STUDIO[1] + "\n")
         planted = say("plant: a lamp for moths\ncolour: amber")
         self.assertEqual(planted["result"]["label"], "passed", planted)
-        # A field line naming only the owner's `remove` is prose to the directory, never its spell.
+        # A field line naming only the owner's `undoor` is prose to the commonplace, never its spell.
         label_line = say("label: moth")
         self.assertEqual((label_line["status"], label_line["result"]["label"], label_line.get("offers", [])), ("admitted", "silent", []), label_line)
 
 
-class HandedToTheDirectory(test_chain.Chain):
+class HandedToTheCommonplace(test_chain.Chain):
     """Rehearsal run 6: anthology lines posted under glm's planting reached the bell, which has
     no policy and no anthology form, and were lost. A card's quiet prose is sent to the
-    directory's receive (Card's default); the directory, with a policy, has hob read it once
+    commonplace's receive (Card's default); the commonplace, with a policy, has hob read it once
     against THAT card's offered forms only (the bell's rain, strike, ring: not the anthology's
     write), and hob's rain spell reaches the bell."""
     policy = test_policy.PolicyObject.policy
 
     def test_replies_under_glms_planting_are_read_by_hob_against_the_bells_forms(self):
         self.policy()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
-        self.assertEqual(r["status"], "created", r)
-        self.turn("directory", "add", record(door=door("ANTHOLOGY", "Write a line.", "anthology")), principal="ember")
+        make_commonplace(self, "policy", doors=[])
+        self.turn("commonplace", "door", record(label=label("ANTHOLOGY"), to=label("anthology")), principal="ember")
         r = self.host.send(op="world-create", principal="ember", identity="mk-anthology", object="anthology", modules=closure("Record"),
                            entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
@@ -387,17 +376,15 @@ class HandedToTheDirectory(test_chain.Chain):
         self.assertEqual(rows(field(self.state("anthology"), "lines")), [])
 
     def test_prose_that_reached_no_one_handed_on_is_not_addressed_at_the_directory(self):
-        """The objects lane's hand-on: the bell's quiet prose is sent to the directory; when the words
-        reached no one (no reach stated) the directory hears it silent and no model is asked."""
+        """The objects lane's hand-on: the bell's quiet prose is sent to the commonplace; when the words
+        reached no one (no reach stated) the commonplace hears it silent and no model is asked."""
         self.policy()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
-        self.assertEqual(r["status"], "created", r)
+        make_commonplace(self, "policy", doors=[])
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
         r = self.turn("bell", "receive", record(text=label(post("3mxghjyx4pk2f")), post=label("at://x/3mxghjyx4pk2f")), principal=KIMI)
         self.assertEqual(r["status"], "admitted", r)
-        # The hand-on is delivered within the turn: the directory hears it silent, asking no one.
+        # The hand-on is delivered within the turn: the commonplace hears it silent, asking no one.
         [handed] = r["delivered"]
         self.assertEqual((handed["status"], handed["result"]["label"], handed["receipt"]["delivery"]["from"]["intent"]),
                          ("admitted", "silent", r["receipt"]["identity"]["intent"]), handed)
@@ -406,7 +393,7 @@ class HandedToTheDirectory(test_chain.Chain):
 
 
 class HandedOnToHob(test_chain.Chain):
-    """Rehearsal run 7 bells handed every conversational reply to the directory's model, 127 of
+    """Rehearsal run 7 bells handed every conversational reply to the commonplace's model, 127 of
     132 of them "not addressed"; FLEX §2 replaced the mention gate by the host's reach and one
     attempt. A reply a card handed on (it has no policy of its own) is read once by hob, against
     THAT card's offered forms only; hob's none is silence, its ask the question over the card's
@@ -416,9 +403,7 @@ class HandedOnToHob(test_chain.Chain):
     def setUp(self):
         super().setUp()
         self.policy()
-        r = self.host.send(op="world-create", principal="ember", identity="mk-directory", object="directory", modules=closure("Directory"),
-                           entry="initial", seed=record(owner=label("ember"), policy=reference("policy")))
-        self.assertEqual(r["status"], "created", r)
+        make_commonplace(self, "policy", doors=[])
         silver = {"tag": "variant", "label": "silver", "payload": record()}
         self.make("bell", closure("Bell"), record(colour=silver, seed=label("a bell"), planting=label("at://x/p"), planter=label(GLM), planterHandle=label("")))
 
@@ -426,7 +411,7 @@ class HandedOnToHob(test_chain.Chain):
         """A reply to the bell, handed on; the pending interpretations after the delivery."""
         r = self.turn("bell", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=KIMI, identity=ident, reach="mention")
         # A reply to the bell itself that fits none of its forms gets the bell's card once an hour
-        # (the directory's `due`), then nothing; either way the prose is handed on.
+        # (the commonplace's `due`), then nothing; either way the prose is handed on.
         first, self.answered = not getattr(self, "answered", False), True
         self.assertEqual((r["status"], r["result"]["label"], len(r.get("offers", []))), ("admitted", "silent", 1 if first else 0), r)
         self.deliver_all()
@@ -440,15 +425,15 @@ class HandedOnToHob(test_chain.Chain):
         return resumed
 
     def root(self, text, ident, who=KIMI):
-        """A reply to the directory itself; the greeting first when the speaker has none yet."""
-        return self.turn("directory", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=who, reach="mention")
+        """A reply to the commonplace itself; the greeting first when the speaker has none yet."""
+        return self.turn("commonplace", "receive", record(text=label(text), post=label("at://x/" + ident)), principal=who, reach="mention")
 
     def greeted(self):
         self.assertEqual(self.root("hello", "h0")["status"], "suspended")
         self.assertTrue(self.settle("none")["receipt"]["offers"][-1]["text"].startswith(GREETING))
 
     def add(self, label_, to):
-        self.assertEqual(self.turn("directory", "add", record(door=door(label_, "A door.", to)), principal="ember")["result"]["label"], "done")
+        self.assertEqual(self.turn("commonplace", "door", record(label=label(label_), to=label(to)), principal="ember")["result"]["label"], "done")
 
     def test_chatter_under_a_bell_reaches_hob_once_and_none_is_silence(self):
         """The old gate let chatter cost nothing; now it reaches hob (unless the host's reach says

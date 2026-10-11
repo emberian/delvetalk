@@ -30,7 +30,7 @@ from transport import post as post_py  # noqa: E402
 OWNER = genesis.OPENER  # ember.delve.town (docs/GENESIS.md)
 WELCOME = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxeibkqxuk2j'
 STATUS = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxhfxkkcts27'
-# Every post of ember's in the archive that carries a card is a hub, recorded for the directory:
+# Every post of ember's in the archive that carries a card is a hub, recorded for the commonplace:
 # the v0 welcome, the v1 status, the leaked v1 welcome draft (the post the FOUNDATION section 10 hour
 # answers), the v2 status. The archive holds no post of the Garden's own card.
 HUBS = [WELCOME, 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxen3fdeo224',
@@ -125,7 +125,7 @@ class Run:
     def record_posts(self, posts):
         """The owner's posts as posted for their objects, through post.py's own record_posted."""
         recorded = []
-        for uri, obj in ((hub, 'directory') for hub in HUBS):
+        for uri, obj in ((hub, 'commonplace') for hub in HUBS):
             p = posts[uri]
             post_py.reserve(self.host, 'hub:' + uri, 'delve')  # a post settles its reservation (HOST-HANDOFF 107)
             reply = post_py.record_posted(self.host, {'uri': uri, 'cid': p['cid']}, obj, intent='hub:' + uri)
@@ -238,7 +238,7 @@ GRAMMAR = [
     ('garden', 'a # comment line, which the status post says is ignored', 'delvetalk garden plant\n# my first\nseed: a commented fern\ncolour: silver'),
     ('garden', 'the spell inside a fence', '```\ndelvetalk garden plant\nseed: a fenced fern\ncolour: silver\n```'),
     ('garden', 'usage', 'delvetalk garden ?'),
-    ('directory', 'a door word, as the directory card invites', 'garden'),
+    ('commonplace', 'a door word, as the commonplace card invites', 'garden'),
     ('tide', 'subscribe', 'delvetalk tide subscribe\nevery: 60\nnote: wake me hourly'),
     ('tide', 'tick', 'delvetalk tide tick'),
     # FOUNDATION section 10 step 3 in the Garden's own grammar, which the archive never wrote: the second is refused.
@@ -534,7 +534,7 @@ def main(argv=None):
             views[obj] = {'version': v.get('version'), 'state': v.get('state'), 'status': v.get('status')}
         results['views'] = views
         results['cards'] = {}
-        for obj in ('directory', 'garden', 'kinds', 'kind/bell', 'tide', envs[0][1], 'policy', 'workshop', 'anthology', *cisterns, *bells):
+        for obj in ('commonplace', 'garden', 'kinds', 'kind/bell', 'tide', envs[0][1], 'policy', 'workshop', 'anthology', *cisterns, *bells):
             c = r.host.send({'op': 'world-card', 'principal': OWNER, 'object': obj})
             results['cards'][obj] = {'status': c.get('status'), 'text': c.get('text'), 'clause': c.get('clause'),
                                      'chars': len(c.get('text') or '')}

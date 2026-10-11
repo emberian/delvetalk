@@ -21,6 +21,10 @@ form door:
   to: text 1..128
 form undoor:
   label: text 1..32
+form example:
+  label: text 1..32
+  spell: text 1..280
+  comes: text 0..200
 def pour(state: State, input: PourInput, context: Abi.Context) -> Activity<Nat>:
   Super.write(state, {text: input.text}, context)
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
@@ -29,10 +33,12 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
   Super.door(state, {label: input.label, to: input.to}, context)
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
+def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 def methods() -> Lists.List<String>:
   Text.words("write")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("pour lines door undoor") else Text.words("pour lines")
+  if context.principal == state.owner then Text.words("pour lines door undoor example") else Text.words("pour lines")
 def blurb() -> Card.Door:
   {word: "cistern", blurb: "A cistern: pour in a refusal; the level only rises."}
 def level(state: State) -> Nat:

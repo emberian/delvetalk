@@ -79,7 +79,7 @@ def plainSeed(state: State, kept: Lists.List<Rows.Field>, under: String, context
 def withScene(state: State, kept: Lists.List<Rows.Field>, under: String, context: Abi.Context, scene: Scenes.Seed) -> Data:
   {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), start: scene.start, passages: scene.passages, cooldown: scene.cooldown, requires: scene.requires}
 def homeDoor(under: String, context: Abi.Context) -> Card.Doorways:
-  if under == "" then Card.Doorways.nil() else Card.Doorways.cons({head: {label: lastSegment(under), to: {world: context.world, object: under}}, tail: Card.Doorways.nil()})
+  if under == "" then Card.Doorways.nil() else Card.Doorways.cons({head: {label: lastSegment(under), to: {world: context.world, object: under}, description: "", examples: Lists.List.nil()}, tail: Card.Doorways.nil()})
 def lastSegment(id: String) -> String:
   let at = textBreak(id, "/")
   if at == textLength(id) then id else lastSegment(textDrop(id, at + 1n))

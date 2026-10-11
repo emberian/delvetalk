@@ -1,6 +1,95 @@
 # Objects handoff
 
-## lane/rewrite6 (2026-10-11): step 1, first half — PLACE folded into RECORD; checkpoint, not yet green
+## lane/rewrite6, continued (2026-10-11): steps 1a and 1b — the commonplace is the first card
+
+Inherited (ClusterVision on lane/rewrite6's last ~100 turns): nothing the section below lacks; its helper had
+dropped test_strangers' creator assertion (the loss), now restored.
+
+Done:
+
+- **1a** (4ad5e05a, merged as 49f3411d): RECORD's `law methods` (`request.kind == proposed implies` lines,
+  admitted, marks, presence, left, vars, things unchanged; `next` stays out so a cistern's drained level is its
+  `level` clause's); Spween reads `* [label] -> target`; publishPage is a host convention in test_properties.
+- **1b** (this commit): `world/objects/Directory.obend` is deleted. The first card is `commonplace`, a Record
+  the opener keeps (genesis `commonplace(opener)`: head THE COMMONPLACE, keeper, policy, `cites` = the doors)
+  with `world/bodies/commonplace.obend` laid over it. Its blank reply, a principal's greeting and `since
+  {entry}` render over `world.changed` (eight `<id> v<n> by <handle>, entry N`, the commonplace itself left
+  out), then `delvetalk kinds make / name: lamp / of: record`, `delvetalk <newest> ?`, then the door trie
+  (Menu.trieUnder, clipped whole branches, STUDIO never clipped). `render` (pure) is the trie with the
+  `since` spell. The hub moved whole: door words, field lines to the door whose form names them, hob with
+  macros, several proposals, asked-first, the pruned miss card, `missed`/`due` (Card.owed). Gone with it:
+  `add`/`remove`, `news` and the watched counts (what changed replaces them), `visits` (the greeting opens
+  on the door the words went through; no stored last door), `Directory.Listed`, `Menu.Door`/`News`/`Visit`.
+- **One door record** (fungus O4): `Card.Doorway {label, to, description, examples}`, `Card.Example
+  {example, comes}`; the owner's `example {label, spell, comes}` (Record) gives a door the spells a menu
+  prints (four at most); an arc is a door under another door's object. One `countWord` (Text.countWord /
+  Text.counted). `Card.hub` (was `Card.directory`) names "commonplace".
+- **Record** gains `policy`, `greeted` (insertOnly in `kept`), `missed`; its `receive` takes `Card.Heard`,
+  and a misfit spell to any record without a reading body is answered `refused <clause>` by that clause
+  (FLEX §2), admitted, nothing written (was the host's turn-level badSpell for records). `Card.Replied`
+  gains `passed {card}`, `asked {card}`, `several {count}` (the hub's outcomes).
+- Found: a direct reply's field line naming the card's own action is the host's spell for that card
+  (`write:` to the commonplace writes a line there), so a door is reached by a field line only through an
+  action the commonplace lacks.
+- Open from 1b: the host's own strings still say "directory" (the `otherCard` refusal "the directory lists
+  the doors", the unknownObject hint, a call reading; tests/test_call_reading.py 56, 61, test_outbound 403):
+  the host lane's. On persvati the dt-foundation binary is newer than foundation af254d69 (rebuilt 21:32):
+  test_archive, test_changes, test_commute, test_outbound Projection, test_turn_world, test_world_object fail
+  on its root shapes (`scalar`, `fields`); the full run is otherwise green (788 tests).
+
+Remaining, in order (each a commit, the full suite green on persvati, pins re-recorded; the brief's words):
+
+2. **The furniture as kinds made by spell at genesis**, each with a maker. Design settled here:
+   - `kind/garden` (`world/bodies/garden.obend` over Record, `makes: [kind/bell, kind/cistern]`): `plant
+     {colour, seed}` and `dig {name}` call `Super.making`; Record.making should also write the made thing
+     into the record's `things` (`insert {object}`: what the garden holds, keyed so `garden/bell/10` follows
+     `/9`), which the garden's card counts ("3 planted") and lists newest first, and which `kind/weather`
+     reads. The garden needs no hob of its own: prose it does not take is handed to the commonplace, whose
+     hob is offered the garden's forms; Garden.obend's held plantings, confirm, macros and page go (the
+     policy's `confirmFor` and the hub's asked-first cover asking first; the host's default page is the
+     page). Keep `byColour` as the body's view (tests/test_derived_views.py). `weather` is a Record field
+     the weather writes (one line of text), shown in the garden's head. Delete Garden.obend; genesis's
+     `garden` becomes the hand's `kind/garden make / name: garden`-style spell (ids: KIND mints
+     `<name>/<n>`; the town's `garden` id needs `kinds`' make to take an exact id, or the door cites
+     `garden/1`: decide, then GARDEN's door and every test's `garden` follow).
+   - `kind/weather`: a body over WAKE (Kind.packageOf gains `wake` -> `Wake`; check arrival's sealed
+     library supplies Wake to `create`), subscribed to the tide's `ticks` (`changedNat`), which on each tick
+     views its garden's `things` and calls `rain {text}` on each (32 a turn, the host's sends bound), so rain
+     falls with nobody posting; its law `weather` names the garden it serves (seed field).
+   - `kind/bell` with `colour` a fixed seeded field (it is a form field now; make it a fixed Record field
+     the head reads, or keep it in `fields` and say so in METAPHYSICS §7.2's row).
+   - `kind/porch` (over Record with the room body, head only), `kind/door` (a THING whose `open` another's
+     call flips: the flood's sluice) and `kind/lantern` (a WAKE body watching a door's `open`).
+   - Genesis: the hand makes the garden, the Moss Gate (`kind/room make / name: The Moss Gate`, then its
+     scene by a ```spween block the hand posts to it, or a `spween` field), the tide and the porch by spell
+     (`world-turn ... make` as the opener with a post), so each has `maker` and `post`; the commonplace
+     cites each. Kind still grafts bodies by the self-sent `graft`: HOST-HANDOFF 5.127 says create-then-
+     extend in one turn now works (the lane's typeMismatch came from grafting `input.id`); replace
+     `grafting`/`graft` with `world.extend` after `created` on `c.object.object` and delete the self-send.
+3. **Tending** (LAW §4 A, E are in the binary: `request.clock`, `old.F`): Record gains `tended: Nat` and the
+   `tend {}` spell (writes `context.clock`); `kind/bell`'s form carries the seed law string `law alive
+   "answers while tended within 1440 minutes": request.method == "tend" or request.clock <= old.tended +
+   1440`; the bell body's `rain` writes `tended`; "quiet since entry N" from a pure view; the free arc (a
+   bell the hand plants and never tends). THING with `me`, `lend`, the `circle` lens (LAW §4 D is not in a
+   binary: say so); BOND from Deal by spell (`kind/bond`); the fungus seams: H1 (delete Spell.obend's
+   parser: `Card.unanswered`/`spellAction`, Workshop, Avatar, the hub's `Spell.Binding` use read the
+   host's), O1 done, O4 done here, O5 (`Policy.escalate`), the Participant tail (T31), K7/K8 where a body
+   is touched, O6 dead symbols, O7 Workshop's receipt hash (HOST 5.127 landed), O8 done here.
+4. Genesis to §7's table with the library's pages and walks and the seed posts' spells; `Policy.prompt` per
+   FLEX; every card in VOICE's register (hob's lines on natural-language surfaces only); docs/GENESIS.md,
+   docs/previews/gsb-welcome-v6.txt and gsb-root-menu-v4.txt (render them from a real genesis: the
+   commonplace's blank-reply card after three plantings, one rain, four lines) and seed-posts current; this
+   file rewritten as the surface as it stands; `git branch -D lane/rewrite5-garden`.
+   Tide's `ownRows` family and Deal's `signer` wait on `changed(new.F.COL) by` (LAW §4 B; HOST-HANDOFF §7
+   item 4, not in a binary as of af254d69).
+
+Folkways and arcs (which body keeps each): folkway 1 and the seventh rain's `ring`/`strike` (bell body);
+folkway 3 (Record's `kept`, `admit`); folkway 5 (room body: `say`/`emote`/`whisper` to those present;
+folkway 4's traces are a visitor's line now); folkway 10 (room body: cooldown, `crowded`); the flood's level
+(cistern body's `level`); folkway 6 (Thing); 7 (Deal); 9 (the commonplace's hub: greeting once, hourly
+card); 2 (Tide). The unwritten passage is the room's scene; the seventh-door deal waits on BOND.
+
+## lane/rewrite6 (2026-10-11): step 1, first half — PLACE folded into RECORD
 
 Standing order (the owner, verbatim): "we can adopt these things. we need to maturify and take forward
 everything that we've started and bring it to its full sophistication and make sure the code is all
@@ -45,32 +134,6 @@ Done here (commit "RECORD absorbs PLACE"):
 - Tests: test_places is test_rooms; test_scene, test_spween, test_kinds, test_strangers, test_lenses (the
   place lenses deleted with them), test_hub, test_await, test_objects and the rest migrated.
 
-Step 1a (green: 787 tests, 0 failed on persvati), the checkpoint's reds closed:
-
-1. The spween block in `test_kinds` was not spween this dialect read (`* [Listen] -> END`); Spween now takes a
-   divert after a choice's label (`* [label] -> target`), as ink does, and its reading names it.
-2. A field line at the root goes to the first door whose card takes it: `write:` reaches ROOMS (a room is a
-   record) before ANTHOLOGY; test_genesis says so. The commonplace replaces this routing in 1b.
-3. `publishPage` is the host's on every public card (HOST-HANDOFF 5.62, 5.68): test_properties' helper probe
-   skips the conventional names.
-4. RECORD's law has `law methods`: `request.kind == proposed implies` lines, admissions, marks, presence,
-   departures, vars and things unchanged, the owner's proposal included; test_strangers' creator assertion is
-   back. `next` stays out, so a cistern's drained level is its own `level` clause's.
-
-Routed here by docs/review/fungus-2026-10-11.md §3 (on foundation; merge it into this lane first), each folded
-into the step that touches the same object:
-
-- **H1** (step 1, second half, with Card): delete the reduced spell parser in `world/lib/Spell.obend`; the
-  Garden's macros and `Card.unanswered` read the host's `spell-parse` answer through the existing Plan, or the
-  one remaining use is declared and only that kept.
-- **O1**: done here (Place and its five unused garden-as-place fields are deleted with it).
-- **O2**: the half-done cut is this lane's steps.
-- **O4** (step 1, second half): one door record, one `Names`, one `Forms`, each in one library.
-- **O5** (step 4, with `Policy.prompt`): delete the unused `Policy.escalate` (field, lens, card line).
-- **T31** (step 4): drop the `Participant:` tail `Policy.prompt` appends; the transport lane then sends the
-  utterance once, with no cut, in `interpret.py`.
-- `capsules/world.txt` is gone; the library page `capsules/pages/world.txt` is the one text.
-
 Host findings for the host lane (repros above in this lane's history):
 
 - **Create-then-extend in one turn (5.122) is not usable by KIND yet**, so Kind keeps the self-sent graft.
@@ -82,19 +145,6 @@ Host findings for the host lane (repros above in this lane's history):
   new.owner` refuses. Repro: Kind.making with `world.extend` after `created` (this lane's first version).
 - A layer may import only modules its base's closure supplies, and a layer that imports Plan derives Edits
   for every State field, so Record imports Spween (for the room) and the bell body imports Scenes.
-
-Transport finding (not this lane's files): the bridge routes a summons to `directory` and reads door words
-from its `doors`; when the commonplace replaces the directory (step 1, second half) `transport/bridge.py`
-`route` and `named_door` and `transport/http.py`'s play default must name `commonplace` and read `cites`.
-
-Remaining of step 1 (next): the `commonplace` RECORD as the first card, its blank-reply card rendering over
-`world.changed` (eight items `<id> v<n> by <handle>, entry N`, then `delvetalk kinds make / name: <a thing> /
-of: record` and `delvetalk <id> ?`), its `cites` the door-menu of the hand's named things; the Directory's
-hub (greeting, hob at the root, macros, several proposals, `missed`/`Card.owed`) moved onto the commonplace's
-body (a layer cannot add state: `greeted` and the hourly `missed` join RECORD's state), Directory.obend,
-Menu's news/visits and `Card.directory` deleted; the Wake's head "WAKE of {handle}". Then steps 2 to 4 as the
-brief lists them. Tide's `ownRows` family and Deal's `signer` wait on `changed(new.F.COL) by` in a binary
-(not in foundation cd35a4c).
 
 ## lane/rewrite5 (2026-10-11): the neutral half of 4b; the garden as a seed parked
 

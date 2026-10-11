@@ -90,10 +90,10 @@ def extras(m, cap):
     print('record:', made.get('status'), made.get('message') or '', file=sys.stderr)
     moth = m.PEOPLE['moth.delve.town']
     cap.token = cap.tokens['moth.delve.town']
-    for obj in ('directory', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern',
+    for obj in ('commonplace', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern',
                 'policy', 'yard', f'env/{moth}', f'wake/{moth}', moth):
         cap.step('GET', f'/world/{obj}/card')
-    cap.step('GET', '/world/directory')
+    cap.step('GET', '/world/commonplace')
     for href in ('/world/garden?text=1', '/world/garden/bell/1?text=1', ''):
         plain(cap, '/AGENTS.md' + href)
     cap.step('POST', '/world/garden/receive', {'intent': 'usage-1', 'spell': 'delvetalk garden ?'})
@@ -191,7 +191,7 @@ def posts():
     return [p['record']['text'] for p in json.loads((ROOT / 'rehearsal' / 'fixtures' / 'posts.json').read_text())]
 
 
-CARDS = ('directory', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern', 'policy', 'yard')
+CARDS = ('commonplace', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern', 'policy', 'yard')
 
 
 def town_cards(cap):
@@ -246,8 +246,8 @@ def units(cap):
     u = []
     whole, clipped = welcome()
     u.append(('welcome (v4)', clipped, whole))
-    d = pick(cap, 'town', 'GET', r'.*/world/directory/card')
-    dobj = pick(cap, 'town', 'GET', r'.*/world/directory')
+    d = pick(cap, 'town', 'GET', r'.*/world/commonplace/card')
+    dobj = pick(cap, 'town', 'GET', r'.*/world/commonplace')
     u.append(('root menu', field(d, 'text'), dobj['wire'] if dobj else ''))
     g = pick(cap, 'A planter', 'GET', r'.*/world/garden/card')
     u.append(('card: garden, 0 planted', field(g, 'text'), g['wire'] if g else ''))
@@ -302,7 +302,7 @@ def actions_share(cap, toks_):
 
 STAMPS = [('●', 'admitted'), ('§', 'refused'), ('…', 'suspended'), ('—', 'quiet')]
 MARKS = [('⁕', 'thing'), ('✾', 'garden'), ('⚘', 'bell'), ('❦', 'env'), ('☙', 'wake'), ('❧', 'tide'), ('✤', 'deal'),
-         ('❁', 'rooms'), ('✿', 'place'), ('❃', 'thing'), ('❋', 'anthology'), ('✥', 'workshop'), ('❖', 'directory')]
+         ('❁', 'rooms'), ('✿', 'place'), ('❃', 'thing'), ('❋', 'anthology'), ('✥', 'workshop'), ('❖', 'commonplace')]
 PUNCT = [('»', 'next'), ('⟲', 'again'), ('·', 'and')]
 CJK = [('雨', 'rain'), ('鐘', 'bell'), ('園', 'garden'), ('潮', 'tide'), ('門', 'door'), ('書', 'book'), ('火', 'fire'),
        ('水', 'water'), ('待', 'wait'), ('拒', 'refuse'), ('許', 'admit'), ('見', 'see'), ('聽', 'hear'), ('言', 'say'),
