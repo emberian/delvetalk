@@ -12,8 +12,7 @@ Card.hobNeeds / Card.hobSaid classify these: an ask, or none (not addressed, bla
 `model:` need, a model that could not be asked); the text "card" is the card, any other text none.
 The commonplace answers `ask` with hob's fixed line naming only the offered fields the need names
 (`hob: still needs colour; the spell is below.`, or `hob: not a spell as said; ...`: never the
-model's words) and the plant spell with blanks (and, when the policy names `escalateTo`, a short
-copy to that principal), `card` with the garden card, `none` with silence, still one attempt.
+model's words) and the plant spell with blanks, `card` with the garden card, `none` with silence, still one attempt.
 
 Refuted by: a spell in the model's text not planting, `none` offering a card, an `ask` asked
 again or answered without its question, or a second interpretation being requested.
@@ -37,7 +36,7 @@ import ./Text.obend as Text
 def forms() -> Lists.List<Form.Form>:
   Lists.List::<Form.Form>.cons({head: {card: "garden", action: "plant", fields: Form.Fields.cons({head: {name: "colour", kind: Form.Kind.choice({options: Lists.append::<String>(Lists.append::<String>(Lists.append::<String>(Form.Names.nil(), "amber"), "violet"), "silver")})}, tail: Form.Fields.cons({head: {name: "seed", kind: Form.Kind.text({min: 1n, max: 80n})}, tail: Form.Fields.nil()})})}, tail: Lists.List::<Form.Form>.nil()})
 def need(text: String) -> String:
-  match Card.hobNeeds(Card.one(text), forms()):
+  match Card.hobNeeds(Form.Names.cons({head: text, tail: Form.Names.nil()}), forms()):
     case ask(a): textConcat("ask ", Text.joined(a.needs))
     case none(_): "none"
     case card(_): "card"
@@ -103,11 +102,11 @@ class Resumed(test_chain.Chain):
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_an_ask_is_one_attempt_whose_question_stands_over_the_plant_spell(self):
-        self.policy(escalate="claude-opus")
+        self.policy()
         self.garden()
         self.say("plant something pretty")
         first, asked = self.settle("ask: which colour?")
-        # One attempt: nothing is asked again, and the policy's escalate model is not tried.
+        # One attempt: nothing is asked again.
         self.assertEqual((asked["status"], asked["result"]["label"]), ("admitted", "unclear"), asked)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         self.assertEqual(first["policy"]["model"], "claude-haiku", first)

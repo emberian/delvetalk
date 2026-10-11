@@ -299,7 +299,7 @@ class Repository(unittest.TestCase):
         self.assertEqual((s, bell['uri'], bell['value']['object']), (200, f'at://{REPO}/{NS}object/garden~bell~1.0', 'garden/bell/1'), bell)
         self.assertEqual(self.xrpc('com.atproto.repo.getRecord', repo=REPO, collection=NS + 'object', rkey='garden/bell/1/0')[0], 400)  # the old <object>/<version> key is gone
         laws = self.xrpc('com.atproto.repo.listRecords', repo=REPO, collection=NS + 'law')[1]['records']
-        self.assertIn(f'at://{REPO}/{NS}law/garden~bell~1.owner', [x['uri'] for x in laws])
+        self.assertIn(f'at://{REPO}/{NS}law/garden~bell~1.kind', [x['uri'] for x in laws])  # under "kind/bell"
         self.assertNotIn('diary', [x['value']['object'] for x in laws])
 
 

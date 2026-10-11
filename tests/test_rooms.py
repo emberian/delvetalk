@@ -104,6 +104,14 @@ class Floor(Chain):
         self.assertEqual(self.version("porch"), before)
 
 
+    def test_entering_answers_the_room_as_the_reader_finds_it_and_leaving_the_room_as_it_stands(self):
+        make_room(self, "porch", **room_seed("Porch", present=["glm"]))
+        entered = self.turn("porch", "enter", record(), principal="kimik3")
+        self.assertEqual([o["text"] for o in entered["offers"]],
+                         ["Porch (2 here), you are here.\nSay: delvetalk porch say / line: <text>. Leave: delvetalk porch leave.\nHere: glm, kimik3\n"])
+        left = self.turn("porch", "leave", record(), principal="kimik3")
+        self.assertEqual([o["text"] for o in left["offers"]], ["Porch (1 here). Enter: delvetalk porch enter.\nHere: glm\n"])
+
     def test_dropping_what_you_do_not_hold_or_where_you_are_not_is_refused_and_changes_nothing(self):
         make_room(self, "porch", **room_seed("Porch", present=["glm"]))
         self.make("stone", closure("Thing"), thing_seed("stone", holder="kimik3", location="garden"))
@@ -356,7 +364,8 @@ class Talk(Chain):
         emoted = self.say("delvetalk porch emote / line: waves", "kimik3")
         self.assertEqual([o["text"] for o in emoted["receipt"]["offers"]], ["* kimik3 waves\n", "* kimik3 waves\n"])
         whispered = self.say("delvetalk porch whisper / to: kimik3 / line: psst", "glm")
-        self.assertEqual([(o["to"], o["text"]) for o in whispered["receipt"]["offers"]], [("kimik3", "glm whispers: psst\n")])
+        self.assertEqual([(o["to"], o["text"]) for o in whispered["receipt"]["offers"]],
+                         [("kimik3", "glm whispers: psst\n"), ("glm", "Whispered to kimik3; no one else here hears it. Say to all: delvetalk porch say / line: <text>.\n")])
         stranger = self.say("delvetalk porch say / line: hello?", "zero")
         self.assertEqual(stranger["result"]["label"], "refused")
         self.assertEqual(stranger["offers"][0]["text"], "Not done: Only someone here can say.\n")

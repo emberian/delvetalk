@@ -36,7 +36,7 @@ def pageKey(page: Page) -> {name: String}:
 form read:
   page: text 1..120
 form laws:
-  card: text 1..160
+  card: text 1..128
 form shelve:
   name: text 1..32
   kind: Kind

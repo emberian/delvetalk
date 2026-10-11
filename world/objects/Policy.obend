@@ -23,7 +23,7 @@ def asking() -> Lists.List<String>:
 def hob() -> String:
   "hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; the card and its law decide what is admitted, never you."
 def initial() -> State:
-  {owner: "", model: "", system: hob(), lexicon: Lists.List.nil(), examples: Lists.List.nil(), escalate: "", escalateTo: "", macros: Lists.List.nil({}), confirmFor: asking()}
+  {owner: "", model: "", system: hob(), lexicon: Lists.List.nil(), examples: Lists.List.nil(), macros: Lists.List.nil({}), confirmFor: asking()}
 # Every write of the policy is its owner's: the law says so, and the methods refuse a
 # stranger by name before writing.
 law owner "the owner never changes, and only the owner teaches it": unchanged(owner) and request.subject == new.owner
@@ -100,16 +100,14 @@ form macro:
 form confirm:
   action: text 1..64
   ask: yes | no
-# The model, the stronger one a second attempt names ("" for the same), the principal a card
-# tells what it could not fit after two attempts (`escalate-to`, a DID, "" for nobody) and the
-# system instruction are set through lenses: `delvetalk <policy> set` and `model: ...`.
+# The model and the system instruction are set through lenses: `delvetalk <policy> set` and `model: ...`.
 def lenses() -> Lists.List<Form.Field>:
-  Lists.append(Lists.append(Lists.append(Lists.append(Lists.List.nil(), {name: "model", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "escalate", kind: Form.Kind.text({min: 0n, max: 64n})}), {name: "escalate-to", kind: Form.Kind.text({min: 0n, max: 160n})}), {name: "system", kind: Form.Kind.text({min: 1n, max: 1000n})})
+  Lists.append(Lists.append(Lists.List.nil(), {name: "model", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "system", kind: Form.Kind.text({min: 1n, max: 1000n})})
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Card.Replied>:
   if context.principal != state.owner then Card.answerRefused(refusal(Why.notOwner({owner: Card.name(state.owner, context)})), context, forms(), render(state, context), fn(r: Card.Replied) -> Card.Replied: r) else setting(input.field, Card.valueText(input.value))
 # The host judged the value against the lens's kind; an unlensed field never reaches here.
 def lensEdits(field: String, value: String) -> Edits:
-  if field == "model" then extend(keep(), {model: Plans.Edit.set({value: value})}) else if field == "escalate" then extend(keep(), {escalate: Plans.Edit.set({value: value})}) else if field == "escalate-to" then extend(keep(), {escalateTo: Plans.Edit.set({value: value})}) else extend(keep(), {system: Plans.Edit.set({value: value})})
+  if field == "model" then extend(keep(), {model: Plans.Edit.set({value: value})}) else extend(keep(), {system: Plans.Edit.set({value: value})})
 def setting(field: String, value: String) -> Activity<Card.Replied>:
   let written(_) = world.write(lensEdits(field, value))
   Card.tell(Card.Replied.done({action: "set"}), Document.text("Set {field} to {value}.\n"))
@@ -157,18 +155,16 @@ def prompt(state: State, asked: {utterance: String, offers: Lists.List<Form.Form
   Document.joinAll(Lists.concat(Lists.concat(Lists.concat(Lists.concat(head, many(asked.offers)), words), Lists.concat(tail, examplesPart(state))), part(answers())))
 def exampleCard(example: Example) -> Document.Document:
   Document.text(exampleLine(example))
-def stance(context: Abi.Context, state: State) -> String:
-  let escalation = if state.escalate == "" then "" else "When unsure I escalate to {state.escalate}.\n"
-  let told = if state.escalateTo == "" then "" else "What a card cannot fit twice goes to {Card.name(state.escalateTo, context)}.\n"
+def stance(state: State) -> String:
   let first = if Lists.length(state.confirmFor) == 0n then "nothing" else Text.joined(state.confirmFor)
-  "I only propose. A card asks the speaker first before: {first}.\n{escalation}{told}"
+  "I only propose. A card asks the speaker first before: {first}.\n"
 def teaching() -> String:
   "\nTo teach me a phrase, reply:\n\n    delvetalk policy teach\n    utterance: a silver fern that remembers\n    spell: delvetalk garden plant seed: a fern that remembers, colour: silver\n\nTo define a word:\n\n    delvetalk policy define\n    word: moth\n    meaning: a seed\n\nTo teach a shortcut no model is asked about:\n\n    delvetalk policy macro\n    name: moth-bell\n    pattern: moth for {{who}}\n    expansion: garden plant / colour: violet / seed: a bell for {{who}}\n\nWhat I know:\n"
 # The policy as a card, including how to teach it; its words, examples and macros take what the
 # head leaves of Card.limit(context), one budget across the card as every card keeps.
 def render(state: State, context: Abi.Context) -> Document.Document:
   let how = if Card.reads(state.owner, context) then teaching() else "\nOnly its owner, {Card.name(state.owner, context)}, teaches it.\n\nWhat I know:\n"
-  let head = Document.text("✾ INTERPRETATION POLICY\n\nModel: {state.model}\n{stance(context, state)}{how}")
+  let head = Document.text("✾ INTERPRETATION POLICY\n\nModel: {state.model}\n{stance(state)}{how}")
   let terms = Lists.map(state.lexicon, fn(term: Term) -> Document.Document: Document.text(termLine(term)))
   let shown = Lists.map(state.examples, exampleCard)
   let macros = Lists.map(state.macros, fn(m: Macro) -> Document.Document: Document.text("Macro {m.name}: {m.pattern}\n  means: delvetalk {m.expansion}\n"))

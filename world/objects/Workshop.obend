@@ -16,6 +16,7 @@ import ./Rows.obend as Rows
 type Held = Rows.Held
 # policy: the interpreter's teaching, which `make` asks for a draft (nobody: no drafts).
 record State:
+  owner: String
   title: String
   held: Relations.Relation<Held>
   next: Nat
@@ -32,11 +33,10 @@ sum Verdict:
   usage: {}
   refused: Card.Refusal
   silent: {}
-# Only its own methods write it: a write no method made is refused (`methods`).
-def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
-  if Plans.unnamed(request) then Plans.proposedRefused() else Abi.Verdict.admitted({})
+law owner "only its owner reprograms or amends it; anyone uses its spells": unchanged(owner) and (request.kind == 0 or request.subject == new.owner)
+law methods "Only its own methods write it; a proposed write is refused.": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))
 def initial() -> State:
-  {title: "Workshop", held: Relations.empty(), next: 1n, policy: Plans.nobody()}
+  {owner: "", title: "Workshop", held: Relations.empty(), next: 1n, policy: Plans.nobody()}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "held", key: Text.words("n"), limit: 12n})
 def heldKey(held: Held) -> {n: Nat}:
@@ -162,11 +162,14 @@ def heldDraft(held: Held, state: State, context: Abi.Context) -> Activity<Verdic
   let written(_) = write {held: insert held, next: add 1n}
   Card.tellTo(Verdict.held({n: held.n, clause: "draft"}), context.principal, Document.text("✾ WORKSHOP\n\nChecked: it compiles. Held as #{natText(held.n)}; adopt it to make {held.name}:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n» {held.name}, yours, made from #{natText(held.n)}\n{dropping(state)}"))
 # The describer's adoption makes the thing under their authority, at its name, with its lineage:
-# the workshop and the receipt of the turn that held it. That receipt is the entry's hash, which
-# no Plan answers Bend yet (an await's Receipt has slot, height and outcome), so the lineage
-# names it by "" and the host refuses `madeFrom` until the await's Receipt carries `hash`.
+# the workshop and the receipt of the turn that held it, which the await of that turn's slot
+# (the proposer and the intent the held row keeps) answers with its hash.
 def making(held: Held, context: Abi.Context) -> Activity<Verdict>:
-  if held.proposer != context.principal then refusing("notDescriber", "Only its describer, {Card.shown(held.proposer, held.proposerHandle, context)}, adopts #{natText(held.n)}") else made(held, "", context)
+  if held.proposer != context.principal then refusing("notDescriber", "Only its describer, {Card.shown(held.proposer, held.proposerHandle, context)}, adopts #{natText(held.n)}") else holdingReceipt(held, context)
+def holdingReceipt(held: Held, context: Abi.Context) -> Activity<Verdict>:
+  match world.await({slot: {principal: held.proposer, intent: held.intent}, patience: 0n}):
+    case reply(r): made(held, r.receipt.hash, context)
+    case _: refusing("noReceipt", "The turn that held #{natText(held.n)} has no receipt to cite.")
 def made(held: Held, receipt: String, context: Abi.Context) -> Activity<Verdict>:
   match world.make({package: held.package, seed: Plans.nothing(), law: "", requireAbsent: {world: context.world, object: held.name}, madeFrom: {object: Plans.self(context), receipt: receipt}}):
     case created(c): madeWritten(held, c.object.object, context)

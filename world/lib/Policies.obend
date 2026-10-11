@@ -1,7 +1,6 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
-# The interpretation policy's state, as data: what a card with a policy views (Garden and
-# Directory read its escalation before they answer a second miss). It lives apart from
+# The interpretation policy's state, as data: what a card with a policy views. It lives apart from
 # world/objects/Policy.obend because a module that declares a law cannot be imported.
 record Term:
   word: String
@@ -16,18 +15,14 @@ record Macro:
   name: String
   pattern: String
   expansion: String
-# model: the model the host asks first. escalate: the stronger model a second attempt names
-# ("" for the same). escalateTo: the principal (a DID) a card tells, in a short copy, what it
-# could not fit after two attempts ("" for nobody). confirmFor: the actions an
-# interpreted proposal waits for the speaker's yes before (Card.confirms); every other
-# action runs at once and its receipt is the answer.
+# model: the model the host asks. confirmFor: the actions an interpreted proposal waits for
+# the speaker's yes before (Card.confirms); every other action runs at once and its receipt is
+# the answer.
 record State:
   owner: String
   model: String
   system: String
   lexicon: Lists.List<Term>
   examples: Lists.List<Example>
-  escalate: String
-  escalateTo: String
   macros: Lists.List<Macro>
   confirmFor: Lists.List<String>

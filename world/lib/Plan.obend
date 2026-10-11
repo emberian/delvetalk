@@ -1,6 +1,5 @@
 edition ObjectiveBend 1
 import ./Abi.obend as Abi
-import ./List.obend as Lists
 # The data every object's writes and references are made of (docs/FOUNDATION.md section 3).
 # An activity asks the world through World.obend's protocol; this module gives what those
 # messages carry: references, per-field edits and receipts.
@@ -51,12 +50,12 @@ sum Entries<D, U>:
   insert: {row: D}
   upsert: {row: D}
   retract: {key: Data}
-# The identity of a turn, (principal, intent): what an await names.
 # Where a made object came from (docs/GROUND.md §6 change 6): the object and the receipt that held its
 # source; the host adds the pin the object runs.
 record MadeFrom:
   object: Reference
   receipt: String
+# The identity of a turn, (principal, intent): what an await names.
 record Slot:
   principal: String
   intent: String
@@ -83,14 +82,3 @@ def same(left: Reference, right: Reference) -> Bool:
   left.world == right.world && left.object == right.object
 def isNobody(reference: Reference) -> Bool:
   reference.object == ""
-# The index of a reference in a list, by world and object; none when absent.
-def indexOf(items: Lists.List<Reference>, target: Reference) -> Lists.Maybe<Nat>:
-  Lists.indexWhere(items, fn(item: Reference) -> Bool: same(item, target))
-# A write no method of the object made: a `world-propose`, judged as `request.kind == 3`
-# (proposed; a migration's state is too, but the old code's Bend law does not read it). An object
-# whose state only its methods move refuses it in its Bend law; a kind-0 write without a method
-# is the same, for a host that judged proposals as kind 0.
-def unnamed(request: Abi.Request) -> Bool:
-  request.kind == 3n || (request.kind == 0n && request.method == "")
-def proposedRefused() -> Abi.Verdict:
-  Abi.Verdict.refused({clause: "methods", reading: "Only its own methods write it; a proposed write is refused."})
