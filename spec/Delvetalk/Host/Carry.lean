@@ -24,7 +24,10 @@
    new type; else the package's `migrate(old: State8) -> State` (a reprogram's migration, `Ops.runMigration`)
    converts it, the old state read through `migrate`'s argument type. The genesis lists each move (`moved
    [{object, from, to, migration, before, after}]`, pins and state CIDs) and the moved object's version moves
-   once; its suspensions (taken in the code before) are dropped, their supervisors told. An object whose
+   once; its suspensions (taken in the code before) are dropped, their supervisors told, and when its package
+   offers `carried` the genesis holds a delivery of `carried {}` to it (`rearmed`), as a kind sends what it makes
+   `made`: the first settling of the carried world runs it, and a self-ticking tide schedules its next `due`
+   there. An object whose
    move refuses (its package does not compile against the image, or its state does not conform and it has
    no `migrate`, or `migrate` refuses) is carried retired at its old pin, the refusal its reading; so is one
    whose own package the image no longer ships (Wake, Env), and one the owner names with `--leave`. Only an
@@ -144,6 +147,22 @@ structure Carried where
   moved : List Moved := []
   dropped : List (Json × String) := []
   refused : List (String × String) := []
+
+/-- The method a package declares to be told it was carried (`carried(state, input: {}, context)`), as a kind
+    tells what it makes `made`: what the carry's move dropped (a self-ticking tide's waiting `due`) it starts
+    again from there. -/
+def rearmMethod : String := "carried"
+
+/-- The moved objects whose package offers `carried`, each told once, after the move. -/
+def Carried.rearmed (c : Carried) : List String :=
+  c.moved.filterMap fun m => (c.world.objects[m.object]?).bind fun o => if o.offers rearmMethod then some m.object else none
+
+/-- The delivery telling `id` it was carried: a pending send from no object (the carry, the opener's act), so it
+    runs as the first turn that settles the carried world, under the carry's principal and a fresh ledger. -/
+def rearm (principal id : String) : Json :=
+  Json.mkObj [("id", toJson s!"carried:{id}"), ("to", toJson id), ("method", toJson rearmMethod),
+    ("argument", Delvetalk.Compiler.ObjectiveBendDataWire.dataJson (.record [])), ("sender", toJson ""), ("from", identityJson principal "carry"),
+    ("principal", toJson principal), ("ledger", Ledger.start.json)]
 
 /-- The modules a source depends on: those it imports, and the one a layer is laid over. -/
 def dependsOn (source : String) : List String :=
@@ -319,10 +338,10 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
     ("replay", toJson replay), ("reason", toJson reason), ("entries", entries)] ++
     (changed.map fun l => [("library", Json.mkObj [("from", toJson previous), ("to", toJson l.pin)])]).getD [] ++ earlier)
   let suspended ← w.suspended.mapM (Snapshot.wholeSuspension w)
-  let pending := w.pending ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray
+  let principal := if !w.opener.isEmpty then w.opener else if !w.clockPrincipal.isEmpty then w.clockPrincipal else "host"
+  let pending := w.pending ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray ++ (c.rearmed.map (rearm principal)).toArray
   let all := Snapshot.indexJson w
   let index := Json.mkObj (Snapshot.carriedKeys.filterMap fun k => (all.getObjVal? k).toOption.map (k, ·))
-  let principal := if !w.opener.isEmpty then w.opener else if !w.clockPrincipal.isEmpty then w.clockPrincipal else "host"
   Snapshot.genesisEntry w w "carried" principal "carry" cid ("carriedFrom", origin) pending suspended
     ([("index", index)] ++
      (if c.left.isEmpty then [] else [("left", Json.arr (c.left.toArray.map fun (id, why) =>
@@ -330,7 +349,8 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
      (if c.moved.isEmpty then [] else [("moved", Json.arr (c.moved.toArray.map (·.json)))]) ++
      (if c.dropped.isEmpty then [] else [("dropped", Json.arr (c.dropped.toArray.map fun (e, why) =>
         Json.mkObj [("hash", (e.getObjVal? "hash").toOption.getD Json.null), ("object", toJson (Snapshot.suspendedObject e)),
-          ("reason", toJson why)]))]))
+          ("reason", toJson why)]))]) ++
+     (if c.rearmed.isEmpty then [] else [("rearmed", toJson c.rearmed)]))
 
 def fail (message : String) (code : UInt32 := 1) : IO UInt32 := do
   (← IO.getStderr).putStrLn s!"carry: {message}"
@@ -425,7 +445,8 @@ def main (args : List String) : IO UInt32 := do
     ("left", Json.arr (carried.left.toArray.map fun (id, why) => Json.mkObj [("object", toJson id), ("reading", toJson why)])),
     ("moved", Json.arr (carried.moved.toArray.map (·.json))),
     ("dropped", Json.arr (carried.dropped.toArray.map fun (e, why) => Json.mkObj [("hash", (e.getObjVal? "hash").toOption.getD Json.null),
-      ("object", toJson (Snapshot.suspendedObject e)), ("reason", toJson why)]))])
+      ("object", toJson (Snapshot.suspendedObject e)), ("reason", toJson why)])),
+    ("rearmed", toJson carried.rearmed)])
   return 0
 
 end Delvetalk.Host.Carry

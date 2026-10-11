@@ -221,7 +221,7 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
   add(context, 1n)
 """
 TALLY = declared(TALLY_SOURCE)
-TALLY_NOTED = declared("""edition ObjectiveBend 1
+TALLY_NOTED_SOURCE = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./World.obend as World
@@ -242,7 +242,8 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
 def jot(state: State, input: {text: String}, context: Abi.Context) -> Activity<String>:
   match world.write(extend(keep(), {note: Plans.Edit::<String, {}>.set({value: input.text})})):
     case _: input.text
-""", "bump", "jot")
+"""
+TALLY_NOTED = declared(TALLY_NOTED_SOURCE, "bump", "jot")
 
 
 class Moves(Reflection):
@@ -345,6 +346,29 @@ class Moves(Reflection):
         new = self.opened(out)
         self.assertEqual(new.send(op="world-turn", principal="ember", object="u", method="bump", argument=record(), identity="b")["status"], "admitted")
         self.assertEqual(field(new.send(op="world-view", principal="ember", object="u")["state"], "count")["value"], "110")
+
+    def test_a_moved_object_whose_package_offers_carried_is_told_once_and_starts_again_from_there(self):
+        # As a kind tells what it makes `made`, the carry tells what it moved `carried`: the tide's re-arm.
+        self.ship(declared(TALLY_NOTED_SOURCE.replace(
+            "def bump(", "def carried(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:\n  add(context, 1000n)\ndef bump(", 1),
+            "bump", "jot", "~carried"))
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        self.assertEqual(carried["rearmed"], ["t", "u"], carried)  # c did not move: its suspensions, if any, stand
+        [genesis] = journal_entries(out)
+        told = [d for d in genesis["outcome"]["pending"] if d["method"] == "carried"]
+        self.assertEqual(sorted((d["to"], d["id"], d["sender"]) for d in told), [("t", "carried:t", ""), ("u", "carried:u", "")])
+        new = self.opened(out)
+        self.assertEqual(new.send(op="world-advance", principal="ember", height=1)["status"], "advanced")
+        count = lambda i: field(new.send(op="world-view", principal="ember", object=i)["state"], "count")["value"]
+        self.assertEqual((count("t"), count("u")), ("1002", "1010"))
+        # Once: a reopen replays the turns it ran, and a second advance tells nobody again.
+        new.close()
+        self.hosts.remove(new)
+        again = self.opened(out)
+        self.assertEqual(again.send(op="world-advance", principal="ember", height=2)["status"], "advanced")
+        self.assertEqual(field(again.send(op="world-view", principal="ember", object="t")["state"], "count")["value"], "1002")
 
     def test_a_package_that_changes_its_methods_alone_moves_with_its_state(self):
         self.ship(declared(TALLY_SOURCE + "def bump2(state: State, context: Abi.Context) -> Activity<Nat>:\n  add(context, 2n)\n"))
