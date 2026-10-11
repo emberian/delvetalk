@@ -3054,7 +3054,7 @@ def deliver (w : World) (limit : Nat) (reader : String) : Except String (World �
   let mut w := w
   let mut receipts : Array Json := #[]
   for _ in [0:min limit Limits.deliveriesPerCall] do
-    let some d := w.pending[0]? | break
+    let some d := w.pending.find? (deliverable w) | break
     let (w', r) ← deliverOne w d
     w := w'
     receipts := receipts.push (settledFor w reader r)
@@ -3069,7 +3069,7 @@ def settleAll (w : World) : Except String (World × Array Json × Array Json) :=
   let mut resumed := resumed
   let mut delivered : Array Json := #[]
   for _ in [0:Limits.deliveriesPerSettle] do
-    let some d := w.pending[0]? | break
+    let some d := w.pending.find? (deliverable w) | break
     let (w', r) ← deliverOne w d
     let (w'', more) ← settle w'
     w := w''

@@ -124,7 +124,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | journal | `maxEntryBytes` 1 MiB (a record), `maxJournalEntries` 1,000,000, `maxJournalBytes` 4 GiB (chain and store), `maxHistoryLimit` 100, `maxCheckpointBytes` 512 KiB, `snapshotEvery` 1000 (`world-open {snapshotEvery}` per process), `maxSnapshotBytes` 256 MiB |
 | ledger | `maxDepth` 100, `chainWork` 10,000,000, `chainStorage` 1 MiB (creation may lower, never raise) |
 | time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64 |
-| delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
+| delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `deliveryAttempts` 4, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
 | programs, laws | `maxPackageBytes` 131072 (`Bounds.maxPackageBytes`), `maxLawBytes` 4096, `maxLawClauses` 16, `maxPreparedPrograms` 16, `maxCompiledPackets` 256, `maxBuilds` 1024, `maxReaders` 256, `maxLibraryModules` 256, `maxLibraryBytes` 786432 |
 | interpret | `maxUtteranceBytes` 8192, `maxOffersBytes` 65536, `maxReplyBytes` 262144 |
 | forms | `formTextMax` 1400, `formNaturalMax` 1000000000 |
@@ -1541,6 +1541,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    1..formTextMax` (`formKind`): required; only a form or kind that declares `0..N` makes one optional. Test:
    `test_spell_turns` (a missing seed reaches `receive` with `Cast plant`; prose with `" "`).
 
+150. **A send refused transiently is delivered again (host18; replay edition 6).** The commonplace lost words handed
+   on to it when that delivery was refused `capacity` after the card's turn was admitted. Now `record` keeps a
+   delivery refused with a transient class pending (`redelivered`): `attempts` counted on it and `next` the clock
+   after the refusal's; `deliver` and `settleAll` take the first pending send that is `deliverable` (its `next`
+   passed), so it runs again once the clock moves, and the refusal of its `Limits.deliveryAttempts` (4)th attempt
+   is its last. The identity does not bind on a transient refusal, so the retry is the same delivery. Replay
+   derives the kept send: edition 6. Tests: `test_deliveries.Redelivery` (a spinning receiver refused `budget`,
+   unlocked, delivered when the clock moves, a reopen; a send refused every time dropped after four).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1553,7 +1562,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   (evictions and changes owed as facts, lineage, reservations, attempts); 3 is host14 (root, ignore and
   shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126); 4 is host16 (roots
   read by their cells, the per-cell bound and ledger; 5.136); 5 is host17 (a layered package's shape is
-  its stack's, 5.138; the relational atoms judged and their citations roots, 5.139). Test:
+  its stack's, 5.138; the relational atoms judged and their citations roots, 5.139); 6 is host18 (a send refused
+  transiently stays pending, 5.150). Test:
   `tests/test_replay_edition.py`.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
