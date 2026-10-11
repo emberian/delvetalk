@@ -299,7 +299,7 @@ class Hub(test_chain.Chain):
         later = self.interpret("none")
         self.assertEqual(later["result"]["label"], "usage", later)
         card = later["receipt"]["offers"][0]["text"]
-        self.assertTrue(card.startswith("✾ DELVETALK · THE COMMONPLACE\n\nI heard no door, spell or field in that.\n\nGARDEN\n"), card)
+        self.assertTrue(card.startswith("✾ DELVETALK · THE COMMONPLACE\n\nI heard no door, spell or field in that.\n\nKINDS\n"), card)
         self.assertIn("\nANTHOLOGY\n", card)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 

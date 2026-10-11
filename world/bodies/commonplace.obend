@@ -102,11 +102,14 @@ def welcomed(greet: Bool, first: String, result: Card.Replied, context: Abi.Cont
   if greet then withChanges(result, Menu.greetingLine(), 0n, first, context, state) else result
 # The card over what changed since an entry (World.changed; a derived read, no root): `line`,
 # hob's above it ("" for none). Left out: the commonplace's own change (a greeting writes one;
-# its lines are on its own card) and a principal's own cards (an id holding a DID: avatars,
-# envs, wakes), which a card never names.
+# its lines are on its own card) and a principal's own cards, which arrival makes and a card
+# never names (`ownCard`: an avatar, env or wake, whatever names the principal: a DID, a Zulip id).
+def ownCard(id: String) -> Bool:
+  let head = textTake(id, Text.indexOf(id, "/"))
+  head == "wake" || head == "env" || Text.contains(head, ":")
 def withChanges(result: Card.Replied, line: String, since: Nat, first: String, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.changed({since: since, prefix: "", after: ""}):
-    case changed(c): Card.tell(result, Menu.trieUnder(line, state.cites, Menu.changes(Lists.filter(c.items, fn(i: World.Change) -> Bool: i.object.object != context.object && Text.contains(i.object.object, "did:") == false)), first, context))
+    case changed(c): Card.tell(result, Menu.trieUnder(line, state.cites, Menu.changes(Lists.filter(c.items, fn(i: World.Change) -> Bool: i.object.object != context.object && ownCard(i.object.object) == false)), first, context))
     case denied(_): Card.tell(result, Menu.trieUnder(line, state.cites, Menu.changes(Lists.List.nil()), first, context))
 def toldThen(document: Document.Document, result: Card.Replied, greet: Bool, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.offer({to: "", document: document}):

@@ -133,6 +133,14 @@ class Kinds(Chain):
         # the record's write stays: a visit is a line the visitor writes
         self.assertEqual(self.turn("room/1", "write", record(text=label("Visit: glm / Took: nothing / Left: a margin line")), principal=GLM)["status"], "admitted")
 
+    def test_a_spween_that_is_no_scene_is_refused_by_name(self):
+        """Playtest 2 F3: prose in `spween:` made a room with no scene, silently."""
+        self.kind("room", "record", "name: text 1..64\nspween: text 0..16384", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
+        made = self.turn("kind/room", "make", record(name=label("The Annex"), spween=label("a quiet annex with a window"), id=label("")), principal=KIM)
+        self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "refused"), made)
+        self.assertEqual(made["result"]["payload"]["fields"][0]["value"], label("spween"))
+        self.assertEqual(self.host.send(op="world-view", principal=KIM, object="room/1").get("status"), "unknown")
+
     def test_a_room_mints_past_an_id_already_held(self):
         """The host takes the first free <prefix><n> (HOST-HANDOFF 5.127), so a squatted id stops no kind."""
         self.kind("room", "record", "name: text 1..64", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))

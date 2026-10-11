@@ -1,5 +1,83 @@
 # Objects handoff
 
+## lane/rewrite11 (2026-10-11): 15a, THING me/lend/circle, BOND, H1 finished, O3's Event, playtest 2 (part)
+
+Inherited: the predecessor's tail (`cv show a40e1a1afb9005a08`, last 80 turns) adds nothing the section below lacks
+but the coordinator's two mid-task notes (inner clauses; kernel15's call sites), both already folded by it or here.
+Foundation's pins were stale after the rewrite10 merge (re-recorded in the first commit).
+
+persvati is down: every run was on hbox (`~/scratch/dt-rewrite11/`, the binary copied to its `bin/`: foundation's
+06:16 for 15a and THING/BOND, then dt-host18's 07:09, which carries ef170556 `spell` on receive, from H1 on).
+
+Done (each commit a full suite on hbox, pins re-recorded; changed cards verbatim in each message):
+
+- **eb66e626 15a.** `Relations.lookup(relation, key)`; `Relations.has(relation, key)`; every call site moved
+  (KERNEL-HANDOFF §16 item 15a), Tide's subscription scan and the door's `open` mark are key reads; the key
+  projections that fed only `lookup` are gone.
+- **6e74c811 THING `me`, `lend`, `circle`; BOND by spell; Deal deleted.**
+  - THING: who may change it is the law's alone (`set` checks nobody in code), so the host's `lend` of `set`
+    runs: the card shows its keeper `Lend its setting: delvetalk <id> lend / to: <a handle, or me> / method: set /
+    until: +<clock minutes>`. `circle` (owner's lens): naming a bond at rest (its `atRest` view) amends the
+    thing's own law to `lawWith(circle)`, whose keeper disjunct reads `request.subject in "<bond>".marks.who`;
+    the owner clause gains `(unchanged(circle) or request.subject == new.owner)`. The one offered reads `Offered
+    to you until clock N. Take it: delvetalk me accept / thing: <id>`. The package keeps its declared law (the
+    host voices a declared clause's reading in the outcome; see host findings); `lawText()` is test-checked to
+    carry the same clause names and readings.
+  - BOND: `world/bodies/bond.obend`, `kind/bond` in genesis's KINDS (`parties: text 1..400` handles, `terms`,
+    `amends: text 0..128`, `law: text 0..4096`; law RECORD_LAW + `SIGNER_LAW` `changed(new.marks.who) by
+    request.subject`). A countersignature is a mark `signed <handle>` (who the signer); the last puts it at rest
+    and amends `amends` to `law` (the bond as caller, the amended object's law judges, the metarule asks the last
+    signer); a party withdraws before rest (mark `withdrawn`). Parties are handles, matched to `context.handle`:
+    no handle-to-DID read was needed. tests/test_bond.py (by spell on a genesis town: countersign, refusals,
+    amendment at rest, withdrawal, the signer clause by a forged body, the goblet's circle, lend and `me accept`).
+- **adae3edf H1 finished** (foundation 25322ef0, host18's ef170556): `Card.Cast {card, action}` in `Reply` and
+  `Heard`; `Card.unanswered` and Workshop's `completing` read `input.spell.action`; `Spell.parse` and its readers,
+  `Card.spellMissing`, `Card.spellAction` and test_spell's `BendReading` are gone (Spell.obend keeps `Binding`,
+  `Bindings`, `valueOf`).
+- **261504eb O3, the Event half**: `Event` gains `n`; `Rows.Sensed` is gone; Env and Wake take `Events.Event`.
+- **The commit after 261504eb, playtest 2's D5, F1, F3**: the commonplace leaves out every principal's own
+  cards (`ownCard`: `wake/…`, `env/…`, any id whose first segment holds `:`, so Zulip principals too); the
+  doors are KINDS, WORKSHOP, then the places (the card clips the places from the end: with the arc it now shows
+  KINDS and WORKSHOP and "… and 4 more"); a `spween:` that is not a scene is refused `spween` at the make.
+
+Not done, with why:
+
+- **`Card.Reply` folding into `Heard` (O3's second half).** Tried whole: with `Card.answer` refusing a misfit by
+  its clause, every plain card's misfit spell becomes an admitted turn (9 test classes moved, the host's badSpell
+  hint lost): the opposite of playtest 2's D6. The fold needs the host to keep badSpell for a card that reads no
+  words (say, fill `misfit` only for an input that also declares a `policy`-reading marker, or a declared
+  `readsWords()`): the host lane's question first.
+- **The lost hand-on** (handoff item 3 below): host18 has not landed re-delivery of a transiently refused send.
+- **`world.principal {handle}`**: not in foundation; `offer / to:` still takes the avatar's id (a DID).
+
+Remaining, in order (each a commit, the full suite green on hbox, pins re-recorded):
+
+1. Playtest 2 (docs/review/zulip-playtest-2.md; the coordinator's list):
+   - **D6** a refusal inside a card's own Bend prints above an `admitted` receipt line: every method that answers a
+     refusal (`Card.tell(…refused…)`: Thing's "Not done", Bond's and Kind's `refusedCard`, Record's `refusedCard`,
+     Avatar, Env, Workshop) must `refuse(...)` so the turn is refused; the host drops a refused turn's offers
+     (5.144), so the refusal line is then the host's `refused evaluation: <reason>`: check that reads as
+     `refused <clause>: <reading>` (a `refuse` carrying the clause may need a host form) before sweeping.
+   - **D3** `workshop make` never drafts (Haiku copies the workshop's spell): the drafting prompt must hold no card
+     spells, show a minimal Bend package and ask for one fenced `obend` block only; test with the dry run's input.
+   - **D4** `kinds make` admits a law that does not parse: check the instance law at the kind's creation (create
+     the kind with a `law:` citing it, or ask the coordinator for a host parse op) and refuse by name.
+   - **D8** the library's `spells` and `laws` pages are over 1,400; **D9** `spells` names the walk `plant`, which is
+     no page until step 4's walks.
+   - **D10** rooms list principals, not names: `Rows.Presence` needs a `handle` column (room `enter` writes it).
+   - **F2** `adopt / law:` with inline law text (host parses already; the host spell's), **F5** a kind's `id:`
+     offered only to its maker (a per-reader form: host usage, or a separate owner's form `make` vs `name`).
+2. Step 4 whole, as below (genesis to §7's table with the library's pages and five walks; Policy.prompt per FLEX
+   with `say:` and `surrounding`; every card in VOICE's register; the previews re-cut from the live cards; the seed
+   posts; this file rewritten as the surface; `git branch -D lane/rewrite5-garden`). The door order is done.
+
+Host findings:
+
+- A refusal by a law given at creation or by amendment carries no `reading` in the outcome (only `reason`
+  "refused <clause>: <reading>"); a package-declared clause's does. test_properties now accepts the voiced
+  reason, but one rule would be better: the outcome's `reading` from the law text (`lawRowsOf`).
+- The `spell` field is host-filled like `fields`/`misfit` (test_properties' `HOST_FILLED`).
+
 ## lane/rewrite10 (2026-10-11): H1 cut, inspirit, the silent turns, the library follows `under`
 
 Inherited: the predecessor's tail (`cv show a0d74c0be27d3d607`, last 80 turns) adds nothing the section below lacks

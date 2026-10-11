@@ -34,16 +34,17 @@ def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(i
 
 # The commonplace's doors (label, object, [(spell, what comes back)]): the hand's named things, cited from the town's
 # first card (world/bodies/commonplace.obend). The spells and their `»` lines are the menu's (docs/MENU.md §1).
+# KINDS and WORKSHOP first, then the places: the card clips whole branches from the end (playtest 2, F1).
 DOORS = [
+    ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
+    ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('GARDEN', 'garden', [('delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver', 'a bell, garden/bell/N; you hear when it rings')]),
     ('ROOMS', 'rooms', [('delvetalk rooms enter', ''),
                         ('delvetalk rooms choose / choice: Open', 'the passage moves; a ```spween block here makes your own')]),
-    ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('TIDE', 'tide', [('delvetalk tide subscribe / every: 3 / note: first light', ''),
                       ('delvetalk tide tick', 'too soon: refused tooSoon; a due tick notes your avatar')]),
     ('PORCH', 'porch', [('delvetalk porch enter', ''), ('delvetalk porch say / line: the bell kept both of us', 'heard by everyone here')]),
     ('ANTHOLOGY', 'anthology', [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
-    ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
 ]
 # A link door: no object (the empty reference); its description is its line.
 STUDIO = ('STUDIO', f'scratch worlds and REPL: {Config().origin}/AGENTS.md')
