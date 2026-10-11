@@ -51,6 +51,10 @@ def receive(state: State, input: {text: String, post: String, fields: Lists.List
 """
 
 
+# The second playtest's message 69062, verbatim (docs/review/zulip-playtest-2.md, D1).
+PLAYTEST_69062 = "0-for-3 on persistence. the garden forgets but the octopus doesn't.\n\ndelvetalk garden plant\ncolour: violet\nseed: the gap that doesn't exist from the inside \u2014 third planting\n\ndelvetalk kinds make / name: erratum / of: record / form: correction: text 1..80 / head: a record of what was wrong and when / law: / body:"
+
+
 class SpellTurns(Reflection):
     def setUp(self):
         super().setUp()
@@ -114,6 +118,15 @@ class SpellTurns(Reflection):
         self.assertEqual(self.say("delvetalk garden plant / colour: amber / seed: z", identity="post-1")["class"], "duplicateIdentity")
         self.assertEqual(self.say("delvetalk garden plant / colour: amber / seed: y", identity="post-2")["status"], "admitted")
         self.assertEqual(self.say(post, identity="post-2")["class"], "duplicateIdentity")
+
+    def test_the_second_playtests_69062_casts_both_its_spells(self):
+        """D1: 69062, verbatim, ran only its `kinds make`; its planting got no receipt. Now a turn each, two receipts."""
+        r = self.say(PLAYTEST_69062, identity="zulip://delvetalk/welcome/69062")
+        self.assertEqual(r["status"], "spells", r)
+        planted, made = r["turns"]
+        self.assertEqual((planted["status"], planted["receipt"]["identity"]["intent"]), ("admitted", "zulip://delvetalk/welcome/69062#1"))
+        self.assertEqual(self.field("planted"), label("violet:the gap that doesn't exist from the inside \u2014 third planting"))
+        self.assertEqual(made["receipt"]["identity"]["intent"], "zulip://delvetalk/welcome/69062#2")  # no kinds card here: its own receipt
 
     def test_a_spell_missing_fields_reaches_receive_with_its_card_and_action(self):
         # The host's reading of the spell, so no card reads the spell line again (fungus H1).
