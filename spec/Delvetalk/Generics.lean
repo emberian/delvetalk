@@ -1192,6 +1192,10 @@ def relationItem (g : GType) : M (Option GType) := do
 def derivedRefusal (module message : String) (tag := "derived-edits") : String :=
   "refused (" ++ tag ++ "): " ++ message ++ " (module " ++ module ++ ")"
 
+/-- A derivation refusal at the source line that occasions it (KERNEL-HANDOFF §16 item 9). -/
+def derivedAt {α : Type} (module : String) (span : Span) (message : String) (tag := "derived-edits") : M α :=
+  throwThe Refusal (refusalAt module span (derivedRefusal module message tag))
+
 /-- The State record's fields and the module they are written in. -/
 def stateFields (index : Nat) (ast : ObjectiveBendSurface.Module) :
     M (Option (List ObjectiveBendSurface.Field × Nat × Span)) := do
@@ -1282,9 +1286,10 @@ def checkFixed (index : Nat) : M Unit := do
   let some (fields, _, _) ← effectiveStateFields (← get).sources.size index | return
   let fixed := (fields.filter (·.fixed)).map (·.name)
   if fixed.isEmpty then return
-  for name in source.ast.decls.flatMap declWritten do
-    if fixed.contains name then
-      throw (derivedRefusal source.module.name (name ++ " is fixed; no edit names it") "fixed")
+  for d in source.ast.decls do
+    for name in declWritten d do
+      if fixed.contains name then
+        derivedAt source.module.name d.span (name ++ " is fixed; no edit names it") "fixed"
 
 /-- The derived `Edits` and `keep()` of module `index`, when it gets them. -/
 def deriveEdits (index : Nat) : M (Option (List Decl)) := do
@@ -1303,11 +1308,11 @@ def deriveEdits (index : Nat) : M (Option (List Decl)) := do
       match ← entriesItem g with
       | some x =>
         let some x ← spell index x
-          | throw (derivedRefusal module ("State." ++ f.name ++ " holds items of a type from a module " ++ module ++ " does not import; import it"))
+          | derivedAt module f.span ("State." ++ f.name ++ " holds items of a type from a module " ++ module ++ " does not import; import it")
         pure ("Entries", x ++ ", " ++ x)
       | none =>
         let some t ← (if home == index then pure (some f.type) else spell index g)
-          | throw (derivedRefusal module ("State." ++ f.name ++ " has a type from a module " ++ module ++ " does not import; import it"))
+          | derivedAt module f.span ("State." ++ f.name ++ " has a type from a module " ++ module ++ " does not import; import it")
         pure ("Edit", t ++ ", {}")
     let name := if ObjectiveBendParse.isIdent f.name.toList then f.name else (toJson f.name).compress
     lines := lines.push ("  " ++ name ++ ": " ++ plans ++ "." ++ sum ++ "<" ++ args ++ ">\n")
@@ -1316,7 +1321,7 @@ def deriveEdits (index : Nat) : M (Option (List Decl)) := do
     ", ".intercalate keeps.toList ++ "}\n"
   match ObjectiveBendParse.parseObjective text with
   | .ok parsed => return some (parsed.decls.map (·.mapSpans fun _ => span))
-  | .error d => throw (derivedRefusal module ("State does not derive its Edits: " ++ d.message))
+  | .error d => derivedAt module span ("State does not derive its Edits: " ++ d.message)
 
 /-! ## The pass -/
 
@@ -1360,15 +1365,15 @@ of its labels), and, when the module declares form blocks and no `forms()`,
 `def forms() -> L.List<F.Form>` of the blocks' values in source order. -/
 
 /-- The labels of the closed sum of empty cases `type` names in module `index`. -/
-def closedLabels (index : Nat) (module action field type : String) : M (List String) := do
-  let refusal := derivedRefusal module ("form " ++ action ++ " offers " ++ field ++ ": " ++ type ++
-    ", which is not a closed sum of empty cases") "form-kind"
-  let some g ← tryCatch (some <$> typeOf maxNesting index [] type) (fun _ => pure none) | throw refusal
-  let .named m n _ := g | throw refusal
-  if m == (← get).generatedModule then throw refusal
-  let some declaration := (← get).byName[(m, n)]? | throw refusal
-  let .sum _ cases [] _ := declaration.ast | throw refusal
-  unless cases.all (fun c => trim c.type == "{}") do throw refusal
+def closedLabels (index : Nat) (module action field type : String) (span : Span) : M (List String) := do
+  let refusal := refusalAt module span (derivedRefusal module ("form " ++ action ++ " offers " ++ field ++ ": " ++ type ++
+    ", which is not a closed sum of empty cases") "form-kind")
+  let some g ← tryCatch (some <$> typeOf maxNesting index [] type) (fun _ => pure none) | throwThe Refusal refusal
+  let .named m n _ := g | throwThe Refusal refusal
+  if m == (← get).generatedModule then throwThe Refusal refusal
+  let some declaration := (← get).byName[(m, n)]? | throwThe Refusal refusal
+  let .sum _ cases [] _ := declaration.ast | throwThe Refusal refusal
+  unless cases.all (fun c => trim c.type == "{}") do throwThe Refusal refusal
   return cases.map (·.name)
 
 structure DerivedForms where
@@ -1396,26 +1401,26 @@ def deriveForms (index : Nat) : M DerivedForms := do
         | .natural .. => pure ("Nat", f.kind)
         | .choice options =>
           let sum := block.choiceSum f.name
-          if ast.decls.any (·.name == sum) then
-            throw (derivedRefusal module ("form " ++ block.action ++ " declares the sum " ++ sum ++ " of " ++ f.name ++
-              "'s choices, and so does the module; delete it or name an existing sum: " ++ f.name ++ ": " ++ sum) "form-input")
+          if let some clash := ast.decls.find? (·.name == sum) then
+            derivedAt module clash.span ("form " ++ block.action ++ " declares the sum " ++ sum ++ " of " ++ f.name ++
+              "'s choices, and so does the module; delete it or name an existing sum: " ++ f.name ++ ": " ++ sum) "form-input"
           text := text ++ "sum " ++ sum ++ ":\n" ++ String.join (options.map ("  " ++ · ++ ": {}\n"))
           pure (sum, f.kind)
         | .named type =>
-          let options ← closedLabels index module block.action f.name type
+          let options ← closedLabels index module block.action f.name type f.span
           labels := (type, options) :: labels
           pure (type, .choice options)
       fields := fields.push ("  " ++ f.name ++ ": " ++ type ++ "\n")
       resolved := resolved.push { f with kind }
-    if ast.decls.any (·.name == block.input) then
-      throw (derivedRefusal module ("form " ++ block.action ++ " declares " ++ block.input ++
-        ", its method's input, and so does the module; delete it") "form-input")
+    if let some clash := ast.decls.find? (·.name == block.input) then
+      derivedAt module clash.span ("form " ++ block.action ++ " declares " ++ block.input ++
+        ", its method's input, and so does the module; delete it") "form-input"
     text := text ++ (if fields.isEmpty then "type " ++ block.input ++ " = {}\n"
       else "record " ++ block.input ++ ":\n" ++ String.join fields.toList)
     forms := forms.push { block with fields := resolved.toList }
   if !ast.decls.any (·.name == "forms") then
     let some lists := (ast.imports.find? (fileOf ·.path == "List.obend")).map (·.importAlias)
-      | throw (derivedRefusal module "forms() is derived as a List of the form blocks' values; import ./List.obend" "derived-forms")
+      | derivedAt module ((ast.forms.head?.map (·.span)).getD default) "forms() is derived as a List of the form blocks' values; import ./List.obend" "derived-forms"
     let list := ast.forms.foldr (fun b acc => lists ++ ".List.cons({head: " ++ b.value ++ "(), tail: " ++ acc ++ "})")
       (lists ++ ".List.nil({})")
     text := text ++ "def forms() -> " ++ lists ++ ".List<" ++ formAlias ++ ".Form>:\n  " ++ list ++ "\n"
@@ -1423,7 +1428,7 @@ def deriveForms (index : Nat) : M DerivedForms := do
   | .ok parsed =>
     let span := (ast.forms.head?.map (·.span)).getD default
     return { decls := parsed.decls.map (·.mapSpans fun _ => span), labels, forms := forms.toList }
-  | .error d => throw (derivedRefusal module ("form blocks do not derive their inputs: " ++ d.message) "form-input")
+  | .error d => derivedAt module ((ast.forms.head?.map (·.span)).getD default) ("form blocks do not derive their inputs: " ++ d.message) "form-input"
 
 /-- A form field's closed-sum marker as its choice of labels. -/
 def resolveChoices (labels : List (String × List String)) : Expr → Expr

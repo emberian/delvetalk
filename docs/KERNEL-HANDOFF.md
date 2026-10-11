@@ -880,3 +880,12 @@ L. (Coordinator's insertion, docs/LAW.md §4 A, E, H; §6 item 1, kernel half.) 
    `#assert_compiled`. `Host/Law.lean` gained only fail-closed arms (`read` of clock, object, old is
    `none`; `leRSum` denotes over `read`), so a law using them refuses every write until the host lane
    adds `Facts.clock`, `Facts.object` and `read` over `old`.
+4. Located refusals from the generics pass (§16 item 9). Every `refused (…)` of the derivation probe
+   now carries `module` and `span` (`derivedAt`, `throwThe Refusal`): `fixed` at the declaration whose
+   write names the field; `derived-edits` at the State field whose type the module cannot spell, or at
+   the State; `form-kind` at the form field; `form-input` "declares" at the module's clashing
+   declaration; `derived-forms` and a form-input parse failure at the first form block. Every other
+   refusal of the pass (world calls, inference, unknown types, the instance bound) is placed at the
+   declaration being rewritten (item 2). `test_sugar.Sugar.test_each_derived_refusal_names_its_source_line`
+   checks through `compile`, which does not localize, so the span is the pass's own.
+5. `textWords`: no object or design document asks for it (grep of docs/ and world/); not built.
