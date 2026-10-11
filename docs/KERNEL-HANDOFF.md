@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-10 (lane/kernel13 after foundation cb4af60: honest package and instance bounds, located generics refusals, LAW §4 A/E/H, §25; the queue is §16).
+State on 2026-10-11 (lane/kernel14 after foundation 68fba1c: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
 
 ## Summary
 
@@ -511,17 +511,18 @@ LAW §4 A/E/H (kernel13, §25). Remaining, in order:
 14. After the host's switch to the stored path (lane/host14 and after): delete
    `startEntryStep`/`resumeSuspended`/`resumeEntryStep`'s quoted state path and `quoteAt` for state,
    and move `test_tariff`'s pins in that commit.
-16. Host requests from kernel13 (§25): `Host.Limits.maxPackageBytes` and `formSourceMax` read
-   `Bounds.maxPackageBytes` (128 KiB) with refusals naming it; `Facts.clock`, `Facts.object` and `read`
-   over `old` (LAW §6 item 1; until then those atoms fail closed in `Host/Law.lean`).
+16. Host requests from kernel13 and kernel14 (§25 items 1, L, M): `Host.Limits.maxPackageBytes` and
+   `formSourceMax` read `Bounds.maxPackageBytes` (128 KiB) with refusals naming it; the law's
+   denotation of every atom that still fails closed in `Host/Law.lean`, exactly as §25 item M lists:
+   `Facts.clock`, `Facts.object`, `Facts.reads`, `read` over `old` and filtered counts, `changed`,
+   cited membership, `under`, the roots and the acceptance check.
 17. `Package.localize` (check-package) still recompiles each function alone for a spanless refusal:
    2.5 s on a 32 KB package. With the generics pass located (§25 items 2, 4) its remaining callers
    are elaborator refusals without a span; find them by making `localize` count its calls in
    `test_sugar` and `test_located`-style fixtures, then delete it when none is left.
-18. LAW §6 items 2 and 3 (kernel halves): `changed(new.F.COL) by REF`, `count(new.F where COL == V)`,
-   the quorum form, `REF in "<object>".F.COL`, `under "<object>"`, `LawExpr.cites`.
 
-Done since kernel10 and no longer queued: 9 (located generics refusals, kernel13), 13 (`52ad1b2`).
+Done since kernel10 and no longer queued: 9 (located generics refusals, kernel13), 13 (`52ad1b2`),
+18 (LAW §6 items 2 and 3, kernel halves, kernel14: §25 item M).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
@@ -907,6 +908,51 @@ L. (Coordinator's insertion, docs/LAW.md §4 A, E, H; §6 item 1, kernel half.) 
    `#assert_compiled`. `Host/Law.lean` gained only fail-closed arms (`read` of clock, object, old is
    `none`; `leRSum` denotes over `read`), so a law using them refuses every write until the host lane
    adds `Facts.clock`, `Facts.object` and `read` over `old`.
+M. (lane/kernel14, docs/LAW.md §4 B, C, D, F, G; §6 items 2 and 3, kernel half.) The law grammar is
+   one term language (`Compiler/ObjectiveBendLaw.lean`, its module comment is the grammar):
+   `LawTerm` (`new.F`, `old.F`, `request.FACT`, `count(SIDE.F)` and `count(SIDE.F where COL == TERM)`,
+   INT, `"TEXT"`, `TERM + TERM`) mutual with `LawFilter`; atoms `eq`, `le`, `member` (`LawPlace`:
+   `[INT, …]`, `new.F`, `new.F.COL`, `"OBJECT".F.COL`), `rule` (`LawRule`: monotone, writeOnce,
+   appendOnly, unchanged, insertOnly), `changed(new.F.COL) by TERM`, `under "OBJECT"`. A count is a
+   reference, so the filtered count, its growth form and the quorum
+   (`count(new.G) <= count(new.F where C == V) + INT`) are comparisons. One refusal shape,
+   `law outside the enforced fragment: FOUND (RULE)`; one name walk (`LawExpr.names`), projected as
+   `fields` (the written object's), `fieldsPlain` and `reads` (the cited objects, each once); one
+   theorem family over tables (`parse_accepts`, `parse_refuses`, `render_reads_back`,
+   `refusals_name_what_and_why`, `names_walk`; `native_decide`, `#assert_compiled`). Renders of every
+   law that parsed before are byte-identical; packets and pins do not move. Deleted: `compile`,
+   `packageLaw`, `LawRef.slot` and the `Pred` library (892 lines; nothing called them, and the
+   agreement theorem `Kernel.ObjectLaw.compile_sound` the module cited does not exist in this tree,
+   so no proved fact went). `Host/Law.lean` was ported arm for arm; what it does not yet denote fails
+   closed. **The host lane's exact request (lane/host15):**
+   - `Facts` gains `clock : Nat` and `object : String` (filled from the write in `judge`, `amendable`,
+     `libraryRefusal`), and `reads : List (String × Data)`: the state of every object the law cites,
+     transitively through `under`, at the version recorded as its root.
+   - `read`: `.fact .clock => some (.num facts.clock)`; `.fact .object => some (.text facts.object)`
+     (and `textOf` the same); `.old F` the field of `old`, or at creation the empty value of `new.F`'s
+     type; `.count of (.eq col value)` the rows of `rowsAt old new of` whose `rawField col` canons to the
+     value's data. Generalize `memberData` to every term (a numeric reading as `.natural`, `.old F` its
+     raw field), and use it for the filter, membership and `changed`.
+   - `denote (.changed F C who)`: with `before` the rows of `old.F` (none at creation) and `after` of
+     `new.F`, the rows of `before` absent from `after` by canonical bytes, less `facts.evicted` for F,
+     and the rows of `after` absent from `before`; every one has `rawField C` equal to `who`'s data.
+   - `denote (.member t (.cited O F C))`: as `.column F C` over `facts.reads.lookup O`; absent is false.
+   - `denote (.under O)`: the `law` field of `facts.reads.lookup O`, a label, parsed by the law-text
+     parser (`Ops.parseLawText`, which moves beside `denote` so `Law.lean` can call it), every clause
+     admitted at depth − 1; `denote` takes a depth, `Limits.lawDepth` = 4; depth 0, absent, not a
+     label, or unparsable is false.
+   - Roots: every clause's `LawExpr.reads`, closed under the `under` citations of the cited laws,
+     joins the write's roots at the version read (`withLawReads` generalized), within `maxRoots`, each
+     viewable by the subject or the write refuses `lawRefused lawReads`; journaled, so replay re-judges
+     from them; a cited object moved since the read is `staleRoot`.
+   - Acceptance (create, amend, reprogram, the default law aside): every `under` resolves to an existing
+     object whose `law` parses; a cycle within `lawDepth` refuses naming the cycle; the composed law
+     passes the metarule (`amendable`). `world-inspect` lists the citations.
+   - Then the objects lane: Tide's `self` and its five helpers become `law self "only you change your
+     own subscription": changed(new.subs.who) by request.subject`; Deal's `def law` becomes `law signer
+     "a party countersigns only for themselves": changed(new.signatures.principal) by request.subject`;
+     Record gains `changed(new.lines.author) by request.subject`; Kind's `lawOf` and `{maker}` holes
+     become `under "kind/<name>"` and `request.subject == new.maker`.
 4. Located refusals from the generics pass (§16 item 9). Every `refused (…)` of the derivation probe
    now carries `module` and `span` (`derivedAt`, `throwThe Refusal`): `fixed` at the declaration whose
    write names the field; `derived-edits` at the State field whose type the module cannot spell, or at

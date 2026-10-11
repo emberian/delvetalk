@@ -10,7 +10,7 @@ grammar and render it one way. Anything outside it refuses, naming what it found
     ATOM   ::= REF == TERM | REF <= TERM
              | TERM in [INT, …] | TERM in new.FIELD | TERM in new.FIELD.COLUMN
              | TERM in "OBJECT".FIELD.COLUMN
-             | RULE(FIELD) | changed(new.FIELD.COLUMN) by TERM
+             | RULE(FIELD) | changed(new.FIELD.COLUMN) by TERM | under "OBJECT"
     RULE   ::= monotone | writeOnce | appendOnly | unchanged | insertOnly
     TERM   ::= REF | INT | "TEXT" | TERM + TERM
     REF    ::= new.FIELD | old.FIELD | request.FACT | COUNT
@@ -48,7 +48,14 @@ What each form means (the host's `denote` is the definition; docs/LAW.md §4 the
 - `changed(new.F.C) by TERM`: every row of F the write inserted, replaced or retracted (the rows of
   old absent from new and of new absent from old, compared whole by canonical bytes, less the
   evicted) has C equal to the term; at creation every row counts. A replaced row contributes both
-  its rows, so a write replaces only the term's row with the term's row. -/
+  its rows, so a write replaces only the term's row with the term's row.
+- `under "OBJECT"` is law by reference: the cited object's `law` field, text in this grammar (one
+  `law NAME "reading": EXPR` a line), holds of this write as if its clauses were written here,
+  judged on this write's old, new and facts. The cited object is a root (`LawExpr.reads`), so
+  amending its law re-laws every object that cites it at their next write. The host resolves the
+  citation at judgment: it parses the cited text, follows the citations within it to a bounded
+  depth, refuses a cycle or an absent object when the citing law is accepted (creation, amendment,
+  reprogram), and judges an absent, unviewable or unparsable citation as holding nothing. -/
 import Theory.AssertCompiled
 namespace Minidregg.Compiler.ObjectiveBendLaw
 set_option autoImplicit false
@@ -117,6 +124,8 @@ inductive LawExpr where
   | rule (rule : LawRule) (field : String)
   /-- `changed(new.FIELD.COLUMN) by WHO`. -/
   | changed (field column : String) (who : LawTerm)
+  /-- `under "OBJECT"`: the cited object's `law` field holds of this write. -/
+  | under (object : String)
   | not (body : LawExpr)
   | and (left right : LawExpr)
   | or (left right : LawExpr)
@@ -131,6 +140,8 @@ inductive LawName where
   | field (name : String)
   | column (name : String)
   | cited (object field column : String)
+  /-- The `law` field of another object, cited by `under`. -/
+  | law (object : String)
   deriving DecidableEq, Repr
 
 mutual
@@ -156,6 +167,7 @@ def LawExpr.names : LawExpr → List LawName
   | .member term place => term.names ++ place.names
   | .rule _ field => [.field field]
   | .changed field column who => .field field :: .column column :: who.names
+  | .under object => [.law object]
   | .not body => body.names
   | .and left right | .or left right | .implies left right => left.names ++ right.names
 
@@ -165,7 +177,7 @@ def LawExpr.fields (e : LawExpr) : List String :=
 
 /-- The objects a law cites, each once, in source order: the roots the host records. -/
 def LawExpr.reads (e : LawExpr) : List String :=
-  (e.names.filterMap fun | .cited object _ _ => some object | _ => none).eraseDups
+  (e.names.filterMap fun | .cited object _ _ | .law object => some object | _ => none).eraseDups
 
 /-- An object id a law may cite: 1..128 bytes of letters, digits and `. _ : / -` (the host's
 `validObjectId` alphabet). -/
@@ -181,6 +193,7 @@ def plainName (name : String) : Bool :=
 def LawName.plain : LawName → Bool
   | .field name | .column name => plainName name
   | .cited object f col => plainObject object && plainName f && plainName col
+  | .law object => plainObject object
 
 /-- Every name a law reads is plain; a clause that reads another refuses every write. -/
 def LawExpr.fieldsPlain (e : LawExpr) : Bool := e.names.all LawName.plain
@@ -225,6 +238,7 @@ def LawExpr.render : LawExpr → String
   | .member term place => s!"{term.render} in {place.render}"
   | .rule r field => s!"{r.name}({field})"
   | .changed field column who => s!"changed(new.{field}.{column}) by {who.render}"
+  | .under object => s!"under \"{object}\""
   | .not body => s!"not ({body.render})"
   | .and left right => s!"({left.render}) and ({right.render})"
   | .or left right => s!"({left.render}) or ({right.render})"
@@ -245,7 +259,9 @@ def factRule : String :=
   "a law reads " ++ ", ".intercalate (LawFact.all.map fun f => "request." ++ f.name)
 def pathRule : String := "a law reads top-level fields only: new.FIELD, old.FIELD"
 def countRule : String := "a count is count(new.FIELD) or count(old.FIELD), optionally with where COLUMN == TERM"
-def atomRule : String := "an atom is REF == TERM, REF <= TERM, TERM in …, RULE(FIELD) or changed(new.FIELD.COLUMN) by TERM"
+def atomRule : String := "an atom is REF == TERM, REF <= TERM, TERM in …, RULE(FIELD), \
+  changed(new.FIELD.COLUMN) by TERM or under \"OBJECT\""
+def underRule : String := "law by reference is under \"OBJECT\", the object's id in quotes"
 def placeRule : String := "membership is in [INT, …], new.FIELD, new.FIELD.COLUMN or \"OBJECT\".FIELD.COLUMN"
 def objectRule : String := "a cited object is 1..128 bytes of letters, digits and . _ : / -"
 def ruleRule : String := "a rule takes one top-level field: " ++ ", ".intercalate (LawRule.all.map fun r => r.name ++ "(FIELD)")
@@ -516,6 +532,9 @@ def parseUnary : Nat → List Tok → Except String (LawExpr × List Tok)
       if who.textual then return (.changed field column who, after)
       else refuse ("`changed(new." ++ field ++ "." ++ column ++ ") by " ++ who.render ++ "`") changedRule
     | .ident "changed" :: _ => refuse (found toks) changedRule
+    | .ident "under" :: .str object :: after =>
+      if plainObject object then .ok (.under object, after) else refuse ("\"" ++ object ++ "\"") objectRule
+    | .ident "under" :: rest => refuse (found rest) underRule
     | .ident name :: .sym "(" :: .ident field :: .sym ")" :: after =>
       match ruleNamed name with
       | some rule => .ok (.rule rule field, after)
@@ -594,6 +613,10 @@ def accepted : List (String × LawExpr) := [
   ("request.subject in \"bond/anthology\".signatures.principal or new.owner in \"circle/porch\".members.principal",
     .or (.member (.fact .subject) (.cited "bond/anthology" "signatures" "principal"))
       (.member (.field "owner") (.cited "circle/porch" "members" "principal"))),
+  -- LAW §4 F: law by reference (a kind's instance under its kind's law).
+  ("under \"kind/bell\"", .under "kind/bell"),
+  ("under \"kind/bell\" and request.subject == new.maker",
+    .and (.under "kind/bell") (.eq (.fact .subject) (.field "maker"))),
   ("count(new.a where b == count(old.a)) == 0",
     .eq (.count (.field "a") (.eq "b" (.count (.old "a") .all))) (.int 0))]
 
@@ -610,7 +633,8 @@ def refused : List String := [
   "\"x\" == request.subject", "request.subject in \"circle/porch\".members",
   "request.subject in \"circle porch\".members.principal", "request.subject in \"\".members.principal",
   "request.subject in \"c\".members.principal.x", "request.height in \"c\".members.principal",
-  "request.subject in \"c\".a/b.principal", "old.last + 0 <= request.clock", "new.a == \"x", "new.a == 1 ; new.b == 2", ""]
+  "request.subject in \"c\".a/b.principal",
+  "under kind", "under", "under \"kind bell\"", "under \"kind/bell\".law", "under (\"kind/bell\")", "old.last + 0 <= request.clock", "new.a == \"x", "new.a == 1 ; new.b == 2", ""]
 
 /-- Laws whose rendering is their own text. -/
 def canonical : List String := [
@@ -620,7 +644,8 @@ def canonical : List String := [
   "count(new.votes where n == -1) <= count(old.votes where n == -1) + 2",
   "count(new.members) <= count(new.votes where vote == \"yes\") + 0",
   "request.subject in new.greeted.principal", "new.b in [1, -2]",
-  "request.subject in \"circle/porch\".members.principal"]
+  "request.subject in \"circle/porch\".members.principal",
+  "(under \"kind/bell\") and (request.subject == new.maker)"]
 
 theorem parse_accepts : accepted.all (fun (law, e) => (parse law).toOption == some e) = true := by native_decide
 
@@ -642,6 +667,8 @@ theorem refusals_name_what_and_why :
     refusalOf "request.clock == \"noon\"" = some (refusal "`request.clock == \"noon\"`" textRule) ∧
     refusalOf "request.height in new.members" = some (refusal "`request.height in new.members`" memberRule) ∧
     refusalOf "request.subject in \"circle porch\".members.principal" = some (refusal "\"circle porch\"" objectRule) ∧
+    refusalOf "under kind" = some (refusal "`kind`" underRule) ∧
+    refusalOf "under \"kind bell\"" = some (refusal "\"kind bell\"" objectRule) ∧
     refusalOf "insertOnly(a.b)" = some (refusal "`insertOnly`" ruleRule) ∧
     refusalOf "old.last + 0 <= request.clock" = some (refusal "`old.last + 0` before <=" "a comparison starts with a reference") ∧
     refusalOf "new.a >= 1" = some (refusal "`>`" "a law compares with == and <=, adds with +, and combines with and, or, not, implies") := by
@@ -659,7 +686,10 @@ theorem names_walk :
         (.member (.fact .caller) (.cited "circle/porch" "members" "principal")))).reads = ["circle/porch", "bond/a"] ∧
     (LawExpr.member (.field "owner") (.cited "bond/a" "signatures" "principal")).fields = ["owner"] ∧
     (LawExpr.member (.fact .subject) (.cited "bond/a" "signatures" "principal")).fields = [] ∧
-    (LawExpr.member (.fact .subject) (.cited "bond a" "signatures" "principal")).fieldsPlain = false := by
+    (LawExpr.member (.fact .subject) (.cited "bond a" "signatures" "principal")).fieldsPlain = false ∧
+    (LawExpr.and (.under "kind/bell") (.or (.member (.fact .subject) (.cited "circle/porch" "members" "principal"))
+      (.under "kind/bell"))).reads = ["kind/bell", "circle/porch"] ∧
+    (LawExpr.and (.under "kind/bell") (.eq (.fact .subject) (.field "maker"))).fields = ["maker"] := by
   native_decide
 
 end Minidregg.Compiler.ObjectiveBendLaw
