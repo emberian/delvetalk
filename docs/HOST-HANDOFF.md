@@ -414,7 +414,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 62. **Declared methods (host10; WORLD-REVIEW finding 1).** A State-first definition is public only when
    the package declares it: the `action` of a form its `forms()` lists, a name its `def methods() ->
    Lists.List<String>` returns, a `views()` entry, or a conventional name (`conventionalMethods`: receive,
-   render, blurb, forms, lenses, set, publishPage, page, relations, methods, law, lawReads, views,
+   render, forms, lenses, set, publishPage, page, relations, methods, law, lawReads, views,
    initial). Only the entry module's declarations count (as for `relations()`); each is compiled and run
    once per build (`publicMethods`, in `compileObject` and `prepareProgram`; a layer keeps what the code
    below declared and may add). A `methods()` that is not a `List<String>` refuses the package (`methods:`,
@@ -488,8 +488,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    whose package declares no `publishPage` is the host's (`defaultPublishPage`, chosen in `runTurnWith`):
    it publishes `Card.defaultPage`'s shape, `## Card` (the card rendered for nobody, as `world-card`
    renders it for "") and `## How to reply` (the host's usage of the card's forms and lenses,
-   `spellUsage`), joined by a line as `Card.pageText` joins sections, under `page`, else the word the
-   pure `blurb()` gives, else the object's id; the result is the post id. The turn writes nothing and
+   `spellUsage`), joined by a line as `Card.pageText` joins sections, under `page`, else the object's id; the result is the post id. The turn writes nothing and
    stages one publication. The five pasted `publishPage` methods (Anthology, Scene, Table, Tide,
    Workshop) may go (objects lane); Garden keeps its own. Test: `tests/test_publish.py` `DefaultPage`.
 
@@ -604,7 +603,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    grant lets this call run <m> on <id> (<clause>).". Test: `tests/test_call_reading.py`.
 
 78. **Declarations from the artifact (host11).** Whether an entry module declares `forms`, `views`,
-   `lenses`, `blurb` (and, for `publicMethods`, `methods`) is read only from the artifact's `declares:
+   `lenses` (and, for `publicMethods`, `methods`) is read only from the artifact's `declares:
    [names]` (the kernel's `declaredNames`, derived definitions included; `Object.declares`, in
    snapshots): a package with form blocks and no hand-written `forms()` has public, bounded actions.
    The source scan is gone. Test: `tests/test_form_bounds.py` `DerivedForms`.

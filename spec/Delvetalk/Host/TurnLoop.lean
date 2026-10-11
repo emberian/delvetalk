@@ -2259,19 +2259,10 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
         changesJson w ctx.principal ctx.intent ctx.ledger used st.sends.length updates proposal.allWrites) endedIfLate
     return (w', turnReply w' r)
 
-/-- The door word a card's pure `blurb()` gives (`Card.Door {word, blurb}`), if it has one. -/
-def blurbWord (o : Object) : M (Option String) := do
-  if !o.declaresDef "blurb" then return none
-  let some c ← tryCatch (some <$> compiledMethod o "blurb") (fun _ => pure none) | return none
-  let some entry := c.entry | return none
-  match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
-  | .ok (.record fs) => return (fs.lookup "word").bind labelOf
-  | _ => return none
-
 /-- `publishPage {page}` asked of a card whose package declares no `publishPage` (WORLD-REVIEW
     finding 16): the host publishes the card's default page as `Card.defaultPage` wrote it, the card as
     a stranger sees it and how to reply (the host's usage of its forms and lenses), under `page`, else
-    the door word `blurb()` gives, else the object's id. The result is the post id, as
+    the object's id. The result is the post id, as
     `Card.publishPage`'s. The page is public, so a card whose read policy names principals has none:
     refused `noMethod` (codex host 2). -/
 def defaultPublishPage (id : String) (argument : Data) : M Data := do
@@ -2283,8 +2274,7 @@ def defaultPublishPage (id : String) (argument : Data) : M Data := do
   let given := match argument with
     | .record fs => ((fs.lookup "page").bind labelOf).getD ""
     | _ => ""
-  let word := (← blurbWord o).getD id
-  let title := if given.isEmpty then word else given
+  let title := if given.isEmpty then id else given
   let card ← match ← renderCard id o (fun m => cardContext s.world id "" "" s.intent s.world.height m) with
     | .ok doc => liftEval (Delvetalk.Document.render doc)
     | .error clause => evaluation s!"publishPage: the card does not render ({clause})"
