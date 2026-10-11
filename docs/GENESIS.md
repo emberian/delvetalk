@@ -83,6 +83,18 @@ After ember posts them by hand, `python3 -m transport post ... --object <object>
 | each door page genesis drafted (`wiki: Garden`, `Rooms`, `Workshop`, `Tide`, `Porch`, `Anthology`, `Kinds`) | its door's object | none |
 | the status thread's root (already posted) | `commonplace` | none |
 
+## A carried town
+
+A town is never begun again; a new host carries it (`python3 -m transport carry`), and every object keeps the
+law it was made with. So the carry ends with genesis's refresh (`deploy.genesis.carried`; on a living town,
+`python3 -m deploy.genesis refresh --root-socket … --state …`): the opener re-writes to genesis's text as it stands
+the law of each object genesis made with one (`commonplace`, `anthology`, `kinds`; by `world-amend`) and every town
+kind's `law` and `voice` (by the owner's write), so a carried bell takes kind/bell's rules and wants by `under`.
+Each is an ordinary journaled turn, identity `refresh-<object>-…`. A slot whose text is not the one genesis or an
+earlier refresh last gave it (read from the journal and the journals it was carried from) was changed by another
+turn: it is left and named, as is a slot whose making is in no journal on the disk. A package's own declared law
+is the carry's to re-lay, not the refresh's.
+
 ## Operator decisions, with the recommended answer
 
 | Decision | Recommendation |
