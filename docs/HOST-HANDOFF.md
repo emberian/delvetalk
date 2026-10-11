@@ -120,7 +120,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | ledger | `maxDepth` 100, `chainWork` 10,000,000, `chainStorage` 1 MiB (creation may lower, never raise) |
 | time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64 |
 | delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
-| programs, laws | `maxPackageBytes` 32768, `maxLawBytes` 4096, `maxLawClauses` 16, `maxPreparedPrograms` 16, `maxCompiledPackets` 256, `maxBuilds` 1024, `maxReaders` 256, `maxLibraryModules` 256, `maxLibraryBytes` 786432 |
+| programs, laws | `maxPackageBytes` 131072 (`Bounds.maxPackageBytes`), `maxLawBytes` 4096, `maxLawClauses` 16, `maxPreparedPrograms` 16, `maxCompiledPackets` 256, `maxBuilds` 1024, `maxReaders` 256, `maxLibraryModules` 256, `maxLibraryBytes` 786432 |
 | interpret | `maxUtteranceBytes` 8192, `maxOffersBytes` 65536, `maxReplyBytes` 262144 |
 | forms | `formTextMax` 1400, `formNaturalMax` 1000000000 |
 
@@ -131,7 +131,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 ### 5.1 Authority and laws
 
 - `Facts {subject, caller, height, turn, pin, kind, method, relations}` (`relations`: the object's declarations, for `insertOnly`, 5.74). `caller` is the object whose method wrote ("" for the turn's own method and client proposals; for a delivered turn, the sending object). `method` is the method whose run made the change ("" for ops).
-- Fragment (grammar in `ObjectiveBendLaw.lean`): `and`, `or`, `not`, `implies`; `request.subject`, `request.caller`, `request.height`, `request.turn`, `request.pin`, `request.kind`, `request.method`, integer and text constants, `monotone(F)`, `writeOnce(F)`, `appendOnly(F)`, `unchanged(F)`, `x in new.F` (`member`), and for relations `insertOnly(F)`, `count(new.F) <= N`, `count(new.F) <= count(old.F) + N`, `x in new.F.COL`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
+- Fragment (grammar in `ObjectiveBendLaw.lean`): `and`, `or`, `not`, `implies`; `request.subject`, `request.caller`, `request.height`, `request.turn`, `request.pin`, `request.kind`, `request.method`, `request.clock` (the world clock the turn read, `Facts.clock`), `request.object` (the written object's id, `Facts.object`; text-comparable), `old.F` (the field before the write; at creation its kind's empty value, `emptyReading`), the three-slot bound `REF <= REF + REF` (`leRSum`), integer and text constants, `monotone(F)`, `writeOnce(F)`, `appendOnly(F)`, `unchanged(F)`, `x in new.F` (`member`), and for relations `insertOnly(F)`, `count(new.F) <= N`, `count(new.F) <= count(old.F) + N`, `x in new.F.COL`. `writeOnce` admits exactly one change of F away from its empty value (`emptyValue`: 0, false, "", the empty list, a record of empty values); a field missing from the old state fails closed.
 - `judge` judges every distinct (caller, kind) of an object's changes. Default law `owner: request.kind == 0 or request.subject == "<creator>"`: anyone may invoke methods, only the creator may reprogram or amend (`defaultLaw`). Metarule: an amendment must be admitted by the existing law for its proposer; message "law does not admit an amendment by its proposer <p>: <name>: <expr>".
 - `Object.readings` holds the package's law readings for clauses that are still the package's; `makeObject` keeps those the effective law leaves equal, an amendment keeps those it leaves equal, a reprogram keeps all. `parseLawTextReadings` reads `law NAME "reading": EXPR`; a malformed reading is `law syntax`.
 - Context (`contextData`, also the Bend law's request context): `{world, object, principal, handle, caller, intent, height, clock, inputOrigin {kind, object, command, program, immediatelyPrevious, post}}` (`post`: 5.71). The host fits each Context to the receiving code's own declared record (`fitRecord`), so a field added to the library later never breaks an older object.
@@ -497,7 +497,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    input type gives (`methodForms` with `declared`; `formsOf`, `spellForms`, `spellFormsData`): a
    spell is judged by the card's bounds (text min and max, natural range, choice set), and
    `world-inspect` `forms`, the `inspect` Plan and `?` usage show them. A field no form names keeps its
-   type's kind. `Form.Kind.source` (any payload) reads as text of 1 to `Limits.formSourceMax` 16,384
+   type's kind. `Form.Kind.source` (any payload) reads as text of 1 to `Limits.formSourceMax` (`Bounds.maxPackageBytes`, 131,072)
    characters, for Bend source; a `source` field the spell lacks takes the reply's first ```obend
    fenced block (`firstFence`, `withFence`), under the same bound, so a block and a fence are one
    value. A choice is passed as a word and read against the method's input (`spellArgumentFor`,
@@ -1276,6 +1276,22 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    admitted. Replay never re-runs a method (Snapshot imports Ops, not TurnLoop), so no admitted entry is re-judged:
    no edition bump. test_properties' `malformed` no longer drops a `receive`'s host-filled `fields`/`misfit`.
    EveryMethod's one remaining violation is the policy card past the clip (objects lane).
+
+133. **Law facts: the clock, the object, `old.F` (host15; LAW §4 A, E, H; KERNEL-HANDOFF §25 L).** `Facts` gains
+   `clock` and `object`, set at every judging site (`judge` in Ops with `w.clock` and the object's id; `amendable`,
+   the reprogram check, `methodAdmits`/`kindAdmits` where the id is known). `read` takes the old state: `old.F`
+   reads it, or the empty value of the new field's kind at creation; `eqS` compares `request.object`. The kernel's
+   fail-closed arms are gone. `#guard`s at the bottom of `Law.lean` (the `alive` clause at, inside and past its
+   window, at creation, the object, the three-slot bound); `tests/test_law.py` `Alive` over a real object with the
+   clock advanced. Facts are derived from the turn and the journaled clock: no edition bump.
+
+134. **The package bound is the kernel's (host15; KERNEL-HANDOFF §25 item 1).** `Limits.maxPackageBytes` and
+   `formSourceMax` are `Bounds.maxPackageBytes` (131,072); the four refusals (`creationInputs`, `buildCreated`,
+   `checkSource`, `prepareProgram`) read "package source exceeds maxPackageBytes (131072 bytes)". Tests:
+   `test_form_bounds`, `test_reprogram` Maximum. Not the host's: Card.obend's and Policy.obend's "1 to 16384
+   characters" (objects lane); the front's `moduleTooLarge` at 16,384 bytes in catalogue.json (transport lane);
+   `test_relation_limits` keeps 16,384-byte packages in the Workshop's `held` until the per-cell bound (§15
+   step 4) replaces `maxStateBytes`.
 
 ## 6. Gotchas
 

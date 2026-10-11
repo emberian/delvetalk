@@ -349,5 +349,44 @@ def make(state: State, context: Abi.Context) -> Activity<String>:
         self.assertEqual(self.refused(), live)
 
 
+class Alive(Reflection):
+    """LAW §4 A, E, H with METAPHYSICS's `alive` clause over a real object: a thing answers while tended
+    within 1440 minutes of the world clock; `tend` is always admitted and writes the clock it read."""
+    LAW = 'law alive "answers while tended within 1440 entries": request.method == "tend" or request.clock <= old.tended + 1440\n'
+    THING = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  tended: Nat
+  rains: Nat
+def initial() -> State:
+  {tended: 0n, rains: 0n}
+def rain(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {rains: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
+    case _: state.rains + 1n
+def tend(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {tended: Plans.Edit::<Nat, Nat>.set({value: context.clock})})):
+    case _: context.clock
+""", "rain", "tend")
+
+    def test_alive_admits_within_the_window_and_a_tend_always_and_refuses_past_it(self):
+        self.open_library()
+        self.make("fern", self.THING + self.LAW, record(tended=nat(0), rains=nat(0)))
+        self.assertEqual(self.turn("fern", "rain")["status"], "admitted")
+        self.assertEqual(self.host.send(op="world-advance", principal="transport", height=1440)["status"], "advanced")
+        self.assertEqual(self.turn("fern", "rain")["status"], "admitted")                 # at the edge: 1440 <= 0 + 1440
+        self.host.send(op="world-advance", principal="transport", height=1500)
+        late = self.turn("fern", "rain")
+        out = late["receipt"]["outcome"]
+        self.assertEqual((late["status"], out["clause"]), ("refused", "alive"), late)
+        self.assertIn("answers while tended within 1440 entries", out["reason"])
+        tend = self.turn("fern", "tend")
+        self.assertEqual((tend["status"], tend["result"]), ("admitted", nat(1500)), tend)
+        self.assertEqual(self.turn("fern", "rain")["status"], "admitted")
+        self.reopen()
+        self.assertEqual(field(self.state("fern"), "rains"), nat(3))
+
+
 if __name__ == "__main__":
     unittest.main()

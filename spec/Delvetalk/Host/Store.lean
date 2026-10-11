@@ -112,8 +112,9 @@ def maxPatience : Nat := 1000000
 def maxCheckpointBytes : Nat := 524288
 /-- Suspended activities one settling pass resumes. -/
 def maxResumesPerCall : Nat := 1024
-/-- Source text of a package offered to `reprogram`. -/
-def maxPackageBytes : Nat := 32768
+/-- Source text of a package offered as a program (`reprogram`, `extend`, a `create` of source, `check`):
+    the kernel's `Bounds.maxPackageBytes` (128 KiB, KERNEL-HANDOFF §25 item 1). -/
+def maxPackageBytes : Nat := Bounds.maxPackageBytes
 /-- Law text of an `amend`, and the clauses in it. -/
 def maxLawBytes : Nat := 4096
 def maxLawClauses : Nat := 16
@@ -150,8 +151,8 @@ def maxUriBytes : Nat := 512
     reader shows. A natural field: at most this. -/
 def formTextMax : Nat := 1400
 def formNaturalMax : Nat := 1000000000
-/-- The longest value of a declared `source` form field (Bend source; `Form.Kind.source`). -/
-def formSourceMax : Nat := 16384
+/-- The longest value of a declared `source` form field (Bend source; `Form.Kind.source`): the program bound. -/
+def formSourceMax : Nat := Bounds.maxPackageBytes
 /-- Journal entries between snapshots, and bytes of one snapshot file. -/
 def snapshotEvery : Nat := 1000
 def maxSnapshotBytes : Nat := 268435456
