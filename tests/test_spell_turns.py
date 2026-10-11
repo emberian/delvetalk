@@ -126,7 +126,7 @@ class SpellTurns(Reflection):
         made = self.host.send(op="world-create", principal="ember", identity="mk-cast", object="cast",
                               modules=[{"name": "Garden", "source": source}], entry="initial", seed=record())
         self.assertEqual(made["status"], "created", made)
-        r = self.say("delvetalk Cast plant\nseed: fern", card="cast")  # colour missing (a derived String field is text 0..N: optional)
+        r = self.say("delvetalk Cast plant\ncolour: silver", card="cast")  # seed missing: a derived text field is required
         self.assertEqual((r["status"], r["result"]), ("admitted", nat(2)), r)
         self.assertEqual(self.field("heard", "cast"), label("Cast plant"))
         self.say("just words", card="cast")

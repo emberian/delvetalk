@@ -1537,9 +1537,9 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    it lacked fields (`castSpell`'s `unclear` arm), else what `Spell.parse` reads in the text, `{card: "",
    action: ""}` for none; a card that does not declare it is unchanged (the shapes tried are fields, with spell,
    with misfit, with both). So the objects lane can delete Bend's last spell reader (`world/lib/Spell.obend`
-   `parse`, `Card.spellMissing`, `spellAction`). `withFields` is gone. Note: a derived `String` field is `text
-   0..formTextMax`, so since 5.147 it may be left out; only choices and numbers are "missing". Test:
-   `test_spell_turns` (a missing colour reaches `receive` with `Cast plant`; prose with `" "`).
+   `parse`, `Card.spellMissing`, `spellAction`). `withFields` is gone. A derived `String` field is `text
+   1..formTextMax` (`formKind`): required; only a form or kind that declares `0..N` makes one optional. Test:
+   `test_spell_turns` (a missing seed reaches `receive` with `Cast plant`; prose with `" "`).
 
 ## 6. Gotchas
 

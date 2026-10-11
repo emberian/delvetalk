@@ -591,11 +591,12 @@ partial def rowFields (row : Json) : Option (List (String × Json)) :=
     return (name, member) :: rest
   | _ => none
 
-/-- A form field's kind for a member type: text, a natural, or a choice among the labels of a
-    sum whose every payload is empty. Any other type has no form. -/
+/-- A form field's kind for a member type: text (required: only a form or kind that declares `0..N` makes
+    a field optional), a natural, or a choice among the labels of a sum whose every payload is empty. Any
+    other type has no form. -/
 def formKind (member : Json) : Option Data :=
   match (member.getObjValAs? String "tag").toOption with
-  | some "label" => some (.variant "text" (.record [("min", .natural 0), ("max", .natural Limits.formTextMax)]))
+  | some "label" => some (.variant "text" (.record [("min", .natural 1), ("max", .natural Limits.formTextMax)]))
   | some "natural" => some (.variant "natural" (.record [("min", .natural 0), ("max", .natural Limits.formNaturalMax)]))
   | some "variant" => do
     let cases ← rowFields ((member.getObjVal? "row").toOption.getD Json.null)
