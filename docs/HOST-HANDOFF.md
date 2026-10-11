@@ -1267,6 +1267,16 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `test_unquiet_and_the_dump`); `test_bridge` OpenerPosts now runs the opener's post as a turn. `deploy/serve.py`'s
      `Served` reads `--socket`/`--root-socket` from `extra`. The bridge's `ON_ROOT` skip is now reached only by a root op.
 
+132. **The input check is exact (host15; the root's decision on EveryMethod).** A method without an input takes
+   only `{}` (`argumentFits`); a record argument with a field the input does not declare is refused `typeMismatch`
+   naming it (`extraField`, `misfitReason`: "<method> takes no field <f>"; a call's or run's reading "<id> <method>
+   takes no field <f>."), for direct turns, spells, calls and deliveries alike (all reach `runFrame` or the call
+   arms). Fixtures that called or sent a no-input method with an argument now pass `{}` (test_grants,
+   test_authority, test_reflection's PROBE); test_principal's `ignored` asserts the refusal by name, then `{}`
+   admitted. Replay never re-runs a method (Snapshot imports Ops, not TurnLoop), so no admitted entry is re-judged:
+   no edition bump. test_properties' `malformed` no longer drops a `receive`'s host-filled `fields`/`misfit`.
+   EveryMethod's one remaining violation is the policy card past the clip (objects lane).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

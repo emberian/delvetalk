@@ -62,7 +62,7 @@ def facts(state: State, context: Abi.Context) -> Activity<Out>:
   match world.view::<State>({object: Plans.self(context)}):
     case _: out(context.intent, context.height)
 def relay(state: State, input: {target: String, method: String}, context: Abi.Context) -> Activity<Out>:
-  match world.call::<Out>({object: {world: "", object: input.target}, method: input.method, argument: Data.of::<Arg>({n: 0n})}):
+  match world.call::<Out>({object: {world: "", object: input.target}, method: input.method, argument: {}}):
     case returned(r): commit(context, bumped(), r.result.text)
     case _: out("unanswered", 0n)
 def dive(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Out>:
