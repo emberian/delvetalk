@@ -239,10 +239,10 @@ class Hand:
             raise HandError(f"{card}: {reply.get('message') or reply.get('status')}")
         tag = (receipt.get('outcome') or {}).get('tag')
         made = [c['object'] for c in (receipt.get('outcome') or {}).get('creates') or [] if c.get('object')]
-        obj = (made or [bridge.turn_root(receipt).get('object') or card])[0]
-        text = bridge.draft_text(reply, self.st.config.origin)
+        obj = (made or [reply.get('object') or card])[0]
+        text = bridge.draft_text(reply, self.st.config.origin, reply.get('object'))
         came = {'card': card, 'object': obj, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
-                'line': bridge.receipt_line(receipt).strip(), 'text': text}
+                'line': bridge.receipt_line(receipt, None, reply.get('object')).strip(), 'text': text}
         name = None
         if tag == 'admitted' and text:
             name = f"{receipt.get('height')}-speak-{uri_hash(intent)}"
@@ -264,8 +264,8 @@ class Hand:
         if not receipt:
             raise HandError(f"{card}: {reply.get('message') or reply.get('status')}")
         said = follow(self.host, self.owner, intent, reply, self.sleep)
-        came = {'card': card, 'object': card, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
-                'line': bridge.receipt_line(receipt).strip(), 'text': '\n'.join(t.rstrip('\n') for t in said), 'drafted': None,
+        came = {'card': card, 'object': reply.get('object') or card, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
+                'line': bridge.receipt_line(receipt, None, reply.get('object') or card).strip(), 'text': '\n'.join(t.rstrip('\n') for t in said), 'drafted': None,
                 'intent': intent, 'waiting': not said and outcome_of(receipt) == 'suspended'}
         self.log('ask', None, intent=intent, words=words, card=card, height=receipt.get('height'), slug=receipt.get('slug'), outcome=came['outcome'],
                  object=card, said=came['text'])

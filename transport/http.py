@@ -191,7 +191,7 @@ def turn_line(r, addressed=None, handles=None):
     rc = r.get('receipt') or {}
     out = rc.get('outcome') or {}
     if r.get('status') == 'admitted':
-        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, addressed, handles)
+        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, r.get('object') or addressed, handles)
     if r.get('status') == 'refused':
         line = bridge.refusal_line(out, r.get('class'))
         return line + (f"\nnext at {out['next']}" if 'next' in out else '')

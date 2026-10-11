@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -8,7 +8,7 @@ The host is one Lean process holding a world of durable objects. Every state cha
 
 - Files: `spec/Delvetalk/Host/` `Blocks` (the block store: `Entries`, `Link`, the pure record read), `Store` (data, `Limits`), `Journal` (hash, chain), `Law` (law evaluator), `Slug`, `DiskCache` (the on-disk compile cache), `Ops` (pure kernel: judge, commit, record, replay, reads, `Refusal.voiced`), `Spell` (the spell grammar), `TurnLoop` (turns, the world's methods, sends, changes, suspension), `Snapshot` (CBOR snapshots and their indexes, opening, fork genesis), `Session` (journal IO, ops dispatch), `RootEdit` (the offline tools: `root-edit`, `migrate`). `PackageSession.lean` imports Session; `spec/PackageMain.lean` is the JSON-lines driver.
 - An activity yields `World.Message`s; `answer` dispatches on the method name against `worldMethods` (5.48). Write is self-only; cross-object change is `call`/`send`, judged by the callee's own law; `reprogram` and `amend` of another object are judged by the target's law.
-- Only declared methods run from outside (5.62). A direct `receive` is read as a spell by the host (5.49, 5.54, 5.63); a misfit is `badSpell` with `clause`, `reason`, `hint`.
+- Only declared methods run from outside (5.62). A direct `receive` is read as a spell by the host (5.49, 5.54, 5.63); a misfit is `badSpell` with `clause`, `reason`, `hint`, unless the card reads words (its state names a `policy`, 5.153).
 - Relations: canonical rows, keyed edits, inserts commuting and rows rebasing (5.45), `insertOnly` under retention (5.74); subscriptions deliver `changed` to typed receivers (5.50, 5.53); `viewField` field roots (5.51), `viewAt` (5.47), `viewDerived` (5.46).
 - An object's pin is the CID of its sealed source closure, never a compiler output. A `fixed` State field is set at creation only (5.76).
 - Laws: a text law (`law NAME "reading": EXPR`) judges every change; `request.kind` is `write` 0, `reprogram` 1, `amend` 2 or `proposed` 3, a write no method of the object made (5.93); an optional Bend `law(old, new, request)` runs after it for kinds 0 and 3 and may give a reading (5.67).
@@ -92,7 +92,7 @@ Outcomes:
 
 - `created`: `{object, pin, sourcesSha256, compile, seed, read, chain, supervisor?, owner?}`; `roots []`, `turn 0`. Replay recompiles, requires the pin to match the source closure, the seed to conform and the amendment dry run to pass at the entry's height.
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
-- `refused`: `{class, clause?, object?, reason?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a text-law refusal with a reading journals `reason: "refused <name>: <reading>"`. Replay checks only that the class is known; `publicRefusal` shows the reason.
+- `refused`: `{class, clause?, object?, reason?, reading?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a law refusal with a reading journals it as `reading` and `voiced` writes `reason: "refused <clause>: <reading>"` from it (5.154). Replay checks only that the class is known; `publicRefusal` shows a law refusal's reason and reading.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
@@ -1045,13 +1045,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    direct turn, a spell refused `unknownField`, `noAction`, `badValue` or `otherCard` (`misfitClauses`)
    runs instead the `receive` of the card the refusal names (the spell's card; the answering card for
    `otherCard`) with the reply's `text`, `post`, its field lines as `fields` and `misfit {clause,
-   reason}`, when that `receive` takes a `misfit` (`heardArgument … misfitOnly`); the turn's reach is
-   `spell`, so the card may `interpret` with the `misfit` line (5.117) and hob asks one question. A
-   card whose `receive` takes no `misfit` refuses as before (`badSpell`, hint), and `duplicateField`,
-   `unclosedBlock`, `fixed`, the host spells' clauses and every call's or delivery's misfit (5.63)
-   stay refusals. A `receive` that takes `misfit` gets `{clause: "", reason: ""}` with every other
-   reply (`withFields`, `heardFits`). The objects lane's World/Card lines: `Reply.misfit`. Tests:
-   `tests/test_spell_turns.py` `Misfits`.
+   reason}`, when that card reads words (5.153) and its `receive` takes a `misfit` (`heardArgument …
+   misfitOnly`); the turn's reach is `spell`, so the card may `interpret` with the `misfit` line (5.117)
+   and hob asks one question. Every other card's misfit is `badSpell` with the hint, and
+   `duplicateField`, `unclosedBlock`, `fixed`, the host spells' clauses and every call's or delivery's
+   misfit (5.63) stay refusals. A `receive` that takes `misfit` gets `{clause: "", reason: ""}` with
+   every other reply (`heardFits`). Tests: `tests/test_spell_turns.py` `Misfits`.
 
 122. **A turn's `extend` reaches what it created (host13; the rewrite lane's Kind).** An `extend` (or
    `reprogram {mode: extend}`) naming an object the same turn created lays the layer into the making
@@ -1506,7 +1505,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 145. **A refusal under a kind's law names the clause that failed (host18).** `Law.refusal` follows a refusing
    clause that is `under "O"` into O's law text (`innermost`, through further `under`s within `lawDepth`) and
    answers that clause's name and its reading there: `refused small: two at most`, not `refused kind`.
-   `refusedBy` is its name; the judge voices the cited reading, else the object's own (`readingOf`). Tests:
+   `refusedBy` is its name; the judge's `reading` is the cited one, else the object's own (5.154). Tests:
    `Law.lean`'s `#guard refusal`; `test_law.Atoms` (the kind's clause and reading).
 
 146. **A sum left of `<=` (host18; the kernel's grammar file, by the coordinator's leave).** `old.last + old.gap <=
@@ -1561,6 +1560,64 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    lens spell's (`set` naming a field no lens has). Tests: `Spell.lean`'s `#guard`s (69082's shape),
    `test_receive.Cards` (a `hob:` line after a whole planting plants), the recorded `fit` rows re-recorded.
 
+153. **A card hears a misfit only when it reads words (host19; the objects lane's fold of `Card.Reply` into
+   `Heard`).** The signal was the shape of `receive`'s input, which the fold erases. Now it is the card's
+   state: a card reads words when its `policy` field names an object of this world (`readsWords`: a
+   `Reference {world: "", object}` whose object is held), the interpreter its `receive` asks. Only such a
+   card's direct misfit (`misfitClauses`) reaches its `receive` with `misfit {clause, reason}`; every other
+   card's is the host's `badSpell` with clause, reason and the card's usage as `hint`, an entry refused, so
+   a record without a policy no longer answers a misfit with an admitted turn and a refusal card (the
+   second playtest's D6). The host already reads `owner` from state by the same convention; `policy` is the
+   field Record, Workshop and the commonplace already hold. So the objects lane may fold `Card.Reply`
+   into `Heard` (every `receive` then declares `misfit`, and a plain card still refuses `badSpell`), and
+   delete what answered a misfit without reading it: `Record.misfitted`, the room body's `Super.misfitted`
+   arm, the commonplace's `isNobody(state.policy)` refusal of a misfit, Card's comment that a `Reply`
+   card is the one refused. Tests: `test_spell_turns.Misfits` (a card naming a policy hears the misfit; one
+   that declares `misfit` and names no policy, or names an object not held, refuses `badSpell` with its
+   usage); `test_receive.Cards`, `test_policy`, `test_scenarios` Garden and Bell moved to the refusal.
+
+154. **Every law refusal carries its reading (host19; the objects lane's finding on a law given at creation).**
+   A law given at creation kept its readings since 8e015ca6 (`makeObject`'s `given`), but no refusal carried a
+   `reading`: each site composed `reason` itself ("refused <clause>: …"), and test_properties split it back
+   out. Now `Refusal.reading` is the refusing clause's reading wherever the law came from (the package, a law
+   given at creation or by amendment, the kind's clause an `under` cites, a Bend verdict's `reading`, and the
+   host's own clauses `fixed` and `lawReads`); `commit` journals it, `Refusal.voiced` writes `reason` from it,
+   and `publicRefusal` shows both. `readingOf` is gone. The amendment rules name their clause: `law syntax`
+   (the parse error its reading), `under` (a citation that does not stand) and `amendable` (the self-sealing
+   rule, its reading the old message naming the proposer); the host's own `noGrant`, `grantSpent`,
+   `notGrantor`, `denied`, `law` and `lawReads` say why. A call site hears a refused amendment, reprogram or
+   layer of another object as `{clause, reading}` with the bare reading (`dryChange`), never "refused …" twice. No replay edition change: replay checks a refusal's
+   class, not its words. Tests: `test_law` `LawAtCreation`, `Readings` (the outcome's and the public
+   projection's `reading`); test_properties holds every `lawRefused` to a clause, a reading and the reason
+   voiced from them.
+
+155. **`context.sender` (host19; replay edition 7).** `Abi.Context` gains `sender`: the object whose send the
+   turn delivers (a `send`, a subscription's `changed`, a supervised activity's `ended`), "" for a turn a
+   principal began. It is the turn's (`TurnState.sender`, from `TurnMeta.caller` when the turn is a
+   delivery, and from the journaled activity's caller on a resume), so every frame of the turn sees it, while
+   `caller` stays the frame's calling object: in a delivered `rain` that calls the ledger, the ledger sees
+   `sender=weather caller=bell`. A Bend law's context carries it too (`Proposal.sender`), and replay reads it
+   from the pending delivery the entry consumes: edition 7. So the weather's rain may be credited to the
+   weather (`author: if context.sender != "" then context.sender else context.principal`, the objects lane's).
+   `fitRecord` keeps an object compiled under an older Abi running. Pins re-recorded (Abi is in every
+   closure). Card's `stranger()` and the tests' hand-built Contexts carry `sender: ""`. Tests: `tests/test_sender.py` (a delivery's frames, a call's, a direct turn's; a Bend
+   law refusing a sender, the same law admitting a call, a verifying reopen).
+
+156. **Three of the second playtest's host rows (host19; the coordinator's list after the objects lane's fixes).**
+   - *D3, a drafted thing.* An interpretation's offered forms keep their `source` fields (`OfferedForm`: the
+     spell form and its source names; `Spell.Form.ofData` alone dropped any form with one), and a model's
+     ```obend block is the value of the first source field the spell lacks, as `withFence` binds it for a typed
+     spell. A reply that is one block and no spell settles the one offered form that takes source; a spell
+     naming a source form without a block is `unclear` naming the field. So `workshop make` drafts: hob's Bend
+     is the `check` form's `source`, the draft is held. Test: `test_workshop` (a fenced reply held as #1).
+   - *F2, a law written inline.* `adopt / law:` takes a law that starts `law ` as the clause set itself (no
+     source root), else the id of a kind or page as before; the usage (`adoptLine`) and an unknown id's
+     refusal say both. Test: `test_extend.HostSpells` (inline with its reading, a syntax error, an unknown id).
+   - *D10, the card a turn line names.* `runTurnWith`'s reply carries `object`, the card the turn ran on (a
+     spell's card as resolved); `bridge` drafts, `spell_line`, the play page's `turn_line` and the hand's
+     `speak`/`ask` name it instead of guessing from the first root (`kind/room` for an entered room). Test:
+     `test_rooms.Floor` (a spell entering a porch names the porch).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1591,30 +1648,34 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host18 (5.142 to 5.152; of host17's queue, T25, T27/S12, H1's host half and the blurb are done), in
-order. The owner's standing order binds every item: "maturify and take forward everything that we've started and
-bring it to its full sophistication and make sure the code is all 'fungused together' (no seams or welds where rich
-semantic braiding is called for); let's not leave behind 'old things', no scar and growth tissue." So each
-replacement deletes what it replaces in the same commit, and this file describes only what is.
+The queue after host19 (5.153 to 5.156; of host18's queue, the misfit signal, the readings and `context.sender` are
+done, with the coordinator's D3, F2 and D10), in order. The owner's standing order binds every item: "maturify and take
+forward everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
+together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things', no scar
+and growth tissue." So each replacement deletes what it replaces in the same commit, and this file describes only what
+is.
 
-1. **Asked by the objects lane, not started (host18 stopped at its budget):**
-   - A misfit spell to a card that does not read words stays the host's `badSpell` with its usage hint. Today the
-     signal is the shape of `receive`'s input: the host hands `misfit` only to a `receive` that declares it
-     (`heardArgument`, `misfitOnly`; `spellTurn`'s `.refuse` arm), else refuses `badSpell`. If the objects lane
-     folds `Card.Reply` into `Heard`, every card declares `misfit` and the distinction is lost: give the host
-     another signal (a card that names a policy in its state, or a declared name) and say it in this section, then
-     the fold can land. Test both: a policy card hears the misfit, a plain card refuses `badSpell`.
-   - A refusal by a law given at creation or by amendment carries `reason` but no `reading` (`readingOf` reads
-     `Object.readings`, which only a package's declared laws and an amendment's own readings fill): parse the
-     given law text's readings (`parseLawTextReadings`) into `readings` at creation as an amendment does, so a thing
-     may take its law at creation. Test: a `world-create {law: "law x \"why\": …"}` refusal carries the reading.
-   - `context.sender`: a delivered turn's top frame carries the sending object (`TurnMeta.caller` is it today,
-     but `caller` is also a call's), so the weather's rain is credited to the weather. One field in
-     `Abi.Context` and `contextData`; `fitRecord` keeps objects compiled without it running.
+1. **D6, a card's refusal refuses its turn (the coordinator's, owned by this lane for the kernel's grammar file;
+   not started).** Bend's `refuse(...)` takes one string literal (`refuseCall`, ObjectiveBendElaborate.lean ~880;
+   `Term.refuse (reason : String)`, ObjectiveBendOpenRecursion.lean 76), so a card cannot refuse with the reading it
+   computes and answers an admitted turn with a refusal card instead. The honest change is a computed reason in the
+   term: `Term.refuse (reason : Term)` (or a `refuseWith`) evaluated to a label before the machine refuses, which
+   touches the typing rule and its proofs (ObjectiveBendTyping 392, 732, 1510), the demand machine and its collect
+   and settle proofs (DemandMachine 328, DemandCollect 349/404/449, DemandCollectProofs 969, DemandSettleProofs
+   110, DemandMachineFast 178), both checkpoint codecs and the round trip (Checkpoint 87/131/221, CheckpointV3
+   70/140, CheckpointRoundTrip 111), the term wire (TermWire 27/66/157), the elaborator (363, 397, 459, 880-893,
+   1284, 1450, 2126, 2662, 3001), `EvaluateTerm`, `Entry`, `Profile`, `CompileProfile`. Then decide the class: a
+   program refusal is `evaluation` with the reason as given; the objects lane wants `refused <clause>: <reading>`,
+   so either `refuse(clause, reading)` journaled as a `lawRefused`-like card class with `reading` (5.154) or the
+   reason voiced by the card. Do not desugar into a hidden `world.` yield: the refusal belongs to the term.
+
 2. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
-   old path: T30 reach as a host op (`reach-of {text, replyTo, thread}` answering `{object, slot, how}`; `bridge.py`'s
-   `route`, `walk`, `named_door` go; the Zulip rule of 9f48f6d5, the author's own messages passed and another
-   resident's stopping, moves with it); T28 `world-history` through `pageByHeight` (`reverse`, `cursor`) and the
+   old path: T30 reach as a host op (`world-reach {text, replyTo, root, kind, author, chain: [{uri, author,
+   replyTo}]}` answering `{object, slot, how}` or nothing: the host holds `posts` (the addressee walk), the spell
+   parse (`Parsed.spell`'s card), the commonplace's doors (`named_door`) and the summon rule; the bridge passes only
+   what it observed, the ancestors it saw with their authors; `bridge.py`'s `route`, `walk`, `named_door`,
+   `parsed` go, and the Zulip rule of 9f48f6d5, the author's own messages passed and another resident's stopping,
+   moves with it; `tests/test_bridge.py:293` and `test_zulip.Bridging` are its cases); T28 `world-history` through `pageByHeight` (`reverse`, `cursor`) and the
    front's widening loop gone; T29 the REPL's two prose refusals (`unknown library pin`, `not issued by this process`)
    as classes and `http.py` matching the class; T32 `world-status.suspendedBytes {median}`; T33/H17 `world-inspect`
    answering each form's usage text (`spellTemplate`), which Card and the front copy; H2's remainder (`respond` with
@@ -1642,11 +1703,12 @@ replacement deletes what it replaces in the same commit, and this file describes
      `{status: "spells"}` without a top `receipt`, which it reports as an error. Teach it the turns, or keep it one.
    - `tests/test_pull_backups.Retention` depends on the time of day (names built from `now - 12h` and `now - 6h`
      straddle midnight UTC): transport's.
-   - `test_hand.Speak` and `test_hand.Plan` were red on foundation after objects step 3 (the hand's plan seeds
-     `kind/room make` where the objects now plant `porch write`): transport and objects'.
    - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new `root:<n>`;
      `set pin` stores the pin alone; `as` runs the method as named; `root-edit` does not rewrite CIDs inside
      checkpoints and states. `openerActs`' interpret-quota exemption ignores `resident`: decide.
-   - Deploy: edition 6 (5.150) needs a new genesis for every world.
+   - Deploy: edition 7 (5.155) needs a new genesis for every world.
+   - The objects lane, after 5.153: fold `Card.Reply` into `Heard` and delete `Record.misfitted`, the room's
+     `Super.misfitted` arm, the commonplace's `isNobody(state.policy)` misfit refusal; credit a delivered write to
+     `context.sender` (the weather's rain, 5.155).
    - `readerActions` compiles `actions` per read; `methodAdmits` judges on the state as it stands; a `call` or
      `write` to an object created in the same turn is `unknownObject`.

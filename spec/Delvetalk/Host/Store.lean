@@ -36,8 +36,9 @@ def sayChars : Nat := 300
     `spans`; the per-cell bound and the storage ledger by changed cells); 5: host17 (a layered package's
     shape is its stack's: public methods, relations and law shape kept from below, `compileObject`; the
     law's relational atoms judged, what a law cites recorded as roots); 6: host18 (a send refused transiently
-    stays pending, `attempts` and `next` on it, up to `deliveryAttempts`). -/
-def replayEdition : Nat := 6
+    stays pending, `attempts` and `next` on it, up to `deliveryAttempts`); 7: host19 (a Bend law's context
+    names the turn's `sender`, read on replay from the pending delivery the entry consumes). -/
+def replayEdition : Nat := 7
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000

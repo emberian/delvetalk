@@ -211,9 +211,9 @@ class Run:
             out = reply["receipt"]["outcome"]
             if out.get("class") not in CLASSES:
                 self.fail("a refusal outside the closed set", request, out)
-            # A Bend law's verdict carries its reading; a text law's is voiced in the reason (`refused <clause>: <reading>`).
-            voiced = out.get("reading") or (out.get("reason") or "").partition("refused %s: " % out.get("clause"))[2]
-            if out["class"] == "lawRefused" and not (out.get("clause") and voiced):
+            # Every law refusal carries its clause's reading, and the reason voices it (HOST-HANDOFF 5.154).
+            if out["class"] == "lawRefused" and not (out.get("clause") and out.get("reading")
+                                                     and out.get("reason") == "refused %s: %s" % (out["clause"], out["reading"])):
                 self.fail("a law refusal without its clause and reading", request, out)
             if self.height() != before + 1:
                 self.fail("a refused turn did not journal exactly one entry", request, self.height() - before)

@@ -438,7 +438,7 @@ class Repl(FrontCase):
 
     def test_repl_imports_the_library_by_name_and_starts_an_activity_from_its_type(self):
         tok = self.login()
-        context = record(world=label(''), object=label(self.c), principal=label(DID), handle=label(''), caller=label(''),
+        context = record(world=label(''), object=label(self.c), principal=label(DID), handle=label(''), caller=label(''), sender=label(''),
                          intent=label('repl-2'), height=nat(0), clock=nat(0),
                          inputOrigin=record(kind=label('request'), object=label(''), command=label(''), program=label(''),
                                             immediatelyPrevious={'tag': 'boolean', 'value': False}, post={'tag': 'label', 'value': ''}))

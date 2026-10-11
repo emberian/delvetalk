@@ -276,6 +276,9 @@ structure Proposal where
   /-- A resumed turn's own object: it may be re-based on the object's current state when it
       moved while the turn waited (`movedRootAdmits`). An entry with `resumes` sets it on replay. -/
   rebaseOwn : Option String := none
+  /-- The object whose send the turn delivers ("" for a direct turn): the law's `context.sender`.
+      Replay reads it from the pending delivery the entry consumes. -/
+  sender : String := ""
 
 /-- Writes, plus a direct (caller-less) change of the proper kind for each reprogram or
     amendment that no write of the proposal already names. -/
@@ -502,6 +505,10 @@ structure Refusal where
   hint : Option String := none
   /-- For `quota`: the clock at which the principal may try again. -/
   next : Option Nat := none
+  /-- For `lawRefused`: the refusing clause's reading, wherever the law came from (the package, a law
+      given at creation or by amendment, a Bend verdict, a kind's clause it cites, the host's own clauses).
+      Journaled beside `reason`, which `voiced` writes from it: `refused <clause>: <reading>`. -/
+  reading : Option String := none
 
 def replaceField (fields : List (String × Data)) (name : String) (v : Data) : List (String × Data) :=
   fields.map fun (k, old) => if k == name then (k, v) else (k, old)
@@ -576,6 +583,7 @@ def Refusal.voiced (r : Refusal) : Refusal :=
     | "keyTaken" => some "another row holds that key; upsert, or add an ordinal."
     | "duplicateKey" => some "the write names one key twice."
     | "budgetExhausted" => given.map exhaustedReason
+    | "lawRefused" => (r.reading.map fun t => s!"refused {r.clause.getD "law"}: {t}") <|> given
     | _ => given
   { r with reason }
 
@@ -1010,10 +1018,6 @@ def artifactReadings (artifact : Json) : List (String × String) :=
     match l.getObjValAs? String "name", l.getObjValAs? String "reading" with
     | .ok n, .ok r => if r.isEmpty then none else some (n, r)
     | _, _ => none
-
-/-- What a refusal by law clause `name` of `o` says, when the package gave the clause a reading. -/
-def readingOf (o : Object) (name : String) : Option String :=
-  (o.readings.lookup name).map fun r => s!"refused {name}: {r}"
 
 /-- The method table and the Bend-law shape an artifact records. -/
 def artifactShape (artifact : Json) : Json × Bool × Bool :=
@@ -1881,13 +1885,15 @@ def principalNamed (w : World) (handle : String) : Option String :=
     `handle` is the principal's display handle from the registry (`world-principal`), ""
     when unknown; `caller` is the calling object's id (empty for the turn's own method),
     `intent` the turn's identity, `height` the journal height the turn read, `clock` the world
-    clock (`world-advance`) the frame runs at, which deadlines compare against, and
-    `inputOrigin.post` the post the turn came from (`TurnState.post`), "" for none. None is chosen
-    by the client. -/
+    clock (`world-advance`) the frame runs at, which deadlines compare against,
+    `inputOrigin.post` the post the turn came from (`TurnState.post`), "" for none, and `sender`
+    the object whose send this turn delivers (a subscription's changed object, a supervised
+    activity's), the same in every frame of the turn and in its law's context, "" for a turn a
+    principal began. None is chosen by the client. -/
 def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String)
-    (post : String := "") : Data :=
+    (post : String := "") (sender : String := "") : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
-    ("handle", .label handle), ("caller", .label caller), ("intent", .label intent), ("height", .natural height),
+    ("handle", .label handle), ("caller", .label caller), ("sender", .label sender), ("intent", .label intent), ("height", .natural height),
     ("clock", .natural clock),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false), ("post", .label post)])]
@@ -1906,7 +1912,7 @@ partial def fitRecord (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBend
 
 /-- The fields `contextData` fills. -/
 def contextFields : List String :=
-  ["world", "object", "principal", "handle", "caller", "intent", "height", "clock", "inputOrigin"]
+  ["world", "object", "principal", "handle", "caller", "sender", "intent", "height", "clock", "inputOrigin"]
 
 /-- A Context type: a record (through the bounds) naming the principal and the intent, every
     field of which the host fills. An older library's Context with fewer fields is one too. -/
@@ -1942,25 +1948,25 @@ def withBindingContext (world : Option World) (entry : Delvetalk.CheckedEntry) (
 /-- An object's Bend law on one ordinary write: none when it admits. -/
 def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (subject caller method : String)
     (argument : Data) (kind : Nat) (pin : String) : Option Refusal := Id.run do
-  let refuse := fun (clause : String) => some ({ cls := "lawRefused", clause := some clause, object := some id } : Refusal)
-  let .ok (c, _) := compileDef w o "law" | return refuse "law"
-  let some entry := c.entry | return refuse "law"
+  let refuse := fun (clause reading : String) => some ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
+  let .ok (c, _) := compileDef w o "law" | return refuse "law" s!"the Bend law of {id} does not compile."
+  let some entry := c.entry | return refuse "law" s!"the Bend law of {id} does not compile."
   let ids ← match lawReadsOf w o with
     | .ok ids => pure ids
     | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
-    | .error _ => return refuse "lawReads"
+    | .error e => return refuse "lawReads" s!"the law of {id} does not say what it reads: {e}"
   let mut reads : List Data := []
   for r in ids do
     match w.objects[r]? with
     | some ro =>
-      unless p.roots.any (·.1 == r) do return refuse "lawReads"
+      unless p.roots.any (·.1 == r) do return refuse "lawReads" s!"the law of {id} reads {r}, which this turn did not read."
       -- A law reads only what its subject may view: its verdict could disclose the rest (codex host 3).
       unless ro.read.permits subject do
         return some { cls := "lawRefused", clause := some "lawReads", object := some id,
-                      reason := some s!"refused lawReads: the law of {id} reads {r}, which you may not see." }
+                      reading := some s!"the law of {id} reads {r}, which you may not see." }
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
-  let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method
+  let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method (sender := p.sender)
   let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
     ("kind", .natural kind), ("pin", .label pin),
     ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
@@ -1971,14 +1977,13 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
   | .ok (.variant "admitted" _) => return none
   | .ok (.variant "refused" (.record f)) =>
     match f.lookup "clause", f.lookup "reading" with
-    -- A reading is copied into the reason as a law text clause's is (`readingOf`).
-    | some (.label clause), some (.label reading) =>
-      if reading.isEmpty then return refuse clause
-      else return some { cls := "lawRefused", clause := some clause, object := some id, reason := some s!"refused {clause}: {reading}" }
-    | some (.label clause), _ => return refuse clause
-    | _, _ => return refuse "law"
+    -- A verdict without a reading takes the one the package gave the clause, else says so.
+    | some (.label clause), reading =>
+      let given := match reading with | some (.label t) => if t.isEmpty then none else some t | _ => none
+      return refuse clause ((given <|> o.readings.lookup clause).getD s!"the Bend law of {id} refuses this.")
+    | _, _ => return refuse "law" s!"the Bend law of {id} gave no verdict."
   | .error "budget" => return some { cls := "budget", reason := some "law ticks", object := some id }
-  | _ => return refuse "law"
+  | _ => return refuse "law" s!"the Bend law of {id} gave no verdict."
 
 /-- An admitted entry's writes with their edits (`Touch`): for each written object, the version and
     the edits other than `keep` then a retraction of each evicted key; none for a write that was not
@@ -2213,14 +2218,16 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     match w.grants[id]? with
     | some g =>
       if let some left := g.uses then
-        if left < n then throw { cls := "lawRefused", clause := some "grantSpent", object := some g.object }
+        if left < n then throw { cls := "lawRefused", clause := some "grantSpent", object := some g.object,
+                                  reading := some s!"the grant has {left} of its uses left, and the turn spends {n}." }
     | none => throw { cls := "evaluation", reason := some "a turn spends an unknown grant" }
   -- A revocation needs the grantor's turn, or a turn that read the object holding the grant.
   for id in p.revokes do
     match w.grants[id]? with
     | some g =>
       unless g.grantor == p.principal || p.roots.any (·.1 == g.holder) || openerActs w p.principal do
-        throw { cls := "lawRefused", clause := some "notGrantor", object := some g.holder }
+        throw { cls := "lawRefused", clause := some "notGrantor", object := some g.holder,
+                reading := some s!"only its grantor, or a turn that read {g.holder}, revokes the grant." }
     | none => throw { cls := "evaluation", reason := some "a revocation names an unknown grant" }
   let mut out : List (String × Object) := []
   let mut reprograms : List Json := []
@@ -2241,7 +2248,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- proposal's edits are not the kernel's, which refuses such a write at compile).
     if let some f := movedFixed o.fixed o.state written then
       throw { cls := "lawRefused", clause := some "fixed", object := some id,
-              reason := some s!"refused fixed: {f} is fixed; it is set when {id} is made and never after." }
+              reading := some s!"{f} is fixed; it is set when {id} is made and never after." }
     if let some cell := Delvetalk.Turn.cellOverBound (cellDecls o.relations) written (editedFields changes) then
       throw (cellRefusal id cell)
     -- A reprogram replaces code and, through its migration, the state's type.
@@ -2303,21 +2310,21 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       let subject ← if via.isEmpty then pure p.principal else
         match grantStands w via id method with
         | some g => pure g.grantor
-        | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id }
+        | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id,
+                          reading := some s!"no standing grant lets this turn run {method} on {id}." }
       -- What the law cites is read as the world holds it (the roots `withLawReads` records), and only
       -- by a subject who may view it.
       let cited := citedStates w o.law
       if let some (r, _) := cited.find? fun (r, _) => !(((w.objects[r]?).map (·.read.permits subject)).getD true) then
         throw { cls := "lawRefused", clause := some "lawReads", object := some id,
-                reason := some s!"the law of {id} cites {r}, which {subject} may not view" }
+                reading := some s!"the law of {id} cites {r}, which {subject} may not view." }
       let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method, evicted,
                                  clock := w.clock, object := id, reads := cited }
       -- The metarule, widened (docs/ROOT.md §2.1): no law locks out the hand that opened the world.
       -- An amendment by the opener is the host's to admit; every other change is the law's.
       unless kind == 2 && openerAmends w subject do
         if let some (clause, cited) := Law.refusal o.law facts (some o.state) state then
-          throw { cls := "lawRefused", clause, object := id,
-                  reason := (cited.map fun r => s!"refused {clause}: {r}") <|> readingOf o clause }
+          throw { cls := "lawRefused", clause, object := id, reading := cited <|> o.readings.lookup clause }
     -- The Bend law, after the text admits: once for each write of edits (the object's own or a
     -- proposed one, its `kind` saying which), with its argument. A migration's state is the text
     -- law's alone: the old code's law does not read the new type.
@@ -2329,15 +2336,15 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         let subject := if c.via.isEmpty then p.principal else ((grantStands w c.via id c.method).map (·.grantor)).getD p.principal
         if let some r := bendLaw w p id o state subject c.caller c.method c.argument c.kind next.pin then throw r
     if let some text := p.laws.lookup id then
-      let refuse := fun (clause : String) => ({ cls := "lawRefused", clause := some clause, object := some id } : Refusal)
+      let refuse := fun (clause reading : String) => ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
       let law ← match parseLawText text with
         | .ok law => pure law
-        | .error _ => throw (refuse "law syntax")
+        | .error e => throw (refuse "law syntax" e)
       let amender := ((changes.find? (·.kind == 2)).map (·.caller)).getD ""
       -- The opener's amendment needs no clause for itself: the host admits it whatever the law (`openerAmends`).
-      if let some message := citationRefusal w id law then throw (refuse message)
+      if let some message := citationRefusal w id law then throw (refuse "under" ((message.drop "under: ".length).toString))
       unless openerAmends w p.principal do
-        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id (citedStates w law) then throw (refuse message)
+        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id (citedStates w law) then throw (refuse "amendable" message)
       -- A reading stays with its clause only while the amendment leaves that clause as it was.
       -- The amendment's own readings; a clause it leaves as it was without one keeps its reading.
       let given := ((parseLawTextReadings text).toOption.map (·.2)).getD []
@@ -2848,6 +2855,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (r.clause.map fun c => [("clause", toJson c)]).getD [] ++
         (r.object.map fun o => [("object", toJson o)]).getD [] ++
         (r.reason.map fun o => [("reason", toJson o)]).getD [] ++
+        (r.reading.map fun o => [("reading", toJson o)]).getD [] ++
         (r.expected.map fun e => [("expected", e)]).getD [] ++
         (r.root.map fun x => [("root", toJson x)]).getD [] ++
         (r.hint.map fun x => [("hint", toJson x)]).getD [] ++
@@ -3968,8 +3976,12 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let subs := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption) |>.getD #[]).toList.mapM Subscription.ofJson
     let subscribes ← subs "subscribes"
     let unsubscribes ← subs "unsubscribes"
+    -- A delivered entry's sender is the pending send it consumes (checked by `checkDelivery`).
+    let delivered := ((entry.getObjVal? "delivery").toOption.bind fun d => (d.getObjValAs? String "id").toOption)
+    let sender := (delivered.bind fun id => w.pending.find? fun s => (s.getObjValAs? String "id").toOption == some id).bind
+      (fun s => (s.getObjValAs? String "sender").toOption) |>.getD ""
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
-                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, cells, madeFrom }
+                          absent, creates, grants, revokes, spent, layered, subscribes, unsubscribes, cells, madeFrom, sender }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     let w := warmLaws w (p.writes.map (·.1))
@@ -4188,12 +4200,11 @@ def publicRefusal (entry : Json) : Json :=
   let roots := (entry.getObjVal? "roots").toOption.getD (Json.arr #[])
   let version := (((parseRoots roots).toOption.map (·.1)).getD []).lookup id
   let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [])
-  -- A law's reading is the package's public text about the clause, never state.
-  let reading := if cls == "lawRefused" then (outcome.getObjValAs? String "reason").toOption else none
+  -- A law's reading is the law's public text about the clause, never state.
+  let law := if cls == "lawRefused" then ["reason", "reading"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·) else []
   let slug := (entry.getObjValAs? String "hash").toOption.bind Slug.ofCid
   Json.mkObj ([("status", toJson "refused"), ("class", toJson cls), ("root", root)] ++
-    (slug.map fun x => [("slug", toJson x)]).getD [] ++
-    (reading.map fun r => [("reason", toJson r)]).getD [] ++
+    (slug.map fun x => [("slug", toJson x)]).getD [] ++ law ++
     (if cls == "unknownObject" then
       [("object", toJson id), ("hint", toJson s!"no card named {id}; reply to the directory for the list")]
     -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.

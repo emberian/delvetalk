@@ -9,6 +9,7 @@ The host answers `check`, `inspect` and a `reprogram` of another object, judged 
 target's own law with request.caller = the workshop. A block must be a package with
 `initial` (the host checks entry `initial`).
 """
+import json
 import unittest
 
 from tests.test_chain import Chain
@@ -148,6 +149,29 @@ class Workshop(Chain):
         [made] = adopted["receipt"]["outcome"]["creates"]
         self.assertEqual(made["madeFrom"]["receipt"], held)
         self.assertEqual(made["madeFrom"]["object"], "workshop")
+
+    def test_a_description_is_drafted_from_the_models_fenced_block(self):
+        """The second playtest's D3: `workshop make` asks hob for the Bend; a reply that is one ```obend block
+        settles the interpretation by binding it to the offered form's `source` field, so the draft is held."""
+        from tests.wire import nil
+        r = self.host.send(op="world-create", principal="ember", identity="mk-policy", object="policy", modules=closure("Policy"),
+                           entry="initial", seed=record(owner=label("ember"), model=label("m"), system=label("S"), lexicon=nil(),
+                                                        examples=nil(), macros=nil(), confirmFor={"tag": "list", "items": []}))
+        self.assertEqual(r["status"], "created", r)
+        self.make("workshop", closure("Workshop"), record(title=label("Workshop"), policy=record(world=label(""), object=label("policy"))))
+        asked = self.turn("workshop", "receive", record(text=label("delvetalk workshop make\nname: lamp\ndescription: a lamp anyone lights"),
+                                                         post=label("")), principal="glm", identity="make-lamp")
+        self.assertEqual(asked["status"], "suspended", asked)
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=item["id"],
+                                 reply={"status": "replied", "model": "m", "json": None, "raw": "```obend\n%s```\n" % BLOCK})
+        verdict = settled["receipt"]["outcome"]["verdict"]
+        self.assertEqual((verdict["tag"], verdict["method"], verdict["argument"]["fields"][-1]["value"]),
+                         ("proposal", "check", label(BLOCK.rstrip("\n"))), verdict)
+        [resumed] = settled["resumed"]
+        out = resumed["receipt"]["outcome"]
+        self.assertEqual((out["tag"], [w["object"] for w in out["writes"]]), ("admitted", ["workshop"]), resumed)
+        self.assertIn('{"name": "name", "value": {"tag": "label", "value": "lamp"}}', json.dumps(out["writes"][0]["edits"]))  # held as #1
 
     def test_a_proposer_withdraws_a_held_proposal(self):
         self.make_workshop()

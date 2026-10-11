@@ -531,7 +531,7 @@ class ReprogramAnother(Reflection):
         self.make("c", PACKAGE, source_seed())
         sealed = 'law owner: request.kind == 0 or request.subject == "nobody"'
         r = self.turn("forge", "relaw", record(target=label("c"), law=label(sealed)))
-        self.assertIn("law does not admit an amendment by its proposer ember", r["result"]["value"])
+        self.assertEqual(r["result"]["value"], "amendable", r)  # the rule's clause; its reading names the proposer (test_reprogram)
         text = 'law owner: request.kind == 0 or request.subject == "ember"\nlaw small: new.count <= 3'
         kim = self.turn("forge", "relaw", record(target=label("c"), law=label(text)), principal="kim")
         self.assertEqual((kim["status"], kim["result"]), ("admitted", label("owner")), kim)

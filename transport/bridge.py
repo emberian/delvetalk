@@ -102,7 +102,7 @@ def spell_line(reply, origin=None, handles=None):
     outcome = receipt.get('outcome') or {}
     if outcome.get('tag') == 'refused':
         return refusal_line(outcome, reply.get('class')) + (f"\nreceipt {receipt['slug']}" if receipt.get('slug') else '') + '\n'
-    return receipt_line(receipt, origin, None, handles)
+    return receipt_line(receipt, origin, reply.get('object'), handles)
 
 
 def draft_text(reply, origin=None, addressed=None, handles=None):
@@ -413,7 +413,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             text = ''.join(spell_line(t, origin, handles) for t in turns)
             st.write(st.outbox / f"{turns[-1]['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
-                'object': turn_root(turns[0]['receipt']).get('object') or obj, 'slot': slot_arg(slot),
+                'object': turns[0].get('object') or obj, 'slot': slot_arg(slot),
                 'receipt': turns[-1]['receipt'], 'posted': False, 'text': text})
             done.append(obs['uri'])
             continue
@@ -434,6 +434,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot),
                                                      'height': reply['receipt']['height']})
             continue
+        obj = reply.get('object') or obj  # the card the host ran the turn on: a spell's card as it resolved it
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot_arg(slot),

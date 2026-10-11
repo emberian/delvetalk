@@ -15,7 +15,7 @@ import unittest
 from tests.host import as_owner
 
 from tests.test_reflection import POLICY, Reflection
-from tests.wire import label, nat, record
+from tests.wire import label, nat, record, reference
 from tests.bend import declared
 
 GARDEN = """edition ObjectiveBend 1
@@ -294,7 +294,8 @@ def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activ
 """).replace("import ./World.obend as World", "import ./Form.obend as Form\nimport ./World.obend as World")
 
 
-HEARING = GARDEN.replace(
+HEARING = GARDEN.replace("  fields: Nat\n", "  fields: Nat\n  policy: Plans.Reference\n").replace(
+    "{planted: \"\", origin: \"\", heard: \"\", fields: 0n}", "{planted: \"\", origin: \"\", heard: \"\", fields: 0n, policy: Plans.nobody()}").replace(
     "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:\n"
     "  let written(_) = world.write(extend(keep(), {heard: Plans.Edit.set({value: input.text}), fields: Plans.Edit.set({value: Lists.length::<Binding>(input.fields)})}))",
     "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>, misfit: {clause: String, reason: String}}, context: Abi.Context) -> Activity<Nat>:\n"
@@ -302,18 +303,21 @@ HEARING = GARDEN.replace(
 
 
 class Misfits(Reflection):
-    """docs/FLEX.md §4 host 4: a direct turn's misfit spell (unknownField, noAction, badValue,
-    otherCard) goes to the card's `receive` with `fields` and `misfit {clause, reason}` when that
-    `receive` takes a misfit, so the card can ask hob; a card whose `receive` takes none refuses as
-    before, and a duplicate field or an unclosed block is refused whatever the card takes."""
+    """docs/FLEX.md §4 host 4, HOST-HANDOFF 5.153: a direct turn's misfit spell (unknownField,
+    noAction, badValue, otherCard) goes to the card's `receive` with `fields` and `misfit {clause,
+    reason}` only when the card reads words: its state's `policy` names an object here, the
+    interpreter it asks. Every other card's misfit is the host's `badSpell` with the usage hint,
+    whatever its `receive` declares; a duplicate field or an unclosed block is refused always."""
 
     def setUp(self):
         super().setUp()
         self.open_library()
         self.assertNotEqual(HEARING, GARDEN)
-        for name, source in (("garden", HEARING), ("plain", GARDEN)):
+        self.make("policy", POLICY, record(model=label("m"), system=label(""), examples=label("")))
+        for name, source, seed in (("garden", HEARING, record(policy=reference("policy"))), ("plain", GARDEN, record()),
+                                   ("deaf", HEARING, record()), ("stray", HEARING, record(policy=reference("gone")))):
             r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
-                               modules=[{"name": "Garden", "source": declared(source)}], entry="initial", seed=record())
+                               modules=[{"name": "Garden", "source": declared(source)}], entry="initial", seed=seed)
             self.assertEqual(r["status"], "created", r)
 
     def say(self, text, card="garden", identity=None):
@@ -322,6 +326,20 @@ class Misfits(Reflection):
     def heard(self, card="garden"):
         return {f["name"]: f["value"] for f in self.state(card)["fields"]}["heard"]["value"]
 
+
+    def test_a_card_that_reads_words_hears_the_misfit(self):
+        r = self.say("delvetalk garden water")
+        self.assertEqual((r["status"], r["result"]), ("admitted", nat(2)), r)
+        self.assertEqual(self.heard(), "noAction|garden has no spell water; it has these:")
+
+    def test_a_card_that_reads_no_words_refuses_badSpell_with_its_usage_whatever_receive_declares(self):
+        for card in ("deaf", "stray", "plain"):
+            with self.subTest(card=card):
+                r = self.say("delvetalk %s water" % card, card=card)
+                out = r["receipt"]["outcome"]
+                self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "badSpell", "noAction"), r)
+                self.assertIn("delvetalk %s plant" % card, out["hint"])
+                self.assertEqual(self.heard(card) if card != "plain" else "", "")
 
     def test_a_card_that_takes_no_misfit_and_the_strict_clauses_still_refuse(self):
         r = self.say("delvetalk plain water", card="plain")

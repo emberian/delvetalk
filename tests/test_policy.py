@@ -47,7 +47,7 @@ def many(n: Nat, context: Abi.Context) -> Nat:
 
 def context(card="garden-1"):
     text = lambda v: {"tag": "label", "value": v}
-    return record(world=text(""), object=text(card), principal=text("glm"), handle=text(""), caller=text(""), intent=text("probe"),
+    return record(world=text(""), object=text(card), principal=text("glm"), handle=text(""), caller=text(""), sender=text(""), intent=text("probe"),
                   height={"tag": "natural", "value": "0"}, clock={"tag": "natural", "value": "0"}, inputOrigin=record(
         kind=text("request"), object=text(""), command=text(""), program=text(""),
         immediatelyPrevious=boolean(False), post=text("")))
@@ -305,13 +305,15 @@ class PolicyObject(Chain):
             "    seed: <text, 1 to 80 characters>\n"))
         self.assertEqual(self.things(), [])
 
-    def test_the_gardens_own_misfit_is_its_refusal_and_asks_no_one(self):
-        # HOST-HANDOFF 121: the garden's receive takes a direct turn's misfit and answers it by clause; it is no prose.
+    def test_a_misfit_to_the_garden_which_reads_no_words_is_the_hosts_refusal_and_asks_no_one(self):
+        # HOST-HANDOFF 5.153: the garden names no policy, so its misfit is the host's badSpell with the usage; it is no prose.
         self.policy()
         self.garden()
         misfit = self.say("delvetalk garden plant\nseed: a fern\ncolour: green")
-        self.assertEqual((misfit["status"], misfit["result"]["label"]), ("admitted", "refused"), misfit)
-        self.assertIn("refused badValue: colour is one of: amber, violet, silver\n", misfit["offers"][0]["text"])
+        out = misfit["receipt"]["outcome"]
+        self.assertEqual((misfit["status"], out["class"], out["clause"], out["reason"]),
+                         ("refused", "badSpell", "badValue", "colour is one of: amber, violet, silver"), misfit)
+        self.assertIn("delvetalk garden plant", out["hint"])
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         self.assertEqual(self.things(), [])
 
