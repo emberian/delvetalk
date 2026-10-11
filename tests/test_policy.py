@@ -67,6 +67,7 @@ HOB_ANSWERS = (
     "- the spell, up to three one after another; every value from their words, never invented, a choice never widened;\n"
     "- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n"
     "- card when they ask something the card already shows (a count, a rule, who is here);\n"
+    "- say: <answer> for a question about what a card is or does: answer in at most three sentences from the card, its forms and the library pages given, then the one spell that would act on it;\n"
     "- none when the words ask nothing of this card: talk among participants, a report, a note.\n")
 SPELL = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
 

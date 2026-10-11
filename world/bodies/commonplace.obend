@@ -210,17 +210,23 @@ def interpreting(input: Card.Heard, read: Reading, policy: Policies.State, greet
     case proposals(p): folding(p.items, Lists.List.nil(), "", policy, greet, context, state)
     case unclear(u): hobbed(Card.hobNeeds(u.needs, read.forms), input, read, policy, greet, context, state)
     case replied(r): hobbed(Card.hobSaid(r.text), input, read, policy, greet, context, state)
-    case said(r): hobbed(Card.hobSaid(r.text), input, read, policy, greet, context, state)
+    case said(r): hobbed(Card.Hob.said({text: r.text}), input, read, policy, greet, context, state)
     case denied(_): refusing("policy", "The policy is not visible to you.", greet, context, state)
     case _: welcomed(greet, "", Card.Replied.silent({}), context, state)
 # hob's answer that is no spell: none is quiet (the hourly menu for a reply to the root itself),
 # card the card answered (the menu at the root), ask hob's question over the nearest doors
-# (at the root) or the card's first spell.
+# (at the root) or the card's first spell, said its answer to a question beside the card.
 def hobbed(hob: Card.Hob, input: Card.Heard, read: Reading, policy: Policies.State, greet: Bool, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match hob:
     case none(_): quiet(greet, input, read.learned, context, state)
     case card(_): if read.card == "" then withChanges(Card.Replied.usage({}), "", 0n, "", context, state) else doorCard({world: context.world, object: read.card}, context)
     case ask(a): toldThen(asking(a.needs, input, read, context, state), Card.Replied.unclear({needs: a.needs}), greet, context, state)
+    case said(s): if read.card == "" then withChanges(Card.Replied.usage({}), "hob: {s.text}", 0n, "", context, state) else saidBeside(s.text, {world: context.world, object: read.card}, context)
+# hob's answer to a question: its line beside the card the words were for, never inside it.
+def saidBeside(text: String, to: Plans.Reference, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.card({object: to}):
+    case carded(c): Card.tell(Card.Replied.usage({}), Document.concat(Document.text("hob: {text}\n"), c.document))
+    case _: Card.tell(Card.Replied.usage({}), Document.text("hob: {text}\n"))
 # hob's lines are fixed (VOICE's second miss), with only the fields the forms name.
 def asking(needs: Form.Names, input: Card.Heard, read: Reading, context: Abi.Context, state: State) -> Document.Document:
   if read.card == "" then Menu.pruned(missLine(needs), nearest(input, read.learned, state), menu(state), context) else Card.askCard(needs, read.card, read.forms)

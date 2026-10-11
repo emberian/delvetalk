@@ -234,6 +234,7 @@ sum Hob:
   none: {}
   card: {}
   ask: {needs: Form.Names}
+  said: {text: String}
 # "not addressed", nothing, and a model that could not be asked (`model: <reason>`) are none;
 # anything else is an ask, naming the offered fields among the needs (none: a bare ask).
 def hobNeeds(needs: Form.Names, forms: Forms) -> Hob:
@@ -265,6 +266,7 @@ def hobbed<T>(hob: Hob, policy: Policies.State, utterance: String, context: Abi.
     case none(_): result
     case card(_): tell(result, card)
     case ask(a): escalated(policy, utterance, context, askCard(a.needs, spellName(context.object, context), forms), result)
+    case said(s): tell(result, Document.concat(Document.text("hob: {s.text}\n\n"), card))
 def escalated<T>(policy: Policies.State, utterance: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:
   if policy.escalateTo == "" then tell(result, card) else escalatedTo(policy, utterance, context, card, result)
 def escalatedTo<T>(policy: Policies.State, utterance: String, context: Abi.Context, card: Document.Document, result: T) -> Activity<T>:

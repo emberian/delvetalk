@@ -41,11 +41,13 @@ def need(text: String) -> String:
     case ask(a): textConcat("ask ", Text.joined(a.needs))
     case none(_): "none"
     case card(_): "card"
+    case said(_): "said"
 def said(text: String) -> String:
   match Card.hobSaid(text):
     case ask(_): "ask"
     case none(_): "none"
     case card(_): "card"
+    case said(_): "said"
 """
 
 
@@ -88,12 +90,16 @@ class Resumed(test_chain.Chain):
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
         return item, resumed
 
-    def test_words_that_are_no_spell_are_none_and_end_with_no_card(self):
+    def test_hobs_prose_is_its_line_beside_the_card_the_words_were_for(self):
+        """hob's answer that is no spell and no prefix is `said` (the host's): its line stands above the garden's card,
+        never inside it."""
         self.policy()
         self.garden()
         self.say("What makes you think anyone needs a portal?")
-        _, quiet = self.settle("I think they are just chatting.")
-        self.assertEqual((quiet["status"], quiet["result"]["label"], quiet["receipt"].get("offers", [])), ("admitted", "silent", []), quiet)
+        _, said = self.settle("A portal here is a door; the garden has none of its own.")
+        [card] = [o["text"] for o in said["receipt"]["offers"]]
+        self.assertEqual((said["status"], said["result"]["label"]), ("admitted", "usage"), said)
+        self.assertTrue(card.startswith("hob: A portal here is a door; the garden has none of its own.\n✾ THE NIGHT GARDEN\n"), card)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_an_ask_is_one_attempt_whose_question_stands_over_the_plant_spell(self):
