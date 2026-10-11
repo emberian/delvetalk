@@ -243,8 +243,9 @@ Avatar, Env and Wake (heights 30 to 40) and were skipped with no draft.
 and the home page shows `entry <n>` (a refused `world-open` shows `entry None`), the bridge's and interpreter's pid files
 are fresh, and the hand answers a tokenless `/hand/` with 404. `docker compose ps` shows all five `(healthy)`. Then
 `docker compose run --rm delvetalk-ops python3 -m transport.hand status` (the journal height, the host pid) and
-`hostd-info` (the binary's SHA-256 and `replay`, the edition: 5 on foundation 7884a972) are the host's own word;
-`serve-status` lists the open worlds and their heights. The DID document and the signed head:
+`serve-status` are the host's own word: the binary's SHA-256, its pid, `replay` (the edition: 5 on foundation
+7884a972), the sealed library's pin, and per world its height, objects, clock, `replay` and `snapshot {resumed,
+refused}` (the height it reopened from: 0 is a replay from genesis). The DID document and the signed head:
 `curl -s <origin>/.well-known/did.json` names the `did:key` `deploy.repokey` printed as `#atproto`, and
 `com.atproto.sync.getLatestCommit?did=did:web:<host>` answers `{cid, rev}`; the commit block in `getRepo`'s CAR
 verifies under that key (`transport.atproto.sign.verify`). From the laptop:

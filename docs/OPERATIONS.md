@@ -21,7 +21,7 @@ of Python in 8 files plus 594 of shell and compose. By role:
 
 The state the Python keeps beside the journal is 20 kinds under `<state>/`:
 `access.log`, `awaiting/`, `binary-pin`, `bridges/`, `hand-log.jsonl`,
-`scratch/`, `host.sock`, `hostd.pid`, `identity.sqlite`, `interpretations/`,
+`scratch/`, `host.sock`, `serve.pid`, `identity.sqlite`, `interpretations/`,
 `journal.lock`, `library/`, `mentioned.txt`, `model-spend.jsonl`,
 `observe.sqlite`, `outbox/`, `posting/`, `principals.txt`,
 `publications.after`, `since`, `skipped.txt`, `worlds/`. Configuration is 95

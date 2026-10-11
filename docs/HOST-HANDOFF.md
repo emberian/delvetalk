@@ -62,7 +62,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
 - Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-addressee`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
-- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (worlds and scratches); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
+- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
 
 Rules:
@@ -1097,12 +1097,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 125. **`serve`: the host holds its directory and its sockets (host13; docs/FEDERATION.md §1, docs/ROOT.md
    §1.4).** `delvetalk-obend serve --state DIR [--socket PATH] [--root-socket PATH] [--root-group GROUP] [--opener DID] [--library DIR]
    [--sync none|fsync|full] [--clock P] [--home NAME]` (`Delvetalk/Serve.lean`, `spec/native/serve.c`)
-   replaces `transport/hostd.py` and `hostproc.py`'s process management.
+   is the one process over a directory of worlds.
    - *Lock.* `flock` on `DIR/journal.lock` before anything else, held for the process's life (the
      handle is kept in `Server.lock`: a dropped handle is a released lock, which the first test found);
-     a second `serve` exits 75, "refusing to start a second writer". `DIR/hostd.pid` is rewritten per op.
+     a second `serve` exits 75, "refusing to start a second writer". `DIR/serve.pid` is rewritten per op.
    - *Library.* `DIR/library` rebuilt at start from `--library` and `../objects/{Avatar,Env,Wake}.obend`;
-     the stateless session `library-load`s it, and `hostd-info` answers its pin.
+     the stateless session `library-load`s it, and `serve-status` answers its pin.
    - *Worlds.* `DIR/<name>.journal`, `name` by `Host.validWorldName` (`[a-z][a-z0-9-]{0,31}`, not `did
      zulip at world me scratch`); envelope `world: <name>`, default `--home` (`town`). The first op naming
      a world opens it with the clock, opener, library (librarian the opener), sync and `name`; `world-open
@@ -1110,8 +1110,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      replay edition change: journals without it replay as before) and refuses a journal that holds
      another ("this journal is the world ring, not moor"). Every world of the directory is opened at start
      and held (5.137 made a held world its live state), so a turn in one reads another (5.140); `world:
-     scratch/<name>` is the request principal's scratch world; `stateless: true` the journal-less session. `serve-status` lists the open worlds; `world-open` over a
+     scratch/<name>` is the request principal's scratch world; `stateless: true` the journal-less session. `world-open` over a
      socket is refused ("serve opens its worlds").
+   - *Status.* `serve-status` is the process's one status: `hostSha256` (the binary, cached in `DIR/binary-pin`
+     by path, size and mtime), `pid`, `replay`, `library` (the sealed pin), `worlds [{name, height, objects,
+     clock, replay, snapshot {resumed, refused}}]` (`replay` read from the world's first entry; `resumed` the
+     snapshot height it reopened from, 0 a replay from genesis) and `scratches` (5.140). `test_serve`.
    - *Sockets.* `DIR/host.sock` and the root socket (default `DIR/root/root.sock`; deploy passes the
      `/data/root` volume's path), the public socket 0600 and the root socket 0660 (its group `--root-group`, 5.131) under umask 0177, backlog 128. The C shim accepts every
      connection, reads newline-framed lines (16 MiB) and hands Lean the next completed line in order with
@@ -1119,12 +1123,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      removing the sockets and pid file. The public socket refuses `rootOps` (`world-root`, `world-library`,
      `world-settings`, `world-fork`, `world-snapshot`, `library-load`) and every op whose `principal` is
      the opener: "the opener speaks on the root socket".
-   - *Gone.* hostd's 120 s kill-and-respawn: in one process it would lose every world's store; ops are
-     bounded by ticks, heap, ledger and entry bounds, and `HostClient`'s timeout still answers
-     `hostTimeout`. The clock stays the bridge's `tick` (hostd ran none). `hostd-info` adds `replay`.
-   - *Landed in the transport (5.131):* `tests/host.py` `Served` starts it; `transport/` holds no hostd.py or
-     hostproc.py; the opener's ordinary turns go on the public socket (`resident`, 5.131). Tests:
-     `tests/test_serve.py` (the old hostd cases against the Lean server, named worlds, the root socket).
+   - Ops are bounded by ticks, heap, ledger and entry bounds, and `HostClient`'s timeout answers
+     `hostTimeout`. The clock is the bridge's `tick`.
+   - *Transport (5.131):* `tests/host.py` `Served` starts it; the opener's ordinary turns go on the public socket
+     (`resident`, 5.131). Tests: `tests/test_serve.py` (one writer, named worlds, the root socket, the status).
 
 126. **ROOT and MODERATION in one edition (host14; docs/ROOT.md §1 to §3; replay edition 3).**
    - *`world-root {principal, reason, act}`* (`Host/Root.lean`, `rootOp`): the opener only (`serve` keeps it to

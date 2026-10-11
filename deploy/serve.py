@@ -54,11 +54,11 @@ class Served:
             time.sleep(0.02)
         from transport.host import HostClient
         ready, client = time.monotonic() + READY, HostClient(self.sock, None)
-        try:  # a socket file is not yet a server answering: the first op waits for `hostd-info` (under load it lags the file)
-            while (got := client.send({'op': 'hostd-info'})).get('status') != 'hostd':
+        try:  # a socket file is not yet a server answering: the first op waits for `serve-status` (under load it lags the file)
+            while (got := client.send({'op': 'serve-status'})).get('status') != 'serve':
                 if self.proc.poll() is not None or time.monotonic() > ready:
                     self.stop()
-                    raise RuntimeError(f'serve did not answer hostd-info within {READY} s: {got.get("message")}')
+                    raise RuntimeError(f'serve did not answer serve-status within {READY} s: {got.get("message")}')
                 time.sleep(0.05)
         finally:
             client.close()

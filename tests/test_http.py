@@ -456,7 +456,7 @@ class Repl(FrontCase):
                          roots=[{'object': self.c, 'version': 0}])
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
         self.assertNotEqual(self.front.library, 'bafyreistale')
-        self.front.hostd_pid = -1  # a changed pid is re-read before the request
+        self.front.serve_pid = -1  # a changed pid is re-read before the request
         self.front.library = 'bafyreistale'
         s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object=self.c, intent='repl-5',
                          roots=[{'object': self.c, 'version': 0}])

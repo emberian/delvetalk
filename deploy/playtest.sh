@@ -29,7 +29,7 @@ done
 if [[ -n $stop ]]; then
   [[ -L $dir/current ]] || { echo "playtest: nothing running under $dir" >&2; exit 1; }
   state=$(cd "$dir/current" && pwd -P)/state
-  for name in bridge interpret front hostd; do  # the host last (serve writes hostd.pid itself): the clients are its tenants
+  for name in bridge interpret front serve; do  # the host last (serve writes serve.pid itself): the clients are its tenants
     pidfile=$state/$name.pid
     [[ -f $pidfile ]] || continue
     pid=$(cat "$pidfile")

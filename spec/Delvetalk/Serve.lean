@@ -1,8 +1,7 @@
 /- `delvetalk-obend serve`: the one process that holds a directory of worlds (docs/FEDERATION.md §1,
    HOST-HANDOFF 5.125). It takes the directory's lock, seals the library, listens on the public socket
    and the root socket (`spec/native/serve.c`), and answers one request at a time in arrival order,
-   each through the world its envelope names. It replaces `transport/hostd.py` and the process
-   management of `transport/hostproc.py`. -/
+   each through the world its envelope names. -/
 import Delvetalk.PackageSession
 
 namespace Delvetalk.Serve
@@ -78,9 +77,9 @@ def errorJson (message : String) : Json :=
 
 def hex (bytes : ByteArray) : String :=
   let digits := "0123456789abcdef".toList.toArray
-  String.join (bytes.toList.map fun b => String.mk [digits[(b.toNat / 16)]!, digits[(b.toNat % 16)]!])
+  String.join (bytes.toList.map fun b => String.ofList [digits[(b.toNat / 16)]!, digits[(b.toNat % 16)]!])
 
-/-- The binary's SHA-256, hashed once and cached in `cache` by path, size and mtime (as hostd did). -/
+/-- The binary's SHA-256, hashed once and cached in `cache` by path, size and mtime. -/
 def binaryPin (cache binary : System.FilePath) : IO String := do
   let info ← binary.metadata
   let key := [("path", toJson binary.toString), ("size", toJson info.byteSize.toNat),
@@ -277,15 +276,20 @@ def citeOp (srv : Server) (request : Json) : IO (Server × Json) := do
     | .ok j => j
     | .error e => errorJson e)
 
-def serveStatus (srv : Server) : Json :=
-  let rows := srv.worlds.toList.filter (!·.1.startsWith "scratch/") |>.map fun (k, h) =>
-    let w := h.world.map fun (o : Host.Open) => o.world
-    Json.mkObj [("name", toJson k), ("height", toJson ((w.map (·.height)).getD 0)),
-      ("objects", toJson ((w.map (·.objects.size)).getD 0)), ("clock", toJson ((w.map (·.clock)).getD 0)),
-      ("open", toJson true)]
+/-- `serve-status`: this process (its binary's SHA-256, pid, replay edition and the sealed library's pin), every
+    world it holds (height, objects, clock, the replay edition its first entry names and the snapshot it reopened
+    from) and every scratch world. The one status of the process; a world's own is `world-status`. -/
+def serveStatus (srv : Server) : IO Json := do
+  let rows := srv.worlds.toList.filter (!·.1.startsWith "scratch/") |>.filterMap fun (k, h) => h.world.map fun (o : Host.Open) =>
+    let w := o.world
+    Json.mkObj [("name", toJson k), ("height", toJson w.height), ("objects", toJson w.objects.size), ("clock", toJson w.clock),
+      ("replay", toJson (((w.entries.get? 0).bind (·.getObjValAs? Nat "replay" |>.toOption)).getD Host.Limits.replayEdition)),
+      ("snapshot", o.report.json)]
   let byName := fun (a b : Json) => decide ((a.getObjValAs? String "name").toOption.getD "" < (b.getObjValAs? String "name").toOption.getD "")
-  Json.mkObj [("status", toJson "serve"), ("worlds", Json.arr (rows.toArray.qsort byName)),
-    ("scratches", Json.arr ((srv.scratches.toList.toArray.qsort (·.1 < ·.1)).map fun (k, t) => scratchRow k t))]
+  return Json.mkObj ([("status", toJson "serve"), ("hostSha256", toJson srv.sha), ("pid", toJson (← IO.Process.getPID).toNat),
+    ("replay", toJson Host.Limits.replayEdition)] ++ ((srv.libraryPin.map fun p => [("library", toJson p)]).getD []) ++
+    [("worlds", Json.arr (rows.toArray.qsort byName)),
+     ("scratches", Json.arr ((srv.scratches.toList.toArray.qsort (·.1 < ·.1)).map fun (k, t) => scratchRow k t))])
 
 /-- The world a reference names, read by `reader`: a world of the directory, or `scratch/<name>` the
     reader's own scratch world. -/
@@ -337,11 +341,7 @@ def keyOf (srv : Server) (request : Json) : Except String String :=
 def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) := do
   let some fields := request.getObj?.toOption | return (srv, errorJson "request is not a JSON object")
   let op := (request.getObjValAs? String "op").toOption.getD ""
-  if op == "hostd-info" then
-    return (srv, Json.mkObj ([("status", toJson "hostd"), ("hostSha256", toJson srv.sha),
-      ("pid", toJson (← IO.Process.getPID).toNat), ("replay", toJson Host.Limits.replayEdition)] ++
-      ((srv.libraryPin.map fun p => [("library", toJson p)]).getD [])))
-  if op == "serve-status" then return (srv, serveStatus srv)
+  if op == "serve-status" then return (srv, ← serveStatus srv)
   if op == "world-open" then return (srv, errorJson "serve opens its worlds; name one with `world`")
   if !root && rootOps.contains op then
     return (srv, errorJson "the opener speaks on the root socket")
@@ -447,7 +447,7 @@ def main (args : List String) : IO UInt32 := do
       if Host.validWorldName name then srv := (← world srv name).1
   let (opened, clock) ← homeClock srv
   srv ← findScratches opened clock
-  let pidfile := config.state / "hostd.pid"
+  let pidfile := config.state / "serve.pid"
   IO.FS.writeFile pidfile (toString (← IO.Process.getPID))
   for p in [config.socket, config.rootSocket] do
     if let some dir := p.parent then IO.FS.createDirAll dir
