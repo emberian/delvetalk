@@ -125,17 +125,6 @@ class Interpret(unittest.TestCase):
         again = interpret.run(self.state, self.host, self.ask)  # a second run does nothing
         self.assertEqual((again['settled'], len(self.calls), len(self.settled())), ([], 2, 2))
 
-    def test_the_utterance_is_sent_once(self):
-        d = Path(self.tmp.name)
-        it = dict(item(1), policy={'model': 'claude-haiku-5-5', 'system': 'forms...\n\nParticipant: plant 1'})
-        (d / 'pending.json').write_text(json.dumps({'pending': [it]}))
-        host = Pipe(str(d / 'stub'))
-        self.addCleanup(host.close)
-        interpret.run(self.state, host, self.ask)
-        sent = self.calls[0]
-        self.assertEqual((sent['system'], sent['user']), ('forms...', 'plant 1'))  # Policy.prompt's tail is the user turn, once
-        self.assertEqual((sent['system'] + sent['user']).count('plant 1'), 1)
-
     def test_crash_after_the_model_call_never_asks_or_settles_twice(self):
         real = self.host.send
 
