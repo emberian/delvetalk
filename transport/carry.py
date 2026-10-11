@@ -104,9 +104,10 @@ def reader(row, opener):
     return owner
 
 
-def check(obend, old_journal, new_journal):
+def check(obend, old_journal, new_journal, moved=()):
     """The carried world against the snapshot it was carried from, in a throwaway copy: {objects, rendered, receipts,
-    turn, problems}."""
+    turn, problems}. An object the carry moved to the image's packages (`moved`) is at its migrated state."""
+    after = {m['object']: m['after'] for m in moved}
     links = journal.links(old_journal)
     body = journal.snapshot(dict(journal.snapshots(old_journal))[len(links)])
     opener = (body.get('settings') or {}).get('opener') or ''
@@ -124,9 +125,9 @@ def check(obend, old_journal, new_journal):
             for row in body['objects']:
                 who = reader(row, opener)
                 got = host.send(op='world-object', principal=who, object=row['id'])
-                after = (got.get('record') or {}).get('stateCid')
-                if after != row['stateCid']:
-                    problems.append(f"{row['id']}: state {after or got.get('status')} after, {row['stateCid']} before")
+                now, expected = (got.get('record') or {}).get('stateCid'), after.get(row['id'], row['stateCid'])
+                if now != expected:
+                    problems.append(f"{row['id']}: state {now or got.get('status')} after, {expected} expected")
                 card = host.send(op='world-card', principal=who, object=row['id'])
                 if card.get('status') == 'card':
                     rendered += 1
@@ -198,10 +199,11 @@ def command(a, out):
     failed = False
     for w in names:
         r = carried[w]
-        checked = check(obend, str(old / f'{w}.journal'), str(new / f'{w}.journal'))
+        checked = check(obend, str(old / f'{w}.journal'), str(new / f'{w}.journal'), r['moved'])
         failed = failed or bool(checked['problems'])
         out.write(json.dumps({'world': w, 'slug': r['slug'], 'hash': r['hash'], 'height': r['carriedFrom']['height'],
                               'replay': [r['carriedFrom']['replay'], r['replay']], 'library': r['library'], 'objects': r['objects'], 'left': r['left'],
+                              'moved': r['moved'],
                               'dropped': r['dropped'], 'check': checked}, sort_keys=True) + '\n')
     town = carried['town']
     out.write(f"hob: the world was carried to a newer host at entry {town['carriedFrom']['height']}; everything is where it was, "

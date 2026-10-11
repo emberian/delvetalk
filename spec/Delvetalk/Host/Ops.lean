@@ -1432,6 +1432,38 @@ partial def compileObject (w : World) (inputs : Json) : Except String Built := d
 def Built.shape (b : Built) : Json × Bool × Bool :=
   (markHelpers (artifactShape b.artifact).1 b.exposed, b.lawShape)
 
+/-- A package's migration `name` over `inputs`, compiled: a function from a state its argument type
+    `reads` (a reprogram: the object's state type; a carry: the state as it was) to `ty`, the state type
+    the same inputs compile. Failures are `(clause, message)`; `wrong` says a type that does not fit. -/
+def compileMigration (w : World) (inputs : Json) (name : String) (ty : Delvetalk.Theory.ObjectiveBendTypes.Ty)
+    (reads : Delvetalk.Theory.ObjectiveBendTypes.Ty → DataBounds → Bool)
+    (wrong : String) : Except (String × String) Compiled := do
+  unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw ("migration", "invalid migration name")
+  let resolved ← (resolveInputs w (inputs.setObjVal! "entry" (toJson name))).mapError (("compile", ·))
+  -- A migration the package does not define is said by name, not by the compiler's entry search.
+  let (art, mty, _) ← (Package.compileKeepingLaws resolved).mapError fun e =>
+    if (e.splitOn "missing selected entry").length > 1 then
+      ("migration", s!"the package defines no {name}; a migration is def {name}(old: OldState) -> State")
+    else ("migration", e)
+  let packet ← (art.getObjVal? "packet").mapError (("migration", ·))
+  let md ← (Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
+  match mty with
+  | .arrow _ _ dom cod =>
+    unless reads dom md.source.assumptions.bounds && cod == ty do throw ("migration", wrong)
+  | _ => throw ("migration", "the migration must be a function OldState -> NewState")
+  return ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid,
+    (Delvetalk.CheckedEntry.ofPacket packet).toOption, none⟩
+
+/-- A compiled migration run over `state`: the state it converts it to, or why not. -/
+def runMigration (m : Compiled) (state : Data) : Except String Data :=
+  let run := match m.entry with
+    | some e => Package.executeDataEntry e #[state] (Json.mkObj [])
+    | none => Package.executeDataValues m.packet #[state] (Json.mkObj [])
+  match run with
+  | .ok (.finished value _ _ _) => .ok value
+  | .ok (.refused failure _) => .error s!"the migration was refused: {failure}"
+  | .error e => .error e
+
 /-- Compile a replacement for an object's entry module (its imports stay as
     sealed at creation). Failures are `(clause, message)`. -/
 def prepareProgram (w : World) (o : Object) (source migration : String) (extend : Bool := false) :
@@ -1444,7 +1476,6 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
     | some lib => if (replaced.getObjVal? "library").toOption.isSome then
         pure (replaced.setObjVal! "library" (toJson lib.pin)) else pure replaced
     | none => pure replaced)
-  let resolved := fun (entry : String) => (resolveInputs w (inputs.setObjVal! "entry" (toJson entry))).mapError (("compile", ·))
   -- The new code compiled as any package is (`compileObject`: a stack keeps the shape below it).
   let built ← (compileObject w (inputs.setObjVal! "entry" (toJson "initial"))).mapError fun e =>
     if e.startsWith "methods: " then ("methods", (e.drop 9).toString)
@@ -1459,22 +1490,8 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
     (← (canonicalTy o.bounds o.stateType).mapError (("stateType", ·)))
   let migrated : Option Compiled ← if migration.isEmpty then
       if same then pure none else throw ("stateType", "the state type differs and no migration names a conversion")
-    else do
-      unless Delvetalk.Compiler.ObjectiveBendParse.isIdent migration.toList do throw ("migration", "invalid migration name")
-      -- A migration the package does not define is said by name, not by the compiler's entry search.
-      let (art, mty, _) ← (Package.compileKeepingLaws (← resolved migration)).mapError fun e =>
-        if (e.splitOn "missing selected entry").length > 1 then
-          ("migration", s!"the package defines no {migration}; a migration is def {migration}(old: OldState) -> State")
-        else ("migration", e)
-      let packet ← (art.getObjVal? "packet").mapError (("migration", ·))
-      let md ← (Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet).mapError (("migration", ·))
-      match mty with
-      | .arrow _ _ dom cod =>
-        unless dom == o.stateType && cod == ty do
-          throw ("migration", "the migration must have type OldState -> NewState")
-      | _ => throw ("migration", "the migration must be a function OldState -> NewState")
-      pure (some ⟨packet, mty, md.source.assumptions.bounds, md.source.assumptions.rigid,
-        (Delvetalk.CheckedEntry.ofPacket packet).toOption, none⟩)
+    else some <$> (compileMigration w inputs migration ty (fun dom _ => dom == o.stateType)
+      "the migration must have type OldState -> NewState")
   -- A stack's artifact lists every layer's methods (the kernel's `stackMethodTable`); its shape is
   -- the stack's (`Built.shape`).
   let (methods, predicate, predicateReads) := built.shape
@@ -2448,12 +2465,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .ok prog => pure prog
         | .error (clause, message) => throw (refuse clause message)
       if let some m := prog.migration then
-        let run := match m.entry with
-          | some e => Package.executeDataEntry e #[written] (Json.mkObj [])
-          | none => Package.executeDataValues m.packet #[written] (Json.mkObj [])
-        match run with
-        | .ok (.finished value _ _ _) => state := value
-        | .ok (.refused failure _) => throw (refuse "migration" s!"the migration was refused: {failure}")
+        match runMigration m written with
+        | .ok value => state := value
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType do
         throw (refuse "migration" "the converted state does not conform to the new state type")
