@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host23 continued by host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -1879,28 +1879,34 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host23 (5.161), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
+The queue after host24 (5.159 *Moves*, 5.160 placings, 5.161), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
 standing order binds every item: "maturify and take forward everything that we've started and bring it to its full
 sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
 called for); let's not leave behind 'old things', no scar and growth tissue." So each replacement deletes what it
 replaces in the same commit, and this file describes only what is. A merge touching the host runs
 `deploy/carry-check.sh` on hbox first (5.159).
 
-0. **The paired merge with lane/rewrite14 (step 4).** lane/host23 holds Wake's host deletion (0a6ed761) on top of
-   verbs, chronicle and arms; it merges into foundation only together with lane/rewrite14. To do: `git worktree add
-   ../pair -b pair/step4 lane/host23 && git -C ../pair merge lane/rewrite14`; resolve the test files both touched
-   (`test_hub`, `test_interpret_object`, `test_interpret_text`, `test_genesis`); sweep the remaining Wake cases
-   of the host's tests (`test_await`'s awaitPost cases, `test_outbound`'s `env/` and awaitPost cases,
-   `test_public_methods`' receiver case (now the supervisor's alone), `test_chain`'s subscription-wired chain (as
-   rules), `test_serve`'s arrival list, `test_zulip`'s `env/` arrivals, `test_bridge`'s
-   mention route (now `<did>` `receive`, identity `#mention:<did>`, reach `mentioned`) and its awaitPost case,
-   `test_theme`'s env/wake kinds with the objects lane); test the Bend arms from a body (`world.rule` from a
-   `made`, `world.grow`, `world.act`, `world.chronicle`) and a rule-fired delivery's `context.sender`; the full run
-   green on hbox; then carry-check (item 1).
-   - Carry applies migrations: built (host24, 5.159 *Moves with migrations*). Not yet run on the playtest-3
-     copy in the pair (bell/2 carried live, its four rains with verb "").
-   - `Enchant.assemble`'s verbs read `Object.verbs` (host24): the kind's forms, then each grown verb once with its
-     grower (`shownName`) and reading, its spell the form's (`test_verbs`).
+0. **The paired merge with lane/rewrite14 (step 4).** The objects lane owns `pair/rewrite14` (lane/rewrite14 merged
+   with lane/host23, worktree `delvetalk2-lanes/pair14`) and its full run; it merges into foundation as one. Done on
+   lane/host23 (host24): carry with migrations and the image's bodies (5.159 *Moves*); a placing moves no version
+   (5.160 *Placing*); the strokes read `Object.verbs`; `arrival` is the avatar alone; the Wake sweep of the host's
+   tests (test_await on slots, test_chain by rules with a rule-fired delivery's `context.sender`, test_outbound's
+   `me`, test_bridge/test_zulip/test_serve's mention and arrival routes; test_replay deleted). playtest 3 carried
+   on the pair + rewrite14 bade8d39: 43 of 51 moved (41 by `migrate`, 19 with the image's body), env/* and wake/*
+   left, the transport check clean (hbox `~/scratch/dt-host24/p3.out` until that directory goes). Left:
+   - The pair's full run green on hbox, with the objects lane: `test_carry.Carry.test_every_object_and_receipt_
+     crosses_and_the_world_goes_on` fails before any carry (a garden `receive` of prose, reach `mention`, yields
+     no suspended interpretation on the pair); `test_rules`' helper reads kind rows as the bell's own (`from` is
+     the holder, `kind/bell` for the kind's); `test_theme`'s env/wake kinds. Then carry-check (item 1) and the
+     seventh rain on the carried garden/bell/2.
+   - Test the Bend arms from a body (`world.rule` from a `made`, `world.grow`, `world.act`, `world.chronicle`).
+   - What a carry's move does not yet carry: a moved object's suspensions are dropped (a self-ticking tide carried
+     across a move stops until something ticks it again: re-arm it in the carry, or have its `migrate` path start
+     the chain); a moved object keeps its law text (an edition-8 law lacks `or request.kind == rule`, so only its
+     owner places on it until the owner amends: decide whether the carry lays the image's law for genesis
+     objects, as it lays bodies); a package's top-level `rule`/`want` lines are placed only by `makeObject`, never
+     on a moved object; a refused move's reading is cut at 200 bytes (`reading`) and the carry prints nothing more:
+     print the whole refusal beside `left`.
 1. **Edition and carry.** Edition 9 is not deployed; 5.161 and the pair change what it derives, so they need no
    bump if they merge before any edition-9 world is. If one is deployed first, the pair is edition 10 and ships
    `carry-check.sh` green on the newest v7 backup and the playtest-3 copy, as OVERHAUL plans.
