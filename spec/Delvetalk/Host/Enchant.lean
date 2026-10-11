@@ -31,7 +31,7 @@ structure Mark where
   handle : String
   entry : Nat
 
-/-- A verb the thing takes: its name, who grew it ("" for its kind's), what it reads as, and its spell. -/
+/-- A verb the thing takes: its name, the handle of who grew it ("" for its kind's), what it reads as, and its spell. -/
 structure Verb where
   name : String
   grower : String
@@ -206,15 +206,14 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
       lines := { n := 0, handle := handleIn w fs "keeperHandle" "keeper", verb := "inspirit", text := d, entry := 0, state := "" } :: lines
   let marks := (rows fs "marks").map fun r =>
     ({ name := (text? r "name").getD "", handle := handleIn w r "handle" "who", entry := (nat? r "at").getD 0 } : Mark)
-  -- The verbs: the card's spells (its kind's), then rows grown on it (`verbs`, when its package keeps them).
-  let declared := (spellForms w id o).map fun f =>
-    ({ name := f.action, grower := "", reading := "", spell := oneLine (spellTemplate id f) } : Verb)
-  let grown := (rows fs "verbs").filterMap fun r => do
-    let name ← text? r "name"
-    let byHandle := handleIn w r "byHandle" "by"
-    pure ({ name, grower := byHandle, reading := (text? r "reading").getD "",
-            spell := ((declared.find? (·.name == name)).map (·.spell)).getD s!"delvetalk {id} {name}" } : Verb)
-  let verbs := (declared.filter fun v => !grown.any (·.name == v.name)) ++ grown
+  -- The verbs: the card's spells (its forms, the grown ones among them), the kind's first, then each grown on it
+  -- (`Object.verbs`) with its grower and reading.
+  let forms := (spellForms w id o).map fun f => (f.action, oneLine (spellTemplate id f))
+  let grown := o.verbs.map fun v =>
+    ({ name := v.name, grower := shownName w v.grower, reading := v.reading,
+       spell := (forms.lookup v.name).getD s!"delvetalk {id} {v.name}" } : Verb)
+  let verbs := (forms.filter fun (n, _) => !grown.any (·.name == n)).map (fun (name, spell) =>
+    ({ name, grower := "", reading := "", spell } : Verb)) ++ grown
   -- Each law clause with its reading; a clause `under "K"` is K's law, so it stands as K's law clauses.
   let lawsOf := fun (t : String) => (textClauses t).filter (·.1 == "law")
   let laws := (lawsOf lawText).flatMap fun (_, name, reading, body) =>

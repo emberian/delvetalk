@@ -106,6 +106,11 @@ class Verbs(Reflection):
         # The inspect a card reads offers it among its forms, and never `act`.
         forms = self.host.send(op="world-inspect", principal="kimi", object="bell")["offered"]
         self.assertEqual(forms, ["rain", "water"])
+        # The strokes a paint reads hold it once, with its grower and reading, after the kind's.
+        strokes = self.host.send(op="world-strokes", principal="kimi", object="bell")["strokes"]
+        self.assertEqual([(v["name"], v.get("by", ""), v.get("reading", "")) for v in strokes["verbs"]],
+                         [("rain", "", ""), ("water", "glm", "poured on by a hand; a line, and the bell is tended")])
+        self.assertEqual(strokes["verbs"][1]["spell"], "delvetalk bell water / text: <text, 1 to 1400 characters>")
 
     def test_a_rule_reading_request_verb_is_the_verbs_consequence_and_does_places_it_with_the_verb(self):
         grown = self.say(WATER + "\ndoes: delvetalk bell rain / text: watered")

@@ -1764,7 +1764,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `keeper`, `owner` (handles, the state's or the registry's), `made` (state `made`, else the creating entry's
      height), `tended` (`tendedAt`), relation `counts` (`lines` and `marks` always), the eight newest `lines` with
      `admitted`/`pending` under a keeper and a thing's `description` as its keeper's `inspirit` line, `marks`, `verbs`
-     (the card's spell forms as one-line spells, then any `verbs` rows with their grower), `laws` (a clause `under "K"`
+     (the card's spell forms as one-line spells, the kind's first, then each of `Object.verbs` with its grower and reading), `laws` (a clause `under "K"`
      stands as K's clauses), `doors` (`cites`), `around` (`location`, else the longest prefix of the id that is an
      object), `present`, `rules` (`carriedRules`: name, owner's handle, reading, the height `ruleLog` last fired it at), `wants` (`wantRows`: those that hold now, with `asks` filled). `today` stays empty until `chronicle` lands. `world-strokes` reads them; nothing is written.
    - *The check* (`verify`): clauses `ids`, `numbers`, `handles`, `spells`, `quotes`, `heads`, `forbidden`,
@@ -1895,8 +1895,8 @@ replaces in the same commit, and this file describes only what is. A merge touch
    green on hbox; then carry-check (item 1).
    - Carry applies migrations: built (host24, 5.159 *Moves with migrations*). Not yet run on the playtest-3
      copy in the pair (bell/2 carried live, its four rains with verb "").
-   - `Enchant.strokes` reads grown verbs from the state's `verbs` field; it must read `Object.verbs` (lane/enchant's
-     file: route it there). Its declared list now includes grown forms (`spellForms`), with no grower.
+   - `Enchant.assemble`'s verbs read `Object.verbs` (host24): the kind's forms, then each grown verb once with its
+     grower (`shownName`) and reading, its spell the form's (`test_verbs`).
 1. **Edition and carry.** Edition 9 is not deployed; 5.161 and the pair change what it derives, so they need no
    bump if they merge before any edition-9 world is. If one is deployed first, the pair is edition 10 and ships
    `carry-check.sh` green on the newest v7 backup and the playtest-3 copy, as OVERHAUL plans.
@@ -1909,9 +1909,9 @@ replaces in the same commit, and this file describes only what is. A merge touch
    re-judge the wants citing it: an index of citers by object, judged in `reactions`); `maxLawClauses` 16 counts
    all three modalities.
 3. **Verbs' remainder.** `retire` of a verb is `ungrow` (the host spell `retire` is the card power); a
-   carried world's things grow only once their pin has an `act` (item 0's migration); the strokes and the
-   card's `Grown here:` line read `Object.verbs` (objects lane: Bend has no read of it, so Card renders it only if
-   a `world.verbs` arm is added; decide with the objects lane); `grow` in a policy's `confirmFor`.
+   carried world's things grow once the carry moves them to a pin with `act` (5.159 *Moves*); the card's
+   `Grown here:` line reads `Object.verbs` only through a `world.verbs` arm (Bend has no read of it; decide with
+   the objects lane); `grow` in a policy's `confirmFor`.
 4. **The carry's remainder (host21).**
    - The first carry of the live town: ship `backup.sh`, `verify.sh` and `carry-check.sh` to the workhorse's
      `/opt/delvetalk/deploy/` and hbox's `~/delvetalk-backups/`, so tarballs hold head snapshots; until one does,
