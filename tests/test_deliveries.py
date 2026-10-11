@@ -13,8 +13,9 @@ Loop is the same package sending to itself.
 """
 import unittest
 
-from tests.test_turn_world import TurnWorld, closure, label, nat, record
-from tests.test_turn_world import declared
+from tests.test_turn_world import TurnWorld
+from tests.wire import label, nat, record
+from tests.bend import closure, declared
 
 MAX_DEPTH = 100          # Limits.maxDepth
 SENDS_PER_TURN = 32      # Limits.sendsPerTurn

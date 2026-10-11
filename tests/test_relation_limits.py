@@ -6,9 +6,9 @@ canonical bytes, or a write to it refused `capacity`.
 """
 import unittest
 
-from tests.test_chain import Chain, reference, town_kinds
-from tests.test_objects import closure
-from tests.test_turn_world import label, nat, record, relation
+from tests.test_chain import Chain, town_kinds
+from tests.wire import label, nat, record, reference, relation
+from tests.bend import MODULES, closure
 
 MAX = 262144
 DID = "did:plc:" + "x" * 24
@@ -20,7 +20,6 @@ def did(n):
 
 def limit(module, field):
     """The limit a module's relations() declares for `field`."""
-    from tests.test_objects import MODULES
     with open(MODULES[module]) as f:
         source = f.read()
     at = source.index('{field: "%s"' % field)

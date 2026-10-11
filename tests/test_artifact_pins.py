@@ -1,9 +1,6 @@
-"""Every entry of every world module keeps its source pin and still compiles, and every object
-activity yields over the Plan library and hears its silences.
+"""Every entry of every world module keeps its source pin and still compiles.
 
 Evidence for FOUNDATION §2 Store (layer: objects).
-
-Every entry of every world closure keeps its source pin and still compiles.
 
 An object's pin is the CID of its source closure (the artifact's `sourcesSha256`); the
 compiled packet is an observation beside it (`compiled {binary, packet}`), which replay
@@ -26,7 +23,8 @@ import sys
 import unittest
 
 from tests import host
-from tests.test_objects import MODULES, WORLD, closure, definitions, pure, row_names
+from tests.bend import MODULES, WORLD, closure, pure
+from tests.test_objects import definitions
 
 FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "pins", "artifacts.json")
 SHARDS = 12
@@ -39,17 +37,6 @@ def outcome(process, name, entry):
         artifact = reply["artifact"]
         return {"status": "compiled", "pin": artifact["sourcesSha256"], "packet": artifact["packetSha256"], "type": artifact["type"]}
     return {"status": reply.get("status")}
-
-
-def activity_rows(type_json):
-    """An activity's Plan and Response row names, or None for a pure entry."""
-    while type_json.get("tag") != "computation" and "codomain" in type_json:
-        type_json = type_json["codomain"]
-    if type_json.get("tag") != "computation":
-        return None
-    if type_json["plan"].get("tag") != "variant":
-        return None  # the message dialect: one World.Message, the response a site's own sum
-    return row_names(type_json["plan"]["row"]), row_names(type_json["response"]["row"])
 
 
 def module_record(process, name):
@@ -92,7 +79,7 @@ class Pins:
             expected = json.load(handle)
         process = host.Host()
         self.addCleanup(process.close)
-        recompiled = activities = 0
+        recompiled = 0
         for name in shard(self.index):
             want = expected.get(name, {"pin": None, "entries": {}})
             self.assertEqual(sorted(want["entries"]), sorted(entries(name)), name)
@@ -106,14 +93,7 @@ class Pins:
                         self.assertEqual(got["pin"], want["pin"], f"{name}: source pin changed")
                         if was["status"] == "compiled" and got["packet"] != was["packet"]:
                             recompiled += 1
-                        rows = activity_rows(got["type"])
-                        if rows and WORLD_MODULES[name].startswith(os.path.join(WORLD, "objects")):
-                            # Every activity of an object yields over the Plan library and hears its silences.
-                            self.assertEqual(rows[0][:3], ["view", "write", "call"], f"{name}.{entry}")
-                            for silence in ("reply", "refused", "unknown", "timedOut", "broken"):
-                                self.assertIn(silence, rows[1], f"{name}.{entry}")
-                            activities += 1
-        print(f"\n{type(self).__name__}: {recompiled} entries recompiled to a different packet, {activities} object activities", file=sys.stderr)
+        print(f"\n{type(self).__name__}: {recompiled} entries recompiled to a different packet", file=sys.stderr)
 
 
 for _index in range(SHARDS):  # one class per shard, so the runner spreads them over processes

@@ -1,20 +1,17 @@
 """A source module is journaled once and named by CID after, a journal opens in one process at a
-time, and two hundred bells replay from one copy of Bell.
+time, and a second object of the same source carries none.
 
 Evidence for FOUNDATION §2 Journal (layer: host).
 
 Journal weight: each source module is journaled once, by CID, and each distinct package
 compiles once per process (creation and replay alike).
-
-Measured on this branch, 500 Bells from world/objects in a library world: before, create
-135 s, reopen 133 s, journal 3.14 MB; after, create 4.3 s, reopen 0.5 s, journal 0.82 MB.
 """
 import os
 import unittest
 
-from tests.test_chain import boolean, empty, nil
-from tests.test_reflection import ROOT, Reflection
-from tests.test_turn_world import label, record
+from tests.test_reflection import Reflection
+from tests.wire import boolean, empty, label, nil, record
+from tests.host import ROOT
 
 BELL = open(os.path.join(ROOT, "tests", "fixtures", "objects", "Bell.obend")).read()
 SEED = record(colour={"tag": "variant", "label": "silver", "payload": empty()}, seed=label("s"),

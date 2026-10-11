@@ -10,7 +10,9 @@ lowercased).
 """
 import unittest
 
-from tests.test_turn import Host, label, library_modules
+from tests.bend import closure
+from tests.test_turn import Host
+from tests.wire import label
 
 SOURCE = """edition ObjectiveBend 1
 import ./List.obend as Lists
@@ -26,7 +28,7 @@ class TextHasAny(unittest.TestCase):
     def setUpClass(cls):
         cls.h = Host()
         reply = cls.h.send({"op": "compile", "entry": "check",
-                            "modules": library_modules("List") + [{"name": "Package", "source": SOURCE}]})
+                            "modules": closure("List") + [{"name": "Package", "source": SOURCE}]})
         assert reply["status"] == "compiled", reply
         cls.art = reply["artifact"]
 

@@ -76,7 +76,7 @@ class Classification(unittest.TestCase):
             mk(5, 'sure\ndelvetalk garden plant\nseed: fern', parent=BASE['uri']),
             mk(6, 'just words', parent=BASE['uri']),
             mk(7, 'merge conflicts are fun'),
-            mk(8, 'delvetalk garden ?'),  # a spell or not is the host's parser's answer (bridge.spelled)
+            mk(8, 'delvetalk garden ?'),  # a spell or not is the host's parser's answer (bridge.parsed)
             mk(9, 'hello @livedelvetalk.delve.town'), mk(10, 'a #gsb post', parent=BASE['uri']),  # a summon: the portal or the tag
             mk(11, '#gsb\ndelvetalk garden plant'), mk(12, 'hi @livedelvetalk.delve.town #GSB'),  # a handle in text, no facet
             mk(13, 'not delvetalk garden plant'),
@@ -85,13 +85,13 @@ class Classification(unittest.TestCase):
                          {'%06d' % i: k for i, k in enumerate(
                              ['wiki-page', 'wiki-edit', 'wiki-merge', 'summon', 'reply', 'reply', 'post', 'post',
                               'summon', 'summon', 'summon', 'summon', 'post'], 1)})
-        self.assertEqual(obs['000001']['wiki'], {'op': 'page', 'title': 'GSB Welcome Message (v2)', 'section': None})
-        self.assertEqual(obs['000002']['wiki']['section'], 'Beds')
+        self.assertEqual(observe.wiki_target(obs['000001']['text']), ('GSB Welcome Message (v2)', ''))
+        self.assertEqual(observe.wiki_target(obs['000002']['text'])[1], 'Beds')
         self.assertEqual(obs['000004']['mentions'], [{'did': OTHER, 'handle': 'livedelvetalk.delve.town'}])
         self.assertEqual(obs['000004']['tags'], ['gsb'])
         self.assertEqual(obs['000006']['replyTo'], BASE['uri'])
         self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo', 'root',
-                                              'mentions', 'tags', 'kind', 'wiki'})
+                                              'mentions', 'tags', 'kind'})
 
 class Idempotence(unittest.TestCase):
     def test_rerun_emits_nothing(self):
@@ -367,12 +367,12 @@ class Posting(unittest.TestCase):
                                   post.FLAG], io.StringIO(), delve.Client(Script()))
             self.assertEqual((code, json.loads(err.getvalue())['error']), (1, 'live_post_needs_object'))
             self.assertEqual(self.dry(d, ['--text-file', str(f)], delve.Client(Script()))[0], 2)
-        # --record without a journal is refused before anything happens
+        # --object without a journal is refused before anything happens
         with tempfile.TemporaryDirectory() as d:
             f = Path(d) / 't.txt'
             f.write_text('x')
             with mock.patch.object(post, 'send', side_effect=AssertionError('send')):
-                code = post.main(['--state', d, 'post', '--intent', 't', '--text-file', str(f), '--record', 'directory'], io.StringIO())
+                code = post.main(['--state', d, 'post', '--intent', 't', '--text-file', str(f), '--object', 'directory'], io.StringIO())
         self.assertEqual(code, 1)
 
 

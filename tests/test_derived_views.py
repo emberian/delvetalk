@@ -1,17 +1,16 @@
-"""Derived views (FOUNDATION §16): pure definitions an object names in `views()`, of its state
+"""Derived views (FOUNDATION §3, §9): pure definitions an object names in `views()`, of its state
 and the reader's context, that another object asks for with `viewDerived {object, view}`.
-Garden's `byColour` counts its bells by colour as a relation keyed {colour}; Place's
-`affordances` is what can be done there, as spells. The pure definitions run here through
-the checker; asking for one through the host waits for the host's `viewDerived`
-(HOST-HANDOFF §7 item 6), so that case is an expected failure until it lands.
+Garden's `byColour` counts its bells by colour as a relation keyed {colour}, run here through
+the checker and asked for through the host by another object.
+
+Evidence for FOUNDATION §9 (layer: objects).
 """
 import unittest
 
 from tests.test_chain import Chain, garden_seed, town_kinds
-from tests.test_objects import closure, run_pure
-from tests.test_replay import rows
-from tests.test_turn_world import label, nat, record
-from tests.test_turn_world import declared
+from tests.test_objects import run_pure
+from tests.wire import label, nat, record, rows
+from tests.bend import closure, declared
 
 GARDEN = declared("""edition ObjectiveBend 1
 import ./List.obend as Lists

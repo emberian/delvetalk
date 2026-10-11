@@ -5,20 +5,18 @@ request it would send and exits 2 without reading credentials or touching the ne
 import argparse
 import hashlib
 import json
-import os
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from transport.delve import Client, Failure, canonical, http_transport
-from transport.host import CLOCK, HostClient
-from transport.observe import MENTION
+from transport.atproto.sign import tid
+from transport.delve import POST as COLLECTION, Client, Failure, canonical, http_transport
+from transport.host import CLOCK, HostClient, add_host_args
+from transport.observe import MENTION, wiki_target
 
 FLAG = '--i-am-ember-and-authorize-posting'
-COLLECTION = 'town.delve.feed.post'
 MAX_TEXT = 64 * 1024
-TID = '234567abcdefghijklmnopqrstuvwxyz'
 CREDENTIALS = '~/.config/delvetown/credentials.json'
 
 
@@ -64,19 +62,6 @@ def reserve(host, intent, source):
     if got.get('status') != 'reserved':
         raise Failure('reserve_failed', str(got.get('message', got.get('status'))))
     return got
-
-
-def wiki_target(text):
-    """(page, section) of an agentwiki post: `wiki: <page>` is the whole page (section ""), `edit: <page> › <section>`
-    one section; None for any other text."""
-    head = text.split('\n', 1)[0]
-    if head.startswith('wiki: ') and head[6:].strip():
-        return head[6:].strip(), ''
-    if head.startswith('edit: ') and ' › ' in head:
-        page, section = head[6:].split(' › ', 1)
-        if page.strip() and section.strip():
-            return page.strip(), section.strip()
-    return None
 
 
 def slot_record(text):
@@ -127,14 +112,6 @@ def ledger(state, intent):
     return path, (json.loads(path.read_text()) if path.exists() else None)
 
 
-def tid(micros, clock):
-    """An AT Protocol TID: 53 bits of microseconds and 10 of clock id, base32-sortable."""
-    n, out = (micros << 10) | (clock & 1023), ''
-    for _ in range(13):
-        out, n = TID[n & 31] + out, n >> 5
-    return out
-
-
 def send(request, intent, state, credentials, host, client=None, now=time.time):
     """Network write, at most once per intent: the host reserves it first (`delve`, counted against its quota); the record
     key is fixed in the ledger before the first attempt, and a retry that finds a record under it adopts that record. The
@@ -154,7 +131,7 @@ def send(request, intent, state, credentials, host, client=None, now=time.time):
             host.send({'op': 'world-post-release', 'principal': CLOCK, 'intent': intent, 'reason': 'credentials unreadable'})
         raise
     if fresh:
-        got = {'intent': intent, 'rkey': tid(int(now() * 1e6), int(hashlib.sha256(intent.encode()).hexdigest()[:4], 16))}
+        got = {'intent': intent, 'rkey': tid(int(now() * 1e6), int(hashlib.sha256(intent.encode()).hexdigest()[:4], 16) & 1023)}
         write_atomic(path, got)
     session = client.write('com.atproto.server.createSession',
                            {'identifier': cred['identifier'], 'password': cred['password']})
@@ -237,9 +214,8 @@ def main(argv=None, out=None, client=None):
     p.add_argument('--intent', required=True)
     p.add_argument('--credentials', default=CREDENTIALS)
     p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
-    p.add_argument('--host-socket', metavar='PATH', help='serve\'s socket: reserve, read the quota, record posts')
-    p.add_argument('--world', default=os.environ.get('DELVETALK_WORLD', 'town'))
-    p.add_argument('--object', '--record', dest='record', metavar='OBJECT', help='the object this card addresses: after a confirmed post, world-posted {object, intent} records it and settles its reservation; required for a live post (the dry run may omit it)')
+    add_host_args(p)  # serve's socket: reserve, read the quota, record posts
+    p.add_argument('--object', metavar='OBJECT', help='the object this card addresses: after a confirmed post, world-posted {object, intent} records it and settles its reservation; required for a live post (the dry run may omit it)')
     p.add_argument('--slot', metavar='PRINCIPAL:INTENT', help='the slot the post settles, as principal:intent')
     p.add_argument(FLAG, dest='authorized', action='store_true', default=False)
     a = ap.parse_args(argv)
@@ -248,7 +224,7 @@ def main(argv=None, out=None, client=None):
             d = json.loads(Path(a.draft).read_text())
             if d.get('posted'):
                 raise Failure('draft_already_posted')
-            a.reply_to, a.record, a.slot = a.reply_to or d.get('replyTo'), a.record or draft_object(d), a.slot or d.get('slot')
+            a.reply_to, a.object, a.slot = a.reply_to or d.get('replyTo'), a.object or draft_object(d), a.slot or d.get('slot')
         if bool(a.text_file) + bool(a.wiki_page) + bool(a.wiki_edit) + bool(a.draft) != 1 or (not (a.text_file or a.draft) and not a.body_file):
             raise Failure('choose_one_of', '--text-file | --wiki-page/--wiki-edit with --body-file')
         if a.draft:
@@ -261,9 +237,9 @@ def main(argv=None, out=None, client=None):
             raise Failure('wiki_edit_needs_reply_to', 'reply to the page post')
         for h in a.mention:
             text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
-        if (a.record or a.authorized) and not a.host_socket:
+        if (a.object or a.authorized) and not a.host_socket:
             raise Failure('record_needs_journal', 'the host reserves every post')
-        if a.authorized and not a.record:
+        if a.authorized and not a.object:
             raise Failure('live_post_needs_object', 'world-posted {object, intent} settles the reservation; without it the post stays counted')
         slot = slot_record(a.slot) if a.slot else None
         reader = client or Client(http_transport)
@@ -275,15 +251,15 @@ def main(argv=None, out=None, client=None):
         try:
             if not a.authorized:
                 plan = {'dry_run': True, 'intent': a.intent, 'quota': posts(host), 'request': request}
-                if a.record:
-                    plan['record'] = {'op': 'world-posted', 'object': a.record, 'slot': slot}
+                if a.object:
+                    plan['record'] = {'op': 'world-posted', 'object': a.object, 'slot': slot}
                     if wiki_target(text):
                         plan['record']['page'], plan['record']['section'] = wiki_target(text)
                 out.write(canonical(plan) + '\n')
                 return 2
             result = send(request, a.intent, Path(a.state), a.credentials, host)
-            if a.record:
-                result['recorded'] = record_posted(host, result, a.record, slot, wiki_target(text), a.intent)
+            if a.object:
+                result['recorded'] = record_posted(host, result, a.object, slot, wiki_target(text), a.intent)
         finally:
             if host:
                 host.close()

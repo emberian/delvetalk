@@ -2,7 +2,7 @@
 """One playtest run -> the ring's harvest: the rehearsal's rows, then the ring's own, as Markdown (or one JSON document).
 Reads the run directory only: no network, no credentials. It counts and joins; it judges nothing (docs/RING-OF-FIRE.md 5, 6).
 
-    python3 deploy/ring/harvest.py --run ~/.delvetalk-playtest/current [--cast ~/.ring] [--json]
+    python3 deploy/ring/harvest.py --run ~/.delvetalk-playtest/current [--json]
 """
 import argparse
 import collections
@@ -66,9 +66,9 @@ def access(state):
             'topPaths': [[p, n] for p, n in paths.most_common(5)], 'topBytes': [[p, n] for p, n in sent.most_common(3)]}
 
 
-def harvest(run, cast_root=None):
+def harvest(run):
     run, state = Path(run).resolve(), Path(run).resolve() / 'state'
-    journal = next((p for p in (run / 'world.journal', state / 'world.journal') if p.exists()), None)
+    journal = state / 'town.journal' if (state / 'town.journal').exists() else None  # serve's journal of the home world
     entries, tags, classes, reasons = journal_stats(journal) if journal else ([], collections.Counter(), collections.Counter(), {})
     by_intent = {(e.get('identity') or {}).get('intent'): e for e in entries}
     obs = observations(state)
@@ -76,7 +76,6 @@ def harvest(run, cast_root=None):
     interp = [json.loads(p.read_text()) for p in (state / 'interpretations').glob('*.json')] if (state / 'interpretations').exists() else []
     awaiting = {json.loads(p.read_text())['uri'] for p in (state / 'awaiting').glob('*.json')} if (state / 'awaiting').exists() else set()
     steps, spend, hand = jsonl(run / 'bridge.log'), jsonl(state / 'model-spend.jsonl'), jsonl(state / 'hand-log.jsonl')
-    roles = {c['handle'].lower(): c for c in (json.loads(p.read_text()) for p in Path(cast_root).glob('*/cast.json'))} if cast_root else {}
     r = {'run': str(run), 'observed': dict(collections.Counter(o['kind'] for o in obs)), 'journal': {
         'height': len(entries), 'bytes': journal.stat().st_size if journal else 0, 'outcomes': dict(tags), 'refusedByClass': dict(classes),
         'medianSuspendedBytes': getattr(journal_stats, 'sizes', {}).get('suspended', {}).get('median', 0)}}
@@ -104,10 +103,9 @@ def harvest(run, cast_root=None):
     quoted, drafted_cards = collections.Counter(), set()
     for d in drafts:
         drafted_cards.update(CARD.findall(d.get('text') or ''))
-    people, arcs = {}, {a: {'step': 0, 'by': None, 'offBrief': False, 'steps': []} for a in ARCS}
+    people, arcs = {}, {a: {'step': 0, 'by': None, 'steps': []} for a in ARCS}
     for handle, mine in by_handle.items():
         mine.sort(key=lambda o: (o['createdAt'], o['uri']))
-        role = roles.get(handle.lower(), {})
         hours = collections.Counter(o['createdAt'][:13] for o in mine)
         outcomes = [(o, by_intent.get(o['uri'])) for o in mine]
         refused = [((e.get('outcome') or {}).get('class'), (e.get('outcome') or {}).get('clause')) for _, e in outcomes if e and (e.get('outcome') or {}).get('tag') == 'refused']
@@ -117,7 +115,7 @@ def harvest(run, cast_root=None):
         for o in mine:
             quoted.update(CARD.findall(o['text']))
         spells = sum(1 for o in mine if SPELL.search(o['text']))
-        people[handle] = {'role': role.get('role'), 'posts': len(mine), 'spells': spells, 'prose': len(mine) - spells, 'maxPerHour': max(hours.values()),
+        people[handle] = {'posts': len(mine), 'spells': spells, 'prose': len(mine) - spells, 'maxPerHour': max(hours.values()),
                           'usage': sum(1 for d in drafts if d.get('usage') and d.get('replyHandle') == handle),
                           'obend': sum(1 for o in mine if FENCE.search(o['text'])),
                           'refused': dict(collections.Counter(c for c, _ in refused)),
@@ -131,10 +129,9 @@ def harvest(run, cast_root=None):
             card, action = m.group(1).split('/')[0], m.group(2)
             if card in ARCS and action in ARCS[card]:
                 step = ARCS[card].index(action) + 1
-                told = card in (role.get('arcs') or '').split(',')
-                arcs[card]['steps'].append({'step': step, 'action': action, 'by': handle, 'told': told, 'at': o['createdAt']})
+                arcs[card]['steps'].append({'step': step, 'action': action, 'by': handle, 'at': o['createdAt']})
                 if step > arcs[card]['step']:
-                    arcs[card].update(step=step, by=handle, offBrief=not told)
+                    arcs[card].update(step=step, by=handle)
     r['people'], r['arcs'] = people, arcs
     r['cards'] = {'quoted': dict(quoted.most_common()), 'draftedNeverQuoted': sorted(drafted_cards - set(quoted))}
     return r
@@ -170,13 +167,13 @@ def markdown(r):
     w(f"| addressed posts with no reply | {len(r['noReply'])} |")
     w(f"| journal height, bytes, median suspended | {j['height']}, {j['bytes']:,}, {j['medianSuspendedBytes']:,} |\n")
     w('### By principal\n')
-    w('| Handle | Role | Posts | Spells | Prose | Max/hour | `?` | obend | Refused | Recurring | Minutes to first spell | Refusals before |')
-    w('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+    w('| Handle | Posts | Spells | Prose | Max/hour | `?` | obend | Refused | Recurring | Minutes to first spell | Refusals before |')
+    w('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |')
     for h, p in sorted(r['people'].items()):
-        w(f"| {h} | {p['role'] or ''} | {p['posts']} | {p['spells']} | {p['prose']} | {p['maxPerHour']} | {p['usage']} | {p['obend']} | {p['refused'] or ''} | {p['recurring'] or ''} | {p['minutesToFirstSpell'] if p['minutesToFirstSpell'] is not None else 'none'} | {p['refusalsBeforeFirstSpell']} |")
-    w('\n### Arcs\n\n| Arc | Furthest step | By | Off brief | Steps |\n| --- | --- | --- | --- | --- |')
+        w(f"| {h} | {p['posts']} | {p['spells']} | {p['prose']} | {p['maxPerHour']} | {p['usage']} | {p['obend']} | {p['refused'] or ''} | {p['recurring'] or ''} | {p['minutesToFirstSpell'] if p['minutesToFirstSpell'] is not None else 'none'} | {p['refusalsBeforeFirstSpell']} |")
+    w('\n### Arcs\n\n| Arc | Furthest step | By | Steps |\n| --- | --- | --- | --- |')
     for a, v in r['arcs'].items():
-        w(f"| {a} | {v['step']} of {len(ARCS[a])} ({ARCS[a][v['step'] - 1] if v['step'] else 'none'}) | {v['by'] or ''} | {v['offBrief']} | {', '.join(s['action'] + ' by ' + s['by'] for s in v['steps'])} |")
+        w(f"| {a} | {v['step']} of {len(ARCS[a])} ({ARCS[a][v['step'] - 1] if v['step'] else 'none'}) | {v['by'] or ''} | {', '.join(s['action'] + ' by ' + s['by'] for s in v['steps'])} |")
     w('\n### Cards quoted\n')
     w(', '.join(f'{c} {n}' for c, n in r['cards']['quoted'].items()) or 'none')
     w('\nDrafted and never quoted: ' + (', '.join(r['cards']['draftedNeverQuoted']) or 'none') + '\n')
@@ -192,10 +189,9 @@ def markdown(r):
 def main(argv=None):
     ap = argparse.ArgumentParser(prog='harvest.py')
     ap.add_argument('--run', required=True)
-    ap.add_argument('--cast', metavar='ROOT', help="cast.sh's --state: joins handles to roles and arcs")
     ap.add_argument('--json', action='store_true')
     a = ap.parse_args(argv)
-    r = harvest(a.run, a.cast)
+    r = harvest(a.run)
     sys.stdout.write(json.dumps(r, indent=1, ensure_ascii=False) + '\n' if a.json else markdown(r))
     return 0
 

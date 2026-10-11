@@ -11,8 +11,9 @@ prefix scan. Workloads over world library code are bounded where that code is te
 """
 import unittest
 
-from tests.test_turn import Host, nat
+from tests.test_turn import Host
 from tests.test_objects import run_pure
+from tests.wire import nat
 
 BIG = {"ticks": "1000000"}
 

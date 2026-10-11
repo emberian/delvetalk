@@ -67,12 +67,12 @@ class HostClient:
                 return json.loads(line)
             except TimeoutError:  # the host took the request and did not answer; a turn it ran may still commit: never re-sent
                 self.close()
-                return {'status': 'error', 'class': 'hostTimeout', 'message': f'hostd did not answer within {self.timeout} seconds'}
+                return {'status': 'error', 'class': 'hostTimeout', 'message': f'the host did not answer within {self.timeout} seconds'}
             except (OSError, ValueError):
                 self.close()
                 if fresh or request.get('op') not in IDEMPOTENT:  # a stale reused connection: once more on a new one, if the op is safe to repeat
                     break
-        return {'status': 'error', 'class': 'hostUnavailable', 'message': f'hostd unavailable at {self.path} after {time.monotonic() - began:.1f} s'}
+        return {'status': 'error', 'class': 'hostUnavailable', 'message': f'the host is unavailable at {self.path} after {time.monotonic() - began:.1f} s'}
 
     def at(self, heap):
         return HostClient(self.path, self.world, heap=heap, timeout=self.timeout)

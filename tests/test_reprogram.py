@@ -7,9 +7,11 @@ Programmable from within: reprogram and amend, judged by the object's own law.
 """
 import unittest
 
-from tests.test_turn_world import ON_DISK, TurnWorld, closure, label, nat, record, fixture, declared
+from tests.test_turn_world import TurnWorld, fixture
+from tests.wire import label, nat, record
+from tests.bend import MODULES, closure, declared
 
-with open(ON_DISK["Counter"]) as handle:
+with open(MODULES["Counter"]) as handle:
     COUNTER = handle.read()
 
 assert "add 1n" in COUNTER and "state.count + 1n" in COUNTER

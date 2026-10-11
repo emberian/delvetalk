@@ -14,25 +14,10 @@ import unittest
 
 
 from tests import host
-from tests.test_turn_world import closure, label, nat, record
+from tests.wire import label, listing, nat, variant
+from tests.bend import closure
 
 ALPHABET = ["a", "b", " ", "\n", "é", "日本", "😀", "\\", '"', "x y", "\n\n", "tab\t", ""]
-
-
-def variant(name, **fields):
-    return {"tag": "variant", "label": name, "payload": record(**fields)}
-
-
-def nil():
-    return {"tag": "list", "items": []}
-
-
-def cons(head, tail):
-    return {"tag": "list", "items": [head] + tail["items"]}
-
-
-def as_list(items):
-    return {"tag": "list", "items": list(items)}
 
 
 # A document as a small Python tree; to_wire and to_bend are its two renderings.
@@ -47,7 +32,7 @@ def gen(rng, depth):
 def to_wire(d):
     if d[0] == "text":
         return variant("text", value=label(d[1]))
-    return variant("sequence", items=as_list([to_wire(c) for c in d[1]]))
+    return variant("sequence", items=listing([to_wire(c) for c in d[1]]))
 
 
 def lit(s):
@@ -116,16 +101,16 @@ class RenderTests(unittest.TestCase):
         sys.setrecursionlimit(20000)
         nested = variant("text", value=label("leaf"))
         for _ in range(63):
-            nested = variant("sequence", items=as_list([nested]))
+            nested = variant("sequence", items=listing([nested]))
         self.assertEqual(self.s.render(nested)["status"], "rendered")  # depth 64
-        r = self.s.render(variant("sequence", items=as_list([nested])))
+        r = self.s.render(variant("sequence", items=listing([nested])))
         self.assertIn("document depth exceeds 64", r.get("message", ""), r)
-        inner = lambda: variant("sequence", items=as_list([variant("text", value=label(""))
+        inner = lambda: variant("sequence", items=listing([variant("text", value=label(""))
                                                        for _ in range(200)]))
-        many = variant("sequence", items=as_list([inner() for _ in range(200)]))
+        many = variant("sequence", items=listing([inner() for _ in range(200)]))
         r = self.s.render(many)
         self.assertIn("document exceeds 65536 nodes", r.get("message", ""), str(r)[:200])
-        big = variant("sequence", items=as_list([variant("text", value=label("x" * 100000)) for _ in range(11)]))
+        big = variant("sequence", items=listing([variant("text", value=label("x" * 100000)) for _ in range(11)]))
         r = self.s.render(big)
         self.assertIn("document text exceeds 1048576 bytes", r.get("message", ""), str(r)[:200])
         for bad in (nat(1), variant("nonsense"), variant("text", value=nat(1)), variant("sequence"),

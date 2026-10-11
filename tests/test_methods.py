@@ -10,7 +10,8 @@ both recorded in the artifact.
 """
 import unittest
 
-from tests.test_objects import compile_job, closure
+from tests.test_objects import compile_job
+from tests.bend import closure
 
 
 LAW_HEAD = """edition ObjectiveBend 1

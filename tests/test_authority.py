@@ -12,10 +12,9 @@ has one method per behaviour; the laws are inserted before `def initial` per tes
 import json
 import unittest
 
-from tests.test_replay import relation
-from tests.test_chain import field, nil, reference
-from tests.test_turn_world import TurnWorld, closure, label, nat, record
-from tests.test_turn_world import declared
+from tests.test_turn_world import TurnWorld
+from tests.wire import field, label, listing, nat, nil, record, reference, relation
+from tests.bend import closure, declared
 
 LEDGER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -96,10 +95,6 @@ def modules(law="", comment=""):
 
 def seed(count=0, last_by="ember", entries=None, planting=""):
     return record(count=nat(count), lastBy=label(last_by), entries=entries or nil(), planting=label(planting))
-
-
-def items(*texts):
-    return {"tag": "list", "items": [label(text) for text in texts]}
 
 
 def text_of(result):
@@ -184,7 +179,7 @@ class LawsOnWho(Authority):
         self.assertEqual(field(self.state("a"), "lastBy"), label("kim"))
 
     def test_append_only_and_unchanged_refuse_what_they_name_and_admit_the_rest(self):
-        self.ledger("a", "law grow: appendOnly(entries)\nlaw fixed: unchanged(planting)\n", entries=items("x"), planting="oak")
+        self.ledger("a", "law grow: appendOnly(entries)\nlaw fixed: unchanged(planting)\n", entries=listing([label("x")]), planting="oak")
         self.assertEqual(self.turn("a", "append", record(item=label("y")))["status"], "admitted")
         self.assertEqual(self.turn("a", "bump")["status"], "admitted")
         for method, arg, clause in (("amendOne", record(old=label("x"), item=label("z")), "grow"),
@@ -192,7 +187,7 @@ class LawsOnWho(Authority):
             r = self.turn("a", method, arg)
             self.assertEqual((r["status"], self.outcome(r)["clause"]), ("refused", clause), method)
         self.assertEqual(self.version("a"), 2)
-        self.assertEqual((field(self.state("a"), "entries"), field(self.state("a"), "planting")), (items("x", "y"), label("oak")))
+        self.assertEqual((field(self.state("a"), "entries"), field(self.state("a"), "planting")), (listing([label("x"), label("y")]), label("oak")))
 
     def test_request_caller_is_the_calling_objects_id_in_a_call_and_empty_in_a_direct_turn(self):
         law = 'law only: request.kind == 0 or request.kind == 3 implies request.caller == "garden"\n'
@@ -231,20 +226,6 @@ class LawsOnWho(Authority):
         self.assertEqual((big["status"], out["class"], out["clause"]), ("refused", "lawRefused", "strictWrites"))
         self.assertEqual(self.count("a"), "2")
 
-
-class Clauses(Authority):
-    def setUp(self):
-        super().setUp()
-        self.ledger("a", entries=items("x"))
-
-    def edit(self, kind, field_name="count", **payload):
-        return {"tag": "record", "fields": [{"name": field_name, "value": {
-            "tag": "variant", "label": kind, "payload": record(**payload)}}]}
-
-    def propose(self, identity, edits):
-        return self.host.send(op="world-propose", principal="ember", identity=identity,
-                              roots=[{"object": "a", "version": self.version("a")}],
-                              writes=[{"object": "a", "edits": edits}])
 
 class HostAssignsTheTurn(Authority):
     def setUp(self):

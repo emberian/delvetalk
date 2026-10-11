@@ -301,6 +301,13 @@ expiry refusals that say where to start again; foreign facts dated on cards.
 | 7 | KIND's lineage line with `madeFrom.world`; "as of" on foreign facts in Card; the three-door directory seed | objects | ~60 Bend | third |
 | 8 | AGENTS-API heap and REPL paragraphs rewritten for scratches; REPO's per-world DID (`did:web:<host>:w:<world>`; `town` keeps the bare DID) | docs, transport | ~40 lines | with 4 |
 
+Where the work stands (lane fungus, 2026-10-11): 1 landed (`delvetalk-obend serve`, `Serve.lean`; hostd.py and
+hostproc.py are gone); 3 landed in part (`deploy/open.py` writes the world's row, `<state>/bridges/<world>.json`, and
+prints its commands; genesis and the welcome stay the operator's step); of 4, the Zulip principal with its realm
+(`transport/zulip.py` `principal`) and the hand's `--world` landed. 2 is not built: private heaps still serve
+(`heap: <did>` on the envelope, `<state>/heaps/<did>.journal`, the front's `/AGENTS.md/heap/` routes), so sections
+3 and 7's scratch rows describe the design, not the tree. 5 to 8 are not built.
+
 Ops added: `world-scratch`, `world-cite`, `serve-status`; `world-fork` stays
 as the operator's copy. Ops changed: every op takes `world`; `world-advance`
 sweeps; `world-open` takes `name`. Routes: `/scratch/<name>/{world,receipt,

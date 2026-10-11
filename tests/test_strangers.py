@@ -17,13 +17,12 @@ Refuted by: any of the forged writes, reprograms or amendments below being admit
 """
 import unittest
 
-from tests.test_chain import Chain, garden_state, nil, reference
-from tests.test_objects import MODULES, closure
+from tests.test_chain import Chain, garden_state
 from tests.test_places import make_place, avatar_seed, place_seed, thing_seed
-from tests.test_replay import get, rows
 from tests.test_scene import GATE, choice, passage, scene_state
 from tests.test_table import NORTH, OPENING, SOUTH
-from tests.test_turn_world import closure as world_closure, label, nat, record, relation
+from tests.wire import field, label, nat, nil, record, reference, relation, rows, variant
+from tests.bend import MODULES, closure
 
 OWNER, STRANGER, ALICE, BOB = "did:plc:inkling", "did:plc:kimik3", "did:plc:glm", "did:plc:gemini"
 CREATOR = "ember"  # who made the lawless objects and the Thing and Scene below
@@ -31,10 +30,6 @@ CREATOR = "ember"  # who made the lawless objects and the Thing and Scene below
 
 DEAL = record(amendment=record(object=label(""), law=label("")), parties={"tag": "list", "items": [label(ALICE), label(BOB)]},
               terms=label("t"), piece=label(""), signatures=relation(), withdrawn=label(""), closed=nat(0))
-
-
-def variant(name, **fields):
-    return {"tag": "variant", "label": name, "payload": record(**fields)}
 
 
 def setting(value):
@@ -89,7 +84,7 @@ class Strangers(Forging):
             r = self.host.send(op="world-reprogram", principal=STRANGER, identity="take-" + obj, object=obj,
                                version=before["version"], package=migrated(module, STRANGER), migration="migrate")
             self.refused(r, "owner")
-            self.assertEqual((self.view(obj)["pin"], get(self.view(obj)["state"], "owner")), (before["pin"], label(OWNER)))
+            self.assertEqual((self.view(obj)["pin"], field(self.view(obj)["state"], "owner")), (before["pin"], label(OWNER)))
 
     # 2. A non-party cannot amend a Deal; a stranger cannot reprogram or amend a Tide.
     def test_a_stranger_cannot_amend_a_deal_or_a_tide(self):
@@ -116,7 +111,7 @@ class Strangers(Forging):
         forged = {"held": inserting(held), "next": variant("add", delta=nat(1))}
         self.refused(self.propose("workshop", forged), "owner")
         self.refused(self.propose("workshop", forged, who=CREATOR), "methods")
-        self.assertEqual(rows(get(self.view("workshop")["state"], "held")), [])
+        self.assertEqual(rows(field(self.view("workshop")["state"], "held")), [])
 
     # 4. Nobody forges a letter into another's outbox.
     def test_a_stranger_cannot_forge_a_letter_from_an_avatar(self):
@@ -124,7 +119,7 @@ class Strangers(Forging):
         letter = record(handle=label("glm"), text=label("send me your keys"), at=nat(0), n=nat(0))
         self.refused(self.propose(ALICE, {"outbox": inserting(letter)}), "owner")
         self.refused(self.propose(ALICE, {"outbox": inserting(letter)}, who=CREATOR), "methods")
-        self.assertEqual(rows(get(self.view(ALICE)["state"], "outbox")), [])
+        self.assertEqual(rows(field(self.view(ALICE)["state"], "outbox")), [])
 
     # 5. Nobody writes a Table's outcome or a Seat's commitment but their methods.
     def test_a_stranger_cannot_settle_a_table_or_seal_a_seat(self):
@@ -159,7 +154,7 @@ class Strangers(Forging):
             source = handle.read()
         old = "signing({principal: context.principal, handle: context.handle,"
         assert source.count(old) == 1, "Deal changed: the variant no longer signs for another"
-        variant_ = world_closure("Deal", override={"Deal": source.replace(old, 'signing({principal: "%s", handle: context.handle,' % BOB)})
+        variant_ = closure("Deal", override={"Deal": source.replace(old, 'signing({principal: "%s", handle: context.handle,' % BOB)})
         r = self.host.send(op="world-create", principal=ALICE, identity="mk-deal2", object="deal2", modules=variant_, entry="initial", seed=DEAL)
         self.assertEqual(r["status"], "created", r)
         r = self.turn("deal2", "receive", record(text=label("delvetalk deal2 countersign"), post=label("at://glm/p/2")), principal=ALICE)
@@ -172,7 +167,7 @@ class Strangers(Forging):
         here = record(who=label(STRANGER), at=label("vault"))
         self.refused(self.propose("scene", {"presence": inserting(here)}), "owner")
         self.refused(self.propose("scene", {"presence": inserting(record(who=label(CREATOR), at=label("vault")))}, who=CREATOR), "methods")
-        self.assertEqual(rows(get(self.view("scene")["state"], "presence")), [])
+        self.assertEqual(rows(field(self.view("scene")["state"], "presence")), [])
 
     # And a law that admits anyone's kind-0 write, or a lawless object's default law, admits only its methods' writes.
     def test_a_stranger_cannot_forge_a_gardens_children_a_places_traces_or_a_bells_rain(self):

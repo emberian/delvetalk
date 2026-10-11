@@ -13,7 +13,6 @@ import argparse
 import configparser
 import hashlib
 import json
-import os
 import re
 import sys
 import urllib.parse
@@ -22,8 +21,9 @@ from pathlib import Path
 
 from transport.bridge import unposted, write_atomic
 from transport.delve import Failure, canonical, http_transport
-from transport.observe import MAX_TEXT, TAG, Observer, classify
-from transport.post import draft_object, ledger, record_posted, reserve, slot_record, wiki_target
+from transport.observe import MAX_TEXT, TAG, Observer, classify, wiki_target
+from transport.host import HostClient, add_host_args
+from transport.post import draft_object, ledger, record_posted, reserve, slot_record
 
 STREAM = 'delvetalk'
 BATCH = 100
@@ -146,10 +146,9 @@ class ZulipObserver(Observer):
         mentions = [{'did': None, 'handle': n} for n in names]
         text = text.strip()
         tags = list(dict.fromkeys(TAG.findall(text)))
-        kind, wiki = classify(text, parent, mentions, tags, summon=bot)
         return {'uri': uri, 'cid': str(m['id']), 'author': {'did': principal(self.client.realm, m['sender_id']), 'handle': m['sender_full_name']},
                 'createdAt': created_at(m), 'text': text, 'replyTo': parent, 'root': row[0] if row and parent else None,
-                'mentions': mentions, 'tags': tags, 'kind': kind, 'wiki': wiki}
+                'mentions': mentions, 'tags': tags, 'kind': classify(text, parent, mentions, tags, summon=bot)}
 
     def store(self, m, me):
         """Fold one message into its topic; observe it unless it is ours. True if new."""
@@ -199,7 +198,7 @@ class ZulipObserver(Observer):
                 return
 
 
-def deliver(state, host, client, stream, topic, text, obj=None, slot=None, now=None, intent=None):
+def deliver(state, host, client, stream, topic, text, obj=None, slot=None, intent=None):
     """Post `text` to stream>topic once per intent, then tell the host the post exists for
     `obj` (world-posted), so replies in the topic route to it. The stream's newest id is persisted before the send; a retry
     adopts our message with this text after it rather than sending again. The host's `postQuota` is delve.town etiquette and does
@@ -217,7 +216,7 @@ def deliver(state, host, client, stream, topic, text, obj=None, slot=None, now=N
     return {**got['result'], 'recorded': record_posted(host, got['result'], obj, slot, wiki_target(text), intent) if obj else None}
 
 
-def post_drafts(state, host, client, stream, now=None, topic=None):
+def post_drafts(state, host, client, stream, topic=None):
     """Post every unposted draft with text, oldest first, with no hourly cap; record each with the host.
     A reply draft goes to its post's topic, addressed to its author; a page publication to a topic named for the page
     (a section edit waits until its page is recorded and the bridge has given it the page post to reply to).
@@ -239,7 +238,7 @@ def post_drafts(state, host, client, stream, now=None, topic=None):
             continue
         obj = draft_object(d)
         try:
-            got = deliver(state, host, client, target[0], target[1], text, obj, slot_record(d['slot']) if d.get('slot') else None, now,
+            got = deliver(state, host, client, target[0], target[1], text, obj, slot_record(d['slot']) if d.get('slot') else None,
                           intent=f'zulip-{path.stem}')
         except Failure as f:
             held.append({'file': path.name, 'reason': f.code})
@@ -263,8 +262,7 @@ def main(argv=None, out=None, transport=http_transport):
     p.add_argument('--text-file', required=True)
     p.add_argument('--object', help='the object the post addresses: world-posted is called for it')
     p.add_argument('--slot', metavar='PRINCIPAL:INTENT')
-    p.add_argument('--host-socket', metavar='PATH')
-    p.add_argument('--world', default=os.environ.get('DELVETALK_WORLD', 'town'))
+    add_host_args(p)
     a = ap.parse_args(argv)
     try:
         client = Client(a.zuliprc, transport)
@@ -273,7 +271,6 @@ def main(argv=None, out=None, transport=http_transport):
             ob.poll()
             ob.drain(lambda js: (out.write(js + '\n'), out.flush()))
             return 0
-        from transport.host import HostClient
         host = HostClient(a.host_socket, a.world) if a.host_socket else None
         if a.object and not host:
             raise Failure('record_needs_journal')

@@ -10,7 +10,8 @@ the method; a form's bounds not shown by world-inspect.
 import unittest
 
 from tests.test_chain import Chain, town_kinds
-from tests.test_turn_world import closure, declared, label, record
+from tests.wire import label, nat, record
+from tests.bend import closure, declared
 
 
 BENCH = declared("""edition ObjectiveBend 1
@@ -42,9 +43,7 @@ def receive(state: State, input: {text: String, post: String}, context: Abi.Cont
 class FormBounds(Chain):
     def setUp(self):
         super().setUp()
-        seen, out = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out)
+        out = closure(*("Abi", "List", "Form", "Plan", "World"))
         self.make("bench", out + [{"name": "Bench", "source": BENCH}], record())
 
     def got(self, name="got"):
@@ -89,7 +88,6 @@ class ExpectedForm(Chain):
 
     def test_the_expected_form_carries_the_declared_bounds(self):
         from tests.test_chain import garden_seed
-        from tests.test_turn_world import nat
         self.make("garden", closure("Garden"), garden_seed())
         town_kinds(self.host.send)
         r = self.turn("garden", "plant", record(colour=label("amber"), seed=nat(3)), principal="glm")

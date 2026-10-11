@@ -5,13 +5,15 @@ instances, expansion nodes, row width) on its way to a packet. `Generics.maxInst
 is the generic instances one package specializes; past it the refusal names the count, the
 bound and the module and declaration that asked for the next one.
 
-    python3 -W ignore -m tests.run tests.test_package_bounds
+    python3 -W ignore -m tests.run test_package_bounds
+
+Evidence for FOUNDATION §2 Limits (layer: kernel).
 """
 import json
 import unittest
 
 from tests import host
-from tests.test_objects import closure
+from tests.bend import closure
 
 MAX_PACKAGE_BYTES = 131072  # Delvetalk.Bounds.maxPackageBytes
 MAX_MODULE_BYTES = 524288  # Delvetalk.Bounds.maxModuleBytes

@@ -11,13 +11,9 @@ post the spell came in (`context.inputOrigin.post`), and a turn from no post is 
 """
 import unittest
 
-from tests.test_turn_world import relation
-from tests.test_replay import rows
 from tests.test_chain import Chain
-from tests.test_objects import closure
-from tests.test_places import listing
-from tests.test_replay import get
-from tests.test_turn_world import label, record
+from tests.wire import field, label, listing, record, relation, rows
+from tests.bend import MODULES, closure
 
 ARTIST, GALLERY, CURATOR = "did:plc:glm", "did:plc:inkling", "did:plc:gemini"
 
@@ -44,12 +40,10 @@ class Deals(Chain):
     def test_three_countersignatures_amend_an_objects_law_and_a_stranger_is_refused(self):
         """A deal at rest applies its amendment by `amend`, the deal as caller, judged by the
         object's own law."""
-        from tests.test_objects import MODULES
-        from tests.test_turn_world import closure as world_closure
         law = 'law steward: request.subject == "ember" or request.caller == "deal"\n'
         source = open(MODULES["Counter"]).read().replace("record State:", law + "record State:", 1)
         r = self.host.send(op="world-create", principal="ember", identity="mk-ledger", object="ledger",
-                           modules=world_closure("Counter", override={"Counter": source}), entry="initial", seed=record(count={"tag": "natural", "value": "0"}))
+                           modules=closure("Counter", override={"Counter": source}), entry="initial", seed=record(count={"tag": "natural", "value": "0"}))
         self.assertEqual(r["status"], "created", r)
         new = 'law steward: request.caller == "deal" or request.subject == "did:plc:glm"'
         r = self.host.send(op="world-create", principal=ARTIST, identity="mk-deal", object="deal", modules=closure("Deal"), entry="initial",
@@ -76,9 +70,9 @@ class Deals(Chain):
         unposted = self.turn("exhibition", "countersign", principal=CURATOR)
         self.assertEqual(unposted["result"]["payload"]["fields"][0]["value"], label("unposted"))
         self.assertEqual(self.sign(CURATOR, "at://gemini/p/1", "exhibition")["result"]["label"], "atRest")
-        signatures = rows(get(self.state("exhibition"), "signatures"))
+        signatures = rows(field(self.state("exhibition"), "signatures"))
         signed = [(ARTIST, "at://glm/p/1"), (GALLERY, "at://inkling/p/1"), (CURATOR, "at://gemini/p/1")]
-        self.assertEqual([(get(s, "principal")["value"], get(s, "post")["value"]) for s in signatures],
+        self.assertEqual([(field(s, "principal")["value"], field(s, "post")["value"]) for s in signatures],
                          sorted(signed, key=lambda s: (len(s[0].encode()), s[0].encode())))   # key order
         card = self.turn("exhibition", "receive", say("", ""), principal="did:plc:zero")["offers"][0]["text"]
         self.assertNotIn("Reply with a spell", card)  # at rest, countersign and withdraw are no longer offered: no usage
@@ -94,7 +88,7 @@ class Deals(Chain):
         self.assertEqual(self.turn("deal", "withdraw", principal=GALLERY)["result"]["label"], "withdrawn")
         after = self.sign(GALLERY, "at://inkling/p/9")
         self.assertEqual(after["result"]["payload"]["fields"][1]["value"], label("The deal was withdrawn."))
-        self.assertEqual(get(self.state("deal"), "withdrawn"), label(GALLERY))
+        self.assertEqual(field(self.state("deal"), "withdrawn"), label(GALLERY))
 
     def propose(self, who, edits, identity):
         version = self.host.send(op="world-view", principal="ember", object="deal")["version"]

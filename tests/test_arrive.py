@@ -16,14 +16,11 @@ import tempfile
 import unittest
 
 from tests.host import HostCase, ROOT
-from tests.test_turn_world import declared, label, nat, record
+from tests.wire import field, label, nat, record, rows
+from tests.bend import closure, declared
 
 DID = "did:plc:abcdefghijklmnopqrstuvwx"
 OBJECTS = os.path.join(ROOT, "world", "objects")
-
-
-def field(state, name):
-    return {f["name"]: f["value"] for f in state["fields"]}[name]
 
 
 def opened(case, wake=None):
@@ -188,7 +185,6 @@ class ToldWithoutPosting(HostCase):
     def setUp(self):
         super().setUp()
         opened(self)
-        from tests.test_objects import closure
         r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden", modules=closure("Garden"),
                            entry="initial", seed=record(owner={"tag": "label", "value": "ember"}))
         self.assertEqual(r["status"], "created", r)
@@ -196,8 +192,7 @@ class ToldWithoutPosting(HostCase):
         town_kinds(self.host.send)
 
     def inbox(self, did=DID):
-        from tests.test_replay import get, rows
-        return [get(n, "text")["value"] for n in rows(get(self.view(did), "inbox"))]
+        return [field(n, "text")["value"] for n in rows(field(self.view(did), "inbox"))]
 
     def plant(self, who, seed, ident):
         r = self.host.send(op="world-turn", principal=who, object="garden", method="receive", identity=ident,

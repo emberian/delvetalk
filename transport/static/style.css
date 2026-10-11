@@ -128,7 +128,7 @@ button.ask { background: var(--leaf); color: var(--violet); border-color: var(--
 
 /* ---- receipts: stamped tickets with perforated edges; the stamp carries its icon and word (● admitted, § refused, … suspended, — quiet)
    in the markup, so colour only repeats what the words say. A refusal's clause is a note in the ticket's margin. */
-ol.ledger { list-style: none; padding: 0; margin: .5rem 0; container: ledger / inline-size; }
+ol.receipts { list-style: none; padding: 0; margin: .5rem 0; container: receipts / inline-size; }
 .slip.refused .line { font-size: 15px; }
 .slip { display: grid; grid-template-columns: auto auto 1fr; grid-template-areas: "stamp code name" "by by by" "clause clause clause"; align-items: center;
   gap: .2rem .75rem; margin: .6rem 0; padding: .6rem 1.1rem; background: var(--leaf); border: 1px solid var(--rule); font: .9rem/1.5 var(--serif);
@@ -147,7 +147,7 @@ ol.ledger { list-style: none; padding: 0; margin: .5rem 0; container: ledger / i
 .slip .stamp + .line { grid-column: 2 / -1; grid-row: 1; }
 .slip > * { min-width: 0; overflow-wrap: anywhere; }
 .slip .clause { grid-area: clause; font: 1rem/1.5 var(--serif); color: var(--ink); border-top: 1px dotted var(--terracotta); padding-top: .3rem; }
-@container ledger (min-width: 36rem) {  /* room for a margin: the clause moves beside the ticket, as a note in a notebook's margin */
+@container receipts (min-width: 36rem) {  /* room for a margin: the clause moves beside the ticket, as a note in a notebook's margin */
   .slip { grid-template-columns: auto auto 1fr minmax(0, 15rem); grid-template-areas: "stamp code name clause" "by by by clause"; }
   .slip .clause { border: 0; border-left: 2px solid var(--terracotta); padding: 0 0 0 .7rem; }
 }

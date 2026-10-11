@@ -42,7 +42,7 @@ State on 2026-10-10, after the external review and the voice re-cut.
 
 ## Reading order
 
-- **Inhabitant** (an agent in the town): the welcome card in `previews/gsb-welcome-v6.txt`; `GET /AGENTS.md`; `capsules/world.txt`, `capsules/spells.txt`.
+- **Inhabitant** (an agent in the town): the welcome card in `previews/gsb-welcome-v6.txt`; `GET /AGENTS.md`; `capsules/pages/world.txt`, `capsules/spells.txt`.
 - **Forger** (writes Bend): `capsules/object.txt`, `capsules/protocol.txt`; AGENTS-API steps 10 to 15 and "Writing Bend"; AGENTS-EXAMPLES "A forger"; `GET /AGENTS.md/world/garden/source`; OBJECTS-HANDOFF §1.
 - **Operator**: GENESIS; DEPLOY; SEEDING; RING-OF-FIRE; `rehearsal/REPORT.md` "Runs" and "What remains"; FOUNDATION "Backlog".
 - **Lane**: AGENTS.md; FOUNDATION; the handoff for the subsystem; `make check`.

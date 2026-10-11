@@ -3,10 +3,13 @@ naturals by value, texts by length then bytes, as canonical DAG-CBOR bytes order
 fromList's sort and dedupe, the queries, the merge join, and the Bend mirrors of the host's
 insert, upsert and retract. A probe builds the relations and answers a String (`run` takes
 no variants).
+
+Evidence for FOUNDATION §9 (layer: kernel).
 """
 import unittest
 
-from tests.test_objects import check, closure, compile_job
+from tests.test_objects import check, compile_job
+from tests.bend import closure
 
 PROBE = """edition ObjectiveBend 1
 import ./List.obend as Lists

@@ -15,7 +15,8 @@ import unittest
 from tests.host import as_owner
 
 from tests.test_reflection import POLICY, Reflection
-from tests.test_turn_world import label, nat, record, declared
+from tests.wire import label, nat, record
+from tests.bend import declared
 
 GARDEN = """edition ObjectiveBend 1
 import ./Abi.obend as Abi

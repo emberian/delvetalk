@@ -1,4 +1,4 @@
-"""Genesis seeds the town's world once through a real hostd: every door resolves, the opener's handle
+"""Genesis seeds the town's world once through a real `serve`: every door resolves, the opener's handle
 shows, the door pages are published, and the library it shelves answers by a word and only its owner shelves.
 
 Evidence for FOUNDATION §7, §11 (layer: transport).
@@ -8,9 +8,8 @@ import tempfile
 import unittest
 
 from deploy import genesis
-from tests.host import served
-from deploy.serve import LIBRARY
-from transport.host import HostClient
+from tests.town import Town
+from tests.wire import label, record
 from transport.identity import ORIGIN
 
 
@@ -22,10 +21,10 @@ class Genesis(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.hostd = served(cls.tmp.name, opener=genesis.OPENER, library=LIBRARY)
-        cls.addClassCleanup(cls.hostd.stop)
-        cls.host = HostClient(cls.hostd.root)  # genesis is the opener's: the root socket
-        cls.made, cls.refusal = genesis.run(cls.host)
+        cls.town = Town(cls.tmp.name)
+        cls.addClassCleanup(cls.town.close)
+        cls.host = cls.town.client  # genesis is the opener's: the root socket
+        cls.made, cls.refusal = cls.town.made, cls.town.refusal
 
     def test_the_whole_sequence_is_created_once_and_refused_a_second_time(self):
         host, made, refusal = self.host, self.made, self.refusal
@@ -47,7 +46,7 @@ class Genesis(unittest.TestCase):
         said = {}
         for word in ('ROOMS', 'STUDIO'):
             got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'directory', 'method': 'receive',
-                             'argument': genesis.rec(text=genesis.lab(word), post=genesis.lab('at://x/p/' + word)),
+                             'argument': record(text=label(word), post=label('at://x/p/' + word)),
                              'identity': 'door-' + word})
             self.assertEqual(got['status'], 'admitted', got)
             said[word] = got['offers'][0]['text']
@@ -76,7 +75,6 @@ class Genesis(unittest.TestCase):
         from tests.test_objects import run_pure
         # Place declares no law (every kind imports the package it makes); genesis passes it with the `place` kind
         self.assertEqual(run_pure("Place", "lawText")["value"]["value"], genesis.PLACE_LAW)
-        kinds = next(m for m in self.made if m['object'] == 'kinds')
         self.assertIn('place', [name for name, *_ in genesis.KINDS])
         state = self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/place'})['state']
         self.assertEqual({f['name']: f['value'] for f in state['fields']}['law']['value'], genesis.PLACE_LAW)
@@ -89,7 +87,7 @@ class Genesis(unittest.TestCase):
 
     def library(self, text, n):
         got = self.host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'library', 'method': 'receive', 'identity': 'lib-%d' % n,
-                              'argument': genesis.rec(text=genesis.lab(text), post=genesis.lab('at://x/p/%d' % n))})
+                              'argument': record(text=label(text), post=label('at://x/p/%d' % n))})
         self.assertEqual(got['status'], 'admitted', got)
         return got['offers'][0]['text']
 
@@ -114,14 +112,14 @@ class MenuFromState(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.hostd = served(cls.tmp.name, opener=genesis.OPENER, library=LIBRARY)
-        cls.addClassCleanup(cls.hostd.stop)
-        cls.host = HostClient(cls.hostd.root)  # genesis is the opener's: the root socket
-        cls.made, cls.refusal = genesis.run(cls.host)
+        cls.town = Town(cls.tmp.name)
+        cls.addClassCleanup(cls.town.close)
+        cls.host = cls.town.client  # genesis is the opener's: the root socket
+        cls.made, cls.refusal = cls.town.made, cls.town.refusal
 
     def say(self, who, obj, text, ident):
         got = self.host.send({'op': 'world-turn', 'principal': who, 'object': obj, 'method': 'receive',
-                              'argument': genesis.rec(text=genesis.lab(text), post=genesis.lab('at://x/p/' + ident)), 'identity': ident})
+                              'argument': record(text=label(text), post=label('at://x/p/' + ident)), 'identity': ident})
         self.assertEqual(got['status'], 'admitted', got)
         self.deliver()
         return got
@@ -158,7 +156,7 @@ class MenuFromState(unittest.TestCase):
             self.say(kimi, 'tide', 'delvetalk tide tick', 'tick-%d' % n)
         # The owner opens an arc under the garden (SEEDING §4): its spell prints under GARDEN.
         arc = self.host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'directory', 'method': 'add', 'identity': 'arc-bell-1',
-                              'argument': genesis.rec(door=genesis.door('BELL', 'The first bell.', 'garden/bell/1', '',
+                              'argument': record(door=genesis.door('BELL', 'The first bell.', 'garden/bell/1', '',
                                                                         [('delvetalk garden/bell/1 rain / text: it rained here first',
                                                                           'it keeps who rained; bell/1 has 2, the seventh rings it')]))})
         self.assertEqual(arc['status'], 'admitted', arc)
@@ -222,7 +220,7 @@ class MenuFromState(unittest.TestCase):
         self.assertEqual(self.menu().index('GARDEN'), later.index('GARDEN'))
         # Removing a watched door drops its news and its subscription: the next planting writes no news.
         removed = self.host.send({'op': 'world-turn', 'principal': genesis.OPENER, 'object': 'directory', 'method': 'remove', 'identity': 'rm-garden',
-                                  'argument': genesis.rec(door=genesis.rec(label=genesis.lab('GARDEN')))})
+                                  'argument': record(door=record(label=label('GARDEN')))})
         self.assertEqual(removed['status'], 'admitted', removed)
         version = self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'directory'})['version']
         self.say(glm, 'garden', 'delvetalk garden plant / seed: a bell for the fourth / colour: amber', 'plant-4')

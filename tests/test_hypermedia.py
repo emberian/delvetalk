@@ -23,7 +23,7 @@ import transport.http
 from transport import delve, identity
 from transport.host import HostClient
 from transport.http import CATALOGUE, ERRORS, EXAMPLES, GUIDE, REFUSALS, Front
-from tests.test_turn_world import closure
+from tests.bend import closure
 
 LAWFUL = REPL_COUNTER + 'law nobody "only ember writes it": request.kind == 0 implies request.subject == "ember"\n'
 
@@ -242,7 +242,7 @@ class Envelope(FrontCase):
 
 
 class Robust(FrontCase):
-    def test_hostd_absent_or_mute_is_a_named_error(self):
+    def test_an_absent_or_mute_host_is_a_named_error(self):
         tok = self.login()
         self.front.host = HostClient(Path(self.tmp.name) / 'nobody.sock')
         s, e = self.call('GET', '/AGENTS.md/world', token=tok)

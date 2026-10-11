@@ -1,10 +1,64 @@
-"""Helpers shared by the suites: an independent DAG-CBOR / CID encoder.
+"""Data on the wire, as every suite writes and reads it, and an independent DAG-CBOR / CID encoder.
 
 Lists cross the wire as `{"tag":"list","items":[...]}` in both directions; the host refuses a
 `nil` / `cons` chain on input ("cons chains are no longer accepted on the wire; send a list").
+A relation is the variant `rows {items}` (world/lib/Relation.obend).
 """
 import base64
 import hashlib
+
+
+def nat(n):
+    return {"tag": "natural", "value": str(n)}
+
+
+def label(s):
+    return {"tag": "label", "value": s}
+
+
+def boolean(value):
+    return {"tag": "boolean", "value": value}
+
+
+def record(**fields):
+    return {"tag": "record", "fields": [{"name": k, "value": v} for k, v in fields.items()]}
+
+
+def empty():
+    return record()
+
+
+def variant(name, payload=None, /, **fields):
+    """A variant: its payload given whole, or as the fields of a record."""
+    return {"tag": "variant", "label": name, "payload": payload if payload is not None else record(**fields)}
+
+
+def listing(items):
+    return {"tag": "list", "items": list(items)}
+
+
+def nil():
+    return listing([])
+
+
+def reference(name):
+    return record(world=label(""), object=label(name))
+
+
+def relation(*items):
+    """A relation, its rows given in key order."""
+    return variant("rows", items=listing(items))
+
+
+def field(wire, name):
+    """The value of the named field of a record on the wire (a state, a row, a payload)."""
+    return [f["value"] for f in wire["fields"] if f["name"] == name][0]
+
+
+def rows(wire):
+    """The rows of a relation on the wire, in key order."""
+    assert wire["tag"] == "variant" and wire["label"] == "rows", wire
+    return field(wire["payload"], "items")["items"]
 
 
 def cbor_head(major, n):

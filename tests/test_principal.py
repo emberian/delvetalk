@@ -15,10 +15,10 @@ import unittest
 from deploy import genesis
 from tests.test_laws import anthology_seed
 from tests.test_chain import Chain, garden_seed, town_kinds
-from tests.test_objects import closure
 from tests.test_places import make_place, avatar_seed, names, place_seed
-from tests.test_replay import bell_seed, get, rows
-from tests.test_turn_world import label, record
+from tests.test_replay import bell_seed
+from tests.wire import field, label, record, rows
+from tests.bend import closure
 
 ACTOR, CLAIMED = "kimik3", "glm"
 
@@ -55,31 +55,28 @@ class Principal(Chain):
                            entry="initial", seed=anthology_seed("ember"), law=genesis.RECORD_LAW)
         self.assertEqual(r["status"], "created", r)
         self.make("glm", closure("Avatar"), avatar_seed("glm", "porch"))
-        for obj, method, text, field, rows_of in (("bell", "rain", "the moths know the way", "author", "rains"),
+        for obj, method, text, by, rows_of in (("bell", "rain", "the moths know the way", "author", "rains"),
                                                   ("anthology", "write", "lamps", "author", "lines"),
                                                   ("glm", "note", "hello", "from", "inbox")):
             argument = record(text=label(text))
-            self.forged(obj, method, argument, field)
+            self.forged(obj, method, argument, by)
             self.acted(obj, method, argument)
-            self.assertEqual([get(x, field) for x in rows(get(self.state(obj), rows_of))], [label(ACTOR)], obj)
+            self.assertEqual([field(x, by) for x in rows(field(self.state(obj), rows_of))], [label(ACTOR)], obj)
 
     def test_a_knock_and_a_light_record_the_turns_principal(self):
         self.make("door", closure("Door"), record())
         self.ignored("door", "knock", "who")
-        self.assertEqual([get(k, "who") for k in rows(get(self.state("door"), "knocks"))], [label(ACTOR)])
-        self.assertEqual(get(self.state("door"), "openedBy"), label(ACTOR))
+        self.assertEqual([field(k, "who") for k in rows(field(self.state("door"), "knocks"))], [label(ACTOR)])
+        self.assertEqual(field(self.state("door"), "openedBy"), label(ACTOR))
         self.make("lantern", closure("Lantern"), record())
         self.ignored("lantern", "light", "by")
-        self.assertEqual(get(self.state("lantern"), "litBy"), label(ACTOR))
+        self.assertEqual(field(self.state("lantern"), "litBy"), label(ACTOR))
 
     def test_entering_a_place_records_the_principals_avatar(self):
         make_place(self, "porch", place_seed("Porch"))
         self.ignored("porch", "enter", "by")
-        self.assertEqual(names(get(self.state("porch"), "present")), [ACTOR])
+        self.assertEqual(names(field(self.state("porch"), "present")), [ACTOR])
 
-    # A planting spell runs `plant` directly, and a method does not see the reply's post (the bell's
-    # strike awaits it): the garden takes the turn's intent, which the bridge makes the post. Expected
-    # to fail until the host gives a spell's method its post (Abi.Context inputOrigin `post`).
     def test_the_planter_is_the_turns_principal_and_the_planting_its_post(self):
         self.make("garden", closure("Garden"), garden_seed())
         town_kinds(self.host.send)
@@ -88,7 +85,7 @@ class Principal(Chain):
         r = self.turn("garden", "receive", record(text=label(spell), post=label("at://p/1")), principal=ACTOR, identity="plant-1")
         self.assertEqual(r["result"]["label"], "planted", r)
         bell = self.state("garden/bell/1")
-        self.assertEqual((get(bell, "maker"), get(bell, "post")), (label(ACTOR), label("at://p/1")))
+        self.assertEqual((field(bell, "maker"), field(bell, "post")), (label(ACTOR), label("at://p/1")))
         self.assertIn("Planted, kimik3", r["offers"][0]["text"])
 
 

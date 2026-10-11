@@ -10,7 +10,8 @@ without the root, a private object answered, or an undeclared definition run as 
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record, declared
+from tests.wire import label, nat, record
+from tests.bend import declared
 
 READER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi

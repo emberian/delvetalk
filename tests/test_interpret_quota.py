@@ -14,7 +14,7 @@ binds the identity, or an exempt principal refused.
 import unittest
 
 from tests.test_reflection import POLICY, PROBE, Reflection, probe_seed
-from tests.test_turn_world import label, record
+from tests.wire import label, record
 
 
 class InterpretQuota(Reflection):
