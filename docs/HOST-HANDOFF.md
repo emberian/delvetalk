@@ -92,7 +92,7 @@ Outcomes:
 
 - `created`: `{object, pin, sourcesSha256, compile, seed, read, chain, supervisor?, owner?}`; `roots []`, `turn 0`. Replay recompiles, requires the pin to match the source closure, the seed to conform and the amendment dry run to pass at the entry's height.
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
-- `refused`: `{class, clause?, object?, reason?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a text-law refusal with a reading journals `reason: "refused <name>: <reading>"`. Replay checks only that the class is known; `publicRefusal` shows the reason.
+- `refused`: `{class, clause?, object?, reason?, reading?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a law refusal with a reading journals it as `reading` and `voiced` writes `reason: "refused <clause>: <reading>"` from it (5.154). Replay checks only that the class is known; `publicRefusal` shows a law refusal's reason and reading.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
@@ -1505,7 +1505,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 145. **A refusal under a kind's law names the clause that failed (host18).** `Law.refusal` follows a refusing
    clause that is `under "O"` into O's law text (`innermost`, through further `under`s within `lawDepth`) and
    answers that clause's name and its reading there: `refused small: two at most`, not `refused kind`.
-   `refusedBy` is its name; the judge voices the cited reading, else the object's own (`readingOf`). Tests:
+   `refusedBy` is its name; the judge's `reading` is the cited one, else the object's own (5.154). Tests:
    `Law.lean`'s `#guard refusal`; `test_law.Atoms` (the kind's clause and reading).
 
 146. **A sum left of `<=` (host18; the kernel's grammar file, by the coordinator's leave).** `old.last + old.gap <=
@@ -1576,6 +1576,21 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    that declares `misfit` and names no policy, or names an object not held, refuses `badSpell` with its
    usage); `test_receive.Cards`, `test_policy`, `test_scenarios` Garden and Bell moved to the refusal.
 
+154. **Every law refusal carries its reading (host19; the objects lane's finding on a law given at creation).**
+   A law given at creation kept its readings since 8e015ca6 (`makeObject`'s `given`), but no refusal carried a
+   `reading`: each site composed `reason` itself ("refused <clause>: …"), and test_properties split it back
+   out. Now `Refusal.reading` is the refusing clause's reading wherever the law came from (the package, a law
+   given at creation or by amendment, the kind's clause an `under` cites, a Bend verdict's `reading`, and the
+   host's own clauses `fixed` and `lawReads`); `commit` journals it, `Refusal.voiced` writes `reason` from it,
+   and `publicRefusal` shows both. `readingOf` is gone. The amendment rules name their clause: `law syntax`
+   (the parse error its reading), `under` (a citation that does not stand) and `amendable` (the self-sealing
+   rule, its reading the old message naming the proposer); the host's own `noGrant`, `grantSpent`,
+   `notGrantor`, `denied`, `law` and `lawReads` say why. A call site hears a refused amendment, reprogram or
+   layer of another object as `{clause, reading}` with the bare reading (`dryChange`), never "refused …" twice. No replay edition change: replay checks a refusal's
+   class, not its words. Tests: `test_law` `LawAtCreation`, `Readings` (the outcome's and the public
+   projection's `reading`); test_properties holds every `lawRefused` to a clause, a reading and the reason
+   voiced from them.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1613,10 +1628,6 @@ semantic braiding is called for); let's not leave behind 'old things', no scar a
 replacement deletes what it replaces in the same commit, and this file describes only what is.
 
 1. **Asked by the objects lane, not started (host18 stopped at its budget):**
-   - A refusal by a law given at creation or by amendment carries `reason` but no `reading` (`readingOf` reads
-     `Object.readings`, which only a package's declared laws and an amendment's own readings fill): parse the
-     given law text's readings (`parseLawTextReadings`) into `readings` at creation as an amendment does, so a thing
-     may take its law at creation. Test: a `world-create {law: "law x \"why\": …"}` refusal carries the reading.
    - `context.sender`: a delivered turn's top frame carries the sending object (`TurnMeta.caller` is it today,
      but `caller` is also a call's), so the weather's rain is credited to the weather. One field in
      `Abi.Context` and `contextData`; `fitRecord` keeps objects compiled without it running.

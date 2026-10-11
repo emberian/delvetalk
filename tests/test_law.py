@@ -207,6 +207,7 @@ class Readings(Reflection):
         r = self.refused("k5")
         self.assertEqual((r["receipt"]["outcome"]["reason"], r["public"]["reason"]),
                          ("refused owner: only the keeper may count: ask ember",) * 2, r)
+        self.assertEqual((r["receipt"]["outcome"]["reading"], r["public"]["reading"]), ("only the keeper may count: ask ember",) * 2, r)
         self.reopen()
         self.assertEqual(self.refused("k6")["receipt"]["outcome"]["reason"], "refused owner: only the keeper may count: ask ember")
 
@@ -235,8 +236,10 @@ class LawAtCreation(Reflection):
         self.assertEqual((r["status"], r["receipt"]["outcome"]["law"]), ("created", law), r)
         for i in range(2):
             self.assertEqual(self.turn("g", "poke", identity=f"b{i}")["status"], "admitted")
-        refused = self.turn("g", "poke", identity="b2")["receipt"]["outcome"]
-        self.assertEqual((refused["clause"], refused["reason"]), ("cap", "refused cap: the count stays under three"), refused)
+        refused = self.turn("g", "poke", identity="b2")
+        out = refused["receipt"]["outcome"]
+        self.assertEqual((out["clause"], out["reading"], out["reason"]), ("cap", "the count stays under three", "refused cap: the count stays under three"), out)
+        self.assertEqual((refused["public"]["reading"], refused["public"]["reason"]), (out["reading"], out["reason"]), refused)
         self.reopen()
         self.assertIn("new.count <= 2", self.host.send(op="world-inspect", principal="ember", object="g", source=False)["law"])
         bad = self.host.send(op="world-create", principal="ember", identity="mk2", object="h", source=PLAIN, entry="initial",

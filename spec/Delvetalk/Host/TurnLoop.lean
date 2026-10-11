@@ -545,7 +545,7 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
     let o := again.object
     let facts : Law.Facts := ⟨s.principal, self, s.world.height + 1, s.world.height + 1, o.pin, 1, "", [], s.world.clock, id, citedStates s.world o.law⟩
     if let some clause := Law.refusedBy o.law facts (some o.state) o.state then
-      return ← refusedReading bounds responseType clause s!"refused {clause}: the law of {id} does not admit this layer"
+      return ← refusedReading bounds responseType clause ((o.readings.lookup clause).getD s!"the law of {id} does not admit this layer.")
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
                               creator := made.creator, package := made.package, seedArg := made.seedArg,
                               lawArg := made.lawArg, layer := source }
@@ -886,7 +886,8 @@ def dryChange (w : World) (s : TurnState) (self id : String) (version : Nat) (pr
                                     writes := [(id, [written])], turn := w.height + 1 }
   match judge w (w.height + 1) p with
   | .ok _ => none
-  | .error r => some (r.clause.getD r.cls, (r.voiced.reason).getD "")
+  -- The call site hears the clause and its reading (a law's own, else the voiced reason), never "refused …" twice.
+  | .error r => some (r.clause.getD r.cls, (r.reading <|> r.voiced.reason).getD "")
 
 /-- Why a turn naming a helper is refused (class `noMethod`). -/
 def noMethodReason (id method : String) : String :=
@@ -2265,7 +2266,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     match st.sends.find? fun x => !x.via.isEmpty && (grantStands w x.via x.to x.method).isNone with
     | some x =>
       let (w', r) := commit w { proposal with writes := [], creates := [], grants := [], revokes := [], spent := [], subscribes := [], unsubscribes := [] } base
-        (some { cls := "lawRefused", clause := some "noGrant", object := some x.to }) (onEnd := endedIfLate)
+        (some { cls := "lawRefused", clause := some "noGrant", object := some x.to, reading := some s!"the grant a send to {x.to} was made under no longer stands." }) (onEnd := endedIfLate)
       return (w', turnReply w' r)
     | none =>
     let offered := (if st.offers.isEmpty then [] else [("offers", offersJson st.offers)]) ++
@@ -3013,14 +3014,14 @@ def deliverOne (w : World) (d : Json) : Except String (World × Json) := do
   -- A send under a grant that no longer stands (revoked, or the clock past it) is consumed, refused.
   if !via.isEmpty && (grantStands w via to method).isNone then
     let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
-    return commit w p deliveryFields (some { cls := "lawRefused", clause := some "noGrant", object := some to })
+    return commit w p deliveryFields (some { cls := "lawRefused", clause := some "noGrant", object := some to, reading := some s!"the grant this send to {to} was made under no longer stands." })
   -- A change is delivered only while its subscription's principal may still view the object; else it
   -- is consumed, refused, and the subscription drops (`subscriptionsAfter`).
   if (d.getObjVal? "field").toOption.isSome then
     if let .ok object := d.getObjValAs? String "object" then
       unless ((w.objects[object]?).map (·.read.permits principal)).getD false do
         let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
-        return commit w p deliveryFields (some { cls := "lawRefused", clause := some "denied", object := some object })
+        return commit w p deliveryFields (some { cls := "lawRefused", clause := some "denied", object := some object, reading := some s!"{principal} may no longer view {object}; the subscription ends." })
   match ledger.exhausted with
   | some field =>
     let p : Proposal := { principal := principal, intent := id, roots := [], writes := [], turn := w.height + 1 }
