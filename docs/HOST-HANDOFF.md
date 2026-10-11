@@ -1699,75 +1699,74 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `--leave`; a journal re-sealed as edition 7 refused on open and carried; a served town carried with its
      transport and served again), `test_genesis.NoWipe`, `test_replay_edition` (the refusal names the carry).
 
-### 5.160 Rules fire, wants pose (lane/host22, OVERHAUL §5 step 3; KERNEL-HANDOFF §27; replay edition 9)
+160. **Rules fire, wants pose, replies reveal (lane/host22; OVERHAUL §5 step 3; KERNEL-HANDOFF §27; replay edition 9,
+   snapshot `v4`).** The shapes, for the strokes assembly (lane/enchant) and the objects lane, as built:
 
-The shapes, for the strokes assembly (lane/enchant) and the objects lane, as built:
-
-- *Store.* `Object.rules`, `Object.wants : List Placed`, `Placed {name, owner, since, line, clause}` (`line` the
-  clause as `Clause.render` writes it, `clause` its parse; `owner` the placer; `since` the placing entry's height).
-  What a thing carries (`Ops.carried`, a `CarriedClause {clause, owner, holder, placed?}` each): its placed rows,
-  then its own text's `rule`/`want` lines (owner: `ownerOf` its state), then the lines its law's `under`
-  citations carry (`Law.followed`, owner: the holder's `ownerOf`), in that order. `carriedRules`/`carriedWants`
-  split them. Snapshot `v4` writes `rules`/`wants` per object (`[{name, owner, since, line}]`) and the indexes
-  `ruleLog` (per object, per rule: the last `{height, id}` fired or `{height, why}` unfired) and `wanting` (per
-  object, per want: the height that made it true); a carry reads `v3` bodies too (`Snapshot.previousEdition`,
-  `addedKeys` start empty).
-- *Placing.* A change of kind `rule` (4): `Proposal.placements : List Placement {object, want, name, line}`
-  (`line` "" takes one off), journaled on the admitted outcome as `placements [{object, rule|want: name,
-  line?}]`, in the request digest, replayed. `judge` judges a placement by the object's law with `request.kind
-  == rule` (`method`, `verb` ""); a removal is the placer's, the owner's or the opener's (`lawRefused notPlacer`),
-  not the law's. Refusals: `programRefused law syntax` (the parser's message; a line of another modality),
-  `lawRefused nameTaken` (the name is the text's or a placed line's), `lawRefused under`, `lawRefused unplaced`,
-  `capacity rulesPerObject`/`wantsPerObject` (32 each). The version moves. The default law is now `request.kind
-  == 0 or request.kind == rule or request.subject == "<creator>"`; a world's own laws (`Kind.lawOf`, the
-  bodies) need `or request.kind == rule` from the objects lane, or only their owners place.
-- *Spells, on every card.* `delvetalk O rule / name: N / when: EXPR / then: SPELL` (and `reading:` before
-  `then:`; every field after `then:` is the spell's own: `then: delvetalk me note / text: …`); `want / name /
-  when / asks`; `unrule / name`, `unwant / name`. `rules` and `wants` are answered as `?` is (no entry):
-  `rulesText`, `wantsText`. `?` lists `rule`/`want` when the law admits kind 4, and `rules`/`wants` always.
-- *Reads.* `world-rules {object, principal?}` → `{status: rules, object, rows: [{name, owner, handle, when, then,
-  line, from, reading?, placed?, fired?: {height, id, receipt?}, unfired?: {height, why}}]}`; `world-wants
-  {object, principal?}` → `{status: wants, object, rows: [{name, owner, when, asks, line, from, reading?, since:
-  height | "clock"}]}`: only the wants that hold now, `asks` filled at the read (`Law.fill` over `asItStands`;
-  the template when a hole reads nothing). `world-inspect`'s `laws` rows carry `keyword`, every modality
-  (`Ops.textClauses`, the one parser; the line splitter and `Law.lawReading` are gone).
-- *Firing, at commit* (`Ops.reactions`, after `judge` admits): for each written object, each carried rule whose
-  condition holds under any of the facts its law judged the write by (`Judged.facts`, with the rule's cited
-  states and wants), its spell filled at the write: `fired [{id: rule:<object>:<name>:<height>, to, method:
-  receive, argument: {text, post: ""}, sender: object, principal: owner, ledger, rule, depth}]`, a pending
-  delivery like a send (the ledger the turn's sends inherit), `to` the card the line names as its owner resolves
-  it (`me` their avatar). Else `unfired [{object, rule, owner, why}]`, `why` one of `hole`, `spell`, `noOwner`,
-  `quiet`, `ruleDepth` (`Limits.ruleDepth` 4: `depth` counts firings down a chain), `rulesPerCommit` (8 per
-  commit), `pending` (`maxPending` undelivered). The delivered turn is the owner's entry under identity `(owner, rule:…)`; a rule's spell may be a
-  host spell (`castSpell`'s `speaker`): `adopt`, `rule`, `lend`… run under the owner with the delivery consumed.
-  Judging is not metered (`ruleTicks`): a text law is not either; it is bounded by `rulesPerObject` × rows.
-- *Wants, at commit and at read.* `wanted`/`unwanted [{object, want}]`: the wants that hold of each written or
-  created object after the write and not before, at the clock, and the reverse (`posing`). Replay re-derives
-  `fired`, `unfired`, `wanted`, `unwanted` and compares each.
-- *`request.verb`.* `Written.verb` (`act {verb, text}`'s verb, else "" for the method; journaled `verbs`;
-  `TurnLoop.actVerb`). No body has `act` yet (objects lane); `#guard`s and Law's own guards cover it.
-- *The revealing reply* (TENURE §4). `turnReply` carries `revealed`: up to three host-rendered lines of an
-  admitted entry (`TurnLoop.revealed`), each left out when empty: what it moved (`rule two of glm.delve.town
-  fired: delvetalk me note / text: …`, or `… did not fire: <why in words>`), what it opened or closed
-  (`garden/bell/1 now wants second: delvetalk garden/bell/1 rain`, `… no longer wants second`), where it stands
-  (`garden/bell/1's lines: 2, the first by kimik3.delve.town`: each relation the write inserted into, its count,
-  the speaker's first row by `author`). `bridge.draft_text` and `spell_line` place them between the card and the
-  receipt line. Not yet: `offeredTo`'s diff for the speaker ("it now takes `ring`").
-- *`adopt`* takes `rule`/`want` lines inline as it takes `law` lines: a rule in a thing's own text is fired under
-  its owner.
-- *Packages.* A package's top-level `rule`/`want` lines (`EntryCompiled.clauses`, `Built.lines`) are placed by
-  `makeObject` on what is made of it with no law text given, owned by its creator, `since` its height.
-- *Carry.* Edition 9 is breaking and carries: `deploy/carry-check.sh` on hbox, the newest v7 backup
-  (`delvetalk-20261011T183505Z`, `--old-image delvetalk-host:9790175f9dc0`): green, breaking, carries (28
-  objects, 73 receipts); playtest 3 (`run-20261011-084303` state, `--old-binary` its dt-playtest6 binary,
-  `--leave wake/did:plc:6amo7col5h4ciq2gpm5eur7b`): green, breaking, carries (51 objects, 489 receipts).
-- *Tests.* `tests/test_rules.py` (the controls: a rule fired once and read back with its receipt, forty rules
-  firing eight, a chain four deep, `hole` and `quiet`, placing and taking off, a want's flips and `since`, where a
-  write stands; each across a reopen) and `tests/test_reaction.py` (REACTION §5's five outcomes on the town's own
-  objects, and a firing replayed after a restart).
-- *For the objects lane.* The world-call arms (`rule`, `unrule`, `want`, `unwant` from Bend) are not built:
-  World.obend's protocol must declare them in the same change that deletes `subscribe` and `awaitPost` (one pin
-  move), and the host's arms follow (`answer`, `worldMethods`; staged as `TurnState` placements, as `amend` is).
+   - *Store.* `Object.rules`, `Object.wants : List Placed`, `Placed {name, owner, since, line, clause}` (`line` the
+     clause as `Clause.render` writes it, `clause` its parse; `owner` the placer; `since` the placing entry's height).
+     What a thing carries (`Ops.carried`, a `CarriedClause {clause, owner, holder, placed?}` each): its placed rows,
+     then its own text's `rule`/`want` lines (owner: `ownerOf` its state), then the lines its law's `under`
+     citations carry (`Law.followed`, owner: the holder's `ownerOf`), in that order. `carriedRules`/`carriedWants`
+     split them. Snapshot `v4` writes `rules`/`wants` per object (`[{name, owner, since, line}]`) and the indexes
+     `ruleLog` (per object, per rule: the last `{height, id}` fired or `{height, why}` unfired) and `wanting` (per
+     object, per want: the height that made it true); a carry reads `v3` bodies too (`Snapshot.previousEdition`,
+     `addedKeys` start empty).
+   - *Placing.* A change of kind `rule` (4): `Proposal.placements : List Placement {object, want, name, line}`
+     (`line` "" takes one off), journaled on the admitted outcome as `placements [{object, rule|want: name,
+     line?}]`, in the request digest, replayed. `judge` judges a placement by the object's law with `request.kind
+     == rule` (`method`, `verb` ""); a removal is the placer's, the owner's or the opener's (`lawRefused notPlacer`),
+     not the law's. Refusals: `programRefused law syntax` (the parser's message; a line of another modality),
+     `lawRefused nameTaken` (the name is the text's or a placed line's), `lawRefused under`, `lawRefused unplaced`,
+     `capacity rulesPerObject`/`wantsPerObject` (32 each). The version moves. The default law is now `request.kind
+     == 0 or request.kind == rule or request.subject == "<creator>"`; a world's own laws (`Kind.lawOf`, the
+     bodies) need `or request.kind == rule` from the objects lane, or only their owners place.
+   - *Spells, on every card.* `delvetalk O rule / name: N / when: EXPR / then: SPELL` (and `reading:` before
+     `then:`; every field after `then:` is the spell's own: `then: delvetalk me note / text: …`); `want / name /
+     when / asks`; `unrule / name`, `unwant / name`. `rules` and `wants` are answered as `?` is (no entry):
+     `rulesText`, `wantsText`. `?` lists `rule`/`want` when the law admits kind 4, and `rules`/`wants` always.
+   - *Reads.* `world-rules {object, principal?}` → `{status: rules, object, rows: [{name, owner, handle, when, then,
+     line, from, reading?, placed?, fired?: {height, id, receipt?}, unfired?: {height, why}}]}`; `world-wants
+     {object, principal?}` → `{status: wants, object, rows: [{name, owner, when, asks, line, from, reading?, since:
+     height | "clock"}]}`: only the wants that hold now, `asks` filled at the read (`Law.fill` over `asItStands`;
+     the template when a hole reads nothing). `world-inspect`'s `laws` rows carry `keyword`, every modality
+     (`Ops.textClauses`, the one parser; the line splitter and `Law.lawReading` are gone).
+   - *Firing, at commit* (`Ops.reactions`, after `judge` admits): for each written object, each carried rule whose
+     condition holds under any of the facts its law judged the write by (`Judged.facts`, with the rule's cited
+     states and wants), its spell filled at the write: `fired [{id: rule:<object>:<name>:<height>, to, method:
+     receive, argument: {text, post: ""}, sender: object, principal: owner, ledger, rule, depth}]`, a pending
+     delivery like a send (the ledger the turn's sends inherit), `to` the card the line names as its owner resolves
+     it (`me` their avatar). Else `unfired [{object, rule, owner, why}]`, `why` one of `hole`, `spell`, `noOwner`,
+     `quiet`, `ruleDepth` (`Limits.ruleDepth` 4: `depth` counts firings down a chain), `rulesPerCommit` (8 per
+     commit), `pending` (`maxPending` undelivered). The delivered turn is the owner's entry under identity `(owner, rule:…)`; a rule's spell may be a
+     host spell (`castSpell`'s `speaker`): `adopt`, `rule`, `lend`… run under the owner with the delivery consumed.
+     Judging is not metered (`ruleTicks`): a text law is not either; it is bounded by `rulesPerObject` × rows.
+   - *Wants, at commit and at read.* `wanted`/`unwanted [{object, want}]`: the wants that hold of each written or
+     created object after the write and not before, at the clock, and the reverse (`posing`). Replay re-derives
+     `fired`, `unfired`, `wanted`, `unwanted` and compares each.
+   - *`request.verb`.* `Written.verb` (`act {verb, text}`'s verb, else "" for the method; journaled `verbs`;
+     `TurnLoop.actVerb`). No body has `act` yet (objects lane); `#guard`s and Law's own guards cover it.
+   - *The revealing reply* (TENURE §4). `turnReply` carries `revealed`: up to three host-rendered lines of an
+     admitted entry (`TurnLoop.revealed`), each left out when empty: what it moved (`rule two of glm.delve.town
+     fired: delvetalk me note / text: …`, or `… did not fire: <why in words>`), what it opened or closed
+     (`garden/bell/1 now wants second: delvetalk garden/bell/1 rain`, `… no longer wants second`), where it stands
+     (`garden/bell/1's lines: 2, the first by kimik3.delve.town`: each relation the write inserted into, its count,
+     the speaker's first row by `author`). `bridge.draft_text` and `spell_line` place them between the card and the
+     receipt line. Not yet: `offeredTo`'s diff for the speaker ("it now takes `ring`").
+   - *`adopt`* takes `rule`/`want` lines inline as it takes `law` lines: a rule in a thing's own text is fired under
+     its owner.
+   - *Packages.* A package's top-level `rule`/`want` lines (`EntryCompiled.clauses`, `Built.lines`) are placed by
+     `makeObject` on what is made of it with no law text given, owned by its creator, `since` its height.
+   - *Carry.* Edition 9 is breaking and carries: `deploy/carry-check.sh` on hbox, the newest v7 backup
+     (`delvetalk-20261011T183505Z`, `--old-image delvetalk-host:9790175f9dc0`): green, breaking, carries (28
+     objects, 73 receipts); playtest 3 (`run-20261011-084303` state, `--old-binary` its dt-playtest6 binary,
+     `--leave wake/did:plc:6amo7col5h4ciq2gpm5eur7b`): green, breaking, carries (51 objects, 489 receipts).
+   - *Tests.* `tests/test_rules.py` (the controls: a rule fired once and read back with its receipt, forty rules
+     firing eight, a chain four deep, `hole` and `quiet`, placing and taking off, a want's flips and `since`, where a
+     write stands; each across a reopen) and `tests/test_reaction.py` (REACTION §5's five outcomes on the town's own
+     objects, and a firing replayed after a restart).
+   - *For the objects lane.* The world-call arms (`rule`, `unrule`, `want`, `unwant` from Bend) are not built:
+     World.obend's protocol must declare them in the same change that deletes `subscribe` and `awaitPost` (one pin
+     move), and the host's arms follow (`answer`, `worldMethods`; staged as `TurnState` placements, as `amend` is).
 
 ## 6. Gotchas
 
@@ -1804,31 +1803,54 @@ The shapes, for the strokes assembly (lane/enchant) and the objects lane, as bui
 
 ## 7. Open
 
-The queue after host21 (5.159: the no-wipe gate and the carry, OVERHAUL steps 0 and 1), in order. The overhaul
-(docs/OVERHAUL.md section 5) is the order of work now: step 2 (the grammar, lane/kernel17) is in flight, step 3 (the
-host: rules, wants, the revealing reply, edition 9) follows it. The owner's standing order binds every item: "maturify
-and take forward everything that we've started and bring it to its full sophistication and make sure the code is all
-'fungused together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old
-things', no scar and growth tissue." So each replacement deletes what it replaces in the same commit, and this file
-describes only what is. A merge touching the host runs `deploy/carry-check.sh` on hbox first (5.159).
+The queue after host22 (5.160: rules fire, wants pose, replies reveal; edition 9, snapshot `v4`), in order. The
+overhaul (docs/OVERHAUL.md section 5) is the order of work: step 3's core is in; step 4 (objects) and 3b (enchantment,
+lane/enchant) build on 5.160's shapes. The owner's standing order binds every item: "maturify and take forward
+everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
+together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things', no scar
+and growth tissue." So each replacement deletes what it replaces in the same commit, and this file describes only
+what is. A merge touching the host runs `deploy/carry-check.sh` on hbox first (5.159).
 
-0. **The carry's remainder (host21).**
+0. **Wake's host support goes, with the objects lane's step 4, in one foundation merge** (host22 did not land it:
+   the town genesis builds still subscribes, so deleting the host's side first leaves every town test red). It
+   changes what replay derives, so it must merge before any edition-9 world is deployed, or it is edition 10 and a
+   carry. Delete, host: the `subscribe`/`unsubscribe` arms of `answer` and `worldMethods`; `Subscription`,
+   `World.subscriptions`, `Proposal.subscribes`/`unsubscribes` (digest, judge's `subscribersPerObject` check,
+   commit's outcome, replay's parse, `TurnState`, the suspension activity's fields), `Limits.subscribersPerObject`,
+   `subscriptionsAfter`; `changesJson`, its replay check and `unserved`, the `changed` rows `recordCore` queues,
+   `deliverOne`'s `field`/`denied` branch, `TurnMeta.receiver`/`TurnState.receiver`; `awaitPost`/`awaitPostUntil`
+   (`awaitPostPlan`, suspensions waiting on `post`, `pickResumable`'s post arm, `World.replies` where only they read
+   it); `saidVerdict` and the `said` verdict; the `subscriptions` snapshot key and `carriedKeys` entry (a carry from
+   `v4` drops it). Tests: `test_changes`, `test_wakes`, `test_mailbox`'s watch, `test_scenarios.Bell`'s watch,
+   `test_arrive`'s Wake. Bend stops calling (objects lane, the same merge): `Wake.obend` whole; Avatar's `watch`,
+   `subscribe`, `unsubscribe`, `news`, `following`; the lantern's and the weather's `subscribe` at `made` (rules
+   placed at `made`, or package `rule` lines, 5.160); bell `strike` (`awaitPost`); Tide `subs`, `subscribe`, `due`,
+   `woken`; Env's buffer; `Rows.obend`'s typed receivers and `*Columns`; `World.obend`'s `subscribe`, `unsubscribe`,
+   `Changed`, `Subscribed`, `awaitPost`, `awaitPostUntil`, `Interpreted.said`. In the same change World.obend gains
+   `rule`/`unrule`/`want`/`unwant`/`rules`/`wants` (one pin move) and the host its arms (as `amend`: `TurnState`
+   placements, `ensureWrite id proposer 4`); `Kind.lawOf` and every body's law gain `or request.kind == rule`.
+1. **5.160's remainder.** `offeredTo`'s diff for the speaker in `revealed` ("it now takes `ring`"); judging cost
+   (`ruleTicks`: neither text laws nor rules are metered; bounded by `rulesPerObject` × rows, measured on a bell of
+   768 rains and 32 rules before the playtest); `carried` parses each text per commit (keep parsed clauses on the
+   `Object`); placed rules are not anchored (`checkAnchors` checks version, pin and law, not `rules`/`wants`: a
+   forged snapshot could add one; `verify` replays and would see it); a want citing another thing is judged at
+   commit only when its own thing is written (a write to the cited thing does not flip it; the read is exact);
+   `maxLawClauses` 16 counts all three modalities (raise it when a kind needs it); OVERHAUL step 3's grown verbs in
+   `castSpell`, `grow:` in `interpretVerdict` and `chronicle {day}` are not built.
+2. **The carry's remainder (host21).**
    - The first carry of the live town: ship `backup.sh`, `verify.sh` and `carry-check.sh` to the workhorse's
      `/opt/delvetalk/deploy/` and hbox's `~/delvetalk-backups/`, so tarballs hold head snapshots; until one does,
      carry-check takes `--old-image delvetalk-host:9790175f9dc0`. The deploy is DEPLOY "A new binary", *It carries*.
-   - Step 3's edition 9 and snapshot `v4`: `World.forkedFrom` leaves the index (`world-status` already reads the origin
-     from entry 1), `Object.rules`/`wants` enter `storeJson`, and `Carry.readKeys`/`install` read both v3 and v4
-     (the snapshot body is the carry's contract, section 6). carry-check on the newest backup is the gate.
    - What a carried world does not yet keep: `world-receipt`/`world-entry` of a pre-carry hash answer unknown (the old
      chain's block store is edition-independent: read it as the world before, by the `carriedFrom.world` path or a
      copy beside the new journal); identity receipts (a retry of a pre-carry intent runs again); a client's offers
      cursor (`http.py` `after`) past the carried height waits until the new chain passes it.
    - A carried genesis's size: the store's compiled types and method tables (1 MB of playtest 3's 1.4 MB) are
      derivable from the carried sources; carry them as blocks, or derive them at install, measured on the v7 town.
-   - `slugTargets` scans every entry (and now every carried hash) per `world-resolve`: index slugs (item 4 below).
+   - `slugTargets` scans every entry (and now every carried hash) per `world-resolve`: index slugs (item 6 below).
    - Wake: playtest 3's opener wake is carried retired by the fourth playtest's `--leave`; step 4 deletes Wake, and a
      carry of a world holding Wake objects leaves each by name.
-1. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
+3. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
    old path: T30 reach as a host op (`world-reach {text, replyTo, root, kind, author, chain: [{uri, author,
    replyTo}]}` answering `{object, slot, how}` or nothing: the host holds `posts` (the addressee walk), the spell
    parse (`Parsed.spell`'s card), the commonplace's doors (`named_door`) and the summon rule; the bridge passes only
@@ -1845,17 +1867,17 @@ describes only what is. A merge touching the host runs `deploy/carry-check.sh` o
    frame bound checked once; H12 `Store.lean`'s `Limits` referencing `Bounds` (`maxTurnTicks` = `ticksMax`,
    `plainDepth` = `plainJsonDepth`, the 1400s); H13 `compressedSize`; H14 the duplicates; H15 one list codec
    (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls.
-2. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
+4. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
    `inspect` and `viewField` of a foreign object; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
    `delvetalk world expire / scratch:` spell; a front route for `world-cite`; `world-history` across worlds; the
    hand's SCRATCHES page.
-3. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
+5. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
    the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
    per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).
-4. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
+6. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
    sources, grants and slugs; CIDs as bytes; one record encoding; `serve --snapshot-every`; held worlds never closed;
    `world-inspect`'s `cites` per clause.
-5. Smaller, standing:
+7. Smaller, standing:
    - `hand.speak` (transport) casts one spell through `spell-parse`; a hand post of several spells answers
      `{status: "spells"}` without a top `receipt`, which it reports as an error. Teach it the turns, or keep it one.
    - `tests/test_pull_backups.Retention` depends on the time of day (names built from `now - 12h` and `now - 6h`
