@@ -1280,6 +1280,7 @@ def routeSpell (w : World) (principal id method : String) (argument : Data) (ret
   let addressee := if addressed then some (id, (spellForms w id o).map (·.action)) else none
   match Spell.parseFor text addressee with
   | .spell card action fields => return castSpell w principal id argument o card action fields retarget
+  | .quotation reason => return .refuse id "quotation" reason (spellUsage id (spellForms w id o))
   | .notASpell reason fielded =>
     if reason.startsWith "The block <<" then
       return .refuse id "unclosedBlock" reason (spellUsage id (spellForms w id o))
@@ -3363,6 +3364,7 @@ def spellVerdict (offered : List Spell.Form) (text : String) : Option (Except (L
     match offered.find? fun f => Spell.fold f.card == Spell.fold card && f.action == action with
     | some form => some (fitted form fields)
     | none => some (.error [s!"{card} {action} is not one of the offered actions"])
+  | .quotation reason => some (.error [reason])
   | .notASpell _ fielded => do
     guard fielded
     let first ← (Spell.bare text).head?

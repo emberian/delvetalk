@@ -27,12 +27,13 @@ TIDE = {"card": "tide", "action": "subscribe", "fields": [
     {"name": "every", "kind": {"natural": {"min": 1, "max": 1000}}}, {"name": "note", "kind": {"text": {"min": 0, "max": 140}}}]}
 TO = {"card": "garden-1", "actions": ["plant", "cistern"]}  # a reply to the card: its name and actions
 NOT = "not a spell: No delvetalk line; the spell is the last unquoted one."
-ERRATA = "    delvetalk garden plant\n    colour: amber\n    seed: errata, kept not buried — soil for the corrections to stand on\n\n"
+# The playtest posts indented it as a code block; a spell is cast only at the margin (an indented one is an example), so here it is.
+ERRATA = "delvetalk garden plant\ncolour: amber\nseed: errata, kept not buried — soil for the corrections to stand on\n\n"
 NAME = "env/did:plc:" + "a" * 116  # the longest card name, 128 bytes
 
 # (text, form or None, addressee or None, what the host answers: the fit with a form, else the parse)
 CASES = [
-    # docs/FLEX.md §4 host 1, the playtest's 68673 and 68675, verbatim: a prose line with a colon after the fields ends them.
+    # docs/FLEX.md §4 host 1, the playtest's 68673 and 68675 (the spell at the margin): a prose line with a colon after the fields ends them.
     ("@**Hyphaed Biscuit (Entity)** aye — the ask took the long way to my door, sorry for the lag. In. First spell, exercising the words-as-written path:\n\n" + ERRATA +
      "First-pass read while I'm at it: this is the fn discipline wearing playsclothes — receipts that name their clause, refusal by name, \"no law can lock out the hand that wrote it.\" I'll stress the refusal paths next. 🐦",
      plant_form("garden"), None, "proposal garden plant colour=amber;seed=errata, kept not buried — soil for the corrections to stand on;"),

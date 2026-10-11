@@ -355,14 +355,16 @@ reader's controls list only the actions the law, judged on the state as it
 stands, and the card's own `actions(state, context)` leave that reader.
 
 **The host reads spells** (`Host/Spell.lean`, the grammar in Lean, rule for
-rule). The last unquoted line `delvetalk CARD ACTION` (fields on the line after
+rule). The last line `delvetalk CARD ACTION` at the margin (fields on the line after
 ` / ` or commas, or on `field: value` lines), `<<DELIM` … `DELIM` blocks,
-fences and quotes skipped; a `source` field takes the reply's first ```obend
+fences and quotes skipped; an indented `delvetalk` line is an example, never cast (every card prints its spells
+indented), and a text holding a card's header line (`✾ `, `Seven doors.`, `KIND `, a line ending `Make one:`)
+beside a `delvetalk` line quotes that card: refused `badSpell`, clause `quotation`, nothing cast; a `source` field takes the reply's first ```obend
 fence. The host resolves the card, looks the action up in its declared forms,
 builds the typed argument (a word for a case of a closed sum) and runs the
 method, `inputOrigin.kind = "spell"`, costing the method's ticks alone. A misfit
 is refused `badSpell` with `clause` (`otherCard`, `noAction`, `unknownField`,
-`duplicateField`, `badValue`, `unclosedBlock`, and `fixed` for a `set` naming a
+`duplicateField`, `badValue`, `unclosedBlock`, `quotation`, and `fixed` for a `set` naming a
 fixed field), `reason` and `hint`, the spell with its blanks to resend. `delvetalk CARD ?` is the usage card, answered by the
 host; a view has no form and is never in it. `delvetalk CARD set` with one `field: value` line is a lens: the card's
 `lenses()` names the field and kind, and its `set` puts the value. A spell

@@ -22,6 +22,9 @@ structure Binding where
 inductive Parsed where
   | spell (card action : String) (fields : List Binding)
   | notASpell (reason : String) (fielded : Bool)
+  /-- A text that quotes a card (one of its header lines beside `delvetalk` lines): its spells are the
+      card's examples, so nothing is cast (`quotation`). -/
+  | quotation (reason : String)
   deriving Repr, BEq
 
 inductive Kind where
@@ -54,13 +57,13 @@ structure Entry where
 
 /-- Why a spell was refused: WHOLENESS.md section 2. -/
 inductive Clause where
-  | otherCard | noAction | unknownField | duplicateField | badValue | unclosedBlock | unclear
+  | otherCard | noAction | unknownField | duplicateField | badValue | unclosedBlock | quotation | unclear
   deriving Repr, BEq
 
 def Clause.name : Clause → String
   | .otherCard => "otherCard" | .noAction => "noAction" | .unknownField => "unknownField"
   | .duplicateField => "duplicateField" | .badValue => "badValue"
-  | .unclosedBlock => "unclosedBlock" | .unclear => "unclear"
+  | .unclosedBlock => "unclosedBlock" | .quotation => "quotation" | .unclear => "unclear"
 
 inductive Fit where
   | proposal (card action : String) (bindings : List Entry)
@@ -130,7 +133,6 @@ def isSpellAt (text : T) (indent : Nat) : Bool :=
   let head := foldT ((text.drop indent).take 10)
   head == lit "delvetalk " || head == lit "delvetalk\t"
 
-def isQuote (text : T) : Bool := span (text.take 4) [' '] == 4 || text.take 1 == ['\t']
 
 def tagged (text : T) (indent stop : Nat) : Bool :=
   decide (stop > indent + 3) && (text.drop indent).take 3 == lit "```" &&
@@ -237,7 +239,7 @@ partial def spellLine (text : T) (indent stop : Nat) : Fields2 :=
   if tagged text indent stop then fieldLines (pastFence (text.drop (stop + 1)))
   else if decide (indent < stop) && isSpellAt text indent then
     match headingAt text indent stop with
-    | .stands .. => if isQuote text then fieldLines (text.drop (stop + 1)) else .again text
+    | .stands .. => if indent == 0 then .again text else fieldLines (text.drop (stop + 1))
     | .none => .found []
   else fieldLine text stop
 
@@ -299,44 +301,56 @@ partial def block (name : String) (delimiter rest : T) (lines : List T) : Fields
     else block name delimiter after (line :: lines)
 end
 
-partial def parseFrom (text : T) (quoted : Candidate) (fielded : Bool) : Parsed :=
-  let noLine := "No delvetalk line; the spell is the last unquoted one."
-  let spelled' := fun (card action : String) (tail rest : T) => spelled card action (both (inline tail) (fieldLines rest))
-  if text.isEmpty then
-    match quoted with
-    | .stands c a tail rest => spelled' c a tail rest
-    | .none => .notASpell noLine fielded
+/-- A spell line is cast only at the margin: an indented `delvetalk …` line is a quotation or an example
+    (every card prints its spells indented), never a spell. -/
+partial def parseFrom (text : T) (fielded : Bool) : Parsed :=
+  if text.isEmpty then .notASpell "No delvetalk line; the spell is the last unquoted one." fielded
   else
     let indent := span text [' ', '\t']
     let stop := brk text ['\n']
-    if tagged text indent stop then parseFrom (pastFence (text.drop (stop + 1))) quoted fielded
-    else if decide (indent < stop) && isSpellAt text indent then
-      let rest := text.drop (stop + 1)
-      match headingAt text indent stop with
-      | .none => parseFrom rest quoted fielded
-      | candidate@(.stands c a tail rest') =>
-          if isQuote text then parseFrom rest candidate fielded else spelled' c a tail rest'
-    else parseFrom (text.drop (stop + 1)) quoted (fielded || fieldHead text indent stop)
+    if tagged text indent stop then parseFrom (pastFence (text.drop (stop + 1))) fielded
+    else if indent == 0 && decide (0 < stop) && isSpellAt text 0 then
+      match headingAt text 0 stop with
+      | .none => parseFrom (text.drop (stop + 1)) fielded
+      | .stands c a tail rest => spelled c a (both (inline tail) (fieldLines rest))
+    else parseFrom (text.drop (stop + 1)) (fielded || fieldHead text indent stop)
 where
   spelled (card action : String) : Fields2 → Parsed
     | .found bs => .spell card action bs
     | .bad reason => .notASpell reason true
-    | .again text => parseFrom text .none false
+    | .again text => parseFrom text false
     | .stray bs rest => seekAfter rest (.spell card action bs)
   seekAfter (text : T) (otherwise : Parsed) : Parsed :=
     if text.isEmpty then otherwise else
     let indent := span text [' ', '\t']
     let stop := brk text ['\n']
     if tagged text indent stop then seekAfter (pastFence (text.drop (stop + 1))) otherwise
-    else if decide (indent < stop) && isSpellAt text indent && !isQuote text then
-      match headingAt text indent stop with
+    else if indent == 0 && decide (0 < stop) && isSpellAt text 0 then
+      match headingAt text 0 stop with
       | .none => seekAfter (text.drop (stop + 1)) otherwise
       | .stands c a tail rest => spelled c a (both (inline tail) (fieldLines rest))
     else seekAfter (text.drop (stop + 1)) otherwise
 
-/-- The spell a reply means: its last unquoted `delvetalk <card> <action>` line with the fields
-    that follow (inline after the action, or one per line), or why there is none. -/
-def parse (text : String) : Parsed := parseFrom text.toList .none false
+/-- A card's header line, as cards print them: `✾ <TITLE>`, the commonplace's `Seven doors.`, a kind's
+    `KIND <name>: …`, or a line ending `Make one:`. -/
+def cardHeader (line : String) : Bool :=
+  let t := line.trimAscii.toString
+  t.startsWith "✾ " || t.startsWith "Seven doors." || t.startsWith "KIND " || t.endsWith "Make one:"
+
+/-- A text holding a card's header line beside a `delvetalk` line (at any indent) quotes that card. -/
+def quotes (text : String) : Option String := do
+  let lines := text.splitOn "\n"
+  let header ← lines.find? cardHeader
+  guard (lines.any fun l => isSpellAt (l.trimAsciiStart.toString.toList) 0)
+  return s!"This quotes a card ({(header.trimAscii.toString.take 40).toString}): its spells are examples, so none is cast. Write the spell alone, at the start of a line."
+
+/-- The spell a reply means: its `delvetalk <card> <action>` line at the margin with the fields that
+    follow (inline after the action, or one per line; a later spell line at the margin replaces it), a
+    quotation of a card (`quotes`), or why there is none. -/
+def parse (text : String) : Parsed :=
+  match quotes text with
+  | some reason => .quotation reason
+  | none => parseFrom text.toList false
 
 /-- Field lines with no delvetalk line: every `name: value` line outside tagged fences and `>`
     quotation, in order. -/
@@ -379,6 +393,7 @@ def addressedText (text card : String) (actions : List String) : Option String :
 def parseFor (text : String) (addressee : Option (String × List String)) : Parsed :=
   match parse text, addressee with
   | p@(.spell ..), _ => p
+  | p@(.quotation _), _ => p
   | p@(.notASpell reason _), some (card, actions) =>
     if reason.startsWith "The block <<" then p else
     match addressedText text card actions with
@@ -481,6 +496,7 @@ def clauseOfReason (reason : String) : Clause :=
 def fit (parsed : Parsed) (form : Form) : Fit :=
   match parsed with
   | .notASpell reason _ => .refused (clauseOfReason reason) reason
+  | .quotation reason => .refused .quotation reason
   | .spell card action fields =>
       if fold card != fold form.card || action != form.action then
         .refused .otherCard s!"This card answers {form.card} {form.action}."
@@ -564,6 +580,7 @@ def parsedJson : Parsed → List (String × Json)
       [("spell", Json.mkObj [("card", toJson card), ("action", toJson action), ("fields", bindingsJson fields)])]
   | .notASpell reason fielded =>
       [("notASpell", Json.mkObj [("reason", toJson reason), ("fielded", Json.bool fielded)])]
+  | .quotation reason => [("quotation", Json.mkObj [("reason", toJson reason)])]
 
 def valueJson : Value → Json
   | .text s => Json.mkObj [("text", toJson s)]

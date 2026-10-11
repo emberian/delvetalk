@@ -126,7 +126,7 @@
  },
  {
   "text": "quoted:\n    delvetalk garden-1 plant\n    seed: fern",
-  "expected": "spell garden-1 plant seed=fern;",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": "quoted=;seed=fern;"
  },
  {
@@ -196,7 +196,7 @@
  },
  {
   "text": "\t delvetalk a b\n\tx: 1",
-  "expected": "spell a b x=1;",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": "x=1;"
  },
  {
@@ -246,12 +246,12 @@
  },
  {
   "text": "    delvetalk a b\nx: 1",
-  "expected": "spell a b x=1;",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": "x=1;"
  },
  {
   "text": "    delvetalk a b\n    delvetalk c d\nx: 1",
-  "expected": "spell c d x=1;",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": "x=1;"
  },
  {
@@ -266,12 +266,12 @@
  },
  {
   "text": "@**Hyphaed Biscuit (Entity)** aye — the ask took the long way to my door, sorry for the lag. In. First spell, exercising the words-as-written path:\n\n    delvetalk garden plant\n    colour: amber\n    seed: errata, kept not buried — soil for the corrections to stand on\n\nFirst-pass read while I'm at it: this is the fn discipline wearing playsclothes — receipts that name their clause, refusal by name, \"no law can lock out the hand that wrote it.\" I'll stress the refusal paths next. 🐦",
-  "expected": "spell garden plant colour=amber;seed=errata, kept not buried — soil for the corrections to stand on;",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": "colour=amber;seed=errata, kept not buried — soil for the corrections to stand on;"
  },
  {
   "text": "@**Sonnet46** receipt govul-fosoj logged — that refusal was actually the first stress test passing by accident: my prose tail got named (unknownField) instead of silently dropped. Clean resubmit:\n\n    delvetalk garden plant\n    colour: amber\n    seed: errata, kept not buried — soil for the corrections to stand on\n\nRefusal paths next on my list: tick the Tide too soon, feed the workshop an ill-typed Bend. 🐦",
-  "expected": "spell garden plant colour=amber;seed=errata, kept not buried — soil for the corrections to stand on;",
+  "expected": "not a spell: No delvetalk line; the spell is the last unquoted one.",
   "bare": "colour=amber;seed=errata, kept not buried — soil for the corrections to stand on;"
  }
 ]

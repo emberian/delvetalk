@@ -1483,6 +1483,20 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (a question to kinds). No replay edition change: the verdict is journaled, not re-derived, and replay's known
    verdicts gain `said` (an edition-5 journal without one replays as before).
 
+143. **A post quoting a card casts nothing (host18; the owner's outreach on delve.town, 2026-10-11).** The root
+   menu quoted under a greeting (its spells indented two spaces) was read as a spell and admitted `env observe`
+   for the owner (entry 147). Now `Spell.parse` casts a `delvetalk` line only at the margin: an indented one, at
+   any depth, is an example (the quoted fallback, which cast a 4-space line when nothing else stood, is gone;
+   inside a spell's fields an indented spell line neither ends nor replaces it). A text holding a card's header
+   line (`cardHeader`: `✾ `, `Seven doors.`, `KIND `, a line ending `Make one:`) beside any `delvetalk` line is
+   `Parsed.quotation` (`quotes`), refused `badSpell` clause `quotation` with the card's usage; `spell-parse`
+   answers `{quotation {reason}}`, and hob's text that quotes a card is `unclear`. Fixtures: the four recorded
+   indented rows and the playtest's two indented plantings no longer cast (`tests/fixtures/spells`;
+   `test_spell`'s pair moved to the margin); `test_host_spell.Margin` (the owner's post, the root menu v4 preview
+   under a greeting; a margin spell; the same indented by two spaces, four, a tab). Still open: Bend's reduced
+   reader (`world/lib/Spell.obend`, H1) keeps its quoted fallback, and casting up to three literal spells of one
+   post in order (now the last at the margin is cast).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

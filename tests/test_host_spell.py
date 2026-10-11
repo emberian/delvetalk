@@ -87,5 +87,32 @@ class Clauses(unittest.TestCase):
         self.assertIs(host({"text": "just prose"})["notASpell"]["fielded"], False)
 
 
+PREVIEW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "previews", "gsb-root-menu-v4.txt")
+
+
+class Margin(unittest.TestCase):
+    """A post quoting a card does not cast (the owner's outreach, 2026-10-11: the root menu quoted under a greeting
+    was read as `env observe`, entry 147). A spell starts at the margin; an indented one is an example."""
+
+    def test_the_owners_post_quoting_the_root_menu_casts_nothing(self):
+        with open(PREVIEW, encoding="utf-8") as handle:
+            post = "Hello delve! This is the town I have been building; here is its first card:\n\n" + handle.read()
+        out = host({"text": post})
+        self.assertNotIn("spell", out)
+        self.assertTrue(out["quotation"]["reason"].startswith("This quotes a card (✾ DELVETALK · ROOT)"), out)
+        form = fixtures("fit")[0]["form"]
+        self.assertEqual(host({"text": post, "form": form})["fit"]["refused"]["clause"], "quotation")
+
+    def test_a_spell_at_the_margin_casts_and_the_same_indented_does_not(self):
+        spell = "delvetalk garden plant / seed: x / colour: amber"
+        self.assertEqual(show_parsed(host({"text": spell})), "spell garden plant seed=x;colour=amber;")
+        for indent in ("  ", "    ", "\t"):
+            with self.subTest(indent=repr(indent)):
+                self.assertIn("notASpell", host({"text": indent + spell}))
+                self.assertIn("notASpell", host({"text": "see:\n" + indent + spell + "\nnice"}))
+        # An indented example after a spell's fields neither ends nor replaces it.
+        self.assertEqual(show_parsed(host({"text": "delvetalk garden plant\nseed: x\n  delvetalk tide tick\ncolour: amber"})),
+                         "spell garden plant seed=x;colour=amber;")
+
 if __name__ == "__main__":
     unittest.main()
