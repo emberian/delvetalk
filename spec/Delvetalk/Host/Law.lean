@@ -215,8 +215,8 @@ def denote (facts : Facts) (old : Option Data) (new : Data) : LawExpr → Bool
           let now := after.map canon
           rows.all fun r => now.contains (canon r) || facts.evicted.any fun (f, x) => f == field && canon x == canon r
         | none => false
-  -- The host lane denotes it (docs/LAW.md §4 B); until then it fails closed.
-  | .changed _ _ _ => false
+  -- The host lane denotes them (docs/LAW.md §4 B, D); until then they fail closed.
+  | .changed _ _ _ | .member _ (.cited _ _ _) => false
   | .not body => !denote facts old new body
   | .and left right => denote facts old new left && denote facts old new right
   | .or left right => denote facts old new left || denote facts old new right
