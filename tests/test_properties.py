@@ -156,11 +156,11 @@ CONVENTIONAL = {"receive", "render", "forms", "lenses", "set", "publishPage", "p
 class Run:
     """One town and the requests sent to it, checked as they go."""
 
-    def __init__(self, directory, seed):
+    def __init__(self, directory, seed, cleanup):
         self.dir, self.seed, self.rng = directory, seed, random.Random(seed)
         self.violations = {}  # what broke -> the first request that broke it
         self.statuses = collections.Counter()
-        self.town = Town(directory)
+        self.town = Town(directory, cleanup=cleanup)
         self.log = []  # every request, in order, for the second town
         self.forks = 0
         for did, handle in STRANGERS.items():
@@ -366,8 +366,7 @@ class Property(unittest.TestCase):
     def town(self, name, seed):
         directory = os.path.join(self.tmp.name, name)
         os.makedirs(directory)
-        run = Run(directory, seed)
-        self.addCleanup(run.town.close)
+        run = Run(directory, seed, self.addCleanup)
         return run
 
 

@@ -81,6 +81,8 @@ pre { font: 14px/1.5 var(--mono); }
 .card { margin: 0; padding: 1.1rem 1.25rem; max-width: calc(72ch + 2.5rem); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink); background: transparent; tab-size: 4; }
 .card::first-line { color: var(--amber); font-weight: 700; }
 .frame.offer { background-color: var(--tint); }
+/* ---- the paint: the thing in its own voice, above its exact card; the card stays the authority */
+.paint { max-width: 72ch; margin: 1rem 0 .25rem; font: italic 17px/1.65 var(--serif); color: var(--ink); white-space: pre-line; }
 .state { background: var(--leaf); border: 1px solid var(--rule); padding: .75rem 1rem; }
 
 /* ---- spells: a left amber rule; parameter slots as dashed underlines */

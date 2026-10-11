@@ -95,8 +95,8 @@ class State:
     def pidfile(self, name):
         return self.home / f'{name}.pid'
 
-    def daemon(self, name, step, stop=None):
-        """step() every `poll` seconds under a pid file; SIGTERM/SIGINT finish the current step and exit."""
+    def daemon(self, name, step, stop=None, every=None):
+        """step() every `every` seconds (default `poll`) under a pid file; SIGTERM/SIGINT finish the current step and exit."""
         stop, pidfile = stop or threading.Event(), self.pidfile(name)
         pidfile.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if pidfile.exists():
@@ -113,6 +113,6 @@ class State:
             while not stop.is_set():
                 step()
                 pidfile.touch()  # the heartbeat: the file's age is the time since the last finished step
-                stop.wait(self.config.poll)
+                stop.wait(self.config.poll if every is None else every)
         finally:
             pidfile.unlink(missing_ok=True)

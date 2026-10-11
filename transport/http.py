@@ -17,7 +17,7 @@ from pathlib import Path
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
 from transport.bridge import door_rows, plain
-from transport.host import CLOCK, HOST_TIMEOUT
+from transport.host import CLOCK, HOST_TIMEOUT, painted
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import PUBLIC, Repo
@@ -955,8 +955,10 @@ class Handler(BaseHTTPRequestHandler):
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
         if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], card, card.get('status')))
+        paint = painted(host, did, name, self.server.sleep) if card.get('status') == 'card' else None
         self.html(200, pages.page(name, who['handle'], pages.T['page'].format(
-            name=html.escape(name), path=html.escape(oid(name)), said=said, card=html.escape(card.get('text', '')), doors=pages.door_nav(door_rows(view)))))
+            name=html.escape(name), path=html.escape(oid(name)), said=said, paint=pages.painting(paint), card=html.escape(card.get('text', '')),
+            doors=pages.door_nav(door_rows(view)))))
 
     def html(self, code, body, headers=()):
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
@@ -979,8 +981,9 @@ class Handler(BaseHTTPRequestHandler):
         acts = actions('', name, seen) if principal and seen.get('status') == 'inspected' else ()
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
+        paint = painted(host, principal or 'anonymous', name, self.server.sleep) if card.get('status') == 'card' else None
         self.html(200, pages.obj(name, handle, view, card.get('text') if card.get('status') == 'card' else None,
-                                 self.history(host, name, principal), principal, door_rows(view), seen, acts, brief))
+                                 self.history(host, name, principal), principal, door_rows(view), seen, acts, brief, paint))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, read from the tail of the journal under the reader's authority."""

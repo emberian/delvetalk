@@ -26,8 +26,7 @@ class Genesis(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name)
-        cls.addClassCleanup(cls.town.close)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         cls.host = cls.town.client  # genesis is the opener's: the root socket
         cls.made, cls.refusal = cls.town.made, cls.town.refusal
 
@@ -157,8 +156,7 @@ class NoWipe(unittest.TestCase):
         with open(os.path.join(self.towns, 'v1', 'state', 'town.journal'), 'w') as f:
             f.write('{"height":1}\n{"height":2}\n')
         os.makedirs(os.path.join(self.towns, 'v1', 'state', 'scratch'))
-        self.town = Town(os.path.join(self.towns, 'v2'), run_genesis=False)
-        self.addCleanup(self.town.close)
+        self.town = Town(os.path.join(self.towns, 'v2'), run_genesis=False, cleanup=self.addCleanup)
 
     def genesis(self, *more):
         err = io.StringIO()
@@ -197,7 +195,7 @@ class Rows(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         for did, handle in (('did:plc:glm', 'glm.delve.town'), ('did:plc:kim', 'kimik3.delve.town')):
             cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
 
@@ -237,7 +235,7 @@ class Checked(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         cls.town.send(op='world-arrive', principal='transport', did='did:plc:glm', handle='glm.delve.town')
 
     def check(self, target, ident):
@@ -268,8 +266,7 @@ class Weather(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.town = Town(tmp.name)
-        self.addCleanup(self.town.close)
+        self.town = Town(tmp.name, cleanup=self.addCleanup)
         self.host = self.town.client
 
     def state(self, obj):
@@ -312,8 +309,7 @@ class Commonplace(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name)
-        cls.addClassCleanup(cls.town.close)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         cls.host = cls.town.client  # genesis is the opener's: the root socket
         cls.made, cls.refusal = cls.town.made, cls.town.refusal
 

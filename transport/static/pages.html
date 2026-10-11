@@ -31,6 +31,8 @@
 <p class="codes"><span class="code">v.{version}</span>{yours}</p>{shown}{doors}{play}{actions}{source}{receipts}
 <!-- card: the card's bytes, framed, never reflowed -->
 <figure class="frame"><pre class="card">{text}</pre></figure>
+<!-- paint: the card painted from its strokes in the thing's voice (docs/VOICE.md "The paint"), above the exact card, never in its frame -->
+<p class="paint">{text}</p>
 <!-- state: an object with no card, its state as a definition list -->
 <div class="state">{state}</div>
 <!-- playlink -->
@@ -48,7 +50,7 @@
 <!-- link -->
 <a class="door" href="{href}">{rel}</a>
 <!-- page: an object to play, as the logged-in principal sees it; the card is world-card's text, unchanged -->
-<h1 class="title"><span class="kind" data-id="{name}"></span>{name}</h1>{said}
+<h1 class="title"><span class="kind" data-id="{name}"></span>{name}</h1>{said}{paint}
 <figure class="frame"><pre class="card">{card}</pre></figure>{doors}
 <section><h2>Reply</h2><form method="post" action="/play/{path}"><textarea name="text" rows="5" placeholder="a spell, or what you mean in your own words"></textarea><button>Send</button></form>
 <form method="post" action="/play/{path}"><input type="hidden" name="text" value="delvetalk {name} ?"><button class="ask">? usage</button></form></section>

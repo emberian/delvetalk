@@ -12,6 +12,10 @@ each test is named as a sentence of what the software does.
 declaring `independent = True` and measured over 8 s is dealt into chunks); `tests/host.py` holds the
 fixtures: `HostCase` (one process per class, a fresh unsynced journal per test), `ServeCase` (one `serve`
 per class, `host` its public socket and `root` the opener's; test_http's `FrontCase` takes `fresh_world` for a `serve` per test), `check` (the run's shared stateless process).
+Every `serve` a test starts goes through `served(state, cleanup=...)` or `Town(..., cleanup=...)`: the test's
+`addCleanup`/`addClassCleanup` receives the stop before serve starts. serve runs in its own process group with
+its PID in `<state>/served.pid`; SIGTERM/SIGHUP, interpreter exit and (Linux) the parent-death signal stop it, and
+the binary copy (`dt-obend-*`, its `owner.pid`) goes with its owner or with the next copy after an owner's SIGKILL.
 `tests/wire.py` writes and reads Data on the wire (`nat`, `label`, `record`, `variant`, `relation`, `field`, `rows`) and holds the independent
 DAG-CBOR encoder; `tests/bend.py` loads the world's modules as packages (`closure`, `declared`). [PROFILE.md](PROFILE.md) is the measurement
 that shaped them.

@@ -30,8 +30,7 @@ class Previews(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name)
-        cls.addClassCleanup(cls.town.close)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         cls.turns = 0
         cls.render = {}
         cls.town.send(op='world-arrive', principal='transport', did=STRANGER, handle='x.test')
