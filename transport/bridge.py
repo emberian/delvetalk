@@ -530,7 +530,7 @@ def main(argv=None, out=None):
             if 'publication' in d:
                 p = d['publication']
                 where = f"--reply-to {d['replyTo']} " if d['replyTo'] else ''
-                need = '' if d['replyTo'] or not d['section'] else '=== needs: the page post first (post and --record the whole page)\n'
+                need = '' if d['replyTo'] or not d['section'] else '=== needs: the page post first (post and --object the whole page)\n'
                 out.write(f"=== publish for: {p['object']}  file: {path}\n{need}=== post: python3 -m transport.post --state STATE post "
                           f"--text-file TEXT {where}--intent {p['id']} --host-socket SOCKET --object {p['object']}\n{d['text'].rstrip()}\n\n")
                 continue
