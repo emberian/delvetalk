@@ -30,6 +30,14 @@
 <form method="post" action="{base}/invite"><input type="hidden" name="minute" value="{minute}">{where}<button class="door">Draft</button></form>
 <!-- spoken: what a cast came back with -->
 <section><h2>Came back</h2><ol class="receipts"><li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">entry {height}</span><span class="name">{slug}</span><span class="by">to {object}</span></li></ol>{card}</section>
+<!-- watch: the journal and the outbox, newest first, refreshed by the page itself -->
+<h1 class="title">Watch<small>the journal{of} and the outbox of {world}, newest first, {pace}</small></h1>
+<p class="codes">{codes}</p><p class="doors">{toggle}</p>
+<form method="get" action="{base}/watch"><label>One object's history <input name="object" value="{object}" placeholder="garden/bell/1"></label><button class="door">Follow it</button></form>
+<ol class="receipts">{rows}</ol>
+<!-- watched: one entry, or one draft of the hand's own -->
+<li class="slip {tag}"><span class="stamp">{stamp}</span><span class="code">{height}</span><span class="name">{who}</span><span class="line">{turn}
+{first}</span><span class="by">{links}</span></li>
 <!-- root: root, one click past moderation: every form one request on the root socket, every form a reason -->
 <hr class="root"><h1 class="title">Root<small>journaled, marked root, public; the reason is on the entry</small></h1>{note}
 <p class="codes">{codes}</p>

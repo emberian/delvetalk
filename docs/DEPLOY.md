@@ -368,6 +368,10 @@ The same operations have a command-line face for the owner's assistant over ssh:
   docs/PLAYTEST-2.md §2) under an intent of its own, so a second cast is the first receipt; `--invitation MINUTE` drafts
   §3's invitation at T+MINUTE for the bot, its spells quoted, once. The hand's own drafts wait for Post on Zulip too.
 - `plan`: the plan's seeds, each with its cast, and its invitations, each with its draft.
+- `watch [--object O] [--limit N]` (`/hand/<world>/watch`, refreshing itself every five seconds, HOLD STILL to stop):
+  the journal, or one object's `world-history`, and the outbox together, newest first; each entry with its
+  principal's handle, the turn as it was typed (the observed post's spell line, or the hand's own), the first line of
+  the card it offered, links to its receipt and to the object in the root editor, and the drafts it made.
 
 Moderation and root (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126), the same verbs as forms on `/hand/<world>/root/` (a red
 rule across the top, a reason or reading required on every form, served on the hand's listener only, linked from every page):

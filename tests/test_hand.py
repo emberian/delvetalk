@@ -21,6 +21,7 @@ from tests.test_bridge import spell_post
 from tests.wire import write_journal
 from transport import delve, hand, identity, observe, post, watch
 from transport.__main__ import main
+from transport.host import CLOCK
 from transport.http import Front
 from transport.state import State
 
@@ -322,9 +323,30 @@ class Plan(unittest.TestCase):
         self.assertEqual(hand.plan('/nonexistent'), {'path': '/nonexistent', 'seeds': [], 'invitations': []})
 
 
+def observed(st, uri, did, handle, text, at='2026-10-11T10:00:00Z'):
+    """An observation as the bridge stores one (observe.SCHEMA), for a turn the test makes under its uri."""
+    import sqlite3
+    st.home.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(st.observed)
+    db.executescript(observe.SCHEMA)
+    db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (uri, json.dumps({
+        'uri': uri, 'author': {'did': did, 'handle': handle}, 'text': text, 'kind': 'post', 'createdAt': at, 'replyTo': None, 'mentions': [], 'root': None})))
+    db.commit()
+    db.close()
+
+
+def cast(town, who, text, intent):
+    """`text` as the bridge turns a post of `who`'s: `receive` on the card the host reads in it."""
+    card = town.send(op='spell-parse', text=text)['spell']['card']
+    return town.send(op='world-turn', principal=who, object=card, method='receive', identity=intent,
+                     argument={'tag': 'record', 'fields': [{'name': 'text', 'value': {'tag': 'label', 'value': text}},
+                                                           {'name': 'post', 'value': {'tag': 'label', 'value': intent}}]})
+
+
 class Speak(unittest.TestCase):
-    """Speak over a real `serve` after genesis, the world a Zulip channel: a seed is cast once as the opener, the card
-    and receipt come back, and the post that says so waits for Post into its topic, recorded for the thing it made."""
+    """Speak and Watch over a real `serve` after genesis, the world a Zulip channel: a seed is cast once as the opener,
+    the card and receipt come back, and the post that says so waits for Post into its topic, recorded for the thing it
+    made; the watch shows each turn as it was typed, by handle, with the card it offered and the draft it made."""
 
     @classmethod
     def setUpClass(cls):
@@ -382,6 +404,30 @@ class Speak(unittest.TestCase):
         code, page, _ = self.hand.handle('GET', '/hand/town/speak?spoken=' + spoken, cookie)
         self.assertIn('Came back', page)
         self.assertIn('garden/bell/', page)
+
+    def test_the_watch_follows_the_journal_and_the_outbox_newest_first(self):
+        resident, uri = 'did:plc:' + 'w' * 24, 'zulip://delvetalk/welcome/9001'
+        self.town.send(op='world-arrive', principal=CLOCK, did=resident, handle='kestrel')
+        observed(self.st, uri, resident, 'kestrel', 'look:\ndelvetalk garden plant / colour: violet / seed: a watched bell')
+        planted = cast(self.town, resident, 'delvetalk garden plant / colour: violet / seed: a watched bell', uri)
+        spell = 'delvetalk garden plant / colour: amber / seed: a bell the hand planted'
+        came = self.hand.cast(spell, intent='hand:speak:watch-1')
+        rows = self.hand.watch()
+        heights = [r['height'] for r in rows if r['height']]
+        self.assertEqual(heights, sorted(heights, reverse=True))  # newest first
+        mine = next(r for r in rows if r['height'] == came['height'])
+        self.assertEqual((mine['who'], mine['turn'], mine['tag']), ('ember.delve.town', spell, 'admitted'))
+        self.assertTrue(mine['first'] and mine['slug'] and mine['object'].startswith('garden/bell/'), mine)
+        self.assertEqual([d['id'] for d in mine['drafts']], [came['drafted']])
+        theirs = next(r for r in rows if r['height'] == planted['receipt']['height'])
+        self.assertEqual((theirs['who'], theirs['turn']), ('kestrel', 'delvetalk garden plant / colour: violet / seed: a watched bell'))
+        bell = mine['object']
+        self.assertEqual([r['height'] for r in self.hand.watch(bell) if r['height']], [x['height'] for x in self.hand.entries(bell, 100)][:30])
+        code, page, _ = self.hand.handle('GET', '/hand/town/watch', f'dt_hand={TOKEN}')
+        self.assertIn('<meta http-equiv="refresh" content="5">', page)
+        self.assertIn(f'/hand/town/root/?object={urllib.parse.quote(bell, safe="")}', page)
+        self.assertIn(f"receipt {came['slug']}", page)
+        self.assertNotIn('http-equiv="refresh"', self.hand.handle('GET', '/hand/town/watch?still=1', f'dt_hand={TOKEN}')[1])
 
     def test_an_invitation_is_drafted_once_with_its_spell_quoted(self):
         got = self.hand.invite(30)

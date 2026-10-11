@@ -79,6 +79,10 @@ def invitation_text(row, transport):
     return PINGS.sub(ping, row['words']) + '\n\n' + '\n'.join('    ' + s for s in row['spells']) + '\n'
 
 
+def first_line(text, n=160):
+    return clip(next((l for l in (text or '').split('\n') if l.strip()), ''), n)
+
+
 def quoted(spell):
     return '\n'.join('    ' + line for line in spell.split('\n'))
 
@@ -87,7 +91,7 @@ class Hand:
     def __init__(self, st, host, token='', poster=post.post_draft, clock=time.time, who='owner'):
         self.st, self.host, self.token, self.poster, self.clock, self.who = st, host, token, poster, clock, who
         self.owner = st.config.opener
-        self.plan = plan(st.config.plan)
+        self.plan, self.names = plan(st.config.plan), {}
 
     def at(self, world):
         """The same hand over another world `serve` holds."""
@@ -97,7 +101,7 @@ class Hand:
         if world not in served:
             raise HandError(f'no world {world} here; serve holds {", ".join(served) or "none"}')
         h = Hand(State(self.st.root, world, self.st.config), self.host.at(world), self.token, self.poster, self.clock, self.who)
-        h.plan = self.plan
+        h.plan, h.names = self.plan, self.names
         return h
 
     def log(self, what, draft, **more):
@@ -275,6 +279,68 @@ class Hand:
         return {'seeds': seeds, 'invitations': [dict(r, draft=r['minute'] in invited and {'id': invited[r['minute']][0], 'state': state(invited[r['minute']][1])})
                                                 for r in self.plan['invitations']]}
 
+    # ---- watching: the journal and the outbox together, newest first
+
+    def handle_of(self, principal):
+        """A principal as the town names it: its avatar's handle, read as the opener and kept once found."""
+        if not principal or principal == CLOCK:
+            return 'the clock' if principal else '—'
+        if principal not in self.names:
+            view = self.host.send({'op': 'world-view', 'principal': self.owner, 'object': principal})
+            handle = (bridge.plain(view.get('state') or {}) or {}).get('handle') if view.get('status') == 'viewed' else None
+            if not isinstance(handle, str) or not handle:
+                return principal
+            self.names[principal] = handle
+        return self.names[principal]
+
+    def entries(self, object=None, limit=30):
+        """The newest `limit` entries as the opener reads them: the world's journal, or one object's `world-history`."""
+        if not object:
+            return self.host.send({'op': 'world-entries', 'principal': self.owner, 'reverse': True, 'limit': limit}).get('entries') or []
+        got, after = [], 0
+        while True:
+            page = self.host.send({'op': 'world-history', 'principal': self.owner, 'object': object, 'after': after})
+            got += page.get('entries') or []
+            if not page.get('more') or not page.get('entries'):
+                return got[::-1][:limit]
+            after = got[-1]['height']
+
+    def watch(self, object=None, limit=30):
+        """The journal (or one object's history) and the outbox, newest first: each entry with its principal's handle, the
+        turn as it was typed, the first line of the card it offered, its receipt's name, the object it reached and the
+        drafts it made; the hand's own drafts that wait on no entry (an invitation, a reply by hand) above them."""
+        seen, by_height, loose = self.observed(), {}, []
+        spells = {(d.get('speak') or {}).get('intent'): d['speak']['spell'] for _, _, d in self.drafts() if (d.get('speak') or {}).get('spell')}
+        for i, _, d in self.drafts():
+            height = next((x['height'] for x in (d.get('receipt'), d.get('offer'), d.get('publication')) if x and x.get('height')), None)
+            row = {'id': i, 'state': self.summary(i, d)['state'], 'first': first_line(d['text'])}
+            if height:
+                by_height.setdefault(height, []).append(row)
+            elif row['state'] == 'waiting' and d['text']:
+                loose.append(dict(row, who='the hand', turn=(d.get('speak') or {}).get('invitation') is not None and f"invitation T+{d['speak']['invitation']}" or 'by hand',
+                                  object=d.get('object'), outcome='drafted', tag='', height=None, slug=None, drafts=[]))
+        return loose[::-1] + [self.watched(x, seen, spells, by_height) for x in self.entries(object, limit)]
+
+    def watched(self, x, seen, spells, by_height):
+        ident, out = x.get('identity') or {}, x.get('outcome') or {}
+        intent = ident.get('intent') or ''
+        made = [c.get('object') for c in out.get('creates') or []]
+        obj = next((o for o in [*made, *(r.get('object') for r in x.get('roots') or []), out.get('object'), x.get('object')] if o), None)
+        if intent in seen:
+            text = seen[intent]['text']
+            turn = next((l.strip() for l in text.split('\n') if l.strip().startswith('delvetalk')), first_line(text))
+        elif intent in spells:
+            turn = spells[intent]
+        elif x.get('root'):
+            turn = f"root {out.get('kind')} {out.get('object') or ''}".strip()
+        else:
+            turn = ('↳ ' if x.get('delivery') else '') + ' '.join(str(t) for t in (out.get('tag') or x.get('status'), obj) if t)
+        offered = next((o.get('text') for o in x.get('offers') or [] if o.get('text')), None)
+        drafts = by_height.get(x.get('height'), [])
+        return {'height': x.get('height'), 'slug': x.get('slug'), 'tag': out.get('tag') or x.get('status'), 'outcome': outcome_of(x) if out else x.get('class') or x.get('status'),
+                'who': self.handle_of(ident.get('principal')), 'turn': turn, 'object': obj,
+                'first': first_line(offered or (drafts[0]['first'] if drafts else '') or out.get('reason') or x.get('hint') or ''), 'drafts': drafts}
+
     # ---- acting
 
     def edit(self, draft_id, text):
@@ -403,7 +469,7 @@ class Hand:
                 back = {'root': '/root/?', 'mod': '/root/?', 'speak': '/speak?', 'invite': '/speak?'}.get(rest.partition('/')[0], '/?')
                 more = {'spoken': done['drafted']} if rest == 'speak' and done.get('drafted') else {}
                 return 303, '', [('Location', base + back + urllib.parse.urlencode({'note': note, **more}) + ('#outbox' if back == '/?' else ''))]
-        page = {'': h.page, 'speak': h.speak_page, 'root': h.root_page}.get(rest) if method == 'GET' else None
+        page = {'': h.page, 'speak': h.speak_page, 'watch': h.watch_page, 'root': h.root_page}.get(rest) if method == 'GET' else None
         if page is None:
             return 404, shell('not here', world, H['missing'].format(text=e(f'no page {rest} in the hand'))), []
         return 200, page(query), []
@@ -477,6 +543,26 @@ class Hand:
         return shell('speak', self.st.world, H['speak'].format(base=base, world=q(self.st.world), note=self.note(query), spoken=spoken,
                                                                intent=q(f'hand:speak:{int(self.clock() * 1000)}'), where=where,
                                                                plan=q(Path(self.plan['path']).name), seeds=seeds, invitations=invitations))
+
+    def watch_page(self, query, every=5):
+        """The watch, refreshed every `every` seconds by the page itself (a meta refresh; `still` holds it)."""
+        q, base, obj, still = lambda t: e(str(t)), f'/hand/{self.st.world}', query.get('object', '').strip(), query.get('still') == '1'
+        here = base + '/watch' + ('?' + urllib.parse.urlencode({'object': obj}) if obj else '')
+        rows = ''.join(H['watched'].format(
+            tag=q(r['tag']), stamp=q(pages.stamp(r['outcome']) if r['tag'] else '◦ drafted'), height=q(f"entry {r['height']}" if r['height'] else 'outbox'),
+            who=q(r['who']), turn=q(r['turn']), first=q(r['first']),
+            links=' · '.join(([f'<a href="{base}/?{urllib.parse.urlencode({"slug": r["slug"]})}">receipt {q(r["slug"])}</a>'] if r['slug'] else []) +
+                             ([f'<a href="{base}/root/?{urllib.parse.urlencode({"object": r["object"]})}">{q(r["object"])}</a>'] if r['object'] else []) +
+                             [f'<a href="{base}/#outbox">draft {q(d["id"])}</a> {q(d["state"])}' for d in r['drafts']] +
+                             ([f'<a href="{base}/#outbox">{q(r["id"])}</a> waiting for Post'] if r.get('id') else [])))
+            for r in self.watch(obj or None)) or '<li class="quiet">— nothing journaled —</li>'
+        st = self.host.send({'op': 'world-status'})
+        codes = self.codes((f"entry {st.get('height')}", f"clock {st.get('clock')}", f"{sum(1 for _ in self.st.unposted())} waiting in the outbox"))
+        return shell('watch', self.st.world, H['watch'].format(
+            base=base, world=q(self.st.world), object=q(obj), of=q(f' of {obj}' if obj else ''), codes=codes, rows=rows,
+            pace=q('held still' if still else f'every {every} seconds'),
+            toggle=f'<a class="door" href="{q(here)}">FOLLOW</a>' if still else f'<a class="door" href="{q(here + ("&" if obj else "?") + "still=1")}">HOLD STILL</a>'),
+            refresh=0 if still else every)
 
     def root_page(self, query):
         q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
@@ -582,7 +668,7 @@ def parser(p, common):
                       ('--seed', dict(type=int, metavar='N', help="the plan's seed N")), ('--invitation', dict(type=int, metavar='MINUTE', help="draft the plan's invitation at T+MINUTE")),
                       ('--topic', dict(help='a Zulip world: the topic (default its one topic, else welcome)')),
                       ('--reply-to', dict(metavar='AT_URI', help='a Delve world: the thread to answer')), ('--intent', dict(help='casting twice under one intent is one turn'))],
-            'plan': []}
+            'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))]}
     flags = lambda fields, why: [(f'--{n}', {}) for n, _ in fields] + [(f'--{n}-file', {}) for n, k in fields if k == 'json' or n == 'text'] + \
         [(f'--{why}', dict(required=True))]
     spec |= {v: flags(f, 'reading') for v, (_, f) in root.POWERS.items()} | {'settings': flags(root.MOD_SETTINGS, 'reading')}
@@ -613,7 +699,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'status': h.status, 'search': lambda: h.search(a.slug), 'spend': lambda: h.spend(a.month),
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
-                'speak': lambda: cli_speak(h, a), 'plan': h.spoken,
+                'speak': lambda: cli_speak(h, a), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit),
                 'root': lambda: cli_root(h, a), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
     except (HandError, OSError) as err:
         print(f'hand: {err}', file=sys.stderr)
