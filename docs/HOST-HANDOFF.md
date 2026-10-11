@@ -1476,12 +1476,27 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    last word and `…`); prose with no prefix and no spell is `said` too (`saidVerdict`; the old prose arm,
    `replied {text}`, is gone: `replied` is only `card`). A Response that cannot carry it hears `unclear`. Garden
    and the commonplace take `said` as they took prose until the objects lane renders it as hob's line. The play
-   page waits on the turn and the turns it handed on (`delivered` under the same principal) while any is
-   suspended, polling `world-offers` and stopping when hob offers or settles with nothing; the turn line names
+   page follows the turn and every turn it handed on (`Front.follow`: each settled receipt's `sends`, delivered
+   under the same principal with the send's id as intent, so hob's planting sent on to the garden is followed)
+   while any is suspended or undelivered, up to `WAIT_MAX`, then shows what they offered; the turn line names
    the card addressed (`bridge.turn_root(receipt, addressed)`), not the first root (a card that asks the
    commonplace's `due` first). Tests: `test_interpret_object` (say, prose, both clips), `test_http.Play`
    (a question to kinds). No replay edition change: the verdict is journaled, not re-derived, and replay's known
    verdicts gain `said` (an edition-5 journal without one replays as before).
+
+143. **A post quoting a card casts nothing (host18; the owner's outreach on delve.town, 2026-10-11).** The root
+   menu quoted under a greeting (its spells indented two spaces) was read as a spell and admitted `env observe`
+   for the owner (entry 147). Now `Spell.parse` casts a `delvetalk` line only at the margin: an indented one, at
+   any depth, is an example (the quoted fallback, which cast a 4-space line when nothing else stood, is gone;
+   inside a spell's fields an indented spell line neither ends nor replaces it). A text holding a card's header
+   line (`cardHeader`: `✾ `, `Seven doors.`, `KIND `, a line ending `Make one:`) beside any `delvetalk` line is
+   `Parsed.quotation` (`quotes`), refused `badSpell` clause `quotation` with the card's usage; `spell-parse`
+   answers `{quotation {reason}}`, and hob's text that quotes a card is `unclear`. Fixtures: the four recorded
+   indented rows and the playtest's two indented plantings no longer cast (`tests/fixtures/spells`;
+   `test_spell`'s pair moved to the margin); `test_host_spell.Margin` (the owner's post, the root menu v4 preview
+   under a greeting; a margin spell; the same indented by two spaces, four, a tab). Still open: Bend's reduced
+   reader (`world/lib/Spell.obend`, H1) keeps its quoted fallback, and casting up to three literal spells of one
+   post in order (now the last at the margin is cast).
 
 ## 6. Gotchas
 

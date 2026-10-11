@@ -92,8 +92,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=violet;seed=fern;",
-  "parsed": "spell garden-1 plant seed=fern;colour=violet;"
+  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
+  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
  },
  {
   "text": "Could we plant a fern?",
@@ -252,8 +252,8 @@
     }
    ]
   },
-  "expected": "proposal garden-1 plant colour=amber;seed=moth;",
-  "parsed": "spell garden-1 plant colour=amber;seed=moth;"
+  "expected": "refused No delvetalk line; the spell is the last unquoted one.",
+  "parsed": "not a spell: No delvetalk line; the spell is the last unquoted one."
  },
  {
   "text": "delvetalk garden-1 plant\nseed fern",

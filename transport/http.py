@@ -366,6 +366,26 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         if force or info.get('pid') != self.serve_pid:
             self.library, self.serve_pid = info.get('library'), info.get('pid')
 
+    def follow(self, principal, intent, reply):
+        """The texts offered to `principal` by a turn and every turn it handed on (its `sends`, delivered under the same
+        principal with the send's id as intent: a card handing prose to the commonplace, hob's planting sent to the garden),
+        waiting up to WAIT_MAX seconds while any of them is suspended on hob or not yet delivered."""
+        host, watch = self.host, {intent}
+        done = {} if reply.get('status') == 'suspended' else {intent: reply['receipt']}  # the turn as it answered
+        watch |= {s['id'] for r in done.values() for s in r.get('sends') or [] if s.get('id')}
+        after = reply['receipt']['height'] - 1
+        for _ in range(WAIT_MAX + 1):
+            for i in sorted(watch - set(done)):
+                got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': i}).get('receipt') or {}
+                if ((got.get('outcome') or {}).get('tag') or 'suspended') != 'suspended':
+                    done[i] = got
+                    watch |= {s['id'] for s in got.get('sends') or [] if s.get('id')}
+            if watch <= set(done):
+                break
+            self.sleep(WAIT_STEP)
+        seen = host.send({'op': 'world-offers', 'principal': principal, 'after': after}).get('offers') or []
+        return [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in watch]
+
     def used(self, credential):
         now = self.clock()
         with self.hits_lock:
@@ -888,22 +908,7 @@ class Handler(BaseHTTPRequestHandler):
             r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent, 'reach': 'direct',
                            'argument': typed(fields if data.get('method') else {'text': str(data.get('text', '')), 'post': ''})})
             self.server.draft_turn(did, intent, r)
-            # The turn and the turns it handed on (a card handing prose to the commonplace): what they offered at once, and
-            # those that wait on hob, whose answer arrives later as an offer under the same identity.
-            turns = [r] + [d for d in r.get('delivered') or [] if (d.get('receipt') or {}).get('identity', {}).get('principal') == did]
-            offers = [o['text'] for t in turns for o in t.get('offers') or []]
-            waiting = {t['receipt']['identity']['intent'] for t in turns if t.get('status') == 'suspended'}
-            after = max(t['receipt']['height'] for t in turns) if waiting else 0
-            for _ in range(WAIT_MAX if waiting else 0):
-                seen = host.send({'op': 'world-offers', 'principal': did, 'after': after}).get('offers') or []
-                answered = [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in waiting]
-                if answered:
-                    offers += answered
-                    break
-                settled = [((host.send({'op': 'world-receipt', 'principal': did, 'identity': i}).get('receipt') or {}).get('outcome') or {}).get('tag') for i in waiting]
-                if 'suspended' not in settled:  # hob answered with nothing to offer
-                    break
-                self.server.sleep(WAIT_STEP)
+            offers = self.server.follow(did, intent, r) if 'receipt' in r else []
             if r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
                 said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
             else:
