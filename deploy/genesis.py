@@ -128,10 +128,10 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
 
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
 # Kind.lawText() (tests/test_kinds.py compares the two).
-KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
-KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head or the body; anyone makes, and places rules, wants and verbs on it": '
+KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nvoice: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
+KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head, the voice or the body; anyone makes, and places rules, wants and verbs on it": '
             'unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(form) and unchanged(law) '
-            'and unchanged(head) and unchanged(body)))')
+            'and unchanged(head) and unchanged(voice) and unchanged(body)))')
 
 
 # Tending (world/bodies/bell.obend `quietAfter`): a bell answers while tended within this many clock minutes, and
@@ -149,6 +149,12 @@ BELL_TEXT = ('rule seven "rings at its seventh rain": count(new.lines) >= 7 and 
 GARDEN_TEXT = 'want five "a garden of fewer than five bells": count(new.things) <= 4 asks delvetalk {request.object} plant'
 ROOM_TEXT = 'want company "a room nobody is in": count(new.presence) == 0 asks delvetalk {request.object} enter'
 DOOR_TEXT = 'want shut "a door nobody has opened": not ("open" in new.marks.name) asks delvetalk {request.object} knock'
+# Each kind's voice (KIND `voice`, docs/OVERHAUL.md §4): the register its maker gives its things' paint; a kind
+# with none is painted in the contract's plain register.
+VOICES = {'bell': 'moon-flavoured; short; the present tense',
+          'garden': 'patient and green; what grows, and who tends it',
+          'room': 'quiet; who is here, and what was said',
+          'porch': 'a threshold; what lies here unclaimed'}
 # A bond's countersignatures are marks whose `who` is the signer (world/bodies/bond.obend).
 SIGNER_LAW = 'law signer "a party signs only for themselves": changed(new.marks.who) by request.subject'
 
@@ -284,7 +290,7 @@ def run(host, opener=OPENER):
         # `kinds` is given its make (`shape`), then makes the root kinds and the town's (docs/CATALOGUE.md §5).
         kinds = next(m for m in made if m['object'] == 'kinds')
         kinds['shape'] = turned('kinds shape', turn('kinds', 'shape', rec(object=lab('kinds')), 'genesis-kinds-shape'))
-        kinds['made'] = [turned('kinds make ' + name, turn('kinds', 'make', rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), law=lab(law),
+        kinds['made'] = [turned('kinds make ' + name, turn('kinds', 'make', rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), voice=lab(VOICES.get(name, '')), law=lab(law),
                                                                                     body=lab(bodies[body] if body else '')), 'genesis-kind-' + name))
                          for name, of, form, head, law, body in KINDS]
         next(m for m in made if m['object'] == 'commonplace')['body'] = turned('the commonplace body', host.send({

@@ -40,18 +40,34 @@ record State:
   form: String
   law: String
   head: String
+  voice: String
   body: String
   made: Relations.Relation<Made>
   count: Nat
 def initial() -> State:
-  {owner: "", ownerHandle: "", name: "", of: "record", form: "", law: "", head: "", body: "", made: Relations.empty(), count: 0n}
+  {owner: "", ownerHandle: "", name: "", of: "record", form: "", law: "", head: "", voice: "", body: "", made: Relations.empty(), count: 0n}
+# A kind as editions 8 and 9 kept it, before `voice`: a carry gives it none ("": its instances are
+# painted in no register but the contract's).
+record State8:
+  owner: String
+  ownerHandle: String
+  name: String
+  of: String
+  form: String
+  law: String
+  head: String
+  body: String
+  made: Relations.Relation<Made>
+  count: Nat
+def migrate(old: State8) -> State:
+  {owner: old.owner, ownerHandle: old.ownerHandle, name: old.name, of: old.of, form: old.form, law: old.law, head: old.head, voice: "", body: old.body, made: old.made, count: old.count}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "made", key: Text.words("object"), limit: 1024n})
 def madeKey(m: Made) -> {object: String}:
   {object: m.object}
 # A kind's own law: the owner stays and alone changes what the kind makes; anyone makes.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the form, the law, the head or the body; anyone makes, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(form) and unchanged(law) and unchanged(head) and unchanged(body)))"
+  "law owner \"the owner stays; only the owner changes the form, the law, the head, the voice or the body; anyone makes, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(form) and unchanged(law) and unchanged(head) and unchanged(voice) and unchanged(body)))"
 sum Done:
   made: {object: String}
   refused: Card.Refusal
@@ -89,7 +105,7 @@ def lastSegment(id: String) -> String:
   let at = textBreak(id, "/")
   if at == textLength(id) then id else lastSegment(textDrop(id, at + 1n))
 def kindSeed(fields: Lists.List<Rows.Field>, context: Abi.Context) -> Data:
-  {owner: context.principal, ownerHandle: context.handle, name: valueOf(fields, "name"), of: valueOf(fields, "of"), form: valueOf(fields, "form"), law: valueOf(fields, "law"), head: valueOf(fields, "head"), body: valueOf(fields, "body")}
+  {owner: context.principal, ownerHandle: context.handle, name: valueOf(fields, "name"), of: valueOf(fields, "of"), form: valueOf(fields, "form"), law: valueOf(fields, "law"), head: valueOf(fields, "head"), voice: valueOf(fields, "voice"), body: valueOf(fields, "body")}
 # What a made thing is created under: its kind's `law`, cited (LAW §4 F), so the kind's owner
 # amends the law of every instance at once and a refusal reads the kind's clause.
 def lawOf(context: Abi.Context) -> String:
@@ -225,5 +241,6 @@ def render(state: State, context: Abi.Context) -> Document.Document:
   let comes = if state.of == "kind" then "kind/<name>, a kind anyone makes" else "{state.name}/N, yours"
   let spell = spellLine(id, Forms.specs(state.form))
   let law = if state.of == "kind" then "A law is written in, one clause a line: law maker \"only its maker writes\": request.subject == new.maker\n" else ""
-  let head = Document.text("KIND {state.name}: makes a {state.of}{bodied}; {natText(state.count)} made. Make one:\n  {spell}\n» {comes}\n{law}Newest first:\n")
+  let voice = if state.voice == "" then "" else "Its things speak: {state.voice}\n"
+  let head = Document.text("KIND {state.name}: makes a {state.of}{bodied}; {natText(state.count)} made. Make one:\n  {spell}\n» {comes}\n{voice}{law}Newest first:\n")
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clippedWithin(Lists.map(newest(state), madeLine), 8n, Card.left(context, Document.size(head)))})})

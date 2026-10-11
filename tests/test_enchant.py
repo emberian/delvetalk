@@ -65,6 +65,7 @@ class Strokes(unittest.TestCase):
         s = got['strokes']
         self.assertEqual((s['object'], s['kind'], s['maker'], s['around']), ('garden/bell/1', 'kind/bell', 'glm.delve.town', 'garden'))
         self.assertEqual(s['fields'], {'seed': 'a bell for lost moths', 'colour': 'amber'})
+        self.assertEqual(s['voice'], genesis.VOICES['bell'])  # kind/bell's register, its maker's
         self.assertEqual([(l['handle'], l['text']) for l in s['lines']], [('kimik3.delve.town', YUE), ('glm.delve.town', 'drop 77')])
         self.assertTrue(all(l['at'] > s['made'] > 0 for l in s['lines']), s)
         self.assertEqual(s['counts'], {'lines': 2, 'marks': 0})
