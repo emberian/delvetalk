@@ -1699,6 +1699,58 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `--leave`; a journal re-sealed as edition 7 refused on open and carried; a served town carried with its
      transport and served again), `test_genesis.NoWipe`, `test_replay_edition` (the refusal names the carry).
 
+### 5.160 Rules fire, wants pose (lane/host22, OVERHAUL §5 step 3; KERNEL-HANDOFF §27; replay edition 9)
+
+The shapes, for the strokes assembly (lane/enchant) and the objects lane, as built:
+
+- *Store.* `Object.rules`, `Object.wants : List Placed`, `Placed {name, owner, since, line, clause}` (`line` the
+  clause as `Clause.render` writes it, `clause` its parse; `owner` the placer; `since` the placing entry's height).
+  What a thing carries (`Ops.carried`, a `CarriedClause {clause, owner, holder, placed?}` each): its placed rows,
+  then its own text's `rule`/`want` lines (owner: `ownerOf` its state), then the lines its law's `under`
+  citations carry (`Law.followed`, owner: the holder's `ownerOf`), in that order. `carriedRules`/`carriedWants`
+  split them. Snapshot `v4` writes `rules`/`wants` per object (`[{name, owner, since, line}]`) and the indexes
+  `ruleLog` (per object, per rule: the last `{height, id}` fired or `{height, why}` unfired) and `wanting` (per
+  object, per want: the height that made it true); a carry reads `v3` bodies too (`Snapshot.previousEdition`,
+  `addedKeys` start empty).
+- *Placing.* A change of kind `rule` (4): `Proposal.placements : List Placement {object, want, name, line}`
+  (`line` "" takes one off), journaled on the admitted outcome as `placements [{object, rule|want: name,
+  line?}]`, in the request digest, replayed. `judge` judges a placement by the object's law with `request.kind
+  == rule` (`method`, `verb` ""); a removal is the placer's, the owner's or the opener's (`lawRefused notPlacer`),
+  not the law's. Refusals: `programRefused law syntax` (the parser's message; a line of another modality),
+  `lawRefused nameTaken` (the name is the text's or a placed line's), `lawRefused under`, `lawRefused unplaced`,
+  `capacity rulesPerObject`/`wantsPerObject` (32 each). The version moves. The default law is now `request.kind
+  == 0 or request.kind == rule or request.subject == "<creator>"`; a world's own laws (`Kind.lawOf`, the
+  bodies) need `or request.kind == rule` from the objects lane, or only their owners place.
+- *Spells, on every card.* `delvetalk O rule / name: N / when: EXPR / then: SPELL` (and `reading:` before
+  `then:`; every field after `then:` is the spell's own: `then: delvetalk me note / text: …`); `want / name /
+  when / asks`; `unrule / name`, `unwant / name`. `rules` and `wants` are answered as `?` is (no entry):
+  `rulesText`, `wantsText`. `?` lists `rule`/`want` when the law admits kind 4, and `rules`/`wants` always.
+- *Reads.* `world-rules {object, principal?}` → `{status: rules, object, rows: [{name, owner, handle, when, then,
+  line, from, reading?, placed?, fired?: {height, id, receipt?}, unfired?: {height, why}}]}`; `world-wants
+  {object, principal?}` → `{status: wants, object, rows: [{name, owner, when, asks, line, from, reading?, since:
+  height | "clock"}]}`: only the wants that hold now, `asks` filled at the read (`Law.fill` over `asItStands`;
+  the template when a hole reads nothing). `world-inspect`'s `laws` rows carry `keyword`, every modality
+  (`Ops.textClauses`, the one parser; the line splitter and `Law.lawReading` are gone).
+- *Firing, at commit* (`Ops.reactions`, after `judge` admits): for each written object, each carried rule whose
+  condition holds under any of the facts its law judged the write by (`Judged.facts`, with the rule's cited
+  states and wants), its spell filled at the write: `fired [{id: rule:<object>:<name>:<height>, to, method:
+  receive, argument: {text, post: ""}, sender: object, principal: owner, ledger, rule, depth}]`, a pending
+  delivery like a send (the ledger the turn's sends inherit), `to` the card the line names as its owner resolves
+  it (`me` their avatar). Else `unfired [{object, rule, owner, why}]`, `why` one of `hole`, `spell`, `noOwner`,
+  `quiet`, `ruleDepth` (`Limits.ruleDepth` 4: `depth` counts firings down a chain), `rulesPerCommit` (8 per
+  commit). The delivered turn is the owner's entry under identity `(owner, rule:…)`; a rule's spell may be a
+  host spell (`castSpell`'s `speaker`): `adopt`, `rule`, `lend`… run under the owner with the delivery consumed.
+  Judging is not metered (`ruleTicks`): a text law is not either; it is bounded by `rulesPerObject` × rows.
+- *Wants, at commit and at read.* `wanted`/`unwanted [{object, want}]`: the wants that hold of each written or
+  created object after the write and not before, at the clock, and the reverse (`posing`). Replay re-derives
+  `fired`, `unfired`, `wanted`, `unwanted` and compares each.
+- *`request.verb`.* `Written.verb` (`act {verb, text}`'s verb, else "" for the method; journaled `verbs`).
+- *Packages.* A package's top-level `rule`/`want` lines (`EntryCompiled.clauses`, `Built.lines`) are placed by
+  `makeObject` on what is made of it with no law text given, owned by its creator, `since` its height.
+- *For the objects lane.* The world-call arms (`rule`, `unrule`, `want`, `unwant` from Bend) are not built:
+  World.obend's protocol must declare them in the same change that deletes `subscribe` and `awaitPost` (one pin
+  move), and the host's arms follow (`answer`, `worldMethods`; staged as `TurnState` placements, as `amend` is).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
