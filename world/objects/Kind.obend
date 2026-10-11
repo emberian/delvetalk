@@ -20,8 +20,10 @@ import ./Forms.obend as Forms
 # grafted on each instance as it is made ("" for none). `make` is create, then extend.
 #
 # A kind's `make` is its own: `shape` grafts on the kind a layer generated from its form, whose
-# `make` takes exactly those fields and hands them to `making` as rows. So the host reads a make
-# spell's fields and bounds as it reads any form's, and `?` on a kind prints its own make.
+# `make` takes exactly those fields (and `id`, blank to be named, an exact id the kind's owner's
+# alone: the hand's own things, `garden`, `porch`) and hands them to `making` as rows. So the host
+# reads a make spell's fields and bounds as it reads any form's, and `?` on a kind prints its own
+# make.
 # `kinds` is the kind of kinds (`of: kind`): its make makes a kind, and shapes it.
 #
 # The package declares no law, as every made package: its creator passes it (`lawText`).
@@ -69,7 +71,7 @@ def captures(fields: Lists.List<Rows.Field>, context: Abi.Context) -> Card.Captu
 def seedOf(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Data:
   if state.of == "kind" then kindSeed(fields, context) else instanceSeed(state, fields, under, context)
 def instanceSeed(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Data:
-  sceneSeed(state, Lists.filter(fields, fn(f: Rows.Field) -> Bool: f.name != "spween"), under, context, Spween.parse(valueOf(fields, "spween")))
+  sceneSeed(state, Lists.filter(fields, fn(f: Rows.Field) -> Bool: f.name != "spween" && f.name != "id"), under, context, Spween.parse(valueOf(fields, "spween")))
 def sceneSeed(state: State, kept: Lists.List<Rows.Field>, under: String, context: Abi.Context, scene: Spween.Parsed) -> Data:
   match scene:
     case parsed(p): withScene(state, kept, under, context, p.seed)
@@ -87,10 +89,10 @@ def kindSeed(fields: Lists.List<Rows.Field>, context: Abi.Context) -> Data:
   {owner: context.principal, ownerHandle: context.handle, name: valueOf(fields, "name"), of: valueOf(fields, "of"), form: valueOf(fields, "form"), law: valueOf(fields, "law"), head: valueOf(fields, "head"), body: valueOf(fields, "body")}
 def lawOf(state: State, fields: Lists.List<Rows.Field>, context: Abi.Context) -> String:
   if state.of == "kind" then lawText() else Card.filled(state.law, captures(fields, context))
-# A kind made by `kinds` is kind/<name>; anything else the first free <under>/<name>/<n>, or
-# <name>/<n> (the host mints past ids already held).
+# A kind made by `kinds` is kind/<name>; an exact `id` is that id; anything else the first free
+# <under>/<name>/<n>, or <name>/<n> (the host mints past ids already held).
 def wanted(state: State, fields: Lists.List<Rows.Field>, under: String) -> String:
-  if state.of == "kind" then kindId(valueOf(fields, "name")) else if under == "" then "{state.name}/" else "{under}/{state.name}/"
+  if state.of == "kind" then kindId(valueOf(fields, "name")) else if valueOf(fields, "id") != "" then valueOf(fields, "id") else if under == "" then "{state.name}/" else "{under}/{state.name}/"
 def kindId(name: String) -> String:
   "kind/{name}"
 # Makes one: creates it from the package `of` names with the fields as its seed under the kind's
@@ -100,6 +102,8 @@ def kindId(name: String) -> String:
 # writes and a record's body refused by its law (docs/OBJECTS-HANDOFF.md, open). Made under a
 # record, the record answers the maker and the kind says nothing.
 def making(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
+  if valueOf(fields, "id") != "" && context.principal != state.owner then refusedCard(state, context, {clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} names what this kind makes; leave id blank"}) else creating(state, fields, under, context)
+def creating(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
   match world.create({package: packageOf(state.of), seed: seedOf(state, fields, under, context), law: lawOf(state, fields, context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
     case created(c): counted(state, c.object.object, under != "", context)
     case refused(r): refusedCard(state, context, {clause: r.clause, reading: if r.reading == "" then "{wanted(state, fields, under)} was not made" else r.reading})
@@ -112,11 +116,16 @@ def grafting(state: State, id: String, method: String, quiet: Bool, context: Abi
   match world.send({object: if method == "shape" then {world: context.world, object: id} else Plans.self(context), method: method, argument: if method == "shape" then {object: id} else {object: id, quiet: quiet}}):
     case delivery(_): toldUnless(quiet, state, id, context)
     case refused(_): refuse("what was made could not be given its body, so nothing was made")
-# The body, on what this kind made: an extend judged by the made thing's law.
+# The body, on what this kind made: an extend judged by the made thing's law; then the made
+# thing's `made`, sent so it runs once the body is laid (a body that watches something
+# subscribes there, which needs its receiver in place).
 def graft(state: State, input: {object: String, quiet: Bool}, context: Abi.Context) -> Activity<Done>:
   match world.extend({object: {world: context.world, object: input.object}, package: state.body, migration: ""}):
-    case reprogrammed(_): Done.made({object: input.object})
+    case reprogrammed(_): finished(input.object, context)
     case refused(r): Done.refused({clause: r.clause, reading: r.reading})
+def finished(object: String, context: Abi.Context) -> Activity<Done>:
+  match world.send({object: {world: context.world, object: object}, method: "made", argument: {}}):
+    case _: Done.made({object: object})
 def told(state: State, id: String, context: Abi.Context) -> Activity<Done>:
   Card.tellTo(Done.made({object: id}), context.principal, Document.text("Made, at {id}; {natText(state.count + 1n)} made. Its card: delvetalk {id} ?\n"))
 def refusedCard(state: State, context: Abi.Context, refusal: Card.Refusal) -> Activity<Done>:
@@ -135,7 +144,7 @@ def makeUnder(state: State, input: {under: String, fields: Lists.List<Rows.Field
 def shape(state: State, input: {object: String}, context: Abi.Context) -> Activity<Done>:
   if context.principal != state.owner then Done.refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shapes this kind"}) else reshaped(state, context)
 def reshaped(state: State, context: Abi.Context) -> Activity<Done>:
-  match world.extend({object: Plans.self(context), package: layerSource(state.form), migration: ""}):
+  match world.extend({object: Plans.self(context), package: layerSource(madeForm(state)), migration: ""}):
     case reprogrammed(_): Done.made({object: context.object})
     case refused(r): Done.refused({clause: r.clause, reading: r.reading})
 def methods() -> Lists.List<String>:
@@ -146,6 +155,9 @@ def blurb() -> Card.Door:
   {word: "kind", blurb: "A kind of thing: make one."}
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
+# What a kind's make takes: its form, and for a thing (not a kind) the `id` it may be given.
+def madeForm(state: State) -> String:
+  if state.of == "kind" then state.form else "{state.form}\nid: text 0..64"
 # The layer `shape` grafts: the kind's make, with exactly its form's fields.
 def layerSource(form: String) -> String:
   let items = Forms.specs(form)

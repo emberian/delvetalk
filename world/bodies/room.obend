@@ -249,24 +249,23 @@ def authored(block: String, parsed: Spween.Parsed, context: Abi.Context, state: 
   match parsed:
     case refused(r): Card.answerRefused({clause: "spween", reading: r.reason}, context, forms(), Super.render(state, context), fn(x: Card.Replied) -> Card.Replied: x)
     case parsed(p): carving(p.seed.title, block, context, state)
-sum Carved:
-  made: {object: String}
-  refused: Card.Refusal
 def fieldOf(name: String, value: String) -> Rows.Field:
   {name: name, value: value}
 def carvedFields(title: String, block: String) -> Lists.List<Rows.Field>:
   Lists.append(Lists.append(Lists.List.nil(), fieldOf("name", textTake(title, 64n))), fieldOf("spween", block))
 def kindOf(state: State) -> String:
   if state.kind == "" then "kind/room" else state.kind
+# A room makes rooms of its own kind (Record.making), each lying here.
 def carving(title: String, block: String, context: Abi.Context, state: State) -> Activity<Card.Replied>:
-  match world.call::<Carved>({object: {world: context.world, object: kindOf(state)}, method: "makeUnder", argument: {under: context.object, fields: carvedFields(title, block)}}):
-    case returned(r): carved(r.result, title)
-    case refused(r): Card.tell(Card.Replied.refused({clause: r.clause, reading: r.reading}), Document.text("Not made: {r.reading}\n"))
-    case denied(_): Card.tell(Card.Replied.refused({clause: "denied", reading: "{kindOf(state)} does not answer."}), Document.text("Not made: {kindOf(state)} does not answer.\n"))
-def carved(result: Carved, title: String) -> Activity<Card.Replied>:
-  match result:
-    case made(m): Card.tell(Card.Replied.done({action: "create"}), Document.text("ROOM {title} is at {m.object}. Enter: delvetalk {m.object} enter\n"))
-    case refused(r): Card.tell(Card.Replied.refused(r), Document.text("Not made: {r.reading}\n"))
+  Super.making(extend(state, {kind: kindOf(state)}), kindOf(state), carvedFields(title, block), context, fn(m: Super.Made) -> Document.Document: carved(m, title), fn(m: Super.Made) -> Card.Replied: carvedAs(m))
+def carved(made: Super.Made, title: String) -> Document.Document:
+  match made:
+    case made(m): Document.text("ROOM {title} is at {m.object}. Enter: delvetalk {m.object} enter\n")
+    case refused(r): Document.text("Not made: {r.reading}\n")
+def carvedAs(made: Super.Made) -> Card.Replied:
+  match made:
+    case made(_): Card.Replied.done({action: "create"})
+    case refused(r): Card.Replied.refused(r)
 # The room's head, over the record's lines and doors: its name and who is here; to a reader in
 # it, their passage and the choices whose guards hold, then the variables; to anyone else, the
 # spell that enters. What lies here follows.

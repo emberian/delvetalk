@@ -41,6 +41,7 @@ DOORS = [
     ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('TIDE', 'tide', [('delvetalk tide subscribe / every: 3 / note: first light', ''),
                       ('delvetalk tide tick', 'too soon: refused tooSoon; a due tick notes your avatar')]),
+    ('PORCH', 'porch', [('delvetalk porch enter', ''), ('delvetalk porch say / line: the bell kept both of us', 'heard by everyone here')]),
     ('ANTHOLOGY', 'anthology', [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
     ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
 ]
@@ -64,22 +65,25 @@ def commonplace(opener):
 POLICY_SYSTEM = ('hob reads for a town of cards. A participant answered the card below in words. Give the spell they meant, so the card can run it; '
                  'the card and its law decide what is admitted, never you.')
 LEXICON = [('colour', 'one of amber, violet or silver'), ('seed', 'what might grow, 1 to 80 characters')]
-def choice(text, to, key='', value=''):
-    """A choice; a key sets that variable to value when it is taken (one `set` effect). As tests/test_scene.py builds it."""
-    effects = [rec(key=lab(key), op={'tag': 'variant', 'label': 'set', 'payload': rec()}, value=lab(value))] if key else []
-    return rec(label=lab(text), to=lab(to), effects=lst(*effects), guard=lst())
-
-
-def passage(pid, text, choices):
-    return rec(id=lab(pid), text=lab(text), choices=lst(*choices))
-
-
-# tests/test_scene.py's smallest scene: a record whose scene genesis seeds, then lays the room's body over
-# (world/bodies/room.obend), as kind/room does in the turn that makes a room.
-def moss_gate(opener):
-    return rec(owner=lab(opener), head=lab('The Moss Gate'), kind=lab('kind/room'), start=lab('gate'),
-               passages=lst(passage('gate', 'A moss gate, ajar.', [choice('Open', 'yard', 'gate', 'open'), choice('Wait', 'gate')]),
-                            passage('yard', 'A quiet yard.', [choice('Back', 'gate'), choice('Knock', 'yard', 'knock', 'twice')])))
+# The Moss Gate's scene, as spween (world/lib/Spween.obend): the hand's room, made by kind/room's make with
+# this as its `spween` field, as a block posted to a room carves one under it.
+MOSS_GATE = """---
+id: gate
+title: The Moss Gate
+---
+=== gate
+A moss gate, ajar.
+* [Open]
+  ~ gate = open
+  -> yard
+* [Wait] -> gate
+=== yard
+A quiet yard.
+* [Back] -> gate
+* [Knock]
+  ~ knock = twice
+  -> yard
+"""
 
 
 EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
@@ -103,8 +107,8 @@ def page_body(name):
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
 # package it makes; its creator passes it (tests/test_genesis.py compares the two).
-RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the policy, the doors, what it makes, its scene or its code; anyone else only by its spells": '
-              'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(policy) and unchanged(cites) and unchanged(makes) '
+RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells": '
+              'unchanged(owner) and (request.subject == new.owner or (request.kind == 0 and unchanged(keeper) and unchanged(policy) and unchanged(cites) '
               'and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\n'
               'law kept "a line, an admission, a mark or a greeting is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and insertOnly(greeted) '
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
@@ -124,12 +128,36 @@ KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the la
 LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
 
 
-# The kinds genesis makes (name, of, form, head, law, body): the root kind of records, and the town's bell,
-# cistern and room, whose bodies are world/bodies/<name>.obend, layers over Record.obend laid on each instance.
+# The kinds genesis makes (name, of, form, head, law, body): the root kind of records, and the town's furniture
+# (docs/METAPHYSICS.md §7.2), each a record with a body, world/bodies/<body>.obend, a layer over Record.obend laid
+# on each instance. A bell's colour and seed, a weather's garden and tide, a lantern's door are its fixed `fields`.
+NAMED = 'name: text 1..64'
 KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
          ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW, 'bell'),
          ('cistern', 'record', '', '', RECORD_LAW + '\nlaw level "the level only rises": monotone(next)', 'cistern'),
-         ('room', 'record', 'name: text 1..64', '{name}', RECORD_LAW, 'room')]
+         ('room', 'record', NAMED + '\nspween: text 0..16384', '{name}', RECORD_LAW, 'room'),
+         ('porch', 'record', NAMED, '{name}', RECORD_LAW, 'room'),
+         ('garden', 'record', NAMED, '{name}', RECORD_LAW, 'garden'),
+         ('weather', 'record', 'garden: text 1..128\ntide: text 1..128', '', RECORD_LAW, 'weather'),
+         ('door', 'record', NAMED, '{name}', RECORD_LAW, 'door'),
+         ('lantern', 'record', NAMED + '\ndoor: text 1..128', '{name}', RECORD_LAW, 'lantern')]
+
+
+# The hand's own things, made by spell on their kinds at genesis, each at an exact id (a kind's owner's alone), so
+# each has a maker and the commonplace cites them: (kind, fields). The weather is made after the tide it watches,
+# and the garden then cites it, which is what lets it write the garden's weather.
+HANDS = [('kind/garden', [('id', 'garden'), ('name', 'THE NIGHT GARDEN')]),
+         ('kind/room', [('id', 'rooms'), ('name', 'The Moss Gate'), ('spween', MOSS_GATE)]),
+         ('kind/porch', [('id', 'porch'), ('name', "The Bellfounder's Porch")]),
+         ('kind/weather', [('id', 'weather'), ('garden', 'garden'), ('tide', 'tide')])]
+
+
+def spell(card, action, fields):
+    """A spell as the hand types it: the delvetalk line, then a `field: value` line each, a multi-line value as a block."""
+    lines = [f'delvetalk {card} {action}']
+    for name, value in fields:
+        lines += [f'{name}: <<END', value.rstrip('\n'), 'END'] if '\n' in value else [f'{name}: {value}']
+    return '\n'.join(lines)
 
 
 def body_of(name):
@@ -142,13 +170,11 @@ def seeds(opener):
                                      lexicon=lst(*[rec(word=lab(w), meaning=lab(m)) for w, m in LEXICON]),
                                      examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
-            ('garden', 'Garden', rec(owner=lab(opener), ownerHandle=lab(HANDLE), policy=ref('policy'))),
             ('tide', 'Tide', rec(gap=nat(1))),
             ('workshop', 'Workshop', rec(title=lab('Workshop'), policy=ref('policy'))),
             ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM))),  # shaped, then makes KINDS
             ('anthology', 'Record', rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE ANTHOLOGY'))),  # created with RECORD_LAW
-            ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE))),
-            ('rooms', 'Record', moss_gate(opener))]  # created with RECORD_LAW, then given the room's body
+            ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
 
 
 def existing(host, opener):
@@ -160,6 +186,13 @@ def existing(host, opener):
         if not got.get('more') or not got.get('ids'):
             return ids
         after = got['ids'][-1]
+
+
+def said(host, opener, card, action, fields, identity):
+    """The hand's spell to a card, as a reply with no post: the host reads it as any spell."""
+    reply = host.send({'op': 'world-turn', 'principal': opener, 'object': card, 'method': 'receive', 'identity': identity,
+                       'argument': rec(text=lab(spell(card, action, fields)), post=lab(''))})
+    return {'object': card, 'module': action, 'status': reply.get('status'), 'creator': opener, 'reply': reply}
 
 
 def run(host, opener=OPENER):
@@ -179,14 +212,6 @@ def run(host, opener=OPENER):
                      'creator': (reply.get('receipt') or {}).get('identity', {}).get('principal'), 'reply': reply})
         if reply.get('status') != 'created':
             return made, None
-    # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
-    # garden existed, hears each planting now, and ticks the tide every 60 clock minutes.
-    wake = 'wake/' + opener
-    tide = next(m for m in made if m['object'] == 'tide')
-    tide['wake'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': wake, 'method': method, 'argument': argument,
-                               'identity': 'genesis-' + method}).get('status')
-                    for method, argument in (('arrived', rec()),
-                                             ('schedule', rec(at=nat(0), every=nat(60), action={'tag': 'variant', 'label': 'call', 'payload': rec(card=lab('tide'), method=lab('tick'))})))]
     # `kinds` is given its make (`shape`), then makes the root kinds and the town's (docs/CATALOGUE.md §5).
     kinds = next(m for m in made if m['object'] == 'kinds')
     kinds['shape'] = host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'shape', 'argument': rec(object=lab('kinds')),
@@ -194,9 +219,21 @@ def run(host, opener=OPENER):
     kinds['made'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'make', 'identity': 'genesis-kind-' + name,
                                 'argument': rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), law=lab(law), body=lab(body_of(body)))}).get('status')
                      for name, of, form, head, law, body in KINDS]
-    for name, body in (('commonplace', 'commonplace'), ('rooms', 'room')):
-        next(m for m in made if m['object'] == name)['body'] = host.send({'op': 'world-reprogram', 'principal': opener, 'identity': f'genesis-{name}-body',
-                                                                          'object': name, 'version': 0, 'package': body_of(body), 'mode': 'extend'}).get('status')
+    commonplace_ = next(m for m in made if m['object'] == 'commonplace')
+    commonplace_['body'] = host.send({'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-commonplace-body',
+                                      'object': 'commonplace', 'version': 0, 'package': body_of('commonplace'), 'mode': 'extend'}).get('status')
+    # The hand's things, each by its spell; then the garden cites its weather.
+    for kind, fields in HANDS:
+        made.append(said(host, opener, kind, 'make', fields, 'genesis-' + dict(fields)['id']))
+    made.append(said(host, opener, 'garden', 'door', [('label', 'weather'), ('to', 'weather')], 'genesis-garden-weather'))
+    # The world moves when nobody posts (docs/OFFERING.md §4): the opener's wake, made at arrival before the
+    # garden existed, hears each thing the garden grows now, and ticks the tide every 60 clock minutes.
+    wake = 'wake/' + opener
+    tide = next(m for m in made if m['object'] == 'tide')
+    tide['wake'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': wake, 'method': method, 'argument': argument,
+                               'identity': 'genesis-' + method}).get('status')
+                    for method, argument in (('arrived', rec()),
+                                             ('schedule', rec(at=nat(0), every=nat(60), action={'tag': 'variant', 'label': 'call', 'payload': rec(card=lab('tide'), method=lab('tick'))})))]
     library = next(m for m in made if m['object'] == 'library')
     library['pages'] = [host.send({'op': 'world-turn', 'principal': opener, 'object': 'library', 'method': 'shelve', 'identity': 'genesis-shelve-' + name,
                                    'argument': rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),
@@ -225,12 +262,12 @@ def main(argv=None):
         print(refusal, file=sys.stderr)
         return 1
     for m in made:
-        print(json.dumps({k: m[k] for k in ('object', 'module', 'status')} | ({} if m['status'] == 'created' else {'reply': m['reply']})))
+        print(json.dumps({k: m[k] for k in ('object', 'module', 'status')} | ({} if m['status'] in ('created', 'admitted') else {'reply': m['reply']})))
     for m in made:
         page = m.get('page')
         if page and page['status'] != 'admitted':
             print(f"genesis: the {page['door']} page was not published ({m['object']}.publishPage: {json.dumps(page['reply'])[:300]})", file=sys.stderr)
-    return 0 if made and all(m['status'] == 'created' for m in made) else 1
+    return 0 if made and all(m['status'] in ('created', 'admitted') for m in made) else 1
 
 
 if __name__ == '__main__':
