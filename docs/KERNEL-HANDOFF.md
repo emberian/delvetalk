@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-10 (lane/kernel11 after foundation f7865b0: lazy state cells, §15, built and measured; the queue is §16).
+State on 2026-10-10 (lane/kernel13 after foundation cb4af60: honest package and instance bounds, located generics refusals, LAW §4 A/E/H, §25; the queue is §16).
 
 ## Summary
 
@@ -15,7 +15,7 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
 - Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
 - Tests: 1,241 `def test_` across 109 files (foundation b0f3618). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
-- Open: section 9.
+- Open: section 9; queue §16.
 
 ## 0. Working rules
 
@@ -471,17 +471,36 @@ reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `S
 state (rows per relation as an array per version), `Reads` into `recordRows`/`judge` with
 `keysChangedSince` and the span rule, the per-cell bound and ledger: 3 days.
 
-## 16. Queue for the successor (lane/kernel10, after foundation 534b92c)
+## 16. Queue for the successor (lane/kernel13, after foundation cb4af60)
 
-Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the ten kernel findings of the
-codex review of a3e1fb2 (kernel10, §24). Remaining:
+Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the codex findings (kernel10,
+§24); lazy cells (kernel11, §15); the package and instance bounds, located generics refusals and
+LAW §4 A/E/H (kernel13, §25). Remaining, in order:
 
-7. `textWords(s) -> List<String>`, only if an object asks (§14: a new term form allocating a
-   native list cell, the `textJoin`-scale change across core, machine, Fast, collector and both
-   codecs).
-9. Located refusals from the generics pass: the derived-edits, fixed, form-kind and
-   derived-forms refusals are strings (stage `source-specialization`, no span); a
-   `Generics` error type with a span (the State's, the write's, the form block's) would place them.
+15. The two primitives of §15, `relationCount(r) -> Nat` and `relationLookup(r, key) -> Maybe<T>`,
+   then `Relation.obend`'s `count` and `lookup` onto them (objects lane). Not started by kernel13
+   (the bounds, the law insertion and item 9 took the lane). The shape, so the successor starts
+   cutting: two `Term` forms beside `textJoin` (`relationCount x`, `relationLookup x key keyType`, the
+   key's type carried so the fallback can compare canonically as `canonicalCompare` does); typing in
+   `PartialTyping` (argument a `Relation<T>` instance: the one-case `rows {items: List<T>}` sum
+   recognised as `Generics.relationItem` does; result `Nat`, or the `Maybe<T>` instance the
+   elaborator names, refused by name when the package has none); machine: entering
+   `relationCount` forces the argument to WHNF; a `stored (relation f n) _` or `stored (items …)`/
+   `stored (spine f j n)` cell answers `n - j` in one tick and adds the whole-relation span to
+   `Reads` (`spineReach` gains a `counted f` mark), any other value walks the list with a
+   `countList` frame; `relationLookup` on a stored spine binary-searches by `Store.key f j :
+   Option Data` (new; the host supplies key projections, charged `1 + 2 * keyBytes` each, `⌈log2 n⌉ + 1`
+   of them, reported as a span over the probed keys) and fetches the found row (`fetchCost`), else a
+   `lookupList` frame walking cons cells comparing canonical bytes. Proof cases: `stepRawFast` and
+   `sizesAfter`, collector `frameAddresses` and renamings for the two frames, `erase_stepRaw`, `agree_*`
+   for the key fetch (`Store.key` threaded as `fetch` is), checkpoint frame tags 18-19 and term tags
+   27-28 with `stateV3_roundTrip`. Evaluators: the reference meaning is the list walk (count;
+   first row whose key projection equals the key by canonical bytes), so Python, JS and C implement
+   the walk; the generator gains both forms (stored and literal relations), `KNOWN_DIVERGENCE`
+   none expected. Conformance and `test_stored` (a count reads no row and reports a whole span; a
+   lookup over 2,048 rows fetches one row and 12 keys) close it.
+   Estimate: 2 days kernel, half a day objects.
+7. `textWords(s) -> List<String>`: only if an object asks; none does (kernel13 grep of docs/, world/).
 10. `Form.obend` `type Forms = Lists.List<Form>` (objects lane) would let the derived `forms()`
    be `F.Forms` and drop its List.obend requirement (Counter, Loop).
 12. Host lane: `Turn.resumeEntryStep entry checkpoint issued binding value b dictionary?` takes
@@ -489,12 +508,20 @@ codex review of a3e1fb2 (kernel10, §24). Remaining:
    checkpoint (and `suspension.checkpoint.digest` for the profile). `expandSuspended` recomputes a
    digest a compacted journal entry lacks: the journal is the trust root, so that is sound, but a
    host that ever resumes a checkpoint from outside its journal must look its digest up there.
-13. Done (`52ad1b2`): a REPL checkpoint from before the host restarted is refused `replRestarted`.
-14. Lazy state (§15) is built through step 5 (lane/kernel11). After the host's switch (lane/host14):
-   delete `startEntryStep`/`resumeSuspended`/`resumeEntryStep`'s quoted state path and `quoteAt`
-   for state, and move `test_tariff`'s pins in that commit.
-15. The two primitives of §15, `relationCount` and `relationLookup` (with `Store.key`), then
-   `Relation.obend`'s `count` and `lookup` onto them (objects lane).
+14. After the host's switch to the stored path (lane/host14 and after): delete
+   `startEntryStep`/`resumeSuspended`/`resumeEntryStep`'s quoted state path and `quoteAt` for state,
+   and move `test_tariff`'s pins in that commit.
+16. Host requests from kernel13 (§25): `Host.Limits.maxPackageBytes` and `formSourceMax` read
+   `Bounds.maxPackageBytes` (128 KiB) with refusals naming it; `Facts.clock`, `Facts.object` and `read`
+   over `old` (LAW §6 item 1; until then those atoms fail closed in `Host/Law.lean`).
+17. `Package.localize` (check-package) still recompiles each function alone for a spanless refusal:
+   2.5 s on a 32 KB package. With the generics pass located (§25 items 2, 4) its remaining callers
+   are elaborator refusals without a span; find them by making `localize` count its calls in
+   `test_sugar` and `test_located`-style fixtures, then delete it when none is left.
+18. LAW §6 items 2 and 3 (kernel halves): `changed(new.F.COL) by REF`, `count(new.F where COL == V)`,
+   the quorum form, `REF in "<object>".F.COL`, `under "<object>"`, `LawExpr.cites`.
+
+Done since kernel10 and no longer queued: 9 (located generics refusals, kernel13), 13 (`52ad1b2`).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
