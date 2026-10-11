@@ -36,7 +36,7 @@ services:
       - "127.0.0.1:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"
     secrets: [hand_token]
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}/state:/data/state
+      - ${DELVETALK_DATA:-/var/lib/delvetalk/v3}/state:/data/state
       - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
       - ${DELVETALK_DELVE_DIR:-/etc/delvetalk/delve}:/run/delve:ro
     depends_on:
