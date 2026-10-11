@@ -346,8 +346,9 @@ root):
 
     ssh -L 8766:127.0.0.1:8766 root@workhorse     # then open http://127.0.0.1:8766/hand/?token=<secret>
 
-The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. The page
-has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
+The token is asked once (query, then a cookie scoped to `/hand/`); without it every `/hand/` path is a 404. `/hand/`
+opens on the town; `/hand/<world>/` is any world `serve` holds, with the same pages (`--world W` on the command line). A
+world's console has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
 retries, host pid), a search by receipt slug (`world-resolve`), the OUTBOX and the INBOX. The outbox groups drafts by
 the post they answer, the post beside an editable textarea of the draft, with three buttons: **Post** runs
 `post.post_draft`, the code `post.py --draft` runs (the edited text, the owner's credentials file, `world-posted` for the
@@ -360,6 +361,8 @@ the public reads (`world-view` as `anonymous` answers it) is drafted here as a t
 `http: {intent}`, no `replyTo`, the turn's offers or else its receipt line), once per receipt, so the owner chooses
 whether the town hears of it; a scratch turn, a refusal and a write to a private object draft nothing. On Zulip the bridge
 never posts such a draft itself (it answers no message); Post sends it to Delve.
+Every page of the hand is its own field notebook (its shell and stylesheet inlined, read at phone width over the
+forward), and `?text=1` reads any of them as plain text, each form as its method, action and fields.
 The same operations have a command-line face for the owner's assistant over ssh: `python3 -m transport hand <verb>
 [--state S] [--world W] [--json]` (`DELVETALK_STATE` stands in for `--state`, and every compose service sets it to
 `/data/state`; the root socket and the credentials are config, `DELVETALK_ROOT_SOCKET` and `DELVETALK_CREDENTIALS`;
@@ -383,20 +386,41 @@ The same operations have a command-line face for the owner's assistant over ssh:
   `world-posted {unposted: true, reason}` so replies stop routing to it, and the draft and `hand-log.jsonl` keep the fact.
   Anyone else's post is refused before any call.
 - `log [--tail N]`: the last actions in `hand-log.jsonl`.
+- `speak SPELL | --spell-file F | --seed N` and `speak --invitation MINUTE` (`/hand/<world>/speak`): cast a spell as the
+  opener on the root socket, as the bridge turns a post (`receive` on the card the host reads in it), and see the
+  receipt and the card; an admitted one is drafted as the post that says so (the spell quoted, then the card and its
+  receipt line), recorded at Post for the thing it made, into `--topic` of a Zulip world (default its one topic, else
+  `welcome`) or under `--reply-to` a Delve thread. `--seed N` is the plan's seed N (`plan`, config `plan`, default
+  docs/PLAYTEST-2.md §2) under an intent of its own, so a second cast is the first receipt; `--invitation MINUTE` drafts
+  §3's invitation at T+MINUTE for the bot, its spells quoted, once. The hand's own drafts wait for Post on Zulip too.
+- `worlds` (`/hand/`, where the hand opens): every world `serve` holds (height, cards, clock, its bridge, drafts waiting,
+  replay edition, the snapshot it reopened from) with its pages, and every scratch world with its owner's handle, its
+  size, the minutes since its last turn and when it expires by the home clock, each with root's `expire`.
+- `plan`: the plan's seeds, each with its cast, and its invitations, each with its draft.
+- `watch [--object O] [--limit N]` (`/hand/<world>/watch`, refreshing itself every five seconds, HOLD STILL to stop):
+  the journal, or one object's `world-history`, and the outbox together, newest first; each entry with its
+  principal's handle, the turn as it was typed (the observed post's spell line, or the hand's own), the first line of
+  the card it offered, links to its receipt and to the object in the root editor, and the drafts it made.
+- `/hand/<world>/measure`, and `python3 -m transport status --playtest` as JSON: docs/PLAYTEST-2.md §4 counted live
+  from the journal by transport/measure.py (things made by residents by kind and maker, things used by another,
+  laws written or adopted, citations, rain with nobody posting, interpretations, refusals by class, minutes from T0,
+  the Post of the T+0 invitation, to the first resident-made thing), each count with the ids behind it; the ring's
+  harvest prints the same table, so the operator and the lessons file read one set of numbers. A resident is any
+  principal but the opener, the clock and config `owner_principals` (the owner's Zulip user).
 
-Moderation and root (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126), the same verbs as forms on `/hand/root/` (a red rule
-across the top, a reason or reading required on every form, served on the hand's listener only, linked from `/hand/`):
+Moderation and root (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126), the same verbs as forms on `/hand/<world>/root/` (a red
+rule across the top, a reason or reading required on every form, served on the hand's listener only, linked from every page):
 
-- `quiet --who P --hours N`, `unquiet --who P`, `retire|unretire|hide|show --object O`, `revoke --grant G`, `expire
-  --scratch S` (refused until scratch worlds exist), each `--reading R`: the power as a turn by the opener on
-  `world` or the card, journaled and receipted. `settings [--postQuota N] [--interpretQuota N] [--modelQuota N]
+- `quiet --who P --hours N`, `unquiet --who P`, `retire|unretire|hide|show --object O`, `revoke --grant G`, each
+  `--reading R`: the power as a turn by the opener on `world` or the card, journaled and receipted. `settings [--postQuota N] [--interpretQuota N] [--modelQuota N]
   --reading R`: `world-settings`. `modlog [--object O] [--tail N]`: the object's `world-history`, or the journal's
   newest root, moderated and opener entries. `find TEXT`: observed handles, object ids by prefix, a receipt by slug.
 - `root dump O`: the object as the opener reads it (view, record, sources; the page's editor saves a `set` for each
   changed field). `root set --object O --field F --value JSON|--value-file F`, `root delete --object O`, `root as
   --principal P --object O --method M --argument JSON --intent I`, `root settings [--clock N] [--postQuota N]
   [--interpretQuota N] [--modelQuota N]`, `root library --dir D`, `root ignore|unignore --height N`, `root card
-  --object O [--text-file F]` (no text clears), `root quiet|hide|show|retire|unretire|revoke ...`, each `--reason R`:
+  --object O [--text-file F]` (no text clears), `root quiet|hide|show|retire|unretire|revoke ...`, `root expire --principal
+  P --scratch S` (a scratch world discarded now, serve's act, in the hand's log only), each `--reason R`:
   one `world-root`, an entry marked `root` with its reason, public. `root entries [--after N] [--object O]
   [--principal P] [--limit N]` pages the journal raw; `root edit N [--out F]` saves entry N and prints the offline
   `root-edit rewrite`, since an entry is never edited in place.
@@ -661,7 +685,7 @@ channel (hob's register: what happened and what to do next, no apology) and what
 delvetalk-ops python3 -m transport hand` (the ops container names the state and the root socket; a Zulip world's `unpost`
 also needs the bot's rc, which the world's bridge row names by path: add `-v RC:RC:ro` for that path). A and F lose data if done in the wrong order: both stop the writers first. The
 moderation verbs (`quiet`, `retire`, `hide`, `find`, `settings`) are the hand's, over the host's powers (ROOT section 2,
-replay edition 3); root is one click further (`hand root ...`, `/hand/root/`).
+replay edition 3); root is one click further (`hand root ...`, `/hand/<world>/root/`).
 
 **A. The host will not start.** Healthcheck red; every reply "host unavailable".
 

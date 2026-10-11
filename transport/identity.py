@@ -35,6 +35,20 @@ def proquint(n):
     return C[n >> 12] + V[(n >> 10) & 3] + C[(n >> 6) & 15] + V[(n >> 4) & 3] + C[n & 15]
 
 
+def slug(cid):
+    """A CID's spoken name, as the host's Slug.ofCid: the proquints of its digest's first 32 bits (a CIDv1, one-byte
+    varints: version, codec, hash, length). None for anything else."""
+    import base64
+    try:
+        raw = base64.b32decode(cid[1:].upper() + '=' * (-len(cid[1:]) % 8)) if isinstance(cid, str) and cid.startswith('b') else b''
+    except ValueError:
+        return None
+    if len(raw) < 8 or raw[0] != 1:
+        return None
+    n = int.from_bytes(raw[4:8], 'big')
+    return proquint(n >> 16) + '-' + proquint(n & 0xFFFF)
+
+
 class IdentityError(Exception):
     def __init__(self, code):
         self.code = code

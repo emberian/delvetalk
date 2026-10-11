@@ -118,7 +118,12 @@ def due(alerted, key, now):
 
 
 def status(st, a, out):
-    """`status`: one probe as JSON, or with `--health SERVICE` the exit status of its healthcheck."""
+    """`status`: one probe as JSON, with `--playtest` the playtest's measures (docs/PLAYTEST-2.md §4, transport/measure.py),
+    or with `--health SERVICE` the exit status of its healthcheck."""
+    if a.playtest:
+        from transport.measure import measures
+        out.write(json.dumps(measures(st), indent=1, sort_keys=True, ensure_ascii=False) + '\n')
+        return 0
     if a.health:
         try:
             return 0 if healthy(st, a.health) else 1

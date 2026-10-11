@@ -1,0 +1,8 @@
+/* The hand's own, after style.css (the hand inlines both: its listener serves /hand/ and nothing else).
+   A slip's foot carries its links and its one form after its line; a count stands in the stamp. */
+.slip .foot { grid-column: 1 / -1; font: .78rem/1.5 var(--mono); color: var(--muted); border-top: 1px dashed var(--rule); padding-top: .2rem; }
+.slip .foot form, .slip form.foot { margin: .35rem 0 0; }
+.slip details.line > summary { font: .8rem var(--mono); }
+.slip .doors { margin: .4rem 0 0; }
+header .who { margin-left: auto; }
+hr.root { border: 0; border-top: 6px solid var(--terracotta); margin: 1rem 0; }  /* the root page: a red rule across the top */

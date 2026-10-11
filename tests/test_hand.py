@@ -1,8 +1,8 @@
-"""The owner's console at /hand/ over a real front, with a stub host and a stub poster.
+"""The owner's console at /hand/<world>/ over a real front, with a stub host and a stub poster; Speak against a real
+`serve` after genesis: the plan's seeds cast as the opener, the invitations drafted, each post waiting for Post.
 
-Evidence for FOUNDATION §7 (layer: transport).
-
-The hand: the owner's console at /hand/, over a real front with a stub host and a stub poster.
+Evidence for FOUNDATION §7 and docs/PLAYTEST-2.md §2, §3 (layer: transport). Refuted by a page without the token, a post
+without a click, a seed cast twice, a spell drafted that the host refused, or a hand draft the Zulip bridge posts itself.
 
     python3 -W ignore -m tests.run test_hand
 """
@@ -19,8 +19,9 @@ from pathlib import Path
 from transport.journal import records, size
 from tests.test_bridge import spell_post
 from tests.wire import write_journal
-from transport import delve, hand, identity, observe, watch
+from transport import delve, hand, identity, observe, post, watch
 from transport.__main__ import main
+from transport.host import CLOCK
 from transport.http import Front
 from transport.state import State
 
@@ -43,6 +44,9 @@ class StubHost:
         if req['op'] == 'world-resolve':
             return {'status': 'resolved', 'slug': req['slug'], 'kind': 'receipt', 'cid': 'c'}
         return {'status': 'ok'}
+
+    def at(self, world):
+        return self
 
 
 class Poster:
@@ -83,7 +87,7 @@ class HandCase(unittest.TestCase):
         r = c.getresponse()
         return r.status, r.read().decode(), dict(r.getheaders())
 
-    def get(self, path='/hand/'):
+    def get(self, path='/hand/town/'):
         return self.req('GET', path, cookie=f'dt_hand={TOKEN}')
 
     def logged(self):
@@ -94,29 +98,57 @@ class Hand(HandCase):
     def test_without_the_token_the_page_is_404_and_a_query_token_sets_the_cookie(self):
         self.assertEqual(self.req('GET', '/hand/')[0], 404)
         self.assertEqual(self.req('GET', '/hand/?token=wrong')[0], 404)
-        self.assertEqual(self.req('POST', '/hand/draft/7-aaaa', {'do': 'post'})[0], 404)
+        self.assertEqual(self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'post'})[0], 404)
         code, _, headers = self.req('GET', '/hand/?token=' + TOKEN)
         self.assertEqual(code, 302)
         self.assertIn('dt_hand=' + TOKEN, headers['Set-Cookie'])
         self.assertEqual(self.poster.calls, [])
+        self.assertIn('The worlds', self.get('/hand/')[1])  # the hand opens on every world serve holds
+        self.assertEqual(self.get('/hand/nowhere/')[0], 404)  # a world serve does not hold
 
     def test_post_calls_the_poster_once_with_the_edited_text_and_logs_it(self):
-        code, _, headers = self.req('POST', '/hand/draft/7-aaaa', {'do': 'post', 'text': 'edited words'}, f'dt_hand={TOKEN}')
+        code, _, headers = self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'post', 'text': 'edited words'}, f'dt_hand={TOKEN}')
         self.assertEqual(code, 303)
         self.assertEqual(self.poster.calls, [('7-aaaa', 'edited words', f'{self.tmp.name}/creds.json')])
         (line,) = self.logged()
         self.assertEqual((line['what'], line['who'], line['draft'], line['edited']), ('post', 'owner', '7-aaaa', True))
 
     def test_skip_and_hold_never_post(self):
-        self.req('POST', '/hand/draft/7-aaaa', {'do': 'hold'}, f'dt_hand={TOKEN}')
+        self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'hold'}, f'dt_hand={TOKEN}')
         self.assertEqual(self.poster.calls, [])
         self.assertIn('planted', self.get()[1])
-        self.req('POST', '/hand/draft/7-aaaa', {'do': 'skip', 'reason': 'off topic'}, f'dt_hand={TOKEN}')
+        self.req('POST', '/hand/town/draft/7-aaaa', {'do': 'skip', 'reason': 'off topic'}, f'dt_hand={TOKEN}')
         self.assertEqual(self.poster.calls, [])
         d = json.loads((self.state.outbox / '7-aaaa.json').read_text())
         self.assertEqual((d['posted'], d['skipped'], d['reason']), (False, True, 'off topic'))
         self.assertNotIn('rows="8"', self.get()[1])  # no draft left to edit
         self.assertEqual([l['what'] for l in self.logged()], ['hold', 'skip'])
+
+
+class Register(HandCase):
+    """The hand's pages in the field notebook's register (docs/VOICE.md): its own shell and stylesheet on a listener that
+    serves nothing else, a viewport for a phone, none of the words the town never says, and a plain-text view."""
+
+    def test_every_page_is_the_hands_shell_with_its_stylesheet_and_a_phone_viewport(self):
+        for path in ('/hand/', '/hand/town/', '/hand/town/speak', '/hand/town/watch', '/hand/town/measure', '/hand/town/root/'):
+            code, page, _ = self.get(path)
+            self.assertEqual(code, 200, path)
+            self.assertTrue(page.startswith('<!doctype html>'), path)
+            for part in ('name="viewport" content="width=device-width,initial-scale=1"', '.slip .foot {', 'hr.root {', '<a class="mark" href="/hand/">the hand</a>'):
+                self.assertIn(part, page, (path, part))
+            self.assertNotIn('/static/style.css', page)  # the hand's listener serves no /static/
+
+    def test_the_hands_own_words_say_none_of_what_the_town_never_says(self):
+        import re
+        words = re.sub(r'<[^>]*>|\{[^}]*\}', ' ', '\n'.join(hand.H.values())).lower()
+        for never in ('thanks', 'thank you', 'sorry', 'please', 'great', 'feel free', 'let me know', 'oops'):
+            self.assertNotRegex(words, rf'\b{never}\b')
+
+    def test_the_plain_text_view_is_every_action_as_its_form(self):
+        code, text, headers = self.get('/hand/town/?text=1')
+        self.assertEqual((code, headers['Content-Type'].split(';')[0]), (200, 'text/plain'))
+        self.assertIn('# town', text)
+        self.assertIn('POST /hand/town/draft/7-aaaa', text)
 
 
 class Listener(unittest.TestCase):
@@ -298,6 +330,223 @@ class Cli(HandCase):
         self.assertEqual((w.sent[1][1]['record']['text'], w.sent[1][1]['record']['reply']['parent']['uri']), ('a word by hand', self.uri))
         self.assertEqual([(o['object'], o['uri']) for o in self.host.ops if o['op'] == 'world-posted'], [('garden-1', 'at://did:plc:x/town.delve.feed.post/r9')])
         self.assertEqual(self.cmd('reply', 'at://nope', '--text-file', str(f), '--object', 'x')[0], 1)
+
+
+class Plan(unittest.TestCase):
+    """docs/PLAYTEST-2.md as the hand reads it at its start."""
+
+    def test_the_plan_gives_four_seeds_and_eight_invitations_each_with_its_spells(self):
+        p = hand.plan(Path(__file__).resolve().parent.parent / 'docs' / 'PLAYTEST-2.md')
+        self.assertEqual(len(p['seeds']), 4)
+        self.assertTrue(all(s.startswith('delvetalk ') for s in p['seeds']))
+        self.assertEqual(p['seeds'][0], "delvetalk kind/room make / name: The Bellfounder's Porch")
+        self.assertEqual([r['minute'] for r in p['invitations']], [0, 15, 30, 45, 60, 75, 90, 105])
+        self.assertTrue(all(r['spells'] and r['answered'] for r in p['invitations']))
+        zulip = hand.invitation_text(p['invitations'][0], 'zulip')
+        self.assertTrue(zulip.startswith('@**Claude** @**Yuè月** @**Kestrel** the world is new.'), zulip)
+        self.assertIn('\n\n    delvetalk kinds make / name: <yours>', zulip)  # quoted: four spaces, so no bridge runs it
+        self.assertTrue(hand.invitation_text(p['invitations'][0], 'delve').startswith('@Claude @Yuè月 @Kestrel the world'))
+        self.assertEqual(hand.plan('/nonexistent'), {'path': '/nonexistent', 'seeds': [], 'invitations': []})
+
+
+def observed(st, uri, did, handle, text, at='2026-10-11T10:00:00Z'):
+    """An observation as the bridge stores one (observe.SCHEMA), for a turn the test makes under its uri."""
+    import sqlite3
+    st.home.mkdir(parents=True, exist_ok=True)
+    db = sqlite3.connect(st.observed)
+    db.executescript(observe.SCHEMA)
+    db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (uri, json.dumps({
+        'uri': uri, 'author': {'did': did, 'handle': handle}, 'text': text, 'kind': 'post', 'createdAt': at, 'replyTo': None, 'mentions': [], 'root': None})))
+    db.commit()
+    db.close()
+
+
+def cast(town, who, text, intent):
+    """`text` as the bridge turns a post of `who`'s: `receive` on the card the host reads in it."""
+    card = town.send(op='spell-parse', text=text)['spell']['card']
+    return town.send(op='world-turn', principal=who, object=card, method='receive', identity=intent,
+                     argument={'tag': 'record', 'fields': [{'name': 'text', 'value': {'tag': 'label', 'value': text}},
+                                                           {'name': 'post', 'value': {'tag': 'label', 'value': intent}}]})
+
+
+class Speak(unittest.TestCase):
+    """Speak and Watch over a real `serve` after genesis, the world a Zulip channel: a seed is cast once as the opener,
+    the card and receipt come back, and the post that says so waits for Post into its topic, recorded for the thing it
+    made; the watch shows each turn as it was typed, by handle, with the card it offered and the draft it made."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.town import Town
+        cls.dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.dir.cleanup)
+        cls.town = Town(cls.dir.name)
+        cls.addClassCleanup(cls.town.close)
+        cls.st = State(cls.town.state)
+        cls.st.write(cls.st.row, {'world': 'town', 'transport': 'zulip', 'realm': 'tulip.example', 'channel': 'delvetalk', 'zuliprc': None})
+        cls.hand = hand.Hand(cls.st, cls.town.client, TOKEN)
+
+    def test_a_seed_is_cast_once_as_the_opener_and_its_post_waits_for_post_in_its_topic(self):
+        spell = self.hand.plan['seeds'][0]
+        came = self.hand.cast(spell, intent=self.hand.seed_intent(spell))
+        self.assertEqual((came['outcome'], came['object']), ('admitted', 'room/1'), came)
+        self.assertIn('Made, at room/1', came['text'])
+        _, d = self.hand.draft(came['drafted'])
+        self.assertEqual((d['topic'], d['replyTo'], d['object'], d['posted'], d['hand']), ('welcome', None, 'room/1', False, True))
+        self.assertTrue(d['text'].startswith("    delvetalk kind/room make / name: The Bellfounder's Porch\n\n"), d['text'])
+        entry = self.town.send(op='world-receipt', principal=self.hand.owner, identity=self.hand.seed_intent(spell))
+        self.assertEqual(entry['receipt']['identity']['principal'], self.hand.owner)
+        again = self.hand.cast(spell, intent=self.hand.seed_intent(spell))  # the same intent: the first receipt, the first draft
+        self.assertEqual((again['height'], again['drafted']), (came['height'], came['drafted']))
+        self.assertEqual(sum(1 for i, _, _ in self.hand.drafts() if '-speak-' in i), 1)
+        seed = self.hand.spoken()['seeds'][0]
+        self.assertEqual((seed['cast']['height'], seed['cast']['state']), (came['height'], 'waiting for Post'))
+        from transport import zulip
+        sent = []
+        bot = type('Bot', (), {'newest': lambda s, stream: 0, 'sent_after': lambda s, *a: None,
+                               'send': lambda s, stream, topic, text: sent.append((stream, topic, text)) or {'id': 501}})()
+        self.assertEqual(zulip.post_drafts(self.st, self.town.client, bot), {'posted': []})  # the bridge leaves the hand's own
+        h = hand.Hand(self.st, self.town.client, TOKEN, poster=lambda path, st, host, text=None: post.post_draft(path, st, host, text, zulip=bot))
+        h.post(came['drafted'])
+        self.assertEqual(sent[0][:2], ('delvetalk', 'welcome'))
+        uri = json.loads((self.st.outbox / f"{came['drafted']}.json").read_text())['sent']['uri']
+        self.assertEqual(self.town.send(op='world-addressee', parent=uri).get('object'), 'room/1')  # a reply to the post reaches the porch
+
+    def test_a_refused_spell_drafts_nothing_and_words_are_no_spell(self):
+        came = self.hand.cast('delvetalk room/99 write / text: nobody here')
+        self.assertEqual((came['outcome'], came['drafted']), ('unknownObject', None), came)
+        with self.assertRaises(hand.HandError):
+            self.hand.cast('could the porch have a bell')
+
+    def test_the_speak_page_offers_the_plan_and_a_cast_comes_back_on_it(self):
+        cookie = f'dt_hand={TOKEN}'
+        code, page, _ = self.hand.handle('GET', '/hand/town/speak', cookie)
+        self.assertEqual(code, 200)
+        for text in ("The hand's seeds", 'seed 4', 'T+105', 'answered when', 'Topic of #delvetalk', 'name="intent"'):
+            self.assertIn(text, page)
+        code, _, headers = self.hand.handle('POST', '/hand/town/speak', cookie, {'spell': 'delvetalk garden plant / colour: amber / seed: a speak test',
+                                                                                'intent': 'hand:speak:test-1', 'topic': 'welcome'})
+        self.assertEqual(code, 303)
+        spoken = urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['spoken'][0]
+        code, page, _ = self.hand.handle('GET', '/hand/town/speak?spoken=' + spoken, cookie)
+        self.assertIn('Came back', page)
+        self.assertIn('garden/bell/', page)
+
+    def test_the_watch_follows_the_journal_and_the_outbox_newest_first(self):
+        resident, uri = 'did:plc:' + 'w' * 24, 'zulip://delvetalk/welcome/9001'
+        self.town.send(op='world-arrive', principal=CLOCK, did=resident, handle='kestrel')
+        observed(self.st, uri, resident, 'kestrel', 'look:\ndelvetalk garden plant / colour: violet / seed: a watched bell')
+        planted = cast(self.town, resident, 'delvetalk garden plant / colour: violet / seed: a watched bell', uri)
+        spell = 'delvetalk garden plant / colour: amber / seed: a bell the hand planted'
+        came = self.hand.cast(spell, intent='hand:speak:watch-1')
+        rows = self.hand.watch()
+        heights = [r['height'] for r in rows if r['height']]
+        self.assertEqual(heights, sorted(heights, reverse=True))  # newest first
+        mine = next(r for r in rows if r['height'] == came['height'])
+        self.assertEqual((mine['who'], mine['turn'], mine['tag']), ('ember.delve.town', spell, 'admitted'))
+        self.assertTrue(mine['first'] and mine['slug'] and mine['object'].startswith('garden/bell/'), mine)
+        self.assertEqual([d['id'] for d in mine['drafts']], [came['drafted']])
+        theirs = next(r for r in rows if r['height'] == planted['receipt']['height'])
+        self.assertEqual((theirs['who'], theirs['turn']), ('kestrel', 'delvetalk garden plant / colour: violet / seed: a watched bell'))
+        bell = mine['object']
+        self.assertEqual([r['height'] for r in self.hand.watch(bell) if r['height']], [x['height'] for x in self.hand.entries(bell, 100)][:30])
+        code, page, _ = self.hand.handle('GET', '/hand/town/watch', f'dt_hand={TOKEN}')
+        self.assertIn('<meta http-equiv="refresh" content="5">', page)
+        self.assertIn(f'/hand/town/root/?object={urllib.parse.quote(bell, safe="")}', page)
+        self.assertIn(f"receipt {came['slug']}", page)
+        self.assertNotIn('http-equiv="refresh"', self.hand.handle('GET', '/hand/town/watch?still=1', f'dt_hand={TOKEN}')[1])
+
+    def test_an_invitation_is_drafted_once_with_its_spell_quoted(self):
+        got = self.hand.invite(30)
+        _, d = self.hand.draft(got['drafted'])
+        self.assertEqual((d['topic'], d['object'], d['speak']), ('welcome', None, {'invitation': 30}))
+        self.assertIn('\n    delvetalk garden/bell/1 rain / text: …', d['text'])
+        with self.assertRaises(hand.HandError):
+            self.hand.invite(30)
+        with self.assertRaises(hand.HandError):
+            self.hand.invite(31)
+        self.assertEqual(next(r for r in self.hand.spoken()['invitations'] if r['minute'] == 30)['draft']['state'], 'waiting for Post')
+
+
+class Measure(unittest.TestCase):
+    """docs/PLAYTEST-2.md §4 counted from a real journal: a short playtest in which two residents make kinds and things,
+    use, cite and name each other's, one law refuses, the owner's own make is not a resident's, and the clock rains."""
+    M0 = 29336333  # unix minutes: the bridge's clock
+    A, B, OWNER = 'did:plc:' + 'k' * 24, 'did:plc:' + 'y' * 24, 'zulip:tulip.example:7'
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.town import Town
+        cls.dir = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.dir.cleanup)
+        cls.town = t = Town(cls.dir.name)
+        cls.addClassCleanup(t.close)
+        (Path(t.state) / 'delvetalk.toml').write_text(f'owner_principals = "{cls.OWNER}"\n')
+        cls.st, S0 = State(t.state), cls.M0 * 60
+        for did, handle in ((cls.A, 'kestrel'), (cls.B, 'yue'), (cls.OWNER, 'Hyphaed Biscuit')):
+            t.send(op='world-arrive', principal=CLOCK, did=did, handle=handle)
+        t.send(op='world-advance', principal=CLOCK, height=cls.M0)
+        h = hand.Hand(cls.st, t.client, TOKEN, poster=lambda *a, **k: {'uri': 'zulip://delvetalk/welcome/1', 'cid': '1'}, clock=lambda: S0)
+        h.post(h.invite(0)['drafted'])  # T0: the invitation's Post
+        observed(cls.st, 'zulip://delvetalk/welcome/2', cls.A, 'kestrel', 'hello', time_of(S0 + 60))
+        observed(cls.st, 'zulip://delvetalk/welcome/3', cls.B, 'yue', 'hi', time_of(S0 + 120))
+        t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 3)
+        kind = lambda name, law='': f'delvetalk kinds make / name: {name} / of: record / form: text: text 1..80 / head: {name}: {{text}} / law: {law} / body:'
+        for n, (who, text) in enumerate([
+                (cls.A, kind('lamp')), (cls.A, 'delvetalk kind/lamp make / text: a small light'), (cls.B, 'delvetalk lamp/1 write / text: brighter'),
+                (cls.B, kind('sealed', 'law maker "only its maker writes": request.subject == new.maker')), (cls.B, 'delvetalk kind/sealed make / text: mine'),
+                (cls.A, 'delvetalk sealed/1 write / text: yours?'), (cls.B, 'delvetalk sealed/1 door / label: lamp / to: lamp/1'),
+                (cls.A, 'delvetalk anthology write / text: seal: what sealed/1 keeps'), (cls.A, 'delvetalk kind/sealed make / text: hers'),
+                (cls.B, 'delvetalk kind/lamp make / text: a second light'), (cls.OWNER, kind('hyphae'))]):
+            cast(t, who, text, f'post-{n}')
+        t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 130)  # the tide's hour: the opener's wake ticks it
+        cls.st.interpretations.mkdir(parents=True, exist_ok=True)
+        for i, raw in enumerate(('delvetalk garden plant / colour: amber / seed: x', 'none')):
+            (cls.st.interpretations / f'{i}.json').write_text(json.dumps({'id': str(i), 'object': 'garden', 'reply': {'status': 'replied', 'raw': raw}}))
+        from transport import measure
+        cls.m = measure.measures(cls.st)
+
+    def test_things_made_are_the_residents_by_kind_and_maker(self):
+        made = self.m['made']
+        self.assertEqual([r['object'] for r in made['rows']], ['kind/lamp', 'lamp/1', 'kind/sealed', 'sealed/1', 'sealed/2', 'lamp/2'])
+        self.assertEqual(made['byKind'], {'kind': 2, 'lamp': 2, 'sealed': 2})
+        self.assertEqual(made['byMaker'], {'kestrel': 3, 'yue': 3})  # the owner's kind/hyphae is no resident's
+
+    def test_use_by_another_citations_laws_and_refusals(self):
+        used = {(r['object'], r['by']) for r in self.m['used']['rows'] if r['residentMade']}
+        self.assertEqual(used, {('lamp/1', 'yue'), ('kind/sealed', 'kestrel'), ('kind/lamp', 'yue')})
+        self.assertEqual((self.m['used']['makers'], self.m['goNoGo']), (2, {'used by another, at least 3 by at least 2 makers': True}))
+        self.assertEqual([(r['object'], r['maker']) for r in self.m['laws']['written']], [('kind/sealed', 'yue')])
+        self.assertTrue(self.m['laws']['written'][0]['law'].startswith('law maker "only its maker writes"'))
+        self.assertEqual([(r['from'], r['to'], r['toResident']) for r in self.m['citations']['doors']], [('sealed/1', 'lamp/1', True)])
+        self.assertEqual([(r['in'], r['names'], r['by']) for r in self.m['citations']['named']], [('anthology', 'sealed/1', 'kestrel')])
+        self.assertEqual(self.m['refusals']['byClass'], {'lawRefused': 1})
+
+    def test_time_rain_and_interpretations(self):
+        self.assertEqual(self.m['T0'], time_of(self.M0 * 60))
+        self.assertEqual(self.m['firstMade'], {'minutesFromT0': 3.0, 'byResident': {'kestrel': 2.0, 'yue': 1.0}})
+        self.assertGreaterEqual(self.m['unposted']['count'], 1)
+        self.assertIn('tide', [o for r in self.m['unposted']['rows'] for o in r['objects']])
+        self.assertEqual((self.m['interpretations']['count'], self.m['interpretations']['byVerdict']), (2, {'none': 1, 'spell': 1}))
+
+    def test_the_page_status_and_harvest_read_the_same_numbers(self):
+        out = io.StringIO()
+        self.assertEqual(main(['status', '--state', self.town.state, '--playtest'], out), 0)
+        self.assertEqual(json.loads(out.getvalue()), json.loads(json.dumps(self.m)))
+        code, page, _ = hand.Hand(self.st, self.town.client, TOKEN).handle('GET', '/hand/town/measure', f'dt_hand={TOKEN}')
+        self.assertEqual(code, 200)
+        for text in ('things made by residents', 'by kind: kind 2, lamp 2, sealed 2', 'holds', 'sealed/1 -&gt; lamp/1 by yue'):
+            self.assertIn(text, page)
+        refused = next(r for r in hand.Hand(self.st, self.town.client, TOKEN).watch() if r['tag'] == 'refused')
+        self.assertEqual((refused['who'], refused['turn'], refused['outcome']), ('kestrel', 'refused sealed/1', 'lawRefused'))  # whole, from the journal
+        from deploy.ring import harvest
+        r = harvest.harvest(self.dir.name)
+        self.assertEqual(r['playtest']['made'], self.m['made'])
+        self.assertIn('| things made by residents | 6 |', harvest.markdown(r))
+
+
+def time_of(seconds):
+    import time
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(seconds))
 
 
 if __name__ == '__main__':

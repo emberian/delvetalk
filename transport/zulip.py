@@ -208,11 +208,13 @@ def deliver(st, host, client, stream, topic, text, intent):
 
 def target(d, row):
     """(stream, topic) of a draft on the world `row` names: a reply goes to its post's topic; a page publication to a topic
-    named for the page; a section edit waits until the bridge has given it its page's post to reply to. With a `topic` in
-    the row the world lives in that one topic, and nothing is posted elsewhere."""
+    named for the page; the hand's own (`speak`) to the topic it names; a section edit waits until the bridge has given it
+    its page's post to reply to. With a `topic` in the row the world lives in that one topic, and nothing is posted elsewhere."""
     where = parse_uri(d.get('replyTo'))
     if where:
         stream, topic = where[:2]
+    elif d.get('topic'):
+        stream, topic = row['channel'], d['topic']
     elif 'publication' in d and not d['section']:
         stream, topic = row['channel'], row.get('topic') or d['page']
     else:
@@ -223,9 +225,12 @@ def target(d, row):
 
 
 def post_drafts(st, host, client):
-    """Post every unposted draft with text, oldest first, with no hourly cap, each recorded with the host."""
+    """Post every unposted draft with text, oldest first, with no hourly cap, each recorded with the host; the hand's own
+    drafts (a reply by hand, a spell spoken, an invitation) wait for the owner's Post."""
     sent, held = [], []
     for path, d in st.unposted():
+        if d.get('hand'):
+            continue
         try:
             sent += [post_draft(path, st, host, zulip=client)['uri']] if d['text'] else []
         except Failure as f:

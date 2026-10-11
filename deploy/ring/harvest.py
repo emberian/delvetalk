@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 from rehearsal.rehearse import journal_stats  # noqa: E402
 from transport import journal as chain  # noqa: E402
+from transport import measure  # noqa: E402
 from transport.state import State  # noqa: E402
 
 ARCS = {'garden': ('plant', 'rain', 'cistern'), 'workshop': ('check', 'propose', 'adopt'), 'rooms': ('enter', 'choose', 'leave')}
@@ -137,6 +138,7 @@ def harvest(run):
                     arcs[card].update(step=step, by=handle)
     r['people'], r['arcs'] = people, arcs
     r['cards'] = {'quoted': dict(quoted.most_common()), 'draftedNeverQuoted': sorted(drafted_cards - set(quoted))}
+    r['playtest'] = measure.measures(st) if journal else None  # PLAYTEST-2 §4, the hand's numbers
     return r
 
 
@@ -180,6 +182,11 @@ def markdown(r):
     w('\n### Cards quoted\n')
     w(', '.join(f'{c} {n}' for c, n in r['cards']['quoted'].items()) or 'none')
     w('\nDrafted and never quoted: ' + (', '.join(r['cards']['draftedNeverQuoted']) or 'none') + '\n')
+    if r.get('playtest'):
+        w('### PLAYTEST-2 section 4, as the hand counts it\n\n| Measure | Count | Of which | Behind it |\n| --- | --- | --- | --- |')
+        for name, n, of, ids in measure.table(r['playtest']):
+            w(f"| {name} | {n if n is not None else 'none'} | {of} | {'; '.join(ids) or 'none'} |")
+        w('')
     w('### Refusals\n')
     for x in r['refusals']:
         w(f"- `{x['class']}` {x['intent']}: {x['reason']}")

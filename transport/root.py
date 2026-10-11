@@ -1,12 +1,15 @@
 """The hand's root console and its moderation verbs (docs/ROOT.md 1.6 and 2.3; HOST-HANDOFF 5.126): one table, read by
-the CLI (`hand root <verb>`, `hand <power>`) and the web face (`/hand/root/`), each verb one request on the root socket
-under the opener. Every write carries a reason (root) or a reading (moderation); the journal is the record.
+the CLI (`hand root <verb>`, `hand <power>`) and the web face (`/hand/<world>/root/`), each write one request on the root
+socket under the opener, each carrying a reason (root) or a reading (moderation); the journal is the record, and root's
+journal browser reads it whole.
 """
 import json
 import time
 from pathlib import Path
 
-from transport.identity import SLUG
+from transport import journal
+from transport.http import typed
+from transport.identity import SLUG, slug
 
 # verb -> (fields, the request it sends). A field is (name, kind): text, int, json (a value), or ? after it when optional.
 ROOT = {
@@ -20,13 +23,14 @@ ROOT = {
     'quiet': (('principal', 'text'), ('hours', 'int')),  # the powers without the law (ROOT 1.1); hours 0 clears a quiet
     'hide': (('object', 'text'),), 'show': (('object', 'text'),), 'retire': (('object', 'text'),), 'unretire': (('object', 'text'),),
     'revoke': (('grant', 'text'),),
+    'expire': (('principal', 'text'), ('scratch', 'text')),  # a scratch world is serve's: discarded now, in the hand's log only
 }
 MOD_SETTINGS = (('postQuota', 'int?'), ('interpretQuota', 'int?'), ('modelQuota', 'int?'))
 POWERS = {  # (the object the power is cast on: a field's value, or `world`), its fields
     'quiet': ('world', (('who', 'text'), ('hours', 'int'))), 'unquiet': ('world', (('who', 'text'),)),
     'retire': ('object', (('object', 'text'),)), 'unretire': ('object', (('object', 'text'),)),
     'hide': ('object', (('object', 'text'),)), 'show': ('object', (('object', 'text'),)),
-    'expire': ('world', (('scratch', 'text'),)), 'revoke': ('world', (('grant', 'text'),)),
+    'revoke': ('world', (('grant', 'text'),)),
 }
 
 
@@ -68,7 +72,6 @@ def request(face, verb, given, opener, clock=time.time):
     on, spec = POWERS[verb]
     got = fields(spec, given)
     target = got.pop('object') if on == 'object' else 'world'
-    from transport.http import typed
     return {'op': 'world-turn', 'principal': opener, 'object': target, 'method': verb, 'identity': f'hand:{verb}:{int(clock() * 1000)}',
             'argument': typed({**got, 'reading': given['reading'].strip()})}
 
@@ -81,12 +84,17 @@ def dump(host, opener, obj):
                                 ('dump', 'world-dump', {}))}
 
 
-def entries(host, opener, after=None, limit=20, object=None, principal=None):
-    """A page of the journal, raw as the opener reads it, newest first unless `after`; `object` and `principal` narrow the page."""
-    got = host.send({'op': 'world-entries', 'principal': opener, 'limit': limit, **({'after': after} if after is not None else {'reverse': True})})
+def entries(st, after=None, limit=20, object=None, principal=None, before=None):
+    """A page of the world's journal, whole, each with its slug: read from the journal itself, since the host projects
+    another's refusal even to the opener and root reads the record. Newest first (below `before`), or oldest first after
+    `after`; `object` and `principal` narrow the page."""
+    if after is not None:
+        got = journal.read(st.journal, [l for l in journal.links(st.journal) if l['height'] > after][:limit]) if st.journal.exists() else []
+    else:
+        got = journal.tail(st.journal, limit, before)[::-1]
     keep = lambda e: (not object or object in json.dumps(e.get('roots') or []) + json.dumps((e.get('outcome') or {}).get('object'))) and \
         (not principal or (e.get('identity') or {}).get('principal') == principal)
-    return [e for e in got.get('entries') or [] if keep(e)]
+    return [dict(e, slug=slug(e.get('hash'))) for e in got if keep(e)]
 
 
 def modlog(host, opener, object=None, tail=20):
@@ -106,8 +114,9 @@ def find(host, opener, text, observed=()):
             **({'receipt': host.send({'op': 'world-resolve', 'principal': opener, 'slug': t})} if SLUG.fullmatch(t) else {})}
 
 
-def edit_command(entry, height, journal, path):
-    """An entry cannot be edited in place: save it and print the offline `root-edit rewrite` (ROOT 1.5)."""
-    Path(path).write_text(json.dumps(entry, indent=1, sort_keys=True) + '\n')
-    return (f'docker compose down && deploy/backup.sh ... && delvetalk-obend root-edit --journal {journal} --out {journal}.edited '
+def edit_command(entry, height, journal_path, path):
+    """An entry cannot be edited in place: save its record (without the slug and size the reader derived) and print the
+    offline `root-edit rewrite` (ROOT 1.5)."""
+    Path(path).write_text(json.dumps({k: v for k, v in entry.items() if k not in ('slug', 'bytes')}, indent=1, sort_keys=True) + '\n')
+    return (f'docker compose down && deploy/backup.sh ... && delvetalk-obend root-edit --journal {journal_path} --out {journal_path}.edited '
             f'--reason REASON rewrite --height {height} --entry {path}')

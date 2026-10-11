@@ -221,7 +221,8 @@ reference to it elsewhere answers `foreignWorld` by name.
 
 ## 5. The operator's view
 
-**One hand over many worlds.** `/hand/<world>/` with the same verbs; the
+**One hand over many worlds.** `/hand/` lists them, scratch worlds with their owner, idle time and expiry and root's
+`expire`; `/hand/<world>/` with the same verbs; the
 hand's CLI takes `--world`, default `town`. `world-status` per world and
 `serve-status {hostSha256, pid, replay, library, worlds: [{name, height,
 objects, clock, replay, snapshot}], scratches}`.
