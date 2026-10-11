@@ -61,8 +61,9 @@ connection per thread, so production runs path (b).
 ## Prerequisites on the workhorse
 
 - Docker with compose v2, as for `/opt/dregg-edge`; `rsync` and `python3` for backups.
-- `/var/lib/delvetalk/v2`, owner `10425:10425`, mode 0700 (the image's uid,
-  next in the edge's series). On ext4 or ZFS, local disk: see "Durability".
+- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v3` since the fresh genesis of 2026-10-11 (the edition-1
+  world stays unserved in `v2`), owner `10425:10425`, mode 0700 (the image's uid, next in the edge's series), with
+  `state/` inside it made the same way. compose's default is still `v2`, so `.env` names it. On ext4 or ZFS, local disk: see "Durability".
 - `/etc/delvetalk/anthropic.key`: the key alone, owner 10425, mode 0400.
 - `/etc/delvetalk/repo/town.key`: the repository's signing key (docs/REPO.md "The key"), made at first start
   (below), owner 10425, mode 0400, in a directory owner 10425, mode 0700. Never printed, never in a backup tarball.
@@ -119,13 +120,15 @@ connection per thread, so production runs path (b).
 On hbox (or any machine with Docker; the images are linux/amd64):
 
     deploy/build.sh            # last line: sha256:  <64 hex>  delvetalk-obend (linux/amd64)
-    docker save delvetalk:<sha12> delvetalk-host:<sha12> | gzip -1 | ssh root@workhorse 'gunzip | docker load'
-    scp deploy/compose.yml deploy/compose.hand.yml deploy/watch.sh deploy/delvetalk-watch.service deploy/delvetalk-watch.timer root@workhorse:/opt/delvetalk/
-    scp deploy/backup.sh deploy/verify.sh deploy/restore.sh root@workhorse:/opt/delvetalk/deploy/
+    docker save delvetalk:<sha12> delvetalk-host:<sha12> | gzip -1 | ssh dregg-workhorse 'gunzip | docker load'
+    scp deploy/compose.yml deploy/compose.hand.yml deploy/watch.sh deploy/delvetalk-watch.service deploy/delvetalk-watch.timer dregg-workhorse:/opt/delvetalk/
+    scp deploy/backup.sh deploy/verify.sh deploy/restore.sh dregg-workhorse:/opt/delvetalk/deploy/
 
-(From hbox, which has no key for the workhorse, pipe through the laptop: `ssh hbox 'docker save ... | gzip -1' | ssh
-root@workhorse 'gunzip | docker load'`.) The backup scripts run on the host, not in a container, so they are shipped
-beside compose.yml; `/opt/delvetalk/deploy/` is the copy the timer runs.
+hbox holds the workhorse's root key since 2026-10-11 (`~/.ssh/id_portable`, the `dregg-workhorse` entry of its
+`~/.ssh/config`), so it ships straight to the workhorse; through the laptop the same 420 MB took minutes over its wifi.
+The backup scripts run on the host, not in a container, so they are shipped beside compose.yml;
+`/opt/delvetalk/deploy/` is the copy the timer runs. Copy from the `git archive` the images were built from, not from a
+checkout that has moved since.
 
 Two builds of one commit must print the same SHA-256; record it with the
 commit. (Measured: foundation 1cc552a gives `6604098861d4…` on an arm64 Mac
@@ -133,7 +136,11 @@ under emulation and natively on hbox; foundation a3e1fb2, deployed 2026-10-10, g
 `1efaa90465860427c46672497aad25b2c7bd265b9e841c1a27a0ec324d5774e7` on both; foundation 18f1de9, deployed 2026-10-10 on hbox,
 gives `523ea05d7dca284f5119ed6a23cf33841c821e44347fd5a137775841d7bdc12f`.) The image id after `docker load` on the
 workhorse differs from hbox's (the two daemons' image stores); compare the binary instead:
-`docker run --rm --entrypoint sha256sum delvetalk:<sha12> /usr/local/bin/delvetalk-obend`. The Lean compile runs inside dockerd's
+`docker run --rm --entrypoint sha256sum delvetalk:<sha12> /usr/local/bin/delvetalk-obend` (the host image has no
+`sha256sum`), and for the whole transport image the same command on both boxes, `docker run --rm --network none
+--entrypoint sh delvetalk:<sha12> -c 'cd / && find app usr/local/bin/delvetalk-obend -type f | sort | xargs sha256sum |
+sha256sum'`. Foundation 2f0e25f4 gives `1f31a920642a707f1619dac217fd79b5f7a9ce051fcfc283e359226af1d924c7` and b14df72e,
+deployed 2026-10-11, `e853262ec0bb6a68287e757f284296661c42df9a77d914694455e793b3fe8116` (hbox). The Lean compile runs inside dockerd's
 build, outside a `swarm-build` cgroup around the client; the Dockerfile's own
 two-slot wrapper is what bounds it. Everything the build reads is pinned (base images by digest, Debian
 packages by snapshot, elan and the Lean tarball by SHA-256).
@@ -142,13 +149,20 @@ packages by snapshot, elan and the Lean tarball by SHA-256).
 
 On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
 
+    # DELVETALK_HOST_IMAGE is the backup timer's replay image; DELVETALK_ORIGIN the portal and the did:web host;
+    # DELVETALK_WATCH_ZULIPRC the watch bot's rc (owner 10425, mode 0400; "Watching")
     DELVETALK_IMAGE=delvetalk:<sha12>
-    DELVETALK_HOST_IMAGE=delvetalk-host:<sha12>     # the backup timer's replay image
+    DELVETALK_HOST_IMAGE=delvetalk-host:<sha12>
     DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b
-    COMPOSE_FILE=compose.yml:compose.hand.yml       # once the hand is opened (below)
-    DELVETALK_ORIGIN=https://gsb.fg-goose.online     # the portal, and the repository's did:web host
+    COMPOSE_FILE=compose.yml:compose.hand.yml
+    DELVETALK_ORIGIN=https://gsb.fg-goose.online
+    DELVETALK_DATA=/var/lib/delvetalk/v3
     DELVETALK_REPO_KEY_PATH=/etc/delvetalk/repo/town.key
-    DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc   # the watch bot's rc (owner 10425, mode 0400); "Watching"
+    DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc
+
+No comment after a value: compose and the shell strip one, but systemd's `EnvironmentFile=` (the backup unit) keeps it
+as part of the value, and the backup then failed `docker: invalid reference format` (2026-10-11, this template's own
+inline comments). The hand's token is a file (below), never a line here; the deploy of 18f1de9 had it inline.
 
 Every path and port has a variable whose default is the workhorse's; a rehearsal or drill on another box sets them in the
 same `.env` (and `COMPOSE_PROJECT_NAME`, which every `docker compose` here then uses): `DELVETALK_DATA`, `DELVETALK_ROOT`,
@@ -191,7 +205,13 @@ an open of the old one-file line format is refused naming it. Two cases, kept ap
   in the line format migrates back to the same two files, byte for byte.
 - *Another replay edition* ("journal replay edition 1; this host is 5"): nothing converts it, `migrate` included. It is
   a new genesis into a fresh data directory (OPERATIONS section b, "The upgrade path"); the old directory is kept as it
-  is, served read-only by its own old image if its receipts are to resolve.
+  is, served read-only by its own old image if its receipts are to resolve. Done 2026-10-11 (b14df72e into `v3`, the
+  edition-1 world left unserved in `v2`, so its receipts stop resolving): `docker compose --profile town down` on the
+  old files (a plain `down` leaves the exited `town` interpreter), one closing backup of the old directory with the old
+  unit, scripts and image, `mv /var/backups/delvetalk/mirror /var/backups/delvetalk/mirror.<old>-<stamp>` (backup.sh's
+  `rsync --delete` into `mirror/` would otherwise erase the old world's copy), the old `.env`, compose files, scripts
+  and units copied to `/opt/delvetalk/before-<sha12>/`, then the new files, `.env` with the new `DELVETALK_DATA`, and
+  this section from here.
 
     docker compose up -d --wait delvetalk-host
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock
@@ -208,7 +228,7 @@ foundation 7884a972: 43 entries, 16 objects, 3.4 s. The rehearsal seeds the same
 
 Genesis is not one transaction: if it stops partway (a traceback, a refused create), the objects it made stay and a
 second run refuses ("genesis has already run here: ..."). Before anything is posted, start again: `docker compose down`,
-move `state/` aside (`mv /var/lib/delvetalk/v2/state /var/lib/delvetalk/v2/state.failed-<stamp>`), fix the cause, and
+move `state/` aside (`mv /var/lib/delvetalk/v3/state /var/lib/delvetalk/v3/state.failed-<stamp>`), fix the cause, and
 run this section from `up -d --wait delvetalk-host`.
 
 The commonplace cites seven doors: GARDEN, ROOMS, WORKSHOP, TIDE, ANTHOLOGY, KINDS and STUDIO (a link to
@@ -259,11 +279,12 @@ Then custody and the watch, before the welcome is posted, so a fresh deploy has 
 explained in its own section below; run as root in `/opt/delvetalk`):
 
     # 1. the backup timer ("Durability and backups"): write the two units shown there, then
-    systemctl daemon-reload && systemctl enable --now delvetalk-v2-backup.timer
-    systemctl start delvetalk-v2-backup.service && cat /var/backups/delvetalk/last-verify     # ok <stamp>
+    systemctl daemon-reload && systemctl enable --now delvetalk-backup.timer
+    systemctl start delvetalk-backup.service && cat /var/backups/delvetalk/last-verify     # ok <stamp>
     # 2. the pull key, one line in /root/.ssh/authorized_keys (the public half of hbox's ~/.ssh/delvetalk-backups):
     restrict,command="/usr/bin/rrsync -ro /var/backups/delvetalk" ssh-ed25519 AAAA... delvetalk-backups-pull@hbox
-    #    and on hbox, pull.env naming this deploy's DELVETALK_HOST_IMAGE; its timer's next run pulls and verifies
+    #    and on hbox, pull.env naming this deploy's DELVETALK_HOST_IMAGE and verify.sh from this deploy's archive;
+    #    systemctl --user start delvetalk-pull-backups.service once: it pulls and replays the newest tarball
     # 3. the watch ("Watching"): the rc at $DELVETALK_WATCH_ZULIPRC, the stream delvetalk-ops with the bot subscribed
     install -o 10425 -g 10425 -m 0400 <the bot's .zuliprc> /etc/delvetalk/watch.zuliprc
     cp delvetalk-watch.service delvetalk-watch.timer /etc/systemd/system/ && systemctl daemon-reload
@@ -436,8 +457,10 @@ all ran and the run failed only at the Zulip send (`network_error: URLError`), s
 is news. `journalctl -u delvetalk-watch` shows each run; `python3 -m deploy.watch ... --dry-run` prints the lines without
 posting or remembering them. Installed 2026-10-10 (rc, `.env` line, `watch.sh`, both units) with the timer **not
 enabled**: the deployed image (foundation 18f1de9, `523ea05d7dca`) predates `deploy/watch.py` and the probe, and its one
-run by hand failed `No module named deploy.watch`. After an image from c5d4eb8 or later is up and the stream exists:
-`systemctl start delvetalk-watch.service` once, then `systemctl enable --now delvetalk-watch.timer`.
+run by hand failed `No module named deploy.watch`. 2026-10-11, image b14df72e: the run by hand passed (`watch: 0
+line(s) sent`, `watch.jsonl` written), and the timer is still **not enabled**: the stream does not exist
+(`get_stream_id?stream=delvetalk-ops` answers `Invalid channel name`; the bot is subscribed to allgame, clankerville,
+delvetalk and nemoland). Once the owner has made it and subscribed the bot: `systemctl enable --now delvetalk-watch.timer`.
 
 ## Opening another community
 
@@ -465,7 +488,7 @@ only if fsync reaches the disk: use a bind mount of a local ext4 or ZFS
 directory, as here. Not NFS, not a network volume driver. Docker Desktop's
 file sharing on a Mac is for testing, not custody.
 
-    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v2 /var/backups/delvetalk
+    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v3 /var/backups/delvetalk
 
 It rsyncs into `mirror/`, cuts a torn final line if a write was in flight,
 copies SQLite through its backup API, replays every journal (`state/*.journal`; `state/scratch/` is not custody and is left out of the backup)
@@ -475,15 +498,18 @@ journal is broken: the tarball is not made. The backup directory is root's, grou
 as 10425 in the ops container and lists it and reads `last-verify` (under 0700 its one run by hand failed `hand: [Errno
 13] Permission denied: '/backups/last-verify'`; rehearsed); 10425 owns every byte in it already. The timer installed on the workhorse:
 
-    # /etc/systemd/system/delvetalk-v2-backup.service
+    # /etc/systemd/system/delvetalk-backup.service
+    [Unit]
+    After=docker.service
+    Requires=docker.service
     [Service]
     Type=oneshot
     EnvironmentFile=/opt/delvetalk/.env
     WorkingDirectory=/opt/delvetalk
-    ExecStart=/opt/delvetalk/deploy/backup.sh --image ${DELVETALK_HOST_IMAGE} /var/lib/delvetalk/v2 /var/backups/delvetalk
+    ExecStart=/opt/delvetalk/deploy/backup.sh --image ${DELVETALK_HOST_IMAGE} ${DELVETALK_DATA} /var/backups/delvetalk
     Nice=10
     IOSchedulingClass=idle
-    # /etc/systemd/system/delvetalk-v2-backup.timer
+    # /etc/systemd/system/delvetalk-backup.timer
     [Timer]
     OnCalendar=*-*-* 00/6:17:00
     RandomizedDelaySec=5m
@@ -491,7 +517,8 @@ as 10425 in the ops container and lists it and reads `last-verify` (under 0700 i
     [Install]
     WantedBy=timers.target
 
-`systemctl enable --now delvetalk-v2-backup.timer`.
+`systemctl enable --now delvetalk-backup.timer`. The data directory comes from `.env`, so a new one needs no unit edit.
+Until 2026-10-11 the units were `delvetalk-v2-backup.{service,timer}` with the path fixed; they are disabled and kept.
 
 **Off the box, by pull, to hbox.** A copy on the box that fsyncs the journal is not custody. hbox pulls; the
 workhorse holds no credential to it, so a box that is taken cannot reach its own backups. Installed 2026-10-10:
@@ -509,7 +536,8 @@ backup timer:
     ~/delvetalk-backups/pull-backups.sh --from root@2.28.141.27 --key ~/.ssh/delvetalk-backups \
       --image ${DELVETALK_HOST_IMAGE} /tank/delvetalk-backups
 
-On a new binary, change `pull.env` on hbox with `.env` on the workhorse. `/tank` was 93 percent full (100 GB free) and
+On a new binary, change `pull.env` on hbox with `.env` on the workhorse, and when the journal's layout changed, its
+`verify.sh` too (the copy of 2026-10-10 read `world.journal` and would refuse every tarball of a serve directory). `/tank` was 93 percent full (100 GB free) and
 the tarballs are 0.1 to 0.35 MB each, so the retention below holds well under a hundred MB; nothing there is removed
 but the script's own expired tarballs. The first run (2026-10-10) pulled five tarballs (810 KB) and replayed the newest,
 `delvetalk-20261010T201220Z`, at height 40. `journalctl --user -u delvetalk-pull-backups` on hbox shows each run; no
@@ -543,13 +571,13 @@ within a poll), and its interpreter would spend.
 Restore on the workhorse:
 
     docker compose down
-    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v2
+    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v3
     docker compose --profile town up -d --wait
 
 A tarball pulled off the box comes back the same way (`scp` it beside its `.sha256` into `/var/backups/delvetalk`).
 
 `restore.sh` (as root) checks the checksum and replays before touching the data, refuses
-while the lock is held, gives the tree to 10425, and moves the current data to `v2.before-<stamp>`.
+while the lock is held, gives the tree to 10425, and moves the current data to `v3.before-<stamp>`.
 
 **A torn tail.** A journal is its chain (`<world>.journal`, one link a line) and its block store
 (`<world>.journal.blocks`, the entries' records; HOST-HANDOFF 5.137); an append syncs the records before the
@@ -560,8 +588,8 @@ Recover through a verified copy; it loses only the entry that was never
 acknowledged, since the host replies after fsync:
 
     docker compose down
-    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v2 /var/backups/delvetalk
-    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v2
+    deploy/backup.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v3 /var/backups/delvetalk
+    deploy/restore.sh --image delvetalk-host:<sha12> /var/backups/delvetalk/delvetalk-<stamp>.tar.gz /var/lib/delvetalk/v3
     docker compose --profile town up -d --wait
 
 `backup.sh` prints `cut a torn final line at byte N` for each journal it cut in its mirror, then replays the mirror
@@ -582,13 +610,13 @@ loaded at serve's start until `docker compose restart delvetalk-host`.
 The healthcheck goes red and every host reply is "host unavailable".
 
 1. `docker compose down`. Never edit the journal in place.
-2. `deploy/verify.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v2` names the
+2. `deploy/verify.sh --image delvetalk-host:<sha12> /var/lib/delvetalk/v3` names the
    journal and the height ("journal broken at height N: ...").
 3. Entries before N are a valid prefix. Copy the directory, keep lines 1..N-1
    of the copy's journal, and verify the copy. Compare it with the newest
    verified backup and restore the longer good one with `restore.sh`.
 4. Everything at height N and after is lost to the world; the broken directory
-   stays under `v2.before-<stamp>` as evidence. Find the second writer before
+   stays under `v3.before-<stamp>` as evidence. Find the second writer before
    starting again.
 
 ## A new binary
@@ -624,7 +652,7 @@ replay edition 3); root is one click further (`hand root ...`, `/hand/root/`).
 - `journal broken at height N: unterminated final line`: a torn tail; "A torn tail" above (backup.sh cuts it in its
   mirror and replays, restore.sh puts the verified copy back).
 - `height out of sequence`: a second writer. Find it before anything else: `docker compose ps -a`, `fuser -v
-  /var/lib/delvetalk/v2/state/journal.lock` (a writer elsewhere holds the lock; serve exits 75 naming it).
+  /var/lib/delvetalk/v3/state/journal.lock` (a writer elsewhere holds the lock; serve exits 75 naming it).
 - `journal replay edition 1; this host is 2`: set the previous `DELVETALK_IMAGE`/`DELVETALK_HOST_IMAGE` back in `.env`
   and `docker compose --profile town up -d --wait`; a new edition is "A new binary" and docs/OPERATIONS.md's upgrade path.
 - `journal exceeds byte capacity`: docs/OPERATIONS.md section c, the journal bound.
@@ -681,7 +709,7 @@ Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on 
 
     df -h /var/lib/delvetalk /var/backups
     docker compose stop delvetalk-bridge delvetalk-interpret     # the host keeps answering reads
-    du -sk /var/backups/delvetalk /var/lib/delvetalk/v2/state/scratch /var/lib/delvetalk/v2/state/access.log* | sort -n
+    du -sk /var/backups/delvetalk /var/lib/delvetalk/v3/state/scratch /var/lib/delvetalk/v3/state/access.log* | sort -n
     docker image ls 'delvetalk*'
 
 Remove only what the puller already holds: compare `ls /var/backups/delvetalk` with hbox's
