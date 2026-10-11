@@ -297,6 +297,66 @@ class Access(FrontCase):
         self.assertEqual(len(lines), 2 + 2 + 1, lines)  # api, challenge, verify, me, nowhere
 
 
+class Guests(FrontCase):
+    """An invitation accepted (POST /AGENTS.md/accept): the operator's code is the guest's credential once, and from then the
+    guest is anyone to the host: it arrives (its avatar, its handle), its turns are judged as anyone's, and nothing is
+    drafted for posting on its behalf. Refuted by a code that works twice, lapsed or revoked, a guest the host does not
+    know by its handle, or a guest's turn in the hand's outbox."""
+
+    def invited(self, name=None, days=7):
+        name = name or 'guest-' + self.c
+        return name, 'guest:gsb.fg-goose.online:' + name, self.front.identity.invite(name, 'a test', days)['code']
+
+    def accept(self, code):
+        return self.call('POST', '/AGENTS.md/accept', {'code': code})
+
+    def test_a_code_accepted_once_is_a_guest_who_arrives_and_turns_as_anyone_with_nothing_drafted(self):
+        name, principal, code = self.invited()
+        s, headers, raw = self.request('POST', '/AGENTS.md/accept', {'code': code})
+        got = json.loads(raw)
+        self.assertEqual((s, got['status'], got['principal'], got['handle']), (200, 'accepted', principal, name), got)
+        tok = got['credential']
+        self.assertIn(f'dt_credential={tok}', dict(headers)['Set-Cookie'])  # a browser holding it plays as the guest
+        s, me = self.call('GET', '/AGENTS.md/me', token=tok)
+        self.assertEqual((s, me['principal'], me['handle']), (200, principal, name))
+        from transport.bridge import plain
+        avatar = self.host.send({'op': 'world-view', 'principal': principal, 'object': principal})
+        self.assertEqual((avatar['status'], plain(avatar['state'])['handle']), ('viewed', name), avatar)  # arrived, by its handle
+        s, t = self.turn(tok, 'g-1')
+        self.assertEqual((s, t['status']), (200, 'admitted'), t)
+        r = self.host.send({'op': 'world-receipt', 'principal': principal, 'identity': 'g-1'})
+        self.assertEqual(r['receipt']['identity']['principal'], principal)
+        s, _, page = self.request('POST', f'/play/{self.c}', raw=b'method=bump', headers={'Cookie': f'dt_credential={tok}', 'Content-Type': FORM})
+        self.assertEqual(s, 200)
+        self.assertIn(name, page.decode())
+        self.assertEqual(list(self.outbox.glob('*.json')) if self.outbox.exists() else [], [])  # admitted public writes, drafted for nobody
+        r = self.host.send({'op': 'world-create', 'principal': DID, 'identity': 'mk-g-' + self.c, 'object': 'g-' + self.c, 'modules': counter_modules(),
+                            'entry': 'initial', 'seed': record(count=nat(0)), 'law': f'law maker "only its maker counts": request.subject == "{DID}"'})
+        self.assertEqual(r['status'], 'created', r)
+        s, t = self.call('POST', f'/AGENTS.md/world/g-{self.c}/bump', {'argument': record(), 'intent': 'g-2'}, tok)
+        self.assertEqual((t['status'], t['class'], t['line']), ('refused', 'lawRefused', '§ refused maker: only its maker counts'), t)  # the law, as for anyone
+        s, e = self.accept(code)
+        self.assertEqual((s, e['class'], e['reason']), (400, 'identity', 'invitation_spent'), e)
+
+    def test_a_code_lapsed_revoked_or_unknown_is_refused_by_name_and_revoking_ends_the_credential(self):
+        _, _, code = self.invited('lapsed-' + self.c, days=1)
+        self.now[0] += 86400
+        self.assertEqual(self.accept(code)[1]['reason'], 'invitation_expired')
+        name, _, code = self.invited('revoked-' + self.c)
+        self.front.identity.revoke_invitation(name)
+        self.assertEqual(self.accept(code)[1]['reason'], 'invitation_revoked')
+        for wrong in ('dt_invite_' + 'x' * 32, 'nonsense', ''):
+            s, e = self.accept(wrong)
+            self.assertEqual((s, e['class'], e['reason']), (400, 'identity', 'invitation_unknown'))
+        name, _, code = self.invited()
+        tok = self.accept(code)[1]['credential']
+        self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 200)
+        self.front.identity.revoke_invitation(name)
+        self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 401)
+        entry = next(e for e in CATALOGUE if e['name'] == 'accept')
+        self.assertEqual(set(entry['reasons']), {'invitation_unknown', 'invitation_spent', 'invitation_expired', 'invitation_revoked'})
+
+
 class Bearer(FrontCase):
     def test_html_and_text_reads_keep_the_bearer_principal_whatever_cookie_comes_with_them(self):
         tok, other = self.login(), self.login('glm.delve.town')

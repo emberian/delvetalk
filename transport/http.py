@@ -40,7 +40,7 @@ ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'receipt', False): 'inten
 TOP_ONLY = ('repl', 'check', 'me', 'revoke')
 ROUTE_HINT = 'GET /AGENTS.md/api lists every route; OPTIONS on a path answers its entries'
 FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)): 'examples',
-         ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify'}
+         ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify', ('POST', ('accept',)): 'accept'}
 
 
 def resolve(method, path):
@@ -190,6 +190,10 @@ CLAIM_LINES = {'no_post_yet': 'No post with that word from {handle} yet. Post it
                'challenge_expired': 'That word is older than 15 minutes. Ask for a new one.',
                'handle_unresolved': '{handle} is not a handle this town knows. Check the spelling.',
                'invalid_handle': '{handle} is not a handle this town knows. Check the spelling.'}
+ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever invited you',
+                'invitation_spent': 'that invitation was accepted already; the credential it gave speaks for you, and the operator can invite you again',
+                'invitation_expired': 'that invitation lapsed before it was accepted; ask for a new one',
+                'invitation_revoked': 'that invitation was revoked'}
 
 
 def turn_line(r, addressed=None, handles=None):
@@ -369,7 +373,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         the town hears of it is the operator's click."""
         receipt = reply.get('receipt') or {}
         writes = [w['object'] for w in (receipt.get('outcome') or {}).get('writes') or [] if w.get('object')]
-        if reply.get('status') != 'admitted' or not writes:
+        if reply.get('status') != 'admitted' or not writes or principal.startswith('guest:'):  # a guest's replies come back over HTTP only
             return
         public = [o for o in dict.fromkeys(writes) if self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': o}).get('status') == 'viewed']
         path = self.st.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
@@ -625,7 +629,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, canonical(self.server.catalogue(self.path)), headers=[('X-DelveTalk-Host-Sha256', self.server.host_sha256)])
         if name == 'examples':
             return self.reply(200, self.server.guide(EXAMPLES), 'text/plain')
-        if name in ('challenge', 'verify'):
+        if name in ('challenge', 'verify', 'accept'):
             return self.identify(name)
         if name == 'static':
             return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
@@ -810,8 +814,10 @@ class Handler(BaseHTTPRequestHandler):
             return
         auth = self.headers.get('Authorization') or ''  # the challenge answered is the requester's own when it holds its credential
         mine = auth[7:] if auth.startswith('Bearer ') else self.cookie()
+        text = lambda k: data.get(k) if isinstance(data.get(k), str) else ''
+        if which == 'accept':
+            return self.accept(text('code'))
         try:
-            text = lambda k: data.get(k) if isinstance(data.get(k), str) else ''
             if which == 'challenge':
                 out = self.server.identity.challenge(text('handle'), address=self.client_ip())
                 if self.browser():
@@ -834,6 +840,20 @@ class Handler(BaseHTTPRequestHandler):
         if self.browser():
             return self.html(200, pages.page('claimed', out['handle'], pages.T['verified'].format(handle=html.escape(out['handle']))), keep)
         self.reply(200, canonical({**terse(out), '_links': links}), headers=keep)
+
+    def accept(self, code):
+        """An invitation's code -> its guest's credential, once (transport/identity.py): the front maps a code to a principal and
+        tells the host it has arrived, as a claim does; everything after is the host's, as for anyone."""
+        try:
+            out = self.server.identity.accept(code)
+        except IdentityError as err:
+            return self.fail('identity', f'{err.code}: {ACCEPT_LINES[err.code]}', more={'reason': err.code})
+        self.server.record_handle(out['principal'], out['handle'])
+        if self.browser():
+            return self.html(200, pages.page('claimed', out['handle'], pages.T['verified'].format(handle=html.escape(out['handle']))),
+                             self.login_cookie(out['credential']))
+        links = {'self': link(self.path), 'world': link(PREFIX + '/world'), 'me': link(PREFIX + '/me'), 'api': link(PREFIX + '/api')}
+        self.reply(200, canonical({**out, '_links': links}), headers=self.login_cookie(out['credential']))
 
     def me(self, credential, who):
         rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []
