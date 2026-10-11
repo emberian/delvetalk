@@ -227,11 +227,11 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
 def render(state: State, context: Abi.Context) -> Document.Document:
   renderFrom(state, context, 0n, 0n)
 # The card's lines numbered `from` on, then its doors: one budget across what the answer has
-# already said (`used`), the head, the lines and the doors (Card.limit()).
+# already said (`used`), the head, the lines and the doors (Card.limit(context)).
 def renderFrom(state: State, context: Abi.Context, from: Nat, used: Nat) -> Document.Document:
   let id = Card.called(context, "record")
   let head = headLine(state, context, id)
   let doors = Card.doorLines(state.cites)
-  let left = Card.left(used + Document.size(head) + Document.size(Document.Document.sequence({items: doors})))
+  let left = Card.left(context, used + Document.size(head) + Document.size(Document.Document.sequence({items: doors})))
   let room = if left < Card.budget() then left else Card.budget()
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(numbered(state, context, Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: l.n >= from), 8n, if room < left then room else left, id), doors)})})

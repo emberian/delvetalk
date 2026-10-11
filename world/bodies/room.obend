@@ -292,17 +292,17 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   let count = "{title(state)} ({natText(Relations.count(state.presence))} here)"
   let around = "{presentLine(state)}{lyingLine(state)}"
   match here(context, state):
-    case some(p): Document.text("{count}{passageText(p.value.at, state)}Say: delvetalk {id} say / line: <text>. Leave: delvetalk {id} leave.\n{around}")
+    case some(p): Document.text("{count}{passageText(p.value.at, state, context)}Say: delvetalk {id} say / line: <text>. Leave: delvetalk {id} leave.\n{around}")
     case none(_): Document.text("{count}. Enter: delvetalk {id} enter.\n{around}")
 # The passage, then the choices whose guards hold and the variables, as many as fit in what the
-# card's 1,400 characters leave after the passage and the room's other lines (300 kept for them).
-def passageText(at: String, state: State) -> String:
+# card's room (Card.limit) leaves after the passage and the room's other lines (300 kept for them).
+def passageText(at: String, state: State, context: Abi.Context) -> String:
   match passageAt(at, state):
     case none(_): ", you are here.\n"
-    case some(ps): passageWith(ps.value, state, ", you are at {ps.value.id}:\n{ps.value.text}\nChoices:\n")
-def passageWith(ps: Passage, state: State, head: String) -> String:
-  let choices = fitting(Lists.map(Lists.take(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(c.guard, state.vars)), 8n), choiceLine), less(Card.limit(), textLength(head) + 300n))
-  "{head}{choices}{fitting(Lists.map(Lists.take(state.vars, 4n), varLine), less(Card.limit(), textLength(head) + textLength(choices) + 300n))}"
+    case some(ps): passageWith(ps.value, state, context, ", you are at {ps.value.id}:\n{ps.value.text}\nChoices:\n")
+def passageWith(ps: Passage, state: State, context: Abi.Context, head: String) -> String:
+  let choices = fitting(Lists.map(Lists.take(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(c.guard, state.vars)), 8n), choiceLine), less(Card.limit(context), textLength(head) + 300n))
+  "{head}{choices}{fitting(Lists.map(Lists.take(state.vars, 4n), varLine), less(Card.limit(context), textLength(head) + textLength(choices) + 300n))}"
 def less(room: Nat, used: Nat) -> Nat:
   if used >= room then 0n else room - used
 def fitting(lines: Lists.List<String>, room: Nat) -> String:
