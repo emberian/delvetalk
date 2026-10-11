@@ -2211,7 +2211,8 @@ def writeEdits (entry : Json) : List (String × Nat × Option (List (String × D
       let k ← (e.getObjVal? "key").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
       return (f, Data.variant "retract" (Data.record [("key", k)]))
     let edits : Option (List (String × Data)) :=
-      if kinds.any (fun k => !((k.getNat?.toOption.map Law.editKind).getD false)) then none else
+      -- A placing (kind `rule`) moves no field: it neither changes what a turn read nor ends the run of writes.
+      if kinds.any (fun k => !((k.getNat?.toOption.map fun n => n == 4 || Law.editKind n).getD false)) then none else
       (steps.foldlM (init := ([] : List (String × Data))) fun acc step => match decodeData Limits.dataDepth step with
         | .ok (.record fs) => some (acc ++ fs.filter fun (x : String × Data) => match x.2 with
             | Data.variant "keep" _ => false
@@ -2622,7 +2623,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
             throw { cls := "capacity", object := some id, reason := some (if want then "wantsPerObject" else "rulesPerObject") }
           let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }
           next := if want then { next with wants := next.wants ++ [row] } else { next with rules := next.rules ++ [row] }
-    out := out ++ [(id, { next with version := o.version + 1, state })]
+    -- A placing (rule, want, verb, or one taken off) is not a state move: the version roots judge, and a
+    -- suspended turn rooted on the thing, stay where they were.
+    let moves := changes.any (·.kind != 4)
+    out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version, state })]
     factsOf := factsOf ++ [(id, judgedBy)]
   return { updates := out, reprograms, amendments, evicted := evictions, facts := factsOf,
            creations := p.creates.map fun (id, c) => (id, c.object),

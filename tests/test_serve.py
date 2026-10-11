@@ -123,7 +123,7 @@ class Serve(unittest.TestCase):
     def test_the_town_is_opened_by_the_opener_with_arrivals_packages_sealed(self):
         who = 'did:plc:' + 'q' * 24
         got = self.client.send({'op': 'world-arrive', 'principal': 'transport', 'did': who, 'handle': 'q.delve.town'})
-        self.assertEqual([c['object'] for c in got.get('created', [])], [who, 'env/' + who, 'wake/' + who], got)
+        self.assertEqual([c['object'] for c in got.get('created', [])], [who], got)
         settings = [e['outcome'] for e in journal_entries(self.state / 'town.journal')
                     if e['outcome'].get('tag') == 'settings']
         self.assertEqual(settings[0]['opener'], OPENER)

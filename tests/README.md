@@ -157,6 +157,5 @@ The Python around one `serve`, which carries bytes and credentials and decides n
 The gate (FOUNDATION §11): the town's archived hour, replayed post by post. `rehearsal/run.sh` is the whole integration test; these are its unit-sized pieces.
 
 - `test_hub` (§11): The directory hears the gate's hour from the archived posts: field lines plant, rains and chatter get nothing, the model's spell reaches the door.
-- `test_replay` (§11): The strike awaits the planting post and rings when the reply to it is admitted, on the host.
 - `test_suspension_size` (§11, §12): A directory suspension journals only what changed: nine prose replies stay under a bounded median entry size.
 - `test_archive` (§11): `rehearsal/rehearse.py` over the whole archive: the section 10 hour and the recorded routing (43 interpretations).

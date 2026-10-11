@@ -105,10 +105,10 @@ class BridgeCase(unittest.TestCase):
 
 
 class DirectReplies(BridgeCase):
-    """A reply in a card's own thread is addressed to it: the commonplace answers prose naming
-    nothing with its menu once an hour per speaker, never with a model call, and then is quiet."""
+    """A reply in a card's own thread is addressed to it: the commonplace hears prose naming
+    nothing (and no policy to read it) as a turn that offers nothing, so no reply is drafted."""
 
-    def test_replies_in_the_commonplaces_thread_get_one_card_an_hour(self):
+    def test_prose_naming_nothing_in_the_commonplaces_thread_is_heard_and_drafts_no_reply(self):
         cites = [door(*d) for d in DOORS] + [door(STUDIO[0], '', (), STUDIO[1])]
         made = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-commonplace', 'object': 'commonplace',
                                'modules': closure('Menu', 'Mentions', 'Policies', 'Record'), 'entry': 'initial', 'law': genesis.RECORD_LAW,
@@ -127,9 +127,8 @@ class DirectReplies(BridgeCase):
         self.observe(posts)
         self.run_bridge()
         texts = [d['text'] for d in self.drafts()]
-        self.assertEqual(len(texts), 3, texts)
-        self.assertIn('DELVETALK · THE COMMONPLACE', texts[0])
-        self.assertEqual([t for t in texts[1:] if 'DELVETALK · THE COMMONPLACE' in t], [])
+        self.assertEqual(texts, ['', '', ''])  # three journaled turns, none with words to post
+        self.assertEqual([d['object'] for d in self.drafts()], ['commonplace'] * 3)
 
 
 class OpenerPosts(BridgeCase):
@@ -405,7 +404,7 @@ class Mentions(BridgeCase):
         p['author'] = {'did': did, 'handle': handle}
         return p
 
-    def test_a_post_mentioning_two_handles_is_a_turn_on_each_env_under_the_author(self):
+    def test_a_post_mentioning_two_handles_is_a_receive_on_each_mentioned_avatar_under_the_author(self):
         stub = Stub()
         glm = mk(1, 'glm here')
         glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
@@ -413,9 +412,9 @@ class Mentions(BridgeCase):
         post = mk(2, text, facets=[self.facet(text, 'kimi.delve.town', self.KIMI)])
         self.observe([glm, self.seen(3, self.KIMI, 'kimi.delve.town'), post])
         r = bridge.run(self.state, stub)
-        turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['object'].startswith('env/')]
-        self.assertEqual([(t['object'], t['principal'], t['method'], t['identity']) for t in turns],
-                         [(f'env/{d}', DID, 'write', f"{post['uri']}#env:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
+        turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['method'] == 'receive']
+        self.assertEqual([(t['object'], t['principal'], t['reach'], t['identity']) for t in turns],
+                         [(d, DID, 'mentioned', f"{post['uri']}#mention:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
         fields = {f['name']: f['value']['value'] for f in turns[0]['argument']['fields']}
         self.assertEqual(fields, {'text': text, 'post': post['uri']})
         self.assertEqual(r['mentioned'], [post['uri']])
@@ -433,7 +432,7 @@ class Mentions(BridgeCase):
         r = bridge.run(self.state, stub)
         arrivals = [o['did'] for o in stub.ops if o['op'] == 'world-arrive']
         self.assertEqual(sorted(arrivals), sorted([DID, self.GLM]))  # every observed author, once; never the unseen kimi
-        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{self.GLM}'])
+        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [self.GLM])
         self.assertIn(f"{post['uri']}#mention:{self.KIMI}", (self.state.skipped).read_text().split())
         self.assertEqual(r['failed'], [])
         before = len(stub.ops)
@@ -447,7 +446,7 @@ class Mentions(BridgeCase):
         post = mk(1, text, facets=[self.facet(text, f'u{i}.delve.town', d) for i, d in enumerate(dids)])
         self.observe([post] + [self.seen(10 + i, d, f'u{i}.delve.town') for i, d in enumerate(dids)])
         bridge.run(self.state, stub)
-        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{d}' for d in dids[:4]])
+        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], dids[:4])
 
 
 class Unaddressed(BridgeCase):
@@ -539,27 +538,6 @@ class Principals(BridgeCase):
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-arrive']), 2)
 
 
-class RealAwaitPost(test_outbound.PostWaiterWorld):
-    def test_a_bridged_reply_settles_a_waiting_awaitPost_on_the_real_host(self):
-        waiting = self.turn("w", "waitFor", record(post=label(test_outbound.URI)), principal="ann", identity="wait-1")
-        self.assertEqual(waiting["status"], "suspended", waiting)
-        self.posted(test_outbound.URI, obj="card")
-        outer = self
-
-        class H:
-            def send(self, req):
-                return outer.host.send(**req)
-        reply = mk(1, "thanks", parent=test_outbound.URI)
-        t = Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': [reply]}),
-                      'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})
-        with tempfile.TemporaryDirectory() as d:
-            d = State(d)
-            observe.Observer(d, delve.Client(t)).poll()
-            result = bridge.run(d, H(), now=60)  # the clock stays inside the waiter's patience
-        self.assertEqual(result["turns"], [reply["uri"]], result)
-        self.assertTrue(self.note().startswith("answered by"), self.note())
-
-
 class Daemon(unittest.TestCase):
     def test_a_live_pid_file_blocks_a_second_daemon(self):
         import os
@@ -581,11 +559,10 @@ class Names(unittest.TestCase):
     def test_a_persons_cards_are_named_by_handle(self):
         did = 'did:plc:' + 'k' * 24
         handles = {did: 'kestrel'}
-        for obj, name in (('wake/' + did, "kestrel's wake"), ('env/' + did, "kestrel's env"), (did, "kestrel's avatar"),
-                          ('garden', 'garden'), ('wake/did:plc:' + 'z' * 24, 'wake/did:plc:' + 'z' * 24)):
+        for obj, name in ((did, "kestrel's avatar"), ('garden', 'garden'), ('did:plc:' + 'z' * 24, 'did:plc:' + 'z' * 24)):
             self.assertEqual(bridge.card_name(obj, handles), name)
-        receipt = {'height': 9, 'slug': 'lodif-rukuz', 'roots': [{'object': 'wake/' + did, 'version': 3}], 'outcome': {'tag': 'admitted'}}
-        self.assertEqual(bridge.turn_words(receipt, handles=handles), "admitted kestrel's wake v3, entry 9, receipt lodif-rukuz")
+        receipt = {'height': 9, 'slug': 'lodif-rukuz', 'roots': [{'object': did, 'version': 3}], 'outcome': {'tag': 'admitted'}}
+        self.assertEqual(bridge.turn_words(receipt, handles=handles), "admitted kestrel's avatar v3, entry 9, receipt lodif-rukuz")
 
 
 if __name__ == '__main__':

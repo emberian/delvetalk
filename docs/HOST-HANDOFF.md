@@ -1705,7 +1705,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      == rule` (`method`, `verb` ""); a removal is the placer's, the owner's or the opener's (`lawRefused notPlacer`),
      not the law's. Refusals: `programRefused law syntax` (the parser's message; a line of another modality),
      `lawRefused nameTaken` (the name is the text's or a placed line's), `lawRefused under`, `lawRefused unplaced`,
-     `capacity rulesPerObject`/`wantsPerObject` (32 each). The version moves. The default law is now `request.kind
+     `capacity rulesPerObject`/`wantsPerObject` (32 each). A placing (rule, want or verb, placed or taken off) is not a state move: the version stays, so a turn rooted on the thing (a suspended `due`, a reader) is not `staleRoot`, and `writeEdits` counts kind 4 as moving no field (host24). The default law is now `request.kind
      == 0 or request.kind == rule or request.subject == "<creator>"`; a world's own laws (`Kind.lawOf`, the
      bodies) need `or request.kind == rule` from the objects lane, or only their owners place.
    - *Spells, on every card.* `delvetalk O rule / name: N / when: EXPR / then: SPELL` (and `reading:` before
@@ -1713,7 +1713,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      when / asks`; `unrule / name`, `unwant / name`. `rules` and `wants` are answered as `?` is (no entry):
      `rulesText`, `wantsText`. `?` lists `rule`/`want` when the law admits kind 4, and `rules`/`wants` always.
    - *Reads.* `world-rules {object, principal?}` → `{status: rules, object, rows: [{name, owner, handle, when, then,
-     line, from, reading?, placed?, fired?: {height, id, receipt?}, unfired?: {height, why}}]}`; `world-wants
+     line, from, reading?, placed?, fired?: {height, id, receipt?}, unfired?: {height, why}}]}` (`from` the holder:
+     the object itself for its placed and own-text lines, `kind/…` for a line its law's `under` follows); `world-wants
      {object, principal?}` → `{status: wants, object, rows: [{name, owner, when, asks, line, from, reading?, since:
      height | "clock"}]}`: only the wants that hold now, `asks` filled at the read (`Law.fill` over `asItStands`;
      the template when a hole reads nothing). `world-inspect`'s `laws` rows carry `keyword`, every modality
@@ -1870,7 +1871,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 - A suspended identity has a `suspended` entry; `retained` ignores it so the final commit can reuse the identity.
 - Settling runs inside `durable`, after the triggering op, and appends to the same write.
 - `Handle.flush` is not durable; `sync.c` does `fflush` + `fsync` (or `F_FULLFSYNC`). One sync per `durable` call. The build needs `lakefile.lean` for `extern_lib`.
-- `python3 -W error` turns leaked subprocess warnings into failures; close hosts in `tearDown`. `tests.test_replay` and `test_await` are slow because every `world-create` compiles.
+- `python3 -W error` turns leaked subprocess warnings into failures; close hosts in `tearDown`. `test_await` is slow because every `world-create` compiles.
 - Never run an unfiltered package suite on a loop.
 
 ## 7. Open
@@ -1888,7 +1889,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
    (`test_hub`, `test_interpret_object`, `test_interpret_text`, `test_genesis`); sweep the remaining Wake cases
    of the host's tests (`test_await`'s awaitPost cases, `test_outbound`'s `env/` and awaitPost cases,
    `test_public_methods`' receiver case (now the supervisor's alone), `test_chain`'s subscription-wired chain (as
-   rules), `test_replay`'s strike, `test_serve`'s arrival list, `test_zulip`'s `env/` arrivals, `test_bridge`'s
+   rules), `test_serve`'s arrival list, `test_zulip`'s `env/` arrivals, `test_bridge`'s
    mention route (now `<did>` `receive`, identity `#mention:<did>`, reach `mentioned`) and its awaitPost case,
    `test_theme`'s env/wake kinds with the objects lane); test the Bend arms from a body (`world.rule` from a
    `made`, `world.grow`, `world.act`, `world.chronicle`) and a rule-fired delivery's `context.sender`; the full run
