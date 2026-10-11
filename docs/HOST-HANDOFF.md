@@ -1624,6 +1624,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    line by its door count (`doorsHead`: `One door.` or `<count> doors.`, as `Menu.trieHead` writes it). Test:
    `test_host_spell.Margin` (a quote from the door line on, and a one-door head, cast nothing).
 
+158. **A target checked whole (host20).** `world.checkObject({object})` answers `Checked` for what a readable
+   object runs: its whole source closure (`Ops.checkObject`: `resolveInputs` of its inputs, the library modules
+   its pin names, the base package and every layer) compiled for `initial`, the diagnostics as `checkSource`
+   writes them (`checkDiagnostics`, shared); an unknown or unreadable object is `refused unknownObject`; it counts
+   against `checksPerTurn`. Workshop's `check / target:` calls it, where it checked `inspect`'s entry source, the
+   top layer alone (`import must name an earlier supplied module: ./Record.obend` on a bell or the garden).
+   Pins re-recorded (World is in every closure). Test: `test_genesis.Checked` (bell/1 and the garden, each
+   `layer over`, check clean; a missing card is named).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

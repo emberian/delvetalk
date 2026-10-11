@@ -906,7 +906,7 @@ def helperOf (w : World) (self id method : String) : Bool :=
 def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "awaitPost", "awaitPostUntil", "interpret",
-   "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "grant", "grantWith", "revoke",
+   "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "checkObject", "grant", "grantWith", "revoke",
    "objects", "changed", "card", "subscribe", "unsubscribe", "principal"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
@@ -1890,6 +1890,17 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     set { s with checks := s.checks + 1 }
     respond bounds responseType "checked"
       [.record [("diagnostics", listData ((checkSource s.world source).map Data.label))]]
+  -- `checkObject {object}`: what a readable object runs, its whole closure (`Ops.checkObject`).
+  | .variant "checkObject" (.record f) =>
+    let s ← get
+    match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?) with
+    | some o =>
+      if !o.read.permits s.subject then refusedWith bounds responseType "unknownObject" else
+      if s.checks ≥ Limits.checksPerTurn then evaluation "turn exceeds the check capacity"
+      set { s with checks := s.checks + 1 }
+      respond bounds responseType "checked"
+        [.record [("diagnostics", listData ((checkObject s.world o).map Data.label))]]
+    | none => refusedWith bounds responseType "unknownObject"
   | .variant "create" (.record f) | .variant "createUnder" (.record f) | .variant "make" (.record f) =>
     let some package := (f.lookup "package").bind labelOf | evaluation "malformed create plan"
     -- `make` (docs/GROUND.md §6 changes 1 and 6): the create, from source a resident supplied, with

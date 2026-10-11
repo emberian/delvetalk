@@ -172,6 +172,34 @@ class Rows(unittest.TestCase):
         self.assertTrue(json.dumps(inbox).count('garden/bell/1') >= 1, inbox)
 
 
+
+class Checked(unittest.TestCase):
+    """`workshop check / target:` checks what the card runs, its whole source: a bell and the garden are a
+    kind's body layered over Record, so the layer alone names a module below it (`world.checkObject`)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Town(cls.tmp.name)
+        cls.town.send(op='world-arrive', principal='transport', did='did:plc:glm', handle='glm.delve.town')
+
+    def check(self, target, ident):
+        got = self.town.send(op='world-turn', principal='did:plc:glm', object='workshop', method='receive',
+                             argument=record(text=label('delvetalk workshop check / target: ' + target),
+                                             post=label('at://x/p/' + ident)), identity=ident)
+        self.assertEqual(got['status'], 'admitted', got)
+        return got['offers'][0]['text']
+
+    def test_a_bell_and_the_garden_check_clean_and_a_missing_card_is_named(self):
+        for target in ('bell/1', 'garden'):
+            with self.subTest(target=target):
+                source = self.town.send(op='world-inspect', principal='did:plc:glm', object=target, source=True)['source']
+                self.assertTrue(source.startswith('layer over ./'), source[:80])
+                self.assertEqual(self.check(target, 'check-' + target.replace('/', '-')), '✾ WORKSHOP\n\nChecked: it compiles.\n')
+        self.assertIn('No object called ghost', json.dumps(self.check('ghost', 'check-ghost')))
+
+
 class Weather(unittest.TestCase):
     """docs/METAPHYSICS.md §7.4: the hand's weather watches the tide's ticks and, at each, rains on every bell the garden
     holds and writes the garden's weather line; the opener's wake ticks the tide every hour with nobody posting."""
