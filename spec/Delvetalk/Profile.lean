@@ -50,13 +50,24 @@ def stateKind (state : State) : String :=
 
 abbrev Tally := Std.HashMap String (Nat × Nat)
 
-/-- `forceHostedFrom`'s loop with attribution (the unrestricted policy). -/
-def profileFrom (limits : Limits) (bytes : Nat) : Nat → State → Nat → Tally → Tally
+/-- `forceHostedFrom`'s loop with attribution (the unrestricted policy), fetching a stored row from
+`fetch` as the hosted runner does (`fetch`, charged `fetchCost`). -/
+def profileFrom (fetch : Fetch) (limits : Limits) (bytes : Nat) : Nat → State → Nat → Tally → Tally
   | 0, _, _, tally => tally
   | fuel + 1, state, depth, tally =>
     match state.control with
     | .complete _ | .refused _ | .blackhole _ | .yielded _ => tally
     | _ =>
+      match fetchable fetch state with
+      | some (address, field, position, row) =>
+        let cost := fetchCost row
+        if cost.2 > bytes || cost.1 > fuel + 1 then tally
+        else
+          let spent := max 1 cost.1
+          let (count, ticks) := tally.getD "fetch" (0, 0)
+          profileFrom fetch limits (bytes - cost.2) (fuel + 1 - spent) (fetchStep state address field position row) depth
+            (tally.insert "fetch" (count + 1, ticks + spent))
+      | none =>
       let cost := textStepCost state (fuel + 1)
       if cost.2 > bytes || cost.1 > fuel + 1 then tally
       else
@@ -66,15 +77,15 @@ def profileFrom (limits : Limits) (bytes : Nat) : Nat → State → Nat → Tall
           let key := stateKind state
           let (count, ticks) := tally.getD key (0, 0)
           let tally := tally.insert key (count + 1, ticks + spent)
-          profileFrom limits bytes (fuel + 1 - spent) (Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRawFast state)
+          profileFrom fetch limits bytes (fuel + 1 - spent) (Minidregg.Theory.ObjectiveBendDemandMachineFast.stepRawFast state)
             sizes.2 tally
         else tally
 termination_by fuel => fuel
 decreasing_by all_goals omega
 
 /-- The profile as JSON, heaviest kind first: `[{kind, steps, ticks}]`. -/
-def profile (limits : Limits) (bytes ticks : Nat) (state : State) : Json :=
-  let tally := profileFrom limits bytes ticks state state.stack.length {}
+def profile (limits : Limits) (bytes ticks : Nat) (state : State) (fetch : Fetch := Fetch.none) : Json :=
+  let tally := profileFrom fetch limits bytes ticks state state.stack.length {}
   let rows := tally.toList.toArray.qsort (fun a b => a.2.2 > b.2.2 || (a.2.2 == b.2.2 && a.1 < b.1))
   Json.arr (rows.map fun (kind, steps, spent) =>
     Json.mkObj [("kind", toJson kind), ("steps", toJson steps), ("ticks", toJson spent)])

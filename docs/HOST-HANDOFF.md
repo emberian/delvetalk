@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host16 from 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -73,7 +73,7 @@ Rules:
 
 ## 3. Journal
 
-One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version}]`, `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
+One JSON object per line. Common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?}]` (5.136), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
 
 `world.receipts` maps `identityKey` to the entry index (first wins, except that a suspension or a transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`) are journaled but do not bind; admitted outcomes and every other refusal bind.
 
@@ -115,7 +115,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | --- | --- |
 | ids, text | `maxObjectIdBytes` 128, `maxPrincipalBytes` 128, `maxIntentBytes` 256, `maxMethodBytes` 128, `maxHandleBytes` 256, `maxTitleBytes` 256, `maxUriBytes` 512 |
 | per turn | `maxRoots` 64, `maxWrites` 64, `maxEditsPerWrite` 256, `maxPlansPerTurn` 1024, `maxCallDepth` 8, `sendsPerTurn` 32, `createsPerTurn` 8, `awaitsPerTurn` 8, `checksPerTurn` 8, `grantsPerTurn` 8, `publishesPerTurn` 4, `listPage` 64 |
-| data | `dataDepth` 8192, `plainDepth` 64, `maxStateBytes` 262144, `maxSeedBytes` 262144, `maxObjects` 10000 |
+| data | `dataDepth` 8192, `plainDepth` 64, `Bounds.maxCellBytes` 262144 (the scalar part and each relation row, 5.136), `maxObjects` 10000 |
 | journal | `maxEntryBytes` 1 MiB, `maxJournalEntries` 1,000,000, `maxJournalBytes` 256 MiB, `maxHistoryLimit` 100, `maxCheckpointBytes` 512 KiB, `snapshotEvery` 1000, `maxSnapshotBytes` 256 MiB |
 | ledger | `maxDepth` 100, `chainWork` 10,000,000, `chainStorage` 1 MiB (creation may lower, never raise) |
 | time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64 |
@@ -158,8 +158,8 @@ A full count refuses the turn with class `capacity`, reason the limit's name.
 - Extend: `world-reprogram {mode: "extend"}` and Plan `extend` add the source as module `Layer<n>`. The host writes `layer over ./<module below>.obend` as its first line (`layerLine`), so the kernel builds a layer stack with late binding. New pin = CID of `["extend", old pin, source CID]`; the state type must be equal under `canonicalTy` or a migration named. Tests: `test_extend`, `test_layers`.
 - Supervisors: `Object.supervisor` is fixed at creation (`world-create {supervisor}`, Plan `createUnder`; `refused {clause: supervisor}` if not an object). An activity of a supervised object ends `broken` when refused `evaluation`, `budget` when a machine budget ran out, `timedOut` when a segment resumed past its deadline ends in any way. `commit` puts an `ended {id, to, method: "ended", argument, sender, ledger}` field in that entry (`endedField`, `endedId`); `record` makes it a pending delivery with argument `{receipt, how}`. A ledger refusal (`budgetExhausted`) tells nobody. Replay checks the id and that `to` is the supervisor (`checkEnded`). Test: `test_supervisors`.
 - Handlers: Plan `run {object, method, argument, handler}` runs the callee as `call` does, but every Plan the callee's frame, or any frame it calls, yields is first offered to the handlers around it, innermost first, each a pure `handle(state, plan[, context]) -> Handled<R>` (`answer {response}`, or `pass` to the next one out; 5.73). The handler must be readable by the subject (`refused {clause: handler}`) and is a root. Plan `judge {edits}` answers `judged {admitted, clause}` without committing. Test: `test_handlers`.
-- Held entries: `compiledMethod`/`compileDef` use `compileEntryIn` (`Package.prepareRequest` cached in `world.requests`, `Package.compileEntryFrom`); `Compiled.entry` is a decoded, checked `CheckedEntry`. Turns run `Turn.startEntry`/`resumeEntry`; pure definitions (law, `lawReads`, handler, pure methods, migrations) run `Package.executeDataEntry`. Only `initial()` at creation runs from the packet.
-- Kernel integration: `world-turn {…, profile: true}` returns `profile [{kind, steps, ticks}]` (not journaled). `Turn.quoteAt` (`Turn.lean`) annotates sum-valued arguments.
+- Held entries: `compiledMethod`/`compileDef` use `compileEntryIn` (`Package.prepareRequest` cached in `world.requests`, `Package.compileEntryFrom`); `Compiled.entry` is a decoded, checked `CheckedEntry`. Turns run `Turn.startEntry`/`resumeSuspended`/`resumeEntry` over a `Turn.Store`; pure methods, cards and views run `Package.executeDataEntryStored`; law, `lawReads`, handlers and migrations run `Package.executeDataEntry`. Only `initial()` at creation runs from the packet.
+- Kernel integration: `world-turn {…, profile: true}` returns `profile [{kind, steps, ticks}]` (not journaled; a fetched row is `fetch`). Every argument enters natively (5.136).
 
 ### 5.4 Interpretation
 
@@ -300,16 +300,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    equal, so it is checked, not trusted. `deliverOne` refuses a `changed` whose principal may no longer view
    the object (`lawRefused`, clause `denied`) and `record` drops that subscription. Test: `tests/test_changes.py`.
 
-51. **Field roots (host8; WHOLENESS §3a, the part the host can see).** `viewField` records a field root
-   (`recordFieldRoot`; none when the whole object is already a root): `{object, field, key: "*", version}` in
-   the entry's `roots` beside the object roots (`allRootsJson`; `parseRoots` skips them, `parseFieldRoots`
-   reads them; in the request digest as `fieldRoots`). `judge` and `resumeOne` hold a moved field root
-   current while no write since its version touched the field (`fieldsChangedSince`, from the per-object
-   index). Both count against `maxRoots`. Not done, and not doable from the host alone: per-row roots
-   (`{object, field, key}` for the rows a turn's code read). The host sees the whole state go into a turn
-   and cannot tell which rows `lookup`/`where` touched; that needs the kernel's lazy state cells
-   (KERNEL-HANDOFF §15), whose `fetch` would record each row it reads. Test: `tests/test_changes.py`
-   `test_a_field_root_is_stale_only_when_its_field_moved`.
+51. **Field roots (host8; WHOLENESS §3a).** `viewField` reads one field: the root is journaled as
+   `{object, version, fields: [f]}` (`recordFieldRoot`, now a `Cells` reading, 5.136), current while no write
+   since its version touched the field (`cellsCurrent`, from the per-object index); it counts against
+   `maxRoots` beside the object roots.
 
 52. **Words for sums at the boundary (host9).** An argument from outside, a direct turn's (`runFrame` at
    depth 0 of a direct turn) or an interpretation proposal's (`interpretVerdict`), is read against the
@@ -370,10 +364,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (the default). A non-boolean is a request error. Test: `tests/test_inspect_reads.py`.
 
 58. **In-process yields hold the machine state (host9; KERNEL-HANDOFF §18).** `runFrame` starts with
-   `Turn.startEntryStep`; `drive` takes a `Turn.Step`, whose yield holds a `Turn.Suspension`; a Plan
-   answered in this process resumes with `Turn.resumeSuspended` (no checkpoint encoded, digested or
-   decoded). Only `await*` and `interpret`, which may suspend, build `suspension.checkpoint`; the profile
-   reads it lazily. A journaled resumption uses `resumeEntryStep`. Measured on hbox, the offline
+   `Turn.startEntry`; `drive` takes a `Turn.Step`, whose yield holds a `Turn.Suspension`; a Plan
+   answered in this process resumes with `Turn.resumeSuspended` over the frame's store (no checkpoint
+   encoded, digested or decoded). Only `await*` and `interpret`, which may suspend, build a checkpoint
+   (`Held.kept`, 5.136). A journaled resumption uses `Turn.resumeEntry`. Measured on hbox, the offline
    rehearsal with `DELVETALK_TIMING=1`, one run each on the same tree (before at load ~5, after at ~17):
    host ms 25,646 -> 13,621; directory `receive` 11,339 -> 4,521 (120 turns, median 70 -> 22 ms); garden
    `receive` 5,189 -> 2,010; env `receive` 3,681 -> 2,267; rehearsal wall 62.3 -> 43.4 s.
@@ -876,9 +870,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (`interpretsStarted`); retries spend none of it, and the `attempted` entries are the record of model
    credit spent.
 
-108. **State bytes are canonical bytes (host12; OBJECTS-HANDOFF §4).** `stateBytes`, which
-   `Limits.maxStateBytes` and `maxSeedBytes` (256 KiB), the storage ledger and the creation charge
-   count, is the length of the Data's canonical DAG-CBOR (`Delvetalk.Canonical.encode`), not of its wire
+108. **State bytes are canonical bytes (host12; OBJECTS-HANDOFF §4).** `stateBytes` (now only
+   `world-inspect`'s; the bound and the ledger are per cell, 5.136) is the length of the Data's canonical DAG-CBOR (`Delvetalk.Canonical.encode`), not of its wire
    JSON (about 150 B of tags and names per relation row: the Anthology refused its 631st short line).
    `world-inspect` answers `stateBytes`. Measured on hbox, a Bell with 2,048 rains (a 32-byte DID
    author, a 19-byte handle, `at` and `n` four digits) is 216,899 B with 20-character texts, about
@@ -1290,8 +1283,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `checkSource`, `prepareProgram`) read "package source exceeds maxPackageBytes (131072 bytes)". Tests:
    `test_form_bounds`, `test_reprogram` Maximum. Not the host's: Card.obend's and Policy.obend's "1 to 16384
    characters" (objects lane); the front's `moduleTooLarge` at 16,384 bytes in catalogue.json (transport lane);
-   `test_relation_limits` keeps 16,384-byte packages in the Workshop's `held` until the per-cell bound (§15
-   step 4) replaces `maxStateBytes`.
+   `test_relation_limits` keeps 16,384-byte packages in the Workshop's `held`: a full Workshop's seed is one
+   `created` entry, bounded by `maxEntryBytes`.
 
 135. **`delvetalk-obend root-edit` (host15; ROOT §1.5; §7 item 1 of host14's queue).** `Host/RootEdit.lean`,
    dispatched by `PackageMain`. `--journal J --out J2 --reason R` with `truncate --height N`, `drop --height N`,
@@ -1314,6 +1307,49 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `tests/test_root_edit.py` (drop over an `ended` delivery, a resumed suspension and turns, then `verify`;
    splice back what drop took; truncate; rewrite; an edit that breaks replay; an open journal; delete-world).
 
+136. **The stored path (host16; KERNEL-HANDOFF §15, §16 item 14; replay edition 4).** Every frame runs its
+   object's state through the kernel's stored path, and the quoted path is gone.
+   - *Runs.* `runFrame` builds a `Held` (`storeOf`: each declared relation's rows at the object's committed
+     version, in key order as `canonicalRowsDropping` keeps them) and starts the method with `Turn.startEntry`
+     on `storedState` (the relations emptied; their rows are fetched only when forced); `drive` keeps the
+     `Held` for in-process segments (`Turn.resumeSuspended`). A pure method, a card (`renderCard`) and a
+     derived view run `Package.executeDataEntryStored` (`storedPure`). Law, `lawReads`, handlers and
+     migrations still take whole states natively (`executeDataEntry`). A checkpoint that may leave the
+     process (`await*`, `interpret`) is `Held.kept`: collected, then every stored cell it still holds unforced
+     made the native rows it stands for (`Turn.materializeStored`), so a journaled resumption needs no store
+     at the version read (`Held.journaled`, `Turn.resumeEntry`) and those relations count as read whole.
+   - *Roots by cells.* A frame's object is a root read by its cells (`Cells {scalar, fields, rows, spans}`,
+     Ops; `recordCells`, joined per root; `recordRoot` still records a whole read, which covers the cells).
+     `cellsOf` turns the kernel's `Reads` into cells: a span is the key of the last row its spine reached, or
+     the whole key set. Journaled on the root: `{object, version, scalar: true, fields?, rows?: [{field, key}],
+     spans?: [{field, through?}]}`; a whole root stays `{object, version}`; `viewField` is `fields` (the old
+     `{object, field, key: "*"}` root and `fieldRoots` are gone). `rootAdmits` (one rule for `judge` and a
+     journaled resumption): the whole-object rule (`movedRootAdmits`), or the cells current (`cellsCurrent`:
+     no scalar changed, no field read changed, no key read touched, no key at or before a span's last touched)
+     and the turn's own edits clear of what changed since (`editsAdmit`). The cells only admit more; on a
+     resumed turn's own object the field rule (5.1) still admits whatever it read.
+   - *Bound and ledger per cell.* A write is refused `capacity`, clause `maxCellBytes`, when its scalar part
+     or a row of a relation it edited passes `Bounds.maxCellBytes` ("the rains row keyed {...} of b pass
+     maxCellBytes (262144 canonical bytes)"; `cellRefusal`, `editedFields`); a migration's result
+     `programRefused` the same; a seed the same at creation. The storage ledger charges `cellBytes` (the
+     changed cells of the edited relations, every cell of a created object). `Limits.maxStateBytes` and
+     `maxSeedBytes` are gone; a grant's `fixed` is held to `maxCellBytes`. `world-inspect` adds `scalarBytes`.
+   - *Kernel.* `Turn.startEntry`/`resumeSuspended`/`resumeEntry` are the stored runners (renamed from
+     `…Stored`); `quoteAt`, `argumentAt`, `shapeTree`, `startActivity`, `prepareStart*`, `prepareResumeEntry`,
+     `runResumed` and the quoted runners are deleted; `storedStart` takes every argument natively when the
+     store holds no relation; `materializeStored`; `cellOverBound` and `changedCellBytes` take the relations
+     a write edited and run in linear time; `Profile.profile` fetches through the store. `turn-start` and
+     `turn-resume` always run stored (`stored` names the relations; the reply carries `reads`).
+   - *Measured* (persvati, `measure/stored_turn.py` in the lane's scratch, 200 turns of "write `count`, read row
+     2" through the JSON-lines driver): 2,048 rows, median 72.0 ms (best 27.7) at foundation f687cc3, 13.3 ms
+     (best 9.4) after; 0 rows 0.42 -> 0.30 ms. What is left of the 13 ms is the write's own O(state) work:
+     `conformsUnder` of the whole written state, its `stateCid`, and `storeOf`'s walk (§7).
+   - No `test_tariff` pin moved (its activity cases compare a run with itself). Tests: `test_relation` Cells
+     (a span journaled; a write past it leaves a resumed turn current; another object's view stale inside its
+     span and current past it) and CellBound; root shapes in test_turn_world, test_outbound, test_commute,
+     test_changes, test_world_object; edition 4 in test_replay_edition and test_serve; test_relation_limits
+     bounds `scalarBytes`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -1324,7 +1360,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   edition 1). **Bump it in the same commit as any change to what replay derives or checks** (a judging
   rule, a derived index, a journaled field replay compares), and say so in the item. 2 is host12
   (evictions and changes owed as facts, lineage, reservations, attempts); 3 is host14 (root, ignore and
-  shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126). Test:
+  shadowing, moderation, the opener's amendments, later settings, `unposted`; 5.126); 4 is host16 (roots
+  read by their cells, the per-cell bound and ledger; 5.136). Test:
   `tests/test_replay_edition.py`.
 
 - `conformsUnder` needs the packet's bounds (`Object.bounds`, `Compiled.bounds`); bare `conforms` is only for closed non-recursive types.
@@ -1341,30 +1378,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host15, in order. The owner's standing order binds every item: "maturify and take forward
+The queue after host16's item 5.136, in order (numbers kept as the coordinator named them). The owner's standing order binds every item: "maturify and take forward
 everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
 together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things',
 no scar and growth tissue." So each replacement deletes what it replaces in the same commit, and this file
 describes only what is.
 
-1. **The stored path (KERNEL-HANDOFF §15, §16 item 14), not started.** Call sites: TurnLoop `runFrame`
-   (`Turn.startEntryStep`, ~1251; the pure-method `Package.executeDataEntry`, ~1263), `drive`
-   (`Turn.resumeSuspended`, ~1308), the journaled resume (`Turn.resumeEntryStep`, ~2761), cards and views
-   (`Package.executeDataEntry`, ~635 and ~665), Ops' pure view (~1001) and Bend law (~2032). Build a `Turn.Store`
-   per frame from the object's state at the version `recordRoot` records (`obj.relations` gives `{field, key}`;
-   rows in key order: check `applyEdits` keeps them so, else sort), keep it for the frame's resumed segments
-   (pass it into `drive`), and for a journaled resume build it at the root's version or refuse `staleRoot` as
-   a moved root does now (~2675). Replace the whole-object `recordRoot` of the running object with: a root on
-   its scalar part (judged by `fieldsChangedSince` against the non-relation fields), a root per `Read`
-   `{object, field, key}` (stale when `keysChangedSince` holds the key, or answers none), a root per span
-   (stale when a write since inserted or retracted a key at or before the span's last key, or any key for a
-   whole span); journal them beside `fieldRoots` and bump the replay edition (replay parses roots). Bound per
-   cell: Ops' `stateBytes written ≤ maxStateBytes` sites and `maxSeedBytes` (and TurnLoop's fixed seed) become
-   `cellOverBound`, refused `capacity` `maxCellBytes` naming the cell; the storage ledger charges
-   `changedCellBytes`; `world-inspect` gains `scalarBytes`. Then delete the quoted entry points and `quoteAt`
-   for state (kernel side, with the kernel lane) and move `test_tariff`'s pins, one commit. Measure a 2,048-row
-   relation read for one row through a real turn before and after (`compile-profile stored` measured 2,853 to
-   45 microseconds on the kernel's harness).
 2. **The journal as a block store and a streaming open** (as host13 wrote it): every entry a canonical record
    under its CID in the checkpoint block store, the text file the ordered chain, every index `record` derives
    persisted with the snapshot (edition 3's `cards`, `quiets`, `hidden`, `ignored`, `rootActs`, `hourCounts`,
@@ -1380,9 +1399,27 @@ describes only what is.
 5. **Scar tissue to remove now:** `proposalShapes`' second shape and `proposedData`'s `spelled := false` (5.128:
    every object compiles from `world/lib`, so no call site has the older `Proposed`); `receiptReplies`' older
    `Receipt` shape (5.127) likewise; `misfitReason`'s fallback once `extraField` covers every input row.
-6. **The objects lane's atomic make:** its `typeMismatch` on a grafted body's method did not reproduce
-   (5.127); take its failing input as a test and fix what it shows.
-7. Smaller, standing:
+6. **The objects lane's atomic make, after item 2:** lane/rewrite6's `tests/test_kinds.py` has the failing
+   inputs: (a) a kind made by `kinds` and extended in the creating turn refuses its own later writes
+   `typeMismatch` (the layer's `make` has a form-derived input record; the rebuilt creation's method table or
+   input shape disagrees with the layer's); (b) a bell body laid in the creating turn is refused, the law
+   judging the extend with the kind as proposer rather than the maker (the turn's principal). Reproduce on
+   persvati, fix in the same-turn extend path, and tell the coordinator so the objects lane drops its
+   send-then-graft workaround.
+7. **Routed by the fungus review** (docs/review/fungus-2026-10-11.md §1, §3), folded into the items above
+   where they touch the same code, else after item 3, each deleting the old path in its commit: `world-history`
+   takes `reverse` (T28); a host reach rule, `reach-of {text, replyTo, thread}`, so the bridge relays the
+   host's answer (T30); `hostd-info` folded into `serve-status` and `hostd.pid` renamed (T25); REPL refusals as
+   classes, never text the front matches (T29, `replRestarted`); `serve-status` answers the kernel and host
+   bounds so the front and tests stop restating them (T27, S12); TurnLoop's older payload-shape ladders (H2,
+   with item 5); the JSON model-reply branch beside spell text (H3); root acts and moderation powers as one
+   table (H7); `Store.lean` literals that repeat `Limits.lean` (H12); reads of older journals (H16: a journal
+   below the edition is refused by name and nothing else reads it).
+8. **The stored path's remainder (5.136):** a write still costs O(state): `conformsUnder` of the whole written
+   state (check the scalar part and the rows it changed), `stateCid` of the whole state (a state CID composed
+   from cell CIDs), `storeOf`'s walk per frame (rows as an array per version on the object). The two kernel
+   primitives (KERNEL-HANDOFF §16 item 15) give `rows` roots meaning; until then a spine walk records a span.
+9. Smaller, standing:
    - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new
      `root:<n>`; `set pin` stores the pin alone (ROOT wants `programRefused: no sources for pin`); `as` runs the
      method as named. `root-edit` does not rewrite CIDs quoted inside checkpoints and states (an await's

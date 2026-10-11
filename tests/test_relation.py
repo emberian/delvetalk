@@ -64,6 +64,32 @@ def laterUpsert(state: State, input: Rain, context: Abi.Context) -> Activity<Nat
   later(context, Plans.Entries.upsert({row: input}))
 def laterRetract(state: State, input: Key, context: Abi.Context) -> Activity<Nat>:
   later(context, Plans.Entries.retract({key: input}))
+def rowsOf(r: Relation<Rain>) -> Lists.List<Rain>:
+  match r:
+    case rows(x): x.items
+def textAt(items: Lists.List<Rain>, k: Nat) -> String:
+  match items:
+    case nil(_): "none"
+    case cons(c): if k == 0n then c.head.text else textAt(c.tail, k - 1n)
+def thirdThen(text: String) -> Activity<String>:
+  if text == "" then "empty" else thirdWait(text)
+def thirdWait(text: String) -> Activity<String>:
+  match world.await({slot: {principal: "ann", intent: "go"}, patience: 50n}):
+    case _: thirdWrite(text)
+def thirdWrite(text: String) -> Activity<String>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.set({value: 1n})})):
+    case written(_): text
+    case _: "refused"
+def thirdLater(state: State, context: Abi.Context) -> Activity<String>:
+  thirdThen(textAt(rowsOf(state.rains), 2n))
+def views() -> Lists.List<String>:
+  Lists.List::<String>.cons({head: "third", tail: Lists.List::<String>.nil({})})
+def third(state: State) -> String:
+  textAt(rowsOf(state.rains), 2n)
+def peekLater(state: State, context: Abi.Context) -> Activity<String>:
+  match world.viewDerived::<String>({object: {world: "", object: "b"}, view: "third"}):
+    case derived(d): thirdThen(d.value)
+    case _: "denied"
 """)
 
 
@@ -307,6 +333,81 @@ class Moved(RelationCase):
         self.assertEqual(self.rows(), [])
         self.reopen()
         self.assertEqual(self.rows(), [])
+
+class Cells(RelationCase):
+    """A turn reads its object by its cells (KERNEL-HANDOFF §15, the stored path): the scalar part,
+    and the rows and spine it forced, journaled on the root as `scalar`, `rows` and `spans`. A write
+    since that left those alone does not make it stale, though its own write sets a scalar; one at or
+    before the last key it reached does. Refuted by a whole-object root, or by a rerun (or none) on
+    the wrong side of the span."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(self.make_bell(record(rains=relation(*[rain("old", i, "t%d" % i) for i in range(10)])))["status"],
+                         "created")
+
+    def waiting(self):
+        r = self.edit("thirdLater", record(), who="kim", ident="w")
+        self.assertEqual(r["status"], "suspended", r)
+        [root] = r["receipt"]["roots"]
+        self.assertEqual(root, {"object": "b", "version": 0, "scalar": True,
+                                "spans": [{"field": "rains", "through": key("old", 2)}]})
+
+    def test_a_write_past_the_span_read_leaves_the_turn_current(self):
+        self.waiting()
+        [resumed] = self.edit("upsert", rain("ann", 7, "a"), ident="go")["resumed"]
+        resumed = as_owner(self.host, resumed, "kim")
+        self.assertEqual((resumed["status"], "rerunOf" in resumed, resumed.get("result")),
+                         ("admitted", False, label("t2")), resumed)
+
+    def test_a_write_inside_the_span_leaves_a_resumed_turn_its_own_field(self):
+        # Its own object: the resumed turn's field rule (HOST-HANDOFF 5.1) admits a write of `count`,
+        # which no write since changed, whatever it read.
+        self.waiting()
+        [resumed] = self.edit("upsert", rain("old", 1, "changed"), ident="go")["resumed"]
+        resumed = as_owner(self.host, resumed, "kim")
+        self.assertEqual((resumed["status"], "rerunOf" in resumed), ("admitted", False), resumed)
+
+    def peeking(self):
+        self.assertEqual(self.make_bell(name="c")["status"], "created")
+        r = self.edit("peekLater", record(), who="kim", ident="w", name="c")
+        self.assertEqual(r["status"], "suspended", r)
+        self.assertIn({"object": "b", "version": 0, "scalar": True, "spans": [{"field": "rains", "through": key("old", 2)}]},
+                      r["receipt"]["roots"])
+
+    def test_another_objects_view_is_current_while_writes_pass_its_span(self):
+        self.peeking()
+        [resumed] = self.edit("upsert", rain("ann", 7, "a"), ident="go")["resumed"]
+        resumed = as_owner(self.host, resumed, "kim")
+        self.assertEqual((resumed["status"], "rerunOf" in resumed, resumed.get("result")),
+                         ("admitted", False, label("t2")), resumed)
+
+    def test_another_objects_view_is_stale_when_a_write_lands_inside_its_span(self):
+        self.peeking()
+        [resumed] = self.edit("upsert", rain("old", 1, "changed"), ident="go")["resumed"]
+        resumed = as_owner(self.host, resumed, "kim")
+        self.assertEqual((resumed["status"], "rerunOf" in resumed), ("admitted", True), resumed)
+
+
+class CellBound(RelationCase):
+    """State is bounded per cell (KERNEL-HANDOFF §15 step 4): the scalar part and each row at most
+    `Bounds.maxCellBytes` canonical bytes; a relation is bounded by its declared limit, not by the
+    object's whole size. Refuted by a relation of small rows past 256 KiB refused, or a row past the
+    bound admitted or refused without naming its cell."""
+
+    def test_rows_past_256_kib_together_are_held_and_one_row_past_it_is_refused_naming_it(self):
+        self.assertEqual(self.make_bell()["status"], "created")
+        for i in range(5):
+            r = self.edit("insert", rain("ann", i, "x" * 60000))
+            self.assertEqual(r["status"], "admitted", r)
+        inspected = self.host.send(op="world-inspect", principal="ember", object="b", source=False)
+        self.assertGreater(inspected["stateBytes"], 262144)
+        self.assertLess(inspected["scalarBytes"], 100)
+        big = self.edit("insert", rain("ann", 9, "x" * 262144))
+        outcome = big["receipt"]["outcome"]
+        self.assertEqual((outcome["class"], outcome["clause"]), ("capacity", "maxCellBytes"), big)
+        self.assertIn('the rains row keyed {"at":9,"author":"ann"}', outcome["reason"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,8 +27,9 @@ def cardShownChars : Nat := 1400
     with every change to what replay derives (judging, a derived field, an index replay checks).
     1: before host12 (no field); 2: host12 (evictions and changes owed as facts, lineage, reservations);
     3: host14 (root entries, ignored and shadowed entries, moderation, the metarule widened to the opener,
-    later settings, `unposted`). -/
-def replayEdition : Nat := 3
+    later settings, `unposted`); 4: host16 (roots read by their cells: `scalar`, `fields`, `rows`,
+    `spans`; the per-cell bound and the storage ledger by changed cells). -/
+def replayEdition : Nat := 4
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -51,8 +52,6 @@ def maxIntentBytes : Nat := 256
 def maxRoots : Nat := 64
 def maxWrites : Nat := 64
 def maxEditsPerWrite : Nat := 256
-/-- Compressed `dataJson` of one object's state. -/
-def maxStateBytes : Nat := 262144
 /-- One compressed journal line. -/
 def maxEntryBytes : Nat := 1048576
 def maxJournalEntries : Nat := 1000000
@@ -93,8 +92,6 @@ def subscribersPerObject : Nat := 64
 def maxPending : Nat := 4096
 /-- Ticks of one turn: the default and the ceiling a request may ask for (the kernel's own cap). -/
 def maxTurnTicks : Nat := 1000000
-/-- Seed state of a created object, compressed wire bytes. -/
-def maxSeedBytes : Nat := 262144
 /-- Objects one turn may create. -/
 def createsPerTurn : Nat := 8
 /-- Suspended activities waiting on one object, and in the whole world. -/
@@ -180,8 +177,8 @@ structure Compiled where
       (a `List<T>` field) are data only under them. -/
   bounds : DataBounds
   rigid : List Nat
-  /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntryStep`,
-      `Turn.resumeEntryStep`, `Package.executeDataEntry`), never from the packet JSON. -/
+  /-- The entry decoded and checked once; every run of it starts from this (`Turn.startEntry`,
+      `Turn.resumeEntry`, `Package.executeDataEntryStored`), never from the packet JSON. -/
   entry : Option Delvetalk.CheckedEntry := none
   /-- The checkpoint dictionary of the entry's program (`Dictionary.ofProgram`), built once with it:
       every yield encodes against it and every resumption decodes against it. -/

@@ -363,13 +363,14 @@ class Projection(Reflection):
         cid_at = lambda who, name, v: self.host.send(op="world-state-cid", principal=who, object=name, version=v)
         before = {name: cid_of(state(name)) for name in ("vault", "lamp")}
         r = self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
-        self.assertEqual(r["receipt"]["roots"], [{"object": "vault", "version": 0}, {"object": "lamp", "version": 0}])
+        self.assertEqual(r["receipt"]["roots"], [{"object": "vault", "version": 0, "scalar": True},
+                                                {"object": "lamp", "version": 0, "scalar": True}])
         writes = {w["object"]: w for w in r["receipt"]["outcome"]["writes"]}
         self.assertEqual(writes["lamp"]["cid"], cid_of(state("lamp")))
         for name in ("lamp", "vault"):
             self.assertEqual(cid_at("ann", name, 0)["cid"], before[name])
         bad = self.turn("lamp", "stamp", record(wrong=label("x")), principal="ann", identity="bad-lamp")
-        self.assertEqual(bad["receipt"]["roots"], [{"object": "lamp", "version": 1}])
+        self.assertEqual(bad["receipt"]["roots"], [{"object": "lamp", "version": 1, "scalar": True}])
         lamp = self.host.send(op="world-receipt", principal="bob", identity="bad-lamp", of="ann")
         self.assertEqual(lamp["root"], {"object": "lamp", "version": 1})
         self.assertEqual(cid_at("bob", "lamp", 1), {"status": "stateCid", "object": "lamp", "version": 1, "cid": cid_of(state("lamp"))})
