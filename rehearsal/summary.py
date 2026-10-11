@@ -125,8 +125,6 @@ def main(path):
         seen.add(key)
         n = sum(1 for x in r['errors'] if json.dumps({k: v for k, v in x.items() if k not in ('object', 'principal', 'what')}, sort_keys=True) == key)
         w(f"- {e['kind']} ({n}x; first: {e.get('object') or e.get('uri') or e.get('post') or e.get('what')}): `{json.dumps(e.get('reply') or e.get('message') or e.get('stderr'), ensure_ascii=False)}`")
-    for name, reply in r['probes'].items():
-        w(f"- probe `{name}` (the shape transport sent before this lane): `{json.dumps(reply)}`")
     w('')
 
     w('### Refusals\n')

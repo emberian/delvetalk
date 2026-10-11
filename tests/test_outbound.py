@@ -16,10 +16,9 @@ import unittest
 
 from tests.host import posted, whole
 
-from tests.test_chain import field
 from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
-from tests.test_turn_world import label, nat, record, declared
-from tests.wire import cid_of
+from tests.wire import cid_of, field, label, nat, record
+from tests.bend import declared
 
 URI = "at://did:plc:world/town.delve.feed.post/3abc"
 SLOT = {"principal": "did:plc:kim", "intent": "strike-1"}
@@ -58,12 +57,6 @@ class Posts(Reflection):
 
 CARDED = PACKAGE.replace("import ./Plan.obend as Plans", "import ./Plan.obend as Plans\nimport ./Document.obend as Document") + """def render(state: State) -> Document.Document:
   Document.text(textConcat("Count: ", natText(state.count)))
-"""
-
-# A card with a point of view: `render(state, context)`, the name objects use once `renderFor` is renamed.
-# Both names, as objects have them until the rename: `renderFor` is the one the host runs.
-BOTH = CARDED + """def renderFor(state: State, context: Abi.Context) -> Document.Document:
-  Document.text(textConcat("Count for ", textConcat(context.principal, textConcat(": ", natText(state.count)))))
 """
 
 DIRECTORY = declared("""edition ObjectiveBend 1
@@ -758,7 +751,7 @@ class Malformed(Reflection):
 
     def test_a_state_type_differing_below_eight_rounds_of_bounds_is_not_the_same(self):
         depth = 12
-        old = DEEP % (nested(depth, "Nat"), nested(depth - 1, "Nat").replace("Lists.List<", "Lists.List::<", 1) if False else "Lists.List::<" + nested(depth - 1, "Nat") + ">")
+        old = DEEP % (nested(depth, "Nat"), "Lists.List::<" + nested(depth - 1, "Nat") + ">")
         new = DEEP % (nested(depth, "Bool"), "Lists.List::<" + nested(depth - 1, "Bool") + ">")
         self.make("deep", old, record(deep={"tag": "list", "items": []}))
         r = self.host.send(op="world-reprogram", principal="ember", identity="rp", object="deep", version=0, package=new)
@@ -768,7 +761,7 @@ class Malformed(Reflection):
 
 class Settings(Reflection):
     def test_a_named_clock_alone_moves_the_clock_and_confirms_posts(self):
-        r = self.host.send(op="world-open", path=self.path, library=self.library(), principal="ember", clock="transport")
+        r = self.host.send(op="world-open", path=self.path, library=LIBRARY, principal="ember", clock="transport")
         self.assertEqual(r["status"], "opened", r)
         self.make("bell", PACKAGE, source_seed())
         self.assertEqual(self.host.send(op="world-advance", height=3)["status"], "error")
@@ -789,10 +782,6 @@ class Settings(Reflection):
         differ = self.host.send(op="world-open", path=self.path, postQuota=5)
         self.assertEqual(differ["status"], "error")
         self.assertIn("settings differ", differ["message"])
-
-    def library(self):
-        from tests.test_reflection import LIBRARY
-        return LIBRARY
 
 
 if __name__ == "__main__":

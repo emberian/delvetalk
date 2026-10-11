@@ -15,7 +15,8 @@ from tests.host import as_owner
 
 from tests.test_chain import Chain
 from tests.test_policy import PolicyObject
-from tests.test_turn_world import ON_DISK, closure, declared, label, record
+from tests.wire import label, record
+from tests.bend import MODULES, closure, declared
 
 WORLD_LINE = "  proposal: {object: String, method: String, argument: R, spell: String}"
 
@@ -63,11 +64,9 @@ class ProposalForAnotherCard(Chain):
     policy = PolicyObject.policy
 
     def modules(self, name, source):
-        with open(ON_DISK["World"], encoding="utf-8") as f:
+        with open(MODULES["World"], encoding="utf-8") as f:
             self.assertIn(WORLD_LINE, f.read())
-        seen, out = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out)
+        out = closure(*("Abi", "List", "Form", "Plan", "World"))
         return out + [{"name": name, "source": source}]
 
     def setUp(self):

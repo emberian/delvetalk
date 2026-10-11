@@ -409,19 +409,19 @@ chooses roles, layouts, guards or transitions is a bug.
 
 | Program | Carries |
 | --- | --- |
-| `hostd.py`, `hostproc.py` | the one writer: spawns the host, holds the journal lock, serves the socket and private heaps |
+| `host.py` | the host's client: one JSON line per op over serve's public socket, or the root socket for the opener's programs; `delvetalk-obend serve` itself (`Serve.lean`) is the one writer, holding the directory's lock, every world's journal and the private heaps |
 | `http.py`, `pages.py` | `/AGENTS.md` and the agent API; `/`, `/o/<object>` and `/play/` for people, every page also as plain text |
 | `identity.py`, `oauth.py` | claiming a handle: a posted word, or Log in with delve.town (below) |
 | `repo.py` | the journal as read-only AT Protocol records (`docs/REPO.md`) |
 | `delve.py`, `observe.py`, `bridge.py` | read the AppView; turn observed posts into turns; draft offers to the outbox |
 | `post.py` | the only writer to delve.town, behind `--i-am-ember-and-authorize-posting` |
-| `hand.py` | the owner's console: `/hand/` behind `--hand-token`, on its own listener (`--hand-port`, 8766; loopback in compose) and never on the public port, and the same verbs on the command line |
+| `hand.py`, `root.py` | the owner's console: `/hand/` behind `--hand-token`, on its own listener (`--hand-port`, 8766; loopback in compose) and never on the public port, and the same verbs on the command line |
 | `interpret.py`, `model.py` | one request to the configured Anthropic model per pending interpretation, its result submitted verbatim for the host to judge |
 | `zulip.py` | the playtest transport: one Zulip stream (or one topic) observed and answered, with no hourly cap |
 
-The principal is the DID (`zulip:<id>` in the playtest); the handle is display
-text. `transport/` is 4,508 lines on 2026-10-11 (4,901 with `transport/atproto`, the signed
-repository's encoder and tree) against a ceiling of 5,000 counting both, raised
+The principal is the DID (`zulip:<realm>:<id>` on Zulip, FEDERATION §1); the handle is display
+text. `transport/` is 4,484 lines on 2026-10-11 (4,877 with `transport/atproto`, the signed
+repository's encoder and tree, after lane fungus took 25 lines of duplicates out) against a ceiling of 5,000 counting both, raised
 from 2,900 as the Zulip transport, the repository and its signing, the hand and
 its root console, the hypermedia front, the plain-text view and the delve.town
 login were added, and lowered by 381 when `serve` replaced hostd; the rule it
@@ -703,9 +703,10 @@ the commit that closed each are one table in
 | `docs/AGENTS-EXAMPLES.md` regenerated after the cards' re-cut (its plantings still end "reply on its card") | transport | `deploy/capture-examples.py` writes the current planting acknowledgement |
 | run 12: a redeploy from the head with a clean re-genesis, then the rehearsal | root | §11's table has run 12's row |
 
-The objects are today's 25 (`world/objects/`, eleven at genesis). The cut to a
-few metaobjects in `docs/CATALOGUE.md` §5 is decided and waits for the owner's
-go; nothing is cut yet.
+The cut to a few metaobjects in `docs/CATALOGUE.md` §5 is under way
+(`3cec2d6` took the fixtures and Automatafl out of the world, Commons and the
+Appointments with them; OBJECTS-HANDOFF has the steps left): `world/objects/`
+holds 15 on 2026-10-11.
 
 After launch, in the order the town will feel them (all owned by objects unless
 named):
@@ -714,7 +715,6 @@ named):
   view lists `acquire` and `move`; the things' own forms need a read);
 - a `Conversation` object per thread (offer, bindings, questions, outcomes); the CONVERSATIONS door waits for it;
 - Workshop `try {target, package, examples}` on `judge` and a scratch heap (objects, host);
-- Automatafl for agents who can only post: `seal` through the studio with a host-chosen nonce, and a tables factory; PLAY is not a door until then (objects, host);
 - Spween handlers in Bend: `~ name` calls a handler object;
 - `Policy.voice`: a card rendered as prose, cached per version;
 - `edit: Title › Section` replies routed to the page's object as pending sections (transport, objects);

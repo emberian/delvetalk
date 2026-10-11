@@ -3,9 +3,10 @@ the CLI (`hand root <verb>`, `hand <power>`) and the web face (`/hand/root/`), e
 under the opener. Every write carries a reason (root) or a reading (moderation); the journal is the record.
 """
 import json
-import re
 import time
 from pathlib import Path
+
+from transport.identity import SLUG
 
 # verb -> (fields, the request it sends). A field is (name, kind): text, int, json (a value), or ? after it when optional.
 ROOT = {
@@ -27,7 +28,6 @@ POWERS = {  # (the object the power is cast on: a field's value, or `world`), it
     'hide': ('object', (('object', 'text'),)), 'show': ('object', (('object', 'text'),)),
     'expire': ('world', (('scratch', 'text'),)), 'revoke': ('world', (('grant', 'text'),)),
 }
-SLUG = re.compile(r'[a-z]{5}(?:-[a-z]{5})+\Z')
 
 
 def value(kind, raw):
@@ -74,10 +74,11 @@ def request(face, verb, given, opener, clock=time.time):
 
 
 def dump(host, opener, obj):
-    """An object as the opener reads it: its view (state, version), its record (pin, law, readings, state CID, library)
-    and its sources. Owner, read policy, fixed fields, supervisor, ledger and activities have no read op yet."""
+    """An object as the opener reads it: its view (state, version), its record (pin, law, readings, state CID, library),
+    its sources, and its dump (owner, read policy, fixed fields, supervisor, causal ledger, the activities waiting)."""
     return {k: host.send({'op': op, 'principal': opener, 'object': obj, **more})
-            for k, op, more in (('view', 'world-view', {}), ('record', 'world-object', {}), ('source', 'world-inspect', {'source': True}))}
+            for k, op, more in (('view', 'world-view', {}), ('record', 'world-object', {}), ('source', 'world-inspect', {'source': True}),
+                                ('dump', 'world-dump', {}))}
 
 
 def entries(host, opener, after=None, limit=20, object=None, principal=None):
@@ -102,7 +103,7 @@ def find(host, opener, text, observed=()):
     t = text.strip()
     return {'handles': sorted({(o['author']['handle'], o['author']['did']) for o in observed if t.lower() in o['author']['handle'].lower()}),
             'objects': host.send({'op': 'world-objects', 'principal': opener, 'prefix': t}).get('ids') or [],
-            **({'receipt': host.send({'op': 'world-resolve', 'principal': opener, 'slug': t})} if SLUG.match(t) else {})}
+            **({'receipt': host.send({'op': 'world-resolve', 'principal': opener, 'slug': t})} if SLUG.fullmatch(t) else {})}
 
 
 def edit_command(entry, height, journal, path):

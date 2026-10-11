@@ -13,7 +13,8 @@ import unittest
 
 from tests.test_reflection import Reflection
 from tests.test_spell_turns import GARDEN
-from tests.test_turn_world import label, record, declared
+from tests.wire import label, record
+from tests.bend import declared
 
 DID = "did:plc:aaaaaaaaaaaaaaaaaaaaaaa1"
 

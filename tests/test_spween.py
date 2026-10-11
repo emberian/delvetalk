@@ -21,8 +21,8 @@ import unittest
 from tests import test_chain
 from tests.test_objects import run_pure
 from tests.test_scene import GATE, GLM, heard, plain, scene_state
-from tests.test_objects import closure
-from tests.test_turn_world import label, record
+from tests.wire import label, record
+from tests.bend import closure
 
 # The README's running example, verbatim.
 TAVERN = """---

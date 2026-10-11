@@ -12,7 +12,7 @@ PY ?= python3
 check:
 	$(PY) -W ignore -m tests.run
 
-# The same, with host processes and hostd daemons counted per class (tests/PROFILE.md).
+# The same, with host processes and serve instances counted per class (tests/PROFILE.md).
 profile:
 	$(PY) -W ignore -m tests.run --profile
 

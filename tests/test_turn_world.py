@@ -7,53 +7,11 @@ world-turn: activities run against the durable store and commit once.
 
 Counter (tests/fixtures/objects) and Bell (world/objects) are real files (each exports `initial`); the other objects are fixtures that each isolate one rule.
 """
-import os
-import re
 import unittest
 
-from tests import host
 from tests.host import HostCase
-from tests.wire import cid_of
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BINARY = host.binary()
-IMPORT = re.compile(r"^import \./(\w+)\.obend", re.M)
-
-
-def modules_on_disk():
-    found = {}
-    for root in (os.path.join(ROOT, "world", "lib"), os.path.join(ROOT, "world", "objects"), os.path.join(ROOT, "tests", "fixtures", "objects"), os.path.join(ROOT, "examples", "automatafl")):
-        for directory, _, files in os.walk(root):
-            for name in files:
-                if name.endswith(".obend"):
-                    found[name[:-6]] = os.path.join(directory, name)
-    return found
-
-
-ON_DISK = modules_on_disk()
-
-
-def closure(name, seen=None, out=None, override=None):
-    """Module `name` and its imports, imports first; `override` replaces a source."""
-    seen = set() if seen is None else seen
-    out = [] if out is None else out
-    if name in seen:
-        return out
-    seen.add(name)
-    if override and name in override:
-        source = override[name]
-    else:
-        with open(ON_DISK[name]) as handle:
-            source = handle.read()
-    for dep in IMPORT.findall(source):
-        closure(dep, seen, out, override)
-    out.append({"name": name, "source": source})
-    return out
-
-
-def counter_modules():
-    return closure("Counter")
-
+from tests.bend import closure, counter_modules, declared
+from tests.wire import cid_of, label, nat, record
 
 FIXTURE_HEAD = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -68,24 +26,6 @@ def addSelf(context: Abi.Context, n: Nat) -> Activity<Nat>:
     case written(_): 1n
     case _: 0n
 """
-
-
-METHOD = re.compile(r"^def (\w+)\(state: ", re.M)
-
-
-def declared(source, *names):
-    """`source` with a `def methods()` naming `names`, or every definition whose first parameter is
-    the State: the host runs only the methods a package declares (HOST-HANDOFF 5.62)."""
-    names = names or tuple(n for n in METHOD.findall(source) if n not in ("receive", "render", "set", "law"))
-    if not names or "\ndef methods(" in source:
-        return source
-    if "List.obend as Lists" not in source:
-        first, rest = source.split("\n", 1)
-        source = first + "\nimport ./List.obend as Lists\n" + rest
-    body = "Lists.List::<String>.nil({})"
-    for n in reversed(names):
-        body = 'Lists.List::<String>.cons({head: "%s", tail: %s})' % (n, body)
-    return source.rstrip("\n") + "\ndef methods() -> Lists.List<String>:\n  " + body + "\n"
 
 
 def fixture(body, law=""):
@@ -123,23 +63,6 @@ PRIVATE_PROBES = fixture("""def probe(state: State, input: {target: String}, con
     case viewed(v): addSelf(context, v.state.count)
     case _: addSelf(context, 100n)
 """)
-
-
-def nat(n):
-    return {"tag": "natural", "value": str(n)}
-
-
-def record(**fields):
-    return {"tag": "record", "fields": [{"name": k, "value": v} for k, v in fields.items()]}
-
-
-def label(s):
-    return {"tag": "label", "value": s}
-
-
-def relation(*items):
-    """A relation on the wire (world/lib/Relation.obend `rows {items}`), its rows given in key order."""
-    return {"tag": "variant", "label": "rows", "payload": record(items={"tag": "list", "items": list(items)})}
 
 
 class TurnWorld(HostCase):
@@ -252,13 +175,7 @@ def fix(state: State, input: {item: String, text: String}, context: Abi.Context)
 
 
 def names_modules():
-    modules = closure("List") + [m for m in closure("World") if m["name"] != "List"]
-    seen, out = set(), []
-    for m in modules:
-        if m["name"] not in seen:
-            seen.add(m["name"])
-            out.append(m)
-    return out + [{"name": "Names", "source": NAMES_SOURCE}]
+    return closure("List", "World") + [{"name": "Names", "source": NAMES_SOURCE}]
 
 
 def list_items(state):

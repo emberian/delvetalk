@@ -8,8 +8,7 @@ The section 10 hour, from the archive itself: glm's planting grows a bell and it
 for it; a reply to a planting post rains on that bell; a second cistern line digs garden/cistern/2;
 the four anthology lines reach a card by the reach rule and are written; the nine-post burst admits;
 every card shows handles, stays within the clip and cites no hash; no program fails. The reach rule
-returns 81 posts, each asked of the model at most once: 70 model calls (FLEX section 2; 43 at
-d02c60f, before FLEX, with the mention gate). The journal reopened from a snapshot holds what its
+returns 81 posts, each asked of the model at most once: 70 model calls (FLEX section 2). The journal reopened from a snapshot holds what its
 straight replay holds.
 """
 import json
@@ -24,13 +23,11 @@ from tests import host
 
 ROOT = Path(__file__).resolve().parent.parent
 GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6jlibkzlobkuu', 'did:plc:j2hnfjwlnm2mau24vnmpir6d'
-# The posts `transport.bridge.route` sends as turns: 81. The opener's posts are turns again: the host admits
-# her ordinary turns on the public socket (host14 68002c5), so the bridge no longer skips them (79 between the
-# switch to `serve`, 92e85cd, and that fix: her leaked draft 3mxgh25xsa227 and her summons 3mxfy4wizo22j).
+# The posts `transport.bridge.route` sends as turns: 81, the opener's own among them (the host admits her
+# ordinary turns on the public socket).
 REACHED = 81
 # Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 81 less the 11 no model
-# reads make 70 calls (69 without the opener's summons). d02c60f measured 43 for the same rule while the
-# directory's mention gate (deleted in step 4a) still answered prose naming no door without the model.
+# reads make 70 calls (69 without the opener's summons).
 INTERPRETATIONS = 70
 
 

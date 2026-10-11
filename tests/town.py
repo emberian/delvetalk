@@ -19,9 +19,10 @@ class Town:
         self.start = lambda: served(self.state, opener=self.opener, library=LIBRARY)
         self.process = self.start()
         self.client = HostClient(self.process.root)
+        self.made, self.refusal = [], None
         if run_genesis:
-            made, refusal = genesis.run(self.client)
-            assert refusal is None and all(m["status"] == "created" for m in made), (refusal, made)
+            self.made, self.refusal = genesis.run(self.client)
+            assert self.refusal is None and all(m["status"] == "created" for m in self.made), (self.refusal, self.made)
 
     def send(self, **request):
         return self.client.send(request)

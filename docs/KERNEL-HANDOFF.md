@@ -162,7 +162,7 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 - `Term.refuse (reason)`, surface `refuse("why")`: stands only where an activity finishes ("refused (refuse-outside-tail)", "refused (refuse-outside-activity)"). Typing rule `PartialTyping.refuse`; machine `control := .refused (.program r)`, `Turn.refusalText` = "turn refused: <reason>". `evaluate-term` reports `stuck`.
 - Law readings: `law NAME "reading": EXPR`; `Surface.Decl.law name source reading`.
 - String interpolation (`interpolationPieces`/`joinPieces`): `{expr}` in a string; up to four pieces lower to nested `textConcat`, more to `textJoin(TextPieces…, "")`. `{{`/`}}` are literal braces; a lone `}`, an unclosed `{` and two expressions in one pair of braces are refused by name. Document templates quote braces as `{`/`}`.
-- `form ACTION [as NAME]:` blocks (`formRe`/`formKind`): fields `name: text A..B | natural A..B | source | a | b | c` (`source` is `F.Kind.source({})`, Bend source the host reads as text of 1 to `Host.Limits.formSourceMax` 16,384 characters and fills from a reply's ```obend fence; the Workshop's `check` and `propose` declare it) declare `def NAME() -> F.Form` (default `ACTIONForm`) from the module's alias `F` of `Form.obend`; refused by name without a Form import or with an unknown kind.
+- `form ACTION [as NAME]:` blocks (`formRe`/`formKind`): fields `name: text A..B | natural A..B | source | a | b | c` (`source` is `F.Kind.source({})`, Bend source the host reads as text of 1 to `Host.Limits.formSourceMax`, which is `Bounds.maxPackageBytes`, 131,072 characters and fills from a reply's ```obend fence; the Workshop's `check` and `propose` declare it) declare `def NAME() -> F.Form` (default `ACTIONForm`) from the module's alias `F` of `Form.obend`; refused by name without a Form import or with an unknown kind.
 - `write {field: op value, …}`: the world call `world.write(extend(keep(), {…}))` with ops `add`, `set`, `append`, `remove`, `amend ITEM with CHANGE`, `removeItem`, `insert`, `upsert`, `retract` (`remove` and `amend` as §22 says). Needs a nullary `keep()`; `P` is the module's alias of Plan.obend (placeholder `$plans`, replaced by `Surface.Decl.mapVars`).
 - `layer over ./X.obend` must be a module's first line (else refused "…is the module's first line"); it imports `X` as `Super`. Every declaration is a field of one knot, so a layer's `L.f` overrides `B.f`: `B.f` holds `self.L.f`, the old body moves to a hygienic `B.f#below`, and a layer's `Super.f` resolves to the key below. `checkOverrides` refuses a retyped override ("refused (layer-override): L.f is …, but it overrides B.f, which is …"). Unlayered packets are byte-identical. `Elaborated.select` takes an entry the top layer lacks from the topmost layer defining it. Tests: `test_layers`.
 - Located refusals: every refusal of an elaborated package names `definition`, `module`, `span`; a type refusal `expected` and `found` in surface syntax, with `hint` (`blameHint`: a record where its field was expected, a function waiting for arguments, too many arguments, a missing field, an unknown case). Core `Expr`/`Body` carry the surface span as an implicit `{span}` field; `ATerm.located` is transparent to `json`, `erase`, `annotate`, `mapTypes`, `knotNames`. Generic instances are placed at their generic declaration (`Origins`, `FrontEnd.originsOf`). Test: `test_located`.
@@ -475,7 +475,8 @@ state (rows per relation as an array per version), `Reads` into `recordRows`/`ju
 
 Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the codex findings (kernel10,
 §24); lazy cells (kernel11, §15); the package and instance bounds, located generics refusals and
-LAW §4 A/E/H (kernel13, §25). Remaining, in order:
+LAW §4 A/E/H (kernel13, §25); the host requests of items 12 and 16 (host15: HOST-HANDOFF 133, 134, and the
+checkpoint digest the TurnLoop call sites pass). Remaining, in order:
 
 15. The two primitives of §15, `relationCount(r) -> Nat` and `relationLookup(r, key) -> Maybe<T>`,
    then `Relation.obend`'s `count` and `lookup` onto them (objects lane). Not started by kernel13
@@ -503,19 +504,15 @@ LAW §4 A/E/H (kernel13, §25). Remaining, in order:
 7. `textWords(s) -> List<String>`: only if an object asks; none does (kernel13 grep of docs/, world/).
 10. `Form.obend` `type Forms = Lists.List<Form>` (objects lane) would let the derived `forms()`
    be `F.Forms` and drop its List.obend requirement (Counter, Loop).
-12. Host lane: `Turn.resumeEntryStep entry checkpoint issued binding value b dictionary?` takes
-   the journaled digest; the two TurnLoop call sites pass `checkpoint.digest` of the journaled
-   checkpoint (and `suspension.checkpoint.digest` for the profile). `expandSuspended` recomputes a
-   digest a compacted journal entry lacks: the journal is the trust root, so that is sound, but a
-   host that ever resumes a checkpoint from outside its journal must look its digest up there.
+12. (Done; the standing caveat.) `expandSuspended` recomputes a digest a compacted journal entry lacks:
+   the journal is the trust root, so that is sound, but a host that ever resumes a checkpoint from
+   outside its journal must look its digest up there.
 14. After the host's switch to the stored path (lane/host14 and after): delete
    `startEntryStep`/`resumeSuspended`/`resumeEntryStep`'s quoted state path and `quoteAt` for state,
    and move `test_tariff`'s pins in that commit.
-16. Host requests from kernel13 and kernel14 (§25 items 1, L, M): `Host.Limits.maxPackageBytes` and
-   `formSourceMax` read `Bounds.maxPackageBytes` (128 KiB) with refusals naming it; the law's
-   denotation of every atom that still fails closed in `Host/Law.lean`, exactly as §25 item M lists:
-   `Facts.clock`, `Facts.object`, `Facts.reads`, `read` over `old` and filtered counts, `changed`,
-   cited membership, `under`, the roots and the acceptance check.
+16. Host requests from kernel14 (§25 item M): the law's denotation of every atom that still fails
+   closed in `Host/Law.lean`: `Facts.reads`, filtered counts, `changed`, cited membership, `under`,
+   the roots and the acceptance check.
 17. `Package.localize` (check-package) still recompiles each function alone for a spanless refusal:
    2.5 s on a 32 KB package. With the generics pass located (§25 items 2, 4) its remaining callers
    are elaborator refusals without a span; find them by making `localize` count its calls in
@@ -854,19 +851,18 @@ Card's declarations alone (one entry module, `check-package`, 20 entries in one 
    in one state cell (a kind's body, a Workshop draft, a form's reply), a cell is `maxCellBytes`
    (256 KiB), and 128 KiB leaves its row the other half. Every bound a package meets: the host's
    `maxPackageBytes` (reprogram, extend, create of source, `check`; host request below) and
-   `formSourceMax` (a form's `source` field, 16,384 characters), the kernel's `maxModuleBytes`
+   `formSourceMax` (a form's `source` field, the same bound), the kernel's `maxModuleBytes`
    (512 KiB a module), `maxPackageSourceBytes` (1 MiB, the import scan), `maxFrameBytes` (16 MiB a
    driver line, which holds the artifact a `run` sends back: 1 MB for the 258 KB Garden, 2.6 MB for an
    entry reaching 1,024 instances), `frontCacheSourceBytes` and `entryCacheBytes` (caches: a closure
    or artifact larger than its cache is compiled and not held, never refused). Each kernel refusal
    names its bound. `tests/test_package_bounds.py`: a 131,072-byte module checks, compiles and runs;
    the module and import-scan bounds refuse by name.
-   Host request (lane/host15; `spec/Delvetalk/Host/Store.lean`): `def maxPackageBytes : Nat :=
+   Landed (lane/host15, HOST-HANDOFF 134; `spec/Delvetalk/Host/Store.lean`): `def maxPackageBytes : Nat :=
    Bounds.maxPackageBytes` and `def formSourceMax : Nat := Bounds.maxPackageBytes`; the four
    refusals (TurnLoop `creationInputs` and `buildCreated`, Ops `checkSource` and `prepareProgram`)
-   read "package source exceeds maxPackageBytes (131072 bytes)". Then `tests/test_form_bounds.py`
-   (16384), `world/lib/Card.obend` and `world/objects/Policy.obend` ("1 to 16384 characters", objects
-   lane) follow. Until the per-cell bound (§15 step 4) replaces `maxStateBytes`, the Workshop's
+   read "package source exceeds maxPackageBytes (131072 bytes)"; `tests/test_form_bounds.py`,
+   `world/lib/Card.obend` and `world/objects/Policy.obend` read 131072 too. Until the per-cell bound (§15 step 4) replaces `maxStateBytes`, the Workshop's
    `held` (12 drafts) cannot hold 12 full-size packages in 256 KiB: `test_relation_limits` fills it
    with 16,384-byte packages and must keep doing so until that switch.
 
@@ -905,9 +901,8 @@ L. (Coordinator's insertion, docs/LAW.md §4 A, E, H; §6 item 1, kernel half.) 
    (host-judged, as relations). `fields`, `fieldsPlain`, `render`, the parser and its refusals cover
    them. Theorems `parse_clock_old_object` (METAPHYSICS `alive` as `request.method == "tend" or
    request.clock <= old.tended + 1440`) and `compile_clock_old_object`, `native_decide`,
-   `#assert_compiled`. `Host/Law.lean` gained only fail-closed arms (`read` of clock, object, old is
-   `none`; `leRSum` denotes over `read`), so a law using them refuses every write until the host lane
-   adds `Facts.clock`, `Facts.object` and `read` over `old`.
+   `#assert_compiled`. `Host/Law.lean` first gained only fail-closed arms; the host lane then added
+   `Facts.clock`, `Facts.object` and `read` over `old` (HOST-HANDOFF 133), so a law using them is judged.
 M. (lane/kernel14, docs/LAW.md §4 B, C, D, F, G; §6 items 2 and 3, kernel half.) The law grammar is
    one term language (`Compiler/ObjectiveBendLaw.lean`, its module comment is the grammar):
    `LawTerm` (`new.F`, `old.F`, `request.FACT`, `count(SIDE.F)` and `count(SIDE.F where COL == TERM)`,
@@ -925,14 +920,12 @@ M. (lane/kernel14, docs/LAW.md §4 B, C, D, F, G; §6 items 2 and 3, kernel half
    agreement theorem `Kernel.ObjectLaw.compile_sound` the module cited does not exist in this tree,
    so no proved fact went). `Host/Law.lean` was ported arm for arm; what it does not yet denote fails
    closed. **The host lane's exact request (lane/host15):**
-   - `Facts` gains `clock : Nat` and `object : String` (filled from the write in `judge`, `amendable`,
-     `libraryRefusal`), and `reads : List (String × Data)`: the state of every object the law cites,
-     transitively through `under`, at the version recorded as its root.
-   - `read`: `.fact .clock => some (.num facts.clock)`; `.fact .object => some (.text facts.object)`
-     (and `textOf` the same); `.old F` the field of `old`, or at creation the empty value of `new.F`'s
-     type; `.count of (.eq col value)` the rows of `rowsAt old new of` whose `rawField col` canons to the
-     value's data. Generalize `memberData` to every term (a numeric reading as `.natural`, `.old F` its
-     raw field), and use it for the filter, membership and `changed`.
+   - `Facts` gains `reads : List (String × Data)`: the state of every object the law cites,
+     transitively through `under`, at the version recorded as its root. (`clock`, `object` and `read`
+     over `old` landed with HOST-HANDOFF 133 and are carried through the port.)
+   - `read (.count of (.eq col value))`: the rows of `rowsAt old new of` whose `rawField col` canons to
+     the value's data. Generalize `memberData` to every term (a numeric reading as `.natural`), and use
+     it for the filter, membership and `changed`.
    - `denote (.changed F C who)`: with `before` the rows of `old.F` (none at creation) and `after` of
      `new.F`, the rows of `before` absent from `after` by canonical bytes, less `facts.evicted` for F,
      and the rows of `after` absent from `before`; every one has `rawField C` equal to `who`'s data.

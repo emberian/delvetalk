@@ -7,8 +7,7 @@ Each test builds the town as deploy does (`deploy/genesis.py` through the produc
 then drives it with requests drawn from a seeded generator: the archive's own posts and the
 rehearsal's model answers, plantings, rains, rings, subscriptions, proposals, amendments, forks,
 clock ticks, and a well-typed or malformed call of every public method of every object, as its
-owner and as a stranger. The committed runs use fixed seeds (a seed that reaches a known defect is an
-expectedFailure naming it); `DELVETALK_SEED=<n>` adds a run of that seed, to replay or to explore.
+owner and as a stranger. The committed runs use fixed seeds; `DELVETALK_SEED=<n>` adds a run of that seed, to replay or to explore.
 
 - Invariant 4 and 5: every reply is admitted, suspended or refused; a refusal names a class from
   the closed set, a law refusal its clause and its reading; a refused turn journals exactly one entry;
@@ -36,6 +35,7 @@ from deploy import genesis
 from tests.host import card_texts
 from tests.town import Town
 from transport import model
+from tests.wire import label, nat, record
 
 ROOT = Path(__file__).resolve().parent.parent
 CLASSES = {"staleRoot", "typeMismatch", "capacity", "absentItem", "lawRefused", "unknownObject", "duplicateIdentity",
@@ -53,18 +53,6 @@ POSTS = json.loads((ROOT / "rehearsal" / "fixtures" / "posts.json").read_text())
 ANSWERS = [a["answer"] for a in json.loads((ROOT / "rehearsal" / "fixtures" / "model-answers.json").read_text()).values()]
 UTTERANCES = [p["record"]["text"] for p in POSTS if p["record"]["text"].strip()]
 SPELLS = [t for t in UTTERANCES if "delvetalk" in t or re.search(r"^(plant|seed|colour|rain):", t, re.M)]
-
-
-def lab(s):
-    return {"tag": "label", "value": s}
-
-
-def nat(n):
-    return {"tag": "natural", "value": str(n)}
-
-
-def rec(**fields):
-    return {"tag": "record", "fields": [{"name": k, "value": v} for k, v in fields.items()]}
 
 
 def fields_of(row):
@@ -90,9 +78,9 @@ def value(t, rng, depth=0):
     """A random value of type `t` (the method table's types, as world-inspect gives them)."""
     tag = t.get("tag")
     if tag in ("field", "emptyRow"):
-        return rec(**{name: value(m, rng, depth + 1) for name, m in fields_of(t)})
+        return record(**{name: value(m, rng, depth + 1) for name, m in fields_of(t)})
     if tag == "label":
-        return lab(text(rng))
+        return label(text(rng))
     if tag == "natural":
         return nat(rng.choice([0, 1, 2, 3, 7, 64, 1000, 2 ** 40]))
     if tag == "boolean":
@@ -103,7 +91,7 @@ def value(t, rng, depth=0):
     if tag == "list":
         item = t.get("item") or t.get("member") or {"tag": "label"}
         return {"tag": "list", "items": [value(item, rng, depth + 1) for _ in range(rng.randint(0, 0 if depth > 2 else 3))]}
-    return rec()  # data, a type variable: the empty record is a value of Data and of a unit row
+    return record()  # data, a type variable: the empty record is a value of Data and of a unit row
 
 
 def bounded(form, arg, rng):
@@ -116,7 +104,7 @@ def bounded(form, arg, rng):
         payload = {x["name"]: x["value"] for x in kind["payload"]["fields"]}
         if kind["label"] == "text" and field["value"].get("tag") == "label":
             lo, hi = int(payload["min"]["value"]), int(payload["max"]["value"])
-            field["value"] = lab(text(rng, lo, hi)[:hi].ljust(lo, "x"))
+            field["value"] = label(text(rng, lo, hi)[:hi].ljust(lo, "x"))
         elif kind["label"] == "choice" and field["value"].get("tag") == "variant":
             field["value"] = dict(field["value"], label=rng.choice(payload["options"]["items"])["value"])
     return arg
@@ -130,7 +118,7 @@ def outside(form, arg, rng):
         field = by.get(f["name"])
         if f["kind"]["label"] == "text" and field and field["value"].get("tag") == "label":
             lo, hi = int(payload["min"]["value"]), int(payload["max"]["value"])
-            field["value"] = lab("y" * (hi + 1) if lo == 0 or rng.random() < 0.5 else "")
+            field["value"] = label("y" * (hi + 1) if lo == 0 or rng.random() < 0.5 else "")
             return arg
     return None
 
@@ -141,7 +129,7 @@ def malformed(t, rng):
     pick = rng.randrange(5)
     good = value(t, rng)
     if pick == 0 or not fields:
-        return rng.choice([lab("x"), nat(3), {"tag": "list", "items": []}, rec(nonsense=lab("x"))])
+        return rng.choice([label("x"), nat(3), {"tag": "list", "items": []}, record(nonsense=label("x"))])
     # The host fills `fields` and `misfit` of a `receive` (HOST-HANDOFF 5.121): leaving them out is no misfit.
     droppable = [i for i, f in enumerate(good["fields"]) if f["name"] not in ("fields", "misfit")]
     if pick == 1 and droppable:
@@ -153,9 +141,9 @@ def malformed(t, rng):
         return dict(good, fields=good["fields"] + [{"name": "zz", "value": nat(1)}])
     typed = [i for i, (_, m) in enumerate(fields) if m.get("tag") in ("label", "natural", "boolean", "field", "variant", "list")]
     if not typed:
-        return lab("x")
+        return label("x")
     i = rng.choice(typed)
-    swapped = nat(1) if good["fields"][i]["value"].get("tag") != "natural" else lab("one")
+    swapped = nat(1) if good["fields"][i]["value"].get("tag") != "natural" else label("one")
     return dict(good, fields=good["fields"][:i] + [{"name": good["fields"][i]["name"], "value": swapped}] + good["fields"][i + 1:])
 
 
@@ -223,7 +211,7 @@ class Run:
             again = self.send(**request)
             if again.get("receipt") != reply.get("receipt") or self.height() != at:
                 self.fail("a retry did not return the retained receipt, journaling nothing", request, reply.get("receipt"), again.get("receipt"))
-            other = self.send(**dict(request, argument=rec(other=lab("x"))))
+            other = self.send(**dict(request, argument=record(other=label("x"))))
             if (other.get("status"), other.get("class")) != ("refused", "duplicateIdentity") or self.height() != at:
                 self.fail("another request under a used identity was not duplicateIdentity, journaling nothing", request, other)
         return dict(reply, request=request)
@@ -260,26 +248,26 @@ class Run:
         pick = r.randrange(11)
         post = "at://%s/town.delve.feed.post/%d" % (who, len(self.log))
         if pick == 0:  # a post of the archive, heard by the directory or the garden
-            return self.turn(who, r.choice(["directory", "garden"]), "receive", rec(text=lab(r.choice(UTTERANCES)), post=lab(post)))
+            return self.turn(who, r.choice(["directory", "garden"]), "receive", record(text=label(r.choice(UTTERANCES)), post=label(post)))
         if pick == 1:  # a spell of the archive, or a planting
             spell = r.choice(SPELLS) if r.random() < 0.5 else "delvetalk garden plant\nseed: %s\ncolour: %s" % (
                 text(r, 1, 80).replace("\n", " ") or "a fern", r.choice(["amber", "violet", "silver", "verdigris"]))
-            return self.turn(who, "garden", "receive", rec(text=lab(spell), post=lab(post)))
+            return self.turn(who, "garden", "receive", record(text=label(spell), post=label(post)))
         if pick == 2 and self.bells():
-            return self.turn(who, r.choice(self.bells()), "rain", rec(text=lab(text(r, 1, 200) or "drizzle")))
+            return self.turn(who, r.choice(self.bells()), "rain", record(text=label(text(r, 1, 200) or "drizzle")))
         if pick == 3 and self.bells():
-            return self.turn(who, r.choice(self.bells()), "ring", rec())
+            return self.turn(who, r.choice(self.bells()), "ring", record())
         if pick == 4 and self.bells():  # a subscription: a wake watching a bell's rains, calling ring at the seventh
             bell = r.choice(self.bells())
-            where = {"tag": "list", "items": [{"tag": "variant", "label": "equals", "payload": rec(column=lab("n"), equals={
-                "tag": "variant", "label": "natural", "payload": rec(value=nat(r.choice([1, 3, 7])))})}]}
-            return self.turn(who, "wake/" + who, "watch", rec(
-                event={"tag": "variant", "label": "rows", "payload": rec(object=lab(bell), field=lab(r.choice(["rains", "lines"])), where=where, atLeast=nat(1))},
-                action={"tag": "variant", "label": "call", "payload": rec(card=lab(bell), method=lab("ring"))}))
+            where = {"tag": "list", "items": [{"tag": "variant", "label": "equals", "payload": record(column=label("n"), equals={
+                "tag": "variant", "label": "natural", "payload": record(value=nat(r.choice([1, 3, 7])))})}]}
+            return self.turn(who, "wake/" + who, "watch", record(
+                event={"tag": "variant", "label": "rows", "payload": record(object=label(bell), field=label(r.choice(["rains", "lines"])), where=where, atLeast=nat(1))},
+                action={"tag": "variant", "label": "call", "payload": record(card=label(bell), method=label("ring"))}))
         if pick == 5:  # a proposal through the workshop: the target's own source, re-proposed
             target = r.choice(["anthology", "library", "garden"])
             src = (ROOT / "world" / "objects" / {"anthology": "Record", "library": "Library", "garden": "Garden"}[target]).with_suffix(".obend").read_text() + "# again\n"
-            return self.turn(who, "workshop", r.choice(["check", "propose"]), rec(target=lab(target), source=lab(src[:16000]), migration=lab("")))
+            return self.turn(who, "workshop", r.choice(["check", "propose"]), record(target=label(target), source=label(src[:16000]), migration=label("")))
         if pick == 6:  # an amendment of a law, by its owner or a stranger
             obj = r.choice(["anthology", "garden", "library"])
             v = self.town.send(op="world-view", principal=OPENER, object=obj)
@@ -338,7 +326,7 @@ class Run:
         for obj in listed["ids"]:
             public = set(listed["methods"].get(obj, []))
             for helper in self.rng.sample([n for n in names if n not in public], 6):
-                got = self.turn(self.who(), obj, helper, rec(), retry=False)
+                got = self.turn(self.who(), obj, helper, record(), retry=False)
                 probed += 1
                 if (got.get("status"), ((got.get("receipt") or {}).get("outcome") or {}).get("class")) != ("refused", "noMethod"):
                     self.fail("an undeclared name ran from outside", got.get("request"), got.get("status"))

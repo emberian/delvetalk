@@ -13,8 +13,9 @@ the whole stack; an unlayered package compiles exactly as before
 """
 import unittest
 
-from tests.test_objects import closure, pure
-from tests.test_turn import Host, label
+from tests.test_turn import Host
+from tests.wire import label
+from tests.bend import closure, pure
 
 LOUDER = """layer over ./Bell.obend
 edition ObjectiveBend 1

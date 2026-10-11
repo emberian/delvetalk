@@ -16,13 +16,11 @@ import unittest
 
 from tests.host import whole
 
-from tests.test_replay import rows
 from tests import test_policy
 from tests.test_chain import garden_seed, town_kinds
-from tests.test_objects import closure
 from tests.test_reflection import PACKAGE, Reflection, source_seed
-from tests.test_replay import get
-from tests.test_turn_world import label, record
+from tests.wire import field, label, record, rows
+from tests.bend import closure
 
 PLANT = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
 
@@ -48,7 +46,7 @@ class Fork(Reflection):
 
     def children(self, host):
         state = host.send(op="world-view", principal="ember", object="garden")["state"]
-        return [get(c, "object")["value"] for c in rows(get(state, "children"))]
+        return [field(c, "object")["value"] for c in rows(field(state, "children"))]
 
     def plant(self, host):
         return host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="what-if",
@@ -82,7 +80,7 @@ class Fork(Reflection):
         at = self.host.send(op="world-status")["height"]
         self.turn("c", "bump")
         r, fork = self.fork(height=at)
-        count = lambda h: get(h.send(op="world-view", principal="ember", object="c")["state"], "count")["value"]
+        count = lambda h: field(h.send(op="world-view", principal="ember", object="c")["state"], "count")["value"]
         self.assertEqual((count(self.host), count(fork)), ("2", "1"))
         with open(self.path) as f:
             entry = json.loads(f.read().splitlines()[at - 1])

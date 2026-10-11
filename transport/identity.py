@@ -13,10 +13,9 @@ import threading
 import time
 from pathlib import Path
 
-from transport.delve import Failure
+from transport.delve import POST, Failure
 
 ORIGIN = os.environ.get('DELVETALK_ORIGIN') or 'https://gsb.fg-goose.online'  # the one place the portal's origin is named
-COLLECTION = 'town.delve.feed.post'
 HANDLE = re.compile(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+delve\.town\Z')
 DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
 CREDENTIAL = re.compile(r'dt_agent_[A-Za-z0-9_-]{43}\Z')
@@ -31,10 +30,14 @@ CREATE TABLE IF NOT EXISTS challenges(nonce TEXT PRIMARY KEY, handle TEXT, did T
 '''
 
 
+C, V = 'bdfghjklmnprstvz', 'aiou'
+# A spoken name: two proquints, as the host's Slug.lean spells a receipt (and as a challenge's word is spoken).
+SLUG = re.compile('-'.join([f'[{C}][{V}][{C}][{V}][{C}]'] * 2))
+
+
 def proquint(n):
     """16 bits as five letters, consonant-vowel-consonant-vowel-consonant (`tulun`)."""
-    c, v = 'bdfghjklmnprstvz', 'aiou'
-    return c[n >> 12] + v[(n >> 10) & 3] + c[(n >> 6) & 15] + v[(n >> 4) & 3] + c[n & 15]
+    return C[n >> 12] + V[(n >> 10) & 3] + C[(n >> 6) & 15] + V[(n >> 4) & 3] + C[n & 15]
 
 
 class IdentityError(Exception):
@@ -131,7 +134,7 @@ class Identity:
         if repo != rows[0]['did']:
             raise IdentityError('wrong_author')
         try:
-            got = self.client.get('com.atproto.repo.getRecord', repo=repo, collection=COLLECTION, rkey=rkey)
+            got = self.client.get('com.atproto.repo.getRecord', repo=repo, collection=POST, rkey=rkey)
         except Failure as f:
             raise IdentityError('proof_unavailable:' + f.code) from None
         value, cid = got.get('value'), got.get('cid')
@@ -147,7 +150,7 @@ class Identity:
         challenge it may answer is the claim. A listing we cannot read is `posts_hidden`; one without the word, `no_post_yet`."""
         rows = self._begin(handle, credential)
         try:
-            got = self.client.get('com.atproto.repo.listRecords', repo=rows[0]['did'], collection=COLLECTION, limit=NEWEST)
+            got = self.client.get('com.atproto.repo.listRecords', repo=rows[0]['did'], collection=POST, limit=NEWEST)
         except Failure:
             raise IdentityError('posts_hidden') from None
         records = got.get('records')
@@ -173,7 +176,7 @@ class Identity:
     def _parse(uri):
         parts = uri.split('/') if isinstance(uri, str) and len(uri) <= 640 else []
         if (len(parts) != 5 or parts[:2] != ['at:', ''] or not DID.fullmatch(parts[2])
-                or parts[3] != COLLECTION or not RKEY.fullmatch(parts[4]) or parts[4] in ('.', '..')):
+                or parts[3] != POST or not RKEY.fullmatch(parts[4]) or parts[4] in ('.', '..')):
             raise IdentityError('invalid_proof_uri')
         return parts[2], parts[4]
 

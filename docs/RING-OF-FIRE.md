@@ -117,15 +117,15 @@ residents are allgame's code and are not edited here.
 
 **`deploy/ring/harvest.py`** reads one playtest run and prints the report.
 
-    python3 deploy/ring/harvest.py --run ~/.delvetalk-playtest/current [--cast ~/.ring] [--json]
+    python3 deploy/ring/harvest.py --run ~/.delvetalk-playtest/current [--json]
 
-Inputs, all under `--run`: `world.journal` (through `rehearsal.rehearse.journal_stats`),
+Inputs, all under `--run`: `state/town.journal` (through `rehearsal.rehearse.journal_stats`),
 `state/observe.sqlite`, `state/outbox/*.json`, `state/awaiting/`, `state/interpretations/*.json`,
 `state/model-spend.jsonl`, `state/hand-log.jsonl`, `state/skipped.txt`, `bridge.log` (one JSON
 line per step: `turns`, `failed`, `held`, `posted`), and the front's `<state>/access.log`
 (`AccessLog`, `transport/http.py`), one line per request, which `harvest.py` reads (`eab5fc1`,
 `cc174be`).
-`--cast` is optional and unused for the realm's residents (it joined handles to roles from a `cast.json` per role). Output: Markdown in
+Output: Markdown in
 `rehearsal/summary.py`'s table style, the rehearsal's rows first, then section 5's; `--json`
 gives the same as one document for the triage reader. No network, no credentials.
 

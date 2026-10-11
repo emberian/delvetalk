@@ -16,7 +16,9 @@ import re
 import json
 import unittest
 
-from tests.test_turn import Host, library_modules, nat, variant
+from tests.bend import closure
+from tests.test_turn import Host
+from tests.wire import nat, variant
 
 HEAD = "edition ObjectiveBend 1\n"
 
@@ -409,7 +411,7 @@ FORM_LIB = ("List", "Form")
 
 def modules(source, library=(), world=False, extra=()):
     """The library from world/lib, the stand-in World when `world`, any extra modules, then the package."""
-    return (library_modules(*library) + ([{"name": "World", "source": SUGAR_WORLD}] if world else [])
+    return (closure(*library) + ([{"name": "World", "source": SUGAR_WORLD}] if world else [])
             + list(extra) + [{"name": "Package", "source": source}])
 
 
@@ -642,7 +644,7 @@ class Sugar(unittest.TestCase):
 
     def test_a_source_field_is_the_source_kind_of_a_form_library_that_has_it(self):
         # Form.obend's `source: {}` case is the objects lane's: one library with it, one without.
-        having, lacking = library_modules(*FORM_LIB), library_modules(*FORM_LIB)
+        having, lacking = closure(*FORM_LIB), closure(*FORM_LIB)
         for with_case, ms in ((True, having), (False, lacking)):
             for m in ms:
                 if m["name"] == "Form":

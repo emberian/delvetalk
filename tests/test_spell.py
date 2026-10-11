@@ -2,7 +2,7 @@
 skipped, fitted to a form or refused by name. The host parses (op `spell-parse`); world/lib/
 Spell.obend keeps only the spell line's card, action and inline fields, which a card reads.
 
-Evidence for FOUNDATION §5 Spell grammar (layer: host; the Bend reading: objects).
+Evidence for FOUNDATION §5 Spell grammar (layer: host).
 
 The recorded rows (tests/fixtures/spells, run by test_host_spell) hold the grammar case by case;
 CASES here are the inputs the fixtures do not: the playtest's posts (docs/FLEX.md §4), a reply to a
@@ -13,7 +13,8 @@ card without `delvetalk`, values without names, the 128-byte card name, a trimme
 import unittest
 
 from tests.test_host_spell import host, show_fit, show_parsed
-from tests.test_objects import check, closure, compile_job
+from tests.test_objects import check, compile_job
+from tests.bend import closure
 
 
 def plant_form(card="garden-1"):
@@ -98,8 +99,7 @@ def parse(text: String) -> String:
 
 
 def bend_parse(reply):
-    seen = set()
-    modules = [m for m in closure("Spell") if not (m["name"] in seen or seen.add(m["name"]))]
+    modules = closure("Spell")
     compiled = compile_job(modules + [{"name": "Probe", "source": PROBE}], "parse")
     assert compiled["status"] == "compiled", compiled
     out = check({"op": "run", "artifact": compiled["artifact"], "arguments": [{"tag": "label", "value": reply}]})

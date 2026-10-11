@@ -1,5 +1,8 @@
 # Suite audit
 
+A dated audit: the tables below name the suite as it stood then (test_hostd, test_card and the rest
+are gone); README.md describes the suite as it is.
+
 Lane tests2, on foundation fcadbd6, 2026-10-10. The owner's brief: too many tests, too fine-grained,
 some of them bullshit; more confidence, faster, with fewer lines. The external review of a3e1fb2
 (`docs/review/codex-2026-10-10/`) found sixty-odd real holes that none of the then 1,100 tests caught:
@@ -71,7 +74,7 @@ the same claim made with exact text: whole cards, hint strings, tick counts, pag
 | durability | host | 2 | 53 | Each sync mode (none/fsync/full/default) opens, writes and reopens a journal to the same head; any other value is refused by name. | split | dup: 1 |
 | extend | host | 10 | 343 | Extend, not replace: a layer grafted by reprogram, the extend Plan or the host's become/adopt/lend spells overrides what it defines, stacks, survives snapshots and replay, and is judged by the object's law; late binding makes Bell's own reply use the layer. | split | dup: 3 |
 | fork | host | 5 | 126 | A fork is a private journal seeded from the shared world at a height: its turns never touch the shared journal, it carries its origin, a fork at an earlier height holds the earlier state, and a private object is omitted for a stranger. | LATER keep | opaque: 1 |
-| form_bounds | host | 7 | 183 | A spell and a direct turn are judged by the card's own declared form bounds: a source field takes up to 16 KiB, a fenced block is the source field, the declared min/max hold and are shown by inspect. | LATER split | literal: 1; forms: 1; dup: 2 |
+| form_bounds | host | 7 | 183 | A spell and a direct turn are judged by the card's own declared form bounds: a source field takes up to 128 KiB, a fenced block is the source field, the declared min/max hold and are shown by inspect. | LATER split | literal: 1; forms: 1; dup: 2 |
 | grants | host | 21 | 421 | A grant lets one grantee run one method of one object as its grantor, for a bounded number of uses and clock, revocable only by the grantor, optionally fixing part of the callee's argument; a law naming the grantor admits it; law membership facts read state. | keep | opaque: 2 |
 | handlers | host | 7 | 238 | A handler object answers the Plans a callee yields before the host does (run), nested handlers pass outward, and judge answers the law's verdict on edits without committing. | split | dup: 2 |
 | host_spell | host | 8 | 137 | The host's spell-parse answers every recorded fixture as recorded (parse, bare, fit, natural) and names the refusal clause. | keep | opaque: 1; literal: 1 |
@@ -205,12 +208,10 @@ but not the Avatar's `handle` field.
    `test_list`, `test_view_data`, `test_derived_forms`, `test_card`, `test_located`), `test_kinds`
    (folded into the Bell scenario), and every flagged test in the files this pass may touch, except
    where the flagged test is a behaviour's only evidence (listed in the commit).
-5. **Next** (needs `tests/host.py`, open on lane/rewrite3; and lane/kernel11's `test_conformance`,
-   `test_stored`, `tests/conformance/`, deferred with `test_serve`): move the fixture backbone
-   (`closure`, `record`, `label`, `nat`, `declared`, `Chain`, `garden_seed`, `Reflection`, `get`,
-   `rows`, `items`) out of test_turn_world, test_chain, test_reflection and test_replay into
-   `host.py`, so the test modules stop importing one another, and collapse test_canonical's and
-   test_turn's private `Host` classes into it; then share one Bend fixture module per object kind
-   instead of a source string per test file. That is where the remaining half of the lines is.
-   Then decide the input-less-method defect and fix whichever of test_principal and
-   EveryMethod is wrong.
+5. **Done** (lane fungus): the fixture backbone left test_turn_world, test_chain, test_reflection and
+   test_replay for `tests/wire.py` (Data on the wire: `nat`, `label`, `record`, `variant`, `relation`,
+   `field`, `rows`) and `tests/bend.py` (`closure`, `declared`, `counter_modules`), so the test modules
+   no longer import one another for them; test_canonical's and test_turn's private `Host` classes are
+   `tests.host.Host` (`raw`, and `send` taking a dict or keywords). Still open: one Bend fixture module
+   per object kind instead of a source string per test file, and the input-less-method defect
+   (decide, then fix whichever of test_principal and EveryMethod is wrong).

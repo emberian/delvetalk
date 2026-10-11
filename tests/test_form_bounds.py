@@ -1,16 +1,17 @@
 """A spell is judged by the card's own form (HOST-HANDOFF 5.69): the kinds its `forms()` declares
 override the defaults the method's input type gives, and a `source` field (`Form.Kind.source`) takes
-Bend source up to `Limits.formSourceMax` (16 KiB), as a `<<BEND` block or as the reply's ```obend
+Bend source up to `Limits.formSourceMax` (`Bounds.maxPackageBytes`, 128 KiB), as a `<<BEND` block or as the reply's ```obend
 fenced block.
 
 Evidence for spells (layer: host). Refuted by: a 6 KB source block refused at the type's 1,400
-characters; a 20 KB one admitted, or refused without naming the field; a fenced block not reaching
+characters; a 140 KB one admitted, or refused without naming the field; a fenced block not reaching
 the method; a form's bounds not shown by world-inspect.
 """
 import unittest
 
 from tests.test_chain import Chain, town_kinds
-from tests.test_turn_world import closure, declared, label, record
+from tests.wire import label, nat, record
+from tests.bend import closure, declared
 
 
 BENCH = declared("""edition ObjectiveBend 1
@@ -42,9 +43,7 @@ def receive(state: State, input: {text: String, post: String}, context: Abi.Cont
 class FormBounds(Chain):
     def setUp(self):
         super().setUp()
-        seen, out = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, out)
+        out = closure(*("Abi", "List", "Form", "Plan", "World"))
         self.make("bench", out + [{"name": "Bench", "source": BENCH}], record())
 
     def got(self, name="got"):
@@ -57,7 +56,7 @@ class FormBounds(Chain):
         r = self.say("delvetalk bench check\n\n```obend\nedition ObjectiveBend 1\n```\n")
         self.assertEqual(r["status"], "admitted", r)
         self.assertEqual(self.got(), "edition ObjectiveBend 1")
-        r = self.say("delvetalk bench check\n```obend\n" + "y" * 17000 + "\n```")
+        r = self.say("delvetalk bench check\n```obend\n" + "y" * 131073 + "\n```")
         self.assertEqual(r["receipt"]["outcome"]["clause"], "badValue", r)
 
 
@@ -70,17 +69,17 @@ class WorkshopSource(Chain):
     def say(self, text):
         return self.turn("workshop", "receive", record(text=label(text), post=label("")), principal="glm")
 
-    def test_a_six_kib_block_is_checked_and_twenty_kib_refused_by_name(self):
+    def test_a_six_kib_block_is_checked_and_one_past_the_package_bound_refused_by_name(self):
         self.create()
         code = "edition ObjectiveBend 1\n" + ("def x() -> Nat:\n  0n\n" * 400)[:6000].rstrip("\n")
         r = self.say("delvetalk workshop check\nsource: <<BEND\n" + code + "\nBEND")
         self.assertEqual(r["status"], "admitted", r)
-        r = self.say("delvetalk workshop check\nsource: <<BEND\n" + "x" * 20000 + "\nBEND")
+        r = self.say("delvetalk workshop check\nsource: <<BEND\n" + "x" * 140000 + "\nBEND")
         outcome = r["receipt"]["outcome"]
         self.assertEqual((outcome["class"], outcome["clause"]), ("badSpell", "badValue"), r)
-        self.assertIn("source takes 1 to 16384 characters", outcome["reason"])
+        self.assertIn("source takes 1 to 131072 characters", outcome["reason"])
         forms = self.host.send(op="world-inspect", principal="glm", object="workshop", source=False)["forms"]
-        self.assertIn("16384", str(forms))
+        self.assertIn("131072", str(forms))
 
 
 class ExpectedForm(Chain):
@@ -89,7 +88,6 @@ class ExpectedForm(Chain):
 
     def test_the_expected_form_carries_the_declared_bounds(self):
         from tests.test_chain import garden_seed
-        from tests.test_turn_world import nat
         self.make("garden", closure("Garden"), garden_seed())
         town_kinds(self.host.send)
         r = self.turn("garden", "plant", record(colour=label("amber"), seed=nat(3)), principal="glm")

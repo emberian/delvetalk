@@ -8,7 +8,8 @@ Each test names what would refute it.
 """
 import unittest
 
-from tests.test_turn import PLANS_WORLD, BINDING, TurnCase, nat
+from tests.test_turn import PLANS_WORLD, BINDING, TurnCase
+from tests.wire import nat
 
 LIST = """edition ObjectiveBend 1
 sum List<T>:

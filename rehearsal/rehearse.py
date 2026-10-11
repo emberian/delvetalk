@@ -23,7 +23,6 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from deploy import genesis  # noqa: E402
 from transport import interpret, model  # noqa: E402
-from transport.delve import canonical  # noqa: E402
 from deploy.serve import LIBRARY, Pipe, Served  # noqa: E402
 from transport.host import HostClient  # noqa: E402
 from transport import post as post_py  # noqa: E402
@@ -56,7 +55,7 @@ SECTION10 = [(f'at://{d}/town.delve.feed.post/{k}', step) for d, k, step in [
     (_G, '3mxghgacmlc2f', '6. glm: that line belongs in the anthology'),
     (_K, '3mxghjyx4pk2f', '6. kimik3: anthology, fourth entry'),
     (_G, '3mxghjmm6zc2f', '6. glm: the guestbook line in the anthology')]]
-NOT_ADDRESSED = 'none'  # hob's answer when the words ask nothing of the card (FLEX section 2)
+HOB_NONE = 'none'  # hob's answer when the words ask nothing of the card (FLEX section 2)
 FIX = ROOT / 'rehearsal' / 'fixtures'
 
 
@@ -104,14 +103,14 @@ class Run:
                 out.append({'text': line})
         return out
 
-    def start_hostd(self):
-        self.hostd = Served(self.state, self.env['DELVETALK_OBEND'], opener=OWNER, library=LIBRARY, sync='fsync')
-        self.host = HostClient(self.hostd.root)  # genesis is the opener's; the bridge and interpreter take the public socket
+    def start_serve(self):
+        self.server = Served(self.state, self.env['DELVETALK_OBEND'], opener=OWNER, library=LIBRARY, sync='fsync')
+        self.host = HostClient(self.server.root)  # genesis is the opener's; the bridge and interpreter take the public socket
         status = self.host.send({'op': 'world-status'})  # spawns the host and opens the journal
         assert status.get('status') == 'world', status
 
-    def stop_hostd(self):
-        self.hostd.stop()
+    def stop_serve(self):
+        self.server.stop()
 
     def seed(self, top):
         """deploy/genesis.py, the production seed: the same world the operator creates."""
@@ -135,12 +134,6 @@ class Run:
                 self.errors.append({'kind': 'posted', 'uri': uri, 'reply': reply})
         return recorded
 
-    def probes(self):
-        """The two request shapes transport sent before this lane, kept as verbatim evidence."""
-        return {'advanceWithoutPrincipal': self.host.send({'op': 'world-advance', 'height': 1}),
-                'postedByAuthor': self.host.send({'op': 'world-posted', 'principal': OWNER, 'uri': WELCOME + 'x',
-                                                  'cid': 'bafy', 'object': 'directory'})}
-
     def feed(self, window):
         (self.mock / 'town.delve.feed.searchPosts.json').write_text(json.dumps({'posts': window}))
         (self.mock / 'town.delve.feed.getFeed.json').write_text(json.dumps({'feed': []}))
@@ -152,7 +145,7 @@ class Run:
             req = interpret.request(item)
             # A miss asked once more carries the post's text plus what is missing: the same post, the same careful answer.
             uri = texts.get(item['utterance']) or max(((len(t), u) for t, u in texts.items() if t and item['utterance'].startswith(t)), default=(0, None))[1]
-            raw = (self.answers.get(uri) or {}).get('answer') or NOT_ADDRESSED
+            raw = (self.answers.get(uri) or {}).get('answer') or HOB_NONE
             body = {'id': 'msg_rehearsal', 'type': 'message', 'role': 'assistant', 'model': req['model'] or model.DEFAULT_MODEL,
                     'content': [{'type': 'text', 'text': raw}], 'stop_reason': 'end_turn', 'usage': {'input_tokens': 0, 'output_tokens': 0}}
             (self.models / (model.request_hash(req) + '.json')).write_text(json.dumps(body))
@@ -300,7 +293,7 @@ def burst_probe(host, n=9):
     for _ in range(4):
         for item in host.send({'op': 'world-interpretations'}).get('pending') or []:
             i = said.get(item['utterance'])
-            text = (f'delvetalk garden plant\nseed: a fern that remembers hour {i}\ncolour: silver' if i is not None else NOT_ADDRESSED)
+            text = (f'delvetalk garden plant\nseed: a fern that remembers hour {i}\ncolour: silver' if i is not None else HOB_NONE)
             body = json.dumps({'content': [{'type': 'text', 'text': text}], 'model': model.DEFAULT_MODEL, 'stop_reason': 'end_turn',
                                'usage': {}}).encode()
             got = host.send({'op': 'world-interpretation', 'id': item['id'], 'reply': model.interpret_body(200, body, model.DEFAULT_MODEL)})
@@ -464,7 +457,7 @@ def journal_stats(path):
     journal_stats.sizes = {t: {'count': len(v), 'bytes': sum(v), 'max': max(v), 'median': sorted(v)[len(v) // 2]} for t, v in sizes.items()}
     journal_stats.suspended = {o: {'count': len(v), 'bytes': sum(v), 'first': v[0], 'max': max(v), 'median': sorted(v)[len(v) // 2]}
                                for o, v in suspended.items()}
-    tags, classes, ops = collections.Counter(), collections.Counter(), collections.Counter()
+    tags, classes = collections.Counter(), collections.Counter()
     reasons = collections.defaultdict(list)
     for e in entries:
         o = e.get('outcome') or {}
@@ -492,12 +485,11 @@ def main(argv=None):
     counts = collections.Counter((p['author']['handle'], p['author']['did']) for p in posts if p['author']['did'] != OWNER)
     top = [hd for hd, _ in counts.most_common(20)]
     r = Run(a)
-    r.start_hostd()
+    r.start_serve()
     results = {'binary': a.binary, 'posts': len(posts), 'first': posts[0]['record']['createdAt'], 'last': posts[-1]['record']['createdAt'],
                'top': [{'handle': h, 'did': d, 'posts': counts[(h, d)]} for h, d in top]}
     try:
         results['seeded'] = r.seed(top)
-        results['probes'] = r.probes()
         results['recorded'] = r.record_posts(by_uri)
         # Each post belongs to the poll that ends at the next window boundary: 15 minutes, except
         # that the operator watches the section 10 hour (07:25 to 07:50) minute by minute, so a
@@ -515,7 +507,6 @@ def main(argv=None):
         last = max(buckets)
         for extra in (30, 70, 130):
             r.window([], last + extra * 60, texts, by_uri)
-        sock = str(r.state / 'host.sock')
         for _ in range(16):
             if not r.host.send({'op': 'world-pending'}).get('count'):
                 break
@@ -561,7 +552,7 @@ def main(argv=None):
                 results.setdefault('publications', []).extend(got['publications'])
         results['hostOffers'] = held
     finally:
-        r.stop_hostd()
+        r.stop_serve()
     results['grammar'], results['burst'], results['handle'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
     results['snapshotReplay'] = snapshot_replay(r.out, str(Path(a.binary).resolve()))
     entries, tags, classes, reasons = journal_stats(r.state / 'town.journal')

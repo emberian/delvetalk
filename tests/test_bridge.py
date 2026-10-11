@@ -14,11 +14,11 @@ from unittest import mock
 from tests import test_outbound
 from tests.test_chain import garden_state, town_kinds
 from tests.test_transport import DID, Script, mk
-from tests.test_turn_world import closure, label, nat, record
 from transport import bridge, delve, observe
 from tests.host import served
-from tests.test_turn_world import declared
 from transport.host import HostClient
+from tests.wire import label, nat, record
+from tests.bend import closure, declared
 
 CARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -46,12 +46,7 @@ REFUSING = """  match world.write(extend(keep(), {seen: Plans.Edit::<Nat, Nat>.s
 
 
 def modules(body, law=''):
-    out, seen = [], set()
-    for m in closure('Document') + closure('World') + [{'name': 'Card', 'source': CARD % (law, body)}]:
-        if m['name'] not in seen:
-            seen.add(m['name'])
-            out.append(m)
-    return out
+    return closure('Document', 'World') + [{'name': 'Card', 'source': CARD % (law, body)}]
 
 
 def spell_post(n, card, ts):
@@ -77,9 +72,9 @@ class BridgeCase(unittest.TestCase):
         """A `serve` of this test's own, started by the first test that talks to a real host
         (the routing tests drive a Stub and never do)."""
         if '_host' not in self.__dict__:
-            hostd = served(str(Path(self.tmp.name) / 'hostd'))
-            self.addCleanup(hostd.stop)
-            self._host = HostClient(hostd.sock)
+            serving = served(str(Path(self.tmp.name) / 'serve'))
+            self.addCleanup(serving.stop)
+            self._host = HostClient(serving.sock)
         return self._host
 
     def make(self, name, body=OFFERING, law=''):
@@ -132,9 +127,9 @@ class OpenerPosts(BridgeCase):
     @property
     def host(self):
         if '_host' not in self.__dict__:
-            hostd = served(str(Path(self.tmp.name) / 'hostd'), opener=DID)
-            self.addCleanup(hostd.stop)
-            self._host = HostClient(hostd.sock)
+            serving = served(str(Path(self.tmp.name) / 'serve'), opener=DID)
+            self.addCleanup(serving.stop)
+            self._host = HostClient(serving.sock)
         return self._host
 
     def test_a_post_by_the_opener_runs_as_a_residents_turn(self):
@@ -243,7 +238,7 @@ class HostParses(BridgeCase):
 
 
 class Stub:
-    """A host that speaks the new ops from canned data and records everything it is sent."""
+    """A host that answers from canned data and records everything it is sent."""
     def __init__(self, addressee=None):
         self.ops, self.addressee, self.suspending, self.offers, self.silent = [], addressee or {}, set(), {}, set()
 

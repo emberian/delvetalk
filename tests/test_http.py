@@ -1,4 +1,4 @@
-"""The agent API at /AGENTS.md over a real hostd: proof-of-control login, turns and receipts, the
+"""The agent API at /AGENTS.md over a real `serve`: proof-of-control login, turns and receipts, the
 REPL, private heaps, pages for people, limits.
 
 Evidence for FOUNDATION §7 (layer: transport).
@@ -14,7 +14,8 @@ import unittest
 import urllib.parse
 from pathlib import Path
 
-from tests.test_turn_world import BINARY, closure, counter_modules, declared, label, nat, record
+from tests.wire import label, nat, record, variant
+from tests.bend import closure, counter_modules, declared
 
 PLANS = """edition ObjectiveBend 1
 import ./World.obend as World
@@ -42,10 +43,8 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
   match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
     case _: state.count + 1n
 ''')
-from tests.test_turn import variant
 from transport import delve, identity
-from tests.host import HostdCase, serve, served
-from tests.test_turn_world import declared
+from tests.host import ServeCase, serve, served
 from transport.host import HostClient
 from transport.http import CATALOGUE, AccessLog, Front
 
@@ -82,7 +81,7 @@ class Provider:
                                 'value': {'text': self.texts[repo]}}).encode()
 
 
-class FrontCase(HostdCase):
+class FrontCase(ServeCase):
     """One `serve` per class, opened by OPENER (not a person the front logs in: the opener speaks on the root socket)
     with the library sealed; each test gets its own front (identity database, rate limits, clock) and its own counter
     object. A class whose tests each need the world as genesis left it sets `fresh_world`: a `serve` per test."""
@@ -100,18 +99,18 @@ class FrontCase(HostdCase):
         self.addCleanup(self.tmp.cleanup)
         if self.fresh_world:
             from deploy.serve import LIBRARY
-            self.hostd_dir = tempfile.TemporaryDirectory()
-            self.addCleanup(self.hostd_dir.cleanup)
-            self.hostd = served(self.hostd_dir.name, opener=self.OPENER, library=LIBRARY)
-            self.addCleanup(self.hostd.stop)
-            self.socket, self.root = self.hostd.sock, HostClient(self.hostd.root)
+            self.state_dir = tempfile.TemporaryDirectory()
+            self.addCleanup(self.state_dir.cleanup)
+            self.server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
+            self.addCleanup(self.server.stop)
+            self.socket, self.root = self.server.sock, HostClient(self.server.root)
         self.provider = Provider()
         self.now = [1000.0]
         self.host = HostClient(self.socket)  # a test may replace its send
         ident = identity.Identity(self.tmp.name, delve.Client(self.provider), clock=lambda: self.now[0])
         self.outbox = Path(self.tmp.name) / 'outbox'  # the hand's: an HTTP turn that writes a public object drafts here
         self.front = serve(Front(('127.0.0.1', 0), self.host, ident, clock=lambda: self.now[0],
-                                 heaps=Path(self.hostd_dir.name) / 'heaps', repl=HostClient(self.socket, stateless=True), outbox=self.outbox))
+                                 heaps=Path(self.state_dir.name) / 'heaps', repl=HostClient(self.socket, stateless=True), outbox=self.outbox))
         self.addCleanup(self.front.server_close)
         self.addCleanup(self.front.shutdown)
         self.port = self.front.server_address[1]
@@ -182,10 +181,12 @@ class Arrival(FrontCase):
         self.now[0] += 61
         self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
 
-    def test_a_body_over_64_kib_is_413_and_malformed_json_is_400(self):
+    def test_a_body_over_256_kib_is_413_and_malformed_json_is_400(self):
         tok = self.login()
-        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', token=tok, raw=b'{"intent":"' + b'x' * (65 * 1024) + b'"}')
+        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', token=tok, raw=b'{"intent":"' + b'x' * 300000 + b'"}')
         self.assertEqual(s, 413)
+        s, e = self.call('POST', '/AGENTS.md/challenge', raw=b'{"handle":"' + b'x' * (65 * 1024) + b'"}')
+        self.assertEqual((s, e['class']), (413, 'bodyTooLarge'))  # unauthenticated: still 64 KiB
         self.assertEqual(self.call('POST', f'/AGENTS.md/world/{self.c}/bump', token=tok, raw=b'{nope')[0], 400)
 
     def test_unauthenticated_routes_are_limited_per_client_ip(self):
@@ -412,7 +413,7 @@ class Repl(FrontCase):
         s, e = self.repl(tok, modules=mods, entry='nope')
         self.assertEqual((s, e['status']), (400, 'error'))
         self.assertIn('missing selected entry', e['message'])
-        s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 16385}], entry='pure')
+        s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 140000}], entry='pure')
         self.assertEqual(s, 413)
 
 
@@ -422,9 +423,9 @@ class Repl(FrontCase):
         s, y = self.repl(tok, modules=mods, entry='bump', turn=True, arguments=[nat(3)], **self.BIND)
         self.assertEqual((s, y['status']), (200, 'yielded'), y)
         from deploy.serve import LIBRARY
-        self.hostd.stop()  # a restart of serve: a new stateless session, which issued nothing
-        type(self).hostd = served(self.hostd_dir.name, opener=self.OPENER, library=LIBRARY)
-        type(self).addClassCleanup(type(self).hostd.stop)
+        self.server.stop()  # a restart of serve: a new stateless session, which issued nothing
+        type(self).server = served(self.state_dir.name, opener=self.OPENER, library=LIBRARY)
+        type(self).addClassCleanup(type(self).server.stop)
         s, e = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
         self.assertEqual((s, e['class'], e['message'], e['_links']['repl']), (409, 'replRestarted', 'the REPL restarted; start the module again',
                                                                               {'href': '/AGENTS.md/repl'}), e)

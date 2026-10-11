@@ -10,7 +10,8 @@ root at the old version, a future version answered, or a private object answered
 import unittest
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record, declared
+from tests.wire import label, nat, record
+from tests.bend import declared
 
 COUNTER = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi

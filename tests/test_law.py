@@ -12,9 +12,9 @@ package's Bend `law(old, new, request)` judges it under `Bounds.lawTicks`, readi
 import os
 import unittest
 
-from tests.test_chain import field
 from tests.test_reflection import Reflection
-from tests.test_turn_world import nat, record, declared
+from tests.wire import field, nat, record
+from tests.bend import closure, declared
 
 GUARD = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -308,7 +308,6 @@ class CreatedReadings(Reflection):
         return r["receipt"]["outcome"]["reason"], [(x["name"], x["reading"]) for x in laws]
 
     def test_a_creators_readings_survive_a_reopen_and_the_snapshot_is_replays(self):
-        from tests.test_objects import closure
         from tests.test_reflection import PROBE
         maker = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -323,9 +322,7 @@ def make(state: State, context: Abi.Context) -> Activity<String>:
     case created(_): "made"
     case refused(r): r.reading
 """ % self.LAW.replace('"', '\\"'), "make")
-        seen, mods = set(), []
-        for dep in ("Abi", "List", "Form", "Plan", "World"):
-            closure(dep, seen, mods)
+        mods = closure(*("Abi", "List", "Form", "Plan", "World"))
         r = self.host.send(op="world-create", principal="ember", identity="mk-maker", object="maker",
                            modules=mods + [{"name": "Probe", "source": PROBE}, {"name": "Maker", "source": maker}],
                            entry="initial", seed=record(n=nat(0)))
@@ -347,6 +344,45 @@ def make(state: State, context: Abi.Context) -> Activity<String>:
         self.host = self.spawn()
         self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
         self.assertEqual(self.refused(), live)
+
+
+class Alive(Reflection):
+    """LAW §4 A, E, H with METAPHYSICS's `alive` clause over a real object: a thing answers while tended
+    within 1440 minutes of the world clock; `tend` is always admitted and writes the clock it read."""
+    LAW = 'law alive "answers while tended within 1440 entries": request.method == "tend" or request.clock <= old.tended + 1440\n'
+    THING = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  tended: Nat
+  rains: Nat
+def initial() -> State:
+  {tended: 0n, rains: 0n}
+def rain(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {rains: Plans.Edit::<Nat, Nat>.add({delta: 1n})})):
+    case _: state.rains + 1n
+def tend(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.write(extend(keep(), {tended: Plans.Edit::<Nat, Nat>.set({value: context.clock})})):
+    case _: context.clock
+""", "rain", "tend")
+
+    def test_alive_admits_within_the_window_and_a_tend_always_and_refuses_past_it(self):
+        self.open_library()
+        self.make("fern", self.THING + self.LAW, record(tended=nat(0), rains=nat(0)))
+        self.assertEqual(self.turn("fern", "rain")["status"], "admitted")
+        self.assertEqual(self.host.send(op="world-advance", principal="transport", height=1440)["status"], "advanced")
+        self.assertEqual(self.turn("fern", "rain")["status"], "admitted")                 # at the edge: 1440 <= 0 + 1440
+        self.host.send(op="world-advance", principal="transport", height=1500)
+        late = self.turn("fern", "rain")
+        out = late["receipt"]["outcome"]
+        self.assertEqual((late["status"], out["clause"]), ("refused", "alive"), late)
+        self.assertIn("answers while tended within 1440 entries", out["reason"])
+        tend = self.turn("fern", "tend")
+        self.assertEqual((tend["status"], tend["result"]), ("admitted", nat(1500)), tend)
+        self.assertEqual(self.turn("fern", "rain")["status"], "admitted")
+        self.reopen()
+        self.assertEqual(field(self.state("fern"), "rains"), nat(3))
 
 
 if __name__ == "__main__":

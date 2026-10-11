@@ -15,10 +15,11 @@ import unittest
 from tests.host import as_owner
 
 from tests.test_reflection import LIBRARY, Reflection
-from tests.test_turn_world import label, nat, record, declared
+from tests.wire import label, nat, record
+from tests.bend import declared
 
-# The relation type and its edits are declared here as the library will declare them (Relation.obend,
-# Plan.obend's Entries): the host reads labels, not type names.
+# The relation type and its edits as Relation.obend and Plan.obend's Entries declare them: the host reads
+# labels, not type names.
 PACKAGE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./List.obend as Lists

@@ -15,9 +15,9 @@ reopen that answers otherwise, or a listing that names a card the asker may not 
 import unittest
 
 from tests.test_chain import Chain
-from tests.test_objects import closure
 from tests.test_reflection import PROBE, Reflection, probe_seed
-from tests.test_turn_world import declared, label, nat, record
+from tests.wire import label, nat, record
+from tests.bend import closure, declared
 
 WATCH = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi

@@ -429,7 +429,7 @@ def mintUnder (pfx : String) : M String := do
     chain (a name), or the source of one more module over that chain. -/
 def creationInputs (creator : Object) (package : String) : Except (String × String) Json := do
   if package.utf8ByteSize > Limits.maxPackageBytes then
-    throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
+    throw ("packageBytes", s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)")
   let limits := (creator.inputs.getObjVal? "limits").toOption
   let finish := fun (fields : List (String × Json)) =>
     Json.mkObj (fields ++ [("entry", toJson "initial")] ++ (limits.map fun l => [("limits", l)]).getD [] ++
@@ -453,7 +453,7 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   -- A layer an `extend` of the same turn lays into the making: one closure, one pin.
   let inputs ← if layer.isEmpty then pure inputs else do
     if layer.utf8ByteSize > Limits.maxPackageBytes then
-      throw ("packageBytes", s!"package source exceeds {Limits.maxPackageBytes} bytes")
+      throw ("packageBytes", s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)")
     (extendInputs inputs layer).mapError (("compile", ·))
   let built ← (compileObject w inputs).mapError (("compile", ·))
   let initial ← (initialState built).mapError (("compile", ·))
@@ -484,7 +484,7 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
       ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
   | .ok (again, built) =>
     let o := again.object
-    let facts : Law.Facts := ⟨s.principal, self, s.world.height + 1, s.world.height + 1, o.pin, 1, "", []⟩
+    let facts : Law.Facts := ⟨s.principal, self, s.world.height + 1, s.world.height + 1, o.pin, 1, "", [], s.world.clock, id⟩
     if let some clause := Law.refusedBy o.law facts (some o.state) o.state then
       return ← refusedReading bounds responseType clause s!"refused {clause}: the law of {id} does not admit this layer"
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
@@ -941,8 +941,8 @@ def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
     the current state): `true`, or `{clause, reading?}` naming the first clause that refuses. A clause
     that reads the state is judged on it too (codex agent 11: `request.subject == new.owner or …`
     refuses a stranger whatever the method writes, unless the method moves the owner). -/
-def methodAdmits (w : World) (o : Object) (principal method : String) : Json :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, []⟩
+def methodAdmits (w : World) (o : Object) (principal method : String) (id : String := "") : Json :=
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, 0, method, [], w.clock, id⟩
   match o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause with
   | none => Json.bool true
   | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
@@ -970,7 +970,7 @@ def readerActions (w : World) (id : String) (o : Object) (reader : String) : Opt
 def offeredTo (w : World) (id : String) (o : Object) (reader : String) : String → Bool :=
   let listed := readerActions w id o reader
   fun action => action == "receive" ||
-    (methodAdmits w o reader action == Json.bool true && (listed.map (·.contains action)).getD true)
+    (methodAdmits w o reader action id == Json.bool true && (listed.map (·.contains action)).getD true)
 
 /-- The forms a card's usage shows `principal` (`offeredTo`). -/
 def usageForms (w : World) (id : String) (o : Object) (principal : String) (forms : List Spell.Form) : List Spell.Form :=
@@ -1080,8 +1080,8 @@ def cardPowers : List String := ["retire", "unretire", "hide", "show"]
 
 /-- Would `o`'s law admit `principal`'s change of kind `kind` (1 reprogram, 2 amend) on the state as
     it stands? As `methodAdmits` judges a method. -/
-def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) : Bool :=
-  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, kind, "", []⟩
+def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : String := "") : Bool :=
+  let facts : Law.Facts := ⟨principal, "", w.height + 1, w.height + 1, o.pin, kind, "", [], w.clock, id⟩
   (o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause).isNone
 
 /-- The host spells' templates a card's usage shows `principal`: those its law would admit them. -/
@@ -2413,7 +2413,7 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
       (w.handles.fold (fun acc did h => if acc.isNone && h == toName then some did else acc) none).getD toName
     unless o.offers m do
       return ← refuseSpell w req id "noAction" s!"{id} has no method {m} to lend." template
-    unless methodAdmits w o req.principal m == Json.bool true do
+    unless methodAdmits w o req.principal m id == Json.bool true do
       return ← refuseSpell w req id "notYours" s!"The law of {id} does not let you run {m}, so you cannot lend it." template
     let expires := w.clock + n
     let speaker := ((w.handles[req.principal]?).filter (!·.isEmpty)).getD req.principal

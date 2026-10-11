@@ -14,7 +14,7 @@ from unittest import mock
 from tests.host import Host
 
 from tests.test_reflection import LIBRARY, PROBE, Reflection
-from tests.test_turn_world import label, nat, record
+from tests.wire import label, nat, record
 
 
 class DiskCache(Reflection):

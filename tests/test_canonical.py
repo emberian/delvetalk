@@ -15,13 +15,10 @@ import os
 import tempfile
 import unittest
 
-import subprocess
+from tests.host import Host, ROOT
+from tests.wire import boolean, cid_of, label, listing, nat, nil, record
+from tests.bend import closure
 
-from tests.host import binary
-from tests.test_turn_world import closure, label, nat, record
-from tests.wire import cid_of
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES = os.path.join(ROOT, "tests", "fixtures", "delve")
 
 
@@ -37,42 +34,12 @@ def records_with_cids(node, out):
     return out
 
 
-class Host:
-    """A host process whose replies are read raw: lists arrive as arrays."""
-
-    def __init__(self):
-        self.proc = subprocess.Popen([binary()], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                     text=True, bufsize=1)
-
-    def send(self, **request):
-        self.proc.stdin.write(json.dumps(request) + "\n")
-        self.proc.stdin.flush()
-        return json.loads(self.proc.stdout.readline())
-
-    def close(self):
-        self.proc.stdin.close()
-        self.proc.wait(timeout=60)
-        self.proc.stdout.close()
-
-
-def list_wire(items):
-    return {"tag": "list", "items": items}
-
-
-def nil():
-    return {"tag": "list", "items": []}
-
-
 def chain_nil():
     return {"tag": "variant", "label": "nil", "payload": record()}
 
 
 def chain_cons(head, tail):
     return {"tag": "variant", "label": "cons", "payload": record(head=head, tail=tail)}
-
-
-def boolean(b):
-    return {"tag": "boolean", "value": b}
 
 
 class Canonical(unittest.TestCase):
@@ -106,7 +73,7 @@ class Canonical(unittest.TestCase):
             "false": (boolean(False), "f4"), "true": (boolean(True), "f5"),
             "empty label": (label(""), "60"), "unicode label": (label("é"), "62c3a9"),
             "empty record": (record(), "a0"), "record": (record(a=nat(1)), "a1" "6161" "01"),
-            "empty list": (nil(), "80"), "list": (list_wire([nat(1), nat(2)]), "82" "01" "02"),
+            "empty list": (nil(), "80"), "list": (listing([nat(1), nat(2)]), "82" "01" "02"),
             "variant": ({"tag": "variant", "label": "ok", "payload": record()}, "a1" "626f6b" "a0"),
         }
         for name, (data, expected) in cases.items():
@@ -119,7 +86,7 @@ class Canonical(unittest.TestCase):
                 self.assertEqual(self.encode(data=back["data"])["hex"], expected)
         big = nat(2 ** 200 + 12345)
         self.assertEqual(self.host.send(op="canonical-decode", hex=self.encode(data=big)["hex"])["data"], big)
-        nested = record(l=list_wire([record(a=list_wire([nat(1)])), list_wire([])]), s=label("x" * 300))
+        nested = record(l=listing([record(a=listing([nat(1)])), listing([])]), s=label("x" * 300))
         hexed = self.encode(data=nested)["hex"]
         again = self.host.send(op="canonical-decode", hex=hexed)["data"]
         self.assertEqual(self.encode(data=again)["hex"], hexed)
@@ -136,7 +103,7 @@ class Canonical(unittest.TestCase):
         back = self.host.send(op="canonical-decode", hex="a1626f6ba0")
         self.assertEqual(back["data"], record(ok=record()))
         back = self.host.send(op="canonical-decode", hex="83010203")
-        self.assertEqual(back["data"], list_wire([nat(1), nat(2), nat(3)]))
+        self.assertEqual(back["data"], listing([nat(1), nat(2), nat(3)]))
 
     def test_noncanonical_and_foreign_cbor_is_refused_by_name(self):
         refused = {
@@ -169,7 +136,7 @@ class Canonical(unittest.TestCase):
                 self.assertEqual(r["status"], "error", r)
 
     def test_lists_cross_as_arrays_bounded_by_nesting_not_length_and_a_cons_chain_is_refused(self):
-        b = self.encode(data=list_wire([nat(i) for i in range(5)]))
+        b = self.encode(data=listing([nat(i) for i in range(5)]))
         back = self.host.send(op="canonical-decode", hex=b["hex"])["data"]
         self.assertEqual(back["tag"], "list")
         self.assertEqual(len(back["items"]), 5)
@@ -179,12 +146,12 @@ class Canonical(unittest.TestCase):
         refused = self.host.send(op="canonical-encode", data=chain)
         self.assertEqual((refused["status"], refused["message"]),
                          ("error", "cons chains are no longer accepted on the wire; send a list"), refused)
-        tail_list = chain_cons(nat(0), list_wire([nat(1)]))          # a cons onto an array is a chain too
+        tail_list = chain_cons(nat(0), listing([nat(1)]))          # a cons onto an array is a chain too
         self.assertEqual(self.host.send(op="canonical-encode", data=tail_list)["status"], "error")
         improper = chain_cons(nat(0), nat(1))                          # not a list: still an ordinary variant
         self.assertNotEqual(self.host.send(op="canonical-encode", data=improper).get("status"), "error")
         items = [nat(i) for i in range(5000)]
-        got = self.encode(data=list_wire(items))
+        got = self.encode(data=listing(items))
         self.assertEqual(got["status"], "encoded", got)
         back = self.host.send(op="canonical-decode", hex=got["hex"])
         self.assertEqual(len(back["data"]["items"]), 5000)
@@ -192,7 +159,7 @@ class Canonical(unittest.TestCase):
         def nest(levels):
             d = nat(1)
             for _ in range(levels):
-                d = list_wire([d])
+                d = listing([d])
             return d
         self.assertEqual(self.encode(data=nest(200))["status"], "encoded")
         r = self.host.send(op="canonical-decode", hex=self.encode(data=nest(200))["hex"])

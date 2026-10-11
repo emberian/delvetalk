@@ -14,9 +14,8 @@ import glob
 import os
 import unittest
 
-from tests.test_chain import field
 from tests.test_reflection import PACKAGE, Reflection, source_seed
-from tests.wire import cbor, cbor_head, cid_of
+from tests.wire import cbor, cbor_head, cid_of, field
 
 
 def read_cbor(data, i=0):

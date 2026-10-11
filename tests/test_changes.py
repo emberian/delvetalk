@@ -19,9 +19,9 @@ import unittest
 from tests.host import whole
 
 from tests.test_reflection import Reflection
-from tests.test_turn_world import label, nat, record
 from tests.test_world_object import extended_library
-from tests.test_turn_world import declared
+from tests.wire import label, nat, record
+from tests.bend import declared
 
 EXTRA = ""  # world/lib/World.obend declares subscribe, unsubscribe and Subscribed itself (objects6)
 

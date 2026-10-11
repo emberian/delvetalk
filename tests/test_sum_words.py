@@ -14,11 +14,9 @@ reaches the object as text.
 import unittest
 
 from tests.test_reflection import Reflection, POLICY
-from tests.test_turn_world import label, record, declared
+from tests.wire import label, record, variant
+from tests.bend import declared
 
-
-def variant(name, payload):
-    return {"tag": "variant", "label": name, "payload": payload}
 
 GARDEN = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi

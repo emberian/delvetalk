@@ -13,10 +13,10 @@ import unittest
 
 from tests.host import as_owner
 
-from tests.test_replay import rows
-from tests.test_chain import Chain, boolean, garden_seed, nil, reference, town_kinds
-from tests.test_objects import check, closure, compile_job
-from tests.test_turn_world import label, record, declared
+from tests.test_chain import Chain, garden_seed, town_kinds
+from tests.test_objects import check, compile_job
+from tests.wire import boolean, label, nil, record, reference, rows
+from tests.bend import closure, declared
 
 PROBE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -53,13 +53,7 @@ def context(card="garden-1"):
 
 
 def run(entry, *arguments, limits=None):
-    modules = []
-    seen = set()
-    for m in closure("Policy"):
-        if m["name"] not in seen:
-            seen.add(m["name"])
-            modules.append(m)
-    modules.append({"name": "Probe", "source": PROBE})
+    modules = closure("Policy") + [{"name": "Probe", "source": PROBE}]
     compiled = compile_job(modules, entry)
     assert compiled["status"] == "compiled", compiled
     request = {"op": "run", "artifact": compiled["artifact"], "arguments": list(arguments)}

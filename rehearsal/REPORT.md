@@ -1466,5 +1466,5 @@ deadline. Owner: transport.
     python3 rehearsal/fixtures.py ~/claude_state/delvetalk/watch/archive/captures/*.json <thread2.json>
 
 `rehearsal/out/` (gitignored) receives `results.json` (every count, draft, error, card and probe),
-`summary.md` (the measured sections above), `programs.log` and `hostd.stderr`. The remote run
+`summary.md` (the measured sections above), `programs.log` and `serve.log`. The remote run
 takes about 35 s and 11 MB.

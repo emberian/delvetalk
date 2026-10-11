@@ -1,5 +1,5 @@
-"""The theme, without a browser: both palettes pass WCAG AA on every text-on-surface pair, the site carries the front's
-palette, every kind the brief names has its own botanical mark, a receipt's fate is a word and an icon in the markup (never
+"""The theme, without a browser: both palettes pass WCAG AA on every text-on-surface pair, the site loads the front's
+stylesheet itself (site/front.css links it), every kind the brief names has its own botanical mark, a receipt's fate is a word and an icon in the markup (never
 colour alone), doors are visibly doors at rest and ringed on focus, and spells are set in the monospace."""
 import re
 import unittest
@@ -56,6 +56,12 @@ class Theme(unittest.TestCase):
             self.assertEqual([fg for fg in TEXT if contrast(p[fg], p['ruleline']) < 4.5], [], name)  # where text crosses a ruled line
             self.assertLess(contrast(p['ruleline'], p['paper']), 1.5, f'{name}: a ruled line is faint')
         self.assertEqual(failures, [])
+
+    def test_the_site_loads_the_front_stylesheet_and_keeps_no_palette_of_its_own(self):
+        self.assertEqual((ROOT / 'site' / 'front.css').resolve(), FRONT)
+        self.assertNotIn('--paper', SITE.read_text())
+        for page in (ROOT / 'site').glob('*.html'):
+            self.assertIn('<link rel="stylesheet" href="front.css">\n<link rel="stylesheet" href="style.css">', page.read_text(), page.name)
 
     def test_a_receipts_fate_is_a_word_and_an_icon_never_colour_alone(self):
         self.assertEqual(len(set(pages.STAMPS.values())), len(pages.STAMPS))

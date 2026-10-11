@@ -10,13 +10,12 @@ import os
 import unittest
 
 from deploy import genesis
-from tests.test_chain import Chain, field, reference, town_kinds
-from tests.test_places import keyed, listing, make_place
-from tests.test_turn_world import relation
-from tests.test_objects import closure
-from tests.test_turn_world import label, nat, record
+from tests.host import ROOT
+from tests.test_chain import Chain, town_kinds
+from tests.test_places import keyed, make_place
+from tests.wire import field, label, listing, nat, record, reference, relation
+from tests.bend import closure
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 KIM, GLM = "did:plc:kimik3", "did:plc:glm"
 
 

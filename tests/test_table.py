@@ -13,10 +13,11 @@ import json
 import os
 import unittest
 
-from tests.test_chain import Chain, reference
+from tests.test_chain import Chain
 from tests.test_objects import check, compile_job
-from tests.test_replay import get
-from tests.test_turn_world import ROOT, closure, label, nat, record
+from tests.wire import field, label, nat, record, reference
+from tests.bend import closure
+from tests.host import ROOT
 
 NORTH, SOUTH = "did:plc:glm", "did:plc:kimik3"
 OPENING = json.load(open(os.path.join(ROOT, "tests", "fixtures", "automatafl", "original-opening.json")))
@@ -79,7 +80,7 @@ class Table(Chain):
         self.assertEqual(waiting["status"], "suspended", waiting)
         sealed = self.seal("south", SOUTH, s1, t1, self.NONCE1)
         self.assertEqual(sealed["status"], "admitted", sealed)
-        self.assertEqual(get(self.state("north"), "opened"), {"tag": "boolean", "value": True})
+        self.assertEqual(field(self.state("north"), "opened"), {"tag": "boolean", "value": True})
         lie = self.open("south", SOUTH, s1, t1 + 1, self.NONCE1)
         self.assertEqual(self.reason(lie), "The opening does not match the seal.")
         # South opens after North sealed: the await answers at once.
@@ -89,11 +90,11 @@ class Table(Chain):
         self.assertEqual(resolved["result"]["label"], "resolved", resolved)
         print("\n  resolve turn: %s ticks" % resolved["ticksUsed"])
         expected = pure_play(int(OPENING["board"]), OPENING["automaton"], s0, t0, s1, t1)
-        game = {f["name"]: f["value"]["value"] for f in get(self.state("table"), "game")["fields"]}
+        game = {f["name"]: f["value"]["value"] for f in field(self.state("table"), "game")["fields"]}
         self.assertEqual(game, expected)
-        self.assertEqual(get(self.state("table"), "round"), nat(1))
+        self.assertEqual(field(self.state("table"), "round"), nat(1))
         for seat in ("north", "south"):
-            self.assertEqual((get(self.state(seat), "round"), get(self.state(seat), "digest")), (nat(1), label("")))
+            self.assertEqual((field(self.state(seat), "round"), field(self.state(seat), "digest")), (nat(1), label("")))
         card = self.turn("table", "receive", record(text=label(""), post=label("")), principal="did:plc:zero")["offers"][0]["text"]
         self.assertEqual(card, (
             "AUTOMATAFL, round 1: Seal, open, resolve.\n"
@@ -114,7 +115,7 @@ class Table(Chain):
         self.assertEqual(self.reason(self.turn("north", "next", principal=NORTH)), "Only the table moves the round.")
         # nextRound took the State first, so a turn naming it moved the round past `next`'s check.
         self.assertEqual(self.turn("north", "nextRound", principal=NORTH)["status"], "refused")
-        self.assertEqual(get(self.state("north"), "round"), nat(1))
+        self.assertEqual(field(self.state("north"), "round"), nat(1))
         # Nor does a turn naming the table's `north`, which would skip the finished-match check.
         self.assertEqual(self.turn("table", "north", principal=NORTH)["status"], "refused")
 
