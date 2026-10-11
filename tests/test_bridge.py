@@ -177,6 +177,16 @@ class Bridging(BridgeCase):
         self.assertEqual(self.run_bridge(), {'turns': [], 'failed': []})
         self.assertEqual(len(self.drafts()), 3)
 
+    def test_a_post_of_two_spells_is_two_turns_and_one_draft_with_both_lines(self):
+        self.make('garden-1')
+        p = mk(1, 'delvetalk garden-1 plant\ndelvetalk garden-1 plant')
+        self.observe([p])
+        self.assertEqual(self.run_bridge()['turns'], [p['uri']])
+        (d,) = self.drafts()
+        receipts = [self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': f"{p['uri']}#{n}"})['receipt'] for n in (1, 2)]
+        self.assertEqual(d['receipt']['hash'], receipts[1]['hash'])
+        self.assertEqual(d['text'], ''.join(bridge.receipt_line(r) for r in receipts))  # the lines, no cards: three fit one reply
+
     def test_crash_between_turn_and_draft_recovers_with_the_same_receipt(self):
         self.make('garden-1')
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])
@@ -565,6 +575,19 @@ class Daemon(unittest.TestCase):
             import threading
             stop = threading.Event()
             st.daemon('bridge', stop.set, stop)
+
+
+class Names(unittest.TestCase):
+    """A turn line never carries a DID to a post: a person's own cards are named by their handle."""
+
+    def test_a_persons_cards_are_named_by_handle(self):
+        did = 'did:plc:' + 'k' * 24
+        handles = {did: 'kestrel'}
+        for obj, name in (('wake/' + did, "kestrel's wake"), ('env/' + did, "kestrel's env"), (did, "kestrel's avatar"),
+                          ('garden', 'garden'), ('wake/did:plc:' + 'z' * 24, 'wake/did:plc:' + 'z' * 24)):
+            self.assertEqual(bridge.card_name(obj, handles), name)
+        receipt = {'height': 9, 'slug': 'lodif-rukuz', 'roots': [{'object': 'wake/' + did, 'version': 3}], 'outcome': {'tag': 'admitted'}}
+        self.assertEqual(bridge.turn_words(receipt, handles=handles), "admitted kestrel's wake v3, entry 9, receipt lodif-rukuz")
 
 
 if __name__ == '__main__':

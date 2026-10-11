@@ -11,6 +11,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -149,7 +150,7 @@ class Run:
         for item in listed.get('pending') or []:
             req = interpret.request(item)
             # A miss asked once more carries the post's text plus what is missing: the same post, the same careful answer.
-            uri = texts.get(item['utterance']) or max(((len(t), u) for t, u in texts.items() if t and item['utterance'].startswith(t)), default=(0, None))[1]
+            uri = texts.get(item['utterance']) or max(((len(t), u) for t, u in texts.items() if t and (item['utterance'].startswith(t) or item['utterance'] in t)), default=(0, None))[1]
             raw = (self.answers.get(uri) or {}).get('answer') or HOB_NONE
             body = {'id': 'msg_rehearsal', 'type': 'message', 'role': 'assistant', 'model': req['model'] or model.DEFAULT_MODEL,
                     'content': [{'type': 'text', 'text': raw}], 'stop_reason': 'end_turn', 'usage': {'input_tokens': 0, 'output_tokens': 0}}
@@ -592,7 +593,7 @@ def main(argv=None):
     # whatever its outcome, with the card it reached first; and which of them the model was asked about.
     reached = {}
     for e in entries:
-        intent = (e.get('identity') or {}).get('intent') or ''
+        intent = re.sub(r'#\d+$', '', (e.get('identity') or {}).get('intent') or '')  # a post of several spells: a turn each, `#n`
         if 'delivery' not in e and intent in by_uri and (e.get('outcome') or {}).get('tag') in ('admitted', 'refused', 'suspended'):
             reached.setdefault(intent, ((e.get('roots') or [{}])[0]).get('object'))
     results['reached'] = reached

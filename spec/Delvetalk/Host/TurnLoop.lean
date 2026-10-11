@@ -2614,7 +2614,7 @@ def runTurnHeard (w : World) (req : TurnRequest) : Except String (World × Json)
 /-- A direct turn; `env` and `wake` name the principal's own (`resolveCard`), refused
     `unknownObject` naming `env/<principal>` when it has none. A `receive` to a card of the message
     dialect is read as a spell first (`spellTurn`). -/
-def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
+def runOne (w : World) (req : TurnRequest) : Except String (World × Json) :=
   let asked := req.object
   let req := { req with object := resolveCard req.principal req.object }
   -- `me` before the speaker has an avatar: refused by name, saying what makes one.
@@ -2628,6 +2628,45 @@ def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   | some (till, reading) =>
     if till > w.clock then quietRefusal w req till reading else runTurnHeard w req
   | none => runTurnHeard w req
+
+/-- A post with several spells at a line's start: each its own turn, as if posted alone (identity the post's
+    plus `#1` .. `#3`, the post's text that spell, judged alone with its own receipt); a fourth and later are
+    one refusal, `badSpell` clause `tooManySpells` (`#4`). The reply lists the turns in order. -/
+def runSpells (w : World) (req : TurnRequest) (spells : List String) : Except String (World × Json) := do
+  let mut w := w
+  let mut turns : Array Json := #[]
+  for (spell, i) in (spells.take Limits.spellsPerReply).zipIdx do
+    let argument := match req.argument with
+      | .record fs => Data.record (fs.map fun (k, v) => if k == "text" then (k, .label spell) else (k, v))
+      | other => other
+    let one := { req with intent := s!"{req.intent}#{i + 1}", argument,
+                          digest := Journal.bodyHash (Json.arr #[toJson req.digest, toJson (i + 1)]) }
+    let (w', r) ← runOne w one
+    w := w'
+    turns := turns.push r
+  if spells.length > Limits.spellsPerReply then
+    let n := Limits.spellsPerReply + 1
+    let card := req.object
+    let req := { req with intent := s!"{req.intent}#{n}", digest := Journal.bodyHash (Json.arr #[toJson req.digest, toJson n]) }
+    let (w', r) ← if let some r := retainedTurn w req then pure (w, r) else
+      refuseSpell w req card "tooManySpells"
+        s!"A post casts at most {Limits.spellsPerReply} spells; the {spells.length - Limits.spellsPerReply} after them are not cast. Post them again."
+        ""
+    w := w'
+    turns := turns.push r
+  return (w, Json.mkObj [("status", toJson "spells"), ("turns", Json.arr turns)])
+
+/-- A direct turn; a post with several spells at a line's start is one turn a spell (`runSpells`). -/
+def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
+  let spells := Spell.segments (heardText req.method req.argument)
+  let several := req.method == "receive" && spells.length > 1 && (Spell.quotes (heardText req.method req.argument)).isNone
+  -- One identity, one request: a post's identity is bound by its one turn, or by its spells' turns (`#1`), so the
+  -- other kind of request under it is `duplicateIdentity`.
+  let other := w.receipts[identityKey req.principal (if several then req.intent else s!"{req.intent}#1")]?
+  match other.map w.entries.getD with
+  | some entry => if isTransient entry then (if several then runSpells w req spells else runOne w req)
+    else .ok (w, duplicate req.principal req.intent entry)
+  | none => if several then runSpells w req spells else runOne w req
 
 /-- `world-arrive` (`arriveOp`), then, when this arrival made the newcomer's Wake and its package
     declares `arrived` (in `methods()` or as a form), the Wake's `arrived {}` as an ordinary turn of the
@@ -3372,22 +3411,6 @@ def spellVerdict (offered : List Spell.Form) (text : String) : Option (Except (L
     let form ← offered.find? fun f => f.action == first.name || f.fields.any (·.name == first.name)
     some (fitted form ((Spell.bare text).filter fun b => b.name == form.action || form.fields.any (·.name == b.name)))
 
-/-- The spells of a model's text, one per line that starts `delvetalk` (at the margin, so a quoted or
-    indented line is none), each with the field lines after it up to the next; prose before the first
-    is dropped. -/
-def spellSegments (text : String) : List String :=
-  let lines := text.splitOn "\n"
-  let (segments, current) := lines.foldl (fun (acc : List String × Option (List String)) line =>
-    let (done, open_) := acc
-    if line.startsWith "delvetalk " || line.startsWith "delvetalk\t" || line == "delvetalk" then
-      (match open_ with | some ls => done ++ ["\n".intercalate ls] | none => done, some [line])
-    else match open_ with
-      | some ls => (done, some (ls ++ [line]))
-      | none => (done, none)) ([], none)
-  match current with
-  | some ls => segments ++ ["\n".intercalate ls]
-  | none => segments
-
 /-- What a reply says to the suspended object. A JSON reply `{method, argument}` is a proposal
     (`proposalVerdict`: a method of the object, one of the offered actions, with an argument that
     conforms to the method's input type and fits the object's response type) or `unclear` with the
@@ -3436,7 +3459,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
           return (w, saidVerdict suspended.bounds responseType (said.drop 4).toString)
         -- Several spells (MENU §2.2): each fitted and checked as one would be, answered in order as
         -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
-        let segments := spellSegments text
+        let segments := Spell.segments text
         if segments.length > 1 then
           let offered := forms.filterMap Spell.Form.ofData
           let mut w := w

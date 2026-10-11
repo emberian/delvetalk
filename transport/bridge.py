@@ -60,20 +60,30 @@ def turn_root(receipt, addressed=None):
     return next((w for w in writes if w.get('object') == name), next((r for r in roots if r.get('object') == name), (writes or roots)[0]))
 
 
-def turn_words(receipt, addressed=None):
+def card_name(object_, handles=None):
+    """How a line names a card: a person's own cards by their handle (`kestrel's wake`, `kestrel's env`, `kestrel's avatar`,
+    the avatar's id being the DID), a DID never reaching a post; any other card by its id."""
+    handles = handles or {}
+    for prefix in ('wake/', 'env/'):
+        if object_.startswith(prefix) and object_[len(prefix):] in handles:
+            return f"{handles[object_[len(prefix):]]}'s {prefix[:-1]}"
+    return f"{handles[object_]}'s avatar" if object_ in handles else object_
+
+
+def turn_words(receipt, addressed=None, handles=None):
     """`admitted garden v1, entry 26, receipt lodif-rukuz`: VOICE's turn line, the same in the JSON `line`, the play
-    page, the text view and a draft, naming the card the words were addressed to."""
+    page, the text view and a draft, naming the card the words were addressed to (`card_name`)."""
     root, tag = turn_root(receipt, addressed), (receipt.get('outcome') or {}).get('tag') or 'admitted'
-    what = f" {root['object']}" + (f" v{root['version']}" if root.get('version') is not None else '') if root.get('object') else ''
+    what = f" {card_name(root['object'], handles)}" + (f" v{root['version']}" if root.get('version') is not None else '') if root.get('object') else ''
     return f"{tag}{what}, entry {receipt.get('height')}" + (f", receipt {receipt['slug']}" if receipt.get('slug') else '')
 
 
-def receipt_line(receipt, origin=None, addressed=None):
+def receipt_line(receipt, origin=None, addressed=None, handles=None):
     """The turn line with its stamp, and with a reachable origin the object's short link on the next line."""
     from transport.pages import stamp
     root = turn_root(receipt, addressed)
     link = cite(root['object'], root.get('version'), origin)[1] if root.get('object') else ''
-    return f"{stamp((receipt.get('outcome') or {}).get('tag') or 'admitted', word=False)} {turn_words(receipt, addressed)}{link}\n"
+    return f"{stamp((receipt.get('outcome') or {}).get('tag') or 'admitted', word=False)} {turn_words(receipt, addressed, handles)}{link}\n"
 
 
 def refusal_line(outcome, fallback_class=None):
@@ -85,7 +95,17 @@ def refusal_line(outcome, fallback_class=None):
     return f'{head}: {tail}' if tail else head
 
 
-def draft_text(reply, origin=None, addressed=None):
+def spell_line(reply, origin=None, handles=None):
+    """One spell's line in a reply to a post of several (a turn each): its receipt line, or its refusal and receipt;
+    no card and no usage, so three fit one reply."""
+    receipt = reply['receipt']
+    outcome = receipt.get('outcome') or {}
+    if outcome.get('tag') == 'refused':
+        return refusal_line(outcome, reply.get('class')) + (f"\nreceipt {receipt['slug']}" if receipt.get('slug') else '') + '\n'
+    return receipt_line(receipt, origin, None, handles)
+
+
+def draft_text(reply, origin=None, addressed=None, handles=None):
     """The only text a draft carries. A refusal is drafted when the host gives it a `public` projection (whether to say it
     is the host's fact; the post's wording is never read for it): the turn line, the host's hint when it gives one, and the
     receipt's name; no state, hash or CID. A usage answer is the host's text."""
@@ -101,9 +121,9 @@ def draft_text(reply, origin=None, addressed=None):
         return '\n'.join(lines) + '\n'
     offers = [o['text'] for o in reply.get('offers') or []]
     if offers:  # every reply ends with its receipt's spoken name
-        return '\n'.join(offers).rstrip('\n') + '\n' + receipt_line(receipt, origin, addressed)
+        return '\n'.join(offers).rstrip('\n') + '\n' + receipt_line(receipt, origin, addressed, handles)
     if receipt.get('offers'):
-        return 'reply card offered but not retained by the host; ' + receipt_line(receipt, origin, addressed)
+        return 'reply card offered but not retained by the host; ' + receipt_line(receipt, origin, addressed, handles)
     return ''  # no offer, no draft
 
 
@@ -129,7 +149,7 @@ def offer_drafts(st, host):
     post). One draft per (addressee, identity), so a retry never drafts twice; no offer, no draft. The draft ends
     with the receipt of the author's turn on that post, as the host names it (`world-receipt`)."""
     waiting = [json.loads(p.read_text()) for p in sorted(st.awaiting.glob('*.json'))]
-    drafted = []
+    drafted, handles = [], {o['author']['did']: o['author']['handle'] for o in all_observations(st)} if waiting else {}
     for principal in dict.fromkeys(w['principal'] for w in waiting):
         mine = {(w['principal'], w['uri']): w for w in waiting if w['principal'] == principal}
         after, grouped = min(w['height'] for w in mine.values()) - 1, {}
@@ -150,7 +170,7 @@ def offer_drafts(st, host):
                 continue
             w = mine[(principal, uri)]
             rc = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri}).get('receipt')
-            text = '\n'.join(o['text'] for o in offers).rstrip('\n') + ('\n' + receipt_line(rc, st.config.origin, w.get('object')) if rc else '')
+            text = '\n'.join(o['text'] for o in offers).rstrip('\n') + ('\n' + receipt_line(rc, st.config.origin, w.get('object'), handles) if rc else '')
             st.write(st.outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
@@ -380,6 +400,18 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if how.get('reach'):
             request['reach'] = how['reach']  # what the bridge saw: mention, door or fields (HOST-HANDOFF 118)
         reply = host.send(request)
+        if reply.get('status') == 'spells':  # several spells at a line's start: a turn each, one reply carrying every line
+            turns = reply.get('turns') or []
+            if not turns or any('receipt' not in t for t in turns):
+                failed.append({'uri': obs['uri'], 'message': next((t.get('message') for t in turns if 'receipt' not in t), 'no turns')})
+                continue
+            text = ''.join(spell_line(t, origin, handles) for t in turns)
+            st.write(st.outbox / f"{turns[-1]['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
+                'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
+                'object': turn_root(turns[0]['receipt']).get('object') or obj, 'slot': slot_arg(slot),
+                'receipt': turns[-1]['receipt'], 'posted': False, 'text': text})
+            done.append(obs['uri'])
+            continue
         if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
             st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
@@ -400,7 +432,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot_arg(slot),
-            'receipt': reply['receipt'], 'posted': False, 'text': draft_text(reply, origin, obj)})  # text '': journaled, hidden from outbox
+            'receipt': reply['receipt'], 'posted': False, 'text': draft_text(reply, origin, obj, handles)})  # text '': journaled, hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot), 'height': reply['receipt']['height']})
         done.append(obs['uri'])

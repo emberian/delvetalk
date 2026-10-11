@@ -344,6 +344,22 @@ def quotes (text : String) : Option String := do
   guard (lines.any fun l => isSpellAt (l.trimAsciiStart.toString.toList) 0)
   return s!"This quotes a card ({(header.trimAscii.toString.take 40).toString}): its spells are examples, so none is cast. Write the spell alone, at the start of a line."
 
+/-- The spells of a text, one per line that starts `delvetalk` at the margin (an indented line is
+    none), each with the lines after it up to the next; prose before the first is dropped. A post's
+    several spells (`runSpells`) and a model's (`interpretVerdict`) are split here. -/
+def segments (text : String) : List String :=
+  let lines := text.splitOn "\n"
+  let (segments, current) := lines.foldl (fun (acc : List String × Option (List String)) line =>
+    let (done, open_) := acc
+    if isSpellAt line.toList 0 && (match headingAt line.toList 0 line.length with | .stands .. => true | .none => false) then
+      (match open_ with | some ls => done ++ ["\n".intercalate ls] | none => done, some [line])
+    else match open_ with
+      | some ls => (done, some (ls ++ [line]))
+      | none => (done, none)) ([], none)
+  match current with
+  | some ls => segments ++ ["\n".intercalate ls]
+  | none => segments
+
 /-- A post that is one spell block and nothing else: its non-blank lines (inside one code fence, or
     bare) are a `delvetalk` line and field lines, every one starting with the first's indent. Dedented,
     it is cast as written (a Zulip code block, a spell pasted with its indent); an indented spell among
