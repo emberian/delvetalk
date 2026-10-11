@@ -411,11 +411,32 @@ class Speak(unittest.TestCase):
         uri = json.loads((self.st.outbox / f"{came['drafted']}.json").read_text())['sent']['uri']
         self.assertEqual(self.town.send(op='world-addressee', parent=uri).get('object'), 'room/1')  # a reply to the post reaches the porch
 
-    def test_a_refused_spell_drafts_nothing_and_words_are_no_spell(self):
+    def test_a_refused_spell_drafts_nothing(self):
         came = self.hand.cast('delvetalk room/99 write / text: nobody here')
         self.assertEqual((came['outcome'], came['drafted']), ('unknownObject', None), came)
         with self.assertRaises(hand.HandError):
-            self.hand.cast('could the porch have a bell')
+            self.hand.cast('  ')
+
+    def test_words_go_to_a_card_as_direct_prose_and_hobs_answer_comes_back(self):
+        from transport import interpret
+        model = lambda req: {'status': 'replied', 'json': None, 'raw': 'delvetalk library read / page: spells', 'model': 'mock', 'usage': {}}
+        read = []  # hob reads while the hand waits: one interpreter round per wait
+        h = hand.Hand(self.st, self.town.client, TOKEN, sleep=lambda s: read.append(interpret.run(self.st, self.town.client, model)))
+        came = h.cast('what is this place?')  # no spell: to the commonplace, as the play page sends words
+        self.assertEqual((came['card'], came['outcome'], came['drafted'], came['waiting']), ('commonplace', 'suspended', None, False), came)
+        self.assertTrue(read and read[0]['settled'], read)
+        self.assertTrue(came['text'].strip(), came)  # hob's answer, through the turns the words were handed on to
+        turn = self.town.send(op='world-receipt', principal=h.owner, identity=came['intent'])['receipt']
+        self.assertEqual(turn['identity']['principal'], h.owner)
+        self.assertEqual(h.tail(1)[0]['what'], 'ask')
+        garden = h.cast('could I have a violet bell', to='garden')  # the card answers words itself
+        self.assertIn('delvetalk garden plant', garden['text'])
+        code, _, headers = h.handle('POST', '/hand/town/speak', f'dt_hand={TOKEN}', {'spell': 'and the porch?', 'to': 'garden', 'intent': 'hand:ask:web'})
+        came = urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['came'][0]
+        self.assertEqual(came, 'hand:ask:web')
+        page = h.handle('GET', '/hand/town/speak?came=' + came, f'dt_hand={TOKEN}')[1]
+        self.assertIn('Came back', page)
+        self.assertIn('delvetalk garden plant', page)
 
     def test_the_speak_page_offers_the_plan_and_a_cast_comes_back_on_it(self):
         cookie = f'dt_hand={TOKEN}'
@@ -426,8 +447,8 @@ class Speak(unittest.TestCase):
         code, _, headers = self.hand.handle('POST', '/hand/town/speak', cookie, {'spell': 'delvetalk garden plant / colour: amber / seed: a speak test',
                                                                                 'intent': 'hand:speak:test-1', 'topic': 'welcome'})
         self.assertEqual(code, 303)
-        spoken = urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['spoken'][0]
-        code, page, _ = self.hand.handle('GET', '/hand/town/speak?spoken=' + spoken, cookie)
+        came = urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['came'][0]
+        code, page, _ = self.hand.handle('GET', '/hand/town/speak?came=' + came, cookie)
         self.assertIn('Came back', page)
         self.assertIn('garden/bell/', page)
 

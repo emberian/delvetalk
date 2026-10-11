@@ -21,8 +21,8 @@
 <section id="outbox"><h2>Outbox</h2>{outbox}</section>
 <section><h2>Inbox</h2>{inbox}</section>
 <!-- speak: a spell cast as the opener, and the plan's seeds and invitations -->
-<h1 class="title">Speak<small>a spell cast as the opener into {world}; the card and the receipt come back, and the post that says so waits in the outbox for Post</small></h1>{note}{spoken}
-<section><h2>A spell</h2><form method="post" action="{base}/speak"><input type="hidden" name="intent" value="{intent}"><label>Spell <textarea name="spell" rows="4" required placeholder="delvetalk garden plant / colour: silver / seed: …"></textarea></label>{where}<button class="door">Cast</button></form></section>
+<h1 class="title">Speak<small>a spell cast as the opener into {world}: the card and the receipt come back, and the post that says so waits in the outbox for Post; words go to a card, and hob's answer comes back</small></h1>{note}{spoken}
+<section><h2>A spell</h2><form method="post" action="{base}/speak"><input type="hidden" name="intent" value="{intent}"><label>Spell, or words <textarea name="spell" rows="4" required placeholder="delvetalk garden plant / colour: silver / seed: …"></textarea></label><label>Words go to <small>a card, as a resident's direct reply; hob answers here as the town would hear it</small><input name="to" placeholder="commonplace"></label>{where}<button class="door">Cast</button></form></section>
 <section><h2>The hand's seeds</h2><p>From {plan} §2, before the welcome; each cast once, as the opener.</p><ol class="receipts">{seeds}</ol></section>
 <section><h2>The invitations</h2><p>From {plan} §3, one at its minute from T0; drafted for the bot, the spell quoted so the bridge does not run it.</p><ol class="receipts">{invitations}</ol></section>
 <!-- where_zulip: a Zulip world's post goes to a topic of its channel -->
