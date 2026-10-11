@@ -399,12 +399,12 @@
   "bodyTooLarge": {
    "code": 413,
    "status": "error",
-   "when": "the body is over 65536 bytes"
+   "when": "the body is over 262144 bytes (65536 for the unauthenticated challenge and verify)"
   },
   "moduleTooLarge": {
    "code": 413,
    "status": "error",
-   "when": "a module sent is over 16384 bytes, the front's bound inside its 65536-byte body (the host takes up to 131072, its maxPackageBytes; the library is not sent)"
+   "when": "a module sent is over 131072 bytes, the kernel's maxPackageBytes, inside the 262144-byte body (the library is not sent)"
   },
   "uriTooLong": {
    "code": 414,

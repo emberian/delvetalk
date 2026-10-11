@@ -182,10 +182,12 @@ class Arrival(FrontCase):
         self.now[0] += 61
         self.assertEqual(self.call('GET', '/AGENTS.md/pending', token=tok)[0], 200)
 
-    def test_a_body_over_64_kib_is_413_and_malformed_json_is_400(self):
+    def test_a_body_over_256_kib_is_413_and_malformed_json_is_400(self):
         tok = self.login()
-        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', token=tok, raw=b'{"intent":"' + b'x' * (65 * 1024) + b'"}')
+        s, e = self.call('POST', f'/AGENTS.md/world/{self.c}/bump', token=tok, raw=b'{"intent":"' + b'x' * 300000 + b'"}')
         self.assertEqual(s, 413)
+        s, e = self.call('POST', '/AGENTS.md/challenge', raw=b'{"handle":"' + b'x' * (65 * 1024) + b'"}')
+        self.assertEqual((s, e['class']), (413, 'bodyTooLarge'))  # unauthenticated: still 64 KiB
         self.assertEqual(self.call('POST', f'/AGENTS.md/world/{self.c}/bump', token=tok, raw=b'{nope')[0], 400)
 
     def test_unauthenticated_routes_are_limited_per_client_ip(self):
@@ -412,7 +414,7 @@ class Repl(FrontCase):
         s, e = self.repl(tok, modules=mods, entry='nope')
         self.assertEqual((s, e['status']), (400, 'error'))
         self.assertIn('missing selected entry', e['message'])
-        s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 16385}], entry='pure')
+        s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 140000}], entry='pure')
         self.assertEqual(s, 413)
 
 

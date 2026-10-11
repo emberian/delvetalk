@@ -30,7 +30,8 @@ from transport.repo import PUBLIC, Repo
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 STATIC = Path(__file__).resolve().parent / 'static'
-MAX_BODY, MAX_SOURCE, MAX_MODULES = 64 * 1024, 16 * 1024, 16
+MAX_BODY, MAX_SOURCE, MAX_MODULES = 256 * 1024, 128 * 1024, 16  # MAX_SOURCE: the kernel's Limits.maxPackageBytes
+OPEN_BODY = 64 * 1024  # what an unauthenticated request (the challenge, verify) may send
 WAIT_MAX, WAIT_STEP = 30, 1  # seconds an offers long poll may hold a request, and how often it re-asks the host
 RATE, OPEN_RATE, WINDOW, DELIVER_LIMIT = 32, 16, 60, 16
 SLUG = re.compile(r'(?:[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz])(?:-[bdfghjklmnprstvz][aiou][bdfghjklmnprstvz][aiou][bdfghjklmnprstvz])+')
@@ -489,7 +490,7 @@ class Handler(BaseHTTPRequestHandler):
             self.request_version = 'HTTP/1.0'
         self.fail(cls, message)
 
-    def body(self):
+    def body(self, limit=MAX_BODY):
         """-> dict, or None after replying with the refusal. JSON, or a urlencoded form."""
         try:
             n = int(self.headers.get('Content-Length') or 0)
@@ -497,7 +498,7 @@ class Handler(BaseHTTPRequestHandler):
             n = -1
         if n < 0:
             return self.fail('badRequest', 'Content-Length is not a number')
-        if n > MAX_BODY:
+        if n > limit:
             return self.fail('bodyTooLarge')
         try:
             raw = self.rfile.read(n)
@@ -776,7 +777,7 @@ class Handler(BaseHTTPRequestHandler):
         wait = self.server.limited('ip:' + self.client_ip(), OPEN_RATE)
         if wait:
             return self.fail('rateLimited', f'more than {OPEN_RATE} requests per {WINDOW} seconds from one address', headers=[('Retry-After', str(wait))])
-        data = self.body()
+        data = self.body(OPEN_BODY)
         if data is None:
             return
         auth = self.headers.get('Authorization') or ''  # the challenge answered is the requester's own when it holds its credential
