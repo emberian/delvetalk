@@ -57,7 +57,7 @@ x-service: &service
     # worlds/<world>/). The host and ops mount all of /data. A host path, not a
     # named volume, as the edge keeps /var/lib/dregg/<service>: it is what
     # deploy/backup.sh reads.
-    - ${DELVETALK_DATA:-/var/lib/delvetalk/v4}/state:/data/state
+    - ${DELVETALK_DATA:-/var/lib/delvetalk/v5}/state:/data/state
   logging:
     driver: json-file
     options: { max-size: "10m", max-file: "5" }
@@ -69,7 +69,7 @@ services:
     command: ["python3", "-m", "transport", "serve"]
     network_mode: none  # unix sockets only: the host never opens a network connection
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v4}:/data
+      - ${DELVETALK_DATA:-/var/lib/delvetalk/v5}:/data
       - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
     # Replay at a world's first op recompiles every created object (~0.2 to 1 s
     # each); a world idle ten minutes is closed and reopened by replay. The old
@@ -100,7 +100,7 @@ services:
       DELVETALK_HTTP_PORT: ${DELVETALK_HTTP_PORT:-8765}  # another port: a drill or rehearsal beside a live stack
       DELVETALK_TRUST_PROXY: "on"
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v4}/state:/data/state
+      - ${DELVETALK_DATA:-/var/lib/delvetalk/v5}/state:/data/state
       # The repositories' signing keys, <world>.key (`transport repokey`; docs/REPO.md "The key"), at the config's default path.
       - ${DELVETALK_REPO_KEYS:-/etc/delvetalk/repo}:/etc/delvetalk/repo:ro
     ports:
@@ -165,7 +165,7 @@ services:
     restart: "no"
     command: ["python3", "-m", "transport", "--help"]
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v4}:/data
+      - ${DELVETALK_DATA:-/var/lib/delvetalk/v5}:/data
       - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
       - ${DELVETALK_REPO_KEYS:-/etc/delvetalk/repo}:/etc/delvetalk/repo
 
