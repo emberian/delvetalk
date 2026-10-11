@@ -208,7 +208,7 @@ class Made(test_chain.Chain):
         # record's law to refuse (no method made it).
         early = self.say(well, "delvetalk %s enter" % well)
         self.assertEqual(self.refusal(early), ("cooldown", "One who left enters again only after the cooldown: from clock %d." % (at + 3)))
-        append = {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(GLM), at=label("intro")))}
+        append = {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(GLM), handle=label(""), at=label("intro")))}
         keep = {"tag": "variant", "label": "keep", "payload": record()}
         forged = self.host.send(op="world-propose", principal="did:plc:kimik3", identity="forged", roots=[{"object": well, "version": version}],
                                 writes=[{"object": well, "edits": [record(presence=append, vars=keep, left=keep)]}])

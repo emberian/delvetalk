@@ -340,17 +340,25 @@ class Cli(HandCase):
 class Plan(unittest.TestCase):
     """docs/PLAYTEST-2.md as the hand reads it at its start."""
 
-    def test_the_plan_gives_four_seeds_and_eight_invitations_each_with_its_spells(self):
-        p = hand.plan(Path(__file__).resolve().parent.parent / 'docs' / 'PLAYTEST-2.md')
-        self.assertEqual(len(p['seeds']), 4)
+    def test_the_plan_gives_every_seed_and_every_invitation_each_with_its_spells(self):
+        """Counted against the file's own shape (§2's numbered spells, §3's table rows), so an edit of the plan is read, never
+        broken: today four seeds and twelve invitations."""
+        import re
+        path = Path(__file__).resolve().parent.parent / 'docs' / 'PLAYTEST-2.md'
+        p, text = hand.plan(path), path.read_text()
+        two, three = hand.section(text, 2), hand.section(text, 3)
+        self.assertEqual(len(p['seeds']), len(re.findall(r'^\d+\. `delvetalk ', two, re.M)))
+        self.assertEqual([r['minute'] for r in p['invitations']], [int(m) for m in re.findall(r'^\| (\d+) \|', three, re.M)])
+        self.assertGreater(len(p['seeds']) * len(p['invitations']), 0)
         self.assertTrue(all(s.startswith('delvetalk ') for s in p['seeds']))
-        self.assertEqual(p['seeds'][1], 'delvetalk garden plant / colour: silver / seed: a lighthouse for beached verbs, as kimik3 planted it on 10-09')
-        self.assertEqual([r['minute'] for r in p['invitations']], [0, 15, 30, 45, 60, 75, 90, 105])
-        self.assertTrue(all(r['spells'] and r['answered'] for r in p['invitations']))
-        zulip = hand.invitation_text(p['invitations'][0], 'zulip')
-        self.assertTrue(zulip.startswith('@**Claude** @**Yuè月** @**Kestrel** the world is new.'), zulip)
-        self.assertIn('\n\n    delvetalk kinds make / name: <yours>', zulip)  # quoted: four spaces, so no bridge runs it
-        self.assertTrue(hand.invitation_text(p['invitations'][0], 'delve').startswith('@Claude @Yuè月 @Kestrel the world'))
+        self.assertTrue(all(r['spells'] and r['answered'] for r in p['invitations']), p['invitations'])
+        first = p['invitations'][0]
+        zulip, delve = hand.invitation_text(first, 'zulip'), hand.invitation_text(first, 'delve')
+        pinged = re.match(r'`((?:@\S+\s*)+)`', first['words'])
+        if pinged:  # the residents it pings, as each transport mentions them
+            self.assertTrue(zulip.startswith(' '.join(f'@**{n[1:]}**' for n in pinged[1].split())), zulip)
+            self.assertTrue(delve.startswith(pinged[1].strip()), delve)
+        self.assertIn('\n\n    ' + first['spells'][0], zulip)  # quoted: four spaces, so no bridge runs it
         self.assertEqual(hand.plan('/nonexistent'), {'path': '/nonexistent', 'seeds': [], 'invitations': []})
 
 
@@ -448,7 +456,8 @@ class Speak(unittest.TestCase):
         cookie = f'dt_hand={TOKEN}'
         code, page, _ = self.hand.handle('GET', '/hand/town/speak', cookie)
         self.assertEqual(code, 200)
-        for text in ("The hand's seeds", 'seed 4', 'T+105', 'answered when', 'Topic of #delvetalk', 'name="intent"'):
+        plan = self.hand.plan
+        for text in ("The hand's seeds", f"seed {len(plan['seeds'])}", f"T+{plan['invitations'][-1]['minute']}", 'answered when', 'Topic of #delvetalk', 'name="intent"'):
             self.assertIn(text, page)
         code, _, headers = self.hand.handle('POST', '/hand/town/speak', cookie, {'spell': 'delvetalk garden plant / colour: amber / seed: a speak test',
                                                                                 'intent': 'hand:speak:test-1', 'topic': 'welcome'})
@@ -483,15 +492,17 @@ class Speak(unittest.TestCase):
         self.assertNotIn('http-equiv="refresh"', self.hand.handle('GET', '/hand/town/watch?still=1', f'dt_hand={TOKEN}')[1])
 
     def test_an_invitation_is_drafted_once_with_its_spell_quoted(self):
-        got = self.hand.invite(30)
+        row = self.hand.plan['invitations'][-1]  # the plan's last: no other test drafts it
+        got = self.hand.invite(row['minute'])
         _, d = self.hand.draft(got['drafted'])
-        self.assertEqual((d['topic'], d['object'], d['speak']), ('welcome', None, {'invitation': 30}))
-        self.assertIn('\n    delvetalk garden/bell/1 rain / text: …', d['text'])
+        self.assertEqual((d['topic'], d['object'], d['speak']), ('welcome', None, {'invitation': row['minute']}))
+        for spell in row['spells']:
+            self.assertIn('\n    ' + spell, d['text'])
         with self.assertRaises(hand.HandError):
-            self.hand.invite(30)
+            self.hand.invite(row['minute'])
         with self.assertRaises(hand.HandError):
-            self.hand.invite(31)
-        self.assertEqual(next(r for r in self.hand.spoken()['invitations'] if r['minute'] == 30)['draft']['state'], 'waiting for Post')
+            self.hand.invite(row['minute'] + 1)
+        self.assertEqual(next(r for r in self.hand.spoken()['invitations'] if r['minute'] == row['minute'])['draft']['state'], 'waiting for Post')
 
 
 class Measure(unittest.TestCase):
@@ -519,11 +530,11 @@ class Measure(unittest.TestCase):
         t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 3)
         kind = lambda name, law='': f'delvetalk kinds make / name: {name} / of: record / form: text: text 1..80 / head: {name}: {{text}} / law: {law} / body:'
         for n, (who, text) in enumerate([
-                (cls.A, kind('lamp')), (cls.A, 'delvetalk kind/lamp make / text: a small light / id:'), (cls.B, 'delvetalk lamp/1 write / text: brighter'),
-                (cls.B, kind('sealed', 'law maker "only its maker writes": request.subject == new.maker')), (cls.B, 'delvetalk kind/sealed make / text: mine / id:'),
+                (cls.A, kind('lamp')), (cls.A, 'delvetalk kind/lamp make / text: a small light'), (cls.B, 'delvetalk lamp/1 write / text: brighter'),
+                (cls.B, kind('sealed', 'law maker "only its maker writes": request.subject == new.maker')), (cls.B, 'delvetalk kind/sealed make / text: mine'),
                 (cls.A, 'delvetalk sealed/1 write / text: yours?'), (cls.B, 'delvetalk sealed/1 door / label: lamp / to: lamp/1'),
-                (cls.A, 'delvetalk anthology write / text: seal: what sealed/1 keeps'), (cls.A, 'delvetalk kind/sealed make / text: hers / id:'),
-                (cls.B, 'delvetalk kind/lamp make / text: a second light / id:'), (cls.OWNER, kind('hyphae'))]):
+                (cls.A, 'delvetalk anthology write / text: seal: what sealed/1 keeps'), (cls.A, 'delvetalk kind/sealed make / text: hers'),
+                (cls.B, 'delvetalk kind/lamp make / text: a second light'), (cls.OWNER, kind('hyphae'))]):
             cast(t, who, text, f'post-{n}')
         t.send(op='world-advance', principal=CLOCK, height=cls.M0 + 130)  # the tide's hour: the opener's wake ticks it
         cls.st.interpretations.mkdir(parents=True, exist_ok=True)

@@ -97,9 +97,9 @@ def refusal(w: Why) -> Card.Refusal:
     case notAmended(n): {clause: n.clause, reading: "Its law did not take the circle: only its owner names one"}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
-# A refusal the speaker reads: its line, offered, and nothing written.
-def told(w: Why) -> Activity<Done>:
-  Card.tell(refused(w), Document.text("Not done: {refusal(w).reading}\n"))
+# A refusal, answered by name (Card.refusing), and nothing written.
+def told(w: Why, context: Abi.Context) -> Activity<Done>:
+  Card.refusing(refused(w), refusal(w), context)
 # Custody recorded, and the speaker shown the line and the card as it now stands.
 def held(context: Abi.Context, holder: Plans.Reference, location: Plans.Reference, line: String, state: State) -> Activity<Done>:
   let handle = if Plans.isNobody(holder) then "" else context.handle
@@ -111,11 +111,11 @@ def person(context: Abi.Context) -> Plans.Reference:
 # not in it, or a thing not lying there), then the holder is recorded. Only an unheld thing can
 # be acquired.
 def acquire(state: State, context: Abi.Context) -> Activity<Done>:
-  if Plans.isNobody(state.holder) == false then told(Why.alreadyHeld({by: Card.shown(state.holder.object, state.holderHandle, context)})) else lift(person(context), context, state)
+  if Plans.isNobody(state.holder) == false then told(Why.alreadyHeld({by: Card.shown(state.holder.object, state.holderHandle, context)}), context) else lift(person(context), context, state)
 def lift(by: Plans.Reference, context: Abi.Context, state: State) -> Activity<Done>:
   match world.call::<Done>({object: state.location, method: "take", argument: Plans.nothing()}):
-    case returned(r): if refusedDone(r.result) then toldBack(r.result) else carried(by, context, state)
-    case _: told(Why.placeSilent({}))
+    case returned(r): if refusedDone(r.result) then toldBack(r.result, context) else carried(by, context, state)
+    case _: told(Why.placeSilent({}), context)
 # The holder's avatar records what it now carries; hold never refuses.
 def carried(by: Plans.Reference, context: Abi.Context, state: State) -> Activity<Done>:
   match world.call::<Done>({object: by, method: "hold", argument: Plans.nothing()}):
@@ -123,15 +123,15 @@ def carried(by: Plans.Reference, context: Abi.Context, state: State) -> Activity
 # Put the thing down in a room the holder is in (at): the room must accept it. A thing lying
 # nowhere (made, or a copy) is put down by its owner, in a room that owner may furnish.
 def drop(state: State, input: {at: Plans.Reference}, context: Abi.Context) -> Activity<Done>:
-  if Plans.same(state.holder, person(context)) then setDown(person(context), input.at, context, state) else if Plans.isNobody(state.holder) && Plans.isNobody(state.location) && context.principal == state.owner then placing(input.at, context, state) else told(Why.notHolding({}))
+  if Plans.same(state.holder, person(context)) then setDown(person(context), input.at, context, state) else if Plans.isNobody(state.holder) && Plans.isNobody(state.location) && context.principal == state.owner then placing(input.at, context, state) else told(Why.notHolding({}), context)
 def placing(at: Plans.Reference, context: Abi.Context, state: State) -> Activity<Done>:
   match world.call::<Done>({object: at, method: "put", argument: Plans.nothing()}):
-    case returned(r): if refusedDone(r.result) then toldBack(r.result) else held(context, Plans.nobody(), at, "Laid in {at.object}.\n\n", state)
-    case _: told(Why.placeSilent({}))
+    case returned(r): if refusedDone(r.result) then toldBack(r.result, context) else held(context, Plans.nobody(), at, "Laid in {at.object}.\n\n", state)
+    case _: told(Why.placeSilent({}), context)
 def setDown(by: Plans.Reference, at: Plans.Reference, context: Abi.Context, state: State) -> Activity<Done>:
   match world.call::<Done>({object: at, method: "put", argument: Plans.nothing()}):
-    case returned(r): if refusedDone(r.result) then toldBack(r.result) else dropped(by, at, context, state)
-    case _: told(Why.placeSilent({}))
+    case returned(r): if refusedDone(r.result) then toldBack(r.result, context) else dropped(by, at, context, state)
+    case _: told(Why.placeSilent({}), context)
 def dropped(by: Plans.Reference, at: Plans.Reference, context: Abi.Context, state: State) -> Activity<Done>:
   match world.call::<Done>({object: by, method: "release", argument: Plans.nothing()}):
     case _: held(context, Plans.nobody(), at, "Put down in {at.object}.\n\n", state)
@@ -139,19 +139,19 @@ def dropped(by: Plans.Reference, at: Plans.Reference, context: Abi.Context, stat
 # id is the recipient's DID) until a clock time (context.clock, which world-advance moves);
 # custody does not move. One offer is open at a time.
 def offer(state: State, input: {to: String, until: Nat}, context: Abi.Context) -> Activity<Done>:
-  if Plans.same(state.holder, person(context)) == false then told(Why.notHolding({})) else offerFrom({world: context.world, object: input.to}, input.until, context, state)
+  if Plans.same(state.holder, person(context)) == false then told(Why.notHolding({}), context) else offerFrom({world: context.world, object: input.to}, input.until, context, state)
 def offerFrom(to: Plans.Reference, until: Nat, context: Abi.Context, state: State) -> Activity<Done>:
   match state.offer:
-    case open(o): told(Why.alreadyOffered({to: Card.name(o.to.object, context), until: o.until}))
-    case none(_): if until <= context.clock then told(Why.tooLate({now: context.clock})) else if to.object == "" then told(Why.noRecipient({})) else offerWritten(Offer.open({to: to, until: until}), "Offered to {Card.name(to.object, context)} until clock {natText(until)}; custody moves when they take it: delvetalk me accept / thing: {context.object}\n\n", context, state)
+    case open(o): told(Why.alreadyOffered({to: Card.name(o.to.object, context), until: o.until}), context)
+    case none(_): if until <= context.clock then told(Why.tooLate({now: context.clock}), context) else if to.object == "" then told(Why.noRecipient({}), context) else offerWritten(Offer.open({to: to, until: until}), "Offered to {Card.name(to.object, context)} until clock {natText(until)}; custody moves when they take it: delvetalk me accept / thing: {context.object}\n\n", context, state)
 def offerWritten(offer: Offer, line: String, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {offer: set offer}
   Card.tell(Done.done({}), Document.concat(Document.text(line), render(extend(state, {offer: offer}), context)))
 def withdraw(state: State, context: Abi.Context) -> Activity<Done>:
-  if Plans.same(state.holder, person(context)) == false then told(Why.notHolder({})) else withdrawing(state, context)
+  if Plans.same(state.holder, person(context)) == false then told(Why.notHolder({}), context) else withdrawing(state, context)
 def withdrawing(state: State, context: Abi.Context) -> Activity<Done>:
   match state.offer:
-    case none(_): told(Why.nothingOffered({}))
+    case none(_): told(Why.nothingOffered({}), context)
     case open(_): offerWritten(Offer.none({}), "Offer withdrawn.\n\n", context, state)
 # The offered avatar's accept calls this: the caller is the avatar the offer names and its
 # own principal is acting; before `until`, custody moves to it and the offer closes, and the
@@ -172,11 +172,14 @@ def transferred(to: Plans.Reference, context: Abi.Context) -> Activity<Done>:
 # package, its seed this state without holder and offer (lying nowhere until put down), owned
 # by whoever asked (the host fills `owner` with the creating principal).
 def copy(state: State, context: Abi.Context) -> Activity<Done>:
-  if state.copyable == false then Card.tellTo(Done.refused({clause: "notCopyable", reading: "{state.name} is not copyable"}), context.principal, Document.text("Not copied: {state.name} is not copyable; its owner, {Card.name(state.owner, context)}, decides.\n")) else copying(context, state)
+  if state.copyable == false then copyRefused({clause: "notCopyable", reading: "{state.name} is not copyable; its owner, {Card.name(state.owner, context)}, decides"}, context) else copying(context, state)
+# A copy is asked by a send (the workshop's `create`), so its refusal is told to the asker.
+def copyRefused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Done>:
+  Card.tellTo(Done.refused(refusal), context.principal, Document.text("{Card.refusalLine(refusal)}\n"))
 def copying(context: Abi.Context, state: State) -> Activity<Done>:
   match world.create({package: "Thing", seed: {name: state.name, description: state.description, holder: Plans.nobody(), location: Plans.nobody(), copyable: state.copyable}, law: "", requireAbsent: Plans.nobody()}):
     case created(c): Card.tellTo(Done.done({}), context.principal, Document.text("Copied {state.name} as {c.object.object}.\n"))
-    case refused(r): Card.tellTo(Done.refused({clause: r.clause, reading: "The world refused the copy ({r.clause})."}), context.principal, Document.text("Not copied: {r.clause}\n"))
+    case refused(r): copyRefused({clause: r.clause, reading: if r.reading == "" then "no copy of {state.name} was made" else r.reading}, context)
 # Its name, description and whether it may be copied are lenses, its keeper's (the owner's before):
 # `delvetalk <thing> set` and `name: ...`; its circle is the owner's. The law refuses anyone else's,
 # and admits whoever the keeper lent `set` to.
@@ -198,12 +201,12 @@ def circling(circle: String, context: Abi.Context, state: State) -> Activity<Don
   if circle == "" then circled(circle, context, state) else bonded(circle, context, state)
 def bonded(circle: String, context: Abi.Context, state: State) -> Activity<Done>:
   match world.viewDerived::<Bool>({object: {world: context.world, object: circle}, view: "atRest"}):
-    case derived(d): if d.value then circled(circle, context, state) else told(Why.unsettled({bond: circle}))
-    case _: told(Why.noBond({bond: circle}))
+    case derived(d): if d.value then circled(circle, context, state) else told(Why.unsettled({bond: circle}), context)
+    case _: told(Why.noBond({bond: circle}), context)
 def circled(circle: String, context: Abi.Context, state: State) -> Activity<Done>:
   match world.amend({object: {world: context.world, object: context.object}, law: lawWith(circle)}):
     case amended(_): circleWritten(circle, context, state)
-    case refused(r): told(Why.notAmended({clause: r.clause}))
+    case refused(r): told(Why.notAmended({clause: r.clause}), context)
 def circleWritten(circle: String, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {circle: set circle}
   let line = if circle == "" then "No circle now; its keeper alone sets it.\n\n" else "Its circle is {circle}: whoever signed it sets it as its keeper does.\n\n"
@@ -216,17 +219,17 @@ def keeperName(state: State, context: Abi.Context) -> String:
 # Inspiriting: an unclaimed thing takes the caster's words as what surrounds it, and the caster as
 # its keeper, once; lying in a room, the room has the line first (it refuses a thing not lying there).
 def inspirit(state: State, input: {surrounding: String}, context: Abi.Context) -> Activity<Done>:
-  if state.keeper != "" then told(Why.inspirited({by: keeperName(state, context)})) else announcing(input.surrounding, context, state)
+  if state.keeper != "" then told(Why.inspirited({by: keeperName(state, context)}), context) else announcing(input.surrounding, context, state)
 def announcing(surrounding: String, context: Abi.Context, state: State) -> Activity<Done>:
   if Plans.isNobody(state.holder) == false || Plans.isNobody(state.location) then inspirited(surrounding, context, state) else announced(surrounding, context, state)
 def announced(surrounding: String, context: Abi.Context, state: State) -> Activity<Done>:
   match world.call::<Done>({object: state.location, method: "inspirited", argument: {line: "{state.name}, inspirited by {Card.name(context.principal, context)}: {surrounding}"}}):
-    case returned(r): if refusedDone(r.result) then toldBack(r.result) else inspirited(surrounding, context, state)
-    case _: told(Why.placeSilent({}))
-# A refusal another object answered (a room's), told as this thing's.
-def toldBack(done: Done) -> Activity<Done>:
+    case returned(r): if refusedDone(r.result) then toldBack(r.result, context) else inspirited(surrounding, context, state)
+    case _: told(Why.placeSilent({}), context)
+# A refusal another object answered (a room's), answered as this thing's.
+def toldBack(done: Done, context: Abi.Context) -> Activity<Done>:
   match done:
-    case refused(r): Card.tell(done, Document.text("Not done: {r.reading}\n"))
+    case refused(r): Card.refusing(done, r, context)
     case _: done
 def refusedDone(done: Done) -> Bool:
   match done:

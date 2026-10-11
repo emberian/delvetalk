@@ -11,6 +11,7 @@ against the offered forms (the garden's plant) before resuming the commonplace's
 """
 import unittest
 
+from deploy import genesis
 from tests.host import as_owner
 
 from tests.test_chain import Chain, town_garden
@@ -67,7 +68,7 @@ HOB_ANSWERS = (
     "- the spell, up to three one after another; every value from their words, never invented, a choice never widened;\n"
     "- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n"
     "- card when they ask something the card already shows (a count, a rule, who is here);\n"
-    "- say: <answer> for a question about what a card is or does: answer in at most three sentences from the card, its forms and the library pages given, then the one spell that would act on it;\n"
+    "- say: <answer> for a question about what a card is or does: at most two sentences, from the card, its forms and the pages given;\n"
     "- none when the words ask nothing of this card: talk among participants, a report, a note.\n")
 SPELL = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
 
@@ -242,7 +243,7 @@ class PolicyObject(Chain):
         self.policy()
         self.garden()
         typed = self.say("delvetalk garden plant\nseed: a fern")
-        self.assertIn("I still need: colour.", typed["offers"][0]["text"])
+        self.assertIn("Almost. Still needs colour.", typed["offers"][0]["text"])
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_the_gardens_prose_is_handed_on_and_read_once_by_hob_against_the_gardens_forms(self):
@@ -355,6 +356,24 @@ class PolicyObject(Chain):
         # What the user turn carries is the utterance alone; no Held or Misfit line for a plain reply.
         self.assertNotIn("Could we plant", system)
         self.assertEqual((item["utterance"], item["held"], item["misfit"]), ("Could we plant a silver fern that remembers?", "", ""))
+
+    def test_the_workshops_make_asks_for_a_package_with_no_card_and_no_spell_in_the_prompt(self):
+        """Playtest 2's D3: the dry run's `workshop make / name: lamp / description: a lamp anyone lights` was answered
+        with the workshop's own spell copied from its card. The drafting prompt holds no card and no spell, shows one
+        whole package (the library's `object` page's), and asks for one ```obend block alone."""
+        self.policy()
+        self.make("workshop", closure("Workshop"), record(title=label("Workshop"), policy=record(world=label(""), object=label("policy"))))
+        asked = self.turn("workshop", "make", record(name=label("lamp"), description=label("a lamp anyone lights")), principal="glm")
+        self.assertEqual(asked["status"], "suspended", asked)
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        system = item["policy"]["system"]
+        self.assertNotIn("delvetalk", system)
+        self.assertNotIn("✾ WORKSHOP", system)
+        package = "".join(line + "\n" for line in genesis.page_body("object").splitlines()[1:] if not line.startswith(("METHODS", "Check:", "Next:")))
+        self.assertIn("```obend\n" + package + "```\n", system)
+        self.assertTrue(system.endswith("Answer with one ```obend block holding the package, and nothing else.\n"), system)
+        self.assertEqual(item["utterance"], "Write the Bend for a thing called lamp: a lamp anyone lights")
+        self.assertEqual([(o["card"], o["action"]) for o in item["offers"]], [("workshop", "check")])
 
     def test_a_plain_spell_reply_is_fitted_to_a_proposal_and_the_garden_grows_the_bell(self):
         self.policy()

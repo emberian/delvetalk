@@ -28,7 +28,8 @@ record State:
 law owner "only the owner shelves a page; anyone reads": request.subject == new.owner or (request.kind == 0 and unchanged(owner) and unchanged(pages))
 def initial() -> State:
   {owner: "", ownerHandle: "", pages: Relations.empty()}
-# 32 pages of at most 1,400 characters: about 48 KB.
+# 32 pages of at most 1,266 characters (what a reply leaves after the library's receipt line,
+# Card.limit): about 44 KB.
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "pages", key: Text.words("name"), limit: 32n})
 form read:
@@ -39,7 +40,7 @@ form shelve:
   name: text 1..32
   kind: Kind
   title: text 1..80
-  body: text 1..1400
+  body: text 1..1266
 def ordered(state: State) -> Lists.List<Page>:
   Relations.order(state.pages, fn(p: Page) -> Nat: p.place)
 def isWalk(page: Page) -> Bool:
@@ -56,11 +57,15 @@ def found(state: State, said: String) -> Lists.Maybe<Page>:
 def read(state: State, input: {page: String}, context: Abi.Context) -> Activity<Card.Replied>:
   match found(state, input.page):
     case some(p): Card.tell(Card.Replied.done({action: "read"}), Document.text(p.value.body))
-    case none(_): Card.tell(Card.Replied.refused({clause: "noPage", reading: "No page called {input.page}"}), Document.concat(Document.text(missLine(state, input.page)), render(state, context)))
+    case none(_): refused({clause: "noPage", reading: "No page called {input.page}. {shelfLine(state)}"}, context)
 def names(pages: Lists.List<Page>) -> String:
   textJoin(Lists.map(pages, fn(p: Page) -> String: p.name), " ")
-def missLine(state: State, said: String) -> String:
-  "hob: no page called {said}. Pages: {names(Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false))}; walks: {names(Lists.filter(ordered(state), isWalk))}.\n\n"
+def shelfLine(state: State) -> String:
+  let walks = Lists.filter(ordered(state), isWalk)
+  let walked = if Lists.length(walks) == 0n then "" else "; walks: {names(walks)}"
+  "Pages: {names(Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false))}{walked}."
+def refused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.refusing(Card.Replied.refused(refusal), refusal, context)
 # A card's law as the host has it (`inspect` without the source): each clause with its reading,
 # then its expression; a clause `under "<object>"` is followed to that object's `law` (a made
 # thing's kind), whose clauses come after, their expressions dropped when the whole would pass
@@ -68,7 +73,7 @@ def missLine(state: State, said: String) -> String:
 def laws(state: State, input: {card: String}, context: Abi.Context) -> Activity<Card.Replied>:
   match world.inspect({object: {world: context.world, object: input.card}, source: false}):
     case inspected(i): citing(input.card, i.laws, Lists.find(i.laws, fn(r: World.LawRow) -> Bool: Text.starts(r.clause, "under \"")), context)
-    case _: Card.tell(Card.Replied.refused({clause: "noCard", reading: "No card {input.card} that you may see"}), Document.text("Not done: No card {input.card} that you may see; the commonplace lists the doors.\n"))
+    case _: refused({clause: "noCard", reading: "No card {input.card} that you may see; the commonplace lists the doors"}, context)
 def citing(card: String, rows: Lists.List<World.LawRow>, under: Lists.Maybe<World.LawRow>, context: Abi.Context) -> Activity<Card.Replied>:
   match under:
     case none(_): lawTold(card, rows, "", "", context)
@@ -106,7 +111,7 @@ def readRow(name: String, after: String) -> World.LawRow:
   {name: name, clause: Text.trimStart(textDrop(Text.trimStart(textDrop(after, close + 1n)), 1n)), reading: textTake(after, close)}
 # Only the owner shelves: a page keeps its place when shelved again.
 def shelve(state: State, input: {name: String, kind: Kind, title: String, body: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  if context.principal != state.owner then Card.tell(Card.Replied.refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page"}), Document.text("Not done: Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page\n")) else shelved(extend(input, {place: placeOf(input.name, state)}))
+  if context.principal != state.owner then refused({clause: "notOwner", reading: "Only {Card.shown(state.owner, state.ownerHandle, context)} shelves a page"}, context) else shelved(extend(input, {place: placeOf(input.name, state)}))
 def placeOf(name: String, state: State) -> Nat:
   match Relations.lookup(state.pages, {name: name}):
     case some(p): p.value.place

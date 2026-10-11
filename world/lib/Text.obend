@@ -27,6 +27,8 @@ def lowerChar(c: String) -> String:
   if at == 26n then c else textTake(textDrop("abcdefghijklmnopqrstuvwxyz", at), 1n)
 def starts(text: String, prefix: String) -> Bool:
   textTake(text, textLength(prefix)) == prefix
+def ends(text: String, suffix: String) -> Bool:
+  textLength(text) >= textLength(suffix) && textDrop(text, textLength(text) - textLength(suffix)) == suffix
 # Where `needle` first stands in `text` (its length when nowhere, and for an empty needle).
 def indexOf(text: String, needle: String) -> Nat:
   indexFrom(text, needle, 0n)

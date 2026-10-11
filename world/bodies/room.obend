@@ -120,19 +120,19 @@ def effectOn(effect: Scenes.Effect, rest: Lists.List<Scenes.Effect>, vars: Lists
   match found:
     case some(v): effects(rest, Lists.map(vars, fn(w: Var) -> Var: if w.name == effect.key then {name: w.name, value: Scenes.applied(effect, w.value)} else w), Lists.append(edits, Plans.Entries.amendItem({item: v.value, change: {name: effect.key, value: Scenes.applied(effect, v.value.value)}})))
     case none(_): if Lists.length(vars) >= 16n then Effects.full({}) else effects(rest, Lists.append(vars, {name: effect.key, value: Scenes.applied(effect, "")}), Lists.append(edits, Plans.Entries.append({item: {name: effect.key, value: Scenes.applied(effect, "")}})))
-# Performs a verdict: a refusal writes nothing and shows the reader the room with its clause;
+# Performs a verdict: a refusal writes nothing and is answered by its clause (Card.refusing);
 # otherwise the writes, in order, and the reader is shown the room as they leave it.
 def done(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Done>:
   match verdict:
-    case no(n): Card.answerRefused(n, context, forms(), Super.render(state, context), fn(r: Card.Replied) -> Done: Done.refused(n))
-    case enter(e): entering(e.at, extend(state, {presence: Relations.insert(state.presence, {who: context.principal, at: e.at}, Rows.presenceKey)}), context)
-    case move(m): moving(m.me, m.choice, m.vars, extend(state, {presence: Relations.upsert(state.presence, {who: m.me.who, at: m.choice.to}, Rows.presenceKey), vars: m.after}), context)
+    case no(n): roomRefused(n, context)
+    case enter(e): entering(e.at, extend(state, {presence: Relations.insert(state.presence, {who: context.principal, handle: context.handle, at: e.at}, Rows.presenceKey)}), context)
+    case move(m): moving(m.me, m.choice, m.vars, extend(state, {presence: Relations.upsert(state.presence, {who: m.me.who, handle: m.me.handle, at: m.choice.to}, Rows.presenceKey), vars: m.after}), context)
     case leave(l): departing(l.me, l.vars, extend(state, {presence: Relations.retract(state.presence, {who: l.me.who}, Rows.presenceKey), vars: l.after}), context, state)
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: insert {who: context.principal, at: at}}
+  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}}
   Card.tell(Done.entered({at: at}), Super.render(after, context))
 def moving(me: Presence, c: Choice, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: upsert {who: me.who, at: c.to}}
+  let written(_) = write {presence: upsert {who: me.who, handle: me.handle, at: c.to}}
   varied(vars, Done.moved({to: c.to}), after, context)
 # The variables' edits in order, then the reader is shown the room as the turn leaves it.
 def varied(vars: Lists.List<Plans.Entries<Var, Var>>, result: Done, after: State, context: Abi.Context) -> Activity<Done>:
@@ -188,20 +188,22 @@ def leave(state: State, context: Abi.Context) -> Activity<Done>:
 # Talk reaches those in the room (in key order, at most Super.presenceMax()) under the speaker's
 # handle; only someone here talks.
 def say(state: State, input: SayInput, context: Abi.Context) -> Activity<Done>:
-  if isHere(context, state) then spoken(Relations.rows(state.presence), "{speaker(context)}: {input.line}\n") else hushed("say")
+  if isHere(context, state) then spoken(Relations.rows(state.presence), "{speaker(context)}: {input.line}\n") else hushed("say", context)
 def emote(state: State, input: EmoteInput, context: Abi.Context) -> Activity<Done>:
-  if isHere(context, state) then spoken(Relations.rows(state.presence), "* {speaker(context)} {input.line}\n") else hushed("emote")
+  if isHere(context, state) then spoken(Relations.rows(state.presence), "* {speaker(context)} {input.line}\n") else hushed("emote", context)
 def whisper(state: State, input: WhisperInput, context: Abi.Context) -> Activity<Done>:
-  if isHere(context, state) == false then hushed("whisper") else whispered(Lists.find(Relations.rows(state.presence), fn(p: Presence) -> Bool: p.who == input.to || Card.handle(p.who) == input.to), input.to, "{speaker(context)} whispers: {input.line}\n", context)
+  if isHere(context, state) == false then hushed("whisper", context) else whispered(Lists.find(Relations.rows(state.presence), fn(p: Presence) -> Bool: p.who == input.to || p.handle == input.to), input.to, "{speaker(context)} whispers: {input.line}\n", context)
 def whispered(found: Lists.Maybe<Presence>, to: String, line: String, context: Abi.Context) -> Activity<Done>:
   match found:
     case some(p): confirmed(p.value, line, context)
-    case none(_): Card.tell(Done.refused({clause: "notHere", reading: "{to} is not here."}), Document.text("Not done: {to} is not here.\n"))
+    case none(_): roomRefused({clause: "notHere", reading: "{to} is not here"}, context)
 def confirmed(to: Presence, line: String, context: Abi.Context) -> Activity<Done>:
   match spoken(Lists.List.cons({head: to, tail: Lists.List.nil()}), line):
-    case _: Card.tell(Done.done({}), Document.text("Whispered to {Card.handle(to.who)}; no one else here hears it. Say to all: delvetalk {Card.called(context, \"room\")} say / line: <text>.\n"))
-def hushed(doing: String) -> Activity<Done>:
-  Card.tell(Done.refused({clause: "notPresent", reading: "Only someone here can {doing}."}), Document.text("Not done: Only someone here can {doing}.\n"))
+    case _: Card.tell(Done.done({}), Document.text("Whispered to {Card.shown(to.who, to.handle, context)}; no one else here hears it. Say to all: delvetalk {Card.called(context, \"room\")} say / line: <text>.\n"))
+def hushed(doing: String, context: Abi.Context) -> Activity<Done>:
+  roomRefused({clause: "notPresent", reading: "Only someone here can {doing}; enter first: delvetalk {Card.called(context, \"room\")} enter"}, context)
+def roomRefused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Done>:
+  Card.refusing(Done.refused(refusal), refusal, context)
 def speaker(context: Abi.Context) -> String:
   Card.name(context.principal, context)
 def spoken(present: Lists.List<Presence>, line: String) -> Activity<Done>:
@@ -256,7 +258,7 @@ def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<C
     case none(_): if input.misfit.clause != "" then Super.misfitted(input.misfit, state, context) else Card.answer(Card.heard(input), context, forms(), Super.render(state, context))
 def authored(block: String, parsed: Spween.Parsed, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match parsed:
-    case refused(r): Card.answerRefused({clause: "spween", reading: r.reason}, context, forms(), Super.render(state, context), fn(x: Card.Replied) -> Card.Replied: x)
+    case refused(r): Super.refused({clause: "spween", reading: r.reason}, context)
     case parsed(p): carving(p.seed.title, block, context, state)
 def fieldOf(name: String, value: String) -> Rows.Field:
   {name: name, value: value}
@@ -266,11 +268,9 @@ def kindOf(state: State) -> String:
   if state.kind == "" then "kind/room" else state.kind
 # A room makes rooms of its own kind (Record.making), each lying here.
 def carving(title: String, block: String, context: Abi.Context, state: State) -> Activity<Card.Replied>:
-  Super.making(extend(state, {kind: kindOf(state)}), kindOf(state), carvedFields(title, block), context, fn(m: Super.Made) -> Document.Document: carved(m, title), fn(m: Super.Made) -> Card.Replied: carvedAs(m))
-def carved(made: Super.Made, title: String) -> Document.Document:
-  match made:
-    case made(m): Document.text("ROOM {title} is at {m.object}. Enter: delvetalk {m.object} enter\n")
-    case refused(r): Document.text("Not made: {r.reading}\n")
+  Super.making(extend(state, {kind: kindOf(state)}), kindOf(state), carvedFields(title, block), context, fn(object: String) -> Document.Document: carved(object, title), fn(m: Super.Made) -> Card.Replied: carvedAs(m))
+def carved(object: String, title: String) -> Document.Document:
+  Document.text("ROOM {title} is at {object}. Enter: delvetalk {object} enter\n")
 def carvedAs(made: Super.Made) -> Card.Replied:
   match made:
     case made(_): Card.Replied.done({action: "create"})
@@ -305,11 +305,11 @@ def unclaimedLine(open: Lists.List<Plans.Reference>) -> String:
     case cons(c): "Unclaimed here: {idsOf(open)}. Inspirit one: delvetalk {c.head.object} inspirit / surrounding: <1 to 400 characters>\n"
 def idsOf(things: Lists.List<Plans.Reference>) -> String:
   textTake(textJoin(Lists.map(things, fn(t: Plans.Reference) -> String: t.object), ", "), 400n)
-def presentLine(state: State) -> String:
-  if Relations.count(state.presence) == 0n then "" else "Here: {textJoin(Lists.map(Lists.take(Relations.rows(state.presence), 8n), fn(p: Presence) -> String: Card.handle(p.who)), \", \")}{if Relations.count(state.presence) > 8n then \" and {natText(Relations.count(state.presence) - 8n)} more\" else \"\"}\n"
+def presentLine(state: State, context: Abi.Context) -> String:
+  if Relations.count(state.presence) == 0n then "" else "Here: {textJoin(Lists.map(Lists.take(Relations.rows(state.presence), 8n), fn(p: Presence) -> String: Card.shown(p.who, p.handle, context)), \", \")}{if Relations.count(state.presence) > 8n then \" and {natText(Relations.count(state.presence) - 8n)} more\" else \"\"}\n"
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let count = "{title(state)} ({natText(Relations.count(state.presence))} here)"
-  let around = "{presentLine(state)}{lyingLine(state)}"
+  let around = "{presentLine(state, context)}{lyingLine(state)}"
   match here(context, state):
     case some(p): Document.text("{count}{passageText(p.value.at, state, context)}Say: delvetalk {id} say / line: <text>. Leave: delvetalk {id} leave.\n{around}")
     case none(_): Document.text("{count}. Enter: delvetalk {id} enter.\n{around}")

@@ -37,7 +37,7 @@ def make_room(chain, name, owner="ember", **fields):
 def room_seed(name, doors=(), present=(), things=()):
     """The fields of a room: its head, the doors it cites, who is in it, what lies in it."""
     return dict(head=label(name), cites=listing([record(label=label(l), to=reference(t), description=label(""), examples=listing([])) for l, t in doors]),
-                presence=relation(*[record(who=label(p), at=label("")) for p in keyed(present)]),
+                presence=relation(*[record(who=label(p), handle=label(""), at=label("")) for p in keyed(present)]),
                 things=relation(*[reference(t) for t in keyed(things)]))
 
 
@@ -103,6 +103,15 @@ class Floor(Chain):
         self.assertEqual(self.refusal_reason(again), "Already here.")
         self.assertEqual(self.version("porch"), before)
 
+
+    def test_who_is_here_is_named_by_handle(self):
+        """Playtest 2's D10 (69110): a room listed a Zulip principal as `Here: zulip:tulip.arke.me:17`. Presence keeps
+        the handle the reader entered under."""
+        make_room(self, "porch", **room_seed("Porch"))
+        zulip = "zulip:tulip.arke.me:17"
+        self.assertEqual(self.host.send(op="world-principal", principal="ember", did=zulip, handle="Kestrel")["status"], "principal")
+        self.turn("porch", "enter", record(), principal=zulip)
+        self.assertIn("Porch (1 here). Enter: delvetalk porch enter.\nHere: Kestrel\n", self.card("porch"))
 
     def test_entering_answers_the_room_as_the_reader_finds_it_and_leaving_the_room_as_it_stands(self):
         make_room(self, "porch", **room_seed("Porch", present=["glm"]))
@@ -368,7 +377,7 @@ class Talk(Chain):
                          [("kimik3", "glm whispers: psst\n"), ("glm", "Whispered to kimik3; no one else here hears it. Say to all: delvetalk porch say / line: <text>.\n")])
         stranger = self.say("delvetalk porch say / line: hello?", "zero")
         self.assertEqual(stranger["result"]["label"], "refused")
-        self.assertEqual(stranger["offers"][0]["text"], "Not done: Only someone here can say.\n")
+        self.assertEqual(stranger["offers"][0]["text"], "refused notPresent: Only someone here can say; enter first: delvetalk porch enter\n")
 
 
 class Copies(Chain):
@@ -398,7 +407,7 @@ class Copies(Chain):
         r = ask("glm", "c2")
         delivered = r.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
         texts = [o["text"] for d in delivered for o in d.get("receipt", d).get("offers", [])]
-        self.assertIn("Not copied: stone is not copyable; its owner, ember, decides.\n", texts)
+        self.assertIn("refused notCopyable: stone is not copyable; its owner, ember, decides\n", texts)
 
 if __name__ == "__main__":
     unittest.main()

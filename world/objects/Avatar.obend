@@ -76,9 +76,11 @@ def refusal(w: Why) -> Card.Refusal:
     case nowhere(_): {clause: "nowhere", reading: "Nowhere yet; go to a room first: delvetalk me go / to: <room>."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
-# A refusal the speaker reads: its line, offered, and nothing written.
-def told(w: Why) -> Activity<Done>:
-  Card.tell(refused(w), Document.text("Not done: {refusal(w).reading}\n"))
+# A refusal, answered by name (Card.refusing), and nothing written.
+def told(w: Why, context: Abi.Context) -> Activity<Done>:
+  Card.refusing(refused(w), refusal(w), context)
+def answerRefused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.refusing(Card.Replied.refused(refusal), refusal, context)
 # --- The inbox ---------------------------------------------------------------------
 # A note from the turn's principal (a Tide's tick, anyone's line).
 # A note someone sends by spell is answered; one an object leaves (a tide's tick) is not.
@@ -102,29 +104,29 @@ sum Mailed:
 def mailRefused(w: Why) -> Mailed:
   Mailed.refused(refusal(w))
 # What the speaker reads of a mailbox spell: the line it came to, or why not.
-def mailTold(m: Mailed, line: String) -> Activity<Mailed>:
+def mailTold(m: Mailed, line: String, context: Abi.Context) -> Activity<Mailed>:
   match m:
-    case refused(r): Card.tell(m, Document.text("Not done: {r.reading}\n"))
+    case refused(r): Card.refusing(m, r, context)
     case _: Card.tell(m, Document.text(line))
 # The avatar's principal sends a line: it joins the outbox, and the host tells each follower
 # (their `mailed`).
 def send(state: State, input: {text: String}, context: Abi.Context) -> Activity<Mailed>:
-  if mine(context) == false then mailTold(mailRefused(Why.notMine({who: owner(state, context), doing: "sends from it"})), "") else posted(input.text, context, state)
+  if mine(context) == false then mailTold(mailRefused(Why.notMine({who: owner(state, context), doing: "sends from it"})), "", context) else posted(input.text, context, state)
 def posted(text: String, context: Abi.Context, state: State) -> Activity<Mailed>:
   let written(_) = write {outbox: insert {handle: context.handle, text: text, at: context.height, n: Relations.count(state.outbox)}}
-  mailTold(Mailed.sent({n: Relations.count(state.outbox)}), "Sent; each of your followers' avatars gets it as a note.\n")
+  mailTold(Mailed.sent({n: Relations.count(state.outbox)}), "Sent; each of your followers' avatars gets it as a note.\n", context)
 # Follow another avatar: subscribe to its outbox, delivered to `mailed`.
 def subscribe(state: State, input: {to: String}, context: Abi.Context) -> Activity<Mailed>:
   match following({object: {world: context.world, object: input.to}, field: "outbox"}, context, state):
-    case followed(f): mailTold(Mailed.followed(f), "Following {Card.name(input.to, context)}: what they send reaches your inbox. Stop: delvetalk me unsubscribe / to: {input.to}\n")
+    case followed(f): mailTold(Mailed.followed(f), "Following {Card.name(input.to, context)}: what they send reaches your inbox. Stop: delvetalk me unsubscribe / to: {input.to}\n", context)
     case sent(n): Mailed.sent(n)
-    case refused(r): mailTold(Mailed.refused(r), "")
+    case refused(r): mailTold(Mailed.refused(r), "", context)
 # Watch any object's field (a bell's `rung`): each change is a note "news from <object>".
 def watch(state: State, input: {to: String, field: String}, context: Abi.Context) -> Activity<Mailed>:
   match following({object: {world: context.world, object: input.to}, field: input.field}, context, state):
-    case followed(f): mailTold(Mailed.followed(f), "Watching {input.to}'s {input.field}: a note in your inbox at each change. Stop: delvetalk me unsubscribe / to: {input.to}\n")
+    case followed(f): mailTold(Mailed.followed(f), "Watching {input.to}'s {input.field}: a note in your inbox at each change. Stop: delvetalk me unsubscribe / to: {input.to}\n", context)
     case sent(n): Mailed.sent(n)
-    case refused(r): mailTold(Mailed.refused(r), "")
+    case refused(r): mailTold(Mailed.refused(r), "", context)
 def receiver(field: String) -> String:
   if field == "outbox" then "mailed" else "news"
 def follows(state: State, object: String, field: String) -> Bool:
@@ -140,17 +142,17 @@ def followedNow(f: Followed) -> Activity<Mailed>:
   let written(_) = write {following: append f}
   Mailed.followed({object: f.object})
 def unsubscribe(state: State, input: {to: String}, context: Abi.Context) -> Activity<Mailed>:
-  if mine(context) == false then mailTold(mailRefused(Why.notMine({who: owner(state, context), doing: "unsubscribes it"})), "") else unfollowing(Lists.find(state.following, fn(f: Followed) -> Bool: f.object.object == input.to), input.to)
-def unfollowing(found: Lists.Maybe<Followed>, object: String) -> Activity<Mailed>:
+  if mine(context) == false then mailTold(mailRefused(Why.notMine({who: owner(state, context), doing: "unsubscribes it"})), "", context) else unfollowing(Lists.find(state.following, fn(f: Followed) -> Bool: f.object.object == input.to), input.to, context)
+def unfollowing(found: Lists.Maybe<Followed>, object: String, context: Abi.Context) -> Activity<Mailed>:
   match found:
-    case none(_): mailTold(mailRefused(Why.notFollowing({object: object})), "")
-    case some(s): unsubscribing(s.value)
-def unsubscribing(f: Followed) -> Activity<Mailed>:
+    case none(_): mailTold(mailRefused(Why.notFollowing({object: object})), "", context)
+    case some(s): unsubscribing(s.value, context)
+def unsubscribing(f: Followed, context: Abi.Context) -> Activity<Mailed>:
   match world.unsubscribe({object: f.object, field: f.field, method: receiver(f.field)}):
-    case _: unfollowed(f)
-def unfollowed(f: Followed) -> Activity<Mailed>:
+    case _: unfollowed(f, context)
+def unfollowed(f: Followed, context: Abi.Context) -> Activity<Mailed>:
   let written(_) = write {following: removeItem f}
-  mailTold(Mailed.followed({object: f.object}), "No longer following {f.object.object}.\n")
+  mailTold(Mailed.followed({object: f.object}), "No longer following {f.object.object}.\n", context)
 # Receivers (helpers: only the host delivers to them, from the object followed). A followed
 # avatar's letters become notes from it.
 def mailed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Letter>, retracted: Lists.List<Letter>}, context: Abi.Context) -> Activity<Done>:
@@ -185,14 +187,14 @@ def released(context: Abi.Context) -> Activity<Done>:
 # Accept what someone offered: the thing's transfer (judged by its own law) moves custody to
 # this avatar, and this avatar records it in its own holding, in the same turn.
 def accept(state: State, input: {thing: String}, context: Abi.Context) -> Activity<Done>:
-  if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "accepts for it"})) else accepting({world: context.world, object: input.thing})
-def accepting(thing: Plans.Reference) -> Activity<Done>:
+  if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "accepts for it"}), context) else accepting({world: context.world, object: input.thing}, context)
+def accepting(thing: Plans.Reference, context: Abi.Context) -> Activity<Done>:
   match world.call::<Done>({object: thing, method: "transfer", argument: Plans.nothing()}):
-    case returned(r): accepted(r.result, thing)
-    case _: told(Why.noAnswer({from: thing.object}))
-def accepted(result: Done, thing: Plans.Reference) -> Activity<Done>:
+    case returned(r): accepted(r.result, thing, context)
+    case _: told(Why.noAnswer({from: thing.object}), context)
+def accepted(result: Done, thing: Plans.Reference, context: Abi.Context) -> Activity<Done>:
   match result:
-    case refused(r): Card.tell(result, Document.text("Not done: {r.reading}\n"))
+    case refused(r): Card.refusing(result, r, context)
     case _: recorded(thing)
 def recorded(thing: Plans.Reference) -> Activity<Done>:
   let written(_) = write {holding: append thing}
@@ -201,43 +203,45 @@ def recorded(thing: Plans.Reference) -> Activity<Done>:
 sum Moved:
   moved: {to: Plans.Reference}
   refused: Card.Refusal
-def moveRefused(w: Why) -> Activity<Moved>:
-  Card.tell(Moved.refused(refusal(w)), Document.text("Not done: {refusal(w).reading}\n"))
+def moveRefused(w: Why, context: Abi.Context) -> Activity<Moved>:
+  movedRefused(refusal(w), context)
+def movedRefused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Moved>:
+  Card.refusing(Moved.refused(refusal), refusal, context)
 # Walk through a door of the room it is in: read the room's doors (`cites`), leave it, enter
 # the room the door cites, and record where it is. A refusal before any write leaves nothing
 # changed; the calls into rooms are the only things staged, and a room's refusal is answered as
 # it gave it.
 def move(state: State, input: {exit: String}, context: Abi.Context) -> Activity<Moved>:
-  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"})) else if Plans.isNobody(state.at) then moveRefused(Why.nowhere({})) else looked(input.exit, state)
-def looked(label: String, state: State) -> Activity<Moved>:
+  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"}), context) else if Plans.isNobody(state.at) then moveRefused(Why.nowhere({}), context) else looked(input.exit, state, context)
+def looked(label: String, state: State, context: Abi.Context) -> Activity<Moved>:
   match world.viewField::<Card.Doorways>({object: state.at, field: "cites"}):
-    case viewed(v): through(label, Lists.find(v.state, fn(e: Card.Doorway) -> Bool: e.label == label), state)
-    case _: moveRefused(Why.noExit({label: label}))
-def through(label: String, found: Lists.Maybe<Card.Doorway>, state: State) -> Activity<Moved>:
+    case viewed(v): through(label, Lists.find(v.state, fn(e: Card.Doorway) -> Bool: e.label == label), state, context)
+    case _: moveRefused(Why.noExit({label: label}), context)
+def through(label: String, found: Lists.Maybe<Card.Doorway>, state: State, context: Abi.Context) -> Activity<Moved>:
   match found:
-    case none(_): moveRefused(Why.noExit({label: label}))
-    case some(s): leaving(state.at, s.value.to)
-def leaving(from: Plans.Reference, to: Plans.Reference) -> Activity<Moved>:
+    case none(_): moveRefused(Why.noExit({label: label}), context)
+    case some(s): leaving(state.at, s.value.to, context)
+def leaving(from: Plans.Reference, to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
   match world.call::<Done>({object: from, method: "leave", argument: Plans.nothing()}):
-    case returned(r): left(r.result, to)
-    case _: moveRefused(Why.roomSilent({}))
-# A room's refusal is told by the room itself (its card with the clause); the avatar passes it on.
-def left(result: Done, to: Plans.Reference) -> Activity<Moved>:
+    case returned(r): left(r.result, to, context)
+    case _: moveRefused(Why.roomSilent({}), context)
+# A room's refusal comes back as its result, the room having said it; the avatar passes it on.
+def left(result: Done, to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
   match result:
     case refused(r): Moved.refused(r)
-    case _: entering(to)
-def entering(to: Plans.Reference) -> Activity<Moved>:
+    case _: entering(to, context)
+def entering(to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
   match world.call::<Done>({object: to, method: "enter", argument: Plans.nothing()}):
-    case returned(r): entered(r.result, to)
-    case _: moveRefused(Why.roomSilent({}))
-def entered(result: Done, to: Plans.Reference) -> Activity<Moved>:
+    case returned(r): entered(r.result, to, context)
+    case _: moveRefused(Why.roomSilent({}), context)
+def entered(result: Done, to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
   match result:
     case refused(r): Moved.refused(r)
     case _: arrived(to)
 # Go to a room by its id, from anywhere: leave the room it is in if any, enter the named one
 # (that room's `enter`, under its own law) and record where it is: what it last entered.
 def go(state: State, input: {to: String}, context: Abi.Context) -> Activity<Moved>:
-  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"})) else if Plans.isNobody(state.at) then entering({world: context.world, object: input.to}) else leaving(state.at, {world: context.world, object: input.to})
+  if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"}), context) else if Plans.isNobody(state.at) then entering({world: context.world, object: input.to}, context) else leaving(state.at, {world: context.world, object: input.to}, context)
 def arrived(to: Plans.Reference) -> Activity<Moved>:
   let written(_) = write {at: set to}
   Moved.moved({to: to})
@@ -266,7 +270,7 @@ def methods() -> Lists.List<String>:
 def lenses() -> Lists.List<Form.Field>:
   Lists.List.cons({head: {name: "handle", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.nil()})
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Done>:
-  if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "changes it"})) else setHandle(Card.valueText(input.value))
+  if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "changes it"}), context) else setHandle(Card.valueText(input.value))
 def setHandle(handle: String) -> Activity<Done>:
   let written(_) = write {handle: set handle}
   Card.tell(Done.done({}), Document.text("Set handle to {handle}.\n"))
@@ -288,11 +292,11 @@ def bare(word: String) -> String:
 def scoped(input: Card.Reply, words: Lists.List<String>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match words:
     case nil(_): answered(input, context, state)
-    case cons(c): if bare(c.head) == "look" then looking(state) else placing(input, bare(c.head), c.tail, context, state)
-def looking(state: State) -> Activity<Card.Replied>:
+    case cons(c): if bare(c.head) == "look" then looking(state, context) else placing(input, bare(c.head), c.tail, context, state)
+def looking(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   match world.card({object: state.at}):
     case carded(c): Card.tell(Card.Replied.done({action: "look"}), c.document)
-    case _: Card.tell(Card.Replied.refused(refusal(Why.nowhere({}))), Document.text("Not done: {refusal(Why.nowhere({})).reading}\n"))
+    case _: answerRefused(refusal(Why.nowhere({})), context)
 record Named:
   object: Plans.Reference
   name: String
@@ -325,7 +329,7 @@ def nouns(asked: Asked, words: Lists.List<String>, named: Lists.List<Named>, con
 def chosen(asked: Asked, after: Lists.List<String>, found: Lists.List<Named>, named: Lists.List<Named>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match found:
     case nil(_): nouns(asked, after, named, context, state)
-    case cons(c): if Lists.length(c.tail) > 0n then Card.tell(Card.Replied.refused({clause: "ambiguous", reading: "Which one?"}), Document.text("Which one: {textJoin(Lists.map(found, fn(n: Named) -> String: n.object.object), \", \")}?\n")) else acting(asked, c.head.object, after, context, state)
+    case cons(c): if Lists.length(c.tail) > 0n then answerRefused({clause: "ambiguous", reading: "which one: {textJoin(Lists.map(found, fn(n: Named) -> String: n.object.object), \", \")}?"}, context) else acting(asked, c.head.object, after, context, state)
 # Else an object named by a word (the commonplace's doors are named by their ids).
 def doors(asked: Asked, words: Lists.List<String>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match words:
@@ -337,7 +341,7 @@ def doorNamed(asked: Asked, door: Plans.Reference, after: Lists.List<String>, co
     case _: doors(asked, after, context, state)
 def acting(asked: Asked, object: Plans.Reference, after: Lists.List<String>, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.inspect({object: object, source: false}):
-    case inspected(i): if Lists.any(i.methods, fn(f: Form.Form) -> Bool: f.action == asked.action) then sending(asked, object, after, i.methods) else Card.tell(Card.Replied.refused({clause: "noAction", reading: "{object.object} does not take {asked.action}"}), Document.text("{object.object} does not take {asked.action}.\n"))
+    case inspected(i): if Lists.any(i.methods, fn(f: Form.Form) -> Bool: f.action == asked.action) then sending(asked, object, after, i.methods) else answerRefused({clause: "noAction", reading: "{object.object} does not take {asked.action}; delvetalk {object.object} ?"}, context)
     case _: answered(asked.input, context, state)
 # The form as a spell sent to the object's receive, under the speaker; its card answers.
 def sending(asked: Asked, object: Plans.Reference, after: Lists.List<String>, forms: Lists.List<Form.Form>) -> Activity<Card.Replied>:
