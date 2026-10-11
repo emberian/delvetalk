@@ -11,7 +11,7 @@ from tests.host import served
 class Town:
     def __init__(self, directory, run_genesis=True):
         from deploy import genesis
-        from deploy.serve import LIBRARY
+        from transport.config import LIBRARY
         from transport.host import HostClient
         self.opener = genesis.OPENER
         self.state = os.path.join(directory, "state")

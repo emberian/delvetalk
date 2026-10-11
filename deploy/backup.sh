@@ -15,7 +15,16 @@ usage() { echo "usage: $0 (--binary PATH | --image IMAGE) DATA DEST" >&2; exit 6
 mode=$1 host=$2 data=${3%/} dest=${4%/}
 here="$(cd "$(dirname "$0")" && pwd)"
 [[ -f $data/state/town.journal ]] || { echo "backup: no $data/state/town.journal" >&2; exit 66; }
+# The mirror is one data directory's copy: rsync --delete below would erase another's. A mirror made from another
+# directory (a fresh genesis into a new one) is moved aside, never deleted; one with no record is adopted.
+src=$(cd "$data" && pwd -P)
+if [[ -d $dest/mirror && -f $dest/mirror.source && $(cat "$dest/mirror.source") != "$src" ]]; then
+  aside="$dest/mirror.$(basename "$(cat "$dest/mirror.source")")-$(date -u +%Y%m%dT%H%M%SZ)"
+  mv "$dest/mirror" "$aside"
+  echo "backup: the mirror was $(cat "$dest/mirror.source")'s; kept at $aside" >&2
+fi
 mkdir -p "$dest/mirror"
+printf '%s\n' "$src" > "$dest/mirror.source"
 # Group 10425 lists it and reads last-verify: the watch's probe runs in the ops container as the stack's uid, which
 # already owns every byte copied here (DEPLOY "Watching"). Nobody else enters.
 chgrp 10425 "$dest" 2>/dev/null || true
@@ -39,8 +48,8 @@ PY
 done
 
 # SQLite files copied while open may be mid-transaction; take SQLite's backup instead.
-for db in "$data"/state/*.sqlite; do
-  python3 - "$db" "$dest/mirror/state/${db##*/}" <<'PY'
+for db in "$data"/state/*.sqlite "$data"/state/worlds/*/*.sqlite; do
+  python3 - "$db" "$dest/mirror/${db#"$data"/}" <<'PY'
 import sqlite3, sys
 src = sqlite3.connect(f'file:{sys.argv[1]}?mode=ro', uri=True)
 dst = sqlite3.connect(sys.argv[2])
@@ -50,7 +59,7 @@ src.close()
 PY
 done
 
-# The watch reads the last verify (transport.hand status --json): ok, or broken with its stamp.
+# The watch's probe (`python3 -m transport status`) reads the last verify: ok, or broken with its stamp.
 if ! "$here/verify.sh" "$mode" "$host" "$dest/mirror"; then
   echo "broken $(date -u +%Y%m%dT%H%M%SZ)" > "$dest/last-verify"
   exit 1

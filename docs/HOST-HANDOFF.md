@@ -62,7 +62,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
 - Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-addressee`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
-- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (worlds and scratches); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
+- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
 
 Rules:
@@ -1097,12 +1097,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 125. **`serve`: the host holds its directory and its sockets (host13; docs/FEDERATION.md §1, docs/ROOT.md
    §1.4).** `delvetalk-obend serve --state DIR [--socket PATH] [--root-socket PATH] [--root-group GROUP] [--opener DID] [--library DIR]
    [--sync none|fsync|full] [--clock P] [--home NAME]` (`Delvetalk/Serve.lean`, `spec/native/serve.c`)
-   replaces `transport/hostd.py` and `hostproc.py`'s process management.
+   is the one process over a directory of worlds.
    - *Lock.* `flock` on `DIR/journal.lock` before anything else, held for the process's life (the
      handle is kept in `Server.lock`: a dropped handle is a released lock, which the first test found);
-     a second `serve` exits 75, "refusing to start a second writer". `DIR/hostd.pid` is rewritten per op.
+     a second `serve` exits 75, "refusing to start a second writer". `DIR/serve.pid` is rewritten per op.
    - *Library.* `DIR/library` rebuilt at start from `--library` and `../objects/{Avatar,Env,Wake}.obend`;
-     the stateless session `library-load`s it, and `hostd-info` answers its pin.
+     the stateless session `library-load`s it, and `serve-status` answers its pin.
    - *Worlds.* `DIR/<name>.journal`, `name` by `Host.validWorldName` (`[a-z][a-z0-9-]{0,31}`, not `did
      zulip at world me scratch`); envelope `world: <name>`, default `--home` (`town`). The first op naming
      a world opens it with the clock, opener, library (librarian the opener), sync and `name`; `world-open
@@ -1110,8 +1110,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      replay edition change: journals without it replay as before) and refuses a journal that holds
      another ("this journal is the world ring, not moor"). Every world of the directory is opened at start
      and held (5.137 made a held world its live state), so a turn in one reads another (5.140); `world:
-     scratch/<name>` is the request principal's scratch world; `stateless: true` the journal-less session. `serve-status` lists the open worlds; `world-open` over a
+     scratch/<name>` is the request principal's scratch world; `stateless: true` the journal-less session. `world-open` over a
      socket is refused ("serve opens its worlds").
+   - *Status.* `serve-status` is the process's one status: `hostSha256` (the binary, cached in `DIR/binary-pin`
+     by path, size and mtime), `pid`, `replay`, `library` (the sealed pin), `worlds [{name, height, objects,
+     clock, replay, snapshot {resumed, refused}}]` (`replay` read from the world's first entry; `resumed` the
+     snapshot height it reopened from, 0 a replay from genesis) and `scratches` (5.140). `test_serve`.
    - *Sockets.* `DIR/host.sock` and the root socket (default `DIR/root/root.sock`; deploy passes the
      `/data/root` volume's path), the public socket 0600 and the root socket 0660 (its group `--root-group`, 5.131) under umask 0177, backlog 128. The C shim accepts every
      connection, reads newline-framed lines (16 MiB) and hands Lean the next completed line in order with
@@ -1119,12 +1123,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      removing the sockets and pid file. The public socket refuses `rootOps` (`world-root`, `world-library`,
      `world-settings`, `world-fork`, `world-snapshot`, `library-load`) and every op whose `principal` is
      the opener: "the opener speaks on the root socket".
-   - *Gone.* hostd's 120 s kill-and-respawn: in one process it would lose every world's store; ops are
-     bounded by ticks, heap, ledger and entry bounds, and `HostClient`'s timeout still answers
-     `hostTimeout`. The clock stays the bridge's `tick` (hostd ran none). `hostd-info` adds `replay`.
-   - *Landed in the transport (5.131):* `tests/host.py` `Served` starts it; `transport/` holds no hostd.py or
-     hostproc.py; the opener's ordinary turns go on the public socket (`resident`, 5.131). Tests:
-     `tests/test_serve.py` (the old hostd cases against the Lean server, named worlds, the root socket).
+   - Ops are bounded by ticks, heap, ledger and entry bounds, and `HostClient`'s timeout answers
+     `hostTimeout`. The clock is the bridge's `tick`.
+   - *Transport (5.131):* `tests/host.py` `Served` starts it; the opener's ordinary turns go on the public socket
+     (`resident`, 5.131). Tests: `tests/test_serve.py` (one writer, named worlds, the root socket, the status).
 
 126. **ROOT and MODERATION in one edition (host14; docs/ROOT.md §1 to §3; replay edition 3).**
    - *`world-root {principal, reason, act}`* (`Host/Root.lean`, `rootOp`): the opener only (`serve` keeps it to
@@ -1495,48 +1497,63 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host17's item 5.137, in order (numbers kept as the coordinator named them). The owner's standing order binds every item: "maturify and take forward
-everything that we've started and bring it to its full sophistication and make sure the code is all 'fungused
-together' (no seams or welds where rich semantic braiding is called for); let's not leave behind 'old things',
-no scar and growth tissue." So each replacement deletes what it replaces in the same commit, and this file
-describes only what is.
+The queue after host17 (5.137 to 5.141; host16's items 2, 3, 4, 5 and 6 are done), in order. The owner's standing
+order binds every item: "maturify and take forward everything that we've started and bring it to its full
+sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
+called for); let's not leave behind 'old things', no scar and growth tissue." So each replacement deletes what it
+replaces in the same commit, and this file describes only what is.
 
-3a. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (§2, a suspension resumed by the target's
-   receipt; row 6); `inspect` and `viewField` of a foreign object (only `view` and `card` cross now); the REPL
-   and `check` in a scratch (`/scratch/<name>/repl`; they still run in the stateless session, `replRestarted`);
-   the `delvetalk world expire / scratch:` spell (only the root act exists); `world-history` and receipts
-   across worlds; the hand's SCRATCHES page.
-7. **Routed by the fungus review** (docs/review/fungus-2026-10-11.md §1, §3), folded into the items above
-   where they touch the same code, else after item 3, each deleting the old path in its commit: `world-history`
-   takes `reverse` (T28); a host reach rule, `reach-of {text, replyTo, thread}`, so the bridge relays the
-   host's answer (T30); `hostd-info` folded into `serve-status` and `hostd.pid` renamed (T25); REPL refusals as
-   classes, never text the front matches (T29, `replRestarted`); `serve-status` answers the kernel and host
-   bounds so the front and tests stop restating them (T27, S12); TurnLoop's older payload-shape ladders (H2,
-   with item 5); the JSON model-reply branch beside spell text (H3); root acts and moderation powers as one
-   table (H7); `Store.lean` literals that repeat `Limits.lean` (H12); reads of older journals (H16: a journal
-   below the edition is refused by name and nothing else reads it).
-8. **The stored path's remainder (5.136):** a write still costs O(state): `conformsUnder` of the whole written
-   state (check the scalar part and the rows it changed), `stateCid` of the whole state (a state CID composed
-   from cell CIDs), `storeOf`'s walk per frame (rows as an array per version on the object). The two kernel
-   primitives (KERNEL-HANDOFF §16 item 15) give `rows` roots meaning; until then a spine walk records a span.
-8a. **The block store's remainder (5.137):** `world-sources`, `world-grants` and `world-resolve` (`slugTargets`) read
-   every record per call: index sources, grants by height and slugs (as `anchors` is) so they read only what they
-   answer; about 1.4 KB a held entry at open (the chain's CIDs as text, the receipt and change indexes, the
-   snapshot's index decoded whole): CIDs as bytes and a streamed index decode; a record is encoded twice (its hash,
-   then the store): keep the bytes `sealEntry` hashed; `maxJournalEntries` against 4 GiB; `serve` has no
-   `--snapshot-every` (only `world-open` does).
-9. Smaller, standing:
-   - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new
-     `root:<n>`; `set pin` stores the pin alone (ROOT wants `programRefused: no sources for pin`); `as` runs the
-     method as named. `root-edit` does not rewrite CIDs quoted inside checkpoints and states (an await's
-     `Receipt.hash`).
+1. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1 T25 to T33, §3 H1 to H19; H9 and H19 are
+   done by 5.140 and 5.136, H2's older shapes by 5.141), one commit each, each deleting the old path:
+   - T25 with the coordinator's request: `serve-status` answers what `hostd-info` answers (sha, pid, replay,
+     library) and, per world, its `replay` edition and `snapshot {resumed}` (the height it reopened from, so the
+     live service shows a snapshot open); `hostd-info` deleted, `hostd.pid` becomes `serve.pid`, and the readers
+     (`http.py` `sync_library`, `hand.py`, `deploy/serve.py`, `deploy/playtest.sh`) move in the same commit.
+   - T27/S12: `serve-status` answers the kernel's and the host's bounds (`maxPackageBytes`, `maxModules`, frame,
+     entry); the front's `MAX_SOURCE`/`MAX_MODULES` and the catalogue read them.
+   - T28: `world-history` through `pageByHeight` (`reverse`, `cursor`); the front's widening loop goes.
+   - T29: the REPL's two prose refusals (`unknown library pin`, `not issued by this process`) as classes.
+   - T30: `world-reach {post, parent, root, text, mentions}` answering `{object, slot, how}`; `bridge.py`'s
+     `route`, `walk`, `named_door` go.
+   - T32: `world-status.suspendedBytes {median}` (the hand's probe now reads the block store's tail, 5.137).
+   - T33/H17: `world-inspect` answers each form's usage text; the front's `actions` and Card's templates copy it.
+   - H2's remainder: `respond` with one payload per method (the `refused` and `inspected` ladders).
+   - H3: the model's JSON `{method, argument}` reply branch and `model.extract`.
+   - H4: `reprogram {mode: "extend"}` beside `extend`.
+   - H5/H6 with the kernel: dispatch on `(method, argument)`; the `plan` wire names.
+   - H7/H8: root acts and moderation powers as one table; settings reach the journal one way (`settingsChange`).
+   - H10: `sealLibrary` reads `Ops.arrivals`. H11: `serve.c` says root; the frame bound checked once.
+   - H12/H13/H14/H15: `Limits` reference `Bounds`; `compressedSize`; `statusOf`; one list codec.
+   - H16: reads of older journals (an edition below 5 is refused by name, nothing else reads it).
+   - H1/H18 with the objects lane: the host's spell grammar the one reader; a host `fit {form, fields}`.
+2. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (§2, a suspension resumed by the target's
+   receipt; row 6); `inspect` and `viewField` of a foreign object (only `view` and `card` cross now); the REPL and
+   `check` in a scratch (`/scratch/<name>/repl`; they still run in the stateless session); the `delvetalk world
+   expire / scratch:` spell (only the root act exists); `world-history` and receipts across worlds; the hand's
+   SCRATCHES page; `world-cite` has no front route.
+3. **The stored path's remainder (5.136):** a write still costs O(state): `conformsUnder` of the whole written
+   state (check the scalar part and the rows it changed), `stateCid` of the whole state (a state CID composed from
+   cell CIDs), `storeOf`'s walk per frame (rows as an array per version on the object). The two kernel primitives
+   (KERNEL-HANDOFF §16 item 15) give `rows` roots meaning; until then a spine walk records a span.
+4. **The block store's remainder (5.137):** `world-sources`, `world-grants` and `world-resolve` (`slugTargets`)
+   read every record per call: index sources, grants by height and slugs (as `anchors` is) so they read only what
+   they answer; about 1.4 KB a held entry at open (the chain's CIDs as text, the receipt and change indexes, the
+   snapshot's index decoded whole): CIDs as bytes and a streamed index decode; a record is encoded twice (its
+   hash, then the store): keep the bytes `sealEntry` hashed; `maxJournalEntries` (1,000,000) binds before 4 GiB
+   for small entries; `serve` has no `--snapshot-every` (only `world-open` does); a held world is never closed now
+   (5.140), so memory grows with the worlds and scratches served.
+5. **The law atoms' remainder (5.139):** `world-inspect`'s `cites` lists the closure, not per clause; the objects
+   lane's Tide, Deal, Record and Kind laws move to the atoms (KERNEL-HANDOFF §25 M, last item) once this binary
+   is deployed.
+6. Smaller, standing:
+   - Root: a `before`/`after` past `maxEntryBytes` by CID in `blocks`; a retry of a root act is a new `root:<n>`;
+     `set pin` stores the pin alone (ROOT wants `programRefused: no sources for pin`); `as` runs the method as
+     named. `root-edit` does not rewrite CIDs quoted inside checkpoints and states (an await's `Receipt.hash`).
    - `openerActs` (5.131): the opener's interpret-quota exemption (TurnLoop ~1425) ignores `resident`; decide.
-   - Not the host's, found here: the policy card renders past the clip (1,889 characters; EveryMethod's
-     only remaining finding before foundation fixed it: re-check), Card.obend's and Policy.obend's "1 to 16384
-     characters" (objects lane, 5.134), the front's `moduleTooLarge` 16,384 in catalogue.json (transport).
-   - `test_zulip.Bridging` once saw "hostd unavailable" in `setUp` under a loaded full run; it passed alone
+   - `test_zulip.Bridging` once saw "host unavailable" in `setUp` under a loaded full run; it passed alone
      twice. Watch it.
-   - Deploy: edition 3 needs a new genesis for every world.
+   - Deploy: edition 5 and the block store need a new genesis for every world (or `delvetalk-obend migrate` of an
+     edition-5 line journal).
    - `readerActions` compiles `actions` per read; warm it as `warmLaws` warms `law` if it shows in
      `DELVETALK_TIMING`. `methodAdmits` judges on the state as it stands. hob's tail line always names
      `page: spells`. A `call` or `write` to an object created in the same turn is `unknownObject` (5.122 covers

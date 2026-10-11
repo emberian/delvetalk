@@ -222,9 +222,9 @@ reference to it elsewhere answers `foreignWorld` by name.
 ## 5. The operator's view
 
 **One hand over many worlds.** `/hand/<world>/` with the same verbs; the
-hand's CLI takes `--world`, default `town`. `world-status` per world and a
-`hostd-info`-shaped `serve-status {worlds: [{name, height, objects, clock,
-scratches}]}`.
+hand's CLI takes `--world`, default `town`. `world-status` per world and
+`serve-status {hostSha256, pid, replay, library, worlds: [{name, height,
+objects, clock, replay, snapshot}], scratches}`.
 
 **One access log**, `<state>/access.log`, with a world column after the DID:
 `<time> <method> <path> <status> <bytes> <did or -> <world>`; the zero-500s

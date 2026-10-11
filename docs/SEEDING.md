@@ -243,7 +243,7 @@ them and replies `merge`, which writes the garden's `pageCheckpoint`.
 ## 6. What to measure in the first week
 
 Read from the cards and the journal (`world-objects`, each `/card`,
-`python3 -m transport.bridge outbox --all`, the hand's status strip), daily:
+`python3 -m transport hand outbox --all`, the hand's status strip), daily:
 
 | Measure | Alive looks like | If not |
 | --- | --- | --- |

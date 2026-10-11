@@ -7,7 +7,7 @@
 # (`ps` shows argv to every local user) and never .env.
 # The Delve credentials file goes in /etc/delvetalk/delve/credentials.json (directory owner 10425, mode 0700;
 # file mode 0400); the hand reads it only when the owner clicks Post, so it may be placed after `up`.
-# The hand is its own service, never the front on :8765, the port Caddy proxies: `transport.hand serve` listens on
+# The hand is its own service, never the front on :8765, the port Caddy proxies: `transport hand serve` listens on
 # :8766, published on workhorse's loopback only (reach it by an ssh forward to 127.0.0.1:8766), and it alone of the
 # long-running services mounts the root socket: it speaks as the opener (docs/ROOT.md section 1.4).
 
@@ -15,31 +15,35 @@ services:
   delvetalk-hand:
     image: ${DELVETALK_IMAGE:-delvetalk:current}
     restart: unless-stopped
-    user: "10425:10425"  # serve's uid: both of its sockets are 0600 (umask 0177), so a uid of the hand's own needs a group-readable root socket from serve first
+    user: "10425:10425"  # serve's uid: both of its sockets are 0600 (umask 0177), so a uid of the hand's own needs root_group set first
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=16m,uid=10425,gid=10425
     security_opt: ["no-new-privileges:true"]
     cap_drop: ["ALL"]
     init: true
-    command: ["python3", "-m", "transport.hand", "serve", "--state", "/data/state", "--bind", "0.0.0.0", "--port", "8766",
-              "--credentials", "/run/delve/credentials.json"]
+    command: ["python3", "-m", "transport", "hand", "serve"]
     environment:
-      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
-      DELVETALK_HAND_TOKEN_FILE: /run/secrets/hand_token
+      DELVETALK_STATE: /data/state
       DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
+      DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
+      DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
+      DELVETALK_HAND_BIND: 0.0.0.0
+      DELVETALK_HAND_PORT: ${DELVETALK_HAND_PORT:-8766}
+      DELVETALK_HAND_TOKEN_FILE: /run/secrets/hand_token
+      DELVETALK_CREDENTIALS: /run/delve/credentials.json
     ports:
-      - "127.0.0.1:${DELVETALK_HAND_PORT:-8766}:8766/tcp"
+      - "127.0.0.1:${DELVETALK_HAND_PORT:-8766}:${DELVETALK_HAND_PORT:-8766}/tcp"
     secrets: [hand_token]
     volumes:
-      - ${DELVETALK_DATA:-/var/lib/delvetalk/v2}/state:/data/state
+      - ${DELVETALK_DATA:-/var/lib/delvetalk/v3}/state:/data/state
       - ${DELVETALK_ROOT:-/var/lib/delvetalk/root}:/run/delvetalk-root
       - ${DELVETALK_DELVE_DIR:-/etc/delvetalk/delve}:/run/delve:ro
     depends_on:
       delvetalk-host: { condition: service_healthy }
     healthcheck:
       # The hand answers a tokenless /hand/ with 404 and nothing else; any other answer, or none, is unhealthy.
-      test: ["CMD", "python3", "-c", "import http.client as h; c = h.HTTPConnection('127.0.0.1', 8766, timeout=5); c.request('GET', '/hand/'); exit(c.getresponse().status != 404)"]
+      test: ["CMD", "python3", "-m", "transport", "status", "--health", "hand"]
       interval: 60s
       timeout: 10s
       retries: 3

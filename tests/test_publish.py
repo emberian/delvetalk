@@ -53,7 +53,7 @@ class Publishing(BridgeCase):
         recorded = post.record_posted(self.host, {'uri': page_uri, 'cid': 'bafypage'}, 'garden', None, target, intent=page_uri)
         self.assertEqual(recorded['status'], 'posted', recorded)
         self.assertEqual(recorded['receipt']['outcome']['page'], 'garden')
-        bridge.mark_posted(next((self.state / 'outbox').glob('*-pub-*.json')))
+        self.state.mark_posted(next(self.state.outbox.glob('*-pub-*.json')))
         self.observe([mk(9, 'merge', parent=page_uri)])
         ran = self.run_bridge()
         self.assertEqual(ran['turns'], [mk(9, '')['uri']], ran)

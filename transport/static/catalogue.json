@@ -455,12 +455,12 @@
   "hostUnavailable": {
    "code": 503,
    "status": "error",
-   "when": "hostd is not answering connections"
+   "when": "the host is not answering connections"
   },
   "hostTimeout": {
    "code": 504,
    "status": "error",
-   "when": "hostd took the request and did not answer in time; a turn it ran may still have committed, so send the same intent again"
+   "when": "the host took the request and did not answer in time; a turn it ran may still have committed, so send the same intent again"
   },
   "httpVersion": {
    "code": 505,
@@ -511,11 +511,11 @@
   },
   "HostUnavailable": {
    "code": 503,
-   "when": "hostd is not answering"
+   "when": "the host is not answering"
   },
   "HostTimeout": {
    "code": 504,
-   "when": "hostd did not answer in time"
+   "when": "the host did not answer in time"
   }
  },
  "refusals": {

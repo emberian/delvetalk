@@ -22,6 +22,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 
 from tests.host import serve
+from transport.state import State
 from transport import delve, identity, oauth
 from transport.host import CLOCK
 from transport.http import Front
@@ -154,9 +155,10 @@ class Login(unittest.TestCase):
         self.addCleanup(self.town.shutdown)
         self.now = [1000.0]
         resolver = lambda method, url, headers, body: (200, json.dumps({'did': DID}).encode()) if HANDLE in url else (400, b'{"error":"InvalidHandle"}')
-        self.ident = identity.Identity(self.tmp.name, delve.Client(resolver), clock=lambda: self.now[0])
+        st = State(self.tmp.name)
+        self.ident = identity.Identity(st, delve.Client(resolver), clock=lambda: self.now[0])
         self.host = Recorder()
-        self.front = serve(Front(('127.0.0.1', 0), self.host, self.ident, clock=lambda: self.now[0]))
+        self.front = serve(Front(st, self.host, self.ident, ('127.0.0.1', 0), clock=lambda: self.now[0]))
         self.addCleanup(self.front.server_close)
         self.addCleanup(self.front.shutdown)
         self.port = self.front.server_address[1]
