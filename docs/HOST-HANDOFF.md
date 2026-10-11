@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-11 (lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-11 (lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -1738,15 +1738,33 @@ The shapes, for the strokes assembly (lane/enchant) and the objects lane, as bui
   delivery like a send (the ledger the turn's sends inherit), `to` the card the line names as its owner resolves
   it (`me` their avatar). Else `unfired [{object, rule, owner, why}]`, `why` one of `hole`, `spell`, `noOwner`,
   `quiet`, `ruleDepth` (`Limits.ruleDepth` 4: `depth` counts firings down a chain), `rulesPerCommit` (8 per
-  commit). The delivered turn is the owner's entry under identity `(owner, rule:…)`; a rule's spell may be a
+  commit), `pending` (`maxPending` undelivered). The delivered turn is the owner's entry under identity `(owner, rule:…)`; a rule's spell may be a
   host spell (`castSpell`'s `speaker`): `adopt`, `rule`, `lend`… run under the owner with the delivery consumed.
   Judging is not metered (`ruleTicks`): a text law is not either; it is bounded by `rulesPerObject` × rows.
 - *Wants, at commit and at read.* `wanted`/`unwanted [{object, want}]`: the wants that hold of each written or
   created object after the write and not before, at the clock, and the reverse (`posing`). Replay re-derives
   `fired`, `unfired`, `wanted`, `unwanted` and compares each.
-- *`request.verb`.* `Written.verb` (`act {verb, text}`'s verb, else "" for the method; journaled `verbs`).
+- *`request.verb`.* `Written.verb` (`act {verb, text}`'s verb, else "" for the method; journaled `verbs`;
+  `TurnLoop.actVerb`). No body has `act` yet (objects lane); `#guard`s and Law's own guards cover it.
+- *The revealing reply* (TENURE §4). `turnReply` carries `revealed`: up to three host-rendered lines of an
+  admitted entry (`TurnLoop.revealed`), each left out when empty: what it moved (`rule two of glm.delve.town
+  fired: delvetalk me note / text: …`, or `… did not fire: <why in words>`), what it opened or closed
+  (`garden/bell/1 now wants second: delvetalk garden/bell/1 rain`, `… no longer wants second`), where it stands
+  (`garden/bell/1's lines: 2, the first by kimik3.delve.town`: each relation the write inserted into, its count,
+  the speaker's first row by `author`). `bridge.draft_text` and `spell_line` place them between the card and the
+  receipt line. Not yet: `offeredTo`'s diff for the speaker ("it now takes `ring`").
+- *`adopt`* takes `rule`/`want` lines inline as it takes `law` lines: a rule in a thing's own text is fired under
+  its owner.
 - *Packages.* A package's top-level `rule`/`want` lines (`EntryCompiled.clauses`, `Built.lines`) are placed by
   `makeObject` on what is made of it with no law text given, owned by its creator, `since` its height.
+- *Carry.* Edition 9 is breaking and carries: `deploy/carry-check.sh` on hbox, the newest v7 backup
+  (`delvetalk-20261011T183505Z`, `--old-image delvetalk-host:9790175f9dc0`): green, breaking, carries (28
+  objects, 73 receipts); playtest 3 (`run-20261011-084303` state, `--old-binary` its dt-playtest6 binary,
+  `--leave wake/did:plc:6amo7col5h4ciq2gpm5eur7b`): green, breaking, carries (51 objects, 489 receipts).
+- *Tests.* `tests/test_rules.py` (the controls: a rule fired once and read back with its receipt, forty rules
+  firing eight, a chain four deep, `hole` and `quiet`, placing and taking off, a want's flips and `since`, where a
+  write stands; each across a reopen) and `tests/test_reaction.py` (REACTION §5's five outcomes on the town's own
+  objects, and a firing replayed after a restart).
 - *For the objects lane.* The world-call arms (`rule`, `unrule`, `want`, `unwant` from Bend) are not built:
   World.obend's protocol must declare them in the same change that deletes `subscribe` and `awaitPost` (one pin
   move), and the host's arms follow (`answer`, `worldMethods`; staged as `TurnState` placements, as `amend` is).
@@ -1766,8 +1784,8 @@ The shapes, for the strokes assembly (lane/enchant) and the objects lane, as bui
   amendments, later settings, `unposted`; 5.126); 4 is host16 (roots read by their cells, the per-cell bound and
   ledger; 5.136); 5 is host17 (a layered package's shape is its stack's, 5.138; the relational atoms judged and
   their citations roots, 5.139); 6 is host18 (a send refused transiently stays pending, 5.150); 7 is host19
-  (`context.sender`, 5.155); 8 is kernel16 (`cardRefused`, 5.157). OVERHAUL plans one more, 9, with step 3's
-  rules and wants, and snapshot `v4` with it; none after. Test: `tests/test_replay_edition.py`.
+  (`context.sender`, 5.155); 8 is kernel16 (`cardRefused`, 5.157); 9 is host22 (rules and wants placed, fired and
+  posed, `request.verb`, 5.160), with snapshot `v4`, the last bump OVERHAUL plans. Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.

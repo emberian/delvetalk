@@ -49,7 +49,9 @@ def readWorld (b : Json) (src : Entries) (height : Nat) : Except String World :=
   let base : World := { entries := src.upTo height, height, head := ← b.getObjValAs? String "head" }
   let index ← b.getObjVal? "index"
   let read ← readKeys.foldlM (init := Snapshot.indexJson base) fun j k => do
-    return j.setObjVal! k (← (index.getObjVal? k).mapError fun _ => s!"its index has no {k}")
+    match index.getObjVal? k with
+    | .ok v => return j.setObjVal! k v
+    | .error _ => if Snapshot.addedKeys.contains k then return j else throw s!"its index has no {k}"
   let w ← Snapshot.installIndex base read
   let w ← Snapshot.install b w
   Snapshot.checkAnchors w
@@ -208,7 +210,7 @@ def main (args : List String) : IO UInt32 := do
     | return ← fail (s!"{journal} has no snapshot at its head ({height}); " ++
         (match snapshots.head? with | some (h, _) => s!"the newest is at {h}; " | none => "") ++
         s!"write one with the binary of its edition ({replay}): deploy/verify.sh --snapshot")
-  let body ← match Snapshot.verifiedBody (← IO.FS.readBinFile file) height src with
+  let body ← match Snapshot.verifiedBody (← IO.FS.readBinFile file) height src [Snapshot.edition, Snapshot.previousEdition] with
     | .ok b => pure b
     | .error e => return ← fail s!"{file}: {e}"
   let w ← match readWorld body src height with

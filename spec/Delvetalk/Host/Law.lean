@@ -15,12 +15,6 @@ open Delvetalk.Compiler.ObjectiveBendLaw (Clause) in
 def renderLaw (law : Law) : String :=
   "\n".intercalate (law.map fun (name, condition) => ({ modality := .law, name, condition } : Clause).render)
 
-/-- The `"reading"` after a clause's name (a JSON string literal): the reading and the rest after
-    it, or none when the text does not open with one. The kernel's (`ObjectiveBendLaw.splitReading`);
-    `Ops.lawClauses` reads it until it reads `parseClauses` (KERNEL-HANDOFF §27). -/
-def lawReading (rest : String) : Except String (Option (String × String)) :=
-  Delvetalk.Compiler.ObjectiveBendLaw.splitReading rest
-
 /-- A thing's text, every modality: one clause a line (`law`, `rule`, `want`), as the kernel parses
     it, within the text's byte and clause bounds. -/
 def parseClauses (text : String) : Except String (List Delvetalk.Compiler.ObjectiveBendLaw.Clause) := do

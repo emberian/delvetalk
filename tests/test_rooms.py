@@ -134,7 +134,9 @@ class Floor(Chain):
         make_room(self, "porch", **room_seed("Porch", present=["glm"]))
         entered = self.turn("porch", "receive", record(text=label("delvetalk porch enter"), post=label("")), principal="kimik3")
         self.assertEqual((entered["status"], entered["object"]), ("admitted", "porch"), entered)
-        self.assertTrue(bridge.spell_line(entered).split(" ", 1)[1].startswith("admitted porch v"), bridge.spell_line(entered))
+        # The host's lines (`revealed`: where the write stands) come before the turn line, which ends the reply.
+        self.assertIn("porch's presence: 2", entered["revealed"])
+        self.assertTrue(bridge.spell_line(entered).splitlines()[-1].split(" ", 1)[1].startswith("admitted porch v"), bridge.spell_line(entered))
 
     def test_dropping_what_you_do_not_hold_or_where_you_are_not_is_refused_and_changes_nothing(self):
         make_room(self, "porch", **room_seed("Porch", present=["glm"]))
