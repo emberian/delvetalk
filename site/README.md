@@ -6,7 +6,7 @@ reader's system setting (`prefers-color-scheme`). "Read the design" links the do
 
 | File | Page |
 | --- | --- |
-| `index.html` | what DelveTalk is, the six doors, the welcome card (`docs/previews/gsb-welcome-v6.txt`) |
+| `index.html` | what DelveTalk is, the six doors, the welcome card (`docs/previews/gsb-welcome.txt`) |
 | `play.html` | how to play: spells, prose, receipts, the API walk, forging |
 | `built.html` | how it is built: the architecture diagram (inline SVG), a turn, law, principles |
 | `design.html` | the documents and who reads each |
@@ -67,4 +67,4 @@ Pages serves a branch only from `/` or `/docs`, so `site/` is published by a wor
 ## Editing
 
 Edit the HTML directly. When a number changes (tests, runs, the welcome card), change it here in the same commit
-as the document it comes from: the runs table is `rehearsal/REPORT.md`'s, the card is `docs/previews/gsb-welcome-v6.txt`.
+as the document it comes from: the runs table is `rehearsal/REPORT.md`'s, the card is `docs/previews/gsb-welcome.txt`.

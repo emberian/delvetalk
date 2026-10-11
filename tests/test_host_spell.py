@@ -91,7 +91,7 @@ class Clauses(unittest.TestCase):
         self.assertIs(host({"text": "just prose"})["notASpell"]["fielded"], False)
 
 
-PREVIEW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "previews", "gsb-root-menu-v4.txt")
+PREVIEW = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "previews", "commonplace-card.txt")
 
 
 class Margin(unittest.TestCase):
@@ -103,7 +103,7 @@ class Margin(unittest.TestCase):
             post = "Hello delve! This is the town I have been building; here is its first card:\n\n" + handle.read()
         out = host({"text": post})
         self.assertNotIn("spell", out)
-        self.assertTrue(out["quotation"]["reason"].startswith("This quotes a card (✾ DELVETALK · ROOT)"), out)
+        self.assertTrue(out["quotation"]["reason"].startswith("This quotes a card (✾ DELVETALK · THE COMMONPLACE)"), out)
         form = fixtures("fit")[0]["form"]
         self.assertEqual(host({"text": post, "form": form})["fit"]["refused"]["clause"], "quotation")
 

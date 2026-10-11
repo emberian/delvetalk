@@ -1,17 +1,19 @@
-# Posting drafts
+# Previews
 
-The welcome cards as they will be posted, and what came before them. Posting is ember's, by hand (docs/DEPLOY.md, "The first welcome card"). Nothing here is posted yet.
+What the hand posts, cut from genesis's live cards. `tests/test_previews.py` fails when a card changes until the preview is re-cut, and casts every seed-post spell.
 
-| File | Where | State |
+| file | where it is posted | what it is |
 | --- | --- | --- |
-| [gsb-welcome-v6.txt](gsb-welcome-v6.txt) | `#gsb` on delve.town, recorded against `directory`: hob's opening, the first level of the root trie, the field-guide voice (docs/VOICE.md); the site's home page embeds it | current |
-| [zulip-welcome-v3.txt](zulip-welcome-v3.txt) | the playtest stream's `welcome` topic: v6 for Zulip, posted by `deploy/playtest.sh`, which fills the STUDIO port; `transport/zulip.py` fills `<bot name>` | current |
-| [gsb-root-menu-v4.txt](gsb-root-menu-v4.txt) | the directory's card as docs/MENU.md's trie in the voice, the library under STUDIO: the target. `Directory.render` draws the trie from live state today in v3's shape, without the library line (`4cbb588`) | current target |
-| [seed-posts/](seed-posts/) | the hand's sixteen posts for the first three days (docs/SEEDING.md) | current |
-| [offering-post.txt](offering-post.txt) | `wiki: DelveTalk: Ground`, docs/GROUND.md's offering to the town | proposed |
-| [site-theme-brief.md](site-theme-brief.md) | the site's theme as the town answered it | reference |
-| [gsb-welcome-v5.txt](gsb-welcome-v5.txt), [gsb-welcome-v4.txt](gsb-welcome-v4.txt), [gsb-welcome-v3.txt](gsb-welcome-v3.txt), [gsb-welcome-v2.txt](gsb-welcome-v2.txt) | superseded by v6, each by the next | history |
-| [zulip-welcome-v2.txt](zulip-welcome-v2.txt), [zulip-welcome.txt](zulip-welcome.txt) | superseded by v3 | history |
-| [gsb-root-menu-v3.txt](gsb-root-menu-v3.txt), [gsb-root-menu-v2.txt](gsb-root-menu-v2.txt), [gsb-root-menu.txt](gsb-root-menu.txt) | superseded by v4; the first is the long menu posted during the as-if days | history |
+| `gsb-welcome.txt` | delve.town `#gsb` | hob's opening (carries the summons), the commonplace's card, how to speak |
+| `zulip-welcome.txt` | the Zulip playtest `welcome` topic | the same, starting at KINDS |
+| `commonplace-card.txt` | reference | the commonplace's card exactly as it renders |
+| `seed-posts/01-porch.txt` | reply on the porch | the porch's card and its three unclaimed things |
+| `seed-posts/02-plant.txt` | reply on the garden | a planting spell |
+| `seed-posts/03-rain-bell-1.txt` | reply on `bell/1` | the sixth bell's card and a rain |
+| `seed-posts/04-sealed.txt` | reply on `kinds` | a kind made with a law, then used |
+| `seed-posts/05-inspirit.txt` | the owner's pingwave | the three things to inspirit |
+| `pingwaves.txt` | to one resident | one task, one first spell |
+| `offering-post.txt` | wiki | DelveTalk: Ground |
+| `site-theme-brief.md` | design | the site's theme brief |
 
-Readers clip near 1,400 characters: each card puts its affordances before the clip line.
+Each seed post begins `recorded against: <card> · <what it opens>`. Card text is the live render verbatim; spells outside a card are indented four spaces.

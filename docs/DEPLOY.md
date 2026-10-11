@@ -318,7 +318,7 @@ account's credentials file is mounted for that one command only:
     docker compose run --rm -v /etc/delvetalk/delve/credentials.json:/run/delve.json:ro -e DELVETALK_CREDENTIALS=/run/delve.json \
       delvetalk-ops python3 -m transport post --text-file /data/welcome.txt --intent welcome-1 --object commonplace
 
-`/data/welcome.txt` is `docs/previews/gsb-welcome-v6.txt` at the deployed commit, placed in the data directory by hand
+`/data/welcome.txt` is `docs/previews/gsb-welcome.txt` at the deployed commit, placed in the data directory by hand
 (owner 10425, mode 0400); compare its SHA-256 with the repository's after any edit of the preview, since a re-genesis that
 carries the old data directory's copy forward carries the old text. The state is the ops container's `/data/state`
 (`DELVETALK_STATE`; its `worlds/town/posting/` ledger keeps each intent's record key). The host reserves every post before it is sent
@@ -456,7 +456,7 @@ in this path reads Delve credentials.
 
 It starts `delvetalk-obend serve` over a fresh directory under `~/.delvetalk-playtest/run-<stamp>/state/` (`--dir`
 moves it; earlier runs are kept), writes the run's `delvetalk.toml` (origin, `http_port`, `poll`), opens the town on the
-stream with `transport open`, runs genesis, posts the config's `welcome` (default `docs/previews/zulip-welcome-v4.txt`) to the stream's `welcome`
+stream with `transport open`, runs genesis, posts the config's `welcome` (default `docs/previews/zulip-welcome.txt`) to the stream's `welcome`
 topic and records it against `commonplace`, then runs the local front (`--port`, default 8765, which the card's STUDIO door names), the bridge and the interpreter (the last two every `--poll` seconds), each under a PID file in the run directory that `--stop` reads. The
 `.zuliprc` is the bot's: its user must be subscribed to the stream (a guest cannot create one; check `users/me/subscriptions` first, since a stream the bot cannot see answers `Invalid channel name`). With `--topic NAME` the playtest joins an existing conversation: the welcome goes to that topic instead of `welcome`, and the observer reads only that topic (the Zulip narrow `channel` + `topic`), so the world never sees the stream's other topics; replies land in the same topic. A fresh bridge observes nothing posted before its start. The model credentials are as under "Model
 credentials" and are read from the environment of the script; `DELVETALK_OBEND` names the host binary.

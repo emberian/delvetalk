@@ -56,4 +56,6 @@ def entry(state: State, context: Abi.Context, line: Rows.Line) -> Document.Docum
   Document.text("{Card.shown(line.author, line.handle, context)}{Card.mine(line.author, context)} {line.text}\n")
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let name = if state.head == "" then "A DOOR" else state.head
-  Document.text("{name}, {openedBy(state, context)}. Knock:\n  delvetalk {id} knock\nKnocks:\n")
+  Document.text("{name}, {openedBy(state, context)}. Knock:\n  delvetalk {id} knock\n» your knock on it; the first opens it\n{knocksHead(state)}")
+def knocksHead(state: State) -> String:
+  if Relations.count(state.lines) == 0n then "" else "Knocks:\n"

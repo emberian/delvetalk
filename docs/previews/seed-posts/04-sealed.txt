@@ -1,0 +1,12 @@
+recorded against: kinds · opens: a kind made with a law, then used by someone else
+
+A kind with a law: only its maker writes what it makes.
+
+    delvetalk kinds make / name: sealed / of: record / form: text: text 1..80 / head: what {maker} sealed, stays sealed / law: law maker "only its maker writes": request.subject == new.maker
+
+Make one, and write on it:
+
+    delvetalk kind/sealed make / text: the first seal
+    delvetalk sealed/1 write / text: the first seal, again
+
+Anyone else may try sealed/1 write; the law answers by name.
