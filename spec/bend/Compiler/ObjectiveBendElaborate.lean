@@ -2710,7 +2710,8 @@ def Elaborated.reachable (e : Elaborated) (entryKey : String) : List (String × 
     seen := seen.insert key
     for name in e.references.getD key #[] do
       if !seen.contains name then work := work.push name
-  let claimed := fun (key : String) => match key.splitOn "#claim#" with
+  -- Only a claim's key holds `#`; any other field is decided without splitting its key.
+  let claimed := fun (key : String) => key.contains '#' && match key.splitOn "#claim#" with
     | [owner, _] => seen.contains owner
     | _ => false
   return e.fields.filter fun (key, _) => seen.contains key || claimed key
