@@ -70,3 +70,5 @@ rewritten (LIBRARY, SEEDING, AGENTS-API).
   gate"; RELATIONAL; WHOLENESS; LAW; VOICE and LIBRARY.
 - **External reviewer**: CODEX-BRIEF, then FOUNDATION §8's invariants and the handoffs' summaries; the first review
   and what became of it in `review/codex-2026-10-10/ROUTING.md`.
+| [TOUR.md](TOUR.md) | one real act followed from the post to the signed record, through every layer |
+| [POSTING.md](POSTING.md) | posting as the primary way in: what a poster can reach, what each flow costs |

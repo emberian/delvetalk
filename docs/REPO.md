@@ -164,7 +164,7 @@ section 2); the at-uri is for readers who follow it.
 
 - **Writes.** No `createRecord`, `putRecord`, `deleteRecord`, `applyWrites`, `uploadBlob`: the journal is
   written by turns at the host, never through this façade. Unknown methods are 501
-  `MethodNotImplemented`; a non-GET is 405.
+  `MethodNotImplemented`; a non-GET answers 501 too.
 - **`getBlocks`, `getBlob`, `getRepo` of another DID.** One repository, no blobs.
 - **Checkpoints and pending sends.** `blocks[].cid`, `activity.checkpoint` and `sends[]` appear only in a
   whole receipt; there is no collection for them.
