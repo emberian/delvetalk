@@ -1532,10 +1532,14 @@ def buildRead (_key : String) : Option Built := none
 
 unsafe def buildKeepImpl (key : String) (b : Built) : Built :=
   unsafeBaseIO do
+    if (← buildMemo.get).contains key then return b
     buildMemo.modify fun m => boundedInsert m Limits.maxBuilds key b
+    -- and the disk's, when there is one: a package no world holds (a reprogram's, a carry's) is never
+    -- written by `persistCaches`, and every process compiled it again.
+    (do if (← DiskCache.dir).isSome then DiskCache.write "build" key (builtJson key b)).catchExceptions fun _ => pure ()
     return b
 
-/-- `b`, kept as the process's compiled package of `key`. -/
+/-- `b`, kept as the process's compiled package of `key` (and the disk cache's). -/
 @[implemented_by buildKeepImpl]
 def buildKeep (_key : String) (b : Built) : Built := b
 
