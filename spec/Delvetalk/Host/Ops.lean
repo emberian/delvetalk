@@ -1235,6 +1235,14 @@ def declsOfArtifact (artifact : Json) : Except String (Option (List RelDecl)) :=
     | none => pure ()
     return ({ field, key, limit } : RelDecl)
 
+/-- `m` with `k ↦ v`, holding at most `bound` keys: when full, one other key goes (never the whole map, which
+    would recompile everything a full cache held). -/
+def boundedInsert {α : Type} (m : Std.HashMap String α) (bound : Nat) (k : String) (v : α) : Std.HashMap String α :=
+  if m.size < bound || m.contains k then m.insert k v else
+  match m.fold (init := none) fun (acc : Option String) key _ => acc <|> (if key == k then none else some key) with
+  | some old => (m.erase old).insert k v
+  | none => m.insert k v
+
 /-- A pure definition of a held entry run on data arguments under `ticks`: its value, or the
     machine's refusal (`budget` when the ticks ran out), and the ticks it used. -/
 def runPure (entry : Delvetalk.CheckedEntry) (arguments : List Data) (ticks : Nat) :
@@ -1460,13 +1468,38 @@ def lowerInputs (inputs : Json) : Option Json := do
   let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) => k != "modules" && k != "layers"
   return Json.mkObj ([("modules", Json.arr ms.pop)] ++ (if n > 1 then [("layers", toJson (n - 1))] else []) ++ fields)
 
+/-- This process's compiled packages by `buildKey` (a content address), whichever world built them. -/
+initialize buildMemo : IO.Ref (Std.HashMap String Built) ← IO.mkRef {}
+
+unsafe def buildReadImpl (key : String) : Option Built :=
+  unsafeBaseIO do return (← buildMemo.get)[key]?
+
+/-- The process's compiled package of `key`; `none` in the model (compile as if cold). -/
+@[implemented_by buildReadImpl]
+def buildRead (_key : String) : Option Built := none
+
+unsafe def buildKeepImpl (key : String) (b : Built) : Built :=
+  unsafeBaseIO do
+    buildMemo.modify fun m => boundedInsert m Limits.maxBuilds key b
+    return b
+
+/-- `b`, kept as the process's compiled package of `key`. -/
+@[implemented_by buildKeepImpl]
+def buildKeep (_key : String) (b : Built) : Built := b
+
+mutual
 /-- A package's compiled form. A layered package is a stack (HOST-HANDOFF 5.3): a layer keeps what the
     code below it declared public and may declare more, keeps the relations below when it declares
     none, and keeps the law shape below when it declares no Bend law; so whether an object was made
     layered, extended later or rebuilt by replay, its stack has one shape. -/
 partial def compileObject (w : World) (inputs : Json) : Except String Built := do
-  if let some b := w.builds[buildKey inputs]? then return b
-  if let some b := ((DiskCache.read "build" (buildKey inputs)).bind builtOf).map DiskCache.hit then return b
+  let key := buildKey inputs
+  if let some b := w.builds[key]? <|> buildRead key then return b
+  if let some b := ((DiskCache.read "build" key).bind builtOf).map DiskCache.hit then return buildKeep key b
+  return buildKeep key (← compileObjectCold w inputs)
+
+/-- `compileObject` with no cache to answer it. -/
+partial def compileObjectCold (w : World) (inputs : Json) : Except String Built := do
   let resolved ← resolveInputs w inputs
   -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
   let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
@@ -1489,6 +1522,7 @@ partial def compileObject (w : World) (inputs : Json) : Except String Built := d
            relations := declared.getD ((below.map (·.relations)).getD []),
            exposed := exposed ++ ((below.map (·.exposed)).getD []).filter (!exposed.contains ·),
            lawShape := if predicate then (predicate, reads) else ((below.map (·.lawShape)).getD (false, false)) }
+end
 
 /-- The method table and law shape an object of `b` runs with (`Object.methods`, `predicate`, `predicateReads`). -/
 def Built.shape (b : Built) : Json × Bool × Bool :=
@@ -1971,7 +2005,7 @@ def requestRead (_key : String) : Option Package.PreparedRequest := none
 
 unsafe def requestKeepImpl (key : String) (r : Package.PreparedRequest) : Package.PreparedRequest :=
   unsafeBaseIO do
-    requestMemo.modify fun m => (if m.size < Limits.maxBuilds then m else {}).insert key r
+    requestMemo.modify fun m => boundedInsert m Limits.maxBuilds key r
     return r
 
 /-- `r`, kept as the process's prepared closure of `key`. -/
@@ -1991,8 +2025,7 @@ def compileEntryIn (w : World) (inputs : Json) (name : String) : Except String (
       | some r => pure (requestKeep own r, w)
       | none =>
         let r ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
-        let cache := if w.requests.size < Limits.maxBuilds then w.requests else {}
-        pure (requestKeep own r, { w with requests := cache.insert key r })
+        pure (requestKeep own r, { w with requests := boundedInsert w.requests Limits.maxBuilds key r })
   let compiled ← (Package.compileEntryFrom request name).mapError Package.Diagnostic.render
   return (compiled, w)
 
@@ -2027,7 +2060,7 @@ def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJ
 unsafe def memoKeepImpl (key : String) (c : Compiled) : Compiled :=
   unsafeBaseIO do
     if (← defMemo.get).contains key then return c
-    defMemo.modify fun m => (if m.size < Limits.maxCompiledPackets then m else {}).insert key c
+    defMemo.modify fun m => boundedInsert m Limits.maxCompiledPackets key c
     -- and the disk's, when there is one: a definition no world holds is never written by `persistCaches`
     (DiskCache.write "def" key (compiledJson key c)).catchExceptions fun _ => pure ()
     return c
@@ -2035,6 +2068,49 @@ unsafe def memoKeepImpl (key : String) (c : Compiled) : Compiled :=
 /-- `c`, kept as the process's compiled definition of `key` (and the disk cache's). -/
 @[implemented_by memoKeepImpl]
 def memoKeep (_key : String) (c : Compiled) : Compiled := c
+
+/-- Definitions that did not compile, by `defKey`, with why: asking again for a definition a package lacks (a
+    card's `actions`, `lenses`, `prompt`) is answered here, not by preparing and failing again. -/
+initialize failMemo : IO.Ref (Std.HashMap String String) ← IO.mkRef {}
+
+unsafe def failReadImpl (key : String) : Option String :=
+  unsafeBaseIO do return (← failMemo.get)[key]?
+
+/-- Why `key` did not compile in this process; `none` in the model. -/
+@[implemented_by failReadImpl]
+def failRead (_key : String) : Option String := none
+
+unsafe def failKeepImpl {α : Type} (key : String) (r : Except String α) : Except String α :=
+  unsafeBaseIO do
+    if let .error e := r then failMemo.modify fun m => boundedInsert m Limits.maxCompiledPackets key e
+    return r
+
+/-- `r`, its failure (if it is one) kept as the process's answer for `key`. -/
+@[implemented_by failKeepImpl]
+def failKeep {α : Type} (_key : String) (r : Except String α) : Except String α := r
+
+/-- Whether `w` resolves `inputs`' library (or they name none): only then is a compile failure the package's own,
+    the same in every world, and so the process's to remember. -/
+def resolvable (w : World) (inputs : Json) : Bool :=
+  match (inputs.getObjValAs? String "library").toOption with
+  | some pin => w.libraries.contains pin
+  | none => true
+
+/-- Zero-argument pure definitions run, by `defKey`: their value is a function of the compiled entry alone
+    (`forms()`, `views()`, `lenses()`, `lawReads()`), so it is computed once per process. -/
+initialize zeroMemo : IO.Ref (Std.HashMap String (Except String Data)) ← IO.mkRef {}
+
+unsafe def runZeroImpl (key : String) (entry : Delvetalk.CheckedEntry) : Except String Data :=
+  unsafeBaseIO do
+    if let some r := (← zeroMemo.get)[key]? then return r
+    let r := (runPure entry [] Delvetalk.Bounds.lawTicks).1
+    zeroMemo.modify fun m => boundedInsert m Limits.maxCompiledPackets key r
+    return r
+
+/-- `entry` (the definition `key`, of no arguments) run under the law's ticks. -/
+@[implemented_by runZeroImpl]
+def runZero (_key : String) (entry : Delvetalk.CheckedEntry) : Except String Data :=
+  (runPure entry [] Delvetalk.Bounds.lawTicks).1
 
 /-- A definition of the on-disk compile cache (`DiskCache`, kind `def`), when it holds `key`; once read,
     the process's. -/
@@ -2049,10 +2125,14 @@ def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
 /-- An object's definition `name`, compiled and prepared (from the world's cache when warm, else
     the process's, else the disk's). -/
 def compileDef (w : World) (o : Object) (name : String) : Except String (Compiled × World) := do
-  if let some c := w.compiled[defKey o name]? then return (c, w)
-  if let some c := memoRead (defKey o name) <|> diskCompiled (defKey o name) then return (c, w)
-  let (c, w) ← compileEntryIn w o.inputs name
-  return (memoKeep (defKey o name) (← compiledOf c), w)
+  let key := defKey o name
+  if let some c := w.compiled[key]? then return (c, w)
+  if let some c := memoRead key <|> diskCompiled key then return (c, w)
+  let mine := resolvable w o.inputs
+  if mine then if let some e := failRead key then throw e
+  let compiled := compileEntryIn w o.inputs name >>= fun (c, w) => do return (← compiledOf c, w)
+  let (c, w) ← if mine then failKeep key compiled else compiled
+  return (memoKeep key c, w)
 
 /-- Compile the Bend law (and its reads) of the objects a proposal writes, into the world's
     cache, so the pure `judge` finds them. -/
@@ -2063,9 +2143,7 @@ def warmLaws (w : World) (ids : List String) : World :=
       (["law"] ++ (if o.predicateReads then ["lawReads"] else [])).foldl (fun w name =>
         if w.compiled.contains (defKey o name) then w else
         match compileDef w o name with
-        | .ok (c, w) =>
-          let cache := if w.compiled.size < Limits.maxCompiledPackets then w.compiled else {}
-          { w with compiled := cache.insert (defKey o name) c }
+        | .ok (c, w) => { w with compiled := boundedInsert w.compiled Limits.maxCompiledPackets (defKey o name) c }
         | .error _ => w) w
     | none => w) w
 
@@ -2074,7 +2152,7 @@ def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
   if !o.predicateReads then return []
   let (c, _) ← compileDef w o "lawReads"
   let some entry := c.entry | throw "lawReads is not held"
-  match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
+  match runZero (defKey o "lawReads") entry with
   | .ok value => match labels [] value with
     | some ids => return ids.eraseDups.take Limits.maxRoots
     | none => throw "lawReads must return a List<String>"
@@ -3617,7 +3695,7 @@ def makeObject (w : World) (b : Built) (inputs : Json) (state : Data) (read : Op
             relations := b.relations, fixed := fixedOf b.artifact, declares := declaresOf b.artifact }, sources)
 
 def cacheBuild (w : World) (inputs : Json) (b : Built) : World :=
-  if w.builds.size < Limits.maxBuilds then { w with builds := w.builds.insert (buildKey inputs) b } else w
+  { w with builds := boundedInsert w.builds Limits.maxBuilds (buildKey inputs) b }
 
 /-- Build an object and remember its compiled package in the world. -/
 def buildObjectIn (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)

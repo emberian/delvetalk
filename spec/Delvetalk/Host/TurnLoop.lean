@@ -389,19 +389,19 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
   match s.world.compiled[key]? <|> memoRead key <|> diskCompiled key with
   | some c =>
     unless s.world.compiled.contains key do
-      let cache := if s.world.compiled.size < Limits.maxCompiledPackets then s.world.compiled else {}
-      set { s with world := { s.world with compiled := cache.insert key c } }
+      set { s with world := { s.world with compiled := boundedInsert s.world.compiled Limits.maxCompiledPackets key c } }
     return c
   | none =>
+    let mine := resolvable s.world obj.inputs
+    if mine then if let some e := failRead key then throw (.request s!"method {method} does not compile: {e}")
     -- A method (of a layer stack too: the kernel resolves it with late binding) is compiled from
     -- its package's closure prepared once, and held decoded and checked.
-    match compileEntryIn s.world obj.inputs method >>= fun (ec, w) => do return (← compiledOf ec, w) with
+    let compiled := compileEntryIn s.world obj.inputs method >>= fun (ec, w) => do return (← compiledOf ec, w)
+    match (if mine then failKeep key compiled else compiled) with
     | .error e => throw (.request s!"method {method} does not compile: {e}")
     | .ok (c, w) =>
       let c := memoKeep key c
-      -- A full cache is emptied and refilled, never left full (which would compile every turn).
-      let cache := if w.compiled.size < Limits.maxCompiledPackets then w.compiled else {}
-      set { s with world := { w with compiled := cache.insert key c } }
+      set { s with world := { w with compiled := boundedInsert w.compiled Limits.maxCompiledPackets key c } }
       return c
 
 /-- The held entry of a compiled method (one is held whenever a method compiles). -/
@@ -691,7 +691,7 @@ def declaredForms (o : Object) : M (List (String × List (String × Data)) × Li
   if !o.declaresDef "forms" then return ([], [])
   let some c ← tryCatch (some <$> compiledMethod o "forms") (fun _ => pure none) | return ([], [])
   let some entry := c.entry | return ([], [])
-  let .ok value := (runPure entry [] Delvetalk.Bounds.lawTicks).1 | return ([], [])
+  let .ok value := runZero (defKey o "forms") entry | return ([], [])
   let forms := ((listOf value).getD []).filterMap fun
     | .record f => do
       let action ← (f.lookup "action").bind labelOf
@@ -799,7 +799,7 @@ def declaredViews (o : Object) : M (List String) := do
   if !o.declaresDef "views" then return []
   let some c ← tryCatch (some <$> compiledMethod o "views") (fun _ => pure none) | return []
   let some entry := c.entry | return []
-  match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
+  match runZero (defKey o "views") entry with
   | .ok d => return (labels [] d).getD []
   | .error _ => return []
 
@@ -1183,7 +1183,7 @@ def declaredLenses (w : World) (o : Object) : List Spell.Field :=
   let read : M (List Spell.Field) := do
     let some c ← tryCatch (some <$> compiledMethod o "lenses") (fun _ => pure none) | return []
     let some entry := c.entry | return []
-    match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
+    match runZero (defKey o "lenses") entry with
     | .ok d =>
       let form := Spell.Form.ofData (.record [("card", .label ""), ("action", .label "set"), ("fields", d)])
       return (form.map (·.fields)).getD []
@@ -4084,8 +4084,7 @@ def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) (
   match compileDef w o "prompt" with
   | .error _ => (none, w)
   | .ok (c, w') =>
-    let cache := if w'.compiled.size < Limits.maxCompiledPackets then w'.compiled else {}
-    let w' := { w' with compiled := cache.insert (defKey o "prompt") c }
+    let w' := { w' with compiled := boundedInsert w'.compiled Limits.maxCompiledPackets (defKey o "prompt") c }
     match c.entry with
     | none => (none, w')
     | some entry =>
