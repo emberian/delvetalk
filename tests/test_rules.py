@@ -170,6 +170,16 @@ class Placing(Bell):
         gone = self.place("unrule / name: two")
         self.assertEqual(gone["receipt"]["outcome"]["clause"], "unplaced", gone)
 
+    def test_a_name_the_bell_inherits_is_taken_and_an_inherited_firing_names_its_holder(self):
+        """codex host 7: a stranger's rule named as kind/bell's `seven` would share its firing's delivery id, and
+        consuming one would drop the other. The name is taken; an inherited firing's id names the kind."""
+        again = self.place("rule / name: seven / when: %s / then: delvetalk me note / text: mine" % TWO, who=KIM)
+        self.assertEqual((again["receipt"]["outcome"]["class"], again["receipt"]["outcome"]["clause"]), ("lawRefused", "nameTaken"), again)
+        for i in range(7):
+            reply = self.rain("drop %d" % i)
+        fired = [f for f in reply["receipt"].get("fired", []) if f["rule"] == "seven"]
+        self.assertEqual([f["id"] for f in fired], ["rule:%s:seven@kind/bell:%d" % (self.bell, reply["receipt"]["height"])], reply)
+
     def test_a_line_that_does_not_parse_is_refused_with_the_parsers_words_and_places_nothing(self):
         bad = self.place("rule / name: two / when: count(new.lines) >= / then: delvetalk me note / text: two")
         self.assertEqual(bad["status"], "refused", bad)
@@ -192,17 +202,17 @@ class Wants(Bell):
         return {r["name"]: r for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]}
 
     def test_a_want_poses_while_it_holds_and_the_write_that_closes_it_says_so(self):
-        placed = self.place("want / name: second / reading: a second hand / when: count(new.lines) <= 1 / asks: delvetalk {request.object} rain / text: <a rain>")
+        placed = self.place("want / name: hands / reading: a second hand / when: count(new.lines) <= 1 / asks: delvetalk {request.object} rain / text: <a rain>")
         self.assertEqual(placed["status"], "admitted", placed)
-        self.assertEqual(placed["receipt"]["wanted"], [{"object": self.bell, "want": "second"}])
-        self.assertIn("%s now wants second: delvetalk %s rain / text: <a rain>" % (self.bell, self.bell), placed["revealed"][0])
-        row = self.wants()["second"]
+        self.assertEqual(placed["receipt"]["wanted"], [{"object": self.bell, "want": "hands"}])
+        self.assertIn("%s now wants hands: delvetalk %s rain / text: <a rain>" % (self.bell, self.bell), placed["revealed"][0])
+        row = self.wants()["hands"]
         self.assertEqual((row["since"], row["asks"], row["reading"]),
                          (placed["receipt"]["height"], "delvetalk %s rain / text: <a rain>" % self.bell, "a second hand"))
         self.assertNotIn("wanted", self.rain("one")["receipt"])
         closed = self.rain("two")
-        self.assertEqual(closed["receipt"]["unwanted"], [{"object": self.bell, "want": "second"}])
-        self.assertIn("%s no longer wants second" % self.bell, closed["revealed"])
+        self.assertEqual(closed["receipt"]["unwanted"], [{"object": self.bell, "want": "hands"}])
+        self.assertIn("%s no longer wants hands" % self.bell, closed["revealed"])
         self.assertEqual(self.wants(), {})
         card = self.say(KIM, self.bell, "delvetalk %s wants" % self.bell)
         self.assertTrue(card["text"].startswith("%s wants nothing now.\n" % self.bell), card)

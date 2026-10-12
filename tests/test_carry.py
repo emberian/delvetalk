@@ -283,6 +283,32 @@ def jot(state: State, input: {text: String}, context: Abi.Context) -> Activity<S
     case _: input.text
 """
 TALLY_NOTED = declared(TALLY_NOTED_SOURCE, "bump", "jot")
+# A thing the image does not ship that reads another's count and waits for ann's turn `go` before keeping it.
+WATCH = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  seen: Nat
+def initial() -> State:
+  {seen: 0n}
+def watch(state: State, input: {other: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Nat>({object: {world: "", object: input.other}, field: "count"}):
+    case viewed(v): kept(v.state)
+    case _: 0n
+def kept(n: Nat) -> Activity<Nat>:
+  match world.await({slot: {principal: "ann", intent: "go"}, patience: 50n}):
+    case reply(_):
+      let written(_) = write {seen: set n}
+      n
+    case _: 0n
+""", "watch")
+# Tally with a method that waits (as a resident's activity waits on a reply).
+TALLY_WAITING = declared(TALLY_SOURCE + """def wait(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.await({slot: {principal: "ann", intent: "go"}, patience: 50n}):
+    case reply(_): add(context, 5n)
+    case _: 0n
+""")
 # A package that declares its law (`objects/Counted.obend`), as one host shipped it.
 COUNTED_SOURCE = TALLY_SOURCE.replace("def initial()", 'law counted "the count only rises": monotone(count)\ndef initial()', 1)
 
@@ -329,8 +355,10 @@ class Moves(Reflection):
     def carry(self, *argv):
         if os.path.exists(self.fading):
             os.remove(self.fading)
-        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
-        self.release()
+        if not getattr(self, "released", False):  # a second carry reads the same head
+            self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+            self.release()
+            self.released = True
         out = os.path.join(self.dir.name, "carried.journal")
         p = subprocess.run([binary(), "carry", "--from", self.path, "--out", out, "--reason", "the image changed",
                             "--library", os.path.join(self.image, "lib"), *argv], capture_output=True, text=True, timeout=600)
@@ -492,6 +520,41 @@ class Moves(Reflection):
         self.assertEqual(new.send(op="world-object", principal="ember", object="t")["record"]["pin"], self.before["t"]["pin"])
         bumped = new.send(op="world-turn", principal="ember", object="t", method="bump", argument=record(), identity="after")
         self.assertEqual((bumped["status"], bumped["receipt"]["outcome"]["clause"]), ("refused", "retired"), bumped)
+
+
+    def test_a_suspension_reading_a_moved_object_is_stale_after_the_carry_and_runs_again(self):
+        """codex host 9: the carry moves t (its version moves, its cells changed by no write a history names). A
+        suspension that read t before the carry is judged stale at its resumption and runs again; it is never
+        admitted by an empty history."""
+        self.make("a", WATCH, record())
+        waiting = self.turn("a", "watch", record(other=label("t")))
+        self.assertEqual(waiting["status"], "suspended", waiting)
+        self.ship(TALLY_NOTED)
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        new = self.opened(out)
+        go = new.send(op="world-turn", principal="ann", object="u", method="bump", argument=record(), identity="go")
+        self.assertEqual(go["status"], "admitted", go)
+        [resumed] = go["resumed"]
+        self.assertIn("rerunOf", resumed, resumed)
+
+    def test_a_moved_objects_suspension_refuses_the_carry_until_its_object_is_left_by_name(self):
+        """codex docs 7: a move whose package offers no `carried` cannot take up a suspension it drops; the carry
+        refuses by name until the owner names the object with --leave."""
+        r = self.host.send(op="world-create", principal="ember", identity="mk-z", object="z",
+                           modules=[{"name": "Tally", "source": TALLY_WAITING}], entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
+        self.assertEqual(self.turn("z", "wait")["status"], "suspended")
+        self.ship(TALLY_NOTED)
+        p, out = self.carry()
+        self.assertNotEqual(p.returncode, 0, p.stdout)
+        self.assertIn("z's suspension", p.stderr + p.stdout)
+        self.assertIn("--leave z", p.stderr + p.stdout)
+        self.assertFalse(os.path.exists(out))
+        p, out = self.carry("--leave", "z")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        self.assertEqual([(d["object"], d["reason"]) for d in carried["dropped"]], [("z", "its object was left")], carried)
 
 
 class StateDirectory(unittest.TestCase):

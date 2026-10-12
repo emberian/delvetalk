@@ -783,7 +783,8 @@ carry-check checks it. It prints one JSON line per world and, last, the hand's o
 
     hob: the world was carried to a newer host at entry 73; everything is where it was, and the carry is receipt <slug>.
 
-An object the new binary cannot rebuild, or a suspension it cannot decode, refuses the carry by name. Only the owner
+An object the new binary cannot rebuild, a suspension it cannot decode, and a suspension the carry would drop (its
+object moved, unless its package offers `carried`, or left unnamed) refuse the carry by name. Only the owner
 lists such an object with `--leave OBJ` (`WORLD=OBJ` for a world other than the town): it is carried retired (the
 `retired` clause, the reason its reading), its state kept, its suspensions dropped with their supervisors told
 `ended {how: broken}`. After the carry, change hbox's `pull.env` to the new image (the tarballs' paths are unchanged:

@@ -40,8 +40,10 @@ def cardShownChars : Nat := 1400
     `wanted`, `unwanted` and re-derived; `request.verb` from `act`; the last bump the overhaul plans);
     10: kernel18 (a state is named by its cells: `cid` is the CID of the scalar part's canonical block
     with each relation's rows as links (`Turn.StateCells`), journaled on creations too; a write is
-    checked, bounded and charged by the cells it changes). -/
-def replayEdition : Nat := 10
+    checked, bounded and charged by the cells it changes); 11: host30 (a rule a thing inherits fires under
+    an id naming its holder, `rule:<object>:<name>@<holder>:<height>`; placing refuses a name the thing
+    carries). -/
+def replayEdition : Nat := 11
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000

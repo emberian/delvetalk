@@ -2820,7 +2820,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           unless clause.name == x.name && (if want then Law.isWant clause else Law.isRule clause) do
             throw { cls := "programRefused", clause := some "law syntax", object := some id,
                     reason := some s!"the line places {clause.name} as another modality than {x.keyword} {x.name}" }
-          let names := (((parseClauses next.lawText).toOption.getD []).map (·.name)) ++ (next.rules ++ next.wants).map (·.name)
+          -- New across all it carries: its text's clauses, its placed lines, and those it inherits through `under`.
+          let names := (((parseClauses next.lawText).toOption.getD []).map (·.name)) ++ (carried cand id next).map (·.clause.name)
           if names.contains x.name then
             throw (refuse "nameTaken" s!"{id} already carries a clause {x.name}; place one whose name is new.")
           if let some message := citationRefusal cand id [(x.name, clause.condition)] then
@@ -3497,8 +3498,11 @@ def endedField (w : World) (object principal intent how : String) (ledger : Ledg
 
 /-! ## What a write sets off and opens (docs/OVERHAUL.md §3 "Commit"; FOUNDATION §10; FOUNDATION §5) -/
 
-/-- The delivery id, and the delivered turn's intent, of rule `name` of `object` fired at `height`. -/
-def ruleDeliveryId (object name : String) (height : Nat) : String := s!"rule:{object}:{name}:{height}"
+/-- The delivery id, and the delivered turn's intent, of rule `name` of `object` fired at `height`: a rule
+    another object's text holds (`holder`, its kind's through `under`) names it after `@`, so a rule the
+    thing holds and one it inherits are two deliveries whatever their names (no object id holds `@`). -/
+def ruleDeliveryId (object holder name : String) (height : Nat) : String :=
+  if holder == object then s!"rule:{object}:{name}:{height}" else s!"rule:{object}:{name}@{holder}:{height}"
 
 /-- How many rule firings deep the turn an entry delivers is: the `depth` its pending send carries (a
     rule's firing), 0 for a direct turn or another send. -/
@@ -3566,7 +3570,7 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
         else if depth + 1 > Limits.ruleDepth then unfired := unfired.push (refuse "ruleDepth")
         else if fired.size ≥ Limits.rulesPerCommit then unfired := unfired.push (refuse "rulesPerCommit")
         else if before.pending.size + fired.size ≥ Limits.maxPending then unfired := unfired.push (refuse "pending")
-        else fired := fired.push (Json.mkObj [("id", toJson (ruleDeliveryId id r.clause.name height)), ("to", toJson to),
+        else fired := fired.push (Json.mkObj [("id", toJson (ruleDeliveryId id r.holder r.clause.name height)), ("to", toJson to),
           ("method", toJson "receive"), ("argument", dataJson (.record [("text", .label text), ("post", .label "")])), ("sender", toJson id),
           ("principal", toJson r.owner), ("ledger", child.json), ("rule", toJson r.clause.name), ("depth", toJson (depth + 1))])
   let mut wanted : Array Json := #[]

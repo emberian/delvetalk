@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (host30: 5.176, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -2113,6 +2113,21 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    thing's law lets the grower reprogram it, else holds it over the thing for whoever its law lets lay it (`adopt /
    n`, `laidOn`). A grown verb with a body is a declared method, so no verb row is placed. Test: `test_authoring`
    (with the verb library: a one-verb kind laid by `become`, `?` saying what it is after).
+176. **Firings named by their holder, carried roots behind a barrier, no suspension dropped unnamed (host30;
+   codex host 7, host 9, docs 7; replay edition 11).**
+   - *Holder* (host 7). `ruleDeliveryId object holder name height`: a rule the thing holds keeps
+     `rule:<object>:<name>:<height>`; one it inherits through `under` (`CarriedClause.holder`) is
+     `rule:<object>:<name>@<holder>:<height>` (no object id holds `@`; `Record.ruledFrom`'s prefix stands), so a
+     placed rule and an inherited one never share a delivery. Placing refuses a name the thing carries, its
+     inherited lines included (`carried`), `nameTaken`. Tests: `test_rules.Placing.test_a_name_the_bell_inherits_…`,
+     `test_reaction`'s ids.
+   - *Barrier* (host 9). `installGenesis` gives each object of a carried or forked genesis one touch at its version
+     and height 1, an entry that writes no edits of it (as a root `set` does), so a root read below that version is
+     stale (`editsSince` none) and the suspension runs again; never current by an empty history. Test:
+     `test_carry.Moves.test_a_suspension_reading_a_moved_object_is_stale_after_the_carry_and_runs_again`.
+   - *Dropped by decision* (docs 7). `carryWorld` drops a suspension only for an object named `--leave`, or a moved
+     one whose package offers `carried`; any other the carry cannot keep refuses it by name. Test:
+     `test_carry.Moves.test_a_moved_objects_suspension_refuses_the_carry_until_its_object_is_left_by_name`.
 
 ## 6. Gotchas
 
@@ -2133,7 +2148,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   posed, `request.verb`, 5.160), with snapshot `v4`; 10 is kernel18 (a state named by its cells,
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
-  anchors alone). Test: `tests/test_replay_edition.py`.
+  anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
+  barriers, 5.176). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.
@@ -2161,13 +2177,6 @@ Each with its failing input as a test first, merging foundation before each comm
   before it, now fixed: Paint's pin re-recorded (lane/paint's prompt), the sentry post's `forge make` in a fence is
   no spell (agent 2), the garden seed post re-cut from the live card. `carry-check.sh` on delvetalk-20261012T090950Z: green, breaking (26 s);
   `bench-write.py` 200 turns: 0.95 / 1.00 / 0.95 ms median at 16 / 256 / 2,048 rows under the suite's load.
-- host 7 (P1): a placed rule named as an inherited one shares `rule:<object>:<name>:<height>` and consuming one
-  delivery removes both: the firing id names its holder (`CarriedClause.holder`), and placing refuses a name the
-  thing's kind carries. Changes `fired` ids: edition 10 ships before it, so derive the old id where holder =
-  object (no bump), or edition 11 with `carry-check.sh` green.
-- host 9 (P1): carry admits a suspended write on cells a migration moved: install a touch barrier per moved object
-  (`touches` noncommuting at the genesis) so `cellsCurrent` refuses the old roots.
-- docs 7: a moved object's suspensions are dropped without `--leave`: refuse the move unless named.
 - host 12: `world.judge` merges its dependency roots into the turn (`TurnState.roots`) before answering.
 - host 13: meter `Law.denote` (rows × clauses) against `lawTicks`; reuse canonical rows across clauses.
 - docs 12: a scratch's last-use clock persisted (Serve.lean:189), not reset at a restart.
