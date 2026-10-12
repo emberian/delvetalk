@@ -508,6 +508,8 @@ class Scratch(FrontCase):
         s, cited = self.call('POST', '/AGENTS.md/scratch/try/cite', {'receipt': made['receipt']['hash']}, tok)
         self.assertEqual((s, cited['status'], cited['_links']['receipt']['href']), (200, 'cited', f"/AGENTS.md/receipt/{cited['receipt']['slug']}"), cited)
         self.assertEqual(self.call('POST', '/AGENTS.md/scratch/try/cite', {'receipt': 'bafy'}, tok)[0], 400)
+        self.assertEqual(self.call('GET', '/AGENTS.md/scratch/try/pending', token=tok)[1]['status'], 'pending')  # the scratch is the caller's
+        self.assertEqual(self.call('POST', '/AGENTS.md/scratch/try/deliver', {}, tok)[1]['status'], 'delivered')
         s, gone = self.call('POST', '/AGENTS.md/world/world/expire', {'fields': {'scratch': 'try'}}, tok)
         self.assertEqual((s, gone['status'], gone['scratch']['world']), (200, 'expired', 'scratch/try'), gone)
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[1]['scratches'], [])

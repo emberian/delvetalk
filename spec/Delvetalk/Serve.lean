@@ -163,11 +163,20 @@ def homeClock (srv : Server) : IO (Server × Nat) := do
     | .ok session => (session.world.map fun (o : Host.Open) => o.world.clock).getD 0
     | .error _ => 0)
 
+/-- Where serve keeps a scratch world's last use (`DIR/scratch/<principal>/<name>.last`, the home clock as text), so a
+    restart does not renew it: the scratch's, not custody, deleted with it. -/
+def lastFile (srv : Server) (key : String) : System.FilePath := srv.config.state / s!"{key}.last"
+
+/-- Scratch world `key` was used at home clock `clock`: it expires `Limits.scratchMinutes` after. -/
+def used (srv : Server) (key : String) (clock : Nat) : IO Server := do
+  IO.FS.writeFile (lastFile srv key) (toString clock)
+  return { srv with scratches := srv.scratches.insert key clock }
+
 /-- Discard scratch world `key` at home clock `clock`: its session, its journal, block store and
     snapshots. The one deletion in the system: a scratch is not custody (docs/FEDERATION.md §3). -/
 def discard (srv : Server) (key : String) (clock : Nat) : IO Server := do
   let path := (journalOf srv key).toString
-  for f in [path, Host.Snapshot.storeOf path] ++ (← Host.Snapshot.files path).map (·.2) do
+  for f in [path, Host.Snapshot.storeOf path, (lastFile srv key).toString] ++ (← Host.Snapshot.files path).map (·.2) do
     try IO.FS.removeFile f catch _ => pure ()
   return { srv with worlds := srv.worlds.erase key, scratches := srv.scratches.erase key, expired := srv.expired.insert key clock }
 
@@ -178,7 +187,7 @@ def expire (srv : Server) (clock : Nat) : IO Server := do
     if last + Host.Limits.scratchMinutes ≤ clock then srv ← discard srv key clock
   return srv
 
-/-- The scratch worlds on disk at start, each as if its last op were now. -/
+/-- The scratch worlds on disk at start, each at the home clock of its last use (`used`), or now when none is kept. -/
 def findScratches (srv : Server) (clock : Nat) : IO Server := do
   let dir := srv.config.state / "scratch"
   unless ← dir.pathExists do return srv
@@ -187,7 +196,9 @@ def findScratches (srv : Server) (clock : Nat) : IO Server := do
     unless ← owner.path.isDir do continue
     for f in ← owner.path.readDir do
       if f.fileName.endsWith ".journal" then
-        srv := { srv with scratches := srv.scratches.insert s!"scratch/{owner.fileName}/{(f.fileName.dropEnd 8).toString}" clock }
+        let key := s!"scratch/{owner.fileName}/{(f.fileName.dropEnd 8).toString}"
+        let last ← try pure ((← IO.FS.readFile (lastFile srv key)).trimAscii.toString.toNat?.getD clock) catch _ => pure clock
+        srv := { srv with scratches := srv.scratches.insert key last }
   return srv
 
 /-- A scratch world's row: who, its name, the home clock of its last op and when it expires. -/
@@ -250,7 +261,7 @@ def scratchOp (srv : Server) (request : Json) : IO (Server × Json) := do
   let height := match opened with
     | .ok session => (session.world.map fun (o : Host.Open) => o.world.height).getD 0
     | .error _ => 0
-  srv := { next with scratches := srv.scratches.insert key clock, expired := srv.expired.erase key }
+  srv ← used { next with expired := srv.expired.erase key } key clock
   return (srv, Json.mkObj [("status", toJson "scratch"), ("world", toJson s!"scratch/{name}"), ("height", toJson height),
     ("expires", toJson (clock + Host.Limits.scratchMinutes))])
 
@@ -335,7 +346,7 @@ def referenceName (key : String) : String :=
 def touched (srv : Server) (key : String) : IO Server := do
   unless key.startsWith "scratch/" do return srv
   let (srv, clock) ← homeClock srv
-  return { srv with scratches := srv.scratches.insert key clock }
+  used srv key clock
 
 /-- One op on world `key` (opened when not held), with what it may reach of the others. -/
 def stepOn (srv : Server) (key : String) (request : Json) : IO (Server × Except String Json) := do

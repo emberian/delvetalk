@@ -144,6 +144,14 @@ class Scratch(unittest.TestCase):
         self.assertEqual(self.town.send({'op': 'serve-status'})['scratches'], [])
         self.assertEqual(list((self.state / 'scratch' / DID).iterdir()), [])
 
+    def test_a_restart_does_not_renew_a_scratch(self):
+        self.town.send({'op': 'world-scratch', 'principal': DID, 'name': 'kept'})
+        self.assertEqual(self.town.send({'op': 'world-advance', 'principal': 'transport', 'height': 300})['status'], 'advanced')
+        self.server.stop()
+        self.server = Served(str(self.state), cleanup=self.addCleanup, opener=OPENER, library=WORLD_LIBRARY)
+        self.town.send({'op': 'world-advance', 'principal': 'transport', 'height': 360})
+        self.assertIn('scratch/kept expired at clock 360', self.at('kept').send({'op': 'world-status', 'principal': DID})['message'])
+
     def test_a_scratch_from_the_town_carries_only_what_its_principal_may_view(self):
         root = HostClient(self.server.root)
         self.addCleanup(root.close)

@@ -684,7 +684,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.object_page(obj, who)
         at = lambda o: {'object': link(f'{base}/world/{oid(o)}'), 'card': link(f'{base}/world/{oid(o)}/card'),
                         'source': link(f'{base}/world/{oid(o)}/source')}
-        send = lambda req, links=None: self.answer(host.send(req), links=links)
+        send = lambda req, links=None: self.answer(host.send({'principal': principal, **req}), links=links)  # a scratch is the principal's
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
         if kind == 'world':
             reply = host.send({'op': 'world-objects', 'principal': principal, 'methods': True, **{k: q[k] for k in ('prefix', 'after') if k in q}})
@@ -984,4 +984,3 @@ def command(st, a, out):
         front.serve_forever()
     finally:
         front.host.close()
-        front.repl.close()

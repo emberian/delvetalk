@@ -1406,7 +1406,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      what the principal may view. Its turns name `world: scratch/<name>` beside the principal. At most
      `Limits.scratchPerPrincipal` (2) at once (a third is refused `capacity`, naming the oldest), each under
      `scratchJournalBytes` (16 MiB) and `scratchObjects` (1,000; `world-open {maxObjects}`, `World.objectBound`).
-   - *Expiry*: `serve` keeps each scratch's home-world clock at its last op (`Server.scratches`; at start, now)
+   - *Expiry*: `serve` keeps each scratch's home-world clock at its last op (`Server.scratches`, and `<name>.last` beside its journal, so a restart does not renew it: `used`)
      and, on the home world's `world-advance`, discards each `Limits.scratchMinutes` (360) past it: session,
      journal, block store, snapshots (`discard`, the one deletion; a scratch is not custody). An op on it then
      is "scratch/<name> expired at clock N; open it again with world-scratch". The root act `expire {principal,
