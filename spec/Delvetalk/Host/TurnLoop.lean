@@ -189,9 +189,13 @@ structure TurnState where
   sends : List Send := []
   programs : List (String × (String × String)) := []
   layered : List String := []
+  /-- A program's lineage, by object (a plan's `become`): journaled on its reprogram (`Proposal.madeFrom`). -/
+  madeFrom : List (String × Json) := []
   laws : List (String × String) := []
   ticks : Nat
   plans : Nat := 0
+  /-- A plan's acts as they ran (`runPlan`), journaled as the entry's `plan`. -/
+  acts : Array Json := #[]
   /-- Rendered `offer` documents in order, each with its addressee: the journal retains them. -/
   offers : List (String × String) := []
   /-- Publications in order, as journaled: `{id, object, page, section, text}`. -/
@@ -596,6 +600,11 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
       else if e.endsWith "byte capacity" then "capacity" else "typeMismatch", e))
   return ({ object := { object with relations }, sources, seed := dataJson state }, built)
 
+/-- The turn's world with what it made (docs/HOST-HANDOFF.md 5.203): a later frame calls it, writes it and places on it
+    (judged at the commit by its own law, `judge`), as a plan's later act names it (`{made N}`). -/
+def madeIn (w : World) (id : String) (made : CreateRec) : World :=
+  { w with objects := w.objects.insert id { made.object with madeFrom := made.madeFrom } }
+
 /-- An `extend` (or `reprogram {mode: extend}`) of `id`, which this turn created (`made`): the creation
     built again with the layer over its package and the layers laid before it (a kind's instance takes
     its ancestors' bodies, then its own), judged by the made thing's own law as a reprogram (kind 1)
@@ -622,7 +631,7 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
                               creator := made.creator, package := made.package, seedArg := made.seedArg,
                               lawArg := made.lawArg, layers := made.layers ++ [source] }
     set { s with creates := s.creates.map (fun (k, c) => if k == id then (k, again) else (k, c)),
-                 world := cacheBuild s.world o.inputs built }
+                 world := madeIn (cacheBuild s.world o.inputs built) id again }
     respond bounds responseType "reprogrammed" [.record [("pin", .label o.pin)]]
 
 /-- The subject a call or send of `method` on `callee` by the running object `self` acts
@@ -2324,7 +2333,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       | .ok (made, built) =>
         let made := { made with object := { made.object with supervisor }, madeFrom, creator := self, package,
                                 seedArg := seed, lawArg }
-        set { note s with creates := s.creates ++ [(id, made)], world := cacheBuild s.world made.object.inputs built }
+        set { note s with creates := s.creates ++ [(id, made)], world := madeIn (cacheBuild s.world made.object.inputs built) id made }
         respond bounds responseType "created" [.record [("object", .record [("world", .label ""), ("object", .label id)])]]
   | .variant "send" (.record f) | .variant "sendVia" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed send plan"
@@ -2478,6 +2487,14 @@ def textField (state : Data) (name : String) : Option String :=
     never gives today's count as the entry's. From the entry and the world after it; no model. -/
 def revealed (w : World) (entry : Json) : List String := Id.run do
   if tagOf entry != "admitted" then return []
+  -- A plan's acts first, one line each, in order (docs/HOST-HANDOFF.md 5.203).
+  let acts := (((entry.getObjVal? "plan").toOption.bind (·.getObjVal? "acts" |>.toOption)).bind (·.getArr?.toOption)).getD #[]
+  let planned := acts.toList.map fun a =>
+    let t := fun (k : String) => (a.getObjValAs? String k).toOption.getD ""
+    let made := ((a.getObjVal? "made").toOption.bind (·.getArr?.toOption)).getD #[]
+    let did := if !made.isEmpty then "made " ++ ", ".intercalate (made.toList.filterMap (·.getStr?.toOption))
+      else match t "done" with | "staged" => "placed" | "read" => "read" | _ => "done"
+    s!"{(a.getObjValAs? Nat "act").toOption.getD 0}. {t "spell"}: {did}" ++ (if t "done" == "read" then "\n" ++ t "text" else "")
   let principal := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
   let rows := fun (k : String) => (((entry.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList
   let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
@@ -2514,7 +2531,7 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
       let addedKeys := added.map fun r => (Delvetalk.Turn.RowCell.of now.key r).key
       let first := added.any mine && !(now.rows.any fun c => mine c.row && !addedKeys.contains c.key)
       stands := stands ++ [s!"{id}'s {field}: {now.rows.size}" ++ (if first then s!", the first by {shownName w principal}" else "")]
-  return [moved, opened, stands].filterMap fun ls => if ls.isEmpty then none else some ("; ".intercalate ls)
+  return planned ++ [moved, opened, stands].filterMap fun ls => if ls.isEmpty then none else some ("; ".intercalate ls)
 
 /-- The `revealed` field of a reply to an admitted entry, left out when it has no line. -/
 def revealedField (w : World) (entry : Json) : List (String × Json) :=
@@ -2548,6 +2565,10 @@ def turnReply (w : World) (r : Json) : Json :=
       | _, _ => none
     Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra ++
       (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++ revealedField w entry ++ inPublic w entry ++
+      -- A plan's acts as they ran, and the one its refusal names.
+      ((entry.getObjVal? "plan").toOption.map fun p => [("plan", match planRefusedAct entry with
+        | some (n, _) => p.setObjVal! "refused" (toJson n)
+        | none => p)]).getD [] ++
       -- What a refusal may say in public, for transport to draft from.
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
 
@@ -2638,6 +2659,8 @@ structure Ctx where
   rerun : Bool := false
   /-- `{by, reason}` of a turn root ran `as` its principal. -/
   root : Option Json := none
+  /-- A plan's acts (`runPlan`): `{acts, of}`, journaled on its entry. -/
+  plan : Option Json := none
 
 
 def sendJson (s : Send) : Json :=
@@ -2663,7 +2686,8 @@ def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
     (ctx.resumes.map fun h => [("resumes", toJson h)]).getD [] ++
     (if ctx.answers.isEmpty then [] else [("replyTo", toJson ctx.answers)]) ++
     (if ctx.rerun then [("rerun", toJson true)] else []) ++
-    (ctx.root.map fun r => [("root", r)]).getD []
+    (ctx.root.map fun r => [("root", r)]).getD [] ++
+    (ctx.plan.map fun j => [("plan", j)]).getD []
 
 /-- End a segment of a turn: commit it, refuse it, or journal its suspension. -/
 def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnState) :
@@ -2679,6 +2703,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       turn := w.height + 1
       programs := st.programs
       layered := st.layered
+      madeFrom := st.madeFrom
       laws := st.laws
       absent := st.absent
       creates := st.creates
@@ -2978,6 +3003,82 @@ def moderate (w : World) (req : TurnRequest) (id action : String) (value : Strin
     return amend o (unretiredLaw o.lawText)
   | _ => refuseSpell w req id "noAction" s!"no power {action}." template
 
+/-- A host spell's field `n`, given and not empty. -/
+def hostValue (fields : List Spell.Binding) (n : String) : Option String :=
+  ((fields.find? (·.name == n)).map (·.value)).filter (!·.isEmpty)
+
+/-- The spell a placing's field `key` holds: a spell's own fields follow it on the line (`then: delvetalk me note /
+    text: …`), so the field that holds the spell takes every field after it back into the line. -/
+def hostSpellFrom (fields : List Spell.Binding) (key : String) : Option String :=
+  (fields.findIdx? (·.name == key)).map fun i =>
+    " / ".intercalate (((fields.drop i).take 1).map (·.value) ++ (fields.drop (i + 1)).map fun b => s!"{b.name}: {b.value}")
+
+/-- What a host spell other than a placing changes (`hostChange`): the roots it reads, and the program, law or
+    grant it stages, with the world its program is cached in; `refusal` when its code or its law does not read,
+    which refuses the turn whole at its commit. A spell alone commits it (`hostSpell`); a plan's act stages it into
+    its one turn (`stageHost`). -/
+structure HostChange where
+  world : World
+  roots : List (String × Nat) := []
+  programs : List (String × (String × String)) := []
+  layered : List String := []
+  madeFrom : List (String × Json) := []
+  laws : List (String × String) := []
+  grants : List Grant := []
+  refusal : Option Refusal := none
+
+/-- `become`, `adopt` and `lend` on card `id` (`o`) for `principal` (`hostSpell` says what each does), from the
+    spell's fields (`value`); `ordinal` numbers the grant `lend` makes among the turn's. A misfit is `(clause, reason)`. -/
+def hostChange (w : World) (principal intent : String) (o : Object) (id action : String) (value : String → Option String)
+    (ordinal : Nat) : Except (String × String) HostChange := do
+  match action with
+  | "become" =>
+    let some kindId := value "kind" | throw ("missingField", "become takes kind: the id of a kind.")
+    let some k := (w.objects[kindId]?).filter (·.read.permits principal) | throw ("unknownKind", s!"There is no kind {kindId}.")
+    let some body := (textField k.state "body").filter (!·.isEmpty)
+      | throw ("noBody", s!"{kindId} names no body to lay over {id}.")
+    let madeFrom := Json.mkObj [("object", toJson kindId), ("pin", toJson k.pin), ("receipt", toJson (versionReceipt w kindId))]
+    let change : HostChange := { world := w, roots := [(id, o.version), (kindId, k.version)], programs := [(id, (body, ""))],
+                                 layered := [id], madeFrom := [(id, madeFrom)] }
+    return match programFor w o body "" true with
+      | .error (clause, message) => { change with refusal := some { cls := "programRefused", clause := some clause, object := some id, reason := some message } }
+      | .ok prog => { change with world := cacheProgram w o body "" prog true }
+  | "adopt" =>
+    let some given := value "law" | throw ("missingField", "adopt takes law: a law written inline, or the id of a kind or a page.")
+    -- A law written inline is adopted as it stands; an id names the kind or page holding one, read as a root.
+    let inline := ["law ", "rule ", "want "].any fun k => given.trimAscii.toString.startsWith k
+    let (clauses, source) ← if inline then pure (given.trimAscii.toString, []) else
+      let some src := (w.objects[given]?).filter (·.read.permits principal)
+        | throw ("unknownLaw", s!"There is no kind or page {given}; or write the law: law <name> \"<reading>\": <expression>.")
+      let some clauses := (textField src.state "law").filter (!·.isEmpty)
+        | throw ("noLaw", s!"{given} names no law to adopt.")
+      pure (clauses, [(given, src.version)])
+    let existing := ((textClauses o.lawText).map (·.2.1)) ++ (o.rules ++ o.wants).map (·.name)
+    if let some (_, n, _, _) := (textClauses clauses).find? (existing.contains ·.2.1) then
+      throw ("lawClash", s!"{id}'s law already has a clause {n}; adopt a set whose names are new.")
+    let text := if o.lawText.isEmpty then clauses else s!"{o.lawText}\n{clauses}"
+    return { world := w, roots := (id, o.version) :: source, laws := [(id, text)],
+             refusal := match parseLawText text with
+               | .error message => some { cls := "programRefused", clause := some "law syntax", object := some id, reason := some message }
+               | .ok _ => none }
+  | "lend" =>
+    let some toName := value "to" | throw ("missingField", "lend takes to: a handle, or me.")
+    let some m := value "method" | throw ("missingField", "lend takes method: one of the card's methods.")
+    let some untilText := value "until" | throw ("missingField", "lend takes until: +<clock units>.")
+    let some n := (if untilText.startsWith "+" then untilText.drop 1 else untilText).toNat?
+      | throw ("badValue", "until takes +<clock units>, plain digits.")
+    -- `me`, a handle the registry knows, or a principal as written.
+    let to := if toName == meCard then principal else (principalNamed w toName).getD toName
+    unless o.offers m do throw ("noAction", s!"{id} has no method {m} to lend.")
+    unless methodAdmits w o principal m id == Json.bool true do
+      throw ("notYours", s!"The law of {id} does not let you run {m}, so you cannot lend it.")
+    let expires := w.clock + n
+    let speaker := ((w.handles[principal]?).filter (!·.isEmpty)).getD principal
+    return { world := w, roots := [(id, o.version)],
+             grants := [{ id := grantId principal intent ordinal, grantor := principal, holder := id, to,
+                          object := id, method := m, expires, reading := s!"lent by {speaker}: {m}, until clock {expires}" }] }
+  | _ => throw ("noAction", s!"{id} has no spell {action}.")
+
 /-- The host's spells on any card (docs/CATALOGUE.md §2), each a direct turn of the speaker judged by
     the card's own law, journaled under the turn's identity:
 
@@ -2997,7 +3098,7 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
     Except String (World × Json) := do
   let refuseSpell := fun (w : World) (req : TurnRequest) (object clause reason hint : String) =>
     refuseSpell w req object clause reason hint how
-  let value := fun (n : String) => ((fields.find? (·.name == n)).map (·.value)).filter (!·.isEmpty)
+  let value := hostValue fields
   if worldPowers.contains action || cardPowers.contains action then
     if how.delivery.isSome then return ← refuseSpell w req id "opener" s!"{action} is the hand's, cast directly on the root socket." ""
     return ← moderate w req id action value
@@ -3015,10 +3116,7 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
     | "grow" => growLine ++ "\n"
     | "ungrow" => "name: <the verb's name>\n"
     | _ => "to: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n")
-  -- A spell's own fields follow it on the line (`then: delvetalk me note / text: …`), so the field that
-  -- holds the spell takes every field after it back into the line.
-  let spellFrom := fun (key : String) => (fields.findIdx? (·.name == key)).map fun i =>
-    " / ".intercalate (((fields.drop i).take 1).map (·.value) ++ (fields.drop (i + 1)).map fun b => s!"{b.name}: {b.value}")
+  let spellFrom := hostSpellFrom fields
   let placing := fun (placements : List Placement) =>
     let p : Proposal := { principal := req.principal, intent := req.intent, roots := [(id, o.version)], writes := [],
                           placements, turn := w.height + 1 }
@@ -3030,63 +3128,14 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
     | .ok xs => return placing xs
     | .error (clause, reason) => refuseSpell w req id clause reason template
   | _ =>
-  match action with
-  | "become" =>
-    let some kindId := value "kind" | refuseSpell w req id "missingField" "become takes kind: the id of a kind." template
-    let some k := w.objects[kindId]? | refuseSpell w req id "unknownKind" s!"There is no kind {kindId}." template
-    unless k.read.permits req.principal do return ← refuseSpell w req id "unknownKind" s!"There is no kind {kindId}." template
-    let some body := (textField k.state "body").filter (!·.isEmpty)
-      | refuseSpell w req id "noBody" s!"{kindId} names no body to lay over {id}." template
-    let madeFrom := Json.mkObj [("object", toJson kindId), ("pin", toJson k.pin), ("receipt", toJson (versionReceipt w kindId))]
-    let p : Proposal := { principal := req.principal, intent := req.intent, roots := [(id, o.version), (kindId, k.version)],
-                          writes := [], programs := [(id, (body, ""))], layered := [id], madeFrom := [(id, madeFrom)],
-                          turn := w.height + 1 }
-    let (w', r) := match programFor w o body "" true with
-      | .error (clause, message) => commit w p base (some { cls := "programRefused", clause := some clause, object := some id, reason := some message })
-      | .ok prog => commit (cacheProgram w o body "" prog true) p base
+  match hostChange w req.principal req.intent o id action value 0 with
+  | .error (clause, reason) => refuseSpell w req id clause reason template
+  | .ok c =>
+    let p : Proposal := { principal := req.principal, intent := req.intent, roots := c.roots, writes := [],
+                          programs := c.programs, layered := c.layered, madeFrom := c.madeFrom, laws := c.laws,
+                          grants := c.grants, turn := w.height + 1 }
+    let (w', r) := commit c.world p base c.refusal
     return (w', turnReply w' r)
-  | "adopt" =>
-    let some given := value "law" | refuseSpell w req id "missingField" "adopt takes law: a law written inline, or the id of a kind or a page." template
-    -- A law written inline is adopted as it stands; an id names the kind or page holding one, read as a root.
-    let inline := ["law ", "rule ", "want "].any fun k => given.trimAscii.toString.startsWith k
-    let (clauses, source) ← if inline then pure (given.trimAscii.toString, []) else
-      let some src := (w.objects[given]?).filter (·.read.permits req.principal)
-        | return ← refuseSpell w req id "unknownLaw" s!"There is no kind or page {given}; or write the law: law <name> \"<reading>\": <expression>." template
-      let some clauses := (textField src.state "law").filter (!·.isEmpty)
-        | return ← refuseSpell w req id "noLaw" s!"{given} names no law to adopt." template
-      pure (clauses, [(given, src.version)])
-    let existing := ((textClauses o.lawText).map (·.2.1)) ++ (o.rules ++ o.wants).map (·.name)
-    if let some (_, n, _, _) := (textClauses clauses).find? (existing.contains ·.2.1) then
-      return ← refuseSpell w req id "lawClash" s!"{id}'s law already has a clause {n}; adopt a set whose names are new." template
-    let text := if o.lawText.isEmpty then clauses else s!"{o.lawText}\n{clauses}"
-    let p : Proposal := { principal := req.principal, intent := req.intent, roots := (id, o.version) :: source,
-                          writes := [], laws := [(id, text)], turn := w.height + 1 }
-    let (w', r) := match parseLawText text with
-      | .error message => commit w p base (some { cls := "programRefused", clause := some "law syntax", object := some id, reason := some message })
-      | .ok _ => commit w p base
-    return (w', turnReply w' r)
-  | "lend" =>
-    let some toName := value "to" | refuseSpell w req id "missingField" "lend takes to: a handle, or me." template
-    let some m := value "method" | refuseSpell w req id "missingField" "lend takes method: one of the card's methods." template
-    let some untilText := value "until" | refuseSpell w req id "missingField" "lend takes until: +<clock units>." template
-    let some n := (if untilText.startsWith "+" then untilText.drop 1 else untilText).toNat?
-      | refuseSpell w req id "badValue" "until takes +<clock units>, plain digits." template
-    -- `me`, a handle the registry knows, or a principal as written.
-    let to := if toName == meCard then req.principal else
-      (principalNamed w toName).getD toName
-    unless o.offers m do
-      return ← refuseSpell w req id "noAction" s!"{id} has no method {m} to lend." template
-    unless methodAdmits w o req.principal m id == Json.bool true do
-      return ← refuseSpell w req id "notYours" s!"The law of {id} does not let you run {m}, so you cannot lend it." template
-    let expires := w.clock + n
-    let speaker := ((w.handles[req.principal]?).filter (!·.isEmpty)).getD req.principal
-    let g : Grant := { id := grantId req.principal req.intent 0, grantor := req.principal, holder := id, to,
-                       object := id, method := m, expires, reading := s!"lent by {speaker}: {m}, until clock {expires}" }
-    let p : Proposal := { principal := req.principal, intent := req.intent, roots := [(id, o.version)],
-                          writes := [], grants := [g], turn := w.height + 1 }
-    let (w', r) := commit w p base
-    return (w', turnReply w' r)
-  | _ => refuseSpell w req id "noAction" s!"{id} has no spell {action}." template
 
 /-- A grant lent to `principal` for `method` of `object` that stands now (`lend`): the borrower's direct
     turn runs under it, judged with the grantor as subject. "" for none. -/
@@ -3281,37 +3330,156 @@ structure HeardStep where
 def HeardStep.action (s : HeardStep) : String :=
   if s.method == actMethod then ((labelsOf s.argument) "verb").getD s.method else s.method
 
-/-- Run hob's steps as the speaker's turn (`ctx`, its identity and what it resumes): each in order at the
-    top of the turn, a direct turn's as a spell's; a verb a `grow` stages is used later in the same turn
-    (`runFrame`); the first refusal refuses the turn. Each step reads its card as the steps before it wrote it
-    (`asWritten`): `enter` then `say` on a room says as one who entered. -/
-def runHeard (w : World) (ctx : Ctx) (post reach : String) (steps : List HeardStep) : Except String (World × Json) := do
+/-- One act of a plan (docs/HOST-HANDOFF.md 5.203): a spell read in the turn after the acts before it (`spell`, its
+    holes `{made N}` filled from what act N made, `fillHoles`), or a step hob read already (`step`). -/
+inductive Act where
+  | spell (text : String)
+  | step (s : HeardStep)
+
+def Act.text : Act → String
+  | .spell t => t
+  | .step s => s.spell
+
+/-- An act's spell line, as a reply names the act: its first line, trimmed. -/
+def actLine (text : String) : String := ((text.trimAscii.toString.splitOn "\n").headD "").trimAscii.toString
+
+/-- `text` with each hole `{made N}` the first object act `N` made (`made`, what each act before act `n` made, in
+    order), or why one names nothing: no number, an act not before `n`, or an act that made nothing. -/
+def fillHoles (text : String) (made : Array (List String)) (n : Nat) : Except String String := do
+  let parts := text.splitOn "{made "
+  let mut out := parts.headD ""
+  for part in parts.drop 1 do
+    match part.splitOn "}" with
+    | k :: rest@(_ :: _) =>
+      let shown := "{made " ++ k ++ "}"
+      let some i := k.trimAscii.toString.toNat? | throw s!"{shown} names no act; a hole is \{made N}, N an earlier act's number."
+      unless 0 < i && i < n do throw s!"{shown} names no act before act {n}; a hole names what an earlier act made."
+      let some id := (made[i - 1]?).bind (·.head?) | throw s!"{shown}: act {i} made nothing."
+      out := out ++ id ++ "}".intercalate rest
+    | _ => out := out ++ "{made " ++ part
+  return out
+
+/-- A refusal of a plan's act `n` (`line`), whole: its clause, the act named in its reason. -/
+def actRefusal (n : Nat) (line object clause reason : String) (hint : String := "") : Abort :=
+  .named { cls := "badSpell", clause := some clause, object := some object,
+           reason := some reason, hint := if hint.isEmpty then none else some hint }
+
+/-- An abort inside act `n`, named by it: whatever refuses an act refuses the plan. An act that would wait (an await,
+    hob's reading) is refused `planWaits`: a plan's acts run inside its one turn. -/
+def inAct (n : Nat) (line object : String) : Abort → Abort
+  | .evaluation r => .evaluation s!"act {n} ({line}): {r}"
+  | .refused cls r e => .refused cls s!"act {n} ({line}): {r}" e
+  | .named r => .named { r with reason := some s!"act {n} ({line}): {(r.reason <|> r.reading).getD r.cls}" }
+  | .suspend .. => actRefusal n line object "planWaits" "it waits on another turn, and a plan's acts run inside its one turn; send it alone."
+  | other => other
+
+/-- Stage a host spell's change into the turn (`hostChange`; a placing as `stagePlacements` stages it): a plan's act,
+    judged with the plan at its commit. An opener's power is an entry of its own, never an act. -/
+def stageHost (n : Nat) (line id action : String) (fields : List Spell.Binding) : M Unit := do
+  let s ← get
+  if worldPowers.contains action || cardPowers.contains action then
+    throw (actRefusal n line id "notInPlan" s!"{action} is the hand's power, an entry of its own; cast it alone.")
+  let some o := s.world.objects[id]? | throw (actRefusal n line id "otherCard" s!"There is no card {id}.")
+  if placingSpells.contains action then
+    match placementsOf o id action (hostValue fields) (hostSpellFrom fields) with
+    | .error (clause, reason) => throw (actRefusal n line id clause reason)
+    | .ok xs => if let some (clause, reading) ← stagePlacements id xs then throw (actRefusal n line id clause reading)
+    return
+  if s.creates.any (·.1 == id) then
+    throw (actRefusal n line id "notMade" s!"{id} is made by this plan; it takes its law and body as its kind makes it.")
+  -- A law an earlier act adopted is the text a later adopt extends.
+  let o := match s.laws.lookup id with | some t => { o with lawText := t } | none => o
+  match hostChange s.world s.principal s.intent o id action (hostValue fields) s.grants.length with
+  | .error (clause, reason) => throw (actRefusal n line id clause reason)
+  | .ok c =>
+    if let some r := c.refusal then throw (.named r)
+    if !c.programs.isEmpty && s.programs.any (·.1 == id) then
+      throw (actRefusal n line id "codeTwice" s!"{id} is given code by an earlier act of this plan.")
+    for (x, v) in c.roots do recordRoot x v
+    modify fun s => { s with world := c.world, programs := s.programs ++ c.programs, layered := s.layered ++ c.layered,
+                             madeFrom := s.madeFrom ++ c.madeFrom, grants := s.grants ++ c.grants,
+                             laws := (s.laws.filter (·.1 != id)) ++ c.laws }
+
+/-- Run a plan as one turn of the speaker (`ctx`, its identity and what it resumes; docs/HOST-HANDOFF.md 5.203): each
+    act in order at the top of the turn, as a spell posted alone runs, reading the cards as the acts before it left
+    them (`asWritten`; what they made is an object of the turn, `madeIn`); a spell is read when its act comes, against
+    `receiver` with the post's argument (`argOf`), so a later act names what an earlier made (`{made N}`). Nothing is
+    judged until the one commit (`finishTurn`), which judges every law against the world the acts leave, fires rules
+    once and writes one receipt; any refusal refuses the whole plan, naming the act (`inAct`, `planRefusedAct`).
+    hob's settled steps run the same way (`runHeard`). -/
+def runPlan (w : World) (ctx : Ctx) (post reach origin receiver : String) (acts : List Act) (argOf : String → Data) :
+    Except String (World × Json) := do
   let init : TurnState := { world := w, principal := ctx.principal, intent := ctx.intent, subject := ctx.principal,
                             direct := true, ticks := Limits.maxTurnTicks,
                             limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))],
-                            origin := "interpreted", command := ((steps.head?.map (·.spell)).getD ""), post, reach }
+                            origin, command := ((acts.head?.map Act.text).getD ""), post, reach }
   let action : M Data := do
     let mut result := emptyRecord
-    for step in steps do
+    let mut made : Array (List String) := #[]
+    for (act, i) in acts.zipIdx do
+      let n := i + 1
+      let line := actLine act.text
+      let before ← get
+      let (object, done, r) ← tryCatch (runAct n line act made) fun e => do
+        modify fun s => { s with acts := s.acts.push (Json.mkObj [("act", toJson n), ("spell", toJson line), ("refused", toJson true)]) }
+        throw (inAct n line receiver e)
+      result := r
+      let after ← get
+      let madeNow := (after.creates.drop before.creates.length).map (·.1)
+      made := made.push madeNow
+      -- What the act touched, so a refusal at the commit names the act that staged it (`planRefusedAct`).
+      let staged := fun (t : TurnState) => (t.writes.map (·.1)) ++ (t.placements.map (·.object)) ++ (t.laws.map (·.1)) ++
+        (t.programs.map (·.1)) ++ (t.grants.map (·.holder)) ++ (t.creates.map (·.1))
+      let touched := ((staged after).filter fun x => !(staged before).contains x || (after.writes.lookup x).map (·.length) != (before.writes.lookup x).map (·.length)).eraseDups
+      modify fun s => { s with acts := s.acts.push (Json.mkObj ([("act", toJson n), ("spell", toJson line), ("object", toJson object),
+        ("done", toJson done)] ++ (match done, r with | "read", .label t => [("text", toJson t)] | _, _ => []) ++
+        (if madeNow.isEmpty then [] else [("made", toJson madeNow)]) ++
+        (if touched.isEmpty then [] else [("touched", toJson touched)]))) }
+    return result
+  let (result, st) := (action.run).run init
+  let plan := Json.mkObj [("acts", Json.arr st.acts), ("of", toJson acts.length)]
+  let (w', r) ← finishTurn w { ctx with ticksStart := Limits.maxTurnTicks, plan := if acts.all (· matches .step _) then none else some plan } result st
+  return (w', if (r.getObjVal? "receipt").isOk then r.setObjVal! "object" (toJson ctx.object) else r)
+where
+  /-- One act: the card it ran on, what it did (`ran`, `staged`, `read`: a `?` read on the cards as they stand in the
+      turn, its text the act's answer) and the frame's result. -/
+  runAct (n : Nat) (line : String) (act : Act) (made : Array (List String)) : M (String × String × Data) := do
+    match act with
+    | .step step =>
       let world := (← get).world
       let some obj := world.objects[step.object]? | throw (.refused "unknownObject" s!"There is no card {step.object}.")
       if placingSpells.contains step.method && !obj.offers step.method then
         match placementsOf obj step.object step.method (labelsOf step.argument) (labelsOf step.argument) with
         | .error (clause, reason) => throw (.refused clause reason)
         | .ok xs => if let some (clause, reading) ← stagePlacements step.object xs then throw (.refused clause reading)
-        result := emptyRecord
-      else
-        let (method, argument) := match grownAct obj step.method step.argument with
-          | some a => (actMethod, a)
-          | none => (step.method, step.argument)
-        let via := lentVia world ctx.principal step.object method
-        result ← runMethod 0 step.object method (← granted via step.object method argument) "" ctx.principal via
-    return result
-  let (result, st) := (action.run).run init
-  -- It answers the post its words replied to only when it ran first on that post's card.
+        return (step.object, "staged", emptyRecord)
+      let (method, argument) := match grownAct obj step.method step.argument with
+        | some a => (actMethod, a)
+        | none => (step.method, step.argument)
+      let via := lentVia world ctx.principal step.object method
+      let r ← runMethod 0 step.object method (← granted via step.object method argument) "" ctx.principal via
+      return (step.object, "ran", r)
+    | .spell text =>
+      let filled ← match fillHoles text made n with
+        | .ok t => pure t
+        | .error why => throw (actRefusal n line receiver "hole" why)
+      let world := (← get).world
+      match routeSpell world ctx.principal receiver "receive" (argOf filled) true with
+      | .run object method argument command =>
+        modify fun s => { s with command }
+        let via := lentVia world ctx.principal object method
+        let r ← runMethod 0 object method (← granted via object method argument) "" ctx.principal via
+        return (object, "ran", r)
+      | .host object action fields => stageHost n line object action fields; return (object, "staged", emptyRecord)
+      | .usage object usage => return (object, "read", .label usage)
+      | .refuse object clause reason hint => throw (actRefusal n line object clause reason hint)
+      | .asIs => throw (actRefusal n line receiver "noAction" "this act is no spell.")
+
+/-- Run hob's settled steps as the speaker's turn (`runPlan`): it answers the post its words replied to only when it
+    ran first on that post's card. -/
+def runHeard (w : World) (ctx : Ctx) (post reach : String) (steps : List HeardStep) : Except String (World × Json) :=
   let answers := if (w.posts[ctx.answers]?).map (·.object) == steps.head?.map (·.object) then ctx.answers else ""
-  let (w', r) ← finishTurn w { ctx with ticksStart := Limits.maxTurnTicks, answers } result st
-  return (w', if (r.getObjVal? "receipt").isOk then r.setObjVal! "object" (toJson ctx.object) else r)
+  runPlan w { ctx with answers } post reach "interpreted" ctx.object (steps.map .step) fun _ => ctx.argument
 
 /-- hob's reading of `text`, words that reached the cards `ids` (one, or each misfit spell's of a post, `runSpells`),
     as the speaker's turn (`req`'s identity), rooted on the first that exists. Field lines that fit a form offered
@@ -3628,8 +3796,39 @@ def runSpells (w : World) (req : TurnRequest) (spells : List String) : Except St
     turns := turns.push r
   return (w, Json.mkObj [("status", toJson "spells"), ("turns", Json.arr turns)])
 
-/-- A direct turn; a post with several spells at a line's start is one turn a spell (`runSpells`). -/
+/-- A post that is a plan (`Spell.plan`): its acts as one turn of the speaker under the post's identity (`runPlan`),
+    read against the card the post reached; past `Limits.planActs` acts, or with none, refused `badSpell` whole. -/
+def runPlanTurn (w : World) (req : TurnRequest) (acts : List String) : Except String (World × Json) :=
+  let asked := req.object
+  let req := { req with object := resolveCard req.principal req.object }
+  if let some r := retainedTurn w req then .ok (w, r) else
+  if asked == meCard && !w.objects.contains req.object then refuseSpell w req meCard "noAvatar" noAvatarReason "" else
+  if acts.length > Limits.planActs then
+    refuseSpell w req req.object "tooManyActs"
+      s!"A plan carries at most {Limits.planActs} acts; this one has {acts.length}, and none was done. Make two plans." "" else
+  if acts.isEmpty then
+    refuseSpell w req req.object "noAction" "A plan with no act: under delvetalk plan, one spell a line at the margin." "" else
+  match quietOf w req.principal req.object with
+  | some quiet => quietRefusal w req quiet
+  | none =>
+    let answers := match w.posts[req.replyTo]? with
+      | some p => if p.object == req.object then req.replyTo else ""
+      | none => ""
+    let ctx : Ctx := { principal := req.principal, intent := req.intent, object := req.object, method := req.method,
+                       argument := req.argument, digest := req.digest, delivery := none, ticksStart := 0, answers,
+                       ledger := ((w.objects[req.object]?).map (·.chain)).getD Ledger.start }
+    let argOf := fun (text : String) => match req.argument with
+      | .record fs => Data.record (fs.map fun (k, v) => if k == "text" then (k, .label text) else (k, v))
+      | other => other
+    runPlan w ctx ((heardPost req.method req.argument).getD req.post) "spell" "spell" req.object (acts.map .spell) argOf
+
+/-- A direct turn; a plan is one turn (`runPlanTurn`); a post with several spells at a line's start is one turn a
+    spell (`runSpells`). -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
+  let text := heardText req.method req.argument
+  match (if req.method == "receive" && req.reach != "mentioned" && (Spell.quotes text).isNone then Spell.plan text else none) with
+  | some acts => runPlanTurn w req acts
+  | none =>
   let spells := Spell.segments (heardText req.method req.argument)
   let several := req.method == "receive" && spells.length > 1 && (Spell.quotes (heardText req.method req.argument)).isNone
   -- One identity, one request: a post's identity is bound by its one turn, or by its spells' turns (`#1`), so the
@@ -3942,6 +4141,17 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
     pure ({ object := ← (v.getObjValAs? String "object").toOption, method := ← (v.getObjValAs? String "method").toOption,
             argument := ← (v.getObjVal? "argument").toOption.bind (decodeData Limits.dataDepth · |>.toOption),
             spell := (v.getObjValAs? String "spell").toOption.getD "" } : HeardStep)
+  -- hob's plan: its acts run as a post's plan runs, read in the turn against the card (`runPlan`), unless the policy asks first.
+  if (verdict.getObjValAs? String "tag").toOption == some "plan" then
+    let acts := strings (verdict.getObjVal? "acts").toOption
+    let asks := confirmFor w
+    if acts.any (fun a => match Spell.parse a with | .spell _ action _ => asks.contains action | _ => false) then
+      return close ("hob: that asks first; send it filled:\n\n" ++ indentSpell ("delvetalk plan\n" ++ "\n".intercalate acts)) none
+    let text := fun (k : String) => (act.getObjValAs? String k).toOption.getD ""
+    let argOf := fun (t : String) => match ctx.argument with
+      | .record fs => Data.record (fs.map fun (k, v) => if k == "text" then (k, .label t) else (k, v))
+      | other => other
+    return ← runPlan w ctx (text "post") (text "reach") "interpreted" card (acts.map .spell) argOf
   if !items.isEmpty && steps.length == items.length then
     let asks := confirmFor w
     if steps.any (asks.contains ·.action) then
@@ -4494,6 +4704,13 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     if !q.isEmpty && !(q.any (· == '\n')) then return (w, unclearVerdict [q])
   if (said.take 5).toString.toLower == "grow:" then
     return growVerdict w principal object carries said
+  -- A plan (docs/HOST-HANDOFF.md 5.203): its acts, read in its one turn as they come (`resumeHeard`, `runPlan`); only
+  -- the host's own reading runs one, for an object's Response carries a proposal, not a turn.
+  if let some acts := Spell.plan text then
+    if !hostResumed s then return (w, unclearVerdict ["a plan answers only the host's reading"])
+    if acts.isEmpty || acts.length > Limits.planActs then
+      return (w, unclearVerdict [s!"a plan carries 1 to {Limits.planActs} acts"])
+    return (w, Json.mkObj [("tag", toJson "plan"), ("acts", toJson acts)])
   -- Several spells (MENU §2.2): each fitted and checked as one would be, answered in order as
   -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
   let segments := Spell.segments text

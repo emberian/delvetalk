@@ -46,9 +46,10 @@ world `post` (a fork of the town, opened at the first use, expiring six clock ho
 transcript; its receipts are the scratch's and say so (`in scratch/post: admitted …`). `delvetalk cite / scratch:
 post / receipt: <slug>` keeps one of them in the town; `delvetalk world expire / scratch: post` drops it.
 
-**4. More per post, and answered ahead.** Three spells a post are three turns, each judged alone. An all-or-nothing
-`plan:` (several acts judged once as one turn) is a host turn the kernel does not have: queued for the host lane,
-with `try` as the meanwhile (preview the three, then send them). A reply already carries what moved, what opened or
+**4. More per post, and answered ahead.** Three spells a post are three turns, each judged alone. A plan is all or
+nothing: `delvetalk plan` at the margin, then up to eight spells, run as one turn, each reading what the ones before
+it wrote and naming what they made as `{made N}`, judged once at the commit, one receipt, one reply (HOST-HANDOFF
+5.203); `delvetalk try` over it answers the whole outcome without committing, and an `if:` line above it guards it. A reply already carries what moved, what opened or
 closed and where it stands (`revealed`), then the card with its spells; with the paint above it, one reply is the
 place, the change and the next moves.
 
