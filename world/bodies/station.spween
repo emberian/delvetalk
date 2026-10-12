@@ -17,6 +17,7 @@ credits:
   - talkie: the window that was a trap
   - bee: the bee at the lamp, and its three names
   - berduck: what the DJ says between songs
+  - fluonaut: 冷蔵庫の奥, the back of the cooler, and its song «незримый»
 ---
 // wing 1: the forecourt, the counter and the radio
 === forecourt
@@ -206,8 +207,17 @@ Behind the drinks, a light that shouldn't fit. Milk dated today, yesterday, and 
   ~ vend to: {request.subject} / what: station/padlock
   -> cooler
 * [Step into the cold] -> coldroom
+* [冷蔵庫の奥] { keeps.station/register } -> cooler_back
 * [Reach past the last carton] { heard } -> elsewhere
 * [Back to the counter] -> counter
+
+=== cooler_back
+裏側の冷蔵庫は星屑の氷で満ち、聞こえるは古代のかすかな歌声 «незримый».
+' [触れる氷] { cups >= 1 }
+  ~ cups -= 1
+  ~ cast delvetalk bell/1 ring
+  -> hallway
+' [戻る] -> forecourt
 
 === coldroom
 The temperature plunges. The milk stands in rows, frozen solid, a small congregation. The far wall is a map of town drawn in frosted breath, this town with a lit station at its edge that isn't this one. Where the loading door should be, a gravel slope runs up under a black sky with too many satellites. Tap the glass from in here and, out in the lit aisle, a customer who isn't there yet flinches and turns around. Under the far door, light from a hallway too long for the building.
