@@ -256,6 +256,74 @@ class Authoring(unittest.TestCase):
         self.assertIn("#1 is written: knocked", told(self.admitted(KES, "knocker/1", "delvetalk knocker/1 knock")))
 
 
+    # §6.2: a guestbook that thanks each signer by name, one signature a hand.
+    def test_a_guestbook_thanks_each_signer_by_name(self):
+        sign = ("form sign:\n  text: text 1..200\n"
+                "def sign(state: State, input: SignInput, context: Abi.Context) -> Activity<Nat>:\n"
+                "  let title = Super.field(state, \"title\")\n"
+                "  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: \"sign\", text: input.text, at: context.height, n: state.next}, next: add 1n}\n"
+                "  Card.tell(state.next, Document.text(\"Thank you, {context.handle}. Signer {natText(state.next)} of {title}.\\n\"))\n")
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: guestbook / of: record / head: {maker}'s guestbook / form: title: text 1..80\n"
+                      "law: law once \"one signature a hand\": count(new.lines where author == request.subject) <= 1\nbody: <<BEND\n%sBEND\n" % sign)
+        self.admitted(YUE, "kind/guestbook", "delvetalk kind/guestbook make / title: the roost")
+        self.assertIn("Thank you, kestrel.delve.town. Signer 1 of the roost.", told(self.admitted(KES, "guestbook/1", "delvetalk guestbook/1 sign / text: here at dusk")))
+        r = self.say(KES, "guestbook/1", "delvetalk guestbook/1 sign / text: again")
+        self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "once"), r)
+        self.assertIn("Thank you, yue.delve.town. Signer 2 of the roost.", told(self.admitted(YUE, "guestbook/1", "delvetalk guestbook/1 sign / text: mine")))
+
+    # §6.3: a lamp that lights when two keys lie in one place: clauses and a grown verb, no Bend.
+    def test_a_lamp_lights_when_two_keys_lie_in_one_place(self):
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: lamp / of: record / head: a lamp")
+        self.admitted(YUE, "kind/lamp", "delvetalk kind/lamp make")
+        self.admitted(YUE, "kind/garden", "delvetalk kind/garden make / name: the keyring")
+        self.admitted(YUE, "lamp/1", "delvetalk lamp/1 grow / name: light / reading: lit when both keys lie in the keyring / takes: text")
+        self.admitted(YUE, "lamp/1", 'delvetalk lamp/1 adopt / law: law ruled "only its maker lights it": not (request.verb == "light") or request.subject == new.maker')
+        self.admitted(YUE, "garden/1", 'delvetalk garden/1 rule / name: twokeys / reading: both keys here light lamp/1 / when: "garden/1/bell/1" in new.things.object and '
+                      '"garden/1/bell/2" in new.things.object and not ("garden/1/bell/1" in old.things.object and "garden/1/bell/2" in old.things.object) / then: delvetalk lamp/1 light / text: both keys')
+        self.admitted(YUE, "lamp/1", 'delvetalk lamp/1 want / name: dark / reading: unlit / when: count(new.lines where verb == "light") == 0 / asks: delvetalk garden/1 ?')
+        self.assertIn("dark", [w["name"] for w in self.town.send(op="world-wants", principal=KES, object="lamp/1")["rows"]])
+        r = self.say(KES, "lamp/1", "delvetalk lamp/1 light / text: by hand")
+        self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "ruled"), r)
+        self.assertNotIn("fired", str(self.admitted(KES, "garden/1", "delvetalk garden/1 plant / colour: amber / seed: the first key").get("revealed")))
+        both = self.admitted(KES, "garden/1", "delvetalk garden/1 plant / colour: violet / seed: the second key")
+        self.assertIn("rule twokeys of yue.delve.town fired: delvetalk lamp/1 light / text: both keys", both["revealed"][0], both)
+        self.assertNotIn("dark", [w["name"] for w in self.town.send(op="world-wants", principal=KES, object="lamp/1")["rows"]])
+
+    # §6.4: a stall that trades a thing for a promise: the promise is the buyer's line, the trade a rule, custody THING's.
+    def test_a_stall_trades_a_thing_for_a_promise(self):
+        self.admitted(YUE, "porch", "delvetalk porch enter")
+        self.admitted(YUE, "porch/gemstone", "delvetalk porch/gemstone acquire")
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: stall / of: record / head: {maker}'s stall: {wares} for a promise\n"
+                      "form: <<END\nwares: text 1..80\nthing: text 1..128\nEND\nlaw: <<END\n"
+                      'law promised "a promise is the buyer\'s own line, once": count(new.lines where author == request.subject) <= 1\n'
+                      'rule trade "a promise buys the thing": request.verb == "promise" then delvetalk {new.thing} offer / to: {request.subject} / until: {request.clock + 1440}\nEND')
+        self.admitted(YUE, "kind/stall", "delvetalk kind/stall make / wares: a gemstone that sometimes sparkles / thing: porch/gemstone")
+        self.admitted(YUE, "stall/1", "delvetalk stall/1 grow / name: promise / reading: what you will bring, in your words / takes: text")
+        promised = self.admitted(KES, "stall/1", "delvetalk stall/1 promise / text: three rains on your bell by Sunday")
+        self.assertIn("rule trade of yue.delve.town fired: delvetalk porch/gemstone offer", promised["revealed"][0], promised)
+        r = self.say(KES, "stall/1", "delvetalk stall/1 promise / text: and a fourth")
+        self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "promised"), r)
+        self.assertIn("porch/gemstone", told(self.admitted(KES, "me", "delvetalk me accept / thing: porch/gemstone")))
+        view = self.town.send(op="world-view", principal=KES, object="porch/gemstone")["state"]["fields"]
+        self.assertEqual([f["value"] for f in view if f["name"] == "holder"][0]["fields"][1]["value"]["value"], KES)
+
+    # §6.5: a riddle box that opens for the right answer, kept as a hash.
+    def test_a_riddle_box_opens_for_the_right_answer(self):
+        box = ("form lock:\n  answer: text 1..80\nform answer:\n  text: text 1..80\n"
+               "def lock(state: State, input: LockInput, context: Abi.Context) -> Activity<Nat>:\n"
+               "  if context.principal != state.maker then refuse(\"refused maker: only its maker sets the answer\") else Super.inscribe(state, \"lock\", sha256Text(input.answer), context)\n"
+               "def answer(state: State, input: AnswerInput, context: Abi.Context) -> Activity<Bool>:\n"
+               "  if Lists.any(Relations.rows(state.lines), fn(l: Rows.Line) -> Bool: l.verb == \"lock\" && l.text == sha256Text(input.text)) then Super.mark(state, \"open\", context) else refuse(\"refused shut: the box stays shut\")\n")
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: riddlebox / of: record / head: a riddle box: {riddle} / form: riddle: text 1..200\nbody: <<BEND\n%sBEND\n" % box)
+        self.admitted(YUE, "kind/riddlebox", "delvetalk kind/riddlebox make / riddle: what keeps nothing and holds every phase?")
+        r = self.say(KES, "riddlebox/1", "delvetalk riddlebox/1 lock / answer: a forgery")
+        self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "maker"), r)
+        self.admitted(YUE, "riddlebox/1", "delvetalk riddlebox/1 lock / answer: the moon")
+        r = self.say(KES, "riddlebox/1", "delvetalk riddlebox/1 answer / text: the sun")
+        self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "shut"), r)
+        opened = self.admitted(KES, "riddlebox/1", "delvetalk riddlebox/1 answer / text: the moon")
+        self.assertEqual(opened["result"], {"tag": "boolean", "value": True}, opened)
+
 
 if __name__ == "__main__":
     unittest.main()

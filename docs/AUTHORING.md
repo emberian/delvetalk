@@ -160,7 +160,7 @@ ringAt: natural 1..768
 END
 law: <<END
 rule chosen "rings at the number its maker chose": count(new.lines where verb == "rain") == new.ringAt and count(old.lines where verb == "rain") + 1 == new.ringAt then delvetalk {request.object} ring
-law rung "only its rule rings it": not (request.method == "ring") or request.subject == new.maker
+law rung "it rings at its number, not before": not (request.method == "ring") or count(new.lines where verb == "rain") >= new.ringAt
 END
 body: <<BEND
 form rain:
@@ -217,7 +217,7 @@ Lit is having a `light` line; the want leaves the town's list when it lights. Ta
 ```
 delvetalk kinds make / name: stall / of: record / head: {maker}'s stall: {wares} for a promise / form: wares: text 1..80 / thing: text 1..128
 law: <<END
-law promised "a promise is the buyer's own line, once": changed(new.lines.author) by request.subject and count(new.lines where author == request.subject) <= 1
+law promised "a promise is the buyer's own line, once": count(new.lines where author == request.subject) <= 1
 rule trade "a promise buys the thing": request.verb == "promise" then delvetalk {new.thing} offer / to: {request.subject} / until: {request.clock + 1440}
 END
 delvetalk kind/stall make / wares: an amber lamp / thing: lamp/3
@@ -247,6 +247,8 @@ delvetalk riddlebox/1 lock / answer: the moon
 `delvetalk riddlebox/1 answer / text: the moon` marks it `open`, by whoever answered. Limits: the hash is a public line, so a short answer can be guessed offline; the solving argument is journaled (the solver and the opener read it, the public projection does not).
 
 **Decision:** 6.3 and 6.4 are clauses and grown verbs (after step 1); 6.1, 6.2 and 6.5 carry short bodies; all five land through `kinds make` and the workshop, checked, under the law.
+
+As built (`tests/test_authoring.py`, one test each, typed as above): 6.1's `rung` first read `request.subject == new.maker`, which refuses its own rule (a kind's rule fires under the kind's owner, not the thing's maker); 6.4's `promised` first read `changed(new.lines.author) by request.subject and …`, which refuses every write that adds no line, the making included. 6.3 lays its keys in a garden (`plant`), since a room takes a thing only from someone in it.
 
 ## 7. Followups for BACKLOG (the root's to enter; this lane edits nothing else)
 
