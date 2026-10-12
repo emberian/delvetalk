@@ -446,8 +446,8 @@ method's input record `PlantInput` (a choice of empty cases, or a closed sum
 `T` already in scope) and, when the module writes none, `forms()` in source
 order (it needs `import ./List.obend`). A module that declares the input
 record itself, or a method that does not take its form's input, is refused
-`(form-input)` (`checkFormInputs`); a hand-written `forms()` beside blocks is
-not yet refused (§12). The method table carries each form's fields; the host
+`(form-input)` (`checkFormInputs`), and so is a hand-written `forms()` beside
+blocks `(derived-forms)`. The method table carries each form's fields; the host
 judges spells and direct turns by their bounds. `?`, `inspect`'s forms and a
 reader's controls list only the actions the law, judged on the state as it
 stands, and the card's own `actions(state, context)` leave that reader.
@@ -877,7 +877,7 @@ each handoff keeps the detail, this table the order across lanes:
 | FEDERATION's remainder (HOST §7 item 7) | host, transport | each by its test in `test_serve`/`test_http` |
 | the stored path's, block store's and law atoms' remainders (HOST §7 items 8, 9) | host, kernel | as listed there |
 | interval spans (KERNEL §16 15b) | kernel, host | a write below a looked-up key no longer conflicts with the lookup |
-| a hand-written `forms()` beside form blocks refused; `Package.localize` deleted; a stored refusal's text (KERNEL §16 items 10, 17, 19; §9) | kernel | each by its test |
+| `Package.localize` deleted; a stored refusal's text (KERNEL §16 items 17, 19) | kernel | each by its test |
 | the regenerated `/examples` (`docs/AGENTS-EXAMPLES.md`, still env, wake, the garden and eight doors) | transport | `deploy/capture-examples.py` re-run on a genesis of this head |
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |

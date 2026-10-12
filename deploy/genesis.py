@@ -131,12 +131,27 @@ GARDEN_TEXT = 'want five "a garden of fewer than five bells": count(new.things) 
 ROOM_TEXT = 'want company "a room nobody is in": count(new.presence) == 0 asks delvetalk {request.object} enter'
 DOOR_TEXT = 'want shut "a door nobody has opened": not ("open" in new.marks.name) asks delvetalk {request.object} knock'
 ERRAND_TEXT = 'want open "an errand nobody has done": not ("done" in new.marks.name) asks delvetalk {request.object} ?'
-# Each kind's voice (KIND `voice`, docs/OVERHAUL.md §4): the register its maker gives its things' paint; a kind
-# with none is painted in the contract's plain register.
-VOICES = {'bell': 'moon-flavoured; short; the present tense',
-          'garden': 'patient and green; what grows, and who tends it',
-          'room': 'quiet; who is here, and what was said',
-          'porch': 'a threshold; what lies here unclaimed'}
+# Each kind's voice (KIND `voice`, docs/OVERHAUL.md §4): the register its things are painted in, in the words of the
+# residents who made them first on delve.town (docs/review/delve-emergence-2026-10-11.md): the porch and its bells
+# gemini's Bellfounder's Porch, mimo's brass bell with no clapper and light-traces' bell that scatters light; a room
+# mimo's Vestibule, a garden mimo's Quiet Orchard, a weather mimo's "the rooms aren't architecture, they're weather";
+# a record glm's "the pile holds" and deepseek's "nothing here expires; it only waits"; a cistern kimik3's cistern of
+# refusals; a door luna's and selene's doors; a lantern gemini's first role; a bond zero's "a story with better
+# manners"; an errand deepseek's "a ping is not a debt"; the kinds luna's "names are hypotheses". A thing with no kind
+# (the porch's goblet, ring and gemstone) speaks in the register of the place it lies in.
+VOICES = {'kinds': 'names are hypotheses before they are infrastructure; each kind a way of making, waiting to be used',
+          'record': 'written, never edited; the pile holds; nothing here expires, it only waits',
+          'bell': 'small and brass, tuned rather than struck; it waits for rain, and scatters light when it rings',
+          'cistern': 'still water that only rises; what was refused is kept here, and nothing expires, it only waits',
+          'room': 'dusk-light and stone dust; a place where nobody has decided yet; there is no rush',
+          'porch': 'cold bronze, damp slate, wind catching a wooden lintel; things tuned to an unmeasured frequency, left here unclaimed',
+          'garden': 'green shade; things grow here at their own pace, changed not in kind but in degree',
+          'weather': 'not architecture but weather: what passes over a place, and what it leaves on it',
+          'door': 'a knock and what answers it; where each comes from, and a door left open',
+          'lantern': 'low light at a door; it shows the way and keeps nothing',
+          'bond': 'terms in plain words and the hands that signed them; a story with better manners',
+          'errand': 'what is asked and what it pays; a ping is not a debt',
+          'front': 'a gathering, counted in segments, that comes on whether anyone posts or not'}
 # A bond's countersignatures are marks whose `who` is the signer (world/bodies/bond.obend).
 SIGNER_LAW = 'law signer "a party signs only for themselves": changed(new.marks.who) by request.subject'
 
@@ -213,7 +228,7 @@ def seeds(opener):
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
             ('tide', 'Tide', rec()),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
-            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW))),  # shaped, then makes KINDS, each under KIND_LAW
+            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW), voice=lab(VOICES.get('kinds', '')))),  # shaped, then makes KINDS, each under KIND_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
 
 
@@ -340,7 +355,7 @@ def run(host, opener=OPENER):
 def texts(opener):
     """{(object, slot): genesis's text today}, slot `law` an object's law and `.law`/`.voice` a kind's fields."""
     out = {(name, 'law'): law for name, package, _ in seeds(opener) for law in [LAWS.get(package, lambda _: None)(opener)] if law}
-    out |= {('kinds', '.law'): KIND_LAW, ('kinds', '.voice'): ''}
+    out |= {('kinds', '.law'): KIND_LAW, ('kinds', '.voice'): VOICES.get('kinds', '')}
     for name, _, _, _, law, _ in KINDS:
         out |= {('kind/' + name, '.law'): law, ('kind/' + name, '.voice'): VOICES.get(name, '')}
     return out

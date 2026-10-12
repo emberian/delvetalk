@@ -2,8 +2,8 @@
 docs/ROOT.md §1.4): named worlds and the root socket beside the public one.
 
 Evidence for FOUNDATION §7 (layer: host). Refuted by a socket others may open, a second writer that starts, a
-chain broken under concurrent clients, a restart that answers a retried turn differently, a scratch world or the
-stateless session that sees the world, a library without arrival's packages, a world opened under another name, or an
+chain broken under concurrent clients, a restart that answers a retried turn differently, a scratch world that
+sees the world, a REPL or a crossing op the sockets take, a library without arrival's packages, a world opened under another name, or an
 opener's op or a root op that the public socket takes. A test's serve outlives its test process: refuted by a serve
 still running seconds after the process that started it died of SIGTERM or (Linux) SIGKILL.
 """
@@ -109,7 +109,7 @@ class Serve(unittest.TestCase):
         self.assertIn('second writer', p.stderr)
         self.assertEqual(self.client.send({'op': 'world-status'})['status'], 'world')
 
-    def test_scratch_worlds_and_stateless_are_separate_worlds_in_one_server(self):
+    def test_scratch_worlds_are_separate_worlds_in_one_server_and_the_repl_runs_only_in_one(self):
         opened = self.client.send({'op': 'world-scratch', 'principal': DID, 'name': 'apart'})
         self.assertEqual((opened['status'], opened['world']), ('scratch', 'scratch/apart'), opened)
         scratch = HostClient(self.sock, world='scratch/apart')
@@ -118,7 +118,9 @@ class Serve(unittest.TestCase):
         self.assertEqual(HostClient(self.sock, world='scratch/../../etc').send({'op': 'world-status', 'principal': DID})['status'], 'error')
         self.assertEqual(HostClient(self.sock, world='scratch/apart').send({'op': 'world-status', 'principal': '../x'})['status'], 'error')
         self.assertEqual(self.client.send({'op': 'world-view', 'principal': 'e', 'object': self.c})['status'], 'viewed')
-        self.assertEqual(HostClient(self.sock, stateless=True).send({'op': 'compile', 'modules': [], 'entry': 'x'})['status'], 'error')
+        self.assertIn('scratch world', self.client.send({'op': 'world-repl', 'principal': DID, 'identity': 'r', 'entry': 'x'})['message'])
+        for op in ('world-relay', 'world-cross'):  # serve's own, on neither socket
+            self.assertIn("serve's own", self.client.send({'op': op, 'principal': DID})['message'])
 
     def test_the_town_is_opened_by_the_opener_with_arrivals_packages_sealed(self):
         who = 'did:plc:' + 'q' * 24
@@ -128,7 +130,7 @@ class Serve(unittest.TestCase):
                     if e['outcome'].get('tag') == 'settings']
         self.assertEqual(settings[0]['opener'], OPENER)
 
-    def test_the_stateless_session_holds_the_library_and_compiles_by_pin(self):
+    def test_serve_status_names_the_library_and_the_town_compiles_by_its_pin(self):
         info = self.client.send({'op': 'serve-status'})
         replay = self.client.send({'op': 'world-status'})['replay']
         self.assertEqual((info['status'], info['pid'], info['replay']), ('serve', self.server.proc.pid, replay), info)
@@ -136,7 +138,7 @@ class Serve(unittest.TestCase):
         self.assertEqual(self.client.send({'op': 'serve-status'})['hostSha256'], info['hostSha256'])
         town = next(w for w in info['worlds'] if w['name'] == 'town')
         self.assertEqual((town['replay'], town['snapshot']), (replay, {'resumed': 0, 'refused': []}), town)
-        checked = HostClient(self.sock, stateless=True).send({'op': 'check-package', 'library': info['library'], 'entry': 'initial',
+        checked = self.client.send({'op': 'check-package', 'library': info['library'], 'entry': 'initial',
                                                              'modules': [{'name': 'Tally', 'source': TALLY}]})
         self.assertEqual(checked['status'], 'checked', checked)
 

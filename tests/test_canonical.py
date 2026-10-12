@@ -75,7 +75,9 @@ class Canonical(unittest.TestCase):
             "empty label": (label(""), "60"), "unicode label": (label("é"), "62c3a9"),
             "empty record": (record(), "a0"), "record": (record(a=nat(1)), "a1" "6161" "01"),
             "empty list": (nil(), "80"), "list": (listing([nat(1), nat(2)]), "82" "01" "02"),
-            "variant": ({"tag": "variant", "label": "ok", "payload": record()}, "a1" "626f6b" "a0"),
+            # a variant is [null, label, payload]: never a one-field record's map, never a list
+            "variant": ({"tag": "variant", "label": "ok", "payload": record()}, "83" "f6" "626f6b" "a0"),
+            "one-field record": (record(ok=record()), "a1" "626f6b" "a0"),
         }
         for name, (data, expected) in cases.items():
             with self.subTest(shape=name):
@@ -103,6 +105,11 @@ class Canonical(unittest.TestCase):
                          "a2" "6162" "02" "626161" "01")
         back = self.host.send(op="canonical-decode", hex="a1626f6ba0")
         self.assertEqual(back["data"], record(ok=record()))
+        back = self.host.send(op="canonical-decode", hex="83f6626f6ba0")
+        self.assertEqual(back["data"], {"tag": "variant", "label": "ok", "payload": record()})
+        # review 2026-10-12 kernel 1: a variant and the one-field record of its label differ
+        fixed = {"tag": "variant", "label": "x", "payload": nat(1)}
+        self.assertNotEqual(self.encode(data=fixed)["cid"], self.encode(data=record(x=nat(1)))["cid"])
         back = self.host.send(op="canonical-decode", hex="83010203")
         self.assertEqual(back["data"], listing([nat(1), nat(2), nat(3)]))
 
@@ -112,6 +119,7 @@ class Canonical(unittest.TestCase):
             "a2616101616102": "sorted", "5f": "definite", "f90000": "Data model", "f6": "Data model",
             "c001": "Data model", "20": "Data model", "4101": "big natural", "01ff": "trailing",
             "62c328": "UTF-8", "8200": "truncated", "a1": "truncated", "a10101": "key is not text",
+            "83f6636e696ca0": "a list is an array", "83f601a0": "label is not text", "82f600": "Data model",
         }
         for hexed, why in refused.items():
             with self.subTest(bytes=hexed):

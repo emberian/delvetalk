@@ -127,6 +127,13 @@ def measures(st, entries=None):
     start = t0(st)
     start = start if start is not None else min(first.values(), default=None)
 
+    # A kind with no law clause holds its package's law (rules and wants after it), so a kind's seed law is the resident's
+    # own only when it is not that package law; the staff's kinds, made by the opener, show the package's text.
+    seeds = [plain(cr['seed']) for x in entries for cr in ([x['outcome']] if (x.get('outcome') or {}).get('tag') == 'created' else (x.get('outcome') or {}).get('creates') or [])
+             if str(cr.get('object') or '').startswith('kind/') and cr.get('seed') and not resident((x.get('identity') or {}).get('principal'))]
+    package_law = min((str(sd['law']).strip() for sd in seeds if isinstance(sd, dict) and str(sd.get('law') or '').strip()), key=len, default=None)
+    own_law = lambda law: bool(law) and not (package_law and (law == package_law or law.startswith(package_law + '\n')))
+
     makers, made, used, written, adopted, cites, named, refusals, unposted = {}, [], {}, [], [], [], [], [], []
     by_identity, moved, now_clock = {}, set(), 0
     for x in entries:
@@ -146,7 +153,7 @@ def measures(st, entries=None):
             if resident(maker) and not GENESIS.match(obj):
                 made.append({'object': obj, 'kind': kind_of(obj, seed), 'maker': who(maker), 'height': height, 'principal': maker,
                              'at': posted_at.get(ident.get('intent'), now_clock * 60)})
-                if obj.startswith('kind/') and isinstance(seed, dict) and str(seed.get('law') or '').strip():
+                if obj.startswith('kind/') and isinstance(seed, dict) and own_law(str(seed.get('law') or '').strip()):
                     written.append({'object': obj, 'maker': who(maker), 'height': height, 'law': str(seed['law']).split('\n')[0][:200]})
         # The clock moves the world with nobody posting: a delivered turn the clock resumed (a wake's due tick; a turn
         # resumed by hob's reading answers a post, and has no delivery), and every turn delivered from one; from T0 on.

@@ -858,7 +858,7 @@ theorem agree_entered {s t : State} (agree : Agree s t) (address : Nat) :
 def recordStep (policy : State → Bool) (fetch : Fetch) (limits : Limits) (depth : Nat)
     (prior : List (String × Data) × State × Budget) (field : String × Nat) :
     Except (Failure × State × Budget) (List (String × Data) × State × Budget) := do
-  if prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)
+  if prior.2.2.nodes = 0 then throw (.nodes,prior.2.1,prior.2.2)
   let entered : State := {prior.2.1 with control:=.enter field.2,stack:=[]}
   let (outcome,ticks) := forceHostedWith policy fetch limits prior.2.2.bytes prior.2.2.ticks entered
   let nextBudget := {prior.2.2 with ticks:=ticks}
@@ -874,10 +874,10 @@ def recordStep (policy : State → Bool) (fetch : Fetch) (limits : Limits) (dept
 theorem materializeWith_record (policy : State → Bool) (fetch : Fetch) (limits : Limits) (depth : Nat) (budget : Budget)
     (fields : List (String × Nat)) (state : State) :
     materializeWith policy fetch limits (depth+1) budget (.record fields) state = (do
-      if budget.nodes = 0 then throw (.budget,state,budget)
+      if budget.nodes = 0 then throw (.nodes,state,budget)
       let remaining := {budget with nodes:=budget.nodes-1}
       if (fields.map Prod.fst).eraseDups.length != fields.length then throw (.duplicateField,state,remaining)
-      if fields.length > remaining.nodes then throw (.budget,state,remaining)
+      if fields.length > remaining.nodes then throw (.nodes,state,remaining)
       let pair ← fields.foldlM (recordStep policy fetch limits depth) ([],state,remaining)
       pure ⟨.record pair.1.reverse,pair.2.1,pair.2.2⟩) := rfl
 
