@@ -931,10 +931,8 @@ class Handler(BaseHTTPRequestHandler):
             if data is None:
                 return
             intent = f'play:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
-            kinds = {'n:': lambda v: int(v) if digits(v) else v, 'c:': lambda v: {'tag': 'variant', 'label': v, 'payload': {'tag': 'record', 'fields': []}}}
-            fields = {k[2:] if k[:2] in kinds else k: kinds[k[:2]](v) if k[:2] in kinds else v for k, v in data.items() if k != 'method'}
-            r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': data.get('method') or 'receive', 'identity': intent, 'reach': 'direct',
-                           'argument': typed(fields if data.get('method') else {'text': str(data.get('text', '')), 'post': ''})})
+            r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': 'receive', 'identity': intent, 'reach': 'direct',
+                           'argument': typed({'text': str(data.get('text', '')), 'post': ''})})
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
             for t in turns:
                 self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
