@@ -58,6 +58,35 @@ def noting(text: String) -> Activity<Heard>:
   Heard.noted({})
 """, "rain", "act", "receive")
 
+# A room that says only for one who entered: its `say` reads the state its `enter` wrote.
+ROOM = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+import ./World.obend as World
+record Binding:
+  name: String
+  value: String
+record State:
+  owner: String
+  here: Nat
+  said: String
+sum Heard:
+  silent: {}
+def initial() -> State:
+  {owner: "", here: 0n, said: ""}
+def enter(state: State, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {here: add 1n}
+  state.here + 1n
+def say(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  if state.here == 0n then refuse("refused absent: nobody has entered") else saying(state, input.text)
+def saying(state: State, text: String) -> Activity<Nat>:
+  let written(_) = write {said: set "{natText(state.here)} here: {text}"}
+  state.here
+def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Heard>:
+  Heard.silent({})
+""", "enter", "say", "receive")
+
 # The world's policy, with what asks the speaker first.
 POLICY = declared("""edition ObjectiveBend 1
 import ./List.obend as Lists
@@ -133,6 +162,13 @@ class Heard(HeardCase):
         item, again = self.settle("delvetalk bell water\ntext: water it again")
         self.assertEqual([o["action"] for o in item["offers"]], ["rain", "water"])
         self.assertEqual((again["receipt"]["outcome"]["tag"], self.value("acts")), ("admitted", "2"))
+
+    def test_each_of_hobs_spells_reads_the_card_as_the_ones_before_it_wrote_it(self):
+        self.make("room", ROOM, record(owner=label("ember")))
+        self.assertEqual(self.say("I come in and say hello", card="room")["status"], "suspended")
+        _, ran = self.settle("delvetalk room enter\n\ndelvetalk room say\ntext: hello")
+        self.assertEqual(ran["receipt"]["outcome"]["tag"], "admitted", ran)
+        self.assertEqual((self.value("here", "room"), self.value("said", "room")), ("1", "1 here: hello"))
 
     def test_ask_naming_a_field_offers_what_is_still_needed_and_any_other_question_points_at_the_spells(self):
         self.say("rain on it")

@@ -284,6 +284,17 @@ def Held.kept (h : Held) (s : Delvetalk.Turn.Suspension) : M Delvetalk.Turn.Susp
   unless fields.isEmpty do recordCells h.object h.version { spans := fields.map (·, none) }
   return { s with state }
 
+/-- An object as a turn has written it so far: its committed state with the edits the turn staged on it
+    applied in order, as `judge` applies them at commit; as committed when there are none, or when they do
+    not apply (the commit refuses them). A frame reads its object so (`runFrame`): a turn's later frame, such
+    as the second of hob's spells on one card, sees what its earlier frames wrote. Its version stays the
+    committed one, which the frame's cells are roots at. -/
+def asWritten (o : Object) (staged : List Written) : Object :=
+  if staged.isEmpty then o else
+  match applyEdits o.relations o.state (staged.map (·.edits)) with
+  | .ok state => { o with state }
+  | .error _ => o
+
 /-- The state a stored frame starts from: its relations emptied (`Turn.scalarPart`), their rows held
     by the store, so neither the machine nor a checkpoint carries a row it did not force. -/
 def storedState (o : Object) : Data := Delvetalk.Turn.scalarPart (o.relations.map (·.field)) o.state
@@ -1555,7 +1566,7 @@ partial def runMethod (depth : Nat) (id method : String) (argument : Data) (call
 /-- The body of `runMethod`, inside the frame it set. -/
 partial def runFrame (depth : Nat) (id method : String) (argument : Data) (caller : String) : M Data := do
   let s ← get
-  let some obj := s.world.objects[id]? | evaluation s!"unknown object {id}"
+  let some obj := (s.world.objects[id]?).map (asWritten · ((s.writes.lookup id).getD [])) | evaluation s!"unknown object {id}"
   -- Only a method the package makes public is asked from outside (a call or a run checked it).
   if depth == 0 && !s.receiver && !obj.offers method then throw (.refused "noMethod" (noMethodReason id method))
   -- `act` runs a verb grown on the card, never another (docs/COLLABORATOR.md §3): its `request.verb`.
@@ -3017,7 +3028,8 @@ def HeardStep.action (s : HeardStep) : String :=
 
 /-- Run hob's steps as the speaker's turn (`ctx`, its identity and what it resumes): each in order at the
     top of the turn, a direct turn's as a spell's; a verb a `grow` stages is used later in the same turn
-    (`runFrame`); the first refusal refuses the turn. Each step reads its card as committed. -/
+    (`runFrame`); the first refusal refuses the turn. Each step reads its card as the steps before it wrote it
+    (`asWritten`): `enter` then `say` on a room says as one who entered. -/
 def runHeard (w : World) (ctx : Ctx) (post reach : String) (steps : List HeardStep) : Except String (World × Json) := do
   let init : TurnState := { world := w, principal := ctx.principal, intent := ctx.intent, subject := ctx.principal,
                             direct := true, ticks := Limits.maxTurnTicks,

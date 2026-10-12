@@ -1919,6 +1919,17 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    twice (was 75). Tests: `test_spell_turns.Misfits`/`MisfitsWithoutPolicy` (a post of a misfit, a fitting spell and
    a misfit: one reading after the plant, a retry asks nothing, hob's spell runs), `test_archive`.
 
+167. **A frame reads its object as the turn has written it (host27; §7 item 1's known limit; no edition change).**
+   hob's several spells run as one turn (`runHeard`), each a frame on its card; a frame read its object as committed,
+   so `enter` then `say` on a room said as one who had not entered (a guard refused; a pure method's whole-state `set`
+   overwrote the earlier edits). Now every frame reads its object `asWritten`: the committed state with the edits the
+   turn has staged on it applied in order, as `judge` applies them at commit (as committed when none, or when they do
+   not apply, which the commit refuses). This is the turn's model generally, not hob's alone: a call back into an
+   object the turn wrote reads its writes too. What stays committed: the frame's version and the roots its cells are
+   recorded at, and `view`/`viewField`/`viewAt`, which answer a state at a named version. Nothing is journaled
+   differently (edits are edits; replay applies what was recorded). Tests: `test_heard.Heard` (hob's `enter` and `say`
+   on a room in one answer: entered, then said as one of 1 here).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
