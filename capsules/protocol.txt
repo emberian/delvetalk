@@ -1,40 +1,36 @@
 WORLD PROTOCOL (lib/World.obend). world.X::<T>(arg) yields Message{object: world, method, argument:
 Data}. Results: the call site's sum, plus refused{clause}; reads add denied{}.
 view<S>{object} -> viewed{version, state: S}  S: its state type or Data
-viewField<S>{object, field} -> viewed{version, state}  one field, a field root
-viewAt<S>{object, version} -> viewed
+viewField<S>{object, field} -> viewed  one field, a field root; viewAt<S>{object, version} -> viewed
 viewDerived<T>{object, view} -> derived{version, value: T}  of its views()
-card{object} -> carded{document}
-inspect{object} -> inspected{pin, law, source, methods}
-objects{prefix, after} -> listed{ids, more}
-check{package} -> checked{diagnostics}
-write<E>(edits) -> written{}  self only; judged at commit
-judge<E>(edits) -> judged{admitted, clause}  dry run
+card{object} -> carded{document}; inspect{object, source} -> inspected{pin, law, source, methods, laws,
+    offered}; objects{prefix, after} -> listed{ids, more}
+check{package}, checkObject{object} -> checked{diagnostics}
+write<E>(edits) -> written{}  self only; judged at commit. judge<E>(edits) -> judged{admitted, clause}
 call<R>{object, method, argument} -> returned{result: R}  same turn, caller = you
-callVia, sendVia: + via  subject = the grant's grantor
-run<R>{.., handler} -> returned  handle() sees them first
-send{object, method, argument} -> delivery{id}  a later turn
-create{package, seed, law, requireAbsent} -> created{object}  "" names <you>/<package>/<n>
-principal{handle} -> named{principal} | unknown  the principal a handle names
-make{.., madeFrom{object, receipt}} -> created  from a resident's source; the lineage journaled
-createUnder: + supervisor  told ended{receipt}
-reprogram, extend{object, package, migration} -> reprogrammed{pin}  kind 1
-amend{object, law} -> amended{}  kind 2
-await{slot{principal, intent}, patience}, awaitPost{post, patience}, ..Until{.., until} ->
-    reply{receipt} | unknown | timedOut | broken
-interpret<R>{utterance, offers, policy, model} -> proposal{object, method, argument: R, spell} |
-    proposals{items} | unclear{needs} | said{text} | replied{text} | timedOut | denied
-offer{to, document} -> offered{}  to "" = the speaker
-publish{page, section, body} -> published{post}
+callVia, sendVia: + via  subject = the grant's grantor; run<R>{.., handler}: handle() sees them first
+send{object, method, argument} -> delivery{id}  a later turn, context.sender = you
+create{package, seed, law, requireAbsent} -> created{object}; createUnder: + supervisor (told ended);
+    make: + madeFrom{object, receipt}, the lineage journaled
+principal{handle} -> named{principal} | unknown
+reprogram, extend{object, package, migration} -> reprogrammed{pin}  kind 1; amend{object, law}  kind 2
+await{slot{principal, intent}, patience}, awaitUntil{slot, until} -> reply{receipt} | unknown |
+    timedOut | broken  (the tide ticks itself by an awaitUntil chain)
+interpret<R>{utterance, offers, policy, model, held, misfit} -> proposal{object, method, argument,
+    spell} | proposals{items} | unclear{needs} | timedOut | denied
+offer{to, document} -> offered{}  to "" = the speaker; publish{page, section, body} -> published{post}
 grant{to, object, method, until}, grantWith{+ fixed, uses} -> granted{id}; revoke{id} -> revoked{}
-subscribe{object, field, method} -> subscribed{}  method: the receiver; unsubscribe{object,
-    field, method}
-CHANGED A write touching F runs each subscriber's receiver later, as its principal, caller and
-context.sender = the written object: {object, field, version, inserted, retracted}, rows or items added/removed (upsert
-both), a scalar [new]/[old], typed by the receiver (inserted: List<Rain>). <= 32 sends+changes a
-turn (rest: unserved); 64 subscribers an object.
+rule{object, name, when, then}, unrule{object, name}, want{object, name, when, asks}, unwant,
+    grow{object, name, reading, takes, does}, ungrow -> placed{} | refused{clause, reading}
+    judged by the thing's law as kind rule (4), request.verb rule | want | grow
+act<R>{object, verb, text} -> returned  a grown verb: a line {author, n, verb, text, at} and a tend
+changed{since, prefix, after} -> changed{items{object, version, height, by}, more}  derived, no root
+wanting{after, limit} -> wanting{rows{object, name, reading, asks, since}, more}  oldest first
+chronicle{day} -> chronicled{day, lines}  one clock day folded: made, grown, fired, wanted, refusals
+REACTION A rule on a thing fires its spell when a write makes the
+condition true: a pending delivery `receive {text}` to the card the spell names, under the rule's
+owner, context.sender = the written thing. A want is read, never delivered.
 RECEIPT Plans.Receipt{slot{principal, intent}, height, outcome admitted{} | refused{class, root}}.
-Entry {height, identity, roots, outcome admitted{writes} | refused{class, clause, reason, hint} |
-suspended, sends, changes, hash}.
+Entry {height, identity, roots, outcome, sends, fired, unfired, wanted, unwanted, placements, hash}.
 REFUSALS. notSelf: call or send the other. denied: not yours to read. noGrant, grantSpent: grant
-gone or used.
+gone or used. nameTaken, notPlacer, unplaced: a placing's.

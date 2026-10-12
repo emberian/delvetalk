@@ -86,22 +86,23 @@ def extras(m, cap):
     cap.say('## town')
     made = create(HostClient(cap.root), m.OPENER, 'yard', 'Record', 'tokens-yard',
                   rec(owner=lab(m.OPENER), head=lab('The moss yard, a quiet yard behind the gate'),
-                      cites=lst(rec(label=lab('garden'), to=ref('garden')))), genesis.RECORD_LAW)
+                      cites=lst(rec(label=lab('porch'), to=ref('porch')))), genesis.RECORD_LAW)
     print('record:', made.get('status'), made.get('message') or '', file=sys.stderr)
     moth = m.PEOPLE['moth.delve.town']
     cap.token = cap.tokens['moth.delve.town']
-    for obj in ('commonplace', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern',
-                'policy', 'yard', moth):
+    for obj in CARDS + (moth,):
         cap.step('GET', f'/world/{obj}/card')
     cap.step('GET', '/world/commonplace')
-    for href in ('/world/garden?text=1', '/world/garden/bell/1?text=1', ''):
+    for href in ('/world/porch?text=1', '/world/bell/1?text=1', ''):
         plain(cap, '/AGENTS.md' + href)
-    cap.step('POST', '/world/garden/receive', {'intent': 'usage-1', 'spell': 'delvetalk garden ?'})
-    cap.step('POST', '/world/garden/receive', {'intent': 'bad-1', 'spell': 'delvetalk garden plant\ncolour: green\nseed: a moss bell'})
+    cap.step('POST', '/world/bell/1/receive', {'intent': 'usage-1', 'spell': 'delvetalk bell/1 ?'})
+    cap.step('POST', '/world/bell/1/receive', {'intent': 'wants-1', 'spell': 'delvetalk bell/1 wants'})
+    cap.step('POST', '/world/kind/bell/receive', {'intent': 'bad-1', 'spell': 'delvetalk kind/bell make\ncolour: green\nseed: a moss bell'})
+    cap.step('POST', '/world/tide/receive', {'intent': 'rules-1', 'spell': 'delvetalk tide rules'})
     cap.step('POST', '/world/tide/receive', {'intent': 'tick-1', 'spell': 'delvetalk tide tick'})
-    cap.step('POST', '/world/tide/receive', {'intent': 'tick-2', 'spell': 'delvetalk tide tick'})
     cap.token = cap.tokens['owl.delve.town']
-    cap.step('POST', '/world/garden/bell/1/receive', {'intent': 'strike-1', 'spell': 'delvetalk garden/bell/1 strike'})
+    cap.step('POST', '/world/bell/2/receive', {'intent': 'rain-1', 'spell': 'delvetalk bell/2 rain\ntext: an owl\'s rain'})
+    cap.step('POST', '/world/bell/1/receive', {'intent': 'ring-1', 'spell': 'delvetalk bell/1 ring'})
     cap.step('GET', '/api')
 
 
@@ -191,17 +192,19 @@ def posts():
     return [p['record']['text'] for p in json.loads((ROOT / 'rehearsal' / 'fixtures' / 'posts.json').read_text())]
 
 
-CARDS = ('commonplace', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern', 'policy', 'yard')
+# The cards a bare genesis holds (docs/GENESIS.md), and `yard`, a Record made for the measure.
+CARDS = ('commonplace', 'porch', 'bell/1', 'bell/2', 'porch/goblet', 'tide', 'kinds', 'kind/bell', 'workshop', 'library',
+         'policy', 'yard')
 
 
 def town_cards(cap):
-    """{label: card text} for every card read in the `town` section (the avatar, env and wake by kind)."""
+    """{label: card text} for every card read in the `town` section (the avatar by kind)."""
     out = {}
     for e in cap:
         mt = re.fullmatch(r'/AGENTS\.md/world/(.+)/card', e['path'])
         if e['section'] == 'town' and mt and e['status'] == 200:
             obj = mt.group(1)
-            label = 'avatar' if obj.startswith('did:') else 'place' if obj == 'yard' else 'bell' if '/bell/' in obj else obj
+            label = 'avatar' if obj.startswith('did:') else 'place' if obj == 'yard' else obj
             out[label] = field(e, 'text')
     return out
 
@@ -212,8 +215,9 @@ def texts(cap):
     out = [('welcome (whole)', whole), ('welcome (before clip)', clipped),
            ('the commonplace', (ROOT / 'docs' / 'previews' / 'commonplace-card.txt').read_text())]
     out += [(f'capsule {p.stem}', p.read_text()) for p in sorted((ROOT / 'capsules').glob('*.txt'))]
+    out += [(f'page {p.stem}', p.read_text()) for p in sorted((ROOT / 'capsules' / 'pages').glob('*.txt'))]
     out += [(f'card {k}', v) for k, v in town_cards(cap).items()]
-    plant = pick(cap, 'A planter', 'POST', r'.*/garden/receive', 'plant-1')
+    plant = pick(cap, 'A planter', 'POST', r'.*/receive', 'plant-1')
     if plant:
         out += [('a DID', field(pick(cap, 'A planter', 'POST', r'.*/verify'), 'did')),
                 ('a CID (receipt hash)', field(pick(cap, 'A planter', 'GET', r'.*/receipt(/|\?intent=)plant-1'), 'receipt', 'hash'))]
@@ -230,8 +234,14 @@ def texts(cap):
         out.append(('held line (workshop propose)', (json.loads(e['wire']).get('offers') or [''])[0].split('\n')[0]))
     e = pick(cap, 'town', 'POST', None, 'usage-1')
     if e:
-        out.append(('usage block (garden ?)', field(e, 'text') or field(e, 'line')))
-    for label, path in (('object page text (garden)', r'.*/world/garden\?text=1'), ('object page text (bell)', r'.*/garden/bell/1\?text=1')):
+        out.append(('usage block (bell/1 ?)', field(e, 'text') or field(e, 'line')))
+    e = pick(cap, 'town', 'POST', None, 'wants-1')
+    if e:
+        out.append(('wants (bell/1 wants)', field(e, 'text') or field(e, 'line')))
+    e = pick(cap, 'town', 'POST', None, 'rain-1')
+    if e:
+        out.append(('turn reply, a rain (wire)', e['wire']))
+    for label, path in (('object page text (porch)', r'.*/world/porch\?text=1'), ('object page text (bell)', r'.*/world/bell/1\?text=1')):
         e = pick(cap, 'town', 'GET', path)
         if e:
             out.append((label, e['wire']))
@@ -248,14 +258,11 @@ def units(cap):
     d = pick(cap, 'town', 'GET', r'.*/world/commonplace/card')
     dobj = pick(cap, 'town', 'GET', r'.*/world/commonplace')
     u.append(('root menu', field(d, 'text'), dobj['wire'] if dobj else ''))
-    g = pick(cap, 'A planter', 'GET', r'.*/world/garden/card')
-    u.append(('card: garden, 0 planted', field(g, 'text'), g['wire'] if g else ''))
-    b = pick(cap, 'A planter', 'GET', r'.*/garden/bell/1/card')
+    g = pick(cap, 'town', 'GET', r'.*/world/porch/card')
+    u.append(('card: porch', field(g, 'text'), g['wire'] if g else ''))
+    b = pick(cap, 'town', 'GET', r'.*/world/bell/1/card')
     u.append(('card: bell', field(b, 'text'), b['wire'] if b else ''))
-    w0, w1 = pick(cap, 'A wake', 'GET', r'.*/wake/.*/card', nth=0), pick(cap, 'A wake', 'GET', r'.*/wake/.*/card', nth=-1)
-    u.append(('card: own wake (first)', field(w0, 'text'), w0['wire'] if w0 else ''))
-    u.append(('card: own wake (last)', field(w1, 'text'), w1['wire'] if w1 else ''))
-    sp = pick(cap, 'A stranger', 'POST', r'.*/world/garden/plant')
+    sp = pick(cap, 'A stranger', 'POST', r'.*/world/.+/(plant|make|rain)')
     sr = pick(cap, 'A stranger', 'GET', r'.*/receipt/[a-z]+-[a-z]+')
     u.append(('receipt: planting, by slug', field(sp, 'line') or field(sp, 'status'), sr['wire'] if sr else ''))
     u.append(('receipt: its slug', field(sp, 'receipt', 'slug'), ''))
@@ -266,15 +273,13 @@ def units(cap):
     tk = pick(cap, 'town', 'POST', None, 'bad-1')
     u.append(('refusal: turn (badSpell)', field(tk, 'line'), tk['wire'] if tk else ''))
     us = pick(cap, 'town', 'POST', None, 'usage-1')
-    u.append(('usage block (garden ?)', field(us, 'text') or field(us, 'line'), us['wire'] if us else ''))
+    u.append(('usage block (bell/1 ?)', field(us, 'text') or field(us, 'line'), us['wire'] if us else ''))
     s, o = pick(cap, 'A planter', 'POST', None, 'plant-3'), pick(cap, 'A planter', 'GET', r'.*/offers\?after=\d+')
     u.append(('interpretation round trip', field(o, 'offers'), (s['wire'] if s else '') + (o['wire'] if o else '')))
     p1 = pick(cap, 'A planter', 'POST', None, 'plant-1')
     u.append(('planting by spell', field(p1, 'offers'), p1['wire'] if p1 else ''))
-    bs = pick(cap, 'A forger', 'GET', r'.*/garden/bell/\d+/source')
-    ws = pick(cap, 'A wake', 'GET', r'.*/wake/.*/source')
+    bs = pick(cap, 'A forger', 'GET', r'.*/bell/\d+/source')
     u.append(('source: bell', field(bs, 'law'), bs['wire'] if bs else ''))
-    u.append(('source: wake', field(ws, 'law'), ws['wire'] if ws else ''))
     api = pick(cap, 'A forger', 'GET', r'/AGENTS\.md/api') or pick(cap, None, 'GET', r'/AGENTS\.md/api')
     u.append(('catalogue /api', '', api['wire'] if api else ''))
     wl = pick(cap, 'A planter', 'GET', r'/AGENTS\.md/world')

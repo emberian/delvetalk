@@ -16,7 +16,7 @@ def initial() -> State:
   {owner: "", coins: Relations.empty()}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "coins", key: Text.words("n who"), limit: 64n})
-law owner "anyone drops; the owner reprograms": request.kind == 0 or request.subject == new.owner
+law owner "anyone drops and places rules; the owner reprograms": request.kind == 0 or request.kind == rule or request.subject == new.owner
 form drop:
   line: text 1..140
 def drop(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:
@@ -25,19 +25,21 @@ def drop(state: State, input: {line: String}, context: Abi.Context) -> Activity<
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("{natText(Relations.count(state.coins))} coins\n")
 NOTES. A method is a form's action, a name methods() lists (`~name` hides it from ?), or a conventional
-one (receive, render, set, publishPage); any other def is a helper no turn can name. A form block declares
-the method's input and, with none written, forms(); the host fits text A..B, natural A..B, a choice and
-source (Bend) under its bounds. actions(state, context) narrows what a reader is offered. receive gets
-what ran no method: Card.Reply {text, post, fields, spell}, or Card.Heard (with misfit) on a card that
-reads words. create lays a seed over initial(); a `fixed` State field is set then and never after. Edits
-and keep() are derived from State (import Plan.obend); write {f: set|add|append|removeItem|insert|upsert|
-retract v} writes only this object.
+one (receive, render, set, publishPage); any other def is a helper no turn can name. A
+form block declares the method's input; the host fits text A..B, natural A..B, a choice and source
+(Bend) under its bounds. actions(state, context) narrows what a reader is offered. receive gets what
+ran no method: Card.Reply {text, post, fields, spell}: blank text (answer with the card), a spell
+missing fields, or words; Card.answer leaves words silent and the host hands them to hob with this
+card's table. A rule or want line in the source is placed on each object made of it. create lays a
+seed over initial(); a `fixed` State field is set then and never after. Edits and keep() are derived
+from State (import Plan.obend); write {f: set|add|append|removeItem|insert|upsert|retract v} writes
+only this object. To react to another's change, place a rule on it (world.rule).
 context: {world, object, principal, handle, caller, sender, intent, height, clock, inputOrigin}; caller is
-the calling object, sender the object whose send this turn delivers ("" otherwise).
-world.view::<S>({object}) -> viewed {version, state} | denied | refused {clause}. refuse("why") (a
-literal) ends the turn: nothing staged is written, the receipt is refused evaluation with your words. A
-Card.Refusal {clause, reading} answered as "refused <clause>: <reading>" is an answer, not a refusal:
-the turn is admitted and commits every write staged before it, so give it before any write.
-A kind's body is a layer over Record.obend (`layer over ./Record.obend`), laid on each thing it makes.
-REFUSALS. typeMismatch: the input fits no method; ask `?`. evaluation: refuse() ran, transient; fix and
-resend. lawRefused "refused owner: ...": delvetalk library laws / card: <id>.
+the calling object, sender the object whose send (or rule) this turn delivers ("" otherwise).
+world.view::<S>({object}) -> viewed {version, state} | denied | refused {clause}. refuse(line) ends
+the turn refused cardRefused, binding, nothing staged written; Card.refusing({clause, reading})
+writes the line "refused <clause>: <reading>", and called by another object returns it as data.
+A kind's body is a layer over Record.obend (`layer over ./Record.obend`), laid on each thing it makes;
+a package declaring State8 and migrate is carried across editions.
+REFUSALS. typeMismatch: the input fits no method; ask `?`. cardRefused: the card's own line; change the
+spell. lawRefused "refused owner: ...": delvetalk library laws / card: <id>.
