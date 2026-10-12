@@ -8,9 +8,7 @@ import argparse
 import collections
 import json
 import re
-import sqlite3
 import sys
-from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -18,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 from rehearsal.rehearse import journal_stats  # noqa: E402
 from transport import journal as chain  # noqa: E402
 from transport import measure  # noqa: E402
+from transport.observe import instant  # noqa: E402
 from transport.state import State  # noqa: E402
 
 ARCS = {'garden': ('plant', 'rain', 'cistern'), 'workshop': ('check', 'propose', 'adopt'), 'rooms': ('enter', 'choose', 'leave')}
@@ -26,40 +25,12 @@ CARD = re.compile(r'\b(?:garden|workshop|tide|anthology|rooms|directory|env|wake
 FENCE = re.compile(r'```obend')
 
 
-def when(stamp):
-    return datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
-
-
-def jsonl(path):
-    rows = []
-    for line in path.read_text().splitlines() if path.exists() else []:
-        try:
-            rows.append(json.loads(line))
-        except ValueError:
-            continue
-    return rows
-
-
-def observations(st):
-    if not st.observed.exists():
-        return []
-    db = sqlite3.connect(st.observed)
-    try:
-        return [json.loads(js) for (js,) in db.execute('SELECT json FROM observations ORDER BY seq')]
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        db.close()
-
-
 def access(st):
     """The front's access log (transport/http.py AccessLog: time method path status bytes did), with its rotated generation.
     -> None when there is none. 4xx by status, the 5xx count (the zero-500s gate), the most requested paths, the most bytes."""
-    files = [p for p in (st.access_log.with_name(st.access_log.name + '.1'), st.access_log) if p.exists()]
-    if not files:
+    if not st.access_log.exists() and not st.access_log.with_name(st.access_log.name + '.1').exists():
         return None
-    rows = [l.split() for p in files for l in p.read_text().splitlines()]
-    rows = [x for x in rows if len(x) >= 6 and x[3].isdigit()]
+    rows = [x for x in st.access() if len(x) >= 6 and x[3].isdigit()]
     paths, sent = collections.Counter(x[2] for x in rows), collections.Counter()
     for x in rows:
         sent[x[2]] += int(x[4]) if x[4].isdigit() else 0
@@ -75,10 +46,10 @@ def harvest(run):
     journal = st.journal if st.journal.exists() else None  # serve's journal of the home world
     entries, tags, classes, reasons = journal_stats(journal) if journal else ([], collections.Counter(), collections.Counter(), {})
     by_intent = {(e.get('identity') or {}).get('intent'): e for e in entries}
-    obs = observations(st)
+    obs = st.observations()
     drafts = [json.loads(p.read_text()) for p in sorted(st.outbox.glob('*.json'))]
     interp = [json.loads(p.read_text()) for p in st.interpretations.glob('*.json')]
-    steps, spend, hand = jsonl(run / 'bridge.log'), jsonl(st.spend), jsonl(st.hand_log)
+    steps, spend, hand = st.lines(run / 'bridge.log'), st.lines(st.spend), st.lines(st.hand_log)
     r = {'run': str(run), 'observed': dict(collections.Counter(o['kind'] for o in obs)), 'journal': {
         'height': len(entries), 'bytes': chain.size(journal) if journal else 0, 'outcomes': dict(tags), 'refusedByClass': dict(classes),
         'medianSuspendedBytes': getattr(journal_stats, 'sizes', {}).get('suspended', {}).get('median', 0)}}
@@ -121,7 +92,7 @@ def harvest(run):
                           'obend': sum(1 for o in mine if FENCE.search(o['text'])),
                           'refused': dict(collections.Counter(c for c, _ in refused)),
                           'recurring': [list(k) for k, n in collections.Counter(refused).items() if n > 1],
-                          'minutesToFirstSpell': round((when(first_spell['createdAt']) - when(mine[0]['createdAt'])) / 60, 1) if first_spell else None,
+                          'minutesToFirstSpell': round((instant(first_spell['createdAt']) - instant(mine[0]['createdAt'])) / 60, 1) if first_spell else None,
                           'refusalsBeforeFirstSpell': sum(1 for o in before if (by_intent.get(o['uri']) or {}).get('outcome', {}).get('tag') == 'refused')}
         for o, e in outcomes:
             m = SPELL.search(o['text'])

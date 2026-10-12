@@ -46,7 +46,7 @@ A well-formed spell is exact, free and model-less. The grammar is loose where in
 - prose before and after: a line that is not `name: value` ends the fields;
 - fields in any order; a value without its name bound by type (a choice's option, digits for a natural, the one open
   text field), so `silver` under a plant line is the colour;
-- a field missing is asked for, not refused: the line alone completes it.
+- a field missing is asked for, not refused, and nothing of the spell is kept: send the whole spell again with it.
 
 Strict where it binds: field bounds and choices, the law, the receipt, `?` (host-answered, free), the intent,
 `duplicateField` and `unclosedBlock` (the hint is the fix). **Only a line-start spell casts:** an indented one, or any in

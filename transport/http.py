@@ -16,11 +16,12 @@ from pathlib import Path
 
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
-from transport.bridge import door_rows, plain
-from transport.host import CLOCK, HOST_TIMEOUT, painted
+from transport.bridge import turn_line
+from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, handles, paged, painted, plain, typed
+from transport.pages import door_rows
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
-from transport.repo import PUBLIC, Repo
+from transport.repo import Repo
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
@@ -83,17 +84,11 @@ def resolve(method, path):
 
 
 
-def follow(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
+def trace(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
     """The texts offered to `principal` by a turn and every turn it handed on (its `sends`, delivered under the same
     principal with the send's id as intent: a card handing prose to the commonplace, hob's planting sent to the garden),
-    waiting up to `wait` seconds while any of them is suspended on hob or not yet delivered: the play page's turn and
-    the hand's Speak."""
-    return trace(host, principal, intent, reply, sleep, wait)[0]
-
-
-def trace(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
-    """`follow`'s texts, and whether any turn of the chain is still waiting (on hob, or for its delivery) when `wait`
-    seconds are spent; with `wait` 0, one look at the chain as it stands (a page that refreshes itself)."""
+    and whether any of them is still waiting (on hob, or for its delivery) when `wait` seconds are spent: the play page's
+    turn and the hand's Speak. With `wait` 0, one look at the chain as it stands (a page that refreshes itself)."""
     watch = {intent}
     done = {} if reply.get('status') == 'suspended' else {intent: reply['receipt']}  # the turn as it answered
     watch |= {s['id'] for r in done.values() for s in r.get('sends') or [] if s.get('id')}
@@ -109,17 +104,6 @@ def trace(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
         sleep(WAIT_STEP)
     seen = host.send({'op': 'world-offers', 'principal': principal, 'after': after}).get('offers') or []
     return [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in watch], not watch <= set(done)
-
-
-def typed(value):
-    """Plain JSON as the host's typed data: text is a label, an integer a natural, an object a record."""
-    if isinstance(value, dict):
-        return value if 'tag' in value else {'tag': 'record', 'fields': [{'name': k, 'value': typed(v)} for k, v in value.items()]}
-    if isinstance(value, list):
-        return {'tag': 'list', 'items': [typed(v) for v in value]}
-    if isinstance(value, bool):
-        return {'tag': 'boolean', 'value': value}
-    return {'tag': 'natural', 'value': str(value)} if isinstance(value, int) else {'tag': 'label', 'value': str(value)}
 
 
 def argument(data):
@@ -162,7 +146,7 @@ def compact(reply):
 
 def turn_view(reply):
     """A turn reply's default rendering: the turn line with its stamp, what the act fired, opened and where it stands (the
-    host's `revealed` lines, when it has any), the offered texts and where the receipt sits. The whole receipt is
+    host's `revealed` lines, when it has any), a refusal's `hint`, the offered texts and where the receipt sits. The whole receipt is
     `?full=1` and `GET /receipt/<slug>`."""
     rc = reply['receipt']
     line = turn_line(reply)
@@ -171,6 +155,7 @@ def turn_view(reply):
     return {'status': reply.get('status'), **({'class': cls} if cls and reply.get('status') == 'refused' else {}),
             'line': f"{pages.stamp(reply.get('status'), word=False)} {line}",
             **({'revealed': reply['revealed']} if reply.get('revealed') else {}),
+            **({'hint': outcome['hint']} if outcome.get('hint') else {}),  # a refusal's fix, as the host wrote it
             'offers': [o['text'] for o in reply.get('offers') or []],
             'receipt': {'slug': rc.get('slug'), 'height': rc.get('height')}}
 
@@ -196,18 +181,6 @@ ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever 
                 'invitation_spent': 'that invitation was accepted already; the credential it gave speaks for you, and the operator can invite you again',
                 'invitation_expired': 'that invitation lapsed before it was accepted; ask for a new one',
                 'invitation_revoked': 'that invitation was revoked'}
-
-
-def turn_line(r, addressed=None, handles=None):
-    """A turn's receipt in one line: `admitted garden v3, entry 9, receipt <slug>`, `refused owner: <reading>`, `suspended, entry 9`."""
-    rc = r.get('receipt') or {}
-    out = rc.get('outcome') or {}
-    if r.get('status') == 'admitted':
-        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, r.get('object') or addressed, handles)
-    if r.get('status') == 'refused':
-        line = bridge.refusal_line(out, r.get('class'))
-        return line + (f"\nnext at {out['next']}" if 'next' in out else '')
-    return f"suspended, entry {rc.get('height')}" if r.get('status') == 'suspended' else f"{r.get('status')}: {r.get('message', '')}"
 
 
 def digits(text):
@@ -370,29 +343,22 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                     pass
 
     def draft_turn(self, principal, intent, reply):
-        """The owner's rule (cracks R6): an admitted HTTP turn that wrote an object the public reads (the host's answer to
-        `world-view` as the anonymous reader) is drafted in the hand's outbox like a town reply, once per receipt; whether
-        the town hears of it is the operator's click."""
+        """The owner's rule (cracks R6): an admitted HTTP turn that wrote something, and read and wrote only what the public
+        reads (`bridge.public`), is drafted in the hand's outbox like a town reply, once per receipt; whether the town
+        hears of it is the operator's click."""
         receipt = reply.get('receipt') or {}
         writes = [w['object'] for w in (receipt.get('outcome') or {}).get('writes') or [] if w.get('object')]
         if reply.get('status') != 'admitted' or not writes or principal.startswith('guest:'):  # a guest's replies come back over HTTP only
             return
-        public = [o for o in dict.fromkeys(writes) if self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': o}).get('status') == 'viewed']
         path = self.st.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
-        if public and not path.exists():
+        if not path.exists() and bridge.public(self.host, receipt):
             self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
-                                       'object': public[0], 'slot': None, 'receipt': receipt, 'posted': False,
-                                       'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
+                                 'object': writes[0], 'slot': None, 'receipt': receipt, 'posted': False,
+                                 'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
 
     def handles(self, dids):
-        """{did: handle} for the DIDs a page names: the `handle` of each one's avatar (`world-arrive` seeds it from the
-        registry) as the public reader sees it; a handle once found is kept, a DID with no avatar asked again next time."""
-        for did in set(dids) - set(self.known):
-            view = self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': did})
-            handle = (plain(view.get('state') or {}) or {}).get('handle') if view.get('status') == 'viewed' else None
-            if isinstance(handle, str) and handle:
-                self.known[did] = handle
-        return self.known
+        """{did: handle} for the DIDs a page names, as the public reader sees their avatars."""
+        return handles(self.host, PUBLIC, dids, self.known)
 
     def sync_library(self, force=False):
         """Re-read serve-status when serve's pid changed (it restarted, maybe with a new library), or when forced."""
@@ -400,16 +366,14 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         if force or info.get('pid') != self.serve_pid:
             self.library, self.serve_pid = info.get('library'), info.get('pid')
 
-    def used(self, credential):
-        now = self.clock()
-        with self.hits_lock:
-            return [t for t in self.hits.get(credential, []) if now - t < WINDOW]
-
-    def limited(self, key, rate=RATE):
-        """0 when under the limit, else the seconds until the oldest counted request leaves the window."""
+    def limited(self, key, rate=RATE, count=True):
+        """0 when under the limit, else the seconds until the oldest counted request leaves the window; `count` False
+        asks without counting (-> the requests in the window)."""
         with self.hits_lock:  # read, test and append as one step
             now = self.clock()
             hits = [t for t in self.hits.get(key, []) if now - t < WINDOW]
+            if not count:
+                return len(hits)
             self.hits[key] = hits + [now]
         return max(1, int(hits[-rate] + WINDOW - now + 0.999)) if len(hits) >= rate else 0
 
@@ -576,7 +540,8 @@ class Handler(BaseHTTPRequestHandler):
         return ''
 
     def login_cookie(self, credential):
-        return [('Set-Cookie', f'{COOKIE}={credential}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000')]
+        secure = '; Secure' if self.server.origin.startswith('https:') else ''  # never sent over plain http to a public origin
+        return [('Set-Cookie', f'{COOKIE}={credential}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000{secure}')]
 
     def principal(self, credential):
         try:
@@ -725,7 +690,7 @@ class Handler(BaseHTTPRequestHandler):
             if found.get('identity'):
                 r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': found['identity']})
                 return self.answer(r, links=receipt_links(base, r))
-            if found.get('status') != 'unknown' and 'unknown' not in str(found.get('message')):
+            if found.get('status') != 'unknown':
                 return self.answer(found)  # ambiguous, denied: the host's words
             return self.answer({'status': 'unknown', 'message': f'no receipt is named {obj}'},
                                links={'hint': link(f'{base}/receipt?{urllib.parse.urlencode({"intent": obj})}')})
@@ -744,12 +709,12 @@ class Handler(BaseHTTPRequestHandler):
             links = {'next': link(f'{base}/offers?after={newest}&wait={WAIT_MAX}'), 'world': link(base + '/world')}
             return self.answer(compact_offers(reply) if q.get('compact') == '1' and reply.get('status') == 'offers' else reply, links=links)
         if kind == 'pending':
-            return send({'op': 'world-pending'}, {'deliver': link(base + '/deliver')})
+            return send({'op': 'world-pending', 'principal': principal}, {'deliver': link(base + '/deliver')})
         data = self.body()
         if data is None:
             return
         if kind == 'deliver':
-            return send({'op': 'world-deliver', 'limit': self.server.bounds['host']['deliveriesPerCall']}, {'pending': link(base + '/pending')})
+            return send({'op': 'world-deliver', 'principal': principal}, {'pending': link(base + '/pending')})
         if kind == 'create':  # a name no spell can address would publish spells nobody can cast: the host's parser says
             name = data.get('object')
             read = self.server.host.send({'op': 'spell-parse', 'text': f'delvetalk {name} ?'}) if isinstance(name, str) else {}
@@ -858,7 +823,7 @@ class Handler(BaseHTTPRequestHandler):
         rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []
         mine = [r for r in rows if r.get('principal') == who['did']]
         self.answer({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'], 'scratches': mine,
-                     'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))}},
+                     'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - self.server.limited(credential, count=False))}},
                     links={'world': link(PREFIX + '/world'), 'scratch': link(PREFIX + '/scratch'), 'offers': link(PREFIX + '/offers'), 'revoke': link(PREFIX + '/revoke')})
 
     def open_scratch(self, principal):
@@ -938,7 +903,9 @@ class Handler(BaseHTTPRequestHandler):
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
             for t in turns:
                 self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
-            offers = [o for t in turns if 'receipt' in t for o in follow(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)]
+            revealed = [line for t in turns for line in t.get('revealed') or []]  # what the act fired, opened, closed: said first
+            offers = ['\n'.join(revealed)] * bool(revealed) + \
+                [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)[0]]
             names = self.server.handles(pages.A_DID.findall(name))
             usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
             answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))
@@ -987,16 +954,8 @@ class Handler(BaseHTTPRequestHandler):
         height = host.send({'op': 'world-status'}).get('height') or 0
         window = 20
         while True:
-            after, entries = max(0, height - window), []
-            for _ in range(50):
-                req = {'op': 'world-history', 'principal': principal or '', 'object': name, 'limit': 100}
-                if after:
-                    req['after'] = after
-                page = host.send(req)
-                entries += page.get('entries') or []
-                if not page.get('more') or not page.get('entries'):
-                    break
-                after = page['entries'][-1]['height']
+            entries = list(paged(host, {'op': 'world-history', 'principal': principal or '', 'object': name, 'limit': 100,
+                                       'after': max(0, height - window)}, 'entries'))
             if len(entries) >= 20 or window >= height:
                 return entries[-20:][::-1]
             window *= 4

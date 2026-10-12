@@ -16,7 +16,7 @@ from pathlib import Path
 
 from transport.delve import Failure, canonical, http_transport
 from transport.observe import MAX_TEXT, TAG, Observer, classify
-from transport.post import ledger, post_draft, reserve
+from transport.post import held, ledger, post_draft, reserve
 
 BATCH = 100
 MENTION = re.compile(r'@_?\*\*([^*|\n]+?)(?:\|\d+)?\*\*')
@@ -63,7 +63,7 @@ class Client:
             url += '?' + encoded
         elif method != 'GET':
             body, headers['Content-Type'] = encoded.encode(), 'application/x-www-form-urlencoded'
-        status, raw = self.transport(method, url, headers, body)
+        status, raw, *_ = self.transport(method, url, headers, body)
         try:
             got = json.loads(raw)
         except ValueError:
@@ -152,14 +152,12 @@ class ZulipObserver(Observer):
                 self.db.execute('COMMIT')
                 return False
             fresh = False
-            if m.get('sender_id') != me['user_id'] and not self.before_start(created_at(m)):  # older messages extend the thread, unobserved
-                if len(m['content'].encode()) > MAX_TEXT:
-                    self.refused.append(('post_body_too_large', uri))
-                else:
-                    obs = self.observation(m, me['full_name'].strip().lower())
-                    self.db.execute('INSERT INTO posts VALUES(?,?,?,?)', (uri, obs['cid'], '', canonical(obs)))
-                    self.db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (uri, canonical(obs)))
-                    fresh = True
+            # older messages, ours and those past MAX_TEXT extend the thread, unobserved
+            if m.get('sender_id') != me['user_id'] and not self.before_start(created_at(m)) and len(m['content'].encode()) <= MAX_TEXT:
+                obs = self.observation(m, me['full_name'].strip().lower())
+                self.db.execute('INSERT INTO posts VALUES(?,?,?,?)', (uri, obs['cid'], '', canonical(obs)))
+                self.db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (uri, canonical(obs)))
+                fresh = True
             self.db.execute('INSERT INTO zulip_topics VALUES(?,?,?,?) ON CONFLICT(topic) DO UPDATE SET last_id=excluded.last_id, last_uri=excluded.last_uri',
                             (topic, uri, m['id'], uri))
             self.db.execute('COMMIT')
@@ -194,16 +192,17 @@ def deliver(st, host, client, stream, topic, text, intent):
     """Post `text` to stream>topic once per intent (reserved with the host as a `zulip` post, which no quota holds: the
     hour's quota is delve.town etiquette). The stream's newest id is persisted before the send; a retry adopts our
     message with this text after it rather than sending again. -> {uri, cid}. Raises Failure."""
-    path, got = ledger(st, intent)
-    if got is None:
-        reserve(host, intent, 'zulip')
-        got = {'after': client.newest(stream)}
-        st.write(path, got)
-    if not got.get('result'):
-        mid = client.sent_after(stream, topic, text, got['after']) or client.send(stream, topic, text)['id']
-        got = dict(got, result={'uri': uri_of(stream, topic, mid), 'cid': str(mid)})
-        st.write(path, got)
-    return dict(got['result'])
+    with held(st):
+        path, got = ledger(st, intent)
+        if got is None:
+            reserve(host, intent, 'zulip')
+            got = {'after': client.newest(stream)}
+            st.write(path, got)
+        if not got.get('result'):
+            mid = client.sent_after(stream, topic, text, got['after']) or client.send(stream, topic, text)['id']
+            got = dict(got, result={'uri': uri_of(stream, topic, mid), 'cid': str(mid)})
+            st.write(path, got)
+        return dict(got['result'])
 
 
 def target(d, row):

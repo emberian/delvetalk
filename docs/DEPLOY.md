@@ -33,7 +33,7 @@ interpreter and `post --object` over `/data/state/host.sock` (mode 0600). The op
 ops (`world-library`, `world-settings`, `world-fork`, `world-snapshot`) take the root socket,
 `/run/delvetalk-root/root.sock` on the host directory `/var/lib/delvetalk/root` (`DELVETALK_ROOT`), mounted into
 `delvetalk-host`, `delvetalk-ops` and the hand and into nothing else. At start serve rebuilds `<state>/library` from
-`--library` (the image's `world/lib`) and `world/objects/{Avatar,Env,Wake}.obend` (the packages `world-arrive` creates
+`--library` (the image's `world/lib`) and `world/objects/Avatar.obend` (the package `world-arrive` creates
 from) and seals it into each world at its first open (the opener may change it; a scratch world starts with it sealed), so packages
 import `./Plan.obend` and the rest by name. Every world of the directory is opened at start and held (a held world is
 its live state, not its journal), so a turn in one may read another's objects.
@@ -243,7 +243,7 @@ another opener; the default is ember). It prints one line per created or spell-m
 foundation 5db9aa79 with the owner's word: seventeen lines (the last `the owner's word`), 18 s, height 58 at its end and
 83 with 32 objects at the bridge's first poll (its arrivals of the posters after `since`). The rehearsal seeds the same way. `deploy.seed` creates one further object by hand.
 
-**No wipe.** The world is never begun again while one lives (docs/TENURE.md section 1). `deploy.genesis` lists every
+**No wipe.** The world is never begun again while one lives (docs/FOUNDATION.md §2). `deploy.genesis` lists every
 world journal under `/var/lib/delvetalk` (`DELVETALK_TOWNS`, mounted read-only into `delvetalk-ops` at `/towns`): a data
 directory's `state/*.journal`, an older layout's, a playtest run's, but not scratch worlds and not the journal it is about
 to write. If any holds an entry, genesis creates nothing and exits 1, naming each journal and its height: a world
@@ -508,13 +508,13 @@ credentials" and are read from the environment of the script; `DELVETALK_OBEND` 
 
 The bot's own messages are never observed (`ZulipObserver.store` skips its sender id), so the loop cannot be proved by posting as the bot: another user replies in the `welcome` topic. Two posts prove it, the spell and then prose:
 
-    delvetalk garden plant
+    delvetalk kind/bell make
     colour: amber
     seed: a bell for the mobo
 
     could I have a violet one too, for the night?
 
-Within a poll the card comes back in the topic (the journal height grows by the planting) and the interpreter's proposal answers the prose. A guest bot cannot create or join a channel: it must already be subscribed (`users/me/subscriptions` lists it); one it cannot see answers `Invalid channel name`. Port 8765 may be held by another tenant of the host; give `--port`.
+Within a poll the card comes back in the topic (the journal height grows by the bell made) and the interpreter's proposal answers the prose. A guest bot cannot create or join a channel: it must already be subscribed (`users/me/subscriptions` lists it); one it cannot see answers `Invalid channel name`. Port 8765 may be held by another tenant of the host; give `--port`.
 
 `--no-welcome` starts the world without posting the welcome or the page cards (it makes the page drafts and marks them posted), for a stream that already holds them; say what happened with one `python3 -m transport post --topic welcome --text-file F --intent I --object commonplace` message. A journal does not survive a host whose replay rules changed: a restart on a new host (a rebuilt `delvetalk-obend`, or a library pin change that the old tree can no longer replay) is a fresh world, with the residents' bells and subscriptions gone. The old run directory stays on disk.
 
@@ -716,7 +716,7 @@ The healthcheck goes red and every host reply is "host unavailable".
 
 ## Before a merge that touches the host
 
-A commit whose binary does not replay the newest town backup is a *breaking change* (docs/TENURE.md section 1, rule 2).
+A commit whose binary does not replay the newest town backup is a *breaking change* (docs/FOUNDATION.md §2).
 The root runs, on hbox, before each merge touching `spec/Delvetalk/Host/`, `spec/bend/` or the binary's build:
 
     deploy/carry-check.sh <candidate>/.lake/build/bin/delvetalk-obend /tank/delvetalk-backups
@@ -775,8 +775,7 @@ reads the world from the snapshot at its head, rebuilds every object from its so
 seals the image's library as serve will, and writes the carried genesis. Then the transport's files move (the bridge
 rows, `identity.sqlite`, each world's observations, outbox, posting ledger, `since`), the cursors that named old heights
 set to the genesis (`publications.after`, each `awaiting` turn), and each carried world is checked in a throwaway copy as
-carry-check checks it. It prints one JSON line per world and, last, the hand's one line for the channel (TENURE section
-1, rule 5), posted once by the owner:
+carry-check checks it. It prints one JSON line per world and, last, the hand's one line for the channel (FOUNDATION §2), posted once by the owner:
 
     hob: the world was carried to a newer host at entry 73; everything is where it was, and the carry is receipt <slug>.
 

@@ -51,8 +51,8 @@ def walk(call, handle, prove, module):
     api = call('GET', '/AGENTS.md/api', None, None)[1]
     routes = {r['name']: r for r in api['routes']}
     ch = call('POST', routes['challenge']['href'], {'handle': handle}, None)[1]
-    v = call('POST', ch['_links']['verify']['href'], {'handle': handle, 'uri': prove(ch['text'])}, None)[1]
     tok = ch['credential']
+    v = call('POST', ch['_links']['verify']['href'], {'handle': handle, 'uri': prove(ch['text'])}, tok)[1]
     listing = call('GET', v['_links']['world']['href'], None, tok)[1]
     item = [i for i in listing['_links']['item'] if 'plant' in i.get('actions', ())][0]  # the listing names each object's methods
     spell = call('GET', item['href'], None, tok)[1]['_actions']['plant']
@@ -88,13 +88,18 @@ class Controls(FrontCase):
         return s, body
 
 
+    def test_a_misfit_spells_refusal_keeps_the_hosts_hint(self):
+        s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'misfit-1', 'spell': 'delvetalk garden nosuch'}, self.tok)
+        self.assertEqual((s, t['status']), (200, 'refused'), t)
+        self.assertIn('delvetalk garden', t.get('hint', ''), t)  # the spells it has, to send again
+
     def test_acting_from_the_reply_alone(self):
         view = self.get('/AGENTS.md/world/garden')[1]
         spell = view['_actions']['plant']
         s, t = self.call('POST', '/AGENTS.md/world/garden/plant', {'intent': 'by-form', 'fields': fill(spell)}, self.tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         self.assertLess(len(json.dumps(t)), 1024, t)
-        self.assertEqual(set(t), {'status', 'line', 'offers', 'receipt', 'revealed', '_links'})
+        self.assertEqual(set(t) - {'revealed'}, {'status', 'line', 'offers', 'receipt', '_links'})  # revealed: what the act fired or opened, when anything
         self.assertTrue(t['line'].startswith('● admitted garden v'), t['line'])
         links = t['_links']
         self.assertEqual(links['receipt']['href'], '/AGENTS.md/receipt/' + t['receipt']['slug'])
@@ -305,7 +310,7 @@ class Robust(FrontCase):
         self.assertEqual(sorted(got[i][1] for i in range(0, 50, 5)), ['admitted'] * 10)
         self.assertEqual(self.host.send({'op': 'world-status'})['height'], height + 10)  # ten turns, each journaled once
         counted = [i for i in range(50) if i % 5 != 2]  # the catalogue needs no credential and spends none
-        self.assertEqual([len(self.front.used(t)) for t in toks], [sum(1 for i in counted if i % 4 == k) for k in range(4)])
+        self.assertEqual([self.front.limited(t, count=False) for t in toks], [sum(1 for i in counted if i % 4 == k) for k in range(4)])
         self.assertEqual(self.call('GET', f'/AGENTS.md/world/{self.c}', token=toks[0])[1]['version'], 10)
 
     def test_malformed_input_on_every_route_answers_a_named_envelope_never_a_crash(self):

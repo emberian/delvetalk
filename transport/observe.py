@@ -121,7 +121,7 @@ class Observer:
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('PRAGMA synchronous=NORMAL')
         self.db.executescript(SCHEMA)
-        self.client, self.refused = client, []
+        self.client = client
 
     def before_start(self, created):
         try:
@@ -133,8 +133,7 @@ class Observer:
         """Store one post and its observation in one transaction. True if new."""
         try:
             obs = observation(post)
-        except Failure as f:
-            self.refused.append((f.code, f.detail))
+        except Failure:  # malformed, or past MAX_TEXT: not an observation
             return False
         if self.before_start(obs['createdAt']):
             return False

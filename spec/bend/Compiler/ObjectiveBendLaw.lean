@@ -1,7 +1,7 @@
 /- The clause language of Objective Bend: law, rule and want, one grammar, one renderer.
 
 A thing's text is one clause a line, each clause a condition in one modality (docs/OVERHAUL.md §2,
-docs/REACTION.md, docs/LAW.md):
+docs/FOUNDATION.md §10, docs/LAW.md):
 
     law  NAME "reading": EXPR                 refuses at commit: [write]φ
     rule NAME "reading": EXPR then SPELL      fires at commit, under the rule's owner: [write]φ then σ
@@ -45,7 +45,7 @@ What each form means (the host's `denote` is the definition):
   value of `new.F`'s type, as `writeOnce` reads an empty field), `"O"` of another object at the
   version the write's turn read, recorded as a root (`LawExpr.reads`). `request.clock` is the world
   clock in minutes, `request.object` the written object's id, `request.verb` the verb the act named
-  (a declared method's name, or a grown verb's: docs/COLLABORATOR.md). `request.laws` and
+  (a declared method's name, or a grown verb's: docs/FOUNDATION.md §10). `request.laws` and
   `request.refusedBy` are what the object stands at: the count of its law clauses, its own and those
   each `under` citation's text holds (followed, each cited object once), and the count of writes its
   law has refused (the journal's `lawRefused` entries naming it).
@@ -1031,7 +1031,7 @@ def accepted : List (String × LawExpr) := [
     .and (.under "kind/bell") (.eq (.fact .subject) (.field .new "maker"))),
   ("count(new.a where b == count(old.a)) == 0",
     .eq (.count .new "a" (.eq "b" (.count .old "a" .all))) (.int 0)),
-  -- OVERHAUL §2 and REACTION §4: `>=`, a comparison reading the write on either side, another
+  -- OVERHAUL §2 and FOUNDATION §10: `>=`, a comparison reading the write on either side, another
   -- object's field as a reference, membership before the write, `%`, the verb, the kind `rule`,
   -- another thing's want.
   ("count(new.presence) >= 3 and count(old.presence) <= 2",
@@ -1108,7 +1108,7 @@ private def rule' (name : String) (condition : LawExpr) (spell : List SpellPart)
 private def want' (name : String) (condition : LawExpr) (spell : List SpellPart) (reading : String := "") : Clause :=
   { modality := .want ⟨spell⟩, name, reading, condition }
 
-/-- Clauses of each modality and what they parse to: REACTION §5's six rules as typed from a card,
+/-- Clauses of each modality and what they parse to: FOUNDATION §10's six rules as typed from a card,
 the kind's rules and wants OVERHAUL §3 names, and the holes. -/
 def clauses : List (String × Clause) := [
   ("law owner \"the owner amends\": request.kind == write or request.subject == new.owner",

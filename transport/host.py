@@ -1,10 +1,11 @@
-"""The host's client: one JSON line per op over a socket of `delvetalk-obend serve` (HOST-HANDOFF 5.125), which owns the
-directory, its lock and every journal. `<dir>/host.sock` is public; the root socket (deploy's /run/delvetalk-root/root.sock,
-mounted into the hand's and the ops containers only) takes `world-root`, the root ops and every op naming the opener.
-Every op carries `world: <name>` (default `town`)."""
+"""The host's client and its wire: one JSON line per op over a socket of `delvetalk-obend serve` (HOST-HANDOFF 5.125),
+which owns the directory, its lock and every journal, or over the stdin of a host process of a script's own. `<dir>/host.sock`
+is public; the root socket (deploy's /run/delvetalk-root/root.sock, mounted into the hand's and the ops containers only)
+takes `world-root`, the root ops and every op naming the opener. Every op carries `world: <name>` (default `town`)."""
 import json
 import os
 import socket
+import subprocess
 import threading
 import time
 
@@ -14,6 +15,7 @@ CLOCK, ON_ROOT = 'transport', 'the opener speaks on the root socket'  # the cloc
 IDEMPOTENT = {'world-' + op for op in 'status view card objects offers history receipt resolve inspect entries entry object publications '
               'grants source sources state-cid addressee turn render strokes'.split()} | {'serve-status'}
 PAINT_STEP = 0.25  # seconds between two looks at a pending paint
+PUBLIC = 'anonymous'  # the reader an unauthenticated request is, and a public channel's: what everyone may read
 
 
 class HostClient:
@@ -98,3 +100,71 @@ def painted(host, principal, obj, sleep=time.sleep):
         sleep(PAINT_STEP)
         r = host.send({'op': 'world-render', 'principal': principal, 'object': obj})
     return r.get('text') if r.get('status') == 'painted' else None
+
+
+class HostProcess:
+    """A host process of a script's own on stdin and stdout, one JSON line each way (carry's check, genesis's refresh of a
+    carried journal, the bench's raw path, a stub in a test); with `journal`, that journal opened unsynced. Never a
+    served world's writer."""
+
+    def __init__(self, binary, journal=None, **opening):
+        self.proc = subprocess.Popen([str(binary)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
+        if journal:
+            opened = self.send({'op': 'world-open', 'path': str(journal), 'sync': 'none', **opening})
+            assert opened.get('status') == 'opened', opened
+
+    def send(self, request=None, **fields):
+        self.proc.stdin.write(json.dumps({**(request or {}), **fields}) + '\n')
+        return json.loads(self.proc.stdout.readline())
+
+    def close(self):
+        self.proc.stdin.close()
+        self.proc.wait(timeout=60)
+        self.proc.stdout.close()
+
+
+def paged(host, request, field):
+    """Every item of a paged read (`world-offers`, `world-history`): `request` again `after` the last item's height while
+    the host says there is `more`."""
+    while True:
+        got = host.send(request)
+        items = got.get(field) or []
+        yield from items
+        if not got.get('more') or not items:
+            return
+        request = {**request, 'after': items[-1]['height']}
+
+
+def typed(value):
+    """Plain JSON as the host's typed data: text is a label, an integer a natural, an object a record."""
+    if isinstance(value, dict):
+        return value if 'tag' in value else {'tag': 'record', 'fields': [{'name': k, 'value': typed(v)} for k, v in value.items()]}
+    if isinstance(value, list):
+        return {'tag': 'list', 'items': [typed(v) for v in value]}
+    if isinstance(value, bool):
+        return {'tag': 'boolean', 'value': value}
+    return {'tag': 'natural', 'value': str(value)} if isinstance(value, int) else {'tag': 'label', 'value': str(value)}
+
+
+def plain(data):
+    """Typed data as plain JSON, for reading only (a form's fields, a view's doors); never sent back to the host."""
+    tag = data.get('tag') if isinstance(data, dict) else None
+    if tag == 'record':
+        return {f['name']: plain(f['value']) for f in data['fields']}
+    if tag == 'list':
+        return [plain(i) for i in data['items']]
+    if tag == 'variant':
+        inner = plain(data['payload'])
+        return {'tag': data['label'], **inner} if isinstance(inner, dict) else {'tag': data['label'], 'value': inner}
+    return int(data['value']) if tag == 'natural' else data.get('value') if tag else data
+
+
+def handles(host, reader, principals, known):
+    """{principal: handle} in `known`, filled for `principals` as `reader` sees them: the `handle` of each one's avatar
+    (`world-arrive` seeds it from the registry). A handle once found is kept; one with no avatar is asked again next time."""
+    for p in set(principals) - set(known):
+        view = host.send({'op': 'world-view', 'principal': reader, 'object': p})
+        handle = (plain(view.get('state') or {}) or {}).get('handle') if view.get('status') == 'viewed' else None
+        if isinstance(handle, str) and handle:
+            known[p] = handle
+    return known
