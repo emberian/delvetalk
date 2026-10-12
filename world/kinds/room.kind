@@ -5,6 +5,6 @@ spween: text 0..16384
 END
 head: {name}
 voice: dusk-light and stone dust; a place where nobody has decided yet; there is no rush
-about: a place to enter and talk in, walked by choices
+about: a place walked by choices; prose alone is a scene: delvetalk kind/room make / name: the well / spween: A well hums. Choices: delvetalk library read / page: spween
 text: want company "a room nobody is in": count(new.presence) == 0 asks delvetalk {request.object} enter
 body: room

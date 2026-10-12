@@ -132,10 +132,10 @@ def captures(fields: Lists.List<Rows.Field>, context: Abi.Context) -> Card.Captu
 # handed by the room a block was posted to) is the instance's scene: its passages, start,
 # cooldown and requirements, and not kept among the fields. A thing is made tended, at the clock of
 # its making.
-def seedOf(state: State, fields: Lists.List<Rows.Field>, under: String, stack: Stack, context: Abi.Context) -> Data:
-  if state.of == "kind" then kindSeed(fields, stack, context) else instanceSeed(state, fields, under, context)
-def instanceSeed(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Data:
-  sceneSeed(state, Lists.filter(fields, fn(f: Rows.Field) -> Bool: f.name != "spween" && f.name != "id"), under, context, Spween.parse(valueOf(fields, "spween")))
+def seedOf(state: State, fields: Lists.List<Rows.Field>, under: String, stack: Stack, scene: Spween.Parsed, context: Abi.Context) -> Data:
+  if state.of == "kind" then kindSeed(fields, stack, context) else instanceSeed(state, fields, under, scene, context)
+def instanceSeed(state: State, fields: Lists.List<Rows.Field>, under: String, scene: Spween.Parsed, context: Abi.Context) -> Data:
+  sceneSeed(state, Lists.filter(fields, fn(f: Rows.Field) -> Bool: f.name != "spween" && f.name != "id"), under, context, scene)
 def sceneSeed(state: State, kept: Lists.List<Rows.Field>, under: String, context: Abi.Context, scene: Spween.Parsed) -> Data:
   match scene:
     case parsed(p): withScene(state, kept, under, context, p.seed)
@@ -164,6 +164,12 @@ def baseLaw(of: String) -> String:
 # amends the law of every instance at once and a refusal reads the kind's clause.
 def lawOf(context: Abi.Context) -> String:
   "law kind \"{context.object}'s law holds\": under \"{context.object}\""
+# A room's text: its kind's, then a rule a cast of its scene (Scenes.ruleText), owned as the text is, by
+# the room's owner, so a choice that casts fires as any rule does.
+def sceneLaw(scene: Spween.Parsed, context: Abi.Context) -> String:
+  match scene:
+    case parsed(p): "{lawOf(context)}{Scenes.ruleText(p.seed.passages)}"
+    case refused(_): lawOf(context)
 # A kind made by `kinds` is kind/<name>; an exact `id` is that id; anything else the first free
 # <under>/<name>/<n>, or <name>/<n> (the host mints past ids already held).
 def wanted(state: State, fields: Lists.List<Rows.Field>, under: String) -> String:
@@ -209,7 +215,17 @@ def diagnosis(line: String) -> String:
 def scened(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context, spween: String) -> Activity<Done>:
   match Spween.parse(spween):
     case refused(r): if Text.blank(spween) then stacking(state, fields, under, context) else refused(context, {clause: "spween", reading: "The spween is not a scene: {r.reason}"})
-    case parsed(_): stacking(state, fields, under, context)
+    case parsed(p): judged(state, fields, under, context, Scenes.conditions(p.seed))
+# Each outside condition of a scene read once by the host, of this kind as it stands, so a guard the
+# host cannot read refuses the make by name rather than never holding.
+def judged(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context, conditions: Lists.List<String>) -> Activity<Done>:
+  match conditions:
+    case nil(_): stacking(state, fields, under, context)
+    case cons(c): conditionRead(state, fields, under, context, c.head, c.tail)
+def conditionRead(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context, condition: String, rest: Lists.List<String>) -> Activity<Done>:
+  match world.holds({object: Plans.self(context), when: condition}):
+    case held(_): judged(state, fields, under, context, rest)
+    case refused(r): refused(context, {clause: "spween", reading: "The guard `{condition}` does not read: {r.reading}"})
 # What is made runs a stack: a kind made by `kinds` the one its `of` and `body` name, checked; a
 # thing this kind's own.
 def stacking(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
@@ -230,7 +246,8 @@ def uncompiled(of: String, body: String, diagnostics: Form.Names) -> String:
 def bodyOf(fields: Lists.List<Rows.Field>) -> String:
   Forms.layer(valueOf(fields, "body"))
 def creating(state: State, fields: Lists.List<Rows.Field>, under: String, stack: Stack, context: Abi.Context) -> Activity<Done>:
-  match world.create({package: if state.of == "kind" then packageOf("kind") else stack.package, seed: seedOf(state, fields, under, stack, context), law: lawOf(context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
+  let scene = Spween.parse(if state.of == "kind" then "" else valueOf(fields, "spween"))
+  match world.create({package: if state.of == "kind" then packageOf("kind") else stack.package, seed: seedOf(state, fields, under, stack, scene, context), law: sceneLaw(scene, context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
     case created(c): counted(state, c.object.object, valueOf(fields, "about"), under != "", layersOf(state, fields, stack), context)
     case refused(r): refused(context, {clause: r.clause, reading: if r.reading == "" then "{wanted(state, fields, under)} was not made" else r.reading})
 def counted(state: State, id: String, about: String, quiet: Bool, layers: Lists.List<String>, context: Abi.Context) -> Activity<Done>:

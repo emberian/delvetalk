@@ -1,4 +1,4 @@
-"""The library's five walks, cast as a resident would: each walk's spells in the order the page gives them, on a genesis
+"""The library's six walks, cast as a resident would: each walk's spells in the order the page gives them, on a genesis
 town as genesis makes it (no furnishing), with the `<...>` blanks filled from the replies before; each step's status and `»` claim are asserted, then the
 `Changed:` line's end state. The spell text is read out of the page file itself, so a walk that names a spell the
 cards no longer take fails here.
@@ -21,7 +21,7 @@ from tests.wire import label, record
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGES = ROOT / "capsules" / "pages"
-WALKS = ("bell", "check", "enter", "tide", "kind")
+WALKS = ("bell", "check", "enter", "scene", "tide", "kind")
 WALKER, OTHER = "did:plc:walker", "did:plc:other"
 LIMIT = 1266  # Library's shelve body bound: a reply's 1,400 less the library's receipt line
 
@@ -183,6 +183,24 @@ class Walks(unittest.TestCase):
         self.assertIn("you are at nook", text)
         self.assertIn("bells = heard", text)
         self.assertIn(room, self.host.send({"op": "world-objects", "principal": W})["ids"])
+
+    def test_scene_make_a_room_from_a_scene_read_its_rule_enter_and_ring_a_bell_by_choosing(self):
+        W = WALKER
+        (_, make, _), (_, rules, _), (_, enter, _), (_, pull, _) = self.steps("scene")
+        _, text = self.say(W, make)
+        room = re.search(r"Made, at (room/\d+);", text).group(1)
+        reply, _ = self.cast(W, self.fill(rules, room=room))
+        self.assertEqual(reply["status"], "usage", reply)
+        self.assertIn("rope_1", reply["text"])
+        self.assertEqual(self.rules(room, "rope_1")["owner"], W)
+        _, text = self.say(W, self.fill(enter, room=room))
+        self.assertIn("you are at rope:\nA rope out of the dark. mimo's bell is somewhere above.\nChoices:\n  * Pull it\n", text)
+        reply, text = self.say(W, self.fill(pull, room=room))
+        self.assertIn("pulled = true", text)
+        self.assertIn("rule rope_1 of walker.test fired: delvetalk bell/1 ring", reply["revealed"])
+        self.host.send({"op": "world-deliver", "principal": "transport", "limit": 16})
+        self.assertIn("rung", [m["fields"][0]["value"]["value"] for m in self.view("bell/1")["marks"]["payload"]["fields"][0]["value"]["items"]])
+        self.assertNotIn("Pull it", self.card_text(W, room))
 
     def test_tide_rules_place_one_refuse_a_hands_tick_and_hear_it_fire_after_the_clock(self):
         W = WALKER

@@ -144,6 +144,17 @@ day's turn (`new.ticks % 24 == 0`), so each day the town is either rained on or 
 Both cards say what they are and show their rules (`delvetalk weather ?`, `delvetalk porch/lamp ?`, `delvetalk tide
 rules`). A maker hears what other hands did to what they made (`heard`, on their avatar), never by a post.
 
+## The all-night station (`--with-gas-station`, off by default)
+
+For the owner's word only: `deploy/genesis.py --with-gas-station` runs `genesis.gas_station` after the rest. It makes
+`kind/station` (`world/kinds/station.kind`, `of: kind/room`, a body that keeps no time and hands things across its
+counter by `vend`), places `station` from the ```spween block of `capsules/pages/station.txt` (the library's example
+scene, shelved either way), creates `station/coffee` (the thing its counter copies for a reader, lying nowhere) and
+`station/register` (lying in the station, nobody's until inspirited, with `sign` grown on it), places the station's
+want `register` and hangs doors between the station and the porch. Its scene braids out: the door rings bell/1, a
+coffee becomes a thing offered into the reader's hands, the register's choice is offered to its keeper alone.
+Nothing there reads or writes the clock.
+
 ## The measure
 
 Whether wants are quests or chores (the owner: quests must not read as chores) is measured from the journal, by

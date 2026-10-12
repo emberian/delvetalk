@@ -1,0 +1,32 @@
+hob: the all-night station's scene, whole; post one like it to a room and it makes yours.
+```spween
+---
+id: station
+title: THE ALL-NIGHT STATION
+---
+=== forecourt
+Past the last lamp of the town, a gas station, lit. The light is the hour it always is.
+* [Push the door]
+  ~ cast delvetalk bell/1 ring
+  -> counter
+=== counter
+The bell over the door, and far off mimo's bell answering. Nobody at the counter. The coffee is fresh; it was fresh before you came. The radio holds the same song. A register lies open by the till, nobody's.
+* [Take a coffee to the counter]
+  ~ cups += 1
+  ~ vend to: {request.subject} / what: station/coffee
+  -> counter
+* [Wind the clock on the wall]
+  ~ wound += 1
+  -> clock
+* [Read the register] { keeps.station/register }
+  -> register
+* [Step back out] -> forecourt
+* [Go home]
+=== clock
+It moves when you wind it and not otherwise. The hour it shows is the one you gave it.
+* [Back to the counter] -> counter
+=== register
+You keep it. Its lines carry no times: whoever signed was here, and that is all it says.
+* [Back to the counter] -> counter
+```
+The station (kind/station) gives its room `vend`; genesis makes it with --with-gas-station.
