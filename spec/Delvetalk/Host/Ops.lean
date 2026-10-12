@@ -1896,17 +1896,42 @@ a root of the turn. Reprograms and amendments are judged by the law text alone: 
 metarule is decided on the fragment, and no predicate, budget or bug can seal out the hand that
 may amend or reprogram. -/
 
+/-- This process's prepared closures by `inputsKeyOf` (a content address: the inputs name their library
+    by pin), whichever world prepared them: preparing parses and expands the whole closure, library
+    included, and a caller that cannot keep the world it was handed (a pure read) would prepare it again. -/
+initialize requestMemo : IO.Ref (Std.HashMap String Package.PreparedRequest) ← IO.mkRef {}
+
+unsafe def requestReadImpl (key : String) : Option Package.PreparedRequest :=
+  unsafeBaseIO do return (← requestMemo.get)[key]?
+
+/-- The process's prepared closure of `key`; `none` in the model (prepare as if cold). -/
+@[implemented_by requestReadImpl]
+def requestRead (_key : String) : Option Package.PreparedRequest := none
+
+unsafe def requestKeepImpl (key : String) (r : Package.PreparedRequest) : Package.PreparedRequest :=
+  unsafeBaseIO do
+    requestMemo.modify fun m => (if m.size < Limits.maxBuilds then m else {}).insert key r
+    return r
+
+/-- `r`, kept as the process's prepared closure of `key`. -/
+@[implemented_by requestKeepImpl]
+def requestKeep (_key : String) (r : Package.PreparedRequest) : Package.PreparedRequest := r
+
 /-- Compile definition `name` of a package (compile inputs without `entry`) from its prepared
-    closure, preparing the closure once per package; the world returned caches it. -/
+    closure, preparing the closure once per package and process; the world returned caches it. -/
 def compileEntryIn (w : World) (inputs : Json) (name : String) : Except String (Package.EntryCompiled × World) := do
-  let resolved ← resolveInputs w (Json.mkObj ((inputs.getObj?.toOption.map (·.toList)).getD [] |>.filter (·.1 != "entry")))
-  let key := Journal.bodyHash resolved
-  let (request, w) ← match w.requests[key]? with
+  let own := inputsKeyOf inputs
+  let (request, w) ← match requestRead own with
     | some r => pure (r, w)
     | none =>
-      let r ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
-      let cache := if w.requests.size < Limits.maxBuilds then w.requests else {}
-      pure (r, { w with requests := cache.insert key r })
+      let resolved ← resolveInputs w (Json.mkObj ((inputs.getObj?.toOption.map (·.toList)).getD [] |>.filter (·.1 != "entry")))
+      let key := Journal.bodyHash resolved
+      match w.requests[key]? with
+      | some r => pure (requestKeep own r, w)
+      | none =>
+        let r ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
+        let cache := if w.requests.size < Limits.maxBuilds then w.requests else {}
+        pure (requestKeep own r, { w with requests := cache.insert key r })
   let compiled ← (Package.compileEntryFrom request name).mapError Package.Diagnostic.render
   return (compiled, w)
 
@@ -1935,12 +1960,18 @@ unsafe def memoReadImpl (key : String) : Option Compiled :=
 @[implemented_by memoReadImpl]
 def memoRead (_key : String) : Option Compiled := none
 
+/-- The on-disk form of a compiled definition. -/
+def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJson key), ("packet", c.packet)]
+
 unsafe def memoKeepImpl (key : String) (c : Compiled) : Compiled :=
   unsafeBaseIO do
+    if (← defMemo.get).contains key then return c
     defMemo.modify fun m => (if m.size < Limits.maxCompiledPackets then m else {}).insert key c
+    -- and the disk's, when there is one: a definition no world holds is never written by `persistCaches`
+    (DiskCache.write "def" key (compiledJson key c)).catchExceptions fun _ => pure ()
     return c
 
-/-- `c`, kept as the process's compiled definition of `key`. -/
+/-- `c`, kept as the process's compiled definition of `key` (and the disk cache's). -/
 @[implemented_by memoKeepImpl]
 def memoKeep (_key : String) (c : Compiled) : Compiled := c
 
@@ -1950,8 +1981,6 @@ def diskCompiled (key : String) : Option Compiled :=
   (DiskCache.read "def" key).bind fun j => ((j.getObjVal? "packet").toOption.bind compiledOfPacket).map fun c =>
     memoKeep key (DiskCache.hit c)
 
-/-- The on-disk form of a compiled definition. -/
-def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJson key), ("packet", c.packet)]
 
 /-- The cache key of an object's compiled definition (`compiledMethod` uses the same). -/
 def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
