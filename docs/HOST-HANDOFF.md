@@ -1934,15 +1934,25 @@ replaces in the same commit, and this file describes only what is. A merge touch
    - What a carry still does not carry: a default-law object (an avatar made under the host's default before edition 9)
      keeps the old default (no `or request.kind == rule`), since its creator is not recorded apart from the law's
      subject; a law given at creation is genesis's refresh's, not the carry's.
-1. **Hob reads a reached card's words with its table (OVERHAUL §2.7; the rest of step 5's host half).** Reach now
-   finds the card; what it does with prose is still each card's Bend `receive`, and since 67c5e2cb a card "hears a
-   verb or nothing", so prose reaching any card but the commonplace is silent (the archive replay loses three
-   anthology lines to it). The host should, for a direct turn whose words reached a card (`reply`, `door`,
-   `fields`, `mention`) and are no spell, interpret them against that card's forms and grown verbs (`formsOf`) with
-   the world's one `policy`, running the proposal as the turn (`interpretVerdict`'s four answers; `none` silent).
-   That needs a host-started interpretation whose resumption is the host's, not a Bend continuation. Door-learning
-   (Mentions.obend's: the commonplace's doors' forms offered to hob) moves to the host in the same change, and
-   Mentions, the commonplace's `learning`/`consulted` path and `readsWords`' `policy` field go (with the objects lane).
+1. **Hob reads a reached card's words with its table (OVERHAUL §2.7; the rest of step 5's host half; the most
+   important item for the fourth playtest).** Reach finds the card (5.162); what it does with prose is still each
+   card's Bend `receive`, and since 67c5e2cb a card "hears a verb or nothing", so prose reaching any card but the
+   commonplace is silent (the archive replay loses three anthology lines to it). Build: in `runTurnHeard`, a direct
+   `receive` whose words reached a card (`reachOf`: `reply`, `door`, `fields`, `mention`) and hold no spell
+   (`spellTurn` gives `.asIs`) is interpreted by the host itself, never by the card's Bend: hob is given the card's
+   table (its declared forms and grown verbs, `formsOf` at TurnLoop 716), its wants as they stand (`wantRows`, each
+   with its filled `asks`), the library pages, and the world's one `policy` object; its four answers
+   (`interpretVerdict`, TurnLoop 3817: the spell, `grow:` + spell, `ask:`, `none`) run as that turn. The suspension
+   today (`.suspend interpretationPrincipal …`, TurnLoop 1730) resumes a Bend continuation inside the card's
+   `receive`; the host-started one needs a resumption that is the host's (a checkpoint-free suspended activity whose
+   verdict `interpretVerdict` turns into the proposal's turn on the card, `none` silent, `ask:` the card's needs).
+   Door-learning moves into the same change: for the commonplace, hob's offers are its doors' cards' forms
+   (`cites`, each door's `formsOf`, as Mentions.obend's `learnedOf`/`doorForms` built them), so the objects lane
+   deletes Mentions.obend, the commonplace's `learning`/`consulted`/`interpreting` path, `Card.interpretation`, and
+   `readsWords`' `policy` field (5.62's misfit hearing becomes the host's: a misfit spell is hob's with its clause).
+   Controls: the archive's three lost anthology lines are written (`test_archive`), a prose reply under a bell's post
+   ("let it rain on the silver one") becomes a `rain` on that bell, prose naming no verb is hob's `none` (silent, no
+   draft), and the interpretation quota and model day still bound it.
 2. **Edition and carry.** Edition 9 is not deployed; 5.161 and the pair change what it derives, so they need no
    bump if they merge before any edition-9 world is. If one is deployed first, the pair is edition 10 and ships
    `carry-check.sh` green on the newest v7 backup and the playtest-3 copy, as OVERHAUL plans.
