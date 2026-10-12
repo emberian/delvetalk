@@ -437,20 +437,9 @@ def eventSentence (w : World) (e : DayEvent) : String :=
   | "wanted" => s!"{e.object} came to want {e.name}{r true}"
   | _ => s!"{e.object} stopped wanting {e.name}"
 
-/-- What wants a hand across the world now (`World.wanting`), oldest first, eight, each a thing the
-    reader may view with its want's reading and the spell that answers it. -/
-def wanting (w : World) (reader : String) : List Want := Id.run do
-  let rows := (w.wanting.fold (fun acc id ws => ws.foldl (fun acc (n, h) => acc.push (h, id, n)) acc) #[]).qsort
-    (fun a b => a.1 < b.1 || (a.1 == b.1 && (a.2.1 < b.2.1 || (a.2.1 == b.2.1 && a.2.2 < b.2.2))))
-  let mut out : List Want := []
-  for (_, id, name) in rows.toList do
-    if out.length ≥ newestLines then break
-    let some o := w.objects[id]? | continue
-    unless o.read.permits reader do continue
-    if let some r := (wantRows w id o).find? (fun r => (r.getObjValAs? String "name").toOption == some name) then
-      out := out ++ [{ object := id, name, reading := (r.getObjValAs? String "reading").toOption.getD "",
-                       spell := (r.getObjValAs? String "asks").toOption.getD "" }]
-  return out
+/-- What wants a hand across the world now (`Ops.wanting`, the commonplace's list), the oldest eight. -/
+def wantsOfDay (w : World) (reader : String) : List Want :=
+  (wanting w reader 0 newestLines).1.map fun r => { object := r.object, name := r.name, reading := r.reading, spell := r.asks }
 
 /-- How many of a day's newest events its strokes carry. -/
 def dayEvents : Nat := 16
@@ -460,7 +449,7 @@ def dayEvents : Nat := 16
     hand now. `version` is the day. -/
 def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Strokes := Id.run do
   let some d := chronicleDay w reader day
-    | return { object := "", version := day, day := some day, wants := if morning then wanting w reader else [], limit := maxDay }
+    | return { object := "", version := day, day := some day, wants := if morning then wantsOfDay w reader else [], limit := maxDay }
   let mut written : Array Line := #[]
   for (id, o) in w.objects.toList do
     unless o.read.permits reader do continue
@@ -487,7 +476,7 @@ def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Stro
              (if made.isEmpty then [] else [{ n := made.length, unit := "thing", note := "made" }]) ++
              byKind.map (fun (u, n) => ({ n, unit := u, note := "made" } : Quantity)) ++
              (if lines.isEmpty then [] else [{ n := lines.length, unit := "line", note := "written" }]),
-           wants := if morning then wanting w reader else [], limit := maxDay }
+           wants := if morning then wantsOfDay w reader else [], limit := maxDay }
 
 /-- The strokes a request names: `{object, version?}` a thing's, `{day?, morning?}` (no object) the town's
     day (default the current one). The outer error is the request's; the inner `unknown` / `denied`. -/

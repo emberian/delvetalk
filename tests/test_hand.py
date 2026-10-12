@@ -480,6 +480,15 @@ class Speak(unittest.TestCase):
         with self.assertRaises(hand.HandError):
             self.hand.cast('  ')
 
+    def test_a_question_mark_shows_the_cards_spells_journals_nothing_and_drafts_nothing(self):
+        before = self.town.send(op='world-status')['height']
+        came = self.hand.cast('delvetalk porch/goblet ?', intent='hand:speak:usage-1')  # the deploy of 5db9aa79: "hand: porch/goblet: usage"
+        self.assertEqual((came['outcome'], came['drafted'], came['height']), ('usage', None, None), came)
+        self.assertIn('delvetalk porch/goblet inspirit', came['text'])
+        self.assertEqual(self.town.send(op='world-status')['height'], before)
+        code, page, _ = self.hand.handle('GET', '/hand/town/speak?came=hand:speak:usage-1', f'dt_hand={TOKEN}')
+        self.assertIn('porch/goblet inspirit', page)  # the page asks again: the log keeps the spell, not the answer
+
     def test_words_go_to_a_card_as_direct_prose_and_hobs_answer_comes_back(self):
         from transport import interpret
         model = lambda req: {'status': 'replied', 'json': None, 'raw': 'delvetalk library read / page: spells', 'model': 'mock', 'usage': {}}

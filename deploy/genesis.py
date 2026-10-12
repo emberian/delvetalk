@@ -487,20 +487,35 @@ def carried(obend, path):
 def towns(root, own):
     """Every world journal under `root` that holds a world, other than `own` (the journal this genesis writes): a data
     directory's `*/state/*.journal`, an older layout's `*/*.journal`, a playtest run's `run-*/state/*.journal`, the
-    root's own; scratch worlds are not custody and are left out. [(path, height)], height the chain's line count."""
-    root = Path(root)
+    root's own; scratch worlds are not custody and are left out. -> ([(path, height)], [unreadable]): height the chain's
+    line count; unreadable every directory of those layers this process cannot list, where a town may live unseen
+    (a glob skips them silently: the deploy of 5db9aa79 ran as 10425 over a root-owned 0700 `/towns` and saw none)."""
     mine = os.stat(own) if own and os.path.exists(own) else None
-    found = []
-    for path in sorted({*root.glob('*.journal'), *root.glob('*/*.journal'), *root.glob('*/state/*.journal')}):
-        if 'scratch' in path.relative_to(root).parts or not path.is_file():
-            continue
+    found, unreadable = [], []
+
+    def listed(d):
+        try:
+            return list(os.scandir(d))
+        except OSError as e:
+            unreadable.append(f'{d} ({e.strerror})')
+            return []
+
+    def journals(d):
+        return [Path(e.path) for e in listed(d) if e.name.endswith('.journal') and e.is_file()]
+
+    paths = journals(root)
+    for d in (e for e in listed(root) if e.is_dir()):
+        paths += journals(d.path)
+        if os.path.isdir(os.path.join(d.path, 'state')):
+            paths += journals(os.path.join(d.path, 'state'))
+    for path in sorted(set(paths)):
         st = path.stat()
         if mine and (st.st_dev, st.st_ino) == (mine.st_dev, mine.st_ino):
             continue
         height = sum(1 for _ in open(path, 'rb'))
         if height:
             found.append((str(path), height))
-    return found
+    return found, unreadable
 
 
 def wipe(host, opener, word):
@@ -548,17 +563,18 @@ def main(argv=None):
     if a.word is not None and (not a.word.strip() or '\n' in a.word or len(a.word) > 280):
         print("genesis: the owner's word is one line of 1 to 280 characters", file=sys.stderr)
         return 64
-    living = towns(a.towns, os.path.join(a.state, f'{a.world}.journal') if a.state else None)
-    if living and a.word is None:
+    living, unreadable = towns(a.towns, os.path.join(a.state, f'{a.world}.journal') if a.state else None)
+    if (living or unreadable) and a.word is None:
         print('genesis refused: a world lives here, and a genesis would abandon it:\n' +
               ''.join(f'  {path} (height {height})\n' for path, height in living) +
+              ''.join(f'  {d}: unreadable, so a town may live there unseen\n' for d in unreadable) +
               'carry it instead (python3 -m transport carry --from OLD --to NEW; docs/DEPLOY.md "A new binary"), or begin '
               "again only with the owner's word: --wipe-with-the-owners-word R", file=sys.stderr)
         return 1
     host = HostClient(a.root_socket, a.world)
     try:
         made, refusal = run(host, a.opener)
-        if not refusal and living:
+        if not refusal and a.word is not None:  # the word given is the town's first line, whatever the guard saw
             try:
                 made.append({'object': 'commonplace', 'module': 'the owner\'s word', 'status': wipe(host, a.opener, a.word), 'reply': {}})
             except Stopped as e:
