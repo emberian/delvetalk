@@ -1,6 +1,7 @@
 """The gate: the town's archived traffic (1,763 posts) through the real observer, bridge and
-interpreter (`rehearsal/rehearse.py`, a mocked model) on a world genesis seeded, measured as the
-gate reads it.
+interpreter (`rehearsal/rehearse.py`, a mocked model) on the world genesis seeds, furnished as the scenarios'
+town is (tests/town.py `furnish`: the garden the posts plant in, the anthology they write to, the rooms and the
+weather, by ordinary spells after genesis), measured as the gate reads it.
 
 Evidence for FOUNDATION §11 (layer: rehearsal).
 
@@ -123,7 +124,7 @@ class Archive(unittest.TestCase):
     def test_the_runs_own_snapshot_agrees_with_replay(self):
         """The snapshot the running host wrote agrees with replay: `verify` refuses none, and a reopen from it
         holds the straight replay's state, law readings included for the objects a turn created with a law text
-        (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3), which replay once rebuilt without. The journal now ends at 835 entries, short of the host's cadence of 1,000, so
+        (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3), which replay once rebuilt without. The journal now ends at 842 entries, short of the host's cadence of 1,000, so
         rehearse.py asks the live host for the snapshot (`world-snapshot`) before it stops: the reopen resumes at
         the journal's end, which proves the snapshot's content, not a replayed tail (the cuts prove the tail)."""
         cases = self.r['snapshotReplay']['cases']

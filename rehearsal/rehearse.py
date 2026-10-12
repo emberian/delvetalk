@@ -23,6 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from deploy import genesis  # noqa: E402
+from tests.town import furnish  # noqa: E402
 from transport import interpret, model  # noqa: E402
 from deploy.serve import Pipe, Served  # noqa: E402
 from transport.config import LIBRARY  # noqa: E402
@@ -118,11 +119,14 @@ class Run:
     def stop_serve(self):
         self.server.stop()
 
-    def seed(self, top):
-        """deploy/genesis.py, the production seed: the same world the operator creates."""
+    def seed(self):
+        """deploy/genesis.py, the production seed, then the places the archive's posts name (the garden they plant in,
+        the anthology they write to, the rooms and the weather), furnished as the scenarios' town is (tests/town.py
+        `furnish`): ordinary spells by the opener after genesis, as any hand could cast them."""
         made, refusal = genesis.run(self.host, OWNER)
         if refusal:
             self.errors.append({'kind': 'seed', 'reply': refusal})
+        made += furnish(self.host, OWNER)
         for m in made:
             if m['status'] not in ('created', 'admitted'):
                 self.errors.append({'kind': 'seed', 'object': m['object'], 'principal': OWNER, 'reply': m['reply']})
@@ -242,7 +246,6 @@ GRAMMAR = [
     ('garden', 'the spell inside a fence', '```\ndelvetalk garden plant\nseed: a fenced fern\ncolour: silver\n```'),
     ('garden', 'usage', 'delvetalk garden ?'),
     ('commonplace', 'a door word, as the commonplace card invites', 'garden'),
-    ('tide', 'subscribe', 'delvetalk tide subscribe\nevery: 60\nnote: wake me hourly'),
     ('tide', 'tick', 'delvetalk tide tick'),
     # FOUNDATION section 10 step 3 in the Garden's own grammar, which the archive never wrote: each digs the next cistern.
     ('garden', 'a cistern: line digs garden/cistern (the dig form)', 'dig: a stone cistern for refused proposals'),
@@ -281,7 +284,7 @@ def turn_text(host, who, obj, intent, text, reach=None):
 
 
 def burst_probe(host, n=9):
-    """Nine prose plantings reach the commonplace (the garden hands prose on to it) in one poll, before the interpreter runs: each must suspend
+    """Nine prose plantings reach the commonplace by mention in one poll, before the interpreter runs: each must suspend
     (pendingInterpretationsPerObject is counted apart from pendingActivitiesPerObject = 8), settle, and
     resume admitted. A turn refused `capacity` is transient: the same identity is retried after settling."""
     who = [f'did:plc:rehearsalburst{i:011d}' for i in range(n)]
@@ -496,7 +499,7 @@ def main(argv=None):
     results = {'binary': a.binary, 'posts': len(posts), 'first': posts[0]['record']['createdAt'], 'last': posts[-1]['record']['createdAt'],
                'top': [{'handle': h, 'did': d, 'posts': counts[(h, d)]} for h, d in top]}
     try:
-        results['seeded'] = r.seed(top)
+        results['seeded'] = r.seed()
         results['recorded'] = r.record_posts(by_uri)
         # Each post belongs to the poll that ends at the next window boundary: 15 minutes, except
         # that the operator watches the section 10 hour (07:25 to 07:50) minute by minute, so a
@@ -525,13 +528,6 @@ def main(argv=None):
         results['status'] = status
         results['pendingDeliveries'] = r.host.send({'op': 'world-pending'})
         results['interpretationsLeft'] = r.host.send({'op': 'world-interpretations'})
-        envs = []
-        for h, d in top:
-            v = r.host.send({'op': 'world-view', 'principal': OWNER, 'object': 'env/' + d})
-            buf = next((f['value'] for f in (v.get('state') or {}).get('fields', []) if f['name'] == 'buffer'), {'items': []})
-            envs.append((len(rows(buf)), 'env/' + d, h))
-        envs.sort(key=lambda e: -e[0])
-        results['envs'] = envs
         bells, cisterns = r.made('kind/bell'), r.made('kind/cistern')
         results['made'] = {'kind/bell': bells, 'kind/cistern': cisterns}
         results['anthology'] = r.anthology()
@@ -541,7 +537,7 @@ def main(argv=None):
             views[obj] = {'version': v.get('version'), 'state': v.get('state'), 'status': v.get('status')}
         results['views'] = views
         results['cards'] = {}
-        for obj in ('commonplace', 'garden', 'kinds', 'kind/bell', 'tide', envs[0][1], 'policy', 'workshop', 'anthology', *cisterns, *bells):
+        for obj in ('commonplace', 'garden', 'kinds', 'kind/bell', 'tide', 'policy', 'workshop', 'anthology', *cisterns, *bells):
             c = r.host.send({'op': 'world-card', 'principal': OWNER, 'object': obj})
             results['cards'][obj] = {'status': c.get('status'), 'text': c.get('text'), 'clause': c.get('clause'),
                                      'chars': len(c.get('text') or '')}

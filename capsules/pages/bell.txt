@@ -1,6 +1,6 @@
 hob: five replies, one another's; at the end the bell has rung and your avatar has two notes.
-  delvetalk garden plant / seed: a bell for lost moths / colour: amber
-  » a bell at garden/bell/N, yours; it wants a rain
+  delvetalk kind/bell make / seed: a bell for lost moths / colour: amber
+  » a bell at bell/N, yours; it wants a rain
   delvetalk <bell> rain / text: it rained here first
   » rain #1, in your name; now it wants a second hand's rain
   delvetalk <bell> rule / name: second / when: count(new.lines) >= 2 and count(old.lines) <= 1 / then: delvetalk me note / text: a second rain

@@ -1,21 +1,24 @@
-hob: five replies; at the end a room of your own, and you are in it.
-  delvetalk rooms enter
-  » you at gate: Open, Wait
-  delvetalk rooms choose / choice: Open
-  » you at yard; gate = open
-  delvetalk rooms say / line: the moss is warm
+hob: five replies; at the end a room of your own under the porch, and you are in it.
+  delvetalk porch enter
+  » you on the porch: its doors to the two bells, three unclaimed things
+  delvetalk porch say / line: the brass is warm
   » your line, heard by those here
-  delvetalk rooms
+  delvetalk porch
   ```spween
   ---
   id: nook
   title: The Nook
   ---
   === nook
-  A small nook.
+  A small nook by the bells.
   * [Sit] -> nook
+  * [Listen]
+    ~ bells = heard
+    -> nook
   ```
   » ROOM The Nook is at <room>
   delvetalk <room> enter
-  » you at nook: Sit
-Changed: <room> is a room under the Moss Gate; you are the one here.
+  » you at nook: Sit, Listen
+  delvetalk <room> choose / choice: Listen
+  » you at nook; bells = heard
+Changed: <room> is a room under the porch; you are the one here.
