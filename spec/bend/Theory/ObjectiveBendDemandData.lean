@@ -9,7 +9,12 @@ open ObjectiveBendDemandMachine
 inductive Failure where
   /-- Only machine tick suspension: forceWith exhausted its countdown. -/
   | tickExhausted
-  | budget | duplicateField | executableValue
+  /-- The byte allowance: a scalar, or the whole value's canonical bytes, past `Budget.bytes`. -/
+  | budget
+  /-- The node allowance: a node, a record's width or the nesting past `Budget.nodes`; the
+  failure names its resource, so no caller re-runs materialization to tell it from bytes. -/
+  | nodes
+  | duplicateField | executableValue
   /-- Capacity/policy suspension or an extraction called on the wrong control shape.
   This does not denote tick exhaustion; that is exclusively tickExhausted. -/
   | suspended
@@ -342,9 +347,9 @@ never more than the value's canonical bytes); records and variants spend nodes, 
 heads, keys and labels are counted once the value is whole, by `Data.canonicalBytes`
 (a list's cells are no map in canonical form, only an array head). -/
 def materializeWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) : Nat → Budget → RuntimeValue → State → Except (Failure × State × Budget) Result
-  | 0, budget, _, state => .error (.budget,state,budget)
+  | 0, budget, _, state => .error (.nodes,state,budget)
   | depth+1, budget, value, state => do
-    if budget.nodes = 0 then throw (.budget,state,budget)
+    if budget.nodes = 0 then throw (.nodes,state,budget)
     let remaining := {budget with nodes:=budget.nodes-1}
     match value with
     | .natural n =>
@@ -360,9 +365,9 @@ def materializeWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) 
       pure ⟨.label s,state,{remaining with bytes:=remaining.bytes-bytes}⟩
     | .record fields =>
       if (fields.map Prod.fst).eraseDups.length != fields.length then throw (.duplicateField,state,remaining)
-      if fields.length > remaining.nodes then throw (.budget,state,remaining)
+      if fields.length > remaining.nodes then throw (.nodes,state,remaining)
       let pair ← fields.foldlM (fun (prior : List (String × Data) × State × Budget) field => do
-        if prior.2.2.nodes = 0 then throw (.budget,prior.2.1,prior.2.2)
+        if prior.2.2.nodes = 0 then throw (.nodes,prior.2.1,prior.2.2)
         let entered : State := {prior.2.1 with control:=.enter field.2,stack:=[]}
         let (outcome,ticks) := forceHostedWith policy fetch limits prior.2.2.bytes prior.2.2.ticks entered
         let nextBudget := {prior.2.2 with ticks:=ticks}
@@ -376,7 +381,7 @@ def materializeWith (policy : State → Bool) (fetch : Fetch) (limits : Limits) 
         | .yielded _ retained => throw (.yielded,retained,nextBudget)) ([],state,remaining)
       pure ⟨.record pair.1.reverse,pair.2.1,pair.2.2⟩
     | .variant label payload =>
-      if remaining.nodes = 0 then throw (.budget,state,remaining)
+      if remaining.nodes = 0 then throw (.nodes,state,remaining)
       let entered : State := {state with control:=.enter payload,stack:=[]}
       let (outcome,ticks) := forceHostedWith policy fetch limits remaining.bytes remaining.ticks entered
       let nextBudget := {remaining with ticks:=ticks}
