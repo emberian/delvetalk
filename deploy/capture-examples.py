@@ -66,14 +66,10 @@ Literal requests and replies, captured on {date} by `deploy/capture-examples.py`
 docs/DEPLOY.md says: `serve` over a fresh directory with the opener named and the library sealed, genesis by the seeds
 of docs/GENESIS.md (the minimal town: the commonplace, `kinds`, the porch with its two bells), `python3 -m transport http`. Two things were not real: the account host (each challenge text
 was "posted" by writing it where a mocked PDS serves it) and the town's interpreter (its one answer is written in
-the script). Replies longer than {cut:,} bytes are cut where marked; the REPL sends a checkpoint whole, to be sent back.
+the script). Replies longer than {cut:,} bytes are cut where marked.
 The guide is `GET /AGENTS.md`, the catalogue `GET /AGENTS.md/api`; `$T` is the credential from the challenge. Each reply
 is shown with its `_links` first and an object's `_actions` last.
 '''
-
-
-def record(**fields):
-    return {'tag': 'record', 'fields': [{'name': k, 'value': v} for k, v in fields.items()]}
 
 
 def label(text):
@@ -219,16 +215,15 @@ def maker(cap):
 def forger(cap):
     cap.say('## A forger')
     cap.login('smith.delve.town')
-    cap.step('POST', '/check', {'entry': 'flip', 'source': FLIP})
-    cap.step('POST', '/check', {'entry': 'bump', 'source': TALLY})
     cap.step('POST', '/scratch', {'name': 'try'})
+    cap.step('POST', '/scratch/try/check', {'entry': 'flip', 'source': FLIP})
+    cap.step('POST', '/scratch/try/check', {'entry': 'bump', 'source': TALLY})
     cap.step('POST', '/scratch/try/objects', {'intent': 'mk-tally', 'object': 'tally', 'modules': [{'name': 'Tally', 'source': TALLY}], 'entry': 'initial', 'seed': {'count': 40}})
     cap.step('POST', '/scratch/try/world/tally/bump', {'intent': 'bump-1'})
     cap.step('GET', '/scratch/try/world/tally')
     cap.step('POST', '/scratch/try/world/tally/lend', {'intent': 'lend-1', 'fields': {'to': 'did:plc:bbbbbbbbbbbbbbbbbbbbbbbb'}})
-    bind = {'object': 'tally', 'intent': 'repl-1', 'roots': [{'object': 'tally', 'version': 0}]}
-    yielded = cap.step('POST', '/repl', {'source': TALLY, 'entry': 'bump', 'arguments': [record(count={'tag': 'natural', 'value': '41'})], **bind})
-    cap.step('POST', '/repl', {'source': TALLY, 'entry': 'bump', 'checkpoint': cap.whole(yielded), 'response': {'tag': 'variant', 'label': 'written', 'payload': record()}, **bind})
+    cap.step('POST', '/scratch/try/repl', {'source': TALLY, 'entry': 'bump', 'object': 'counter', 'intent': 'repl-1'})
+    cap.step('POST', '/scratch/try/repl', {'entry': 'bump', 'object': 'counter', 'intent': 'repl-2'})
     cap.say("An unclaimed thing on the porch becomes its keeper's by one spell; being its keeper does not make one its owner.")
     cap.step('POST', '/world/porch/ring/receive', {'intent': 'inspirit-1', 'spell': 'delvetalk porch/ring inspirit\nsurrounding: a ring that hums on an anvil'})
     cap.step('GET', '/world/porch/ring/source')
@@ -279,7 +274,7 @@ def walk(call, handle, prove, module):
     bumped = call('POST', mine['_links']['object']['href'] + '/bump', {'intent': 'stranger-bump', 'fields': {}}, tok)[1]
     result = call('GET', bumped['_links']['receipt']['href'], None, tok)[1]['receipt']['result']
     got['scratch'] = (made_['status'], bumped['status'], result)
-    ran = call('POST', routes['repl']['href'], {'source': PURE, 'entry': 'twice', 'arguments': [{'tag': 'natural', 'value': '21'}]}, tok)[1]
+    ran = call('POST', opened['_links']['repl']['href'], {'source': PURE, 'entry': 'twice', 'arguments': [{'tag': 'natural', 'value': '21'}]}, tok)[1]
     got['repl'] = (ran['status'], ran['value'])
     return got
 
@@ -314,7 +309,6 @@ def main(argv=None):
         threading.Thread(target=front.serve_forever, daemon=True).start()
         cap = Capture(front.server_address[1], sock, provider, tmp)
         cap.root = served.root
-        cap.whole = lambda reply: reply['checkpoint']
         cap.out = HEAD.format(date=datetime.date.today().isoformat(), cut=CUT).split('\n')
         try:
             for session in (bell_maker, maker, forger, stranger):

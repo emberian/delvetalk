@@ -2956,9 +2956,19 @@ def recordInert (w : World) (entry : Json) : World :=
            modules := sources.foldl (fun m (x : String × String) => m.insert x.1 w.height) w.modules,
            blocks := ((entryBlocks entry).toOption.getD []).foldl (fun m (x : String × Array Json) => m.insert x.1 w.height) w.blocks }
 
-/-- A pending send ready to deliver: one a transient refusal put back waits for the clock to pass it. -/
+def ledgerOf (j : Json) : Except String Ledger := do
+  return ⟨← natField j "depth", ← natField j "work", ← natField j "storage"⟩
+
+/-- A send to another world (`world` on it), which `serve` carries (`outbound`) unless its ledger is spent:
+    a spent one is refused where it was sent. -/
+def crossesOver (p : Json) : Bool :=
+  (p.getObjValAs? String "world").toOption.any (!·.isEmpty) &&
+    ((p.getObjVal? "ledger").toOption.bind fun l => (ledgerOf l).toOption.bind (·.exhausted)).isNone
+
+/-- A pending send ready to deliver here: not one crossing over, and not one a transient refusal put back
+    until the clock passes it. -/
 def deliverable (w : World) (p : Json) : Bool :=
-  ((p.getObjValAs? Nat "next").toOption.map fun n => decide (n ≤ w.clock)).getD true
+  !crossesOver p && ((p.getObjValAs? Nat "next").toOption.map fun n => decide (n ≤ w.clock)).getD true
 
 /-- A send whose delivery was refused transiently, put back to be delivered again once the clock moves,
     unless that was its last attempt (`Limits.deliveryAttempts`). -/
@@ -3009,7 +3019,7 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
   let identity := (entry.getObjVal? "identity").toOption.getD Json.null
   let sent := match (entry.getObjVal? "outcome").toOption.bind (fun o => (o.getObjValAs? String "tag").toOption),
       (entry.getObjVal? "sends").toOption.bind (·.getArr?.toOption) with
-    | some "admitted", some sends => sends.map fun s =>
+    | some tag, some sends => if tag != "admitted" && tag != "relayed" then #[] else sends.map fun s =>
         -- A send under a grant is delivered as its grantor (the send's own `principal`).
         let fields := s.getObj?.toOption.map (·.toList) |>.getD []
         Json.mkObj ([("from", identity)] ++
@@ -3180,9 +3190,6 @@ def childLedger (w : World) (ledger : Ledger) (used : Nat) (updates : List (Stri
     | some before => cellBytes o.relations (some before.state) o.state ((writes.lookup id).map editedFields)
     | none => cellBytes o.relations none o.state) 0
   ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
-
-def ledgerOf (j : Json) : Except String Ledger := do
-  return ⟨← natField j "depth", ← natField j "work", ← natField j "storage"⟩
 
 /-! ## Supervision -/
 
@@ -3897,6 +3904,93 @@ def citeOp (w : World) (j : Json) : Except String (World × Json) := do
      ("outcome", Json.mkObj [("tag", toJson "cited"), ("world", toJson world), ("receipt", toJson hash), ("entry", cited)])] []
   return (w', Json.mkObj [("status", toJson "cited"), ("receipt", slugged entry)])
 
+/-! ## Crossings (docs/FEDERATION.md §2): a `call` or `send` to another world one host serves
+
+A send across is a pending delivery with `world` on it (`crossesOver`); a call across is a suspension with
+`crossing` on it, waiting on the slot `(principal, id)`. `serve` carries each (`outbound`): the target world
+journals it `relayed`, under `(principal, "<home>:<id>")`, as a pending send of that world (`relayOp`), which
+it delivers as any send, under the sender's principal with `request.caller` `<home>:<object>`; the target's
+receipt of that delivery comes back as the home world's `crossed` entry (`crossOp`), which consumes the send
+or settles the call's slot. Each journal holds the other's receipt as data, so either replays alone. -/
+
+/-- The entry an identity's receipt names: `(hash, height)`. -/
+def sentFrom (w : World) (principal intent : String) : Option (String × Nat) := do
+  let e ← w.entries.get? (← w.receipts[identityKey principal intent]?)
+  return (← (e.getObjValAs? String "hash").toOption, ← (e.getObjValAs? Nat "height").toOption)
+
+/-- What waits here to cross to another world: each send across still pending and each call across still
+    suspended, as `{id, principal, world, to, method, argument, sender, ledger, receipt, height, send}`
+    (`receipt` and `height` name the entry that sent it, `send` whether a pending send is consumed). -/
+def outbound (w : World) : Array Json :=
+  let item := fun (id principal : String) (c : Json) (from_ : Json) (send : Bool) =>
+    let text := fun (k : String) => (from_.getObjValAs? String k).toOption.getD ""
+    let (hash, height) := (sentFrom w (text "principal") (text "intent")).getD ("", 0)
+    Json.mkObj ((["world", "to", "method", "argument", "sender", "ledger"].filterMap fun k => (c.getObjVal? k).toOption.map (k, ·)) ++
+      [("id", toJson id), ("principal", toJson principal), ("from", from_), ("receipt", toJson hash), ("height", toJson height),
+       ("send", toJson send)])
+  let sends := w.pending.filter crossesOver |>.filterMap fun p => do
+    item (← (p.getObjValAs? String "id").toOption) (← (p.getObjValAs? String "principal").toOption) p (← (p.getObjVal? "from").toOption) true
+  let calls := w.suspended.filterMap fun e => do
+    let outcome ← (e.getObjVal? "outcome").toOption
+    let c ← (outcome.getObjVal? "crossing").toOption
+    let slot ← (outcome.getObjVal? "slot").toOption
+    let principal ← (slot.getObjValAs? String "principal").toOption
+    let id ← (slot.getObjValAs? String "intent").toOption
+    if w.receipts.contains (identityKey principal id) then none
+    else item id principal c ((e.getObjVal? "identity").toOption.getD Json.null) false
+  sends ++ calls
+
+/-- `world-relay {principal, world, id, to, method, argument, sender, ledger, receipt, height}` (serve's own,
+    never a socket's): a call or send of world `world`'s entry `receipt` arrives here as a `relayed` entry
+    under `(principal, "<world>:<id>")` whose one send (`<world>:<sender>` its sender) the settling pass
+    delivers. A second relay of the same answers the first's receipt. -/
+def relayOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
+  let world ← j.getObjValAs? String "world"
+  let intent ← boundedText "identity" Limits.maxIntentBytes s!"{world}:{← j.getObjValAs? String "id"}"
+  let to ← j.getObjValAs? String "to"
+  let method ← boundedText "method" Limits.maxMethodBytes (← j.getObjValAs? String "method")
+  let argument ← j.getObjVal? "argument"
+  discard <| decodeData Limits.dataDepth argument
+  let ledger ← j.getObjVal? "ledger"
+  discard <| ledgerOf ledger
+  let send := Json.mkObj [("id", toJson (deliveryId principal intent 0)), ("to", toJson to), ("method", toJson method),
+    ("argument", argument), ("sender", toJson s!"{world}:{← j.getObjValAs? String "sender"}"), ("ledger", ledger)]
+  let outcome := Json.mkObj [("tag", toJson "relayed"), ("world", toJson world),
+    ("receipt", toJson (← j.getObjValAs? String "receipt")), ("height", toJson (← natField j "height"))]
+  let digest := Journal.bodyHash (Json.mkObj [("outcome", outcome), ("send", send)])
+  if let some r := retained w principal intent digest then return (w, r)
+  if w.pending.size ≥ Limits.maxPending then throw "world exceeds the pending delivery capacity"
+  let (w', entry) := push w (identityKey principal intent)
+    [("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0), ("request", toJson digest),
+     ("outcome", outcome), ("sends", Json.arr #[send])] []
+  return (w', reply entry)
+
+/-- `world-cross {principal, id, world, answer {tag, class?, clause?, reason?}, receipt? {hash, height}, result?}`
+    (serve's own): the other world's answer to the crossing `id` waiting here (`outbound`), journaled as
+    `crossed` under `(principal, id)`: it consumes a send's pending delivery, or settles a call's slot,
+    which the settling pass then resumes (`TurnLoop.crossedResponse`). -/
+def crossOp (w : World) (j : Json) : Except String (World × Json) := do
+  let principal ← j.getObjValAs? String "principal"
+  let id ← j.getObjValAs? String "id"
+  let answer ← j.getObjVal? "answer"
+  unless ["admitted", "refused"].contains (← answer.getObjValAs? String "tag") do throw "a crossing answers admitted or refused"
+  let receipt := (j.getObjVal? "receipt").toOption
+  let result := (j.getObjVal? "result").toOption
+  let outcome := Json.mkObj ([("tag", toJson "crossed"), ("world", toJson (← j.getObjValAs? String "world")),
+    ("answer", answer)] ++ ((receipt.map fun r => [("receipt", r)]).getD []))
+  let digest := Journal.bodyHash (Json.mkObj ([("outcome", outcome)] ++ ((result.map fun r => [("result", r)]).getD [])))
+  if let some r := retained w principal id digest then return (w, r)
+  let some item := (outbound w).find? fun x =>
+      (x.getObjValAs? String "id").toOption == some id && (x.getObjValAs? String "principal").toOption == some principal
+    | throw s!"no crossing {id} waits here"
+  let delivery := if (item.getObjValAs? Bool "send").toOption == some true then
+      [("delivery", Json.mkObj [("id", toJson id), ("from", (item.getObjVal? "from").toOption.getD Json.null)])] else []
+  let (w', entry) := push w (identityKey principal id)
+    ([("identity", identityJson principal id), ("roots", rootsJson []), ("turn", toJson 0), ("request", toJson digest),
+      ("outcome", outcome)] ++ delivery ++ ((result.map fun r => [("result", r)]).getD [])) []
+  return (w', reply entry)
+
 /-- A newcomer's own object, made from the library module of that name: the Avatar, whose id is the
     principal's DID (`me` resolves to it); it holds the newcomer's notes (mentions, rule notes). -/
 def arrivals (did : String) : List (String × String) :=
@@ -4280,6 +4374,20 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   | "cited" =>
     discard <| outcome.getObjValAs? String "world"
     discard <| outcome.getObjVal? "entry"
+    return record w entry key []
+  | "relayed" =>
+    discard <| outcome.getObjValAs? String "world"
+    discard <| outcome.getObjValAs? String "receipt"
+    unless ((entry.getObjVal? "sends").toOption.bind (·.getArr?.toOption)).map (·.size) == some 1 do
+      throw "a relayed entry sends one delivery"
+    return record w entry key []
+  | "crossed" =>
+    discard <| outcome.getObjValAs? String "world"
+    discard <| (← outcome.getObjVal? "answer").getObjValAs? String "tag"
+    -- A send's crossing consumes its pending delivery (`checkDelivery`); a call's settles its waiting slot.
+    unless (outbound w).any fun x => (x.getObjValAs? String "id").toOption == some intent &&
+        (x.getObjValAs? String "principal").toOption == some principal do
+      throw "a crossing that nothing here waits for"
     return record w entry key []
   | "named" =>
     if !w.name.isEmpty then throw "a world named twice"
