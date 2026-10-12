@@ -21,7 +21,7 @@ def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
 /-- Spells one interpretation answers as `proposals` (MENU §2.2: the prompt asks for at most three). -/
 def spellsPerReply : Nat := 3
-/-- The characters of a card an interpretation shows the model (docs/FLEX.md §2). -/
+/-- The characters of a card any reader is shown: `world-card`, a question's answer, the model's copy (docs/FLEX.md §2, docs/AGENTS-API.md). -/
 def cardShownChars : Nat := 1400
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
@@ -40,8 +40,10 @@ def cardShownChars : Nat := 1400
     `wanted`, `unwanted` and re-derived; `request.verb` from `act`; the last bump the overhaul plans);
     10: kernel18 (a state is named by its cells: `cid` is the CID of the scalar part's canonical block
     with each relation's rows as links (`Turn.StateCells`), journaled on creations too; a write is
-    checked, bounded and charged by the cells it changes). -/
-def replayEdition : Nat := 10
+    checked, bounded and charged by the cells it changes); 11: host30 (a rule a thing inherits fires under
+    an id naming its holder, `rule:<object>:<name>@<holder>:<height>`; placing refuses a name the thing
+    carries; a carried genesis's touch barriers; a judgment's law work metered against `lawTicks`). -/
+def replayEdition : Nat := 11
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -193,7 +195,7 @@ def listPage : Nat := 64
 def maxUriBytes : Nat := 512
 /-- A text field of a form derived from a method's input type: at most the characters a card
     reader shows. A natural field: at most this. -/
-def formTextMax : Nat := 1400
+def formTextMax : Nat := cardShownChars
 def formNaturalMax : Nat := 1000000000
 /-- The longest value of a declared `source` form field (Bend source; `Form.Kind.source`): the program bound. -/
 def formSourceMax : Nat := Bounds.maxPackageBytes

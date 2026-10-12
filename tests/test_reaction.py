@@ -59,7 +59,10 @@ class Reaction(Arc):
         self.assertEqual(sorted((f["rule"], f["sender"]) for f in rows), sorted((n, card) for n in (name,) + tuple(beside)), reply)
         rows = [f for f in rows if f["rule"] == name]
         height = reply["receipt"]["height"]
-        self.assertEqual(rows[0]["id"], "rule:%s:%s:%d" % (card, name, height))
+        # A rule the card inherits (its kind's) names its holder after `@` (codex host 7).
+        holder = self.row(card, name)["from"]
+        self.assertEqual(rows[0]["id"], "rule:%s:%s:%d" % (card, name, height) if holder == card else
+                         "rule:%s:%s@%s:%d" % (card, name, holder, height))
         self.assertTrue(any(("rule %s of" % name) in line and "fired" in line and then in line for line in reply["revealed"]), reply["revealed"])
         shown = self.row(card, name)
         self.assertEqual(shown["fired"]["height"], height, shown)

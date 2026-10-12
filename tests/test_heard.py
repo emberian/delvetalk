@@ -14,7 +14,7 @@ replaced by hob's, or a reading not counted by the interpretation quotas.
 """
 import unittest
 
-from tests.host import as_owner
+from tests.host import as_owner, bounds
 from tests.test_reflection import Reflection
 from tests.wire import field, label, listing, nat, record, reference
 from tests.bend import declared
@@ -180,13 +180,42 @@ class Heard(HeardCase):
         card = carded["text"]
         self.assertIn("A brass bell, rained on 0 times.", card)
         [offer] = [o["text"] for o in answered["receipt"]["offers"]]
-        self.assertTrue(offer.startswith(card), (offer, card))
-        self.assertIn('What brass wants now:\n\n» clapper "a bell with no clapper"', offer)
-        self.assertIn("delvetalk brass rain / text: <a clapper>", offer)
+        self.assertEqual(offer, card)
+        self.assertTrue(offer.endswith("\nwants clapper: a bell with no clapper: delvetalk brass rain / text: <a clapper>\n"), offer)
         self.assertEqual(answered["receipt"]["outcome"]["tag"], "admitted")
         self.say("lovely evening for it", card="brass", identity="talk")
         _, quiet = self.settle("none")
         self.assertNotIn("offers", quiet["receipt"])
+
+    def long_card(self, name, size):
+        """A bell whose `render` returns `size` characters."""
+        source = BELL.replace("import ./World.obend as World", "import ./World.obend as World\nimport ./Document.obend as Document").replace(
+            "def receive(", "def render(state: State, context: Abi.Context) -> Document.Document:\n"
+                            "  Document.text(\"%s\")\ndef receive(" % ("x" * size))
+        self.make(name, source, record(owner=label("ember")))
+
+    def test_a_card_shows_at_most_the_bound_and_says_where_the_rest_is_read(self):
+        """docs/AGENTS-API.md promises a card under the bound whoever wrote its `render`: at the bound it is whole, one
+        over it is clipped to the bound with a closing line, on `world-card` and in the answer to a question hob read nothing into."""
+        bound = bounds()["host"]["cardShownChars"]
+        self.long_card("exact", bound)
+        self.long_card("over", bound + 1)
+        self.long_card("long", 2000)
+        self.assertEqual(self.host.send(op="world-card", principal="glm", object="exact")["text"], "x" * bound)
+        for name in ("over", "long"):
+            text = self.host.send(op="world-card", principal="glm", object=name)["text"]
+            self.assertEqual(len(text), bound, name)
+            self.assertTrue(text.startswith("xxx") and text.endswith("world-inspect %s reads its source]\n" % name), text[-120:])
+            self.assertIn("clipped at %d characters" % bound, text)
+        want = "delvetalk long want\nname: tail\nreading: last\nwhen: new.rains <= 0\nasks: delvetalk {request.object} rain / text: <a rain>"
+        self.assertEqual(self.say(want, card="long", who="ember")["status"], "admitted")
+        text = self.host.send(op="world-card", principal="glm", object="long")["text"]
+        self.assertEqual(len(text), bound)
+        self.assertTrue(text.endswith("source]\nwants tail: last: delvetalk long rain / text: <a rain>\n"), text[-160:])
+        self.assertEqual(self.say("does the bell have a clapper?", card="long")["status"], "suspended")
+        _, answered = self.settle("none")
+        [offer] = [o["text"] for o in answered["receipt"]["offers"]]
+        self.assertEqual(offer, self.host.send(op="world-card", principal="glm", object="long")["text"])
 
     def test_each_of_hobs_spells_reads_the_card_as_the_ones_before_it_wrote_it(self):
         self.make("room", ROOM, record(owner=label("ember")))

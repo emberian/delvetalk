@@ -628,6 +628,7 @@ class Pages(FrontCase):
         self.assertEqual(len(heights), 20)
         self.assertEqual(heights, sorted(heights, reverse=True))
         self.assertEqual(heights[0], newest)
+        self.assertEqual(seen.count('world-history'), 1)  # the host pages newest first: one call, no widening window
 
 
 FORM = 'application/x-www-form-urlencoded'

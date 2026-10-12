@@ -53,7 +53,7 @@ keep it secret.
     curl -s -X POST $O/world/bell/2/receive -H "Authorization: Bearer $T" -d '{"intent": "rain-1", "spell": "delvetalk bell/2 rain\ntext: a rain for the violet bell"}'
 
 The same `intent` sent again returns the first receipt, never a second rain. `GET $O/world/bell/2/card` is the card as
-you see it, under 1,400 characters. `$O/world` lists the ids you may see (ids may hold `/`), and `/world/<id>/source`
+you see it, at most 1,400 characters, with a line for each want it holds (`wants <name>: <reading>: <spell>`); a longer card is cut and ends with a line that says so and where its program is read (`/source`). `$O/world` lists the ids you may see (ids may hold `/`), and `/world/<id>/source`
 gives its law and its Bend.
 
 **Guests come by invitation:** accept the code once; its credential is your bearer and cards show your name. A browser

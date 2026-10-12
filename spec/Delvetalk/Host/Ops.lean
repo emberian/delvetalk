@@ -2246,6 +2246,28 @@ def shownName (w : World) (principal : String) : String :=
   let h := handleOf w principal
   if h.isEmpty then principal else h
 
+/-- A spell as people are shown it: each principal the registry names, written out in full in the text a
+    rule filled, shown by its handle (`shownName`). A principal is a whole `did:` token (a post's `at://did:…`
+    URI cites it and stays); any other text is left as filled. -/
+def shownSpell (w : World) (text : String) : String := Id.run do
+  let cs := text.toList.toArray
+  let isId := fun (c : Char) => c.isAlphanum || c == '.' || c == '_' || c == ':' || c == '-' || c == '%'
+  let mut out := ""
+  let mut i := 0
+  while i < cs.size do
+    let mut j := i
+    while j < cs.size && isId cs[j]! do j := j + 1
+    if j == i then
+      out := out.push cs[i]!
+      i := i + 1
+      continue
+    let token := String.mk (cs.extract i j).toList
+    let principal := token.dropRightWhile (· == '.')
+    out := if token.startsWith "did:" && !out.endsWith "at://"
+      then out ++ shownName w principal ++ token.drop principal.length else out ++ token
+    i := j
+  return out
+
 /-- The principal the registry names by `handle` (case folded, as a DNS name is), if one. -/
 def principalNamed (w : World) (handle : String) : Option String :=
   let h := handle.toLower
@@ -2715,6 +2737,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     let judgments := if judgments.isEmpty then [("", 0, "", "", "")] else
       judgments.filter fun (_, kind, _, _, verb) => kind != 4 || !verb.isEmpty
     let mut judgedBy : List Law.Facts := []
+    -- What judging reads is metered (codex host 13): the law's clauses and the rules and wants the thing carries,
+    -- which commit and replay judge of the same write, each judgment within `Bounds.lawTicks`.
+    let lines := (carried cand id next).map (·.clause)
+    let metered := lawNames o.law ++ lines.flatMap (·.names)
+    let conditions := o.law.map (·.2) ++ lines.map (·.condition)
+    let (meteredOld, meteredNew) := (viewFor metered o.cells, viewFor metered cells)
     for (caller, kind, method, via, verb) in judgments do
       let subject ← if via.isEmpty then pure p.principal else
         match grantStands w via id method with
@@ -2729,6 +2757,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       let facts : Law.Facts := citing cand o.law (lawNames o.law)
         { subject, caller, height, turn := p.turn, pin := next.pin, kind, method,
           verb := if verb.isEmpty then method else verb, evicted, clock := w.clock, object := id }
+      if conditions.foldl (fun n c => n + Law.work facts (some meteredOld) meteredNew c) 0 > Delvetalk.Bounds.lawTicks then
+        throw { cls := "budget", reason := some "law ticks", object := some id }
       judgedBy := judgedBy ++ [facts]
       -- The metarule, widened (docs/ROOT.md §2.1): no law locks out the hand that opened the world.
       -- An amendment by the opener is the host's to admit; every other change is the law's.
@@ -2820,7 +2850,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           unless clause.name == x.name && (if want then Law.isWant clause else Law.isRule clause) do
             throw { cls := "programRefused", clause := some "law syntax", object := some id,
                     reason := some s!"the line places {clause.name} as another modality than {x.keyword} {x.name}" }
-          let names := (((parseClauses next.lawText).toOption.getD []).map (·.name)) ++ (next.rules ++ next.wants).map (·.name)
+          -- New across all it carries: its text's clauses, its placed lines, and those it inherits through `under`.
+          let names := (((parseClauses next.lawText).toOption.getD []).map (·.name)) ++ (carried cand id next).map (·.clause.name)
           if names.contains x.name then
             throw (refuse "nameTaken" s!"{id} already carries a clause {x.name}; place one whose name is new.")
           if let some message := citationRefusal cand id [(x.name, clause.condition)] then
@@ -3497,8 +3528,11 @@ def endedField (w : World) (object principal intent how : String) (ledger : Ledg
 
 /-! ## What a write sets off and opens (docs/OVERHAUL.md §3 "Commit"; FOUNDATION §10; FOUNDATION §5) -/
 
-/-- The delivery id, and the delivered turn's intent, of rule `name` of `object` fired at `height`. -/
-def ruleDeliveryId (object name : String) (height : Nat) : String := s!"rule:{object}:{name}:{height}"
+/-- The delivery id, and the delivered turn's intent, of rule `name` of `object` fired at `height`: a rule
+    another object's text holds (`holder`, its kind's through `under`) names it after `@`, so a rule the
+    thing holds and one it inherits are two deliveries whatever their names (no object id holds `@`). -/
+def ruleDeliveryId (object holder name : String) (height : Nat) : String :=
+  if holder == object then s!"rule:{object}:{name}:{height}" else s!"rule:{object}:{name}@{holder}:{height}"
 
 /-- How many rule firings deep the turn an entry delivers is: the `depth` its pending send carries (a
     rule's firing), 0 for a direct turn or another send. -/
@@ -3566,7 +3600,7 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
         else if depth + 1 > Limits.ruleDepth then unfired := unfired.push (refuse "ruleDepth")
         else if fired.size ≥ Limits.rulesPerCommit then unfired := unfired.push (refuse "rulesPerCommit")
         else if before.pending.size + fired.size ≥ Limits.maxPending then unfired := unfired.push (refuse "pending")
-        else fired := fired.push (Json.mkObj [("id", toJson (ruleDeliveryId id r.clause.name height)), ("to", toJson to),
+        else fired := fired.push (Json.mkObj [("id", toJson (ruleDeliveryId id r.holder r.clause.name height)), ("to", toJson to),
           ("method", toJson "receive"), ("argument", dataJson (.record [("text", .label text), ("post", .label "")])), ("sender", toJson id),
           ("principal", toJson r.owner), ("ledger", child.json), ("rule", toJson r.clause.name), ("depth", toJson (depth + 1))])
   let mut wanted : Array Json := #[]
@@ -5616,34 +5650,16 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
       ("message", toJson s!"ambiguous: {many.length} matches; cite the object and version")]
 
 
-/-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
-    reader, `identity`), projected under the reader's authority; a refusal with its `public` projection. -/
-def receipt (w : World) (j : Json) : Except String Json := do
-  let reader ← readerOf j
-  let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
-  let owner := (← optText j "of").getD reader
-  match boundEntry w owner intent with
-  | none => return Json.mkObj [("status", toJson "unknown")]
-  | some entry =>
-    let shown := projectEntry w reader entry
-    if owner != reader && tagOf entry == "refused" then return publicRefusal entry
-    -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.
-    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++
-      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
-
+/-- `world-history {principal, object, after?, before?, reverse?, cursor?, limit?}`: the admitted entries
+    that touched an object, each as the reader may see it, paged by height (`pageByHeight`). -/
 def history (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let id ← j.getObjValAs? String "object"
-  let after := (← optNat j "after").getD 0
-  let asked := (← optNat j "limit").getD Limits.maxHistoryLimit
-  if asked == 0 || asked > Limits.maxHistoryLimit then throw s!"limit must be 1..{Limits.maxHistoryLimit}"
   if !w.objects.contains id then return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
   if !viewable w reader id then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
-  let all := (w.touched.getD id #[]).filter fun index => index + 1 > after
-  let page := all.extract 0 asked
-  return Json.mkObj [("status", toJson "history"), ("object", toJson id),
-    ("entries", Json.arr (page.map fun index => projectEntry w reader (w.entries.getD index))),
-    ("more", toJson (decide (all.size > asked)))]
+  let (shown, more, cursor) ← pageByHeight j ((w.touched.getD id #[]).map fun index => (index + 1, index))
+  return Json.mkObj ([("status", toJson "history"), ("object", toJson id),
+    ("entries", Json.arr (shown.map fun index => projectEntry w reader (w.entries.getD index)))] ++ pageFields more cursor)
 
 /-- The principal transport reads publications as: the world's clock principal, or "transport". -/
 def publisher (w : World) : String := if w.clockPrincipal.isEmpty then "transport" else w.clockPrincipal

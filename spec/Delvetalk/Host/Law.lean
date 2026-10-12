@@ -268,6 +268,13 @@ def Reading.render : Reading → String
 def columnHas (rows : List Data) (col : String) (w : Data) : Bool :=
   rows.any fun r => (rawField col r).map canon == some (canon w)
 
+/-- Rows as the set of their canonical bytes: membership in one pass, never a row against every row. -/
+def canonSet (rows : List Data) : Std.HashSet String := rows.foldl (fun s r => s.insert (canon r)) {}
+
+/-- The rows of `field` the declared retention dropped while the write was applied (`Facts.evicted`). -/
+def evictedIn (facts : Facts) (field : String) : Std.HashSet String :=
+  canonSet (facts.evicted.filterMap fun (f, x) => if f == field then some x else none)
+
 /-- The rows a write changed in relation (or list) `field`: those of `old` gone from `new` by canonical
     bytes, less the ones the declared retention dropped, and those of `new` not in `old`. -/
 def changedRows (facts : Facts) (old : Option Data) (new : Data) (field : String) : Option (List Data) := do
@@ -275,10 +282,10 @@ def changedRows (facts : Facts) (old : Option Data) (new : Data) (field : String
   let before ← match old with
     | none => some []
     | some o => (rawField field o).bind rowsOf
-  let now := after.map canon
-  let was := before.map canon
-  let gone := before.filter fun r => !now.contains (canon r) &&
-    !(facts.evicted.any fun (f, x) => f == field && canon x == canon r)
+  let now := canonSet after
+  let was := canonSet before
+  let evicted := evictedIn facts field
+  let gone := before.filter fun r => let c := canon r; !now.contains c && !evicted.contains c
   return gone ++ after.filter fun r => !was.contains (canon r)
 
 def isWant (c : Clause) : Bool := match c.modality with | .want _ => true | _ => false
@@ -350,8 +357,9 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
       | none => true
       | some before => match (rawField field before).bind rowsOf with
         | some rows =>
-          let now := after.map canon
-          rows.all fun r => now.contains (canon r) || facts.evicted.any fun (f, x) => f == field && canon x == canon r
+          let now := canonSet after
+          let evicted := evictedIn facts field
+          rows.all fun r => let c := canon r; now.contains c || evicted.contains c
         | none => false
   -- Every row the write changed carries `who` in its column (docs/LAW.md §4 B).
   | .changed field col who => match changedRows facts old new field, memberData facts old new who with
@@ -372,6 +380,39 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
   | .and left right => denote facts old new left depth && denote facts old new right depth
   | .or left right => denote facts old new left depth || denote facts old new right depth
   | .implies premise conclusion => !denote facts old new premise depth || denote facts old new conclusion depth
+
+/-- What reading `t` walks: one for the term, and a row for each row a count reads. -/
+partial def termWork (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Nat
+  | .count side field filter => 1 + ((rowsAt facts old new side field).map (·.length)).getD 0 +
+      (match filter with | .eq _ v => termWork facts old new v | .all => 0)
+  | .sum l r => 1 + termWork facts old new l + termWork facts old new r
+  | .mod t _ => 1 + termWork facts old new t
+  | _ => 1
+
+/-- What judging `e` reads, as `denote` reads it: a step per atom and a row (or list item) per row it walks, on
+    each side; through `under` and `wants`, what the cited clauses read. A judgment's clauses together are
+    bounded by `Bounds.lawTicks` (`Facts` the host meters with; codex host 13), as a Bend law's ticks are. -/
+partial def work (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr) (depth : Nat := Limits.lawDepth) : Nat :=
+  let rows := fun (side : LawSide) (field : String) => ((rowsAt facts old new side field).map (·.length)).getD 0
+  let both := fun (field : String) => rows .old field + rows .new field
+  match e with
+  | .eq l r | .le l r | .ge l r => 1 + termWork facts old new l + termWork facts old new r
+  | .member t (.list side field) => 1 + termWork facts old new t +
+      ((((sideState facts old new side).bind (rawField field)).bind (listItems [])).map (·.length)).getD 0
+  | .member t (.column side field _) => 1 + termWork facts old new t + rows side field
+  | .member t _ => 1 + termWork facts old new t
+  | .rule _ field => 1 + both field
+  | .changed field _ who => 1 + both field + termWork facts old new who
+  | .under object => if depth == 0 then 1 else 1 + match (facts.reads.lookup object).bind (rawField "law") with
+    | some (.label text) => match parseLawText text with
+      | .ok law => law.foldl (fun n (_, c) => n + work facts old new c (depth - 1)) 0
+      | .error _ => 0
+    | _ => 0
+  | .wants object name => if depth == 0 then 1 else 1 + match facts.reads.lookup object, wantNamed facts object name with
+    | some state, some want => work (asItStands facts object) none state want.condition (depth - 1)
+    | _, _ => 0
+  | .not b => 1 + work facts old new b depth
+  | .and l r | .or l r | .implies l r => 1 + work facts old new l depth + work facts old new r depth
 
 /-- A clause that reads a non-plain field name refuses every write. -/
 def admits (facts : Facts) (old : Option Data) (new : Data) (clause : LawExpr) : Bool :=
