@@ -166,7 +166,7 @@ Whether wants are quests or chores (the owner: quests must not read as chores) i
 - **ignored**: a want still holding at the end.
 
 An answer by the opener or the hand is no resident's and is not counted. A want made true or false by the clock alone
-is recorded when its thing is next written. The fourth playtest reads unprompted answers against the ten-minute
+is recorded by the `advanced` entry that moved the clock (HOST-HANDOFF 5.210). The fourth playtest reads unprompted answers against the ten-minute
 windows: wants are working when most answers are unprompted and few wants are ignored.
 
 ## A carried town

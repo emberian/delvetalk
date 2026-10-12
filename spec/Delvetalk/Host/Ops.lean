@@ -3444,9 +3444,9 @@ def lawRefusedOf (outcome : Json) : Option String :=
       (outcome.getObjValAs? String "class").toOption == some "lawRefused"
   then (outcome.getObjValAs? String "object").toOption else none
 
-/-- An admitted entry's rows of `k` (`fired`, `unfired`, `wanted`, `unwanted`). -/
+/-- An admitted, refused or clock entry's rows of `k` (`fired`, `unfired`, `wanted`, `unwanted`). -/
 def reactionRows (entry : Json) (k : String) : Array Json :=
-  if tagOf entry != "admitted" && tagOf entry != "refused" then #[] else ((entry.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+  if tagOf entry != "admitted" && tagOf entry != "refused" && tagOf entry != "advanced" then #[] else ((entry.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
 
 /-- Each rule's last firing or refusal to fire after an entry (`World.ruleLog`). -/
 def ruleLogAfter (w : World) (entry : Json) : Std.HashMap String (List (String × Json)) :=
@@ -3461,6 +3461,45 @@ def ruleLogAfter (w : World) (entry : Json) : Std.HashMap String (List (String �
     match f.getObjValAs? String "object", f.getObjValAs? String "rule", f.getObjValAs? String "why" with
     | .ok o, .ok r, .ok why => note log o r (Json.mkObj [("height", toJson height), ("why", toJson why)])
     | _, _, _ => log) log
+
+/-- What the wants `o` (`id`) carries read: the other objects they cite, closed (`citesOf`, with what its law
+    follows by `under`), and whether one of those wants, its own or a cited thing's, reads `request.clock`. -/
+def wantReads (w : World) (id : String) (o : Object) : List String × Bool :=
+  let wants := carriedWants w id o
+  let c := citesOf w (wants.flatMap (·.clause.names))
+  let under := (citesOf w (lawNames o.law) false).objects
+  (((c.objects ++ under).eraseDups).filter (· != id),
+   (wants.map (·.clause) ++ c.wants.flatMap (·.2)).any fun cl => cl.condition.readsClock)
+
+/-- `w` with the want index (`wantCites`, `wantReaders`, `wantClock`) re-read for `ids` as `w` holds them. -/
+def reindexWants (w : World) (ids : List String) : World :=
+  ids.foldl (fun w id =>
+    let dropped := (w.wantCites.getD id []).foldl (fun m c =>
+      match (m.getD c []).filter (· != id) with
+      | [] => m.erase c
+      | xs => m.insert c xs) w.wantReaders
+    match w.objects[id]? with
+    | none => { w with wantReaders := dropped, wantCites := w.wantCites.erase id, wantClock := w.wantClock.erase id }
+    | some o =>
+      let (cites, clock) := wantReads w id o
+      let readers := cites.foldl (fun m c =>
+        m.insert c ((id :: m.getD c []).toArray.qsort (· < ·)).toList) dropped
+      { w with wantReaders := readers,
+               wantCites := if cites.isEmpty then w.wantCites.erase id else w.wantCites.insert id cites,
+               wantClock := if clock then w.wantClock.insert id true else w.wantClock.erase id }) w
+
+/-- The things an entry that wrote `written` re-judges for the wants they hold: those whose wants read a
+    written object (`wantReaders`, as `w` held them before the entry), not themselves written, by id, the
+    first `Limits.wantReviewed`. The bound keeps one write's cost to that many judgments, each within
+    `Limits.clauseTicks`; a reader past it is judged when it or an object it reads is next written. -/
+def wantReview (w : World) (written : List String) : List String :=
+  let sorted := (written.flatMap fun id => w.wantReaders.getD id []).toArray.qsort (· < ·)
+  let once := sorted.foldl (fun (acc : Array String) x => if acc.back? == some x then acc else acc.push x) #[]
+  (once.toList.filter (!written.contains ·)).take Limits.wantReviewed
+
+/-- The things carrying a want that reads the clock, by id. -/
+def clockThings (w : World) : List String :=
+  (w.wantClock.toList.map (·.1)).toArray.qsort (· < ·) |>.toList
 
 /-- The wants holding after an entry, with the height that made each true (`World.wanting`). -/
 def wantingAfter (w : World) (entry : Json) : Std.HashMap String (List (String × Nat)) :=
@@ -3556,7 +3595,9 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
     anchors := anchorsAfter w (w.height + 1) entry }
 
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
-  recordActs (recordCore w entry key touch) entry
+  -- The want index follows what the entry wrote and the readers it re-judged (`wantReview`).
+  let indexed := if touch.isEmpty then w else reindexWants w (touch ++ wantReview w touch)
+  recordActs (recordCore indexed entry key touch) entry
 
 /-- The facts a want of `o` (`id`) is judged and filled by, as `w` holds it at `height`: the clock, the
     thing, the states its lines cite and the wants they name (`Law.asItStands` keeps only these). -/
@@ -3593,6 +3634,22 @@ def refusalWants (w : World) (outcome : Json) : List (String × Json) :=
     let (wanted, unwanted) := wantFlips id ((posing w (w.height + 1) id o).map (·.clause.name))
       ((posing after (w.height + 1) id o).map (·.clause.name))
     flipFields wanted unwanted
+
+/-- The wants the clock's move to `to` opens and closes, on the things whose wants read it (`clockThings`):
+    each judged at the clock it stands at and at `to`, journaled on the `advanced` entry and re-derived by
+    replay. Bound: one judgment, within `Limits.clauseTicks`, per such thing; an advance is the clock's
+    principal's alone. -/
+def clockFlips (w : World) (to : Nat) : List (String × Json) := Id.run do
+  let after := { w with clock := to }
+  let mut wanted : Array Json := #[]
+  let mut unwanted : Array Json := #[]
+  for id in clockThings w do
+    let some o := w.objects[id]? | continue
+    let (opened, closed) := wantFlips id ((posing w (w.height + 1) id o).map (·.clause.name))
+      ((posing after (w.height + 1) id o).map (·.clause.name))
+    wanted := wanted ++ opened
+    unwanted := unwanted ++ closed
+  return flipFields wanted unwanted
 
 /-- Seal and record the world's next entry. A law's refusal carries the wants it flips (`refusalWants`). -/
 def push (w : World) (key : String) (fields : List (String × Json)) (touch : List String) :
@@ -3745,7 +3802,8 @@ def spellCard (w : World) (owner text : String) : Option String :=
       `pending` (the world holds `Limits.maxPending` undelivered sends), `reads` (its owner may not
       view the thing or an object its condition or holes cite);
     - `wanted`, `unwanted`: `{object, want}` for each want that holds of the object as it stands after
-      the write and did not before (a created object had none), and the reverse, at the clock. -/
+      the write and did not before (a created object had none), and the reverse, at the clock; for the
+      written objects, and for the things whose wants read them (`wantReview`). -/
 def reactions (before after : World) (height : Nat) (judged : Judged) (child : Ledger) (depth : Nat) :
     List (String × Json) := Id.run do
   let mut fired : Array Json := #[]
@@ -3797,7 +3855,10 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
             (if wait == 0 then [] else [("next", toJson (before.clock + wait))])))
   let mut wanted : Array Json := #[]
   let mut unwanted : Array Json := #[]
-  for (id, o) in judged.updates ++ judged.creations do
+  -- The wants of what it wrote, and of the things whose wants read what it wrote (`wantReview`).
+  let readers := (wantReview before ((judged.updates ++ judged.creations).map (·.1))).filterMap fun id =>
+    (after.objects[id]?).map (id, ·)
+  for (id, o) in judged.updates ++ judged.creations ++ readers do
     let was := ((before.objects[id]?).map fun x => (posing before height id x).map (·.clause.name)).getD []
     let (opened, closed) := wantFlips id was ((posing after height id o).map (·.clause.name))
     wanted := wanted ++ opened
@@ -4870,6 +4931,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     let before ← natField outcome "from"
     let to ← natField outcome "to"
     unless before == w.clock && to > before do throw "clock advance out of sequence"
+    let flipped := clockFlips w to
+    for k in ["wanted", "unwanted"] do
+      unless flipped.lookup k == (entry.getObjVal? k).toOption do throw s!"what the clock {k} does not replay"
     return record w entry key []
   | "settings" =>
     -- A later settings entry is the opener's `world-settings`: quotas only, each replacing the last.
@@ -5139,9 +5203,9 @@ def advance (w : World) (j : Json) : Except String (World × Json) := do
     return (w, Json.mkObj [("status", toJson "advanced"), ("clock", toJson w.clock)])
   let intent := s!"advance:{to}"
   let (w', entry) := push w (identityKey "clock" intent)
-    [("identity", identityJson "clock" intent), ("roots", rootsJson []), ("turn", toJson 0),
+    ([("identity", identityJson "clock" intent), ("roots", rootsJson []), ("turn", toJson 0),
      ("request", toJson (Journal.bodyHash (toJson intent))),
-     ("outcome", Json.mkObj [("tag", toJson "advanced"), ("from", toJson w.clock), ("to", toJson to)])] []
+     ("outcome", Json.mkObj [("tag", toJson "advanced"), ("from", toJson w.clock), ("to", toJson to)])] ++ clockFlips w to) []
   return (w', Json.mkObj [("status", toJson "advanced"), ("clock", toJson to), ("receipt", entry)])
 
 /-! ## Reads -/
@@ -5443,11 +5507,11 @@ def wantAsks (w : World) (reader : String) (facts : Law.Facts) (id : String) (o 
 
 /-- The wants that hold of `id` as it stands now, as `wants` reads them: name, owner, reading,
     condition, the spell that answers it (`wantAsks`, for its reader), the line, the object holding it,
-    and `since`: the height of the entry that made it true, or `clock` when it came true by the clock alone. -/
+    and `since`: the height of the entry that made it true (a write, a law's refusal, or the clock's move). -/
 def wantRows (w : World) (reader id : String) (o : Object) : List Json :=
   let facts := wantFacts w w.height id o
   (posing w w.height id o).map fun c =>
-    let since := ((w.wanting[id]?).bind (·.lookup c.clause.name)).map toJson |>.getD (toJson "clock")
+    let since := ((w.wanting[id]?).bind (·.lookup c.clause.name)).map toJson |>.getD (toJson 0)
     Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("when", toJson c.clause.condition.render),
         ("asks", toJson (wantAsks w reader facts id o c)), ("line", toJson c.clause.render), ("from", toJson c.holder), ("since", since)] ++
       (if c.clause.reading.isEmpty then [] else [("reading", toJson c.clause.reading)]))
@@ -5468,8 +5532,8 @@ structure Wanted where
     (below it, or with `oldest` above it; 0: from the first), while it stays within `limit` rows (0, or
     past `Limits.listPage`, is `listPage`); its first height is whole whatever its size, so `after` set
     to a page's last `since` reads on without a gap. `more` when rows remain past the page. A want that
-    came true by the clock alone, with no entry to make it, is not in the index: the thing's `wants`
-    reads it. Derived, no root. -/
+    came true by the clock alone is in the index, made so by the `advanced` entry that moved the clock
+    (`clockFlips`). Derived, no root. -/
 def wanting (w : World) (reader : String) (after limit : Nat) (oldest : Bool := false) : List Wanted × Bool := Id.run do
   let rows : List Wanted := w.wanting.toList.flatMap fun (id, xs) => match w.objects[id]? with
     | none => []
