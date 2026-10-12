@@ -2,6 +2,8 @@
 exact request it would send and exits 2 without reading credentials or touching the network. A world whose bridge row
 is a Zulip channel, the owner's own, is posted to at once.
 """
+import contextlib
+import fcntl
 import hashlib
 import json
 import sys
@@ -98,6 +100,16 @@ def build_request(text, reply=None, facets=None):
             'body': {'repo': '<session did>', 'collection': COLLECTION, 'record': record}}
 
 
+@contextlib.contextmanager
+def held(st):
+    """The posting ledger held by this process alone, from an intent's first read to its last write: two posts of one
+    intent at once are one post (another waits, then finds the first's record)."""
+    st.posting.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with open(st.posting / '.lock', 'w') as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+
+
 def ledger(st, intent):
     """The posting ledger, one file per intent: what was fixed before the network was touched (the record key, or Zulip's
     anchor) and what came back. A retry reads it, so an intent is posted at most once and its quota slot taken once."""
@@ -110,35 +122,36 @@ def send(request, intent, st, host, client=None, now=time.time):
     key is fixed in the ledger before the first attempt, and a retry that finds a record under it adopts that record. The
     reservation is released only when the post certainly did not leave (the credentials unreadable). Credentials go only to
     the fixed PDS via Client."""
-    path, got = ledger(st, intent)
-    if got and got.get('result'):
-        return got['result']
-    client, found, fresh = client or Client(http_transport, allow_write=True), None, got is None
-    if fresh:
-        reserve(host, intent, 'delve')
-    try:
-        cred = json.loads(Path(st.config.credentials).expanduser().read_text())
-    except (OSError, ValueError):
+    with held(st):
+        path, got = ledger(st, intent)
+        if got and got.get('result'):
+            return got['result']
+        client, found, fresh = client or Client(http_transport, allow_write=True), None, got is None
         if fresh:
-            host.send({'op': 'world-post-release', 'principal': CLOCK, 'intent': intent, 'reason': 'credentials unreadable'})
-        raise
-    if fresh:
-        got = {'intent': intent, 'rkey': tid(int(now() * 1e6), int(hashlib.sha256(intent.encode()).hexdigest()[:4], 16) & 1023)}
-        st.write(path, got)
-    session = client.write('com.atproto.server.createSession',
-                           {'identifier': cred['identifier'], 'password': cred['password']})
-    if not fresh:  # an earlier attempt may have landed with its reply lost
+            reserve(host, intent, 'delve')
         try:
-            found = client.record(f"at://{session['did']}/{COLLECTION}/{got['rkey']}")
-        except Failure as f:
-            if 'RecordNotFound' not in f.detail:
-                raise
-    if found is None:
-        found = client.write('com.atproto.repo.createRecord', dict(request['body'], repo=session['did'], rkey=got['rkey']),
-                             token=session['accessJwt'])
-    result = {'uri': found['uri'], 'cid': found['cid']}
-    st.write(path, dict(got, result=result))
-    return result
+            cred = json.loads(Path(st.config.credentials).expanduser().read_text())
+        except (OSError, ValueError):
+            if fresh:
+                host.send({'op': 'world-post-release', 'principal': CLOCK, 'intent': intent, 'reason': 'credentials unreadable'})
+            raise
+        if fresh:
+            got = {'intent': intent, 'rkey': tid(int(now() * 1e6), int(hashlib.sha256(intent.encode()).hexdigest()[:4], 16) & 1023)}
+            st.write(path, got)
+        session = client.write('com.atproto.server.createSession',
+                               {'identifier': cred['identifier'], 'password': cred['password']})
+        if not fresh:  # an earlier attempt may have landed with its reply lost
+            try:
+                found = client.record(f"at://{session['did']}/{COLLECTION}/{got['rkey']}")
+            except Failure as f:
+                if 'RecordNotFound' not in f.detail:
+                    raise
+        if found is None:
+            found = client.write('com.atproto.repo.createRecord', dict(request['body'], repo=session['did'], rkey=got['rkey']),
+                                 token=session['accessJwt'])
+        result = {'uri': found['uri'], 'cid': found['cid']}
+        st.write(path, dict(got, result=result))
+        return result
 
 
 def unsend(uri, credentials, client=None):

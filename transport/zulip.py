@@ -16,7 +16,7 @@ from pathlib import Path
 
 from transport.delve import Failure, canonical, http_transport
 from transport.observe import MAX_TEXT, TAG, Observer, classify
-from transport.post import ledger, post_draft, reserve
+from transport.post import held, ledger, post_draft, reserve
 
 BATCH = 100
 MENTION = re.compile(r'@_?\*\*([^*|\n]+?)(?:\|\d+)?\*\*')
@@ -192,16 +192,17 @@ def deliver(st, host, client, stream, topic, text, intent):
     """Post `text` to stream>topic once per intent (reserved with the host as a `zulip` post, which no quota holds: the
     hour's quota is delve.town etiquette). The stream's newest id is persisted before the send; a retry adopts our
     message with this text after it rather than sending again. -> {uri, cid}. Raises Failure."""
-    path, got = ledger(st, intent)
-    if got is None:
-        reserve(host, intent, 'zulip')
-        got = {'after': client.newest(stream)}
-        st.write(path, got)
-    if not got.get('result'):
-        mid = client.sent_after(stream, topic, text, got['after']) or client.send(stream, topic, text)['id']
-        got = dict(got, result={'uri': uri_of(stream, topic, mid), 'cid': str(mid)})
-        st.write(path, got)
-    return dict(got['result'])
+    with held(st):
+        path, got = ledger(st, intent)
+        if got is None:
+            reserve(host, intent, 'zulip')
+            got = {'after': client.newest(stream)}
+            st.write(path, got)
+        if not got.get('result'):
+            mid = client.sent_after(stream, topic, text, got['after']) or client.send(stream, topic, text)['id']
+            got = dict(got, result={'uri': uri_of(stream, topic, mid), 'cid': str(mid)})
+            st.write(path, got)
+        return dict(got['result'])
 
 
 def target(d, row):

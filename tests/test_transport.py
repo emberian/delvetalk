@@ -541,6 +541,23 @@ class Idempotent(unittest.TestCase):
             post.send(request, 'c', self.state, host, client=pds)
         self.assertEqual((e.exception.code, pds.creates), ('rate_limited', 2))
 
+    def test_two_posts_of_one_intent_at_once_are_one_post(self):
+        import threading
+        import time
+
+        class Slow(Recorder):  # the reservation takes a while: both posts are past the ledger's first read
+            def send(self, req):
+                time.sleep(0.3 if req['op'] == 'world-post-reserve' else 0)
+                return super().send(req)
+        pds, host, got = Pds(), Slow(), []
+        request = post.build_request('Planted.', None, None)
+        ts = [threading.Thread(target=lambda: got.append(post.send(request, 'twice', self.state, host, client=pds))) for _ in range(2)]
+        for th in ts:
+            th.start()
+        for th in ts:
+            th.join()
+        self.assertEqual((pds.creates, len(got), got[0] == got[1]), (1, 2, True))
+
     def test_a_publication_draft_is_recorded_for_its_publications_object_by_the_hand_and_the_cli(self):
         page = {'publication': {'id': 'p1', 'height': 3, 'object': 'genesis'}, 'page': 'Genesis', 'section': '',
                 'replyTo': None, 'text': 'wiki: Genesis\n\nbody', 'posted': False}
