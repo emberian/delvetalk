@@ -51,8 +51,11 @@ def cardWanting : Nat := 8
     checked, bounded and charged by the cells it changes); 11: host30 (a rule a thing inherits fires under
     an id naming its holder, `rule:<object>:<name>@<holder>:<height>`; placing refuses a name the thing
     carries; a carried genesis's touch barriers; a judgment's law work metered against `lawTicks`); 12: host31
-    (a carried genesis continues the heights of the world it was carried from, `Snapshot.firstHeight`). -/
-def replayEdition : Nat := 12
+    (a carried genesis continues the heights of the world it was carried from, `Snapshot.firstHeight`); 13:
+    lane/authority (a thing's owner's amendment no cited law refuses; a rule a thing inherits acts as `@<id>`;
+    carried clauses own, inherited, placed; a firing past `rulesPerCommit` is queued, never dropped; rules and
+    wants judged after the commit within `clauseTicks`, no roots of the write). -/
+def replayEdition : Nat := 13
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -114,6 +117,14 @@ def sendsPerTurn : Nat := 32
     its kind's `under` carries are bounded by `maxLawClauses` in each text. -/
 def rulesPerObject : Nat := 32
 def wantsPerObject : Nat := 32
+/-- Of `rulesPerObject` (and `wantsPerObject`), what one hand other than the thing's owner may hold on it, and
+    what all such hands together may (the rest the owner's alone): a stranger's lines never take the owner's room
+    (docs/review/astra-2026-10-12 world 6). -/
+def placedPerHand : Nat := 4
+def placedByOthers : Nat := 24
+/-- What judging one rule's or want's condition may read (`Law.work`), after the commit: past it the rule is
+    `unfired budget`, the want does not pose; nothing of it is charged to the write (world 6). -/
+def clauseTicks : Nat := Delvetalk.Bounds.lawTicks / 8
 /-- Verbs grown on one object (docs/FOUNDATION.md §10: sixteen a thing; `ungrow` makes room). -/
 def verbsPerObject : Nat := 16
 /-- A grown verb's reading, in characters: what the verb does, as the grower says it. -/
@@ -123,7 +134,8 @@ def verbNameMax : Nat := 32
 def clockDay : Nat := 1440
 /-- Lines one day's chronicle says before `and N more`. -/
 def chronicleLines : Nat := 48
-/-- Rules one commit fires, over every object it wrote; the rest are journaled `unfired`. -/
+/-- Rules one commit's firings make deliverable at once, over every object it wrote; the rest are queued, each
+    following eight a clock minute later (`next`), never dropped (docs/review/astra-2026-10-12 world 7). -/
 def rulesPerCommit : Nat := 8
 /-- How many rule firings deep a chain goes: a turn a rule's spell delivered fires its own rules one
     level down, and past this depth a rule is `unfired` (a chain of rules ends sooner than `maxDepth`). -/

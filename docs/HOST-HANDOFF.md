@@ -2408,6 +2408,28 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `test_tenure` (red on foundation), `test_kinds` (a kind with no law clause), `test_genesis.Refresh` (bell/2
    rebased), `test_authoring` (§6.4's trade is its keeper's placed rule), `test_rules.Revealed` (the bell notes its
    planter itself).
+209. **Rules queue, are judged as their own, hold a share; an errand is one settlement; marks are facts
+   (lane/authority; astra 2026-10-12 world.md 6, 7, 8, 9; replay edition 13).**
+   - *Queued, never dropped* (7). `Ops.reactions`: past `Limits.rulesPerCommit` a firing is staged with `next =
+     clock + i / rulesPerCommit`, so each next eight are deliverable a clock minute later; the `rulesPerCommit`
+     unfired reason is gone. `revealed` says "fired (queued until clock N)". Carried clauses run own text,
+     inherited, placed (5.208), so residents' placed rules no longer crowd out a kind's.
+   - *A rule is its own judging* (6). `judge` meters the law's clauses alone against `lawTicks`; `objectCitations`
+     is the law's citations alone, so what a carried rule or want cites is no root of the write; each rule's
+     condition is metered in `reactions` against `Limits.clauseTicks` (`lawTicks / 8`, `unfired budget`), each
+     want's in `posing` (a want past it does not pose). Placing: a hand other than the owner (or the opener) holds
+     at most `Limits.placedPerHand` (4) rules, and 4 wants, all such hands `placedByOthers` (24) of the 32
+     (`capacity placedPerHand` / `placedByOthers`).
+   - *The errand* (8, world/bodies/errand.obend). One rule on `on` (`settles`); `settle` claims for the doer, once,
+     in one turn: `done` mark, `settles` off `on`, and `pay` placed on the errand, `"done" in new.marks.name and
+     (request.method == "settle" or request.method == "repay")`, its `pays` with `{request.subject}` replaced by
+     the doer (`payFor`, `replaced`; a doer is one word, `oneWord`), firing at that very write. `repay` (the
+     maker's) writes a `repay` line, which fires it again for the same hand. `awaiting`, `receipted`, `unpaid`,
+     `payIntent` are gone; `arm` still takes an older errand's `_v` rule off.
+   - *Facts* (9). Record's `marks` have no retention (`limit 0`): a `rung` or `done` is never dropped. A count of
+     lines counts the retained 128; `next` counts every line (AUTHORING §6.1's `ringAt` is `1..128`).
+   - Tests: `test_rules.Firing.test_eight_fire_a_commit_and_the_rest_are_queued…`, `test_rules.Share`,
+     `test_reaction.Errand` (both), `test_replay_edition`.
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

@@ -71,7 +71,9 @@ class Firing(Bell):
         self.town.reopen()
         self.assertEqual(self.rules()["two"]["fired"]["height"], second["receipt"]["height"])
 
-    def test_eight_fire_a_commit_and_the_rest_are_unfired_by_name(self):
+    def test_eight_fire_a_commit_and_the_rest_are_queued_a_clock_minute_apart_never_dropped(self):
+        """Astra 2026-10-12 world 7: past the eight a commit, a firing is queued (`next`), each next eight a clock minute
+        later, and runs when the clock gets there; none is lost."""
         for i in range(32):
             placed = self.place("rule / name: r%02d / when: request.method == \"rain\" / then: delvetalk me note / text: r%02d" % (i, i))
             self.assertEqual(placed["status"], "admitted", (i, placed))
@@ -83,16 +85,23 @@ class Firing(Bell):
         adopted = self.say(GLM, self.bell, "delvetalk %s adopt\nlaw: <<END\n%s\nEND" % (self.bell, block))
         self.assertEqual(adopted["status"], "admitted", adopted)
         self.assertEqual(len(self.rules()), 40)
+        clock = self.town.send(op="world-status")["clock"]
         rained = self.rain("storm")
         receipt = rained["receipt"]
-        # The bell's own text first, then what hands placed, in the order they were placed.
-        self.assertEqual([f["rule"] for f in receipt["fired"]], ["t%d" % i for i in range(8)])
-        self.assertEqual([(u["rule"], u["why"]) for u in receipt["unfired"]][:2], [("r00", "rulesPerCommit"), ("r01", "rulesPerCommit")])
-        self.assertEqual(len(receipt["unfired"]), 32)
-        self.assertIn("did not fire: 8 rules fired on this write already", rained["revealed"][0])
-        self.assertEqual(self.rules()["r00"]["unfired"]["why"], "rulesPerCommit")
+        # The bell's own text first, then what hands placed, in the order they were placed; none unfired.
+        self.assertEqual([f["rule"] for f in receipt["fired"]], ["t%d" % i for i in range(8)] + ["r%02d" % i for i in range(32)])
+        self.assertEqual([f.get("next") for f in receipt["fired"]], [None] * 8 + [clock + 1 + i // 8 for i in range(32)])
+        self.assertNotIn("unfired", receipt)
+        self.assertIn("rule r00 of glm.delve.town fired (queued until clock %d): delvetalk me note" % (clock + 1), "\n".join(rained["revealed"]))
+        notes = lambda: [t for (_, t) in self.inbox(GLM) if t[:1] in "rt" and t[1:].isdigit()]
+        self.assertEqual(sorted(notes()), sorted("t%d" % i for i in range(8)))
+        # The clock reaching each minute runs the next eight, and a reopened town keeps the queue.
         self.town.reopen()
-        self.assertEqual(self.rules()["r00"]["unfired"]["height"], receipt["height"])
+        for minute in range(1, 5):
+            self.town.send(op="world-advance", principal="transport", height=clock + minute)
+            self.town.send(op="world-deliver", limit=16)
+            self.assertEqual(len(notes()), 8 + 8 * minute, minute)
+        self.assertEqual(sorted(notes()), sorted(["t%d" % i for i in range(8)] + ["r%02d" % i for i in range(32)]))
 
     def test_a_chain_of_rules_ends_four_firings_deep(self):
         placed = self.place("rule / name: echo / when: request.method == \"rain\" / then: delvetalk {request.object} rain / text: echo")
@@ -115,6 +124,29 @@ class Firing(Bell):
                                  identity="quiet-glm")
         self.assertEqual(quieted["status"], "moderated", quieted)
         self.assertEqual([(u["rule"], u["why"]) for u in self.rain("two")["receipt"]["unfired"]], [("hush", "quiet")])
+
+
+class Share(Bell):
+    """Astra 2026-10-12 world 6: a stranger's rules on another's thing hold a bounded share of it, and judging them is
+    theirs: what they cite is no root of the owner's write and their conditions are no part of its law's budget, so
+    they never refuse or stale the owner's own acts."""
+
+    def test_a_strangers_rules_take_a_bounded_share_and_never_refuse_the_owners_write(self):
+        others = [o for o in self.objects() if o != self.bell and '"' not in o][:32]
+        self.assertEqual(len(others), 32)
+        for n in range(4):
+            cited = " or ".join('"%s".owner == "nobody"' % o for o in others[8 * n:8 * n + 8])
+            placed = self.say(KIM, self.bell, "delvetalk %s rule / name: k%d / when: %s / then: delvetalk me note / text: k%d" % (self.bell, n, cited, n))
+            self.assertEqual(placed["status"], "admitted", (n, placed))
+        fifth = self.say(KIM, self.bell, "delvetalk %s rule / name: k4 / when: request.method == \"rain\" / then: delvetalk me note / text: k4" % self.bell)
+        self.assertEqual(fifth["status"], "refused", fifth)
+        self.assertIn("placedPerHand", fifth["receipt"]["outcome"].get("reason"))
+        # What they cite is no root of the bell's writes: a stranger's citations cannot fill the root bound (64) or
+        # make the owner's turn stale.
+        rained = self.rain("still mine", who=GLM)
+        self.assertLessEqual(len(rained["receipt"]["roots"]), 8, rained["receipt"]["roots"])
+        # The owner places past every stranger's share.
+        self.assertEqual(self.place("rule / name: own / when: request.method == \"rain\" / then: delvetalk me note / text: own")["status"], "admitted")
 
 
 class Holes(Bell):

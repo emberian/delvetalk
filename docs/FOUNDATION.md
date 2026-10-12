@@ -758,11 +758,17 @@ deleting a closed sum or a convention:
   (§4). At commit, after the law admits, each written object's rules whose condition the write made true stage
   `receive {text: SPELL}` to the spell's card under the rule's writer, or as the thing for a line it inherits (§4
   Tenure) (`fired`, identity
-  `rule:<object>:<name>:<height>`; at most 8 a commit and 4 down a chain, the rest `unfired` with why), and the
-  wants that came to hold or stopped holding are journaled (`wanted`, `unwanted`); replay re-derives all four.
-  Nothing subscribes or notifies otherwise. The writer pays the judging, linear in rules and rows; the rule's
-  owner is the follow-on turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on
-  your thing runs their spells under their name and spends nothing of yours. The follow-on turn is a delivery under
+  `rule:<object>:<name>:<height>`; 4 down a chain; past 8 a commit a firing is queued, never dropped, each next
+  eight deliverable a clock minute later (`next`, the reply says "queued until clock N"); a rule that held and was
+  not cast is `unfired` with why), and the wants that came to hold or stopped holding are journaled (`wanted`,
+  `unwanted`); replay re-derives all four. Nothing subscribes or notifies otherwise. The carried lines go in order:
+  the thing's own text, what it inherits, then what hands placed. A rule is judged after the commit, on the world it
+  leaves: what it cites is no root of the write, and its condition no part of the law's budget; it reads within
+  `Limits.clauseTicks` or is `unfired budget` (a want past it does not pose), so a stranger's rule never refuses,
+  stales or starves the owner's own acts. A hand other than the owner holds at most `placedPerHand` (4) rules and 4
+  wants on a thing, all such hands together `placedByOthers` (24) of the 32. The rule's owner is the follow-on
+  turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on your thing runs their
+  spells under their name and spends nothing of yours. The follow-on turn is a delivery under
   the triggering turn's ledger. `delvetalk CARD rules` reads each rule back: name, owner, reading, condition, spell,
   and its last firing (entry and receipt) or why it did not fire. Conditions are state, never counters: "two
   rains" is `count(new.lines) >= 2 and count(old.lines) <= 1`, true once, at the crossing.
@@ -780,8 +786,12 @@ deleting a closed sum or a convention:
   it printed and the spell that answers it; RECORD's default wants are a line waiting for its keeper (`admit`) and
   a record with no door (`door`). An errand (`world/bodies/errand.obend`) is a rule with a pay: its maker's
   `asks`, the condition `done` judged at each write on the thing it is `on`, and the spell that `pays`, cast
-  under the maker; `settle` takes the call from that rule alone, marks the errand done by the writer, once, and
-  takes both rules off. A front (`world/bodies/front.obend`) is a visible clock the tide fills: its `fills`
+  under the maker. Payment and completion are one settlement: the errand's one rule on `on` casts `settle`, which
+  takes the call from that rule alone and claims the errand for the writer, once, in one turn: marked `done` by them
+  (a mark, a fact never dropped: marks have no retention), its rule off `on`, and its own `pay` placed with the doer
+  written in, firing at that write (`rule:<errand>:pay:<height>`). A later write pays nobody; a pay its target refused
+  is cast again for the same hand by its maker's `repay`. A count of lines counts the retained history (128 lines);
+  `next` counts every line written. A front (`world/bodies/front.obend`) is a visible clock the tide fills: its `fills`
   condition is judged at each tick, and when `segments` are full the maker's `move` is cast and the clock empties;
   only the tide's rule fills. Nothing in the world addresses a resident by name.
 - **Outcomes are one-line conditions** (`tests/test_reaction.py` places each by spell on the town's own objects).

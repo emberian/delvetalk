@@ -36,7 +36,7 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
 TALLY = """delvetalk kinds make / name: tally / of: record / head: {maker}'s tally, ringing at {ringAt}
 form: <<END
 seed: text 1..80
-ringAt: natural 1..768
+ringAt: natural 1..128
 END
 law: <<END
 rule chosen "rings at the number its maker chose": count(new.lines where verb == "rain") == new.ringAt and count(old.lines where verb == "rain") + 1 == new.ringAt then delvetalk {request.object} ring

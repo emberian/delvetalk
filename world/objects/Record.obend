@@ -117,12 +117,15 @@ record State12:
   tendedAt: Nat
 def migrate(old: State12) -> State:
   {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, tended: old.tended, chose: ""}
-# The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
+# The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes. A
+# condition counting lines counts these, the retained history (`next` counts every line ever written).
+# Marks are facts, kept whole and never dropped for newer ones (no `limit`): a bell's `rung`, an errand's
+# `done` are what makes a thing's once once (docs/review/astra-2026-10-12 world 9).
 # A body that keeps shorter lines keeps more of them (`relationsWith`); `pending` keeps as many.
 def relations() -> Relations.Decls:
   relationsWith(128n)
 def relationsWith(lines: Nat) -> Relations.Decls:
-  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("n author"), limit: lines}), {field: "pending", key: Text.words("n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("n author"), limit: lines}), {field: "pending", key: Text.words("n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 0n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n})
 # Who may be in a room at once: one turn offers a line to at most 32 (the host's sendsPerTurn).
 def presenceMax() -> Nat:
   32n

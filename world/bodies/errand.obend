@@ -14,17 +14,22 @@ import ./Text.obend as Text
 # The errand's body, over RECORD (docs/OVERHAUL.md §2, an errand is a rule with a pay; TENURE §3B):
 # a record made with what it asks (`asks`), the thing it is about (`on`), the condition that does it
 # (`done`, in the law grammar, judged at each write on `on`) and the spell that pays (`pays`, which may
-# name the doer as `{request.subject}`), all fixed. As its kind finishes it, it places two rules on
-# `on` under its maker (`made`): when `done` holds of a write there, one casts `delvetalk <errand>
-# settle / by: {request.subject}` and the other casts `pays`, both the maker's turns, so a pay is
-# whatever the maker may cast (a `lend` of a method they own, an `offer` of a thing they hold) and the
-# law of what it touches judges it. `settle` takes the call from its maker's rule on `on` alone and
-# waits for the receipt of the pay that write fired: admitted, it marks the errand `done` by that hand,
-# once, and takes both rules off `on`; a pay refused, or never cast (a commit casts at most eight
-# rules), leaves it open with a line saying so, and the next write doing it settles again.
+# name the doer as `{request.subject}`), all fixed. As its kind finishes it, it places one rule on `on`
+# under its maker (`made`): when `done` holds of a write there, it casts `delvetalk <errand> settle / by:
+# {request.subject}`, the maker's turn.
+#
+# Settling is one settlement (docs/review/astra-2026-10-12 world 8): `settle` takes the call from its
+# maker's rule on `on` alone, and the first that comes claims the errand for that hand, once: in one
+# turn it marks it `done` by them (a mark, kept, never dropped), takes its rule off `on`, and places on
+# itself its maker's rule `pay`, the pay with the doer written in, which fires at that very write: the
+# claim and the pay's casting commit together, the pay's identity `rule:<errand>:pay:<height>`. A
+# second write doing it finds it claimed and pays nobody. The pay is judged by what it touches; refused
+# (its maker no longer holds what it offers), the claim stands, `rules` says why, and its maker casts it
+# again for the same hand (`repay`), never for another.
 # kind/errand's want `open` puts an errand nobody has done on "What wants a hand".
 type State = Super.State
 form arm:
+form repay:
 form settle:
   by: text 1..128
 form write:
@@ -45,13 +50,13 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(if context.principal == state.owner then Text.words("settle write lines door undoor") else Text.words("settle write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
+  Lists.concat(if context.principal == state.owner then Text.words("settle write lines door undoor") else Text.words("settle write lines"), if context.principal == state.maker then Text.words("arm repay") else Text.words(""))
 def methods() -> Lists.List<String>:
   Text.words("~made ~act")
 def on(state: State) -> String:
   Super.field(state, "on")
-# The two rules' names on `on`: the errand's id as an identifier, and `_v` before it for the pay (no
-# identifier of an id begins `_v`, so no other errand's rule takes it).
+# The rule's name on `on`: the errand's id as an identifier. `_v` before it named the pay rule an errand
+# placed there before its pay was its own (`arm` takes such a rule off).
 def settles(context: Abi.Context) -> String:
   Text.identifier(context.object)
 def paying(context: Abi.Context) -> String:
@@ -60,13 +65,10 @@ def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
   if context.caller != state.kind then false else placing(state, context)
 def placing(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: on(state)}, name: settles(context), when: Super.field(state, "done"), then: "delvetalk {context.object} settle / by: {{request.subject}}"}):
-    case placed(_): payPlaced(state, context)
-    case refused(r): Super.unarmed(state, on(state), r.clause, r.reading, context)
-def payPlaced(state: State, context: Abi.Context) -> Activity<Bool>:
-  match world.rule({object: {world: context.world, object: on(state)}, name: paying(context), when: Super.field(state, "done"), then: Super.field(state, "pays")}):
     case placed(_): Super.armedNow(state, context)
     case refused(r): Super.unarmed(state, on(state), r.clause, r.reading, context)
-# Its maker places its rules again (taken off first, where they stood), while it is open.
+# Its maker places its rule again (taken off first where it stood, an older errand's pay rule with it),
+# while it is open.
 def arm(state: State, context: Abi.Context) -> Activity<Bool>:
   if context.principal != state.maker then Super.armRefused(state, context) else if Super.marked(state, "done") then false else rearming(state, context)
 def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
@@ -75,32 +77,42 @@ def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
 def unpayRule(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.unrule({object: {world: context.world, object: on(state)}, name: paying(context)}):
     case _: placing(state, context)
-# Its maker's rule on `on` settles it; anyone else, or another's rule there, is told what does.
+# Its maker's rule on `on` settles it; anyone else, or another's rule there, is told what does. The
+# first to come claims it; a principal is one word (a DID, a handle, a thing's `@<id>`).
 def settle(state: State, input: SettleInput, context: Abi.Context) -> Activity<Bool>:
-  if Super.ruledFrom(state, on(state), context) == false then Card.refusing(false, {clause: "ruled", reading: ruled(state)}, context) else if Super.marked(state, "done") then false else awaiting(state, input.by, context)
+  if Super.ruledFrom(state, on(state), context) == false then Card.refusing(false, {clause: "ruled", reading: ruled(state)}, context) else if Super.marked(state, "done") then false else if oneWord(input.by) == false then Card.refusing(false, {clause: "by", reading: "a doer is one principal"}, context) else claiming(state, input.by, context)
 def ruled(state: State) -> String:
   "it settles when {Super.field(state, \"done\")} holds of a write on {on(state)}"
-# The pay the same write fired is the delivery `rule:<on>:<pay rule>:<height>`, under the maker; the
-# height is the settling delivery's own (`rule:<on>:<settle rule>:<height>`).
-def payIntent(state: State, context: Abi.Context) -> String:
-  "rule:{on(state)}:{paying(context)}:{textDrop(context.intent, textLength(\"rule:{on(state)}:{settles(context)}:\"))}"
-def awaiting(state: State, by: String, context: Abi.Context) -> Activity<Bool>:
-  match world.await({slot: {principal: context.principal, intent: payIntent(state, context)}, patience: 60n}):
-    case reply(r): receipted(state, by, r.receipt.outcome, context)
-    case _: unpaid(state, "the pay to {Card.handle(by)} was not cast", context)
-def receipted(state: State, by: String, outcome: Plans.Outcome, context: Abi.Context) -> Activity<Bool>:
-  match outcome:
-    case admitted(_): settled(state, by, context)
-    case refused(r): unpaid(state, "the pay to {Card.handle(by)} was refused ({r.class})", context)
-def settled(state: State, by: String, context: Abi.Context) -> Activity<Bool>:
+def oneWord(by: String) -> Bool:
+  by != "" && Text.contains(by, " ") == false && Text.contains(by, "\n") == false && Text.contains(by, "{{") == false && Text.contains(by, "}}") == false
+# The claim, the rule off `on`, and the pay placed on the errand to fire at this write: one turn.
+def claiming(state: State, by: String, context: Abi.Context) -> Activity<Bool>:
+  let written(_) = write {marks: insert {name: "done", who: by, handle: "", at: context.height}}
+  match world.rule({object: Plans.self(context), name: "pay", when: payWhen(), then: payFor(state, by)}):
+    case placed(_): unsettling(state, context)
+    case refused(r): unplaced(state, "{r.clause}: {r.reading}", context)
+# Its pay could not be placed (its `pays` reads as no rule): the claim stands, and its card says why.
+def unplaced(state: State, clause: String, context: Abi.Context) -> Activity<Bool>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "unpaid", text: "its pay could not be placed: {clause}", at: context.height, n: state.next}, next: add 1n}
+  unsettling(state, context)
+def unsettling(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.unrule({object: {world: context.world, object: on(state)}, name: settles(context)}):
-    case _: unpaying(state, by, context)
-def unpaying(state: State, by: String, context: Abi.Context) -> Activity<Bool>:
-  match world.unrule({object: {world: context.world, object: on(state)}, name: paying(context)}):
-    case _: Super.markWritten({name: "done", who: by, handle: "", at: context.height})
-def unpaid(state: State, text: String, context: Abi.Context) -> Activity<Bool>:
-  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "unpaid", text: text, at: context.height, n: state.next}, next: add 1n}
-  false
+    case _: true
+# The pay fires at the claim and at each `repay`, never at another write.
+def payWhen() -> String:
+  "\"done\" in new.marks.name and (request.method == \"settle\" or request.method == \"repay\")"
+# The maker's `pays` with the doer written in where it says `{request.subject}`.
+def payFor(state: State, by: String) -> String:
+  replaced(Super.field(state, "pays"), "{{request.subject}}", by)
+def replaced(text: String, needle: String, by: String) -> String:
+  let at = Text.indexOf(text, needle)
+  if at == textLength(text) then text else "{textTake(text, at)}{by}{replaced(textDrop(text, at + textLength(needle)), needle, by)}"
+# The maker casts the pay again for the hand that claimed it (a pay refused, or one its maker owes again).
+def repay(state: State, context: Abi.Context) -> Activity<Bool>:
+  if context.principal != state.maker then Card.refusing(false, {clause: "notMaker", reading: "Only its maker pays it again"}, context) else if Super.marked(state, "done") == false then Card.refusing(false, {clause: "open", reading: "Nobody has done it yet"}, context) else repaying(state, context)
+def repaying(state: State, context: Abi.Context) -> Activity<Bool>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "repay", text: "paid again", at: context.height, n: state.next}, next: add 1n}
+  true
 def doneBy(state: State, context: Abi.Context) -> String:
   match Relations.lookup(state.marks, {name: "done"}):
     case some(m): "done by {Card.shown(m.value.who, m.value.handle, context)} at entry {natText(m.value.at)}"
@@ -109,11 +121,7 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   let asks = Super.field(state, "asks")
   let condition = Super.field(state, "done")
   let pays = Super.field(state, "pays")
-  Document.text("ERRAND from {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}, {doneBy(state, context)}: {asks}\nOn {on(state)}, done when: {condition}\nPays: {pays}\n{payLine(state, context)}{Super.inactiveLine(state, id)}")
-# The last pay not admitted, while it is open.
-def payLine(state: State, context: Abi.Context) -> String:
-  if Super.marked(state, "done") then "" else lastPay(state)
-def lastPay(state: State) -> String:
-  match Lists.find(Lists.reverse(Relations.rows(state.lines)), fn(l: Rows.Line) -> Bool: l.verb == "unpaid"):
-    case some(l): "Not paid yet: {l.value.text}.\n"
-    case none(_): ""
+  Document.text("ERRAND from {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}, {doneBy(state, context)}: {asks}\nOn {on(state)}, done when: {condition}\nPays: {pays}\n{payLine(state, id)}{Super.inactiveLine(state, id)}")
+# Where its pay stands, once claimed: `rules` reads its firing and receipt, or why it did not fire.
+def payLine(state: State, id: String) -> String:
+  if Super.marked(state, "done") then "Its pay: delvetalk {id} rules\n" else ""

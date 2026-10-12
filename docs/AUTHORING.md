@@ -45,7 +45,7 @@ Held by all: the law judges every write a resident's code makes; a turn runs und
 
 ### (a) Clauses that compute
 
-*The law grammar stays the first language.* `then` casts spells; holes are terms. Added: a made thing's form fields read as `new.F` when F is no State field (`ringAt: natural 1..768` at make, `… == new.ringAt` in a rule): one `denote` arm over `fields`, digits as a natural; the parser already takes `new.F`. Refused: a `set` effect (`then set count = old.count + 1`): two concurrent writes fill one `old` and lose a count, and it is a second effect beside the spell; a tally is `count(new.lines where verb == V)` or a body's `add`, both commutative.
+*The law grammar stays the first language.* `then` casts spells; holes are terms. Added: a made thing's form fields read as `new.F` when F is no State field (`ringAt: natural 1..128` at make, at most the 128 lines a RECORD keeps: a count of lines counts the retained history, and `next` alone every line written; `… == new.ringAt` in a rule): one `denote` arm over `fields`, digits as a natural; the parser already takes `new.F`. Refused: a `set` effect (`then set count = old.count + 1`): two concurrent writes fill one `old` and lose a count, and it is a second effect beside the spell; a tally is `count(new.lines where verb == V)` or a body's `add`, both commutative.
 
 Written by spell, or by prose to hob (a `rule` spell is a spell hob may answer); computes linear conditions and filled spells; bounded by the grammar (it has no loop) and `rulesPerObject` × rows; shared as lines (`adopt / law:` copies, `under` follows live); credited to the line's owner. It is Inform 7's rulebook ("After …") and the spreadsheet's formula: declarative and total, the end-user programming that worked (Nardi, *A Small Matter of Programming*, 1993).
 
@@ -156,7 +156,7 @@ After steps 1–7 unless marked. `<<END … END` is the spell grammar's block fi
 delvetalk kinds make / name: tally / of: record / head: {maker}'s tally, ringing at {ringAt}
 form: <<END
 seed: text 1..80
-ringAt: natural 1..768
+ringAt: natural 1..128
 END
 law: <<END
 rule chosen "rings at the number its maker chose": count(new.lines where verb == "rain") == new.ringAt and count(old.lines where verb == "rain") + 1 == new.ringAt then delvetalk {request.object} ring

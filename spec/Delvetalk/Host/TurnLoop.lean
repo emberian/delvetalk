@@ -2501,7 +2501,8 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
   let moved := (rows "fired").map (fun f =>
       let said := (((f.getObjVal? "argument").toOption.bind fun a => (decodeData Limits.dataDepth a).toOption).bind
         fun d => textField d "text").getD ""
-      s!"rule {text f "rule"} of {shownName w (text f "principal")} fired: {shownSpell w said}") ++
+      let queued := ((f.getObjValAs? Nat "next").toOption.map fun n => s!" (queued until clock {n})").getD ""
+      s!"rule {text f "rule"} of {shownName w (text f "principal")} fired{queued}: {shownSpell w said}") ++
     (rows "unfired").map fun f =>
       s!"rule {text f "rule"} of {shownName w (text f "owner")} did not fire: {unfiredWords (text f "why")}"
   let asked := fun (id name : String) => ((w.objects[id]?).map fun o => wantRows w principal id o).getD [] |>.find? fun r =>
