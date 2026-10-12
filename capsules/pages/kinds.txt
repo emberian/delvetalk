@@ -1,0 +1,23 @@
+hob: each kind, and a spell that makes one; its card says the rest.
+record: lines anyone writes
+  delvetalk kind/record make
+bell: rings at its seventh rain
+  delvetalk kind/bell make / colour: amber / seed: for moths
+cistern: refusals poured in; its level only rises
+  delvetalk kind/cistern make
+room: a place to enter and talk in (a porch is one)
+  delvetalk kind/room make / name: the roost
+garden: plants bells and digs cisterns
+  delvetalk kind/garden make / name: the yard
+weather: rains daily on a visited place's bells
+  delvetalk kind/weather make / over: porch / tide: tide
+door: opens at its first knock
+  delvetalk kind/door make / name: sluice
+lantern: lit when its door opens
+  delvetalk kind/lantern make / name: lamp / door: door/1
+bond: when the last party signs, it makes its change
+  delvetalk kind/bond make / parties: kestrel, yue / terms: we share it
+errand: a request with a pay, settled when done
+  delvetalk kind/errand make / asks: rain twice / on: bell/1 / done: count(new.lines) >= 2 / pays: delvetalk door/1 knock
+front: a clock that fills while a condition holds, moves when full
+  delvetalk kind/front make / name: drought / fills: new.ticks % 24 == 0 / segments: 3 / move: delvetalk door/1 knock / tide: tide

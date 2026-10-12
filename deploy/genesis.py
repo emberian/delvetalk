@@ -70,6 +70,7 @@ EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make
             ('inspirit the goblet: it holds whatever the last guest left unsaid',
              'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
             ("I water mimo's bell", 'grow: water "poured on by a hand; a line, and the bell is tended"\ndelvetalk bell/1 water / text: I water the bell'),
+            ('what is a front?', 'delvetalk library read / page: kinds'),
             ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/FOUNDATION.md §5)
 
 
@@ -81,6 +82,7 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
          ('relations', 'page', "rows in a card's state: keys, insert, upsert, retract, order"),
          ('protocol', 'page', 'what a card asks the world: view, call, send, create, rule'),
          ('world', 'page', "the doors, every card's spells, the classes of refusal"),
+         ('kinds', 'page', 'every kind: what it is, and a spell that makes one'),
          ('bell', 'walk', 'make a bell, rain on it, rule on it, hear it ring'),
          ('check', 'walk', 'check Bend, draft a thing, adopt it, hold another\'s proposal'),
          ('enter', 'walk', 'enter the porch, say, carve a room of your own under it, choose'),
@@ -107,10 +109,10 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
 
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
 # Kind.lawText() (tests/test_kinds.py compares the two).
-KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nvoice: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
-KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head, the voice or the body; anyone makes, and places rules, wants and verbs on it": '
+KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nvoice: text 0..200\nabout: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
+KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head, the voice, what it is or the body; anyone makes, and places rules, wants and verbs on it": '
             'unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(form) and unchanged(law) '
-            'and unchanged(head) and unchanged(voice) and unchanged(body)))')
+            'and unchanged(head) and unchanged(voice) and unchanged(about) and unchanged(body)))')
 
 
 # Tending (world/bodies/bell.obend `quietAfter`): a bell answers while tended within this many clock minutes, and
@@ -135,6 +137,21 @@ VOICES = {'bell': 'moon-flavoured; short; the present tense',
           'garden': 'patient and green; what grows, and who tends it',
           'room': 'quiet; who is here, and what was said',
           'porch': 'a threshold; what lies here unclaimed'}
+# What each kind is and does over time, one plain line its card leads with and the kinds card lists (KIND `about`);
+# capsules/pages/kinds.txt gives a spell that makes each.
+ABOUT = {'record': 'lines anyone writes, in order',
+         'bell': 'rings at its seventh rain; goes quiet untended a day',
+         'cistern': 'refusals poured in; its level only rises',
+         'room': 'a place to enter and talk in, walked by choices',
+         'porch': 'a room at a threshold where things lie unclaimed',
+         'garden': 'plants bells and digs cisterns',
+         'weather': "rains daily on a place's bells while it is visited",
+         'door': 'opens at its first knock',
+         'lantern': 'lit when its door opens',
+         'bond': 'signed by several hands; the last signing makes its change',
+         'errand': 'a request with a pay, settled when its condition comes true',
+         'front': 'a clock that fills while a condition holds; moves when full'}
+KINDS_ABOUT = 'the kind of kinds: each makes things of one shape under one law'
 # A bond's countersignatures are marks whose `who` is the signer (world/bodies/bond.obend).
 SIGNER_LAW = 'law signer "a party signs only for themselves": changed(new.marks.who) by request.subject'
 
@@ -223,15 +240,15 @@ def seeds(opener):
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
             ('tide', 'Tide', rec()),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
-            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW))),  # shaped, then makes KINDS, each under KIND_LAW
+            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), about=lab(KINDS_ABOUT), law=lab(KIND_LAW))),  # shaped, then makes KINDS, each under KIND_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
 
 
 def making(name, bodies):
     """The argument of `kinds make` for the town kind `name` (KINDS), its body from `bodies` (inputs())."""
     _, of, form, head, law, body = next(k for k in KINDS if k[0] == name)
-    return rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), voice=lab(VOICES.get(name, '')), law=lab(law),
-               body=lab(bodies[body] if body else ''))
+    return rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), voice=lab(VOICES.get(name, '')), about=lab(ABOUT[name]),
+               law=lab(law), body=lab(bodies[body] if body else ''))
 
 
 def existing(host, opener):
@@ -353,9 +370,10 @@ def run(host, opener=OPENER):
 def texts(opener):
     """{(object, slot): genesis's text today}, slot `law` an object's law and `.law`/`.voice`/`.form` a kind's fields."""
     out = {(name, 'law'): law for name, package, _ in seeds(opener) for law in [LAWS.get(package, lambda _: None)(opener)] if law}
-    out |= {('kinds', '.law'): KIND_LAW, ('kinds', '.voice'): '', ('kinds', '.form'): KINDS_FORM}
+    out |= {('kinds', '.law'): KIND_LAW, ('kinds', '.voice'): '', ('kinds', '.form'): KINDS_FORM, ('kinds', '.about'): KINDS_ABOUT}
     for name, _, form, _, law, _ in KINDS:
-        out |= {('kind/' + name, '.law'): law, ('kind/' + name, '.voice'): VOICES.get(name, ''), ('kind/' + name, '.form'): form}
+        out |= {('kind/' + name, '.law'): law, ('kind/' + name, '.voice'): VOICES.get(name, ''), ('kind/' + name, '.form'): form,
+                ('kind/' + name, '.about'): ABOUT[name]}
     return out
 
 
@@ -385,7 +403,8 @@ def given(journals, opener):
             gave[(obj, 'law')] = law
         fields = {f['name']: f['value'].get('value', '') for f in ((seed or {}).get('fields') or [])}
         if 'law' in fields and 'form' in fields:  # a kind's seed
-            gave.update({(obj, '.law'): fields['law'], (obj, '.voice'): fields.get('voice', ''), (obj, '.form'): fields['form']})
+            gave.update({(obj, '.law'): fields['law'], (obj, '.voice'): fields.get('voice', ''), (obj, '.form'): fields['form'],
+                         (obj, '.about'): fields.get('about', '')})
 
     for path in journals:
         for e in journal.entries(path):
@@ -402,7 +421,7 @@ def given(journals, opener):
             for w in o.get('writes') or []:
                 for edit in w.get('edits') or []:
                     for f in edit.get('fields') or []:
-                        if f['name'] in ('law', 'voice', 'form') and f['value'].get('label') == 'set':
+                        if f['name'] in ('law', 'voice', 'form', 'about') and f['value'].get('label') == 'set':
                             gave[(w['object'], '.' + f['name'])] = dict((g['name'], g['value']) for g in f['value']['payload']['fields'])['value']['value']
     return gave
 
@@ -415,7 +434,7 @@ def standing(host, opener, obj):
     state = host.send({'op': 'world-view', 'principal': opener, 'object': obj}).get('state') or {}
     fields = {f['name']: f['value'].get('value', '') for f in (state.get('fields') or [])}
     return int(record['version']), {'law': record.get('law') or '', '.law': fields.get('law', ''), '.voice': fields.get('voice', ''),
-                                    '.form': fields.get('form', '')}
+                                    '.form': fields.get('form', ''), '.about': fields.get('about', '')}
 
 
 def refresh(host, opener, journals):
@@ -439,6 +458,7 @@ def refresh(host, opener, journals):
         for slot in [s for o, s in today if o == obj]:
             text = today[(obj, slot)]
             rows[slot] = ({'status': 'current'} if slots[slot] == text else
+                          {'status': 'stale', 'text': text} if (obj, slot) not in gave and slots[slot] == '' else  # a slot no turn wrote
                           {'status': 'left', 'reading': 'its making is in no journal read'} if (obj, slot) not in gave else
                           {'status': 'left', 'reading': 'changed since genesis gave it'} if gave[(obj, slot)] != slots[slot] else
                           {'status': 'stale', 'text': text})
@@ -455,6 +475,7 @@ def refresh(host, opener, journals):
                                                                            for slot, text in stale.items()})]}]})
             rows |= {slot: done(reply) for slot in stale}
         out += [{'object': obj, 'slot': slot, **row} for slot, row in rows.items()]
+    out += listed(host, opener)
     # The world's motion (MOTION), placed when the carried town lacks it, as genesis places it.
     have = set(existing(host, opener))
     for kind, fields in MOTION:
@@ -465,6 +486,28 @@ def refresh(host, opener, journals):
         placed = said(host, opener, kind, 'place', fields, f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
     return out
+
+
+def listed(host, opener):
+    """The kinds card's line for each town kind (`kinds`' `made` rows carry what each is): a row a carried town keeps
+    with none is given ABOUT's, by one owner's write; a row another hand gave a line is left."""
+    record = host.send({'op': 'world-object', 'principal': opener, 'object': 'kinds'}).get('record')
+    if not record:
+        return []
+    state = host.send({'op': 'world-view', 'principal': opener, 'object': 'kinds'}).get('state') or {}
+    made = next((f['value'] for f in state.get('fields') or [] if f['name'] == 'made'), None)
+    rows = ((made or {}).get('payload') or {}).get('fields', [{}])[0].get('value', {}).get('items', [])
+    edits = []
+    for row in rows:
+        f = {x['name']: x['value'] for x in row['fields']}
+        name = f['object']['value'][len('kind/'):] if f['object']['value'].startswith('kind/') else None
+        if name in ABOUT and f.get('about', {}).get('value', '') == '':
+            edits.append(rec(made={'tag': 'variant', 'label': 'upsert', 'payload': rec(row=rec(object=f['object'], n=f['n'], about=lab(ABOUT[name])))}))
+    if not edits:
+        return [{'object': 'kinds', 'slot': 'made', 'status': 'current'}]
+    reply = host.send({'op': 'world-propose', 'principal': opener, 'identity': f"refresh-kinds-made-{record['version']}",
+                       'roots': [{'object': 'kinds', 'version': int(record['version'])}], 'writes': [{'object': 'kinds', 'edits': edits}]})
+    return [{'object': 'kinds', 'slot': 'made', **done(reply)}]
 
 
 def done(reply):
