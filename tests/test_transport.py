@@ -439,6 +439,66 @@ class Posting(unittest.TestCase):
             with mock.patch('sys.stderr', io.StringIO()):
                 self.assertEqual(main(['post', '--state', d, '--intent', 't', '--draft', str(draft)], io.StringIO()), 1)
 
+class Threaded(unittest.TestCase):
+    """A draft over the clip (docs/POSTING.md, build 3) is posted as numbered parts in one thread, each within the
+    clip, each a reply to the one before and its own reservation; when the hour has room for fewer, the last that
+    fits says when the next follows, and posting again goes on from there. Refuted by a part over 1,400 characters,
+    a part replying to anything but the one before, a part posted twice, or a part sent past the quota."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        creds = Path(self.tmp.name) / 'creds.json'
+        creds.write_text('{"identifier": "a", "password": "b"}')
+        (Path(self.tmp.name) / 'delvetalk.toml').write_text(f'credentials = "{creds}"\n')
+        self.state = State(self.tmp.name)
+        self.text = '\n\n'.join(f'Section {i}. ' + ('a word ' * 60).strip() for i in range(9))  # 9 paragraphs, about 3,900 characters
+        self.draft = self.state.outbox / '8-bbbb.json'
+        self.draft.parent.mkdir(parents=True)
+        self.draft.write_text(json.dumps({'text': self.text, 'replyTo': None, 'object': 'library', 'slot': None, 'posted': False}))
+
+    def texts(self, pds):
+        return [r['value']['text'] for r in list(pds.records.values())]
+
+    def test_parts_are_cut_at_paragraphs_within_the_clip_and_numbered(self):
+        parts = post.parts(self.text)
+        self.assertEqual(len(parts), 3)
+        self.assertTrue(all(len(p) <= post.CLIP for p in parts), [len(p) for p in parts])
+        self.assertEqual([p.rsplit('\n', 1)[1] for p in parts], ['(1/3)', '(2/3)', '(3/3)'])
+        self.assertEqual(' '.join(p.rsplit('\n', 1)[0].replace('\n\n', ' ') for p in parts), self.text.replace('\n\n', ' '))
+        self.assertEqual(post.parts('short'), ['short'])
+        self.assertTrue(all(len(p) <= post.CLIP for p in post.parts('x' * 5000)))  # no break anywhere: cut hard
+
+    def test_a_long_draft_is_a_thread_each_part_under_the_one_before(self):
+        pds, host = Pds(), Recorder()
+        got = post.post_draft(self.draft, self.state, host, reader=pds, client=pds)
+        self.assertEqual((got['parts'], got['sent']), (3, 3))
+        records = list(pds.records.values())
+        self.assertNotIn('reply', records[0]['value'])
+        self.assertEqual([r['value']['reply']['parent']['uri'] for r in records[1:]], [r['uri'] for r in records[:2]])
+        self.assertEqual([p['intent'] for p in host.posted], ['draft-8-bbbb#1', 'draft-8-bbbb#2', 'draft-8-bbbb#3'])
+        self.assertTrue(json.loads(self.draft.read_text())['posted'])
+
+    def test_when_the_hour_binds_the_last_part_that_fits_says_so_and_the_rest_follows_after(self):
+        pds, host = Pds(), Recorder(quota=2)
+        got = post.post_draft(self.draft, self.state, host, reader=pds, client=pds)
+        self.assertEqual((got['parts'], got['sent']), (3, 2))
+        self.assertTrue(self.texts(pds)[1].endswith('(2/3; the next part follows when the hour turns)'), self.texts(pds)[1][-80:])
+        d = json.loads(self.draft.read_text())
+        self.assertFalse(d['posted'])
+        with self.assertRaises(delve.Failure):
+            post.post_draft(self.draft, self.state, host, reader=pds, client=pds)  # no room: nothing leaves
+        host.quota = 16
+        with self.assertRaises(delve.Failure):  # its first parts are out: the rest is the same text, never an edit
+            post.post_draft(self.draft, self.state, host, text=self.text + ' edited', reader=pds, client=pds)
+        got = post.post_draft(self.draft, self.state, host, reader=pds, client=pds)
+        self.assertEqual(got['sent'], 3)
+        records = list(pds.records.values())
+        self.assertEqual(len(records), 3)
+        self.assertEqual(records[2]['value']['reply']['parent']['uri'], records[1]['uri'])
+        self.assertTrue(json.loads(self.draft.read_text())['posted'])
+
+
 class Pds:
     """The PDS side of a post: a session, records kept by key, and a reply that can be lost after the write lands."""
     def __init__(self, lose=0):

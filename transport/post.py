@@ -18,6 +18,8 @@ from transport.observe import MENTION, wiki_target
 
 FLAG = '--i-am-ember-and-authorize-posting'
 MAX_TEXT = 64 * 1024
+CLIP = 1400  # what a reader of the town reads of one post (world/lib/Card.obend `post()`)
+NOTE = 64  # room each part keeps for its number, and for saying when the next part follows
 
 
 def reply_ref(client, parent_uri):
@@ -190,6 +192,64 @@ def record_sent(st, host):
     return done
 
 
+def parts(text, limit=CLIP):
+    """A text over the clip as the numbered parts of a thread, each at most `limit` characters with its number
+    (`(2/5)` on its own last line): cut at a blank line where one falls in the second half of the room, else at a
+    line, else at a space, else hard. Each part leaves NOTE characters for its number and a note. A text within the
+    clip is one part, unnumbered."""
+    if len(text) <= limit:
+        return [text]
+    room, rest, chunks = limit - NOTE, text, []
+    while len(rest) > room:
+        cut = next((c for c in (rest.rfind('\n\n', 0, room), rest.rfind('\n', 0, room), rest.rfind(' ', 0, room)) if c >= room // 2), room)
+        chunks.append(rest[:cut].rstrip())
+        rest = rest[cut:].lstrip('\n ')
+    chunks.append(rest.rstrip())
+    return [f'{c}\n({k}/{len(chunks)})' for k, c in enumerate(chunks, 1)]
+
+
+def room(host, source='delve'):
+    """Posts the host's quota leaves this hour, None when it counts none."""
+    s = posts(host.send({'op': 'world-status'}), source)
+    return None if s.get('quota') is None else max(0, s['quota'] - (s.get('used') or 0))
+
+
+def thread(path, d, st, host, body, texts, reader, client, intent, object):
+    """A draft over the clip, posted as its parts in one thread (`parts`): the first under the post it answers, each
+    next under the one before, each its own intent (`<intent>#k`) reserved against the hour's quota and recorded with
+    the host, so a reply under any part reaches the card. When the hour has room for fewer than all, the last that
+    fits says the next follows when the hour turns, and the draft keeps what was sent (`sentParts`): posted again,
+    it goes on from there. -> the last part's result, with `parts` and `sent`."""
+    if d.get('sentParts') and body != d['text']:
+        raise Failure('partly_posted', 'its first parts are posted: the rest is the same text, never another')
+    sent = list(d.get('sentParts') or [])
+    if room(host) == 0 and len(sent) < len(texts):
+        raise Failure('rate_limited', "the host's quota: no post left this hour")
+    left, under, n = room(host), (d.get('sentParts') or [{}])[-1].get('uri') if sent else d.get('replyTo'), len(texts)
+    for k in range(len(sent), n):
+        if left is not None and left <= 0:
+            break
+        said = texts[k] if left != 1 or k == n - 1 else texts[k][:texts[k].rindex('(')] + f'({k + 1}/{n}; the next part follows when the hour turns)'
+        try:
+            one = send(build_request(said, reply_ref(reader, under) if under else None, mention_facets(reader, said)), f'{intent}#{k + 1}', st, host, client=client)
+        except Failure as f:
+            if f.code != 'rate_limited' or not sent:
+                raise
+            break
+        sent.append(one)
+        under, left = one['uri'], None if left is None else left - 1
+        st.write(path, dict(d, text=body, sentParts=sent))
+        if object:
+            record_posted(host, one, object, d.get('slot'), wiki_target(said) if k == 0 else None, f'{intent}#{k + 1}')
+    done = len(sent) == n
+    d = dict(d, text=body, sentParts=sent, posted=done, intent=intent, **({'sent': sent[-1]} if done else {}),
+             **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
+    if done and object:
+        d['recorded'] = {'status': 'recorded', 'parts': n}
+    st.write(path, d)
+    return {**(sent[-1] if sent else {}), 'parts': n, 'sent': len(sent)}
+
+
 def post_draft(path, st, host, text=None, reader=None, client=None, intent=None, object=None, zulip=None):
     """Post an outbox draft where its world lives (its replyTo, object and slot; `text` replaces its text), record it with
     the host and mark it posted: on delve.town a record (`reader` reads the thread, `client` writes), on a Zulip world a
@@ -207,6 +267,9 @@ def post_draft(path, st, host, text=None, reader=None, client=None, intent=None,
         result = z.deliver(st, host, zulip or z.Client(row['zuliprc']), stream, topic, said, intent)
     else:
         reader, intent = reader or Client(http_transport), intent or f'draft-{path.stem}'
+        texts = parts(body)
+        if len(texts) > 1:
+            return thread(path, d, st, host, body, texts, reader, client, intent, object)
         result = send(build_request(body, reply_ref(reader, d['replyTo']) if d.get('replyTo') else None, mention_facets(reader, body)),
                       intent, st, host, client=client)
     d = dict(d, text=body, posted=True, sent=result, intent=intent, **({} if body == d['text'] else {'original': d.get('original', d['text'])}))

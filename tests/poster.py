@@ -18,7 +18,7 @@ BOT = 'did:plc:livedelvetalk'
 class Poster:
     def __init__(self, directory, host, did='did:plc:poster', handle='poster.delve.town'):
         self.st = State(Path(directory) / 'state', config=Config(origin='http://127.0.0.1:8765'))
-        self.host, self.did, self.handle, self.posts, self.bots, self.seen, self.others = host, did, handle, [], [], set(), []
+        self.host, self.did, self.handle, self.posts, self.bots, self.seen, self.others, self.threads = host, did, handle, [], [], set(), [], []
         self.n = itertools.count(1)
 
     def _post(self, text, reply_to=None, did=None, handle=None):
@@ -60,13 +60,15 @@ class Poster:
         return out
 
     def posted(self, draft):
-        """Post a draft as the hand does: each of its parts a post, the first under the post it answers and each
-        next under the one before, recorded with the host. -> the last part's uri."""
-        under, uri = draft.get('replyTo'), None
-        for text in draft.get('parts') or [draft['text']]:
+        """Post a draft as the hand does (`post.thread`): each of its parts (`post.parts`) a post, the first under the
+        post it answers and each next under the one before, recorded with the host. -> the parts' uris."""
+        under, uris = draft.get('replyTo'), []
+        for text in post.parts(draft['text']):
             bot = self._post(text, under, BOT, 'livedelvetalk.delve.town')
-            uri = under = bot['uri']
+            under = bot['uri']
+            uris.append(under)
             obj = post.draft_object(draft)
             if obj:
                 post.record_posted(self.host, {'uri': bot['uri'], 'cid': bot['cid']}, obj, draft.get('slot'))
-        return uri
+        self.threads.append([b for b in self.bots if b['uri'] in uris])
+        return uris

@@ -397,9 +397,12 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
                 continue
             ran = [t for t in turns if 'receipt' in t]
             text = ''.join(draft_text(t).rstrip('\n') + '\n' if 'receipt' not in t else spell_line(t, origin, handles) for t in turns)
+            # A reply answering several cards is no one card's: a bare verb under it would reach whichever came first,
+            # so its address is the commonplace, where words go to hob and a spell names its card.
+            cards = {t.get('object') or obj for t in turns}
             st.write(st.outbox / f"{ran[-1]['receipt']['height'] if ran else 0}-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
-                'object': turns[0].get('object') or obj, 'slot': slot,
+                'object': cards.pop() if len(cards) == 1 else 'commonplace', 'slot': slot,
                 'receipt': ran[-1]['receipt'] if ran else None, 'posted': False, 'text': text})
             for t in ran:  # a suspended spell's own answer comes when hob has read it, as a reply to the same post
                 if (t['receipt'].get('outcome') or {}).get('tag') == 'suspended':
