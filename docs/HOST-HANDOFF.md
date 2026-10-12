@@ -175,7 +175,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name. Th
 - `world-interpretations` lists pending items with the Policy's state as `{model, system, examples}`; `policy.system` is the Policy's pure `prompt(state, offers, utterance)` (`policyPrompt`) else its `system` field; `policy.model` is the item's `model` when non-empty (at most 128 bytes), else the Policy's.
 - `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts, as `Interpreted<R>`: `proposal {object, method, argument, spell}` (the spell fits an offered form, or a JSON `{method, argument}` for the asking object; the method is one its object offers and the argument conforms; `interpretVerdict`, `spellVerdict`, `proposalVerdict`), `replied {text}` (prose, or reply `json` not `{method, argument}` with `raw`), `unclear {needs}` (a misfit or missing fields; a failed reply gives `needs: ["model: <reason>"]`). `denied {}` when the Policy is not readable by the turn's principal (TurnLoop, `interpret`); Garden and the Directory refuse it with clause `policy`.
 - Capacity: `mayWait … (interpreting := true)` counts interpretations apart (`waitFull`); `interpretGate` is the hour's and the day's quotas. Test: `test_interpret_text`, `test_policy`.
-- The host starts a reading itself for words a card heard (5.163, `heardTurn`): a suspension with no checkpoint (`hostResumed`), resumed by `resumeHeard`, which runs hob's answer as the speaker's turn on the card. `world-interpretations` gives a Policy's `prompt(state, asked)` the card's `wants` (each with its filled `asks`) and the library's `pages` beside `{utterance, offers, card, held, misfit}`.
+- The host starts a reading itself for words a card heard (5.163, `heardTurn`): a suspension with no checkpoint (`hostResumed`), resumed by `resumeHeard`, which runs hob's answer as the speaker's turn on the card. `world-interpretations` gives a Policy's `prompt(state, asked)` the card's `wants` (each with its filled `asks`) and the library's `pages` beside `{utterance, offers, card, misfit}` (`misfit` the host's own, from `heardTurn`; the `interpret` arm takes no `held` or `misfit`, 5.168).
 
 ### 5.5 Cards, offers, publish, posts
 
@@ -950,14 +950,11 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `tests/test_spell.py` `test_a_prose_line_with_a_colon_after_the_fields_ends_them`,
    `test_a_name_outside_the_identifier_alphabet_is_no_field_and_ends_the_fields`.
 
-117. **What the model sees, and hob's answers (host12; docs/FLEX.md §4 host 5, 6).** The `interpret`
-   Plan may name `held` (what the card holds for this speaker: a pending question, a held proposal)
-   and `misfit` (a misfit spell's clause and reason), both journaled on the interpretation (a World
-   line for the objects lane: `interpret<R>({utterance, offers, policy, model, held, misfit})`).
-   `world-interpretations` lists, beside the utterance and offers, `card` (the asking card as the
-   speaker reads it now, `cardText`, at most `Limits.cardShownChars` 1,400 characters), `held` and
-   `misfit`, and the policy's `lexicon`; a Policy whose `prompt` takes `(state, asked)` gets `asked =
-   {utterance, offers, card, held, misfit}` fitted to its type (the old `(state, offers, utterance)`
+117. **What the model sees, and hob's answers (host12; docs/FLEX.md §4 host 5, 6; `held` and the arm's `misfit`
+   deleted by 5.168).** `world-interpretations` lists, beside the utterance and offers, `card` (the asking card as the
+   speaker reads it now, `cardText`, at most `Limits.cardShownChars` 1,400 characters), `misfit` (the misfit spells
+   a host reading reads past), and the policy's `lexicon`; a Policy whose `prompt` takes `(state, asked)` gets `asked =
+   {utterance, offers, card, misfit, wants, pages}` fitted to its type (the old `(state, offers, utterance)`
    still runs). `interpretVerdict` reads hob's three non-spell answers before the spells: `none` is
    `unclear {needs: ["not addressed"]}`, `card` is `replied {text: "card"}` (`unclear ["card"]` where
    the Response has no `replied`), `ask: <one line>` is `unclear {needs: [<question>]}`; spells and
@@ -1929,6 +1926,17 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    recorded at, and `view`/`viewField`/`viewAt`, which answer a state at a named version. Nothing is journaled
    differently (edits are edits; replay applies what was recorded). Tests: `test_heard.Heard` (hob's `enter` and `say`
    on a room in one answer: entered, then said as one of 1 here).
+
+168. **`interpret` takes no `held` or `misfit` (host27; OVERHAUL §3's deletions; the coordinator's docs pass).** The
+   arm reads `utterance`, `offers`, `policy` and `model` only; a Plan naming `held` or `misfit` (World.obend still
+   declares them) has them ignored, and nothing journals or lists `held`. `misfit` stays only as the host's own: the
+   misfit spells a host reading reads past (`heardTurn`, 5.166), shown to `Policy.prompt` as `asked.misfit`.
+   `Policy.prompt`'s `asked` drops `held` (`heldPart` gone) in the same commit, since a prompt naming a field the host
+   no longer supplies would not fit and fall back to the bare `system` text. Left for the objects lane: World.obend's
+   `interpret<R>({utterance, offers, policy, model, held, misfit})` loses `held`, `misfit` (and, per OVERHAUL §3,
+   `policy`: the world's one is `policy`, which the host's own readings already use), with its eight callers
+   (Workshop's `make`; `test_interpret_object` ×2, `test_verbs`, `test_spell_turns`, `test_reach`, `test_reflection`,
+   `test_sum_words`). Tests: `test_policy` (the misfit prompt; no `held` listed).
 
 ## 6. Gotchas
 

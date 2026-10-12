@@ -1729,11 +1729,6 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
   -- The model to ask instead of the policy's own (a card's second attempt names the escalate model).
   let model := ((f.lookup "model").bind labelOf).getD ""
   if model.utf8ByteSize > Limits.maxPrincipalBytes then evaluation "interpret model exceeds its byte capacity"
-  -- What the card holds for this speaker (a pending question, a held proposal) and a misfit spell's
-  -- clause, when the Plan names them (docs/FLEX.md §4 host 5): the prompt shows them.
-  let held := ((f.lookup "held").bind labelOf).getD ""
-  let misfit := ((f.lookup "misfit").bind labelOf).getD ""
-  if held.utf8ByteSize + misfit.utf8ByteSize > Limits.maxUtteranceBytes then evaluation "interpret held exceeds its byte capacity"
   let s ← get
   -- Words that reached no card go to no model (docs/FLEX.md §2): answered at once, no quota spent.
   if s.reach.isEmpty then
@@ -1754,9 +1749,7 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
       throw (.suspend interpretationPrincipal id Limits.interpretationPatience checkpoint
         (some (Json.mkObj ([("id", toJson id), ("object", toJson self), ("policy", toJson policy),
           ("utterance", toJson utterance), ("offers", dataJson offers)] ++
-          (if model.isEmpty then [] else [("model", toJson model)]) ++
-          (if held.isEmpty then [] else [("held", toJson held)]) ++
-          (if misfit.isEmpty then [] else [("misfit", toJson misfit)])))))
+          (if model.isEmpty then [] else [("model", toJson model)])))))
 
 partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
   match plan with
@@ -3967,7 +3960,7 @@ def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) (
     | none => (none, w')
     | some entry =>
       -- `prompt(state, offers, utterance)`, or `prompt(state, asked)` taking the whole request
-      -- `{utterance, offers, card, held, misfit, wants, pages}` (docs/FLEX.md §4 host 5), fitted to its type.
+      -- `{utterance, offers, card, misfit, wants, pages}` (docs/FLEX.md §4 host 5), fitted to its type.
       let arguments := match c.type with
         | .arrow _ _ _ (.arrow _ _ dom .label) => [o.state, fitRecord c.bounds dom asked]
         | _ => [o.state, offers, .label utterance]
@@ -4011,10 +4004,9 @@ def interpretationsReply (w : World) : World × Json := Id.run do
       let utterance ← (i.getObjValAs? String "utterance").toOption
       pure (id, object, policy, offers, utterance, (i.getObjValAs? String "model").toOption.getD "")
     let some (id, object, policy, offers, utterance, model) := item | continue
-    -- The card answered, as the speaker reads it now; what it holds for them; a misfit's clause.
+    -- The card answered, as the speaker reads it now; the misfit spell hob reads past (`heardTurn`).
     let speaker := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
     let i := (interpretationOf w s).getD Json.null
-    let held := (i.getObjValAs? String "held").toOption.getD ""
     let misfit := (i.getObjValAs? String "misfit").toOption.getD ""
     let card := cardText w object speaker
     let reach := ((s.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)
@@ -4027,7 +4019,7 @@ def interpretationsReply (w : World) : World × Json := Id.run do
     let pages := (((w.objects["library"]?).filter (·.read.permits speaker)).bind fun o =>
       (Law.rawField "pages" o.state).bind Law.rowsOf).getD []
     let asked := Data.record [("utterance", .label utterance), ("offers", offers), ("card", .label card),
-      ("held", .label held), ("misfit", .label misfit), ("wants", listData wants), ("pages", listData pages)]
+      ("misfit", .label misfit), ("wants", listData wants), ("pages", listData pages)]
     let (shown, w') := policyJson w policy offers utterance asked
     -- A model the Plan named takes precedence over the policy's own.
     let shown := if model.isEmpty then shown else shown.setObjVal! "model" (toJson model)
@@ -4035,7 +4027,7 @@ def interpretationsReply (w : World) : World × Json := Id.run do
     -- How many transient failures the host journaled, and the clock before which the next is not asked.
     let (tried, next) := (w.attempts[id]?).getD (0, 0)
     pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
-      ("utterance", toJson utterance), ("offers", plainJson offers), ("card", toJson card), ("held", toJson held),
+      ("utterance", toJson utterance), ("offers", plainJson offers), ("card", toJson card),
       ("misfit", toJson misfit), ("wants", plainJson (listData wants)), ("reach", toJson reach), ("attempts", toJson tried),
       ("next", if next > w.clock then toJson next else Json.null)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
