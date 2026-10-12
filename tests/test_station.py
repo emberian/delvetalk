@@ -327,6 +327,11 @@ class Carried(unittest.TestCase):
         self.assertEqual(sum(r["reading"] == "placed: station stitch" for r in placed), len(genesis.station_wings()))
         host = HostProcess(binary(), outs[0])
         self.addCleanup(host.close)
+        # The station's refresh is no act of the day, names no hand, and grew no first verb.
+        day = host.send(op="world-surface", principal="anonymous", read="chronicle")
+        history = day.get("whole") or day["text"]
+        self.assertNotIn("sign on station/register", history)
+        self.assertFalse([l for l in history.splitlines() if l.startswith("hands: ")], history)
         # Every step is the opener's journaled refresh.
         steps = [e for e in journal_.entries(outs[0]) if (e.get("identity") or {}).get("intent", "").startswith("refresh-station")
                  or "station" in (e.get("identity") or {}).get("intent", "")]

@@ -5692,9 +5692,12 @@ def carryRefresh (w : World) (identity : Json) (inCarried : Bool) : Bool :=
   !w.opener.isEmpty && text "principal" == w.opener &&
     ((text "intent").startsWith "refresh-" || (inCarried && (text "intent").startsWith "genesis-"))
 
-/-- Whether entry `e` of this chain is a carry's refresh (`carryRefresh`). -/
+/-- Whether entry `e` of this chain is a carry's refresh (`carryRefresh`), or a delivery of a send one made (its
+    `delivery.from`: the station's refresh hands its sends on, each its own entry under a hash of the refresh's intent). -/
 def refreshEntry (w : World) (e : Json) : Bool :=
-  carryRefresh w ((e.getObjVal? "identity").toOption.getD Json.null) ((w.entries.genesis?.map tagOf) == some "carried")
+  let carried := (w.entries.genesis?.map tagOf) == some "carried"
+  carryRefresh w ((e.getObjVal? "identity").toOption.getD Json.null) carried ||
+    (((e.getObjVal? "delivery").toOption.bind (·.getObjVal? "from" |>.toOption)).map (carryRefresh w · carried)).getD false
 
 def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.run do
   let some i := w.days.findIdx? (·.1 == day) | return none
