@@ -1,0 +1,64 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.request",
+  "description": "A public act on a DelveTalk world, written by its author in their own repository. Public from the moment it is written: never a draft, never a preview (use town.delvetalk.try).",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "description": "The turn's identity is (repository DID, this record's at-uri).",
+      "record": {
+        "type": "object",
+        "required": [
+          "mode",
+          "calls",
+          "createdAt"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "description": "act: one call, one turn. plan: up to eight calls judged as one turn, all or nothing.",
+            "knownValues": [
+              "act",
+              "plan"
+            ]
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "town.delvetalk.defs#call"
+            },
+            "minLength": 1,
+            "maxLength": 8
+          },
+          "if": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "town.delvetalk.defs#pin"
+            },
+            "maxLength": 16,
+            "description": "Commit only if every object stands where named."
+          },
+          "world": {
+            "type": "string",
+            "description": "The durable world; default the town."
+          },
+          "witness": {
+            "type": "boolean",
+            "description": "Also reply under a post of the author's (inside the town's post quota). Default false."
+          },
+          "witnessPost": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime"
+          }
+        }
+      }
+    }
+  }
+}

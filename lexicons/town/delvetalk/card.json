@@ -31,7 +31,7 @@
           },
           "paint": {
             "type": "string",
-            "description": "The verified paint above the card, when one is verified for this version (docs/OVERHAUL.md section 4)."
+            "description": "The verified paint (docs/OVERHAUL.md section 4). Moves to town.delvetalk.paint (docs/ATPROTO.md section 1, lane L3) so that a card record is a function of the journal and has one CID in both repositories."
           },
           "wants": {
             "type": "array",

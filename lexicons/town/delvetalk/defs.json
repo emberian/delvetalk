@@ -1,0 +1,245 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.defs",
+  "description": "Shared definitions for acting on a DelveTalk world (docs/ATPROTO.md section 2).",
+  "defs": {
+    "call": {
+      "type": "object",
+      "description": "One call: a spell's exact text, or a verb on an object with its fields (the front's _actions form). Exactly one of spell or object+verb.",
+      "properties": {
+        "spell": {
+          "type": "string",
+          "description": "A spell: the delvetalk line and its field lines.",
+          "maxLength": 4096
+        },
+        "object": {
+          "type": "string",
+          "description": "The object id."
+        },
+        "verb": {
+          "type": "string",
+          "description": "The verb or method name."
+        },
+        "fields": {
+          "type": "unknown",
+          "description": "The verb's fields as a JSON object."
+        }
+      }
+    },
+    "pin": {
+      "type": "object",
+      "description": "Commit-if-unchanged: the object must stand at this version (and state CID) when the turn commits, else the turn is refused `moved`.",
+      "required": [
+        "object",
+        "version"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cid": {
+          "type": "string",
+          "description": "The object's stateCid at that version (a town.delvetalk.object record's cid).",
+          "format": "cid"
+        }
+      }
+    },
+    "moved": {
+      "type": "object",
+      "required": [
+        "object",
+        "was",
+        "now"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "was": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The version the pin named."
+        },
+        "now": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The version the object stands at."
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "required": [
+        "status",
+        "line"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "knownValues": [
+            "admitted",
+            "refused",
+            "suspended",
+            "previewed",
+            "moved",
+            "unsupported"
+          ]
+        },
+        "line": {
+          "type": "string",
+          "description": "The host's stamp line, verbatim."
+        },
+        "class": {
+          "type": "string",
+          "description": "A refusal's class."
+        },
+        "clause": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "moved": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#moved"
+          }
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "description": "The journal entry the turn made. Absent from a preview, which can never pass for a receipt.",
+      "required": [
+        "slug",
+        "height",
+        "entry"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string",
+          "description": "Two proquint words: what a post cites."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "entry": {
+          "type": "cid-link",
+          "description": "The entry's hash: the CID of its canonical DAG-CBOR without `hash`, signed in the world's repository."
+        }
+      }
+    },
+    "version": {
+      "type": "object",
+      "required": [
+        "object",
+        "version"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stateCid": {
+          "type": "string",
+          "format": "cid"
+        }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "description": "What the turn read and moved, over objects the reader may view.",
+      "properties": {
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#version"
+          },
+          "description": "Objects read, at the versions read."
+        },
+        "writes": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#version"
+          },
+          "description": "Objects written, each with its new version and stateCid."
+        },
+        "fired": {
+          "type": "array",
+          "items": {
+            "type": "unknown"
+          },
+          "description": "Rules fired, as journaled."
+        },
+        "wanted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Wants opened."
+        },
+        "unwanted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Wants closed."
+        },
+        "revealed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The host's revealed lines, verbatim."
+        }
+      }
+    },
+    "answerView": {
+      "type": "object",
+      "required": [
+        "outcome"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "ref",
+          "ref": "town.delvetalk.defs#outcome"
+        },
+        "receipt": {
+          "type": "ref",
+          "ref": "town.delvetalk.defs#receipt"
+        },
+        "card": {
+          "type": "string",
+          "description": "The exact card the turn offered (or, for a try, would offer), as the caller may read it."
+        },
+        "cardCid": {
+          "type": "string",
+          "description": "The CID of the town.delvetalk.card record those card bytes make.",
+          "format": "cid"
+        },
+        "offers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Cards offered to the caller, verbatim."
+        },
+        "trace": {
+          "type": "ref",
+          "ref": "town.delvetalk.defs#trace"
+        }
+      }
+    }
+  }
+}
