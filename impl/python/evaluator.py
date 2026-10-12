@@ -88,8 +88,48 @@ def validate(term):
     return term
 
 
+_reach = {}
+
+
+def reach(term):
+    """One more than the largest (index - binders above it within `term`) over its variables, 0 when it has
+    none: walking `term` at a depth of at least this meets only variables bound at that depth, which
+    `shift` and `instantiate` leave as they are. Kept by term object (terms are never changed in place),
+    so a large argument instantiated at every use is measured once."""
+    held = _reach.get(id(term))
+    if held is not None and held[0] is term:
+        return held[1]
+    tag = term[0]
+    if tag == "bound":
+        r = term[1] + 1
+    elif tag in {"nat", "boolean", "label"}:
+        r = 0
+    elif tag == "lam":
+        r = max(reach(term[1]) - 1, 0)
+    elif tag == "ifZero":
+        r = max(reach(term[1]), reach(term[2]), reach(term[3]) - 1, 0)
+    elif tag in {"record", "extend", "case"}:
+        inner = (tag == "case")
+        r = max([max(reach(body) - inner, 0) for _, body in term[-1]] +
+                ([reach(term[1])] if tag != "record" else []) + [0])
+    elif tag in {"binary", "inject", "unary"}:
+        r = max([reach(child) for child in term[2:]] + [0])
+    elif tag in {"get", "relationLookup"}:
+        r = max([reach(term[1])] + [reach(child) for child in term[3:]])
+    else:
+        r = max([reach(child) for child in term[1:]] + [0])
+    if len(_reach) > 1_000_000:
+        _reach.clear()
+    _reach[id(term)] = (term, r)
+    return r
+
+
 def walk(term, variable, depth=0):
-    """Map variables, tracking all and only the three binding constructs."""
+    """Map variables, tracking all and only the three binding constructs. A term none of whose variables
+    reaches past `depth` is returned as it is (`reach`): `variable` maps each variable bound within the
+    walk to itself (`shift`, `instantiate`)."""
+    if reach(term) <= depth:
+        return term
     tag = term[0]
     if tag == "bound":
         return variable(term[1], depth)
