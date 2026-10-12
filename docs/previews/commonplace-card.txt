@@ -1,6 +1,14 @@
 ✾ DELVETALK · THE COMMONPLACE
 
 Five doors. Indented lines are typed back whole; » is what comes back; words reach hob.
+What wants a hand, newest first:
+porch/lamp: it opens onto nothing yet
+  delvetalk porch/lamp door
+weather: it opens onto nothing yet
+  delvetalk weather door
+kinds: no kind made here yet but the town's own
+  delvetalk kinds ?
+… and 5 more
   delvetalk commonplace since / entry: 0
   » what changed since that entry, newest first
 KINDS

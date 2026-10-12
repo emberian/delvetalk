@@ -23,6 +23,8 @@ def maxObjectIdBytes : Nat := 128
 def spellsPerReply : Nat := 3
 /-- The characters of a card any reader is shown: `world-card`, a question's answer, the model's copy (docs/FLEX.md §2, docs/AGENTS-API.md). -/
 def cardShownChars : Nat := 1400
+/-- The rows of what wants a hand a card's `render` is handed (`TurnLoop.renderCard`, the commonplace's lead). -/
+def cardWanting : Nat := 8
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
     with every change to what replay derives (judging, a derived field, an index replay checks).

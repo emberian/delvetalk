@@ -24,9 +24,11 @@ type State = Super.State
 type Door = Card.Doorway
 def doors(state: State) -> Lists.List<Door>:
   state.cites
-# The card without what changed (render is pure): the doors, with the spell that asks.
-def render(state: State, context: Abi.Context) -> Document.Document:
-  Menu.trie(state.cites, Menu.unread("  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n"), Lists.List.nil(), context)
+# The card without what changed (a card is pure): what wants a hand, which the host hands it as it
+# hands it the reader (`wanting`, the newest eight the reader may view), then the doors, with the
+# spell that asks what changed.
+def renderWanting(state: State, context: Abi.Context, wanting: Lists.List<World.Want>) -> Document.Document:
+  Menu.trie(state.cites, Menu.unread("  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n"), Lists.map(wanting, wantLine), context)
 # What changed since an entry, over the doors.
 def since(state: State, input: SinceInput, context: Abi.Context) -> Activity<Card.Replied>:
   withChanges(Card.Replied.done({action: "since"}), input.entry, context, state)

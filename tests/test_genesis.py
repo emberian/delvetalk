@@ -433,6 +433,11 @@ class Commonplace(unittest.TestCase):
         # What wants a hand leads (the onboarding); what changed yields it room, and is said only when its first row fits.
         self.assertEqual(blank.split('\n')[3], 'What wants a hand, newest first:', blank)
         self.assertIn('\ngarden/bell/2: a bell nobody has rained on\n  delvetalk garden/bell/2 rain\n', blank)
+        # The card itself leads with it (the web's card, and the answer to a question hob reads nothing into, 5.171, are
+        # this text): the host hands `renderWanting` the rows, as it hands it the reader.
+        shown = self.host.send({'op': 'world-card', 'principal': stranger, 'object': 'commonplace'})['text']
+        self.assertEqual(shown.split('\n')[3], 'What wants a hand, newest first:', shown)
+        self.assertIn('\ngarden/bell/2: a bell nobody has rained on\n  delvetalk garden/bell/2 rain\n', shown)
         if 'What changed, newest first:\n' in blank:
             changed = blank[blank.index('What changed, newest first:\n'):].split('\n')[1]
             self.assertTrue(changed.startswith('garden/bell/1 v') and changed.endswith(' by kimi, entry %d' % rain['receipt']['height']), changed)

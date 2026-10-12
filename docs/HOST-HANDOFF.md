@@ -181,7 +181,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name. Th
 
 ### 5.5 Cards, offers, publish, posts
 
-- Plan `card {object}` -> `carded {document}`: `renderCard` runs the target's card on its committed state under the turn's ticks (records a root; `denied` without read authority, `noCard`, `refused {clause: render}`). It runs `renderFor(state, context)` when the method table lists it, else `render`. `cardContext`: principal = reader, caller = asking object ("" for the op), `inputOrigin.kind` "card". `world-card {principal, object}` -> `{status: "card", text, document}`; `ownCards` `env`/`wake` resolve to `<name>/<principal>` (`resolveCard`).
+- Plan `card {object}` -> `carded {document}`: `renderCard` runs the target's card on its committed state under the turn's ticks (records a root; `denied` without read authority, `noCard`, `refused {clause: render}`). It runs `renderWanting(state, context, wanting)` when the package declares it (the host hands it `wanting`'s rows for the reader, 5.184), else `render`. `cardContext`: principal = reader, caller = asking object ("" for the op), `inputOrigin.kind` "card". `world-card {principal, object}` -> `{status: "card", text, document}`; `ownCards` `env`/`wake` resolve to `<name>/<principal>` (`resolveCard`).
 - Plan `objects {prefix, after}` -> `listed {ids, more}` (ids the subject may view, byte order, `listPage`); op `world-objects`.
 - `offer {to, document}` ("" = the frame's subject). An admitted entry retains `offers [{to, text}]`; `record` indexes them by addressee (`world.outbox`). `world-offers {principal, after?}` answers `offers [{height, ordinal, identity, text, from {post, principal, intent}}]` (`originOf`). A turn's reply carries only offers addressed to its own principal. A turn that offers nothing has no `offers` field.
 - Reads under authority: `world-receipt {principal, identity, of?}`; `projectEntry` gives the identity's own principal the whole entry, anyone else a `publicRefusal` (`{status: "refused", class, root {object, version?}, reason?}`, plus `object` and `hint` for `unknownObject`, `object` for `requiredAbsence`) or chain fields, roots and writes of objects the reader may view, and an `elided` count. A refused turn reply carries it as `public`.
@@ -2203,6 +2203,16 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `fellBack`, the hand's web action notes it, and Speak's "what came back" shows it above the exact card; the
    fronts read `text` alone. Tests: `test_hand.Speak.test_a_paint_that_falls_back_keeps_the_hosts_reason_and_clause`,
    the morning test's quiet day (`pending`: a morning with wants is painted, and no worker runs there).
+184. **The commonplace's card leads with what wants a hand (host31; the coordinator, after lane/objrev with attend).**
+   A card is pure, so the commonplace's `render` could not read `world.wanting`, and only its blank-words reply led
+   with it. `renderCard id o reader caller intent` (TurnLoop; it builds `cardContext` itself) runs
+   `renderWanting(state, context, wanting)` when the package declares it (`Package.conventionalNames`), handing the
+   third parameter what wants a hand as the reader may view it (`Ops.wanting`, the newest `Limits.cardWanting` 8,
+   each `Ops.wantedData`, which the `wanting` arm shares; derived, no root), as it hands the second the reader; else
+   `render`. The dead `renderFor` is gone. `world/bodies/commonplace.obend` declares `renderWanting` in place of its
+   `render`, so `world-card`, the web's card and the answer to a question hob reads nothing into (5.171) lead with it;
+   `shownCard`'s `wants` lines stay the thing's own. Previews re-cut (`gsb-welcome`, `zulip-welcome`,
+   `commonplace-card`, GENESIS.md). Test: `test_genesis.Commonplace.test_what_wants_a_hand_leads_…`.
 
 ## 6. Gotchas
 
@@ -2262,10 +2272,6 @@ input as a test first, merging foundation before each commit:
    `interpretVerdict` and `model.extract`; (4) a refusal class for "the opener speaks on the root socket"; (6) the
    REPL's retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
    mention cap of 4 as host answers.
-5. **`render` reads what wants a hand** (the coordinator, after lane/objrev with attend's work): `render` is pure, so
-   the commonplace's card cannot lead with "What wants a hand". Hand `render` the wanting rows as context the host
-   supplies (as it supplies the reader: `cardContext`, from `world.wanting`/`wantRows` for the reader), so the card
-   itself, on the web and in `?`, leads with them; then `shownCard`'s appended wants lines (5.180) are the card's own.
 6. **`genesis refresh` on a carried town** leaves every carried kind's law and form ("its making is in no journal
    read"), so the live town keeps the old kind texts. Read the making through the carried chain (the old journals
    the `carried` genesis cites by `carriedFrom`, or the genesis's `moved` records), so a kind the opener made at the

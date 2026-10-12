@@ -5232,6 +5232,10 @@ def wanting (w : World) (reader : String) (after limit : Nat) : List Wanted × B
     rest := rest.drop group.length
   return (page.toList, !rest.isEmpty)
 
+/-- A row of `wanting` as Bend reads it (`World.Want`): `world.wanting`'s rows, and a card's third parameter. -/
+def wantedData (r : Wanted) : Data := .record [("object", .label r.object), ("name", .label r.name),
+  ("reading", .label r.reading), ("asks", .label r.asks), ("since", .natural r.since)]
+
 /-- `world-wanting {principal?, after?, limit?}` → `{status: wanting, rows: [{object, name, reading?, asks,
     since}], more}` (`wanting`). -/
 def wantingOp (w : World) (j : Json) : Except String Json := do

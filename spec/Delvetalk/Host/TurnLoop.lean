@@ -803,16 +803,21 @@ def storedPure (id : String) (o : Object) (c : Compiled) (rest : List Data) : M 
     return .error failure
   | .error e => return .error e
 
-/-- An object's card as `context`'s reader sees it, run on its committed state under this turn's
-    ticks: `renderFor(state, context)` when the package has it, else `render`, which may take
-    `(state, context)` or the state alone. `noCard` when it has neither, `render` when it fails
-    or runs out. It runs on the stored state (`storedPure`): what it read of `id` is a root. -/
-def renderCard (id : String) (o : Object) (context : String → Data) : M (Except String Data) := do
-  let name := if hasMethod o "renderFor" then "renderFor" else "render"
+/-- An object's card as `reader` sees it (asked by `caller` under `intent`, `cardContext`), run on its
+    committed state under this turn's ticks: `renderWanting(state, context, wanting)` when the package
+    declares it, handed what wants a hand across the world as the reader may view it (`wanting`, the
+    newest `Limits.cardWanting`, each `wantedData`; derived, no root) as it is handed the reader; else
+    `render`, which may take the state alone or `(state, context)`. `noCard` when it has neither, `render`
+    when it fails or runs out. It runs on the stored state (`storedPure`): what it read of `id` is a root. -/
+def renderCard (id : String) (o : Object) (reader caller intent : String) : M (Except String Data) := do
+  let name := if o.declaresDef "renderWanting" then "renderWanting" else "render"
   let compiled ← tryCatch (some <$> compiledMethod o name) fun _ => pure none
   let some c := compiled | return .error "noCard"
-  let arguments := match c.type with
-    | .arrow _ _ _ (.arrow _ _ ct _) => [fitRecord c.bounds ct (context name)]
+  let w := (← get).world
+  let context := fun ct => fitRecord c.bounds ct (cardContext w id reader caller intent w.height name)
+  let arguments := match arrowDomains 3 c.type with
+    | [_, ct] => [context ct]
+    | [_, ct, _] => [context ct, listData ((wanting w reader 0 Limits.cardWanting).1.map wantedData)]
     | _ => []
   match ← storedPure id o c arguments with
   | .ok value => return .ok value
@@ -2067,9 +2072,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let nat := fun (k : String) => match f.lookup k with | some (.natural n) => n | _ => 0
     let s ← get
     let (rows, more) := wanting s.world s.subject (nat "after") (nat "limit")
-    let row := fun (r : Wanted) => Data.record [("object", .label r.object), ("name", .label r.name),
-      ("reading", .label r.reading), ("asks", .label r.asks), ("since", .natural r.since)]
-    respond bounds responseType "wanting" [.record [("rows", listData (rows.map row)), ("more", .boolean more)]]
+    respond bounds responseType "wanting" [.record [("rows", listData (rows.map wantedData)), ("more", .boolean more)]]
   | .variant "amend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed amend plan"
     let some text := (f.lookup "law").bind labelOf | evaluation "malformed amend plan"
@@ -2146,8 +2149,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
       -- What the card shows is its code's on the scalar part and the rows it forced (`storedPure`).
       recordCells id o.version { scalar := true }
-      let reader := cardContext s.world id s.subject self s.intent s.world.height
-      match ← renderCard id o reader with
+      match ← renderCard id o s.subject self s.intent with
       | .ok document => respond bounds responseType "carded" [.record [("document", document)]]
       | .error clause => refusedWith bounds responseType clause
   | .variant "viewField" (.record f) =>
@@ -2737,7 +2739,7 @@ def defaultPublishPage (id : String) (argument : Data) : M Data := do
     | .record fs => ((fs.lookup "page").bind labelOf).getD ""
     | _ => ""
   let title := if given.isEmpty then id else given
-  let card ← match ← renderCard id o (fun m => cardContext s.world id "" "" s.intent s.world.height m) with
+  let card ← match ← renderCard id o "" "" s.intent with
     | .ok doc => liftEval (Delvetalk.Document.render doc)
     | .error clause => evaluation s!"publishPage: the card does not render ({clause})"
   let usage := spellUsage id (spellForms s.world id o) (declaredLenses s.world o)
@@ -3776,7 +3778,7 @@ def cardRendered (w : World) (id reader : String) : Option String :=
   | some o =>
     let init : TurnState := { world := w, principal := reader, intent := "", subject := reader, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    match (renderCard id o (cardContext w id reader "" "" w.height)).run.run init with
+    match (renderCard id o reader "" "").run.run init with
     | (.ok (.ok document), _) => (Delvetalk.Document.render document).toOption
     | _ => none
 
@@ -4173,7 +4175,7 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
         ("text", toJson (shownCard w id principal text)), ("override", toJson true)])
     let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    let (r, st) := (renderCard id o (cardContext w id principal "" "" w.height)).run.run init
+    let (r, st) := (renderCard id o principal "" "").run.run init
     -- The render definition compiled here stays compiled for the next read.
     let w := w.withCachesOf st.world
     match r with

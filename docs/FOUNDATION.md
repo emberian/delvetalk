@@ -422,8 +422,9 @@ replies `merge`; reposting the title is a checkpoint; `[[Title]]` links.
 
 A DelveTalk object's encounter is a card. Every object has
 `render(state, context) -> Document` and `receive(state, input: Card.Reply,
-context)` for what runs no method. One state renders a member's card and a
-stranger's. A reply is the card plus the receipt line the bridge stamps, within 1,400 characters, where readers
+context)` for what runs no method; a card that leads with what wants a hand across the world (the commonplace)
+declares `renderWanting(state, context, wanting: List<World.Want>)` instead, and the host hands it the rows as it
+hands it the reader. One state renders a member's card and a stranger's. A reply is the card plus the receipt line the bridge stamps, within 1,400 characters, where readers
 clip: a card takes `Card.limit(context)` (1,400 less twice the id and 120) and every renderer clips its lists with
 `Card.left`/`Card.clippedWithin`, "… and N more" counted; a list alone keeps at most 1,200 (`Card.budget`).
 `publishPage {page}` drafts the card as `wiki: <Page>`; a package that declares

@@ -42,7 +42,8 @@ the tide and on itself, the weather on its tide, the lantern on its door.
 
 ## How a card speaks (docs/VOICE.md)
 
-- **Protocol.** `render(state, context) -> Document` is the card as that reader sees it; form blocks declare the
+- **Protocol.** `render(state, context) -> Document` is the card as that reader sees it (`renderWanting(state,
+  context, wanting)` when it leads with what wants a hand: the host hands it the rows); form blocks declare the
   spells; `methods()` lists other public definitions (`~` hides one from `?`); `actions(state, context)` narrows what
   a reader is offered. `receive(state, input: Card.Reply, context)` gets only what ran no method: blank text (the card
   and its spells), a spell the host found missing fields (`unclear`), and words, which `Card.answer` leaves `silent`.

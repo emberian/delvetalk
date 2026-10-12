@@ -347,8 +347,8 @@ def signaturesAt (modules : List SourceModule) (asts : List Delvetalk.Compiler.O
 
 /-- The conventional declarations a host looks for in an entry module. -/
 def conventionalNames : List String :=
-  ["forms", "methods", "relations", "views", "lenses", "law", "lawReads", "initial", "render", "receive",
-    "page", "publishPage", "set"]
+  ["forms", "methods", "relations", "views", "lenses", "law", "lawReads", "initial", "render", "renderWanting",
+    "receive", "page", "publishPage", "set"]
 
 /-- Which conventional declarations the modules declare, derived ones included (the decoded
 modules are the generics pass's output), in `conventionalNames` order. -/
