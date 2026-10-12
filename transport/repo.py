@@ -25,7 +25,8 @@ from transport.host import PUBLIC
 from transport.identity import SLUG
 
 NS = 'town.delvetalk.'
-COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law'))
+COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law', 'card', 'page', 'index'))
+MIRRORED = ('card', 'page', 'index')  # transport/mirror.py renders them, for the PDS and for this façade alike
 ENTRY = NS + 'entry'  # the signed repository's one collection: an entry's CID and height under its rev
 LIMIT, MAX_LIMIT = 50, 100
 CAR = 'application/vnd.ipld.car'
@@ -77,17 +78,24 @@ class Signed:
     """The journal as a signed repository. Height h adds the record {$type: entry, entry: <hash link>, height: h}
     under `town.delvetalk.entry/<rev>` and the commit {did, version: 3, data: <MST root>, rev, prev: <commit h-1>},
     rev = TID(clock minute * 60e6 + h), the clock the latest `advance:<minute>` entry set. Every input is in every
-    reader's projection of the entry; the key signs deterministically, so the chain is a function of the journal."""
+    reader's projection of the entry; the key signs deterministically, so the chain is a function of the journal.
+
+    A carried journal continues the heights of the world before (HOST-HANDOFF 5.182): its first entry is height
+    `base` + 1, not 1. `heights` and `revs` count positions in this journal (1 the first entry), and a height read
+    from the host becomes a position by `position`."""
 
     def __init__(self, did, key):
-        self.did, self.key, self.tree, self.heights, self.revs, self.clock = did, key, Tree(), [], {}, 0
+        self.did, self.key, self.tree, self.heights, self.revs, self.clock, self.base = did, key, Tree(), [], {}, 0, 0
         self.lock = threading.Lock()
+
+    def position(self, height):
+        return height - self.base if isinstance(height, int) else None
 
     def catch_up(self, host):
         """Append every entry past the last height seen; the journal only appends, so nothing else is recomputed."""
         with self.lock:
             while True:
-                reply = host.send({'op': 'world-entries', 'principal': PUBLIC, 'after': len(self.heights), 'limit': MAX_LIMIT})
+                reply = host.send({'op': 'world-entries', 'principal': PUBLIC, 'after': self.base + len(self.heights), 'limit': MAX_LIMIT})
                 if 'entries' not in reply:
                     raise refused(reply)
                 for entry in reply['entries']:
@@ -96,7 +104,9 @@ class Signed:
                     return self.heights[-1] if self.heights else None
 
     def add(self, entry):
-        h = len(self.heights) + 1
+        if not self.heights and isinstance(entry.get('height'), int) and entry['height'] >= 1:
+            self.base = entry['height'] - 1  # the journal's first entry, whatever height a carry began it at
+        h = self.base + len(self.heights) + 1
         if entry.get('height') != h or not isinstance(entry.get('hash'), str):
             raise Refusal(503, 'HostUnavailable', f"the journal's entry {entry.get('height')} is not height {h} with a hash")
         who = entry.get('identity') or {}
@@ -108,7 +118,7 @@ class Signed:
         self.tree.append(f'{ENTRY}/{rev}'.encode(), record[0])
         commit = self.key.commit(self.did, self.tree.root(), rev, self.heights[-1].commit[0] if self.heights else None)
         self.heights.append(Height(rev, entry['hash'], record, commit))
-        self.revs[rev] = h
+        self.revs[rev] = len(self.heights)
 
     def repo(self, since=None):
         """The CAR of the head commit, the MST and the records; with `since` (a rev), what was added after it."""
@@ -228,7 +238,7 @@ class Repo:
     def signed_height(self, host, rkey, who):
         """The height a receipt key names: a rev (the signed record key), a slug or an entry CID."""
         head = self.head(host, {}, None)
-        h = self.signed.revs.get(rkey) if TID.fullmatch(rkey) else self.entry(host, rkey, who)['receipt'].get('height')
+        h = self.signed.revs.get(rkey) if TID.fullmatch(rkey) else self.signed.position(self.entry(host, rkey, who)['receipt'].get('height'))
         if not isinstance(h, int) or not 1 <= h <= len(self.signed.heights):
             raise Refusal(400, 'RecordNotFound', f'no receipt here is {rkey}')
         return h, head
@@ -257,6 +267,8 @@ class Repo:
             items = reply[field]
             return {'records': [self.record(collection, i.get(key), i.get(cid), i) for i in items],
                     **({'cursor': reply['cursor']} if reply.get('more') and reply.get('cursor') else {})}
+        if collection in MIRRORED:
+            return self.mirrored_page(host, collection, who, cursor, int(limit), reverse)
         if reverse:  # objects and laws page by id in byte order, as world-objects lists them
             raise Refusal(400, 'InvalidRequest', f'{NS}{collection} pages by object id and has no reverse order')
         after, mid, k = (cursor or '').partition('#')  # an object id, or `<object id>#<laws of it already listed>` inside a law page
@@ -269,6 +281,37 @@ class Repo:
             taken.append(record)
             last = oid if ended else f'{oid}#{listed}'
         return {'records': taken}
+
+    def mirrored(self, host, collection, rkey, who):
+        """A record the mirror writes to the PDS, as `who` reads it here (transport/mirror.py), or None."""
+        from transport import mirror
+        if collection == 'card':
+            return mirror.card_record(host, rkey.replace('~', '/'), who)
+        pages = mirror.library_pages(host, who)
+        if collection == 'page':
+            return next((mirror.page_record(p) for p in pages if p['name'] == rkey), None)
+        return mirror.index_record(host, mirror.ids(host, who), pages) if rkey == 'self' else None
+
+    def mirrored_page(self, host, collection, who, cursor, limit, reverse):
+        """Cards by id and pages in shelf order, `limit` a page, the cursor the last key listed."""
+        from transport import mirror
+        if collection == 'index':
+            keys = ['self']
+        elif collection == 'page':
+            keys = [p['name'] for p in mirror.library_pages(host, who)]
+        else:
+            keys = [mirror.card_key(oid) for oid in mirror.ids(host, who)]
+        keys = keys[::-1] if reverse else keys
+        start = keys.index(cursor) + 1 if cursor in keys else 0
+        if cursor and cursor not in keys:
+            raise Refusal(400, 'InvalidRequest', 'cursor: not one this listing gave')
+        out, at = [], start
+        while at < len(keys) and len(out) < limit:
+            value = self.mirrored(host, collection, keys[at], who)
+            if value is not None:
+                out.append({'uri': f'at://{self.did}/{NS}{collection}/{keys[at]}', 'cid': str(block(value)[0]), 'value': value})
+            at += 1
+        return {'records': out, **({'cursor': keys[at - 1]} if at < len(keys) else {})}
 
     def walk(self, host, who, collection, after, skip, inside):
         """(object id, its laws listed so far, record, whether that ends the object) in id order from `after` (exclusive; inside
@@ -310,6 +353,11 @@ class Repo:
             if q.get('cid') and q['cid'] != out['cid']:
                 raise Refusal(400, 'RecordNotFound', f"the record at {rkey} has cid {out['cid']}")
             return out
+        if collection in MIRRORED:
+            value = self.mirrored(host, collection, rkey, who)
+            if value is None:
+                raise Refusal(400, 'RecordNotFound', f'no {NS}{collection} here is {rkey}')
+            return {'uri': f'at://{self.did}/{NS}{collection}/{rkey}', 'cid': str(block(value)[0]), 'value': value}
         if collection == 'receipt':
             item = self.entry(host, rkey, who)['receipt']
             cid = item.get('hash')

@@ -158,6 +158,25 @@ def unsend(uri, credentials, client=None):
     client.write('com.atproto.repo.deleteRecord', {'repo': repo, 'collection': COLLECTION, 'rkey': rkey}, token=session['accessJwt'])
 
 
+def record_writer(st, client=None):
+    """-> write(collection, rkey, value): the mirror's writer (transport/mirror.py), a record in the posting account's own
+    repository put (`value`) or deleted (None); never a feed post, never counted against the host's post quota. One
+    session, made at the first write; credentials go only to the fixed PDS via Client."""
+    client, session = client or Client(http_transport, allow_write=True), {}
+
+    def write(collection, rkey, value):
+        if collection == COLLECTION:
+            raise Failure('not_a_mirror_record', 'a feed post is posted, never mirrored')
+        if not session:
+            cred = json.loads(Path(st.config.credentials).expanduser().read_text())
+            session.update(client.write('com.atproto.server.createSession', {'identifier': cred['identifier'], 'password': cred['password']}))
+        where = {'repo': session['did'], 'collection': collection, 'rkey': rkey}
+        if value is None:
+            return client.write('com.atproto.repo.deleteRecord', where, token=session['accessJwt'])
+        return client.write('com.atproto.repo.putRecord', {**where, 'record': value, 'validate': False}, token=session['accessJwt'])
+    return write
+
+
 def record_sent(st, host):
     """Tell the host of every posted draft it has not confirmed: registration is retried on its own, never by posting
     again. -> the drafts recorded now."""

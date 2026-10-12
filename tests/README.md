@@ -117,6 +117,7 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_laws` (§4): The world's objects carry their laws in source: only owners change directories and admit anthology lines, and Tide's and Wake's predicates refuse what their code would.
 - `test_kinds` (§8 extend): `kinds` makes a kind, a kind makes an instance of its package under its law, and a kind with a body grafts it on each instance.
 - `test_lenses` (§5 Spell grammar): An object's exposed fields are lenses: `set` writes one through its kind and its owner, `?` lists every form and lens.
+- `test_mirror` (POSTING §1): The town as records on the PDS: every card the public reads is a `town.delvetalk.card` of its exact text, wants and doors, every library page a `town.delvetalk.page`, written only when changed, never a feed post, and the façade answers the same records.
 - `test_mailbox` (§8 claims): A post that mentions an avatar's resident is a note from its author and offers nothing; the principal marks the entry it has read through; the inbox keeps the newest 64.
 - `test_objects` (§5): The library holds one Context and no dynamic universe; objects claim the Plans they perform; cards render in under 1,400 characters at their fullest.
 - `test_rooms` (§8 MUD floor): Rooms, things and avatars are ordinary objects (a room is a record with the room's body, world/bodies/room.obend): entering, leaving, choosing, talking, taking and putting down, offering and accepting, scoped commands and copies, each refused by name where it should be.

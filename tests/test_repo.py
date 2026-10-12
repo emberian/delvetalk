@@ -457,11 +457,11 @@ class Vectors(unittest.TestCase):
 class World:
     """A fake host: a journal of DAG-CBOR entries chained by CID, read as the host's ops answer them."""
 
-    def __init__(self, page=4):
-        self.entries, self.page = [], page
+    def __init__(self, page=4, start=0):
+        self.entries, self.page, self.start = [], page, start  # a carried journal's first height is start + 1
 
     def append(self, principal, intent, tag='admitted'):
-        h = len(self.entries) + 1
+        h = self.start + len(self.entries) + 1
         body = {'height': h, 'identity': {'principal': principal, 'intent': intent}, 'turn': 0, 'roots': [],
                 'outcome': {'tag': tag}, **({'previous': self.entries[-1]['hash']} if self.entries else {})}
         cid, data = block(body)
@@ -470,7 +470,7 @@ class World:
     def send(self, q):
         whole = lambda e: e['identity']['principal'] == q.get('principal')
         if q['op'] == 'world-entries':
-            after, limit = q.get('after', 0), min(q.get('limit', 100), self.page)
+            after, limit = max(q.get('after', 0) - self.start, 0), min(q.get('limit', 100), self.page)
             shown = self.entries[after:after + limit]
             return {'status': 'entries', 'more': after + limit < len(self.entries),
                     'entries': [{k: e[k] for k in ('height', 'hash', 'identity')} for e in shown]}
@@ -481,6 +481,33 @@ class World:
             return {'status': 'receipt', 'receipt': {k: e[k] for k in ('height', 'hash')},
                     **({'bytes': e['bytes'].hex()} if q.get('bytes') and whole(e) else {})}
         return {'status': 'unknown', 'message': q['op']}
+
+
+@signs
+class CarriedRepository(unittest.TestCase):
+    """A carried journal begins at the height the world before reached (HOST-HANDOFF 5.182): the live v10 town's
+    first entry is 447, and getRepo answered 503 "the journal's entry 447 is not height 1"."""
+
+    def test_a_journal_whose_first_entry_is_447_is_a_whole_repository_and_since_reads_what_came_after(self):
+        world, key = World(start=446), sign.Key.generate()
+        for i in range(6):
+            world.append(OWNER, f'turn-{i}')
+        repo = Repo(ORIGIN, key)
+        code, car, _ = repo.serve(world, 'GET', 'com.atproto.sync.getRepo', {'did': REPO}, 'anonymous')
+        self.assertEqual(code, 200, car)
+        [root], blocks = read_car(car)
+        commit = decode(blocks[root])
+        pairs = leaves(blocks, commit['data'])
+        self.assertEqual([decode(blocks[v])['height'] for _, v in pairs], list(range(447, 453)))
+        code, latest, _ = repo.serve(world, 'GET', 'com.atproto.sync.getLatestCommit', {'did': REPO}, 'anonymous')
+        world.append(OWNER, 'turn-after')
+        code, newer, _ = repo.serve(world, 'GET', 'com.atproto.sync.getRepo', {'did': REPO, 'since': latest['rev']}, 'anonymous')
+        self.assertEqual(code, 200, newer)
+        [root], blocks = read_car(newer)
+        records = [decode(b) for b in blocks.values() if isinstance(decode(b), dict) and decode(b).get('$type') == NS + 'entry']
+        self.assertEqual([r['height'] for r in records], [453])
+        code, listed, _ = repo.serve(world, 'GET', 'com.atproto.repo.listRecords', {'repo': REPO, 'collection': NS + 'entry', 'limit': '3'}, 'anonymous')
+        self.assertEqual([r['value']['height'] for r in listed['records']], [447, 448, 449], listed)
 
 
 @signs
