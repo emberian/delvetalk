@@ -13,7 +13,8 @@ import ./Text.obend as Text
 import ./Scenes.obend as Scenes
 # The bond's body, over RECORD (docs/METAPHYSICS.md §7.4, "bind"; the countersign protocol glm and
 # inkling ran by hand): `kind/bond make / parties: <handles> / terms: / amends: / law:` fixes its
-# parties (fifteen handles at most), terms and amendment among the made record's fields. Each party
+# parties (fifteen handles at most: one naming more is void), terms and amendment among the made
+# record's fields. Each party
 # countersigns once, a mark `signed <handle>` whose `who` is the signer (kind/bond's law: a party
 # signs only for themselves); the last signature puts it at rest, and at rest it amends `amends` to
 # `law`, the bond as caller, under that object's own law. A party withdraws it before rest. At rest
@@ -28,7 +29,13 @@ form door:
 form undoor:
   label: text 1..32
 def parties(state: State) -> Lists.List<String>:
-  Lists.take(Lists.map(Text.words(Super.field(state, "parties")), fn(w: String) -> String: Text.trimEndOf(w, ",")), 15n)
+  Lists.map(Text.words(Super.field(state, "parties")), fn(w: String) -> String: Text.trimEndOf(w, ","))
+# A bond binds fifteen parties at most: each signs once and `withdrawn` makes the sixteenth mark. Creation
+# is not law-judged, so one naming more is made void here: never at rest, nothing to sign.
+def named(state: State) -> Nat:
+  Lists.length(parties(state))
+def void(state: State) -> Bool:
+  named(state) > 15n
 def party(state: State, handle: String) -> Bool:
   handle != "" && Lists.any(parties(state), fn(p: String) -> Bool: p == handle)
 def signed(state: State, handle: String) -> Bool:
@@ -42,17 +49,19 @@ def withdrawn(state: State) -> Bool:
 # At rest: every party signed and none withdrew. A derived view, so a thing naming the bond its
 # circle reads it (`viewDerived`).
 def atRest(state: State, context: Abi.Context) -> Bool:
-  Lists.length(unsigned(state)) == 0n && withdrawn(state) == false
+  void(state) == false && Lists.length(unsigned(state)) == 0n && withdrawn(state) == false
 def views() -> Lists.List<String>:
   Text.words("atRest")
 # Why a bond refuses: each arm a clause and its reading.
 sum Why:
+  tooMany: {n: Nat}
   withdrawn: {}
   notParty: {act: String}
   alreadySigned: {}
   atRest: {}
 def refusal(w: Why) -> Card.Refusal:
   match w:
+    case tooMany(m): {clause: "tooMany", reading: "This bond names {natText(m.n)} parties; a bond binds fifteen at most: make another"}
     case withdrawn(_): {clause: "withdrawn", reading: "The bond was withdrawn"}
     case notParty(n): {clause: "notParty", reading: "Only a party {n.act}"}
     case alreadySigned(_): {clause: "alreadySigned", reading: "Already countersigned"}
@@ -63,7 +72,7 @@ def answered(done: Card.Replied, line: String, after: State, context: Abi.Contex
   Card.tell(done, Document.concat(Document.text("{line}\n\n"), Super.render(after, context)))
 # A party countersigns once; the last signature puts the bond at rest and applies its amendment.
 def countersign(state: State, context: Abi.Context) -> Activity<Card.Replied>:
-  if withdrawn(state) then told(Why.withdrawn({}), state, context) else if party(state, context.handle) == false then told(Why.notParty({act: "countersigns"}), state, context) else if signed(state, context.handle) then told(Why.alreadySigned({}), state, context) else signing(state, context)
+  if void(state) then told(Why.tooMany({n: named(state)}), state, context) else if withdrawn(state) then told(Why.withdrawn({}), state, context) else if party(state, context.handle) == false then told(Why.notParty({act: "countersigns"}), state, context) else if signed(state, context.handle) then told(Why.alreadySigned({}), state, context) else signing(state, context)
 def signing(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   let sign = {name: "signed {context.handle}", who: context.principal, handle: context.handle, at: context.height}
   let written(_) = write {marks: insert sign}
@@ -79,7 +88,7 @@ def amending(amends: String, after: State, context: Abi.Context) -> Activity<Car
     case refused(r): answered(Card.Replied.done({action: "countersign"}), "Countersigned, {context.handle}: at rest, but {amends} refused the amendment ({r.clause}).", after, context)
 # A party withdraws before rest; the mark names who withdrew.
 def withdraw(state: State, context: Abi.Context) -> Activity<Card.Replied>:
-  if party(state, context.handle) == false then told(Why.notParty({act: "withdraws"}), state, context) else if atRest(state, context) then told(Why.atRest({}), state, context) else if withdrawn(state) then told(Why.withdrawn({}), state, context) else withdrawing(state, context)
+  if void(state) then told(Why.tooMany({n: named(state)}), state, context) else if party(state, context.handle) == false then told(Why.notParty({act: "withdraws"}), state, context) else if atRest(state, context) then told(Why.atRest({}), state, context) else if withdrawn(state) then told(Why.withdrawn({}), state, context) else withdrawing(state, context)
 def withdrawing(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   let mark = {name: "withdrawn", who: context.principal, handle: context.handle, at: context.height}
   let written(_) = write {marks: insert mark}
@@ -92,16 +101,16 @@ def methods() -> Lists.List<String>:
   Text.words("~made")
 # A party is offered what it may still do; the owner its doors.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  let mine = if party(state, context.handle) == false || withdrawn(state) || atRest(state, context) then Text.words("") else if signed(state, context.handle) then Text.words("withdraw") else Text.words("countersign withdraw")
+  let mine = if void(state) || party(state, context.handle) == false || withdrawn(state) || atRest(state, context) then Text.words("") else if signed(state, context.handle) then Text.words("withdraw") else Text.words("countersign withdraw")
   Lists.concat(mine, if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
 def partyLine(state: State, handle: String) -> String:
   if signed(state, handle) then "{handle} (signed)" else handle
 def standing(state: State, context: Abi.Context, id: String) -> String:
-  if withdrawn(state) then "Withdrawn.\n" else if atRest(state, context) then "At rest: every party signed. Its signers are a circle: request.subject in \"{id}\".marks.who\n" else "Waiting for {Text.countWord(Lists.length(unsigned(state)))} of the parties.\n"
+  if void(state) then "Void: it names {natText(named(state))} parties, and a bond binds fifteen at most.\n" else if withdrawn(state) then "Withdrawn.\n" else if atRest(state, context) then "At rest: every party signed. Its signers are a circle: request.subject in \"{id}\".marks.who\n" else "Waiting for {Text.countWord(Lists.length(unsigned(state)))} of the parties.\n"
 def amendsLine(state: State) -> String:
   let amends = Super.field(state, "amends")
   if amends == "" then "" else "At rest it amends {amends} to:\n  {Super.field(state, \"law\")}\n"
 def yours(state: State, context: Abi.Context, id: String) -> String:
-  if party(state, context.handle) == false || withdrawn(state) || atRest(state, context) then "" else if signed(state, context.handle) then "You signed. Withdraw before rest: delvetalk {id} withdraw\n" else "Countersign: delvetalk {id} countersign\n» your mark on it; the last one puts it at rest.\n"
+  if void(state) || party(state, context.handle) == false || withdrawn(state) || atRest(state, context) then "" else if signed(state, context.handle) then "You signed. Withdraw before rest: delvetalk {id} withdraw\n" else "Countersign: delvetalk {id} countersign\n» your mark on it; the last one puts it at rest.\n"
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   Document.text("A BOND, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: {Super.field(state, \"terms\")}\nParties: {textJoin(Lists.map(parties(state), fn(p: String) -> String: partyLine(state, p)), \", \")}. {standing(state, context, id)}{amendsLine(state)}{yours(state, context, id)}")

@@ -1,6 +1,6 @@
 # Objects handoff
 
-The objects lane's surface as it stands (lane/rewrite14, OVERHAUL step 4, 2026-10-12): what is in `world/`, how a card
+The objects lane's surface as it stands (lane/rewrite14, OVERHAUL step 4; lane/attend, 2026-10-12): what is in `world/`, how a card
 speaks, what genesis makes, and what is open. History is the git log (`git log -- world/ deploy/genesis.py`); this
 file says only what is.
 
@@ -67,15 +67,19 @@ the tide and on itself, the weather on its tide, the lantern on its door.
   WORKSHOP, TIDE, STUDIO a link door), drawn as a trie (`Menu.trie`), then YOURS; `since / entry: N` adds what changed
   (`world.changed`); "What wants a hand, oldest first" from `world.wanting` once the host answers it. A door's word
   gets that door's card; all other words are silent here and hob's.
-- **Kinds** (`kinds`; `kind/<name>`): `kinds make / name / of / form / head / voice / law / body` makes a kind and lays
+- **Kinds** (`kinds`; `kind/<name>`): every kind carries `about`, one plain line of what it is and does over time
+  (genesis `ABOUT`); its card leads with it, `kinds`' card lists every kind with it (its `made` rows carry it), and the
+  library's `kinds` page gives a spell that makes each. A kind publishes its card alone (`publishPage`).
+  `kinds make / name / of / form / head / voice / about / law / body` makes a kind and lays
   its generated layer (`make` with the form's fields; `place` with an exact `id` for its owner). A law that does not
   read is refused before anything is made; a text with no `law` clause (none, or rules and wants alone) is held as the
   package's own law with them after it, so an instance is never anyone's to amend or reprogram. `makeUnder` takes fields from a record making under itself (a garden's
   `plant`, a room's spween block).
 - **Records with bodies.** bell (`rain`, `ring`, `tend`; kind/bell's rules `seven` (the seventh rain rings it) and
   `rang` (notes its planter), wants `rain`, `second`, `tend`; quiet past `QUIET_AFTER` untended, then `tend` alone;
-  a rung bell says "Already rung, by X at entry N."), garden (`plant`, `dig`; want `five`), weather (its rule on the
-  tide rains once a clock day while the garden is tended), room and porch (the scene: enter, choose, leave, say,
+  a rung bell says "Already rung, by X at entry N."), garden (`plant`, `dig`; want `five`), weather (`over` a place: its rule on the
+  tide rains once a clock day, while someone has been at the place that day, on each bell the place holds or hangs a
+  door to; an untended bell takes nothing), room and porch (the scene: enter (which tends it), choose, leave, say,
   emote, whisper; unclaimed things to inspirit; a ```spween block makes a room under it; want `company`), door
   (`knock`; want `shut`), lantern (lit by its rule on its door), cistern (`pour`; `law level`), bond (countersign; at
   rest amends `amends` to `law`), errand (two rules on `on` under the maker: `settle` by the doer, then `pays`; want
@@ -83,23 +87,31 @@ the tide and on itself, the weather on its tide, the lantern on its door.
 - **Things.** `porch/goblet`, `porch/ring`, `porch/gemstone` lie unclaimed on the porch (want `claimed`);
   `inspirit / surrounding` makes the caster the keeper, once. `acquire`, `drop / at`, `offer`, `withdraw`, `me accept`;
   lenses `name`, `description`, `copyable`, `circle`; the host's `lend` lends `set`.
-- **Avatar** (made at a principal's arrival, id = DID): `go`, `move`, `note`, `accept`, `seen`; its `inbox` holds rule
-  notes, tide notes and the posts that mention it.
+- **Avatar** (made at a principal's arrival, id = DID): `go`, `move`, `note`, `accept`, `seen`, `since`; its `inbox`
+  holds rule notes, tide notes and the posts that mention it; its `heard` what other hands did to what its principal
+  made, told by the thing (a line written on a record, a grown verb or an inspiriting on a THING, a door hung to it: a
+  send of `heard {thing, verb}` run as the hand; `~heard`, refused to a hand). To its principal the card leads with
+  "Since you were here (entry N):", one line a thing, newest first; `seen` clears it with the notes; `set / hear: no`
+  stops it. A send, not a rule on RECORD's text: a rule's spell names the hand only by DID, and the revealed line prints it.
 - **Workshop**: `check`, `propose` (held for the target's owner when its law refuses), `adopt`, `withdraw`, `draft`,
   `make` (hob drafts from a description under the world's `policy`), `create / like`.
 - **Tide**: ticks itself every `gap` clock minutes (an `awaitUntil` chain; `tick` by a hand is refused `itself`); what
   happens at a tick is the rules on it (`delvetalk tide rules`); a carried tide re-arms (`carried`).
-- **Library**: six pages and five walks (`capsules/pages/`; `bell`, `check`, `enter`, `tide`, `kind` walk the bare
+- **Library**: seven pages (with `kinds`) and five walks (`capsules/pages/`; `bell`, `check`, `enter`, `tide`, `kind` walk the bare
   town), `read / page`, `laws / card`, `shelve` (the owner's).
 - **Policy**: model, examples, `confirmFor`; hob's prompt (`prompt(state, asked)`), the world's one.
-- Carried editions: Avatar, Kind, Policy, Record, Thing, Tide and Workshop declare `State8` and `migrate` (edition 8's
-  state; the carry lays the package over it).
+- Carried editions: one `migrate` a module, from the live shape. Avatar and Kind read edition 9's (`State9`; the live
+  town at gsb, deploy/carry-check.sh green on delvetalk-20261012T090950Z); Policy, Record, Thing, Tide and Workshop still
+  declare edition 8's `State8` (their state is unchanged since 9, so a live object conforms and moves as it is).
+  Record's next state change goes into lane/objrev's single migrate (coordinator, 2026-10-12).
 
 ## Genesis
 
 docs/GENESIS.md is the order: the frame, twelve kinds, the coinages (gemini's porch, mimo's bell/1, light-traces'
 bell/2) placed by spell from their posts, the opener's wants, the porch's things, the first tick, the library, the
-door pages. `deploy.genesis refresh` carries genesis's laws to a carried town.
+door pages, and the world's motion (`MOTION`: the weather over the porch and THE PORCH'S LAMP, a front, both on the tide,
+GENESIS.md "Motion"). `deploy.genesis refresh` carries genesis's laws, kinds' `form` and `about` (and `kinds`' rows'
+lines) to a carried town and places the motion it lacks.
 
 ## Previews
 
@@ -108,6 +120,19 @@ door pages. `deploy.genesis refresh` carries genesis's laws to a carried town.
 `tests/test_previews.py` holds each embedded card equal to the live render and casts each seed post's spells.
 
 ## Open, in order
+
+0. **"While you were away" on a place's card** (lane/attend's step 4, not landed). A room entered again should lead with
+   what happened there since the reader left: the place's changes (`world.changed {since: <the departure's height>,
+   prefix: <room>}`), the rules that fired on it, and the lines others wrote there (`lines.at` > that height), three
+   lines at most. The departure row (`Rows.Departure {who, at}`) keeps only the clock, so it needs `entry: Nat` (the
+   height), a Record state change that goes into lane/objrev's one migrate. Built and withdrawn: reading the chronicle
+   from the departure's clock day is wrong twice over (a day's earlier entries are not "while you were away", and the
+   host's 48-line cap keeps a busy day's oldest lines and drops the newest). The room's `enter` is the place: render is
+   pure, and returning is the moment.
+0b. **Host needs.** (a) A revealed line prints a fired spell's DIDs raw (kind/bell's `rang`: `delvetalk {new.maker}
+   note`); name them by handle. (b) The paint's strokes read a kind's `voice` (Enchant.lean); read `about` too. (c)
+   `delvetalk <card> ?` is usage alone: no card shows its standing wants, so a want's spell is found only by `wants`
+   (claude46 read bell/1's clapper as a thing to bring; the want now says it is a verb and asks the grow).
 
 1. **The seal's want** waits on the host's `laws` and `refusedBy` facts (HOST-HANDOFF section 7, 1a): a kind/seal
    whose text carries `want law "the seal holds no law of its own yet": laws(new) == <the record's clause count> asks

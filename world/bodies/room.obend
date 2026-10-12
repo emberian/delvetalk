@@ -5,6 +5,7 @@ import ./List.obend as Lists
 import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
+import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
@@ -18,7 +19,8 @@ import ./Spween.obend as Spween
 # changes it only by these spells.
 #
 # Entering needs the scene's `requires` to hold and, with a cooldown, that the reader left at
-# least `cooldown` clock minutes ago (folkway 10). A choice offers itself only while its guard
+# least `cooldown` clock minutes ago (folkway 10); an entering is the room's attention, and tends it
+# (a weather over the room rains while someone has been there that day). A choice offers itself only while its guard
 # holds over the variables; taking it applies its effects in order and moves the reader to its
 # target, or out at END. `say`, `emote` and `whisper` reach those in the room (folkway 5); a
 # thing lying here is taken and put down by its own call, while its taker is here. A ```spween
@@ -129,8 +131,26 @@ def done(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Done>
     case move(m): moving(m.me, m.choice, m.vars, extend(state, {presence: Relations.upsert(state.presence, {who: m.me.who, handle: m.me.handle, at: m.choice.to}, Rows.presenceKey), vars: m.after}), context)
     case leave(l): departing(l.me, l.vars, extend(state, {presence: Relations.retract(state.presence, {who: l.me.who}, Rows.presenceKey), vars: l.after}), context, state)
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}}
-  Card.tell(Done.entered({at: at}), Super.render(after, context))
+  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}, tended: set context.clock, tendedAt: set context.height}
+  match lastLeft(context.principal, after):
+    case some(l): if l.value.entry == 0n then welcomed(at, after, Document.text(""), context) else away(at, after, l.value.entry, context)
+    case none(_): welcomed(at, after, Document.text(""), context)
+def welcomed(at: String, after: State, lead: Document.Document, context: Abi.Context) -> Activity<Done>:
+  Card.tell(Done.entered({at: at}), Document.concat(lead, Super.render(after, context)))
+# One who comes back is told first what happened here while they were away, since the entry they
+# left at: the lines others wrote here, newest first, then what changed under the room (`world.changed`
+# under its id: rooms carved in it, things made here), three lines at most.
+def away(at: String, after: State, since: Nat, context: Abi.Context) -> Activity<Done>:
+  match world.changed({since: since, prefix: "{context.object}/", after: ""}):
+    case changed(c): welcomed(at, after, awayLines(after, since, c.items, context), context)
+    case denied(_): welcomed(at, after, awayLines(after, since, Lists.List.nil(), context), context)
+def awayLines(state: State, since: Nat, changes: Lists.List<World.Change>, context: Abi.Context) -> Document.Document:
+  let written = Lists.map(Lists.filter(Lists.reverse(Relations.order(state.lines, fn(l: Rows.Line) -> Nat: l.n)), fn(l: Rows.Line) -> Bool: l.at > since && l.author != context.principal), fn(l: Rows.Line) -> String: "{Card.shown(l.author, l.handle, context)}: {clip(l.text)}\n")
+  let made = Lists.map(changes, fn(c: World.Change) -> String: "{c.object.object} v{natText(c.version)} by {Card.handle(c.by)}\n")
+  let rows = Lists.take(Lists.concat(written, made), 3n)
+  if Lists.length(rows) == 0n then Document.text("") else Document.text("While you were away (since entry {natText(since)}):\n{textJoin(rows, \"\")}\n")
+def clip(text: String) -> String:
+  if textLength(text) > 100n then "{textTake(text, 99n)}…" else text
 def moving(me: Presence, c: Choice, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {presence: upsert {who: me.who, handle: me.handle, at: c.to}}
   varied(vars, Done.moved({to: c.to}), after, context)
@@ -153,7 +173,7 @@ def forgotten(last: Departure, vars: Lists.List<Plans.Entries<Var, Var>>, after:
   let written(_) = write {left: retract leftKey(last)}
   recorded(vars, after, context)
 def recorded(vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {left: insert {at: context.clock, who: context.principal}}
+  let written(_) = write {left: insert {at: context.clock, who: context.principal, entry: context.height}}
   varied(vars, Done.left({}), after, context)
 form enter:
 form choose:

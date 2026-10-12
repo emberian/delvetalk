@@ -13,7 +13,8 @@ import unittest
 
 from tests.test_reflection import Reflection
 from tests.wire import field, label, nat, record
-from tests.bend import declared
+from tests.bend import closure, declared
+from tests.test_chain import Chain
 
 BASE = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -56,6 +57,32 @@ def graft(state: State, input: {target: String, package: String}, context: Abi.C
     case refused(r): r.clause
     case _: "other"
 """)
+
+
+# THING's own package with a verb of its own (a lawful module takes no layer, so its owner reprograms it whole).
+def shining():
+    from tests.bend import MODULES
+    source = open(MODULES["Thing"]).read()
+    return source.replace('  Text.words("transfer copy drop ~act")', '  Text.words("transfer copy drop ~act shine")') + "def shine(state: State, context: Abi.Context) -> Activity<Bool>:\n  true\n"
+
+
+class Copy(Chain):
+    def test_a_copy_of_a_reprogrammed_thing_runs_its_program(self):
+        """Codex objects 12: `copy` created the copy from the package named "Thing", the library's module, so a
+        thing its owner reprogrammed to `shine` copied into one that could not (or, its package holding no module
+        of that name, not at all). The copy is made from the copied thing's own sealed package."""
+        made = self.host.send(op="world-create", principal="ember", identity="mk-lamp", object="lamp", modules=closure("Thing"),
+                              entry="initial", seed=record(owner=label("ember"), name=label("lamp")))
+        self.assertEqual(made["status"], "created", made)
+        version = self.host.send(op="world-view", principal="ember", object="lamp")["version"]
+        grafted = self.host.send(op="world-reprogram", principal="ember", identity="graft", object="lamp", version=version, package=shining())
+        self.assertEqual(grafted["status"], "admitted", grafted)
+        copied = self.turn("lamp", "copy", record(), principal="glm")
+        self.assertEqual(copied["status"], "admitted", copied)
+        [created] = copied["receipt"]["outcome"]["creates"]
+        names = {m["name"] for m in self.host.send(op="world-inspect", principal="glm", object=created["object"])["methods"]}
+        self.assertIn("shine", names)
+        self.assertEqual(self.turn(created["object"], "shine", record(), principal="glm")["status"], "admitted")
 
 
 class Extend(Reflection):

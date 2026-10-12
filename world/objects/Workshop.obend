@@ -339,9 +339,11 @@ def methods() -> Lists.List<String>:
 # and pass the 1,400-character clip (genesis's `wiki: Workshop` was 1,444).
 def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
   Card.publishPage(Card.pageName(input.page, "workshop"), Card.Page.cons({head: {title: "Card", body: render(state, Card.public(context))}, tail: Card.Page.nil()}))
+# The usage, then the held proposals within what it leaves of Card.limit(context).
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: usage(), tail: heldLines(context, state)})})
-def heldLines(context: Abi.Context, state: State) -> Document.Documents:
-  if Relations.count(state.held) == 0n then Document.Documents.nil() else Document.Documents.cons({head: Document.text("\nHeld (owner or describer: adopt / n; proposer: withdraw / n):\n"), tail: Card.clipped(Lists.map(Relations.rows(state.held), fn(h: Held) -> Document.Document: Document.text(heldLine(h, context))), 8n)})
+  Document.Document.sequence({items: Document.Documents.cons({head: usage(), tail: heldLines(context, state, Document.size(usage()))})})
+def heldLines(context: Abi.Context, state: State, used: Nat) -> Document.Documents:
+  let head = "\nHeld (owner or describer: adopt / n; proposer: withdraw / n):\n"
+  if Relations.count(state.held) == 0n then Document.Documents.nil() else Document.Documents.cons({head: Document.text(head), tail: Card.clippedWithin(Lists.map(Relations.rows(state.held), fn(h: Held) -> Document.Document: Document.text(heldLine(h, context))), 8n, Card.left(context, used + textLength(head)))})
 def heldLine(h: Held, context: Abi.Context) -> String:
   if h.target == "" then "#{natText(h.n)} makes {h.name}, described by {Card.shown(h.proposer, h.proposerHandle, context)}\n" else "#{natText(h.n)} for {h.target} from {Card.shown(h.proposer, h.proposerHandle, context)}\n"
