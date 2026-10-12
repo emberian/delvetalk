@@ -296,7 +296,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
         self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
         self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
-        self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None)  # the journal as AT Protocol records, read only
+        self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None, st.world)  # the journal as AT Protocol records, read only
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT

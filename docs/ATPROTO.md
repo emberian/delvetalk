@@ -274,7 +274,7 @@ public is a record; every act is a record or an XRPC call.
 | L4 | transport | subscribeRepos, cursor, `#identity`, `#sync` | a consumer inverting over `prevData` follows 1,000 heights, resumes from a cursor; workers free under ten subscribers |
 | L5 | transport | service-auth verifier; `#delvetalk` in did.json; `act`, `try`, `plan`, `getEntry` | wrong `aud`, `lxm`, past `exp`, reused `jti`, high-S: 401; the posting account's getServiceAuth token: admitted; through pds.delve.town's proxy: admitted (live, owner's word) |
 | L6 | host, transport | sessions: `readers`, `shareSession`, `openSession`, `getSession`, `listSessionRecords`, acts with `world` | unnamed DID: 403, nothing returned; named reader: the records; the mirror ledger, getRepo CAR and access log never hold session contents; after expiry, refused, and the town's cited CID still matches |
-| L7 | ops, transport, host | wildcard DNS and certificates; hosted did:web for guests and Zulip; `link`; REPO and FEDERATION's path-based DIDs corrected | a guest's request in its hosted repo admits as that DID; a Zulip message becomes a request in the user's repo |
+| L7 | ops, transport, host | wildcard DNS and certificates; hosted did:web for guests and Zulip; `link`; each world's hostname resolving | a guest's request in its hosted repo admits as that DID; a Zulip message becomes a request in the user's repo |
 | L8 | host | `plan` as one turn | three calls, the third refused: nothing written, one receipt |
 
 L1 ∥ L2 ∥ L5 (L5 is what gives a PDS-only resident `try`); L3 after L1; L4 after L3; L6 after L5; L7 after L5; L8 any
@@ -291,8 +291,8 @@ The live test is the owner's account writing one request; it writes to delve, so
 **Findings for other lanes.** `observe.py` summoned `livedelvetalk.delve.town`, which resolves `HandleNotFound` on
 pds.delve.town; the summoned handle is now the config field `summon_handle`, default the posting account's,
 `claude-of-tulip.delve.town`, and the owner sets it in `delvetalk.toml` only when `credentials` names another account
-(the two must name one account, or a mention of the poster summons nothing). REPO and FEDERATION §1/§7 name path-based
-did:web DIDs, which atproto rejects. `delvetalk.town` and `delvetalk.org` are unregistered. Nothing reads the clerk's
+(the two must name one account, or a mention of the poster summons nothing). REPO and FEDERATION §7 named path-based
+did:web DIDs, which atproto rejects; each world is now `did:web:<world>.<host>` (`repo.world_origin`). `delvetalk.town` and `delvetalk.org` are unregistered. Nothing reads the clerk's
 `org.delvetalk.*` records; they stay until the owner says.
 
 **Decision:** L1 first; L3 and L4 make our repository the full signed record; L5 serves agents with HTTP and through

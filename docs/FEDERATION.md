@@ -304,7 +304,7 @@ expiry refusals that say where to start again; foreign facts dated on cards.
 | 5 | References: `<world>:<object>` in `resolveCard` and the spell reader; foreign `view`/`card`/`inspect` as citations; `foreignWorld` narrowed | host | ~200 Lean | second |
 | 6 | Cross-world `call` and `send` as suspension and delivery; the ledger across | host | ~300 Lean | third |
 | 7 | KIND's lineage line with `madeFrom.world`; "as of" on foreign facts in Card; the three-door directory seed | objects | ~60 Bend | third |
-| 8 | AGENTS-API heap and REPL paragraphs rewritten for scratches; REPO's per-world DID (`did:web:<host>:w:<world>`; `town` keeps the bare DID) | docs, transport | ~40 lines | with 4 |
+| 8 | AGENTS-API heap and REPL paragraphs rewritten for scratches; REPO's per-world DID (`did:web:<world>.<host>`, a hostname: atproto has no path-based did:web; `town` keeps the bare DID) | docs, transport | ~40 lines | with 4 |
 
 Where the work stands (lane fungus, 2026-10-11): 1 landed (`delvetalk-obend serve`, `Serve.lean`; hostd.py and
 hostproc.py are gone); 3 landed in part (`python3 -m transport open` writes the world's row, `deploy/open.py` gone into it; `<state>/bridges/<world>.json`, and
@@ -320,7 +320,7 @@ home world's `crossed` entry, citing the target's receipt, resumes it; a send is
 crossing per turn, the ledger crossing with it. The REPL and `check` run in a scratch (`world-repl`, HOST-HANDOFF
 5.174): a definition is an object of the scratch, so the stateless process and its checkpoints are gone; its owner
 expires a scratch with `delvetalk world expire / scratch: <name>`, and `/scratch/<name>/cite` is the second exit's
-front route. 7 and 8 are not built.
+front route. 7 is not built; of 8, the per-world DID is (`repo.world_origin`), the AGENTS-API paragraphs are not.
 
 Ops added: `world-scratch`, `world-cite`, `serve-status`; `world-fork` stays
 as the operator's copy. Ops changed: every op takes `world`; `world-advance`

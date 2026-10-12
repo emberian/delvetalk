@@ -1,4 +1,4 @@
-"""DelveTalk's own repository: the journal as AT Protocol records under did:web:<origin host>, read only, and,
+"""DelveTalk's own repository: the journal as AT Protocol records under did:web:<the world's host>, read only, and,
 with a signing key on the box, as a signed repository: one commit per journal height over a Merkle search tree
 of the entries' CIDs.
 
@@ -136,6 +136,15 @@ class Signed:
         return car_of(head.commit[0], [head.commit, *path, self.heights[h - 1].record, *extra])
 
 
+def world_origin(origin, world):
+    """The origin a world's repository is named by: the front's own for the town, else `<world>.<its host>`. An atproto
+    did:web is a hostname and never a path (atproto.com/specs/did), so each world is a host of its own (docs/REPO.md)."""
+    if world == 'town':
+        return origin.rstrip('/')
+    parts = urllib.parse.urlsplit(origin)
+    return f'{parts.scheme}://{world}.{parts.netloc}'
+
+
 def object_key(oid, tail):
     """`<object with / as ~>.<tail>`: a record key for every id the host creates (`[A-Za-z0-9._:/-]`)."""
     return f"{oid.replace('/', '~')}.{tail}"
@@ -149,9 +158,9 @@ class Repo:
                'com.atproto.sync.listRepos': 'list_repos', 'com.atproto.sync.listBlobs': 'list_blobs',
                'com.atproto.sync.subscribeRepos': 'subscribe'}
 
-    def __init__(self, origin, key=None):
-        """`key`: a transport.atproto.sign.Key, or None for an unsigned repository."""
-        self.origin = origin.rstrip('/')
+    def __init__(self, origin, key=None, world='town'):
+        """`key`: a transport.atproto.sign.Key, or None for an unsigned repository; `world` names its host (`world_origin`)."""
+        self.origin = world_origin(origin, world)
         parts = urllib.parse.urlsplit(self.origin)
         self.handle, self.did = parts.hostname, 'did:web:' + parts.netloc.replace(':', '%3A')
         self.signed = Signed(self.did, key) if key else None
