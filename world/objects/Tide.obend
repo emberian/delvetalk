@@ -14,7 +14,10 @@ import ./Text.obend as Text
 # nothing, so a resumed wait never meets a stale root; a wait the clock passed by a jump ticks
 # once, at the clock it wakes to (missed ticks are not made up). What happens at a tick is the
 # rules written on the tide (`delvetalk tide rules`): the weather's, once a clock day, is `new.ticks
-# % 24 == 0`; a front's clock reads the tick too. Its owner starts it (`tick`, the first); a tick
+# % 24 == 0`; a front's clock reads the tick too. Its wait is its own on the clock (a slot in its own
+# name), so the clock's ending it is a new cause: the host runs the wake under the tide's own chain, a
+# whole budget each period, and it ticks for ever (docs/review/astra-2026-10-12 world 5); a second wait of
+# its own is refused `waiting`. Its owner starts it (`tick`, the first); a tick
 # sooner than `gap` after the last is refused tooSoon, so a second chain dies at its first tick.
 # owner: who alone starts, reprograms or amends it (the host fills it with the creating principal).
 record State:

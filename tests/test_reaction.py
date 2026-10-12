@@ -429,6 +429,20 @@ class LongFront(Tide):
         self.assertEqual(sum(1 for _, text in self.inbox(KIM) if text == "the long front moved"), 3)
 
 
+class Ticking(Tide):
+    def test_the_tide_ticks_for_ever_each_period_with_a_whole_budget(self):
+        """Astra 2026-10-12 world 5: each tick sent `due` and each resumed `due` sent the next tick, one ledger
+        level a link, so the self-ticking tide stopped after about fifty hourly ticks (`budgetExhausted`). A thing's
+        wait on the clock for itself is a new cause: its wake runs under the thing's own chain, and the tide ticks for
+        every hour the clock moves through, a hundred and twenty here."""
+        start = int(self.field("tide", "ticks")["value"])
+        clock = int(self.field("tide", "last")["value"])
+        for _ in range(120):
+            clock += 61
+            self.advance(clock)
+        self.assertEqual(int(self.field("tide", "ticks")["value"]), start + 120)
+
+
 class Replay(Reaction):
     def test_a_fired_rule_replays_after_the_host_restarts(self):
         door = self.made(OPENER, "kind/door", "\nname: sluice")

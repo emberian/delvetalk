@@ -774,7 +774,9 @@ deleting a closed sum or a convention:
   rains" is `count(new.lines) >= 2 and count(old.lines) <= 1`, true once, at the crossing.
 - **The clock is a condition, never the cause.** Nothing is evaluated in a silence. A condition on `request.clock`
   fires at the first write after the clock passes it, and whoever writes next pays. The tide is the one thing
-  that writes on the clock, ticking itself every `gap` minutes; "every day" is a rule on the tide
+  that writes on the clock, ticking itself every `gap` minutes, for ever: a thing's wait on the clock in its own
+  name (one at a time) wakes under its own chain, a whole budget each period, missed periods one wake; "every day"
+  is a rule on the tide
   (`request.method == "tick" and new.ticks % 24 == 0`). A reply to a card is already a turn of that card, so a
   rule on `request.method` is the reaction to a reply.
 - **The world poses.** A rule's `then` is any spell its owner may cast, so what a body or the hand places is the
