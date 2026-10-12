@@ -140,6 +140,23 @@ that wrote them: rains as rains); with `morning: true`, what
 still wants a hand, the eight longest waiting, oldest first, by their readings and without spells (the exact list
 beneath carries them). Up to 600 characters. That is the morning card; without `morning`, the chronicle's day.
 
+**A telling** (the owner: "not just 'while you were away' but also a 'before you arrived... [painted past]'";
+`Enchant.tellingOf`, `world-render {object, telling: {reader?, since?}}`): what happened in a place (a thing one
+`enter`s), told to one who comes in, read from the journal of that place and nothing else. Its span runs from the entry
+the reader last left at (`left`; 0 for one who never did) to the change that brought them in (not in it: its newest
+change), so it is one model call per arrival. Its strokes: each act by whose hand (came in, left, took or laid down a
+thing, hung or took down a door, made a thing here, a rule fired), the lines written and said there (a room's `say`
+and `emote` are its lines, a whisper is not) and the marks; counts with their units (lines, visits, visitors); for one
+arriving first, the making and its credit, the first two lines and the newest four, who came, what it still wants.
+Never the reader's own comings and goings, a spell, a rule, a law, or what moves with every later act. The paint is
+past tense for what happened and present for what stands, one or two sentences while away (300 characters), up to
+four before arrival (500), and is checked as a card's is: the frame above it, "While you were away" or "Before you
+arrived", is the host's, so the paint addresses nobody and `secondPerson` stands. Beneath it, folded, the exact lines
+it draws on (`telling.exact`, with their entries), in its place when there is none; on entering a room its reply's
+own "While you were away" lead stands below as well. Nothing happened while away is `quiet`: no model, nothing shown.
+Shown on `/play/<place>` after an admitted `enter` and on `/o/<place>` to a signed-in reader; never posted, never in
+a reply, a receipt or a draft.
+
 **The prompt** is `Paint.contract()`, the one prompt file. **The check** is `Enchant.verify`, the table
 `Enchant.clauses` in order, the first failed refusing; `Enchant.table` holds every word a clause reads:
 
@@ -154,8 +171,8 @@ beneath carries them). Up to 600 characters. That is the morning card; without `
 | `heads` | no line begins `●`, `§`, `refused`, `law `, `rule `, `want `, `hob:` |
 | `forbidden` | none of I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please (a quotation may hold any) |
 | `secondPerson` | no you, your, yours, you're, you've, you'll, you'd, yourself, yourselves, y'all |
-| `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one |
-| `length` | 1 to 400 characters, a day 600 |
+| `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, `came`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one |
+| `length` | 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival |
 
 A paint refused for its length alone is asked for once more, told its length; any other refused paint, or a second
 long one, shows the card exact until its next version and is not asked again for that one; `world-status.renders`

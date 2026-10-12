@@ -17,7 +17,7 @@ from pathlib import Path
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
-from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, door_rows, handles, place, plain, typed
+from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, door_rows, handles, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import Repo
@@ -709,8 +709,11 @@ class Handler(BaseHTTPRequestHandler):
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             reply = host.send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
             return self.answer(reply, links=receipt_links(base, reply))
-        reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,  # asked on the card itself
-                           'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct'})
+        # `try: true` is the act with the write switched off (docs/POSTING.md §2); `if` the roots a try read, else `moved`.
+        reply = host.send({'op': 'world-try' if data.get('try') is True else 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
+                           'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct', **({'if': data['if']} if 'if' in data else {})})
+        if reply.get('tried') or reply.get('class') == 'moved':  # nothing journaled: the whole answer, nothing drafted
+            return self.answer(reply, links=at(obj))
         turns = reply.get('turns') if reply.get('status') == 'spells' else [reply]  # several spells: a turn each
         if not scratch:  # a scratch turn drafts nothing for the town
             for t in turns:
@@ -882,9 +885,13 @@ class Handler(BaseHTTPRequestHandler):
         here = place(host, did, name, self.server.sleep)
         if here['card'] is None and not answer:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], here.get('cardReply') or here['view'], (here.get('cardReply') or here['view']).get('status')))
+        # Entering a place: what happened there, told above what came back; never in the reply's text, never posted.
+        entered = spoke and any(t.get('status') == 'admitted' and t.get('object') == name and (t.get('result') or {}).get('label') == 'entered'
+                                for t in turns)
+        told = painted(host, did, name, self.server.sleep, telling={}) if entered else None
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
         self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered,
-                                  paint=here['paint'], wants=here['wants'], doors=here['doors'], said=say))
+                                  paint=here['paint'], wants=here['wants'], doors=here['doors'], said=say, told=told))
 
     def html(self, code, body, headers=()):
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
@@ -906,8 +913,9 @@ class Handler(BaseHTTPRequestHandler):
         seen = host.send({'op': 'world-inspect', 'principal': principal or PUBLIC, 'object': name})
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
+        told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
-                                 here['doors'], seen, here['wants'], brief, here['paint']))
+                                 here['doors'], seen, here['wants'], brief, here['paint'], told))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, under the reader's authority."""

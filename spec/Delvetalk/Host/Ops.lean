@@ -54,15 +54,22 @@ def worldId : String := "world"
     (docs/METAPHYSICS.md §5). No object takes the id. -/
 def objectsCard : String := "objects"
 
+/-- The card name `delvetalk try` is read as (docs/POSTING.md §2): the spells under it are tried, never cast. No
+    object takes the id. -/
+def tryCard : String := "try"
+
+/-- The card name `delvetalk receipt / of: <slug or post>` is read as: a receipt looked up by post. No object takes it. -/
+def receiptCard : String := "receipt"
+
 /-- An object id a creation may take: 1..128 bytes of `Limits.nameAlphabet` (ASCII letters, digits and
     `. _ : / -`), the rule the spell grammar reads a card name by, so every object can be spelled and
     has an AT record key (`~` stands for `/` there). Journals with other ids still replay; only new
     creations are held to it. -/
 def validObjectId (id : String) : Bool :=
-  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId && id != objectsCard &&
+  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId && id != objectsCard && id != tryCard && id != receiptCard &&
     id.toList.all fun (c : Char) => Limits.nameAlphabet.toList.contains c
 
-def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world or objects"
+def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world, objects, try or receipt"
 
 /-- The public reader's name: `anonymous`, or the empty string; both read as "". -/
 def publicReader : String := "anonymous"
@@ -556,11 +563,11 @@ def Proposal.digest (p : Proposal) : String :=
 
 /-! ## Judging -/
 
-/-- The closed set of refusal classes. -/
+/-- The closed set of refusal classes (`moved`, an act whose `if` no longer holds, is answered and never journaled). -/
 def refusalClasses : List String :=
   ["staleRoot", "typeMismatch", "capacity", "absentItem", "lawRefused", "unknownObject",
    "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
-   "keyTaken", "duplicateKey", "badSpell", "quota", "noMethod", "quiet", "cardRefused"]
+   "keyTaken", "duplicateKey", "badSpell", "quota", "noMethod", "quiet", "cardRefused", "moved"]
 
 open Lean Elab Term in
 /-- `natsIn% N`: every `Nat` definition of namespace `N`, as `[(its name, its value)]` in name order, so a
@@ -2760,12 +2767,16 @@ def viewFor (names : List Delvetalk.Compiler.ObjectiveBendLaw.LawName) (cells : 
 def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := do
   if let some r := quietOf w p.principal ((p.roots.head?.map (·.1)).getD "") then throw r
   let writes := p.allWrites
+  -- What the turn makes is an object of the turn (docs/HOST-HANDOFF.md 5.203): a later frame of it, a plan's later
+  -- act, reads it, writes it and places on it, judged here by its own law over the state it is made with.
+  let made := p.creates.foldl (fun (c : World) (id, x) =>
+    { c with objects := c.objects.insert id { x.object with madeFrom := x.madeFrom } }) w
   for id in p.roots.map (·.1) ++ writes.map (·.1) do
-    unless w.objects.contains id do throw { cls := "unknownObject", object := id }
+    unless made.objects.contains id do throw { cls := "unknownObject", object := id }
   -- A root the turn only changes by `add`/`append` (FOUNDATION section 13, row 1) need only be a
   -- version the object had: its changes re-apply on the state as it is now and are judged there.
   for (id, seen) in p.roots do
-    if let some o := w.objects[id]? then
+    if let some o := made.objects[id]? then
       if o.version != seen && !(seen < o.version &&
           rootAdmits w writes id seen (p.cells.lookup id) (p.rebaseOwn == some id)) then
         throw { cls := "staleRoot", object := id }
@@ -2807,7 +2818,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   -- it as the commit leaves it, so an atomic commit is judged as the world it makes.
   let mut staged : List (String × List Written × Object × Object × Delvetalk.Turn.StateCells × List (String × Data)) := []
   for (id, changes) in writes do
-    let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
+    let some o := made.objects[id]? | throw { cls := "unknownObject", object := id }
     let applied ← match applyEdits o.relations o.cells (changes.map (·.edits)) with
       | .ok a => pure a
       | .error clause => throw { cls := clause, object := id }
@@ -2872,7 +2883,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     staged := staged ++ [(id, changes, o, next, cells, applied.evicted)]
   let cand := staged.foldl (fun (c : World) (id, changes, o, next, cells, _) =>
       { c with objects := c.objects.insert id { next with cells, version := if changes.any (·.kind != 4) then o.version + 1 else o.version } })
-    (p.creates.foldl (fun (c : World) (id, x) => { c with objects := c.objects.insert id x.object }) w)
+    made
   for (id, changes, o, next, cells, evicted) in staged do
     let mut next := next
     -- The current law judges the whole write, under the pin the object will run. Every
@@ -3024,7 +3035,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version, cells })]
     factsOf := factsOf ++ [(id, judgedBy)]
   return { updates := out, reprograms, amendments, evicted := evictions, facts := factsOf,
-           creations := p.creates.map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom }),
+           -- A creation the turn also wrote or placed on is its update, made at the state the turn leaves it in.
+           creations := (p.creates.filter fun (id, _) => !out.any (·.1 == id)).map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom }),
            creates := p.creates.map fun (id, c) => createRecJson id c }
 
 /-! ## Entries -/
@@ -3084,7 +3096,8 @@ def reservationsAfter (w : World) (entry : Json) : Std.HashMap String Reservatio
   | "reserved", some i =>
     let round := ((w.reservations[i]?).map (·.round + 1)).getD 0
     w.reservations.insert i { source := (outcome.getObjValAs? String "source").toOption.getD "",
-                              hour := (outcome.getObjValAs? Nat "hour").toOption.getD 0, round }
+                              hour := (outcome.getObjValAs? Nat "hour").toOption.getD 0, round,
+                              resident := (outcome.getObjValAs? String "for").toOption.getD "" }
   | "released", some i => match w.reservations[i]? with
     | some r => w.reservations.insert i { r with released := true }
     | none => w.reservations
@@ -3782,7 +3795,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     (onEnd : Nat → Json → List (String × Json) := fun _ _ => []) : World × Json :=
   -- Arguments are kept only where a Bend law reads them; its reads are roots; its code is warm.
   let p := { p with writes := p.writes.map fun (id, ws) =>
-    if ((w.objects[id]?).map (·.predicate)).getD false then (id, ws) else (id, ws.map fun x => { x with argument := .record [] }) }
+    if ((w.objects[id]? <|> (p.creates.lookup id).map (·.object)).map (·.predicate)).getD false then (id, ws) else (id, ws.map fun x => { x with argument := .record [] }) }
   let w := warmLaws w (p.writes.map (·.1))
   -- The law reads join the roots only within the root bound replay holds every entry to (codex
   -- host 4): past it the turn is refused `capacity` on the roots it read itself.
@@ -3820,7 +3833,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let before := w
       let updates := judged.updates
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
+      let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
+      let w := p.creates.foldl (fun w (id, _) => noteMinted w id) w
       let w := applyGrants w p.grants p.revokes p.spent
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
         (("object", toJson id) :: ("version", toJson o.version) :: ("cid", toJson o.stateCid) ::
@@ -3843,7 +3857,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       -- A creation's state is storage the turn spent, as a write's growth is (codex host 9): the
       -- ledger its sends inherit counts both (`childLedger`; a created id is new, so all of it).
       let (w', entry) := push w key (base ++ [("outcome", outcome)] ++ onAdmit (updates ++ judged.creations) ++ reacted ++
-          newSources w (judged.creations.flatMap fun (_, o) => inputSources o.inputs) ++ onEnd (w.height + 1) outcome)
+          newSources w (p.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ onEnd (w.height + 1) outcome)
         (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
       (w', reply entry)
 
@@ -4270,11 +4284,23 @@ def quotaSource : String := "delve"
 def postsUsed (w : World) (source : String) : Nat :=
   w.reservations.fold (fun n _ r => if r.source == source && r.hour == postHour w && !r.released then n + 1 else n) 0
 
-/-- Would a reservation of `source` now be refused? The clock at which the next may be made. -/
-def postRefusal (w : World) (source : String) : Option Nat :=
-  if source == quotaSource && postsUsed w source ≥ w.postQuota then some ((postHour w + 1) * 60) else none
+/-- One resident's share of the hour's `delve` posts (the astra posting review (6)): a quarter of `postQuota`, at least
+    one, so one resident's long answers or many questions never take every reply the town has. -/
+def postShare (w : World) : Nat := max 1 (w.postQuota / 4)
 
-/-- `world-post-reserve {principal: clock, intent, source}` (HOST-HANDOFF 5.107): admit one post of
+/-- The hour's unreleased `delve` reservations answering `resident`. -/
+def residentUsed (w : World) (resident : String) : Nat :=
+  w.reservations.fold (fun n _ r => if r.source == quotaSource && r.resident == resident && r.hour == postHour w && !r.released then n + 1 else n) 0
+
+/-- Would a reservation of `source` (answering `resident`, "" for none) now be refused? The clock at which the next
+    may be made, and whether it is the resident's share that binds. -/
+def postRefusal (w : World) (source : String) (resident : String := "") : Option (Nat × Bool) :=
+  if source != quotaSource then none
+  else if postsUsed w source ≥ w.postQuota then some ((postHour w + 1) * 60, false)
+  else if !resident.isEmpty && residentUsed w resident ≥ postShare w then some ((postHour w + 1) * 60, true)
+  else none
+
+/-- `world-post-reserve {principal: clock, intent, source, for?}` (HOST-HANDOFF 5.107, 5.206): admit one post of
     `intent` before the network is touched. `delve` posts count against the journaled `postQuota` per
     clock hour and are refused `quota {next}` past it; another source reserves without a count. The
     reservation is journaled `reserved {intent, source, hour}` under `(clock, "post:" intent)`, so a
@@ -4284,21 +4310,25 @@ def postReserveOp (w : World) (j : Json) : Except String (World × Json) := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let intent ← boundedText "intent" Limits.maxIntentBytes (← j.getObjValAs? String "intent")
   let source ← boundedText "source" Limits.maxSourceBytes (← j.getObjValAs? String "source")
+  let resident := (← optText j "for").getD ""
+  if resident.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"for must be at most {Limits.maxPrincipalBytes} bytes"
   if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
     throw s!"posts are reserved only by {w.clockPrincipal}"
   let round := match w.reservations[intent]? with
     | some r => if r.released then r.round + 1 else r.round
     | none => 0
   let key := s!"post:{intent}" ++ (if round == 0 then "" else s!"/{round}")
-  let digest := Journal.bodyHash (Json.mkObj [("intent", toJson intent), ("source", toJson source)])
+  let digest := Journal.bodyHash (Json.mkObj ([("intent", toJson intent), ("source", toJson source)] ++
+    (if resident.isEmpty then [] else [("for", toJson resident)])))
   if let some r := retained w principal key digest then return (w, r)
-  if let some next := postRefusal w source then
+  if let some (next, share) := postRefusal w source resident then
     return (w, Json.mkObj [("status", toJson "refused"), ("class", toJson "quota"), ("source", toJson source),
-      ("reason", toJson s!"{w.postQuota} {source} posts an hour; the next at clock {next}"), ("next", toJson next)])
+      ("reason", toJson (if share then s!"{postShare w} of the hour's {w.postQuota} {source} posts answer one resident; the next at clock {next}"
+        else s!"{w.postQuota} {source} posts an hour; the next at clock {next}")), ("next", toJson next)] |>.setObjVal! "share" (Json.bool share))
   let (w', entry) := push w (identityKey principal key)
     [("identity", identityJson principal key), ("roots", rootsJson []), ("turn", toJson 0),
-     ("request", toJson digest), ("outcome", Json.mkObj [("tag", toJson "reserved"), ("intent", toJson intent),
-       ("source", toJson source), ("hour", toJson (postHour w))])] []
+     ("request", toJson digest), ("outcome", Json.mkObj ([("tag", toJson "reserved"), ("intent", toJson intent),
+       ("source", toJson source), ("hour", toJson (postHour w))] ++ (if resident.isEmpty then [] else [("for", toJson resident)])))] []
   return (w', reply entry)
 
 /-- `world-post-release {principal: clock, intent, reason}`: give back a reservation whose post
@@ -4323,14 +4353,17 @@ def postReleaseOp (w : World) (j : Json) : Except String (World × Json) := do
   return (w', reply entry)
 
 /-- `world-status.posts`: per source standing this clock hour, how many are reserved and, for the
-    counted source, the quota and the clock at which the next may be made. -/
+    counted source, the quota, one resident's share, how many each resident's posts took, and the clock at which the
+    next may be made. -/
 def postsStatus (w : World) : Json :=
   let sources := (w.reservations.fold (fun acc _ r => if r.hour == postHour w && !acc.contains r.source then acc ++ [r.source] else acc)
     [quotaSource])
   Json.mkObj [("hour", toJson (postHour w)), ("sources", Json.arr (sources.toArray.map fun src =>
     Json.mkObj ([("source", toJson src), ("used", toJson (postsUsed w src))] ++
-      (if src == quotaSource then [("quota", toJson w.postQuota),
-        ("next", match postRefusal w src with | some n => toJson n | none => Json.null)] else []))))]
+      (if src == quotaSource then [("quota", toJson w.postQuota), ("share", toJson (postShare w)),
+        ("residents", Json.mkObj ((w.reservations.fold (fun acc _ r => if r.source == src && r.hour == postHour w && !r.released &&
+            !r.resident.isEmpty && !acc.contains r.resident then acc ++ [r.resident] else acc) []).map fun p => (p, toJson (residentUsed w p)))),
+        ("next", match postRefusal w src with | some (n, _) => toJson n | none => Json.null)] else []))))]
 
 /-- `world-principal {principal, did, handle}`: the clock principal records the display handle
     of `did` (the bridge, at the first observed post of each author). Journaled as a
@@ -4776,9 +4809,11 @@ def rebuildCreates (w : World) (principal : String) (recorded : Array Json) :
   for r in recorded do
     let id ← r.getObjValAs? String "object"
     let seed ← r.getObjVal? "seed"
-    let (o, sources, w') ← buildObjectIn w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
+    -- Each is built as the turn made it: with what the turn made before it (a thing under a kind of the same turn).
+    let made := creates.foldl (fun (c : World) (x, m) => { c with objects := c.objects.insert x m.object }) w
+    let (o, sources, w') ← buildObjectIn made (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
       (r.getObjVal? "chain").toOption principal (w.height + 1) (← createdLaw r)
-    w := w'
+    w := { w' with objects := w.objects }
     let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
     creates := creates ++ [(id, ({ object := o, sources, seed, madeFrom := (r.getObjVal? "madeFrom").toOption } : CreateRec))]
   return (w, creates)
@@ -4879,7 +4914,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "post reserved by another principal"
     let source ← outcome.getObjValAs? String "source"
     unless (← natField outcome "hour") == postHour w do throw "a reservation not in its clock hour"
-    if (postRefusal w source).isSome then throw "a reservation past its source's quota"
+    if (postRefusal w source ((outcome.getObjValAs? String "for").toOption.getD "")).isSome then
+      throw "a reservation past its source's quota or its resident's share"
     return record w entry key []
   | "released" =>
     if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "post released by another principal"
@@ -4942,7 +4978,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       throw "interpretation of an unknown or already settled request"
     discard <| outcome.getObjVal? "reply"
     let verdict ← outcome.getObjVal? "verdict"
-    unless ["proposal", "proposals", "unclear"].contains (← verdict.getObjValAs? String "tag") do throw "unknown verdict"
+    unless ["proposal", "proposals", "plan", "unclear"].contains (← verdict.getObjValAs? String "tag") do throw "unknown verdict"
     return record w entry key []
   | "created" =>
     let id ← outcome.getObjValAs? String "object"
@@ -5020,7 +5056,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         let recorded := ((x.getObjVal? "evicted").toOption.bind (·.getArr?.toOption)).getD #[]
         unless recorded == ((judged.evicted.lookup id).getD #[]) do
           throw s!"the rows retention evicted from {id} do not replay"
-      let w := (judged.updates.filter (fun (id, _) => judged.reprograms.any fun r =>
+      let w := (judged.updates.filter (fun (id, _) => creates.any (·.1 == id) || judged.reprograms.any fun r =>
           (r.getObjValAs? String "object").toOption == some id) ++ judged.creations).foldl (fun w (_, o) => noteRecompiled w o) w
       let updates := judged.updates
       for raw in rawWrites do
@@ -5036,7 +5072,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       let usedTicks := (entry.getObjValAs? Nat "ticksUsed").toOption.getD 0
       let before := w
       let w := updates.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
-      let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
+      let w := judged.creations.foldl (fun w (id, o) => { w with objects := w.objects.insert id o }) w
+      let w := creates.foldl (fun w (id, _) => noteMinted w id) w
       let w := applyGrants w grants revokes spent
       -- The rules it fired and the wants it opened and closed are re-derived and must be the ones journaled.
       let child := childLedger before entryLedger usedTicks (updates ++ judged.creations) p.allWrites
@@ -5247,6 +5284,20 @@ def viewable (w : World) (reader id : String) : Bool :=
   | some o => o.read.permits reader
   | none => false
 
+/-- The act of a refused plan's entry its refusal names (docs/HOST-HANDOFF.md 5.203), with how many the plan had: the
+    act refused as it ran, else the last act that staged what the commit refused (its `object`, in the act's `touched`). -/
+def planRefusedAct (entry : Json) : Option (Nat × Nat) := do
+  guard (tagOf entry == "refused")
+  let plan ← (entry.getObjVal? "plan").toOption
+  let acts := ((plan.getObjVal? "acts").toOption.bind (·.getArr?.toOption)).getD #[]
+  let of := (plan.getObjValAs? Nat "of").toOption.getD acts.size
+  let object := ((entry.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "object" |>.toOption)).getD ""
+  let numbered := fun (a : Json) => (a.getObjValAs? Nat "act").toOption
+  let n ← (acts.findSome? fun a => if (a.getObjValAs? Bool "refused").toOption == some true then numbered a else none) <|>
+    (acts.reverse.findSome? fun a =>
+      if ((a.getObjVal? "touched").toOption.bind (·.getArr?.toOption)).any (·.contains (toJson object)) then numbered a else none)
+  return (n, of)
+
 /-- The public projection of a refusal: observed, not committed, the class and the root it
     names, and nothing else. `root` is `{object, version}`, the version the turn read it at (a reader
     who may view the object reads that state's CID with `world-state-cid`); an `unknownObject` refusal also names the
@@ -5266,6 +5317,8 @@ def publicRefusal (entry : Json) : Json :=
   let slug := (entry.getObjValAs? String "hash").toOption.bind Slug.ofCid
   Json.mkObj ([("status", toJson "refused"), ("class", toJson cls), ("root", root)] ++
     (slug.map fun x => [("slug", toJson x)]).getD [] ++ law ++
+    -- A plan's refusal says which act, of how many: none of them was done.
+    ((planRefusedAct entry).map fun (n, of) => [("act", toJson n), ("acts", toJson of)]).getD [] ++
     (if cls == "unknownObject" then
       [("object", toJson id), ("hint", toJson s!"no card named {id}; the commonplace lists the doors")]
     -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.
