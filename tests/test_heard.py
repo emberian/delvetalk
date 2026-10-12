@@ -242,6 +242,21 @@ class Heard(HeardCase):
         self.assertEqual(ran["receipt"]["outcome"]["tag"], "admitted", ran)
         self.assertEqual((self.value("here", "room"), self.value("said", "room")), ("1", "1 here: hello"))
 
+    def test_hob_may_answer_with_a_plan_that_runs_as_one_turn_and_stands_or_falls_whole(self):
+        """HOST-HANDOFF 5.203: hob's spell answer may be a plan; its acts run in one turn read as they come, and a refused act
+        refuses them all."""
+        self.make("room", ROOM, record(owner=label("ember")))
+        self.assertEqual(self.say("I come in, say hello, and it rains", card="room", identity="post-plan")["status"], "suspended")
+        _, ran = self.settle("delvetalk plan\ndelvetalk room enter\ndelvetalk room say / text: hello\ndelvetalk bell rain / text: hello")
+        self.assertEqual(ran["receipt"]["outcome"]["tag"], "admitted", ran)
+        self.assertEqual([a["act"] for a in ran["receipt"]["plan"]["acts"]], [1, 2, 3])
+        self.assertEqual((self.value("said", "room"), self.value("rains")), ("1 here: hello", "1"))
+        self.say("again, and ring it", card="room")
+        _, refused = self.settle("delvetalk plan\ndelvetalk room enter\ndelvetalk bell ring")
+        self.assertEqual(refused["receipt"]["outcome"]["tag"], "refused", refused)
+        self.assertTrue(refused["receipt"]["outcome"]["reason"].startswith("act 2 (delvetalk bell ring)"), refused)
+        self.assertEqual(self.value("here", "room"), "1")
+
     def test_ask_naming_a_field_offers_what_is_still_needed_and_any_other_question_points_at_the_spells(self):
         self.say("rain on it")
         _, ran = self.settle("ask: what text should the rain carry?")

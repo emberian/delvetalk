@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -2314,6 +2314,34 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    journal sealed. carry-check reads each world line's `moved`: "green, moving: the deploy must carry: … the image moves
    N objects (…), which a restart in place keeps at the code they had; it carries". Test:
    `test_carry_check.CarryCheck.test_carry_check_says_a_deploy_carries_when_the_image_moves_an_object`.
+203. **A plan is one turn (lane/plan).** On delve.town a post is the interface and the town shares `postQuota` (16)
+   posts an hour, with no draft-and-try loop (docs/POSTING.md), so one post must make a kind, make one, and place a
+   rule on it, all or nothing. A post with `delvetalk plan` at the margin, or a fence tagged `plan`, is a plan
+   (`Spell.plan`): every spell of the post an act, in order, at most `Limits.planActs` (8; past it `tooManyActs`).
+   `runTurn` runs it as ONE turn under the post's identity (`runPlanTurn`, `runPlan`): each act is read when it
+   comes (`routeSpell` on the turn's world) and runs at the top of the turn as a spell posted alone does (a card's
+   method frame; a placing staged by `stagePlacements`; `become`, `adopt`, `lend` staged from `hostChange`, which
+   `hostSpell` commits for a spell alone; the opener's powers are entries of their own, `notInPlan`). Nothing is judged
+   until the one `finishTurn`: `judge` judges every law against the world the acts leave, `reactions` fires rules once,
+   one receipt. A later act reads what earlier acts wrote (`asWritten`) and made: what a turn creates is an object of
+   the turn (`madeIn` puts it in the turn's world; `judge` judges roots, writes and placements on it over the state it
+   is made with, its own law judging them; the commit applies the creation, then the update), and a hole `{made N}`
+   is the first object act N made (`fillHoles`; a hole naming no earlier act, or one that made nothing, `hole`). A
+   refusal in a frame refuses the plan whole, its reason `act N (<spell line>): …` (`inAct`; an act that would wait,
+   `planWaits`); a refusal at the commit is named by the act that staged its object (`planRefusedAct`, from the
+   entry's `plan {acts, of}`: each act's line, card, `done` (`ran`, `staged`, `read`), `made` and `touched`). The
+   reply carries `plan` (with `refused`), the acts' lines first in `revealed` (`1. <spell>: made kind/lamp`), and a
+   refusal's public projection `act`/`acts`, which the bridge drafts as "act N of M refused, so none of the plan was
+   done:". A plan is one reply, so one post of the quota. `try` (lane/posting's `world-try`) is this same `runTurn`
+   with the world dropped, and `if:` (`world-turn`'s, or the margin line above the plan) guards it whole. hob may
+   answer with a plan (the policy's answers say so): the verdict `plan {acts}`, the host's reading only, runs through
+   `runPlan` at `resumeHeard`; hob's settled steps run there too (`runHeard`). Replay: an entry that creates and then
+   writes or places on what it made, or creates a thing citing what it made, replays (`rebuildCreates` builds each
+   creation over the ones before it); no earlier entry could hold either, so the derivation of every existing journal
+   is unchanged: no edition change. Tests: `test_plan` (kind, thing and rule in one plan, replayed; a third act refused
+   in its frame and at the commit leaves nothing; holes; too many acts; a fence; later acts read earlier writes),
+   `test_bridge.Bridging.test_a_plan_is_one_turn_one_draft_and_one_post_of_the_quota`,
+   `test_heard.Heard.test_hob_may_answer_with_a_plan_that_runs_as_one_turn_and_stands_or_falls_whole`.
 
 ## 6. Gotchas
 
