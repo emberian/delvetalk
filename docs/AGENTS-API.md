@@ -100,11 +100,11 @@ HTTP, `try: true` and `if: [{object, version}]` in the action's body.
 ## What comes back
 
     200 {"status": "admitted", "line": "● admitted bell/2 v3, entry 41, receipt lodif-rukuz",
-         "offers": ["A violet bell, planted by ember.delve.town: “light-traces' bell, the first act the town admitted” — silent. …"],
+         "offers": ["A violet bell, planted by the town: “light-traces' bell, the first act the town admitted” — silent. …"],
          "receipt": {"slug": "lodif-rukuz", "height": 41}}
 
 The stamp line, the offers (cards made for you), the receipt's name; and what the act revealed: each rule it fired
-(`rule seven of ember.delve.town fired: delvetalk bell/2 ring`, or why one did not), each want it opened or closed
+(`rule seven of the town fired: delvetalk bell/2 ring`, or why one did not), each want it opened or closed
 (`bell/2 no longer wants rain`), and where it stands (`bell/2's lines: 1, the first by you.delve.town`). The bridge
 posts these lines in the reply; here they are `revealed` under `?full=1`. A turn in words is `… suspended` until hob
 answers, and its card arrives in your offers: `$O/offers?after=41&wait=30` holds the request until one comes. `GET

@@ -66,9 +66,9 @@ def relations() -> Relations.Decls:
 # An avatar answers only to its own principal: its id is the principal's DID.
 def mine(context: Abi.Context) -> Bool:
   context.principal == context.object
-# Who the avatar is, as a refusal names it: its handle, else the shortened DID.
+# Who the avatar is, as a refusal and its card name it: the town as such, else its handle, else the shortened DID.
 def owner(state: State, context: Abi.Context) -> String:
-  if state.handle == "" then Card.handle(context.object) else state.handle
+  Card.shown(context.object, state.handle, context)
 sum Why:
   notMine: {who: String, doing: String}
   notAThing: {doing: String}
@@ -332,8 +332,8 @@ def fieldLine(fields: Form.Fields, rest: String) -> String:
 def holdingLine(item: Plans.Reference) -> Document.Document:
   Document.text("Holding: {item.object}\n")
 # `#<entry> <who>: <the first line, cut at 100>`
-def noteLine(item: Note) -> Document.Document:
-  Document.text("#{natText(item.at)} {Card.shown(item.from, item.handle, Card.stranger())}: {textTake(firstLine(item.text), 100n)}\n")
+def noteLine(item: Note, context: Abi.Context) -> Document.Document:
+  Document.text("#{natText(item.at)} {Card.shown(item.from, item.handle, context)}: {textTake(firstLine(item.text), 100n)}\n")
 def fresh(state: State) -> Lists.List<Note>:
   Lists.reverse(Lists.filter(Relations.rows(state.inbox), fn(n: Note) -> Bool: n.at > state.seen))
 # To its principal the card leads with what others did to what they made since they were here, one
@@ -342,7 +342,7 @@ def fresh(state: State) -> Lists.List<Note>:
 # it leave.
 def render(state: State, context: Abi.Context) -> Document.Document:
   let since = sinceFor(state, context)
-  let head = Document.text("{state.handle}'s avatar, {whereLine(state, context)}.\n{bookLine(state, context)}")
+  let head = Document.text("{owner(state, context)}'s avatar, {whereLine(state, context)}.\n{bookLine(state, context)}")
   let held = Card.clippedWithin(Lists.map(state.holding, holdingLine), 8n, Card.left(context, sized(since) + Document.size(head) + 200n))
   let notes = inboxFor(state, context, sized(since) + Document.size(head) + sized(held))
   Document.Document.sequence({items: Lists.concat(Lists.concat(since, Document.Documents.cons({head: head, tail: held})), notes)})
@@ -379,8 +379,9 @@ def handOf(rows: Lists.List<Heard>) -> String:
 def whereLine(state: State, context: Abi.Context) -> String:
   if Plans.isNobody(state.at) == false then "in {state.at.object}" else if Card.reads(context.object, context) then "nowhere yet; go: delvetalk me go / to: <a room>" else "nowhere yet"
 # The one line that opens its book (`book`): its principal's by `me`, anyone else's by its handle.
+# The spell that reads its principal's book, by the handle a spell names it by: none for the town, which no spell names.
 def bookLine(state: State, context: Abi.Context) -> String:
-  if Card.reads(context.object, context) then "Its book: delvetalk me book\n" else if state.handle == "" then "" else "Its book: delvetalk {state.handle} book\n"
+  if Card.reads(context.object, context) then "Its book: delvetalk me book\n" else if state.handle == "" || Card.town(context.object, context) then "" else "Its book: delvetalk {state.handle} book\n"
 def sized(lines: Document.Documents) -> Nat:
   Document.size(Document.Document.sequence({items: lines}))
 # The notes are the avatar's principal's alone: the new ones after its mark, newest first, and
@@ -399,7 +400,7 @@ def newFor(state: State, news: Lists.List<Note>, at: Nat, context: Abi.Context, 
     case cons(_): newNotes(state, news, marked, context, used + Document.size(spell))
 def newNotes(state: State, news: Lists.List<Note>, marked: Document.Documents, context: Abi.Context, used: Nat) -> Document.Documents:
   let top = Document.text("{natText(Lists.length(news))} new since entry {natText(state.seen)}:\n")
-  Document.Documents.cons({head: top, tail: Lists.concat(Card.clippedWithin(Lists.map(news, noteLine), 8n, Card.left(context, used + Document.size(top))), marked)})
+  Document.Documents.cons({head: top, tail: Lists.concat(Card.clippedWithin(Lists.map(news, fn(n: Note) -> Document.Document: noteLine(n, context)), 8n, Card.left(context, used + Document.size(top))), marked)})
 # --- The book --------------------------------------------------------------------------
 # Its principal's commonplace book (docs/VOICE.md "The book, the history, the map"): what they made, each with
 # what others did to it (`heard`: rains, doors, uses, by whom), the verbs they grew and on what, the rules and

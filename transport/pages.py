@@ -8,7 +8,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
 
-from transport.host import door_rows, plain
+from transport.host import TOWN, door_rows, plain
 
 STATIC = Path(__file__).resolve().parent / 'static'
 
@@ -53,6 +53,14 @@ def guest_name(principal):
     return principal.rsplit(':', 1)[-1] if principal.startswith('guest:') else principal
 
 
+def by(principal, handle, town=''):
+    """A principal as a page names them: the town as such (`town` its own principal, the host's `isTown`), else the handle
+    kept beside them, else an invited guest's name."""
+    if town and principal == town:
+        return TOWN
+    return handle if isinstance(handle, str) and handle else guest_name(str(principal or ''))
+
+
 def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), newest=()):
     """What the town is and how to come in, then the town alive: today's chronicle painted (its text folded beneath), the
     commonplace's doors as its places, what wants a hand, the newest makings; residents are counted, not listed.
@@ -92,17 +100,19 @@ def slip(x, did=None):
                             note=T['note'].format(clause=e(f"{out.get('class')}: {clause}" if clause else str(out.get('class')))) if out.get('tag') == 'refused' else '')
 
 
-A_DID = re.compile(r'did:plc:[a-z2-7]{24}')
+A_DID = re.compile(r'(?<!at://)did:(?:plc:[a-z2-7]{24}|web:[a-z0-9.%-]*[a-z0-9])')
 
 
 def named(markup, names):
-    """A page as a person reads it: each DID in its text as the handle the host's registry gave its avatar, else `a
-    stranger` and the DID's last four (VOICE: a DID is never shown to a person). Never in a tag, where an href keeps the
-    id, nor in a <pre>: a card, a law and a source are verbatim."""
+    """A page as a person reads it: each DID in its text as `names` gives it (the town's own principal as the town, else
+    the handle the host's registry gave its avatar), else `a stranger` and a did:plc's last four (VOICE: a DID is never
+    shown to a person; a did:web no avatar names is a host, shown as it is). Never in a tag, where an href keeps the id,
+    nor in a <pre>: a card, a law and a source are verbatim; nor as the authority of an at:// URI."""
     out, verbatim = [], 0
     for part in re.split(r'(<[^>]*>)', markup):
         verbatim += part.startswith('<pre') - part.startswith('</pre')
-        out.append(part if part.startswith('<') or verbatim else A_DID.sub(lambda m: e(names.get(m[0]) or f'a stranger …{m[0][-4:]}'), part))
+        out.append(part if part.startswith('<') or verbatim else A_DID.sub(
+            lambda m: e(names.get(m[0]) or (f'a stranger …{m[0][-4:]}' if m[0].startswith('did:plc:') else m[0])), part))
     return ''.join(out)
 
 
@@ -181,12 +191,13 @@ def rows(value):
     return [r for r in items or [] if isinstance(r, dict)]
 
 
-def heading(name, view, did=None):
+def heading(name, view, did=None, town=''):
     """A place's name as its state calls it (`head`), else its id; above it, small, its id, its kind and its maker."""
     s = state_of(view)
     head = s.get('head') if isinstance(s.get('head'), str) and s.get('head').strip() else None
     kind = s.get('kind') if isinstance(s.get('kind'), str) and s.get('kind') else None
-    maker = s.get('makerHandle') or s.get('keeperHandle')
+    maker = next((by(p, h, town) for p, h in ((s.get('maker'), s.get('makerHandle')), (s.get('keeper'), s.get('keeperHandle')))
+                  if (town and p == town) or (isinstance(h, str) and h)), None)
     about = ' · '.join(x for x in (name if head else None, f"a {kind.rpartition('/')[2]}" if kind else None,
                                    f'made by {maker}' if isinstance(maker, str) and maker else None) if x)
     return T['heading'].format(about=e(about), name=e(head or name), yours=yours(name, did))
@@ -195,11 +206,11 @@ def heading(name, view, did=None):
 LATELY, LOCAL_DOORS = 6, 8  # lines shown under a place; doors drawn on its local map
 
 
-def lately(view, entries=()):
+def lately(view, entries=(), town=''):
     """The place's newest lines (its `lines` relation: who, the verb, what they wrote), newest first; with none, the newest
     admitted entries that touched it (who, the verbs their writes name)."""
     shown = sorted(rows(state_of(view).get('lines')), key=lambda r: r.get('at') or 0, reverse=True)[:LATELY]
-    items = [T['line'].format(who=e(r.get('handle') or guest_name(str(r.get('author', '')))), verb=e(str(r.get('verb') or 'wrote')),
+    items = [T['line'].format(who=e(by(r.get('author'), r.get('handle'), town)), verb=e(str(r.get('verb') or 'wrote')),
                               text=T['line_text'].format(text=e(r['text'])) if r.get('text') else '', at=e(str(r.get('at', ''))))
              for r in shown]
     if not items:
@@ -208,20 +219,20 @@ def lately(view, entries=()):
             if out.get('tag') not in ('admitted', 'created') or len(items) >= LATELY:
                 continue
             verbs = sorted({v for w in out.get('writes') or [] for v in w.get('verbs') or []})
-            items.append(T['line'].format(who=e(guest_name(str((x.get('identity') or {}).get('principal', '')))),
+            items.append(T['line'].format(who=e(by((x.get('identity') or {}).get('principal', ''), '', town)),
                                           verb=e(', '.join(verbs) or ('made it' if out.get('tag') == 'created' else 'acted')), text='', at=e(str(x.get('height')))))
     return T['lately'].format(items=''.join(items)) if items else ''
 
 
-def around(name, view, ways=(), entries=(), href=None):
+def around(name, view, ways=(), entries=(), href=None, town=''):
     """What is around a place: who is here now, what lies here, its newest lines; beside them its doors as a small local
     map (the ways in above, the doors out below) and the same doors as links."""
     href = href or (lambda o: '/play/' + quote(o, safe='/:'))
     s = state_of(view)
-    present = [r.get('handle') or guest_name(str(r.get('who', ''))) for r in rows(s.get('presence'))]
+    present = [by(r.get('who'), r.get('handle'), town) for r in rows(s.get('presence'))]
     things = [r['object'] for r in rows(s.get('things')) if isinstance(r.get('object'), str) and r.get('object')]
     here = (T['present'].format(names=e(', '.join(present)), verb='is' if len(present) == 1 else 'are') if present else '') + \
-        (T['things'].format(items=', '.join(T['link'].format(href=e(href(t)), rel=e(t)) for t in things)) if things else '') + lately(view, entries)
+        (T['things'].format(items=', '.join(T['link'].format(href=e(href(t)), rel=e(t)) for t in things)) if things else '') + lately(view, entries, town)
     out = [w for w in ways if w.get('from') == name and w.get('to') != name]
     into = [w for w in ways if w.get('to') == name and w.get('from') != name]
     if not out:  # a place whose doors the map does not reach: the doors its own state cites
@@ -279,20 +290,20 @@ def reply(turns, offers=(), usage=None):
     return T['reply'].format(lines=answers, offers=body + receipts), spells
 
 
-def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), view=None, ways=(), entries=(), said='', told=None, did=None):
+def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), view=None, ways=(), entries=(), said='', told=None, did=None, town=''):
     """An object to play: its name, a place's telling when the reply just sent entered it, what came back, the place, the
     one box and its suggestions (the reply's spells, then what the thing wants, then the card's own), then what is around it."""
     wanted = [(' '.join(w['asks'].split()[1:3]), w['asks']) for w in wants if w.get('asks')]
-    return page(name, who, T['play'].format(heading=heading(name, view, did), name=e(name), path=e(path), reply=telling(told) + answer, said=e(said),
+    return page(name, who, T['play'].format(heading=heading(name, view, did, town), name=e(name), path=e(path), reply=telling(told) + answer, said=e(said),
                                             place=place(card, paint, wants) if card is not None else '',
                                             suggestions=suggestions(path, [*offered, *wanted, *(speech(card)[1] if card else [])], f'delvetalk {name} ?'),
-                                            around=around(name, view, ways, entries) if card is not None else ''))
+                                            around=around(name, view, ways, entries, town=town) if card is not None else ''))
 
 
 BRIEF = 5  # receipts the brief text view keeps
 
 
-def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), brief=None, paint=None, told=None):
+def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), brief=None, paint=None, told=None, town=''):
     """An object as anyone may read it: its name, a place's telling for a signed-in reader, the place (paint, exact card,
     wants), a way to speak to it (or in), what is around it, then its law, source and journal on demand. `brief` (the text
     view's default, the href of the whole page): the place, the doors and the newest BRIEF entries; the law and the source
@@ -304,8 +315,8 @@ def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), 
                                 lines=len((seen.get('source') or '').splitlines())) if seen else ''
     if brief:
         source, entries = T['whole'].format(href=e(brief)), entries[:BRIEF]
-    return page(name, who, T['object'].format(heading=heading(name, view, did), shown=shown, play=play, source=source,
-                                              around=around(name, view, ways, entries, lambda o: '/o/' + quote(o, safe=':')) if card else '',
+    return page(name, who, T['object'].format(heading=heading(name, view, did, town), shown=shown, play=play, source=source,
+                                              around=around(name, view, ways, entries, lambda o: '/o/' + quote(o, safe=':'), town) if card else '',
                                               receipts=T['receipts'].format(n=len(entries), slips=''.join(slip(x, did) for x in entries)) if entries else ''))
 
 

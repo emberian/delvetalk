@@ -874,7 +874,7 @@ def hasMethod (o : Object) (name : String) : Bool :=
 /-- The Context a card is rendered for: the reader (`principal`), the card's object, the asking
     object (`caller`, "" for `world-card`), and the turn's intent and height. -/
 def cardContext (w : World) (id reader caller intent : String) (height : Nat) (method : String) (whole : Bool := false) : Data :=
-  contextData id reader (handleOf w reader) caller intent height w.clock (if whole then Card.wholeKind else "card") method
+  contextData id reader (handleShown w reader) w.opener caller intent height w.clock (if whole then Card.wholeKind else "card") method
 
 /-- A pure definition of `id`'s package run on its committed state (the first argument) through the
     stored path under this turn's ticks (KERNEL-HANDOFF §15): only the rows it forces are fetched,
@@ -1053,7 +1053,7 @@ def handleWith (handler self : String) (plan : Data) (bounds : DataBounds) (resp
   recordRoot handler obj.version
   let c ← compiledMethod obj "handle"
   let entry ← entryOf c
-  let context := contextData handler s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "handle" "" s.post s.sender
+  let context := contextData handler s.subject (handleShown s.world s.subject) s.world.opener self s.intent s.world.height s.world.clock "handle" "" s.post s.sender
   let (domain, arguments) := match c.type with
     | .arrow _ _ _ (.arrow _ _ d (.arrow _ _ ct _)) => (d, [obj.state, plan, fitRecord c.bounds ct context])
     | .arrow _ _ _ (.arrow _ _ d _) => (d, [obj.state, plan])
@@ -1556,7 +1556,7 @@ def lineageLine (w : World) (o : Object) : String := Id.run do
   let receipt := (m.getObjValAs? String "receipt").toOption.getD ""
   let some i := w.entries.indexOf? receipt | return s!"After {object}.\n"
   let by_ := ((w.entries.get? i).bind fun e => ((e.getObjVal? "identity").toOption.bind
-    (·.getObjValAs? String "principal" |>.toOption))).map (handleOf w ·)
+    (·.getObjValAs? String "principal" |>.toOption))).map (handleShown w ·)
   return s!"After {object}{(by_.map (s!" by {·}")).getD ""}, entry {i + 1}.\n"
 
 /-- The workshop a verb grown with a body is written by (`growBody`). -/
@@ -1886,7 +1886,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
         throw (.refused "typeMismatch" (wordRefusal path word cases)
           (some ((← expectedNow).setObjVal! "cases" (Json.mkObj [("at", toJson path), ("given", toJson word), ("cases", toJson cases)]))))
     else pure argument
-  let context := contextData id s.subject (handleOf s.world s.subject) caller s.intent s.world.height s.world.clock
+  let context := contextData id s.subject (handleShown s.world s.subject) s.world.opener caller s.intent s.world.height s.world.clock
     (if depth == 0 then s.origin else "call") (if depth == 0 && !s.command.isEmpty then s.command else method) s.post s.sender
   let (arguments, r) ← match compiled.type with
     | .arrow _ _ _ (.arrow _ _ _ (.arrow _ _ ct r)) => pure ([storedState obj, argument, fitRecord compiled.bounds ct context], r)
@@ -2447,7 +2447,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let s ← get
     let (items, more) := changedSince s.world s.subject since pfx after
     let item := fun (c : Change) =>
-      let handle := handleOf s.world c.principal
+      let handle := handleShown s.world c.principal
       Data.record [("object", .record [("world", .label ""), ("object", .label c.object)]), ("version", .natural c.version), ("height", .natural c.height),
         ("by", .label (if handle.isEmpty then c.principal else handle))]
     respond bounds responseType "changed" [.record [("items", listData (items.map item)), ("more", .boolean more)]]
@@ -2505,7 +2505,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     | some (id, o) =>
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
       recordCells id o.version { scalar := true }
-      let context := contextData id s.subject (handleOf s.world s.subject) self s.intent s.world.height s.world.clock "view" view s.post s.sender
+      let context := contextData id s.subject (handleShown s.world s.subject) s.world.opener self s.intent s.world.height s.world.clock "view" view s.post s.sender
       match ← derivedView id o view context with
       | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause

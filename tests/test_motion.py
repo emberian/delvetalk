@@ -49,10 +49,10 @@ class Seeded(Motion):
         self.assertIn("weather", rules)
         self.assertIn("porch_slamp", rules)
         weather = self.say_card("weather")
-        self.assertIn("WEATHER over porch, made by ember.delve.town: once a clock day, while someone has been at porch that day, "
+        self.assertIn("WEATHER over porch, made by the town: once a clock day, while someone has been at porch that day, "
                       "it rains on every bell porch holds or hangs a door to, by its rule on tide:\n  delvetalk tide rules\n", weather)
         lamp = self.say_card("porch/lamp")
-        self.assertIn("THE PORCH'S LAMP, a front set by ember.delve.town: a slow pressure with a clock that fills while its condition "
+        self.assertIn("THE PORCH'S LAMP, a front set by the town: a slow pressure with a clock that fills while its condition "
                       "holds, and moves when full. Its clock: 0 of 4; it has not moved yet.", lamp)
         self.assertIn("When full: delvetalk porch write / text: the porch's lamp has burned down: four days and nobody came", lamp)
 

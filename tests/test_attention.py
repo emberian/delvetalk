@@ -116,7 +116,7 @@ class Since(Attention):
         shelf = self.made(GLM, "kind/record", "")
         self.admitted(self.say(GLM, shelf, "delvetalk %s door / label: kim's bell / to: %s" % (shelf, bell)))
         card = self.card(KIM, KIM)
-        lead = "Since you were here (entry 0):\n  %s: 1 door from %s; 3 rains from ember.delve.town and 1 other\n" % (bell, STRANGERS[GLM])
+        lead = "Since you were here (entry 0):\n  %s: 1 door from %s; 3 rains from the town and 1 other\n" % (bell, STRANGERS[GLM])
         self.assertTrue(card.startswith(lead), card)
         # The commonplace's YOURS door: the card asked for, writing nothing.
         asked = self.admitted(self.say(KIM, "me", "delvetalk me since"))

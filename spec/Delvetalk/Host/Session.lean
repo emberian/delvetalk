@@ -230,9 +230,9 @@ def movedReply (moved : List Json) : Json :=
 /-- `world-try`: a turn exactly as `world-turn` runs it, with its settling pass, and the world it leaves dropped:
     the commit with the write switched off (docs/POSTING.md §2). The reply is the turn's own, its receipt the entry
     that would be journaled (its writes' state CIDs, its roots with their versions), its offers the exact cards,
-    `tried: true`, `against {height, hash}`, the head it ran on, and `unresolved {pending, suspended}`: what the
-    settling pass left for later (sends not yet delivered, turns waiting on hob), which a preview does not foresee.
-    Nothing is journaled. -/
+    `tried: true`, `against {height, hash}`, the head it ran on, and `unresolved {pending, suspended, answered}`: what
+    the settling pass left for later (sends not yet delivered, turns waiting on hob), which a preview does not foresee,
+    and the sends it never runs because their receipt is bound already (`Ops.answered`). Nothing is journaled. -/
 def tryTurn (s : Open) (reader : String) (request : Json) : IO (Session × Except String Json) := do
   match ← settledStep s reader (fun w => pure (do runTurn w (← parseTurn request))) with
   | .error e => return (some s, .error e)
@@ -242,7 +242,9 @@ def tryTurn (s : Open) (reader : String) (request : Json) : IO (Session × Excep
     -- have moved, so they are counted, never foreseen.
     return (some s, .ok (((r.setObjVal! "tried" (Json.bool true)).setObjVal! "against"
       (Json.mkObj [("height", toJson s.world.height), ("hash", toJson head)])).setObjVal! "unresolved"
-      (Json.mkObj [("pending", toJson w'.pending.size), ("suspended", toJson w'.suspended.size)])))
+      (let answered := (w'.pending.filter (answered w')).size
+       Json.mkObj ([("pending", toJson (w'.pending.size - answered)), ("suspended", toJson w'.suspended.size)] ++
+         (if answered == 0 then [] else [("answered", toJson answered)])))))
 
 /-- `durableIO` of a pure step. -/
 def durable (s : Open) (reader : String) (step : World → Except String (World × Json)) : IO (Session × Except String Json) :=
@@ -476,6 +478,8 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
+          -- The world's own principal (`isTown`), which surfaces outside the host name the town as it does.
+          ("opener", toJson s.world.opener),
           ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world),
           ("modelQuota", Json.mkObj [("quota", toJson s.world.modelQuota), ("used", toJson
             (if s.world.modelDay.1 == s.world.clock / Limits.clockDay then s.world.modelDay.2 else 0)), ("next", toJson ((s.world.clock / Limits.clockDay + 1) * Limits.clockDay))]),

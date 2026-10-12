@@ -21,6 +21,7 @@ from transport.atproto.cbor import CID, block, decode, from_json
 from transport.atproto.cbor import car as car_of
 from transport.atproto.mst import Tree
 from transport.atproto.sign import Key, multikey, tid
+from transport.config import town_did
 from transport.host import PUBLIC
 from transport.identity import SLUG
 
@@ -147,8 +148,8 @@ def world_origin(origin, world):
 
 def world_did(origin, world='town'):
     """-> (did, handle): the did:web of a world's repository and the hostname that is its handle."""
-    parts = urllib.parse.urlsplit(world_origin(origin, world))
-    return 'did:web:' + parts.netloc.replace(':', '%3A'), parts.hostname
+    at = world_origin(origin, world)
+    return town_did(at), urllib.parse.urlsplit(at).hostname
 
 
 def object_key(oid, tail):

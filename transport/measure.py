@@ -111,10 +111,12 @@ def measures(st, entries=None):
             names[out.get('did')] = out.get('handle')
         if out.get('tag') == 'settings':
             settings.update(out)
+        if out.get('tag') in ('carried', 'forked'):  # a store-installing genesis holds the settings of the world before
+            settings.update((out.get('state') or {}).get('settings') or {})
     obs = st.observations()
     for o in obs:
         names.setdefault(o['author']['did'], o['author']['handle'])
-    staff = {c.opener, settings.get('clock') or 'transport', 'world', *c.owner_principals.split()}
+    staff = {settings.get('opener') or c.opener, settings.get('clock') or 'transport', 'world', *c.owner_principals.split()}
     resident = lambda p: bool(p) and p not in staff
     who = lambda p: names.get(p) or p
     # Wall time: a turn's is the post it answers (the transport's timestamp); the clock's minutes only stand in for a turn

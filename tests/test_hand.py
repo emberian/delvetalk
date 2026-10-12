@@ -622,7 +622,7 @@ class Speak(unittest.TestCase):
         heights = [r['height'] for r in rows if r['height']]
         self.assertEqual(heights, sorted(heights, reverse=True))  # newest first
         mine = next(r for r in rows if r['height'] == came['height'])
-        self.assertEqual((mine['who'], mine['turn'], mine['tag']), ('ember.delve.town', spell, 'admitted'))
+        self.assertEqual((mine['who'], mine['turn'], mine['tag']), ('the town', spell, 'admitted'))
         self.assertTrue(mine['first'] and mine['slug'] and mine['object'].startswith('garden/bell/'), mine)
         self.assertEqual([d['id'] for d in mine['drafts']], [came['drafted']])
         theirs = next(r for r in rows if r['height'] == planted['receipt']['height'])

@@ -1,6 +1,7 @@
 # The repository: the journal as a signed AT Protocol repository
 
-One repository per world. The town's is `did:web:<origin host>` (deployed: `did:web:gsb.fg-goose.online`);
+One repository per world. The town's is `did:web:<origin host>` (deployed: `did:web:gsb.fg-goose.online`), the same
+principal a new world opens as (config `opener`, `config.town_did`; docs/GENESIS.md "The town");
 under federation (FEDERATION §1) each further world is `did:web:<world>.<origin host>` (`ring.gsb.fg-goose.online`),
 its document at `https://<world>.<origin host>/.well-known/did.json` and its key `/etc/delvetalk/repo/<world>.key`
 (`repo.world_origin`; a front serves one world, `--world`). An atproto did:web is a hostname, never a path
