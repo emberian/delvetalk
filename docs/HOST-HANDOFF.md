@@ -2100,6 +2100,16 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 **First, host29's remainder (the second codex review, docs/review/codex-2026-10-12; stopped at its token budget).**
 Each with its failing input as a test first, merging foundation before each commit:
+- **First: merge foundation a5676b4c (lane/kernel18, replay edition 10, state as cells).** Twelve conflicts, all in
+  host29's braid: `judge` (kernel18's `applied`/`cells` beside host29's two phases over `cand`: build `cand` from
+  the applied cells, judge `citing cand`, `bendLaw cand … cells.state`), `reactions` (kernel18's `viewFor` with
+  `citing after`, the `reads` check kept), `amendable`/`createRecJson` (kernel18's `cid` beside `lines`),
+  `quietOf` beside `viewFor`, `placedIn`/`readPolicyIn` beside kernel18's `*In`, Snapshot's anchors (five heights)
+  and `checkAnchors` with kernel18's `Naming`, Carry's `readWorld` (`carriedIds` and the edition-`whole` check with
+  `Naming.ofEdition`). Then the narrow runs of 5.175's tests, the full run and `carry-check.sh` (green
+  non-breaking before kernel18 on delvetalk-20261012T090950Z, 41 s; kernel18 makes it edition 10).
+- Full run before that merge (994 tests): red `test_artifact_pins.Pins11` (Paint's pin, lane/paint's),
+  `test_archive.Archive` (the sentry post read by hob), `test_previews` (below): none in host29's files.
 - host 7 (P1): a placed rule named as an inherited one shares `rule:<object>:<name>:<height>` and consuming one
   delivery removes both: the firing id names its holder (`CarriedClause.holder`), and placing refuses a name the
   thing's kind carries. Changes `fired` ids: edition 10 with `carry-check.sh` green, or derive the old id where
