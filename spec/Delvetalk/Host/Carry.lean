@@ -408,24 +408,10 @@ A carried genesis keeps each object's making (`made`): who made it, under which 
 the world it was made in. A reader of the world's history (genesis's refresh: is this kind genesis's?) reads it
 there when the journals before are not on its disk. -/
 
-/-- The objects an entry makes: its `created` object, or its `creates` rows. -/
-def makes (e : Json) : List String :=
-  let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
-  let object := fun (j : Json) => (j.getObjValAs? String "object").toOption
-  if tagOf e == "created" then (object outcome).toList
-  else (((outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap object
-
 /-- A `made` row: the object, and the identity and height of the entry that made it. -/
 def madeRow (id : String) (e : Json) : Json :=
   Json.mkObj [("object", toJson id), ("identity", (e.getObjVal? "identity").toOption.getD Json.null),
     ("height", (e.getObjVal? "height").toOption.getD Json.null)]
-
-/-- The makings a carried genesis keeps, by object. -/
-def madeOf (genesis : Json) : Std.HashMap String Json :=
-  ((((genesis.getObjVal? "outcome").toOption.bind (·.getObjVal? "made" |>.toOption)).bind (·.getArr?.toOption)).getD #[]).foldl
-    (fun m r => match r.getObjValAs? String "object" with
-      | .ok id => m.insert id r
-      | .error _ => m) {}
 
 /-- The makings of what the journal at `journal`, whose genesis is `genesis`, was given by it: a carried genesis's
     `made`; for one of an edition before it kept them, every making in the journal it was carried from (its

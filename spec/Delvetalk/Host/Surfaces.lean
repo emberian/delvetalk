@@ -67,13 +67,26 @@ def named (w : World) (fs : List (String × Data)) (handleKey principalKey : Str
   | some h => if h.isEmpty then shownName w ((text? fs principalKey).getD "") else h
   | none => shownName w ((text? fs principalKey).getD "")
 
-/-- The entry that made `id` and its principal, as the journal holds it; none when the store came whole from
-    a carry or a fork (its first entry installs the store), so the entry that made it is the world before's. -/
-def madeEntry (w : World) (id : String) : Option (Nat × String) := do
-  let i ← (w.touched[id]?).bind (·[0]?)
-  let e ← w.entries.get? i
-  guard (!installsStore e)
-  return (i + 1, ((e.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD "")
+/-- The entry that made `id` and its principal: the entry of this chain that made it, else the making a carried
+    genesis kept (`made`, at the height of the world it was made in); none for a store that came whole from a fork,
+    or from a carry that kept no making. A carry's refresh is never a making (`Ops.carryRefresh`): a thing it placed has
+    none, and a carried thing it first touched keeps the world before's. -/
+def madeEntry (w : World) (id : String) : Option (Nat × String) :=
+  let principal := fun (j : Json) => ((j.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+  let here : Option (Nat × String) := do
+    let i ← (w.touched[id]?).bind (·[0]?)
+    let e ← w.entries.get? i
+    guard ((makes e).contains id && !installsStore e)
+    return (i + 1, principal e)
+  match here with
+  | some m => if refreshEntry w (w.entries.get? (m.1 - 1) |>.getD Json.null) then none else some m
+  | none => do
+    let g ← w.entries.genesis?
+    guard (tagOf g == "carried")
+    let row ← (madeOf g)[id]?
+    guard (!carryRefresh w ((row.getObjVal? "identity").toOption.getD Json.null) false)
+    let h ← (row.getObjValAs? Nat "height").toOption
+    return (h, principal row)
 
 /-- Who made `id`: the maker its state names (a record made of a kind), else the principal of the entry that
     made it, else its owner (a thing or a kind carried whole). -/
@@ -184,18 +197,23 @@ def firsts (w : World) (reader : String) : List First := Id.run do
   let rains := seen.flatMap fun (id, o) => (rows (fieldsOf o.state) "lines").filterMap fun r =>
     if text? r "verb" == some "rain" then some ({ what := "rain", object := id, who := named w r "handle" "author", height := (nat? r "at").getD 0 } : First)
     else none
-  let rooms := seen.filterMap fun (id, o) =>
-    if !isRoom o then none else
-    some ({ what := "room", object := id, who := shownName w (makerOf w id o), height := ((madeEntry w id).map (·.1)).getD 0 } : First)
+  -- A room or a coinage is a first only by a making the world holds (`madeEntry`): never a carry's refresh.
+  let rooms := seen.filterMap fun (id, o) => do
+    guard (isRoom o)
+    let (h, _) ← madeEntry w id
+    return ({ what := "room", object := id, who := shownName w (makerOf w id o), height := h } : First)
   let verbs := seen.flatMap fun (id, o) => o.verbs.map fun v =>
     ({ what := "verb", object := id, who := shownName w v.grower, name := v.name, height := v.height } : First)
-  let coinages := seen.filterMap fun (id, o) =>
+  let coinages := seen.filterMap fun (id, o) => do
     let coiner := coinerOf w o
-    if coiner.isEmpty then none else some ({ what := "coinage", object := id, who := coiner, height := ((madeEntry w id).map (·.1)).getD 0 } : First)
+    guard (!coiner.isEmpty)
+    let (h, _) ← madeEntry w id
+    return ({ what := "coinage", object := id, who := coiner, height := h } : First)
   -- The journal's first firing, read from its start until one is found.
   let mut fired : Option First := none
   for i in [0:w.height] do
     let some e := w.entries.get? i | continue
+    if refreshEntry w e then continue
     let rows := (((e.getObjVal? "fired").toOption.bind (·.getArr?.toOption)).getD #[]).toList
     let row := rows.find? fun f => viewable w reader ((f.getObjValAs? String "sender").toOption.getD "")
     if let some f := row then
