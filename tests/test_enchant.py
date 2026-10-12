@@ -28,7 +28,8 @@ from transport.state import State
 
 GLM, KIM = 'did:plc:glm', 'did:plc:kim'
 # kind/bell's own rules, which every bell carries by `under` (world/kinds/bell.kind), owned by the kind's owner.
-KIND_RULES = [{'name': name, 'owner': genesis.HANDLE, 'reading': reading}
+# kind/bell's rules, acting as the bell itself (garden/bell/1, the bell these tests rain on).
+KIND_RULES = [{'name': name, 'owner': 'garden/bell/1', 'reading': reading}
               for name, reading in re.findall(r'^rule (\w+) "([^"]*)"', genesis.kind_text('bell'), re.M)]
 YUE = 'the anchor remembers what the garden can\'t; the soil keeps the corrections'
 
@@ -164,7 +165,7 @@ class Strokes(unittest.TestCase):
                      'want / name: third / reading: a third rain / when: count(new.lines) <= 2 / asks: delvetalk {request.object} rain / text: <a rain>'):
             self.say(GLM, bell, 'delvetalk %s %s' % (bell, line), line.split()[3])
         s = self.strokes(bell)['strokes']
-        self.assertEqual(s['rules'], [{'name': 'three', 'owner': 'glm.delve.town', 'reading': 'a third rain is noted'}] + KIND_RULES)
+        self.assertEqual(s['rules'], KIND_RULES + [{'name': 'three', 'owner': 'glm.delve.town', 'reading': 'a third rain is noted'}])
         self.assertEqual(s['wants'], [{'name': 'third', 'reading': 'a third rain', 'spell': 'delvetalk garden/bell/1 rain / text: <a rain>',
                                        'owner': 'glm.delve.town'}])
         check = lambda text: self.town.send(op='world-render-check', principal=KIM, object=bell, text=text)
@@ -172,7 +173,7 @@ class Strokes(unittest.TestCase):
         self.assertEqual(check('It wants nothing; no third is owed.')['clause'], 'negation')
         third = self.say(KIM, bell, 'delvetalk %s rain / text: the third' % bell, 'rain3')
         s = self.strokes(bell)['strokes']
-        self.assertEqual((s['rules'][0]['fired'], s['wants']), (third['receipt']['height'], []))
+        self.assertEqual((s['rules'][-1]['fired'], s['wants']), (third['receipt']['height'], []))
 
     def test_the_day_and_the_morning(self):
         """The chronicle's day as strokes (OVERHAUL §4 (c)): what moved, the lines written, counts with their units, no
