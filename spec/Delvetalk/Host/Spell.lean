@@ -229,7 +229,16 @@ def inline (tail : T) : Fields2 :=
 def isDelimiter (text : T) : Bool :=
   decide (text.length ≥ 1) && decide (text.length ≤ 32) && span text delimiterAlphabet == text.length
 
-def opens (head : T) : Bool := head.take 2 == lit "<<" || head.take 3 == lit " <<"
+/-- The delimiter of the block a field line opens (`law: <<END`), if it opens one. -/
+def blockOpener (line : T) : Option T :=
+  let colon := brk line [':']
+  let value := trimStart (line.drop (colon + 1))
+  if colon < line.length && looksLikeField line && value.take 2 == lit "<<" && isDelimiter (trimEnd (value.drop 2))
+  then some (trimEnd (value.drop 2)) else none
+
+/-- A block's last line: exactly its delimiter (a trailing carriage return allowed). -/
+def closesBlock (delimiter line : T) : Bool :=
+  line == delimiter || (line.take (line.length - 1) == delimiter && line.drop (line.length - 1) == ['\r'])
 
 mutual
 partial def fieldLines (text : T) : Fields2 :=
@@ -282,13 +291,9 @@ partial def binding (line rest : T) : Fields2 :=
   -- A line with no colon in the field lines is a value without a name, bound by type at fit.
   if !line.any (· == ':') then consed ⟨"", str line⟩ (loose rest)
   else if colon == 0 || name == line || !looksLikeField line then .stray [] rest
-  else if opens ((line.drop (colon + 1)).take 3) then valued (str (foldT name)) (trimStart (line.drop (colon + 1))) rest
-  else consed ⟨str (foldT name), str (trimStart (line.drop (colon + 1)))⟩ (fieldLines rest)
-
-partial def valued (name : String) (value rest : T) : Fields2 :=
-  if value.take 2 == lit "<<" && isDelimiter (trimEnd (value.drop 2)) then
-    block name (trimEnd (value.drop 2)) rest []
-  else consed ⟨name, str value⟩ (fieldLines rest)
+  else match blockOpener line with
+    | some delimiter => block (str (foldT name)) delimiter rest []
+    | none => consed ⟨str (foldT name), str (trimStart (line.drop (colon + 1)))⟩ (fieldLines rest)
 
 partial def block (name : String) (delimiter rest : T) (lines : List T) : Fields2 :=
   if rest.isEmpty then
@@ -296,7 +301,7 @@ partial def block (name : String) (delimiter rest : T) (lines : List T) : Fields
   else
     let line := rest.take (brk rest ['\n'])
     let after := rest.drop (brk rest ['\n'] + 1)
-    if line == delimiter || (line.take (line.length - 1) == delimiter && line.drop (line.length - 1) == ['\r']) then
+    if closesBlock delimiter line then
       consed ⟨name, "\n".intercalate (lines.reverse.map str)⟩ (fieldLines after)
     else block name delimiter after (line :: lines)
 end
@@ -351,18 +356,41 @@ def quotes (text : String) : Option String := do
   guard (lines.any fun l => isSpellAt (l.trimAsciiStart.toString.toList) 0)
   return s!"This quotes a card ({(header.trimAscii.toString.take 40).toString}): its spells are examples, so none is cast. Write the spell alone, at the start of a line."
 
+/-- Where `segments` is in the text: in the open, inside a tagged code fence, or inside a field's
+    `<<TAG` block. A `delvetalk` line inside a fence or block is text, as the parser reads it. -/
+inductive Scan where
+  | open_
+  | fence
+  | block (delimiter : T)
+
 /-- The spells of a text, one per line that starts `delvetalk` at the margin (an indented line is
-    none), each with the lines after it up to the next; prose before the first is dropped. A post's
-    several spells (`runSpells`) and a model's (`interpretVerdict`) are split here. -/
+    none, as is any inside a tagged code fence or a `<<TAG` block), each with the lines after it up to
+    the next; prose before the first is dropped. A post's several spells (`runSpells`) and a model's
+    (`interpretVerdict`) are split here. -/
 def segments (text : String) : List String :=
   let lines := text.splitOn "\n"
-  let (segments, current) := lines.foldl (fun (acc : List String × Option (List String)) line =>
-    let (done, open_) := acc
-    if isSpellAt line.toList 0 && (match headingAt line.toList 0 line.length with | .stands .. => true | .none => false) then
-      (match open_ with | some ls => done ++ ["\n".intercalate ls] | none => done, some [line])
-    else match open_ with
-      | some ls => (done, some (ls ++ [line]))
-      | none => (done, none)) ([], none)
+  let (segments, current, _) := lines.foldl
+    (fun (acc : List String × Option (List String) × Scan) line =>
+      let (done, open_, scan) := acc
+      let chars := line.toList
+      let indent := span chars [' ', '\t']
+      let append := fun (o : Option (List String)) => o.map (· ++ [line])
+      match scan with
+      | .fence =>
+          (done, append open_, if (chars.drop indent).take 3 == lit "```" then .open_ else .fence)
+      | .block delimiter =>
+          (done, append open_, if closesBlock delimiter chars then .open_ else .block delimiter)
+      | .open_ =>
+          if isSpellAt chars 0 && (match headingAt chars 0 chars.length with | .stands .. => true | .none => false) then
+            (match open_ with | some ls => done ++ ["\n".intercalate ls] | none => done, some [line], .open_)
+          else if tagged chars indent chars.length then (done, append open_, .fence)
+          else match open_ with
+            | some _ =>
+                (done, append open_,
+                  match blockOpener (trimEnd (trimStart chars)) with
+                  | some delimiter => .block delimiter
+                  | none => .open_)
+            | none => (done, none, .open_)) ([], none, .open_)
   match current with
   | some ls => segments ++ ["\n".intercalate ls]
   | none => segments
