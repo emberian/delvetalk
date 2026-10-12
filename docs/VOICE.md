@@ -215,7 +215,9 @@ whole reply (`spec/Delvetalk/Host/Surfaces.lean`). The host folds the index a re
 journal as the reader may view them and hands it to the card's own pure Bend definition of the read's name, whose
 document is the answer; a post of the spell and its web page show that one text. A read fits a reply: the first page
 within 1,400 characters, `Page 1 of N; the next: <its spell> / page: 2` under it, each further page its own spell's
-answer, so a thread reads them in turn. The reply carries every page as one text beside the first (`whole`), and a
+answer, so a thread reads them in turn. The commonplace's card opens all three in one line (`READ · delvetalk
+chronicle · delvetalk map · delvetalk me book`), an avatar's its book (`Its book: delvetalk <handle> book`, `me` to its
+own), and the library's world page names them (`READ`). The reply carries every page as one text beside the first (`whole`), and a
 draft of it is that text, which the poster threads into numbered parts (`transport/post.py` `parts`); any card asked
 for `whole` (`world-card {whole: true}`) is rendered with `Card.limit` none, for the same threading.
 

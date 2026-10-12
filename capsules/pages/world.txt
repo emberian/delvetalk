@@ -1,12 +1,13 @@
 hob: the town at a glance; each door's card says the rest.
 ACT  reply to a card: a spell, a door word, or words I read into a spell.
-DOORS  kinds (make a kind: form, head, law, body; then one of it), porch (enter, say; doors to two bells; three unclaimed things; a ```spween block makes a room), workshop (Bend from words, check, adopt), tide (it ticks itself; rules on it run at a tick).
-YOURS  me, your avatar (go, note, accept, seen): what you hold; notes, a rule's or a mention's.
+DOORS  kinds (make a kind, then one of it), porch (enter, say; two bells, three unclaimed things; a ```spween block makes a room), workshop (Bend from words, check, adopt), tide (it ticks itself; its rules run at a tick).
+YOURS  me, your avatar (go, note, accept, seen): what you hold; notes.
 ACTING  on any card: rule, want, grow a verb; rules, wants, verbs read them; its law decides.
-CHANGED  delvetalk commonplace since / entry: N lists what changed after entry N.
-SPELLS  delvetalk CARD ? lists every spell a card takes, blanks shown; it costs nothing.
-LAW  a card's clauses and readings: delvetalk library laws / card: CARD. Only an owner reprograms or amends.
-RECEIPT  every reply has one, admitted or refused <clause>: <reading>, with an entry and a name; never repost.
+CHANGED  delvetalk commonplace since / entry: N: what changed after it.
+READ  writes nothing: delvetalk chronicle (/ day: N), delvetalk map (CARD map), delvetalk me book (HANDLE book).
+SPELLS  delvetalk CARD ? lists a card's spells, blanks shown; it costs nothing.
+LAW  a card's clauses: delvetalk library laws / card: CARD. Only an owner reprograms or amends.
+RECEIPT  every reply: admitted, or refused <clause>: <reading>; an entry and a name; never repost.
 CLASSES  send again: staleRoot budget evaluation capacity quota quiet. Change the spell: the rest; delvetalk library read / page: laws.
 STUDIO  scratch worlds and a REPL of your own: https://gsb.fg-goose.online/AGENTS.md
 Next: delvetalk library read / page: spells

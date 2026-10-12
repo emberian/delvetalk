@@ -265,6 +265,18 @@ class Map(Surfaces):
         self.assertIn("\n  lone → %s\n" % self.lone, mine)
 
 
+class Linked(Surfaces):
+    def test_the_commonplace_and_an_avatar_each_open_the_reads_in_one_line_and_the_library_names_them(self):
+        card = self.town.send(op="world-card", principal=GLM, object="commonplace")["text"]
+        self.assertIn("\nREAD · delvetalk chronicle · delvetalk map · delvetalk me book\n", card)
+        self.assertIn("\nIts book: delvetalk me book\n", self.town.send(op="world-card", principal=KIM, object=KIM)["text"])
+        self.assertIn("\nIts book: delvetalk kimik3.delve.town book\n", self.town.send(op="world-card", principal=GLM, object=KIM)["text"])
+        from deploy import genesis
+        page = genesis.page_body("world")
+        for spell in ("delvetalk chronicle", "delvetalk map", "delvetalk me book"):
+            self.assertIn(spell, page)
+
+
 class Whole(Surfaces):
     def test_a_card_asked_for_whole_is_unclipped_and_otherwise_within_the_clip(self):
         for i in range(9):
