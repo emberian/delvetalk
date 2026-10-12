@@ -320,6 +320,13 @@
    "does": "HTML: the card's paint, its exact card folded beneath, what it wants, its doors, and on demand its law, source and last 20 receipts; logged in, a link to play it; a / in the id is %2F"
   },
   {
+   "name": "book",
+   "method": "GET",
+   "href": "/o/{handle}/book",
+   "auth": "cookie",
+   "does": "HTML: a resident's commonplace book (what they made and what others did with it, the verbs they grew, the rules and wants they placed, the lines they wrote, the places they visited), the same text `delvetalk <handle> book` answers; ?page=N"
+  },
+  {
    "name": "play",
    "method": "GET",
    "href": "/play/{object}",

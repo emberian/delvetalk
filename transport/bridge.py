@@ -126,8 +126,8 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     receipt's name; no state, hash or CID. A usage answer is the host's text. An admitted reply carries the exact card
     only, never its paint (`world-render`): whether a post carries paint is the fourth playtest's question (OVERHAUL §4);
     one that offered nothing but changed something, its revealed lines and receipt line."""
-    if reply.get('status') == 'usage':
-        return str(reply.get('text', ''))
+    if reply.get('status') == 'usage':  # a read's every page as one text (`whole`), which the poster threads into parts
+        return str(reply.get('whole') or reply.get('text', ''))
     receipt = reply['receipt']
     outcome = receipt.get('outcome', {})
     if reply.get('status') == 'refused' or outcome.get('tag') == 'refused':

@@ -142,6 +142,20 @@ sum Wanting:
 sum Held:
   held: {value: Bool}
   refused: {clause: String, reading: String}
+# The indexes the host hands a card's read (spec/Delvetalk/Host/Surfaces.lean; docs/VOICE.md "The book, the
+# history, the map"): derived at the read from the store and the journal as the reader may view them, never
+# kept. A Deed is what a hand did that the store still shows: `made` (name: what it is), `grew` (name: the verb,
+# text: its reading), `rule` and `want` (name, text: the reading), `wrote` (name: the verb that wrote the line,
+# text: the line), `visited` (name: `here` while present); `at` the entry, 0 when the world before a carry made it.
+record Deed:
+  what: String
+  object: String
+  name: String
+  text: String
+  at: Nat
+record Deeds:
+  page: Nat
+  rows: Lists.List<Deed>
 sum Carded:
   carded: {document: Document.Document}
   denied: {}

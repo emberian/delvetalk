@@ -213,6 +213,12 @@ def obj(name, who, view, card, entries, did=None, doors=(), seen=None, wants=(),
                                               receipts=T['receipts'].format(n=len(entries), slips=''.join(slip(x, did) for x in entries)) if entries else ''))
 
 
+def surface(title, who, text, paint=None, drawing=''):
+    """A read as a page (the book, the history, the map): its paint above, the exact text a post of its spell carries,
+    a drawing of it beside when it has one."""
+    return page(title, who, T['surface'].format(title=e(title), paint=painting(paint), text=e(text), drawing=drawing))
+
+
 def dl(v):
     """Plain JSON as semantic HTML: a record a definition list, a list an ordered list, typed data its value."""
     if isinstance(v, dict) and v.get('tag') in ('record', 'list'):  # typed data: its fields, its items

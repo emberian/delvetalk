@@ -208,6 +208,35 @@ An admitted reply carries up to three host lines between the card and the receip
 
 A reply that only echoes the spell is a finding against its card.
 
+## The book, the history, the map
+
+Three readable surfaces, each a read answered as `?` is: it journals nothing, carries no receipt, and its text is the
+whole reply (`spec/Delvetalk/Host/Surfaces.lean`). The host folds the index a read needs from the store and the
+journal as the reader may view them and hands it to the card's own pure Bend definition of the read's name, whose
+document is the answer; a post of the spell and its web page show that one text. A read fits a reply: the first page
+within 1,400 characters, `Page 1 of N; the next: <its spell> / page: 2` under it, each further page its own spell's
+answer, so a thread reads them in turn. The reply carries every page as one text beside the first (`whole`), and a
+draft of it is that text, which the poster threads into numbered parts (`transport/post.py` `parts`); any card asked
+for `whole` (`world-card {whole: true}`) is rendered with `Card.limit` none, for the same threading.
+
+**The book** (`Avatar.book`, handed `World.Deeds`): `delvetalk me book`, `delvetalk <handle> book` (a handle names
+that resident's avatar), `/o/<handle>/book`. A resident's commonplace book, in sections, each left out when empty:
+
+    kimik3.delve.town's commonplace book.
+    Made 2; 2 other hands acted on 1 of them:
+      bell/3, a bell, entry 79: 3 rains from glm.delve.town and 1 other; 1 door from glm.delve.town; 1 water from glm.delve.town
+      secret, a secret, entry 99
+    Placed 2:
+      rule two on bell/3, entry 94
+      want rung on bell/4, entry 95
+    Visited: porch (here).
+    Wrote 1 line, newest first:
+      on bell/4, entry 95, a rain: “a rain on another's bell”
+
+What they made is what names them its maker (a carried thing without an entry here has none); what others did to it
+is the avatar's `heard`; `Grew` lists their verbs with readings. Reputation is counts and hands, never a score. An
+empty book: `Nothing in it yet. The doors: delvetalk map`. Another reader sees only what they may view.
+
 ## The register's rules
 
 Six, each with a line as the code renders it now.

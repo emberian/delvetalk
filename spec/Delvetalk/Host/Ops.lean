@@ -3045,6 +3045,16 @@ def foldedId (w : World) (id : String) : Option String :=
   | [k] => some k
   | _ => none
 
+/-- The inputOrigin kind of a card rendered whole (`world-card {whole}`, a read's `whole`): Bend's `Card.limit`
+    is then none, so a transport that threads a long text into parts has all of it. -/
+def Card.wholeKind : String := "whole"
+
+/-- A card as a spell or a turn names it: `me` the principal's avatar, an object's id, folded, or a resident's
+    handle, which names their avatar (`delvetalk kimik3.delve.town book`); the name as written when none is. -/
+def namedCard (w : World) (principal card : String) : String :=
+  let id := resolveCard principal card
+  if w.objects.contains id then id else ((foldedId w id) <|> (principalNamed w card).filter (w.objects.contains ·)).getD id
+
 /-- The principal under which a settled interpretation is journaled. -/
 def interpretationPrincipal : String := "interpretation"
 

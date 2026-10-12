@@ -79,6 +79,8 @@ def resolve(method, path):
         return ('play' if method == 'GET' else 'reply'), {'object': '/'.join(parts[1:])}
     if parts[:1] == ['o'] and len(parts) == 2 and method == 'GET':
         return 'page', {'object': parts[1]}
+    if parts[:1] == ['o'] and len(parts) == 3 and parts[2] == 'book' and method == 'GET':
+        return 'book', {'object': parts[1]}
     return None, None
 
 
@@ -588,7 +590,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
         if name in ('xrpc', 'did'):
             return self.xrpc(method, p.get('nsid', 'did.json'))
-        if name in ('home', 'page'):  # pages ask the host: limited per account, or per address, before they do
+        if name in ('home', 'page', 'book'):  # pages ask the host: limited per account, or per address, before they do
             key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
             wait = self.server.limited(key)
             if wait:
@@ -601,6 +603,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.play(p['object'] or 'commonplace', name == 'reply')
         if name == 'page':
             return self.object_page(p['object'])
+        if name == 'book':
+            return self.surface('book', p['object'])
         return self.agents(name, p['scratch'], p['object'], p['method'])
 
     def options(self):
@@ -916,6 +920,18 @@ class Handler(BaseHTTPRequestHandler):
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
                                  here['doors'], seen, here['wants'], brief, here['paint'], told))
+
+    def surface(self, read, name):
+        """A read (docs/VOICE.md "The book, the history, the map") as its reader may see it: the text a post of its spell
+        carries, `world-surface`'s, and its page's spell as a link (`?page=`); the host renders it, the page only shows it."""
+        who = self.principal(self.cookie())
+        handle, principal = who and who['handle'], who and who['did']
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        fields = {k: q[k][0] for k in ('page',) if q.get(k)}
+        r = self.server.host.send({'op': 'world-surface', 'principal': principal or 'anonymous', 'object': name, 'read': read, 'fields': fields})
+        if r.get('status') != 'surface':
+            return self.html(404, pages.refusal(name, handle, {'message': r.get('reason') or f"no {read} of {name} that you may see"}, r.get('status')))
+        self.html(200, pages.surface(f"{name}'s {read}", handle, r['text']))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, under the reader's authority."""

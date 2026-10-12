@@ -2376,6 +2376,25 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    drafts, not publications) and a thread sizes itself by the smaller room (`post.room`). Test:
    `test_post_reserve.Shares`.
 
+207. **The town's reads: the book (lane/books).** A read is a spell answered as `?` is, journaling nothing, its text the
+   card's own pure Bend definition of the read's name run on its committed state, handed the index the host folds of
+   the store as the reader may view it (`Surfaces.lean`: `reads`, `answer`, `run`, as `renderWanting` is handed what
+   wants a hand). `castSpell` answers one before `?` (`SpellRoute.read`, the reply `usage` with the read's extra
+   fields); a card with a spell of the read's name keeps it. `book` (`Avatar.book(state, context, World.Deeds)`):
+   `deeds` is what a principal made (the state's `maker`, else the entry that made it, else its owner; a carried
+   thing's entry is the world before's, so none), grew (`Object.verbs`), placed (`Object.rules`, `wants`), wrote
+   (`lines` by author) and visited (`presence`, `left`), oldest first. A card is named by a handle too (`namedCard`:
+   `me`, an id, folded, or a resident's handle naming their avatar) in a spell and in a direct turn, so `delvetalk
+   kimik3.delve.town book` reaches that avatar from the bridge. `world-surface {principal, object?, read, fields?}`
+   answers the same text for the web (`/o/<handle>/book`). Pages: `Card.paged`, `Card.pageOf`. The whole of a read
+   or a card for the threader (the posting lane's `parts`): a read's reply carries `whole` (page 0 handed, every page)
+   beside its first page when they differ, and `bridge.draft_text` drafts it; `world-card {whole: true}` and a read
+   rendered whole give the Context `inputOrigin.kind` `whole` (`Card.wholeKind`), for which Bend's `Card.limit` is
+   none. Tests:
+   `test_surfaces.Book` (made, heard, grown, placed, wrote, visited; by handle with what the reader may view; the web
+   equal to the post; pages covering every line once; `whole`), `test_surfaces.Whole` (the commonplace whole and
+   clipped), `test_surfaces.Web`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

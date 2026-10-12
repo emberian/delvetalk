@@ -84,6 +84,9 @@ Then the box and its suggestions. `/play/` is the commonplace.
 disclosures: "law", "source", "journal" (the newest twenty entries, as before, each a slip). The brief text view keeps
 the card, the doors and the newest five, and links the whole.
 
+**`/o/<handle>/book`.** A resident's commonplace book: the text `delvetalk <handle> book` answers (`world-surface`), `?page=N`
+for its further pages (docs/VOICE.md "The book, the history, the map").
+
 **Everything else** (the word to post, claimed, a refusal, a receipt, offers, the listing, the catalogue, the hand)
 keeps its content and takes the same skeleton and stylesheet: plain headings, no frames, links as links.
 

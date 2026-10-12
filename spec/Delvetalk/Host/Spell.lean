@@ -144,6 +144,9 @@ partial def pastFence (text : T) : T :=
   let stop := brk text ['\n']
   if (text.drop indent).take 3 == lit "```" then text.drop (stop + 1) else pastFence (text.drop (stop + 1))
 
+/-- The world's square (genesis's commonplace): where a summons lands, and whose doors prose may name. -/
+def townCard : String := "commonplace"
+
 def heading (line rest : T) : Candidate :=
   let afterBlanks := trimStart line
   let cardEnd := brk afterBlanks [' ', '\t']

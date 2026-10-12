@@ -1,0 +1,264 @@
+/- The town's readable surfaces (docs/VOICE.md "The book, the history, the map"): a resident's commonplace
+   book (`delvetalk me book`, `delvetalk <handle> book`), the town's history (`delvetalk chronicle`) and the
+   door map (`delvetalk map`, `delvetalk <card> map`). Each is a host read, answered as `?` is and journaling
+   nothing. The host folds the index a read needs from the store and the journal, as the reader may view them
+   (`deeds`, `annal`, `ways`), and hands it to the card's own pure Bend definition of the read's name
+   (`def book(state, context, deeds)` on the avatar, the commonplace's `chronicle` and `map`); the document that
+   definition renders is the answer, the one rendering a post and the web page (`world-surface`) show alike. A
+   card with no definition of `chronicle` or `map` of its own is read by the commonplace's, from that card. -/
+import Delvetalk.Host.Ops
+import Delvetalk.Document
+
+namespace Delvetalk.Host.Surfaces
+open Lean (Json toJson)
+open Delvetalk.Host
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Theory.ObjectiveBendTypes (Ty)
+
+/-- The reads, each the name of the card's definition that renders it. -/
+def reads : List String := ["book"]
+
+/-- The reads the commonplace renders for any card that has no definition of its own. -/
+def townReads : List String := []
+
+/-- Where the town's reads are rendered when the card has none: the world's square (genesis's commonplace). -/
+def square : String := Spell.townCard
+
+/-! ## Reading the store -/
+
+def fieldsOf : Data → List (String × Data)
+  | .record f => f
+  | _ => []
+
+def text? (fs : List (String × Data)) (k : String) : Option String :=
+  match fs.lookup k with
+  | some (.label s) => some s
+  | _ => none
+
+def nat? (fs : List (String × Data)) (k : String) : Option Nat :=
+  match fs.lookup k with
+  | some (.natural n) => some n
+  | _ => none
+
+/-- A relation's rows (`rows {items}`), or a list's items, as field lists. -/
+def rows (fs : List (String × Data)) (k : String) : List (List (String × Data)) :=
+  match fs.lookup k with
+  | some (.variant "rows" (.record f)) => (((f.lookup "items").bind listOf).getD []).map fieldsOf
+  | some d => ((listOf d).getD []).map fieldsOf
+  | none => []
+
+/-- A Reference naming this world's object. -/
+def referenceOf : Data → Option String
+  | .record f => match f.lookup "world", f.lookup "object" with
+      | some (.label ""), some (.label id) => some id
+      | _, _ => none
+  | _ => none
+
+/-- A `List<T>` value on the wire: `nil {} | cons {head, tail}`. -/
+def listOfData (items : List Data) : Data :=
+  items.foldr (fun x tail => .variant "cons" (.record [("head", x), ("tail", tail)])) (.variant "nil" (.record []))
+
+/-- A principal's own avatar (its id holds a DID), which no surface names as a thing. -/
+def avatarId (id : String) : Bool := ((id.splitOn "/").head?.getD "").contains ':'
+
+/-- A principal as a surface names them: the handle a row kept, else the registry's, else the principal. -/
+def named (w : World) (fs : List (String × Data)) (handleKey principalKey : String) : String :=
+  match text? fs handleKey with
+  | some h => if h.isEmpty then shownName w ((text? fs principalKey).getD "") else h
+  | none => shownName w ((text? fs principalKey).getD "")
+
+/-- The entry that made `id` and its principal, as the journal holds it; none when the store came whole from
+    a carry or a fork (its first entry installs the store), so the entry that made it is the world before's. -/
+def madeEntry (w : World) (id : String) : Option (Nat × String) := do
+  let i ← (w.touched[id]?).bind (·[0]?)
+  let e ← w.entries.get? i
+  guard (!installsStore e)
+  return (i + 1, ((e.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD "")
+
+/-- Who made `id`: the maker its state names (a record made of a kind), else the principal of the entry that
+    made it, else its owner (a thing or a kind carried whole). -/
+def makerOf (w : World) (id : String) (o : Object) : String :=
+  let fs := fieldsOf o.state
+  match text? fs "maker" with
+  | some m => if !m.isEmpty then m else fallback fs
+  | none => fallback fs
+where
+  fallback (fs : List (String × Data)) : String :=
+    match madeEntry w id with
+    | some (_, who) => if who.isEmpty then (text? fs "owner").getD "" else who
+    | none => (text? fs "owner").getD ""
+
+/-- What a thing is, in a word: its kind's name (`kind/bell` a bell), a kind, else what its id calls it. -/
+def calledWord (id : String) (o : Object) : String :=
+  let kind := (text? (fieldsOf o.state) "kind").getD ""
+  if !kind.isEmpty then ((kind.splitOn "/").getLast?.getD kind)
+  else if id.startsWith "kind/" || id == "kinds" then "kind"
+  else
+    let parts := id.splitOn "/"
+    let last := parts.getLast?.getD id
+    if !last.isEmpty && last.all Char.isDigit then (parts.dropLast.getLast?.getD "thing") else last
+
+/-- The fields a read was given, by name ("" for one not given). -/
+def given (fields : List Spell.Binding) (name : String) : String :=
+  ((fields.find? (·.name == name)).map (·.value)).getD ""
+
+/-- A field that is a number in plain digits, or nothing given; `refused` names the field otherwise. -/
+def number (fields : List Spell.Binding) (name : String) : Except (String × String) (Option Nat) :=
+  let v := (given fields name).trimAscii.toString
+  if v.isEmpty then .ok none
+  else match Spell.number v.toList with
+    | some n => .ok (some n)
+    | none => .error ("badValue", s!"{name} takes a natural number in plain digits.")
+
+/-! ## The book: what a hand did that the store still shows -/
+
+/-- One row of a book (`World.Deed`): `made` (`name` what it is), `grew` (`name` the verb, `text` its reading),
+    `rule` and `want` (`name`, `text` the reading), `wrote` (`name` the verb that wrote the line, `text` the
+    line), `visited` (`name` `here` while present); `at` the entry, 0 when the world before the carry made it. -/
+structure Deed where
+  what : String
+  object : String
+  name : String := ""
+  text : String := ""
+  height : Nat := 0
+
+def Deed.data (d : Deed) : Data :=
+  .record [("what", .label d.what), ("object", .label d.object), ("name", .label d.name), ("text", .label d.text),
+    ("at", .natural d.height)]
+
+/-- Everything `who` made, grew, placed, wrote and visited among the things `reader` may view, oldest first. -/
+def deeds (w : World) (reader who : String) : List Deed := Id.run do
+  let mut out : Array Deed := #[]
+  for (id, o) in w.objects.toList do
+    unless o.read.permits reader do continue
+    let fs := fieldsOf o.state
+    if !avatarId id && makerOf w id o == who then
+      out := out.push { what := "made", object := id, name := calledWord id o, height := ((madeEntry w id).map (·.1)).getD 0 }
+    for v in o.verbs do
+      if v.grower == who then out := out.push { what := "grew", object := id, name := v.name, text := v.reading, height := v.height }
+    for r in o.rules do
+      if r.owner == who then out := out.push { what := "rule", object := id, name := r.name, text := r.clause.reading, height := r.since }
+    for r in o.wants do
+      if r.owner == who then out := out.push { what := "want", object := id, name := r.name, text := r.clause.reading, height := r.since }
+    for r in rows fs "lines" do
+      if text? r "author" == some who then
+        out := out.push { what := "wrote", object := id, name := (text? r "verb").getD "", text := (text? r "text").getD "",
+                          height := (nat? r "at").getD 0 }
+    if (rows fs "presence").any (text? · "who" == some who) then
+      out := out.push { what := "visited", object := id, name := "here" }
+    else
+      let left := ((rows fs "left").filter (text? · "who" == some who)).filterMap (nat? · "entry")
+      if let some h := left.max? then out := out.push { what := "visited", object := id, height := h }
+  return (out.qsort fun a b => a.height < b.height || (a.height == b.height && a.object < b.object)).toList
+
+/-! ## Rendering by the card's own definition -/
+
+/-- The parameter types of a function type and what it returns past `n` arrows. -/
+def peeled : Nat → Ty → List Ty × Ty
+  | n + 1, .arrow _ _ domain codomain => let (rest, result) := peeled n codomain; (domain :: rest, result)
+  | _, ty => ([], ty)
+
+/-- `o`'s pure definition `name` taking `(state, context, handed)`, compiled; none when it has none of that shape. -/
+def surfaceDef (w : World) (o : Object) (name : String) : Option Compiled :=
+  match compileDef w o name with
+  | .ok (c, _) =>
+    match peeled 3 c.type with
+    | ([_, _, _], result) => match result with
+      | .computation .. => none
+      | .arrow .. => none
+      | _ => if c.entry.isSome then some c else none
+    | _ => none
+  | .error _ => none
+
+/-- `o`'s definition `c` (`id`'s) run for `reader` with `handed`, as a card renders: on its committed state, under
+    a turn's ticks, the Context and `handed` fitted to its own types; its document's text. -/
+def run (w : World) (id : String) (o : Object) (reader name : String) (c : Compiled) (handed : Data) (whole : Bool := false) :
+    Except String String := do
+  let some entry := c.entry | throw "noCard"
+  let (domains, _) := peeled 3 c.type
+  let context := contextData id reader (handleOf w reader) "" "" w.height w.clock (if whole then Card.wholeKind else "card") name
+  let fit := fun (i : Nat) (d : Data) => match domains[i]? with
+    | some ty => fitRecord c.bounds ty d
+    | none => d
+  match (runPure entry [o.state, fit 1 context, fit 2 handed] Limits.maxTurnTicks).1 with
+  | .ok document => Delvetalk.Document.render document
+  | .error e => throw e
+
+/-- A read answered: the card that rendered it, its text (the page asked for, within a reply), and what the answer
+    carries beside it (`whole`: every page as one text, page 0 handed and `Card.limit` none, when there are several,
+    for a transport that threads it into parts; `paint`: the strokes a transport may paint above it; `ways`: the
+    map's doors, for a drawing). -/
+structure Answer where
+  object : String
+  text : String
+  extra : List (String × Json) := []
+
+/-- `read` cast on card `id` (`target`) by `reader` with `fields`: rendered by the card's own definition of it, or
+    for a town read (with `fallback`: the card has no spell of that name) by the square's from this card; none
+    when neither has one (the spell is then the card's to answer as any other). `.error (clause, reason)` for a field the read cannot take. -/
+def answer (w : World) (reader id : String) (target : Object) (read : String) (fields : List Spell.Binding)
+    (fallback : Bool := true) : Option (Except (String × String) Answer) := do
+  guard (reads.contains read)
+  let (renderer, o, c) ← match surfaceDef w target read with
+    | some c => some (id, target, c)
+    | none => do
+      guard (fallback && townReads.contains read && id != square)
+      let sq ← w.objects[square]?
+      guard (sq.read.permits reader)
+      let c ← surfaceDef w sq read
+      some (square, sq, c)
+  let page : Unit → Except (String × String) Nat := fun _ => (number fields "page").map fun p => (p.getD 1).max 1
+  let rendered : (Nat → Data) → Nat → List (String × Json) → Except (String × String) Answer := fun handed page extra =>
+    match run w renderer o reader read c (handed page) with
+    | .ok text =>
+      let whole := match run w renderer o reader read c (handed 0) (whole := true) with
+        | .ok all => if all == text then [] else [("whole", toJson all)]
+        | .error _ => []
+      .ok { object := id, text, extra := whole ++ extra }
+    | .error e => .error ("render", s!"{renderer} could not render its {read}: {e}")
+  some <| match read with
+    | _ => do
+      let p ← page ()
+      let rows := listOfData ((deeds w reader id).map Deed.data)
+      rendered (fun page => .record [("page", .natural page), ("rows", rows)]) p []
+
+/-- The spells of a read, as `?` lists them: the first page, then the fields it takes. -/
+def spellsOf (card read : String) : List String :=
+  match read with
+  | "book" => [s!"delvetalk {card} book", s!"delvetalk {card} book / page: <a page after the first>"]
+  | _ => [s!"delvetalk {card} {read}"]
+
+/-- The reads `?` lists on card `id` (shown as `shown`) for `reader`: those the card renders, and the town's the square
+    renders from any card that has no spell of their name (`owned`, its spells and verbs). -/
+def usage (w : World) (reader id : String) (target : Object) (shown : String) (owned : List String) : String :=
+  let mine := reads.filter fun r => (surfaceDef w target r).isSome
+  let town := if id == square || !((w.objects[square]?).map (·.read.permits reader)).getD false then [] else
+    townReads.filter fun r => !mine.contains r && !owned.contains r &&
+      (((w.objects[square]?).bind fun sq => surfaceDef w sq r).isSome)
+  let all := (mine ++ town).flatMap (spellsOf shown)
+  if all.isEmpty then "" else "\nTo read it (nothing is written):\n" ++ String.join (all.map (s!"\n{·}")) ++ "\n"
+
+/-- `world-surface {principal, object?, read, fields?: {name: text}}`: a read rendered as a spell would answer it,
+    for the web (`/o/<handle>/book`, `/history`, `/map`); the object defaults to the square, `me` and a handle
+    resolve as in a spell. `{status: "surface", object, read, text, …extra}`, or `unknown` / `denied` / `noRead`,
+    or `refused` with the field's clause and reason. Nothing is written. -/
+def surfaceOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let read ← j.getObjValAs? String "read"
+  let asked := (← optText j "object").getD square
+  let id := namedCard w reader asked
+  let fields : List Spell.Binding := match (j.getObjVal? "fields").toOption.bind (·.getObj?.toOption) with
+    | some kvs => kvs.toList.filterMap fun (k, v) => match v with
+      | .str s => some ⟨k, s⟩
+      | .num n => some ⟨k, toString n⟩
+      | _ => none
+    | none => []
+  let status := fun (s : String) => Json.mkObj [("status", toJson s), ("object", toJson id), ("read", toJson read)]
+  let some o := w.objects[id]? | return status "unknown"
+  unless o.read.permits reader do return status "denied"
+  match answer w reader id o read fields with
+  | none => return status "noRead"
+  | some (.error (clause, reason)) => return (status "refused").mergeObj (Json.mkObj [("clause", toJson clause), ("reason", toJson reason)])
+  | some (.ok a) => return (status "surface").mergeObj (Json.mkObj ([("text", toJson a.text)] ++ a.extra))
+
+end Delvetalk.Host.Surfaces
