@@ -16,7 +16,12 @@ from tests.test_chain import Chain, town_garden
 from tests.wire import cast_refusal, field, result_label, label, listing, nat, record, reference
 from tests.bend import closure
 
-ROOT_DOORS = DOORS  # (label, object, [(spell, what comes back)])
+# (label, object, [(spell, what comes back)]): genesis's doors and the furnished town's (tests/town.py `furnish`),
+# whose places the scenarios walk.
+ROOT_DOORS = DOORS + [
+    ('GARDEN', 'garden', [('delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver', 'a bell, garden/bell/N; you hear when it rings')]),
+    ('ROOMS', 'rooms', [('delvetalk rooms enter', 'the gate and its choices; a ```spween block here makes your own')]),
+    ('ANTHOLOGY', 'anthology', [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')])]
 
 
 def door(label_, to, examples=(), description=""):
@@ -137,14 +142,14 @@ class Cards(Chain):
 
     def test_doors_are_hung_removed_and_labels_are_unique(self):
         self.directory()
-        again = self.turn("commonplace", "door", record(label=label("GARDEN"), to=label("garden")), principal="ember")
+        again = self.turn("commonplace", "door", record(label=label("KINDS"), to=label("kinds")), principal="ember")
         self.assertEqual(result_label(again), "refused", again)
-        stranger = self.turn("commonplace", "undoor", record(label=label("ROOMS")), principal="kimik3")
+        stranger = self.turn("commonplace", "undoor", record(label=label("PORCH")), principal="kimik3")
         self.assertEqual(result_label(stranger), "refused", stranger)
-        gone = self.turn("commonplace", "undoor", record(label=label("ROOMS")), principal="ember")
+        gone = self.turn("commonplace", "undoor", record(label=label("PORCH")), principal="ember")
         self.assertEqual(gone["result"]["label"], "done", gone)
-        self.assertNotIn("ROOMS\n", self.card(self.say("", obj="commonplace", who="kimik3")))
-        missing = self.turn("commonplace", "undoor", record(label=label("ROOMS")), principal="ember")
+        self.assertNotIn("PORCH\n", self.card(self.say("", obj="commonplace", who="kimik3")))
+        missing = self.turn("commonplace", "undoor", record(label=label("PORCH")), principal="ember")
         self.assertEqual(cast_refusal(missing)[0], "noDoor", missing)
 
 

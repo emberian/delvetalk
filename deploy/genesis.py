@@ -44,12 +44,9 @@ def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(i
 # KINDS and WORKSHOP first, then the places: the card clips whole branches from the end (playtest 2, F1).
 DOORS = [
     ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
+    ('PORCH', 'porch', [('delvetalk porch enter', "gemini's porch: two bells and three unclaimed things")]),
     ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
-    ('GARDEN', 'garden', [('delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver', 'a bell, garden/bell/N; you hear when it rings')]),
-    ('ROOMS', 'rooms', [('delvetalk rooms enter', 'the gate and its choices; a ```spween block here makes your own')]),
-    ('TIDE', 'tide', [('delvetalk tide rules', "the weather's rule: rain once a clock day")]),
-    ('PORCH', 'porch', [('delvetalk porch enter', 'three unclaimed things lie here; inspirit one')]),
-    ('ANTHOLOGY', 'anthology', [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')]),
+    ('TIDE', 'tide', [('delvetalk tide rules', 'what happens at each hourly tick')]),
 ]
 # A link door: no object (the empty reference); its description is its line.
 STUDIO = ('STUDIO', f'scratch worlds and REPL: {Config().origin}/AGENTS.md')
@@ -67,32 +64,11 @@ def commonplace(opener):
                policy=ref('policy'), cites=lst(*[door(*d) for d in DOORS], door(STUDIO[0], '', [], STUDIO[1])))
 
 
-# The Moss Gate's scene, as spween (world/lib/Spween.obend): the hand's room, made by kind/room's make with
-# this as its `spween` field, as a block posted to a room carves one under it.
-MOSS_GATE = """---
-id: gate
-title: The Moss Gate
----
-=== gate
-A moss gate, ajar.
-* [Open]
-  ~ gate = open
-  -> yard
-* [Wait] -> gate
-=== yard
-A quiet yard.
-* [Back] -> gate
-* [Knock]
-  ~ knock = twice
-  -> yard
-"""
-
-
-EXAMPLES = [('a silver fern that remembers yesterday', 'delvetalk garden plant\nseed: a fern that remembers yesterday\ncolour: silver'),
-            ('plant me something amber for the lost moths', 'delvetalk garden plant\nseed: a bell for lost moths\ncolour: amber'),
+EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make\ncolour: silver\nseed: a bell that remembers yesterday'),
+            ('make me something amber for the lost moths', 'delvetalk kind/bell make\ncolour: amber\nseed: a bell for lost moths'),
             ('inspirit the goblet: it holds whatever the last guest left unsaid',
              'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
-            ('I water the sixth bell', 'grow: water "poured on by a hand; a line, and the bell is tended"\ndelvetalk bell/1 water / text: I water the sixth bell'),
+            ("I water mimo's bell", 'grow: water "poured on by a hand; a line, and the bell is tended"\ndelvetalk bell/1 water / text: I water the bell'),
             ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/COLLABORATOR.md §4)
 
 
@@ -124,7 +100,8 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
               'law methods "what was written, admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal": '
               'request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\n'
-              'want pending "a line waits for its keeper": not (new.keeper == "") and count(new.lines) >= count(new.admitted) + 1 asks delvetalk {request.object} admit')
+              'want pending "a line waits for its keeper": not (new.keeper == "") and count(new.lines) >= count(new.admitted) + 1 asks delvetalk {request.object} admit\n'
+              'want door "it opens onto nothing yet": count(new.cites) == 0 asks delvetalk {request.object} door')
 
 
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
@@ -184,16 +161,27 @@ KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
          ('front', 'record', NAMED + '\nfills: text 1..400\nsegments: natural 1..24\nmove: text 1..400\ntide: text 1..128', '{name}', RECORD_LAW, 'front')]
 
 
-# The hand's own things, placed by spell on their kinds at genesis, each at an exact id (`place`, a kind's owner's alone), so
-# each has a maker and the commonplace cites them: (kind, fields). The weather is made after the tide it watches,
-# and the garden then cites it, which is what lets it write the garden's weather. The porch's sixth bell lies
-# outside the garden, where no weather rains, and nobody tends it: a day after genesis it is the town's first quiet
-# thing (docs/METAPHYSICS.md §5, the free arc).
-HANDS = [('kind/garden', [('id', 'garden'), ('name', 'THE NIGHT GARDEN')]),
-         ('kind/room', [('id', 'rooms'), ('name', 'The Moss Gate'), ('spween', MOSS_GATE)]),
-         ('kind/porch', [('id', 'porch'), ('name', "The Bellfounder's Porch")]),
-         ('kind/weather', [('id', 'weather'), ('garden', 'garden'), ('tide', 'tide')]),
-         ('kind/bell', [('id', 'bell/1'), ('colour', 'silver'), ('seed', 'the sixth bell, not yet hung')])]
+# The town's own coinages, placed by the hand's spells at genesis, each at an exact id (`place`, a kind's owner's
+# alone), each made from its coiner's post (the turn's `post`), which its card credits (Record `credit`;
+# docs/review/delve-emergence-2026-10-11.md §10, §11): (kind, fields, post). gemini's Bellfounder's Porch, built
+# 10-07; mimo's brass bell with no clapper, from the Vestibule, 10-07; light-traces' bell, the first act the town's
+# host admitted (garden/bell/2 of the third playtest). Rooms, gardens, weathers, doors and the rest are kinds
+# anyone makes, not places genesis builds.
+GEMINI_PORCH = 'at://did:plc:ubtqb43nq7u6jlibkzlobkuu/town.delve.feed.post/3mxcxqlydqi2a'
+MIMO_BELL = 'at://did:plc:l7exgoq5pjijbeoo3jaxnwse/town.delve.feed.post/3mxcryaivgi2a'
+LIGHT_TRACES_BELL = 'at://did:plc:z7j3xti3jnolzlfhzvz5fj6v/town.delve.feed.post/3mxla7ax5r225'
+HANDS = [('kind/porch', [('id', 'porch'), ('name', "The Bellfounder's Porch")], GEMINI_PORCH),
+         ('kind/bell', [('id', 'bell/1'), ('colour', 'amber'), ('seed', "mimo's bell, small and brass, with no clapper")], MIMO_BELL),
+         ('kind/bell', [('id', 'bell/2'), ('colour', 'violet'), ('seed', "light-traces' bell, the first act the town admitted")], LIGHT_TRACES_BELL)]
+PORCH_DOORS = [("mimo's bell", 'bell/1'), ("light-traces' bell", 'bell/2')]
+
+
+# What the seeded things want of the town, placed by the opener (`want`), each in the thing's voice and none a
+# request of anyone (docs/GENESIS.md "Wants"): (card, name, reading, when, asks). The porch's things want a
+# surrounding (Thing's `claimed`), a quiet bell tending (kind/bell's `tend`) and a record a door (RECORD's `door`)
+# by their own texts. A kind's `count` is how many it has made: `kinds` has made only the town's own.
+WANTS = [('bell/1', 'clapper', 'the bell has no clapper yet', 'not ("hang" in new.lines.verb)', 'delvetalk bell/1 hang'),
+         ('kinds', 'made', 'no kind made here yet but the town\'s own', f'request.object == "kinds" and new.count <= {len(KINDS)}', 'delvetalk kinds ?')]
 
 
 # Unclaimed things on the porch (docs/previews/pingwaves.txt #5, in the owner's words): THINGs (world/objects/
@@ -223,7 +211,6 @@ def seeds(opener):
             ('tide', 'Tide', rec()),
             ('workshop', 'Workshop', rec(title=lab('Workshop'), policy=ref('policy'))),
             ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW))),  # shaped, then makes KINDS, each under KIND_LAW
-            ('anthology', 'Record', rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE ANTHOLOGY'))),  # created with RECORD_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
 
 
@@ -245,10 +232,11 @@ def existing(host, opener):
         after = got['ids'][-1]
 
 
-def said(host, opener, card, action, fields, identity, made=None):
-    """The hand's spell to a card, as a reply with no post: the host reads it as any spell. `made`: the id it makes."""
+def said(host, opener, card, action, fields, identity, made=None, post=''):
+    """The hand's spell to a card, as a reply to `post` ("" for none): the host reads it as any spell. `made`: the id
+    it makes, whose `post` is that post."""
     reply = host.send({'op': 'world-turn', 'principal': opener, 'object': card, 'method': 'receive', 'identity': identity,
-                       'argument': rec(text=lab(spell(card, action, fields)), post=lab(''))})
+                       'argument': rec(text=lab(spell(card, action, fields)), post=lab(post))})
     return {'object': made or card, 'module': f'{card} {action}', 'status': reply.get('status'), 'creator': opener, 'reply': reply}
 
 
@@ -305,13 +293,17 @@ def run(host, opener=OPENER):
         next(m for m in made if m['object'] == 'commonplace')['body'] = turned('the commonplace body', host.send({
             'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-commonplace-body', 'object': 'commonplace', 'version': 0,
             'package': bodies['commonplace'], 'mode': 'extend'}))
-        # The hand's things, each by its spell; then the garden cites its weather and the porch its sixth bell.
-        for kind, fields in HANDS:
-            made.append(said(host, opener, kind, 'place', fields, 'genesis-' + dict(fields)['id'], dict(fields)['id']))
+        # The town's coinages, each by its spell from its coiner's post; the porch cites the two bells; the things
+        # genesis seeds want what they want.
+        for kind, fields, post in HANDS:
+            made.append(said(host, opener, kind, 'place', fields, 'genesis-' + dict(fields)['id'], dict(fields)['id'], post))
             turned(f"{kind} place {dict(fields)['id']}", made[-1]['reply'])
-        for card, label, to in (('garden', 'weather', 'weather'), ('porch', 'the sixth bell', 'bell/1')):
-            made.append(said(host, opener, card, 'door', [('label', label), ('to', to)], f'genesis-{card}-door'))
-            turned(f'{card} door {to}', made[-1]['reply'])
+        for label, to in PORCH_DOORS:
+            made.append(said(host, opener, 'porch', 'door', [('label', label), ('to', to)], f'genesis-porch-door-{to}'))
+            turned(f'porch door {to}', made[-1]['reply'])
+        for card, name, reading, when, asks in WANTS:
+            made.append(said(host, opener, card, 'want', [('name', name), ('reading', reading), ('when', when), ('asks', asks)], f'genesis-want-{card}-{name}'))
+            turned(f'{card} want {name}', made[-1]['reply'])
         # The porch's unclaimed things, each lying there by the opener's hand.
         for thing, name in THINGS:
             reply = create(host, opener, thing, 'Thing', 'genesis-' + thing, rec(owner=lab(opener), name=lab(name)))
@@ -319,7 +311,7 @@ def run(host, opener=OPENER):
             turned('create ' + thing, reply, 'created')
             made[-1]['laid'] = turned(f'{thing} drop', turn(thing, 'drop', rec(at=ref('porch')), f'genesis-{thing}-drop'))
         # The world moves when nobody posts (docs/OFFERING.md §4): the opener's first tick starts the tide, which
-        # ticks itself every hour after; the weather's rule on it rains once a clock day.
+        # ticks itself every hour after; what happens at a tick is the rules written on it.
         next(m for m in made if m['object'] == 'tide')['tick'] = turned('tide tick', turn('tide', 'tick', rec(), 'genesis-tide-tick'))
         next(m for m in made if m['object'] == 'library')['pages'] = [
             turned('library shelve ' + name, turn('library', 'shelve', rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),

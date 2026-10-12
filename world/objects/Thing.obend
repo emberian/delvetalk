@@ -50,7 +50,7 @@ def initial() -> State:
   {owner: "", keeper: "", keeperHandle: "", name: "", description: "", holder: Plans.nobody(), holderHandle: "", location: Plans.nobody(), offer: Offer.none({}), copyable: true, circle: "", lines: Relations.empty(), next: 1n, tended: 0n, tendedAt: 0n}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: 32n})
-want claimed "a thing nobody has inspirited": new.keeper == "" asks delvetalk {request.object} inspirit
+want claimed "nothing surrounds it yet": new.keeper == "" asks delvetalk {request.object} inspirit
 # A thing as edition 8 kept it: no lines yet, never tended.
 record State8:
   owner: String

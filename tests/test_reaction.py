@@ -213,7 +213,7 @@ class Errand(Reaction):
                            "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
         placed = sorted(r["name"] for r in self.town.send(op="world-rules", principal=OPENER, object=bell)["rows"] if r["from"] == bell)
         self.assertEqual(len(placed), 2, placed)
-        self.assertEqual([w["name"] for w in self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"]], ["open"])
+        self.assertIn("open", [w["name"] for w in self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"]])
         forged = self.say(GLM, errand, "delvetalk %s settle / by: glm" % errand)
         self.assertEqual((forged["status"], forged["receipt"]["outcome"]["clause"]), ("refused", "ruled"), forged)
         self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: the first" % bell))
@@ -224,7 +224,7 @@ class Errand(Reaction):
         at = int(re.search("done by \u2026%s at entry (\\d+)" % GLM[-8:], self.card(self.say(KIM, errand, ""))).group(1))
         self.assertGreaterEqual(at, second["receipt"]["height"])  # the settle is the delivered turn the rain fired
         self.assertEqual([r for r in self.town.send(op="world-rules", principal=OPENER, object=bell)["rows"] if r["from"] == bell], [])
-        self.assertEqual(self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"], [])
+        self.assertNotIn("open", [w["name"] for w in self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"]])
         grants = [g for g in self.town.send(op="world-grants", principal=GLM)["grants"] if g["object"] == "anthology"]
         self.assertEqual([(g["method"], g["to"]) for g in grants], [("admit", GLM)], grants)
 
