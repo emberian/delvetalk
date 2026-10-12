@@ -1,10 +1,12 @@
 /- Enchantment (docs/OVERHAUL.md §4): every act leaves strokes on a thing; the card a resident reads may
    be painted from them by the world's model, and the exact card stands beneath it.
 
-   `Strokes` is the thing as exact data at a version, assembled by the host from the store and nothing
-   authored for it: its head, maker, keeper, owner, counts, the eight newest lines and the marks
-   verbatim, its verbs with their spells and growers, its laws' readings, its rules and wants, its
-   doors, where it lies and who is here. Read-only: `world-strokes {principal, object, version?}`. -/
+   `Strokes` is a thing as exact data at a version, assembled by the host from the store and nothing
+   authored for it, or a day of the town (`dayStrokes`, the chronicle's day and what wants a hand). What
+   the painter reads is `Strokes.text`: what the thing is, its maker's words and voice, its residents'
+   lines, what it wants, and each number with its unit and its meaning ("rains: 2"; "the 7th rain:
+   rule seven"); never an entry number or a version. `verify` holds a paint to them. Read-only:
+   `world-strokes {principal, object | day, version?, morning?}`. -/
 import Delvetalk.Host.TurnLoop
 
 namespace Delvetalk.Host.Enchant
@@ -15,8 +17,8 @@ open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 /-! ## Strokes -/
 
 /-- A line written on the thing: its number, the writer's handle, the verb that wrote it ("" while the
-    store keeps no verb column), its text verbatim, the entry that wrote it, and, on a record with a
-    keeper, `admitted` or `pending`. -/
+    store keeps no verb column), its text verbatim, the entry that wrote it, on a record with a keeper
+    `admitted` or `pending`, and, in a day's strokes, the thing it was written on. -/
 structure Line where
   n : Nat
   handle : String
@@ -24,12 +26,21 @@ structure Line where
   text : String
   entry : Nat
   state : String
+  on : String := ""
 
 /-- A named moment (a bell's `rung`), by whom and at which entry. -/
 structure Mark where
   name : String
   handle : String
   entry : Nat
+
+/-- A number and what it counts: `n` of `unit` ("2 rain"), or, `ordinal`, the `n`th `unit` at which what
+    `note` says happens ("the 7th rain: rule seven"). The numbers a paint may write, each beside its unit. -/
+structure Quantity where
+  n : Nat
+  unit : String
+  ordinal : Bool := false
+  note : String := ""
 
 /-- A verb the thing takes: its name, the handle of who grew it ("" for its kind's), what it reads as, and its spell. -/
 structure Verb where
@@ -45,40 +56,58 @@ structure Rule where
   reading : String
   fired : Nat
 
-/-- A want the thing holds now: its name, its reading, the spell that answers it. -/
+/-- A want that holds now: its name, its reading, the spell that answers it, and, in a day's strokes, its thing. -/
 structure Want where
   name : String
   reading : String
   spell : String
+  object : String := ""
 
 structure Door where
   label : String
   target : String
 
+/-- The longest paint of a thing; a day may run to `maxDay`. -/
+def maxPaint : Nat := 400
+def maxDay : Nat := 600
+
 structure Strokes where
   object : String
   version : Nat
   kind : String := ""
+  /-- Its kind's register, else (a thing with no kind) the register of the place it lies in. -/
   voice : String := ""
   head : String := ""
-  /-- The values its kind's form took when it was made (`seed`, `colour`), by name. -/
+  /-- The values its kind's form took when it was made (`seed`, `colour`), by name: its maker's words. -/
   fields : List (String × String) := []
   maker : String := ""
+  /-- Made after another's post (a coinage of the town's): `coined`, and the coiner's handle when the
+      registry knows it. -/
+  coined : Bool := false
+  coiner : String := ""
   made : Nat := 0
+  /-- The entry it was last tended at (0: never), and how long ago, in words. -/
   tended : Nat := 0
+  tendedAgo : String := ""
   keeper : String := ""
   owner : String := ""
-  counts : List (String × Nat) := []
+  quantities : List Quantity := []
   lines : List Line := []
   marks : List Mark := []
   verbs : List Verb := []
+  /-- The law its kind adds to the frame every record or thing keeps (`kind/record`'s clauses left out). -/
   laws : List (String × String) := []
   rules : List Rule := []
   wants : List Want := []
   doors : List Door := []
   around : String := ""
   present : List String := []
+  /-- A day's strokes: what the day did, as sentences, and the hands that acted. -/
   today : List String := []
+  hands : List String := []
+  /-- A day's strokes are of no thing: `day` is the clock day they read. -/
+  day : Option Nat := none
+  limit : Nat := maxPaint
 
 /-- How many of the newest lines the strokes carry. -/
 def newestLines : Nat := 8
@@ -86,22 +115,23 @@ def newestLines : Nat := 8
 /-- Relation fields that are bookkeeping, not strokes: who was greeted or missed, who left. -/
 def unstroked : List String := ["greeted", "missed", "left"]
 
-/-- Counts shown even at zero: a thing with no lines or marks is seen to have none. -/
-def alwaysCounted : List String := ["lines", "marks"]
-
-/-- A JSON object of the fields that say something: an empty string, list or zero is left out. -/
+/-- A JSON object of the fields that say something: an empty string, list, zero or false is left out. -/
 def present? (fields : List (String × Json)) : Json :=
   Json.mkObj (fields.filter fun (_, v) => match v with
     | .str s => !s.isEmpty
     | .arr a => !a.isEmpty
     | .num n => n != (0 : Lean.JsonNumber)
+    | .bool b => b
     | _ => true)
 
 def Line.json (l : Line) : Json :=
   present? [("n", toJson l.n), ("handle", toJson l.handle), ("verb", toJson l.verb), ("text", toJson l.text),
-    ("at", toJson l.entry), ("state", toJson l.state)]
+    ("at", toJson l.entry), ("state", toJson l.state), ("on", toJson l.on)]
 
 def Mark.json (m : Mark) : Json := present? [("name", toJson m.name), ("handle", toJson m.handle), ("at", toJson m.entry)]
+
+def Quantity.json (q : Quantity) : Json :=
+  present? [("n", toJson q.n), ("unit", toJson q.unit), ("ordinal", toJson q.ordinal), ("note", toJson q.note)]
 
 def Verb.json (v : Verb) : Json :=
   present? [("name", toJson v.name), ("by", toJson v.grower), ("reading", toJson v.reading), ("spell", toJson v.spell)]
@@ -109,22 +139,83 @@ def Verb.json (v : Verb) : Json :=
 def Rule.json (r : Rule) : Json :=
   present? [("name", toJson r.name), ("owner", toJson r.owner), ("reading", toJson r.reading), ("fired", toJson r.fired)]
 
-def Want.json (x : Want) : Json := present? [("name", toJson x.name), ("reading", toJson x.reading), ("spell", toJson x.spell)]
+def Want.json (x : Want) : Json :=
+  present? [("name", toJson x.name), ("reading", toJson x.reading), ("spell", toJson x.spell), ("object", toJson x.object)]
 
-/-- The strokes as the painter and the reader are shown them; every field present, empty or not, so an
-    empty one is seen to be empty. -/
+/-! ### What the painter reads -/
+
+/-- `unit` counted `n`: "rain" 2 is "rains", 1 "rain". -/
+def plural (unit : String) (n : Nat) : String :=
+  if n == 1 || unit.endsWith "s" || unit.endsWith "ed" || unit == "here" then unit else unit ++ "s"
+
+def nth (n : Nat) : String :=
+  let suffix := if (n / 10) % 10 == 1 then "th" else match n % 10 with
+    | 1 => "st" | 2 => "nd" | 3 => "rd" | _ => "th"
+  s!"{n}{suffix}"
+
+def Quantity.text (q : Quantity) : String :=
+  if q.ordinal then s!"the {nth q.n} {q.unit}: {q.note}"
+  else s!"{plural q.unit 2}: {q.n}" ++ (if q.note.isEmpty then "" else s!" ({q.note})")
+
+def quoted (t : String) : String := "“" ++ t ++ "”"
+
+/-- The strokes as the painter reads them: what the thing is, then its maker's words, its life (lines,
+    wants, rules), its counts with their units, its spells; a field it does not hold is not written. -/
+def Strokes.text (s : Strokes) : String := Id.run do
+  let kindName := ((s.kind.splitOn "/").getLast?.getD s.kind)
+  let part := fun (title : String) (rows : List String) =>
+    if rows.isEmpty then [] else [title] ++ rows.map ("- " ++ ·)
+  let line := fun (cond : Bool) (t : String) => if cond then [t] else []
+  let who := (line (!s.maker.isEmpty) s!"made by {s.maker}") ++ (line (!s.owner.isEmpty && s.owner != s.maker) s!"owned by {s.owner}") ++
+    (line (!s.keeper.isEmpty) s!"kept by {s.keeper}")
+  let out :=
+    (match s.day with
+      | none => [s!"What it is: {s.object}" ++ (if s.kind.isEmpty then "" else s!", a {kindName} ({s.kind})")]
+      | some _ => ["What it is: a day of the town"]) ++
+    line (!s.head.isEmpty) s!"Called: {s.head}" ++
+    [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
+    line (!s.fields.isEmpty) ("Its maker's words when it was made: " ++ "; ".intercalate (s.fields.map fun (k, v) => s!"{k}: {v}")) ++
+    line s.coined (if s.coiner.isEmpty then "A coinage of the town's: another resident coined it first, in a post on delve.town that its card links; its maker here only placed it"
+      else s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it") ++
+    line (!who.isEmpty) ("Who: " ++ ", ".intercalate who) ++
+    line (!s.around.isEmpty) s!"It lies in: {s.around}" ++
+    line (!s.doors.isEmpty) ("Its doors: " ++ ", ".intercalate (s.doors.map fun d => if d.label == d.target then d.target else s!"{d.label} (to {d.target})")) ++
+    line (!s.present.isEmpty) ("Here now: " ++ ", ".intercalate s.present) ++
+    line (!s.tendedAgo.isEmpty) s!"Last tended: {s.tendedAgo}" ++
+    part "What happened that day, in order:" s.today ++
+    line (!s.hands.isEmpty) ("Hands that acted: " ++ ", ".intercalate s.hands) ++
+    part "Lines written, oldest first:" (s.lines.map fun l =>
+      let tag := ", ".intercalate ([l.verb, l.state].filter (!·.isEmpty))
+      let on := if l.on.isEmpty then "" else s!" on {l.on}"
+      (if l.handle.isEmpty then "someone" else l.handle) ++ on ++ (if tag.isEmpty then "" else s!" ({tag})") ++ ": " ++ quoted l.text) ++
+    part "Marks:" (s.marks.map fun m => if m.handle.isEmpty then m.name else s!"{m.name}, by {m.handle}") ++
+    part "Counts:" (s.quantities.map Quantity.text) ++
+    part (if s.day.isSome then "What wants a hand, oldest first:" else "What it wants now:") (s.wants.map fun x =>
+      (if x.object.isEmpty then "" else s!"{x.object}, ") ++ x.name ++ (if x.reading.isEmpty then "" else ": " ++ quoted x.reading) ++
+        (if x.spell.isEmpty then "" else s!"; answered by: {x.spell}")) ++
+    part "Rules on it:" (s.rules.map fun r =>
+      s!"{r.name}, {if r.owner.isEmpty then "its kind's" else r.owner ++ "'s"}: {quoted r.reading}" ++ (if r.fired == 0 then " (has not fired)" else " (has fired)")) ++
+    part "What its kind holds it to:" (s.laws.map fun (n, r) => if r.isEmpty then n else s!"{n}: {quoted r}") ++
+    line (!s.verbs.isEmpty) ("Its verbs: " ++ ", ".intercalate (s.verbs.map fun v =>
+      v.name ++ (if v.grower.isEmpty then "" else s!" (grown by {v.grower}" ++ (if v.reading.isEmpty then ")" else ": " ++ quoted v.reading ++ ")")))) ++
+    [s!"Length: at most {s.limit} characters, the spell included: about {s.limit / 8} words."]
+  return "\n".intercalate out
+
+/-- The strokes as exact data (`world-strokes`), every field present, and the text the painter reads. -/
 def Strokes.json (s : Strokes) : Json :=
   Json.mkObj [("object", toJson s.object), ("version", toJson s.version), ("kind", toJson s.kind),
     ("voice", toJson s.voice), ("head", toJson s.head),
-    ("fields", Json.mkObj (s.fields.map fun (k, v) => (k, toJson v))), ("maker", toJson s.maker), ("made", toJson s.made),
-    ("tended", toJson s.tended), ("keeper", toJson s.keeper), ("owner", toJson s.owner),
-    ("counts", Json.mkObj (s.counts.map fun (k, n) => (k, toJson n))),
+    ("fields", Json.mkObj (s.fields.map fun (k, v) => (k, toJson v))), ("maker", toJson s.maker),
+    ("coined", toJson s.coined), ("coiner", toJson s.coiner), ("made", toJson s.made),
+    ("tended", toJson s.tended), ("tendedAgo", toJson s.tendedAgo), ("keeper", toJson s.keeper), ("owner", toJson s.owner),
+    ("quantities", Json.arr (s.quantities.toArray.map Quantity.json)),
     ("lines", Json.arr (s.lines.toArray.map Line.json)), ("marks", Json.arr (s.marks.toArray.map Mark.json)),
     ("verbs", Json.arr (s.verbs.toArray.map Verb.json)),
     ("laws", Json.arr (s.laws.toArray.map fun (n, r) => present? [("name", toJson n), ("reading", toJson r)])),
     ("rules", Json.arr (s.rules.toArray.map Rule.json)), ("wants", Json.arr (s.wants.toArray.map Want.json)),
     ("doors", Json.arr (s.doors.toArray.map fun d => Json.mkObj [("label", toJson d.label), ("to", toJson d.target)])),
-    ("around", toJson s.around), ("present", toJson s.present), ("today", toJson s.today)]
+    ("around", toJson s.around), ("present", toJson s.present), ("today", toJson s.today), ("hands", toJson s.hands),
+    ("day", toJson s.day), ("limit", toJson s.limit)]
 
 /-! ### Reading the store -/
 
@@ -184,13 +275,46 @@ def madeUnder (w : World) (id : String) : String := Id.run do
     if w.objects.contains pfx then return pfx
   return ""
 
+/-- A kind's register (`voice` on the kind object), "" for none. -/
+def voiceOf (w : World) (kind : String) : String :=
+  match w.objects[kind]? with
+  | some k => (text? (fieldsOf k.state) "voice").getD ""
+  | none => ""
+
+/-- The kind of `id` as it stands ("" for none). -/
+def kindOf (w : World) (id : String) : String :=
+  match w.objects[id]? with
+  | some o => (text? (fieldsOf o.state) "kind").getD ""
+  | none => ""
+
+/-- What a thing lying here is called by: `garden/bell/2` a bell, `porch/goblet` a goblet. -/
+def calledBy (id : String) : String :=
+  let parts := id.splitOn "/"
+  let last := parts.getLast?.getD id
+  if !last.isEmpty && last.all Char.isDigit then (parts.dropLast.getLast?.getD "thing") else last
+
+/-- `n` minutes since, in words: the day it is in, coarse, so a strokes key moves at most once a day. -/
+def ago (minutes : Nat) : String :=
+  let days := minutes / Limits.clockDay
+  if days == 0 then "today" else if days == 1 then "a day ago" else s!"{days} days ago"
+
+/-- `count(new.F) >= N` in a rule's condition: the count it fires at. -/
+def threshold (field condition : String) : Option Nat := do
+  let rest ← (condition.splitOn s!"count(new.{field}) >= ")[1]?
+  let n := (rest.takeWhile Char.isDigit).toString.toNat!
+  if n == 0 then none else some n
+
+/-- The names of `kind/record`'s clauses: the frame every record keeps (who owns, who keeps, what only
+    a method writes), which a paint need not be told. -/
+def frameLaws (w : World) : List String :=
+  match w.objects["kind/record"]? with
+  | some k => (textClauses ((text? (fieldsOf k.state) "law").getD "")).map (·.2.1)
+  | none => []
+
 /-- The strokes of object `id` with `state` and `lawText` (its own at `version`). -/
 def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Data) (lawText : String) : Strokes := Id.run do
   let fs := fieldsOf state
   let kind := (text? fs "kind").getD ""
-  let voice := match w.objects[kind]? with
-    | some k => (text? (fieldsOf k.state) "voice").getD ""
-    | none => ""
   let keeperP := (text? fs "keeper").getD ""
   let admitted := (rows fs "admitted").filterMap (nat? · "n")
   let lineOf := fun (r : List (String × Data)) =>
@@ -214,16 +338,18 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
        spell := (forms.lookup v.name).getD s!"delvetalk {id} {v.name}" } : Verb)
   let verbs := (forms.filter fun (n, _) => !grown.any (·.name == n)).map (fun (name, spell) =>
     ({ name, grower := "", reading := "", spell } : Verb)) ++ grown
-  -- Each law clause with its reading; a clause `under "K"` is K's law, so it stands as K's law clauses.
+  -- The law its kind adds: each clause `under "K"` stands as K's clauses, the frame's left out.
+  let frame := frameLaws w
   let lawsOf := fun (t : String) => (textClauses t).filter (·.1 == "law")
-  let laws := (lawsOf lawText).flatMap fun (_, name, reading, body) =>
+  let laws := ((lawsOf lawText).flatMap fun (_, _, _, body) =>
     match underOf body with
     | some k => ((w.objects[k]?).bind fun ko => text? (fieldsOf ko.state) "law").map (fun t =>
-        (lawsOf t).map fun (_, n, r, _) => (n, r.getD "")) |>.getD [(name, reading.getD "")]
-    | none => [(name, ((reading.orElse fun _ => o.readings.lookup name)).getD "")]
+        (lawsOf t).map fun (_, n, r, _) => (n, r.getD "")) |>.getD []
+    | none => []).filter fun (n, _) => !frame.contains n
   -- The rules it carries (placed, its text's, its kind's), each with its owner and its last firing; the wants
   -- that hold of it now, each with the spell that answers it as filled at this read (`world-rules`, `world-wants`).
-  let rules := (carriedRules w id o).map fun c =>
+  let carried := carriedRules w id o
+  let rules := carried.map fun c =>
     let last := (w.ruleLog[id]?).bind (·.lookup c.clause.name)
     let fired := if (last.bind fun l => (l.getObjVal? "why").toOption).isSome then 0
       else (last.bind fun l => (l.getObjValAs? Nat "height").toOption).getD 0
@@ -238,16 +364,48 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
     | some place => place
     | none => madeUnder w id
   let present := (rows fs "presence").map fun r => handleIn w r "handle" "who"
-  let counts := ((fs.filter fun (k, v) => isRelation v && !unstroked.contains k).map fun (k, v) =>
-    (k, ((rowsOf v).map (·.length)).getD 0)).filter fun (k, n) => n > 0 || alwaysCounted.contains k
+  -- Each number with its unit: the lines by the verb that wrote them (a bell's rains), the count a rule
+  -- fires at as the nth, what lies here by what it is called, who is here, its doors, any other relation.
+  let unitOf := fun (verb : String) => if verb.isEmpty || verb == "write" then "line" else verb
+  let byVerb := all.foldl (fun (acc : List (String × Nat)) l =>
+    let u := unitOf l.verb
+    if acc.any (·.1 == u) then acc.map fun (k, n) => (k, if k == u then n + 1 else n) else acc ++ [(u, 1)]) []
+  let lineUnit := match byVerb with
+    | [(u, _)] => u
+    | _ => "line"
+  let things := (rows fs "things").filterMap fun r => referenceId (.record r)
+  let byKind := things.foldl (fun (acc : List (String × Nat)) t =>
+    let u := calledBy t
+    if acc.any (·.1 == u) then acc.map fun (k, n) => (k, if k == u then n + 1 else n) else acc ++ [(u, 1)]) []
+  let others := (fs.filter fun (k, v) => isRelation v && !unstroked.contains k &&
+      !["lines", "marks", "things", "presence"].contains k).map fun (k, v) => (k, ((rowsOf v).map (·.length)).getD 0)
+  let quantities : List Quantity :=
+    (if all.isEmpty then (if lines.isEmpty then [{ n := 0, unit := "line" }] else []) else byVerb.map fun (u, n) => ({ n, unit := u } : Quantity)) ++
+    (if byVerb.length > 1 || (byVerb.length == 1 && lineUnit != "line") then [{ n := all.length, unit := "line" }] else []) ++
+    (carried.filterMap fun c => (threshold "lines" c.clause.condition.render).map fun n =>
+      ({ n, unit := lineUnit, ordinal := true, note := s!"rule {c.clause.name}, {quoted c.clause.reading}" } : Quantity)) ++
+    byKind.map (fun (u, n) => ({ n, unit := u } : Quantity)) ++
+    (if things.isEmpty then [] else [{ n := things.length, unit := "thing", note := "lying here" }]) ++
+    (if present.isEmpty then [] else [{ n := present.length, unit := "here" }]) ++
+    (if doors.isEmpty then [] else [{ n := doors.length, unit := "door" }]) ++
+    (others.filter (·.2 > 0)).map fun (k, n) => ({ n, unit := k } : Quantity)
   let fields := (rows fs "fields").filterMap fun r => do pure (← text? r "name", ← text? r "value")
   let made := (nat? fs "made").getD (((w.touched[id]?).bind (·[0]?)).map (· + 1) |>.getD 0)
+  let tendedAt := (nat? fs "tendedAt").getD 0
+  let tendedAgo := match nat? fs "tended" with
+    | some at_ => if tendedAt == 0 && at_ == 0 then "" else ago (w.clock - at_)
+    | none => ""
+  let maker := handleIn w fs "makerHandle" "maker"
+  -- A coinage: made after a post that is not its maker's own (`Record.credit`), crediting its coiner.
+  let post := (text? fs "post").getD ""
+  let coined := post.startsWith "at://" && !post.startsWith s!"at://{(text? fs "maker").getD ""}/"
+  let coiner := if coined then handleOf w ((((post.drop 5).toString).splitOn "/").head?.getD "") else ""
+  let voice := if kind.isEmpty then voiceOf w (kindOf w around) else voiceOf w kind
   return { object := id, version, kind, voice,
            head := (text? fs "head").getD ((text? fs "name").getD ""), fields,
-           maker := handleIn w fs "makerHandle" "maker",
-           made, tended := (nat? fs "tendedAt").getD 0,
+           maker, coined, coiner, made, tended := tendedAt, tendedAgo,
            keeper := handleIn w fs "keeperHandle" "keeper", owner := handleIn w fs "ownerHandle" "owner",
-           counts, lines, marks, verbs, laws, rules, wants, doors, around, present }
+           quantities, lines, marks, verbs, laws, rules, wants, doors, around, present }
 
 /-- The strokes of `id` at `version` (default its current one), as `reader` may read them: `none` when
     there is no such object or version, or the reader may not view it. -/
@@ -259,53 +417,119 @@ def strokesAt (w : World) (reader id : String) (version : Option Nat) : Except S
   let (_, lawText) := pinAndLawAt w o id v
   return assemble w id o v state lawText
 
-/-- `world-strokes {principal, object, version?}`: `{status: "strokes", object, version, strokes}`, or
-    `unknown` / `denied`. Nothing is written. -/
+/-! ### A day of the town -/
+
+/-- The reading of `name` among the rules (or wants) `id` carries now, "" for none. -/
+def readingOf (w : World) (id name : String) (wants : Bool) : String :=
+  match w.objects[id]? with
+  | some o => (((if wants then carriedWants w id o else carriedRules w id o).find? (·.clause.name == name)).map (·.clause.reading)).getD ""
+  | none => ""
+
+/-- A day event as a sentence of the day's strokes: who did what to which thing, a rule or want by its
+    reading; no entry number. -/
+def eventSentence (w : World) (e : DayEvent) : String :=
+  let r := fun (wants : Bool) => let t := readingOf w e.object e.name wants; if t.isEmpty then "" else ", " ++ quoted t
+  match e.what with
+  | "made" => s!"{e.who} made {e.object}"
+  | "grew" => s!"{e.who} grew the verb {e.name} on {e.object}"
+  | "fired" => s!"{e.object}'s rule {e.name} fired{r false}"
+  | "unfired" => s!"{e.object}'s rule {e.name} held and did not fire: {e.why}"
+  | "wanted" => s!"{e.object} came to want {e.name}{r true}"
+  | _ => s!"{e.object} stopped wanting {e.name}"
+
+/-- What wants a hand across the world now (`World.wanting`), oldest first, eight, each a thing the
+    reader may view with its want's reading and the spell that answers it. -/
+def wanting (w : World) (reader : String) : List Want := Id.run do
+  let rows := (w.wanting.fold (fun acc id ws => ws.foldl (fun acc (n, h) => acc.push (h, id, n)) acc) #[]).qsort
+    (fun a b => a.1 < b.1 || (a.1 == b.1 && (a.2.1 < b.2.1 || (a.2.1 == b.2.1 && a.2.2 < b.2.2))))
+  let mut out : List Want := []
+  for (_, id, name) in rows.toList do
+    if out.length ≥ newestLines then break
+    let some o := w.objects[id]? | continue
+    unless o.read.permits reader do continue
+    if let some r := (wantRows w id o).find? (fun r => (r.getObjValAs? String "name").toOption == some name) then
+      out := out ++ [{ object := id, name, reading := (r.getObjValAs? String "reading").toOption.getD "",
+                       spell := (r.getObjValAs? String "asks").toOption.getD "" }]
+  return out
+
+/-- How many of a day's newest events its strokes carry. -/
+def dayEvents : Nat := 16
+
+/-- The strokes of the town's day `day` (`Ops.chronicleDay`): what it did, the lines written in it (the
+    newest eight, with the thing each is on), its counts, the hands that acted; with `morning`, what wants a
+    hand now. `version` is the day. -/
+def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Strokes := Id.run do
+  let some d := chronicleDay w reader day
+    | return { object := "", version := day, day := some day, wants := if morning then wanting w reader else [], limit := maxDay }
+  let mut written : Array Line := #[]
+  for (id, o) in w.objects.toList do
+    unless o.read.permits reader do continue
+    for r in rows (fieldsOf o.state) "lines" do
+      let at_ := (nat? r "at").getD 0
+      if d.start ≤ at_ && at_ < d.stop then
+        let l : Line := { n := (nat? r "n").getD 0, handle := handleIn w r "handle" "author", verb := (text? r "verb").getD "",
+                          text := (text? r "text").getD "", entry := at_, state := "", on := id }
+        written := written.push l
+  let lines := (written.qsort fun a b => a.entry < b.entry || (a.entry == b.entry && a.on < b.on)).toList
+  let refused := d.refusals.foldl (· + ·.2) 0
+  -- A principal's own avatar (`did:…`) is never a thing of the day.
+  let events := d.events.filter fun e => !((e.object.splitOn "/").head?.getD "").contains ':'
+  let made := (events.filter (·.what == "made")).map (·.object)
+  -- What was made, by what each is called: two bells, a goblet, twelve kinds.
+  let byKind := made.foldl (fun (acc : List (String × Nat)) id =>
+    let u := if id.startsWith "kind/" then "kind" else calledBy id
+    if acc.any (·.1 == u) then acc.map fun (k, n) => (k, if k == u then n + 1 else n) else acc ++ [(u, 1)]) []
+  return { object := "", version := day, day := some day, today := (events.drop (events.length - dayEvents)).map (eventSentence w), hands := d.hands,
+           lines := lines.drop (lines.length - newestLines),
+           quantities := [{ n := d.admitted, unit := "act", note := "admitted" }] ++
+             (if refused == 0 then [] else [{ n := refused, unit := "refusal" }]) ++
+             (if d.hands.isEmpty then [] else [{ n := d.hands.length, unit := "hand" }]) ++
+             (if made.isEmpty then [] else [{ n := made.length, unit := "thing", note := "made" }]) ++
+             byKind.map (fun (u, n) => ({ n, unit := u, note := "made" } : Quantity)) ++
+             (if lines.isEmpty then [] else [{ n := lines.length, unit := "line", note := "written" }]),
+           wants := if morning then wanting w reader else [], limit := maxDay }
+
+/-- The strokes a request names: `{object, version?}` a thing's, `{day?, morning?}` (no object) the town's
+    day (default the current one). The outer error is the request's; the inner `unknown` / `denied`. -/
+def strokesFor (w : World) (reader : String) (j : Json) : Except String (Except String Strokes) := do
+  match j.getObjValAs? String "object" with
+  | .ok given => return strokesAt w reader (resolveCard reader given) (← optNat j "version")
+  | .error _ =>
+    let day := (← optNat j "day").getD (w.clock / Limits.clockDay)
+    return .ok (dayStrokes w reader day ((j.getObjValAs? Bool "morning").toOption.getD false))
+
+/-- `world-strokes {principal, object | day, version?, morning?}`: `{status: "strokes", object, version,
+    strokes, text}`, or `unknown` / `denied`. Nothing is written. -/
 def strokesOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
-  let id := resolveCard reader (← j.getObjValAs? String "object")
-  let version ← optNat j "version"
-  match strokesAt w reader id version with
-  | .ok s => return Json.mkObj [("status", toJson "strokes"), ("object", toJson id), ("version", toJson s.version),
-      ("strokes", s.json)]
-  | .error why => return Json.mkObj [("status", toJson why), ("object", toJson id)]
+  match ← strokesFor w reader j with
+  | .ok s => return Json.mkObj [("status", toJson "strokes"), ("object", toJson s.object), ("version", toJson s.version),
+      ("strokes", s.json), ("text", toJson s.text)]
+  | .error why => return Json.mkObj [("status", toJson why), ("object", toJson ((j.getObjValAs? String "object").toOption.getD ""))]
 
 /-! ## The check
 
-`verify strokes text` (OVERHAUL §4 (d)): deterministic, the host's, before anything is cached. A paint is refused
-by the first clause it fails, in this order:
+`verify strokes text` (OVERHAUL §4 (d)): deterministic, the host's, before anything is cached. A paint is
+refused by the first clause of `clauses` it fails, in order; `table` is every word a clause reads. A token
+check cannot read meaning: a sentence true of every stroke and false as a whole can pass (OVERHAUL §7
+risk 11); the numbers clause narrows it, since a number stands only beside the unit it counts. The exact
+card stands beneath every paint. -/
 
-- `ids`: every id-shaped token (`garden/bell/2`) is an id the strokes hold;
-- `numbers`: every run of digits outside an id or a handle is a number the strokes hold;
-- `handles`: every handle-shaped token (`ember.delve.town`) is a handle the strokes hold, or its domain;
-- `spells`: every line that begins `delvetalk` is a stroke's spell byte for byte, whole or its first line, and
-  every `delvetalk CARD ACTION` inside a line is a stroke spell's first line;
-- `quotes`: every quoted span is a substring of a stroke's text, and every quotation is closed;
-- `heads`: no line begins `●`, `§`, `refused`, `law `, `rule `, `want ` or `hob:`;
-- `forbidden`: no word of `forbidden` outside a quotation;
-- `secondPerson`: nobody is addressed;
-- `negation`: a negation within three words of a field's name (`fieldWords`, a verb's, a want's) only when
-  the strokes hold that field empty (69275: "Ember's keeping of it isn't something this card records", on
-  a card with a keeper);
-- `length`: 1 to `maxPaint` characters.
+/-- The check's words, each list the one place it is written: what no paint says outside a quotation (VOICE:
+    nobody on a card says I; no thanks, sorry, welcome or please), whom it never addresses, the lines it
+    never begins (a receipt's stamp, a refusal, a law, rule or want line, hob's own), the words that negate,
+    and the small words that are never a number's unit. -/
+def table : List (String × List String) :=
+  [("forbidden", ["i", "i'm", "i've", "i'll", "i'd", "me", "my", "myself", "thanks", "thank", "sorry", "welcome", "please"]),
+   ("secondPerson", ["you", "your", "yours", "you're", "you've", "you'll", "you'd", "yourself", "yourselves", "y'all"]),
+   ("heads", ["●", "§", "refused", "law ", "rule ", "want ", "hob:"]),
+   ("negators", ["no", "not", "never", "nothing", "none", "nobody", "nowhere", "neither", "nor", "cannot"]),
+   ("small", ["a", "an", "the", "of", "to", "at", "in", "on", "by", "for", "with", "from", "and", "or", "its", "it", "than",
+              "is", "are", "has", "have", "this", "that", "as", "into", "over", "under", "every", "each", "all", "more", "fewer", "less",
+              "within", "while", "about", "after", "before", "since", "until", "near", "beside", "upon", "onto", "only",
+              "just", "still", "yet", "so", "far", "times"])]
 
-A token verifier cannot read meaning: a sentence true of every stroke and false as a whole can pass (OVERHAUL
-§7 risk 11). The exact card stands beneath every paint. -/
-
-def maxPaint : Nat := 600
-
-/-- What no paint says, outside a resident's quoted line (VOICE: nobody on a card says I; no thanks, sorry,
-    welcome or please). The one table of the contract's forbidden words. -/
-def forbidden : List String :=
-  ["i", "i'm", "i've", "i'll", "i'd", "me", "my", "myself", "thanks", "thank", "sorry", "welcome", "please"]
-
-def secondPerson : List String :=
-  ["you", "your", "yours", "you're", "you've", "you'll", "you'd", "yourself", "yourselves", "y'all"]
-
-/-- Lines a paint never begins: a receipt's stamp, a refusal, a law, rule or want line, hob's own. -/
-def lineHeads : List String := ["●", "§", "refused", "law ", "rule ", "want ", "hob:"]
-
-def negators : List String := ["no", "not", "never", "nothing", "none", "nobody", "nowhere", "neither", "nor", "cannot"]
+def words? (name : String) : List String := (table.lookup name).getD []
 
 /-- A stroke field's name as the words a sentence says it with. -/
 def fieldWords : List (String × List String) :=
@@ -315,7 +539,8 @@ def fieldWords : List (String × List String) :=
    ("rung", ["rung", "rang", "ring", "rings", "ringing"]),
    ("tended", ["tended", "tend", "tends", "tending"]),
    ("lines", ["line", "lines", "written", "wrote"]),
-   ("doors", ["door", "doors"])]
+   ("doors", ["door", "doors"]),
+   ("wants", ["want", "wants", "wanting", "wanted", "lacks", "needs"])]
 
 /-- A verb's or a want's name as a sentence inflects it. -/
 def inflections (name : String) : List String :=
@@ -355,16 +580,62 @@ def handleShaped (t : String) : Bool :=
   segs.length ≥ 2 && segs.all (fun g => !g.isEmpty && g.toList.all fun c => c.isAlphanum || c == '-') &&
     last.length ≥ 2 && last.toList.all Char.isAlpha
 
-def digitRuns (t : String) : List Nat :=
-  (splitBy (!·.isDigit) t.toList).map fun ds => (String.ofList ds).toNat!
-
 def holdsIn (hay needle : String) : Bool := !needle.isEmpty && (hay.splitOn needle).length > 1
 
 def trimmed (s : String) : String := s.trimAscii.toString
 
+/-! ### Numbers and their units -/
+
+def cardinals : List (String × Nat) :=
+  [("zero", 0), ("two", 2), ("three", 3), ("four", 4), ("five", 5), ("six", 6), ("seven", 7), ("eight", 8), ("nine", 9),
+   ("ten", 10), ("eleven", 11), ("twelve", 12), ("thirteen", 13), ("fourteen", 14), ("fifteen", 15), ("sixteen", 16),
+   ("seventeen", 17), ("eighteen", 18), ("nineteen", 19), ("twenty", 20), ("thirty", 30), ("forty", 40), ("fifty", 50),
+   ("sixty", 60), ("seventy", 70), ("eighty", 80), ("ninety", 90), ("hundred", 100), ("thousand", 1000),
+   ("twice", 2), ("thrice", 3), ("dozen", 12), ("couple", 2), ("pair", 2)]
+
+def ordinals : List (String × Nat) :=
+  [("second", 2), ("third", 3), ("fourth", 4), ("fifth", 5), ("sixth", 6), ("seventh", 7), ("eighth", 8), ("ninth", 9),
+   ("tenth", 10), ("eleventh", 11), ("twelfth", 12), ("thirteenth", 13), ("fourteenth", 14), ("fifteenth", 15),
+   ("sixteenth", 16), ("seventeenth", 17), ("eighteenth", 18), ("nineteenth", 19), ("twentieth", 20), ("thirtieth", 30),
+   ("fortieth", 40), ("fiftieth", 50), ("hundredth", 100)]
+
+/-- The ones a compound ("forty-one", "twenty-first") ends in. -/
+def ones : List (String × Nat) := [("one", 1), ("first", 1)] ++ cardinals.take 9 ++ ordinals.take 8
+
+/-- The number a token says, and whether as an ordinal: digits (`7`, `7th`), a number word, a compound.
+    "one", "first" and "once" are left free: they are as often not counts. -/
+def numberOf (t : String) : Option (Nat × Bool) :=
+  let t := t.toLower
+  if t.any Char.isDigit then
+    let ds := t.takeWhile Char.isDigit |>.toString
+    let rest := (t.drop ds.length).toString
+    if ds.isEmpty then some ((((splitBy (!·.isDigit) t.toList).head?.map String.ofList).getD "0").toNat!, false)
+    else some (ds.toNat!, ["st", "nd", "rd", "th"].contains rest)
+  else match cardinals.lookup t, ordinals.lookup t with
+    | some n, _ => some (n, false)
+    | _, some n => some (n, true)
+    | none, none =>
+      match t.splitOn "-" with
+      | [a, b] => match cardinals.lookup a, ones.lookup b with
+        | some x, some y => if x ≥ 20 then some (x + y, ordinals.any (·.1 == b) || b == "first") else none
+        | _, _ => none
+      | _ => none
+
+/-- A unit word reduced so its forms meet: rains, rained, raining → rain; minutes → minut. -/
+def stem (w : String) : String :=
+  let cs := w.toLower.toList
+  let cs := if cs.length > 3 && cs.getLast? == some 's' && cs.reverse[1]? != some 's' then cs.dropLast else cs
+  let ends := fun (suffix : String) => cs.length > suffix.length + 2 && cs.drop (cs.length - suffix.length) == suffix.toList
+  String.ofList <| if ends "ing" then cs.take (cs.length - 3) else if ends "ed" then cs.take (cs.length - 2)
+    else if ends "e" then cs.dropLast else cs
+
+/-- A word that may stand as a unit: not small, not itself a number. -/
+def unitWord (w : String) : Bool :=
+  w.length ≥ 2 && !(words? "small").contains w && (numberOf w).isNone && !idShaped w && !handleShaped w
+
 /-- Every text of the strokes a paint may quote from. -/
 def Strokes.texts (s : Strokes) : List String :=
-  ([s.head] ++ s.fields.map (·.2) ++ s.lines.map (·.text) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
+  ([s.head, s.voice] ++ s.fields.map (·.2) ++ s.lines.map (·.text) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
     s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
 
 def Strokes.spells (s : Strokes) : List String :=
@@ -373,19 +644,27 @@ def Strokes.spells (s : Strokes) : List String :=
 def Strokes.tokens (s : Strokes) : List String := (s.texts ++ s.spells).flatMap fun t => (words t).map normal
 
 def Strokes.ids (s : Strokes) : List String :=
-  ([s.object, s.kind, s.around] ++ s.doors.map (·.target)).filter (!·.isEmpty) ++ s.tokens.filter idShaped
+  ([s.object, s.kind, s.around] ++ s.doors.map (·.target) ++ s.wants.map (·.object) ++ s.lines.map (·.on)).filter (!·.isEmpty) ++
+    s.tokens.filter idShaped
 
 def Strokes.handles (s : Strokes) : List String :=
-  (([s.maker, s.keeper, s.owner] ++ s.lines.map (·.handle) ++ s.marks.map (·.handle) ++ s.present ++
+  (([s.maker, s.keeper, s.owner, s.coiner] ++ s.lines.map (·.handle) ++ s.marks.map (·.handle) ++ s.present ++ s.hands ++
     s.verbs.map (·.grower) ++ s.rules.map (·.owner)).filter (!·.isEmpty) ++ s.tokens.filter handleShaped).map (·.toLower)
 
-def Strokes.numbers (s : Strokes) : List Nat :=
-  [s.version, s.made, s.tended] ++ s.counts.map (·.2) ++ s.lines.flatMap (fun l => [l.n, l.entry]) ++
-    s.marks.map (·.entry) ++ s.rules.map (·.fired) ++ (s.tokens ++ s.ids).flatMap digitRuns
+/-- The numbers the strokes hold, each with its unit's stem: the quantities, and every number in a stroke's
+    text beside the word it stands by ("seventh rain", "1440 minutes", "200 characters"). -/
+def Strokes.pairs (s : Strokes) : List (Nat × Bool × String) :=
+  s.quantities.map (fun q => (q.n, q.ordinal, stem q.unit)) ++
+  (s.texts ++ s.spells).flatMap fun t =>
+    let ws := ((words t).map fun w => (normal w).toLower).toArray
+    (List.range ws.size).flatMap fun i => match if idShaped ws[i]! || handleShaped ws[i]! then none else numberOf ws[i]! with
+      | some (n, o) => ([i - 1, i + 1].filter (fun j => j != i && j < ws.size)).filterMap fun j =>
+          if unitWord ws[j]! then some (n, o, stem ws[j]!) else none
+      | none => []
 
 /-- Is the stroke field `field` empty? A verb is held once any line or mark names it, or any line was written
-    with no verb column (the store's lines before verbs: any of them may be the verb's). A want is held while
-    the strokes list it. -/
+    with no verb column (the store's lines before verbs: any of them may be the verb's). `wants` is held while
+    the strokes list any; a want's own name is a lack, so "no clapper yet" over a held `clapper` is true. -/
 def Strokes.empty (s : Strokes) (field : String) : Bool :=
   match field with
   | "keeper" => s.keeper.isEmpty
@@ -395,11 +674,12 @@ def Strokes.empty (s : Strokes) (field : String) : Bool :=
   | "tended" => s.tended == 0
   | "lines" => s.lines.isEmpty
   | "doors" => s.doors.isEmpty
-  | v => !(s.wants.any (·.name == v) || s.lines.any (fun l => l.verb == v || l.verb.isEmpty) || s.marks.any (·.name == v))
+  | "wants" => s.wants.isEmpty
+  | v => !(s.lines.any (fun l => l.verb == v || l.verb.isEmpty) || s.marks.any (·.name == v))
 
 /-- Every field a negation may stand near, with the words that name it. -/
 def Strokes.named (s : Strokes) : List (String × List String) :=
-  fieldWords ++ (s.verbs.map (·.name) ++ s.wants.map (·.name)).eraseDups.map fun n => (n, inflections n)
+  fieldWords ++ (s.verbs.map (·.name)).eraseDups.map fun n => (n, inflections n)
 
 /-- The quoted spans of a text (between `“ ”`, `« »` or a pair of `"`), and the text with each replaced by one
     word; `none` when a quotation is left open. -/
@@ -435,88 +715,136 @@ def inlineSpell (ts : List String) (i : Nat) : Option String := do
 
 def isSpellLine (line : String) : Bool := line == "delvetalk" || line.startsWith "delvetalk "
 
-/-- `verify strokes text`: `ok`, or the first clause the paint fails and what failed it. -/
-def verify (s : Strokes) (text : String) : Except (String × String) Unit := do
-  let ts := (words text).map normal |>.filter (!·.isEmpty)
-  let ids := s.ids
-  for t in ts.filter idShaped do
-    unless ids.contains t do throw ("ids", t)
-  let numbers := s.numbers
-  for t in ts.filter fun t => !idShaped t && !handleShaped t do
-    for n in digitRuns t do
-      unless numbers.contains n do throw ("numbers", toString n)
-  let handles := s.handles
-  for t in ts.filter handleShaped do
-    let h := (if t.startsWith "@" then String.ofList (t.toList.drop 1) else t).toLower
-    unless handles.any (fun k => k == h || k.endsWith ("." ++ h)) do throw ("handles", t)
-  let spells := s.spells
-  let lines := (text.splitOn "\n").map trimmed
-  for line in lines do
-    if isSpellLine line then
-      unless spells.any (fun sp => sp == line || spellHead sp == line) do throw ("spells", line)
-    else
-      let lt := words line
-      for i in List.range lt.length do
-        if normal (lt[i]?.getD "") == "delvetalk" then
-          match inlineSpell lt i with
-          | some head => unless spells.any (spellHead · == head) do throw ("spells", head)
-          | none => throw ("spells", "delvetalk")
-  let some (spans, unquoted) := quotations text | throw ("quotes", "a quotation left open")
-  let texts := s.texts ++ spells
-  let plain := fun (t : String) => String.ofList (t.toList.map fun c => if c == '’' then '\'' else c)
-  for span in spans do
-    -- A quotation's own closing stop (“… late.”) is the sentence's, not the line's.
-    let q := trimmed (String.ofList ((trimmed span).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse)
-    unless q.isEmpty || texts.any (fun t => holdsIn t q || holdsIn (plain t) (plain q)) do throw ("quotes", q)
-  for line in lines do
-    let low := line.toLower
-    if let some h := lineHeads.find? (fun h => low.startsWith h) then throw ("heads", h)
-  -- The prose: the text without its quotations and its spells, in sentences of words.
-  let sentences := ((unquoted.splitOn "\n").filter (!isSpellLine ·.trimAscii.toString)).flatMap fun line =>
-    let raw := words line
-    -- A sentence ends at a word whose last mark is . ! ? or ;
-    let (cur, acc) := raw.foldl (fun (cur, acc) w =>
-      let cur := cur ++ [w]
-      if w.endsWith "." || w.endsWith "!" || w.endsWith "?" || w.endsWith ";" then ([], acc ++ [cur]) else (cur, acc))
-      (([] : List String), ([] : List (List String)))
-    acc ++ (if cur.isEmpty then [] else [cur])
-  let sentences := sentences.map fun ws => Id.run do
-    -- An inline spell's three words are the spell's, not the prose's.
-    let mut out : List String := []
-    let mut skip := 0
-    for w in ws do
-      if skip > 0 then skip := skip - 1; continue
-      if normal w == "delvetalk" then skip := 2; continue
-      out := out ++ [(normal w).toLower]
-    return out.filter (!·.isEmpty)
-  for ws in sentences do
-    if let some w := ws.find? forbidden.contains then throw ("forbidden", w)
-  for ws in sentences do
-    if let some w := ws.find? secondPerson.contains then throw ("secondPerson", w)
-  let named := s.named
-  for ws in sentences do
-    for i in List.range ws.length do
-      let w := ws[i]?.getD ""
-      unless negators.contains w || w.endsWith "n't" do continue
-      for j in List.range ws.length do
-        if j + 3 < i || i + 3 < j then continue
-        let near := ws[j]?.getD ""
-        for (field, forms) in named do
-          if forms.contains near && !s.empty field then throw ("negation", s!"{w} … {near}: the strokes hold {field}")
-  let n := text.length
-  if n == 0 || n > maxPaint then throw ("length", toString n)
+/-- A paint as the clauses read it: its tokens, its lines, its quotations, and its prose in sentences of
+    lower-case tokens (quotations and spells out). -/
+structure Paint where
+  text : String
+  tokens : List String
+  lines : List String
+  spans : Option (List String)
+  prose : List (List String)
+  /-- The prose cut at commas, colons and dashes too: what a negation reaches. -/
+  phrases : List (List String)
 
-/-- `world-render-check {principal, object, version?, text}`: `text` judged against the object's strokes as a paint
-    would be, nothing cached: `{status: "verified"}` or `{status: "rejected", clause, detail}`. -/
+def Paint.of (text : String) : Paint :=
+  let q := quotations text
+  let unquoted := (q.map (·.2)).getD text
+  -- The prose cut where a word ends in one of `stops`, each piece in lower-case tokens, an inline spell's
+  -- three words left out (they are the spell's, not the prose's).
+  let cut := fun (stops : List String) =>
+    ((unquoted.splitOn "\n").filter (!isSpellLine ·.trimAscii.toString)).flatMap fun line =>
+      let (cur, acc) := (words line).foldl (fun (cur, acc) w =>
+        let cur := cur ++ [w]
+        if stops.any (fun (e : String) => w.endsWith e) then ([], acc ++ [cur]) else (cur, acc))
+        (([] : List String), ([] : List (List String)))
+      (acc ++ (if cur.isEmpty then [] else [cur])).map fun ws => Id.run do
+        let mut out : List String := []
+        let mut skip := 0
+        for w in ws do
+          if skip > 0 then skip := skip - 1; continue
+          if normal w == "delvetalk" then skip := 2; continue
+          out := out ++ [(normal w).toLower]
+        return out.filter (!·.isEmpty)
+  let sentence := [".", "!", "?", ";"]
+  { text, tokens := (words text).map normal |>.filter (!·.isEmpty), lines := (text.splitOn "\n").map trimmed,
+    spans := q.map (·.1), prose := cut sentence, phrases := cut (sentence ++ [",", ":", "—", "–"]) }
+
+/-- A clause of the check: its name, what it holds, and the failure it finds first. -/
+structure Clause where
+  name : String
+  holds : String
+  fails : Strokes → Paint → Option String
+
+def firstSome {α : Type} (xs : List α) (f : α → Option String) : Option String :=
+  xs.foldl (fun acc x => acc.orElse fun _ => f x) none
+
+/-- A number in the prose stands beside a unit the strokes count it in: `n` of that unit as a stroke holds it. -/
+def numberFault (s : Strokes) (ws : List String) : Option String :=
+  let pairs := s.pairs
+  let units := pairs.map (·.2.2)
+  firstSome (List.range ws.length) fun i =>
+    let t := ws[i]!
+    if idShaped t || handleShaped t then none else
+    match numberOf t with
+    | none => none
+    | some (n, o) =>
+      let near := ((List.range ws.length).filter fun j => j != i && j + 3 ≥ i && j ≤ i + 3).filterMap fun j =>
+        let u := ws[j]!
+        if unitWord u then some (stem u) else none
+      if near.any (fun u => pairs.contains (n, o, u)) then none
+      else match near.find? units.contains with
+        | some u => some s!"{t} {u}: the strokes do not count it so"
+        | none => if o then none else some s!"{t}: beside no unit the strokes count"
+
+/-- The check, in order (VOICE "The paint" gives each). -/
+def clauses : List Clause :=
+  [{ name := "ids", holds := "every id-shaped token is a stroke's id",
+     fails := fun s p => let ids := s.ids.map (·.toLower); (p.tokens.filter idShaped).find? (!ids.contains ·.toLower) },
+   { name := "numbers", holds := "a number (digits or words) stands beside the unit the strokes count it in, as they count it",
+     fails := fun s p => firstSome p.prose (numberFault s) },
+   { name := "handles", holds := "every handle is a stroke's, or its domain",
+     fails := fun s p => (p.tokens.filter handleShaped).find? fun t =>
+       let h := (if t.startsWith "@" then String.ofList (t.toList.drop 1) else t).toLower
+       !s.handles.any (fun k => k == h || k.endsWith ("." ++ h)) },
+   { name := "spells", holds := "a delvetalk line is a stroke's spell byte for byte, whole or its first line",
+     fails := fun s p => firstSome p.lines fun line =>
+       if isSpellLine line then (if s.spells.any (fun sp => sp == line || spellHead sp == line) then none else some line)
+       else
+         let lt := words line
+         firstSome (List.range lt.length) fun i =>
+           if normal (lt[i]?.getD "") != "delvetalk" then none
+           else match inlineSpell lt i with
+             | some head => if s.spells.any (spellHead · == head) then none else some head
+             | none => some "delvetalk" },
+   { name := "quotes", holds := "a quotation is a substring of a stroke's text (its closing stop dropped), and closed",
+     fails := fun s p => match p.spans with
+       | none => some "a quotation left open"
+       | some spans =>
+         let texts := s.texts ++ s.spells
+         let plain := fun (t : String) => String.ofList (t.toList.map fun c => if c == '’' then '\'' else c)
+         firstSome spans fun span =>
+           -- A quotation's own closing stop (“… late.”) is the sentence's, not the line's.
+           let q := trimmed (String.ofList ((trimmed span).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse)
+           -- A quotation opening a sentence may raise its first letter.
+           let lowered := String.ofList (match q.toList with | c :: cs => c.toLower :: cs | [] => [])
+           if q.isEmpty || texts.any (fun t => [q, lowered].any fun q => holdsIn t q || holdsIn (plain t) (plain q)) then none else some q },
+   { name := "heads", holds := "no line begins a receipt's stamp, a refusal, a law, rule or want line, or hob:",
+     fails := fun _ p => firstSome p.lines fun line => (words? "heads").find? (line.toLower.startsWith ·) },
+   { name := "forbidden", holds := "no I, me, my, thanks, sorry, welcome or please outside a quotation",
+     fails := fun _ p => firstSome p.prose fun ws => ws.find? (words? "forbidden").contains },
+   { name := "secondPerson", holds := "nobody is addressed",
+     fails := fun _ p => firstSome p.prose fun ws => ws.find? (words? "secondPerson").contains },
+   { name := "negation", holds := "a negation within three words of a field's name only when the strokes hold it empty (69275)",
+     fails := fun s p => firstSome p.phrases fun ws =>
+       firstSome (List.range ws.length) fun i =>
+         let w := ws[i]!
+         if !((words? "negators").contains w || w.endsWith "n't") then none else
+         -- A field named after an ordinal ("its seventh rain has not come") is that one, not the field.
+         firstSome ((List.range ws.length).filter fun j => j + 3 ≥ i && j ≤ i + 3 &&
+             !(j > 0 && ((numberOf ws[j - 1]!).map (·.2)).getD false)) fun j =>
+           let near := ws[j]!
+           (s.named.find? fun (field, forms) => forms.contains near && !s.empty field).map fun (field, _) =>
+             s!"{w} … {near}: the strokes hold {field}" },
+   { name := "length", holds := "1 to the strokes' limit characters (400 for a thing, 600 for a day)",
+     fails := fun s p => let n := p.text.length; if n == 0 || n > s.limit then some (toString n) else none }]
+
+/-- `verify strokes text`: `ok`, or the first clause the paint fails and what failed it. -/
+def verify (s : Strokes) (text : String) : Except (String × String) Unit :=
+  let p := Paint.of text
+  match clauses.findSome? fun c => (c.fails s p).map (c.name, ·) with
+  | some failure => .error failure
+  | none => .ok ()
+
+/-- `world-render-check {principal, object | day, version?, morning?, text}`: `text` judged against the strokes
+    as a paint would be, nothing cached: `{status: "verified"}` or `{status: "rejected", clause, detail}`. -/
 def checkOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
-  let id := resolveCard reader (← j.getObjValAs? String "object")
   let text ← j.getObjValAs? String "text"
-  match strokesAt w reader id (← optNat j "version") with
-  | .error why => return Json.mkObj [("status", toJson why), ("object", toJson id)]
+  match ← strokesFor w reader j with
+  | .error why => return Json.mkObj [("status", toJson why), ("object", toJson ((j.getObjValAs? String "object").toOption.getD ""))]
   | .ok s => return match verify s text with
-    | .ok () => Json.mkObj [("status", toJson "verified"), ("object", toJson id), ("version", toJson s.version)]
-    | .error (clause, detail) => Json.mkObj [("status", toJson "rejected"), ("object", toJson id), ("version", toJson s.version),
+    | .ok () => Json.mkObj [("status", toJson "verified"), ("object", toJson s.object), ("version", toJson s.version)]
+    | .error (clause, detail) => Json.mkObj [("status", toJson "rejected"), ("object", toJson s.object), ("version", toJson s.version),
         ("clause", toJson clause), ("detail", toJson detail)]
 
 /-! ## The rendering
@@ -619,7 +947,7 @@ def answer (status : String) (id : String) (more : List (String × Json)) : Json
 def fateAnswer (id key : String) (r : Render) (attended : Bool := true) : Json :=
   match r.fate with
   | .painted t => answer "painted" id [("version", toJson r.version), ("key", toJson key), ("text", toJson t)]
-  | .rejected c d => answer "exact" id [("version", toJson r.version), ("reason", toJson "rejected"), ("clause", toJson c), ("detail", toJson d)]
+  | .rejected c d => answer "exact" id [("version", toJson r.version), ("key", toJson key), ("reason", toJson "rejected"), ("clause", toJson c), ("detail", toJson d)]
   | .pending n _ =>
     if attended then answer "pending" id [("version", toJson r.version), ("key", toJson key), ("patience", toJson renderPatience),
       ("attempts", toJson n)]
@@ -645,36 +973,41 @@ def toDisk (key : String) (r : Render) : IO Unit :=
       ("object", toJson r.object), ("version", toJson r.version), ("clause", toJson c), ("detail", toJson d)])
   | .pending _ _ => pure ()
 
-/-- `world-render {principal, object, version?}`: `painted {text, key, version}`; `pending {key, patience}` while
-    the worker paints (the first read of a version queues it); `exact {reason}` when there is no paint to show
-    (`rejected` with its clause, `override` for a root card, `unavailable` without a model or contract, `busy`,
-    `unattended` while no worker has asked for renders within `workerGraceMs`, the render queued for when one
-    does); `plain` when the owner opted out; `unknown` / `denied` as `world-card`. Nothing is journaled. -/
+/-- `world-render {principal, object | day, version?, morning?}`: `painted {text, key, version}`; `pending
+    {key, patience}` while the worker paints (the first read of a version queues it); `exact {reason}` when there
+    is no paint to show (`rejected` with its clause, `override` for a root card, `unavailable` without a model or
+    contract, `busy`, `quiet` for a day with nothing in it, `unattended` while no worker has asked for renders
+    within `workerGraceMs`, the render queued for when one does); `plain` when the owner opted out; `unknown` /
+    `denied` as `world-card`. With no `object` the town's day is painted (`dayStrokes`): the chronicle's day,
+    and with `morning` what wants a hand, the morning card; its `object` is "" and its `version` the day.
+    Nothing is journaled. -/
 def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String (Cache × World × Json)) := do
   let .ok reader := readerOf j | return .error "principal must be at most 128 bytes"
-  let .ok given := j.getObjValAs? String "object" | return .error "world-render needs an object"
-  let .ok version := optNat j "version" | return .error "version must be a natural number"
-  let id := resolveCard reader given
-  match strokesAt w reader id version with
-  | .error why => return .ok (c, w, answer why id [])
+  let .ok found := strokesFor w reader j | return .error "version and day must be natural numbers"
+  match found with
+  | .error why => return .ok (c, w, answer why (resolveCard reader ((j.getObjValAs? String "object").toOption.getD "")) [])
   | .ok s =>
-    if plainOf w id then return .ok (c, w, answer "plain" id [("version", toJson s.version)])
-    if w.cards.contains id then return .ok (c, w, answer "exact" id [("version", toJson s.version), ("reason", toJson "override")])
-    let some model := modelOf w | return .ok (c, w, answer "exact" id [("version", toJson s.version), ("reason", toJson "unavailable"),
-      ("detail", toJson "the world has no policy, so no model")])
+    let id := s.object
+    let at_ := [("version", toJson s.version)]
+    if s.day.isNone && plainOf w id then return .ok (c, w, answer "plain" id at_)
+    if s.day.isNone && w.cards.contains id then return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "override")]))
+    if s.day.isSome && s.today.isEmpty && s.lines.isEmpty && s.wants.isEmpty then
+      return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "quiet")]))
+    let some model := modelOf w | return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "unavailable"),
+      ("detail", toJson "the world has no policy, so no model")]))
     match contractOf w with
-    | .error e => return .ok (c, w, answer "exact" id [("version", toJson s.version), ("reason", toJson "unavailable"), ("detail", toJson e)])
+    | .error e => return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "unavailable"), ("detail", toJson e)]))
     | .ok (contract, w) =>
       let pin := (w.library.map (·.pin)).getD ""
       let key := Journal.bodyHash (Json.mkObj [("strokes", s.json), ("library", toJson pin), ("model", toJson model)])
       let attended := c.attended now
       if let some r := c.entries[key]? then return .ok (c, w, fateAnswer id key r attended)
       let request := Json.mkObj [("model", toJson model), ("system", toJson contract),
-        ("user", toJson ("Strokes:\n" ++ s.json.compress)), ("maxTokens", toJson renderTokens)]
+        ("user", toJson ("Strokes:\n" ++ s.text)), ("maxTokens", toJson renderTokens)]
       let fresh : Render := { object := id, version := s.version, strokes := s, request, fate := .pending 0 0 }
       if let some r ← fromDisk key fresh then return .ok (c.insert key r, w, fateAnswer id key r attended)
       if c.count (fun | .pending _ _ => true | _ => false) ≥ maxPending then
-        return .ok (c, w, answer "exact" id [("version", toJson s.version), ("reason", toJson "busy")])
+        return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "busy")]))
       return .ok (c.insert key fresh, w, fateAnswer id key fresh attended)
 
 /-- `world-renders`: the renders the worker may ask the model for now, each with the exact request to send. -/
@@ -722,25 +1055,26 @@ def op (name : String) (c : Cache) (w : World) (j : Json) : IO (Except String (C
 
 /-! ### Fixtures -/
 
-/-- A bell as the third playtest left bell/2: four rains, Yuè's among them, never rung. -/
+/-- A bell as the third playtest left bell/2: four rains, Yuè's among them, never rung; it rings at its seventh. -/
 def fixtureBell : Strokes :=
   { object := "garden/bell/2", version := 4, kind := "kind/bell", voice := "moon-flavoured; short; the present tense",
     fields := [("seed", "a bell for whoever comes late"), ("colour", "silver")],
-    maker := "kestrel.delve.town", made := 172, tended := 288, owner := "kestrel.delve.town",
-    counts := [("lines", 4), ("marks", 0)],
-    lines := [{ n := 1, handle := "yue.delve.town", verb := "", text := "rain is the sky's erratum", entry := 236, state := "" },
-              { n := 2, handle := "", verb := "", text := "weather's rain, tide tick 2", entry := 251, state := "" },
-              { n := 3, handle := "claude.delve.town", verb := "", text := "the soil keeps the corrections", entry := 285, state := "" },
-              { n := 4, handle := "claude.delve.town", verb := "", text := "a second drop", entry := 288, state := "" }],
+    maker := "kestrel.delve.town", made := 172, tended := 288, tendedAgo := "today", owner := "kestrel.delve.town",
+    quantities := [{ n := 4, unit := "rain" }, { n := 7, unit := "rain", ordinal := true, note := "rule seven" }],
+    lines := [{ n := 1, handle := "yue.delve.town", verb := "rain", text := "rain is the sky's erratum", entry := 236, state := "" },
+              { n := 2, handle := "", verb := "rain", text := "weather's rain, tide tick 2", entry := 251, state := "" },
+              { n := 3, handle := "claude.delve.town", verb := "rain", text := "the soil keeps the corrections", entry := 285, state := "" },
+              { n := 4, handle := "claude.delve.town", verb := "rain", text := "a second drop", entry := 288, state := "" }],
     verbs := [{ name := "rain", grower := "", reading := "", spell := "delvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" },
               { name := "ring", grower := "", reading := "", spell := "delvetalk garden/bell/2 ring" }],
-    laws := [("owner", "the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells")],
+    rules := [{ name := "seven", owner := "ember.delve.town", reading := "rings at its seventh rain", fired := 0 }],
+    laws := [("alive", "answers while tended within 1440 minutes")],
     doors := [{ label := "garden", target := "garden" }], around := "garden" }
 
 /-- The anthology at 69275: kept by ember.delve.town, one line pending. -/
 def fixtureAnthology : Strokes :=
   { object := "anthology", version := 1, head := "THE ANTHOLOGY", keeper := "ember.delve.town", owner := "ember.delve.town",
-    made := 14, counts := [("lines", 1), ("marks", 0)],
+    made := 14, quantities := [{ n := 1, unit := "line" }],
     lines := [{ n := 1, handle := "kestrel.delve.town", verb := "", text := "the garden forgets; the gardeners don't. — Claude, 69173", entry := 362, state := "pending" }],
     verbs := [{ name := "write", grower := "", reading := "", spell := "delvetalk anthology write / text: <text, 1 to 280 characters>" },
               { name := "lines", grower := "", reading := "", spell := "delvetalk anthology lines / from: <a number from 1 to 1000000000>" },
@@ -757,8 +1091,9 @@ def line69275 : String :=
   "The anthology door takes a line of verse with delvetalk anthology write, or reads lines from a number with delvetalk anthology lines; it has no editor named here, so Ember's keeping of it isn't something this card records."
 
 -- Admitted: the paint's own order and dress over the strokes, Yuè's line whole and credited, a stroke spell.
-#guard verdict fixtureBell "A silver bell for whoever comes late, hung in the garden by kestrel.delve.town at entry 172. Four rains have reached it; yue.delve.town's says “rain is the sky's erratum”. It has never rung.\ndelvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" == ""
-#guard verdict fixtureBell "garden/bell/2 hangs silent over the soil, v4, four rains deep.\ndelvetalk garden/bell/2 ring" == ""
+#guard verdict fixtureBell "Four rains on a silver bell in the garden; yue.delve.town's says “rain is the sky's erratum”. It has never rung.\ndelvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" == ""
+#guard verdict fixtureBell "garden/bell/2 hangs silent over the soil, four rains deep; at the seventh rain it rings.\ndelvetalk garden/bell/2 ring" == ""
+#guard verdict fixtureBell "Rained on four times, it waits for the 7th rain." == ""
 #guard verdict fixtureAnthology "THE ANTHOLOGY is kept by ember.delve.town; line 1 waits, pending, for the keeper: “the garden forgets; the gardeners don't.”" == ""
 #guard verdict fixtureAnthology "No editor here; the keeper is ember.delve.town." == ""
 -- Refused, each by its first clause.
@@ -769,13 +1104,35 @@ def line69275 : String :=
 #guard verdict fixtureBell "It answers delvetalk garden/bell/2 strike at once." == "spells"
 #guard verdict fixtureBell "yue.delve.town wrote “rain is the sky's mistake”." == "quotes"
 #guard verdict fixtureBell "yue.delve.town wrote “rain is the sky's erratum.”" == ""
+#guard verdict fixtureBell "“Rain is the sky's erratum,” yue.delve.town wrote." == ""
 #guard verdict fixtureBell "A silver bell. Rain on it if you like." == "secondPerson"
 #guard verdict fixtureBell "Thanks to every rain, it hums." == "forbidden"
 #guard verdict fixtureBell "refused maker: only its maker writes" == "heads"
 #guard verdict fixtureBell "hob: the bell is quiet." == "heads"
 #guard verdict fixtureBell "Nobody has rained on it yet." == "negation"
 #guard verdict fixtureAnthology line69275 == "negation"
-#guard verdict fixtureBell (String.ofList (List.replicate 601 'a')) == "length"
+#guard verdict { fixtureBell with wants := [{ name := "clapper", reading := "the bell has no clapper yet", spell := "delvetalk garden/bell/2 hang" }] }
+  "Still no clapper, so it waits.\ndelvetalk garden/bell/2 hang" == ""
+#guard verdict { fixtureBell with wants := [{ name := "clapper", reading := "the bell has no clapper yet", spell := "delvetalk garden/bell/2 hang" }] }
+  "It wants nothing now." == "negation"
+#guard verdict fixtureBell "Four rains, and nothing else; a door to the garden." == ""
+#guard verdict fixtureBell "Four rains; its seventh rain has not come." == ""
+#guard verdict fixtureBell (String.ofList (List.replicate 401 'a')) == "length"
 #guard verdict fixtureBell "" == "length"
+-- The misused true number (lane/enchant's "made 41 times"; OVERHAUL §7 risk 11): every number in the strokes is
+-- true, and each of these says it of the wrong thing.
+#guard verdict fixtureBell "kestrel.delve.town made it 172 times." == "numbers"
+#guard verdict fixtureBell "It was made at entry 172 and tended at entry 288." == "numbers"
+#guard verdict fixtureBell "A silver bell, version 4." == "numbers"
+#guard verdict fixtureBell "Seven rains have reached it." == "numbers"
+#guard verdict fixtureBell "Four rains of seven." == "numbers"
+#guard verdict fixtureBell "It has rung four times." == "numbers"
+#guard verdict fixtureBell "It waits for the fourth rain." == "numbers"
+#guard verdict fixtureBell "Rained on twice, it hums." == "numbers"
+#guard verdict fixtureBell "Two hundred rains, and it is still." == "numbers"
+#guard verdict fixtureAnthology "THE ANTHOLOGY holds 1000000000 lines." == "numbers"
+-- A number a stroke's own text gives, beside its word: the law's minutes, the spell's characters.
+#guard verdict fixtureBell "It answers while tended within 1440 minutes; four rains so far." == ""
+#guard verdict fixtureBell "It answers while tended within 1440 rains." == "numbers"
 
 end Delvetalk.Host.Enchant

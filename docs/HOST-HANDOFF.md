@@ -1802,6 +1802,17 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `DELVETALK_COMPILE_CACHE` paints each card once more (deploy does not set it; set it, or accept the call);
      (5) the paint is dry, a field-guide catalogue; once kinds carry `voice` read a dozen live paints and tune
      `Paint.contract()` (it is library text: a library change, not a host one).
+   - *lane/paint* (2026-10-12; no edition change): the strokes carry meaning, not ledger (`Strokes.text` is what the
+     painter reads: no entry number, version or line number; counts as `Quantity` with unit and meaning, a rule's
+     `count(new.lines) >= N` as the Nth; a coinage's credit; the kind's added law only); `numbers` holds a number,
+     digits or words, beside the unit the strokes count it in (the misused true number, "made 41 times", refused;
+     `#guard`s); `verify` is the table `clauses`, its words `table`; a thing paints in at most 400 characters, a day 600.
+     The day (`dayStrokes` over `Ops.chronicleDay`, which `chronicle` now formats): `world-render`, `world-strokes`
+     and `world-render-check` with no `object` and `{day?, morning?}` (the morning card with what wants a hand; `quiet`
+     for an empty day). Voices for every town kind (genesis `VOICES`); a thing of no kind speaks in its place's. Live,
+     hbox, five runs of the minimal genesis's five things, the day and the morning: 7 calls a run, $0.0014 to $0.0018.
+     Open: `hand morning` posting the painted morning card (transport); a coinage's own voice and the coiner's handle
+     need a field on the thing (objects) and the coiner's arrival; Haiku runs long, length is the commonest refusal.
 
 161. **Grown verbs, the chronicle, the world arms; Wake's host support deleted (lane/host23; OVERHAUL §5 steps
    3 and 4's host half).** No edition bump: edition 9 is not deployed, and these change what it derives.
