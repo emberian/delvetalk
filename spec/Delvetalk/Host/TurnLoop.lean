@@ -951,7 +951,7 @@ def worldMethods : List String :=
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "checkObject", "grant", "grantWith", "revoke",
    "objects", "changed", "card", "principal",
-   "rule", "unrule", "want", "unwant", "grow", "ungrow", "act", "chronicle"]
+   "rule", "unrule", "want", "unwant", "grow", "ungrow", "act", "chronicle", "wanting"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
     host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
@@ -1933,6 +1933,15 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let day := match f.lookup "day" with | some (.natural d) => d | _ => s.world.clock / Limits.clockDay
     respond bounds responseType "chronicled"
       [.record [("day", .natural day), ("lines", listData ((chronicle s.world s.subject day).map Data.label))]]
+  -- `wanting {after, limit}`: what wants a hand across the world (`Ops.wanting`), as the turn's subject may
+  -- view it; derived, no root.
+  | .variant "wanting" (.record f) =>
+    let nat := fun (k : String) => match f.lookup k with | some (.natural n) => n | _ => 0
+    let s ← get
+    let (rows, more) := wanting s.world s.subject (nat "after") (nat "limit")
+    let row := fun (r : Wanted) => Data.record [("object", .label r.object), ("name", .label r.name),
+      ("reading", .label r.reading), ("asks", .label r.asks), ("since", .natural r.since)]
+    respond bounds responseType "wanting" [.record [("rows", listData (rows.map row)), ("more", .boolean more)]]
   | .variant "amend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed amend plan"
     let some text := (f.lookup "law").bind labelOf | evaluation "malformed amend plan"

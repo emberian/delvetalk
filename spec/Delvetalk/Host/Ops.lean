@@ -3174,14 +3174,18 @@ def spellCard (w : World) (owner text : String) : Option String :=
     some (if w.objects.contains id then id else (foldedId w id).getD id)
   | _ => none
 
+/-- The facts a want of `o` (`id`) is judged and filled by, as `w` holds it at `height`: the clock, the
+    thing, the states its lines cite and the wants they name (`Law.asItStands` keeps only these). -/
+def wantFacts (w : World) (height : Nat) (id : String) (o : Object) : Law.Facts :=
+  { subject := "", caller := "", height, turn := height, clock := w.clock, object := id,
+    reads := statesOf w (objectCitations w id o),
+    wants := wantsCited w ((carriedWants w id o).flatMap (·.clause.names)) }
+
 /-- The wants of `o` (`id`) that hold of its state as it stands in `w`, at its clock, each with its
     clause: the want's condition judged with what the thing's lines cite as `w` holds them. -/
 def posing (w : World) (height : Nat) (id : String) (o : Object) : List CarriedClause :=
-  let wants := carriedWants w id o
-  let base : Law.Facts := { subject := "", caller := "", height, turn := height, clock := w.clock, object := id,
-                            reads := statesOf w (objectCitations w id o),
-                            wants := wantsCited w (wants.flatMap (·.clause.names)) }
-  wants.filter fun c => !(Law.poses base id o.state [c.clause]).isEmpty
+  let facts := wantFacts w height id o
+  (carriedWants w id o).filter fun c => !(Law.poses facts id o.state [c.clause]).isEmpty
 
 /-- What an admitted write sets off and opens, as the entry journals it and replay re-derives it:
 
@@ -4647,20 +4651,72 @@ def ruleRow (w : World) (id : String) (c : CarriedClause) : Json :=
     ((last.map fun l => if (l.getObjVal? "why").toOption.isSome then [("unfired", l)]
       else [("fired", (receipt.map fun r => l.setObjVal! "receipt" (toJson r)).getD l)]).getD []))
 
+/-- What answers a want, filled at the read (`Law.fill` over `Law.asItStands`): the line's template when a
+    hole reads nothing. -/
+def wantAsks (facts : Law.Facts) (id : String) (o : Object) (c : CarriedClause) : String :=
+  let template := (c.clause.modality.spell?.map (·.render)).getD ""
+  ((c.clause.modality.spell?).bind (Law.fill (Law.asItStands facts id) none o.state)).getD template
+
 /-- The wants that hold of `id` as it stands now, as `wants` reads them: name, owner, reading,
-    condition, the spell that answers it filled at the read (the line's template when a hole reads
-    nothing), the line, the object holding it, and `since`: the height of the entry that made it true,
-    or `clock` when it came true by the clock alone. -/
+    condition, the spell that answers it (`wantAsks`), the line, the object holding it, and `since`:
+    the height of the entry that made it true, or `clock` when it came true by the clock alone. -/
 def wantRows (w : World) (id : String) (o : Object) : List Json :=
-  let facts : Law.Facts := { subject := "", caller := "", height := w.height, turn := w.height, clock := w.clock, object := id,
-                             reads := statesOf w (objectCitations w id o) }
+  let facts := wantFacts w w.height id o
   (posing w w.height id o).map fun c =>
-    let template := (c.clause.modality.spell?.map (·.render)).getD ""
-    let asks := ((c.clause.modality.spell?).bind (Law.fill (Law.asItStands facts id) none o.state)).getD template
     let since := ((w.wanting[id]?).bind (·.lookup c.clause.name)).map toJson |>.getD (toJson "clock")
     Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("when", toJson c.clause.condition.render),
-        ("asks", toJson asks), ("line", toJson c.clause.render), ("from", toJson c.holder), ("since", since)] ++
+        ("asks", toJson (wantAsks facts id o c)), ("line", toJson c.clause.render), ("from", toJson c.holder), ("since", since)] ++
       (if c.clause.reading.isEmpty then [] else [("reading", toJson c.clause.reading)]))
+
+/-- One row of the world's wanting index as `wanting` reads it: the thing, the want's name and reading,
+    what answers it (`wantAsks`), and the height of the entry that made it true. -/
+structure Wanted where
+  object : String
+  name : String
+  reading : String
+  asks : String
+  since : Nat
+
+/-- What wants a hand across the world (`world.wanting {after, limit}`, `world-wanting`): each row of the
+    wanting index (`World.wanting`) whose want still holds of its thing as it stands, for things `reader`
+    may view, newest first (by `since`, then thing and name). A page holds whole heights, each below
+    `after` (0: from the newest), while it stays within `limit` rows (0, or past `Limits.listPage`, is
+    `listPage`); its first height is whole whatever its size, so `after` set to a page's last `since`
+    reads on without a gap. `more` when older rows remain. A want that came true by the clock alone,
+    with no entry to make it, is not in the index: the thing's `wants` reads it. Derived, no root. -/
+def wanting (w : World) (reader : String) (after limit : Nat) : List Wanted × Bool := Id.run do
+  let rows : List Wanted := w.wanting.toList.flatMap fun (id, xs) => match w.objects[id]? with
+    | none => []
+    | some o =>
+      if !o.read.permits reader then [] else
+      let holding := posing w w.height id o
+      let facts := wantFacts w w.height id o
+      xs.filterMap fun (name, since) =>
+        if after != 0 && since ≥ after then none else
+        (holding.find? (·.clause.name == name)).map fun c =>
+          { object := id, name, reading := c.clause.reading, asks := wantAsks facts id o c, since }
+  let sorted := (rows.toArray.qsort fun (a b : Wanted) =>
+    a.since > b.since || (a.since == b.since && (a.object < b.object || (a.object == b.object && a.name < b.name)))).toList
+  let cap := if limit == 0 then Limits.listPage else min limit Limits.listPage
+  let mut page : Array Wanted := #[]
+  let mut rest := sorted
+  while true do
+    let some first := rest.head? | break
+    let group := rest.takeWhile (·.since == first.since)
+    unless page.isEmpty || page.size + group.length ≤ cap do break
+    page := page ++ group.toArray
+    rest := rest.drop group.length
+  return (page.toList, !rest.isEmpty)
+
+/-- `world-wanting {principal?, after?, limit?}` → `{status: wanting, rows: [{object, name, reading?, asks,
+    since}], more}` (`wanting`). -/
+def wantingOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let nat := fun (k : String) => (j.getObjValAs? Nat k).toOption.getD 0
+  let (rows, more) := wanting w reader (nat "after") (nat "limit")
+  return Json.mkObj [("status", toJson "wanting"), ("more", toJson more), ("rows", Json.arr (rows.toArray.map fun r =>
+    Json.mkObj ([("object", toJson r.object), ("name", toJson r.name), ("asks", toJson r.asks), ("since", toJson r.since)] ++
+      (if r.reading.isEmpty then [] else [("reading", toJson r.reading)]))))]
 
 /-- `world-rules {object, principal?}`: every rule `object` carries (`ruleRow`), for a reader who may
     view it. `world-wants {object, principal?}`: the wants that hold of it now (`wantRows`). Derived

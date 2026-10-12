@@ -62,7 +62,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 
 - Open and status: `world-open {path, library?, principal?, libraryLaw?, sync?, verify?, snapshotEvery?, maxJournalBytes?, clock?, postQuota?, opener?}`, `world-status`, `world-snapshot`.
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
-- Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-reach` (5.162).
+- Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-reach` (5.162), `world-wanting` (5.164).
 - Paint (5.161, never journaled): `world-render {principal, object, version?}`, `world-renders`, `world-render-submit {key, reply}`; `world-status.renders {cached, rejected, pending}`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
 - `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
@@ -1872,6 +1872,19 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `badSpell`, which is the answer at once without a policy. `readsWords` and `misfitData` are gone.
    `world-receipt` gives a refusal's owner its `public` projection, and the bridge drafts a refused resumption and
    marks a settled one (`awaiting.settled`). Tests: `test_heard`, `test_spell_turns.Misfits`/`MisfitsWithoutPolicy`.
+
+164. **What wants a hand (host27; §7 item 1a; no edition change).** `world.wanting({after: Nat, limit: Nat}) ->
+   Wanting {wanting {rows [Want {object, name, reading, asks, since}], more} | refused}` (the objects lane's
+   World.obend) and `world-wanting {principal?, after?, limit?}` → `{status: wanting, rows [{object, name, reading?,
+   asks, since}], more}`, one function (`Ops.wanting`): each row of the wanting index (`World.wanting`) whose want
+   still holds of its thing as it stands (`posing`), for things the reader may view (the arm's reader is the turn's
+   subject), newest first by `since`, then thing and name. A page holds whole heights below `after` (0: from the
+   newest) within `limit` rows (0 or past `listPage` 64 is 64); its first height is whole whatever its size, so
+   `after` set to a page's last `since` reads on without a gap. A want true by the clock alone, which no entry
+   made true, is not in the index (the thing's `wants` reads it). `asks` is filled at the read (`wantAsks`, shared
+   with `world-wants`; `wantFacts` is the one set of facts `posing` and both reads judge and fill by). Derived, no
+   root. Tests: `tests/test_wanting.py` (the index by whole heights for whom may view, a closed want leaving,
+   unchanged by a reopen and a snapshot; the Bend arm, on the pair).
 
 ## 6. Gotchas
 
