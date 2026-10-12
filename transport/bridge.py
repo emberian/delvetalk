@@ -193,7 +193,7 @@ def offer_drafts(st, host):
             rc = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri}).get('receipt')
             text = ('\n'.join(o['text'] for o in offers).rstrip('\n') + '\n' if public(host, rc) else '') + receipt_line(rc, st.config.origin, w.get('object'), handles) if rc else ''
             st.write(st.outbox / f"{offers[-1]['height']}-off-{key}.json", {
-                'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
+                'replyTo': w.get('post', uri), 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
                 'offer': {'height': offers[-1]['height'], 'identity': uri},
                 'text': text, 'posted': False})
@@ -211,7 +211,7 @@ def offer_drafts(st, host):
                 if tag == 'refused' and got.get('public') else ''
             if text:
                 st.write(st.outbox / f"{rc['height']}-off-{key}.json", {
-                    'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
+                    'replyTo': w.get('post', uri), 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                     'object': w.get('object'), 'slot': w.get('slot'), 'receipt': rc, 'text': text, 'posted': False})
                 drafted.append(uri)
             st.write(awaiting_path(st, uri), {**w, 'settled': True})
@@ -360,14 +360,21 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         reply = host.send(request)
         if reply.get('status') == 'spells':  # several spells at a line's start: a turn each, one reply carrying every line
             turns = reply.get('turns') or []
-            if not turns or any('receipt' not in t for t in turns):
-                failed.append({'uri': obs['uri'], 'message': next((t.get('message') for t in turns if 'receipt' not in t), 'no turns')})
+            lost = [t for t in turns if 'receipt' not in t and t.get('status') != 'usage']  # a `?` journals nothing: its text is its answer
+            if not turns or lost:
+                failed.append({'uri': obs['uri'], 'message': lost[0].get('message') if lost else 'no turns'})
                 continue
-            text = ''.join(spell_line(t, origin, handles) for t in turns)
-            st.write(st.outbox / f"{turns[-1]['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
+            ran = [t for t in turns if 'receipt' in t]
+            text = ''.join(draft_text(t).rstrip('\n') + '\n' if 'receipt' not in t else spell_line(t, origin, handles) for t in turns)
+            st.write(st.outbox / f"{ran[-1]['receipt']['height'] if ran else 0}-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': turns[0].get('object') or obj, 'slot': slot,
-                'receipt': turns[-1]['receipt'], 'posted': False, 'text': text})
+                'receipt': ran[-1]['receipt'] if ran else None, 'posted': False, 'text': text})
+            for t in ran:  # a suspended spell's own answer comes when hob has read it, as a reply to the same post
+                if (t['receipt'].get('outcome') or {}).get('tag') == 'suspended':
+                    intent = t['receipt']['identity']['intent']
+                    st.write(awaiting_path(st, intent), {'uri': intent, 'post': obs['uri'], 'principal': did, 'replyHandle': handle,
+                                                         'object': t.get('object') or obj, 'slot': slot, 'height': t['receipt']['height'], 'suspended': True})
             done.append(obs['uri'])
             continue
         if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done

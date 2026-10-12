@@ -372,6 +372,47 @@ class Suspended(BridgeCase):
         self.assertEqual((d['text'], d['replyTo']), ('Handed over.\n' + bridge.receipt_line(Stub.RESUMED), p['uri']))
 
 
+class Spells(Stub):
+    """Each post of several spells answered as the host answers one: a turn per spell line, `segments` naming each
+    one's status (`usage` for a `?`, `suspended`, else admitted)."""
+    def __init__(self, segments):
+        super().__init__()
+        self.segments = segments
+
+    def send(self, req):
+        if req['op'] != 'world-turn':
+            return super().send(req)
+        self.ops.append(req)
+        turns = []
+        for n, status in enumerate(self.segments, 1):
+            identity = {'principal': req['principal'], 'intent': f"{req['identity']}#{n}"}
+            rc = {'hash': f'h{n}', 'height': 10 + n, 'slug': f'lodif-ruku{"zb"[n % 2]}', 'identity': identity,
+                  'outcome': {'tag': 'suspended' if status == 'suspended' else 'admitted'}, 'roots': [{'object': 'bell-1', 'version': n}]}
+            turns.append({'status': 'usage', 'text': 'delvetalk bell-1 rain / text: <1 to 200>\n'} if status == 'usage' else
+                         {'status': status, 'object': 'bell-1', 'receipt': rc})
+        return {'status': 'spells', 'turns': turns}
+
+
+class SeveralSpells(BridgeCase):
+    def test_a_usage_line_among_the_spells_is_answered_with_the_others(self):
+        stub = Spells(['admitted', 'usage'])
+        self.observe([mk(1, 'delvetalk bell-1 rain\ntext: hello\ndelvetalk bell-1 ?')])
+        self.assertEqual(bridge.run(self.state, stub)['failed'], [])
+        (d,) = self.drafts()
+        self.assertIn('admitted bell-1 v1', d['text'])
+        self.assertIn('delvetalk bell-1 rain / text: <1 to 200>', d['text'])
+
+    def test_a_suspended_spell_among_them_is_answered_when_its_offer_comes(self):
+        stub = Spells(['admitted', 'suspended'])
+        p = mk(1, 'delvetalk bell-1 rain\ntext: hello\ndelvetalk bell-1 tend')
+        self.observe([p])
+        self.assertEqual(bridge.run(self.state, stub)['failed'], [])
+        stub.offers[DID] = [{'height': 20, 'ordinal': 0, 'identity': {'principal': DID, 'intent': p['uri'] + '#2'}, 'text': 'Tended.'}]
+        self.assertEqual(bridge.run(self.state, stub)['offered'], [p['uri'] + '#2'])
+        later = [d for d in self.drafts() if 'Tended.' in d['text']]
+        self.assertEqual([d['replyTo'] for d in later], [p['uri']])
+
+
 class Mentions(BridgeCase):
     GLM, KIMI = 'did:plc:' + 'b' * 24, 'did:plc:' + 'c' * 24
 
