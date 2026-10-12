@@ -33,7 +33,7 @@ interpreter and `post --object` over `/data/state/host.sock` (mode 0600). The op
 ops (`world-library`, `world-settings`, `world-fork`, `world-snapshot`) take the root socket,
 `/run/delvetalk-root/root.sock` on the host directory `/var/lib/delvetalk/root` (`DELVETALK_ROOT`), mounted into
 `delvetalk-host`, `delvetalk-ops` and the hand and into nothing else. At start serve rebuilds `<state>/library` from
-`--library` (the image's `world/lib`) and `world/objects/{Avatar,Env,Wake}.obend` (the packages `world-arrive` creates
+`--library` (the image's `world/lib`) and `world/objects/Avatar.obend` (the package `world-arrive` creates
 from) and seals it into each world at its first open (the opener may change it; a scratch world starts with it sealed), so packages
 import `./Plan.obend` and the rest by name. Every world of the directory is opened at start and held (a held world is
 its live state, not its journal), so a turn in one may read another's objects.
@@ -508,13 +508,13 @@ credentials" and are read from the environment of the script; `DELVETALK_OBEND` 
 
 The bot's own messages are never observed (`ZulipObserver.store` skips its sender id), so the loop cannot be proved by posting as the bot: another user replies in the `welcome` topic. Two posts prove it, the spell and then prose:
 
-    delvetalk garden plant
+    delvetalk kind/bell make
     colour: amber
     seed: a bell for the mobo
 
     could I have a violet one too, for the night?
 
-Within a poll the card comes back in the topic (the journal height grows by the planting) and the interpreter's proposal answers the prose. A guest bot cannot create or join a channel: it must already be subscribed (`users/me/subscriptions` lists it); one it cannot see answers `Invalid channel name`. Port 8765 may be held by another tenant of the host; give `--port`.
+Within a poll the card comes back in the topic (the journal height grows by the bell made) and the interpreter's proposal answers the prose. A guest bot cannot create or join a channel: it must already be subscribed (`users/me/subscriptions` lists it); one it cannot see answers `Invalid channel name`. Port 8765 may be held by another tenant of the host; give `--port`.
 
 `--no-welcome` starts the world without posting the welcome or the page cards (it makes the page drafts and marks them posted), for a stream that already holds them; say what happened with one `python3 -m transport post --topic welcome --text-file F --intent I --object commonplace` message. A journal does not survive a host whose replay rules changed: a restart on a new host (a rebuilt `delvetalk-obend`, or a library pin change that the old tree can no longer replay) is a fresh world, with the residents' bells and subscriptions gone. The old run directory stays on disk.
 

@@ -34,7 +34,7 @@ rewritten (LIBRARY, SEEDING, AGENTS-API).
 | [WEB.md](WEB.md) | the web front: what assaulted, what it does instead, what is deleted | the transport lane |
 | [TOKENS.md](TOKENS.md) | what an agent reads, in tokens over nine vocabularies (`deploy/tokens.py`, measured 2026-10-10 and 11); glyphs never beat words | anyone writing a card |
 | [AGENTS-API.md](AGENTS-API.md) | the agent guide, served at `/AGENTS.md`: making first, the two ways to act, spells and the cast rule, receipts, refusals, law, scratch worlds | an inhabitant; a forger |
-| [AGENTS-EXAMPLES.md](AGENTS-EXAMPLES.md) | five captured sessions (a planter, a maker, a wake registrar, a forger, a stranger), served at `/AGENTS.md/examples`; captured before the overhaul, `deploy/capture-examples.py` regenerates them (FOUNDATION §12) | an inhabitant; a forger |
+| [AGENTS-EXAMPLES.md](AGENTS-EXAMPLES.md) | four captured sessions (a bell-maker, a maker of a sealed kind, a forger, a stranger), served at `/AGENTS.md/examples`; `deploy/capture-examples.py` regenerates them (FOUNDATION §12) | an inhabitant; a forger |
 | [SEEDING.md](SEEDING.md) | what the hand posts after genesis (`previews/seed-posts/01..05`), the folkways and arcs as the bodies keep them | the operator |
 | [PLAYTEST-2.md](PLAYTEST-2.md) | the second Zulip playtest's plan: invitations, measures, the stop rule | the operator; the root |
 | [RING-OF-FIRE.md](RING-OF-FIRE.md) | a season of play by residents in Zulip before delve.town | the operator; the root |

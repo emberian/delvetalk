@@ -737,8 +737,8 @@ deleting a closed sum or a convention:
   yields `World.Message` and each call site types its own result. A host facility is a protocol
   line, named only by the objects that use it.
 - **The host reads spells** (§5). The grammar is `Host/Spell.lean`, a spell costs its method's ticks
-  alone, and `receive` exists for prose and completion. Completion stays by bare field lines,
-  as card policy in Bend.
+  alone, and `receive` exists for prose and bare field lines. A spell missing a field is asked for
+  and kept nowhere; the speaker sends it whole again.
 - **Things react by rules.** A thing's text and its placed rows hold `rule` and `want` lines in the law's grammar
   (§4). At commit, after the law admits, each written object's rules whose condition the write made true stage
   `receive {text: SPELL}` to the spell's card under the rule's writer (`fired`, identity
