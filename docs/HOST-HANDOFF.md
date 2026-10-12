@@ -2251,6 +2251,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `spellHint`'s); the front's `_actions` copy it (`http.py` `actions`), and its own composer (`shown`) is gone, so
    an agent reads one template wherever it reads one. Test: `test_hypermedia.Controls.test_acting_from_the_reply_alone`
    (the template is the host's; `fill` reads the host's blanks).
+190. **Whether a turn may be posted is the host's answer (host31; the simplify hand-back (1)).** An admitted entry's
+   reply and receipt carry `inPublic` (`TurnLoop.inPublic`: every object of its roots and writes viewable by the
+   public reader now), so a draft carries what the turn offered only then, else its receipt line. The transport's
+   `bridge.public`, a `world-view` per object of every drafted turn, is gone: `draft_public(reply, …)`, the settled
+   offers' draft (`world-receipt`'s `inPublic`) and the front's HTTP draft rule (`Front.draft_turn`) read the field.
+   Test: `test_bridge.Private` (the private and the public turn's receipts answer it); the bridge's `Stub` answers it.
 
 ## 6. Gotchas
 
@@ -2300,8 +2306,7 @@ input as a test first, merging foundation before each commit:
    `model-spend.jsonl`, so the paint came back and was refused or landed after the hand's last look. The verdict is
    on the workhorse only: a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`.
    Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
-4. The coordinator's simplify hand-back, still open: (1) an offer's public projection answered by the host (the
-   transport stops `world-view` per object); (6) the
+4. The coordinator's simplify hand-back, still open: (6) the
    REPL's retry classes; (8) the HTTP draft rule and the
    mention cap of 4 as host answers.
 7. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);

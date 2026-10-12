@@ -2490,9 +2490,19 @@ def revealedField (w : World) (entry : Json) : List (String × Json) :=
   let lines := revealed w entry
   if lines.isEmpty then [] else [("revealed", toJson lines)]
 
+/-- Whether everyone may read what an admitted entry read and wrote (every object of its roots and writes, as the
+    public reader may view them now): a post, which everyone reads, carries what the turn offered only then, else its
+    receipt line alone. Answered as `inPublic` on its reply and receipt, so a draft asks the host nothing more. -/
+def inPublic (w : World) (entry : Json) : List (String × Json) :=
+  if tagOf entry != "admitted" then [] else
+  let arr := fun (j : Json) (k : String) => ((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+  let objects := (arr entry "roots" ++ arr ((entry.getObjVal? "outcome").toOption.getD Json.null) "writes").toList.filterMap
+    (·.getObjValAs? String "object" |>.toOption)
+  [("inPublic", toJson (objects.all (viewable w "" ·)))]
+
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
     offers the entry retains for the turn's own principal (others are read with `world-offers`), and an
-    admitted entry's three lines (`revealed`). -/
+    admitted entry's three lines (`revealed`) and whether they may be posted (`inPublic`). -/
 def turnReply (w : World) (r : Json) : Json :=
   match r.getObjVal? "receipt" with
   | .error _ => r
@@ -2506,7 +2516,7 @@ def turnReply (w : World) (r : Json) : Json :=
       | .ok to, .ok text => if to == principal then some (Json.mkObj [("principal", toJson to), ("text", toJson text)]) else none
       | _, _ => none
     Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra ++
-      (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++ revealedField w entry ++
+      (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++ revealedField w entry ++ inPublic w entry ++
       -- What a refusal may say in public, for transport to draft from.
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
 
@@ -2523,7 +2533,7 @@ def receipt (w : World) (j : Json) : Except String Json := do
     let shown := projectEntry w reader entry
     if owner != reader && tagOf entry == "refused" then return publicRefusal entry
     -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.
-    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++
+    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++ inPublic w entry ++
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
       (if owner == reader && !reader.isEmpty then revealedField w entry else []))
 

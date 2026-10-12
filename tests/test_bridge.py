@@ -243,6 +243,10 @@ class Private(BridgeCase):
         private, public = self.drafts()
         self.assertEqual(private['text'], bridge.receipt_line(private['receipt']))
         self.assertEqual(public['text'], f"hello {DID}\n{bridge.receipt_line(public['receipt'])}")
+        # Whether a draft may carry the offers is the host's answer (`inPublic`), never a `world-view` per object (simplify (1)).
+        for d, seen in ((private, False), (public, True)):
+            r = self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': d['receipt']['identity']['intent']})
+            self.assertEqual(r.get('inPublic'), seen, r)
 
 
 class HostParses(BridgeCase):
@@ -286,12 +290,11 @@ class Stub:
         if op == 'world-turn' and req['object'] in self.suspending:
             return {'status': 'suspended', 'receipt': {'hash': 'h', 'height': 5, 'outcome': {'tag': 'suspended'}}}
         if op == 'world-turn':
-            return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}},
+            return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}}, 'inPublic': True,
                     **({} if req['object'] in self.silent else {'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]})}
         if op == 'world-receipt':  # a suspended turn stays suspended until its offer is there
-            return {'status': 'receipt', 'receipt': self.RESUMED} if self.offers.get(req['principal']) else {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended'}}}
-        if op == 'world-view':
-            return {'status': 'viewed'}
+            return {'status': 'receipt', 'receipt': self.RESUMED, 'inPublic': True} if self.offers.get(req['principal']) else \
+                {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended'}}}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':

@@ -337,14 +337,14 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
 
     def draft_turn(self, principal, intent, reply):
         """The owner's rule (cracks R6): an admitted HTTP turn that wrote something, and read and wrote only what the public
-        reads (`bridge.public`), is drafted in the hand's outbox like a town reply, once per receipt; whether the town
+        reads (the host's `inPublic`), is drafted in the hand's outbox like a town reply, once per receipt; whether the town
         hears of it is the operator's click."""
         receipt = reply.get('receipt') or {}
         writes = [w['object'] for w in (receipt.get('outcome') or {}).get('writes') or [] if w.get('object')]
         if reply.get('status') != 'admitted' or not writes or principal.startswith('guest:'):  # a guest's replies come back over HTTP only
             return
         path = self.st.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
-        if not path.exists() and bridge.public(self.host, receipt):
+        if not path.exists() and reply.get('inPublic'):
             self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
                                  'object': writes[0], 'slot': None, 'receipt': receipt, 'posted': False,
                                  'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})

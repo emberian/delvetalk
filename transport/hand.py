@@ -246,7 +246,7 @@ class Hand:
         tag = (receipt.get('outcome') or {}).get('tag')
         made = [c['object'] for c in (receipt.get('outcome') or {}).get('creates') or [] if c.get('object')]
         obj = (made or [reply.get('object') or card])[0]
-        text = bridge.draft_public(self.host, reply, self.st.config.origin, reply.get('object'))
+        text = bridge.draft_public(reply, self.st.config.origin, reply.get('object'))
         came = {'card': card, 'object': obj, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
                 'line': bridge.receipt_line(receipt, None, reply.get('object')).strip(), 'text': text}
         name = None
