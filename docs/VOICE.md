@@ -135,7 +135,8 @@ name. Never an entry number, a version or a line number: the reader never needs 
 
 **A day** (`Enchant.dayStrokes`, `world-render` with no `object`): the chronicle's day (`Ops.chronicleDay`) as
 sentences with no entry numbers, rules and wants by their readings, avatars left out; the day's lines with the thing
-each is on; counts (acts admitted, refusals, hands, things made by what they are called); with `morning: true`, what
+each is on; counts (acts admitted, refusals, hands, things made by what they are called, the day's lines by the verb
+that wrote them: rains as rains); with `morning: true`, what
 wants a hand, oldest first. Up to 600 characters. That is the morning card; without `morning`, the chronicle's day.
 
 **The prompt** is `Paint.contract()`, the one prompt file. **The check** is `Enchant.verify`, the table
@@ -162,7 +163,9 @@ without caching it.
 
 **Where.** Painted, above the exact card and never inside it: `/play/<id>` after a reply or a look, the public
 `/o/<id>` (the exact card folded beneath under "the card", open when nothing is painted), and the hand's Speak; the
-morning card and the chronicle's day by `world-render {day?, morning?}` (the hand's post of it is not built).
+morning card and the chronicle's day by `world-render {day?, morning?}`; `hand morning` (CLI, and Speak's "The
+morning card") paints it, shows it and drafts it once a day for Post, what wants a hand exact beneath and the
+chronicle's exact lines in the paint's place when there is none; it never posts by itself.
 Never: a receipt or refusal line, the revealing lines, `?`'s usage, a law line or reading, the library's pages, hob's
 own lines, and the bridge's drafts: a post carries the exact card alone until the fourth playtest decides whether a
 post carries paint. An owner's `plain: yes` shows a thing exact alone; a root `card` override is shown exact.

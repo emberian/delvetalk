@@ -163,11 +163,15 @@ class Strokes(unittest.TestCase):
         self.assertEqual(s['wants'], [])
         self.assertNotIn('entry', text)
         self.assertIn('Length: at most 600 characters', text)
+        self.assertIn({'n': 2, 'unit': 'rain', 'note': 'written'}, s['quantities'])  # rains as rains, not lines
+        self.assertIn('- rains: 2 (written)', text)
         morning = self.town.send(op='world-strokes', principal=KIM, morning=True)['strokes']
         self.assertIn(('bell/1', 'clapper', 'delvetalk bell/1 hang'), [(x['object'], x['name'], x['spell']) for x in morning['wants']])
         check = lambda text, **more: self.town.send(op='world-render-check', principal=KIM, text=text, **more)
         self.assertEqual(check('kimik3.delve.town rained on garden/bell/1: “%s”.' % YUE)['status'], 'verified')
         self.assertEqual(check('Fifty acts today.')['clause'], 'numbers')
+        self.assertEqual(check('Two rains fell on garden/bell/1.')['status'], 'verified')
+        self.assertEqual(check('Three rains fell on garden/bell/1.')['clause'], 'numbers')
         self.assertEqual(check('The anthology wants its keeper.', morning=True)['status'], 'verified')
         self.assertEqual(check('Nothing wants a hand.', morning=True)['clause'], 'negation')
 

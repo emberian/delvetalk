@@ -574,6 +574,31 @@ class Speak(unittest.TestCase):
         self.assertNotIn('http-equiv="refresh"', page)
         self.assertIn(html.escape(after['text'].strip().split('\n')[0]), page)
 
+    def test_the_morning_card_is_painted_shown_and_drafted_once_a_day_never_posted(self):
+        """`hand morning` (OVERHAUL §4 (c)): the day painted from its strokes with what wants a hand exact beneath, drafted
+        once a day for Post; a day with no paint stands as the chronicle's exact lines."""
+        from transport import interpret
+        self.town.send(op='world-renders')  # the worker attends
+        queued = self.town.send(op='world-render', principal=self.hand.owner, morning=True)
+        self.assertEqual(queued['status'], 'pending', queued)
+        paint = 'The town kept its day with its porch and its bells, and the clapper still waits.'
+        reply = {'status': 'replied', 'json': None, 'raw': paint, 'model': 'claude-haiku-5-5', 'usage': {}}
+        done = interpret.paint(self.town.client, lambda req: reply if 'a day of the town' in req['user'] else dict(reply, raw='x' * 900))
+        self.assertIn(queued['key'], done['painted'], done)
+        got = self.hand.morning()
+        _, d = self.hand.draft(got['drafted'])
+        self.assertTrue(got['painted'])
+        self.assertTrue(d['text'].startswith(paint + '\n\nWhat wants a hand, oldest first:\n'), d['text'])
+        first = self.town.send(op='world-wanting', principal=self.hand.owner, limit=8)['rows'][0]
+        self.assertIn('%s: %s\n  %s' % (first['object'], first.get('reading') or first['name'], first['asks']), d['text'])
+        self.assertEqual((d['speak'], d['posted'], d['topic']), ({'morning': got['day']}, False, 'welcome'))
+        with self.assertRaises(hand.HandError):
+            self.hand.morning()
+        quiet = self.hand.morning(day=1)  # nothing journaled that day: no paint, the chronicle's exact line
+        self.assertFalse(quiet['painted'])
+        self.assertTrue(quiet['text'].startswith('day 1: nothing was journaled.\n\nWhat wants a hand'), quiet['text'])
+        self.assertIn('morning card, day %d' % got['day'], [r['turn'] for r in self.hand.drafted()[2]])
+
     def test_an_invitation_is_drafted_once_with_its_spell_quoted(self):
         row = self.hand.plan['invitations'][-1]  # the plan's last: no other test drafts it
         got = self.hand.invite(row['minute'])

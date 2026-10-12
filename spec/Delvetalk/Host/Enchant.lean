@@ -316,6 +316,19 @@ def frameLaws (w : World) : List String :=
   | some k => (textClauses ((text? (fieldsOf k.state) "law").getD "")).map (·.2.1)
   | none => []
 
+/-- The unit a line counts as: the verb that wrote it (a bell's rain), a plain `write` or none a line. -/
+def lineUnit (verb : String) : String := if verb.isEmpty || verb == "write" then "line" else verb
+
+/-- How many of each `unit` a list holds, in first-seen order. -/
+def tally (units : List String) : List (String × Nat) :=
+  units.foldl (fun acc u => if acc.any (·.1 == u) then acc.map fun (k, n) => (k, if k == u then n + 1 else n) else acc ++ [(u, 1)]) []
+
+/-- Lines counted by what wrote them, and all of them as lines when that says more: rains: 2, lines: 2. -/
+def lineQuantities (verbs : List String) (note : String := "") : List Quantity :=
+  let byVerb := tally (verbs.map lineUnit)
+  byVerb.map (fun (u, n) => ({ n, unit := u, note } : Quantity)) ++
+    (if byVerb.length > 1 || byVerb.any (·.1 != "line") then [{ n := verbs.length, unit := "line", note }] else [])
+
 /-- The strokes of object `id` with `state` and `lawText` (its own at `version`). -/
 def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Data) (lawText : String) : Strokes := Id.run do
   let fs := fieldsOf state
@@ -372,24 +385,18 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
   let present := (rows fs "presence").map fun r => handleIn w r "handle" "who"
   -- Each number with its unit: the lines by the verb that wrote them (a bell's rains), the count a rule
   -- fires at as the nth, what lies here by what it is called, who is here, its doors, any other relation.
-  let unitOf := fun (verb : String) => if verb.isEmpty || verb == "write" then "line" else verb
-  let byVerb := all.foldl (fun (acc : List (String × Nat)) l =>
-    let u := unitOf l.verb
-    if acc.any (·.1 == u) then acc.map fun (k, n) => (k, if k == u then n + 1 else n) else acc ++ [(u, 1)]) []
-  let lineUnit := match byVerb with
+  let byVerb := tally (all.map (lineUnit ·.verb))
+  let unitOfLines := match byVerb with
     | [(u, _)] => u
     | _ => "line"
   let things := (rows fs "things").filterMap fun r => referenceId (.record r)
-  let byKind := things.foldl (fun (acc : List (String × Nat)) t =>
-    let u := calledBy t
-    if acc.any (·.1 == u) then acc.map fun (k, n) => (k, if k == u then n + 1 else n) else acc ++ [(u, 1)]) []
+  let byKind := tally (things.map calledBy)
   let others := (fs.filter fun (k, v) => isRelation v && !unstroked.contains k &&
       !["lines", "marks", "things", "presence"].contains k).map fun (k, v) => (k, ((rowsOf v).map (·.length)).getD 0)
   let quantities : List Quantity :=
-    (if all.isEmpty then (if lines.isEmpty then [{ n := 0, unit := "line" }] else []) else byVerb.map fun (u, n) => ({ n, unit := u } : Quantity)) ++
-    (if byVerb.length > 1 || (byVerb.length == 1 && lineUnit != "line") then [{ n := all.length, unit := "line" }] else []) ++
+    (if all.isEmpty then (if lines.isEmpty then [{ n := 0, unit := "line" }] else []) else lineQuantities (all.map (·.verb))) ++
     (carried.filterMap fun c => (threshold "lines" c.clause.condition.render).map fun n =>
-      ({ n, unit := lineUnit, ordinal := true, note := s!"rule {c.clause.name}, {quoted c.clause.reading}" } : Quantity)) ++
+      ({ n, unit := unitOfLines, ordinal := true, note := s!"rule {c.clause.name}, {quoted c.clause.reading}" } : Quantity)) ++
     byKind.map (fun (u, n) => ({ n, unit := u } : Quantity)) ++
     (if things.isEmpty then [] else [{ n := things.length, unit := "thing", note := "lying here" }]) ++
     (if present.isEmpty then [] else [{ n := present.length, unit := "here" }]) ++
@@ -473,9 +480,7 @@ def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Stro
   let events := d.events.filter fun e => !((e.object.splitOn "/").head?.getD "").contains ':'
   let made := (events.filter (·.what == "made")).map (·.object)
   -- What was made, by what each is called: two bells, a goblet, twelve kinds.
-  let byKind := made.foldl (fun (acc : List (String × Nat)) id =>
-    let u := if id.startsWith "kind/" then "kind" else calledBy id
-    if acc.any (·.1 == u) then acc.map fun (k, n) => (k, if k == u then n + 1 else n) else acc ++ [(u, 1)]) []
+  let byKind := tally (made.map fun id => if id.startsWith "kind/" then "kind" else calledBy id)
   return { object := "", version := day, day := some day, today := (events.drop (events.length - dayEvents)).map (eventSentence w), hands := d.hands,
            lines := lines.drop (lines.length - newestLines),
            quantities := [{ n := d.admitted, unit := "act", note := "admitted" }] ++
@@ -483,7 +488,7 @@ def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Stro
              (if d.hands.isEmpty then [] else [{ n := d.hands.length, unit := "hand" }]) ++
              (if made.isEmpty then [] else [{ n := made.length, unit := "thing", note := "made" }]) ++
              byKind.map (fun (u, n) => ({ n, unit := u, note := "made" } : Quantity)) ++
-             (if lines.isEmpty then [] else [{ n := lines.length, unit := "line", note := "written" }]),
+             lineQuantities (lines.map (·.verb)) "written",
            wants := if morning then wantsOfDay w reader else [], limit := maxDay }
 
 /-- The strokes a request names: `{object, version?}` a thing's, `{day?, morning?}` (no object) the town's

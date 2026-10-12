@@ -90,15 +90,17 @@ class HostClient:
                 pass
 
 
-def painted(host, principal, obj, sleep=time.sleep):
+def painted(host, principal, obj, sleep=time.sleep, **day):
     """The painted card of `obj` as `principal` reads it (docs/OVERHAUL.md section 4), or None, when the exact card stands
-    alone: the host's `pending` is looked at again every PAINT_STEP seconds for the `patience` it names, no longer."""
-    r = host.send({'op': 'world-render', 'principal': principal, 'object': obj})
+    alone: the host's `pending` is looked at again every PAINT_STEP seconds for the `patience` it names, no longer. With
+    no `obj`, the town's day (`day`, `morning`)."""
+    ask = {'op': 'world-render', 'principal': principal, **({'object': obj} if obj else {}), **{k: v for k, v in day.items() if v is not None}}
+    r = host.send(ask)
     for _ in range(int((r.get('patience') or 0) / PAINT_STEP)):
         if r.get('status') != 'pending':
             break
         sleep(PAINT_STEP)
-        r = host.send({'op': 'world-render', 'principal': principal, 'object': obj})
+        r = host.send(ask)
     return r.get('text') if r.get('status') == 'painted' else None
 
 
