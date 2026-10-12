@@ -788,6 +788,15 @@ deleting a closed sum or a convention:
   first rows. Words that run no spell reach hob (§5, §6); `grow:` is for a verb the words mean that the card lacks. A
   gesture is one line and a tend, nothing more until a rule gives it a consequence. Hob decides which verb the words mean and
   whether none does, never admission, a fact, a number, a consequence, or the card (reach, §5).
+- **A scene is the same grammar.** A room's spween scene (world/lib/Spween.obend, Scenes.obend) has an inside, the
+  room's own variables, and an outside braided into the world: a choice's guard may be any condition the law reads
+  (`"bell/1".tended >= 5`, `count(new.presence) >= 2`, `"garden/1" wants five`, `request.subject == new.owner`), judged
+  by the host of the room as it stands with the reader as `request.subject` (`world.holds {object, when}`: one
+  `denote`, no `old`, its citations roots), or what the reader keeps or holds (`keeps.<thing>`, `holds.<thing>`); a
+  choice's `~ cast SPELL` (or `~ verb args`, the room's own verb, a kind body's or a grown one) is a rule of the room's
+  text, written at its making, `rule <passage>_<n>: request.method == "choose" and new.chose == "<passage>.<n>" then
+  SPELL`, so it fires as every rule fires: under the room's owner, judged by its target's law, journaled, eight a
+  commit and four deep. A passage never falls through; every choice is sticky, once-only being a guard on a variable.
 - **The chronicle is derived.** `chronicle {day}` folds one clock day of the journal (made, grown, fired, wanted,
   refusals by class, who) into lines; nothing is kept to say it.
 

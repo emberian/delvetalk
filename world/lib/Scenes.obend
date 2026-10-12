@@ -6,15 +6,23 @@ import ./Card.obend as Card
 # requirements and cooldown. A room (world/bodies/room.obend over RECORD) keeps one;
 # world/lib/Spween.obend lowers spween's text to its Seed.
 #
-# An effect sets a variable (`set`), adds to it or subtracts from it (`add`, `sub`, on
-# naturals; a missing or non-numeric value counts 0, a subtraction stops at 0). A clause
-# tests a variable: against a value (atLeast, above, atMost, below on naturals; equals and
-# differs on the text), or whether it is truthy or falsy ("", "0" and "false" are falsy, as
-# is a variable never set). A guard holds when every clause does.
+# The inside and the outside, one grammar each (docs/OVERHAUL.md §2). Inside, an effect sets a variable
+# of the room (`set`), adds to it or subtracts from it (`add`, `sub`, on naturals; a missing or
+# non-numeric value counts 0, a subtraction stops at 0), and a clause tests one: against a value (atLeast,
+# above, atMost, below on naturals; equals and differs on the text), or whether it is truthy or falsy
+# ("", "0" and "false" are falsy, as is a variable never set). Outside, an effect casts a spell (`cast`,
+# `value` the spell): the room's text holds it as a rule, `rule <passage>_<n>: request.method == "choose" and
+# new.chose == "<passage>.<n>" then SPELL`, so it fires as any rule fires, under the room's owner, judged
+# by its target's law, journaled, eight a commit and four deep (`ruleText`). An outside clause is a
+# condition in the law's grammar (`law`, `value` the condition), judged by the host of the room as it
+# stands with the reader as `request.subject` (`world.holds`), or what the reader keeps or holds
+# (`holding`, `lacking`: `key` holds, keeps or has, `value` the thing's id). A guard holds when every
+# clause does; a pure read of a card judges the inside alone and shows the outside beside the choice.
 sum Op:
   set: {}
   add: {}
   sub: {}
+  cast: {}
 sum Test:
   truthy: {}
   falsy: {}
@@ -24,6 +32,9 @@ sum Test:
   above: {}
   atMost: {}
   below: {}
+  law: {}
+  holding: {}
+  lacking: {}
 record Effect:
   key: String
   op: Op
@@ -90,9 +101,19 @@ def holdsClause(clause: Clause, vars: Vars) -> Bool:
     case above(_): numbers(have, clause.value) && natural(have) > natural(clause.value)
     case atMost(_): numbers(have, clause.value) && natural(have) <= natural(clause.value)
     case below(_): numbers(have, clause.value) && natural(have) < natural(clause.value)
+    case _: true
 def numbers(have: String, want: String) -> Bool:
   isNatural(have) && isNatural(want)
-# The first clause of a guard that does not hold, if any.
+# A clause the room's own variables answer; the rest are the outside's.
+def inside(clause: Clause) -> Bool:
+  match clause.test:
+    case law(_): false
+    case holding(_): false
+    case lacking(_): false
+    case _: true
+def outside(guard: Guard) -> Guard:
+  Lists.filter(guard, fn(c: Clause) -> Bool: inside(c) == false)
+# The first inside clause of a guard that does not hold, if any.
 def failing(guard: Guard, vars: Vars) -> Lists.Maybe<Clause>:
   Lists.find(guard, fn(c: Clause) -> Bool: holdsClause(c, vars) == false)
 def holds(guard: Guard, vars: Vars) -> Bool:
@@ -101,6 +122,9 @@ def clauseText(clause: Clause) -> String:
   match clause.test:
     case truthy(_): clause.key
     case falsy(_): "!{clause.key}"
+    case law(_): clause.value
+    case holding(_): "{clause.key}.{clause.value}"
+    case lacking(_): "!{clause.key}.{clause.value}"
     case _: "{clause.key} {symbol(clause.test)} {clause.value}"
 # How spween writes a test.
 def symbol(test: Test) -> String:
@@ -116,7 +140,57 @@ def symbol(test: Test) -> String:
 def applied(effect: Effect, old: String) -> String:
   match effect.op:
     case set(_): effect.value
+    case cast(_): old
     case add(_): natText(natural(old) + natural(effect.value))
     case sub(_): natText(less(natural(old), natural(effect.value)))
 def less(have: Nat, by: Nat) -> Nat:
   if have > by then have - by else 0n
+# Whether an effect sets one of the room's variables (a cast reaches outside it).
+def varies(effect: Effect) -> Bool:
+  match effect.op:
+    case cast(_): false
+    case _: true
+def casts(effects: Lists.List<Effect>) -> Lists.List<String>:
+  Lists.map(Lists.filter(effects, fn(e: Effect) -> Bool: varies(e) == false), fn(e: Effect) -> String: e.value)
+# What `chose` holds after a reader takes the `n`th choice (from 1) of passage `id`.
+def chosen(id: String, n: Nat) -> String:
+  "{id}.{natText(n)}"
+# The rule lines a scene's casts are, one a cast, for the room's text: named by passage and choice (a
+# second cast of one choice `b`, then `c`), read by the choice's label.
+def ruleText(passages: Lists.List<Passage>) -> String:
+  textJoin(sceneRules(passages), "")
+def sceneRules(passages: Lists.List<Passage>) -> Lists.List<String>:
+  match passages:
+    case nil(_): Lists.List.nil()
+    case cons(c): Lists.concat(passageRules(c.head, c.head.choices, 1n), sceneRules(c.tail))
+def passageRules(p: Passage, choices: Lists.List<Choice>, n: Nat) -> Lists.List<String>:
+  match choices:
+    case nil(_): Lists.List.nil()
+    case cons(c): Lists.concat(castRules(p.id, n, c.head.label, casts(c.head.effects), 0n), passageRules(p, c.tail, n + 1n))
+def castRules(id: String, n: Nat, label: String, spells: Lists.List<String>, k: Nat) -> Lists.List<String>:
+  match spells:
+    case nil(_): Lists.List.nil()
+    case cons(c): Lists.List.cons({head: "\nrule {id}_{natText(n)}{suffix(k)} \"{readable(label)}\": request.method == \"choose\" and new.chose == \"{chosen(id, n)}\" then {c.head}", tail: castRules(id, n, label, c.tail, k + 1n)})
+def suffix(k: Nat) -> String:
+  if k == 0n then "" else textTake(textDrop("bcdefghijklmnop", k - 1n), 1n)
+# A label as a reading: no quote or backslash.
+def readable(label: String) -> String:
+  let at = textBreak(label, "\"\\")
+  if at == textLength(label) then label else "{textTake(label, at)}'{readable(textDrop(label, at + 1n))}"
+def castCount(passages: Lists.List<Passage>) -> Nat:
+  Lists.length(sceneRules(passages))
+# Every outside condition of a scene (its requirements' and its choices'), for the host to read once at making.
+def conditions(seed: Seed) -> Lists.List<String>:
+  Lists.map(Lists.filter(Lists.concat(seed.requires, guards(seed.passages)), isLaw), fn(c: Clause) -> String: c.value)
+def guards(passages: Lists.List<Passage>) -> Guard:
+  match passages:
+    case nil(_): Lists.List.nil()
+    case cons(c): Lists.concat(choiceGuards(c.head.choices), guards(c.tail))
+def choiceGuards(choices: Lists.List<Choice>) -> Guard:
+  match choices:
+    case nil(_): Lists.List.nil()
+    case cons(c): Lists.concat(c.head.guard, choiceGuards(c.tail))
+def isLaw(c: Clause) -> Bool:
+  match c.test:
+    case law(_): true
+    case _: false

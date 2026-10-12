@@ -18,7 +18,7 @@ a reader re-entering inside the cooldown, by spell or by a forged write; or not 
 """
 import unittest
 
-from tests import test_chain
+from tests import test_chain, test_scenarios
 from tests.test_objects import run_pure
 from tests.test_scene import GATE, GLM, heard, plain, scene_fields
 from tests.test_rooms import make_room
@@ -97,12 +97,16 @@ def test(t: Scenes.Test) -> String:
   match t:
     case truthy(_): "truthy"
     case falsy(_): "falsy"
+    case law(_): "law"
+    case holding(_): "holding"
+    case lacking(_): "lacking"
     case _: Scenes.symbol(t)
 def op(o: Scenes.Op) -> String:
   match o:
     case set(_): "set"
     case add(_): "add"
     case sub(_): "sub"
+    case cast(_): "cast"
 def clauses(guard: Scenes.Guard) -> String:
   textJoin(Lists.map(guard, fn(c: Scenes.Clause) -> String: "{c.key} {test(c.test)} {c.value}"), ", ")
 def effects(list: Lists.List<Scenes.Effect>) -> String:
@@ -111,6 +115,10 @@ def choice(c: Scenes.Choice) -> String:
   "  * {c.label} [{clauses(c.guard)}] ({effects(c.effects)}) -> {c.to}"
 def passage(p: Scenes.Passage) -> String:
   "=== {p.id}: {p.text}\\n{textJoin(Lists.map(p.choices, choice), \\"\\\\n\\")}"
+def rules(text: String) -> String:
+  match Spween.parse(text):
+    case refused(r): "refused: {r.reason}"
+    case parsed(p): Scenes.ruleText(p.seed.passages)
 def summary(text: String) -> String:
   match Spween.parse(text):
     case refused(r): "refused: {r.reason}"
@@ -118,28 +126,84 @@ def summary(text: String) -> String:
 """
 
 
-def summary(text):
-    out = run_pure("Spween", "summary", label(text), probe=PROBE, limits={"ticks": "1000000"})
+def summary(text, what="summary"):
+    out = run_pure("Spween", what, label(text), probe=PROBE, limits={"ticks": "1000000"})
     assert out["status"] == "finished", out
     return out["value"]["value"], out["ticksUsed"]
 
 
+# The braid, as a resident types it (docs/OVERHAUL.md section 2): guards that read the outside (a thing's field, a
+# count, another thing's want, what the reader keeps), effects that cast a spell or call the room's own verb.
+ROPE = """---
+id: bell_rope
+title: The Bell Rope
+---
+=== rope
+A rope hangs out of the dark over the porch. Somewhere above, mimo's bell.
+* [Pull the rope] { !pulled }
+  ~ pulled = true
+  ~ cast delvetalk bell/1 ring
+  -> rung
+* [Ask after the goblet] { keeps.porch/goblet }
+  -> goblet
+* [Wait for company] { count(new.presence) >= 2 }
+  -> rung
+* [Leave a line for whoever pulled] when "bell/1".tended >= 0, !"bell/1" wants rain
+  ~ cast delvetalk me note / text: {request.subject} came by the rope
+  -> END
+=== rung
+The bell has said what it had. The rope still sways.
+* [Sing back]
+  ~ call("song", "low", "the porch")
+  -> END
+=== goblet
+The goblet's keeper is the only one the rope tells about it.
+* [Go]
+"""
+
+
 class Parse(unittest.TestCase):
-    def test_weights_calls_has_stray_effects_dangling_targets_and_long_passages_are_refused_by_name(self):
+    def test_weights_unknown_categories_stray_effects_dangling_targets_and_long_passages_are_refused_by_name(self):
         body = "---\nid: s\n---\n=== a\nText.\n* [Go]\n  %s\n  -> END\n"
         long = "---\nid: s\n---\n=== a\n%s\n* [Go]\n  -> END\n"
         for text, refusal in ((TAVERN, "refused: weight: a scene is entered by name here, never drawn by weight"),
-                              (body % '~ play_sound "victory"', "refused: ~ call: play_sound"),
-                              (body % '~ call("play_sound", "victory")', "refused: ~ call: call("),
-                              ("---\nid: s\n---\n=== a\n* [Go] { inventory.sword }\n  -> END\n", "refused: has: inventory.sword"),
-                              ("---\nid: s\nrequires:\n  has: [inventory.sword]\n---\n=== a\n", "refused: has:"),
-                              ("---\nid: s\n---\n=== a\n~ gold += 1\n", "refused: an effect outside a choice"),
+                              ("---\nid: s\n---\n=== a\n* [Go] { inventory.sword }\n  -> END\n",
+                               "refused: inventory.sword: a room reads what the reader keeps or holds as keeps.<thing>, holds.<thing> or has.<thing>"),
+                              ("---\nid: s\nrequires:\n  has: [inventory.sword]\n---\n=== a\n", "refused: inventory.sword: a room reads"),
+                              ("---\nid: s\n---\n=== a\n~ gold += 1\n",
+                               "refused: an effect outside a choice: ~ gold += 1; put it, indented, under the * [choice] that leads here"),
+                              (body % "~ cast ring the bell", "refused: ~ cast takes a spell, as a rule's then does: ~ cast delvetalk bell/1 ring"),
+                              ("---\nid: s\n---\n=== 1a\n", "refused: a passage name is letters, digits and _, starting with a letter: 1a"),
                               ("---\nid: s\n---\n=== a\n* [Go]\n  -> nowhere\n", "refused: -> nowhere: no passage of that name"),
                               ("=== a\nText.\n", "refused: a scene starts with frontmatter naming its id: ---, id: <name>, ---"),
                               (long % ("x" * 601), "refused: a passage holds at most 600 characters"),
                               (long % ("x" * 600), "s / s")):
             with self.subTest(refusal=refusal):
                 self.assertTrue(summary(text)[0].startswith(refusal), summary(text)[0])
+
+    def test_a_guard_reads_the_inside_the_reader_s_things_and_any_condition_of_the_law_s_grammar(self):
+        text, _ = summary(ROPE)
+        self.assertIn("  * Pull the rope [pulled falsy ] (pulled set true;  cast delvetalk bell/1 ring) -> rung", text)
+        self.assertIn("  * Ask after the goblet [keeps holding porch/goblet] () -> goblet", text)
+        self.assertIn("  * Wait for company [ law count(new.presence) >= 2] () -> rung", text)
+        # Commas split at the top only; `!` before a condition is `not`.
+        self.assertIn('  * Leave a line for whoever pulled [ law "bell/1".tended >= 0,  law not ("bell/1" wants rain)] '
+                      '( cast delvetalk me note / text: {request.subject} came by the rope) -> END', text)
+        # spween's `~ call("song", ...)`, as `~ song low the porch`: the room's own verb, on itself.
+        self.assertIn("  * Sing back [] ( cast delvetalk {request.object} song / text: low the porch) -> END", text)
+        self.assertIn("[ law request.subject in [1, 2]]", summary("---\nid: s\n---\n=== a\n* [Go] { request.subject in [1, 2] }\n")[0])
+
+    def test_each_cast_is_a_rule_of_the_room_s_text_named_by_passage_and_choice(self):
+        self.assertEqual(summary(ROPE, "rules")[0],
+                         '\nrule rope_1 "Pull the rope": request.method == "choose" and new.chose == "rope.1" then delvetalk bell/1 ring'
+                         '\nrule rope_4 "Leave a line for whoever pulled": request.method == "choose" and new.chose == "rope.4" then delvetalk me note / text: {request.subject} came by the rope'
+                         '\nrule rung_1 "Sing back": request.method == "choose" and new.chose == "rung.1" then delvetalk {request.object} song / text: low the porch')
+        two = '---\nid: s\n---\n=== a\n* [Ring "twice"]\n  ~ cast delvetalk bell/1 ring\n  ~ fanfare\n'
+        self.assertEqual(summary(two, "rules")[0],
+                         '\nrule a_1 "Ring \'twice\'": request.method == "choose" and new.chose == "a.1" then delvetalk bell/1 ring'
+                         '\nrule a_1b "Ring \'twice\'": request.method == "choose" and new.chose == "a.1" then delvetalk {request.object} fanfare')
+        many = "---\nid: s\n---\n" + "".join("=== p%d\n" % p + "".join("* [C%d]\n  ~ cast delvetalk bell/1 ring\n" % i for i in range(8)) for p in range(2))
+        self.assertTrue(summary(many)[0].startswith("refused: a scene casts at most fifteen spells"), summary(many)[0])
 
 
 class Made(test_chain.Chain):
@@ -225,6 +289,64 @@ class Made(test_chain.Chain):
         self.deliver_all()
         r = self.say("scene/room/1", "delvetalk scene/room/1 enter")
         self.assertEqual(self.refusal(r), ("unmet", "The room requires well_open."))
+
+
+class Braid(test_scenarios.Arc):
+    """The scene braided into the town: a resident's ```spween block under the porch makes a room whose casts are
+    rules of its text, whose guards read the town and the reader's things, walked by spells as residents type them."""
+
+    def carve(self, who, text):
+        r = self.say(who, "porch", "A rope for the porch:\n\n```spween\n" + text + "```\n")
+        self.assertEqual(r["status"], "admitted", r)
+        return [o for o in self.objects() if o.startswith("porch/porch/")][-1]
+
+    def deliver(self):
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+
+    def fired(self, reply):
+        who = reply["receipt"]["identity"]["principal"]
+        return self.town.send(op="world-entry", principal=who, hash=reply["receipt"]["hash"])["receipt"].get("fired", [])
+
+    def refusal(self, reply):
+        outcome = reply["receipt"]["outcome"]
+        return outcome.get("clause"), outcome.get("reading")
+
+    def test_a_choice_casts_under_the_room_s_owner_and_its_guards_read_the_town(self):
+        room = self.carve(test_scenarios.KIM, ROPE)
+        rules = {r["name"]: r for r in self.town.send(op="world-rules", principal=test_scenarios.KIM, object=room)["rows"]}
+        self.assertEqual(sorted(rules), ["rope_1", "rope_4", "rung_1"], rules)
+        self.assertTrue(all(r["owner"] == test_scenarios.KIM for r in rules.values()), rules)
+        entered = self.say(test_scenarios.KIM, room, "delvetalk %s enter" % room)
+        card = self.card(entered)
+        # The reader keeps nothing, is alone, and bell/1 still wants rain: only the rope is offered.
+        self.assertIn("Choices:\n  * Pull the rope\n", card)
+        for hidden in ("Ask after the goblet", "Wait for company", "Leave a line"):
+            self.assertNotIn(hidden, card)
+        refused = self.say(test_scenarios.KIM, room, "delvetalk %s choose / choice: Ask after the goblet" % room)
+        self.assertEqual(self.refusal(refused), ("guarded", "Ask after the goblet needs keeps.porch/goblet."))
+        pulled = self.say(test_scenarios.KIM, room, "delvetalk %s choose / choice: Pull the rope" % room)
+        self.assertEqual(pulled["status"], "admitted", pulled)
+        [fired] = self.fired(pulled)
+        self.assertEqual((fired["rule"], fired["principal"], fired["to"]), ("rope_1", test_scenarios.KIM, "bell/1"), fired)
+        self.deliver()
+        marks = self.field("bell/1", "marks")["payload"]["fields"][0]["value"]["items"]
+        self.assertEqual([[f["value"]["value"] for f in m["fields"] if f["name"] in ("name", "who")] for m in marks], [["rung", test_scenarios.KIM]])
+        # The variable it set keeps the rope from being pulled twice, by anyone: sticky choices, once by a guard.
+        self.assertNotIn("Pull the rope", self.card(self.say(test_scenarios.GLM, room, "delvetalk %s enter" % room)))
+        # What the reader keeps: inspiriting the goblet makes one its keeper, and the room offers what it guards.
+        self.assertEqual(self.say(test_scenarios.GLM, "porch/goblet", "delvetalk porch/goblet inspirit / surrounding: rain kept for later")["status"], "admitted")
+        card = self.card(self.say(test_scenarios.GLM, room, ""))
+        self.assertIn("  * Ask after the goblet\n", card)
+        self.assertIn("  * Wait for company\n", card)  # count(new.presence) >= 2: the rope's puller is still here
+        self.assertEqual(self.say(test_scenarios.GLM, room, "delvetalk %s choose / choice: Ask after the goblet" % room)["result"]["label"], "moved")
+
+    def test_a_guard_the_host_cannot_read_refuses_the_making_by_name(self):
+        text = "---\nid: s\n---\n=== a\nA door.\n* [Knock] { count(new.presence) >> 1 }\n"
+        r = self.say(test_scenarios.KIM, "porch", "```spween\n" + text + "```\n")
+        clause, reading = self.refusal(r)
+        self.assertEqual(clause, "spween", r)
+        self.assertTrue(reading.startswith("The guard `count(new.presence) >> 1` does not read: law outside the enforced fragment"), reading)
+        self.assertFalse([o for o in self.objects() if o.startswith("porch/porch/")])
 
 
 if __name__ == "__main__":
