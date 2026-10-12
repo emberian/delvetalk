@@ -1677,7 +1677,23 @@ The journal carries each source module once: the first entry whose compile input
 source carries it in its `sources [{cid, source}]` field, and compile inputs in every entry
 name it as `{name, cid}` (or `sourceCid`). Objects keep the full inputs in memory. -/
 
-def sourceCid (source : String) : String := Journal.bodyHash (toJson source)
+def sourceCidCold (source : String) : String := Journal.bodyHash (toJson source)
+
+/-- This process's source CIDs, by the source: every entry that names compile inputs (a creation,
+    a fork's genesis, a snapshot's store) names each module of the closure by its CID, the library's
+    included, and hashing them is most of writing such an entry. -/
+@[noinline] unsafe def sourceCidMemo : IO.Ref (Std.HashMap String String) := unsafeBaseIO (IO.mkRef {})
+
+unsafe def sourceCidImpl (source : String) : String :=
+  unsafeBaseIO do
+    if let some c := (← sourceCidMemo.get)[source]? then return c
+    let c := sourceCidCold source
+    sourceCidMemo.modify fun m => boundedInsert m Limits.maxBuilds source c
+    return c
+
+/-- The CID a source is journaled under (`sourceCidCold`), hashed once per process. -/
+@[implemented_by sourceCidImpl]
+def sourceCid (source : String) : String := sourceCidCold source
 
 /-- Compile inputs as journaled: every source replaced by its CID. -/
 def compactInputs (inputs : Json) : Json :=
