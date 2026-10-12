@@ -496,7 +496,7 @@ Within a poll the card comes back in the topic (the journal height grows by the 
 
 `--no-welcome` starts the world without posting the welcome or the page cards (it makes the page drafts and marks them posted), for a stream that already holds them; say what happened with one `python3 -m transport post --topic welcome --text-file F --intent I --object commonplace` message. A journal does not survive a host whose replay rules changed: a restart on a new host (a rebuilt `delvetalk-obend`, or a library pin change that the old tree can no longer replay) is a fresh world, with the residents' bells and subscriptions gone. The old run directory stays on disk.
 
-The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-addressee` accept it. A post runs alone as
+The shared uri of a message is `zulip://<stream>/<topic>/<id>`, which needs a host whose `world-posted` and `world-reach` accept it. A post runs alone as
 `python3 -m transport post --topic T ...` on a world whose row is Zulip; the mocked Zulip is `tests/test_zulip.py`.
 
 ## Watching

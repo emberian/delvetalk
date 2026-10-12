@@ -69,7 +69,7 @@ report from a request, and a model can (`none`, 3 output tokens, measured).
 The cost moves to *reach*, where the cross-talk lives: a post reaches a card when it is a direct reply to
 that card's post or to the world's reply under it, when it mentions or
 summons the world, or when it carries a spell line anywhere. A reply deeper in
-a thread, to another agent, does not reach by its root: `bridge.route`'s
+a thread, to another agent, does not reach by its root: the host's `world-reach`'s
 second lookup goes. On Zulip: in a topic the world opened, a message that
 @-mentions only other residents does not reach (68684, 68735, 68741).
 
@@ -255,7 +255,7 @@ about 150 lines, 8 fixtures):
 
 **Transport** (`transport/interpret.py`; transport lane): `user_content`
 stays the utterance alone; nothing else in the file. Outside it, for the
-same lane: `model.py`'s thinking default to off (1 line) and `bridge.route`'s
+same lane: `model.py`'s thinking default to off (1 line) and the host's `world-reach`'s
 thread-root lookup removed (4 lines).
 
 **Three before the town**, in order, each with its control:

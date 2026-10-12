@@ -399,6 +399,34 @@ class Moves(Reflection):
         # The new law's own reading is the one a refusal by it reads.
         self.assertEqual(law("l")["readings"], [{"name": "counted", "reading": "the count only rises, and anyone places rules on it"}])
 
+    def test_a_moved_object_holding_its_packages_law_takes_the_packages_new_rule_and_want_lines(self):
+        version = self.host.send(op="world-view", principal="ember", object="m")["version"]
+        a = self.host.send(op="world-amend", principal="ember", identity="am-m", object="m", version=version,
+                           law='law counted: monotone(count)\nlaw mine "ember alone bumps": request.subject == "ember"')
+        self.assertEqual(a["status"], "admitted", a)
+        low = 'want low "a count under ten": new.count <= 9 asks delvetalk {request.object} bump'
+        self.ship(declared(COUNTED_SOURCE.replace("def initial()", low + "\ndef initial()", 1)), "Counted")
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        moved = {m["object"]: m for m in json.loads(p.stdout)["moved"]}
+        self.assertEqual((moved["l"].get("placed"), moved["m"].get("placed")), (["low"], None), moved)
+        new = self.opened(out)
+        wants = lambda i: [r["name"] for r in new.send(op="world-wants", principal="ember", object=i)["rows"]]
+        self.assertEqual((wants("l"), wants("m")), (["low"], []))
+
+    def test_a_refused_moves_whole_refusal_is_printed_and_its_clause_reads_within_its_bound(self):
+        self.ship(TALLY_NOTED.replace("  note: String", "  note: Nowhere", 1))  # a type nothing declares
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        left = {x["object"]: x["reading"] for x in json.loads(p.stdout)["left"]}
+        self.assertIn("t", left, p.stdout)
+        self.assertTrue(left["t"].startswith("left at the carry: its package does not compile"), left)
+        self.assertGreater(len(left["t"].encode()), 200)
+        readings = self.opened(out).send(op="world-object", principal="ember", object="t")["record"]["readings"]
+        clause = next(r["reading"] for r in readings if r["name"] == "retired")
+        # The clause's reading is the refusal's first line, its quotes made plain, within a reading's 200 bytes.
+        self.assertTrue(left["t"].replace('"', "'").startswith(clause.removesuffix("...")) and len(clause.encode()) <= 200, clause)
+
     def test_a_package_that_changes_its_methods_alone_moves_with_its_state(self):
         self.ship(declared(TALLY_SOURCE + "def bump2(state: State, context: Abi.Context) -> Activity<Nat>:\n  add(context, 2n)\n"))
         p, out = self.carry()

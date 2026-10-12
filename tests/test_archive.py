@@ -25,7 +25,7 @@ from tests import host
 
 ROOT = Path(__file__).resolve().parent.parent
 GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6jlibkzlobkuu', 'did:plc:j2hnfjwlnm2mau24vnmpir6d'
-# The posts `transport.bridge.route` sends as turns: 81, the opener's own among them (the host admits her
+# The posts the host reaches (`world-reach`) and the bridge sends as turns: 81, the opener's own among them (the host admits her
 # ordinary turns on the public socket).
 REACHED = 81
 # Only prose at the commonplace, and a spell no object reads (a misfit), goes to hob (docs/FLEX.md section 2). Prose

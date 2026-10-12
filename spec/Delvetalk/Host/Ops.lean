@@ -3560,7 +3560,7 @@ def libraryOp (w : World) (principal intent : String) (lib : Library) (lawArg : 
 
 The first open that names a clock principal or a posting quota journals a `settings` entry;
 after that both are fixed. `posted` entries record what transport published for an object,
-so a reply to that post can be routed back (`world-addressee`). An open that journals nothing
+so a reply to that post reaches its card (`world-reach`). An open that journals nothing
 answers `{}`, never null: `durable`'s settling pass sets `resumed`/`delivered` on the answer. -/
 
 def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener : Option String := none)
@@ -3883,16 +3883,6 @@ def arriveOp (w : World) (j : Json) : Except String (World × Json) := do
     made := made.push (Json.mkObj [("object", toJson id), ("height", toJson w.height)])
   return (w, Json.mkObj ([("status", toJson "arrived"), ("did", toJson did), ("handle", toJson handle),
     ("created", Json.arr made)] ++ ((recorded.getObjVal? "receipt").toOption.map fun e => [("principal", e)]).getD []))
-
-/-- `world-addressee {parent}`: the object (and slot, or page and section) a post at `parent` was made for. -/
-def addressee (w : World) (j : Json) : Except String Json := do
-  let uri ← j.getObjValAs? String "parent"
-  match w.posts[uri]? with
-  | none => return Json.mkObj [("status", toJson "unknown")]
-  | some p => return Json.mkObj ([("status", toJson "addressee"), ("object", toJson p.object)] ++
-      (p.slot.map fun s => [("slot", s)]).getD [] ++
-      (if p.page.isEmpty then [] else [("page", toJson p.page), ("section", toJson p.part)]) ++
-      (if p.unposted.isEmpty then [] else [("unposted", toJson p.unposted)]))
 
 /-! ## Replay -/
 

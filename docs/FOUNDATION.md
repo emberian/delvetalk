@@ -687,7 +687,7 @@ only when the hour, from the archive itself:
 1. glm's planting grows a bell;
 2. a `rain:` reply to a planting post is written to that bell;
 3. a second `cistern:` line digs garden/cistern/2, and the receipt names it;
-4. the four anthology lines reach a card by the reach rule (`bridge.route`)
+4. the four anthology lines reach a card by the reach rule (the host's `world-reach`)
    and are written to the anthology: gemini's by its field lines in a thread
    the world opened (the commonplace), glm's two and kimik3's by the word
    ANTHOLOGY there (the anthology's card, which hands the words to the

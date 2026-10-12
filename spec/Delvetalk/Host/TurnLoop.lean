@@ -2831,6 +2831,95 @@ def reachOf (w : World) (req : TurnRequest) : String :=
     | .spell .. => "spell"
     | _ => req.reach
 
+/-! ## Reach (docs/FLEX.md §2; OVERHAUL §2.7): where an observed post's words go -/
+
+/-- An ancestor the transport observed above a post: its uri, its author, the post it answers. -/
+structure Seen where
+  uri : String
+  author : String
+  replyTo : String
+
+/-- The world's square (genesis's commonplace): where a summons lands, and whose doors prose may name. -/
+def commonplaceId : String := "commonplace"
+
+/-- The longest walk up a thread (Zulip's topic, the doors' threads on Delve). -/
+def reachHops : Nat := 32
+
+/-- The nearest post the world recorded among `hops` ancestors from `uri`, walking `replyTo` through what was
+    observed (`seen`), each asked once (`asked`: a cycle or a second walk asks nothing twice); with `author`
+    (a Zulip topic) the walk passes only that author's own messages: another resident's message above is
+    whom the words answer. -/
+def walkTo (w : World) (seen : List Seen) (author : Option String) :
+    Nat → String → List String → Option (String × Post) × List String
+  | 0, _, asked => (none, asked)
+  | n + 1, uri, asked =>
+    if uri.isEmpty || asked.contains uri then (none, asked) else
+    let asked := uri :: asked
+    match w.posts[uri]? with
+    | some p => (some (uri, p), asked)
+    | none =>
+      let above := seen.find? (·.uri == uri)
+      if author.isSome && (above.map (·.author)) != author then (none, asked)
+      else walkTo w seen author n ((above.map (·.replyTo)).getD "") asked
+
+/-- The card of the first of the commonplace's doors (`cites`, as its card shows them) whose label the text
+    names as a word. -/
+def namedDoor (w : World) (text : String) : Option String := do
+  let o ← w.objects[commonplaceId]?
+  let .record fs := o.state | none
+  let doors := ((fs.lookup "cites").bind listOf |>.getD []).filterMap fun d => do
+    let .record r := d | none
+    pure ((← (r.lookup "label").bind labelOf).toLower, ← (r.lookup "to").bind referenceId)
+  let words := (text.toLower.split fun c => !(c.isAlphanum || c == '\'' || c == '-' || c == '_')).map (·.toString)
+  words.findSome? fun word => doors.lookup word
+
+/-- `world-reach {uri, text, kind, author, replyTo?, root?, mentions?, chain?: [{uri, author, replyTo?}]}`: where
+    an observed post reaches, and how, or nowhere (docs/FLEX.md §2; the bridge passes only what it saw). (a) A
+    reply reaches the card whose recorded post is its direct parent (`how: reply`, with the post it answers); on
+    Zulip, where a topic is one thread, the nearest recorded message up the topic past only its author's own,
+    unless it mentions only other residents. (b) A spell line reaches its card (`spell`); a summons reaches the
+    commonplace (`mention`). (c) Field lines anywhere in a thread the world opened reach that thread's card
+    (`fields`), and (d) prose there naming one of the commonplace's doors reaches that door's card (`door`).
+    Other prose deeper in a thread, and anything on Zulip that reached no recorded message, reaches nothing. -/
+def reachOp (w : World) (j : Json) : Except String Json := do
+  let uri ← j.getObjValAs? String "uri"
+  let text ← j.getObjValAs? String "text"
+  let kind ← j.getObjValAs? String "kind"
+  let author ← j.getObjValAs? String "author"
+  let replyTo := (← optText j "replyTo").getD ""
+  let root := (← optText j "root").getD ""
+  let mentions := (← optNat j "mentions").getD 0
+  let chain ← match j.getObjVal? "chain" with
+    | .ok c => (← c.getArr?).toList.mapM fun a => do
+        pure ({ uri := ← a.getObjValAs? String "uri", author := ← a.getObjValAs? String "author",
+                replyTo := (← optText a "replyTo").getD "" } : Seen)
+    | .error _ => pure []
+  if chain.length > reachHops then throw s!"chain is at most {reachHops} ancestors"
+  let reached := fun (object : String) (slot : Option Json) (how : String) (answers : String) =>
+    Json.mkObj ([("status", toJson "reached"), ("object", toJson object)] ++ ((slot.map fun s => [("slot", s)]).getD []) ++
+      [("how", toJson how)] ++ (if answers.isEmpty then [] else [("replyTo", toJson answers)]))
+  let unreached := Json.mkObj [("status", toJson "unreached")]
+  let zulip := uri.startsWith "zulip://"
+  let hops := if !zulip then 1 else if mentions > 0 && kind != "summon" then 0 else reachHops
+  let (found, asked) := walkTo w chain (if zulip then some author else none) hops replyTo []
+  -- A reply names what its parent was made for: the slot, a page's section, and why it left the town.
+  if let some (at_, p) := found then
+    return (reached p.object p.slot "reply" at_).mergeObj (Json.mkObj ((if p.page.isEmpty then [] else
+      [("page", toJson p.page), ("section", toJson p.part)]) ++ (if p.unposted.isEmpty then [] else [("unposted", toJson p.unposted)])))
+  let parsed := if kind.startsWith "wiki" then none else some (Spell.parse text)
+  if let some (.spell card _ _) := parsed then return reached card none "spell" ""
+  if kind == "summon" then return reached commonplaceId none "mention" ""
+  if zulip || replyTo.isEmpty then return unreached
+  let above := ((chain.find? (·.uri == replyTo)).map (·.replyTo)).getD ""
+  let thread := match (walkTo w chain none reachHops above asked).1 with
+    | some (_, p) => some p
+    | none => if root.isEmpty || root == replyTo then none else w.posts[root]?
+  let some t := thread | return unreached
+  if parsed.isSome && !(Spell.bare text).isEmpty then return reached t.object t.slot "fields" ""
+  match namedDoor w text with
+  | some door => return reached door none "door" ""
+  | none => return unreached
+
 /-- The misfits a card that reads words may take instead of a refusal: what hob can read past. A duplicate
     field, an unclosed block, `fixed` and the host spells' own stay refusals: their hint is the fix. -/
 def misfitClauses : List String := ["unknownField", "noAction", "badValue", "otherCard"]
