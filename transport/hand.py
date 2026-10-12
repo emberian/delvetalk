@@ -17,8 +17,9 @@ import urllib.parse
 from html import escape as e
 from pathlib import Path
 
-from transport import bridge, measure, model, post, pages, root
+from transport import bridge, byhand, measure, model, post, pages, root
 from transport.bridge import awaiting_path, uri_hash
+from transport import observe
 from transport.delve import Failure, canonical
 from transport.host import CLOCK, fell_back, handles, history_limit, painted, typed
 from transport.http import WAIT_MAX, trace
@@ -27,6 +28,7 @@ from transport.measure import counted
 from transport.state import State
 
 CLIP, HAND_COOKIE = 400, 'dt_hand'
+LOOK_EVERY = 30  # seconds between two looks of the outbox into the posting account's repository (config hand_find)
 H, CSS = pages.sections('hand.html'), (pages.STATIC / 'style.css').read_text()
 
 
@@ -106,11 +108,19 @@ def welcome_text(spell, answered):
 
 
 class Hand:
-    def __init__(self, st, host, token='', poster=post.post_draft, clock=time.time, who='owner', sleep=time.sleep):
+    def __init__(self, st, host, token='', poster=post.post_draft, clock=time.time, who='owner', sleep=time.sleep, reader=None):
         self.st, self.host, self.token, self.poster, self.clock, self.who, self.sleep = st, host, token, poster, clock, who, sleep
         self.owner = st.config.opener
         self.plan, self.names, self.hands = plan(st.config.plan), {}, {st.world: self}  # read once; kept across the hand's worlds
-        self._identity = None
+        self._identity, self._reader, self.looked, self.found = None, reader, 0.0, {'linked': [], 'offers': []}
+
+    @property
+    def reader(self):
+        """delve.town read only (`getRecord`, `listRecords`, `resolveHandle`): no client here may write."""
+        if self._reader is None:
+            from transport.delve import Client, FixtureTransport, http_transport
+            self._reader = Client(FixtureTransport(self.st.config.delve_mock) if self.st.config.delve_mock else http_transport)
+        return self._reader
 
     def at(self, world):
         """The same hand over another world `serve` holds."""
@@ -118,7 +128,7 @@ class Hand:
             served = [w.get('name') for w in self.host.send({'op': 'serve-status'}).get('worlds') or []]
             if world not in served:
                 raise HandError(f'no world {world} here; serve holds {", ".join(served) or "none"}')
-            h = Hand(State(self.st.root, world, self.st.config), self.host.at(world), self.token, self.poster, self.clock, self.who, self.sleep)
+            h = Hand(State(self.st.root, world, self.st.config), self.host.at(world), self.token, self.poster, self.clock, self.who, self.sleep, self._reader)
             h.plan, h.names, h.hands, h._identity = self.plan, self.names, self.hands, self._identity
             self.hands[world] = h
         return self.hands[world]
@@ -151,7 +161,15 @@ class Hand:
         return {'entry': f"entry {st.get('height')}", 'posts': f'{delve.get("used", 0)} of {delve.get("quota", "?")} posts this hour',
                 'model': f'${spent.get("dollars", 0):.4f} of model spend in {month}, {counted(spent.get("calls", 0), "call")}',
                 'interpretations': f'{counted(len(waiting), "interpretation")} waiting, {len(retrying)} retrying',
-                'host': f"host pid {self.host.send({'op': 'serve-status'}).get('pid', 'none')}", 'shadowed': f"{len(st.get('shadowed') or [])} shadowed"}
+                'host': f"host pid {self.host.send({'op': 'serve-status'}).get('pid', 'none')}", 'shadowed': f"{len(st.get('shadowed') or [])} shadowed",
+                'posting': self.posting()}
+
+    def posting(self):
+        """How this world's drafts leave, said: by the owner's hand, the credential file, or the Zulip bot."""
+        how = byhand.mode(self.st)
+        return {'by hand': 'posting by hand: no credential file, so you post each draft from your own client and give the hand its link',
+                'automatic': f'posting automatically: Post reads the credential file {self.st.config.credentials}',
+                'zulip': "posting by the world's Zulip bot"}[how]
 
     def spend(self, month=None):
         """The model's spend by UTC month, every world's, and `month`'s (default this one) against the monthly grant."""
@@ -187,19 +205,72 @@ class Hand:
         return rows[:limit]
 
     def outbox(self, all=False):
-        """Drafts grouped by the post they answer: [{post, original: {handle, text}|None, drafts: [...]}]; the hand's own
-        (a spell spoken, an invitation) under what the hand said."""
+        """Drafts grouped by the post they answer, the longest waiting first: [{post, original: {handle, text}|None,
+        source, since, waiting, drafts: [...]}]; the hand's own (a spell spoken, an invitation) under what the hand said.
+        Each draft waiting on delve.town carries what posting it by hand needs (`ready`). A draft answering the town's
+        own feed is not here: the feed posts itself."""
+        from transport import feed
         seen, groups, said = self.observed(), {}, {}
-        for i, _, d in self.drafts():
+        for i, path, d in self.drafts():
             if not all and (d['posted'] or d.get('skipped') or not d['text']):
                 continue
+            if feed.is_feed(d.get('replyTo'), self.st.config.origin, self.st.world):
+                continue
             key = d.get('replyTo') or d.get('publication', {}).get('id', i)
-            groups.setdefault(key, []).append(self.summary(i, d))
+            groups.setdefault(key, []).append(dict(self.summary(i, d), since=self.since(path, d), source=self.source(d, seen), **self.ready(path, d, seen)))
             if d.get('speak'):
                 said[key] = {'handle': 'the hand', 'text': d['speak'].get('spell') or (f"the morning card of day {d['speak']['morning']}" if 'morning' in d['speak']
                                                                                       else f"the invitation at T+{d['speak'].get('invitation')}")}
-        return [{'post': k, 'original': {'handle': seen[k]['author']['handle'], 'text': clip(seen[k]['text'])} if k in seen else said.get(k), 'drafts': v}
-                for k, v in groups.items()]
+        rows = [{'post': k, 'original': {'handle': seen[k]['author']['handle'], 'text': clip(seen[k]['text'])} if k in seen else said.get(k),
+                 'source': v[0]['source'], 'since': min(x['since'] for x in v), 'drafts': sorted(v, key=lambda x: x['since'])} for k, v in groups.items()]
+        for r in rows:
+            r['waiting'] = self.waited(r['since'])
+        return sorted(rows, key=lambda r: r['since'])
+
+    def since(self, path, d):
+        """When a draft began waiting: the post it answers was made (its observation's createdAt), else the draft was
+        written (its file's time: the hand's own, a publication, a turn made on the web)."""
+        o = self.observed().get(d.get('replyTo')) if d.get('replyTo') else None
+        try:
+            return int(observe.instant(o['createdAt'])) if o else int(path.stat().st_mtime)
+        except (ValueError, KeyError, OSError):
+            return int(self.clock())
+
+    def waited(self, since):
+        m = max(0, int(self.clock() - since) // 60)
+        return f'{m // 1440} d {m % 1440 // 60} h' if m >= 1440 else f'{m // 60} h {m % 60} min' if m >= 60 else f'{m} min'
+
+    def source(self, d, seen):
+        """Where a draft came from, in words: a summon on delve.town, a reply under one of the town's posts, the hand's
+        own, a page the town published, a turn made on the web, a reply by hand."""
+        o = seen.get(d.get('replyTo'))
+        if d.get('publication'):
+            return f"a page the town published ({first_line(d['text'], 60)})"
+        if d.get('speak'):
+            return 'the hand\'s own: ' + ('the morning card' if 'morning' in d['speak'] else 'an invitation' if 'invitation' in d['speak']
+                                         else 'the welcome' if d.get('welcome') else 'a spell it cast')
+        if d.get('http'):
+            return 'a turn made on the web'
+        if d.get('hand'):
+            return f"a reply by hand to @{o['author']['handle']}" if o else 'by hand'
+        if o:
+            return {'summon': f"a summon on delve.town by @{o['author']['handle']}", 'reply': f"a reply under a town post by @{o['author']['handle']}",
+                    'post': f"a post on delve.town by @{o['author']['handle']}"}.get(o['kind'], f"a {o['kind']} by @{o['author']['handle']}")
+        return 'a reply to a post no longer observed' if d.get('replyTo') else 'the town'
+
+    def ready(self, path, d, seen=None):
+        """What posting a waiting delve.town draft by hand needs: each part's exact text and count (posted ones with
+        their link), the post the next part goes under as a delve.town link (None: it starts a thread), and which part
+        is next. {} for a draft posted, skipped, or of a Zulip world."""
+        if d['posted'] or d.get('skipped') or not d['text'] or byhand.mode(self.st) == 'zulip':
+            return {}
+        seen = self.observed() if seen is None else seen
+        k, _, _, under, _, n = byhand.expected(path, d)
+        done = {p['part']: p['link'] for p in d.get('byHand') or []}
+        done |= {j + 1: byhand.web_link(p['uri']) for j, p in enumerate(d.get('sentParts') or []) if j + 1 not in done}
+        handle = (seen.get(under) or {}).get('author', {}).get('handle')
+        return {'parts': [{'n': j, 'text': t, 'chars': len(t), 'posted': done.get(j)} for j, t in enumerate(post.parts(d['text']), 1)],
+                'next': k + 1, 'under': under and {'uri': under, 'link': byhand.web_link(under, handle), 'handle': handle}}
 
     def summary(self, i, d):
         r = d.get('receipt')
@@ -567,6 +638,8 @@ class Hand:
 
     def post(self, draft_id, text=None, object=None):
         path, d = self.draft(draft_id)
+        if byhand.mode(self.st) == 'by hand':
+            raise HandError(f'no credential file ({self.st.config.credentials}): post {draft_id} from your own client, then give the hand its link')
         text = d['text'] if text is None else text.replace('\r\n', '\n')
         try:
             result = self.poster(path, self.st, self.host, text=text, **({'object': object} if object else {}))
@@ -576,6 +649,46 @@ class Hand:
             raise HandError(f'post failed: {code}') from None
         self.log('post', draft_id, uri=result.get('uri'), edited=text != d['text'])
         return result
+
+    def posted(self, draft_id, links):
+        """`hand posted DRAFT --url LINK`: the owner posted the draft (or its next parts, in order) from his own client;
+        each link is read back, checked and recorded with the host as the automatic path records a post
+        (transport/byhand.py), or refused by name. -> what was recorded."""
+        path, d = self.draft(draft_id)
+        if byhand.mode(self.st) == 'zulip':
+            raise HandError("a Zulip world's drafts are posted by its bot")
+        links = links.split() if isinstance(links, str) else [l for l in links or [] if l.strip()]
+        if not links:
+            raise HandError('posted: paste the link of the post you made')
+        got = []
+        for link in links:
+            try:
+                d, entry = byhand.record(self.st, self.host, self.reader, path, d, link, self.clock)
+            except Failure as err:
+                self.log('posted-refused', draft_id, link=link, error=err.code)
+                raise HandError(f'{err.code}: {err.detail}' + (f' (recorded before it: {", ".join(g["link"] for g in got)})' if got else '')) from None
+            self.log('posted', draft_id, uri=entry['uri'], part=entry['part'], edited=bool(entry.get('edited')), recorded=(entry['recorded'] or {}).get('status'))
+            got.append(entry)
+        thread = bool(d.get('sentParts'))
+        said = lambda e: (draft_id + (f" part {e['part']}" if thread else '') + f" is {e['link']}" +  # noqa: E731
+                          (', your edit recorded' if e.get('edited') else '') +
+                          (f" (not recorded with the host yet: {e['recorded'].get('message')}; the bridge asks again)" if (e['recorded'] or {}).get('status') == 'error' else ''))
+        return {'recorded': [{k: e[k] for k in ('part', 'link', 'uri')} | ({'edited': True} if e.get('edited') else {}) for e in got],
+                'note': '; '.join(said(e) for e in got) + ('' if d.get('posted') else f"; part {len(d['sentParts']) + 1} next")}
+
+    def find_posts(self):
+        """`hand match`: the posting account's newest posts (read only) against the waiting drafts; an exact text and
+        parent is linked, and said; a near one is offered, never linked. -> {linked, offers}."""
+        if byhand.mode(self.st) == 'zulip':
+            raise HandError("a Zulip world's drafts are posted by its bot")
+        try:
+            found = byhand.find(self.st, self.host, self.reader, self.clock)
+        except Failure as err:
+            raise HandError(f'reading {self.st.config.poster}\'s posts: {err.code} {err.detail}'.strip()) from None
+        for x in found['linked']:
+            self.log('posted', x['draft'], uri=x['uri'], part=x['part'], found='exact text and parent')
+        self.looked, self.found = self.clock(), found
+        return found
 
     def skip(self, draft_id, reason=''):
         path, d = self.draft(draft_id)
@@ -598,6 +711,14 @@ class Hand:
                 if zulip is None and not rc:
                     raise HandError("a Zulip post is withdrawn by the world's bot, and its bridge row names no zuliprc")
                 (zulip or Client(rc)).delete(parse_uri(uri)[2])
+            elif client is None and byhand.mode(self.st) == 'by hand':  # no credential here: the owner deletes it in his client
+                try:
+                    self.reader.record(uri)
+                except Failure as err:
+                    if 'RecordNotFound' not in err.detail:
+                        raise
+                else:
+                    raise HandError(f'{byhand.web_link(uri)} is still on delve.town: delete it from your client, then unpost')
             else:
                 post.unsend(uri, self.st.config.credentials, client)
         except Failure as err:
@@ -703,14 +824,22 @@ class Hand:
             got = self.act(face, verb, form)
             return {'done': f"{verb}: {got.get('status')}" + (f", entry {got['receipt'].get('height')}" if got.get('receipt') else '')}
         if face == 'draft':
-            acts = {'post': lambda: self.post(verb, form.get('text')), 'skip': lambda: self.skip(verb, form.get('reason', '')), 'hold': lambda: self.hold(verb)}
+            acts = {'post': lambda: self.post(verb, form.get('text')), 'skip': lambda: self.skip(verb, form.get('reason', '')), 'hold': lambda: self.hold(verb),
+                    'posted': lambda: {'note': self.posted(verb, form.get('link', ''))['note']}, 'edit': lambda: self.edit(verb, (form.get('text') or '').replace('\r\n', '\n'))}
             act = acts.get(form.get('do'))
         else:
             act = {'retry': lambda: self.retry(form.get('uri', '')), 'reply': lambda: self.reply(form.get('uri', ''), form.get('text', ''), form.get('object', '')),
                    'speak': lambda: self.spoke(self.cast(form.get('spell', ''), form.get('topic'), form.get('replyTo'), form.get('intent'), form.get('to'), wait=0)),
                    'invite': lambda: self.invite(form.get('minute', ''), form.get('topic'), form.get('replyTo')),
+                   'match': lambda: {'note': self.matched(self.find_posts())},
                    'morning': lambda: {k: v for k, v in self.morning(None, form.get('topic'), form.get('replyTo')).items() if k in ('drafted', 'fellBack') and v}}.get(rest)
         return act and act()
+
+    @staticmethod
+    def matched(found):
+        return '; '.join([f"linked {x['draft']} to {x['link']}: its text and parent are exactly the draft's" for x in found['linked']] +
+                         [f"{len(found['offers'])} of your posts look like a draft: link each below if it is" if found['offers'] else '']) or \
+            'none of your newest posts is a waiting draft\'s'
 
     @staticmethod
     def spoke(came):
@@ -725,19 +854,52 @@ class Hand:
 
     def page(self, query):
         q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
-        codes = self.codes(self.status().values())
+        codes = self.codes(v for k, v in self.status().items() if k != 'posting')
         found = H['card'].format(text=q(json.dumps(self.search(query['slug']), indent=1, sort_keys=True)[:3000])) if query.get('slug') else ''
+        how, looked = byhand.mode(self.st), ''
+        if how != 'zulip' and self.st.config.hand_find and self.clock() - self.looked >= LOOK_EVERY:
+            try:
+                looked = self.matched(self.find_posts())
+            except HandError as err:
+                looked = str(err)
+        offers = {}
+        for o in self.found['offers']:
+            offers.setdefault(o['draft'], []).append(o)
         outbox = ''.join(H['group'].format(
+            source=q(g['source']), waiting=q(g['waiting']),
             original=H['card'].format(text=q(f'{g["original"]["handle"]}\n{g["original"]["text"]}')) if g['original'] else H['note'].format(text=q(g['post'])),
             drafts=''.join(H['draft'].format(base=base, fate=q(d['outcome']), stamp=q(pages.stamp(d['outcome'])), height=q('-' if d['height'] is None else d['height']),
-                                             name=q(d['slug']), object=q(d['object']), id=q(d['id']), text=q(d['text']))
+                                             name=q(d['slug']), object=q(d['object']), id=q(d['id']), leave=self.leave(d, how, offers.get(d['id']) or []))
                            for d in g['drafts'])) for g in self.outbox()) or '<p class="quiet">— no drafts waiting —</p>'
         inbox = ''.join(H['row'].format(
             base=base, outcome=q(r['outcome'] or ''), kind=q(r['kind']), handle=q(r['handle']), text=q(r['text']), uri=q(r['uri']),
             stamp=q('' if r['skipped'] or not r['fate'] else pages.stamp(r['fate'])), retry=H['retry'].format(base=base, uri=q(r['uri'])) if r['skipped'] else '')
             for r in self.inbox()) or '<p class="quiet">— nothing observed —</p>'
+        look = '' if how == 'zulip' else H['look'].format(base=base, looked=q(looked or (f"looked {self.waited(self.looked)} ago" if self.looked else
+                                                                                          "reads your newest posts on delve.town, read only")))
         return shell(self.st.world, self.st.world, H['console'].format(base=base, world=q(self.st.world), note=self.note(query), codes=codes, found=found,
-                                                                       outbox=outbox, inbox=inbox))
+                                                                       mode=q(self.posting()), outbox=look + outbox, inbox=inbox))
+
+    def leave(self, d, how, offers):
+        """How a waiting draft leaves, on the page: by hand (each part to copy, where it goes, the link to give), and with
+        a credential file Post as well, by hand folded beneath it; on Zulip, Post."""
+        q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
+        by_post = H['by_post'].format(base=base, id=q(d['id']), text=q(d['text']))
+        if how == 'zulip' or not d.get('parts'):
+            return by_post if d['state'] == 'waiting' else ''
+        n, under = len(d['parts']), d['under']
+        where = (f'Part {d["next"]} of {n}: reply' if n > 1 else 'Reply') + (
+            f' under <a href="{q(under["link"])}" target="_blank" rel="noopener">{q("@" + under["handle"] + "’s post" if under["handle"] else under["link"])}</a>'
+            if under else ' as a new post of your own, under nothing') + ', with the text below exactly' + ('; each next part under the one before.' if n > 1 else '.')
+        parts = ''.join(H['part'].format(
+            label=q(f'part {p["n"]} of {n}' if n > 1 else 'the post'), chars=q(f'{p["chars"]:,}'), clip=q(f'{post.CLIP:,}'), tid=q(f'{d["id"]}-{p["n"]}'),
+            rows=min(18, p['text'].count('\n') + 2), text=q(p['text']),
+            done=f' · posted: <a href="{q(p["posted"])}">{q(p["posted"])}</a>' if p['posted'] else '') for p in d['parts'])
+        offered = ''.join(H['offer'].format(base=base, id=q(o['draft']), part=q(f' part {d["next"]}' if n > 1 else ''), link=q(o['link']), uri=q(o['uri']),
+                                            like=q(f"{int(o['like'] * 100)}%"), why=q(f" ({o['why']})" if o.get('why') else ''), text=q(o['text'])) for o in offers)
+        hand = H['by_hand'].format(base=base, id=q(d['id']), where=where, parts=parts, offers=offered, text=q(d['text']),
+                                   ask=q(f'I posted part {d["next"]}: paste its link' if n > 1 else 'I posted it: paste the link'))
+        return by_post + H['by_hand_folded'].format(byhand=hand) if how == 'automatic' else hand
 
     def speak_page(self, query):
         q, base, row = lambda t: e(str(t)), f'/hand/{self.st.world}', self.st.bridge()
@@ -911,7 +1073,10 @@ def parser(p, common):
     spec = {'inbox': [('--since', dict(type=int)), ('--kind', dict(choices=('summon', 'reply', 'post', 'wiki-page', 'wiki-edit', 'wiki-merge')))],
             'outbox': [('--all', dict(action='store_true'))], 'draft': [('draft', {})],
             'edit': [('draft', {}), ('--text-file', {}), ('--stdin', dict(action='store_true'))],
-            'post': [('draft', {}), ('--object', {})], 'skip': [('draft', {}), ('--reason', dict(required=True))], 'hold': [('draft', {})],
+            'post': [('draft', {}), ('--object', {})],
+            'posted': [('draft', {}), ('--url', dict(action='append', required=True, metavar='LINK',
+                                                     help="the post you made: https://delve.town/profile/<handle>/post/<rkey> or at://; a thread's parts, one --url each, in order"))],
+            'match': [], 'skip': [('draft', {}), ('--reason', dict(required=True))], 'hold': [('draft', {})],
             'unpost': [('draft', {}), ('--reason', dict(required=True))], 'status': [], 'search': [('slug', {})], 'retry': [('uri', {})],
             'reply': [('uri', {}), ('--text-file', dict(required=True)), ('--object', dict(required=True))],
             'log': [('--tail', dict(type=int, default=20))], 'spend': [('--month', dict(metavar='YYYY-MM'))], 'serve': [],
@@ -954,6 +1119,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
         read = lambda p: Path(p).read_text()
         data = {'inbox': lambda: h.inbox(a.since, a.kind), 'outbox': lambda: h.outbox(a.all), 'draft': lambda: h.view(a.draft),
                 'edit': lambda: h.edit(a.draft, sys.stdin.read() if a.stdin else read(a.text_file)), 'post': lambda: h.post(a.draft, object=a.object),
+                'posted': lambda: h.posted(a.draft, a.url), 'match': h.find_posts,
                 'skip': lambda: h.skip(a.draft, a.reason), 'hold': lambda: h.hold(a.draft), 'unpost': lambda: h.unpost(a.draft, a.reason),
                 'status': h.status, 'search': lambda: h.search(a.slug), 'spend': lambda: h.spend(a.month),
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
