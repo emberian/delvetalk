@@ -476,6 +476,12 @@ def refresh(host, opener, journals):
                                'version': version, 'law': stale.pop('law')})
             rows['law'] = done(reply)
             version += reply.get('status') == 'admitted'
+        # A kind's form is its make: re-shaped by the kind itself, the form written and its make laid again in one turn.
+        if '.form' in stale:
+            reply = host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': 'reshape', 'identity': f'refresh-{obj}-form-{version}',
+                               'argument': rec(form=lab(stale.pop('.form')))})
+            rows['.form'] = done(reply)
+            version = standing(host, opener, obj)[0]
         if stale:
             reply = host.send({'op': 'world-propose', 'principal': opener, 'identity': f'refresh-{obj}-kind-{version}',
                                'roots': [{'object': obj, 'version': version}],
@@ -497,10 +503,11 @@ def refresh(host, opener, journals):
 
 
 def carried_fields(host, opener, kind, fields):
-    """`fields` as the carried kind's form names them: a kind/weather carried from before `over` takes the place as
-    `garden` (its make layer was laid from that form, and a kind is shaped once)."""
-    form = (standing(host, opener, kind) or (0, {}))[1].get('.form', '')
-    return [('garden' if name == 'over' and 'over:' not in form and 'garden:' in form else name, value) for name, value in fields]
+    """`fields` as the kind's place offers them (`world-inspect`'s template): a kind/weather whose form was `garden`
+    and is not re-shaped (its form another hand's) takes the place as `garden`."""
+    spell = (host.send({'op': 'world-inspect', 'principal': opener, 'object': kind}).get('templates') or {}).get('place', '')
+    offered = {line.split(':', 1)[0] for line in spell.splitlines()[1:]}
+    return [('garden' if name == 'over' and 'over' not in offered and 'garden' in offered else name, value) for name, value in fields]
 
 
 def listed(host, opener):
