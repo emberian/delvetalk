@@ -141,8 +141,8 @@ class Carry(Reflection):
         new.close()
 
     def test_a_carried_world_counts_its_heights_on_from_the_world_before(self):
-        # The first live carry (v8 to v9) showed "untended since entry 27" in a world at 48, and a carried avatar's
-        # `seen` past the new heights hid its new notes. The carried genesis takes the old head's height + 1, so every
+        # The first live carry (v8 to v9) began its heights again at 1, so a carried avatar's `seen` past the new heights
+        # hid its new notes (and bell/1's tending, then read by entry, named v8's). The carried genesis takes the old head's height + 1, so every
         # height a state holds names an entry of one sequence, across every carry.
         old = journal_entries(self.path)
         head = old[-1]["height"]
@@ -154,8 +154,11 @@ class Carry(Reflection):
         self.assertEqual(new.send(op="world-status")["height"], head + 1)
         planted = self.plant("kim", "after", new)
         self.assertEqual((planted["status"], planted["receipt"]["height"]), ("admitted", head + 2), planted)
+        rained = new.send(op="world-turn", principal="kim", object="garden/bell/2", method="rain", identity="rain-after",
+                          argument=record(text=label("after the carry")))
+        self.assertEqual(rained["status"], "admitted", rained)
         state = new.send(op="world-view", principal="ember", object="garden/bell/2")["state"]
-        self.assertEqual(field(state, "tendedAt")["value"], str(head + 1))  # the height the planting turn read
+        self.assertEqual([field(l, "at")["value"] for l in rows(field(state, "lines"))], [str(rained["receipt"]["height"] - 1)])  # the height the rain read
         listed = [e["height"] for e in new.send(op="world-entries", principal="ember", reverse=True)["entries"]]
         self.assertEqual(listed, list(range(listed[0], head, -1)))  # newest first, down to the carried genesis
         self.assertEqual([e["height"] for e in new.send(op="world-entries", principal="ember", after=head + 1)["entries"]], listed[-2::-1])

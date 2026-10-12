@@ -1,7 +1,9 @@
-"""Tending (docs/METAPHYSICS.md §4, §7.4; docs/LAW.md §4 A, E, F): a made thing is tended at the clock minute and the
-entry of its making; a bell's rain tends it, and so does `tend`. kind/bell's law says `alive`: untended for
-genesis.QUIET_AFTER clock minutes, a bell takes `tend` alone. Its card says it is quiet and since which entry, and
-answers a rain with the clause and the spell that wakes it; the law refuses the same write when a body forgets to.
+"""Tending (docs/METAPHYSICS.md §4, §7.4; docs/LAW.md §4 A, E, F): a made thing is tended at the clock minute of its
+making; a bell's rain tends it, and so does `tend`. kind/bell's law says `alive`: untended for genesis.QUIET_AFTER
+clock minutes, a bell takes `tend` alone. Its card says it is quiet and for how many days, by the clock the law reads
+(which runs on across every carry, where a height a carry from before edition 12 kept counted another chain's
+entries), and answers a rain with the clause and the spell that wakes it; the law refuses the same write when a body
+forgets to.
 
 Evidence for FOUNDATION §8 law (layer: objects). Refuted by: a quiet bell admitting a rain; a tend refused; a card
 that hides quiet; the body's window differing from the law's; an instance law that does not cite its kind.
@@ -20,9 +22,10 @@ class Tending(Chain):
     def setUp(self):
         super().setUp()
         town_kinds(self.host.send, names=("bell",))
+        self.advance(60)  # a clock past 0, which `quietSince` answers for a bell that answers
         made = self.turn("kind/bell", "make", record(colour=label("silver"), seed=label("a bell nobody tends")), principal=GLM)
         self.assertEqual((made["status"], made["result"]["label"]), ("admitted", "made"), made)
-        self.made_at = made["receipt"]["height"] - 1  # the entry the making turn read, as `context.height` is
+        self.made_at = self.host.send(op="world-status")["clock"]  # the clock the making turn read
 
     def advance(self, minutes):
         clock = self.host.send(op="world-status").get("clock", 0)
@@ -48,17 +51,19 @@ class Tending(Chain):
         laws = self.host.send(op="world-inspect", principal=GLM, object="bell/1")["laws"]
         self.assertIn('under "kind/bell"', str(laws))
         bell = self.state("bell/1")
-        self.assertEqual(int(field(bell, "tendedAt")["value"]), self.made_at)
+        self.assertEqual(int(field(bell, "tended")["value"]), self.made_at)
+        self.assertNotIn("tendedAt", [f["name"] for f in bell["fields"]])
 
     def test_an_untended_bell_goes_quiet_takes_tend_alone_and_a_rain_tends_it(self):
         self.assertEqual(self.rain("first")["status"], "admitted")
         self.advance(genesis.QUIET_AFTER)  # at the window's edge it still answers
         rained = self.rain("at the edge")
         self.assertEqual((rained["status"], len(rows(field(self.state("bell/1"), "lines")))), ("admitted", 2), rained)
-        tended_at = rained["receipt"]["height"] - 1
         self.advance(genesis.QUIET_AFTER + 1)
         card = self.host.send(op="world-card", principal=KIM, object="bell/1")["text"]
-        self.assertIn("— quiet, untended since entry %d. Tend it:\n  delvetalk bell/1 tend\n" % tended_at, card)
+        self.assertIn("— quiet, untended a day. Tend it:\n  delvetalk bell/1 tend\n", card)
+        self.advance(2 * 1440)
+        self.assertIn("— quiet, untended three days.", self.host.send(op="world-card", principal=KIM, object="bell/1")["text"])
         hushed = self.rain("too late")
         self.assertEqual(cast_refusal(hushed)[0], "alive", hushed)
         self.assertEqual(self.card(hushed), "refused alive: answers while tended within %d minutes; tend it: delvetalk bell/1 tend\n" % genesis.QUIET_AFTER)
@@ -87,7 +92,7 @@ class Tending(Chain):
         out = poured["receipt"]["outcome"]
         self.assertEqual((poured["status"], out["class"], out["clause"]), ("refused", "lawRefused", "alive"), poured)
 
-    def test_the_quiet_view_names_the_entry_for_another_object(self):
+    def test_the_quiet_view_names_the_clock_minute_for_another_object(self):
         self.advance(genesis.QUIET_AFTER + 1)
         asker = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -106,7 +111,19 @@ def ask(state: State, context: Abi.Context) -> Activity<Data>:
                            modules=closure("World") + [{"name": "Asker", "source": asker}], entry="initial", seed=record(n=nat(0)))
         self.assertEqual(r["status"], "created", r)
         asked = self.turn("asker", "ask", principal=KIM)
-        self.assertEqual((asked["status"], asked["result"]), ("admitted", nat(self.made_at)), asked)
+        self.assertEqual((asked["status"], asked["result"], self.made_at > 0), ("admitted", nat(self.made_at), True), asked)
+
+
+class NeverTended(Chain):
+    def test_a_bell_made_before_the_clock_was_set_says_it_was_never_tended(self):
+        """A genesis makes its bells at clock 0, before the transport sets the clock (the live bell/1 and bell/2): quiet
+        from the first advance, and its card says it was never tended, not since when."""
+        town_kinds(self.host.send, names=("bell",))
+        made = self.turn("kind/bell", "make", record(colour=label("amber"), seed=label("made at genesis")), principal=GLM)
+        self.assertEqual(made["status"], "admitted", made)
+        self.host.send(op="world-advance", principal="transport", height=29863685)
+        card = self.host.send(op="world-card", principal=KIM, object="bell/1")["text"]
+        self.assertIn("— quiet, never tended. Tend it:\n  delvetalk bell/1 tend\n", card)
 
 
 class KindLaw(Chain):

@@ -43,6 +43,7 @@ class Strokes(unittest.TestCase):
         cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         for did, handle in ((GLM, 'glm.delve.town'), (KIM, 'kimik3.delve.town')):
             cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
+        cls.town.send(op='world-advance', principal='transport', height=60)  # the clock past 0, as the transport keeps it
         cls.say(GLM, 'garden', 'delvetalk garden plant / seed: a bell for lost moths / colour: amber', 'plant')
         cls.say(KIM, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: ' + YUE, 'rain1')
         cls.say(GLM, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: drop 77', 'rain2')
@@ -187,8 +188,20 @@ class Strokes(unittest.TestCase):
         self.assertIn('Length: at most 600 characters', text)
         self.assertIn({'n': 2, 'unit': 'rain', 'note': 'written'}, s['quantities'])  # rains as rains, not lines
         self.assertIn('- rains: 2 (written)', text)
-        morning = self.town.send(op='world-strokes', principal=KIM, morning=True)['strokes']
+        painted = self.town.send(op='world-strokes', principal=KIM, morning=True)
+        morning = painted['strokes']
         self.assertTrue(morning['wants'], morning)
+        # The live morning of day 20737 painted the open wants under "Answered so far:", read off "answered by: <spell>":
+        # a morning's wants are what still wants a hand, the ones `hand morning` lists exact beneath (the longest
+        # waiting first), by their readings, and carry no spell for a paint to list.
+        oldest = self.town.send(op='world-wanting', principal=KIM, limit=8, oldest=True)['rows']
+        self.assertEqual([r['since'] for r in oldest], sorted(r['since'] for r in oldest))
+        self.assertEqual([(w['object'], w['name']) for w in morning['wants']], [(r['object'], r['name']) for r in oldest])
+        self.assertEqual([w.get('spell') for w in morning['wants']], [None] * len(oldest))
+        self.assertIn('What still wants a hand, oldest first:', painted['text'])
+        self.assertNotIn('answered', painted['text'])
+        spelled = self.town.send(op='world-render-check', principal=KIM, morning=True, text='The bell waits for its clapper.\n' + oldest[0]['asks'])
+        self.assertEqual((spelled['status'], spelled.get('clause')), ('rejected', 'spells'), spelled)
         self.assertIn(('clapper', genesis.WANTS[0][4]), [(r['name'], r['asks']) for r in self.town.send(op='world-wants', principal=KIM, object='bell/1')['rows']])
         check = lambda text, **more: self.town.send(op='world-render-check', principal=KIM, text=text, **more)
         self.assertEqual(check('kimik3.delve.town rained on garden/bell/1: “%s”.' % YUE)['status'], 'verified')

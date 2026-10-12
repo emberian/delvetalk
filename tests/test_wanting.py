@@ -62,7 +62,7 @@ class Things(Reflection):
 
 
 class Wanting(Things):
-    def test_the_index_newest_first_by_whole_heights_for_whom_may_view(self):
+    def test_the_index_newest_or_oldest_first_by_whole_heights_for_whom_may_view(self):
         # Two wants that one rain makes true at once, a want true where it is placed, one on a private stone.
         self.want("bell", "wet", "new.rains >= 1")
         self.want("bell", "damp", "new.rains >= 1")
@@ -77,6 +77,10 @@ class Wanting(Things):
         self.assertEqual(self.wanting(after=rained, limit=1), ([("bell2", "dry", dry)], False))
         row = self.host.send(op="world-wanting", principal="glm", after=rained)["rows"][0]
         self.assertEqual(row["asks"], "delvetalk bell2 rain / text: again")
+        # `oldest`: what has waited longest first (the morning card's), paged past `after` the other way.
+        self.assertEqual(self.wanting(oldest=True), ([("bell2", "dry", dry), ("bell", "damp", rained), ("bell", "wet", rained)], False))
+        self.assertEqual(self.wanting(oldest=True, limit=1), ([("bell2", "dry", dry)], True))
+        self.assertEqual(self.wanting(oldest=True, after=dry, limit=1), ([("bell", "damp", rained), ("bell", "wet", rained)], False))
         # A want that stops holding leaves; reading writes nothing; a reopen and a snapshot answer the same.
         self.say("bell2", "delvetalk bell2 rain\ntext: one", who="kimi")
         height = self.host.send(op="world-status")["height"]

@@ -35,9 +35,10 @@ import ./Spween.obend as Spween
 # changed only by its owner's reprogram; `presence` who is in it and at which passage; `vars`
 # what its choices set; `left` when each reader last left; `things` what lies in it.
 #
-# A record is tended (`tend`, or its body's own attention: a bell's rain) at a clock minute and an
-# entry (`tended`, `tendedAt`; its kind sets both when it is made). A kind whose law reads
-# `request.clock <= old.tended + N` makes things that go quiet untended: they answer `tend` alone.
+# A record is tended (`tend`, or its body's own attention: a bell's rain) at a clock minute
+# (`tended`; its kind sets it when it is made). A kind whose law reads
+# `request.clock <= old.tended + N` makes things that go quiet untended: they answer `tend` alone,
+# and a card says how long by the same clock, which runs on across every carry.
 #
 # A record that reads words keeps its `policy` (hob's, nobody for none): the commonplace
 # (world/bodies/commonplace.obend) reads words with it.
@@ -78,17 +79,14 @@ record State:
   things: Relations.Relation<Plans.Reference>
   weather: String
   tended: Nat
-  tendedAt: Nat
 type Pending = Rows.Pending
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), pending: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, tendedAt: 0n}
-# A record as edition 9 keeps it (the live town's; a carry lays this package over it, `migrate`):
-# no `pending`. A kept record's lines it has not admitted are its pending ones.
-# A departure as edition 9 kept it: the clock alone (no height; a carried one reads as entry 0).
-record Departure9:
-  who: String
-  at: Nat
-record State9:
+  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), pending: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n}
+# A record as edition 12 keeps it (the live town's; a carry lays this package over it, `migrate`):
+# with `tendedAt`, the entry it was last tended at. A height a carry from before edition 12 kept
+# counts another chain's entries (the live bell/1's "untended since entry 27" was v8's), so tending
+# is read by the clock alone, as the law reads it.
+record State12:
   owner: String
   keeper: String
   keeperHandle: String
@@ -99,6 +97,7 @@ record State9:
   makerHandle: String
   post: String
   lines: Relations.Relation<Line>
+  pending: Relations.Relation<Pending>
   admitted: Relations.Relation<Rows.Admission>
   marks: Relations.Relation<Rows.Mark>
   next: Nat
@@ -109,15 +108,13 @@ record State9:
   requires: Scenes.Guard
   presence: Relations.Relation<Presence>
   vars: Lists.List<Scenes.Var>
-  left: Relations.Relation<Departure9>
+  left: Relations.Relation<Departure>
   things: Relations.Relation<Plans.Reference>
   weather: String
   tended: Nat
   tendedAt: Nat
-def migrate(old: State9) -> State:
-  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: Relations.Relation.rows({items: waiting(old)}), admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: Relations.Relation.rows({items: Lists.map(Relations.rows(old.left), fn(l: Departure9) -> Departure: {who: l.who, at: l.at, entry: 0n})}), things: old.things, weather: old.weather, tended: old.tended, tendedAt: old.tendedAt}
-def waiting(old: State9) -> Lists.List<Pending>:
-  if old.keeper == "" then Lists.List.nil() else Lists.map(Lists.filter(Relations.rows(old.lines), fn(l: Line) -> Bool: Relations.has(old.admitted, {n: l.n}) == false), fn(l: Line) -> Pending: {n: l.n})
+def migrate(old: State12) -> State:
+  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, tended: old.tended}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
 # A body that keeps shorter lines keeps more of them (`relationsWith`); `pending` keeps as many.
 def relations() -> Relations.Decls:
@@ -152,7 +149,7 @@ def act(state: State, input: {verb: String, text: String}, context: Abi.Context)
 # A hand's line is heard by the record's maker when the hand is another's (`heard`).
 def inscribe(state: State, verb: String, text: String, context: Abi.Context) -> Activity<Nat>:
   let line = {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}
-  let written(_) = write {lines: insert line, next: add 1n, tended: set context.clock, tendedAt: set context.height}
+  let written(_) = write {lines: insert line, next: add 1n, tended: set context.clock}
   waits(state, line, context)
 # On a kept record the line waits for its keeper (`pending`); the line retention drops at capacity,
 # the oldest, stops waiting with it.
@@ -171,7 +168,7 @@ def pended(state: State, line: Line, context: Abi.Context) -> Activity<Nat>:
 def inscribed(state: State, line: Line, context: Abi.Context) -> Activity<Nat>:
   let said = Document.text("#{natText(line.n)} is written: {line.text}\n\n")
   match heard(state.maker, context.object, line.verb, context):
-    case _: Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n, tended: context.clock, tendedAt: context.height}), context, 0n, Document.size(said))))
+    case _: Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n, tended: context.clock}), context, 0n, Document.size(said))))
 # How many lines the record keeps (its `relations()`, a body's own).
 def linesKept() -> Nat:
   match Lists.find(relations(), fn(d: Relations.Decl) -> Bool: d.field == "lines"):
@@ -184,8 +181,8 @@ def heard(maker: String, thing: String, verb: String, context: Abi.Context) -> A
   if maker == "" || maker == context.principal then World.Sent.refused({clause: "self"}) else world.send({object: {world: context.world, object: maker}, method: "heard", argument: {thing: thing, verb: verb}})
 # Tending: the clock minute and the entry of this attention, answered with the card.
 def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>:
-  let written(_) = write {tended: set context.clock, tendedAt: set context.height}
-  Card.tell(Card.Replied.done({action: "tend"}), Document.concat(Document.text("Tended at clock {natText(context.clock)}, entry {natText(context.height)}.\n\n"), render(extend(state, {tended: context.clock, tendedAt: context.height}), context)))
+  let written(_) = write {tended: set context.clock}
+  Card.tell(Card.Replied.done({action: "tend"}), Document.concat(Document.text("Tended at clock {natText(context.clock)}, entry {natText(context.height)}.\n\n"), render(extend(state, {tended: context.clock}), context)))
 # The card's lines from a number on, for reading past the first eight.
 def lines(state: State, input: {from: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
   Card.tell(Card.Replied.done({action: "lines"}), renderFrom(state, context, input.from, 0n))
@@ -285,7 +282,7 @@ def madeLine(object: String) -> Document.Document:
   Document.text("Made, at {object}.\n")
 # What is made here tends the record: a garden is tended by its planting.
 def holding<T>(object: String, made: Made, context: Abi.Context, said: String -> Document.Document, as: Made -> T) -> Activity<T>:
-  let written(_) = write {things: insert {world: context.world, object: object}, tended: set context.clock, tendedAt: set context.height}
+  let written(_) = write {things: insert {world: context.world, object: object}, tended: set context.clock}
   Card.tellTo(as(made), context.principal, said(object))
 # A delivery of the rule this record's maker placed on `source` (a body's `made` places it under
 # them): the turn the rule fired, sent by that thing, under the maker. A guest's rule on the same

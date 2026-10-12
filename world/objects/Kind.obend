@@ -130,8 +130,8 @@ def captures(fields: Lists.List<Rows.Field>, context: Abi.Context) -> Card.Captu
 # package's initial(); a kind made by `kinds` takes its own fields from the form. An instance
 # made under a record cites it home, labelled by its last segment. A `spween` field (a room's,
 # handed by the room a block was posted to) is the instance's scene: its passages, start,
-# cooldown and requirements, and not kept among the fields. A thing is made tended: at the clock and the
-# entry of its making.
+# cooldown and requirements, and not kept among the fields. A thing is made tended, at the clock of
+# its making.
 def seedOf(state: State, fields: Lists.List<Rows.Field>, under: String, stack: Stack, context: Abi.Context) -> Data:
   if state.of == "kind" then kindSeed(fields, stack, context) else instanceSeed(state, fields, under, context)
 def instanceSeed(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Data:
@@ -141,9 +141,9 @@ def sceneSeed(state: State, kept: Lists.List<Rows.Field>, under: String, context
     case parsed(p): withScene(state, kept, under, context, p.seed)
     case refused(_): plainSeed(state, kept, under, context)
 def plainSeed(state: State, kept: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Data:
-  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock, tendedAt: context.height}
+  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock}
 def withScene(state: State, kept: Lists.List<Rows.Field>, under: String, context: Abi.Context, scene: Scenes.Seed) -> Data:
-  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock, tendedAt: context.height, start: scene.start, passages: scene.passages, cooldown: scene.cooldown, requires: scene.requires}
+  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock, start: scene.start, passages: scene.passages, cooldown: scene.cooldown, requires: scene.requires}
 def homeDoor(under: String, context: Abi.Context) -> Card.Doorways:
   if under == "" then Card.Doorways.nil() else Card.Doorways.cons({head: {label: lastSegment(under), to: {world: context.world, object: under}, description: "", examples: Lists.List.nil()}, tail: Card.Doorways.nil()})
 def lastSegment(id: String) -> String:

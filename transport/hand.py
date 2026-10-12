@@ -329,7 +329,7 @@ class Hand:
                 raise HandError(f'the morning card of day {day} is drafted already: {i}')
         paint = painted(self.host, self.owner, None, self.sleep, day=day, morning=True)
         why = fell_back(paint)
-        rows = self.host.send({'op': 'world-wanting', 'principal': self.owner, 'limit': 8}).get('rows') or []
+        rows = self.host.send({'op': 'world-wanting', 'principal': self.owner, 'limit': 8, 'oldest': True}).get('rows') or []
         wants = ''.join(f"{r['object']}: {r.get('reading') or r['name']}\n  {r['asks']}\n" for r in rows)
         text = (paint.get('text') or '\n'.join(chronicled['lines'])) + ('\n\nWhat wants a hand, oldest first:\n' + wants if wants else '')
         where, name = self.where(topic, reply_to), f'{int(self.clock())}-morning-{day}'

@@ -45,14 +45,14 @@ record State:
   lines: Relations.Relation<Rows.Line>
   next: Nat
   tended: Nat
-  tendedAt: Nat
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", name: "", description: "", holder: Plans.nobody(), holderHandle: "", location: Plans.nobody(), offer: Offer.none({}), copyable: true, circle: "", lines: Relations.empty(), next: 1n, tended: 0n, tendedAt: 0n}
+  {owner: "", keeper: "", keeperHandle: "", name: "", description: "", holder: Plans.nobody(), holderHandle: "", location: Plans.nobody(), offer: Offer.none({}), copyable: true, circle: "", lines: Relations.empty(), next: 1n, tended: 0n}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: 32n})
 want claimed "nothing surrounds it yet": new.keeper == "" asks delvetalk {request.object} inspirit
-# A thing as edition 8 kept it: no lines yet, never tended.
-record State8:
+# A thing as edition 12 keeps it (a carry lays this package over it, `migrate`): with `tendedAt`,
+# an entry that a carry from before edition 12 left counting another chain's; tending is the clock's.
+record State12:
   owner: String
   keeper: String
   keeperHandle: String
@@ -64,14 +64,18 @@ record State8:
   offer: Offer
   copyable: Bool
   circle: String
-def migrate(old: State8) -> State:
-  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, name: old.name, description: old.description, holder: old.holder, holderHandle: old.holderHandle, location: old.location, offer: old.offer, copyable: old.copyable, circle: old.circle, lines: Relations.empty(), next: 1n, tended: 0n, tendedAt: 0n}
+  lines: Relations.Relation<Rows.Line>
+  next: Nat
+  tended: Nat
+  tendedAt: Nat
+def migrate(old: State12) -> State:
+  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, name: old.name, description: old.description, holder: old.holder, holderHandle: old.holderHandle, location: old.location, offer: old.offer, copyable: old.copyable, circle: old.circle, lines: old.lines, next: old.next, tended: old.tended}
 def lineKey(line: Rows.Line) -> {author: String, n: Nat}:
   {author: line.author, n: line.n}
 # A grown verb used on the thing (the host runs `act` for a row of its verb table): a gesture, one
 # line tagged with the verb, and the thing tended; its card shows the newest three.
 def act(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:
-  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: input.verb, text: input.text, at: context.height, n: state.next}, next: add 1n, tended: set context.clock, tendedAt: set context.height}
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: input.verb, text: input.text, at: context.height, n: state.next}, next: add 1n, tended: set context.clock}
   match heard(state, input.verb, context):
     case _: actTold(state, input, context)
 def actTold(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:

@@ -622,7 +622,7 @@ class Speak(unittest.TestCase):
         _, d = self.hand.draft(got['drafted'])
         self.assertTrue(got['painted'])
         self.assertTrue(d['text'].startswith(paint + '\n\nWhat wants a hand, oldest first:\n'), d['text'])
-        first = self.town.send(op='world-wanting', principal=self.hand.owner, limit=8)['rows'][0]
+        first = self.town.send(op='world-wanting', principal=self.hand.owner, limit=8, oldest=True)['rows'][0]  # the longest waiting
         self.assertIn('%s: %s\n  %s' % (first['object'], first.get('reading') or first['name'], first['asks']), d['text'])
         self.assertEqual((d['speak'], d['posted'], d['topic']), ({'morning': got['day']}, False, 'welcome'))
         with self.assertRaises(hand.HandError):

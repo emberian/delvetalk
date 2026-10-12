@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -1760,7 +1760,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      package's state gives what it holds: `head` (else `name`), `fields` (the kind's form values; beyond OVERHAUL's list,
      because a bell's seed is its maker's words and no other stroke holds it), `kind` and that kind's `voice`, `maker`,
      `keeper`, `owner` (handles, the state's or the registry's), `made` (state `made`, else the creating entry's
-     height), `tended` (`tendedAt`), relation `counts` (`lines` and `marks` always), the eight newest `lines` with
+     height), `tended` (its clock minute, 5.200), relation `counts` (`lines` and `marks` always), the eight newest `lines` with
      `admitted`/`pending` under a keeper and a thing's `description` as its keeper's `inspirit` line, `marks`, `verbs`
      (the card's spell forms as one-line spells, the kind's first, then each of `Object.verbs` with its grower and reading), `laws` (a clause `under "K"`
      stands as K's clauses), `doors` (`cites`), `around` (`location`, else the longest prefix of the id that is an
@@ -2134,7 +2134,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `test_root_console`.
 182. **A carried world's heights continue the world before (host31; the first live carry's "untended since entry 27" in
    a world at 48; replay edition 12).** A `carried` genesis is sealed at the old head's height + 1 (`Carry.carryGenesis`,
-   `Snapshot.genesisEntry (height)`, `Journal.sealEntry (first)`), so a height a state holds (a bell's `tendedAt`, an
+   `Snapshot.genesisEntry (height)`, `Journal.sealEntry (first)`), so a height a state holds (an
    avatar's `seen`, a line's `at`) names an entry of one sequence across every carry, a carried avatar's new notes
    show at once, and the transport's height cursors (`publications.after`, `awaiting`) keep their meaning (the
    carry's cursor reset is gone). `Entries.base` is the heights before a journal's first entry; an index is a height
@@ -2143,7 +2143,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    1, or for a `carried` genesis of edition 12 on its `carriedFrom.height` + 1 (an earlier carry's genesis is at 1).
    Reads walk `[base:count]`; `installGenesis` starts the world at `base`; `root-edit` takes and prints heights as the
    journal names them (`baseOf`); the journal-full bound counts this journal's entries. Fork geneses stay at 1. Test:
-   `test_carry.Carry.test_a_carried_world_counts_its_heights_on_from_the_world_before` (genesis, turns, a body's
+   `test_carry.Carry.test_a_carried_world_counts_its_heights_on_from_the_world_before` (genesis, turns, a line's
    stored height, `world-entries` both ways, `root-edit drop`, a second carry, every old receipt by its slug).
 183. **A paint that fell back says why (host31; the v9 deploy check's `hand morning`, `painted: False`).**
    `transport/host.py` `painted` answers `{text}` or the host's reason as `world-render` gave it, `{reason, clause?,
@@ -2282,6 +2282,38 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `templates`, 5.189), not the text. Tests: `test_genesis.Reshape` (a town whose weather kind was made with
    `garden:`: form refreshed, the place offered with `over`, the weather placed `refreshed` and raining on bell/1
    the day someone entered the porch, a second refresh all `current`; a kind with a layer over its make refused).
+200. **Tending is read by the clock (host32; §7 2 (a), the live bell/1's "untended since entry 27").** A record or thing
+   kept `tendedAt`, the entry it was last tended at, beside `tended`, the clock minute, and the bell's card said "untended
+   since entry N" while its law and want read the clock. v8's 27 survived the v8 to v9 carry, which began heights again at
+   1 (edition 10), into a sequence where 27 is a v9 clock advance; no stored height says which chain it counts (Bend has
+   no height type, and the rows a migrate moved match nothing at the restart), so no carry can re-base one. The clock
+   runs on across every carry: `tendedAt` is gone (Record's and Thing's `State`, Kind's make seeds, every write), the
+   bell says "quiet, untended a day" / "untended three days" (`untended`, whole clock days) or "quiet, never tended" for
+   one tended at clock 0 (a genesis makes its things before the transport sets the clock: the live bell/1 and bell/2),
+   `quietSince` answers the clock minute, and the strokes' `tended` is the clock minute (0: never). Record's and Thing's
+   `migrate` read the edition-12 shape (`State12`) and drop the field; their edition-9 and edition-8 readers are gone
+   (no world holds those shapes since v10). The carry of the newest live backup (delvetalk-20261012T160615Z, v10 at 468)
+   moves 22 objects, 9 through `migrate` (bell/1, bell/2, commonplace, porch, porch/lamp, weather, porch/goblet,
+   porch/ring, porch/gemstone), and bell/1's card then says "quiet, never tended". What other residue of v8's chain the
+   live town holds (read against v9's genesis): the commonplace's line 1 (`at` 58) and its admission (`at` 59), which no
+   card or chronicle of v10 reads (a day's lines are this journal's heights), and the wanting index's `since` of the v8
+   wants (26 to 34), which orders "What wants a hand" alone. Tests: `test_tending` (a day, three days, never tended; the
+   view's clock minute), `test_carry.Carry.test_a_carried_world_counts_its_heights_on_from_the_world_before` (a rain's
+   `at`), `test_enchant` (the town's clock set before its making), `test_receive`.
+201. **The morning's wants are what still wants a hand, oldest first (host32; §7 2 (b), `hand morning` of day 20737).**
+   The live morning painted the eight open wants under "Answered so far:": the day's strokes listed each "answered by:
+   <spell>", and day 20737 held nothing else (it lies in v9's journal), so the painter read them as answered.
+   `wanting` (and `world-wanting`) takes `oldest`: the longest waiting first, paged past `after` the other way; the
+   morning's strokes (`wantsOfDay`) read it as `hand morning` lists them exact beneath ("What wants a hand, oldest
+   first" said so of a newest-first list), titled "What still wants a hand, oldest first", by reading and without
+   spells, so the `spells` clause refuses a morning paint that names one (the contract's "no spell"). A thing's want
+   reads "the spell it asks for: …". Tests: `test_enchant.Strokes.test_the_day_and_the_morning`,
+   `test_wanting` (`oldest`, paged), `test_hand` (the exact list's first row the longest waiting).
+202. **carry-check says when the image moves objects (host32).** A candidate whose library replays the backup but whose
+   packages or bodies differ (5.200's Record) said plain green, and a restart in place keeps every object at the code its
+   journal sealed. carry-check reads each world line's `moved`: "green, moving: the deploy must carry: … the image moves
+   N objects (…), which a restart in place keeps at the code they had; it carries". Test:
+   `test_carry_check.CarryCheck.test_carry_check_says_a_deploy_carries_when_the_image_moves_an_object`.
 
 ## 6. Gotchas
 
@@ -2342,10 +2374,9 @@ failing input as a test first, merging foundation before each commit:
    form, shaped once from v8's form, still takes `garden`. `genesis.carried_fields` reads the text, so it kept
    `over: porch` and the spell misfit. Fixed by 5.199 (lane/refresh-fix) and deployed: v9 carried into v10 at 446,
    every refresh row `refreshed`/`current`, kind/errand's `made` the opener's `genesis-kind-errand` (DEPLOY "It
-   carries"). Two things the live checks found, open: (a) bell/1 says "untended since entry 27", v8's height: v9's
-   heights began again at 1 (edition 10), so a height a v8-era state holds names v8's chain, not this one (v9's 27 is a
-   clock advance); re-base such stored heights or say which chain they count. (b) `hand morning` (day 20737, painted)
-   lists under "Answered so far:" the same eight wants its "What wants a hand" section lists as open.
+   carries"). The two things the live checks found are fixed, undeployed: (a) bell/1's "untended since entry 27"
+   (v8's height) by tending read by the clock, 5.200; (b) `hand morning`'s "Answered so far:" by the morning's wants
+   read as still wanted, 5.201. Both move objects (Record, Thing, Kind, the bell's body): the deploy carries (5.202).
 3. **`shownSpell` scans for `did:` tokens** (5.181): a `fired` row keeps the filled spell, not its holes, so a DID the
    speaker typed is shown by handle too. Keep the rule's template and its fills on the row (edition 12 is undeployed:
    it can ride it) and show the fills by handle; delete the scan.
