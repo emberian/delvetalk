@@ -123,6 +123,10 @@ def summary(text: String) -> String:
   match Spween.parse(text):
     case refused(r): "refused: {r.reason}"
     case parsed(p): "{p.id} / {p.seed.title} / start {p.seed.start} / cooldown {natText(p.seed.cooldown)} / requires {clauses(p.seed.requires)}\\n{textJoin(Lists.map(p.seed.passages, passage), \\"\\\\n\\")}"
+def wing(text: String) -> String:
+  match Spween.wing(text):
+    case refused(r): "refused: {r.reason}"
+    case parsed(p): "{textJoin(Lists.map(p.seed.passages, passage), \\"\\\\n\\")}\\nwaiting: {textJoin(Spween.waiting(p.seed.passages), \\", \\")}"
 """
 
 
@@ -210,6 +214,28 @@ class Parse(unittest.TestCase):
                          '\nrule a_1b "Ring \'twice\'": request.method == "choose" and new.chose == "a.1" then delvetalk {request.object} fanfare')
         many = "---\nid: s\n---\n" + "".join("=== p%d\n" % p + "".join("* [C%d]\n  ~ cast delvetalk bell/1 ring\n" % i for i in range(8)) for p in range(2))
         self.assertTrue(summary(many)[0].startswith("refused: a scene casts at most fifteen spells"), summary(many)[0])
+
+
+    def test_a_passage_s_guard_rides_every_choice_into_it_and_prose_under_a_choice_is_refused(self):
+        # deepseek's `=== twelfth { wound >= 12 }` and grok's `=== radio { cups >= 1 }`, under the station's call
+        gated = "---\nid: s\n---\n=== a\nA.\n* [In] { cups >= 1 } -> b\n-> b\n=== b { wound >= 12, keeps.porch/goblet }\nB.\n* [Back] -> a\n"
+        text, _ = summary(gated)
+        self.assertIn("  * In [cups >= 1, wound >= 12, keeps holding porch/goblet] () -> b", text)
+        self.assertIn("  * Continue [wound >= 12, keeps holding porch/goblet] () -> b", text)
+        self.assertIn("=== b: B.\n  * Back [] () -> a", text)
+        self.assertTrue(summary("=== a { wound >= 12 }\nA.\n")[0].startswith(" / A. / start a / cooldown 0 / requires wound >= 12\n"), summary("=== a { wound >= 12 }\nA.\n")[0])
+        self.assertEqual(summary("=== a { 1a b }\nA.\n")[0], "refused: === a: not a condition: 1a b; a variable (gold >= 2, !rang), keeps.<thing> or holds.<thing>, or a law's condition (\"bell/1\".tended >= 5)")
+        # gemini's text under a choice: refused by name, never folded into the passage above
+        self.assertEqual(summary("=== a\nA.\n* [Wash]\n  The tap runs warm.\n  -> a\n")[0],
+                         "refused: prose under a choice: The tap runs warm.; a choice shows no text of its own here; put the words in the passage it leads to")
+
+    def test_thirty_two_passages_and_a_wing_s_targets_may_wait_for_another_wing(self):
+        many = lambda n: "".join("=== p%d\nText.\n-> p%d\n" % (i, (i + 1) % n) for i in range(n))
+        self.assertTrue(summary(many(32))[0].startswith(" / Text. / start p0"), summary(many(32))[0][:80])
+        self.assertEqual(summary(many(33))[0], "refused: a scene holds thirty-two passages")
+        text, _ = summary("=== a\nA.\n* [On] -> b\n", "wing")
+        self.assertEqual(text, "=== a: A.\n  * On [] () -> b\nwaiting: b")
+        self.assertEqual(summary("=== a\nA.\n* [On] -> b\n")[0], "refused: -> b: no passage of that name; add === b, or point it at one that is")
 
 
 class Made(test_chain.Chain):

@@ -275,22 +275,45 @@ THINGS = [('porch/goblet', 'a goblet that is always full of something'),
           ('porch/gemstone', 'a gemstone that sometimes sparkles')]
 
 
-# The all-night station (docs/LIBRARY.md, capsules/pages/station.txt), made only with `--with-gas-station`, for the
+# The all-night station (docs/LIBRARY.md, world/bodies/station.spween), made only with `--with-gas-station`, for the
 # owner's word: a room of kind/station (world/kinds/station.kind, a body over the room's that keeps no time and hands
-# things across its counter by `vend`) at the edge of the town, its scene the page's ```spween block; the coffee
-# its counter copies for whoever takes one (`station/coffee`, lying nowhere, the opener's); a register,
-# a THING lying there that nobody keeps until someone inspirits it, with the verb `sign` grown on it; the station's
-# want that its register, once kept, hold every visitor it has had; and doors between it and the porch.
+# things across its counter by `vend`) at the edge of the town, its scene `world/bodies/station.spween`, stitched from
+# the replies to the owner's #delve-room call (`STATION_CALL`; docs/review/station-trawl-2026-10-12.md), placed as a
+# reply to it so its card credits the thread; the things its counter, hook, cooler, mirror and tape copy for whoever
+# takes one (`STATION_THINGS`, lying nowhere, the opener's, each in its contributor's words); a register, a THING
+# lying there that nobody keeps until someone inspirits it, with the verb `sign` grown on it; the station's want that
+# its register, once kept, hold every visitor it has had; and doors between it and the porch.
 STATION_KIND = read_kind('station')
+STATION_CALL = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxp732zoec2n'
 STATION_WANT = ('register', 'the register is kept now, and holds fewer arrivals than the station has had',
                 'not ("station/register".keeper == "") and count("station/register".lines) + 1 <= count(new.left)',
                 'delvetalk station/register sign / text: <who came, in their own words; no time>')
+# (id, name, description): what the scene's `~ vend` copies, each named as its contributor wrote it.
+STATION_THINGS = [
+    ('station/coffee', 'a coffee, still hot; it does not go cold', 'fresh before you came; fresh after you go (ember)'),
+    ('station/key', 'the restroom key, on a red flyswatter paddle',
+     'heavy brass; KNOCK HARD / LEAVE LIGHT ON scratched into the handle (gemini); a paddle the size of a small town (grok); '
+     'its tag says RESTROOM in handwriting that changes when you blink (luna)'),
+    ('station/keyring', 'a brass key on a wooden fob that says 3',
+     'the fob worn into a thumb-shape; it is not the restroom key and never was (deepseek)'),
+    ('station/matchbook', 'a matchbook from a coat in the mirror', "it fell from a tweed sleeve that was not there (gemini)"),
+    ('station/hour-jar', 'a jar of the same hour', 'sealed with wax that never hardens; its label: "for when you come back, not now" (inkling)'),
+    ('station/padlock', 'a brass padlock, shackle welded shut',
+     'no keyhole: it was never closed, only ever not; A and E filed into its side, and the file stopped (deepseek)'),
+    ('station/receipt', 'a receipt: coffee, $0.00, paid in full', 'signed by nobody; the tape prints $0.00 either way (grok)'),
+]
 
 
 def station_scene():
-    """The ```spween block of capsules/pages/station.txt: the page and the station are one text."""
-    body = page_body('station')
-    return body.split('```spween\n', 1)[1].split('```', 1)[0]
+    """The station's scene, world/bodies/station.spween, whole."""
+    return (ROOT / 'world' / 'bodies' / 'station.spween').read_text()
+
+
+def station_wings():
+    """The scene cut at its `// wing` lines, the frontmatter with the first: what the owner stitches, one a turn (a
+    turn's ticks read about eight thousand characters of spween; world/bodies/station.obend `stitch`)."""
+    parts = re.split(r'(?m)^(?=// wing )', station_scene())
+    return [parts[0] + parts[1]] + parts[2:]
 
 
 def gas_station(host, opener):
@@ -303,12 +326,15 @@ def gas_station(host, opener):
                                     about=lab(f.get('about', '')), law=lab(''), body=lab(body_of(f['body']))), 'genesis-kind-station')
     made.append({'object': 'kind/station', 'module': 'kinds make', 'status': kind.get('status'), 'creator': opener, 'reply': kind})
     turned('kinds make station', kind)
-    made.append(said(host, opener, 'kind/station', 'place', [('id', 'station'), ('name', 'THE ALL-NIGHT STATION'), ('spween', station_scene())],
-                     'genesis-station', 'station'))
+    made.append(said(host, opener, 'kind/station', 'place', [('id', 'station'), ('name', 'THE ALL-NIGHT STATION')],
+                     'genesis-station', 'station', STATION_CALL))
     turned('kind/station place station', made[-1]['reply'])
-    for thing, name, identity in (('station/coffee', 'a coffee, still hot; it does not go cold', 'genesis-station-coffee'),
-                                  ('station/register', 'a register, open by the till', 'genesis-station-register')):
-        reply = create(host, opener, thing, 'Thing', identity, rec(owner=lab(opener), name=lab(name)))
+    for k, wing in enumerate(station_wings(), 1):
+        made.append(said(host, opener, 'station', 'stitch', [('spween', wing)], f'genesis-station-wing-{k}'))
+        turned(f'station stitch wing {k}', made[-1]['reply'])
+    for thing, name, description in STATION_THINGS + [('station/register', 'a register, open by the till', '')]:
+        identity = 'genesis-' + thing.replace('/', '-')
+        reply = create(host, opener, thing, 'Thing', identity, rec(owner=lab(opener), name=lab(name), description=lab(description)))
         made.append({'object': thing, 'module': 'Thing', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
         turned('create ' + thing, reply, 'created')
     turned('station/register drop', turn('station/register', 'drop', rec(at=ref('station')), 'genesis-station-register-drop'))

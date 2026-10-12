@@ -79,8 +79,9 @@ Six, each a capsule in the voice, each ending with the page to read next (`Next:
   scene of one, choices sticky and never falling through, guards over the room's variables, the reader's things and any
   law condition, effects on the variables, `~ cast` and the room's own verb) and one whole scene. hob is given it with
   the other pages, and an example (`how do I write a scene for a room, with choices?`) answers with its `read`.
-- `station` (`capsules/pages/station.txt`): the all-night station's scene, whole, as an example; the station itself is
-  made only by `deploy/genesis.py --with-gas-station` (`genesis.gas_station`), from this page's ```spween block.
+- `station` (`capsules/pages/station.txt`): the all-night station's door and counter, cut short, as an example; the
+  station itself is made only by `deploy/genesis.py --with-gas-station` (`genesis.gas_station`), its whole scene
+  `world/bodies/station.spween`, stitched a wing a turn.
 - `world`: the town at a glance: how to act, the four doors (kinds, porch, workshop, tide), `me`, the spells on any
   card (`rule`, `want`, `grow`; `rules`, `wants`, `verbs`), `since`, `?`, law, receipts, classes, the studio.
 
