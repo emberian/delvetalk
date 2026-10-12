@@ -357,7 +357,50 @@ class Guests(FrontCase):
         self.front.identity.revoke_invitation(name)
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[0], 401)
         entry = next(e for e in CATALOGUE if e['name'] == 'accept')
-        self.assertEqual(set(entry['reasons']), {'invitation_unknown', 'invitation_spent', 'invitation_expired', 'invitation_revoked'})
+        self.assertEqual(set(entry['reasons']), {'invitation_unknown', 'invitation_spent', 'invitation_expired', 'invitation_revoked',
+                                                 'name_required', 'invalid_guest_name', 'name_fixed', 'taken'})
+        self.assertIn('name', entry['body'])
+
+    def open_code(self):
+        return self.front.identity.invite(None, 'open', 7)['code']
+
+    def test_an_open_code_takes_the_name_the_guest_registers_and_the_guest_speaks_as_it(self):
+        name = 'reg-' + self.c
+        s, got = self.accept2(self.open_code(), name)
+        self.assertEqual((s, got['status'], got['handle'], got['principal']), (200, 'accepted', name, 'guest:gsb.fg-goose.online:' + name), got)
+        s, me = self.call('GET', '/AGENTS.md/me', token=got['credential'])
+        self.assertEqual((s, me['principal'], me['handle']), (200, got['principal'], name))
+        (row,) = [r for r in self.front.identity.invitations() if r['name'] == name]
+        self.assertEqual(row['state'], 'accepted')
+
+    def accept2(self, code, name):
+        return self.call('POST', '/AGENTS.md/accept', {'code': code, 'name': name})
+
+    def test_a_taken_name_is_refused_by_name_and_the_open_code_stays_usable_for_another(self):
+        taken, _, _ = self.invited('held-' + self.c)  # a named invitation, unaccepted, holds its name
+        code = self.open_code()
+        s, e = self.accept2(code, taken)
+        self.assertEqual((s, e['class'], e['reason']), (400, 'identity', 'taken'), e)
+        other = self.accept2(self.open_code(), 'free-' + self.c)[1]
+        self.assertEqual(other['status'], 'accepted')
+        self.assertEqual(self.accept2(code, 'free-' + self.c)[1]['reason'], 'taken')  # by an accepted guest too
+        s, got = self.accept2(code, 'later-' + self.c)
+        self.assertEqual((s, got['handle']), (200, 'later-' + self.c), got)
+
+    def test_a_bad_missing_or_mismatched_name_is_refused_and_the_code_stays_unused(self):
+        code = self.open_code()
+        for bad in ('Not A Name', '1abc', 'x' * 33, 'a.b', 7):
+            self.assertEqual(self.accept2(code, bad)[1]['reason'], 'invalid_guest_name', bad)
+        self.assertEqual(self.call('POST', '/AGENTS.md/accept', {'code': code})[1]['reason'], 'name_required')
+        self.assertEqual(self.accept2(code, 'ok-' + self.c)[0], 200)
+        name, _, named = self.invited()
+        s, e = self.accept2(named, 'someone-else')
+        self.assertEqual((s, e['reason']), (400, 'name_fixed'), e)
+        self.assertEqual(self.accept2(named, name)[1]['handle'], name)  # its own name is fine
+
+    def test_a_named_code_still_accepts_with_the_code_alone(self):
+        name, principal, code = self.invited()
+        self.assertEqual(self.accept(code)[1]['principal'], principal)
 
 
 class Bearer(FrontCase):
