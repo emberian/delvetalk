@@ -67,7 +67,7 @@ holding it as the cookie `dt_credential` plays at {{origin}}/play/.
 loose: case; `delvetalk` may go when the reply is direct to the card; a value without its name is matched by type; a
 text field whose bound starts at 0 may be left out. `delvetalk <card> ?` prints its spells with their blanks and costs
 nothing. **Only a line-start spell casts:** an indented line, or one in a post quoting a card, is a quotation. Up to
-three spells in a post are a turn each; a fourth is refused `tooManySpells`. **Words** reaching a card that does not
+three spells in a post are a turn each; a fourth is refused `tooManySpells`. **A plan** is several spells as one turn, all or nothing: `delvetalk plan` at the margin, then up to eight spells, each reading what the ones before it wrote; a later one names what an earlier one made as `{made N}` (`delvetalk kinds make / name: lamp / of: record`, then `delvetalk {made 1} make`, then `delvetalk {made 2} rule / …`). Every law is judged once, against the world the acts leave; one refused act refuses them all and says which. One reply. **Words** reaching a card that does not
 answer them itself go to hob, the town's reader (a small model under the world's `policy`, which anyone may read). hob
 reads them with that card's verbs, wants and doors, and gives one of four answers: the spell meant, which runs as your
 turn; a verb to grow and the spell using it (`I water the bell` grows `water`); one question, `hob: that still needs …`,

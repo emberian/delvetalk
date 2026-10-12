@@ -22,6 +22,8 @@ def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
 /-- Spells one interpretation answers as `proposals` (MENU §2.2: the prompt asks for at most three). -/
 def spellsPerReply : Nat := 3
+/-- Acts one plan carries (`Spell.plan`, `runPlan`): one turn, judged once at its commit. -/
+def planActs : Nat := 8
 /-- The characters of a card any reader is shown: `world-card`, a question's answer, the model's copy (docs/FLEX.md §2, docs/AGENTS-API.md). -/
 def cardShownChars : Nat := 1400
 /-- The mentions of one post that are addressed, in its order (the bridge turns each on the mentioned avatar); the

@@ -600,7 +600,7 @@
   "badSpell": {
    "transient": false,
    "hint": "source",
-   "means": "the reply is not a spell the card hears; `clause` says which part (otherCard, noAction, noAvatar, unknownField, duplicateField, missingField, badValue, fixed, unclosedBlock, quotation, tooManySpells, unknownKind, noBody, unknownLaw, noLaw, lawClash, notYours, opener; unknownKind to notYours are become's, adopt's and lend's, opener a moderation power cast by another than the world's opener), `reason` says why, and `hint` is the spell with its blanks, to resend"
+   "means": "the reply is not a spell the card hears; `clause` says which part (otherCard, noAction, noAvatar, unknownField, duplicateField, missingField, badValue, fixed, unclosedBlock, quotation, tooManySpells, unknownKind, noBody, unknownLaw, noLaw, lawClash, notYours, opener, tooManyActs, hole, planWaits, notInPlan, notMade, codeTwice; unknownKind to notYours are become's, adopt's and lend's, opener a moderation power cast by another than the world's opener, tooManyActs to codeTwice a plan's: past its acts, a `{made N}` naming nothing made before it, an act that would wait, a power, a host spell on a thing it made, code given twice), `reason` says why, and `hint` is the spell with its blanks, to resend"
   },
   "quota": {
    "transient": true,
