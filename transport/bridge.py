@@ -316,7 +316,8 @@ def would_line(t, handles=None):
     if outcome.get('tag') == 'suspended' or t.get('status') == 'suspended':
         return 'would wait for hob to read it; try the spell hob gives'
     root = turn_root(t['receipt'], t.get('object'))
-    return f"would be admitted {card_name(root['object'], handles)}" + (f" v{root['version']}" if root.get('version') is not None else '')
+    name = root.get('object') or t.get('object')  # a delivery answered by a receipt already bound reads and writes nothing here
+    return 'would be admitted' + (f' {card_name(name, handles)}' if name else '') + (f" v{root['version']}" if root.get('version') is not None else '')
 
 
 def preview_text(reply, handles=None):
@@ -336,7 +337,14 @@ def preview_text(reply, handles=None):
         out.append(would_line(t, handles))
         if t.get('inPublic') is not False and (t['receipt'].get('outcome') or {}).get('tag') not in ('refused', 'suspended'):
             out += [line for line in t.get('revealed') or []] + [o['text'].rstrip('\n') for o in t.get('offers') or []]
-    out += ['then ' + would_line(t, handles) for t in (reply.get('delivered') or []) + (reply.get('resumed') or []) if 'receipt' in t]
+    # What the host would settle in the same write, each receipt once: a delivery answered again with a receipt already
+    # bound (its identity's) did one thing, however often the settling pass met it.
+    settled = set()
+    for t in (reply.get('delivered') or []) + (reply.get('resumed') or []):
+        key = (t.get('receipt') or {}).get('hash')
+        if 'receipt' in t and (key is None or key not in settled):
+            settled.add(key)
+            out.append('then ' + would_line(t, handles))
     later = reply.get('unresolved') or {}
     if later.get('pending') or later.get('suspended'):
         out.append(f"left for later, not foreseen: {later.get('pending', 0)} sends, {later.get('suspended', 0)} waiting on hob")
@@ -686,6 +694,14 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     return {'turns': done, 'failed': failed, **({'recorded': recorded} if recorded else {}), **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
 
 
+def delve_observer(st, since):
+    """The observer of a delve.town world: its posts, and residents' request records only when the config's `requests`
+    is on (the poller reads every repository the PDS lists; it is the owner's to start) and the posts are not fixtures."""
+    from transport.requests import Poller
+    client = Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else http_transport)
+    return Observer(st, client, since, Poller(st, client) if st.config.requests and not st.config.delve_mock else None)
+
+
 def command(st, a, out):
     """`bridge`: the world's bridge row says what it observes (delve.town, or a channel of the owner's Zulip, whose drafts
     it then posts itself); one step with `--once`, else a step every `poll` seconds."""
@@ -697,9 +713,7 @@ def command(st, a, out):
         observer = zulip.ZulipObserver(st, client, row['channel'], since, row.get('topic'))
         after = lambda: zulip.post_drafts(st, host, client)
     else:
-        from transport.requests import Poller
-        client = Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else http_transport)
-        observer, after = Observer(st, client, since, None if st.config.delve_mock else Poller(st, client)), dict
+        observer, after = delve_observer(st, since), dict
     step = lambda: out.write(canonical({**run(st, host, observer, now=a.now), **after()}) + '\n') and out.flush()
     try:
         step() if a.once else st.daemon('bridge', step)

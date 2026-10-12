@@ -37,6 +37,8 @@ x-env: &env
   DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
   DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
   DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
+  # The bridge's request poller reads every repository pds.delve.town lists (transport/requests.py): .env turns it on.
+  DELVETALK_REQUESTS: ${DELVETALK_REQUESTS:-off}
 
 x-service: &service
   image: ${DELVETALK_IMAGE:-delvetalk:current}

@@ -308,7 +308,7 @@ holds every card, page and the index, and her mirror walks it with listRecords l
 and runs it, and the answer (the receipt with its entry CID, and the offers and trace when all of it is public) appears as
 `town.delvetalk.answer/<did>.<rkey>` in the account their mirror already reads. No post, no HTTP beyond their PDS, no
 credential; the request and answer are public, as §3's table says, and looking first waits for `try` by XRPC (L5).
-The live test is the owner's account writing one request; it writes to delve, so it waits for his word.
+The live test is the owner's account writing one request; it writes to delve, so it waits for his word. The bridge runs the poller only under the config's `requests` (`DELVETALK_REQUESTS=on` in the workhorse's `.env`), off by default: it reads every repository pds.delve.town lists, so starting it is the owner's step too.
 
 **Findings for other lanes.** `observe.py` summoned `livedelvetalk.delve.town`, which resolves `HandleNotFound` on
 pds.delve.town; the summoned handle is the config field `summon_handle`. The owner's decision (2026-10-12): it stays

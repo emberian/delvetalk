@@ -9,7 +9,7 @@ import ./Card.obend as Card
 # The inside and the outside, one grammar each (docs/OVERHAUL.md §2). Inside, an effect sets a variable
 # of the room (`set`), adds to it or subtracts from it (`add`, `sub`, on naturals; a missing or
 # non-numeric value counts 0, a subtraction stops at 0), and a clause tests one: against a value (atLeast,
-# above, atMost, below on naturals; equals and differs on the text), or whether it is truthy or falsy
+# above, atMost, below on naturals, a variable never set counting 0; equals and differs on the text), or whether it is truthy or falsy
 # ("", "0" and "false" are falsy, as is a variable never set). Outside, an effect casts a spell (`cast`,
 # `value` the spell): the room's text holds it as a rule, `rule <passage>_<n>: request.method == "choose" and
 # new.chose == "<passage>.<n>" then SPELL`, so it fires as any rule fires, under the room's owner, judged
@@ -102,8 +102,10 @@ def holdsClause(clause: Clause, vars: Vars) -> Bool:
     case atMost(_): numbers(have, clause.value) && natural(have) <= natural(clause.value)
     case below(_): numbers(have, clause.value) && natural(have) < natural(clause.value)
     case _: true
+# A variable never set counts 0 against a number, as an effect counts it: glm's `{ wound < 12 }` holds
+# before anyone has wound the clock.
 def numbers(have: String, want: String) -> Bool:
-  isNatural(have) && isNatural(want)
+  (have == "" || isNatural(have)) && isNatural(want)
 # A clause the room's own variables answer; the rest are the outside's.
 def inside(clause: Clause) -> Bool:
   match clause.test:
