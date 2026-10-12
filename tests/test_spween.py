@@ -163,7 +163,7 @@ The goblet's keeper is the only one the rope tells about it.
 
 
 class Parse(unittest.TestCase):
-    def test_weights_unknown_categories_stray_effects_dangling_targets_and_long_passages_are_refused_by_name(self):
+    def test_refusals_name_the_missing_piece_with_the_line_to_add_and_prose_alone_is_a_scene(self):
         body = "---\nid: s\n---\n=== a\nText.\n* [Go]\n  %s\n  -> END\n"
         long = "---\nid: s\n---\n=== a\n%s\n* [Go]\n  -> END\n"
         for text, refusal in ((TAVERN, "refused: weight: a scene is entered by name here, never drawn by weight"),
@@ -174,8 +174,14 @@ class Parse(unittest.TestCase):
                                "refused: an effect outside a choice: ~ gold += 1; put it, indented, under the * [choice] that leads here"),
                               (body % "~ cast ring the bell", "refused: ~ cast takes a spell, as a rule's then does: ~ cast delvetalk bell/1 ring"),
                               ("---\nid: s\n---\n=== 1a\n", "refused: a passage name is letters, digits and _, starting with a letter: 1a"),
-                              ("---\nid: s\n---\n=== a\n* [Go]\n  -> nowhere\n", "refused: -> nowhere: no passage of that name"),
-                              ("=== a\nText.\n", "refused: a scene starts with frontmatter naming its id: ---, id: <name>, ---"),
+                              ("---\nid: s\n---\n=== a\n* [Go]\n  -> nowhere\n", "refused: -> nowhere: no passage of that name; add === nowhere, or point it at one that is"),
+                              ("---\nid: s\n=== a\n", "refused: the frontmatter has no closing ---; add --- on the line after its last field"),
+                              ("---\nid: s\n---\nThe door.\n=== a\n", "refused: text before the first passage: The door.; a scene needs === start; add it above your prose"),
+                              ("The door.\n* [Knock]\n", "refused: a scene needs === start; add it above your prose"),
+                              ("=== a\n* Knock\n", "refused: a choice is * [Label], its words in brackets: * Knock"),
+                              # Frontmatter is optional; prose alone is a scene of one passage, its first line the title.
+                              ("=== a\nText.\n", " / Text. / start a / cooldown 0 / requires \n=== a: Text."),
+                              ("A well hums under the square.\nCoins glint.\n", " / A well hums under the square. / start start / cooldown 0 / requires \n=== start: A well hums under the square.\nCoins glint."),
                               (long % ("x" * 601), "refused: a passage holds at most 600 characters"),
                               (long % ("x" * 600), "s / s")):
             with self.subTest(refusal=refusal):
@@ -339,6 +345,19 @@ class Braid(test_scenarios.Arc):
         self.assertIn("  * Ask after the goblet\n", card)
         self.assertIn("  * Wait for company\n", card)  # count(new.presence) >= 2: the rope's puller is still here
         self.assertEqual(self.say(test_scenarios.GLM, room, "delvetalk %s choose / choice: Ask after the goblet" % room)["result"]["label"], "moved")
+
+    def test_prose_into_spween_is_a_room_of_one_passage_and_its_maker_is_shown_the_shape(self):
+        made = self.say(test_scenarios.KIM, "kind/room", "delvetalk kind/room make / name: the well / spween: A well hums under the square.")
+        self.assertEqual(made["status"], "admitted", made)
+        room = made["receipt"]["outcome"]["creates"][0]["object"]
+        card = self.card(self.say(test_scenarios.KIM, room, "delvetalk %s enter" % room))
+        self.assertIn("you are at start:\nA well hums under the square.\nNo choices: a reader stays here. A choice is * [Label] -> passage "
+                      "under the prose; the shape: delvetalk library read / page: spween\n", card)
+        self.assertIn("No choice is open here now; leave when you will.", self.card(self.say(test_scenarios.GLM, room, "delvetalk %s enter" % room)))
+        page = self.card(self.say(test_scenarios.GLM, "library", "delvetalk library read / page: spween"))
+        self.assertTrue(page.startswith("hob: a scene is a room's own story, walked by choosing."), page)
+        # The room kind's card shows a scene inline.
+        self.assertIn("delvetalk kind/room make / name: the well / spween: A well hums.", self.card(self.say(test_scenarios.GLM, "kind/room", "")))
 
     def test_a_guard_the_host_cannot_read_refuses_the_making_by_name(self):
         text = "---\nid: s\n---\n=== a\nA door.\n* [Knock] { count(new.presence) >> 1 }\n"

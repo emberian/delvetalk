@@ -71,10 +71,11 @@ EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make
              'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
             ("I water mimo's bell", 'grow: water "poured on by a hand; a line, and the bell is tended"\ndelvetalk bell/1 water / text: I water the bell'),
             ('what is a front?', 'delvetalk library read / page: kinds'),
+            ('how do I write a scene for a room, with choices?', 'delvetalk library read / page: spween'),
             ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/FOUNDATION.md §5)
 
 
-# The library's stacks (docs/LIBRARY.md): six pages and five walks, (name, kind, title); each body is
+# The library's stacks (docs/LIBRARY.md): eight pages and six walks, (name, kind, title); each body is
 # capsules/pages/<name>.txt, so the page in the world and the file in the tree are one text.
 PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a badSpell hint'),
          ('laws', 'page', 'law, rule and want lines, what they read; transient and binding refusals'),
@@ -83,9 +84,11 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
          ('protocol', 'page', 'what a card asks the world: view, call, send, create, rule'),
          ('world', 'page', "the doors, every card's spells, the classes of refusal"),
          ('kinds', 'page', 'every kind: what it is, and a spell that makes one'),
+         ('spween', 'page', "a room's scene: passages, choices, guards and casts, one whole"),
          ('bell', 'walk', 'make a bell, rain on it, rule on it, hear it ring'),
          ('check', 'walk', 'check Bend, draft a thing, adopt it, hold another\'s proposal'),
          ('enter', 'walk', 'enter the porch, say, carve a room of your own under it, choose'),
+         ('scene', 'walk', 'make a room from your own scene; a choice in it rings a bell'),
          ('tide', 'walk', 'read the tide\'s rules, write one, be noted at a tick'),
          ('kind', 'walk', 'make a kind under your law; another makes one and meets it')]
 

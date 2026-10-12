@@ -384,7 +384,7 @@ def answered(input: Card.Reply, context: Abi.Context, state: State) -> Activity<
 def authored(block: String, parsed: Spween.Parsed, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match parsed:
     case refused(r): Super.refused({clause: "spween", reading: r.reason}, context)
-    case parsed(p): carving(p.seed.title, block, context, state)
+    case parsed(p): carving(if p.seed.title == "" then "a room" else p.seed.title, block, context, state)
 def fieldOf(name: String, value: String) -> Rows.Field:
   {name: name, value: value}
 def carvedFields(title: String, block: String) -> Lists.List<Rows.Field>:
@@ -445,7 +445,12 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
 def passageText(at: String, state: State, context: Abi.Context) -> String:
   match passageAt(at, state):
     case none(_): ", you are here.\n"
-    case some(ps): passageWith(ps.value, state, context, ", you are at {ps.value.id}:\n{ps.value.text}\nChoices:\n")
+    case some(ps): passageWith(ps.value, state, context, ", you are at {ps.value.id}:\n{ps.value.text}\n{choicesHead(ps.value, state, context)}")
+# A passage with no choice open keeps its reader; the owner of a scene of prose alone is shown the shape.
+def choicesHead(ps: Passage, state: State, context: Abi.Context) -> String:
+  match ps.choices:
+    case cons(_): "Choices:\n"
+    case nil(_): if context.principal == state.owner && Lists.length(state.passages) == 1n then "No choices: a reader stays here. A choice is * [Label] -> passage under the prose; the shape: delvetalk library read / page: spween\n" else "No choice is open here now; leave when you will.\n"
 def passageWith(ps: Passage, state: State, context: Abi.Context, head: String) -> String:
   let choices = fitting(Lists.map(Lists.take(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(c.guard, state.vars)), 8n), choiceLine), less(Card.limit(context), textLength(head) + 300n))
   "{head}{choices}{fitting(Lists.map(Lists.take(state.vars, 4n), varLine), less(Card.limit(context), textLength(head) + textLength(choices) + 300n))}"
