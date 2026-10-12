@@ -343,6 +343,22 @@ class Misfits(Reflection):
         self.assertEqual(self.field("planted"), label("amber:rue"))
         self.assertEqual(self.field("origin"), label("interpreted|delvetalk plain plant\ncolour: amber\nseed: rue"))
 
+    POST = "delvetalk plain water\n\ndelvetalk plain plant\ncolour: amber\nseed: x\n\ndelvetalk plain plant\ncolour: gold\nseed: rue"
+
+    def test_a_posts_misfit_spells_are_one_reading_after_the_spells_that_run(self):
+        r = self.say(self.POST, identity="post")
+        self.assertEqual([t["status"] for t in r["turns"]], ["admitted", "suspended"], r)
+        self.assertEqual(self.field("planted"), label("amber:x"))
+        # A retry answers each from its identity: nothing more is asked.
+        again = self.say(self.POST, identity="post")
+        self.assertEqual([t["receipt"]["hash"] for t in again["turns"]], [t["receipt"]["hash"] for t in r["turns"]])
+        item, resumed = self.settle("delvetalk plain plant\ncolour: violet\nseed: rue")
+        self.assertEqual((item["object"], item["utterance"]), ("plain", "delvetalk plain water\n\ndelvetalk plain plant\ncolour: gold\nseed: rue"))
+        self.assertTrue(item["misfit"].startswith("noAction, delvetalk plain water: plain has no spell water"), item)
+        self.assertIn("delvetalk plain plant: ", item["misfit"])
+        self.assertEqual(resumed["receipt"]["outcome"]["tag"], "admitted", resumed)
+        self.assertEqual(self.field("planted"), label("violet:rue"))
+
     def test_the_strict_clauses_refuse_at_once(self):
         for i, (text, clause) in enumerate((("delvetalk plain plant\ncolour: amber\ncolour: amber\nseed: x", "duplicateField"),
                                             ("delvetalk plain plant\nseed: <<END\nfern\n", "unclosedBlock"))):
@@ -364,6 +380,12 @@ class MisfitsWithoutPolicy(Misfits):
 
     def test_hobs_spell_for_a_misfit_runs_on_the_card(self):
         self.assertEqual(self.say("delvetalk plain plant\ncolour: gold\nseed: rue")["receipt"]["outcome"]["clause"], "badValue")
+
+    def test_a_posts_misfit_spells_are_one_reading_after_the_spells_that_run(self):
+        r = self.say(self.POST, identity="post")
+        self.assertEqual([(t["status"], t["receipt"]["outcome"].get("clause")) for t in r["turns"]],
+                         [("admitted", None), ("refused", "noAction"), ("refused", "badValue")], r)
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
 
 class Interpreted(Reflection):

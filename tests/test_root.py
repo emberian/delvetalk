@@ -65,6 +65,24 @@ class Root(RootCase):
         self.reopen()
         self.assertEqual(self.count(), (3, 8))
 
+    def test_set_one_field_of_the_state_journals_that_field_and_replays(self):
+        """`set` of `state.F` changes one field (a live town's kinds needed one, entry 129): typed data or a plain value
+        of the field's kind, journaled as `state` is, its `before` and `after` that field's; a field the state lacks,
+        a nested path and a value of another kind refuse."""
+        self.assertEqual(self.turn("counter", "bump")["status"], "admitted")
+        r = self.root({"kind": "set", "object": "counter", "field": "state.count", "value": 12}, reason="one field")
+        self.assertEqual(r["status"], "root", r)
+        o = r["receipt"]["outcome"]
+        self.assertEqual((o["field"], o["before"], o["after"], o["version"]), ("state.count", nat(1), nat(12), 2))
+        self.assertEqual(self.count(), (2, 12))
+        typed = self.root({"kind": "set", "object": "counter", "field": "state.count", "value": nat(13)})
+        self.assertEqual((typed["status"], self.count()), ("root", (3, 13)), typed)
+        for field, value in (("state.missing", 1), ("state.count.x", 1), ("state.count", "twelve"), ("state.", 1)):
+            self.assertEqual(self.root({"kind": "set", "object": "counter", "field": field, "value": value})["status"], "error", field)
+        self.assertEqual(self.turn("counter", "bump")["status"], "admitted")
+        self.reopen()
+        self.assertEqual(self.count(), (4, 14))
+
     def test_the_other_fields_delete_and_card(self):
         law = "law owner: request.kind == 0"
         self.assertEqual(self.root({"kind": "set", "object": "counter", "field": "law", "value": law})["status"], "root")
