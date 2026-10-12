@@ -12,6 +12,7 @@ import unittest
 
 from tests.test_scenarios import Arc, GLM, KIM
 from tests.test_properties import OPENER
+from tests.wire import label, record
 
 TWO = "count(new.lines) >= 2 and count(old.lines) <= 1"
 
@@ -112,6 +113,49 @@ class Firing(Bell):
                                  identity="quiet-glm")
         self.assertEqual(quieted["status"], "moderated", quieted)
         self.assertEqual([(u["rule"], u["why"]) for u in self.rain("two")["receipt"]["unfired"]], [("hush", "quiet")])
+
+
+class Reads(Bell):
+    """A rule reads, and its spell carries, only what its owner may view (codex 2026-10-12 host 1): a line
+    citing a private thing is refused to a placer who may not view it, and one in a thing's text whose owner
+    may not view what it cites does not fire; an avatar takes rules from its own principal alone (objects 4)."""
+
+    SECRET = """edition ObjectiveBend 1
+record State:
+  code: String
+def initial() -> State:
+  {code: "4471"}
+"""
+
+    def setUp(self):
+        super().setUp()
+        made = self.town.send(op="world-create", principal=OPENER, identity="mk-secret", object="secret", source=self.SECRET,
+                              entry="initial", seed=record(), read={"principals": [OPENER]})
+        self.assertEqual(made["status"], "created", made)
+
+    def test_a_line_citing_what_its_placer_may_not_view_is_refused(self):
+        placed = self.place('rule / name: leak / when: request.method == "rain" / then: delvetalk me note / text: {"secret".code}', who=KIM)
+        self.assertEqual((placed["status"], placed["receipt"]["outcome"].get("clause")), ("refused", "lawReads"), placed)
+        wanted = self.place('want / name: leak / when: "secret".code == "4471" / asks: delvetalk me note / text: x', who=KIM)
+        self.assertEqual(wanted["receipt"]["outcome"].get("clause"), "lawReads", wanted)
+        self.assertEqual(self.rules(), {})
+
+    def test_a_rule_whose_owner_may_not_view_what_it_cites_does_not_fire(self):
+        line = 'rule leak: request.method == "rain" then delvetalk me note / text: {"secret".code}'
+        adopted = self.say(GLM, self.bell, "delvetalk %s adopt\nlaw: <<END\n%s\nEND" % (self.bell, line))
+        self.assertEqual(adopted["status"], "admitted", adopted)
+        receipt = self.rain("one")["receipt"]
+        self.assertNotIn("fired", receipt)
+        self.assertEqual([(u["rule"], u["why"]) for u in receipt["unfired"]], [("leak", "reads")])
+        self.assertNotIn("4471", str(self.inbox(GLM)))
+
+    def test_only_its_principal_places_a_rule_on_an_avatar(self):
+        self.say(GLM, "me", "delvetalk me ?")
+        line = 'rule / name: watch / when: request.method == "note" / then: delvetalk me note / text: seen'
+        stranger = self.say(KIM, GLM, "delvetalk %s %s" % (GLM, line))
+        self.assertEqual((stranger["status"], stranger["receipt"]["outcome"].get("clause")), ("refused", "rules"), stranger)
+        own = self.say(GLM, "me", "delvetalk me %s" % line)
+        self.assertEqual(own["status"], "admitted", own)
 
 
 class Placing(Bell):

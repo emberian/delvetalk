@@ -58,7 +58,7 @@ structure Facts where
   /-- The written object's id (`request.object`, LAW §4 H). -/
   object : String := ""
   /-- The state of every object the law cites (`"O".F`, `under "O"`, `"O" wants N`), transitively
-      through `under`, at the version the write records as its root (`Ops.citedStates`). -/
+      through `under` and `wants`, as the write leaves them (`Ops.citing`). -/
   reads : List (String × Data) := []
   /-- The verb the act named (`request.verb`): a declared method's name, or a grown verb's under
       `act` (docs/COLLABORATOR.md); "" for an op. -/

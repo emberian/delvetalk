@@ -1088,8 +1088,8 @@ def isAmendmentRefusal (message : String) : Bool :=
     amendment (the state unchanged) by the principal who proposes it. None when it does,
     else the refusal naming that principal and the clause (`name: expression`) that refused. -/
 def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data)
-    (clock : Nat := 0) (id : String := "") (reads : List (String × Data) := []) : Option String :=
-  (Law.refusedBy law { subject := principal, caller, height, turn, pin, kind := 2, clock, object := id, reads } (some state) state).map fun name =>
+    (clock : Nat := 0) (id : String := "") (cite : Law.Facts → Law.Facts := fun f => f) : Option String :=
+  (Law.refusedBy law (cite { subject := principal, caller, height, turn, pin, kind := 2, clock, object := id }) (some state) state).map fun name =>
     amendmentRefusal principal (((law.lookup name).map fun e => s!"{name}: {e.render}").getD name)
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
@@ -1982,47 +1982,29 @@ def citedLaw (w : World) (id : String) : Option Law := do
   let .label text ← (w.objects[id]?).bind fun o => Law.rawField "law" o.state | none
   (parseLawText text).toOption
 
-/-- The objects some clauses cite first (`first`), closed under the citations of each cited object's own
-    `law` text, `Limits.lawDepth` deep; each once, in the order met. -/
-def citationsFrom (w : World) (first : List String) : List String := Id.run do
-  let mut out : List String := []
-  let mut frontier := first.eraseDups
-  for _ in [0:Limits.lawDepth] do
-    let fresh := frontier.filter (!out.contains ·)
-    if fresh.isEmpty then break
-    out := out ++ fresh
-    frontier := (fresh.flatMap fun id => ((citedLaw w id).getD []).flatMap fun (_, c) => c.reads).eraseDups
-  return out
+/-- What some names read beyond the written object, closed `Limits.lawDepth` deep, each once in the
+    order met: every object they cite (`"O".F`, `under "O"`, `"O" wants N`); through `under "O"`, what
+    O's law text names; through `"O" wants N` (when `wanting`), what O's want N names, with every want
+    clause O carries, so a want resting on another's want is judged by both. Without `wanting` it is
+    what a thing's kind carries through `under` (`carried`). -/
+structure Cites where
+  objects : List String := []
+  wants : List (String × List Delvetalk.Compiler.ObjectiveBendLaw.Clause) := []
 
-/-- The objects a law cites (`"O".F.COL`, `under "O"`, `"O" wants N`), closed (`citationsFrom`). -/
-def lawCitations (w : World) (law : Law) : List String :=
-  citationsFrom w (law.flatMap fun (_, c) => c.reads)
+instance : Inhabited Cites := ⟨{}⟩
+
+/-- The names a law reads. -/
+def lawNames (law : Law) : List Delvetalk.Compiler.ObjectiveBendLaw.LawName :=
+  law.flatMap fun (_, c) => c.names
+
+/-- The objects a write's facts read and whether one may read them (`Law.Facts.reads`): the first of
+    `ids` that `who` may not view, if any. -/
+def unviewable (w : World) (who : String) (ids : List String) : Option String :=
+  ids.find? fun r => !(((w.objects[r]?).map (·.read.permits who)).getD true)
 
 /-- The states of some objects as the world holds them (`Law.Facts.reads`). -/
 def statesOf (w : World) (ids : List String) : List (String × Data) :=
   ids.filterMap fun id => (w.objects[id]?).map (id, ·.state)
-
-/-- The states a law reads beside the written object's (`Law.Facts.reads`), as the world holds them. -/
-def citedStates (w : World) (law : Law) : List (String × Data) :=
-  statesOf w (lawCitations w law)
-
-/-- Why a law's `under` citations cannot stand (create, amend, reprogram): a cited object that does
-    not exist or whose `law` does not parse, or a cycle of citations within `Limits.lawDepth`,
-    named. -/
-def citationRefusal (w : World) (self : String) (law : Law) : Option String := Id.run do
-  let unders := fun (l : Law) => (l.flatMap fun (_, c) => c.names.filterMap fun | .law o => some o | _ => none).eraseDups
-  let mut paths : List (List String) := (unders law).map ([·])
-  for _ in [0:Limits.lawDepth] do
-    let mut next : List (List String) := []
-    for path in paths do
-      let some last := path.getLast? | continue
-      if last == self || (path.dropLast.contains last) then
-        return some s!"under: a cycle of citations: {" -> ".intercalate ((if self.isEmpty then [] else [self]) ++ path)}"
-      unless w.objects.contains last do return some s!"under: no object {last} to cite"
-      let some cited := citedLaw w last | return some s!"under: {last} holds no law text that parses"
-      next := next ++ (unders cited).map (path ++ [·])
-    paths := next
-  return none
 
 /-! ## Rules and wants on things (docs/OVERHAUL.md §2, §3; KERNEL-HANDOFF §27)
 
@@ -2047,32 +2029,65 @@ def ownerOf (state : Data) : String :=
     | _ => ""
   | _ => ""
 
+mutual
+/-- `Cites` of some names (see the structure). -/
+partial def citesOf (w : World) (first : List Delvetalk.Compiler.ObjectiveBendLaw.LawName) (wanting : Bool := true) : Cites := Id.run do
+  let mut out : Cites := {}
+  let mut seen : List Delvetalk.Compiler.ObjectiveBendLaw.LawName := []
+  let mut frontier := first
+  for _ in [0:Limits.lawDepth] do
+    let mut next : List Delvetalk.Compiler.ObjectiveBendLaw.LawName := []
+    for n in frontier do
+      if seen.contains n then continue
+      seen := seen ++ [n]
+      match n with
+      | .cited o _ =>
+        unless out.objects.contains o do out := { out with objects := out.objects ++ [o] }
+      | .law o =>
+        unless out.objects.contains o do out := { out with objects := out.objects ++ [o] }
+        next := next ++ ((citedLaw w o).getD []).flatMap fun (_, c) => c.names
+      | .want o name =>
+        unless out.objects.contains o do out := { out with objects := out.objects ++ [o] }
+        if wanting then
+          let clauses := match out.wants.lookup o with
+            | some cs => cs
+            | none => ((w.objects[o]?).map fun x => (carriedWants w o x).map (·.clause)).getD []
+          unless out.wants.any (·.1 == o) do out := { out with wants := out.wants ++ [(o, clauses)] }
+          next := next ++ ((clauses.find? (·.name == name)).map (·.condition.names)).getD []
+      | _ => pure ()
+    if next.isEmpty then break
+    frontier := next
+  return out
+
 /-- The rules and wants `o` (`id`) carries, in order: its placed rules and wants, its own text's, then
     those its law's `under` citations carry (`Law.followed`), each owned by its holder's owner. -/
-def carried (w : World) (id : String) (o : Object) : List CarriedClause :=
+partial def carried (w : World) (id : String) (o : Object) : List CarriedClause :=
   let placed := (o.rules ++ o.wants).map fun r => ({ clause := r.clause, owner := r.owner, holder := id, placed := some r.since } : CarriedClause)
   let own := (((parseClauses o.lawText).toOption.getD []).filter fun c => Law.isRule c || Law.isWant c).map fun c =>
     ({ clause := c, owner := ownerOf o.state, holder := id } : CarriedClause)
-  let followed := (Law.followed (citedStates w o.law) o.law).map fun (h, c) =>
+  let followed := (Law.followed (statesOf w (citesOf w (lawNames o.law) false).objects) o.law).map fun (h, c) =>
     ({ clause := c, owner := ((w.objects[h]?).map (ownerOf ·.state)).getD "", holder := h } : CarriedClause)
   placed ++ own ++ followed
 
+partial def carriedWants (w : World) (id : String) (o : Object) : List CarriedClause := (carried w id o).filter (Law.isWant ·.clause)
+end
+
 def carriedRules (w : World) (id : String) (o : Object) : List CarriedClause := (carried w id o).filter (Law.isRule ·.clause)
-def carriedWants (w : World) (id : String) (o : Object) : List CarriedClause := (carried w id o).filter (Law.isWant ·.clause)
+
+/-- The objects a law cites, closed (`citesOf`). -/
+def lawCitations (w : World) (law : Law) : List String :=
+  (citesOf w (lawNames law)).objects
+
+/-- Facts with what some names cite as `w` holds them: the states (`Law.Facts.reads`) and the cited
+    objects' want clauses (`Law.Facts.wants`). -/
+def citing (w : World) (names : List Delvetalk.Compiler.ObjectiveBendLaw.LawName) (facts : Law.Facts) : Law.Facts :=
+  let c := citesOf w names
+  { facts with reads := statesOf w c.objects, wants := c.wants }
 
 /-- What an object's law and the rules and wants it carries cite (their conditions and their spells'
-    holes), closed under the cited objects' own laws: the roots a write of it records. -/
+    holes), closed: the roots a write of it records. -/
 def objectCitations (w : World) (id : String) (o : Object) : List String :=
-  citationsFrom w ((o.law.flatMap fun (_, c) => c.reads) ++ (carried w id o).flatMap (·.clause.reads))
-
-/-- The want clauses of every object some names cite by `"O" wants N` (`Law.Facts.wants`). -/
-def wantsCited (w : World) (names : List Delvetalk.Compiler.ObjectiveBendLaw.LawName) : List (String × List Delvetalk.Compiler.ObjectiveBendLaw.Clause) :=
-  ((names.filterMap fun | .want o _ => some o | _ => none).eraseDups).filterMap fun o =>
-    (w.objects[o]?).map fun x => (o, (carriedWants w o x).map (·.clause))
-
-/-- The names a law reads. -/
-def lawNames (law : Law) : List Delvetalk.Compiler.ObjectiveBendLaw.LawName :=
-  law.flatMap fun (_, c) => c.names
+  (citesOf w (lawNames o.law ++ (carried w id o).flatMap (·.clause.names))).objects
 
 /-- The proposal with the objects the laws of its written objects read added as roots: the Bend
     law's `lawReads`, and every object the text law and the carried rules and wants cite
@@ -2084,6 +2099,24 @@ def withLawReads (w : World) (p : Proposal) : Proposal :=
           | some ro => { p with roots := p.roots ++ [(r, ro.version)] }
           | none => p) p
     | none => p) p
+
+/-- Why a law's `under` citations cannot stand (create, amend, reprogram): a cited object that does
+    not exist or whose `law` does not parse, or a cycle of citations within `Limits.lawDepth`,
+    named. -/
+def citationRefusal (w : World) (self : String) (law : Law) : Option String := Id.run do
+  let unders := fun (l : Law) => (l.flatMap fun (_, c) => c.names.filterMap fun | .law o => some o | _ => none).eraseDups
+  let mut paths : List (List String) := (unders law).map ([·])
+  for _ in [0:Limits.lawDepth] do
+    let mut next : List (List String) := []
+    for path in paths do
+      let some last := path.getLast? | continue
+      if last == self || (path.dropLast.contains last) then
+        return some s!"under: a cycle of citations: {" -> ".intercalate ((if self.isEmpty then [] else [self]) ++ path)}"
+      unless w.objects.contains last do return some s!"under: no object {last} to cite"
+      let some cited := citedLaw w last | return some s!"under: {last} holds no law text that parses"
+      next := next ++ (unders cited).map (path ++ [·])
+    paths := next
+  return none
 
 /-- The display handle the principal registry holds for a principal, "" when unknown. -/
 def handleOf (w : World) (principal : String) : String :=
@@ -2447,6 +2480,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   let mut amendments : List Json := []
   let mut evictions : List (String × Array Json) := []
   let mut factsOf : List (String × List Law.Facts) := []
+  -- Every write is applied before any law judges: a law citing another object the commit writes reads
+  -- it as the commit leaves it, so an atomic commit is judged as the world it makes.
+  let mut staged : List (String × List Written × Object × Object × Data × List (String × Data)) := []
   for (id, changes) in writes do
     let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
     let (written, evicted) ← match applyEditsEvicting o.relations o.state (changes.map (·.edits)) with
@@ -2504,6 +2540,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           fun j => match p.madeFrom.lookup id with
             | some m => j.setObjVal! "madeFrom" m
             | none => j]
+    staged := staged ++ [(id, changes, o, next, state, evicted)]
+  let cand := staged.foldl (fun (c : World) (id, changes, o, next, state, _) =>
+      { c with objects := c.objects.insert id { next with state, version := if changes.any (·.kind != 4) then o.version + 1 else o.version } })
+    (p.creates.foldl (fun (c : World) (id, x) => { c with objects := c.objects.insert id x.object }) w)
+  for (id, changes, o, next, state, evicted) in staged do
+    let mut next := next
     -- The current law judges the whole write, under the pin the object will run. Every
     -- kind of change the object undergoes in this turn is judged, once for each object
     -- that called the running one to make it: the subject is the principal, the caller
@@ -2527,15 +2569,14 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | some g => pure g.grantor
         | none => throw { cls := "lawRefused", clause := some "noGrant", object := some id,
                           reading := some s!"no standing grant lets this turn run {method} on {id}." }
-      -- What the law cites is read as the world holds it (the roots `withLawReads` records), and only
+      -- What the law cites is read as the commit leaves it (the roots `withLawReads` records), and only
       -- by a subject who may view it.
-      let cited := citedStates w o.law
-      if let some (r, _) := cited.find? fun (r, _) => !(((w.objects[r]?).map (·.read.permits subject)).getD true) then
+      if let some r := unviewable cand subject (lawCitations cand o.law) then
         throw { cls := "lawRefused", clause := some "lawReads", object := some id,
                 reading := some s!"the law of {id} cites {r}, which {subject} may not view." }
-      let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method,
-                                 verb := if verb.isEmpty then method else verb, evicted, clock := w.clock, object := id,
-                                 reads := cited, wants := wantsCited w (lawNames o.law) }
+      let facts : Law.Facts := citing cand (lawNames o.law)
+        { subject, caller, height, turn := p.turn, pin := next.pin, kind, method,
+          verb := if verb.isEmpty then method else verb, evicted, clock := w.clock, object := id }
       judgedBy := judgedBy ++ [facts]
       -- The metarule, widened (docs/ROOT.md §2.1): no law locks out the hand that opened the world.
       -- An amendment by the opener is the host's to admit; every other change is the law's.
@@ -2543,15 +2584,16 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         if let some (clause, cited) := Law.refusal o.law facts (some o.state) state then
           throw { cls := "lawRefused", clause, object := id, reading := cited <|> o.readings.lookup clause }
     -- The Bend law, after the text admits: once for each write of edits (the object's own or a
-    -- proposed one, its `kind` saying which), with its argument. A migration's state is the text
-    -- law's alone: the old code's law does not read the new type.
+    -- proposed one) and each placing (a rule, want or verb placed: kind `rule`), its `kind` saying
+    -- which, with its argument. A migration's state is the text law's alone: the old code's law does
+    -- not read the new type. Taking a line off is its placer's or the owner's, as above.
     if o.predicate then
-      let seen := (changes.filter (Law.editKind ·.kind)).foldl (fun (acc : List (String × Written)) c =>
+      let seen := (changes.filter fun c => Law.editKind c.kind || (c.kind == 4 && !c.verb.isEmpty)).foldl (fun (acc : List (String × Written)) c =>
         let key := (Json.arr #[toJson c.caller, toJson c.kind, toJson c.method, toJson c.via, dataJson c.argument]).compress
         if acc.any (·.1 == key) then acc else acc ++ [(key, c)]) []
       for (_, c) in seen do
         let subject := if c.via.isEmpty then p.principal else ((grantStands w c.via id c.method).map (·.grantor)).getD p.principal
-        if let some r := bendLaw w p id o state subject c.caller c.method c.argument c.kind next.pin then throw r
+        if let some r := bendLaw cand p id o state subject c.caller c.method c.argument c.kind next.pin then throw r
     if let some text := p.laws.lookup id then
       let refuse := fun (clause reading : String) => ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
       let law ← match parseLawText text with
@@ -2559,9 +2601,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         | .error e => throw (refuse "law syntax" e)
       let amender := ((changes.find? (·.kind == 2)).map (·.caller)).getD ""
       -- The opener's amendment needs no clause for itself: the host admits it whatever the law (`openerAmends`).
-      if let some message := citationRefusal w id law then throw (refuse "under" ((message.drop "under: ".length).toString))
+      if let some message := citationRefusal cand id law then throw (refuse "under" ((message.drop "under: ".length).toString))
       unless openerAmends w p.principal do
-        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id (citedStates w law) then throw (refuse "amendable" message)
+        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id (citing cand (lawNames law)) then throw (refuse "amendable" message)
       -- A reading stays with its clause only while the amendment leaves that clause as it was.
       -- The amendment's own readings; a clause it leaves as it was without one keeps its reading.
       let given := ((parseLawTextReadings text).toOption.map (·.2)).getD []
@@ -2626,8 +2668,11 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           let names := (((parseClauses next.lawText).toOption.getD []).map (·.name)) ++ (next.rules ++ next.wants).map (·.name)
           if names.contains x.name then
             throw (refuse "nameTaken" s!"{id} already carries a clause {x.name}; place one whose name is new.")
-          if let some message := citationRefusal w id [(x.name, clause.condition)] then
+          if let some message := citationRefusal cand id [(x.name, clause.condition)] then
             throw (refuse "under" ((message.drop "under: ".length).toString))
+          -- A line reads, and its spell carries, only what its placer may view.
+          if let some r := unviewable cand p.principal (citesOf cand clause.names).objects then
+            throw (refuse "lawReads" s!"{x.keyword} {x.name} cites {r}, which you may not view.")
           if rows.length ≥ (if want then Limits.wantsPerObject else Limits.rulesPerObject) then
             throw { cls := "capacity", object := some id, reason := some (if want then "wantsPerObject" else "rulesPerObject") }
           let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }
@@ -3178,9 +3223,8 @@ def spellCard (w : World) (owner text : String) : Option String :=
     clause: the want's condition judged with what the thing's lines cite as `w` holds them. -/
 def posing (w : World) (height : Nat) (id : String) (o : Object) : List CarriedClause :=
   let wants := carriedWants w id o
-  let base : Law.Facts := { subject := "", caller := "", height, turn := height, clock := w.clock, object := id,
-                            reads := statesOf w (objectCitations w id o),
-                            wants := wantsCited w (wants.flatMap (·.clause.names)) }
+  let base : Law.Facts := citing w (wants.flatMap (·.clause.names))
+    { subject := "", caller := "", height, turn := height, clock := w.clock, object := id }
   wants.filter fun c => !(Law.poses base id o.state [c.clause]).isEmpty
 
 /-- What an admitted write sets off and opens, as the entry journals it and replay re-derives it:
@@ -3195,7 +3239,8 @@ def posing (w : World) (height : Nat) (id : String) (o : Object) : List CarriedC
     - `unfired`: `{object, rule, owner, why}` for a rule that held and was not cast: `hole` (a hole read
       nothing), `spell` (the filled line is not a spell), `noOwner`, `quiet` (its owner is quieted),
       `ruleDepth` (the chain is `Limits.ruleDepth` firings deep), `rulesPerCommit` (that many fired),
-      `pending` (the world holds `Limits.maxPending` undelivered sends);
+      `pending` (the world holds `Limits.maxPending` undelivered sends), `reads` (its owner may not
+      view the thing or an object its condition or holes cite);
     - `wanted`, `unwanted`: `{object, want}` for each want that holds of the object as it stands after
       the write and did not before (a created object had none), and the reverse, at the clock. -/
 def reactions (before after : World) (height : Nat) (judged : Judged) (child : Ledger) (depth : Nat) :
@@ -3204,17 +3249,21 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
   let mut unfired : Array Json := #[]
   for (id, o) in judged.updates do
     let some old := before.objects[id]? | continue
-    let rules := carriedRules before id o
+    let rules := carriedRules after id o
     if rules.isEmpty then continue
-    let reads := statesOf before (objectCitations before id o)
-    let wants := wantsCited before (rules.flatMap (·.clause.names))
+    let cite := citing after (rules.flatMap (·.clause.names))
     for r in rules do
       let held := ((judged.facts.lookup id).getD []).find? fun f =>
-        !(Law.fires { f with reads, wants } (some old.state) o.state [r.clause]).isEmpty
+        !(Law.fires (cite f) (some old.state) o.state [r.clause]).isEmpty
       let some f := held | continue
-      let facts := { f with reads, wants }
+      let facts := cite f
       let refuse := fun (why : String) => Json.mkObj [("object", toJson id), ("rule", toJson r.clause.name),
         ("owner", toJson r.owner), ("why", toJson why)]
+      -- A rule reads, and its spell carries, only what its owner may view: the thing it is on and all
+      -- its condition and holes cite.
+      if (unviewable after r.owner (id :: (citesOf after r.clause.names).objects)).isSome then
+        unfired := unfired.push (refuse "reads")
+        continue
       let text := (r.clause.modality.spell?).bind (Law.fill facts (some old.state) o.state)
       let quiet := ((before.quiets[r.owner]?).map fun q => decide (q.1 > before.clock)).getD false
       match text, text.bind (spellCard before r.owner) with
@@ -3389,7 +3438,7 @@ def makeObject (w : World) (b : Built) (inputs : Json) (state : Data) (read : Op
     | some text => parseLawText text
     | none => if b.laws.isEmpty then defaultLaw creator else pure b.laws
   if let some message := citationRefusal w "" laws then throw message
-  if let some message := amendable laws creator "" height 0 pin state (reads := citedStates w laws) then throw message
+  if let some message := amendable laws creator "" height 0 pin state (cite := citing w (lawNames laws)) then throw message
   let (methods, predicate, predicateReads) := b.shape
   -- Readings belong to the package's clauses; a law given at creation keeps those it left alone.
   let given := (lawText.bind fun t => (parseLawTextReadings t).toOption.map (·.2)).getD []
@@ -4651,12 +4700,16 @@ def ruleRow (w : World) (id : String) (c : CarriedClause) : Json :=
     condition, the spell that answers it filled at the read (the line's template when a hole reads
     nothing), the line, the object holding it, and `since`: the height of the entry that made it true,
     or `clock` when it came true by the clock alone. -/
-def wantRows (w : World) (id : String) (o : Object) : List Json :=
-  let facts : Law.Facts := { subject := "", caller := "", height := w.height, turn := w.height, clock := w.clock, object := id,
-                             reads := statesOf w (objectCitations w id o) }
-  (posing w w.height id o).map fun c =>
+def wantRows (w : World) (reader id : String) (o : Object) : List Json :=
+  let wants := posing w w.height id o
+  let facts : Law.Facts := citing w (wants.flatMap (·.clause.names))
+    { subject := "", caller := "", height := w.height, turn := w.height, clock := w.clock, object := id }
+  wants.map fun c =>
     let template := (c.clause.modality.spell?.map (·.render)).getD ""
-    let asks := ((c.clause.modality.spell?).bind (Law.fill (Law.asItStands facts id) none o.state)).getD template
+    -- A hole is filled only from what the reader may view; else the reader sees the template.
+    let filled := if (unviewable w reader (citesOf w c.clause.names).objects).isSome then none
+      else (c.clause.modality.spell?).bind (Law.fill (Law.asItStands facts id) none o.state)
+    let asks := filled.getD template
     let since := ((w.wanting[id]?).bind (·.lookup c.clause.name)).map toJson |>.getD (toJson "clock")
     Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("when", toJson c.clause.condition.render),
         ("asks", toJson asks), ("line", toJson c.clause.render), ("from", toJson c.holder), ("since", since)] ++
@@ -4670,7 +4723,7 @@ def rulesOp (w : World) (j : Json) (wants : Bool) : Except String Json := do
   let id ← j.getObjValAs? String "object"
   let some o := w.objects[id]? | return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
   if !o.read.permits reader then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
-  let rows := if wants then wantRows w id o else (carriedRules w id o).map (ruleRow w id)
+  let rows := if wants then wantRows w reader id o else (carriedRules w id o).map (ruleRow w id)
   return Json.mkObj [("status", toJson (if wants then "wants" else "rules")), ("object", toJson id), ("rows", Json.arr rows.toArray)]
 
 /-- Why a rule that held was not cast, in words (`Ops.reactions`'s `why`). -/
@@ -4682,6 +4735,7 @@ def unfiredWords : String → String
   | "ruleDepth" => s!"the chain of rules is {Limits.ruleDepth} deep"
   | "rulesPerCommit" => s!"{Limits.rulesPerCommit} rules fired on this write already"
   | "pending" => s!"the world holds {Limits.maxPending} undelivered sends"
+  | "reads" => "its owner may not view what it reads"
   | other => other
 
 /-- `world-chronicle {principal, day}` (docs/TENURE.md §2; OVERHAUL §2 conflict 6): one clock day of the

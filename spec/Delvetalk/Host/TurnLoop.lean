@@ -565,8 +565,9 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
       ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
   | .ok (again, built) =>
     let o := again.object
-    let facts : Law.Facts := { subject := s.principal, caller := self, height := s.world.height + 1, turn := s.world.height + 1,
-                                 pin := o.pin, kind := 1, clock := s.world.clock, object := id, reads := citedStates s.world o.law }
+    let facts : Law.Facts := citing s.world (lawNames o.law)
+      { subject := s.principal, caller := self, height := s.world.height + 1,
+        turn := s.world.height + 1, pin := o.pin, kind := 1, clock := s.world.clock, object := id }
     if let some clause := Law.refusedBy o.law facts (some o.state) o.state then
       return ← refusedReading bounds responseType clause ((o.readings.lookup clause).getD s!"the law of {id} does not admit this layer.")
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
@@ -1092,8 +1093,9 @@ def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
     that reads the state is judged on it too (codex agent 11: `request.subject == new.owner or …`
     refuses a stranger whatever the method writes, unless the method moves the owner). -/
 def methodAdmits (w : World) (o : Object) (principal method : String) (id : String := "") (verb : String := method) : Json :=
-  let facts : Law.Facts := { subject := principal, caller := "", height := w.height + 1, turn := w.height + 1, pin := o.pin,
-                              method, verb, clock := w.clock, object := id, reads := citedStates w o.law }
+  let facts : Law.Facts := citing w (lawNames o.law)
+    { subject := principal, caller := "", height := w.height + 1,
+      turn := w.height + 1, pin := o.pin, method, verb, clock := w.clock, object := id }
   match o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause with
   | none => Json.bool true
   | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
@@ -1243,8 +1245,8 @@ def rulesText (w : World) (id : String) (o : Object) (shown : String) : String :
 
 /-- `delvetalk <card> wants`: the wants that hold of the card now, each with the spell that answers it
     and since when it has held. -/
-def wantsText (w : World) (id : String) (o : Object) (shown : String) : String :=
-  let rows := wantRows w id o
+def wantsText (w : World) (reader id : String) (o : Object) (shown : String) : String :=
+  let rows := wantRows w reader id o
   if rows.isEmpty then s!"{shown} wants nothing now.\n" else
   let line := fun (row : Json) =>
     let text := fun (k : String) => (row.getObjValAs? String k).toOption.getD ""
@@ -1277,8 +1279,9 @@ def cardPowers : List String := ["retire", "unretire", "hide", "show"]
 /-- Would `o`'s law admit `principal`'s change of kind `kind` (1 reprogram, 2 amend) on the state as
     it stands? As `methodAdmits` judges a method. -/
 def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : String := "") (verb : String := "") : Bool :=
-  let facts : Law.Facts := { subject := principal, caller := "", height := w.height + 1, turn := w.height + 1, pin := o.pin,
-                              kind, verb, clock := w.clock, object := id, reads := citedStates w o.law }
+  let facts : Law.Facts := citing w (lawNames o.law)
+    { subject := principal, caller := "", height := w.height + 1,
+      turn := w.height + 1, pin := o.pin, kind, verb, clock := w.clock, object := id }
   (o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause).isNone
 
 /-- `rule`'s and `want`'s fields as the usage prints them: the spell last, since its own fields follow it. -/
@@ -1375,7 +1378,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   if hostReads.contains action && !forms.any (·.action == action) then
     return .usage id (match action with
       | "rules" => rulesText w id target shown
-      | "wants" => wantsText w id target shown
+      | "wants" => wantsText w principal id target shown
       | _ => verbsText w id target shown (shownForms.filter fun f => !target.verbs.any (·.name == f.action)))
   -- The host's own spells, on any card that does not define the action itself (`hostSpell`).
   if hostSpells.contains action && !forms.any (·.action == action) then
@@ -2267,7 +2270,7 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
       s!"rule {text f "rule"} of {shownName w (text f "principal")} fired: {said}") ++
     (rows "unfired").map fun f =>
       s!"rule {text f "rule"} of {shownName w (text f "owner")} did not fire: {unfiredWords (text f "why")}"
-  let asked := fun (id name : String) => ((w.objects[id]?).map fun o => wantRows w id o).getD [] |>.find? fun r =>
+  let asked := fun (id name : String) => ((w.objects[id]?).map fun o => wantRows w principal id o).getD [] |>.find? fun r =>
     (r.getObjValAs? String "name").toOption == some name
   let opened := (rows "wanted").map (fun x =>
       let id := text x "object"
@@ -3954,7 +3957,7 @@ def interpretationsReply (w : World) : World × Json := Id.run do
       |>.bind (·.getObjValAs? String "reach" |>.toOption)).getD ""
     -- The card's wants as they stand, each with the spell that answers it filled, and the library's
     -- pages: what hob may read the words into besides the forms offered.
-    let wants := ((w.objects[object]?).map (wantRows w object ·)).getD [] |>.map fun r =>
+    let wants := ((w.objects[object]?).map (wantRows w speaker object ·)).getD [] |>.map fun r =>
       let field := fun (k : String) => Data.label ((r.getObjValAs? String k).toOption.getD "")
       Data.record [("name", field "name"), ("reading", field "reading"), ("asks", field "asks")]
     let pages := (((w.objects["library"]?).filter (·.read.permits speaker)).bind fun o =>
