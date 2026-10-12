@@ -183,9 +183,15 @@ structure Carried where
     again from there. -/
 def rearmMethod : String := "carried"
 
-/-- The moved objects whose package offers `carried`, each told once, after the move. -/
+/-- The moved objects whose package offers `carried`, each told once, after the move; and every object a re-arm of an
+    earlier carry still waits for (pending, never run), told again under this carry's intent: what the old one sends
+    would take ids the world before bound (`Ops.deliveryId` of the same intent), and never run (`Ops.answered`). The
+    live tide's re-arm `carried:tide`, run at last by the v13 carry, sent a `due` v9 had bound. -/
 def Carried.rearmed (c : Carried) : List String :=
-  c.moved.filterMap fun m => (c.world.objects[m.object]?).bind fun o => if o.offers rearmMethod then some m.object else none
+  let moved := c.moved.filterMap fun m => (c.world.objects[m.object]?).bind fun o => if o.offers rearmMethod then some m.object else none
+  let waiting := c.world.pending.toList.filterMap fun p =>
+    if rearmIntent ((p.getObjValAs? String "id").toOption.getD "") then (p.getObjValAs? String "to").toOption else none
+  (moved ++ waiting).eraseDups
 
 /-- The delivery telling `id` it was carried: a pending send from no object (the carry, the opener's act), so it
     runs as the first turn that settles the carried world, under the carry's principal and a fresh ledger. Its id,
@@ -453,10 +459,8 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
     (changed.map fun l => [("library", Json.mkObj [("from", toJson previous), ("to", toJson l.pin)])]).getD [] ++ earlier)
   let suspended ← w.suspended.mapM (Snapshot.wholeSuspension w)
   let principal := if !w.opener.isEmpty then w.opener else if !w.clockPrincipal.isEmpty then w.clockPrincipal else "host"
-  -- A re-arm an earlier carry left pending (never run: until 2026-10-12 its intent was bound to the first carry's
-  -- receipt) is superseded by this carry's of the same object.
-  let stale := fun (p : Json) => rearmIntent ((p.getObjValAs? String "id").toOption.getD "") &&
-    c.rearmed.contains ((p.getObjValAs? String "to").toOption.getD "")
+  -- A re-arm an earlier carry left pending is superseded by this carry's of the same object (`Carried.rearmed`).
+  let stale := fun (p : Json) => rearmIntent ((p.getObjValAs? String "id").toOption.getD "")
   let pending := w.pending.filter (!stale ·) ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray ++
     (c.rearmed.map (rearm principal (height + 1))).toArray
   let all := Snapshot.indexJson w

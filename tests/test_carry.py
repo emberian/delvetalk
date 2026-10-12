@@ -522,6 +522,41 @@ class Moves(Reflection):
         self.assertEqual((count("t"), count("u")), ("2", "1010"))
         self.assertEqual(new.send(op="world-pending")["ids"], ["already"])
 
+    def test_a_re_arm_an_earlier_carry_left_pending_is_told_again_under_this_carrys_intent(self):
+        # The live v12 town: the tide's re-arm `carried:tide` still pending. Run under that intent at last (the v13
+        # carry), its `due` took the id v9's had bound, and waited for ever; a carry tells it again as its own.
+        self.ship(declared(TALLY_NOTED_SOURCE.replace(
+            "def bump(", "def carried(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:\n  add(context, 1000n)\ndef bump(", 1),
+            "bump", "jot", "~carried"))
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        [g] = journal_entries(out)
+        g["outcome"]["pending"] = [dict(d, id="carried:" + d["to"]) if d["method"] == "carried" else d for d in g["outcome"]["pending"]]
+        g.pop("hash")
+        g["hash"] = cid_of(g)
+        os.remove(out)
+        os.remove(out + ".blocks")
+        write_journal(out, [g])
+        held = self.opened(out)
+        self.assertEqual(sorted(held.send(op="world-pending")["ids"]), ["carried:t", "carried:u"])
+        self.assertEqual(held.send(op="world-snapshot")["status"], "snapshot")
+        held.close()
+        self.hosts.remove(held)
+        again = os.path.join(self.dir.name, "again.journal")
+        p = subprocess.run([binary(), "carry", "--from", out, "--out", again, "--reason", "again",
+                            "--library", os.path.join(self.image, "lib")], capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        self.assertEqual((carried["moved"], sorted(carried["rearmed"])), ([], ["t", "u"]), carried)  # nothing moved; both told again
+        [g2] = journal_entries(again)
+        self.assertEqual(sorted(d["id"] for d in g2["outcome"]["pending"] if d["method"] == "carried"),
+                         [f"carried:t:{g2['height']}", f"carried:u:{g2['height']}"])
+        new = self.opened(again)
+        self.assertEqual(new.send(op="world-advance", principal="ember", height=1)["status"], "advanced")
+        count = lambda i: field(new.send(op="world-view", principal="ember", object=i)["state"], "count")["value"]
+        self.assertEqual((count("t"), count("u")), ("1002", "1010"))
+        self.assertEqual(new.send(op="world-pending")["ids"], [])
+
     def test_a_moved_object_takes_its_packages_new_law_and_an_amended_one_is_kept_and_named(self):
         version = self.host.send(op="world-view", principal="ember", object="m")["version"]
         amended = 'law counted: monotone(count)\nlaw mine "ember alone bumps": request.subject == "ember"'
