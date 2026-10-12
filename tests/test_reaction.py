@@ -204,15 +204,15 @@ class Quest(Reaction):
 class Errand(Reaction):
     def test_an_errand_settles_by_the_hand_that_did_it_and_pays_from_its_maker(self):
         """The opener's errand on kim's bell: done at its second rain, pays a day of the anthology's `admit`. Its `made`
-        places two rules on the bell under the opener; glm's rain (the second) fires both: the errand is marked done
-        by glm and its rules leave the bell, and the opener lends `admit` to glm. A hand's settle is refused `ruled`;
+        places two rules on the bell under the opener; glm's rain (the second) fires both: the opener lends `admit` to
+        glm, and the errand, reading that pay's receipt admitted, is marked done by glm, its rules off the bell. A hand's settle is refused `ruled`;
         the errand wants `open` until it is done."""
         bell = self.plant(KIM)
         errand = self.made(OPENER, "kind/errand", "\nasks: a second hand's rain on kim's bell\non: %s\n"
                            "done: count(new.lines) >= 2 and count(old.lines) <= 1\n"
                            "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
         placed = sorted(r["name"] for r in self.town.send(op="world-rules", principal=OPENER, object=bell)["rows"] if r["from"] == bell)
-        self.assertEqual(len(placed), 2, placed)
+        self.assertEqual(placed, sorted([identifier(errand), "_v" + identifier(errand)]), placed)
         self.assertIn("open", [w["name"] for w in self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"]])
         forged = self.say(GLM, errand, "delvetalk %s settle / by: glm" % errand)
         self.assertEqual((forged["status"], forged["receipt"]["outcome"]["clause"]), ("refused", "ruled"), forged)
@@ -227,6 +227,39 @@ class Errand(Reaction):
         self.assertNotIn("open", [w["name"] for w in self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"]])
         grants = [g for g in self.town.send(op="world-grants", principal=GLM)["grants"] if g["object"] == "anthology"]
         self.assertEqual([(g["method"], g["to"]) for g in grants], [("admit", GLM)], grants)
+
+    def test_an_errand_is_done_only_once_its_pay_is_admitted(self):
+        """Codex objects 6: settling and paying are two rules on the bell, and a commit casts at most eight: with seven
+        of kim's rules firing beside them, the pay was the ninth, `unfired`, yet settling marked the errand done and
+        took both rules off, so it never paid. Settling waits for that pay's receipt: unpaid, the errand stays open
+        and says so; the next rain that does it, with room for the pay, pays and settles."""
+        bell = self.plant(KIM)
+        for n in range(1, 8):
+            self.place(KIM, bell, "n%d / when: request.method == \"rain\" / then: delvetalk me note / text: rained %d" % (n, n))
+        errand = self.made(OPENER, "kind/errand", "\nasks: a second hand's rain on kim's bell\non: %s\n"
+                           "done: request.method == \"rain\" and count(new.lines) >= 2\n"
+                           "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
+        grants = lambda: [(g["method"], g["to"]) for g in self.town.send(op="world-grants", principal=GLM)["grants"] if g["object"] == "anthology"]
+        self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: the first" % bell))
+        crowded = self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: the second" % bell))
+        self.assertIn("_v" + identifier(errand), [u["rule"] for u in self.fired_and_unfired(crowded)[1]])
+        clock = int(self.field("tide", "last")["value"]) + 61
+        self.town.send(op="world-advance", principal="transport", height=clock)
+        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.assertEqual(self.marks(errand), [])
+        self.assertEqual(grants(), [])
+        self.assertIn("Not paid yet: the pay to …gggggggg was not cast.", self.card(self.say(GLM, errand, "")))
+        self.admitted(self.say(KIM, bell, "delvetalk %s unrule / name: n7" % bell))
+        self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: the third" % bell))
+        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.assertEqual([(m, who) for m, who in self.marks(errand)], [("done", GLM)])
+        self.assertEqual(grants(), [("admit", GLM)])
+        self.assertEqual([r for r in self.town.send(op="world-rules", principal=OPENER, object=bell)["rows"] if r["name"] in (identifier(errand), "_v" + identifier(errand))], [])
+
+    def fired_and_unfired(self, reply):
+        who = reply["receipt"]["identity"]["principal"]
+        entry = self.town.send(op="world-entry", principal=who, hash=reply["receipt"]["hash"])["receipt"]
+        return entry.get("fired", []), entry.get("unfired", [])
 
     def marks(self, obj):
         rows = self.field(obj, "marks")["payload"]["fields"][0]["value"]["items"]
