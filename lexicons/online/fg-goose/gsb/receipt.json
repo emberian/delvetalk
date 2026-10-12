@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.receipt",
+  "id": "online.fg-goose.gsb.receipt",
   "description": "One journal entry, as the host projects it to the reader (world-entry, world-entries, world-resolve). The identity's own principal sees the whole entry; anyone else sees a refusal as its public projection and any other entry as its chain fields, identity, turn, outcome tag and the roots and writes of objects it may view.",
   "defs": {
     "main": {

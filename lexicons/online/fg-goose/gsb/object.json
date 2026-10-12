@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.object",
+  "id": "online.fg-goose.gsb.object",
   "description": "An object at a version, as world-object answers it to a reader who may view the object.",
   "defs": {
     "main": {
@@ -40,7 +40,7 @@
             "type": "array",
             "items": {
               "type": "ref",
-              "ref": "town.delvetalk.law#reading"
+              "ref": "online.fg-goose.gsb.law#reading"
             },
             "description": "The package's reading of each clause it gave one."
           },
@@ -48,9 +48,9 @@
             "type": "array",
             "items": {
               "type": "ref",
-              "ref": "town.delvetalk.law"
+              "ref": "online.fg-goose.gsb.law"
             },
-            "description": "The law's clauses, each a town.delvetalk.law record."
+            "description": "The law's clauses, each a online.fg-goose.gsb.law record."
           },
           "stateCid": {
             "type": "string",

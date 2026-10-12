@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.getEntry",
+  "id": "online.fg-goose.gsb.getEntry",
   "description": "A journal entry's whole canonical bytes, to its own principal only.",
   "defs": {
     "main": {

@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.plan",
+  "id": "online.fg-goose.gsb.plan",
   "description": "Run up to eight calls judged as one turn, all or nothing (host turn not yet built: answered unsupported).",
   "defs": {
     "main": {
@@ -19,7 +19,7 @@
               "type": "array",
               "items": {
                 "type": "ref",
-                "ref": "town.delvetalk.defs#call"
+                "ref": "online.fg-goose.gsb.defs#call"
               },
               "minLength": 1,
               "maxLength": 8
@@ -32,7 +32,7 @@
               "type": "array",
               "items": {
                 "type": "ref",
-                "ref": "town.delvetalk.defs#pin"
+                "ref": "online.fg-goose.gsb.defs#pin"
               },
               "maxLength": 16
             },
@@ -47,7 +47,7 @@
         "encoding": "application/json",
         "schema": {
           "type": "ref",
-          "ref": "town.delvetalk.defs#answerView"
+          "ref": "online.fg-goose.gsb.defs#answerView"
         }
       },
       "errors": [

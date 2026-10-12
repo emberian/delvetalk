@@ -1,5 +1,5 @@
 """Observed posts -> host turns -> reply drafts for a human to post (`python3 -m transport bridge`); observed request
-records (transport/requests.py) -> the same turns -> `town.delvetalk.answer` records, which the façade serves (the
+records (transport/requests.py) -> the same turns -> `online.fg-goose.gsb.answer` records, which the façade serves (the
 mirror would copy them; it is built and not running).
 
 Never posts to delve.town: `post` is the only writer there. A world whose bridge row is a Zulip channel, the owner's own,
@@ -15,6 +15,7 @@ from transport.delve import Client, FixtureTransport, canonical, http_transport
 from transport.host import CLOCK, PUBLIC, paged, painted, typed
 from transport import observe
 from transport.observe import Observer
+from transport.mirror import ANSWER, NS
 
 DELIVER_ROUNDS = 8
 TELLING_LINES = 8  # the exact lines an unpainted telling before arrival leads a post with, the newest
@@ -239,9 +240,6 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     return ''  # nothing changed and nothing offered: silence
 
 
-ANSWER = 'town.delvetalk.answer'
-
-
 def answer_path(st, uri):
     """`<did>.<rkey>.json`: the answer's record key, DIDs and TIDs being record-key characters."""
     did, _, rkey = uri.removeprefix('at://').partition('/')
@@ -249,7 +247,7 @@ def answer_path(st, uri):
 
 
 def public_view(host, reply):
-    """What the anonymous reader may read of a turn reply (an answerView, lexicons/town/delvetalk/defs.json): the line,
+    """What the anonymous reader may read of a turn reply (an answerView, lexicons/online/fg-goose/gsb/defs.json): the line,
     receipt and, only when everything the turn read and wrote is public (the host's `inPublic`), its offers and trace; a
     refusal's words only from the host's `public` projection; a `moved` object's versions only when the public views it."""
     if reply.get('class') == 'moved':
@@ -259,7 +257,7 @@ def public_view(host, reply):
         return {'outcome': {'status': 'moved', 'line': line, 'moved': public}}
     if reply.get('status') == 'usage':
         return {'outcome': {'status': 'usage', 'line': "a `?` or a read is its reader's, not by request: a card's spells are its own record's "
-                                                       "(town.delvetalk.card); a book, the chronicle and the map are the web's"}}
+                                                       f"({NS}card); a book, the chronicle and the map are the web's"}}
     rc = reply.get('receipt') or {}
     tag = (rc.get('outcome') or {}).get('tag') or reply.get('status')
     receipt = {'slug': rc['slug'], 'height': rc['height'], 'entry': {'$link': rc['hash']}} if {'hash', 'slug', 'height'} <= set(rc) else None
@@ -297,7 +295,7 @@ def answer_turn(st, host, obs, reply):
         views = [public_view(host, t) for t in turns]
         return write_answer(st, obs, {'outcome': {'status': 'spells', 'line': '\n'.join(v['outcome']['line'] for v in views)}, 'turns': views})
     if reply.get('status') == 'looked':  # `delvetalk receipt / of:`: whose receipt is the caller's, not the public's
-        return write_answer(st, obs, {'outcome': {'status': 'invalid', 'line': 'a receipt is read from the repository (town.delvetalk.receipt), not by request'}})
+        return write_answer(st, obs, {'outcome': {'status': 'invalid', 'line': f'a receipt is read from the repository ({NS}receipt), not by request'}})
     if 'receipt' not in reply and reply.get('class') != 'moved' and reply.get('status') != 'usage':
         return reply.get('message', reply.get('status'))  # the host gave no answer: read again next run
     if reply.get('status') == 'suspended' or (reply.get('receipt', {}).get('outcome') or {}).get('tag') == 'suspended':

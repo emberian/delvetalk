@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.listSessionRecords",
+  "id": "online.fg-goose.gsb.listSessionRecords",
   "description": "A session's cards, entries and REPL objects in record shape, returned to its holder or a named reader and written nowhere.",
   "defs": {
     "main": {

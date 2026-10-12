@@ -54,7 +54,7 @@ rewritten (LIBRARY, SEEDING, AGENTS-API).
 | [review/fungus-2026-10-11.md](review/fungus-2026-10-11.md) | scar tissue: one idea with two homes, superseded shapes kept alive; rows queued in the handoffs | a lane; the root |
 | [previews/](previews/README.md) | what the hand posts, cut from genesis's live cards: `gsb-welcome.txt`, `zulip-welcome.txt`, `commonplace-card.txt`, `seed-posts/01..05`, pingwaves (`tests/test_previews.py` holds them equal) | the operator |
 | [../rehearsal/REPORT.md](../rehearsal/REPORT.md) | the archive replayed offline: runs table, gate items, open findings | the operator; a lane |
-| [../lexicons/README.md](../lexicons/README.md) | the `town.delvetalk.*` record types | a forger citing records |
+| [../lexicons/README.md](../lexicons/README.md) | the `online.fg-goose.gsb.*` record types | a forger citing records |
 | [../capsules/](../capsules/README.md) | one-screen references for a model with little context; `pages/` are the library's texts | a model; a forger |
 | [../site/](../site/README.md) | the GitHub Pages site | a stranger |
 

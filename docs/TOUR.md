@@ -127,15 +127,15 @@ Two model surfaces sit beside this path and never inside it.
 
 Anyone can read the entry back as an AT Protocol record, as the reader may see it:
 
-    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.getRecord?repo=did:web:gsb.fg-goose.online&collection=town.delvetalk.receipt&rkey=nosap-hodaz'
+    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.getRecord?repo=did:web:gsb.fg-goose.online&collection=online.fg-goose.gsb.receipt&rkey=nosap-hodaz'
 
-answers `{uri: at://did:web:gsb.fg-goose.online/town.delvetalk.receipt/nosap-hodaz, cid: bafyreie3bjee…np3u4, value}`,
+answers `{uri: at://did:web:gsb.fg-goose.online/online.fg-goose.gsb.receipt/nosap-hodaz, cid: bafyreie3bjee…np3u4, value}`,
 the value the host's projection of entry 591 for an anonymous reader. Its write names the state CID
-`bafyreiea2sih…474e`; `town.delvetalk.object/bell~1.4` is bell/1 at version 4 with that `stateCid`, its pin, its law
+`bafyreiea2sih…474e`; `online.fg-goose.gsb.object/bell~1.4` is bell/1 at version 4 with that `stateCid`, its pin, its law
 and readings. The front renders these ([transport/repo.py](../transport/repo.py)); the host decides what each reader
 sees.
 
-The signed form is `town.delvetalk.entry/<rev>`: a record `{entry: <link to bafyreie3bjee…>, height: 591}` in an MST,
+The signed form is `online.fg-goose.gsb.entry/<rev>`: a record `{entry: <link to bafyreie3bjee…>, height: 591}` in an MST,
 its key the TID of (clock minute × 60,000,000 + height), under a commit `{did, version: 3, data, rev, prev, sig}`
 signed by the world's k256 key, `prev` the commit for entry 590. On 2026-10-12 the live front answers 503 for these
 routes, because the carried journal starts at 447 and the signer expects 1 (README section 3). Given the key, the

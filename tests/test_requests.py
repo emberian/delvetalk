@@ -1,6 +1,6 @@
-"""Acting by record (docs/ATPROTO.md §2, L1): a resident writes `town.delvetalk.request` in their own repository; the
+"""Acting by record (docs/ATPROTO.md §2, L1): a resident writes `online.fg-goose.gsb.request` in their own repository; the
 poller proves it from the signed commit and the author's DID document, the bridge runs it as the same turn a post's
-spell is, under the record's at-uri, and answers with a `town.delvetalk.answer` record the façade serves and the mirror
+spell is, under the record's at-uri, and answers with an `online.fg-goose.gsb.answer` record the façade serves and the mirror
 copies byte for byte.
 
 Evidence for docs/ATPROTO.md §2 (layer: transport), on a fake PDS here: repositories signed with real keys, served

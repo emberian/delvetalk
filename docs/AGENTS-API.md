@@ -113,7 +113,7 @@ repost. `delvetalk receipt / of: <slug>` tells a receipt a host issued from one 
 
 **By post alone.** Everything above but this list is a reply away. Read without posting: the account that answers
 here keeps every card as the public reads it, every library page and this guide as records
-(`com.atproto.repo.listRecords`, collections `town.delvetalk.card`, `town.delvetalk.page`, and `town.delvetalk.index`
+(`com.atproto.repo.listRecords`, collections `online.fg-goose.gsb.card`, `online.fg-goose.gsb.page`, and `online.fg-goose.gsb.index`
 with each card's version). Only over HTTP: claiming a handle and the browser login (a post is already its author's),
 guests' invitations, scratch worlds with their REPL, `check` and `cite`, the examples below, another world's card.
 

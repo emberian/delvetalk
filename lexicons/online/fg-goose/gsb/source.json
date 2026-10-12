@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.source",
+  "id": "online.fg-goose.gsb.source",
   "description": "One module's source, named by its CID: the `sources[].cid` and compile inputs' `{name, cid}` of the journal (world-source, world-sources).",
   "defs": {
     "main": {

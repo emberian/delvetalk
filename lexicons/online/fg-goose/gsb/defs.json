@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.defs",
+  "id": "online.fg-goose.gsb.defs",
   "description": "Shared definitions for acting on a DelveTalk world (docs/ATPROTO.md section 2).",
   "defs": {
     "call": {
@@ -43,7 +43,7 @@
         },
         "cid": {
           "type": "string",
-          "description": "The object's stateCid at that version (a town.delvetalk.object record's cid).",
+          "description": "The object's stateCid at that version (a online.fg-goose.gsb.object record's cid).",
           "format": "cid"
         }
       }
@@ -217,11 +217,11 @@
       "properties": {
         "outcome": {
           "type": "ref",
-          "ref": "town.delvetalk.defs#outcome"
+          "ref": "online.fg-goose.gsb.defs#outcome"
         },
         "receipt": {
           "type": "ref",
-          "ref": "town.delvetalk.defs#receipt"
+          "ref": "online.fg-goose.gsb.defs#receipt"
         },
         "card": {
           "type": "string",
@@ -229,7 +229,7 @@
         },
         "cardCid": {
           "type": "string",
-          "description": "The CID of the town.delvetalk.card record those card bytes make.",
+          "description": "The CID of the online.fg-goose.gsb.card record those card bytes make.",
           "format": "cid"
         },
         "offers": {
@@ -241,7 +241,7 @@
         },
         "trace": {
           "type": "ref",
-          "ref": "town.delvetalk.defs#trace"
+          "ref": "online.fg-goose.gsb.defs#trace"
         }
       }
     }

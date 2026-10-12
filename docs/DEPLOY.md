@@ -798,6 +798,12 @@ name entries of the same sequence), and each carried world is checked in a throw
 
     hob: the world was carried to a newer host at entry 73; everything is where it was, and the carry is receipt <slug>.
 
+The carry that first runs this edition's repository names changes the collections to `online.fg-goose.gsb.*`
+and re-derives every MST key and commit CID from the journal. The façade then serves only the new names,
+and residents' mirror readers must list `online.fg-goose.gsb.*`. Nothing follows the firehose yet
+(`com.atproto.sync.subscribeRepos` is 501). The posting account's orphaned records under the old authority
+segments `town`, `delvetalk` are deleted by the owner's authorized mirror run.
+
 An object the new binary cannot rebuild, a suspension it cannot decode, and a suspension the carry would drop (its
 object moved, unless its package offers `carried`, or left unnamed) refuse the carry by name. Only the owner
 lists such an object with `--leave OBJ` (`WORLD=OBJ` for a world other than the town): it is carried retired (the

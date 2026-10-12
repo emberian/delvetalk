@@ -44,7 +44,7 @@ class State:
         self.mirror = h / 'mirror.json'  # what the mirror last wrote to the PDS: {collection rkey: digest}
         self.taught = h / 'taught.txt'  # the residents whose first admitted reply carried the next move
         self.requests = h / 'requests.json'  # the request poller's ledger: each repo's rev read, each record refused
-        self.answers = h / 'answers'  # town.delvetalk.answer records, <did>.<rkey>.json: the façade and the mirror serve them
+        self.answers = h / 'answers'  # online.fg-goose.gsb.answer records, <did>.<rkey>.json: the façade and the mirror serve them
 
     def host(self, **more):
         return HostClient(self.host_socket, **{'world': self.world, **more})

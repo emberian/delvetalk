@@ -118,7 +118,7 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_laws` (§4): The world's objects carry their laws in source: only owners change directories and admit anthology lines, and Tide's and Wake's predicates refuse what their code would.
 - `test_kinds` (§8 extend): `kinds` makes a kind, a kind makes an instance of its package under its law, and a kind with a body grafts it on each instance.
 - `test_lenses` (§5 Spell grammar): An object's exposed fields are lenses: `set` writes one through its kind and its owner, `?` lists every form and lens.
-- `test_mirror` (POSTING §1): The town as records on the PDS: every card the public reads is a `town.delvetalk.card` of its exact text, wants and doors, every library page a `town.delvetalk.page`, written only when changed, never a feed post, and the façade answers the same records.
+- `test_mirror` (POSTING §1): The town as records on the PDS: every card the public reads is an `online.fg-goose.gsb.card` of its exact text, wants and doors, every library page an `online.fg-goose.gsb.page`, written only when changed, never a feed post, and the façade answers the same records.
 - `test_posting` (POSTING): A resident who only posts, on the bridge's fake Delve over a genesis town (tests/poster.py): a reply answering several cards is addressed to the commonplace, never to the first card alone.
 - `test_try` (POSTING §2): `world-try` is the turn with the write switched off: it journals nothing, the state CIDs it shows are the ones the act lands, an act whose `if` root moved is refused `moved` unjournaled, and by post `delvetalk try` previews indented spells and its `if:` line guards the act.
 - `test_mailbox` (§8 claims): A post that mentions an avatar's resident is a note from its author and offers nothing; the principal marks the entry it has read through; the inbox keeps the newest 64.
@@ -152,6 +152,7 @@ The Python around one `serve`, which carries bytes and credentials and decides n
 - `test_pages` (§7): Every route a browser reaches is a page in the theme; JSON stays JSON for agents.
 - `test_publish` (§5, §7): A published page reaches the outbox as a draft, is recorded when posted, and a merge reply to it routes back to its object.
 - `test_repo` (§2 Journal, §7): The journal as a read-only AT Protocol repository over a real `serve`: records by slug and CID agree with the host, blocks hash to their CIDs, private records stay private.
+- `test_lexicons` (ATPROTO §5, pure Python): Every lexicon ID matches its path under `online.fg-goose.gsb.*`; the old prefix in a lexicon file or a transport string literal fails. References resolve, nested objects use refs, and missing fields and wrong types are refused.
 - `test_ring_harvest` (§11): `deploy/ring/harvest.py` reads the front's access log.
 - `test_open` (FEDERATION §7): `python3 -m transport open` writes one bridge row per world, starting nothing; the world's bridge reads it.
 - `test_pull_backups` (OPERATIONS §b): `deploy/pull-backups.sh` keeps the pulled tarballs 7 days whole, 56 days daily, months forever.

@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.getSession",
+  "id": "online.fg-goose.gsb.getSession",
   "description": "A session's status, readers and expiry, to its holder or a named reader.",
   "defs": {
     "main": {

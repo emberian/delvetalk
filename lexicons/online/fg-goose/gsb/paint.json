@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.paint",
+  "id": "online.fg-goose.gsb.paint",
   "description": "A card's verified paint (docs/OVERHAUL.md section 4): model prose, cached and never journaled, so outside the signed tree; the exact card is its strongRef.",
   "defs": {
     "main": {

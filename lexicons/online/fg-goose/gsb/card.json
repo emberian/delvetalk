@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.card",
+  "id": "online.fg-goose.gsb.card",
   "description": "A card as the public reads it now (transport/mirror.py, docs/POSTING.md §1): the rendering the front's pages and a reply's draft share, written to the posting account's repository on the PDS and answered by the did:web façade.",
   "defs": {
     "main": {
@@ -31,7 +31,7 @@
           },
           "paint": {
             "type": "string",
-            "description": "The verified paint (docs/OVERHAUL.md section 4). Moves to town.delvetalk.paint (docs/ATPROTO.md section 1, lane L3) so that a card record is a function of the journal and has one CID in both repositories."
+            "description": "The verified paint (docs/OVERHAUL.md section 4). Moves to online.fg-goose.gsb.paint (docs/ATPROTO.md section 1, lane L3) so that a card record is a function of the journal and has one CID in both repositories."
           },
           "wants": {
             "type": "array",

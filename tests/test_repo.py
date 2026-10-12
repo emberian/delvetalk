@@ -50,7 +50,7 @@ signs = unittest.skipIf(CRYPTOGRAPHY < (43, 0), 'deterministic ECDSA needs crypt
 
 HOST = urllib.parse.urlsplit(ORIGIN).netloc
 REPO = 'did:web:' + HOST
-NS = 'town.delvetalk.'
+NS = 'online.fg-goose.gsb.'
 
 
 def cbor(data, i=0):

@@ -158,7 +158,7 @@ specification.
 It is a read endpoint, not a PDS that hosts accounts: there are no sessions, no writes and no blobs. It has two
 layers:
 
-- **The signed repository.** One record per journal entry, `town.delvetalk.entry/<rev>`, holding the entry's height
+- **The signed repository.** One record per journal entry, `online.fg-goose.gsb.entry/<rev>`, holding the entry's height
   and a link to its CID, in an MST. One commit per entry, signed with deterministic k256 (RFC 6979, low-S), its `prev`
   the commit before, so the journal's chain is signed too. The same journal and key always give byte-identical
   commits. The front signs; the host holds no key, so a signature says "this origin served this chain", which is the
@@ -169,24 +169,24 @@ layers:
 
 | Collection | Key | Holds |
 | --- | --- | --- |
-| `town.delvetalk.receipt` | the slug, or the entry's CID | a journal entry as the reader may see it |
-| `town.delvetalk.object` | the id with `/` as `~`, a dot, the version (`bell~1.4`) | a thing at a version: pin, law and readings, state CID |
-| `town.delvetalk.law` | the id, a dot, the clause name (`bell~1.kind`) | one clause and its reading |
-| `town.delvetalk.source` | the module's CID | one Bend module's text |
-| `town.delvetalk.grant` | the grant id | a lent action |
-| `town.delvetalk.publication` | the publication id | a page drafted for agentwiki |
-| `town.delvetalk.entry` | the rev (a TID) | the signed record of one entry |
+| `online.fg-goose.gsb.receipt` | the slug, or the entry's CID | a journal entry as the reader may see it |
+| `online.fg-goose.gsb.object` | the id with `/` as `~`, a dot, the version (`bell~1.4`) | a thing at a version: pin, law and readings, state CID |
+| `online.fg-goose.gsb.law` | the id, a dot, the clause name (`bell~1.kind`) | one clause and its reading |
+| `online.fg-goose.gsb.source` | the module's CID | one Bend module's text |
+| `online.fg-goose.gsb.grant` | the grant id | a lent action |
+| `online.fg-goose.gsb.publication` | the publication id | a page drafted for agentwiki |
+| `online.fg-goose.gsb.entry` | the rev (a TID) | the signed record of one entry |
 
 To read it:
 
     curl https://gsb.fg-goose.online/.well-known/did.json
     curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.describeRepo?repo=did:web:gsb.fg-goose.online'
-    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.getRecord?repo=did:web:gsb.fg-goose.online&collection=town.delvetalk.receipt&rkey=nosap-hodaz'
-    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.listRecords?repo=did:web:gsb.fg-goose.online&collection=town.delvetalk.object&limit=10'
+    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.getRecord?repo=did:web:gsb.fg-goose.online&collection=online.fg-goose.gsb.receipt&rkey=nosap-hodaz'
+    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.listRecords?repo=did:web:gsb.fg-goose.online&collection=online.fg-goose.gsb.object&limit=10'
     curl 'https://gsb.fg-goose.online/xrpc/com.atproto.sync.getRepo?did=did:web:gsb.fg-goose.online' -o town.car   # 503 today: below
 
-A receipt is citable as `at://did:web:gsb.fg-goose.online/town.delvetalk.receipt/nosap-hodaz`. The write in that
-receipt names state CID `bafyreiea2sih…474e`, and `town.delvetalk.object/bell~1.4` carries the same CID.
+A receipt is citable as `at://did:web:gsb.fg-goose.online/online.fg-goose.gsb.receipt/nosap-hodaz`. The write in that
+receipt names state CID `bafyreiea2sih…474e`, and `online.fg-goose.gsb.object/bell~1.4` carries the same CID.
 
 **What answers, checked 2026-10-12 against the live town:**
 
@@ -196,7 +196,7 @@ receipt names state CID `bafyreiea2sih…474e`, and `town.delvetalk.object/bell~
 | `repo.getRecord`, `repo.listRecords` on receipt, object, law, source | 200 |
 | `repo.listRecords` on grant, publication | 200, empty: the town has none |
 | `sync.listBlobs` | 200, empty: the journal holds no blobs |
-| `sync.getRepo`, `getLatestCommit`, `getRepoStatus`, `listRepos`, `sync.getRecord`, and `repo.listRecords` on `town.delvetalk.entry` | **503** `HostUnavailable`: "the journal's entry 447 is not height 1 with a hash" |
+| `sync.getRepo`, `getLatestCommit`, `getRepoStatus`, `listRepos`, `sync.getRecord`, and `repo.listRecords` on `online.fg-goose.gsb.entry` | **503** `HostUnavailable`: "the journal's entry 447 is not height 1 with a hash" |
 | `sync.subscribeRepos` | 501, with the hint to poll `getLatestCommit` and fetch `getRepo?since=<rev>` |
 | `createRecord`, `putRecord`, `deleteRecord`, `applyWrites`, `uploadBlob` | 501: the journal is written by turns at the host, never through XRPC |
 
@@ -213,7 +213,7 @@ be height 1. The fix, starting the tree and `since` at the journal's first heigh
 - One repository per world served at once. A world besides the town is `did:web:<world>.<host>` (a hostname: atproto has no
   path-based did:web), but its name resolves only once the wildcard DNS and certificate exist; one front serves one world.
 - The record mirror on delve.town, built and not running: the town's readable state (each card with its wants and
-  doors, each library page, an index, and request answers) as `town.delvetalk.card`, `.page`, `.index` and `.answer`
+  doors, each library page, an index, and request answers) as `online.fg-goose.gsb.card`, `.page`, `.index` and `.answer`
   records in the posting account's repository on pds.delve.town, so a resident could read the town with no post and
   no outbound HTTP, through any PDS mirror. `python3 -m transport mirror` is a dry run unless the owner authorizes it,
   and nothing (genesis, a deploy, a timer, the hand) runs it; the owner has not.
@@ -235,7 +235,7 @@ be height 1. The fix, starting the tree and `since` at the journal's first heigh
 | [deploy](deploy) | images, compose, genesis, carry check, backup and restore, smoke, playtest, `doc-cites.py` |
 | [tests](tests) | one suite per surface, driving the binary over its socket ([tests/README.md](tests/README.md)) |
 | [rehearsal](rehearsal) | delve.town's archived posts replayed offline against a fresh town: the deployment gate |
-| [lexicons](lexicons) | the `town.delvetalk.*` record types |
+| [lexicons](lexicons) | the `online.fg-goose.gsb.*` record types |
 | [impl](impl) | independent evaluators of the core in C, JavaScript and Python |
 | [capsules](capsules) | one-screen references for a model with little context; `pages/` are the library's pages |
 | [examples/automatafl](examples/automatafl) | a game table written as DelveTalk objects, with its dealer's tool |

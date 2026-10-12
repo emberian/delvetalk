@@ -1,4 +1,4 @@
-"""The lexicons under lexicons/town/delvetalk/ are documents the reference validator takes, and a record checks against
+"""The lexicons under lexicons/online/fg-goose/gsb/ are documents the reference validator takes, and a record checks against
 them (docs/ATPROTO.md §5).
 
 Evidence for docs/ATPROTO.md §5 (layer: transport).
@@ -7,11 +7,12 @@ Refuted by: an object type inline below a definition's top (the reference valida
 `ref`), a `ref` naming no definition, a required property its object does not declare, or `validate` passing a value
 that misses a required field or carries a field of the wrong type.
 """
+import ast
 import json
 import unittest
 from pathlib import Path
 
-DIR = Path(__file__).resolve().parent.parent / 'lexicons' / 'town' / 'delvetalk'
+DIR = Path(__file__).resolve().parent.parent / 'lexicons' / 'online' / 'fg-goose' / 'gsb'
 DOCS = {json.loads(p.read_text())['id']: json.loads(p.read_text()) for p in sorted(DIR.glob('*.json'))}
 EXTERNAL = {'com.atproto.repo.strongRef#main': {'type': 'object', 'required': ['uri', 'cid'],
                                                 'properties': {'uri': {'type': 'string', 'format': 'at-uri'}, 'cid': {'type': 'string', 'format': 'cid'}}}}
@@ -66,6 +67,29 @@ def record_problems(value):
 
 
 class Lexicons(unittest.TestCase):
+    def test_every_lexicon_id_matches_its_path_and_one_authority(self):
+        root = Path(__file__).resolve().parent.parent / 'lexicons'
+        files = sorted(root.rglob('*.json'))
+        self.assertTrue(files, 'no lexicons found')
+        for path in files:
+            with self.subTest(path=path.relative_to(root)):
+                nsid = json.loads(path.read_text())['id']
+                self.assertEqual(nsid, '.'.join(path.relative_to(root).with_suffix('').parts))
+                self.assertTrue(nsid.startswith('online.fg-goose.gsb.'), nsid)
+
+    def test_old_prefix_is_absent_from_lexicons_and_transport_string_literals(self):
+        root = Path(__file__).resolve().parent.parent
+        old_prefix = 'town' + '.delvetalk'
+        for path in sorted((root / 'lexicons').rglob('*')):
+            if path.is_file():
+                with self.subTest(path=path.relative_to(root)):
+                    self.assertNotIn(old_prefix, path.read_text())
+        for path in sorted((root / 'transport').glob('*.py')):
+            for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    with self.subTest(path=path.relative_to(root), line=node.lineno):
+                        self.assertNotIn(old_prefix, node.value)
+
     def test_every_document_takes_nested_objects_only_by_ref_and_every_ref_resolves(self):
         problems = []
 
@@ -97,7 +121,7 @@ class Lexicons(unittest.TestCase):
         self.assertEqual(problems, [])
 
     def test_the_validator_refuses_a_missing_field_and_a_wrong_type(self):
-        good = {'$type': 'town.delvetalk.answer', 'request': {'uri': 'at://did:plc:x/town.delvetalk.request/3a', 'cid': 'bafy'},
+        good = {'$type': 'online.fg-goose.gsb.answer', 'request': {'uri': 'at://did:plc:x/online.fg-goose.gsb.request/3a', 'cid': 'bafy'},
                 'outcome': {'status': 'admitted', 'line': 'admitted'}, 'height': 3, 'receipt': {'slug': 'a-b', 'height': 3, 'entry': {'$link': 'bafy'}}}
         self.assertEqual(record_problems(good), [])
         self.assertEqual(record_problems({**good, 'outcome': {'status': 'admitted'}}), ['$.outcome.line: required'])

@@ -1,33 +1,34 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.try",
-  "description": "Run calls with the write switched off (world-try): the exact card, its CID and the trace, answered to the caller only; nothing journaled, no record written, no receipt.",
+  "id": "online.fg-goose.gsb.act",
+  "description": "Run one call as the caller's turn.",
   "defs": {
     "main": {
       "type": "procedure",
-      "description": "Run calls with the write switched off (world-try): the exact card, its CID and the trace, answered to the caller only; nothing journaled, no record written, no receipt. Inter-service auth: aud did:web:gsb.fg-goose.online#delvetalk, lxm this NSID.",
+      "description": "Run one call as the caller's turn. Inter-service auth: aud did:web:gsb.fg-goose.online#delvetalk, lxm this NSID.",
       "input": {
         "encoding": "application/json",
         "schema": {
           "type": "object",
           "required": [
-            "calls"
+            "call",
+            "intent"
           ],
           "properties": {
-            "calls": {
-              "type": "array",
-              "items": {
-                "type": "ref",
-                "ref": "town.delvetalk.defs#call"
-              },
-              "minLength": 1,
-              "maxLength": 8
+            "call": {
+              "type": "ref",
+              "ref": "online.fg-goose.gsb.defs#call"
+            },
+            "intent": {
+              "type": "string",
+              "description": "The caller's idempotency key: the same intent answers the first receipt.",
+              "maxLength": 256
             },
             "if": {
               "type": "array",
               "items": {
                 "type": "ref",
-                "ref": "town.delvetalk.defs#pin"
+                "ref": "online.fg-goose.gsb.defs#pin"
               },
               "maxLength": 16
             },
@@ -42,7 +43,7 @@
         "encoding": "application/json",
         "schema": {
           "type": "ref",
-          "ref": "town.delvetalk.defs#answerView"
+          "ref": "online.fg-goose.gsb.defs#answerView"
         }
       },
       "errors": [

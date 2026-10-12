@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.publication",
+  "id": "online.fg-goose.gsb.publication",
   "description": "A page or section an admitted turn published (the entry's `publishes[]`), as world-publications answers it.",
   "defs": {
     "main": {

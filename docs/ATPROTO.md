@@ -7,13 +7,13 @@ on `lane/atproto` at 66315d85 (lane/posting merged), against atproto.com/specs a
 section ends with its decision.
 
 **Ground.** DelveTalk's repository, `did:web:gsb.fg-goose.online` (docs/REPO.md): one signed commit per journal
-height over an MST of `town.delvetalk.entry/<rev>`, plus façade collections (`receipt`, `object`, `source`, `law`,
+height over an MST of `online.fg-goose.gsb.entry/<rev>`, plus façade collections (`receipt`, `object`, `source`, `law`,
 `grant`, `publication`; since lane/posting `card`, `page`, `index`); getRepo, `since` and listRecords work for a
 carried journal (74cc83a8); subscribeRepos is 501. The posting account on pds.delve.town is the
 owner's, `ember.delve.town` (`did:plc:6amo7col5h4ciq2gpm5eur7b`, the handle in the posting credential, which the
 owner configures and the repository never holds): the town's replies go out through it, and its address, the one
 residents mention, is the fictional `@livedelvetalk.delve.town`, matched as text (`summon_handle`). `python3 -m
-transport mirror` would put `town.delvetalk.card`, `.page` and `.index/self` there by putRecord/deleteRecord, no feed
+transport mirror` would put `online.fg-goose.gsb.card`, `.page` and `.index/self` there by putRecord/deleteRecord, no feed
 post (POSTING §1); it is built and not running: the owner has not approved it, and it runs dry unless authorized. In progress on lane/posting: `world-try` (the commit with the write switched off: exact
 card bytes, roots read with versions, each written object's new stateCid) and `if: [{object, version}]` on any turn,
 refused `moved` with `[{object, was, now}]`.
@@ -90,7 +90,7 @@ copies the same bytes and names the signed head.
 
 **(a) Records in the resident's own repository: public acts only.** Anyone who can `createRecord` can act:
 
-    at://did:plc:corf…/town.delvetalk.request/3mxq…   {service: "did:web:gsb.fg-goose.online", mode: "act",
+    at://did:plc:corf…/online.fg-goose.gsb.request/3mxq…   {service: "did:web:gsb.fg-goose.online", mode: "act",
                                                        calls: [{spell: "delvetalk bell/2 rain\ntext: …"}],
                                                        if: [{object: "bell/2", version: 4}], createdAt}
 
@@ -130,7 +130,7 @@ record maps to `{object, version}`, its CID checked against the signed record. T
 `swapCommit` shape (a write names the CID it expects) at the host's grain: one object, not a repository whose head
 moves at every tick.
 
-*The answer.* `town.delvetalk.answer/<did>.<rkey>` (DIDs and TIDs are record-key characters): `request` (strongRef),
+*The answer.* `online.fg-goose.gsb.answer/<did>.<rkey>` (DIDs and TIDs are record-key characters): `request` (strongRef),
 `outcome {status, line, class?, clause?, reason?, moved?}`, `receipt {slug, height, entry}` (`entry` a cid-link),
 `offers`, and `trace {roots, writes [{object, version, stateCid}], revealed}`, and for a call of several spells
 `turns`, one answerView each. It is the anonymous reader's projection, never the caller's: offers and trace only when
@@ -143,10 +143,10 @@ Built (L1): the bridge writes it at the turn (`bridge.answer_turn`; a turn hob h
 `<state>/worlds/<world>/answers/`, the façade serves it and the mirror copies the same JSON, so its CID is one in both
 repositories (the PDS hashes `{$link}` as a link, as `cbor.from_json` does). In L3 it joins that height's signed
 commit. The entry's whole bytes are the principal's (FOUNDATION §2):
-`town.delvetalk.getEntry` returns them as a CAR rooted at the entry's CID to a service-auth `iss` that is the
+`online.fg-goose.gsb.getEntry` returns them as a CAR rooted at the entry's CID to a service-auth `iss` that is the
 entry's principal. A post is the optional witness (`witness: true`, inside `postQuota`); default off.
 
-**(b) XRPC procedures.** `town.delvetalk.act`, `.try`, `.plan`: the request's fields plus a required `intent` for act
+**(b) XRPC procedures.** `online.fg-goose.gsb.act`, `.try`, `.plan`: the request's fields plus a required `intent` for act
 and plan; outputs the answer's shape. `try` runs `world-try` and answers `status: "previewed"` with the exact card,
 its CID and the trace, no receipt and no slug (it cannot pass for one, POSTING §2), in the response only: no record,
 no entry, no mirror copy. An act's response is likewise the caller's; only its public projection becomes an `answer`.
@@ -164,10 +164,10 @@ our DID document, finds the service entry, signs and forwards [xrpc "Service Pro
 pds.delve.town proxying to third-party services, which the reference PDS does for an `/xrpc/<nsid>` it does not serve
 itself; untested here. The reference PDS sent bare-DID `aud` until spring 2026 [xrpc]; accept the bare DID only from
 tokens forwarded by `did:web:pds.delve.town` until a probe shows the fragment. Since a PDS serves `com.atproto.repo.*`
-itself, every read meant to pass the proxy is in `town.delvetalk.*`.
+itself, every read meant to pass the proxy is in `online.fg-goose.gsb.*`.
 
 **OAuth** stays identity-only (`oauth.py`, scope `atproto`, tokens revoked at once). Writing a request from `/play/`
-would need `repo:town.delvetalk.request?action=create` [permission]; delve offers only `transition:generic`, the whole
+would need `repo:online.fg-goose.gsb.request?action=create` [permission]; delve offers only `transition:generic`, the whole
 account's write, which DelveTalk will not hold.
 
 **Decision:** request records for public acts only, polled from listRepos, proven by sync.getRecord, answered by
@@ -184,14 +184,14 @@ built from the part of a PDS that is not the repository: authenticated XRPC answ
 with the sealed library, the holder's, at most two, discarded 360 clock minutes after its last turn, its contents only
 in `DIR/scratch/<principal>/<name>.journal`. Its AT face, all under service auth:
 
-- `town.delvetalk.openSession {name, from?, readers?}` → `{session, expires}`: `world-scratch` plus `readers`, DIDs
+- `online.fg-goose.gsb.openSession {name, from?, readers?}` → `{session, expires}`: `world-scratch` plus `readers`, DIDs
   the holder names, kept by the host beside the scratch (changed by `shareSession`);
 - `act`, `try`, `plan` with `world: "scratch/<name>"`;
-- `town.delvetalk.getSession` (status, readers, expiry) and `listSessionRecords {session, collection, cursor?}`: the
+- `online.fg-goose.gsb.getSession` (status, readers, expiry) and `listSessionRecords {session, collection, cursor?}`: the
   session's cards, entries and REPL objects in record shape, in the response and nowhere else.
 
 The front admits a call when `iss` is the holder or a named reader; the host then judges it under that principal as
-any read. Being `town.delvetalk.*`, all of it passes `atproto-proxy`. A session has no DID, repository, commit or
+any read. Being `online.fg-goose.gsb.*`, all of it passes `atproto-proxy`. A session has no DID, repository, commit or
 firehose: nothing exists to mirror. (`did:web:<host>:scratch:<name>` would not have been an atproto DID anyway:
 "only hostname-level did:web DIDs are supported" [did].)
 
@@ -237,7 +237,7 @@ DNS zone `fg-goose.online` already sits in); the same gives durable worlds `did:
 
 **Zulip residents** (`zulip:<realm>:<id>`) get the same hosted account, `did:web:<id>.<realm>.zulip.gsb…`, written
 by the Zulip bridge on their behalf, its custody visible in the commits. FEDERATION §6's no-merge stands: Zulip and
-delve are two DIDs. A link is a pair of `town.delvetalk.link {did}` records, one in each repository naming the other
+delve are two DIDs. A link is a pair of `online.fg-goose.gsb.link {did}` records, one in each repository naming the other
 (the two-way check of `alsoKnownAs` [did]), which a `lend` may cite.
 
 **Decision:** principals are DIDs; guests and Zulip users get hosted did:web accounts whose one collection is
@@ -245,30 +245,30 @@ delve are two DIDs. A link is a pair of `town.delvetalk.link {did}` records, one
 
 ## 5. Lexicons
 
-Every collection and procedure is a file under `lexicons/town/delvetalk/` [lexicon]. This commit adds `defs` (call,
+Every collection and procedure is a file under `lexicons/online/fg-goose/gsb/` [lexicon]. This commit adds `defs` (call,
 pin, outcome, trace, receipt), `request`, `answer`, `paint`, `act`, `try`, `plan`, `getEntry`, `openSession`,
 `getSession`, `listSessionRecords`; `verb`, `chronicle`, `book`, `door`, `link`, `shareSession` follow their lanes.
-All are one NSID group, `town.delvetalk.<name>`, because each group needs its own DNS record and resolution does not
+All are one NSID group, `online.fg-goose.gsb.<name>`, because each group needs its own DNS record and resolution does not
 recurse [lexicon "Publication and Resolution"].
 
-**Authority.** `town.delvetalk.*` belongs to whoever controls `delvetalk.town` [nsid]. On 2026-10-12 it has no NS
-records: unregistered, so every name DelveTalk has used is unclaimed (`delvetalk.org`, the clerk's `org.delvetalk.*`,
-likewise). Needed:
+**Authority.** The group `online.fg-goose.gsb.*` belongs to whoever controls `gsb.fg-goose.online` [nsid],
+which the owner does. Hyphens are allowed inside authority segments; the final names here are alphabetic.
+The owner adds this exact record, pointing to the posting account `ember.delve.town`:
 
-1. The owner registers `delvetalk.town`.
-2. TXT `_lexicon.delvetalk.town` = `did=did:plc:oq2mrkwsuts7dqbkqqm2ntiz`.
-3. The mirror writes each file as `com.atproto.lexicon.schema/<nsid>` in that account, as delve.town does.
+    _lexicon.gsb.fg-goose.online.   TXT   "did=did:plc:6amo7col5h4ciq2gpm5eur7b"
 
+Then the mirror writes each file as `com.atproto.lexicon.schema/<nsid>` in that account, as delve.town does.
 The posting account, not the did:web repository: the signed tree stays a function of the journal, and the authority
-sits on a did:plc that survives a move of host. Fallback: `software.ember.delvetalk.*` under the owner's
-`ember.software`, renaming seven collections and every cited at-uri; recommended against.
+sits on a did:plc that survives a move of host.
+
+Owner decision, 2026-10-12: `delvetalk.town` cannot be bought; the group moved to `online.fg-goose.gsb`.
 
 `try` is a keyword where lexicon codegen lands; it stays (the residents' word) and generated clients call it
 `tryAct`. Nothing validates lexicons today: L2 tests that each file is lexicon v1 and that every record the façade and
 mirror emit validates.
 
-**Decision:** one NSID group; register `delvetalk.town`, point `_lexicon.delvetalk.town` at the posting account and
-publish there; validated by test.
+**Decision:** one NSID group, `online.fg-goose.gsb.*`, under the owner's `gsb.fg-goose.online`;
+point `_lexicon.gsb.fg-goose.online` at the posting account and publish there; validated by test.
 
 ## 6. What stays non-AT
 
@@ -291,7 +291,7 @@ public is a record; every act is a record or an XRPC call.
 | # | Lane | Work | Control |
 | --- | --- | --- | --- |
 | L1 | transport | **first slice**: the `requests` poller (listRepos rev diff, listRecords, sync.getRecord with signature and path checked); identity `(did, at-uri)`; `if` passed through; `answer` records by the mirror's writer and the façade | fixture Delve: a request gives one entry with intent = its URI and one `answer`; read twice, one entry; a commit signed by another key, no turn; stale `if`, `moved` with was/now; `mode: try`, refused with no entry and no answer. **Built** (`tests/test_requests.py`), every control on a real host; a `delvetalk try` spell by record is likewise never answered |
-| L2 | docs, transport | lexicon test; `delvetalk.town`, TXT, schema records (owner) | every emitted record validates; `_lexicon.delvetalk.town` resolves |
+| L2 | docs, transport | lexicon test; `_lexicon.gsb.fg-goose.online` TXT, schema records (owner) | every emitted record validates; `_lexicon.gsb.fg-goose.online` resolves to the posting account |
 | L3 | host, transport | `world-projection`; MST `put`/`delete`; per-height ops; paint split | `goat` or @atproto/repo verifies getRepo; CIDs equal in both repositories; a restart re-derives a byte-identical head |
 | L4 | transport | subscribeRepos, cursor, `#identity`, `#sync` | a consumer inverting over `prevData` follows 1,000 heights, resumes from a cursor; workers free under ten subscribers |
 | L5 | transport | service-auth verifier; `#delvetalk` in did.json; `act`, `try`, `plan`, `getEntry` | wrong `aud`, `lxm`, past `exp`, reused `jti`, high-S: 401; the posting account's getServiceAuth token: admitted; through pds.delve.town's proxy: admitted (live, owner's word) |
@@ -304,9 +304,9 @@ time. Each lane commits named files and keeps `make check`'s narrow targets gree
 
 **The first slice is L1, on what lane/posting built.** selene's mirror can read the town now: the posting account
 holds every card, page and the index, and her mirror walks it with listRecords like any repo (the owner's step: run
-`mirror` authorized). L1 adds acting: a resident writes `town.delvetalk.request` in their own repo, the poller proves
+`mirror` authorized). L1 adds acting: a resident writes `online.fg-goose.gsb.request` in their own repo, the poller proves
 and runs it, and the answer (the receipt with its entry CID, and the offers and trace when all of it is public) appears as
-`town.delvetalk.answer/<did>.<rkey>` in the account their mirror already reads. No post, no HTTP beyond their PDS, no
+`online.fg-goose.gsb.answer/<did>.<rkey>` in the account their mirror already reads. No post, no HTTP beyond their PDS, no
 credential; the request and answer are public, as §3's table says, and looking first waits for `try` by XRPC (L5).
 The live test is the owner's account writing one request; it writes to delve, so it waits for his word.
 
@@ -314,11 +314,11 @@ The live test is the owner's account writing one request; it writes to delve, so
 pds.delve.town; the summoned handle is the config field `summon_handle`. The owner's decision (2026-10-12): it stays
 `livedelvetalk.delve.town`, a fictional address matched as the post's text, never resolved to a DID, while the
 replies go out through the owner's account (`credentials`); the two need not be one account. REPO and FEDERATION §7 named path-based
-did:web DIDs, which atproto rejects; each world is now `did:web:<world>.<host>` (`repo.world_origin`). `delvetalk.town` and `delvetalk.org` are unregistered. Nothing reads the clerk's
+did:web DIDs, which atproto rejects; each world is now `did:web:<world>.<host>` (`repo.world_origin`). Our NSIDs use the owner's `gsb.fg-goose.online` (§5). Nothing reads the clerk's
 `org.delvetalk.*` records; they stay until the owner says.
 
 **Decision:** L1 first; L3 and L4 make our repository the full signed record; L5 serves agents with HTTP and through
-the PDS proxy; L6 gives hidden sessions; the owner registers `delvetalk.town` and gives the word for live probes.
+the PDS proxy; L6 gives hidden sessions; the owner adds `_lexicon.gsb.fg-goose.online` TXT and gives the word for live probes.
 
 ## 8. The review of 2026-10-12, decided
 
@@ -338,11 +338,11 @@ For the next slices, each with its decision:
 | --- | --- | --- | --- |
 | 3 | OAuth discovery reaches internal addresses | accepted: `oauth.py`'s discovered URLs go through the global-address check `delve.Client.did_document` now applies to did:web hosts, and the connection is made to the address checked (today's check leaves DNS rebinding between check and connect) | L5 |
 | 4 | carry and key rotation break rev continuity | accepted: a durable rev floor kept beside the key (the last rev served); a carried journal's first commit and every commit after a rotation take revs above it, rotation re-signing the same MST root under a new, higher rev and announcing `#sync` | L3 |
-| 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | accepted: `receipt`, `object`, `source`, `grant`, `publication`, `law` move to `town.delvetalk.getEntry`/`getObject`/… procedures; `com.atproto.repo.*` and `sync.*` keep only records whose `cid` is their value's (entry, and the mirrored collections, whose CID is the value's since L1) | L3 |
+| 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | accepted: `receipt`, `object`, `source`, `grant`, `publication`, `law` move to `online.fg-goose.gsb.getEntry`/`getObject`/… procedures; `com.atproto.repo.*` and `sync.*` keep only records whose `cid` is their value's (entry, and the mirrored collections, whose CID is the value's since L1) | L3 |
 | 9 | the bare-audience exception cannot know the forwarder | accepted: no forwarder-based exception. `aud` is our DID with `#delvetalk` or bare (both name only us; `lxm` binds the method), `typ` `JWT`, `iat` not in the future, `exp` within five minutes, `jti` once | L5 |
 | 10 | height cannot be the firehose `seq` | accepted: an endpoint-wide durable event log with its own `seq`, a stated backfill window, `OutdatedCursor`/`FutureCursor` | L4 |
 | 11 | one commit event per height can overflow | accepted: events budgeted under 200 ops and 2,000,000 bytes, `#sync` and resync past that, `rebase: false` sent, proofs built and tested for inversion of updates and deletes | L4 |
-| 12 | the signed index naming its own head is a cycle | accepted: the signed `index` names no head; the mirror writes a `town.delvetalk.checkpoint/self` of its own naming the source commit it copied from | L3 |
+| 12 | the signed index naming its own head is a cycle | accepted: the signed `index` names no head; the mirror writes a `online.fg-goose.gsb.checkpoint/self` of its own naming the source commit it copied from | L3 |
 | 13 | proxied sessions are visible to the resident's PDS | accepted: §3's table counts the resident's PDS inside the trust boundary of every proxied call; privacy from it needs a direct call | L6 |
 | 14 | equal CIDs do not make strongRefs portable | accepted: the canonical URI of a journal-derived record is the did:web repository's; the mirror's index maps it; a strongRef names the canonical URI; versions a book or paint cites are kept under versioned keys | L3 |
 | 15 | sessions have no unambiguous address | accepted: `openSession` returns an opaque id binding holder and incarnation, used by every call; read, act, share and publish permissions separate, the host's | L6 |

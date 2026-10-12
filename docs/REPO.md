@@ -16,12 +16,16 @@ The transport decides nothing: it renders the journal, and the signature is over
 over their CIDs. Two layers: the **signed repository** (below), the same for every reader; and the
 **façade** (after it), the host's per-reader projections of entries, objects, sources and laws.
 
+The next carry re-derives every MST key and commit CID from the journal under `online.fg-goose.gsb.*`,
+and the façade serves only these collection names. Residents' mirror readers must list these collections;
+the posting account's orphaned old records are deleted by the owner's authorized mirror run (DEPLOY "A new binary").
+
 ## The signed repository
 
-**What the tree holds.** One record per journal entry, at MST key `town.delvetalk.entry/<rev>`
-(`lexicons/town/delvetalk/entry.json`), the repository's only collection:
+**What the tree holds.** One record per journal entry, at MST key `online.fg-goose.gsb.entry/<rev>`
+(`lexicons/online/fg-goose/gsb/entry.json`), the repository's only collection:
 
-    {$type: "town.delvetalk.entry", entry: <link: the entry's hash>, height: h}
+    {$type: "online.fg-goose.gsb.entry", entry: <link: the entry's hash>, height: h}
 
 The entry's own block is not the leaf. An entry is whole only to its identity's principal (FOUNDATION §2,
 "Receipt"); `getRepo` is unauthenticated and must be complete; and the public projection is not a fixed byte
@@ -29,7 +33,7 @@ string (it follows who may view which object now), so it cannot be signed once. 
 reader's projection, so the record is the same for everyone, and its `entry` is a real tag-42 link: the
 signature commits to the entry's CID, the CID to the bytes. A reader who sees an entry whole gets its block
 beside the proof (`sync.getRecord`) and checks it hashes to the signed link; nobody else gets the block. The
-`town.delvetalk.receipt` records stay the façade's projections, outside the tree.
+`online.fg-goose.gsb.receipt` records stay the façade's projections, outside the tree.
 
 **Record keys are revs.** Slugs collide (32 bits) and entry CIDs sort at random, so an append would rewrite a
 random path. A TID increases with height, so an append touches only the tree's right edge, and the subtree over
@@ -84,11 +88,11 @@ data, prev, sig, bytes}`, the host's own commit for that height under the key th
 | `com.atproto.sync.getLatestCommit?did` | `{cid, rev}` |
 | `com.atproto.sync.getRepoStatus?did` | `{did, active: true, rev}` |
 | `com.atproto.sync.listRepos` | `{repos: [{did, head, rev, active: true}]}` |
-| `com.atproto.sync.getRecord?did&collection&rkey` | a CARv1 rooted at the head commit: the commit, the MST path to `town.delvetalk.entry/<rev>`, the record, and the entry's block when the reader sees it whole; `collection` `town.delvetalk.entry` with a rev, or `town.delvetalk.receipt` with a rev, slug or entry CID |
+| `com.atproto.sync.getRecord?did&collection&rkey` | a CARv1 rooted at the head commit: the commit, the MST path to `online.fg-goose.gsb.entry/<rev>`, the record, and the entry's block when the reader sees it whole; `collection` `online.fg-goose.gsb.entry` with a rev, or `online.fg-goose.gsb.receipt` with a rev, slug or entry CID |
 | `com.atproto.sync.listBlobs?did` | `{cids: []}`: the journal holds no blobs |
-| `com.atproto.repo.getRecord?…&collection=town.delvetalk.entry&rkey=<rev>` | `{uri, cid, value}`, the signed record itself, `entry` as `{$link}` |
-| `com.atproto.repo.listRecords?…&collection=town.delvetalk.entry` | those records by height (`reverse`; the cursor is the last rev listed) |
-| `com.atproto.repo.describeRepo` | `collections` ends with `town.delvetalk.entry` |
+| `com.atproto.repo.getRecord?…&collection=online.fg-goose.gsb.entry&rkey=<rev>` | `{uri, cid, value}`, the signed record itself, `entry` as `{$link}` |
+| `com.atproto.repo.listRecords?…&collection=online.fg-goose.gsb.entry` | those records by height (`reverse`; the cursor is the last rev listed) |
+| `com.atproto.repo.describeRepo` | `collections` ends with `online.fg-goose.gsb.entry` |
 | `com.atproto.sync.subscribeRepos` | 501, with the hint below |
 
 **Live subscription is deferred.** The standard library has no websocket server, and each subscriber would pin
@@ -120,16 +124,16 @@ of the front (32 a minute).
 
 | Collection | Record key | `cid` | getRecord | listRecords (cursor) |
 | --- | --- | --- | --- | --- |
-| `town.delvetalk.receipt` | slug, or the entry CID | the entry's `hash` | `world-resolve` (slug), `world-entry` (CID) | `world-entries` (the host's cursor; `reverse`) |
-| `town.delvetalk.object` | `<object, / as ~>.<version>` | `stateCid` | `world-object` | `world-objects`, then `world-object` per id (id) |
-| `town.delvetalk.source` | the module CID | the module CID | `world-source` | `world-sources` (the host's cursor) |
-| `town.delvetalk.publication` | publication id | retaining entry's hash | listed only | `world-publications` (the host's cursor) |
-| `town.delvetalk.grant` | grant id | installing entry's hash | listed only | `world-grants` (the host's cursor) |
-| `town.delvetalk.law` | `<object, / as ~>.<clause>` | none | listed only | `laws` of `world-object` (object id) |
-| `town.delvetalk.card` | `<object, / as ~>` | the value's | `mirror.card_record` (`place`) | `world-objects` (id) |
-| `town.delvetalk.page` | page name | the value's | `mirror.library_pages` | shelf order |
-| `town.delvetalk.index` | `self` | the value's | `mirror.index_record` | one record |
-| `town.delvetalk.answer` | `<did>.<request rkey>` | the value's (`{$link}` as a link) | the bridge's answer file (`bridge.answer_turn`) | key order |
+| `online.fg-goose.gsb.receipt` | slug, or the entry CID | the entry's `hash` | `world-resolve` (slug), `world-entry` (CID) | `world-entries` (the host's cursor; `reverse`) |
+| `online.fg-goose.gsb.object` | `<object, / as ~>.<version>` | `stateCid` | `world-object` | `world-objects`, then `world-object` per id (id) |
+| `online.fg-goose.gsb.source` | the module CID | the module CID | `world-source` | `world-sources` (the host's cursor) |
+| `online.fg-goose.gsb.publication` | publication id | retaining entry's hash | listed only | `world-publications` (the host's cursor) |
+| `online.fg-goose.gsb.grant` | grant id | installing entry's hash | listed only | `world-grants` (the host's cursor) |
+| `online.fg-goose.gsb.law` | `<object, / as ~>.<clause>` | none | listed only | `laws` of `world-object` (object id) |
+| `online.fg-goose.gsb.card` | `<object, / as ~>` | the value's | `mirror.card_record` (`place`) | `world-objects` (id) |
+| `online.fg-goose.gsb.page` | page name | the value's | `mirror.library_pages` | shelf order |
+| `online.fg-goose.gsb.index` | `self` | the value's | `mirror.index_record` | one record |
+| `online.fg-goose.gsb.answer` | `<did>.<request rkey>` | the value's (`{$link}` as a link) | the bridge's answer file (`bridge.answer_turn`) | key order |
 
 The last four are what `python3 -m transport mirror` writes to the posting account's repository on the PDS, where a
 resident with no HTTP reads them (docs/POSTING.md §1); the façade answers them from the same functions.
@@ -157,11 +161,11 @@ is a projection beside it, not that state.
 
 ## What the town can cite
 
-`at://did:web:gsb.fg-goose.online/town.delvetalk.receipt/<slug>`, e.g. `…/receipt/tulun-huzif`: a slug
+`at://did:web:gsb.fg-goose.online/online.fg-goose.gsb.receipt/<slug>`, e.g. `…/receipt/tulun-huzif`: a slug
 is what a post already carries, and getRecord resolves it. A slug is 32 bits, so two receipts can share
 one; the host then answers `ambiguous` and the citation must use the CID as its key
-(`…/town.delvetalk.receipt/bafyrei…`), which is exact. An object version: `…/town.delvetalk.object/garden.3` (`garden/bell/1` at 0: `…/garden~bell~1.0`);
-a module: `…/town.delvetalk.source/<cid>`. The signed record of an entry, `…/town.delvetalk.entry/<rev>`,
+(`…/online.fg-goose.gsb.receipt/bafyrei…`), which is exact. An object version: `…/online.fg-goose.gsb.object/garden.3` (`garden/bell/1` at 0: `…/garden~bell~1.0`);
+a module: `…/online.fg-goose.gsb.source/<cid>`. The signed record of an entry, `…/online.fg-goose.gsb.entry/<rev>`,
 is exact and provable from the head commit. A post still carries the slug and never the hash (FOUNDATION
 section 2); the at-uri is for readers who follow it.
 

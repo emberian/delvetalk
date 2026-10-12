@@ -1,4 +1,4 @@
-"""Residents act by writing `town.delvetalk.request` in their own repository (docs/ATPROTO.md §2): the poller finds those
+"""Residents act by writing `online.fg-goose.gsb.request` in their own repository (docs/ATPROTO.md §2): the poller finds those
 records, proves each, and keeps it as an observation the bridge turns as it turns a post.
 
 pds.delve.town's firehose answers 401, so the poller pages `com.atproto.sync.listRepos` and reads a repository again only
@@ -18,9 +18,9 @@ from transport.atproto.cbor import decode, encode, read_car
 from transport.atproto.mst import find
 from transport.atproto.sign import public_key, verify
 from transport.delve import PDS, Failure
-from transport.repo import json_of, world_did
+from transport.repo import NS, json_of, world_did
 
-COLLECTION = 'town.delvetalk.request'
+COLLECTION = NS + 'request'
 MODES = ('act', 'plan')
 PLAN_CALLS = 8  # the request lexicon's calls.maxLength
 PAGES = 10  # a repository's request collection read per poll, 100 records a page

@@ -23,8 +23,8 @@ from transport.atproto.mst import Tree
 from transport.atproto.sign import Key, multikey, tid
 from transport.host import PUBLIC
 from transport.identity import SLUG
+from transport.mirror import NS
 
-NS = 'town.delvetalk.'
 COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law', 'card', 'page', 'index', 'answer'))
 MIRRORED = ('card', 'page', 'index', 'answer')  # transport/mirror.py renders them, for the PDS and for this façade alike
 ENTRY = NS + 'entry'  # the signed repository's one collection: an entry's CID and height under its rev
@@ -37,7 +37,7 @@ PAGED = {'receipt': ('world-entries', 'entries', 'slug', 'hash'), 'source': ('wo
 ERRORS = {'unknown': (400, 'RecordNotFound'), 'denied': (403, 'Denied'), 'ambiguous': (400, 'AmbiguousSlug')}
 XRPC_ERRORS = json.loads((Path(__file__).resolve().parent / 'static' / 'catalogue.json').read_text())['xrpcErrors']  # name -> {code, when}
 NOT_SERVED = 'no signing key on this box, so no signed MST: page com.atproto.repo.listRecords?collection=' \
-             'town.delvetalk.receipt, and fetch each entry\'s block with com.atproto.sync.getRecord'
+             f'{NS}receipt, and fetch each entry\'s block with com.atproto.sync.getRecord'
 NOT_LIVE = 'no live subscription: poll com.atproto.sync.getLatestCommit, then com.atproto.sync.getRepo?since=<your rev>'
 TID = re.compile(r'[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}')
 MINUTE = 60_000_000  # microseconds: the world's clock counts minutes since the epoch
@@ -76,7 +76,7 @@ def json_of(v):
 
 class Signed:
     """The journal as a signed repository. Height h adds the record {$type: entry, entry: <hash link>, height: h}
-    under `town.delvetalk.entry/<rev>` and the commit {did, version: 3, data: <MST root>, rev, prev: <commit h-1>},
+    under `online.fg-goose.gsb.entry/<rev>` and the commit {did, version: 3, data: <MST root>, rev, prev: <commit h-1>},
     rev = TID(clock minute * 60e6 + h), the clock the latest `advance:<minute>` entry set. Every input is in every
     reader's projection of the entry; the key signs deterministically, so the chain is a function of the journal.
 

@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.grant",
+  "id": "online.fg-goose.gsb.grant",
   "description": "A delegation an admitted turn installed (the entry's `grants[]`, with its revocation), as world-grants answers it.",
   "defs": {
     "main": {

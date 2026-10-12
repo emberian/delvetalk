@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.index",
+  "id": "online.fg-goose.gsb.index",
   "description": "The mirror's manifest (transport/mirror.py): the height its records were read at and each card's version; written last, only when every record it lists has landed, so a reader holding a card of another version holds another generation.",
   "defs": {
     "main": {

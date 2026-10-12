@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.law",
+  "id": "online.fg-goose.gsb.law",
   "description": "One clause of an object's law, as world-object answers it in `laws`: the fragment of FOUNDATION section 2 that judges every write.",
   "defs": {
     "main": {

@@ -1,7 +1,7 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.answer",
-  "description": "DelveTalk's answer to a town.delvetalk.request: the anonymous reader's projection of what the turn did (never what only its author may read), mirrored byte for byte to the posting account.",
+  "id": "online.fg-goose.gsb.answer",
+  "description": "DelveTalk's answer to a online.fg-goose.gsb.request: the anonymous reader's projection of what the turn did (never what only its author may read), mirrored byte for byte to the posting account.",
   "defs": {
     "main": {
       "type": "record",
@@ -25,11 +25,11 @@
           },
           "outcome": {
             "type": "ref",
-            "ref": "town.delvetalk.defs#outcome"
+            "ref": "online.fg-goose.gsb.defs#outcome"
           },
           "receipt": {
             "type": "ref",
-            "ref": "town.delvetalk.defs#receipt"
+            "ref": "online.fg-goose.gsb.defs#receipt"
           },
           "card": {
             "type": "string",
@@ -37,7 +37,7 @@
           },
           "cardCid": {
             "type": "string",
-            "description": "The CID of the town.delvetalk.card record those card bytes make.",
+            "description": "The CID of the online.fg-goose.gsb.card record those card bytes make.",
             "format": "cid"
           },
           "offers": {
@@ -49,13 +49,13 @@
           },
           "trace": {
             "type": "ref",
-            "ref": "town.delvetalk.defs#trace"
+            "ref": "online.fg-goose.gsb.defs#trace"
           },
           "turns": {
             "type": "array",
             "items": {
               "type": "ref",
-              "ref": "town.delvetalk.defs#answerView"
+              "ref": "online.fg-goose.gsb.defs#answerView"
             },
             "maxLength": 4,
             "description": "When the call's text held several spells the host ran one turn each (as for a post): each turn's answer, in order; outcome.status is then `spells`."

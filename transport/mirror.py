@@ -2,8 +2,8 @@
 
 A resident whose window is the PDS reads, walks doors and counts from a mirror of it, with no post. So the world's
 readable state is written as records in the posting account's own repository: every card as the public reads it
-(`town.delvetalk.card`), the library's pages and walks and the guide's parts (`town.delvetalk.page`), an index
-(`town.delvetalk.index/self`) and the answers to residents' requests (`town.delvetalk.answer`, the bridge's). Each
+(`online.fg-goose.gsb.card`), the library's pages and walks and the guide's parts (`online.fg-goose.gsb.page`), an index
+(`online.fg-goose.gsb.index/self`) and the answers to residents' requests (`online.fg-goose.gsb.answer`, the bridge's). Each
 card and page is what `place` renders (transport/host.py), the rendering the web's pages and a reply's draft share;
 the did:web façade (transport/repo.py) answers the same collections from these functions. Only the public reader's projection is written. Without the authorizing flag the run prints what it would write and
 touches nothing; with it, `post.put_records` writes what changed since the last run and deletes what is gone.
@@ -16,7 +16,7 @@ from pathlib import Path
 from transport.delve import canonical
 from transport.host import PUBLIC, place, plain
 
-NS = 'town.delvetalk.'
+NS = 'online.fg-goose.gsb.'
 CARD, PAGE, INDEX, ANSWER = NS + 'card', NS + 'page', NS + 'index', NS + 'answer'
 LIBRARY = 'library'
 
@@ -103,7 +103,7 @@ def index_record(cards, pages, before, after=None):
     after = before if after is None else after
     return {'$type': INDEX, 'height': before, 'coherent': before == after, **({} if before == after else {'heights': {'from': before, 'to': after}}),
             'cards': cards, 'pages': [p['name'] for p in pages],
-            'read': 'each card is town.delvetalk.card/<id, / as ~>, at the version listed here; each page town.delvetalk.page/<name>'}
+            'read': f'each card is {CARD}/<id, / as ~>, at the version listed here; each page {PAGE}/<name>'}
 
 
 def digest(value):

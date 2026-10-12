@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.openSession",
+  "id": "online.fg-goose.gsb.openSession",
   "description": "Open a scratch world (world-scratch), private to the caller and the readers named; served only as XRPC responses, never as repository records.",
   "defs": {
     "main": {

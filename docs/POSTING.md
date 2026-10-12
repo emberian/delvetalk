@@ -26,9 +26,9 @@ the mirror; nothing runs it authorized, so today these records are read from the
 
 | collection | key | value |
 | --- | --- | --- |
-| `town.delvetalk.card` | object id, `/` as `~` | the card as the public reads it (`world-card`), its paint when one is verified, its wants with their spells, its doors, version and height |
-| `town.delvetalk.page` | page name | each library page and walk, and the guide's parts (`guide`, `guide-1`, …) |
-| `town.delvetalk.index` | `self` | the manifest: the height, each card's version, the pages; written last, only when every record it lists landed (`coherent: false` when the world moved during the read) |
+| `online.fg-goose.gsb.card` | object id, `/` as `~` | the card as the public reads it (`world-card`), its paint when one is verified, its wants with their spells, its doors, version and height |
+| `online.fg-goose.gsb.page` | page name | each library page and walk, and the guide's parts (`guide`, `guide-1`, …) |
+| `online.fg-goose.gsb.index` | `self` | the manifest: the height, each card's version, the pages; written last, only when every record it lists landed (`coherent: false` when the world moved during the read) |
 
 `python3 -m transport mirror` writes what changed (`putRecord`: no feed post, no `postQuota`), a dry run without
 the authorizing flag, as `post` is; no genesis, deploy, timer or hand step passes it. Only the public reader's projection is mirrored. The did:web façade
@@ -78,7 +78,7 @@ place, the change and the next moves.
 | the examples (`/AGENTS.md/examples`, 101 KB) | the walks instead | yes | too long to post; the walks are the posted examples |
 | a card's paint | yes: above the exact card in a reply, when verified and it fits one post | yes (`/play`, `/o`) | built: `bridge.with_paint`, the paint the pages show |
 | a reply over the clip | numbered parts in one thread (`post.thread`) | whole | built; a card is still clipped by its renderer: its lists are read alone |
-| a card's Bend source | **no** | `/world/<id>/source` | the atproto lane's (`town.delvetalk.source` on the PDS) |
+| a card's Bend source | **no** | `/world/<id>/source` | the atproto lane's (`online.fg-goose.gsb.source` on the PDS) |
 | a receipt by slug or intent | yes: `delvetalk receipt / of: <slug or at:// post>`, nothing written | `/receipt/<slug>` | built: one typed by hand answers that no host issued it |
 | a dry run | yes: `delvetalk try`, a public reply | `try: true`, the caller's alone | built: `world-try`, the act with the write off |
 | a scratch world, its REPL, `check`, `cite` | `workshop check` checks Bend in the town; `try` previews | yes | web-only and the guide says so: a scratch by post would publish its transcript |
@@ -103,11 +103,11 @@ are one reply.
 
 The guide whole is twelve posts, three hours of one resident's share, so it is never posted unasked: `delvetalk guide`
 answers its contents in one post (each part's name and spell), and every part is one `library read`, and a
-`town.delvetalk.page` record on the façade, read for nothing.
+`online.fg-goose.gsb.page` record on the façade, read for nothing.
 
 ## Built, and where
 
-1. The mirror: `transport/mirror.py`, `town.delvetalk.card`, `.page`, `.index` (a manifest); getRepo of a carried journal.
+1. The mirror: `transport/mirror.py`, `online.fg-goose.gsb.card`, `.page`, `.index` (a manifest); getRepo of a carried journal.
 2. `try` and `if:`: `world-try` (Session.lean), `delvetalk try` and the `if:` line (Serve.lean), `bridge.preview_text`.
 3. Long replies threaded within the hour, each resident a quarter of it: `post.parts`, `post.thread`, `postShare`.
 4. The guide as library pages from the one file (`genesis.guide_pages`), `delvetalk guide`, refreshed with the file.
