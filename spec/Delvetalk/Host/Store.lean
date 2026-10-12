@@ -268,6 +268,9 @@ structure Reservation where
   released : Bool := false
   posted : Bool := false
   round : Nat := 0
+  /-- The resident whose post it answers ("" for the hand's own: a publication, the morning card), whose share of
+      the hour it counts against (`postShare`). -/
+  resident : String := ""
   deriving Inhabited
 
 /-- A rule or a want placed on a thing by a hand (docs/OVERHAUL.md §3; KERNEL-HANDOFF §27 item 1): its
@@ -552,13 +555,13 @@ def HourCounts.json (h : HourCounts) : Json :=
     ("interpretations", toJson h.interpretations), ("attempts", toJson h.attempts)]
 
 def Reservation.json (r : Reservation) : Json :=
-  Json.mkObj [("source", toJson r.source), ("hour", toJson r.hour), ("released", toJson r.released),
-    ("posted", toJson r.posted), ("round", toJson r.round)]
+  Json.mkObj ([("source", toJson r.source), ("hour", toJson r.hour), ("released", toJson r.released),
+    ("posted", toJson r.posted), ("round", toJson r.round)] ++ (if r.resident.isEmpty then [] else [("resident", toJson r.resident)]))
 
 def Reservation.ofJson (j : Json) : Except String Reservation := do
   return { source := ← j.getObjValAs? String "source", hour := ← j.getObjValAs? Nat "hour",
            released := ← j.getObjValAs? Bool "released", posted := ← j.getObjValAs? Bool "posted",
-           round := ← j.getObjValAs? Nat "round" }
+           round := ← j.getObjValAs? Nat "round", resident := (j.getObjValAs? String "resident").toOption.getD "" }
 
 def HourCounts.ofJson (j : Json) : Except String HourCounts := do
   return { hour := ← j.getObjValAs? Nat "hour", turns := ← j.getObjValAs? Nat "turns",

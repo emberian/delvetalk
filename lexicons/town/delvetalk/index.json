@@ -1,7 +1,7 @@
 {
   "lexicon": 1,
   "id": "town.delvetalk.index",
-  "description": "What the mirror holds and the height it was read at.",
+  "description": "The mirror's manifest (transport/mirror.py): the height its records were read at and each card's version; written last, only when every record it lists has landed, so a reader holding a card of another version holds another generation.",
   "defs": {
     "main": {
       "type": "record",
@@ -10,6 +10,8 @@
       "record": {
         "type": "object",
         "required": [
+          "height",
+          "coherent",
           "cards",
           "pages"
         ],
@@ -17,11 +19,24 @@
           "height": {
             "type": "integer"
           },
-          "cards": {
-            "type": "array",
-            "items": {
-              "type": "string"
+          "coherent": {
+            "type": "boolean",
+            "description": "false when the world moved while the records were read; `heights` then says from and to"
+          },
+          "heights": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "integer"
+              },
+              "to": {
+                "type": "integer"
+              }
             }
+          },
+          "cards": {
+            "type": "unknown",
+            "description": "{object id: version}"
           },
           "pages": {
             "type": "array",

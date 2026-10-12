@@ -287,6 +287,17 @@ class Posted(unittest.TestCase):
         self.assertEqual(lines[:3], ['Before you arrived:', 'made by a.delve.town', '… and 12 earlier'])
         self.assertEqual(lines[3:], ['entry %d: b' % n for n in range(12, 20)])
         self.assertEqual(bridge.telling_text({'reason': 'quiet'}), '')
+        # Within the clip: long lines clipped, the oldest shown dropped until it is half a post at most; a draft past the
+        # clip threads (lane/posting's `post.parts`) with the telling whole in its first part.
+        from transport import post
+        long = {'reason': 'rejected', 'telling': {'form': 'before', 'frame': 'Before you arrived',
+                                                  'exact': ['made by a.delve.town'] + ['entry %d: #%d b.delve.town (say): %s' % (n, n, 'w' * 270) for n in range(12)]}}
+        tell = bridge.telling_text(long)
+        self.assertLessEqual(len(tell), bridge.TELLING_CLIP)
+        self.assertTrue(all(len(l) <= bridge.TELLING_LINE for l in tell.split('\n')), tell)
+        self.assertIn('… and ', tell)
+        first = post.parts(tell + 'The porch (2 here), you are here.\n' + 'x ' * 900)[0]
+        self.assertTrue(first.startswith(tell.rstrip('\n')), first)
 
     def test_4_the_hand_s_speak_drafts_it_too(self):
         from tests.test_hand import TOKEN

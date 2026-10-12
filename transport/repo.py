@@ -290,7 +290,11 @@ class Repo:
         pages = mirror.library_pages(host, who)
         if collection == 'page':
             return next((mirror.page_record(p) for p in pages if p['name'] == rkey), None)
-        return mirror.index_record(host, mirror.ids(host, who), pages) if rkey == 'self' else None
+        if rkey != 'self':
+            return None
+        before = mirror.height(host)
+        cards = {oid: c['version'] for oid in mirror.ids(host, who) if (c := mirror.card_record(host, oid, who, paint=False))}
+        return mirror.index_record(cards, pages, before, mirror.height(host))
 
     def mirrored_page(self, host, collection, who, cursor, limit, reverse):
         """Cards by id and pages in shelf order, `limit` a page, the cursor the last key listed."""

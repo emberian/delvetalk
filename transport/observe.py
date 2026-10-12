@@ -66,6 +66,9 @@ def mentions_of(text, record):
     return found
 
 
+LEADING_BLANK = re.compile(r'\A(?:[ \t]*\n)+')
+
+
 def observation(post):
     """Pure: validated postView -> observation dict. Raises Failure naming the refusal."""
     try:
@@ -81,7 +84,7 @@ def observation(post):
     parent = ((record.get('reply') or {}).get('parent') or {}).get('uri')
     root = ((record.get('reply') or {}).get('root') or {}).get('uri')
     mentions = mentions_of(text, record)
-    text = text.strip()
+    text = LEADING_BLANK.sub('', text).rstrip()  # an indented first line keeps its indent: an indented spell is quoted, not cast
     tags = list(dict.fromkeys(TAG.findall(text)))
     return {'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': created, 'text': text,
             'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': classify(text, parent, mentions, tags)}
