@@ -226,7 +226,7 @@ class Repo:
                'com.atproto.sync.getLatestCommit': 'latest_commit', 'com.atproto.sync.getRepoStatus': 'repo_status',
                'com.atproto.sync.listRepos': 'list_repos', 'com.atproto.sync.listBlobs': 'list_blobs',
                'com.atproto.sync.subscribeRepos': 'subscribe',
-               NS + 'getProjection': 'get_projection', NS + 'listProjections': 'list_projections'}
+               NS + 'getProjection': 'get_projection', NS + 'listProjections': 'list_projections', NS + 'getEntry': 'get_entry'}
 
     def __init__(self, origin, key=None, world='town', answers=None, ledger=None, firehose_port=0):
         """`key`: a transport.atproto.sign.Key, or None for an unsigned repository; `world` names its host (`world_origin`);
@@ -234,6 +234,7 @@ class Repo:
         (`State.repo_ledger`), required when signing; `firehose_port` advertises the configured WebSocket listener
         on the HTTP route (0 answers 501)."""
         self.answers = answers
+        self.world = world
         self.firehose_port = firehose_port
         self.origin = world_origin(origin, world)
         self.did, self.handle = world_did(origin, world)
@@ -247,7 +248,8 @@ class Repo:
                 'id': self.did, 'alsoKnownAs': ['at://' + self.handle],
                 **({'verificationMethod': [{'id': self.did + '#atproto', 'type': 'Multikey', 'controller': self.did,
                                             'publicKeyMultibase': multikey(key)}]} if key else {}),
-                'service': [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer', 'serviceEndpoint': self.origin}]}
+                'service': [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer', 'serviceEndpoint': self.origin},
+                            {'id': '#delvetalk', 'type': 'DelvetalkWorld', 'serviceEndpoint': self.origin}]}
 
     def serve(self, host, method, nsid, query, principal):
         """-> (HTTP status, body, content type): body a dict to send as JSON, or the bytes of a CAR."""
@@ -528,6 +530,21 @@ class Repo:
         return self.signed.proof(h, [(CID.parse(cid), bytes.fromhex(whole['bytes']))] if 'bytes' in whole else [])
 
     # ---- host reads
+
+    def get_entry(self, host, q, who):
+        """The host alone decides whether the reader receives the entry's canonical bytes."""
+        if 'world' in q and q['world'] != self.world:
+            raise Refusal(400, 'InvalidRequest', 'world')
+        try:
+            cid = CID.parse(q['entry'])
+        except (KeyError, ValueError, TypeError, IndexError):
+            raise Refusal(400, 'InvalidRequest', 'entry') from None
+        reply = host.send({'op': 'world-entry', 'principal': who, 'hash': q['entry'], 'bytes': True})
+        if 'bytes' in reply:
+            return car_of(cid, [(cid, bytes.fromhex(reply['bytes']))])
+        if reply.get('status') == 'receipt':
+            raise Refusal(403, 'Denied', 'entry')
+        raise refused(reply)
 
     def entry(self, host, rkey, who):
         """The host's receipt projection for a slug or entry CID."""

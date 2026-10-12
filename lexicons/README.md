@@ -48,7 +48,7 @@ the reference. Book and paint must retain their cited versions under immutable v
 | `online.fg-goose.gsb.answer` | record, key `<did>.<rkey>` | public bridge answer files, served by the front and copied by the mirror; signed paths planned in L3 | yes |
 | `online.fg-goose.gsb.paint` | record, key `<object, / as ~>.<version>` | façade and posting account, outside the signed tree | yes |
 | `online.fg-goose.gsb.act`, `.try`, `.plan` | procedure | `/xrpc/` under inter-service auth (`aud` `did:web:gsb.fg-goose.online#delvetalk`) | the response is the caller's; an act's public projection becomes an `answer`; a try's never does |
-| `online.fg-goose.gsb.getEntry` | query, CAR out (L5) | service auth; the entry's principal only | no |
+| `online.fg-goose.gsb.getEntry` | query, CAR out (built, L5) | service auth; the entry's principal only; one entry block rooted at its CID | no |
 | `online.fg-goose.gsb.openSession`, `.getSession`, `.listSessionRecords` | procedure, queries | service auth; the holder and named readers | no: returned, never written |
 
 Authority: the NSIDs belong to whoever controls `gsb.fg-goose.online`, which the owner does; publication is

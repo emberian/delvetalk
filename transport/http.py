@@ -21,6 +21,7 @@ from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, door_rows, handles, pain
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import Repo
+from transport.serviceauth import Rejected, Verifier, shaped
 from transport.firehose import Firehose
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -290,14 +291,15 @@ BUSY = (b'HTTP/1.1 503 Service Unavailable\r\nContent-Type: application/json; ch
 
 class AccessLog:
     """One line per request: time, method, path (no query), status, bytes sent, the principal's DID or `-`, the world.
-    Never a credential or a body. Rotated by size: past `limit` bytes the file becomes `<name>.1` (the previous one is dropped)."""
+    A service-auth refusal appends its fixed reason code. Never a credential or a body.
+    Rotated by size: past `limit` bytes the file becomes `<name>.1` (the previous one is dropped)."""
     LIMIT = 16 * 1024 * 1024
 
     def __init__(self, path, world, limit=LIMIT):
         self.path, self.world, self.limit, self.lock = Path(path), world, limit, threading.Lock()
 
-    def write(self, when, method, path, status, sent, did):
-        line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'} {self.world}\n"
+    def write(self, when, method, path, status, sent, did, reason=None):
+        line = f"{time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(when))} {method} {path} {status} {sent} {did or '-'} {self.world}" + (f" auth={reason}" if reason else '') + '\n'
         with self.lock:
             try:
                 if self.path.exists() and self.path.stat().st_size + len(line) > self.limit:
@@ -327,6 +329,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self._feed = None  # object -> (height, principal) of the first entry touching it: it never changes
         self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None,
                          st.world, st.answers, st.repo_ledger, c.firehose_port if not hand else 0)  # the journal as AT Protocol records, read only
+        self.serviceauth = Verifier(self.repo.did, identity.client, clock=clock)
         self.firehose = None
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
@@ -483,12 +486,12 @@ class Handler(BaseHTTPRequestHandler):
         super().send_response(code, message)
 
     def handle_one_request(self):
-        self.status, self.did, self.head = 0, None, False
+        self.status, self.did, self.head, self.auth_reason = 0, None, False, None
         self.wfile.sent = 0
         super().handle_one_request()
         if self.server.access and self.status:  # a request that never parsed has no status
             self.server.access.write(self.server.clock(), getattr(self, 'command', '-'), urllib.parse.urlsplit(self.path).path,
-                                     self.status, self.wfile.sent, self.did)
+                                     self.status, self.wfile.sent, self.did, self.auth_reason)
 
     def reply(self, code, body, ctype='application/json', headers=()):
         raw = body.encode('utf-8', 'backslashreplace') if isinstance(body, str) else body  # a lone surrogate the host echoed stays a JSON escape
@@ -805,19 +808,31 @@ class Handler(BaseHTTPRequestHandler):
         self.answer(reply, links=links, acts=acts)
 
     def xrpc(self, method, nsid):
-        """Repository records and projection queries: no credential reads as PUBLIC, a bearer authenticates its principal."""
+        """getEntry alone accepts method-bound JWTs; other bearers use the credential path."""
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else ''
-        who = self.principal(credential) if credential else {}
+        service = nsid == 'online.fg-goose.gsb.getEntry'
+        if service and (not credential or shaped(credential)):
+            try:
+                self.did = self.server.serviceauth.authenticate(credential, nsid)
+            except Rejected as r:
+                self.auth_reason = r.reason
+                return self.xrpc_reply(r.code, r.body, [('Retry-After', str(r.retry))] if r.retry else ())
+            who = {'did': self.did}
+        else:
+            who = self.principal(credential) if credential else {}
+            if service and who is not None:
+                who = None  # this query requires the resident's service JWT
         if who is None:
+            self.auth_reason = 'credential'
             return self.xrpc_reply(401, {'error': 'InvalidToken', 'message': 'unverified or revoked credential'})
-        wait = self.server.limited(credential or 'xrpc:' + self.client_ip())
+        wait = self.server.limited(self.did if service else credential or 'xrpc:' + self.client_ip())
         if wait:
             return self.xrpc_reply(429, {'error': 'RateLimitExceeded', 'message': f'more than {RATE} requests per {WINDOW} seconds'},
                                    [('Retry-After', str(wait))])
         if nsid == 'did.json':
             return self.reply(200, canonical(self.server.repo.did_document()), 'application/did+json')
-        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True).items()}
         code, body, ctype = self.server.repo.serve(self.server.host, method, nsid, q, who.get('did'))
         if code == 426:
             return self.xrpc_reply(code, body, [('Upgrade', 'websocket')])

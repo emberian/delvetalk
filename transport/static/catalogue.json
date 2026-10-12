@@ -586,7 +586,11 @@
   },
   "InvalidToken": {
    "code": 401,
-   "when": "unverified or revoked credential"
+   "when": "unverified or revoked credential, or malformed, expired, replayed, mismatched or unverifiable service JWT"
+  },
+  "AuthRequired": {
+   "code": 401,
+   "when": "getEntry requires a service-auth token"
   },
   "MethodNotImplemented": {
    "code": 501,
@@ -598,7 +602,7 @@
   },
   "RateLimitExceeded": {
    "code": 429,
-   "when": "over the rate limit"
+   "when": "over the rate limit, or service-auth nonce custody is full until an expiry; Retry-After gives seconds"
   },
   "HostUnavailable": {
    "code": 503,

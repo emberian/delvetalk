@@ -219,19 +219,44 @@ and plan; outputs the answer's shape. `try` runs `world-try` and answers `status
 its CID and the trace, no receipt and no slug (it cannot pass for one, POSTING §2), in the response only: no record,
 no entry, no mirror copy. An act's response is likewise the caller's; only its public projection becomes an `answer`.
 
-Authentication is **inter-service auth** [xrpc]: a JWT signed with the caller's `#atproto` key, header `alg` ES256K
-or ES256, body `iss`, `aud` `did:web:gsb.fg-goose.online#delvetalk`, `exp` (60 s advised), `lxm` the method, `jti` a
-nonce. The front checks `aud` exactly ("an undefined service type is not ... a wildcard"), `lxm` against the route,
-`exp` within five minutes, `jti` unseen, the signature low-S under the DID document's key (`sign.verify`, refetching
-once on failure). The principal is `iss`: no challenge, credential or login.
+Authentication is **inter-service auth** [xrpc], built in `transport/serviceauth.py`. Header `typ` must be `JWT`;
+`alg` is `ES256K` (secp256k1) or `ES256` (P-256), matching the issuer key's curve. `iss` is a did:plc or
+hostname-level did:web, without a fragment. `aud` is exactly this front's `Repo.did` with `#delvetalk`, or the
+bare DID: both name only this service; required `lxm` equals the called NSID, so bare is not a wildcard. Other
+DIDs, fragments, lists and missing audiences refuse. Integer `exp` must be in the future and at most 300 seconds
+ahead (60 s advised). Optional `iat` is an integer, at most 30 seconds ahead, with `exp - iat <= 300`.
+Required nonempty `jti` is used once per `(iss, jti)` until `exp`.
+
+The signature is 64 raw ECDSA bytes over the JWT's first two segments, low-S only (`sign.verify`), under the
+issuer DID document's `#atproto` Multikey. Documents use `Client.did_document`'s public-address-checked, pinned
+HTTPS fetch: did:plc at plc.directory, did:web at its hostname. Documents cache for 60 seconds (at most 1,024);
+signature failure refetches once before refusal, admitting key rotation. Atomic replay admission retains at most
+10,000 live nonces, pruning only expired entries; capacity answers retryable 429 `RateLimitExceeded` with
+`Retry-After`, never forgetting a live nonce. Tokens are at most 16 KiB; `jti` at most 256 UTF-8 bytes. Missing
+token is 401 `AuthRequired`; malformed, expired, replayed, mismatched or unverifiable is 401 `InvalidToken`,
+with a short reason code in `message` and the access log, never token bytes. The principal is `iss`.
+
+The sole service-auth consumer built here is the query `online.fg-goose.gsb.getEntry?entry=<entry CID>&world?`.
+`world`, if present, must equal this front's world, else 400 `InvalidRequest`. The host receives
+`world-entry {principal: iss, hash: entry, bytes: true}`: returned `bytes` become a CARv1 rooted at the entry CID
+with that one block; an existing entry without bytes is 403 `Denied`, an unknown entry 400 `RecordNotFound`.
+This works without a repository signing key. The front distinguishes a JWT-shaped bearer by three nonempty,
+dot-separated base64url segments; on getEntry that shape goes to the verifier. All other strings use the existing
+credential path; getEntry still requires service auth. `dt_agent_` bearers retain their existing authority on
+other routes, which do not accept service JWTs. Service calls share the front's per-credential rate limit keyed
+on `iss` (32 per minute), so new tokens do not buy new buckets. Procedures `act`, `try`, `plan` are the L5
+remainder, out of scope here; they follow on this verifier.
 
 A caller with HTTP gets the token from `com.atproto.server.getServiceAuth?aud&lxm` on its PDS. A caller whose window
 is the PDS sends the call to its PDS with `atproto-proxy: did:web:gsb.fg-goose.online#delvetalk`; the PDS resolves
-our DID document, finds the service entry, signs and forwards [xrpc "Service Proxying"]. That needs `{id:
-"#delvetalk", type: "DelvetalkWorld", serviceEndpoint}` in `did.json` (one line in `repo.did_document`) and
+our DID document, finds the service entry, signs and forwards [xrpc "Service Proxying"]. `did.json` carries `{id:
+"#delvetalk", type: "DelvetalkWorld", serviceEndpoint: <world origin>}` beside `#atproto_pds`. This needs
 pds.delve.town proxying to third-party services, which the reference PDS does for an `/xrpc/<nsid>` it does not serve
-itself; untested here. The reference PDS sent bare-DID `aud` until spring 2026 [xrpc]; accept the bare DID only from
-tokens forwarded by `did:web:pds.delve.town` until a probe shows the fragment. Since a PDS serves `com.atproto.repo.*`
+itself; live proxying is untested here. The reference proxy emits bare-DID audiences. An unforwarded token with
+that audience and a proxied one are indistinguishable by design: `iss` names the resident, and the signature
+attests no HTTP forwarder. The policy treats both identically, with no forwarder-based exception. The proxy's
+authorization of its caller (the PDS's `rpc` permission check) is the caller's PDS's business, not evidence here.
+Since a PDS serves `com.atproto.repo.*`
 itself, every read meant to pass the proxy is in `online.fg-goose.gsb.*`.
 
 **OAuth** stays identity-only (`oauth.py`, scope `atproto`, tokens revoked at once). Discovery checks the PDS,
@@ -300,7 +325,7 @@ publish what the holder chooses.
 | posting account's `checkpoint/self` | no | anyone; nothing | superseded after complete mirror steps; retained when the source head is unavailable; never served in the did:web repository |
 | `paint` | no | anyone; nothing | replaced per version; old paint stays where copied |
 | lexicon schema records | no | anyone; nothing | edits supersede; history keeps the old |
-| non-public façade reads (whole receipt, private object, grant) | no | the principal the host lets view it; bearer or service auth, then the host's read policy | nothing written; the access log keeps method, path, status, DID |
+| non-public façade reads (whole receipt, private object, grant) | no | the principal the host lets view it; bearer, then the host's read policy | nothing written; the access log keeps method, path, status, DID |
 | `getEntry` | no | the entry's principal; service auth, then the host | the journal keeps the entry |
 | `act`/`plan` responses | no | the caller; TLS and service auth | the entry is journaled for good and its public projection is an `answer`; the response is kept only by the caller |
 | `try` responses | no | the caller; TLS and service auth | `world-try` journals nothing; kept only by the caller |
@@ -385,7 +410,7 @@ public is a record; every act is a record or an XRPC call.
 | L2 | docs, transport | lexicon test; `_lexicon.gsb.fg-goose.online` TXT, schema records (owner) | every emitted record validates; `_lexicon.gsb.fg-goose.online` resolves to the posting account |
 | L3 | host, transport | `world-projection`; MST `put`/`delete`; per-height ops; paint split | `goat` or @atproto/repo verifies getRepo; CIDs equal in both repositories; a restart re-derives a byte-identical head |
 | L4 | transport | **Built**: subscribeRepos, durable event seq/log, bounded cursor replay, rotation `#identity` and epoch/downtime `#sync` | a consumer inverting over `prevData` follows 1,000 heights, resumes from a cursor; workers free under ten subscribers |
-| L5 | transport | service-auth verifier; `#delvetalk` in did.json; `act`, `try`, `plan`, `getEntry` | wrong `aud`, `lxm`, past `exp`, reused `jti`, high-S: 401; the posting account's getServiceAuth token: admitted; through pds.delve.town's proxy: admitted (live, owner's word) |
+| L5 | transport | **Built**: service-auth verifier, `#delvetalk` in did.json, `getEntry` query. Remainder (out of scope here): procedures `act`, `try`, `plan` follow on the verifier | `tests/test_serviceauth.py`: wrong audience/method/time/header/curve, high-S and replay: 401 with no host call; bare and fragment audiences accepted; rotation refresh once; bounded nonce custody, issuer rate limit and one-block CAR. Live getServiceAuth/proxy probes require the owner's word |
 | L6 | host, transport | sessions: `readers`, `shareSession`, `openSession`, `getSession`, `listSessionRecords`, acts with `world` | unnamed DID: 403, nothing returned; named reader: the records; the mirror ledger, getRepo CAR and access log never hold session contents; after expiry, refused, and the town's cited CID still matches |
 | L7 | ops, transport, host | wildcard DNS and certificates; hosted did:web for guests and Zulip; `link`; each world's hostname resolving | a guest's request in its hosted repo admits as that DID; a Zulip message becomes a request in the user's repo |
 | L8 | host | `plan` as one turn (built, lane/plan; by record since L1) | three calls, the third refused: nothing written, one receipt |
@@ -428,7 +453,7 @@ Fixed in L3:
 | # | Finding | Decision |
 | --- | --- | --- |
 | 4 | carry and key rotation break rev continuity | fixed: one durable epoch ledger at `State.repo_ledger` (`worlds/<world>/repo.json`), atomic writes inside `Signed.lock`; `{key, base, epochs: [{height, clock, cause}], head: {height, rev, clock}}`. A changed base raises the floor to `head.clock + 1` at the first carried height, tree empty, `prev` null, pre-carry entries reconciled away. A changed key on the same journal raises the floor after head height H, signs the same root once at `TID((head.clock + 1) × 60,000,000)`, `prev` null; H+1 chains from it. Old commits are not rebuilt, old record revs remain `since` cursors. Restart depends only on journal, key and ledger and changes no bytes. Carry copies the ledger with state; deletion requires follower re-sync. L4 announces epochs with `#sync`, and rotations with `#identity` before it |
-| 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | fixed: one pair of queries, `online.fg-goose.gsb.getProjection`/`listProjections`, for receipt/object/source/publication/grant/law; `{kind, key, of?, value, signed?}` with host values untagged, `of` the subject CID. Receipt `signed` points to `entry/<rev>` when in the current tree. Repo record methods accept only public entry/card/page/index/answer, each `cid` hashes `value`; sync.getRecord proves only the requested entry path and includes whole bytes for its principal. `getEntry` remains L5 work |
+| 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | fixed: one pair of queries, `online.fg-goose.gsb.getProjection`/`listProjections`, for receipt/object/source/publication/grant/law; `{kind, key, of?, value, signed?}` with host values untagged, `of` the subject CID. Receipt `signed` points to `entry/<rev>` when in the current tree. Repo record methods accept only public entry/card/page/index/answer, each `cid` hashes `value`; sync.getRecord proves only the requested entry path and includes whole bytes for its principal. `getEntry` is built in L5 |
 | 12 | the signed index naming its own head is a cycle | fixed: `index` never carries did/rev/commit/head in either repository; its bytes depend on the journal alone. The posting-only `online.fg-goose.gsb.checkpoint/self` names `{did, rev, commit, height}`, fetched from the world's front before host reads, written after the index or alone when the source head changes, through the same plan/digest/ledger. Unavailable source: records proceed, reason reported, held checkpoint retained. No timestamp; no did:web façade or signed-tree checkpoint; dry run only reads (§1, `tests/test_mirror.py`) |
 | 14 | canonical strongRef URI and mirror mapping | fixed in the design: a journal-derived record's canonical URI is `at://did:web:gsb.fg-goose.online/<collection>/<rkey>` (or its world's did:web DID). A strongRef names that URI; checkpoint + index map the copy by collection and unchanged rkey, with identical bytes/CID. CID equality verifies bytes against the canonical repository, never retargets a URI or proves commit membership. Version retention remains below |
 
@@ -444,12 +469,12 @@ Fixed in L5:
 | # | Finding | Decision |
 | --- | --- | --- |
 | 3 | OAuth discovery reaches internal addresses; did:web DNS can rebind between check and connect | fixed: one global-address policy for discovered URLs, including browser authorization and optional revocation; `delve.public_transport` resolves once per request and connects to the first checked IP, with verifying TLS for the URL host and its original Host header. All DNS answers must be public; mapped/compatible/NAT64/6to4 private forms are refused. OAuth discovery and DPoP POSTs and `Client.did_document` use it by default; configured XRPC, Zulip and model hosts keep `http_transport`. Injected fixture transports preserve the loopback tests without an HTTP scheme switch; `test_netsafe` and `test_oauth` name the attacks (§2) |
+| 9 | the bare-audience exception cannot know the forwarder | Fixed in L5: our bare DID and `#delvetalk` audiences are treated identically; no forwarder inference. `typ` JWT; matching ES256K/ES256 curve, integer `exp` within 300 s and optional `iat` within 30 s skew and lifetime 300 s; required method-bound `lxm` and atomic, bounded `(iss, jti)` custody. Public DID fetch, 60 s cache, one signature-failure refresh; getEntry consumes the verifier (§2(b), `tests/test_serviceauth.py`) |
 
 For the next slices, each with its decision:
 
 | # | Finding | Decision | Lane |
 | --- | --- | --- | --- |
-| 9 | the bare-audience exception cannot know the forwarder | accepted: no forwarder-based exception. `aud` is our DID with `#delvetalk` or bare (both name only us; `lxm` binds the method), `typ` `JWT`, `iat` not in the future, `exp` within five minutes, `jti` once | L5 |
 | 13 | proxied sessions are visible to the resident's PDS | accepted: §3's table counts the resident's PDS inside the trust boundary of every proxied call; privacy from it needs a direct call | L6 |
 | 14 | retrieving versions cited by book or paint | required when those records land: immutable versioned keys for book/paint and every card/page version they cite; no claim of historical retrieval from overwritten singleton keys (§1) | L3 |
 | 15 | sessions have no unambiguous address | accepted: `openSession` returns an opaque id binding holder and incarnation, used by every call; read, act, share and publish permissions separate, the host's | L6 |

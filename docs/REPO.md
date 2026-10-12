@@ -104,7 +104,8 @@ data, prev, sig, bytes}`, the host's own commit for that height under the key th
 
 | Method | Answers |
 | --- | --- |
-| `GET /.well-known/did.json` | `{id, alsoKnownAs: [at://<host>], verificationMethod: [#atproto, Multikey, publicKeyMultibase], service: [#atproto_pds → origin]}` |
+| `GET /.well-known/did.json` | `{id, alsoKnownAs: [at://<host>], verificationMethod: [#atproto, Multikey, publicKeyMultibase], service: [#atproto_pds → origin, #delvetalk (DelvetalkWorld) → origin]}`; the service entries are present even without a signing key |
+| `online.fg-goose.gsb.getEntry?entry&world?` | service-auth query: the entry's identity principal receives a CARv1 rooted at the entry CID holding its one canonical block; another reader 403 `Denied`, unknown 400 `RecordNotFound`. Optional world must equal this front's world, else 400 `InvalidRequest`. No signing key required; authentication policy is ATPROTO §2(b) |
 | `com.atproto.sync.getRepo?did&since?` | a CARv1 rooted at the head commit: the commit, every MST node, every record; with `since` (a rev here, else 400) the head commit, the nodes made after it and the newer records |
 | `com.atproto.sync.getLatestCommit?did` | `{cid, rev}` |
 | `com.atproto.sync.getRepoStatus?did` | `{did, active: true, rev}` |
@@ -226,7 +227,8 @@ dot and `~` to `/`. Replayed ids outside the host's creation alphabet may have n
 
 Host statuses become XRPC errors carrying the reply: `unknown` → 400 `RecordNotFound`, `denied` → 403
 `Denied`, `ambiguous` → 400 `AmbiguousSlug`; unavailable/mute host → 503 `HostUnavailable`/504 `HostTimeout`;
-other failures → 400 `InvalidRequest`. The front adds 401 `InvalidToken` and 429 `RateLimitExceeded`
+other failures → 400 `InvalidRequest`. The front adds 401 `AuthRequired` (getEntry without a token),
+401 `InvalidToken` (bad credential or service JWT) and 429 `RateLimitExceeded`
 (`Retry-After`). The catalogue's `xrpcErrors` is the error source.
 
 ## What the town can cite
@@ -251,8 +253,12 @@ of the returned JSON. Public card/page/index/answer at-uris name actual records 
 - **Checkpoints and pending sends.** `blocks[].cid`, `activity.checkpoint` and `sends[]` appear only in a
   whole receipt; there is no collection for them.
 
-Whole entry bytes outside a signed proof belong to `online.fg-goose.gsb.getEntry`, whose lexicon exists;
-its service-auth verifier and route are L5 work. An unsigned box serves projections, not a whole-entry CAR.
+Whole entry bytes outside a signed proof are served by `online.fg-goose.gsb.getEntry` under service auth, including
+on an unsigned box. Only this query accepts service JWTs: three dot-separated base64url segments select the
+verifier; other strings use the credential path, which still serves existing record and projection reads.
+The host's `world-entry {principal: iss, hash, bytes: true}` decides access; absent bytes on an existing entry
+answer `Denied` without carrying its projection. `#delvetalk` lets a PDS resolve
+`atproto-proxy: did:web:<world host>#delvetalk` to this origin.
 Inside an entry, CIDs are strings as the journal stores them; its block has no `$type`. Changing them to
 links would change the entry bytes and every CID. The signed entry record carries the real link.
 

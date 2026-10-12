@@ -18,7 +18,8 @@
             "format": "cid"
           },
           "world": {
-            "type": "string"
+            "type": "string",
+            "description": "If given, must equal this front's world."
           }
         }
       },
@@ -29,6 +30,15 @@
       "errors": [
         {
           "name": "AuthRequired"
+        },
+        {
+          "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
         },
         {
           "name": "Denied"
