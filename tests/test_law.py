@@ -535,6 +535,27 @@ if __name__ == "__main__":
 
 ADD = {"tag": "variant", "label": "add", "payload": record(delta=nat(1))}
 OPENS = "law opens: request.kind == 0 or request.kind == 2"
+# Asks the host whether setting `verdict` would admit (`world.judge`), waits for ann's `go`, then notes the answer.
+ASKER = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  verdict: String
+  noted: String
+def initial() -> State:
+  {verdict: "", noted: ""}
+def ask(state: State, context: Abi.Context) -> Activity<String>:
+  match world.judge(extend(keep(), {verdict: Plans.Edit::<String, {}>.set({value: "yes"})})):
+    case judged(j): later(if j.admitted then "admitted" else j.clause)
+    case _: "other"
+def later(said: String) -> Activity<String>:
+  match world.await({slot: {principal: "ann", intent: "go"}, patience: 50n}):
+    case reply(_):
+      match world.write(extend(keep(), {noted: Plans.Edit::<String, {}>.set({value: said})})):
+        case _: said
+    case _: ""
+""", "ask")
 
 
 class Cited(Reflection):
@@ -584,3 +605,13 @@ class Cited(Reflection):
         r = self.open("a")
         self.assertEqual((r["status"], self.clause(r)), ("refused", "free"), r)
         self.assertIn("c", [x["object"] for x in r["receipt"]["roots"]])
+
+    def test_a_judgment_that_read_another_object_is_stale_when_it_moves(self):
+        # codex 2026-10-12 host 12: world.judge read b through a's law but left no root, so the resumed turn noted
+        # an approval b had since withdrawn.
+        self.make("b", GATE, record(open=nat(0)))
+        self.make("a", ASKER, record(), law='law gate: request.kind == 2 or new.verdict == old.verdict or "b".open == 0')
+        self.assertEqual(self.turn("a", "ask")["status"], "suspended")
+        self.assertEqual(self.open("b")["status"], "admitted")
+        self.assertEqual(self.turn("b", "open", principal="ann", identity="go")["status"], "admitted")
+        self.assertEqual(field(self.state("a"), "noted")["value"], "gate")

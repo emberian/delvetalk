@@ -1987,6 +1987,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
                           cells := s.cells,
                           placements := s.placements, turn := w.height + 1 }
     let p := withLawReads w p
+    -- What the verdict read is the turn's root too: a later move of it makes the answer stale (codex host 12).
+    for (id, version) in p.roots do
+      unless s.roots.any (·.1 == id) do recordRoot id version
     let (admitted, clause) := match judge w (w.height + 1) p with
       | .ok _ => (true, "")
       | .error r => (false, r.clause.getD r.cls)
