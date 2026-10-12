@@ -1088,8 +1088,9 @@ def isAmendmentRefusal (message : String) : Bool :=
     amendment (the state unchanged) by the principal who proposes it. None when it does,
     else the refusal naming that principal and the clause (`name: expression`) that refused. -/
 def amendable (law : Law) (principal caller : String) (height turn : Nat) (pin : String) (state : Data)
-    (clock : Nat := 0) (id : String := "") (reads : List (String × Data) := []) : Option String :=
-  (Law.refusedBy law { subject := principal, caller, height, turn, pin, kind := 2, clock, object := id, reads } (some state) state).map fun name =>
+    (clock : Nat := 0) (id : String := "") (reads : List (String × Data) := [])
+    (standing : List (String × Law.Standing) := []) : Option String :=
+  (Law.refusedBy law { subject := principal, caller, height, turn, pin, kind := 2, clock, object := id, reads, standing } (some state) state).map fun name =>
     amendmentRefusal principal (((law.lookup name).map fun e => s!"{name}: {e.render}").getD name)
 
 def replaceSource (inputs : Json) (source : String) : Except String Json := do
@@ -2006,6 +2007,17 @@ def statesOf (w : World) (ids : List String) : List (String × Data) :=
 def citedStates (w : World) (law : Law) : List (String × Data) :=
   statesOf w (lawCitations w law)
 
+/-- What a thing whose law is `law` stands at (`request.laws`, `request.refusedBy`): its law clauses, own
+    and followed through `under` (`Law.lawClauses`), and the writes its law has refused (`World.refusedBy`). -/
+def standingOf (w : World) (id : String) (law : Law) : Law.Standing :=
+  { laws := Law.lawClauses (citedStates w law) law, refusedBy := w.refusedBy.getD id 0 }
+
+/-- What `id` (its law `law`) and every other thing in `reads` stand at, by thing (`Law.Facts.standing`):
+    a cited want reads its own thing's. -/
+def standings (w : World) (id : String) (law : Law) (reads : List (String × Data)) : List (String × Law.Standing) :=
+  (id, standingOf w id law) :: reads.filterMap fun (r, _) =>
+    if r == id then none else (w.objects[r]?).map fun o => (r, standingOf w r o.law)
+
 /-- Why a law's `under` citations cannot stand (create, amend, reprogram): a cited object that does
     not exist or whose `law` does not parse, or a cycle of citations within `Limits.lawDepth`,
     named. -/
@@ -2535,7 +2547,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
                 reading := some s!"the law of {id} cites {r}, which {subject} may not view." }
       let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method,
                                  verb := if verb.isEmpty then method else verb, evicted, clock := w.clock, object := id,
-                                 reads := cited, wants := wantsCited w (lawNames o.law) }
+                                 reads := cited, wants := wantsCited w (lawNames o.law), standing := standings w id o.law cited }
       judgedBy := judgedBy ++ [facts]
       -- The metarule, widened (docs/ROOT.md §2.1): no law locks out the hand that opened the world.
       -- An amendment by the opener is the host's to admit; every other change is the law's.
@@ -2561,7 +2573,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       -- The opener's amendment needs no clause for itself: the host admits it whatever the law (`openerAmends`).
       if let some message := citationRefusal w id law then throw (refuse "under" ((message.drop "under: ".length).toString))
       unless openerAmends w p.principal do
-        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id (citedStates w law) then throw (refuse "amendable" message)
+        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id (citedStates w law)
+            (standings w id law (citedStates w law)) then throw (refuse "amendable" message)
       -- A reading stays with its clause only while the amendment leaves that clause as it was.
       -- The amendment's own readings; a clause it leaves as it was without one keeps its reading.
       let given := ((parseLawTextReadings text).toOption.map (·.2)).getD []
@@ -2953,9 +2966,15 @@ def redelivered (w : World) (entry : Json) (id : String) : Option Json := do
   guard (attempts < Limits.deliveryAttempts)
   return (p.setObjVal! "attempts" (toJson attempts)).setObjVal! "next" (toJson (w.clock + 1))
 
+/-- The thing whose law refused an entry (its outcome `lawRefused`, naming it): `World.refusedBy` counts it. -/
+def lawRefusedOf (outcome : Json) : Option String :=
+  if (outcome.getObjValAs? String "tag").toOption == some "refused" &&
+      (outcome.getObjValAs? String "class").toOption == some "lawRefused"
+  then (outcome.getObjValAs? String "object").toOption else none
+
 /-- An admitted entry's rows of `k` (`fired`, `unfired`, `wanted`, `unwanted`). -/
 def reactionRows (entry : Json) (k : String) : Array Json :=
-  if tagOf entry != "admitted" then #[] else ((entry.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+  if tagOf entry != "admitted" && tagOf entry != "refused" then #[] else ((entry.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
 
 /-- Each rule's last firing or refusal to fire after an entry (`World.ruleLog`). -/
 def ruleLogAfter (w : World) (entry : Json) : Std.HashMap String (List (String × Json)) :=
@@ -3054,6 +3073,9 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
     touched := touch.foldl (fun t id => t.insert id ((t.getD id #[]).push index)) w.touched
     ruleLog := ruleLogAfter w entry
     wanting := wantingAfter w entry
+    refusedBy := match (entry.getObjVal? "outcome").toOption.bind lawRefusedOf with
+      | some id => w.refusedBy.insert id (w.refusedBy.getD id 0 + 1)
+      | none => w.refusedBy
     days := if (w.days.back?.map (·.1)) == some (w.clock / Limits.clockDay) then w.days
       else w.days.push (w.clock / Limits.clockDay, index + 1)
     touches := if tagOf entry != "admitted" then w.touches else
@@ -3064,8 +3086,45 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   recordActs (recordCore w entry key touch) entry
 
+/-- The facts a want of `o` (`id`) is judged and filled by, as `w` holds it at `height`: the clock, the
+    thing, the states its lines cite and the wants they name (`Law.asItStands` keeps only these). -/
+def wantFacts (w : World) (height : Nat) (id : String) (o : Object) : Law.Facts :=
+  let reads := statesOf w (objectCitations w id o)
+  { subject := "", caller := "", height, turn := height, clock := w.clock, object := id, reads,
+    wants := wantsCited w ((carriedWants w id o).flatMap (·.clause.names)), standing := standings w id o.law reads }
+
+/-- The wants of `o` (`id`) that hold of its state as it stands in `w`, at its clock, each with its
+    clause: the want's condition judged with what the thing's lines cite as `w` holds them. -/
+def posing (w : World) (height : Nat) (id : String) (o : Object) : List CarriedClause :=
+  let facts := wantFacts w height id o
+  (carriedWants w id o).filter fun c => !(Law.poses facts id o.state [c.clause]).isEmpty
+
+/-- `{object, want}` rows for the wants of `id` that hold `now` and did not before (`was`), and the reverse. -/
+def wantFlips (id : String) (was now : List String) : Array Json × Array Json :=
+  let row := fun (n : String) => Json.mkObj [("object", toJson id), ("want", toJson n)]
+  ((now.filter (!was.contains ·)).toArray.map row, (was.filter (!now.contains ·)).toArray.map row)
+
+/-- An entry's `wanted` and `unwanted` fields, each only when it holds a row. -/
+def flipFields (wanted unwanted : Array Json) : List (String × Json) :=
+  (if wanted.isEmpty then [] else [("wanted", Json.arr wanted)]) ++
+    (if unwanted.isEmpty then [] else [("unwanted", Json.arr unwanted)])
+
+/-- The wants a law's refusal opens and closes on the thing it refused (`lawRefusedOf`), whose
+    `request.refusedBy` it moves by one, at the clock: journaled by `push` on every such entry, as
+    `reactions` journals an admitted write's, and re-derived by replay. -/
+def refusalWants (w : World) (outcome : Json) : List (String × Json) :=
+  match (lawRefusedOf outcome).bind fun id => (w.objects[id]?).map (id, ·) with
+  | none => []
+  | some (id, o) =>
+    let after := { w with refusedBy := w.refusedBy.insert id (w.refusedBy.getD id 0 + 1) }
+    let (wanted, unwanted) := wantFlips id ((posing w (w.height + 1) id o).map (·.clause.name))
+      ((posing after (w.height + 1) id o).map (·.clause.name))
+    flipFields wanted unwanted
+
+/-- Seal and record the world's next entry. A law's refusal carries the wants it flips (`refusalWants`). -/
 def push (w : World) (key : String) (fields : List (String × Json)) (touch : List String) :
     World × Json :=
+  let fields := fields ++ refusalWants w ((fields.lookup "outcome").getD Json.null)
   let entry := Journal.sealEntry (w.height + 1) w.head fields
   (record { w with entries := w.entries.push entry } entry key touch, entry)
 
@@ -3174,19 +3233,6 @@ def spellCard (w : World) (owner text : String) : Option String :=
     some (if w.objects.contains id then id else (foldedId w id).getD id)
   | _ => none
 
-/-- The facts a want of `o` (`id`) is judged and filled by, as `w` holds it at `height`: the clock, the
-    thing, the states its lines cite and the wants they name (`Law.asItStands` keeps only these). -/
-def wantFacts (w : World) (height : Nat) (id : String) (o : Object) : Law.Facts :=
-  { subject := "", caller := "", height, turn := height, clock := w.clock, object := id,
-    reads := statesOf w (objectCitations w id o),
-    wants := wantsCited w ((carriedWants w id o).flatMap (·.clause.names)) }
-
-/-- The wants of `o` (`id`) that hold of its state as it stands in `w`, at its clock, each with its
-    clause: the want's condition judged with what the thing's lines cite as `w` holds them. -/
-def posing (w : World) (height : Nat) (id : String) (o : Object) : List CarriedClause :=
-  let facts := wantFacts w height id o
-  (carriedWants w id o).filter fun c => !(Law.poses facts id o.state [c.clause]).isEmpty
-
 /-- What an admitted write sets off and opens, as the entry journals it and replay re-derives it:
 
     - `fired`: for each written object in order, each rule it carries (`carried`, after the write)
@@ -3237,15 +3283,11 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
   let mut unwanted : Array Json := #[]
   for (id, o) in judged.updates ++ judged.creations do
     let was := ((before.objects[id]?).map fun x => (posing before height id x).map (·.clause.name)).getD []
-    let now := (posing after height id o).map (·.clause.name)
-    for n in now do
-      unless was.contains n do wanted := wanted.push (Json.mkObj [("object", toJson id), ("want", toJson n)])
-    for n in was do
-      unless now.contains n do unwanted := unwanted.push (Json.mkObj [("object", toJson id), ("want", toJson n)])
+    let (opened, closed) := wantFlips id was ((posing after height id o).map (·.clause.name))
+    wanted := wanted ++ opened
+    unwanted := unwanted ++ closed
   return (if fired.isEmpty then [] else [("fired", Json.arr fired)]) ++
-    (if unfired.isEmpty then [] else [("unfired", Json.arr unfired)]) ++
-    (if wanted.isEmpty then [] else [("wanted", Json.arr wanted)]) ++
-    (if unwanted.isEmpty then [] else [("unwanted", Json.arr unwanted)])
+    (if unfired.isEmpty then [] else [("unfired", Json.arr unfired)]) ++ flipFields wanted unwanted
 
 /-- The ledger and the ticks an entry's fields name (a turn's `entryBase`), and the delivery it consumes. -/
 def entryBudget (fields : List (String × Json)) : Ledger × Nat × Option String :=
@@ -3393,7 +3435,8 @@ def makeObject (w : World) (b : Built) (inputs : Json) (state : Data) (read : Op
     | some text => parseLawText text
     | none => if b.laws.isEmpty then defaultLaw creator else pure b.laws
   if let some message := citationRefusal w "" laws then throw message
-  if let some message := amendable laws creator "" height 0 pin state (reads := citedStates w laws) then throw message
+  if let some message := amendable laws creator "" height 0 pin state (reads := citedStates w laws)
+      (standing := standings w "" laws (citedStates w laws)) then throw message
   let (methods, predicate, predicateReads) := b.shape
   -- Readings belong to the package's clauses; a law given at creation keeps those it left alone.
   let given := (lawText.bind fun t => (parseLawTextReadings t).toOption.map (·.2)).getD []
@@ -4302,6 +4345,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   | "refused" =>
     let cls ← outcome.getObjValAs? String "class"
     unless refusalClasses.contains cls do throw s!"unknown refusal class {cls}"
+    let flipped := refusalWants w outcome
+    for k in ["wanted", "unwanted"] do
+      unless flipped.lookup k == (entry.getObjVal? k).toOption do throw s!"what the refusal {k} does not replay"
     return record w entry key []
   | "admitted" =>
     let rawWrites ← (← outcome.getObjVal? "writes").getArr?
@@ -4782,11 +4828,12 @@ def chronicle (w : World) (reader : String) (day : Nat) : List String := Id.run 
       for f in rows e "unfired" do
         if seen (text f "object") then
           things := things.push s!"rule {text f "rule"} of {shownName w (text f "owner")} did not fire on {text f "object"} at entry {h}: {unfiredWords (text f "why")}"
-      for x in rows e "wanted" do
-        if seen (text x "object") then things := things.push s!"{text x "object"} came to want {text x "want"} at entry {h}"
-      for x in rows e "unwanted" do
-        if seen (text x "object") then things := things.push s!"{text x "object"} stopped wanting {text x "want"} at entry {h}"
     | _ => pure ()
+    -- An admitted write's wants, and a law refusal's (`refusalWants`).
+    for x in rows e "wanted" do
+      if seen (text x "object") then things := things.push s!"{text x "object"} came to want {text x "want"} at entry {h}"
+    for x in rows e "unwanted" do
+      if seen (text x "object") then things := things.push s!"{text x "object"} stopped wanting {text x "want"} at entry {h}"
   let shown := things.toList.take Limits.chronicleLines
   let more := things.size - shown.length
   return [s!"day {day}: entries {start} to {stop - 1}, {admitted} admitted."] ++ shown ++

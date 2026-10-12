@@ -566,7 +566,8 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
   | .ok (again, built) =>
     let o := again.object
     let facts : Law.Facts := { subject := s.principal, caller := self, height := s.world.height + 1, turn := s.world.height + 1,
-                                 pin := o.pin, kind := 1, clock := s.world.clock, object := id, reads := citedStates s.world o.law }
+                                 pin := o.pin, kind := 1, clock := s.world.clock, object := id, reads := citedStates s.world o.law,
+                                 standing := standings s.world id o.law (citedStates s.world o.law) }
     if let some clause := Law.refusedBy o.law facts (some o.state) o.state then
       return ← refusedReading bounds responseType clause ((o.readings.lookup clause).getD s!"the law of {id} does not admit this layer.")
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
@@ -1093,7 +1094,8 @@ def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
     refuses a stranger whatever the method writes, unless the method moves the owner). -/
 def methodAdmits (w : World) (o : Object) (principal method : String) (id : String := "") (verb : String := method) : Json :=
   let facts : Law.Facts := { subject := principal, caller := "", height := w.height + 1, turn := w.height + 1, pin := o.pin,
-                              method, verb, clock := w.clock, object := id, reads := citedStates w o.law }
+                              method, verb, clock := w.clock, object := id, reads := citedStates w o.law,
+                              standing := standings w id o.law (citedStates w o.law) }
   match o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause with
   | none => Json.bool true
   | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
@@ -1278,7 +1280,8 @@ def cardPowers : List String := ["retire", "unretire", "hide", "show"]
     it stands? As `methodAdmits` judges a method. -/
 def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : String := "") (verb : String := "") : Bool :=
   let facts : Law.Facts := { subject := principal, caller := "", height := w.height + 1, turn := w.height + 1, pin := o.pin,
-                              kind, verb, clock := w.clock, object := id, reads := citedStates w o.law }
+                              kind, verb, clock := w.clock, object := id, reads := citedStates w o.law,
+                              standing := standings w id o.law (citedStates w o.law) }
   (o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause).isNone
 
 /-- `rule`'s and `want`'s fields as the usage prints them: the spell last, since its own fields follow it. -/

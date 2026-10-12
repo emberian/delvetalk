@@ -1886,6 +1886,26 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    root. Tests: `tests/test_wanting.py` (the index by whole heights for whom may view, a closed want leaving,
    unchanged by a reopen and a snapshot; the Bend arm, on the pair).
 
+165. **What a thing stands at: `request.laws`, `request.refusedBy` (host27; §7 item 1a; no edition change: edition 9
+   is not deployed).** Two facts in the kernel grammar (`LawFact.laws`, `.refusedBy`; `LawFact.atRead` names the four
+   a want may read: `clock`, `object`, `laws`, `refusedBy`), read of `request.object` by laws, rules and wants alike:
+   `laws` the count of its law clauses, its own and each one its `under` citations' texts hold, followed through
+   their own `under` within `lawDepth`, each (holder, clause) once (`Law.followedLaws`, `Law.lawClauses`; a Bend
+   law is not a clause); `refusedBy` the count of journaled `lawRefused` entries naming it (`Ops.lawRefusedOf`; every
+   `lawRefused`, the host's clauses such as `noGrant` or `notPlacer` too; never `cardRefused`), the index
+   `World.refusedBy` that `record` derives (snapshot `v4` key `refusedBy`, a carried key; a carry from `v3` starts
+   it empty). `Law.Facts.standing` holds a `Standing {laws, refusedBy}` for the written thing and every thing it
+   cites (`Ops.standings`), so a cited want (`"seal" wants tried`, judged `asItStands` the seal) reads the seal's;
+   every site that builds facts fills it (`judge`, `wantFacts`, `amendable` at creation and amendment, `methodAdmits`,
+   `kindAdmits`, a layer's check); none reads as no reading (fails closed). A law's refusal moves its thing's
+   `refusedBy`, so `push` journals on every `lawRefused` entry the wants it opens and closes (`refusalWants`, `wanted`/
+   `unwanted` as an admitted write's; `wantFlips`, `flipFields` shared with `reactions`); `wantingAfter` and the
+   chronicle read them on a refused entry too, and replay re-derives and compares them. A want reading
+   `laws` moves only when its own thing is written (an amendment is), not when a cited kind's text changes (§7 item
+   3's citing-want limit). Tests: `Law.lean`'s `#guard`s (counts, a cited want reading its own thing's standing), the
+   kernel's accept lists, `tests/test_wanting.py` `Standing` (a seal's "a law and a second hand's try" opened by the
+   refusal, listed, in `wants` and the chronicle, across a replay and a snapshot; a law reading `refusedBy`).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
