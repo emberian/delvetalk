@@ -10,6 +10,8 @@ verb}` to the thing's maker's avatar, run as that hand; the avatar keeps it (`he
 - Door: a door another hand hangs to a thing is heard as `door`.
 - Forgery: a hand's own turn of `heard` is refused by name.
 - Hush: with `hear: no` nothing more is kept; `hear: yes` hears again.
+- Since: the avatar's card leads, to its principal, with "Since you were here", one line a thing, newest first;
+  `seen` clears it; anyone else sees none of it; with hearing off it says how to hear again.
 
 Evidence for OVERHAUL §2 (rules on things) and §3 (Avatar's notes) (layer: scenarios).
 """
@@ -85,6 +87,38 @@ class Heard(Attention):
         self.admitted(self.say(KIM, "me", "delvetalk me set\nhear: yes"))
         self.rain(GLM, bell, "heard")
         self.assertEqual(self.heard(KIM), [(bell, "rain", GLM, STRANGERS[GLM])])
+
+
+class Since(Attention):
+    """The avatar's card leads, to its principal alone, with what others did to what they made since the entry they
+    read through: one line a thing, newest first, each verb counted with its newest hand and how many others; `seen`
+    clears it with the notes."""
+
+    def card(self, who, of):
+        return self.town.send(op="world-card", principal=who, object=of)["text"]
+
+    def test_the_card_leads_with_since_you_were_here_and_seen_clears_it(self):
+        bell = self.bell(KIM)
+        self.rain(GLM, bell, "one")
+        self.rain(GLM, bell, "two")
+        self.rain(OPENER, bell, "three")
+        shelf = self.made(GLM, "kind/record", "")
+        self.admitted(self.say(GLM, shelf, "delvetalk %s door / label: kim's bell / to: %s" % (shelf, bell)))
+        card = self.card(KIM, KIM)
+        lead = "Since you were here (entry 0):\n  %s: 1 door from %s; 3 rains from ember.delve.town and 1 other\n" % (bell, STRANGERS[GLM])
+        self.assertTrue(card.startswith(lead), card)
+        self.assertNotIn("Since you were here", self.card(GLM, KIM))
+        at = int(card.split("delvetalk me seen / at: ")[1].split("\n")[0])
+        self.admitted(self.say(KIM, "me", "delvetalk me seen / at: %d" % at))
+        after = self.card(KIM, KIM)
+        self.assertNotIn("Since you were here", after)
+        self.assertNotIn("delvetalk me seen", after)
+        self.rain(GLM, bell, "four")
+        self.assertTrue(self.card(KIM, KIM).startswith("Since you were here (entry %d):\n  %s: 1 rain from %s\n" % (at, bell, STRANGERS[GLM])))
+
+    def test_with_hearing_off_the_card_says_how_to_hear_again(self):
+        self.admitted(self.say(KIM, "me", "delvetalk me set\nhear: no"))
+        self.assertTrue(self.card(KIM, KIM).startswith("Not hearing what others do to what you made: delvetalk me set / hear: yes\n"))
 
 
 if __name__ == "__main__":

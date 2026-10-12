@@ -345,13 +345,45 @@ def noteLine(item: Note) -> Document.Document:
   Document.text("#{natText(item.at)} {Card.shown(item.from, item.handle, Card.stranger())}: {textTake(firstLine(item.text), 100n)}\n")
 def fresh(state: State) -> Lists.List<Note>:
   Lists.reverse(Lists.filter(Relations.rows(state.inbox), fn(n: Note) -> Bool: n.at > state.seen))
-# Notes newest first; eight of each list, then a count; one budget across the card (Card.limit(context)):
-# each list gets what the ones before it leave.
+# To its principal the card leads with what others did to what they made since they were here, one
+# line a thing, newest first; then where it is, what it holds and the new notes. Eight of each list,
+# then a count; one budget across the card (Card.limit(context)): each list gets what the ones before
+# it leave.
 def render(state: State, context: Abi.Context) -> Document.Document:
+  let since = sinceFor(state, context)
   let head = Document.text("{state.handle}'s avatar, {whereLine(state, context)}.\n")
-  let held = Card.clippedWithin(Lists.map(state.holding, holdingLine), 8n, Card.left(context, Document.size(head) + 200n))
-  let notes = inboxFor(state, context, Document.size(head) + sized(held))
-  Document.Document.sequence({items: Lists.concat(Document.Documents.cons({head: head, tail: held}), notes)})
+  let held = Card.clippedWithin(Lists.map(state.holding, holdingLine), 8n, Card.left(context, sized(since) + Document.size(head) + 200n))
+  let notes = inboxFor(state, context, sized(since) + Document.size(head) + sized(held))
+  Document.Document.sequence({items: Lists.concat(Lists.concat(since, Document.Documents.cons({head: head, tail: held})), notes)})
+# --- Since you were here ------------------------------------------------------------
+def freshHeard(state: State) -> Lists.List<Heard>:
+  Lists.reverse(Lists.filter(Relations.rows(state.heard), fn(h: Heard) -> Bool: h.at > state.seen))
+# Each value once, in the order it first stands.
+def distinct(items: Lists.List<String>) -> Lists.List<String>:
+  Lists.fold(items, Lists.List.nil(), fn(x: String) -> Lists.List<String> -> Lists.List<String>: fn(rest: Lists.List<String>) -> Lists.List<String>: Lists.List.cons({head: x, tail: Lists.filter(rest, fn(y: String) -> Bool: y != x)}))
+def sinceFor(state: State, context: Abi.Context) -> Document.Documents:
+  if Card.reads(context.object, context) == false then Document.Documents.nil() else if state.hear == false then Document.Documents.cons({head: Document.text("Not hearing what others do to what you made: delvetalk me set / hear: yes\n"), tail: Document.Documents.nil()}) else heardFor(state, freshHeard(state), context)
+def heardFor(state: State, news: Lists.List<Heard>, context: Abi.Context) -> Document.Documents:
+  if Lists.length(news) == 0n then Document.Documents.nil() else sinceLines(state, news, context)
+def sinceLines(state: State, news: Lists.List<Heard>, context: Abi.Context) -> Document.Documents:
+  let top = Document.text("Since you were here (entry {natText(state.seen)}):\n")
+  let lines = Lists.map(distinct(Lists.map(news, fn(h: Heard) -> String: h.thing)), fn(thing: String) -> Document.Document: thingLine(thing, Lists.filter(news, fn(h: Heard) -> Bool: h.thing == thing)))
+  Document.Documents.cons({head: top, tail: Card.clippedWithin(lines, 8n, Card.left(context, Document.size(top) + 400n))})
+# `  bell/1: 3 rains from kestrel.delve.town and 1 other; 1 door from yue.delve.town`
+def thingLine(thing: String, rows: Lists.List<Heard>) -> Document.Document:
+  let parts = Lists.map(distinct(Lists.map(rows, fn(h: Heard) -> String: h.verb)), fn(verb: String) -> String: verbPart(verb, Lists.filter(rows, fn(h: Heard) -> Bool: h.verb == verb)))
+  let said = textJoin(parts, "; ")
+  Document.text("  {thing}: {said}\n")
+def verbPart(verb: String, rows: Lists.List<Heard>) -> String:
+  let count = Lists.length(rows)
+  let others = Lists.length(distinct(Lists.map(rows, fn(h: Heard) -> String: h.by))) - 1n
+  let rest = if others == 0n then "" else if others == 1n then " and 1 other" else " and {natText(others)} others"
+  let plural = if count == 1n then "" else "s"
+  "{natText(count)} {verb}{plural} from {handOf(rows)}{rest}"
+def handOf(rows: Lists.List<Heard>) -> String:
+  match rows:
+    case cons(c): if c.head.handle == "" then Card.handle(c.head.by) else c.head.handle
+    case nil(_): ""
 # Where it is: what it last entered; nowhere yet, its principal is shown the spell that goes.
 def whereLine(state: State, context: Abi.Context) -> String:
   if Plans.isNobody(state.at) == false then "in {state.at.object}" else if Card.reads(context.object, context) then "nowhere yet; go: delvetalk me go / to: <a room>" else "nowhere yet"
@@ -359,13 +391,18 @@ def sized(lines: Document.Documents) -> Nat:
   Document.size(Document.Document.sequence({items: lines}))
 # The notes are the avatar's principal's alone: the new ones after its mark, newest first, and
 # the spell that moves the mark. Anyone else sees how many there are.
+# The newest entry among the new notes and the new heard (0 when there are none): what `seen` moves to.
+def latest(state: State) -> Nat:
+  Lists.fold(Lists.concat(Lists.map(fresh(state), fn(n: Note) -> Nat: n.at), Lists.map(freshHeard(state), fn(h: Heard) -> Nat: h.at)), 0n, fn(at: Nat) -> Nat -> Nat: fn(most: Nat) -> Nat: if at > most then at else most)
 def inboxFor(state: State, context: Abi.Context, used: Nat) -> Document.Documents:
-  if Card.reads(context.object, context) then newFor(state, fresh(state), context, used) else Document.Documents.cons({head: Document.text(if Relations.count(state.inbox) == 1n then "1 note\n" else "{natText(Relations.count(state.inbox))} notes\n"), tail: Document.Documents.nil()})
-def newFor(state: State, news: Lists.List<Note>, context: Abi.Context, used: Nat) -> Document.Documents:
+  if Card.reads(context.object, context) then newFor(state, fresh(state), latest(state), context, used) else Document.Documents.cons({head: Document.text(if Relations.count(state.inbox) == 1n then "1 note\n" else "{natText(Relations.count(state.inbox))} notes\n"), tail: Document.Documents.nil()})
+# The new notes, then the spell that marks them and the heard read.
+def newFor(state: State, news: Lists.List<Note>, at: Nat, context: Abi.Context, used: Nat) -> Document.Documents:
+  let spell = Document.text("  delvetalk me seen / at: {natText(at)}\n")
+  let marked = if at == 0n then Document.Documents.nil() else Document.Documents.cons({head: spell, tail: Document.Documents.nil()})
   match news:
-    case nil(_): Document.Documents.cons({head: Document.text("No new notes since entry {natText(state.seen)}.\n"), tail: Document.Documents.nil()})
-    case cons(c): newNotes(state, c.head, news, context, used)
-def newNotes(state: State, latest: Note, news: Lists.List<Note>, context: Abi.Context, used: Nat) -> Document.Documents:
+    case nil(_): Document.Documents.cons({head: Document.text("No new notes since entry {natText(state.seen)}.\n"), tail: marked})
+    case cons(_): newNotes(state, news, marked, context, used + Document.size(spell))
+def newNotes(state: State, news: Lists.List<Note>, marked: Document.Documents, context: Abi.Context, used: Nat) -> Document.Documents:
   let top = Document.text("{natText(Lists.length(news))} new since entry {natText(state.seen)}:\n")
-  let spell = Document.text("  delvetalk me seen / at: {natText(latest.at)}\n")
-  Document.Documents.cons({head: top, tail: Lists.append(Card.clippedWithin(Lists.map(news, noteLine), 8n, Card.left(context, used + Document.size(top) + Document.size(spell))), spell)})
+  Document.Documents.cons({head: top, tail: Lists.concat(Card.clippedWithin(Lists.map(news, noteLine), 8n, Card.left(context, used + Document.size(top))), marked)})
