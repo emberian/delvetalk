@@ -194,6 +194,20 @@ class NoWipe(unittest.TestCase):
                          ('1', word, genesis.OPENER))
         self.assertEqual([field(a, 'n')['value'] for a in rows(field(state, 'admitted'))], ['1'])
 
+    @unittest.skipIf(os.geteuid() == 0, 'root reads a mode-0 directory')
+    def test_a_directory_the_guard_cannot_read_refuses_and_the_word_is_written_whatever_it_saw(self):
+        hidden = os.path.join(self.towns, 'v1')
+        os.chmod(hidden, 0)
+        self.addCleanup(os.chmod, hidden, 0o755)
+        code, err = self.genesis()
+        self.assertEqual(code, 1, err)
+        self.assertIn('v1 (Permission denied): unreadable', err)
+        self.assertEqual(genesis.existing(self.town.client, genesis.OPENER), [])
+        word = 'the owner begins again'
+        self.assertEqual(self.genesis('--wipe-with-the-owners-word', word)[0], 0)  # the deploy of 5db9aa79 ran so, and dropped the word
+        state = self.town.send(op='world-view', principal=genesis.OPENER, object='commonplace')['state']
+        self.assertEqual([field(r, 'text')['value'] for r in rows(field(state, 'lines'))], [word])
+
     def test_without_towns_genesis_refuses_to_guess(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err), unittest.mock.patch.dict(os.environ, {'DELVETALK_TOWNS': ''}):

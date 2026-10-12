@@ -234,8 +234,11 @@ class Hand:
         if not card:
             return self.ask(spell, to, intent, wait)
         where, intent = self.where(topic, reply_to), (intent or '').strip() or f'hand:speak:{int(self.clock() * 1000)}'
-        reply = self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': 'receive', 'identity': intent,
-                                'argument': typed({'text': spell, 'post': intent})})
+        reply = self.receive(card, spell, intent)
+        if reply.get('status') == 'usage':  # a `?`: the card's spells, which the host journals nowhere; nothing is drafted
+            self.log('speak', None, intent=intent, spell=spell, height=None, slug=None, outcome='usage', object=card)
+            return {'card': card, 'object': card, 'outcome': 'usage', 'height': None, 'slug': None, 'line': f'{card}: its spells',
+                    'text': bridge.draft_text(reply), 'intent': intent, 'drafted': None}
         receipt = reply.get('receipt')
         if not receipt:
             raise HandError(f"{card}: {reply.get('message') or reply.get('status')}")
@@ -254,6 +257,10 @@ class Hand:
                                      'object': obj, 'slot': None, 'receipt': receipt, 'text': quoted(spell) + '\n\n' + text, 'posted': False, 'hand': True})
         self.log('speak', name, intent=intent, spell=spell, height=receipt.get('height'), slug=receipt.get('slug'), outcome=came['outcome'], object=obj)
         return {**came, 'intent': intent, 'drafted': name}
+
+    def receive(self, card, spell, intent):
+        return self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': 'receive', 'identity': intent,
+                               'argument': typed({'text': spell, 'post': intent})})
 
     def ask(self, words, card=None, intent=None, wait=WAIT_MAX):
         """Words that are no spell, to `card` (default the commonplace) as a resident's direct prose, the turn the play page
@@ -282,6 +289,8 @@ class Hand:
         if line is None:
             return None
         text, waiting = self.draft(line['draft'])[1]['text'] if line.get('draft') else '', False
+        if line.get('outcome') == 'usage':  # asked again: a `?` journals nothing, so the log keeps the spell, not the answer
+            text = bridge.draft_text(self.receive(line['object'], line['spell'], intent))
         if line['what'] == 'ask':
             rc = self.host.send({'op': 'world-receipt', 'principal': self.owner, 'identity': intent}).get('receipt') or {}
             said, waiting = trace(self.host, self.owner, intent, {'status': outcome_of(rc), 'receipt': rc}, wait=0) if rc else ([], True)

@@ -62,7 +62,7 @@ def healthy(st, service):
     if service == 'http':
         base = f'http://127.0.0.1:{st.config.http_port}'
         urllib.request.urlopen(base + '/AGENTS.md', timeout=5).read()
-        return bool(re.search(rb'class=.code.>entry [0-9]+<', urllib.request.urlopen(base + '/', timeout=30).read()))
+        return bool(re.search(rb'class="shelf">entry [0-9]+ ', urllib.request.urlopen(base + '/', timeout=30).read()))  # static/pages.html
     pidfile = st.pidfile(service)
     os.kill(int(pidfile.read_text()), 0)
     return time.time() - pidfile.stat().st_mtime <= 3 * st.config.poll
