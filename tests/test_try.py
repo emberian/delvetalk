@@ -87,6 +87,15 @@ class Try(unittest.TestCase):
         made = self.host.send({'op': 'world-create', 'principal': WHO, 'identity': 'mk-try', 'object': 'try', 'modules': [], 'entry': 'initial'})
         self.assertNotEqual(made.get('status'), 'created', made)  # no object takes the name
 
+    def test_a_plan_under_try_answers_its_whole_outcome_and_makes_nothing(self):
+        before = self.height()
+        plan = ('delvetalk try\n  delvetalk plan\n  delvetalk kinds make / name: trylamp / of: record\n  delvetalk {made 1} make\n')
+        tried = self.turn(plan)
+        self.assertTrue(tried.get('tried'), tried)
+        self.assertEqual(tried['status'], 'admitted', tried)
+        self.assertEqual(self.height(), before)
+        self.assertEqual(self.host.send({'op': 'world-view', 'principal': WHO, 'object': 'kind/trylamp'})['status'], 'unknown')
+
     def test_an_if_line_ahead_of_a_posts_spells_guards_them(self):
         v = self.version('bell/1')
         moved = self.turn(f'if: bell/1 v{v + 7}\ndelvetalk bell/1 rain / text: guarded')
