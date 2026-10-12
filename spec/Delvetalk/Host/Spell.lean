@@ -578,6 +578,16 @@ def bind (form : Form) (bs : List Binding) : List Binding :=
 def clauseOfReason (reason : String) : Clause :=
   if reason.startsWith "The block <<" then .unclosedBlock else .noAction
 
+def proposed (form : Form) (bindings : List Binding) : Fit :=
+  match audit form.fields bindings with
+  | some (clause, reason) => .refused clause reason
+  | none =>
+      let needs := (form.fields.filter fun f => !f.optional && !bindings.any (named f.name)).map (·.name)
+      if needs.isEmpty then
+        .proposal form.card form.action
+          (form.fields.map fun f => ⟨f.name, typed f.kind (valueOf bindings f.name)⟩)
+      else .unclear needs
+
 def fit (parsed : Parsed) (form : Form) : Fit :=
   match parsed with
   | .notASpell reason _ => .refused (clauseOfReason reason) reason
@@ -586,17 +596,20 @@ def fit (parsed : Parsed) (form : Form) : Fit :=
       if fold card != fold form.card || action != form.action then
         .refused .otherCard s!"This card answers {form.card} {form.action}."
       else
-        -- A line whose name the form lacks (`hob: still owed …`) ends the fields, as a prose line with a colon
-        -- does: what follows it is the reply's prose, not the spell's (the second playtest's D7).
-        let bindings := (bind form fields).takeWhile fun b => form.fields.any (·.name == b.name)
-        match audit form.fields bindings with
-        | some (clause, reason) => .refused clause reason
-        | none =>
-            let needs := (form.fields.filter fun f => !f.optional && !bindings.any (named f.name)).map (·.name)
-            if needs.isEmpty then
-              .proposal form.card form.action
-                (form.fields.map fun f => ⟨f.name, typed f.kind (valueOf bindings f.name)⟩)
-            else .unclear needs
+        -- A binding whose name the form lacks ends the fields when no field the form names follows it
+        -- (`hob: still owed …` in the reply's prose, the second playtest's D7); with one after it, it is
+        -- a misspelled field and the fields behind it would be lost, so it is refused.
+        let bound := bind form fields
+        let known := fun (b : Binding) => form.fields.any (·.name == b.name)
+        let bindings := bound.takeWhile known
+        let stray := bound.drop bindings.length
+        match stray.head? with
+        | some b =>
+            if stray.any known then
+              .refused .unknownField
+                s!"{b.name} is not a field of {form.card} {form.action}; its fields are {", ".intercalate (form.fields.map (·.name))}."
+            else proposed form bindings
+        | none => proposed form bindings
 
 /-! ## Forms -/
 
@@ -715,7 +728,10 @@ private def plant : Form :=
 -- A `text 0..N` field may be left out: it reads as the empty text.
 #guard fit (parse "delvetalk kinds make / name: lamp") ⟨"kinds", "make", [⟨"name", .text 1 80⟩, ⟨"law", .text 0 4096⟩]⟩ ==
   .proposal "kinds" "make" [⟨"name", .text "lamp"⟩, ⟨"law", .text ""⟩]
-#guard fit (parse "delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver") plant == .unclear ["colour", "seed"]
+#guard fit (parse "delvetalk garden-1 plant\nplant: a fern\nseed: moss\ncolour: silver") plant ==
+  .refused .unknownField "plant is not a field of garden-1 plant; its fields are colour, seed."
+#guard fit (parse "delvetalk garden-1 plant\nvoce: lunar\nseed: moss\ncolour: silver") plant ==
+  .refused .unknownField "voce is not a field of garden-1 plant; its fields are colour, seed."
 -- A line whose name the form lacks ends the fields: the second playtest's 69082, a `hob:` line after the spell.
 #guard fit (parse "delvetalk library laws / card: prereg\nhob: still owed — a law that parses") ⟨"library", "laws", [⟨"card", .text 1 128⟩]⟩ ==
   .proposal "library" "laws" [⟨"card", .text "prereg"⟩]
