@@ -1921,9 +1921,34 @@ def compiledOfPacket (packet : Json) : Option Compiled := do
   return ⟨packet, e.type, e.source.assumptions.bounds, e.source.assumptions.rigid, some e,
     some (Delvetalk.Theory.ObjectiveBendCheckpoint.Dictionary.ofProgram e.source.term)⟩
 
-/-- A definition of the on-disk compile cache (`DiskCache`, kind `def`), when it holds `key`. -/
+/-- This process's compiled definitions by key (`defKey`, a content address), whichever world compiled
+    them. A world keeps only what its own threaded state cached, and a pure read that cannot hand a
+    world back (a card's `actions` as it renders, a Bend law at judgement) would otherwise compile its
+    definition again at every call: from source, or, under `DELVETALK_COMPILE_CACHE`, by reading and
+    re-checking the file. -/
+initialize defMemo : IO.Ref (Std.HashMap String Compiled) ← IO.mkRef {}
+
+unsafe def memoReadImpl (key : String) : Option Compiled :=
+  unsafeBaseIO do return (← defMemo.get)[key]?
+
+/-- The process's compiled definition of `key`; `none` in the model (compile as if cold). -/
+@[implemented_by memoReadImpl]
+def memoRead (_key : String) : Option Compiled := none
+
+unsafe def memoKeepImpl (key : String) (c : Compiled) : Compiled :=
+  unsafeBaseIO do
+    defMemo.modify fun m => (if m.size < Limits.maxCompiledPackets then m else {}).insert key c
+    return c
+
+/-- `c`, kept as the process's compiled definition of `key`. -/
+@[implemented_by memoKeepImpl]
+def memoKeep (_key : String) (c : Compiled) : Compiled := c
+
+/-- A definition of the on-disk compile cache (`DiskCache`, kind `def`), when it holds `key`; once read,
+    the process's. -/
 def diskCompiled (key : String) : Option Compiled :=
-  (DiskCache.read "def" key).bind fun j => ((j.getObjVal? "packet").toOption.bind compiledOfPacket).map DiskCache.hit
+  (DiskCache.read "def" key).bind fun j => ((j.getObjVal? "packet").toOption.bind compiledOfPacket).map fun c =>
+    memoKeep key (DiskCache.hit c)
 
 /-- The on-disk form of a compiled definition. -/
 def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJson key), ("packet", c.packet)]
@@ -1932,12 +1957,12 @@ def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJ
 def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
 
 /-- An object's definition `name`, compiled and prepared (from the world's cache when warm, else
-    the disk's). -/
+    the process's, else the disk's). -/
 def compileDef (w : World) (o : Object) (name : String) : Except String (Compiled × World) := do
   if let some c := w.compiled[defKey o name]? then return (c, w)
-  if let some c := diskCompiled (defKey o name) then return (c, w)
+  if let some c := memoRead (defKey o name) <|> diskCompiled (defKey o name) then return (c, w)
   let (c, w) ← compileEntryIn w o.inputs name
-  return (← compiledOf c, w)
+  return (memoKeep (defKey o name) (← compiledOf c), w)
 
 /-- Compile the Bend law (and its reads) of the objects a proposal writes, into the world's
     cache, so the pure `judge` finds them. -/

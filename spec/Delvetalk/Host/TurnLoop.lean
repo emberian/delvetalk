@@ -392,7 +392,7 @@ def callReading (cls object : String) (expected : Option Json := none) : String 
 def compiledMethod (obj : Object) (method : String) : M Compiled := do
   let key := obj.inputsKey ++ "/" ++ method
   let s ← get
-  match s.world.compiled[key]? <|> diskCompiled key with
+  match s.world.compiled[key]? <|> memoRead key <|> diskCompiled key with
   | some c =>
     unless s.world.compiled.contains key do
       let cache := if s.world.compiled.size < Limits.maxCompiledPackets then s.world.compiled else {}
@@ -404,6 +404,7 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
     match compileEntryIn s.world obj.inputs method >>= fun (ec, w) => do return (← compiledOf ec, w) with
     | .error e => throw (.request s!"method {method} does not compile: {e}")
     | .ok (c, w) =>
+      let c := memoKeep key c
       -- A full cache is emptied and refilled, never left full (which would compile every turn).
       let cache := if w.compiled.size < Limits.maxCompiledPackets then w.compiled else {}
       set { s with world := { w with compiled := cache.insert key c } }
