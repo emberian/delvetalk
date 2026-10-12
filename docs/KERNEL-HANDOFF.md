@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-11 (lane/kernel17 after foundation 57d1c580: one clause language, `law`, `rule` and `want` on a thing's text, OVERHAUL §5 step 2, §27; before it lane/kernel16 after foundation 1de640d7: a computed refusal, `refuse(line)`, §26; before it lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
+State on 2026-10-12 (lane/kernel19 after foundation b45ccef6: the second codex review's nine kernel findings, §28; before it lane/kernel17 after foundation 57d1c580: one clause language, `law`, `rule` and `want` on a thing's text, OVERHAUL §5 step 2, §27; before it lane/kernel16 after foundation 1de640d7: a computed refusal, `refuse(line)`, §26; before it lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
 
 ## Summary
 
@@ -9,9 +9,9 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Language: `spec/bend/Compiler/` (Surface, Parse, Elaborate, FrontEnd, Blame, Law, TermWire, DataWire, Sha256) and `spec/bend/Theory/` (OpenRecursion, Types, Typing, DemandMachine, DemandMachineFast, DemandData, Checkpoint, CheckpointV3, DemandCollect and the proofs). Delvetalk side: `spec/Delvetalk/` `FrontEnd`, `Generics`, `DocumentTemplate`, `Hints`, `Package`, `PackageSession`, `Turn`, `Entry`, `Limits`, `Canonical`, `Document`, `Profile`, `EvaluateTerm`, `PackageData*`; driver `spec/PackageMain.lean`.
 - Binary: `.lake/build/bin/delvetalk-obend` (`lake build`; `make build` also builds the proof-only modules in `PROOF_ONLY`). No `sorry` in `spec/`.
 - One dialect (§21): an activity is `Activity<A>` = `computation Message Data A`; its only yields are world calls `world.X(arg)` / `world.X::<T>(arg)` against `world/lib/World.obend`'s `protocol world` (§17), each resumed at its site's type. Surface `perform` and `Activity<P, R, A>` are refused by name.
-- The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and, absent a hand-written one, `forms()`; a hand-written one beside blocks is not yet refused (§9).
+- The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and `forms()`; a hand-written `forms()` beside blocks is refused (§28).
 - Relations (§14, §22, §15): law atoms `insertOnly`, `count`, column membership; `insert`/`upsert`/`retract` in `write {...}`; `canonicalCompare`; `relationCount(r)` and `relationLookup(r, key)` (core forms: a stored relation answers a count from its handle and a lookup by its declared key by binary search); the artifact's `relations: [{field, key, limit, retain?}]`, evaluated once per package.
-- Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR, CID = `b` + base32lower(`01 71 12 20` + sha256).
+- Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR (a variant `[null, label, payload]`, injective: `encode_injective`, §3), CID = `b` + base32lower(`01 71 12 20` + sha256).
 - Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
 - Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
 - Tests: 1,241 `def test_` across 109 files (foundation b0f3618). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
@@ -182,7 +182,6 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
 - Parse is the largest front-end stage (13 ms for Garden at 7d90f1b): a direct scanner per line regex, checked against the `Re` values the way `tokenLength` was (`compile-profile self-check`).
 - An activity entry's packet is 200-250 KB that must be rendered, hashed, decoded and checked per entry.
 - A checkpoint-local term table was built and measured: no gain on forced literal lists, worse nine-prose dedup; not committed (the edition name v3 now means relative addresses, §14).
-- A hand-written `forms()` beside form blocks is accepted, and wins over the derived one (`Generics.lean`, the `forms` check); refusing it by name closes FOUNDATION §12's row. Closed by a diagnostic in `test_sugar`.
 - The `Not proved` list in section 1.
 - Turn performance: docs/PERF.md (lane/perf2). The machine runs 25 to 37 million ticks a second; a directory turn spends about two thirds of its drive loop encoding, digesting, re-digesting and decoding a checkpoint per segment the host answers in process. Its items 1, 2 and 4 are this lane's (`Turn.lean`, `ObjectiveBendTyping.infer`).
 
@@ -519,12 +518,13 @@ reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `S
 state (rows per relation as an array per version), `Reads` into `recordRows`/`judge` with
 `keysChangedSince` and the span rule, the per-cell bound and ledger: 3 days.
 
-## 16. Queue for the successor (lane/kernel15, after foundation 8f69bd7e)
+## 16. Queue for the successor (lane/kernel19, after foundation b45ccef6)
 
 Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the codex findings (kernel10,
 §24); lazy cells (kernel11, §15); the package and instance bounds, located generics refusals and
 LAW §4 A/E/H (kernel13, §25); the law term language (kernel14, §25 M, N); item 15, the relation
-primitives (kernel15, §15 "Two primitives"). Remaining, in order:
+primitives (kernel15, §15 "Two primitives"); the second codex review's kernel findings 1-9 (kernel19,
+§28). Remaining, in order:
 
 15a. (Objects lane.) `Relation.obend`'s `count` and `lookup` are the primitives now, so every caller
    already pays the stored tariff; what is left is theirs, by site:
@@ -556,8 +556,21 @@ primitives (kernel15, §15 "Two primitives"). Remaining, in order:
    `test_sugar` and `test_located`-style fixtures, then delete it when none is left.
 19. A card's stored refusal answers the `Failure` name (`…Failure.refused`), not `Turn.refusalText`
    (a turn's does): `Package.executeDataEntryStored` should say why, as the turn path does.
+20. (Kernel, then host; replay edition.) Charge argument admission to the turn (§28 item 7): `admits`
+   bounds the conformance and well-formedness walks by the turn's ticks but does not deduct them, so
+   `ticksUsed` excludes them, as a card's preparation does not (`executePreparedNativeFrom` deducts).
+   Charging moves every turn's ticks: re-record `test_tariff`, and a replay edition. Closes when
+   `startEntry` deducts the work `admissionLeft` counts and `ticksUsed` includes it.
+21. (Kernel and kernel18's store.) `Canonical.variantHead` is the writer for a hand-built block that
+   holds a variant (kernel18's `stateBlock` writes the relation field's `rows`): such a writer must
+   produce `encode`'s bytes for the value it stands for, `[null, "rows", {items}]` (§3).
+22. (Host.) The grant and relation consumers compare Data by canonical bytes (`Ops.attenuate`,
+   `relationEdit`, `keyAtMost`); with `encode_injective` that is equality up to `normalize`. A host
+   test of a grant fixing a Data-typed variant and a holder supplying the one-field record (now
+   `grantConflict`) belongs in `test_grants`.
 
-Done since kernel10 and no longer queued: 9 (located generics refusals, kernel13), 13 (`52ad1b2`),
+Done since kernel10 and no longer queued: 10 (Counter and Loop import List.obend; a hand-written
+`forms()` beside blocks is refused, §28 item 9), 9 (located generics refusals, kernel13), 13 (`52ad1b2`),
 18 (LAW §6 items 2 and 3, kernel halves, kernel14: §25 item M), 15 (kernel15).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
@@ -1156,3 +1169,47 @@ does next.
    `Package.EntryCompiled` should carry them to `Built` so `makeObject` places them (owner the
    creator) when no law text is given. (Objects lane: `Kind.obend`'s `lawChecked` still refuses lines
    not starting `law `; `world.check` accepts `rule` and `want` lines now.)
+
+## 28. The second codex review's kernel findings (lane/kernel19, after foundation b45ccef6)
+
+`docs/review/codex-2026-10-12/kernel.md`, all nine, each verified on the tree first and refuted by a
+test or a `#guard` that fails on the previous binary.
+
+1. **Canonical collisions (P1).** A variant was the one-key map `{label: payload}`: the bytes of the
+   one-field record, so at type `Data` (a grant's fixed argument, a relation row) a holder could pass
+   a record where a variant was fixed. A variant that is not a list is now `[null, label, payload]`
+   (no Data item is null). The writer is total with a byte-list specification (`writeData_spec`),
+   and `encode_injective` (`#assert_axioms`) proves equal bytes, fewer than 2^64, are equal values up
+   to `normalize`. `Data.canonicalBytes` counts the extra byte; no packet, pin or tariff moved.
+   `retype`/`decodeAs` deleted (no caller; decoding is untyped now that variants are self-describing).
+2. **Re-exported law unenforced (P1).** `Package.signaturesAt` reads `export Alias.f [as g]` as the
+   function it names (through imports); a re-exported parameter typed `State` keeps the name only if
+   the exporting module's State is the defining module's (`recordAt`), else `law` is refused by shape.
+   Methods and `relations()` read it too. `test_methods`.
+3. **Alias chain dropping fixed fields (P1).** `recordAt` walks State's aliases and layers on fuel
+   equal to the package's alias declarations and modules; running out is a cycle and refused, as is an
+   alias naming an import its module lacks ("refused (fixed)"), never read as no fixed fields.
+   `test_sugar` (a 64-alias chain).
+4. **Checkpoint materialized before its bound (P2).** `materializeStored store state allowance`
+   measures each stored part row by row before building it and refuses past the allowance; the host's
+   `Held.kept` passes `Limits.maxCheckpointBytes`. `#guard` (1,024 rows of 4 KiB).
+5. **Another stack's metadata (P2).** `layerAncestry` (the entry module's own layer chain) replaces the
+   closure-wide stack for entry selection, methods, declares and law readings; the context's stack
+   still decides package-wide overrides. `test_layers`.
+6. **Uncharged re-execution on node exhaustion (P2).** `Failure.nodes` (every node check of
+   `materializeWith`) is split from `Failure.budget` (bytes): `concludeStep` no longer re-materializes a
+   Plan with 2^40 nodes, and a result wider than the nodes left is `exhausted nodes` (it read `bytes`).
+   `test_turn`.
+7. **Unmetered argument admission (P2).** `admissionLeft` counts the conformance and well-formedness
+   work (a visit per node per check, a record's names pairwise) against the turn's ticks and stops at
+   them: `startEntry`, `resumeSuspended` and `resumeEntry` answer `exhausted ticks` without the walk.
+   Bounded, not charged (§16 item 20). `#guard`.
+8. **Clauses block layering (P2).** The entry's text is its ancestry's clauses, lowest first, names
+   unique across them (a layer adds, never overrides, a clause); a clause in a module the entry only
+   imports is still refused. `test_layers`.
+9. **Hand-written `forms()` erasing bounds (P2).** Refused beside form blocks, at its declaration
+   ("refused (derived-forms)"). `test_sugar`.
+
+Pins: none re-recorded (no packet moved). Replay: see the lane report (carry-check on the newest
+backup).
+
