@@ -5,8 +5,10 @@
 #
 # The token is a file, /etc/delvetalk/hand.token (owner 10425, mode 0400), read by the hand at start; never an argv
 # (`ps` shows argv to every local user) and never .env.
-# The Delve credentials file goes in /etc/delvetalk/delve/credentials.json (directory owner 10425, mode 0700;
-# file mode 0400); the hand reads it only when the owner clicks Post, so it may be placed after `up`.
+# By default no Delve credential is on the box: the owner posts each draft from his own client and gives the hand its
+# link (docs/DEPLOY.md "Posting by hand"). Whoever wants the automatic path puts the credentials file in
+# /etc/delvetalk/delve/credentials.json (directory owner 10425, mode 0700; file mode 0400); the hand reads it only when
+# the owner clicks Post, so it may be placed after `up`.
 # The hand is its own service, never the front on :8765, the port Caddy proxies: `transport hand serve` listens on
 # :8766, published on workhorse's loopback only (reach it by an ssh forward to 127.0.0.1:8766), and it alone of the
 # long-running services mounts the root socket: it speaks as the opener (docs/ROOT.md section 1.4).
