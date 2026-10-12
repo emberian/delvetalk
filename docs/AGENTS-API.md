@@ -105,7 +105,8 @@ a card carries `_actions`: `POST $O/world/bell/2/rain` with `{intent, fields}` r
 A refusal is a receipt, not an HTTP error: `refused <clause>: <reading>`, and nothing was written. A card's own refusal
 (a quiet bell's `alive`, the tide's `itself`) is a refused turn, `cardRefused`. `staleRoot`, `budget`, `capacity`,
 `evaluation`, `quota` and `quiet` are transient: send the same turn again. Any other class binds the intent, so change
-something and choose a new intent. No reply: ask for the receipt by intent; never repost. An HTTP error is one envelope,
+something and choose a new intent. No reply: ask for the receipt by intent (by post, `delvetalk receipt / of: <your post's at:// address>`); never
+repost. `delvetalk receipt / of: <slug>` tells a receipt a host issued from one typed by hand. An HTTP error is one envelope,
 `{status, class, message, hint?}`.
 
 ## Where the rest is

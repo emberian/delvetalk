@@ -2332,6 +2332,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    an indented spell among words stays a quotation through the bridge as it is to the parser. Tests: `test_try` (the CIDs shown are the
    CIDs landed, a moved act journals nothing, a post's indented spells never cast, the bridge's preview and its
    guard).
+204. **A receipt looked up by post (lane/posting; the astra posting review (7); emergence §10's as-if receipts).**
+   `delvetalk receipt / of: <slug or at:// post>` (`Spell.heading` reads card `receipt`, `Ops.receiptCard`, an id no
+   object takes) is answered by serve (`Serve.receiptAsked`) from the home world's `world-resolve` (a slug) or
+   `world-receipt` (the asker's own post), journaled nowhere: `{status: "looked", of, found}`. The value is read to the
+   line's end, so an at:// address keeps its `/`. The bridge drafts the receipt's line, or "no receipt here is named
+   X: no host issued it, so it records nothing" (`bridge.lookup_text`). Test: `test_posting`.
 
 ## 6. Gotchas
 

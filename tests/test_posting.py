@@ -34,5 +34,19 @@ class Resident(unittest.TestCase):
         self.assertEqual(self.town.client.send({'op': 'world-view', 'principal': 'anonymous', 'object': 'bell/1'})['version'], v)
 
 
+    def test_a_receipt_is_looked_up_by_post_and_one_typed_by_hand_does_not_resolve(self):
+        [tended] = self.poster.say('delvetalk bell/1 tend')
+        slug = tended['receipt']['slug']
+        [found] = self.poster.say(f'delvetalk receipt / of: {slug}')
+        self.assertIn(f'receipt {slug}', found['text'])
+        self.assertIn('admitted bell/1', found['text'])
+        [mine] = self.poster.say(f"delvetalk receipt / of: {tended['replyTo']}")
+        self.assertIn(f'receipt {slug}', mine['text'])
+        [typed] = self.poster.say('delvetalk receipt / of: lusab-babad')
+        self.assertEqual(typed['text'], 'no receipt here is named lusab-babad: no host issued it, so it records nothing\n')
+        made = self.town.client.send({'op': 'world-create', 'principal': self.poster.did, 'identity': 'mk-receipt', 'object': 'receipt', 'modules': [], 'entry': 'initial'})
+        self.assertNotEqual(made.get('status'), 'created', made)
+
+
 if __name__ == '__main__':
     unittest.main()

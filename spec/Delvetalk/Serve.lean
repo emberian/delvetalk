@@ -504,6 +504,20 @@ def postShaped (request : Json) : Json := Id.run do
   return (((request.setObjVal! "op" (toJson "world-try")).setObjVal! "object" (toJson "commonplace")).setObjVal! "reach" (toJson "direct"))
     |>.setObjVal! "argument" (withFieldText argument "text" inner)
 
+/-- What `delvetalk receipt / of: <slug or at:// post>` asks (docs/POSTING.md): the receipt a slug names, or the one a
+    post of the asker's own became, so a resident with no HTTP finds an act's outcome, and tells a receipt a host
+    issued from one typed by hand. -/
+def receiptAsked (request : Json) : Option String := do
+  guard ((request.getObjValAs? String "op").toOption == some "world-turn" && (request.getObjValAs? String "method").toOption == some "receive")
+  let text ← fieldText ((request.getObjVal? "argument").toOption.getD Json.null) "text"
+  let .spell card _ _ := Host.Spell.parse text | none
+  guard (card == Host.receiptCard)
+  -- The value as written to the line's end: an at:// address holds the `/` an inline field would end at.
+  let after := match text.splitOn "of:" with
+    | _ :: rest@(_ :: _) => "of:".intercalate rest
+    | _ => ""
+  return ((after.splitOn "\n").headD "").trimAscii.toString
+
 /-- One request, as the socket it came on may ask it. -/
 def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) := do
   let request := postShaped request
@@ -535,6 +549,16 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
       unless srv.scratches.contains key do return (srv, errorJson s!"no scratch/{name} of yours is open")
       let (srv, clock) ← homeClock srv
       return (← discard srv key clock, Json.mkObj [("status", toJson "expired"), ("scratch", scratchRow key clock)])
+  -- A receipt looked up by post: the home world's `world-resolve` (a slug) or `world-receipt` (a post), journaled nowhere.
+  if let some of_ := receiptAsked request then
+    let principal := (request.getObjValAs? String "principal").toOption.getD ""
+    let (srv, home) ← world srv srv.config.home
+    let .ok session := home | return (srv, errorJson (match home with | .error e => e | .ok _ => ""))
+    let ask := if of_.startsWith "at://" then Json.mkObj [("op", toJson "world-receipt"), ("principal", toJson principal), ("identity", toJson of_)]
+      else Json.mkObj [("op", toJson "world-resolve"), ("principal", toJson principal), ("slug", toJson of_)]
+    let (session, r) ← PackageSession.stepIO session ask
+    let srv := { srv with worlds := srv.worlds.insert srv.config.home session }
+    return (srv, Json.mkObj [("status", toJson "looked"), ("of", toJson of_), ("found", match r with | .ok j => j | .error e => errorJson e)])
   -- Every public request is a resident's, whoever it names: the opener's privileges are the root socket's.
   let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "resident")
   match keyOf srv request with

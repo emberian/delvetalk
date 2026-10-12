@@ -76,7 +76,7 @@ place, the change and the next moves.
 | a card's paint | **no**: drafts carry the exact card only | yes (`/play`, `/o`) | the paint above the card in a reply, when it fits |
 | a card or reply over the clip | cut, with "… and N more" or a pointer to `/source` | whole | continued in numbered posts in the same thread |
 | a card's Bend source | **no** | `/world/<id>/source` | the mirror's card record names its pin; the source record follows in the façade's `town.delvetalk.source` (web) |
-| a receipt by slug or intent | **no** | `/receipt/<slug>` | the mirror carries none; the town's as-if receipts (§10) want a spell: queued |
+| a receipt by slug or intent | yes: `delvetalk receipt / of: <slug or at:// post>`, nothing written | `/receipt/<slug>` | built: one typed by hand answers that no host issued it |
 | a dry run | **no** | a scratch fork, by hand | `try` |
 | a scratch world, its REPL, `check`, `cite` | **no** (`workshop check` checks Bend in the town) | yes | `scratch`, `cite` by post; the REPL's pure entries stay web-only, said in the guide |
 | another world's card (`<world>:<object>`) | **no** | yes | queued: one world is served |

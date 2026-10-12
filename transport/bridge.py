@@ -184,6 +184,25 @@ def preview_text(reply, handles=None):
     return '\n'.join(out) + '\n'
 
 
+def lookup_text(reply, handles=None):
+    """`delvetalk receipt / of: …` answered (`Serve.receiptAsked`): the receipt's line as the turn's reply said it, or
+    that no host issued one by that name (a receipt typed by hand never resolves)."""
+    of, found = reply.get('of') or '', reply.get('found') or {}
+    receipt = found.get('receipt')
+    if found.get('status') == 'resolved' and found.get('carried'):
+        return f"receipt {of}: {found.get('message')}\n"
+    if found.get('status') == 'resolved' and not receipt:
+        return f"{of} names a {found.get('kind')} here, not a receipt\n"
+    if receipt and (receipt.get('outcome') or {}).get('tag') == 'refused':
+        return f"receipt {receipt.get('slug') or of}: " + refusal_line(receipt['outcome']) + '\n'
+    if receipt:
+        return receipt_line(receipt, None, None, handles)
+    if found.get('status') == 'ambiguous':
+        return f"{of} names {found.get('matches')} things here; a receipt by post: delvetalk receipt / of: <your post's at:// address>\n"
+    return (f"no turn of yours is {of}\n" if of.startswith('at://') else
+            f"no receipt here is named {of}: no host issued it, so it records nothing\n")
+
+
 def register(st, host, did, handle):
     """Tell the host an author has arrived, at their first observed post (the clock principal alone may). The call
     is idempotent at the host; the local set is the skip list and only saves the round trips."""
@@ -390,6 +409,12 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if how['how'] in ('mention', 'door', 'fields'):
             request['reach'] = how['how']  # the reach the host found; a reply and a spell it finds again at the turn
         reply = host.send(request)
+        if reply.get('status') == 'looked':  # a receipt looked up: nothing journaled, its line is the answer
+            st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
+                'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
+                'object': 'commonplace', 'slot': slot, 'receipt': None, 'posted': False, 'text': lookup_text(reply, handles)})
+            done.append(obs['uri'])
+            continue
         if reply.get('tried') or reply.get('class') == 'moved':  # a preview, or an act whose `if` moved: nothing journaled
             st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
