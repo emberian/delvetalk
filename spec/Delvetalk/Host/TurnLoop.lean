@@ -703,18 +703,26 @@ def grownForm (id : String) (act : Option Data) (v : Verb) : Data :=
     | _ => []
   .record [("card", .label id), ("action", .label v.name), ("fields", listData text)]
 
-/-- A card's declared forms with its grown verbs after them; `act` itself is no spell: its spells are
-    the verbs. -/
-def withVerbs (id : String) (o : Object) (declared : List Data) : List Data :=
-  let act := declared.find? (formAction · == actMethod)
-  declared.filter (formAction · != actMethod) ++ (if act.isSome then o.verbs.map (grownForm id act) else [])
+/-- `act`'s own form, whether the package offers it (`act`) or keeps it from usage (`~act`, as RECORD
+    and THING do): the row a grown verb's spell runs and whose `text` field it takes. None when `o` does
+    not offer `act` to a turn. -/
+def actForm (id : String) (o : Object) (declared : List (String × List (String × Data))) : Option Data := do
+  guard (o.offers actMethod)
+  let row ← ((o.methods.getArr?.toOption).getD #[]).find? fun m => (m.getObjValAs? String "name").toOption == some actMethod
+  (methodForms id (Json.arr #[row.setObjVal! "unoffered" (toJson false)]) declared).head?
+
+/-- A card's forms (`methodForms`, with the kinds `declared`) and its grown verbs after them; `act`
+    itself is no spell: its spells are the verbs. -/
+def withVerbs (id : String) (o : Object) (declared : List (String × List (String × Data)) := []) : List Data :=
+  let act := actForm id o declared
+  (methodForms id o.methods declared).filter (formAction · != actMethod) ++ (if act.isSome then o.verbs.map (grownForm id act) else [])
 
 /-- An object's forms (`methodForms`) with the kinds its `forms()` declares: a spell is judged by the
     card's own bounds, and the type's default holds only for a field no form names. Then its grown verbs
     (docs/COLLABORATOR.md §3), each a form as a declared one is; `act` itself is no spell: its spells
     are the verbs. -/
 def formsOf (id : String) (o : Object) : M (List Data) := do
-  return withVerbs id o (methodForms id o.methods (← declaredForms o).1)
+  return withVerbs id o (← declaredForms o).1
 
 /-- Does the object's method table list `name`? -/
 def hasMethod (o : Object) (name : String) : Bool :=
@@ -1075,7 +1083,7 @@ def heardFits (w : World) (o : Object) (argument : Data) : Bool :=
     (`viewDerived`), not cast. -/
 def spellFormsData (w : World) (id : String) (o : Object) : List Data :=
   let views := ((declaredViews o).run.run (scratchState w)).1.toOption.getD []
-  let forms := ((formsOf id o).run.run (scratchState w)).1.toOption.getD (withVerbs id o (methodForms id o.methods))
+  let forms := ((formsOf id o).run.run (scratchState w)).1.toOption.getD (withVerbs id o)
   forms.filter fun f => match f with
     | .record fs => match fs.lookup "action" with
       | some (.label a) => !views.contains a
@@ -1116,15 +1124,17 @@ def readerActions (w : World) (id : String) (o : Object) (reader : String) : Opt
 
 /-- The per-reader action filter usage and inspection share (codex agent 11): an action is offered to
     `reader` when the law admits them to run it on the state as it stands (`methodAdmits`) and the
-    card's `actions` (if any) lists it. `receive`, the spell's way in, always stands. A spell for
-    another action is still fitted, and the commit's law refuses it. -/
+    card's `actions` (if any) lists it. `receive`, the spell's way in, always stands. A grown verb is
+    the law's alone: its `act` judged with the verb as `request.verb`, since a body's `actions` names
+    its own methods, never the verbs hands grew on it. A spell for another action is still fitted,
+    and the commit's law refuses it. -/
 def offeredTo (w : World) (id : String) (o : Object) (reader : String) : String → Bool :=
   let listed := readerActions w id o reader
   fun action =>
-    -- A grown verb is offered as its `act` is, judged with the verb as `request.verb`.
-    let method := if o.verbs.any (·.name == action) then actMethod else action
     action == "receive" ||
-      (methodAdmits w o reader method id action == Json.bool true && (listed.map (·.contains method)).getD true)
+      if o.verbs.any (·.name == action) && !o.offers action then
+        o.offers actMethod && methodAdmits w o reader actMethod id action == Json.bool true
+      else methodAdmits w o reader action id action == Json.bool true && (listed.map (·.contains action)).getD true
 
 /-- The forms a card's usage shows `principal` (`offeredTo`). -/
 def usageForms (w : World) (id : String) (o : Object) (principal : String) (forms : List Spell.Form) : List Spell.Form :=

@@ -1816,7 +1816,9 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `rule NAME: request.verb == "NAME" then SPELL`; `ungrow` takes both off.
    - *Spells.* `grow / name / reading / takes: text|nothing / does: <spell, last>`, `ungrow / name`, `verbs`
      (declared then grown, with grower and entry). `formsOf` appends grown verbs as forms (the text field is
-     `act`'s own) and hides `act`; `offeredTo` judges a verb as `act` with the verb; `castSpell` runs a grown
+     `act`'s own, `actForm`, whether the package offers `act` or keeps it from usage as `~act`, as RECORD and
+     THING do) and hides `act`; `offeredTo` offers a verb by the law alone, judging `act` with the verb (a body's
+     `actions()` names its own methods, never grown verbs; docs/AUTHORING.md §1's D-grown); `castSpell` runs a grown
      verb as `act {verb, text}` (`grownAct`); a direct `act` naming no grown or staged verb is `noMethod`. A
      spell naming no verb says how it grows.
    - *Staging.* `placementsOf` is the one reading of a placing (spell, call, arm); `stagePlacements` judges at
