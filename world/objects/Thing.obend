@@ -213,13 +213,26 @@ def transferred(to: Plans.Reference, context: Abi.Context) -> Activity<Done>:
 # package, its seed this state without holder and offer (lying nowhere until put down), owned
 # by whoever asked (the host fills `owner` with the creating principal).
 def copy(state: State, context: Abi.Context) -> Activity<Done>:
-  if state.copyable == false then copyRefused({clause: "notCopyable", reading: "{state.name} is not copyable; its owner, {Card.name(state.owner, context)}, decides"}, context) else copying(context, state)
+  copyTo("", state, context)
+# A copy made for someone: offered to them as it is made (`to`, a principal), until taken; nobody holds it
+# before, so custody moves only by their `accept`, as every gift's does. A room's counter hands things so
+# (world/bodies/station.obend's `vend`).
+def copyFor(state: State, input: {to: String}, context: Abi.Context) -> Activity<Done>:
+  copyTo(input.to, state, context)
+def copyTo(to: String, state: State, context: Abi.Context) -> Activity<Done>:
+  if state.copyable == false then copyRefused({clause: "notCopyable", reading: "{state.name} is not copyable; its owner, {Card.name(state.owner, context)}, decides"}, context) else copying(to, context, state)
 # A copy is mostly asked by a send (the workshop's `create`), whose turn says the refusal to the asker.
+def copiedFor(to: String, id: String, context: Abi.Context, state: State) -> Activity<Done>:
+  match world.offer({to: to, document: Document.text("{state.name}, offered to you: delvetalk me accept / thing: {id}\n")}):
+    case _: Card.tellTo(Done.done({}), context.principal, Document.text("Copied {state.name} as {id}, offered to {Card.name(to, context)}.\n"))
+# An offer made with a copy runs to the end of the clock's range: until it is taken.
+def untilTaken() -> Nat:
+  1000000000n
 def copyRefused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Done>:
   Card.refusing(Done.refused(refusal), refusal, context)
-def copying(context: Abi.Context, state: State) -> Activity<Done>:
-  match world.create({package: "Thing", seed: {name: state.name, description: state.description, holder: Plans.nobody(), location: Plans.nobody(), copyable: state.copyable}, law: "", requireAbsent: Plans.nobody()}):
-    case created(c): Card.tellTo(Done.done({}), context.principal, Document.text("Copied {state.name} as {c.object.object}.\n"))
+def copying(to: String, context: Abi.Context, state: State) -> Activity<Done>:
+  match world.create({package: "Thing", seed: {name: state.name, description: state.description, holder: Plans.nobody(), location: Plans.nobody(), copyable: state.copyable, offer: if to == "" then Offer.none({}) else Offer.open({to: {world: context.world, object: to}, until: untilTaken()})}, law: "", requireAbsent: Plans.nobody()}):
+    case created(c): if to == "" then Card.tellTo(Done.done({}), context.principal, Document.text("Copied {state.name} as {c.object.object}.\n")) else copiedFor(to, c.object.object, context, state)
     case refused(r): copyRefused({clause: r.clause, reading: if r.reading == "" then "no copy of {state.name} was made" else r.reading}, context)
 # Its name, description and whether it may be copied are lenses, its keeper's (the owner's before):
 # `delvetalk <thing> set` and `name: ...`; its circle is the owner's. The law refuses anyone else's,
@@ -316,7 +329,8 @@ def offerLine(offer: Offer, id: String, context: Abi.Context) -> String:
     case none(_): ""
     case open(o): offeredTo(o.to, o.until, id, context)
 def offeredTo(to: Plans.Reference, until: Nat, id: String, context: Abi.Context) -> String:
-  if Card.reads(to.object, context) then "Offered to you until clock {natText(until)}. Take it: delvetalk me accept / thing: {id}\n" else "Offered to {Card.name(to.object, context)} until clock {natText(until)}.\n"
+  let lasting = if until >= untilTaken() then "until taken" else "until clock {natText(until)}"
+  if Card.reads(to.object, context) then "Offered to you {lasting}. Take it: delvetalk me accept / thing: {id}\n" else "Offered to {Card.name(to.object, context)} {lasting}.\n"
 form acquire:
 form offer:
   to: text 1..128
@@ -330,6 +344,6 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Lists.concat(Lists.concat(if state.keeper == "" then Text.words("inspirit") else Text.words(""), if Plans.isNobody(state.holder) then Text.words("acquire") else Text.words("")), if Plans.same(state.holder, person(context)) then Text.words("offer withdraw") else Text.words("")), if context.principal == keeperOf(state) || context.principal == state.owner then Text.words("set") else Text.words(""))
 # An avatar's accept calls transfer, the Workshop's copy sends copy; drop names a place.
 def methods() -> Lists.List<String>:
-  Text.words("transfer copy drop ~act")
+  Text.words("transfer copy copyFor drop ~act")
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))

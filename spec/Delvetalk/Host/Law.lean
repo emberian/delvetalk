@@ -319,6 +319,19 @@ def wantNamed (facts : Facts) (object name : String) : Option Clause :=
 def asItStands (facts : Facts) (object : String) : Facts :=
   { facts with subject := "", caller := "", kind := 0, method := "", verb := "", evicted := [], object }
 
+/-- What a condition read as it stands, by a reader (`holds`, a scene's guard), cannot read: `old`, a rule
+    over old and new, `changed`, `under`; rendered, or none. Unlike a want it reads every request fact. -/
+def standingRefusal (e : LawExpr) : Option String :=
+  let oldTerm : LawTerm → Bool := fun t => (t.atRead.map (·.startsWith "old.") |>.getD false) || (t.atRead.map (·.startsWith "count(old.") |>.getD false)
+  let rec go : LawExpr → Option String
+    | .eq l r | .le l r | .ge l r => if oldTerm l || oldTerm r then some (LawExpr.eq l r).render else none
+    | .member t p => if oldTerm t || p.atRead.isSome then some (LawExpr.member t p).render else none
+    | e@(.rule _ _) | e@(.changed _ _ _) | e@(.under _) => some e.render
+    | .wants _ _ => none
+    | .not b => go b
+    | .and l r | .or l r | .implies l r => go l <|> go r
+  go e
+
 /-- The meaning of a clause. `under "O"` reads the `law` text of the cited object's state and judges
     this write by each of its clauses at `depth - 1`; at depth 0 it is false, so a cycle of citations
     ends (`Limits.lawDepth`). -/

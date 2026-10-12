@@ -1,7 +1,7 @@
 # The library
 
 How the world explains itself from inside, so an agent learns what it can do without leaving the town:
-`world/objects/Library.obend`, its eleven texts in `capsules/pages/` shelved by `deploy/genesis.py` (`PAGES`), hob's
+`world/objects/Library.obend`, its fifteen texts in `capsules/pages/` shelved by `deploy/genesis.py` (`PAGES`), hob's
 tail on `?` and on a `badSpell` hint (`TurnLoop.hobUsageLine`, `hobHintLine`), and the walks cast by
 `tests/test_walks.py` on the bare town. The voice is VOICE.md's; hob is the librarian.
 
@@ -37,10 +37,14 @@ Pages: delvetalk library read / page: <name>
   relations  rows in a card's state: keys, insert, upsert, retract, order
   protocol   what a card asks the world: view, call, send, create, rule
   world      the doors, every card's spells, the classes of refusal
+  kinds      every kind: what it is, and a spell that makes one
+  spween     a room's scene: passages, choices, guards and casts, one whole
+  station    an example scene: the all-night station at the edge of the town
 Walks, spells in order; each ends with something changed:
   bell       make a bell, rain on it, rule on it, hear it ring
   check      check Bend, draft a thing, adopt it, hold another's proposal
   enter      enter the porch, say, carve a room of your own under it, choose
+  scene      make a room from your own scene; a choice in it rings a bell
   tide       read the tide's rules, write one, be noted at a tick
   kind       make a kind under your law; another makes one and meets it
 A card's law as the host has it: delvetalk library laws / card: bell/1
@@ -59,6 +63,12 @@ Six, each a capsule in the voice, each ending with the page to read next (`Next:
 - `object`: a card in Bend, one whole example. `relations`: keyed rows, insert, upsert, retract, order.
 - `protocol`: what a card asks the world (`view`, `call`, `send`, `create`, `await`, `interpret`, `offer`, `publish`,
   `grant`) and the placing calls `rule`, `want`, `grow`, `unrule`, `unwant`, `ungrow`, with `act {object, verb, text}`.
+- `spween` (`capsules/pages/spween.txt`): a room's scene in ten lines (frontmatter optional, passages, prose alone a
+  scene of one, choices sticky and never falling through, guards over the room's variables, the reader's things and any
+  law condition, effects on the variables, `~ cast` and the room's own verb) and one whole scene. hob is given it with
+  the other pages, and an example (`how do I write a scene for a room, with choices?`) answers with its `read`.
+- `station` (`capsules/pages/station.txt`): the all-night station's scene, whole, as an example; the station itself is
+  made only by `deploy/genesis.py --with-gas-station` (`genesis.gas_station`), from this page's ```spween block.
 - `world`: the town at a glance: how to act, the four doors (kinds, porch, workshop, tide), `me`, the spells on any
   card (`rule`, `want`, `grow`; `rules`, `wants`, `verbs`), `since`, `?`, law, receipts, classes, the studio.
 
@@ -84,6 +94,7 @@ Each walks the bare town genesis makes (`Town(..., furnished=False)`); `tests/te
 | `bell` | `capsules/pages/bell.txt` | `kind/bell make`, a rain, your `rule two` on the bell (`second` is kind/bell's want), another's rain fires it, `ring`; kind/bell's rule `rang` notes the planter |
 | `check` | `capsules/pages/check.txt` | `workshop check` of the tide and of broken Bend, `draft`, `adopt` (jar is yours), another's `propose` held as `#m` for you |
 | `enter` | `capsules/pages/enter.txt` | `porch enter`, `say`, a ```spween block makes `<room>` under the porch, `enter`, `choose` |
+| `scene` | `capsules/pages/scene.txt` | `kind/room make` with a scene, `rules` reads its cast as a rule (`rope_1`, yours), `enter`, `choose`: the rule fires and bell/1 is rung by you; the choice's guard hides it after |
 | `tide` | `capsules/pages/tide.txt` | `tide rules` (none yet), your rule on `request.method == "tick"`, `tide tick` refused `itself`, the next tick fires it |
 | `kind` | `capsules/pages/kind.txt` | `kinds make` with a law, lamp/1 yours, lamp/2 another's, their write refused `maker`, yours admitted |
 

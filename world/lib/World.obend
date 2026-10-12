@@ -137,6 +137,11 @@ record Want:
 sum Wanting:
   wanting: {rows: Lists.List<Want>, more: Bool}
   refused: {clause: String}
+# A condition in the law's grammar judged of a thing as it stands, the turn's subject reading it (`holds
+# {object, when}`): no `old`, nothing written; what it cites are roots (a scene's guard, Scenes.obend).
+sum Held:
+  held: {value: Bool}
+  refused: {clause: String, reading: String}
 sum Carded:
   carded: {document: Document.Document}
   denied: {}
@@ -182,4 +187,5 @@ protocol world:
   act<R>({object: Plans.Reference, verb: String, text: String}) -> Returned<R>
   chronicle({day: Nat}) -> Chronicled
   wanting({after: Nat, limit: Nat}) -> Wanting
+  holds({object: Plans.Reference, when: String}) -> Held
   principal({handle: String}) -> Named
