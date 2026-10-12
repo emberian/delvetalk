@@ -1582,6 +1582,13 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   recordCells id obj.version { scalar := true }
   let held := Held.of id obj.version obj
   let compiled ← compiledMethod obj method
+  -- `receive` is heard with what the host fills where the sender left it out (`heardArgument`: `fields` empty, the
+  -- `spell` read from the text, none for a mention, which is heard and never cast; `misfit` none), whoever sends it:
+  -- a mention, a rule's firing or a send of `{text, post}`.
+  let argument ← if method != "receive" || argumentFits compiled argument then pure argument else
+    match heardArgument s.world obj argument [] (if s.reach == "mentioned" then some (castData "" "") else none) with
+    | some filled => do modify (fun st => { st with argument := filled }); pure filled
+    | none => pure argument
   -- What the method takes, with the card's declared bounds: built only for a refusal.
   let expectedNow : M Json := do return expectedInput obj id method compiled (← declaredForms obj).1
   -- A direct turn's argument came from outside: its text words are read as cases.

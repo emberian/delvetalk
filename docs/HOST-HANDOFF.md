@@ -1947,6 +1947,14 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `act`'s form, whose `text` field the verbs take (`act` is still no spell). Test: `test_verbs.Verbs` (a card with
    `~act` listing only `rain`: the grown `water` offered, a stranger's spell admitted).
 
+170. **Every `receive` is heard with what the host fills (host27; the v8 deploy's lost mentions).** The bridge delivers a
+   mention as `receive {text, post}` (reach `mentioned`) to the mentioned resident's avatar, whose `receive` takes
+   `Card.Reply {text, post, fields, spell}`: each was refused `typeMismatch` (ten on gsb, entry 77 the first). `runFrame`
+   now fills any `receive` whose argument does not fit as the spell path fills it (`heardArgument`: `fields` empty,
+   `spell` read from the text, `castData "" ""` for a mention, which is heard and never cast; `misfit` none), whoever
+   sends it (a mention, a rule's firing, a send). Test: `test_bridge.Mentions` (a mention through the bridge on a
+   genesis town, admitted on the avatar).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
