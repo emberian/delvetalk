@@ -464,32 +464,13 @@ def compileStructured (j : Json) : Except Diagnostic Compiled := do
   let compiled ← compileEntry j
   return (compiled.artifact, compiled.entry.type, compiled.laws)
 
-/-- The functions of a module with the span of each body, in source order. -/
-def functionBodies (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) :
-    List (String × Delvetalk.Compiler.ObjectiveBendSurface.Span) :=
-  ast.decls.filterMap fun
-    | .function signature _ body _ => some (signature.name, match body with
-      | .expr _ s | .cases _ _ s | .letB _ _ _ _ s => s)
-    | _ => none
-
-/-- The elaborator and the checker refuse without a position. For a refusal that has none,
-find the first function (in module, then source order) that on its own, with the modules
-before it, is refused with the same stage and message, and report that module and the span of
-its body. A refusal that already carries a span is returned unchanged. -/
-def localize (modules : List (String × String)) (limits : Json) (d : Diagnostic) : Diagnostic := Id.run do
-  if d.span.isSome then return d
-  let mut seen := 0
-  for (name, source) in modules do
-    seen := seen + 1
-    let .ok ast := FrontEnd.parseSource name source | continue
-    for (function, span) in functionBodies ast do
-      let request := Json.mkObj [("entry", toJson function), ("limits", limits),
-        ("modules", Json.arr ((modules.take seen).map fun (n, src) =>
-          Json.mkObj [("name", toJson n), ("source", toJson src)]).toArray)]
-      if let .error e := compileStructured request then
-        if e.stage == d.stage && e.message == d.message then
-          return { d with span := some span, sourceModule := some name }
-  return d
+/-- A refusal as `check-package` reports it: as compilation placed it. Refusals are placed where
+they arise (a node's at the node, a declaration's own at its body: `elaboratePackageM`; the
+checker's by blame; the generics pass's at its declaration); one without a place is about the
+package (a missing entry names the entry). Nothing is recompiled to search for a place: this
+replaced a search that compiled every function alone against its module prefix (slowness review
+row 12). Kept for `Host.Ops.checkModules`, which calls it; BACKLOG has its removal there. -/
+def localize (_modules : List (String × String)) (_limits : Json) (d : Diagnostic) : Diagnostic := d
 
 /-- A pure dry-run compile of `(name, source)` modules, in dependency order, for `entry`:
 the artifact, or the diagnostic with its stage, message, module and span intact. -/
@@ -499,7 +480,7 @@ def checkPackage (modules : List (String × String)) (entry : String) (limits : 
     ("modules", Json.arr (modules.map fun (name, source) =>
       Json.mkObj [("name", toJson name), ("source", toJson source)]).toArray)]
   match compileStructured request with
-  | .error d => throw (localize modules limits d)
+  | .error d => throw d
   | .ok (artifact, _, laws) =>
     if !laws.isEmpty then throw (requestRefusal "package laws require a host law adapter; this pure profile refuses them")
     return artifact

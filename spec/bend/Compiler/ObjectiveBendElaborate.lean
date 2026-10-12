@@ -129,6 +129,11 @@ inductive Decl where
 def Decl.name : Decl → String
   | .spec s => s.name | .extension n .. => n | .function n .. => n | .record n .. => n | .sum n .. => n | .reexport n .. => n
 
+/-- Where a refusal about the declaration itself is placed: a function's or extension's body. -/
+def Decl.bodySpan? : Decl → Option ObjectiveBendSurface.Span
+  | .function _ _ _ body | .extension _ _ _ body _ => some body.span
+  | _ => none
+
 structure Module where
   name : String
   /-- (alias, imported module name) in source order. -/
@@ -2844,7 +2849,11 @@ def elaboratePackageM (c : Ctx) : M (List (String × ATerm) × List (String × P
   let mut fields : List (String × ATerm) := []
   for m in c.modules do
     for d in m.decls do
-      fields ← emitDecl c fuel m d fields
+      -- A refusal no node claims (the declaration's result type, an old dialect, ...) is the
+      -- declaration's: placed at its body, as the checker's refusals are placed at a node.
+      fields ← tryCatch (emitDecl c fuel m d fields) fun r =>
+        throw (if r.loc.isSome then r else
+          { r with loc := d.bodySpan?.map fun span => ⟨m.name, m.name ++ "." ++ d.name, span⟩ })
   checkProtocols c fuel
   checkFormInputs c fuel
   let mut rowFields : List (String × PTy) := []
@@ -2895,7 +2904,9 @@ def Elaborated.select (e : Elaborated) (entryModule : Nat) (entryDefinition : St
   let entryKey := if (declOf e.ctx entryKey).isSome then entryKey else
     (((layerAncestry e.ctx.modules entry.name).drop 1).findSome? fun m =>
       let k := m ++ "." ++ entryDefinition; if (declOf e.ctx k).isSome then some k else none).getD entryKey
-  if (declOf e.ctx entryKey).isNone then throw "missing selected entry"
+  if (declOf e.ctx entryKey).isNone then
+    throw ("missing selected entry: " ++ entry.name ++ " defines no " ++ entryDefinition ++
+      (if (layerAncestry e.ctx.modules entry.name).length > 1 then ", nor does a module it is a layer over" else ""))
   let knot := e.reachable entryKey
   let kept : Std.HashSet String := knot.foldl (fun set (k, _) => set.insert k) {}
   let globalRow := e.globalRow
