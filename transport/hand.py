@@ -253,7 +253,7 @@ class Hand:
         if reply.get('status') == 'usage':  # a `?`: the card's spells, which the host journals nowhere; nothing is drafted
             self.log('speak', None, intent=intent, spell=spell, height=None, slug=None, outcome='usage', object=card)
             return {'card': card, 'object': card, 'outcome': 'usage', 'height': None, 'slug': None, 'line': f'{card}: its spells',
-                    'text': bridge.draft_text(reply), 'intent': intent, 'drafted': None}
+                    'text': bridge.read_text(self.host, self.owner, reply, self.sleep), 'intent': intent, 'drafted': None}
         receipt = reply.get('receipt')
         if not receipt:
             raise HandError(f"{card}: {reply.get('message') or reply.get('status')}")
@@ -263,6 +263,7 @@ class Hand:
         text = bridge.draft_public(reply, self.st.config.origin, reply.get('object'))
         if tag == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
             text = bridge.with_paint(self.host, bridge.offered_object(reply, card), text, self.sleep)
+        text = bridge.with_telling(self.host, self.owner, reply, reply.get('object') or card, text, self.sleep)[0]
         came = {'card': card, 'object': obj, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
                 'line': bridge.receipt_line(receipt, None, reply.get('object')).strip(), 'text': text}
         name = None

@@ -155,9 +155,14 @@ four before arrival (500), and is checked as a card's is: the frame above it, "W
 arrived", is the host's, so the paint addresses nobody and `secondPerson` stands. Beneath it, folded, the exact lines
 it draws on (`telling.exact`, with their entries), in its place when there is none; on entering a room its reply's
 own "While you were away" lead stands below as well. Nothing happened while away is `quiet`: no model, nothing shown.
-Shown on `/play/<place>` after an admitted `enter` and on `/o/<place>` to a signed-in reader, and by post above the
-reply to an `enter` when painted and it fits the post (the owner: posting is the most accessible way in;
-`bridge.with_telling`); never in a receipt or a refusal.
+Shown on `/play/<place>` after an admitted `enter` and on `/o/<place>` to a signed-in reader, and, since posting is
+how most residents come in, at the head of the `enter` reply's post (`bridge.with_telling`, the one path: the bridge's
+draft, and so Zulip's, for one spell or the first of several that entered; the hand's Speak): the frame above the
+paint, or unpainted before arrival the frame above the exact lines (its making, the newest eight, how many earlier;
+each at most 120 characters, the whole at most 700, half a post, so a draft past the clip threads with the telling
+whole in its first part and the reply beginning there), then a blank line and the reply's exact text; unpainted while
+away, the reply's own lead alone. The draft notes `told: <characters>`. Never in a receipt or a refusal, nor above a
+reply drafted as its receipt line alone (one that read what the public may not).
 
 **The prompt** is `Paint.contract()`, the one prompt file. **The check** is `Enchant.verify`, the table
 `Enchant.clauses` in order, the first failed refusing; `Enchant.table` holds every word a clause reads:
@@ -174,6 +179,7 @@ reply to an `enter` when painted and it fits the post (the owner: posting is the
 | `forbidden` | none of I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please (a quotation may hold any) |
 | `secondPerson` | no you, your, yours, you're, you've, you'll, you'd, yourself, yourselves, y'all |
 | `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, `came`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one |
+| `wants` | a want claimed ("wants", "still wants", "needs", "lacks", "asks for", unnegated) only when the strokes hold one (a want now, or one a day's events name), and only of what one is for: a word after it beside a held want's name, reading or thing (filler like "a hand", "someone" aside). The live porch telling "the porch still wants a hand to keep what lies unclaimed", over a porch wanting nothing, is refused; so is the nook's "still wants someone to listen from it" over its `door` want |
 | `length` | 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival |
 
 A paint refused for its length alone is asked for once more, told its length; any other refused paint, or a second
@@ -182,13 +188,13 @@ counts `cached`, `rejected`, `pending` and `retried`. `world-render-check` judge
 without caching it.
 
 **Where.** Painted, above the exact card and never inside it: `/play/<id>` after a reply or a look, the public
-`/o/<id>` (the exact card folded beneath under "the card", open when nothing is painted), and the hand's Speak; the
+`/o/<id>` (the exact card folded beneath under "the card", open when nothing is painted), a post's reply and the
+hand's Speak (`bridge.with_paint`: the card a reply offers, as the public reads it, when the two fit one post); the
 morning card and the chronicle's day by `world-render {day?, morning?}`; `hand morning` (CLI, and Speak's "The
 morning card") paints it, shows it and drafts it once a day for Post, what wants a hand exact beneath and the
 chronicle's exact lines in the paint's place when there is none; it never posts by itself.
 Never: a receipt or refusal line, the revealing lines, `?`'s usage, a law line or reading, the library's pages, hob's
-own lines, and the bridge's drafts: a post carries the exact card alone until the fourth playtest decides whether a
-post carries paint. An owner's `plain: yes` shows a thing exact alone; a root `card` override is shown exact.
+own lines. An owner's `plain: yes` shows a thing exact alone; a root `card` override is shown exact.
 
 **Time.** One model call per version, on its first read; every later read is the cached paint. "Last tended" is
 coarse (today, a day ago, N days ago), so a key moves at most once a day by the clock. A reader waits for a fresh one
