@@ -8,6 +8,7 @@ import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Scenes.obend as Scenes
 import ./Text.obend as Text
+import ./World.obend as World
 type Done = Scenes.Done
 # A note in the inbox: who it is from (a principal, or the object whose rule told of a change),
 # their handle when the host knew it, the line, the height its turn read, `n`, the inbox's
@@ -341,7 +342,7 @@ def fresh(state: State) -> Lists.List<Note>:
 # it leave.
 def render(state: State, context: Abi.Context) -> Document.Document:
   let since = sinceFor(state, context)
-  let head = Document.text("{state.handle}'s avatar, {whereLine(state, context)}.\n")
+  let head = Document.text("{state.handle}'s avatar, {whereLine(state, context)}.\n{bookLine(state, context)}")
   let held = Card.clippedWithin(Lists.map(state.holding, holdingLine), 8n, Card.left(context, sized(since) + Document.size(head) + 200n))
   let notes = inboxFor(state, context, sized(since) + Document.size(head) + sized(held))
   Document.Document.sequence({items: Lists.concat(Lists.concat(since, Document.Documents.cons({head: head, tail: held})), notes)})
@@ -377,6 +378,9 @@ def handOf(rows: Lists.List<Heard>) -> String:
 # Where it is: what it last entered; nowhere yet, its principal is shown the spell that goes.
 def whereLine(state: State, context: Abi.Context) -> String:
   if Plans.isNobody(state.at) == false then "in {state.at.object}" else if Card.reads(context.object, context) then "nowhere yet; go: delvetalk me go / to: <a room>" else "nowhere yet"
+# The one line that opens its book (`book`): its principal's by `me`, anyone else's by its handle.
+def bookLine(state: State, context: Abi.Context) -> String:
+  if Card.reads(context.object, context) then "Its book: delvetalk me book\n" else if state.handle == "" then "" else "Its book: delvetalk {state.handle} book\n"
 def sized(lines: Document.Documents) -> Nat:
   Document.size(Document.Document.sequence({items: lines}))
 # The notes are the avatar's principal's alone: the new ones after its mark, newest first, and
@@ -396,3 +400,57 @@ def newFor(state: State, news: Lists.List<Note>, at: Nat, context: Abi.Context, 
 def newNotes(state: State, news: Lists.List<Note>, marked: Document.Documents, context: Abi.Context, used: Nat) -> Document.Documents:
   let top = Document.text("{natText(Lists.length(news))} new since entry {natText(state.seen)}:\n")
   Document.Documents.cons({head: top, tail: Lists.concat(Card.clippedWithin(Lists.map(news, noteLine), 8n, Card.left(context, used + Document.size(top))), marked)})
+# --- The book --------------------------------------------------------------------------
+# Its principal's commonplace book (docs/VOICE.md "The book, the history, the map"): what they made, each with
+# what others did to it (`heard`: rains, doors, uses, by whom), the verbs they grew and on what, the rules and
+# wants they placed, the lines they wrote and where, the places they visited; counts and hands, never a score.
+# The host hands it what the store shows of them as the reader may view it (`World.Deeds`, Surfaces.deeds) for
+# `delvetalk me book`, `delvetalk <handle> book` and the page /o/<handle>/book, and writes nothing: it is read,
+# a page within a reply (Card.post()), the next page's spell under it.
+def book(state: State, context: Abi.Context, deeds: World.Deeds) -> Document.Document:
+  let who = owner(state, context)
+  let spell = if Card.reads(context.object, context) then "delvetalk me book" else "delvetalk {who} book"
+  let lines = bookLines(state, deeds.rows)
+  let body = if Lists.length(lines) == 0n then Lists.List.cons({head: "Nothing in it yet. The doors: delvetalk map\n", tail: Lists.List.nil()}) else lines
+  Card.pageOf(Card.paged(Lists.List.cons({head: "{who}'s commonplace book.\n", tail: body}), bookRoom()), deeds.page, spell)
+# A page's room: a reply's characters less the line under it.
+def bookRoom() -> Nat:
+  Card.post() - 160n
+def deedsOf(rows: Lists.List<World.Deed>, what: String) -> Lists.List<World.Deed>:
+  Lists.filter(rows, fn(d: World.Deed) -> Bool: d.what == what)
+def bookLines(state: State, rows: Lists.List<World.Deed>) -> Lists.List<String>:
+  let made = deedsOf(rows, "made")
+  let heard = Lists.filter(Relations.rows(state.heard), fn(h: Heard) -> Bool: Lists.any(made, fn(d: World.Deed) -> Bool: d.object == h.thing))
+  Lists.concat(Lists.concat(Lists.concat(madeLines(made, heard), grownLines(deedsOf(rows, "grew"))), Lists.concat(placedLines(Lists.filter(rows, fn(d: World.Deed) -> Bool: d.what == "rule" || d.what == "want")), visitedLines(deedsOf(rows, "visited")))), wroteLines(Lists.reverse(deedsOf(rows, "wrote"))))
+def entryOf(at: Nat) -> String:
+  if at == 0n then "" else ", entry {natText(at)}"
+# `Made 3; 4 other hands acted on 2 of them:` then each thing, what it is, when, and what others did to it.
+def madeLines(made: Lists.List<World.Deed>, heard: Lists.List<Heard>) -> Lists.List<String>:
+  let touched = Lists.length(Lists.filter(made, fn(d: World.Deed) -> Bool: Lists.any(heard, fn(h: Heard) -> Bool: h.thing == d.object)))
+  let hands = Lists.length(distinct(Lists.map(heard, fn(h: Heard) -> String: h.by)))
+  let others = if hands == 1n then "1 other hand" else "{natText(hands)} other hands"
+  let head = if hands == 0n then "Made {natText(Lists.length(made))}:\n" else "Made {natText(Lists.length(made))}; {others} acted on {natText(touched)} of them:\n"
+  if Lists.length(made) == 0n then Lists.List.nil() else Lists.List.cons({head: head, tail: Lists.map(made, fn(d: World.Deed) -> String: madeLine(d, Lists.filter(heard, fn(h: Heard) -> Bool: h.thing == d.object)))})
+def madeLine(d: World.Deed, rows: Lists.List<Heard>) -> String:
+  let parts = textJoin(Lists.map(distinct(Lists.map(rows, fn(h: Heard) -> String: h.verb)), fn(verb: String) -> String: verbPart(verb, Lists.filter(rows, fn(h: Heard) -> Bool: h.verb == verb))), "; ")
+  let done = if parts == "" then "" else ": {parts}"
+  let coined = if d.text == "" then "" else ", coined by {d.text}"
+  "  {d.object}, a {d.name}{coined}{entryOf(d.at)}{done}\n"
+def grownLines(grew: Lists.List<World.Deed>) -> Lists.List<String>:
+  if Lists.length(grew) == 0n then Lists.List.nil() else Lists.List.cons({head: "Grew {natText(Lists.length(grew))}:\n", tail: Lists.map(grew, fn(d: World.Deed) -> String: "  {d.name} on {d.object}{entryOf(d.at)}{reading(d.text)}\n")})
+def placedLines(placed: Lists.List<World.Deed>) -> Lists.List<String>:
+  if Lists.length(placed) == 0n then Lists.List.nil() else Lists.List.cons({head: "Placed {natText(Lists.length(placed))}:\n", tail: Lists.map(placed, fn(d: World.Deed) -> String: "  {d.what} {d.name} on {d.object}{entryOf(d.at)}{reading(d.text)}\n")})
+# A verb's, rule's or want's reading after its name, quoted, when it has one.
+def reading(text: String) -> String:
+  if text == "" then "" else ": “{Card.cut(text, 80n)}”"
+# The lines, newest first, each where it was written and its words cut to 100.
+def wroteLines(wrote: Lists.List<World.Deed>) -> Lists.List<String>:
+  let count = if Lists.length(wrote) == 1n then "1 line" else "{natText(Lists.length(wrote))} lines"
+  if Lists.length(wrote) == 0n then Lists.List.nil() else Lists.List.cons({head: "Wrote {count}, newest first:\n", tail: Lists.map(wrote, fn(d: World.Deed) -> String: "  on {d.object}{entryOf(d.at)}{verbNote(d.name)}: “{Card.cut(firstLine(d.text), 100n)}”\n")})
+def verbNote(verb: String) -> String:
+  if verb == "" || verb == "write" then "" else ", a {verb}"
+def visitedLines(visited: Lists.List<World.Deed>) -> Lists.List<String>:
+  let places = textJoin(Lists.map(visited, placeWord), ", ")
+  if Lists.length(visited) == 0n then Lists.List.nil() else Lists.List.cons({head: "Visited: {places}.\n", tail: Lists.List.nil()})
+def placeWord(d: World.Deed) -> String:
+  if d.name == "here" then "{d.object} (here)" else d.object

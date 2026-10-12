@@ -142,6 +142,57 @@ sum Wanting:
 sum Held:
   held: {value: Bool}
   refused: {clause: String, reading: String}
+# The indexes the host hands a card's read (spec/Delvetalk/Host/Surfaces.lean; docs/VOICE.md "The book, the
+# history, the map"): derived at the read from the store and the journal as the reader may view them, never
+# kept. A Deed is what a hand did that the store still shows: `made` (name: what it is, text: its coiner, when another's
+# post coined it), `grew` (name: the verb,
+# text: its reading), `rule` and `want` (name, text: the reading), `wrote` (name: the verb that wrote the line,
+# text: the line), `visited` (name: `here` while present); `at` the entry, 0 when the world before a carry made it.
+record Deed:
+  what: String
+  object: String
+  name: String
+  text: String
+  at: Nat
+record Deeds:
+  page: Nat
+  rows: Lists.List<Deed>
+# The first of a kind of act the world holds: `rain`, `room`, `verb` (grown), `rule` (fired), `coinage`; who did
+# it by handle (the rainer, the maker, the grower, the rule's writer, the coiner), what (the verb, the rule).
+record First:
+  what: String
+  object: String
+  who: String
+  name: String
+  at: Nat
+# A clock day of the town for the chronicle: the day and its date, today, the first day the journal holds, the
+# range asked (from, to: a page a day), the page of the day, its exact lines (`chronicle {day}`), the firsts.
+record Annal:
+  day: Nat
+  date: String
+  today: Nat
+  first: Nat
+  from: Nat
+  to: Nat
+  page: Nat
+  lines: Document.Names
+  firsts: Lists.List<First>
+# A door as the map draws it: the card it is on, its label, the card it opens onto.
+record Way:
+  from: String
+  label: String
+  to: String
+record Lying:
+  object: String
+  count: Nat
+# The map from `root`: the shortest way to it from the commonplace (`path`, the commonplace first; empty when no
+# door leads there), every door the reader may follow, how many things lie in each place, the page.
+record Ways:
+  root: String
+  path: Document.Names
+  ways: Lists.List<Way>
+  lying: Lists.List<Lying>
+  page: Nat
 sum Carded:
   carded: {document: Document.Document}
   denied: {}

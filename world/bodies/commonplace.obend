@@ -100,3 +100,75 @@ def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Card.Replied
   match world.card({object: to}):
     case carded(c): Card.tell(Card.Replied.usage({}), c.document)
     case _: refusing("noCard", "The door to {to.object} opens on nothing yet", context)
+# --- The town's history ------------------------------------------------------------------
+# A clock day of the town (docs/VOICE.md "The book, the history, the map"): its date, the chronicle's exact lines
+# (`chronicle {day}`), and the town's firsts credited to who did each; read by `delvetalk chronicle` (today), `/ day: N`,
+# `/ from: N / to: M` (a day a page, each naming the next) and the page /history. The host hands it the day
+# (`World.Annal`) and paints the day above it where a transport shows paint; it writes nothing. Its pages leave the
+# day's paint room in a reply.
+def chronicle(state: State, context: Abi.Context, annal: World.Annal) -> Document.Document:
+  let spell = if annal.from == annal.to then "delvetalk chronicle / day: {natText(annal.day)}" else "delvetalk chronicle / from: {natText(annal.day)} / to: {natText(annal.to)}"
+  let pages = Card.paged(Lists.concat(Lists.List.cons({head: historyHead(annal), tail: Lists.map(annal.lines, fn(l: String) -> String: "{l}\n")}), firstsLines(annal.firsts)), historyRoom())
+  let shown = Card.pageOf(pages, annal.page, spell)
+  let last = annal.page == 0n || annal.page >= Lists.length(pages)
+  Document.Document.sequence({items: Document.Documents.cons({head: shown, tail: Document.Documents.cons({head: Document.text(if last then onward(annal) else ""), tail: Document.Documents.nil()})})})
+# A reply's characters less the day's paint above it (at most 600) and the lines under it.
+def historyRoom() -> Nat:
+  Card.post() - 600n - 180n
+def historyHead(annal: World.Annal) -> String:
+  let of = if annal.from == annal.to then "" else ", {natText(annal.day - annal.from + 1n)} of {natText(annal.to - annal.from + 1n)} days"
+  "THE TOWN'S HISTORY · day {natText(annal.day)}, {annal.date}{of}\n"
+# The next day of a range, else the day before (while the journal holds one).
+def onward(annal: World.Annal) -> String:
+  if annal.day < annal.to then "The next day: delvetalk chronicle / from: {natText(annal.day + 1n)} / to: {natText(annal.to)}\n" else if annal.from == annal.to && annal.day > annal.first then "The day before: delvetalk chronicle / day: {natText(annal.day - 1n)}\n" else ""
+# Who did each of the town's first acts.
+def firstsLines(firsts: Lists.List<World.First>) -> Lists.List<String>:
+  if Lists.length(firsts) == 0n then Lists.List.nil() else Lists.List.cons({head: "Firsts:\n", tail: Lists.map(firsts, firstLine)})
+def firstLine(f: World.First) -> String:
+  let entry = if f.at == 0n then "" else ", entry {natText(f.at)}"
+  if f.what == "rain" then "  the first rain: {f.who} on {f.object}{entry}\n" else if f.what == "room" then "  the first room: {f.object}, made by {f.who}{entry}\n" else if f.what == "verb" then "  the first grown verb: {f.name} on {f.object}, grown by {f.who}{entry}\n" else if f.what == "rule" then "  the first rule fired: {f.name} on {f.object}, written by {f.who}{entry}\n" else "  the first coinage: {f.object}, coined by {f.who}{entry}\n"
+# --- The door map ---------------------------------------------------------------------------
+# Geography here is citation (docs/METAPHYSICS.md §7): which cards open onto which, as a compact indented tree from
+# the commonplace, or from any card (`delvetalk map`, `delvetalk <card> map`, the page /map); the host hands every door
+# the reader may follow (`World.Ways`). Three levels drawn, a card met before said `(above)`, the doors past the third
+# counted; a card's map says the way to it from the commonplace and which doors open onto it. Writes nothing.
+record Drawn:
+  lines: Lists.List<String>
+  seen: Lists.List<String>
+def map(state: State, context: Abi.Context, ways: World.Ways) -> Document.Document:
+  let spell = if ways.root == "commonplace" then "delvetalk map" else "delvetalk {ways.root} map"
+  let tree = drawnFrom(ways.root, 2n, "  ", ways, {lines: Lists.List.nil(), seen: Lists.List.cons({head: ways.root, tail: Lists.List.nil()})})
+  let body = if Lists.length(tree.lines) == 0n then Lists.List.cons({head: "  It opens onto no card yet.\n", tail: Lists.List.nil()}) else tree.lines
+  Card.pageOf(Card.paged(Lists.concat(Lists.concat(mapHead(ways), Lists.List.cons({head: "{ways.root}{lying(ways, ways.root)}\n", tail: body})), mapFoot(ways)), Card.post() - 160n), ways.page, spell)
+def mapHead(ways: World.Ways) -> Lists.List<String>:
+  if ways.root == "commonplace" then Lists.List.cons({head: "THE DOOR MAP · from the commonplace\n", tail: Lists.List.nil()}) else Lists.List.cons({head: "THE DOOR MAP · from {ways.root}\n", tail: Lists.List.cons({head: wayHere(ways), tail: Lists.List.nil()})})
+def wayHere(ways: World.Ways) -> String:
+  let path = textJoin(ways.path, " › ")
+  if Lists.length(ways.path) > 1n then "The way here: {path}\n" else "No door leads here from the commonplace.\n"
+# Which doors open onto a card that is not the commonplace; how to draw another's.
+def mapFoot(ways: World.Ways) -> Lists.List<String>:
+  let into = Lists.filter(ways.ways, fn(w: World.Way) -> Bool: w.to == ways.root)
+  let opened = textJoin(Lists.map(into, fn(w: World.Way) -> String: "{w.from} ({w.label})"), ", ")
+  let onto = if ways.root == "commonplace" || Lists.length(into) == 0n then Lists.List::<String>.nil({}) else Lists.List.cons({head: "Doors onto it: {opened}\n", tail: Lists.List.nil()})
+  Lists.append(onto, "A card's own map: delvetalk <card> map\n")
+def outOf(ways: World.Ways, node: String) -> Lists.List<World.Way>:
+  Lists.filter(ways.ways, fn(w: World.Way) -> Bool: w.from == node)
+def drawnFrom(node: String, depth: Nat, indent: String, ways: World.Ways, acc: Drawn) -> Drawn:
+  doorsOut(outOf(ways, node), depth, indent, ways, acc)
+def doorsOut(doors: Lists.List<World.Way>, depth: Nat, indent: String, ways: World.Ways, acc: Drawn) -> Drawn:
+  match doors:
+    case nil(_): acc
+    case cons(c): doorsOut(c.tail, depth, indent, ways, wayDrawn(c.head, depth, indent, ways, acc))
+def wayDrawn(way: World.Way, depth: Nat, indent: String, ways: World.Ways, acc: Drawn) -> Drawn:
+  let head = "{indent}{wayLabel(way)}"
+  let seen = Lists.List.cons({head: way.to, tail: acc.seen})
+  if Lists.any(acc.seen, fn(s: String) -> Bool: s == way.to) then {lines: Lists.append(acc.lines, "{head} (above)\n"), seen: acc.seen} else if depth == 0n then {lines: Lists.append(acc.lines, "{head}{lying(ways, way.to)}{beyond(ways, way.to)}\n"), seen: seen} else drawnFrom(way.to, depth - 1n, "{indent}  ", ways, {lines: Lists.append(acc.lines, "{head}{lying(ways, way.to)}\n"), seen: seen})
+def wayLabel(way: World.Way) -> String:
+  if way.label == way.to then "→ {way.to}" else "{way.label} → {way.to}"
+def lying(ways: World.Ways, node: String) -> String:
+  match Lists.find(ways.lying, fn(l: World.Lying) -> Bool: l.object == node):
+    case some(l): " · {natText(l.value.count)} lying here"
+    case none(_): ""
+def beyond(ways: World.Ways, node: String) -> String:
+  let n = Lists.length(outOf(ways, node))
+  if n == 0n then "" else if n == 1n then " · 1 door beyond" else " · {natText(n)} doors beyond"

@@ -62,7 +62,7 @@ class Views(test_chain.Chain):
         self.assertIn("1 new since entry 0:\n", mine)
         self.assertIn("kimik3: meet at the gate\n", mine)
         self.assertNotIn("meet at the gate", theirs)
-        self.assertIn("glm's avatar, in porch.\n1 note\n", theirs)
+        self.assertIn("glm's avatar, in porch.\nIts book: delvetalk glm book\n1 note\n", theirs)
 
 
 if __name__ == "__main__":

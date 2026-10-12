@@ -155,6 +155,17 @@ def first_move(st, did, reply, text):
     return f'{head}\n{line}{last}\n' if head and last.startswith('●') else line + text  # the receipt's line stays the last
 
 
+def read_text(host, principal, reply, sleep=time.sleep):
+    """A usage reply's draft: its text (`draft_text`), and for a read the host says a day paints (the chronicle's
+    `paint {day}`), that day's verified paint above it when there is one within the host's patience (docs/VOICE.md "The
+    book, the history, the map"); the exact lines alone otherwise."""
+    text = draft_text(reply)
+    if not isinstance(reply.get('paint'), dict):
+        return text
+    paint = painted(host, principal, None, sleep, **reply['paint']).get('text')
+    return f"{paint}\n\n{text}" if paint else text
+
+
 def draft_public(reply, origin=None, addressed=None, handles=None):
     """`draft_text`, or for an admitted turn that read or wrote what the public may not read (the host's `inPublic`: a
     post is read by everyone), its receipt line."""
@@ -170,8 +181,8 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     receipt's name; no state, hash or CID. A usage answer is the host's text. An admitted reply carries the exact card
     (the paint above it is `with_paint`'s, which needs the host); one that offered nothing but changed something, its
     revealed lines and receipt line."""
-    if reply.get('status') == 'usage':
-        return str(reply.get('text', ''))
+    if reply.get('status') == 'usage':  # a read's every page as one text (`whole`), which the poster threads into parts
+        return str(reply.get('whole') or reply.get('text', ''))
     receipt = reply['receipt']
     outcome = receipt.get('outcome', {})
     if reply.get('status') == 'refused' or outcome.get('tag') == 'refused':
@@ -495,7 +506,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
             st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
-                'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
+                'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False, 'text': read_text(host, did, reply)})
             done.append(obs['uri'])
             continue
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
