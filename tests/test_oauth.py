@@ -221,7 +221,7 @@ class Login(unittest.TestCase):
         self.assertIn(f'{HANDLE}: this browser is you', body)
         session = [v.split(';')[0] for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential=')][0]
         self.assertEqual(self.ident.authenticate(session.split('=', 1)[1])['did'], DID)  # exactly as a claimed handle
-        self.assertIn('ENTER THE WORLD', self.get(self.origin + '/', session)[2])
+        self.assertIn('Enter the commonplace', self.get(self.origin + '/', session)[2])
         self.assertIn({'op': 'world-arrive', 'principal': CLOCK, 'did': DID, 'handle': HANDLE}, self.host.sent)
         self.assertEqual(len(self.town.revoked), 2)  # both tokens handed back
         stored = open(f'{self.tmp.name}/identity.sqlite', 'rb').read()

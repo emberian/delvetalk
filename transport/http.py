@@ -70,10 +70,10 @@ def resolve(method, path):
         return (name, {}) if name else (None, None)
     if parts[:1] == ['xrpc'] and len(parts) == 2:
         return 'xrpc', {'nsid': parts[1]}  # the repository answers every method (405 for a write)
-    get = {('',): 'home', ('o',): 'find', ('.well-known', 'did.json'): 'did', ('style', ''): 'specimen', ('style',): 'specimen'}.get(tuple(parts))
+    get = {('',): 'home', ('.well-known', 'did.json'): 'did', ('style', ''): 'specimen', ('style',): 'specimen'}.get(tuple(parts))
     if method == 'GET' and get:
         return get, {}
-    if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'theme.js'):
+    if method == 'GET' and parts[:1] == ['static'] and len(parts) == 2 and parts[1] in ('style.css', 'say.js'):
         return 'static', {'file': parts[1]}
     if parts[:1] == ['play'] and method in ('GET', 'POST'):
         return ('play' if method == 'GET' else 'reply'), {'object': '/'.join(parts[1:])}
@@ -644,9 +644,6 @@ class Handler(BaseHTTPRequestHandler):
             return self.home()
         if name == 'specimen':
             return self.html(200, pages.page('style', None, (STATIC / 'specimen.html').read_text()))
-        if name == 'find':
-            found = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('object', [''])[0]
-            return self.reply(302, '', 'text/plain', [('Location', '/o/' + urllib.parse.quote(found, safe=''))])
         if name in ('play', 'reply'):
             return self.play(p['object'] or 'commonplace', name == 'reply')
         if name == 'page':
@@ -923,7 +920,7 @@ class Handler(BaseHTTPRequestHandler):
         """The world in a browser as a verified principal (the session cookie verify sets): the card world-card renders, the
         doors in the object's state, a reply box whose text goes to `receive` as a Delve reply would."""
         credential = self.cookie()
-        who, said = self.principal(credential), ''
+        who, answer, offered = self.principal(credential), '', ()
         if who is None:
             return self.reply(303, '', 'text/plain', [('Location', '/')])
         if self.server.limited(credential):
@@ -943,22 +940,22 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
             offers = [o for t in turns if 'receipt' in t for o in follow(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)]
             names = self.server.handles(pages.A_DID.findall(name))
-            if r.get('status') == 'spells':
-                said = ''.join(pages.T['said'].format(cls=html.escape(str(t.get('status'))), icon=pages.stamp(t.get('status'), word=False),
-                                                      line=html.escape(turn_line(t, None, names)), offers='') for t in turns) + (
-                    ''.join(pages.framed(t) for t in offers) or pages.T['quiet'])
-            elif r.get('status') == 'usage':  # the host's `?` answer: the card's usage, its text sacred
-                said = pages.T['usage'].format(text=html.escape(str(r.get('text', ''))))
-            else:
-                said = pages.T['said'].format(cls=html.escape(str(r.get('status'))), icon=pages.stamp(r.get('status'), word=False), line=html.escape(turn_line(r, name, names)),
-                                              offers=''.join(pages.framed(t) for t in offers) or pages.T['quiet'])
+            usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
+            answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))
+                                                                       for t in turns], offers, usage)
         card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
-        if card.get('status') != 'card' and not said:  # an object with no card still shows the turn a form ran on it
+        if card.get('status') != 'card' and not answer:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], card, card.get('status')))
-        paint = painted(host, did, name, self.server.sleep) if card.get('status') == 'card' else None
-        self.html(200, pages.page(name, who['handle'], pages.T['page'].format(
-            name=html.escape(name), path=html.escape(oid(name)), said=said, paint=pages.painting(paint), card=html.escape(card.get('text', '')),
-            doors=pages.door_nav(door_rows(view)))))
+        shown = card.get('status') == 'card'
+        paint = painted(host, did, name, self.server.sleep) if shown else None
+        say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
+        self.html(200, pages.play(name, who['handle'], oid(name), card.get('text', '') if shown else None, answer=answer, offered=offered,
+                                  paint=paint, wants=self.wants(host, did, name) if shown else (), doors=door_rows(view), said=say))
+
+    def wants(self, host, principal, name):
+        """What the thing wants now, as the reader may see it (world-wants); nothing from a host without the op."""
+        r = host.send({'op': 'world-wants', 'principal': principal or 'anonymous', 'object': name})
+        return [w for w in r.get('rows') or [] if isinstance(w, dict)] if r.get('status') == 'wants' else []
 
     def html(self, code, body, headers=()):
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
@@ -970,20 +967,20 @@ class Handler(BaseHTTPRequestHandler):
         self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did']))
 
     def object_page(self, name, who=None):
-        """An object as its reader may read it (the authenticated `who`, else the cookie's login, else anyone): its card as
-        the reader sees it, its ledger; logged in, a link to play it."""
+        """An object as its reader may read it (the authenticated `who`, else the cookie's login, else anyone): the place as
+        the reader sees it; logged in, a way to speak to it; its law, source and journal on demand."""
         who = who or self.principal(self.cookie())
         handle, principal, host = who and who['handle'], who and who['did'], self.server.host
         view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
         if view.get('status') != 'viewed':
             return self.html(404, pages.refusal(name, handle, view, view.get('status')))
         card, seen = (host.send({'op': op, 'principal': principal or 'anonymous', 'object': name}) for op in ('world-card', 'world-inspect'))
-        acts = actions('', name, seen) if principal and seen.get('status') == 'inspected' else ()
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
-        paint = painted(host, principal or 'anonymous', name, self.server.sleep) if card.get('status') == 'card' else None
-        self.html(200, pages.obj(name, handle, view, card.get('text') if card.get('status') == 'card' else None,
-                                 self.history(host, name, principal), principal, door_rows(view), seen, acts, brief, paint))
+        shown = card.get('status') == 'card'
+        paint = painted(host, principal or 'anonymous', name, self.server.sleep) if shown else None
+        self.html(200, pages.obj(name, handle, view, card.get('text') if shown else None, self.history(host, name, principal), principal,
+                                 door_rows(view), seen, self.wants(host, principal, name) if shown else (), brief, paint))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, read from the tail of the journal under the reader's authority."""

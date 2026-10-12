@@ -1,7 +1,8 @@
-"""HTML for people. The markup is transport/static/pages.html (named sections), the look transport/static/style.css;
-no script is needed to read. Python fills the sections with escaped host facts and decides nothing. `text` reads any
-page back off its own markup as plain text, so the two views cannot drift."""
+"""HTML for people (docs/WEB.md). The markup is transport/static/pages.html (named sections), the look
+transport/static/style.css, the one stylesheet; reading and acting need no script. Python fills the sections with escaped
+host facts and decides nothing. `text` reads any page back off its own markup as plain text, so the two views cannot drift."""
 import re
+import textwrap
 from html import escape as e
 from html.parser import HTMLParser
 from pathlib import Path
@@ -16,10 +17,13 @@ def sections(name):
 
 
 T = sections('pages.html')
+SUGGESTIONS = 6  # spells offered under the box, at most
 
 
-def page(title, who, body):
-    return T['shell'].format(title=e(title), who=e(who or 'not logged in'), body=body)
+def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav='', foot=None):
+    """The one skeleton. The hand passes its own `head` (the stylesheet inlined), `nav` and `foot`."""
+    return T['shell'].format(title=e(title), site=e(site), home=e(home), head=T['head'] if head is None else head, nav=nav,
+                             who=e(who or ''), body=body, foot=T['foot'] if foot is None else foot)
 
 
 STAMPS = {'admitted': '●', 'refused': '§', 'suspended': '…', 'quiet': '—'}  # a receipt's stamp: an icon beside its word, never colour alone
@@ -33,23 +37,33 @@ def yours(text, did):
     return T['yours'] if did and did in str(text) else ''
 
 
+def resident(i):
+    """An id that is a resident's avatar (a DID, or an invited guest), not a place or a thing."""
+    return i.startswith(('did:', 'guest:'))
+
+
 def home(status, who, ids=(), did=None):
-    return page('the notebook', who, T['home'].format(height=e(str(status.get('height'))), objects=e(str(status.get('objects'))),
-                                                    enter=T['enter'] if who else '', login='' if who else T['login'], items=items(ids, {}, did)))
+    """What the town is, one way in, and its places; residents are counted, not listed."""
+    places = [i for i in ids if not resident(i)]
+    items = ' '.join(T['place_item'].format(id=e(i), href=e(quote(i, safe=':')), yours=yours(i, did)) for i in places)
+    n = len(ids) - len(places)
+    shown = T['places'].format(items=items, residents=T['residents'].format(n=n) if n else '') if ids else ''
+    return page('a town of things that answer', who, T['home'].format(height=e(str(status.get('height'))), objects=e(str(status.get('objects'))),
+                                                  enter=T['enter'] if who else '', login='' if who else T['login'], places=shown))
 
 
 def items(ids, words, did):
-    """Objects as small cards: the kind's mark, the id, the door word the commonplace gives it, (yours)."""
+    """Objects as a list: the id, the door word the commonplace gives it, (yours)."""
     return ''.join(T['world_item'].format(id=e(i), href=e(quote(i, safe=':')), yours=yours(i, did),
                                           word=T['word'].format(word=e(words[i])) if words.get(i) else '') for i in ids)
 
 
 def doors_of(links):
-    return ''.join(T['link'].format(href=e(v['href']), rel=e(k)) for k, v in (links or {}).items() if isinstance(v, dict) and k != 'self')
+    return ' '.join(T['link'].format(href=e(v['href']), rel=e(k)) for k, v in (links or {}).items() if isinstance(v, dict) and k != 'self')
 
 
 def slip(x, did=None):
-    """A receipt as a stamped ticket: its stamp's icon and word, the slug in small caps, the height as a shelf mark, a refusal's clause."""
+    """A receipt as a ticket: its stamp's icon and word, the slug, the entry, a refusal's clause."""
     out, ident = x.get('outcome') or {}, x.get('identity') or {}
     clause = out.get('reason') or ' '.join(str(out[k]) for k in ('clause', 'object') if out.get(k))
     return T['slip'].format(fate=e(str(out.get('tag'))), stamp=e(stamp(str(out.get('tag')))), height=e(str(x.get('height'))), name=e(str(x.get('slug') or '')),
@@ -71,58 +85,120 @@ def named(markup, names):
     return ''.join(out)
 
 
-def framed(text, kind='offer'):
-    """A card's text in its frame (T[kind]); the `hob:` lines at its head or tail are hob's own, beside the frame, never in it."""
+def hobbed(text):
+    """A card's text and hob's lines at its head or tail, apart: hob's are beside the card, never in it."""
     lines = text.split('\n')
     head = next((i for i, l in enumerate(lines) if not l.startswith('hob:')), len(lines))
     tail = len(lines) - next((i for i, l in enumerate(reversed(lines[head:])) if l and not l.startswith('hob:')), len(lines) - head)
     tail = tail if any(l.startswith('hob:') for l in lines[tail:]) else len(lines)  # the card keeps its own blank tail
-    hob = lambda ls: ''.join(T['hob'].format(text=e(l)) for l in ls if l)
-    card = '\n'.join(lines[head:tail])
-    return hob(lines[:head]) + (T[kind].format(text=e(card)) if card.strip() else '') + hob(lines[tail:])
+    return [l for l in lines[:head] + lines[tail:] if l], '\n'.join(lines[head:tail])
+
+
+A_SPELL = re.compile(r'\s+delvetalk \S')
+
+
+def speech(card):
+    """An exact card read as speech: its first paragraph of prose, and its spells as (label, spell). A spell is an indented
+    line beginning `delvetalk`, with the more indented lines under it; its label is the line that introduces it (`Rain on
+    it:`, or the last clause of `…; 10 made. Make one:`), else its card and action. `»` lines say what a spell gives back."""
+    prose, spells, lines, i = [], [], card.split('\n'), 0
+    while i < len(lines):
+        line = lines[i]
+        if A_SPELL.match(line):
+            indent, j = len(line) - len(line.lstrip()), i + 1
+            while j < len(lines) and lines[j].strip() and len(lines[j]) - len(lines[j].lstrip()) >= indent \
+                    and not lines[j].lstrip().startswith(('delvetalk ', '»')):
+                j += 1
+            spell, label = textwrap.dedent('\n'.join(lines[i:j])).strip(), None
+            k = next((k for k in range(len(prose) - 1, -1, -1) if prose[k].strip()), None)
+            if k is not None and prose[k].rstrip().endswith(':') and k >= len(prose) - 2:
+                said = prose[k].rstrip()[:-1]
+                m = re.match(r'(.*[.;])\s+([^.;]+)$', said)
+                label, prose[k] = (m[2], m[1]) if m else (said, '')
+            spells.append((label if label and len(label) <= 40 else ' '.join(spell.split()[1:3]), spell))
+            i = j
+            while i < len(lines) and lines[i].lstrip().startswith('»'):
+                i += 1
+            continue
+        prose.append(line)
+        i += 1
+    paragraphs = [p.strip() for p in re.split(r'\n\s*\n', '\n'.join(prose)) if p.strip()]
+    first = next((p for p in paragraphs if re.search('[a-z]', p)), paragraphs[0] if paragraphs else '')
+    return first, spells
+
+
+def painting(text):
+    """A card's paint, above its exact card (never inside it), or nothing."""
+    return T['paint'].format(text=e(text)) if text else ''
+
+
+def door_line(doors, href):
+    items = ' · '.join(T['door'].format(href=e(href(d['to']['object'])), label=e(d.get('label') or d['to']['object']), description=e(d.get('description', '')))
+                       for d in doors)
+    return T['doors'].format(items=items) if items else ''
+
+
+def place(card, paint=None, wants=(), doors=(), href=None):
+    """A card as the place speaking: the paint first; the exact card folded beneath it, open when nothing is painted."""
+    href = href or (lambda o: '/play/' + quote(o, safe='/:'))
+    return T['place'].format(paint=painting(paint), open='' if paint else ' open', card=e(card),
+                             wants=''.join(T['wants'].format(reading=e(w.get('reading') or w.get('name', ''))) for w in wants),
+                             doors=door_line(doors, href))
+
+
+def suggestions(path, offered, usage):
+    """Spells to edit in the box, each once, at most SUGGESTIONS, then the card's usage; choosing one sends nothing."""
+    seen, out = set(), []
+    for label, spell in [*offered[:SUGGESTIONS * 4]]:
+        if spell not in seen and len(seen) < SUGGESTIONS:
+            seen.add(spell)
+            out.append((label, spell))
+    return ' '.join(T['suggestion'].format(path=e(path), spell=e(quote(spell, safe='')), label=e(label)) for label, spell in out + [('how to say it', usage)])
+
+
+def reply(turns, offers=(), usage=None):
+    """What came back: a refusal or a wait first, as the answer; each offer as speech with its exact text folded, hob's
+    lines beside them, or the quiet line; then an admission's line, on demand. -> (markup, the offers' spells)."""
+    line = lambda which, fate, text: T[which].format(cls=e(str(fate)), icon=stamp(fate, word=False), line=e(text))
+    answers = ''.join(line('turn', fate, text) for fate, text in turns if fate != 'admitted')
+    receipts = ''.join(line('receipt', fate, text) for fate, text in turns if fate == 'admitted')
+    said, spells = [], []
+    for text in offers:
+        hob, card = hobbed(text)
+        said += [T['hob'].format(text=e(h)) for h in hob]
+        if card.strip():
+            first, found = speech(card)
+            said.append(T['spoken'].format(text=e(first), card=e(card)))
+            spells += found
+    body = T['exact'].format(text=e(usage)) if usage is not None else ''.join(said) or T['quiet']
+    return T['reply'].format(lines=answers, offers=body + receipts), spells
+
+
+def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), doors=(), said=''):
+    """An object to play: what came back to the reply just sent, the place, the one box, and its suggestions: the reply's
+    spells, then what the thing wants, then the card's own."""
+    wanted = [(' '.join(w['asks'].split()[1:3]), w['asks']) for w in wants if w.get('asks')]
+    return page(name, who, T['play'].format(name=e(name), path=e(path), reply=answer, said=e(said),
+                                            place=place(card, paint, wants, doors) if card is not None else '',
+                                            suggestions=suggestions(path, [*offered, *wanted, *(speech(card)[1] if card else [])], f'delvetalk {name} ?')))
 
 
 BRIEF = 5  # receipts the brief text view keeps
 
 
-def painting(text):
-    """A card's paint, above its exact card (never inside the frame), or nothing."""
-    return T['paint'].format(text=e(text)) if text else ''
-
-
-def obj(name, who, view, card, entries, did=None, doors=(), seen=None, acts=(), brief=None, paint=None):
-    """An object: its paint and its card (sacred text), its doors, a way to play it, its actions as forms from the method
-    table, its law and source as code, its receipts as slips. `brief` (the text view's default, the href of the whole page):
-    the card, the doors, the actions as spell templates and the newest BRIEF receipts; the law, the source and the rest are
-    a link away."""
-    shown = painting(paint) + framed(card, 'card') if card else T['state'].format(state=dl(view.get('state')))
-    play = T['playlink'].format(href=e(quote(name, safe='/:')), id=e(name)) if who else ''
+def obj(name, who, view, card, entries, did=None, doors=(), seen=None, wants=(), brief=None, paint=None):
+    """An object as anyone may read it: the place (paint, exact card, wants, doors), a way to speak to it, then its law,
+    source and journal on demand. `brief` (the text view's default, the href of the whole page): the place, the doors and
+    the newest BRIEF entries; the law and the source are a link away."""
+    shown = place(card, paint, wants, doors, lambda o: '/o/' + quote(o, safe=':')) if card else T['state'].format(state=dl(view.get('state')))
+    play = T['playlink'].format(href=e(quote(name, safe='/:'))) if who else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
     source = T['source'].format(law=e(seen.get('law') or ''), pin=e(str(seen.get('pinSlug') or '')), source=e(seen.get('source') or ''),
                                 lines=len((seen.get('source') or '').splitlines())) if seen else ''
-    forms = ''.join(form(name, a) for a in acts if a['name'] != 'receive')
     if brief:
-        spells = ''.join(T['spell'].format(spell=e(a['spell'])) for a in acts if a.get('spell'))
-        forms, source, entries = '', T['whole'].format(href=e(brief)), entries[:BRIEF]
-        play += T['spells'].format(spells=spells, id=e(name)) if acts else ''
-    return page(name, who, T['object'].format(id=e(name), version=e(str(view.get('version'))), yours=yours(name, did), shown=shown, play=play,
-                                              doors=door_nav(doors), actions=T['actions'].format(forms=forms, href=e(quote(name, safe='/:')), id=e(name)) if forms else '', source=source,
-                                              receipts=T['receipts'].format(slips=''.join(slip(x, did) for x in entries)) if entries else ''))
-
-
-def door_nav(doors):
-    return T['doors'].format(items=''.join(T['door'].format(href=e(quote(d['to']['object'], safe='/:')), id=e(d['to']['object']), label=e(d.get('label', '')),
-                                                              description=e(d.get('description', ''))) for d in doors)) if doors else ''
-
-
-def form(name, act):
-    """A method of the host's table as a real form: a select for a choice, a bounded text input, a number with min and max."""
-    if 'fields' not in act:
-        return T['f_typed'].format(method=e(act['name']), id=e(name))
-    inputs = ''.join(T['f_' + f['kind']].format(name=e(f['name']), min=e(str(f['bounds'].get('min', ''))), max=e(str(f['bounds'].get('max', ''))),
-                                                options=''.join(f'<option>{e(o)}</option>' for o in f['bounds'].get('options', []))) for f in act['fields'])
-    return T['action'].format(href=e(quote(name, safe='/:')), method=e(act['name']), inputs=inputs,
-                              spell=T['spell'].format(spell=e(act['spell'])) if act.get('spell') else '')
+        source, entries = T['whole'].format(href=e(brief)), entries[:BRIEF]
+    return page(name, who, T['object'].format(id=e(name), yours=yours(name, did), shown=shown, play=play, source=source,
+                                              receipts=T['receipts'].format(n=len(entries), slips=''.join(slip(x, did) for x in entries)) if entries else ''))
 
 
 def dl(v):
@@ -137,21 +213,27 @@ def dl(v):
 
 
 def listing(ids, words, who, did, more=None):
-    return page('the world', who, T['world'].format(items=items(ids, words, did), more=T['more'].format(href=e(more)) if more else ''))
+    return page('the town', who, T['world'].format(items=items(ids, words, did), more=T['more'].format(href=e(more)) if more else ''))
+
+
+def exact(text):
+    """A card's text verbatim, hob's lines beside it."""
+    hob, card = hobbed(text)
+    return ''.join(T['hob'].format(text=e(h)) for h in hob) + (T['exact'].format(text=e(card)) if card.strip() else '')
 
 
 def rendered(kind, body, links, who, did=None):
     """An agent route's reply for a browser: a receipt as its slip, offers as slips and cards, anything else as a definition list."""
     if kind == 'receipt' and isinstance(body.get('receipt'), dict):
         rc = body['receipt']
-        roots = ''.join(T['root'].format(href=e(quote(r.get('object', ''), safe=':')), id=e(str(r.get('object'))), version=e(str(r.get('version'))))
-                        for r in rc.get('roots') or [])
-        offers = ''.join(framed(str(o['text'])) for o in rc.get('offers') or [] if isinstance(o, dict) and 'text' in o)
-        return page('receipt', who, T['receipt'].format(name=e(str(rc.get('slug', ''))), slip=slip(rc, did), offers=offers,
-                                                        roots=roots, projection=dl({k: v for k, v in rc.items() if k not in ('slug', 'roots', 'offers' if offers else '')})))
+        roots = ' '.join(T['root'].format(href=e(quote(r.get('object', ''), safe=':')), id=e(str(r.get('object'))), version=e(str(r.get('version'))))
+                         for r in rc.get('roots') or [])
+        offers = ''.join(exact(str(o['text'])) for o in rc.get('offers') or [] if isinstance(o, dict) and 'text' in o)
+        return page('receipt', who, T['receipt_page'].format(name=e(str(rc.get('slug', ''))), slip=slip(rc, did), offers=offers,
+                                                             roots=roots, projection=dl({k: v for k, v in rc.items() if k not in ('slug', 'roots', 'offers' if offers else '')})))
     if kind == 'offers' and isinstance(body.get('offers'), list):
         items = ''.join(T['offer_slip'].format(height=e(str(o.get('height'))), intent=e(str((o.get('identity') or {}).get('intent'))),
-                                               offer=framed(str(o.get('text')))) for o in body['offers'] if isinstance(o, dict)) or T['quiet']
+                                               offer=exact(str(o.get('text')))) for o in body['offers'] if isinstance(o, dict)) or T['quiet']
         return page('offers', who, T['offers'].format(items=items, more=T['more'].format(href=e(links['next']['href'])) if 'next' in links else ''))
     return page(kind, who, T['generic'].format(title=e(kind), body=dl(body), links=doors_of(links)))
 
@@ -170,10 +252,10 @@ def catalogue(api, who):
 
 
 def refusal(title, who, body, code_class=None):
-    """An envelope (or a host refusal) as a page: its class, its words, its hint as large as the card's, its links as doors."""
+    """An envelope (or a host refusal) as a page: its class, its words, its hint, its links."""
     hint = T['hint'].format(hint=e(str(body['hint']))) if body.get('hint') else ''
     return page(title, who, T['refusal'].format(cls=e(str(code_class or body.get('class') or body.get('status'))), title=e(title),
-                                                message=e(str(body.get('message') or f"no object {title} that you may see")), hint=hint, links=doors_of(body.get('_links')) or T['link'].format(href='/', rel='the notebook')))
+                                                message=e(str(body.get('message') or f"no object {title} that you may see")), hint=hint, links=doors_of(body.get('_links')) or T['link'].format(href='/', rel='the town')))
 
 
 VOID = {'input', 'br', 'img', 'meta', 'link', 'hr', 'source', 'wbr', 'col', 'area', 'base'}

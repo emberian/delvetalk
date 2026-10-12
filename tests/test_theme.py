@@ -1,6 +1,6 @@
-"""The theme, without a browser: both palettes pass WCAG AA on every text-on-surface pair, the site loads the front's
-stylesheet itself (site/front.css links it), every kind the brief names has its own botanical mark, a receipt's fate is a word and an icon in the markup (never
-colour alone), doors are visibly doors at rest and ringed on focus, and spells are set in the monospace."""
+"""The theme, without a browser (docs/WEB.md): both palettes pass WCAG AA on every text-on-surface pair, there is one
+stylesheet (the site loads it as site/front.css, the hand inlines it) and one skeleton, and a receipt's fate is a word
+and an icon in the markup, never colour alone."""
 import re
 import unittest
 from pathlib import Path
@@ -12,8 +12,6 @@ FRONT, SITE = ROOT / 'transport' / 'static' / 'style.css', ROOT / 'site' / 'styl
 SPECIMEN = ROOT / 'transport' / 'static' / 'specimen.html'
 TEXT = ('ink', 'soft', 'muted', 'amber', 'violet', 'silver', 'terracotta', 'sage')  # every colour text is set in
 SURFACES = ('paper', 'leaf', 'tint', 'rtint')  # every colour text is set on
-KINDS = {'garden': 'garden', 'bell': 'garden/bell/1', 'env': 'env/did:plc:x', 'wake': 'wake/did:plc:x', 'tide': 'tide', 'deal': 'deal/1',
-         'scene': 'rooms', 'place': 'place/1', 'thing': 'thing/1', 'anthology': 'anthology', 'workshop': 'workshop'}
 
 
 def palettes(css):
@@ -36,26 +34,22 @@ def contrast(a, b):
     return (hi + .05) / (lo + .05)
 
 
-def mark(css, oid):
-    """The glyph the stylesheet gives `.kind[data-id=oid]`: the last matching rule wins, as the cascade has it."""
-    glyph = None
-    for selectors, body in re.findall(r'([^{}]*\.kind\[data-id[^{}]*)\{([^{}]*)\}', css):
-        for op, value in re.findall(r'\.kind\[data-id(\^=|\*=|=)"([^"]*)"\]::before', selectors):
-            if {'=': oid == value, '^=': oid.startswith(value), '*=': value in oid}[op]:
-                glyph = re.search(r'content:\s*"([^"]*)"', body)[1]
-    return glyph
-
-
 class Theme(unittest.TestCase):
-    def test_every_text_pair_passes_wcag_aa_in_both_palettes_and_across_the_ruled_lines(self):
+    def test_every_text_pair_passes_wcag_aa_in_both_palettes(self):
         failures = []
         for name, p in palettes(FRONT.read_text()).items():
             pairs = [(fg, bg) for fg in TEXT for bg in SURFACES] + [('bink', 'button'), ('violet', 'leaf')]
             failures += [(name, fg, bg, round(contrast(p[fg], p[bg]), 2)) for fg, bg in pairs if contrast(p[fg], p[bg]) < 4.5]
             self.assertGreaterEqual(contrast(p['amber'], p['paper']), 3, 'the focus ring')  # non-text contrast
-            self.assertEqual([fg for fg in TEXT if contrast(p[fg], p['ruleline']) < 4.5], [], name)  # where text crosses a ruled line
-            self.assertLess(contrast(p['ruleline'], p['paper']), 1.5, f'{name}: a ruled line is faint')
         self.assertEqual(failures, [])
+
+    def test_one_stylesheet_and_one_skeleton(self):
+        static = sorted(p.name for p in (ROOT / 'transport' / 'static').iterdir() if p.suffix in ('.css', '.js'))
+        self.assertEqual(static, ['say.js', 'style.css'])
+        self.assertEqual(sum('<!doctype html>' in p.read_text() for p in (ROOT / 'transport' / 'static').glob('*.html')), 1)
+        from transport import hand
+        self.assertTrue(hand.shell('t', None, 'B').startswith('<!doctype html>'))
+        self.assertIn(FRONT.read_text(), hand.shell('t', None, 'B'))  # the hand inlines the one stylesheet
 
     def test_the_site_loads_the_front_stylesheet_and_keeps_no_palette_of_its_own(self):
         self.assertEqual((ROOT / 'site' / 'front.css').resolve(), FRONT)
