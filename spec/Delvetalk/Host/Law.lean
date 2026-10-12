@@ -7,6 +7,7 @@
 import Delvetalk.Host.Store
 import Delvetalk.Canonical
 import Compiler.ObjectiveBendDataWire
+import Std.Data.HashSet
 
 namespace Delvetalk.Host
 
@@ -284,7 +285,17 @@ def Reading.render : Reading → String
 
 /-- The rows of `F` in `rows`'s column `C`, as `.column` reads them. -/
 def columnHas (rows : List Data) (col : String) (w : Data) : Bool :=
-  rows.any fun r => (rawField col r).map canon == some (canon w)
+  let cw := canon w
+  rows.any fun r => (rawField col r).map canon == some cw
+
+/-- Rows by canonical bytes, as a set: a relation's rows are compared whole, each once (not each against
+    every other, which was quadratic in the rows). -/
+def canonSet (rows : List Data) : Std.HashSet String :=
+  rows.foldl (fun s r => s.insert (canon r)) {}
+
+/-- The rows of `field` the declared retention dropped while the write was applied (`Facts.evicted`). -/
+def evictedOf (facts : Facts) (field : String) : Std.HashSet String :=
+  canonSet (facts.evicted.filterMap fun (f, x) => if f == field then some x else none)
 
 /-- The rows a write changed in relation (or list) `field`: those of `old` gone from `new` by canonical
     bytes, less the ones the declared retention dropped, and those of `new` not in `old`. -/
@@ -293,10 +304,10 @@ def changedRows (facts : Facts) (old : Option Data) (new : Data) (field : String
   let before ← match old with
     | none => some []
     | some o => (rawField field o).bind rowsOf
-  let now := after.map canon
-  let was := before.map canon
-  let gone := before.filter fun r => !now.contains (canon r) &&
-    !(facts.evicted.any fun (f, x) => f == field && canon x == canon r)
+  let now := canonSet after
+  let was := canonSet before
+  let evicted := evictedOf facts field
+  let gone := before.filter fun r => let c := canon r; !now.contains c && !evicted.contains c
   return gone ++ after.filter fun r => !was.contains (canon r)
 
 def isWant (c : Clause) : Bool := match c.modality with | .want _ => true | _ => false
@@ -368,8 +379,9 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
       | none => true
       | some before => match (rawField field before).bind rowsOf with
         | some rows =>
-          let now := after.map canon
-          rows.all fun r => now.contains (canon r) || facts.evicted.any fun (f, x) => f == field && canon x == canon r
+          let now := canonSet after
+          let evicted := evictedOf facts field
+          rows.all fun r => let c := canon r; now.contains c || evicted.contains c
         | none => false
   -- Every row the write changed carries `who` in its column (docs/LAW.md §4 B).
   | .changed field col who => match changedRows facts old new field, memberData facts old new who with
