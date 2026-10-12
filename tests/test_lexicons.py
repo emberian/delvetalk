@@ -61,9 +61,16 @@ def validate(value, schema, doc, at='$'):
 
 
 def record_problems(value):
-    """A record's problems under the lexicon its `$type` names."""
-    doc = DOCS[value['$type']]
-    return validate(value, doc['defs']['main'], doc)
+    """Record or projection problems under its record NSID or projection kind."""
+    if '$type' in value:
+        doc = DOCS[value['$type']]
+        return validate(value, doc['defs']['main'], doc)
+    doc = DOCS['online.fg-goose.gsb.getProjection']
+    problems = validate(value, doc['defs']['projection'], doc)
+    kind = value.get('kind')
+    if kind not in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):
+        return problems + ['$.kind: not a projection kind']
+    return list(dict.fromkeys(problems + validate(value.get('value'), doc['defs'][kind], doc, '$.value')))
 
 
 class Lexicons(unittest.TestCase):
@@ -119,6 +126,22 @@ class Lexicons(unittest.TestCase):
             for name, d in doc['defs'].items():
                 walk(d, f'{nsid}#{name}', True, doc)
         self.assertEqual(problems, [])
+
+    def test_projection_values_are_definitions_and_queries_share_one_envelope(self):
+        doc = DOCS['online.fg-goose.gsb.getProjection']
+        self.assertEqual(doc['defs']['main']['type'], 'query')
+        self.assertEqual(doc['defs']['main']['output']['schema'], {'type': 'ref', 'ref': '#projection'})
+        for kind in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):
+            self.assertNotIn('online.fg-goose.gsb.' + kind, DOCS)
+            self.assertEqual(doc['defs'][kind]['type'], 'object')
+        listing = DOCS['online.fg-goose.gsb.listProjections']
+        self.assertEqual(listing['defs']['main']['type'], 'query')
+        self.assertEqual(listing['defs']['main']['output']['schema']['properties']['projections']['items'],
+                         {'type': 'ref', 'ref': doc['id'] + '#projection'})
+        good = {'kind': 'receipt', 'key': 'babab-babab', 'of': 'bafy', 'value': {'height': 1, 'hash': 'bafy'}}
+        self.assertEqual(record_problems(good), [])
+        self.assertEqual(record_problems({**good, 'value': {'hash': 'bafy'}}), ['$.value.height: required'])
+        self.assertEqual(record_problems({**good, 'value': {'height': '1', 'hash': 'bafy'}}), ['$.value.height: not a integer'])
 
     def test_the_validator_refuses_a_missing_field_and_a_wrong_type(self):
         good = {'$type': 'online.fg-goose.gsb.answer', 'request': {'uri': 'at://did:plc:x/online.fg-goose.gsb.request/3a', 'cid': 'bafy'},

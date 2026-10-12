@@ -123,23 +123,32 @@ Two model surfaces sit beside this path and never inside it.
   admits it only if every id, number, handle, spell and quotation is a stroke's. claude46's line may be quoted, whole
   and credited to claude46, or not at all. The paint is cached per version and never journaled.
 
-## 8. The records
+## 8. The projection and signed record
 
-Anyone can read the entry back as an AT Protocol record, as the reader may see it:
+A post cites `nosap-hodaz`; a reader resolves that receipt through the projection query:
 
-    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.getRecord?repo=did:web:gsb.fg-goose.online&collection=online.fg-goose.gsb.receipt&rkey=nosap-hodaz'
+    curl 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.getProjection?kind=receipt&key=nosap-hodaz'
 
-answers `{uri: at://did:web:gsb.fg-goose.online/online.fg-goose.gsb.receipt/nosap-hodaz, cid: bafyreie3bjee…np3u4, value}`,
-the value the host's projection of entry 591 for an anonymous reader. Its write names the state CID
-`bafyreiea2sih…474e`; `online.fg-goose.gsb.object/bell~1.4` is bell/1 at version 4 with that `stateCid`, its pin, its law
-and readings. The front renders these ([transport/repo.py](../transport/repo.py)); the host decides what each reader
-sees.
+It answers `{kind: "receipt", key: "nosap-hodaz", of: bafyreie3bjee…np3u4, value, signed?}`. `value` is the
+host's projection of entry 591 for the reader, without `$type`; `of` is the entry's CID, not the value's.
+Its write names state CID `bafyreiea2sih…474e`. Read bell/1 at version 4 with:
 
-The signed form is `online.fg-goose.gsb.entry/<rev>`: a record `{entry: <link to bafyreie3bjee…>, height: 591}` in an MST,
-its key the TID of (clock minute × 60,000,000 + height), under a commit `{did, version: 3, data, rev, prev, sig}`
-signed by the world's k256 key, `prev` the commit for entry 590. On 2026-10-12 the live front answers 503 for these
-routes, because the carried journal starts at 447 and the signer expects 1 (README section 3). Given the key, the
-commits are a function of the journal: a restart recomputes them byte for byte.
+    curl 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.getProjection?kind=object&key=bell~1.4'
+
+That projection carries the same `of` and `stateCid`, its pin, law and readings. Sources are projections too,
+fetched with `kind=source&key=<module CID>`. The front frames these queries
+([transport/repo.py](../transport/repo.py)); the host decides what each reader sees.
+
+On a signing box the receipt's `signed` is the at-uri `online.fg-goose.gsb.entry/<rev>` in the world's repository.
+This public record holds `{$type, entry: <link to bafyreie3bjee…>, height: 591}`; its record CID hashes that
+value. `com.atproto.sync.getRecord?did=did:web:gsb.fg-goose.online&collection=online.fg-goose.gsb.entry&rkey=<rev>`
+returns a CAR proving exactly this path in the MST under the head commit. The entry's principal also gets
+its canonical block beside that proof; the anonymous reader gets only the signed link.
+
+The rev is a TID derived from the journal's clock and height with a durable epoch floor across carries and
+key rotations. Commits are a function of journal, key and epoch ledger; a restart recomputes the same head.
+`repo.getRecord`/`listRecords` also serve public card/page/index/answer records, whose CIDs hash their values;
+these four wait for signed paths in L3. Projection kinds are not repository collections.
 
 ## 9. Replay and carry
 

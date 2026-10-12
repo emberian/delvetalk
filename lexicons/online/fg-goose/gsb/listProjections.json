@@ -1,0 +1,91 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.listProjections",
+  "description": "Page the same host projections under the authenticated reader, or PUBLIC when anonymous.",
+  "defs": {
+    "main": {
+      "type": "query",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "receipt",
+              "object",
+              "source",
+              "publication",
+              "grant",
+              "law"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque host cursor for receipt/source/publication/grant; object id for object; object id or <id>#<n> for law."
+          },
+          "reverse": {
+            "type": "boolean",
+            "default": false,
+            "description": "Descending host order for receipt/source/publication/grant. true is InvalidRequest for object/law, which page by object id."
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "projections"
+          ],
+          "properties": {
+            "projections": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "online.fg-goose.gsb.getProjection#projection"
+              }
+            },
+            "cursor": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "RecordNotFound"
+        },
+        {
+          "name": "Denied"
+        },
+        {
+          "name": "AmbiguousSlug"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "HostUnavailable"
+        },
+        {
+          "name": "HostTimeout"
+        },
+        {
+          "name": "InvalidToken"
+        },
+        {
+          "name": "RateLimitExceeded"
+        }
+      ]
+    }
+  }
+}

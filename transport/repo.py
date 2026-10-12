@@ -2,8 +2,8 @@
 with a signing key on the box, as a signed repository: commits per journal height and rotation sync commits
 over a Merkle search tree of the entries' CIDs, ordered by durable chain epochs.
 
-Mounted by the front (transport/http.py) at /xrpc/<nsid> and /.well-known/did.json. Every record is a host
-reply carried verbatim with `$type` added; the host decides what a reader sees: an unauthenticated request
+Mounted by the front (transport/http.py) at /xrpc/<nsid> and /.well-known/did.json. Projections are host
+replies carried verbatim; the host decides what a reader sees: an unauthenticated request
 reads as PUBLIC, a bearer credential as its principal. The signed repository renders what every reader sees
 (each entry's height and hash) and signs it with the world's key (`State.repo_key`, made once by `repokey`). docs/REPO.md says what
 is served, what is signed, what is not, and the host ops it reads.
@@ -27,19 +27,19 @@ from transport.identity import SLUG
 from transport.mirror import NS
 from transport.state import State
 
-COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law', 'card', 'page', 'index', 'answer'))
 MIRRORED = ('card', 'page', 'index', 'answer')  # transport/mirror.py renders them, for the PDS and for this façade alike
+COLLECTIONS = tuple(NS + c for c in MIRRORED)
+PROJECTIONS = ('receipt', 'object', 'source', 'publication', 'grant', 'law')
 ENTRY = NS + 'entry'  # the signed repository's one collection: an entry's CID and height under its rev
 LIMIT, MAX_LIMIT = 50, 100
 CAR = 'application/vnd.ipld.car'
 OBJECT_KEY = re.compile(r'([A-Za-z0-9._~:-]+)\.([0-9]+)')  # <object with / as ~>.<version>
-# Collections a host op pages by journal height: (op, the reply's list, the item's record key, the item's cid).
+# Projections a host op pages by journal height: (op, reply list, key field, subject CID field).
 PAGED = {'receipt': ('world-entries', 'entries', 'slug', 'hash'), 'source': ('world-sources', 'sources', 'cid', 'cid'),
          'publication': ('world-publications', 'publications', 'id', 'hash'), 'grant': ('world-grants', 'grants', 'id', 'hash')}
 ERRORS = {'unknown': (400, 'RecordNotFound'), 'denied': (403, 'Denied'), 'ambiguous': (400, 'AmbiguousSlug')}
 XRPC_ERRORS = json.loads((Path(__file__).resolve().parent / 'static' / 'catalogue.json').read_text())['xrpcErrors']  # name -> {code, when}
-NOT_SERVED = 'no signing key on this box, so no signed MST: page com.atproto.repo.listRecords?collection=' \
-             f'{NS}receipt, and fetch each entry\'s block with com.atproto.sync.getRecord'
+NOT_SERVED = f'no signing key on this box: read projections with {NS}getProjection and {NS}listProjections'
 NOT_LIVE = 'no live subscription: poll com.atproto.sync.getLatestCommit, then com.atproto.sync.getRepo?since=<your rev>'
 TID = re.compile(r'[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}')
 MINUTE = 60_000_000  # microseconds: the world's clock counts minutes since the epoch
@@ -58,11 +58,6 @@ def refused(reply):
     host = {'hostUnavailable': 'HostUnavailable', 'hostTimeout': 'HostTimeout'}.get(reply.get('class'))
     code, error = (XRPC_ERRORS[host]['code'], host) if host else ERRORS.get(reply.get('status'), (400, 'InvalidRequest'))
     return Refusal(code, error, reply.get('message') or reply.get('status') or 'no reply', reply)
-
-
-def car(cid, block):
-    """A CARv1 of one block, rooted at it."""
-    return car_of(CID.parse(cid), [(CID.parse(cid), block)])
 
 
 def json_of(v):
@@ -222,7 +217,8 @@ class Repo:
                'com.atproto.sync.getRepo': 'get_repo', 'com.atproto.identity.resolveHandle': 'resolve_handle',
                'com.atproto.sync.getLatestCommit': 'latest_commit', 'com.atproto.sync.getRepoStatus': 'repo_status',
                'com.atproto.sync.listRepos': 'list_repos', 'com.atproto.sync.listBlobs': 'list_blobs',
-               'com.atproto.sync.subscribeRepos': 'subscribe'}
+               'com.atproto.sync.subscribeRepos': 'subscribe',
+               NS + 'getProjection': 'get_projection', NS + 'listProjections': 'list_projections'}
 
     def __init__(self, origin, key=None, world='town', answers=None, ledger=None):
         """`key`: a transport.atproto.sign.Key, or None for an unsigned repository; `world` names its host (`world_origin`);
@@ -266,9 +262,29 @@ class Repo:
             raise Refusal(400, 'InvalidRequest', 'collection must be one of ' + ', '.join(COLLECTIONS + (ENTRY,)))
         return q['collection'][len(NS):]
 
-    def record(self, collection, rkey, cid, item):
-        return {'uri': f'at://{self.did}/{NS}{collection}/{rkey}', **({'cid': cid} if cid else {}),
-                'value': {'$type': NS + collection, **item}}
+    def kind(self, q):
+        if q.get('kind') not in PROJECTIONS:
+            raise Refusal(400, 'InvalidRequest', 'kind must be one of ' + ', '.join(PROJECTIONS))
+        return q['kind']
+
+    def paging(self, q):
+        limit = q.get('limit', str(LIMIT))
+        digits = limit.lstrip('0')
+        if not (limit.isascii() and limit.isdigit()) or len(digits) > 3 or not 1 <= int(digits or '0') <= MAX_LIMIT:
+            raise Refusal(400, 'InvalidRequest', f'limit must be 1..{MAX_LIMIT}')
+        return q.get('cursor'), int(digits), q.get('reverse') == 'true'
+
+    def projection(self, host, kind, key, of, value):
+        out = {'kind': kind, 'key': key, **({'of': of} if of else {}), 'value': value}
+        if kind == 'receipt' and self.signed:
+            self.head(host, {}, None)
+            h = self.signed.position(value.get('height'))
+            # A receipt retained across a carry need not have a record in this epoch's tree.
+            if isinstance(h, int) and 1 <= h <= len(self.signed.heights):
+                entry = self.signed.heights[h - 1]
+                if entry.hash == of:
+                    out['signed'] = f'at://{self.did}/{ENTRY}/{entry.rev}'
+        return out
 
     # ---- methods
 
@@ -314,22 +330,18 @@ class Repo:
     def subscribe(self, host, q, who):
         raise Refusal(501, 'MethodNotImplemented', 'com.atproto.sync.subscribeRepos is not served here', hint=NOT_LIVE)
 
-    def signed_height(self, host, rkey, who):
-        """The height a receipt key names: a rev (the signed record key), a slug or an entry CID."""
-        head = self.head(host, {}, None)
-        is_rev = TID.fullmatch(rkey)
-        h = self.signed.revs.get(rkey) if is_rev else self.signed.position(self.entry(host, rkey, who)['receipt'].get('height'))
-        if (not isinstance(h, int) or not 1 <= h <= len(self.signed.heights)
-                or (is_rev and self.signed.heights[h - 1].rev != rkey)):
-            raise Refusal(400, 'RecordNotFound', f'no receipt here is {rkey}')
-        return h, head
+    def signed_height(self, host, rkey):
+        """The journal position of the requested entry record's rev, excluding rotation sync revs."""
+        self.head(host, {}, None)
+        h = self.signed.revs.get(rkey) if TID.fullmatch(rkey) else None
+        if not isinstance(h, int) or not 1 <= h <= len(self.signed.heights) or self.signed.heights[h - 1].rev != rkey:
+            raise Refusal(400, 'RecordNotFound', f'no entry record here has rev {rkey}')
+        return h
 
     def list_records(self, host, q, who):
         self.repo(q)
-        collection, cursor, reverse = self.collection(q), q.get('cursor'), q.get('reverse') == 'true'
-        limit = q.get('limit', str(LIMIT))
-        if not (limit.isascii() and limit.isdigit()) or not 1 <= int(limit) <= MAX_LIMIT:
-            raise Refusal(400, 'InvalidRequest', f'limit must be 1..{MAX_LIMIT}')
+        collection = self.collection(q)
+        cursor, limit, reverse = self.paging(q)
         if collection == 'entry':  # by height; the cursor is the last rev listed
             n, size = len(self.head(host, {}, None) and self.signed.heights), int(limit)
             at = self.signed.revs.get(cursor) if cursor else (n + 1 if reverse else 0)
@@ -338,30 +350,37 @@ class Repo:
             hs = range(at - 1, max(at - 1 - size, 0), -1) if reverse else range(at + 1, min(at + size, n) + 1)
             more = len(hs) and (hs[-1] > 1 if reverse else hs[-1] < n)
             return {'records': [self.signed_record(h) for h in hs], **({'cursor': self.signed.heights[hs[-1] - 1].rev} if more else {})}
-        if collection in PAGED:
-            op, field, key, cid = PAGED[collection]
-            # The host's (height, item) cursor, opaque here and to clients: records sharing an entry are never skipped.
+        return self.mirrored_page(host, collection, PUBLIC, cursor, limit, reverse)
+
+    def list_projections(self, host, q, who):
+        kind = self.kind(q)
+        cursor, limit, reverse = self.paging(q)
+        if kind in PAGED:
+            op, field, key, cid = PAGED[kind]
+            # The host's (height, item) cursor keeps projections sharing an entry from being skipped.
             reply = host.send({'op': op, 'principal': who, 'limit': int(limit), **({'cursor': cursor} if cursor else {}),
                                **({'reverse': True} if reverse else {})})
             if field not in reply:
                 raise refused(reply)
             items = reply[field]
-            return {'records': [self.record(collection, i.get(key), i.get(cid), i) for i in items],
+            return {'projections': [self.projection(host, kind, i.get(key), i.get(cid), i) for i in items],
                     **({'cursor': reply['cursor']} if reply.get('more') and reply.get('cursor') else {})}
-        if collection in MIRRORED:
-            return self.mirrored_page(host, collection, who, cursor, int(limit), reverse)
         if reverse:  # objects and laws page by id in byte order, as world-objects lists them
-            raise Refusal(400, 'InvalidRequest', f'{NS}{collection} pages by object id and has no reverse order')
+            raise Refusal(400, 'InvalidRequest', f'{NS}{kind} pages by object id and has no reverse order')
         after, mid, k = (cursor or '').partition('#')  # an object id, or `<object id>#<laws of it already listed>` inside a law page
-        if mid and not (collection == 'law' and k.isdigit()):
+        if mid and not (kind == 'law' and k.isascii() and k.isdigit()):
+            raise Refusal(400, 'InvalidRequest', 'cursor: not one this listing gave')
+        try:
+            skip = int(k or 0)
+        except ValueError:
             raise Refusal(400, 'InvalidRequest', 'cursor: not one this listing gave')
         taken, last = [], None
-        for oid, listed, record, ended in self.walk(host, who, collection, after, int(k or 0), bool(mid)):
+        for oid, listed, record, ended in self.walk(host, who, kind, after, skip, bool(mid)):
             if len(taken) == int(limit):
-                return {'records': taken, 'cursor': last}
+                return {'projections': taken, 'cursor': last}
             taken.append(record)
             last = oid if ended else f'{oid}#{listed}'
-        return {'records': taken}
+        return {'projections': taken}
 
     def mirrored(self, host, collection, rkey, who):
         """A record the mirror writes to the PDS, as `who` reads it here (transport/mirror.py), or None."""
@@ -415,10 +434,10 @@ class Repo:
             for oid in ids:
                 item = self.object(host, oid, None, who)
                 if collection == 'object':
-                    yield oid, 0, self.record('object', object_key(oid, item['version']), item.get('stateCid'), item), True
+                    yield oid, 0, self.projection(host, 'object', object_key(oid, item['version']), item.get('stateCid'), item), True
                 laws = item.get('laws') or [] if collection == 'law' else []
                 for n in range(skip, len(laws)):
-                    yield oid, n + 1, self.record('law', object_key(oid, laws[n]['name']), None, laws[n]), n + 1 == len(laws)
+                    yield oid, n + 1, self.projection(host, 'law', object_key(oid, laws[n]['name']), None, laws[n]), n + 1 == len(laws)
                 skip = 0
             if not more:
                 return
@@ -435,68 +454,78 @@ class Repo:
         self.repo(q)
         collection, rkey = self.collection(q), q.get('rkey') or ''
         if collection == 'entry':
-            h = self.signed_height(host, rkey, who)[0] if TID.fullmatch(rkey) else 0
-            if not h:
-                raise Refusal(400, 'RecordNotFound', f'an entry record key is a rev; {rkey} is not one here')
-            out = self.signed_record(h)
-            if q.get('cid') and q['cid'] != out['cid']:
-                raise Refusal(400, 'RecordNotFound', f"the record at {rkey} has cid {out['cid']}")
-            return out
-        if collection in MIRRORED:
-            value = self.mirrored(host, collection, rkey, who)
+            out = self.signed_record(self.signed_height(host, rkey))
+        else:
+            value = self.mirrored(host, collection, rkey, PUBLIC)
             if value is None:
                 raise Refusal(400, 'RecordNotFound', f'no {NS}{collection} here is {rkey}')
-            return {'uri': f'at://{self.did}/{NS}{collection}/{rkey}', 'cid': str(block(from_json(value))[0]), 'value': value}
-        if collection == 'receipt':
-            item = self.entry(host, rkey, who)['receipt']
-            cid = item.get('hash')
-        elif collection == 'object':
-            key = OBJECT_KEY.fullmatch(rkey)
-            if not key:
-                raise Refusal(400, 'InvalidRequest', 'an object record key is <object with / as ~>.<version>')
-            oid, version = key[1].replace('~', '/'), key[2]
-            item = self.object(host, oid, int(version), who)
-            cid, rkey = item.get('stateCid'), object_key(oid, version)
-        elif collection == 'source':
-            reply = host.send({'op': 'world-source', 'principal': who, 'cid': rkey})
+            out = {'uri': f'at://{self.did}/{NS}{collection}/{rkey}', 'cid': str(block(from_json(value))[0]), 'value': value}
+        if q.get('cid') and q['cid'] != out['cid']:
+            raise Refusal(400, 'RecordNotFound', f"the record at {rkey} has cid {out['cid']}")
+        return out
+
+    def get_projection(self, host, q, who):
+        kind, key = self.kind(q), q.get('key') or ''
+        if not key:
+            raise Refusal(400, 'InvalidRequest', 'key is required')
+        if kind == 'receipt':
+            value = self.entry(host, key, who)['receipt']
+            out = self.projection(host, kind, key, value.get('hash'), value)
+        elif kind == 'object':
+            parsed = OBJECT_KEY.fullmatch(key)
+            if not parsed:
+                raise Refusal(400, 'InvalidRequest', 'an object projection key is <object with / as ~>.<version>')
+            value = self.object(host, parsed[1].replace('~', '/'), int(parsed[2]), who)
+            out = self.projection(host, kind, key, value.get('stateCid'), value)
+        elif kind == 'source':
+            reply = host.send({'op': 'world-source', 'principal': who, 'cid': key})
             if reply.get('status') != 'source':
                 raise refused(reply)
-            item, cid = reply['record'], rkey
+            out = self.projection(host, kind, key, key, reply['record'])
+        elif kind == 'law':
+            oid, dot, name = key.rpartition('.')
+            if not dot or not oid or not name:
+                raise Refusal(400, 'InvalidRequest', 'a law projection key is <object with / as ~>.<clause>')
+            value = self.object(host, oid.replace('~', '/'), None, who)
+            clause = next((law for law in value.get('laws', []) if law['name'] == name), None)
+            if clause is None:
+                raise Refusal(400, 'RecordNotFound', f'no law here is {key}')
+            out = self.projection(host, kind, key, None, clause)
         else:
-            raise Refusal(400, 'InvalidRequest', f'{NS}{collection} is listed, not fetched by key: use com.atproto.repo.listRecords')
-        if q.get('cid') and q['cid'] != cid:
-            raise Refusal(400, 'RecordNotFound', f'the record at {rkey} has cid {cid}')
-        return self.record(collection, rkey, cid, item)
+            cursor = None
+            while True:
+                page = self.list_projections(host, {'kind': kind, 'limit': str(MAX_LIMIT), **({'cursor': cursor} if cursor else {})}, who)
+                out = next((row for row in page['projections'] if row['key'] == key), None)
+                if out is not None:
+                    break
+                cursor = page.get('cursor')
+                if not cursor:
+                    raise Refusal(400, 'RecordNotFound', f'no {kind} here is {key}')
+        if q.get('cid') and q['cid'] != out.get('of'):
+            raise Refusal(400, 'RecordNotFound', f"the projection at {key} is of {out.get('of')}")
+        return out
 
     def sync_record(self, host, q, who):
         self.repo(q, 'did')
-        if self.collection(q) not in ('receipt', 'entry'):
-            raise Refusal(400, 'InvalidRequest', 'only receipts are blocks: an object, source or law record is a projection')
-        if self.signed or self.collection(q) == 'entry':  # the proof of the signed record; the entry's own block too when the reader sees it whole
-            h, head = self.signed_height(host, q.get('rkey') or '', who)
-            cid = self.signed.heights[h - 1].hash
-            whole = host.send({'op': 'world-entry', 'principal': who, 'hash': cid, 'bytes': True}) if who != PUBLIC else {}
-            return self.signed.proof(h, [(CID.parse(cid), bytes.fromhex(whole['bytes']))] if 'bytes' in whole else [])
-        reply = self.entry(host, q.get('rkey') or '', who, whole=True)
-        if 'bytes' not in reply:
-            raise Refusal(403, 'Denied', "only the identity's own principal reads an entry whole; "
-                                         'a projection is not the block its CID names', reply)
-        return car(reply['receipt']['hash'], bytes.fromhex(reply['bytes']))
+        if self.collection(q) != 'entry':
+            raise Refusal(400, 'InvalidRequest', 'only entry records are in the signed tree')
+        h = self.signed_height(host, q.get('rkey') or '')
+        cid = self.signed.heights[h - 1].hash
+        whole = host.send({'op': 'world-entry', 'principal': who, 'hash': cid, 'bytes': True}) if who != PUBLIC else {}
+        return self.signed.proof(h, [(CID.parse(cid), bytes.fromhex(whole['bytes']))] if 'bytes' in whole else [])
 
     # ---- host reads
 
-    def entry(self, host, rkey, who, whole=False):
-        """The host's {status: receipt, receipt, bytes?} for a slug or an entry CID."""
+    def entry(self, host, rkey, who):
+        """The host's receipt projection for a slug or entry CID."""
         if SLUG.fullmatch(rkey):
             found = host.send({'op': 'world-resolve', 'principal': who, 'slug': rkey})
             if found.get('status') == 'resolved' and found.get('kind') != 'receipt':
                 found = {'status': 'unknown', 'message': f"{rkey} names a {found.get('kind')}, not a receipt"}
             if found.get('status') != 'resolved':
                 raise refused(found)
-            if not whole:
-                return {'status': 'receipt', 'receipt': found['receipt']}
-            rkey = found['cid']
-        reply = host.send({'op': 'world-entry', 'principal': who, 'hash': rkey, **({'bytes': True} if whole else {})})
+            return {'status': 'receipt', 'receipt': found['receipt']}
+        reply = host.send({'op': 'world-entry', 'principal': who, 'hash': rkey})
         if reply.get('status') != 'receipt':
             raise refused(reply)
         return reply

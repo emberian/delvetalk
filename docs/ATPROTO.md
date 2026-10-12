@@ -7,8 +7,7 @@ on `lane/atproto` at 66315d85 (lane/posting merged), against atproto.com/specs a
 section ends with its decision.
 
 **Ground.** DelveTalk's repository, `did:web:gsb.fg-goose.online` (docs/REPO.md): one signed commit per journal
-height over an MST of `online.fg-goose.gsb.entry/<rev>` and a higher-rev sync commit at key rotation, plus façade collections (`receipt`, `object`, `source`, `law`,
-`grant`, `publication`; since lane/posting `card`, `page`, `index`); getRepo, `since` and listRecords work for a
+height over an MST of `online.fg-goose.gsb.entry/<rev>` and a higher-rev sync commit at key rotation, plus public mirrored collections (`card`, `page`, `index`, `answer`) and per-reader projection queries; getRepo, `since` and listRecords work for a
 carried journal (74cc83a8); subscribeRepos is 501. The posting account on pds.delve.town is the
 owner's, `ember.delve.town` (`did:plc:6amo7col5h4ciq2gpm5eur7b`, the handle in the posting credential, which the
 owner configures and the repository never holds): the town's replies go out through it, and its address, the one
@@ -52,8 +51,16 @@ record there; and a repository is public, so it holds only what the public reade
 | `index` | `self` | ids, pages, height, and the signed head copied from (built, less the head) |
 | `entry`, `answer` | rev; `<did>.<rkey>` | the journal (signed today); answers (§2) |
 
-Rules and wants stay on the card (they are its lines). `object`, `source`, `grant`, `publication`, `receipt` stay
-façade-only: authority-bearing projections asked for by key, not state to mirror.
+Rules and wants stay on the card (they are its lines). `receipt`, `object`, `source`, `publication`, `grant` and
+`law` are per-reader projections served by `online.fg-goose.gsb.getProjection` and `.listProjections`, not
+repository collections. Both queries take `kind`; get takes `key` and optional `cid`, list takes `limit`
+(1..100, default 50), `cursor` and `reverse`. A projection is `{kind, key, of?, value, signed?}`: `value` is the
+host reply without `$type`; `of` is the CID of the thing projected, not of `value` (entry hash for
+receipt/publication/grant, stateCid for object, module CID for source, absent for law). `cid` filters `of`,
+a mismatch `RecordNotFound`. A receipt's `signed` names its `entry/<rev>` record when in the signing box's
+current tree. Keys and cursors are the host's current forms (REPO); authority is the authenticated reader,
+or PUBLIC anonymously. `repo.*` serves only entry and the four public mirrored collections with value-derived
+CIDs; `sync.getRecord` proves only `entry/<rev>` until the other public records join the tree.
 
 **Paint leaves the card.** Paint is model prose, cached, never journaled (OVERHAUL §4); everything else above is a
 function of the journal. Split out, a card record has the same bytes, so the same CID, in both repositories, which
@@ -271,8 +278,9 @@ sits on a did:plc that survives a move of host.
 Owner decision, 2026-10-12: `delvetalk.town` cannot be bought; the group moved to `online.fg-goose.gsb`.
 
 `try` is a keyword where lexicon codegen lands; it stays (the residents' word) and generated clients call it
-`tryAct`. Nothing validates lexicons today: L2 tests that each file is lexicon v1 and that every record the façade and
-mirror emit validates.
+`tryAct`. Tests check lexicon v1 definitions, nested refs, and the records and projection values the front and mirror emit.
+The six projection value definitions live in `getProjection`; `kind` selects their required fields without
+adding a `$type` to host replies. The list query references the same projection definition.
 
 **Decision:** one NSID group, `online.fg-goose.gsb.*`, under the owner's `gsb.fg-goose.online`;
 point `_lexicon.gsb.fg-goose.online` at the posting account and publish there; validated by test.
@@ -344,13 +352,13 @@ Fixed in L3:
 | # | Finding | Decision |
 | --- | --- | --- |
 | 4 | carry and key rotation break rev continuity | fixed: one durable epoch ledger at `State.repo_ledger` (`worlds/<world>/repo.json`), atomic writes inside `Signed.lock`; `{key, base, epochs: [{height, clock, cause}], head: {height, rev, clock}}`. A changed base raises the floor to `head.clock + 1` at the first carried height, tree empty, `prev` null, pre-carry entries reconciled away. A changed key on the same journal raises the floor after head height H, signs the same root once at `TID((head.clock + 1) × 60,000,000)`, `prev` null; H+1 chains from it. Old commits are not rebuilt, old record revs remain `since` cursors. Restart depends only on journal, key and ledger and changes no bytes. Carry copies the ledger with state; deletion requires follower re-sync. L4 announces each epoch with `#sync` |
+| 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | fixed: one pair of queries, `online.fg-goose.gsb.getProjection`/`listProjections`, for receipt/object/source/publication/grant/law; `{kind, key, of?, value, signed?}` with host values untagged, `of` the subject CID. Receipt `signed` points to `entry/<rev>` when in the current tree. Repo record methods accept only public entry/card/page/index/answer, each `cid` hashes `value`; sync.getRecord proves only the requested entry path and includes whole bytes for its principal. `getEntry` remains L5 work |
 
 For the next slices, each with its decision:
 
 | # | Finding | Decision | Lane |
 | --- | --- | --- | --- |
 | 3 | OAuth discovery reaches internal addresses | accepted: `oauth.py`'s discovered URLs go through the global-address check `delve.Client.did_document` now applies to did:web hosts, and the connection is made to the address checked (today's check leaves DNS rebinding between check and connect) | L5 |
-| 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | accepted: `receipt`, `object`, `source`, `grant`, `publication`, `law` move to `online.fg-goose.gsb.getEntry`/`getObject`/… procedures; `com.atproto.repo.*` and `sync.*` keep only records whose `cid` is their value's (entry, and the mirrored collections, whose CID is the value's since L1) | L3 |
 | 9 | the bare-audience exception cannot know the forwarder | accepted: no forwarder-based exception. `aud` is our DID with `#delvetalk` or bare (both name only us; `lxm` binds the method), `typ` `JWT`, `iat` not in the future, `exp` within five minutes, `jti` once | L5 |
 | 10 | height cannot be the firehose `seq` | accepted: an endpoint-wide durable event log with its own `seq`, a stated backfill window, `OutdatedCursor`/`FutureCursor` | L4 |
 | 11 | one commit event per height can overflow | accepted: events budgeted under 200 ops and 2,000,000 bytes, `#sync` and resync past that, `rebase: false` sent, proofs built and tested for inversion of updates and deletes | L4 |

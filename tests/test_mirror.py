@@ -13,6 +13,7 @@ import unittest
 from pathlib import Path
 
 from tests.town import Town
+from tests.test_lexicons import record_problems
 from tests.wire import label, record
 from transport import mirror, post
 from transport.delve import Failure
@@ -47,6 +48,8 @@ class Mirror(unittest.TestCase):
 
     def test_every_card_the_public_reads_is_a_record_of_its_exact_text_and_every_page_is_one(self):
         held = mirror.records(self.host, NOWAIT)
+        for key, value in held.items():
+            self.assertEqual(record_problems(value), [], (key, value))
         ids = mirror.ids(self.host)
         self.assertIn('commonplace', ids)
         for oid in ('commonplace', 'library', 'bell/1', 'porch', 'kinds'):

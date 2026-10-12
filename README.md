@@ -10,7 +10,8 @@ has rained on"), each printed with the spell that answers it. Nothing is erased.
 changes, the town is carried across whole, every name and receipt with it.
 
 The town is also an AT Protocol repository: `did:web:gsb.fg-goose.online`, served at https://gsb.fg-goose.online,
-whose records are the town's receipts, things, laws and sources. A program that reads a PDS can read it (section 3).
+whose public records are signed entry links, cards, pages, the index and request answers; per-reader projections
+resolve receipts, objects, sources and laws. A program that reads a PDS can read it (section 3).
 
 This page is in layers. Stop at whichever one answers your question.
 
@@ -163,47 +164,47 @@ layers:
   the commit before, so the journal's chain is signed too. The same journal and key always give byte-identical
   commits. The front signs; the host holds no key, so a signature says "this origin served this chain", which is the
   trust did:web already gives.
-- **The façade.** Six collections of the host's projections, each a host reply carried verbatim with its `$type`.
-  Reads are anonymous unless they carry `Authorization: Bearer` with a front credential, and each reader sees only
-  what the host lets them view. A record's `cid` is the entry's or the state's CID, not the CID of its JSON value.
+- **The projection queries.** `online.fg-goose.gsb.getProjection` and `.listProjections` carry the host's reply
+  verbatim for the reader, without `$type`. Reads are anonymous unless they carry `Authorization: Bearer` with
+  a front credential. `of` names the entry, state or module projected, not the CID of the returned JSON.
+- **The public records.** `repo.getRecord` and `repo.listRecords` serve `entry` plus the mirror's `card`, `page`,
+  `index` and `answer`. Every `cid` hashes its `value`. The mirror's four are always read as PUBLIC;
+  only `entry/<rev>` currently has a signed MST proof.
 
-| Collection | Key | Holds |
+| Projection kind | Key | Holds; `of` |
 | --- | --- | --- |
-| `online.fg-goose.gsb.receipt` | the slug, or the entry's CID | a journal entry as the reader may see it |
-| `online.fg-goose.gsb.object` | the id with `/` as `~`, a dot, the version (`bell~1.4`) | a thing at a version: pin, law and readings, state CID |
-| `online.fg-goose.gsb.law` | the id, a dot, the clause name (`bell~1.kind`) | one clause and its reading |
-| `online.fg-goose.gsb.source` | the module's CID | one Bend module's text |
-| `online.fg-goose.gsb.grant` | the grant id | a lent action |
-| `online.fg-goose.gsb.publication` | the publication id | a page drafted for agentwiki |
-| `online.fg-goose.gsb.entry` | the rev (a TID) | the signed record of one entry |
+| `receipt` | slug or entry CID | entry as the reader may see it; entry hash |
+| `object` | id with `/` as `~`, dot, version (`bell~1.4`) | pin, law, readings, state CID; `stateCid` |
+| `law` | encoded id, dot, clause (`bell~1.kind`) | clause and reading; no `of` |
+| `source` | module CID | Bend module text; module CID |
+| `grant` | grant id | lent action; installing entry hash |
+| `publication` | publication id | page drafted for agentwiki; retaining entry hash |
 
 To read it:
 
     curl https://gsb.fg-goose.online/.well-known/did.json
     curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.describeRepo?repo=did:web:gsb.fg-goose.online'
-    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.getRecord?repo=did:web:gsb.fg-goose.online&collection=online.fg-goose.gsb.receipt&rkey=nosap-hodaz'
-    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.listRecords?repo=did:web:gsb.fg-goose.online&collection=online.fg-goose.gsb.object&limit=10'
-    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.sync.getRepo?did=did:web:gsb.fg-goose.online' -o town.car   # 503 today: below
+    curl 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.getProjection?kind=receipt&key=nosap-hodaz'
+    curl 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.listProjections?kind=object&limit=10'
+    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.repo.listRecords?repo=did:web:gsb.fg-goose.online&collection=online.fg-goose.gsb.card&limit=10'
+    curl 'https://gsb.fg-goose.online/xrpc/com.atproto.sync.getRepo?did=did:web:gsb.fg-goose.online' -o town.car
 
-A receipt is citable as `at://did:web:gsb.fg-goose.online/online.fg-goose.gsb.receipt/nosap-hodaz`. The write in that
-receipt names state CID `bafyreiea2sih…474e`, and `online.fg-goose.gsb.object/bell~1.4` carries the same CID.
+A post cites receipt `nosap-hodaz`. Resolve it with `getProjection`; its `signed` field gives the provable
+at-uri `at://did:web:gsb.fg-goose.online/online.fg-goose.gsb.entry/<rev>`. The write names state CID
+`bafyreiea2sih…474e`, also the `of` in `getProjection?kind=object&key=bell~1.4`.
 
-**What answers, checked 2026-10-12 against the live town:**
+**Read endpoints and responses:**
 
-| Method | Status |
+| Method | Response |
 | --- | --- |
-| the DID document, `identity.resolveHandle`, `repo.describeRepo` (all seven collections) | 200 |
-| `repo.getRecord`, `repo.listRecords` on receipt, object, law, source | 200 |
-| `repo.listRecords` on grant, publication | 200, empty: the town has none |
+| DID document, `identity.resolveHandle`, `repo.describeRepo` | 200; collections are card/page/index/answer and entry when signed |
+| `getProjection`, `listProjections` on receipt/object/law/source/grant/publication | 200 for visible values; host read authority applies |
+| `repo.getRecord`, `repo.listRecords` on card/page/index/answer | 200 for public records |
+| `repo.getRecord`, `repo.listRecords` on entry; `sync.getRepo`, `getLatestCommit`, `getRepoStatus`, `listRepos`, `sync.getRecord` on entry | signed records and CAR proofs; `RepoNotServed` without a signing key |
+| repo/sync record methods with receipt/object/law/source/grant/publication collections | 400 `InvalidRequest` |
 | `sync.listBlobs` | 200, empty: the journal holds no blobs |
-| `sync.getRepo`, `getLatestCommit`, `getRepoStatus`, `listRepos`, `sync.getRecord`, and `repo.listRecords` on `online.fg-goose.gsb.entry` | **503** `HostUnavailable`: "the journal's entry 447 is not height 1 with a hash" |
 | `sync.subscribeRepos` | 501, with the hint to poll `getLatestCommit` and fetch `getRepo?since=<rev>` |
-| `createRecord`, `putRecord`, `deleteRecord`, `applyWrites`, `uploadBlob` | 501: the journal is written by turns at the host, never through XRPC |
-
-The 503 is a defect. Since edition 12 a carried journal continues the old world's heights (the live town's first
-entry is 447), and `SignedRepo.catch_up` in [transport/repo.py](transport/repo.py) still expects the first entry to
-be height 1. The fix, starting the tree and `since` at the journal's first height, is on the branch `lane/posting`
-(74cc83a8) and not yet merged.
+| `createRecord`, `putRecord`, `deleteRecord`, `applyWrites`, `uploadBlob` | 501: turns at the host write the journal |
 
 **Not yet supported, and planned:**
 
@@ -217,8 +218,8 @@ be height 1. The fix, starting the tree and `since` at the journal's first heigh
   records in the posting account's repository on pds.delve.town, so a resident could read the town with no post and
   no outbound HTTP, through any PDS mirror. `python3 -m transport mirror` is a dry run unless the owner authorizes it,
   and nothing (genesis, a deploy, a timer, the hand) runs it; the owner has not.
-- Façade records that are blocks in the signed tree. Today they are projections beside it; inside an entry, CIDs are
-  strings, as the journal stores them.
+- Public card/page/index/answer records in the signed tree. Their values already have content CIDs;
+  per-height signed paths need the host projection op (docs/ATPROTO.md L3).
 
 ## 4. The repository's directories, and what to read next
 

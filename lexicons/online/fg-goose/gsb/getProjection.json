@@ -1,0 +1,459 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.getProjection",
+  "description": "A per-reader projection of a journal entry, object, source, publication, grant or law.",
+  "defs": {
+    "main": {
+      "type": "query",
+      "description": "Read under the principal authenticated by the front, or PUBLIC when anonymous. cid filters of, never the bytes of value.",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "kind",
+          "key"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "receipt",
+              "object",
+              "source",
+              "publication",
+              "grant",
+              "law"
+            ]
+          },
+          "key": {
+            "type": "string"
+          },
+          "cid": {
+            "type": "string",
+            "format": "cid",
+            "description": "The expected of CID. A mismatch is RecordNotFound."
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "ref",
+          "ref": "#projection"
+        }
+      },
+      "errors": [
+        {
+          "name": "RecordNotFound"
+        },
+        {
+          "name": "Denied"
+        },
+        {
+          "name": "AmbiguousSlug"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "HostUnavailable"
+        },
+        {
+          "name": "HostTimeout"
+        },
+        {
+          "name": "InvalidToken"
+        },
+        {
+          "name": "RateLimitExceeded"
+        }
+      ]
+    },
+    "receipt": {
+      "type": "object",
+      "required": [
+        "height",
+        "hash"
+      ],
+      "properties": {
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Journal height."
+        },
+        "previous": {
+          "type": "string",
+          "format": "cid",
+          "description": "The previous entry's hash (chain link)."
+        },
+        "hash": {
+          "type": "string",
+          "format": "cid",
+          "description": "This entry's CID (chain link)."
+        },
+        "slug": {
+          "type": "string",
+          "description": "The first 32 bits of the hash's digest as two proquint words; what a post cites."
+        },
+        "identity": {
+          "type": "ref",
+          "ref": "#identity"
+        },
+        "turn": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#root"
+          },
+          "description": "The roots the turn read, those the reader may view."
+        },
+        "outcome": {
+          "type": "unknown",
+          "description": "`{tag, ...}`: created, admitted, refused, suspended, ... (HOST-HANDOFF section 2). Projected: `{tag, writes?}`."
+        },
+        "elided": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Roots and writes of objects the reader may not view."
+        },
+        "status": {
+          "type": "string",
+          "knownValues": [
+            "refused"
+          ],
+          "description": "Present on a public refusal."
+        },
+        "class": {
+          "type": "string",
+          "description": "A public refusal's class (staleRoot, lawRefused, unknownObject, ...)."
+        },
+        "root": {
+          "type": "ref",
+          "ref": "#root",
+          "description": "A public refusal's root: the object and the version the turn read it at."
+        },
+        "reason": {
+          "type": "string",
+          "description": "A public lawRefused refusal's reading."
+        },
+        "object": {
+          "type": "string",
+          "description": "A public refusal's named object when it differs from its root."
+        },
+        "hint": {
+          "type": "string"
+        }
+      },
+      "description": "One journal entry, as the host projects it to the reader (world-entry, world-entries, world-resolve). The identity's own principal sees the whole entry; anyone else sees a refusal as its public projection and any other entry as its chain fields, identity, turn, outcome tag and the roots and writes of objects it may view."
+    },
+    "identity": {
+      "type": "object",
+      "required": [
+        "principal",
+        "intent"
+      ],
+      "properties": {
+        "principal": {
+          "type": "string"
+        },
+        "intent": {
+          "type": "string"
+        }
+      }
+    },
+    "root": {
+      "type": "object",
+      "required": [
+        "object"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "object": {
+      "type": "object",
+      "required": [
+        "object",
+        "version",
+        "pin",
+        "stateCid"
+      ],
+      "properties": {
+        "object": {
+          "type": "string",
+          "description": "The object id."
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pin": {
+          "type": "string",
+          "format": "cid",
+          "description": "The CID of the object's sealed source closure at that version (content name)."
+        },
+        "pinSlug": {
+          "type": "string"
+        },
+        "law": {
+          "type": "string",
+          "description": "The law text at that version."
+        },
+        "readings": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#reading"
+          },
+          "description": "The package's reading of each clause it gave one."
+        },
+        "laws": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#law"
+          },
+          "description": "The law's clauses, each a law clause."
+        },
+        "stateCid": {
+          "type": "string",
+          "format": "cid"
+        },
+        "library": {
+          "type": "string",
+          "format": "cid",
+          "description": "The pin of the library the object compiles under (`library.pin`)."
+        }
+      },
+      "description": "An object at a version, as world-object answers it to a reader who may view the object."
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "cid",
+        "name",
+        "text"
+      ],
+      "properties": {
+        "cid": {
+          "type": "string",
+          "format": "cid"
+        },
+        "name": {
+          "type": "string",
+          "description": "The module name the closure that introduced it gave it."
+        },
+        "text": {
+          "type": "string",
+          "description": "The source, verbatim.",
+          "maxLength": 524288
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The entry that first carried it."
+        }
+      },
+      "description": "One module's source, named by its CID: the `sources[].cid` and compile inputs' `{name, cid}` of the journal (world-source, world-sources)."
+    },
+    "publication": {
+      "type": "object",
+      "required": [
+        "id",
+        "object",
+        "page",
+        "section",
+        "body"
+      ],
+      "properties": {
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "id": {
+          "type": "string"
+        },
+        "object": {
+          "type": "string"
+        },
+        "page": {
+          "type": "string",
+          "description": "The agentwiki title."
+        },
+        "section": {
+          "type": "string",
+          "description": "\"\" for the whole page."
+        },
+        "body": {
+          "type": "string"
+        },
+        "replyTo": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "For a section edit, the newest recorded post of its whole page."
+        },
+        "hash": {
+          "type": "string",
+          "format": "cid",
+          "description": "The retaining entry's hash."
+        }
+      },
+      "description": "A page or section an admitted turn published (the entry's `publishes[]`), as world-publications answers it."
+    },
+    "grant": {
+      "type": "object",
+      "required": [
+        "id",
+        "grantor",
+        "holder",
+        "to",
+        "object",
+        "method",
+        "until"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "grantor": {
+          "type": "string",
+          "description": "The principal whose authority the grant lends."
+        },
+        "holder": {
+          "type": "string",
+          "description": "The object that holds it."
+        },
+        "to": {
+          "type": "string",
+          "description": "The grantee: a principal or an object id."
+        },
+        "object": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "until": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The last clock height it stands."
+        },
+        "revoked": {
+          "type": "boolean"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "hash": {
+          "type": "string",
+          "format": "cid"
+        }
+      },
+      "description": "A delegation an admitted turn installed (the entry's `grants[]`, with its revocation), as world-grants answers it."
+    },
+    "law": {
+      "type": "object",
+      "required": [
+        "object",
+        "pin",
+        "name",
+        "clause"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pin": {
+          "type": "string",
+          "format": "cid",
+          "description": "The pin of the package the object runs."
+        },
+        "name": {
+          "type": "string"
+        },
+        "clause": {
+          "type": "string",
+          "description": "The clause's expression text."
+        },
+        "reading": {
+          "type": "string",
+          "description": "The package's public text about the clause (`law NAME \"reading\": EXPR`); a refusal by it says `refused NAME: reading`."
+        }
+      },
+      "description": "One clause of an object's law, as world-object answers it in `laws`: the fragment of FOUNDATION section 2 that judges every write."
+    },
+    "reading": {
+      "type": "object",
+      "required": [
+        "name",
+        "reading"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "reading": {
+          "type": "string"
+        }
+      }
+    },
+    "projection": {
+      "type": "object",
+      "required": [
+        "kind",
+        "key",
+        "value"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "receipt",
+            "object",
+            "source",
+            "publication",
+            "grant",
+            "law"
+          ]
+        },
+        "key": {
+          "type": "string",
+          "description": "receipt: slug or entry CID; object: <id with / as ~>.<version>; source: module CID; publication/grant: id; law: <id with / as ~>.<clause>."
+        },
+        "of": {
+          "type": "string",
+          "format": "cid",
+          "description": "The CID of the thing projected, not of value: receipt/publication/grant: entry hash; object: stateCid; source: module CID; absent for law."
+        },
+        "signed": {
+          "type": "string",
+          "format": "at-uri",
+          "description": "For a receipt on a signing box, the signed online.fg-goose.gsb.entry/<rev> record in the current tree. com.atproto.sync.getRecord proves this path; the entry block is included only for a reader who sees it whole."
+        },
+        "value": {
+          "type": "unknown",
+          "description": "The host reply for this kind, verbatim, without $type: #receipt, #object, #source, #publication, #grant or #law selects its shape."
+        }
+      },
+      "description": "kind is the discriminator selecting the shape of the host reply in value."
+    }
+  }
+}

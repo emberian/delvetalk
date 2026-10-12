@@ -1,33 +1,38 @@
 # Lexicons: `online.fg-goose.gsb.*`
 
-The record types of DelveTalk's read-only repository (`docs/REPO.md`). Each record is a host reply
-carried verbatim with `$type` set to its collection's NSID; the lexicon describes that reply, it does
-not reshape it. Files sit at `online/fg-goose/gsb/<name>.json`, `defs.main` a `record`.
+Public records and per-reader queries for DelveTalk (`docs/REPO.md`), at
+`online/fg-goose/gsb/<name>.json`. Each public record has `$type` and a CID hashing its value.
+Projection values are the host's untagged replies. `getProjection` contains their six definitions and
+one shared envelope; `listProjections` references that envelope. `kind` selects the value's required fields.
 
-| Collection | Record key | Record `cid` | Host op (get / list) | Journal fields (FOUNDATION section 2 table) |
-| --- | --- | --- | --- | --- |
-| `online.fg-goose.gsb.entry` | the rev (a TID) | the record's own | `getRecord` / `listRecords` by height; the only collection in the signed MST | `height`, `hash` as a link: every reader's projection |
-| `online.fg-goose.gsb.receipt` | slug, or the CID | `hash` | `world-resolve` (slug), `world-entry` (CID) / `world-entries` | the entry: `height`, `previous` and `hash` (chain links), `identity`, `turn`, `roots [{object, version}]`, `outcome`; a public refusal is `{class, root, reason?}` |
-| `online.fg-goose.gsb.object` | `<object, / as ~>.<version>` | `stateCid` | `world-object` / `world-objects` then `world-object` | `pin` (content name: `created.pin`, `creates[].pin`, `reprograms[].newPin`), `library.pin`, the state named by `writes[].cid` or a created seed |
-| `online.fg-goose.gsb.source` | the module CID | the module CID | `world-source` / `world-sources` | `sources[].cid` with its text, compile inputs' `{name, cid}` |
-| `online.fg-goose.gsb.publication` | the publication id | the retaining entry's `hash` | (list only) `world-publications` | `publishes [{id, object, page, section, text}]` (id: derived) |
-| `online.fg-goose.gsb.grant` | the grant id | the installing entry's `hash` | (list only) `world-grants` | `grants [{id, grantor, holder, to, object, method, until}]`, `revokes [id]` (ids: derived) |
-| `online.fg-goose.gsb.law` | `<object, / as ~>.<clause>` | none | (list only) `laws` of `world-object` | `created.law`, `amendments [{object, old, new}]`; readings from the package (`law NAME "reading": EXPR`) |
-| `online.fg-goose.gsb.card` | the object id, `/` as `~` | the record's own | `place`: `world-view`, `world-card`, `world-render`, `world-wants` (transport/mirror.py) / `world-objects` | none: a rendering, written to the PDS by `mirror` and answered here alike |
-| `online.fg-goose.gsb.page` | the page's name | the record's own | the library's `pages` (`world-view`) | none: the library's state |
-| `online.fg-goose.gsb.index` | `self` | the record's own | `world-objects`, the library, `world-status` | none |
+| Served record | Key | Source |
+| --- | --- | --- |
+| `online.fg-goose.gsb.entry` | rev (TID) | height and entry hash as a link; the signed MST's one collection |
+| `online.fg-goose.gsb.card` | object id, `/` as `~` | `mirror.card_record`: public exact card, wants, doors |
+| `online.fg-goose.gsb.page` | page name | public library pages |
+| `online.fg-goose.gsb.index` | `self` | public manifest with height and card versions |
+| `online.fg-goose.gsb.answer` | `<did>.<rkey>` | bridge's public answer to a request |
 
-Every key is in record-key syntax. An object id maps to a key by writing each `/` as `~` and appending
-`.` and the version (`garden/bell/1` v2: `garden~bell~1.2`); it reads back by the last dot and `~` to `/`.
-The host creates ids only in `[A-Za-z0-9._:/-]`, so every object has a key. Slugs and CIDs (entries, modules, publication and grant ids) are keys as they are.
+| Projection kind | Key | `of` | Host source |
+| --- | --- | --- | --- |
+| `receipt` | slug or entry CID | entry hash | world-resolve/world-entry/world-entries |
+| `object` | `<id, / as ~>.<version>` | stateCid | world-object, world-objects |
+| `source` | module CID | module CID | world-source/world-sources |
+| `publication` | publication id | retaining entry hash | world-publications |
+| `grant` | grant id | installing entry hash | world-grants |
+| `law` | `<id, / as ~>.<clause>` | absent | world-object.laws |
 
-What the table does not carry: request digests (`request`, `turnRequest`), checkpoint names
-(`blocks[].cid`, `activity.checkpoint`) and `sends[].id` appear only inside a whole receipt, read by the
-identity's own principal; there is no collection for checkpoints or pending sends.
+`getProjection?kind&key&cid?` returns `{kind, key, of?, value, signed?}`. `of` is the CID of the thing
+projected, not of `value`; `cid` filters it. `listProjections?kind&limit&cursor&reverse` returns
+`{projections: [...], cursor?}`. No `$type` is added to a projection value. Queries read under the front's
+authenticated principal (PUBLIC anonymously). A receipt's `signed` points to the signed `entry/<rev>`
+record when present in the current tree; that is the path `sync.getRecord` proves.
 
-CIDs inside records are strings (`format: cid`), as the journal stores them, not DAG-CBOR links
-(tag 42): an entry's canonical bytes, and so its CID, are the journal's own. The exception is
-`online.fg-goose.gsb.entry`, the signed repository's record, which the transport builds: its `entry` is a link.
+Object ids map to keys by `/` → `~`, then a dot and version or clause. The host creates ids only in
+`[A-Za-z0-9._:/-]`. A slug, CID, publication or grant id is a key as it stands. Checkpoints, request
+digests and pending sends appear only inside an entry when the host lets its principal see it whole;
+they have no collections. CIDs inside host replies are strings, as the journal stores them. The signed
+entry record's `entry` is a DAG-CBOR link; the journal block keeps its own bytes without `$type`.
 
 ## Acting and sessions (docs/ATPROTO.md)
 
@@ -35,10 +40,10 @@ CIDs inside records are strings (`format: cid`), as the journal stores them, not
 | --- | --- | --- | --- |
 | `online.fg-goose.gsb.defs` | defs | call, pin, moved, outcome, receipt, version, trace, answerView | n/a |
 | `online.fg-goose.gsb.request` | record, key `tid` | the author's own repository | yes: public acts only; no try mode |
-| `online.fg-goose.gsb.answer` | record, key `<did>.<rkey>` | the world's signed repository, mirrored to the posting account | yes |
+| `online.fg-goose.gsb.answer` | record, key `<did>.<rkey>` | public bridge answer files, served by the front and copied by the mirror; signed paths planned in L3 | yes |
 | `online.fg-goose.gsb.paint` | record, key `<object, / as ~>.<version>` | façade and posting account, outside the signed tree | yes |
 | `online.fg-goose.gsb.act`, `.try`, `.plan` | procedure | `/xrpc/` under inter-service auth (`aud` `did:web:gsb.fg-goose.online#delvetalk`) | the response is the caller's; an act's public projection becomes an `answer`; a try's never does |
-| `online.fg-goose.gsb.getEntry` | query, CAR out | service auth; the entry's principal only | no |
+| `online.fg-goose.gsb.getEntry` | query, CAR out (L5) | service auth; the entry's principal only | no |
 | `online.fg-goose.gsb.openSession`, `.getSession`, `.listSessionRecords` | procedure, queries | service auth; the holder and named readers | no: returned, never written |
 
 Authority: the NSIDs belong to whoever controls `gsb.fg-goose.online`, which the owner does; publication is

@@ -112,6 +112,17 @@ something and choose a new intent. No reply: ask for the receipt by intent (by p
 repost. `delvetalk receipt / of: <slug>` tells a receipt a host issued from one typed by hand. An HTTP error is one envelope,
 `{status, class, message, hint?}`.
 
+A receipt's slug is also a key for the per-reader AT query:
+
+    curl -s 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.getProjection?kind=receipt&key=novas-sumiv'
+    curl -s 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.listProjections?kind=object&limit=10'
+
+Use `Authorization: Bearer $T` for your projection; anonymous reads are PUBLIC. The reply is
+`{kind, key, of?, value, signed?}`: `of` names the thing projected, not the JSON value. A receipt's `signed`
+points to its provable `online.fg-goose.gsb.entry/<rev>` record; `sync.getRecord` on that path also carries
+whole entry bytes when the host lets you see them. Objects, sources, grants, publications and laws are projections.
+`repo.getRecord`/`listRecords` serve public entry/card/page/index/answer records, with the CID of each value.
+
 ## Where the rest is
 
 **By post alone.** Everything above but this list is a reply away. Read without posting: the account that answers

@@ -746,7 +746,7 @@ class Handler(BaseHTTPRequestHandler):
         self.answer(reply, links=links, acts=acts)
 
     def xrpc(self, method, nsid):
-        """The read-only repository (transport/repo.py): no credential reads as the public reader, a bearer as its principal."""
+        """Repository records and projection queries: no credential reads as PUBLIC, a bearer authenticates its principal."""
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else ''
         who = self.principal(credential) if credential else {}

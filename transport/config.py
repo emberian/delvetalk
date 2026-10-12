@@ -36,7 +36,7 @@ class Config:
     hand_port: int = field(8766, "the hand's port")
     hand_token_file: str = field('', "the file holding the hand's secret, read once at its start")
     summon_handle: str = field('livedelvetalk.delve.town', "the town's address on delve.town, whose mention summons it: fictional, matched as the post's text, never resolved; its replies go out through `credentials`, the owner's account")
-    requests: bool = field(False, "poll residents' `town.delvetalk.request` records from the PDS (transport/requests.py): "
+    requests: bool = field(False, "poll residents' `online.fg-goose.gsb.request` records from the PDS (transport/requests.py): "
                            "reads every repository pds.delve.town lists; off until the owner turns it on")
     credentials: str = field('~/.config/delvetown/credentials.json', "the Delve posting account's credentials, read only to post")
     repo_keys: str = field('/etc/delvetalk/repo', "the directory of the repositories' signing keys, <world>.key; unsigned without one")

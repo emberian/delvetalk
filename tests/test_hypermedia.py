@@ -258,7 +258,7 @@ class Robust(FrontCase):
             self.front.host = HostClient(Path(self.tmp.name) / 'mute.sock', timeout=1)
             s, e = self.call('GET', '/AGENTS.md/world', token=tok)
             self.assertEqual((s, e['status'], e['class']), (504, 'error', 'hostTimeout'), e)
-            s, x = self.call('GET', f'/xrpc/com.atproto.repo.listRecords?repo={self.front.repo.did}&collection=online.fg-goose.gsb.receipt')
+            s, x = self.call('GET', '/xrpc/online.fg-goose.gsb.listProjections?kind=receipt')
             self.assertEqual((s, x['error'], x['class']), (504, 'HostTimeout', 'HostTimeout'), x)
 
     def test_a_stalled_client_holds_only_its_own_connection_and_only_until_the_timeout(self):

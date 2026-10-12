@@ -43,7 +43,7 @@
         },
         "cid": {
           "type": "string",
-          "description": "The object's stateCid at that version (a online.fg-goose.gsb.object record's cid).",
+          "description": "The object's stateCid at that version (an object projection's of CID).",
           "format": "cid"
         }
       }
