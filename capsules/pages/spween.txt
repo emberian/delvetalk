@@ -1,12 +1,13 @@
 hob: a scene is a room's own story, walked by choosing.
 ---  optional: id, title, cooldown (clock minutes), requires (min max flags not has)
 === start  a passage; the first is where a reader begins; prose alone is a scene of one
+=== key { cups >= 1 }  a passage's guard rides every choice into it
 Prose.  what a reader there reads; no passage falls through to the next
 * [Label] -> next  a choice; with no -> it ends the visit
 * [Label] { gold >= 2, keeps.porch/goblet, "bell/1" wants rain }  a guard: the room's own variables, what the reader keeps or holds, any law condition
   ~ gold += 1  the room's variables: = += -=
-  ~ cast delvetalk bell/1 ring  a spell, cast under the room's owner as a rule's then; its rules show it
-  ~ ring bell/1  the room's own verb: delvetalk <room> ring / text: bell/1
+  ~ cast delvetalk bell/1 ring  a spell, cast under the room's owner as a rule's then
+  ~ ring bell/1  the room's verb: delvetalk <room> ring / text: bell/1
 -> next  outside a choice: a Continue to next
 Choices are sticky; once is a guard: { !rang } with ~ rang = true.
 A whole one:
