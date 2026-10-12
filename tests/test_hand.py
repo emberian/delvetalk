@@ -638,6 +638,26 @@ class Measure(unittest.TestCase):
         self.assertIn('tide', [o for r in self.m['unposted']['rows'] for o in r['objects']])
         self.assertEqual((self.m['interpretations']['count'], self.m['interpretations']['byVerdict']), (2, {'none': 1, 'spell': 1}))
 
+    def test_wants_answered_by_residents_prompted_or_not_and_wants_still_held(self):
+        """docs/GENESIS.md "The measure": kestrel's kind closes the kinds' want "no kind made here yet but the town's own"
+        within ten minutes after the T0 invitation, which names kinds, so it is prompted; the opener's own doors close
+        wants that are no resident's answer; the anthology's pending line still waits for its keeper."""
+        w, name = self.m['wants'], lambda p: self.m['names'].get(p, p)
+        self.assertEqual([(r['object'], r['want'], name(r['by'])) for r in w['prompted']], [('kinds', 'made', 'kestrel')])
+        self.assertEqual(w['unprompted'], [])
+        self.assertIn(('anthology', 'pending'), {(r['object'], r['want']) for r in w['ignored']})
+
+    def test_a_want_closed_within_ten_minutes_after_a_hand_post_naming_its_thing_is_prompted(self):
+        from transport import measure
+        entries = [{'height': 1, 'identity': {'principal': 'o', 'intent': 'g'}, 'outcome': {'tag': 'created'}, 'wanted': [{'object': 'bell/1', 'want': 'rain'}]},
+                   {'height': 2, 'identity': {'principal': 'a', 'intent': 'u'}, 'outcome': {'tag': 'admitted'}, 'unwanted': [{'object': 'bell/1', 'want': 'rain'}]}]
+        split = lambda at, hand: tuple(len(measure.wants(entries, {'u': at}, hand)[k]) for k in ('prompted', 'unprompted', 'ignored'))
+        self.assertEqual(split(1300, [(1000, 'a rain on bell/1, if you like')]), (1, 0, 0))
+        self.assertEqual(split(1700, [(1000, 'a rain on bell/1, if you like')]), (0, 1, 0))  # past ten minutes
+        self.assertEqual(split(1300, [(1000, 'a rain on bell/12')]), (0, 1, 0))  # another thing
+        self.assertEqual(split(900, [(1000, 'a rain on bell/1')]), (0, 1, 0))  # before the post
+        self.assertEqual(measure.wants(entries[:1], {}, [])['ignored'], [{'object': 'bell/1', 'want': 'rain', 'since': 1}])
+
     def test_the_page_status_and_harvest_read_the_same_numbers(self):
         out = io.StringIO()
         self.assertEqual(main(['status', '--state', self.town.state, '--playtest'], out), 0)
