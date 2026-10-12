@@ -62,7 +62,7 @@ class BlockStore(Reflection):
         self.assertEqual(self.turn("probe", "fire", record(target=label("target")))["status"], "admitted")
         [item] = self.host.send(op="world-interpretations")["pending"]
         settled = self.host.send(op="world-interpretation", id=item["id"],
-                                 reply={"status": "replied", "json": {"method": "bump2", "argument": {"n": 3}}})
+                                 reply={"status": "replied", "raw": "delvetalk probe bump2\nn: 3"})
         self.assertEqual(settled["resumed"][-1]["status"], "admitted", settled)  # after a re-run: probe moved
         self.assertEqual(self.ask("wait-2")["status"], "suspended")
         live = self.world()

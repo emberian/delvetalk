@@ -4378,13 +4378,12 @@ def growVerdict (w : World) (principal self : String) (carries : Data → Bool) 
     else Json.mkObj [("tag", toJson "unclear"), ("reasons", (v.getObjVal? "needs").toOption.getD (Json.arr #[]))]
   return (w, Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr #[grown, item use])])
 
-/-- What a reply says to the suspended object. A JSON reply `{method, argument}` is a proposal
-    (`proposalVerdict`: a method of the object, one of the offered actions, with an argument that
-    conforms to the method's input type and fits the object's response type) or `unclear` with the
-    reason. Any other reply is the model's text: `none`, `ask:`, `grow:` (`growVerdict`), else it is
-    fitted as a spell against the offered forms (`spellVerdict`); prose that is none of these is `none`
-    (silence). An object whose Response cannot
-    carry an answer hears `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
+/-- What a reply says to the suspended object: the model's text (`raw`), hob's four answers. `none`;
+    `ask: <question>`; `grow:` (`growVerdict`); else it is fitted as a spell against the offered forms
+    (`spellVerdict`) and checked as a proposal (`proposalVerdict`: a method of the card, its argument
+    conforming to the method's input, the suspended object's response type carrying it); prose that is
+    none of these is `none` (silence). An object whose Response cannot carry an answer hears `unclear`.
+    A failed call is `unclear {needs: ["model: <reason>"]}`. -/
 def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
   let some i := interpretationOf w s | throw "not an interpretation"
   let act ← (← s.getObjVal? "outcome").getObjVal? "activity"
@@ -4396,9 +4395,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     let reason := ((reply.getObjValAs? String "reason").toOption).getD "failed"
     return (w, unclearVerdict [s!"model: {reason}"])
   | _ => throw "reply must have status replied or failed"
-  let json := (reply.getObjVal? "json").toOption.getD Json.null
-  let raw := (reply.getObjValAs? String "raw").toOption
-  if json.isNull && raw.isNone then throw "a replied interpretation carries json or raw"
+  let some text := (reply.getObjValAs? String "raw").toOption | throw "a replied interpretation carries the model's text, raw"
   let some obj := w.objects[object]? | throw s!"unknown object {object}"
   -- What the answer must fit: the suspended activity's response type; the host's own reading of words a
   -- card heard runs the answer itself (`resumeHeard`), so any answer fits it.
@@ -4409,65 +4406,49 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     pure (w.withCachesOf st2.world, fun (d : Data) => d.conformsUnder suspended.bounds responseType)
   let offers ← decodeData Limits.dataDepth (← i.getObjVal? "offers")
   let forms := (listHeads [] offers).getD []
-  let some method := (json.getObjValAs? String "method").toOption
-    | match raw with
-      | some text =>
-        let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
-        -- hob's four answers (docs/OVERHAUL.md §2; FOUNDATION §10): the spell meant, `grow: NAME
-        -- "reading"` with the spell that uses it, `ask: <question>`, or `none`. hob states no fact and
-        -- shows no card: there is no fifth.
-        let said := text.trimAscii.toString
-        if said.toLower == "none" then return (w, unclearVerdict ["not addressed"])
-        if (said.take 4).toString.toLower == "ask:" then
-          let q := ((said.drop 4).toString.trimAscii.toString)
-          if !q.isEmpty && !(q.any (· == '\n')) then return (w, unclearVerdict [q])
-        if (said.take 5).toString.toLower == "grow:" then
-          return growVerdict w principal object carries said
-        -- Several spells (MENU §2.2): each fitted and checked as one would be, answered in order as
-        -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
-        let segments := Spell.segments text
-        if segments.length > 1 then
-          let offered := forms.filterMap OfferedForm.ofData
-          let mut w := w
-          let mut items : Array Json := #[]
-          for segment in segments.take Limits.spellsPerReply do
-            let item ← match spellVerdict offered segment with
-              | some (.ok (card, action, argument)) =>
-                let target := if w.objects.contains card then card else resolveCard principal card
-                match w.objects[target]? with
-                | none => pure (unclearVerdict [s!"there is no card {card}"])
-                | some targetObj =>
-                  let (w', v) := proposalVerdict w target object targetObj carries action argument card
-                  w := w'
-                  pure v
-              | some (.error needs) => pure (unclearVerdict needs)
-              | none => pure (unclearVerdict ["not a spell"])
-            items := items.push (if (item.getObjValAs? String "tag").toOption == some "proposal" then item
-              else Json.mkObj [("tag", toJson "unclear"), ("reasons", (item.getObjVal? "needs").toOption.getD (Json.arr #[]))])
-          return (w, Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr items)])
-        match spellVerdict (forms.filterMap OfferedForm.ofData) text with
+  let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+  -- hob's four answers (docs/OVERHAUL.md §2; FOUNDATION §10): the spell meant, `grow: NAME
+  -- "reading"` with the spell that uses it, `ask: <question>`, or `none`. hob states no fact and
+  -- shows no card: there is no fifth.
+  let said := text.trimAscii.toString
+  if said.toLower == "none" then return (w, unclearVerdict ["not addressed"])
+  if (said.take 4).toString.toLower == "ask:" then
+    let q := ((said.drop 4).toString.trimAscii.toString)
+    if !q.isEmpty && !(q.any (· == '\n')) then return (w, unclearVerdict [q])
+  if (said.take 5).toString.toLower == "grow:" then
+    return growVerdict w principal object carries said
+  -- Several spells (MENU §2.2): each fitted and checked as one would be, answered in order as
+  -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
+  let segments := Spell.segments text
+  if segments.length > 1 then
+    let offered := forms.filterMap OfferedForm.ofData
+    let mut w := w
+    let mut items : Array Json := #[]
+    for segment in segments.take Limits.spellsPerReply do
+      let item ← match spellVerdict offered segment with
         | some (.ok (card, action, argument)) =>
-          -- The form names its card: the proposal is checked against that object, which may be
-          -- another than the asking one (a directory offers its doors' forms).
           let target := if w.objects.contains card then card else resolveCard principal card
-          let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
-          return proposalVerdict w target object targetObj carries action argument card
-        | some (.error needs) => return (w, unclearVerdict needs)
-        -- Prose with no answer's prefix and no spell says nothing to the card: silence.
-        | none => return (w, unclearVerdict ["not addressed"])
-      | none => return (w, unclearVerdict ["the reply names no method"])
-  let actions := forms.filterMap fun form =>
-    match form with
-    | .record f => (f.lookup "action").bind labelOf
-    | _ => none
-  if !actions.isEmpty && !actions.contains method then
-    return (w, unclearVerdict [s!"{method} is not one of the offered actions"])
-  let wanted := match (json.getObjVal? "argument").toOption.getD (Json.mkObj []) with
-    | .null => Json.mkObj []
-    | other => other
-  match Package.jsonData Limits.plainDepth wanted with
-  | .error e => return (w, unclearVerdict [s!"the argument is not plain data: {e}"])
-  | .ok (argument, _) => return proposalVerdict w object object obj carries method argument
+          match w.objects[target]? with
+          | none => pure (unclearVerdict [s!"there is no card {card}"])
+          | some targetObj =>
+            let (w', v) := proposalVerdict w target object targetObj carries action argument card
+            w := w'
+            pure v
+        | some (.error needs) => pure (unclearVerdict needs)
+        | none => pure (unclearVerdict ["not a spell"])
+      items := items.push (if (item.getObjValAs? String "tag").toOption == some "proposal" then item
+        else Json.mkObj [("tag", toJson "unclear"), ("reasons", (item.getObjVal? "needs").toOption.getD (Json.arr #[]))])
+    return (w, Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr items)])
+  match spellVerdict (forms.filterMap OfferedForm.ofData) text with
+  | some (.ok (card, action, argument)) =>
+    -- The form names its card: the proposal is checked against that object, which may be
+    -- another than the asking one (a directory offers its doors' forms).
+    let target := if w.objects.contains card then card else resolveCard principal card
+    let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
+    return proposalVerdict w target object targetObj carries action argument card
+  | some (.error needs) => return (w, unclearVerdict needs)
+  -- Prose with no answer's prefix and no spell says nothing to the card: silence.
+  | none => return (w, unclearVerdict ["not addressed"])
 
 /-- The model failures the host retries rather than settles: the network or a rate limit. -/
 def transientReasons : List String := ["transport", "rate"]

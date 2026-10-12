@@ -54,7 +54,7 @@ def border(state: State, input: {bed: {colours: Lists.List<Colour>}}, context: A
 def named(state: State, input: {name: String}, context: Abi.Context) -> Activity<Nat>:
   put(input.name)
 def offered() -> Lists.List<Form.Form>:
-  Lists.List::<Form.Form>.cons({head: {card: "garden", action: "plant", fields: Lists.List::<Form.Field>.nil()}, tail: Lists.List::<Form.Form>.nil()})
+  Lists.List::<Form.Form>.cons({head: {card: "garden", action: "plant", fields: Lists.List::<Form.Field>.cons({head: {name: "colour", kind: Form.Kind.text({min: 1n, max: 20n})}, tail: Lists.List::<Form.Field>.cons({head: {name: "seed", kind: Form.Kind.text({min: 1n, max: 80n})}, tail: Lists.List::<Form.Field>.nil()})})}, tail: Lists.List::<Form.Form>.nil()})
 def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activity<Nat>:
   match world.interpret::<Planting>({utterance: input.utterance, offers: offered(), policy: {world: "", object: "policy"}, model: ""}):
     case proposal(p): put(textConcat(colourText(p.argument.colour), textConcat(":", p.argument.seed)))
@@ -96,7 +96,7 @@ class SumWords(Reflection):
         self.assertEqual(r["status"], "suspended", r)
         [item] = self.host.send(op="world-interpretations")["pending"]
         return self.host.send(op="world-interpretation", id=item["id"],
-                              reply={"status": "replied", "model": "m", "json": {"method": "plant", "argument": argument}})
+                              reply={"status": "replied", "model": "m", "raw": "\n".join(["delvetalk garden plant"] + [f"{k}: {v}" for k, v in argument.items()])})
 
     # World.obend's proposal names its object (`proposal {object, method, argument}`, HOST-HANDOFF 5.64).
     def test_a_proposals_word_is_the_case_and_one_naming_none_is_unclear_naming_them(self):

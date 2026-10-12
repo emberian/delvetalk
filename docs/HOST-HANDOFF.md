@@ -175,7 +175,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name. Th
 
 - `world.interpret::<R>({utterance, offers, policy, model})` suspends like `await` with `interpretation {id, object, policy, utterance, offers, model?}` (id = hash of principal, intent, ordinal). Deadline `interpretationPatience`, resuming `timedOut`.
 - `world-interpretations` lists pending items with the Policy's state as `{model, system, examples}`; `policy.system` is the Policy's pure `prompt(state, offers, utterance)` (`policyPrompt`) else its `system` field; `policy.model` is the item's `model` when non-empty (at most 128 bytes), else the Policy's.
-- `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts, as `Interpreted<R>`: `proposal {object, method, argument, spell}` (the spell fits an offered form, or a JSON `{method, argument}` for the asking object; the method is one its object offers and the argument conforms; `interpretVerdict`, `spellVerdict`, `proposalVerdict`), `replied {text}` (prose, or reply `json` not `{method, argument}` with `raw`), `unclear {needs}` (a misfit or missing fields; a failed reply gives `needs: ["model: <reason>"]`). `denied {}` when the Policy is not readable by the turn's principal (TurnLoop, `interpret`); Garden and the Directory refuse it with clause `policy`.
+- `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts, as `Interpreted<R>`: `proposal {object, method, argument, spell}` (the reply's text, `raw`, is a spell fitting an offered form; the method is one its object offers and the argument conforms; `interpretVerdict`, `spellVerdict`, `proposalVerdict`; a reply without `raw` is a request error, 5.187), `unclear {needs}` (a misfit or missing fields; a failed reply gives `needs: ["model: <reason>"]`). `denied {}` when the Policy is not readable by the turn's principal (TurnLoop, `interpret`); Garden and the Directory refuse it with clause `policy`.
 - Capacity: `mayWait … (interpreting := true)` counts interpretations apart (`waitFull`); `interpretGate` is the hour's and the day's quotas. Test: `test_interpret_text`, `test_policy`.
 - The host starts a reading itself for words a card heard (5.163, `heardTurn`): a suspension with no checkpoint (`hostResumed`), resumed by `resumeHeard`, which runs hob's answer as the speaker's turn on the card. `world-interpretations` gives a Policy's `prompt(state, asked)` the card's `wants` (each with its filled `asks`) and the library's `pages` beside `{utterance, offers, card, misfit}` (`misfit` the host's own, from `heardTurn`; the `interpret` arm takes no `held` or `misfit`, 5.168).
 
@@ -316,8 +316,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 54. **Spells, the rest (host9; WHOLENESS §2, second root decisions 2).** Interpretation: a model's text
    to an activity of the message dialect is fitted against the offered forms (`spellVerdict`): a spell
-   naming an offered form that fits is that form's `proposal {method, argument}` (checked as a JSON
-   proposal is, `proposalVerdict`), a misfit `unclear {needs: [reason]}`, missing fields `unclear
+   naming an offered form that fits is that form's `proposal {method, argument}` (checked by
+   `proposalVerdict`), a misfit `unclear {needs: [reason]}`, missing fields `unclear
    {needs: [names]}`, a spell naming no offered form `unclear`; a text with no spell line whose first
    field line names an offered action or field is that form's spell; prose stays `replied {text}`. Lenses: a card declares its lenses as data, `def lenses() ->
    Lists.List<Form.Field>` (name and kind), and puts through a method `set(state, input: {field: String, value:
@@ -429,7 +429,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    against the object that card names (an id, else `resolveCard` for the asking principal): the
    method must be one it offers (5.62) and the argument fit its input. `Interpreted.proposal` carries
    `object: String`, and every verdict names it (host11 deleted the unnamed path and the
-   interpretation's `named` flag: no journal from before host10 is opened). A JSON proposal `{method, argument}` is for the asking object. Test:
+   interpretation's `named` flag: no journal from before host10 is opened). Test:
    `tests/test_interpret_object.py` (a hub whose World copy carries the new line proposes `g plant`
    and calls it; a form naming a method its card does not offer is `unclear`). World.obend's
    `Interpreted.proposal {object, method, argument}` and the Directory's `world.call::<Data>(...)` use it.
@@ -2233,8 +2233,14 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (`ruleLine`/`wantLine`: `name`, `when`, the spell `then`/`asks` last; `unrule`/`unwant` `name`). `proposalVerdict`
    accepts such a proposal without a compiled method, its fields checked by `placementsOf`, and `runHeard` stages it
    as the spell does; the law judges it at the commit. `grow:` stays hob's own answer (`growVerdict`). Tests:
-   `test_heard.Heard.test_hob_is_offered_the_hosts_placing_spells_…`; the offered tables of `test_heard` and
+   `test_heard.Heard.test_hob_is_offered_the_hosts_placing_spells_…`; the offered tables of `test_heard`, `test_policy` and
    `test_hub.RootReadsDoorForms` name them (`PLACING`).
+187. **The model's answer is its text (host31; the simplify hand-back (3), fungus H3).** `interpretVerdict` reads a
+   reply's `raw` alone: the JSON `{method, argument}` branch is gone (the transport's `model` has long sent text
+   only), so a reply without `raw` is a request error, and every proposal is a spell fitted to an offered form. Tests
+   reply in text: `test_reflection.Interpret` (its probe's offered form now names `n`; a JSON reply is an error),
+   `test_sum_words` (its garden's offered `plant` names text fields, so the words are read as cases by
+   `proposalVerdict`), `test_block_store`, `test_snapshot`; `test_policy`'s unused `planting` is gone.
 
 ## 6. Gotchas
 
@@ -2285,8 +2291,7 @@ input as a test first, merging foundation before each commit:
    on the workhorse only: a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`.
    Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
 4. The coordinator's simplify hand-back, still open: (1) an offer's public projection answered by the host (the
-   transport stops `world-view` per object); (3) delete the JSON `{method, argument}` model-reply branch of
-   `interpretVerdict` and `model.extract`; (4) a refusal class for "the opener speaks on the root socket"; (6) the
+   transport stops `world-view` per object); (4) a refusal class for "the opener speaks on the root socket"; (6) the
    REPL's retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
    mention cap of 4 as host answers.
 7. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);
@@ -2343,8 +2348,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
    old path: T29 the REPL's two prose refusals (`unknown library pin`, `not issued by this process`)
    as classes and `http.py` matching the class; T32 `world-status.suspendedBytes {median}`; T33/H17 `world-inspect`
    answering each form's usage text (`spellTemplate`), which Card and the front copy; H2's remainder (`respond` with
-   one payload per method: the `refused` and `inspected` ladders); H3 the model's JSON `{method, argument}` reply
-   branch in `interpretVerdict` and `model.extract`; H4 `reprogram {mode: "extend"}`; H5/H6 dispatch on `(method,
+   one payload per method: the `refused` and `inspected` ladders); H4 `reprogram {mode: "extend"}`; H5/H6 dispatch on `(method,
    argument)` and the `plan` wire names (with the kernel); H7/H8 root acts and moderation powers as one table,
    settings through `settingsChange`; H10 `sealLibrary` reading `Ops.arrivals`; H11 `serve.c` saying root and the
    frame bound checked once; H12 `Store.lean`'s `Limits` referencing `Bounds` (`maxTurnTicks` = `ticksMax`,

@@ -196,9 +196,6 @@ class PolicyObject(Chain):
         resumed.setdefault("offers", [{"principal": o["to"], "text": o["text"]} for o in resumed["receipt"].get("offers", [])])
         return resumed
 
-    def planting(self, colour="silver", seed="a fern that remembers"):
-        return {"status": "replied", "model": "m", "json": {"method": "plant", "argument": {"colour": colour, "seed": seed}}}
-
     def things(self):
         return [field(r, "object")["value"] for r in rows(field(self.state("garden"), "things"))]
 
@@ -217,7 +214,7 @@ class PolicyObject(Chain):
         reply = self.say("Could we plant a silver fern that remembers?", obj="garden")
         self.assertEqual(reply["status"], "suspended", reply)
         [item] = self.host.send(op="world-interpretations")["pending"]
-        self.assertEqual((item["object"], [o["action"] for o in item["offers"]]), ("garden", ["plant", "dig", "lines"]), item)
+        self.assertEqual((item["object"], [o["action"] for o in item["offers"]]), ("garden", ["plant", "dig", "lines", "rule", "want", "unrule", "unwant"]), item)
         planted = self.interpret(self.raw(SPELL))
         self.assertEqual((planted["receipt"]["outcome"]["tag"], planted["receipt"]["identity"]["principal"]), ("admitted", "glm"), planted)
         self.assertEqual(self.things(), ["garden/bell/1"])
@@ -235,10 +232,11 @@ class PolicyObject(Chain):
         reply = self.say("Could we plant a silver fern that remembers?")
         self.assertEqual(reply["status"], "suspended", reply)
         [item] = self.host.send(op="world-interpretations")["pending"]
-        # The commonplace's own table, then its doors' (each door's card and the first three under it).
+        # The commonplace's own table and the host's placing spells, then its doors' (each door's card and the first three under it).
         self.assertEqual([(o["card"], o["action"]) for o in item["offers"]],
-                         [("commonplace", "since"), ("commonplace", "write"), ("commonplace", "lines"),
-                          ("garden", "plant"), ("garden", "dig"), ("garden", "lines")], item["offers"])
+                         [("commonplace", "since"), ("commonplace", "write"), ("commonplace", "lines")] +
+                         [("commonplace", a) for a in ("rule", "want", "unrule", "unwant")] +
+                         [("garden", "plant"), ("garden", "dig"), ("garden", "lines")], item["offers"])
         planted = self.interpret(self.raw(SPELL))
         self.assertEqual(planted["receipt"]["outcome"]["tag"], "admitted", planted)
         self.assertTrue(planted["offers"][0]["text"].startswith("Planted, glm: a silver bell, “a fern that remembers”, at garden/bell/1; 1 planted.\n"), planted["offers"])
