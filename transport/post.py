@@ -59,14 +59,6 @@ def reserve(host, intent, source):
     return got
 
 
-def slot_record(text):
-    """`principal:intent` -> {principal, intent}, split at the last colon (DIDs contain colons)."""
-    principal, sep, intent = (text or '').rpartition(':')
-    if not (principal and sep and intent):
-        raise Failure('bad_slot', 'expected principal:intent')
-    return {'principal': principal, 'intent': intent}
-
-
 def draft_object(d):
     """The object a draft addresses: a reply's `object`, a publication's `publication.object`."""
     return d.get('object') or (d.get('publication') or {}).get('object')
@@ -173,7 +165,7 @@ def record_sent(st, host):
     for path, d in st.drafts():
         obj = draft_object(d)
         if d.get('posted') and d.get('sent') and obj and (d.get('recorded') or {}).get('status') in (None, 'error'):
-            got = record_posted(host, d['sent'], obj, slot_record(d['slot']) if d.get('slot') else None, wiki_target(d['text']), d.get('intent'))
+            got = record_posted(host, d['sent'], obj, d.get('slot'), wiki_target(d['text']), d.get('intent'))
             st.write(path, dict(d, recorded=got))
             done += [path.name] if got.get('status') != 'error' else []
     return done
@@ -201,7 +193,7 @@ def post_draft(path, st, host, text=None, reader=None, client=None, intent=None,
     d = dict(d, text=body, posted=True, sent=result, intent=intent, **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
     st.write(path, d)  # sent, whatever the host says next: record_sent retries the registration alone
     if object:
-        result = dict(result, recorded=record_posted(host, result, object, slot_record(d['slot']) if d.get('slot') else None, wiki_target(body), intent))
+        result = dict(result, recorded=record_posted(host, result, object, d.get('slot'), wiki_target(body), intent))
         st.write(path, dict(d, recorded=result['recorded']))
     return result
 
@@ -211,13 +203,13 @@ def command(st, a, out, client=None, zulip=None):
     world lives; a text to delve.town is a dry run without the authorizing flag; to a Zulip world, a message in `--topic`."""
     try:
         d = json.loads(Path(a.draft).read_text()) if a.draft else {}
-        reply_to, obj, slot = a.reply_to or d.get('replyTo'), a.object or draft_object(d), a.slot or d.get('slot')
+        reply_to, obj, slot = a.reply_to or d.get('replyTo'), a.object or draft_object(d), json.loads(a.slot) if a.slot else d.get('slot')
         if bool(a.text_file) == bool(a.draft):
             raise Failure('choose_one_of', '--text-file | --draft')
         text = d['text'] if a.draft else Path(a.text_file).read_text()
         for h in a.mention:
             text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
-        slot, host, row = slot_record(slot) if slot else None, st.host(), st.bridge()
+        host, row = st.host(), st.bridge()
         zulip_world = row['transport'] == 'zulip'  # the owner's own Zulip: no flag and no quota
         try:
             if d.get('posted'):

@@ -429,10 +429,11 @@ class Posting(unittest.TestCase):
     def test_a_draft_posts_and_records_in_one_command_and_a_posted_draft_is_refused(self):
         with tempfile.TemporaryDirectory() as d:
             draft = Path(d) / 'd.json'
-            draft.write_text(json.dumps({'text': 'Planted.', 'replyTo': None, 'object': 'garden-1', 'slot': f'{DID}:ask-1', 'posted': False}))
+            slot = {'principal': DID, 'intent': 'task:1'}  # the host's slot, kept whole: an intent may hold a colon
+            draft.write_text(json.dumps({'text': 'Planted.', 'replyTo': None, 'object': 'garden-1', 'slot': slot, 'posted': False}))
             code, req = self.dry(d, ['--draft', str(draft)], delve.Client(Script()))
             self.assertEqual(code, 2)
-            self.assertEqual(req['record'], {'op': 'world-posted', 'object': 'garden-1', 'slot': {'principal': DID, 'intent': 'ask-1'}})
+            self.assertEqual(req['record'], {'op': 'world-posted', 'object': 'garden-1', 'slot': slot})
             self.assertEqual(req['request']['body']['record']['text'], 'Planted.')
             draft.write_text(json.dumps({'text': 'x', 'posted': True}))
             with mock.patch('sys.stderr', io.StringIO()):

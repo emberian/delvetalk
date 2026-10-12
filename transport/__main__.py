@@ -71,7 +71,7 @@ def parser():
     p.add_argument('--reply-to', metavar='AT_URI', help='thread under this post (its cid is read with getRecord)')
     p.add_argument('--intent', required=True, help='posted at most once: a retry of the intent is the same post')
     p.add_argument('--object', help='the object the post addresses: world-posted records it and settles its reservation')
-    p.add_argument('--slot', metavar='PRINCIPAL:INTENT', help='the slot the post settles')
+    p.add_argument('--slot', metavar='JSON', help='the slot the post settles, as the host names it: {"principal": ..., "intent": ...}')
     p.add_argument('--mention', action='append', default=[], metavar='HANDLE', help='deliberately ping this handle (appended to the text)')
     p.add_argument('--topic', help="a Zulip world: the topic of its channel to post in")
     p.add_argument('--i-am-ember-and-authorize-posting', dest='authorized', action='store_true', default=False)

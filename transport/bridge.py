@@ -25,13 +25,6 @@ def draft_exists(outbox, uri):
     return any(outbox.glob(f'*-{uri_hash(uri)}.json'))
 
 
-def slot_arg(slot):
-    """A route slot as post.py's --slot argument (principal:intent), or None."""
-    if isinstance(slot, dict) and slot.get('principal') and slot.get('intent'):
-        return f"{slot['principal']}:{slot['intent']}"
-    return slot if isinstance(slot, str) and ':' in slot else None
-
-
 def reachable(origin):
     """An origin someone else can open: not loopback (`localhost`, 127/8, ::1), whose links reach nobody but this machine."""
     host = urllib.parse.urlsplit(origin or '').hostname or ''
@@ -373,14 +366,14 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             text = ''.join(spell_line(t, origin, handles) for t in turns)
             st.write(st.outbox / f"{turns[-1]['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
-                'object': turns[0].get('object') or obj, 'slot': slot_arg(slot),
+                'object': turns[0].get('object') or obj, 'slot': slot,
                 'receipt': turns[-1]['receipt'], 'posted': False, 'text': text})
             done.append(obs['uri'])
             continue
         if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
             st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
-                'object': obj, 'slot': slot_arg(slot), 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
+                'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
             done.append(obs['uri'])
             continue
         if reply.get('message') == ON_ROOT:  # the opener's own post: her authority is the root socket, which the bridge never holds
@@ -391,16 +384,16 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             continue
         if reply.get('status') == 'suspended' or reply['receipt'].get('outcome', {}).get('tag') == 'suspended':
             # Nothing was committed and nothing is offered yet: no draft until the interpretation settles.
-            st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot),
+            st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot,
                                                      'height': reply['receipt']['height'], 'suspended': True})
             continue
         obj = reply.get('object') or obj  # the card the host ran the turn on: a spell's card as it resolved it
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
-            'object': obj, 'slot': slot_arg(slot),
+            'object': obj, 'slot': slot,
             'receipt': reply['receipt'], 'posted': False, 'text': draft_public(host, reply, origin, obj, handles)})  # text '': journaled, hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
-            st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot), 'height': reply['receipt']['height']})
+            st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot, 'height': reply['receipt']['height']})
         done.append(obs['uri'])
     for _ in range(rounds):
         if not host.send({'op': 'world-pending'}).get('count'):
