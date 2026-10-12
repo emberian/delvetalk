@@ -25,21 +25,6 @@ sum Derived<T>:
   derived: {version: Nat, value: T}
   denied: {}
   refused: {clause: String}
-sum Subscribed:
-  subscribed: {}
-  denied: {}
-  refused: {clause: String}
-# What a `changed` delivery carries to the receiver a subscription names (`subscribe {object,
-# field, method}`, WHOLENESS §3): the object and field written, its version after, and the
-# rows or items added and removed (a scalar's new and old value as one-item lists). The
-# receiver types `inserted` and `retracted` by its own input (a shared row type lives in
-# Rows.obend); this is the shape with them as Data.
-record Changed:
-  object: Plans.Reference
-  field: String
-  version: Nat
-  inserted: Data
-  retracted: Data
 sum Written:
   written: {}
   refused: {clause: String}
@@ -75,8 +60,6 @@ sum Interpreted<R>:
   proposal: {object: String, method: String, argument: R, spell: String}
   proposals: {items: Lists.List<Proposed<R>>}
   unclear: {needs: Document.Names}
-  replied: {text: String}
-  said: {text: String}
   timedOut: {}
   denied: {}
   refused: {clause: String}
@@ -131,6 +114,27 @@ record Change:
 sum Since:
   changed: {items: Lists.List<Change>, more: Bool}
   denied: {}
+# A rule, a want or a grown verb placed on a thing or taken off it (OVERHAUL §2): judged by the
+# thing's law as a request of kind `rule`, the verb naming which (`rule`, `want`, `grow`).
+sum Placed:
+  placed: {}
+  refused: {clause: String, reading: String}
+# One clock day of the journal folded into lines (`chronicle {day}`): made, grown, fired, wanted,
+# refusals by class and who; derived, nothing kept to say it.
+sum Chronicled:
+  chronicled: {day: Nat, lines: Document.Names}
+  refused: {clause: String}
+# What wants a hand across the world (`wanting {after, limit}`): each want that holds now, the thing's
+# own and the ones it follows, oldest first, with the height since which it has held; derived, no root.
+record Want:
+  object: String
+  name: String
+  reading: String
+  asks: String
+  since: Nat
+sum Wanting:
+  wanting: {rows: Lists.List<Want>, more: Bool}
+  refused: {clause: String}
 sum Carded:
   carded: {document: Document.Document}
   denied: {}
@@ -152,8 +156,6 @@ protocol world:
   make({package: String, seed: Data, law: String, requireAbsent: Plans.Reference, madeFrom: Plans.MadeFrom}) -> Created
   await({slot: Plans.Slot, patience: Nat}) -> Awaited
   awaitUntil({slot: Plans.Slot, until: Nat}) -> Awaited
-  awaitPost({post: String, patience: Nat}) -> Awaited
-  awaitPostUntil({post: String, until: Nat}) -> Awaited
   interpret<R>({utterance: String, offers: Forms, policy: Plans.Reference, model: String, held: String, misfit: String}) -> Interpreted<R>
   offer({to: String, document: Document.Document}) -> Offered
   publish({page: String, section: String, body: String}) -> Published
@@ -169,6 +171,13 @@ protocol world:
   objects({prefix: String, after: String}) -> Listed
   changed({since: Nat, prefix: String, after: String}) -> Since
   card({object: Plans.Reference}) -> Carded
-  subscribe({object: Plans.Reference, field: String, method: String}) -> Subscribed
-  unsubscribe({object: Plans.Reference, field: String, method: String}) -> Subscribed
+  rule({object: Plans.Reference, name: String, when: String, then: String}) -> Placed
+  unrule({object: Plans.Reference, name: String}) -> Placed
+  want({object: Plans.Reference, name: String, when: String, asks: String}) -> Placed
+  unwant({object: Plans.Reference, name: String}) -> Placed
+  grow({object: Plans.Reference, name: String, reading: String, takes: String, does: String}) -> Placed
+  ungrow({object: Plans.Reference, name: String}) -> Placed
+  act<R>({object: Plans.Reference, verb: String, text: String}) -> Returned<R>
+  chronicle({day: Nat}) -> Chronicled
+  wanting({after: Nat, limit: Nat}) -> Wanting
   principal({handle: String}) -> Named

@@ -27,10 +27,6 @@ form door:
   to: text 1..128
 form undoor:
   label: text 1..32
-form example:
-  label: text 1..32
-  spell: text 1..280
-  comes: text 0..200
 def parties(state: State) -> Lists.List<String>:
   Lists.take(Lists.map(Text.words(Super.field(state, "parties")), fn(w: String) -> String: Text.trimEndOf(w, ",")), 15n)
 def party(state: State, handle: String) -> Bool:
@@ -92,14 +88,12 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
   Super.door(state, {label: input.label, to: input.to}, context)
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
-def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity<Card.Replied>:
-  Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 def methods() -> Lists.List<String>:
   Text.words("~made")
 # A party is offered what it may still do; the owner its doors.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   let mine = if party(state, context.handle) == false || withdrawn(state) || atRest(state, context) then Text.words("") else if signed(state, context.handle) then Text.words("withdraw") else Text.words("countersign withdraw")
-  Lists.concat(mine, if context.principal == state.owner then Text.words("door undoor example") else Text.words(""))
+  Lists.concat(mine, if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
 def partyLine(state: State, handle: String) -> String:
   if signed(state, handle) then "{handle} (signed)" else handle
 def standing(state: State, context: Abi.Context, id: String) -> String:

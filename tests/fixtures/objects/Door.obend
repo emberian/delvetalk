@@ -15,18 +15,16 @@ record Knock:
   at: Nat
   who: String
   handle: String
-# watching: the object whose `rung` opens this door (a bell), nobody until `watch`.
 record State:
   open: Bool
   openedBy: String
   openedHandle: String
   knocks: Relations.Relation<Knock>
-  watching: Plans.Reference
 def initial() -> State:
-  {open: false, openedBy: "", openedHandle: "", knocks: Relations.empty(), watching: Plans.nobody()}
+  {open: false, openedBy: "", openedHandle: "", knocks: Relations.empty()}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "knocks", key: Text.words("at who"), limit: 64n})
-# Who opened it: the knocker, or the object whose change opened it (its id, no handle).
+# Who opened it: the knocker.
 def unlatched(who: String, handle: String) -> Edits:
   extend(keep(), {open: Plans.Edit.set({value: true}), openedBy: Plans.Edit.set({value: who}), openedHandle: Plans.Edit.set({value: handle})})
 def latch(context: Abi.Context, state: State) -> Edits:
@@ -35,27 +33,7 @@ def latch(context: Abi.Context, state: State) -> Edits:
 def knock(state: State, context: Abi.Context) -> Activity<Bool>:
   let written(_) = world.write(extend(latch(context, state), {knocks: Plans.Entries.insert({row: {at: context.height, who: context.principal, handle: context.handle}})}))
   true
-# Watch an object's `rung` (a bell's): the host delivers each write of it to `changed`.
-def watch(state: State, input: {object: String}, context: Abi.Context) -> Activity<String>:
-  let object = {world: context.world, object: input.object}
-  match world.subscribe({object: object, field: "rung", method: "changed"}):
-    case subscribed(_): watched(object)
-    case denied(_): "denied"
-    case refused(r): r.clause
-def watched(object: Plans.Reference) -> Activity<String>:
-  let written(_) = write {watching: set object}
-  "watching"
-# A change of the watched object's `rung` to true opens the door; the change is delivered by
-# the host (the watched object is the caller), so nobody else's turn opens it this way.
-def changed(state: State, input: {object: Plans.Reference, field: String, version: Nat, inserted: Lists.List<Bool>, retracted: Lists.List<Bool>}, context: Abi.Context) -> Activity<Bool>:
-  if context.caller == state.watching.object && Plans.same(input.object, state.watching) && input.field == "rung" && Lists.any(input.inserted, fn(rung: Bool) -> Bool: rung) && state.open == false then opened(context.caller) else state.open
-def opened(by: String) -> Activity<Bool>:
-  let written(_) = world.write(unlatched(by, ""))
-  true
 form knock:
-# An action without a form: watching names an object.
-def methods() -> Lists.List<String>:
-  Text.words("watch")
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
 def knockLine(knock: Knock) -> Document.Document:

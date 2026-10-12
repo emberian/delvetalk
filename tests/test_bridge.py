@@ -105,13 +105,13 @@ class BridgeCase(unittest.TestCase):
 
 
 class DirectReplies(BridgeCase):
-    """A reply in a card's own thread is addressed to it: the commonplace answers prose naming
-    nothing with its menu once an hour per speaker, never with a model call, and then is quiet."""
+    """A reply in a card's own thread is addressed to it: the commonplace hears prose naming
+    nothing (and no policy to read it) as a turn that offers nothing, so no reply is drafted."""
 
-    def test_replies_in_the_commonplaces_thread_get_one_card_an_hour(self):
+    def test_prose_naming_nothing_in_the_commonplaces_thread_is_heard_and_drafts_no_reply(self):
         cites = [door(*d) for d in DOORS] + [door(STUDIO[0], '', (), STUDIO[1])]
         made = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-commonplace', 'object': 'commonplace',
-                               'modules': closure('Menu', 'Mentions', 'Policies', 'Record'), 'entry': 'initial', 'law': genesis.RECORD_LAW,
+                               'modules': closure('Menu', 'Policies', 'Record'), 'entry': 'initial', 'law': genesis.RECORD_LAW,
                                'seed': record(owner=label('ember'), keeper=label('ember'), head=label('THE COMMONPLACE'), cites=listing(cites))})
         self.assertEqual(made['status'], 'created', made)
         body = self.host.send({'op': 'world-reprogram', 'principal': 'ember', 'identity': 'body-commonplace', 'object': 'commonplace', 'version': 0,
@@ -127,9 +127,8 @@ class DirectReplies(BridgeCase):
         self.observe(posts)
         self.run_bridge()
         texts = [d['text'] for d in self.drafts()]
-        self.assertEqual(len(texts), 3, texts)
-        self.assertIn('DELVETALK · THE COMMONPLACE', texts[0])
-        self.assertEqual([t for t in texts[1:] if 'DELVETALK · THE COMMONPLACE' in t], [])
+        self.assertEqual(texts, ['', '', ''])  # three journaled turns, none with words to post
+        self.assertEqual([d['object'] for d in self.drafts()], ['commonplace'] * 3)
 
 
 class OpenerPosts(BridgeCase):
@@ -233,7 +232,7 @@ class Bridging(BridgeCase):
 
 
 class HostParses(BridgeCase):
-    """Whether a post is a spell, and to which card, is the host's parser's answer (`spell-parse`), never Python's."""
+    """Whether a post is a spell, and to which card, is the host's answer (`world-reach` reads it with its parser), never Python's."""
     def test_a_standalone_question_mark_spell_reaches_the_card_and_is_answered_with_its_usage(self):
         self.make('garden-1')
         post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
@@ -257,14 +256,16 @@ class HostParses(BridgeCase):
 
 class Stub:
     """A host that answers from canned data and records everything it is sent."""
-    def __init__(self, addressee=None):
-        self.ops, self.addressee, self.suspending, self.offers, self.silent = [], addressee or {}, set(), {}, set()
+    def __init__(self, reaches=None):
+        self.ops, self.reaches, self.suspending, self.offers, self.silent = [], reaches or {}, set(), {}, set()
 
     def send(self, req):
         self.ops.append(req)
         op = req['op']
-        if op == 'world-addressee':
-            return self.addressee.get(req['parent'], {'status': 'unknown'})
+        if op == 'world-reach':  # the host's answer, by the post (tests/test_reach.py checks the host's own): else a spell
+            lines = [l.split() for l in req['text'].split('\n') if l.startswith('delvetalk ') and len(l.split()) > 2]  # line's card, a summons the commonplace
+            return self.reaches.get(req['uri']) or ({'status': 'reached', 'object': lines[-1][1], 'how': 'spell'} if lines else
+                {'status': 'reached', 'object': 'commonplace', 'how': 'mention'} if req['kind'] == 'summon' else {'status': 'unreached'})
         if op == 'world-offers':
             return {'status': 'offers', 'offers': self.offers.get(req['principal'], []), 'more': False}
         if op == 'world-turn' and req['object'] in self.suspending:
@@ -272,12 +273,6 @@ class Stub:
         if op == 'world-turn':
             return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}},
                     **({} if req['object'] in self.silent else {'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]})}
-        if op == 'spell-parse':  # the host's parser, reduced to these tests' spells: the last `delvetalk <card> <action>` line
-            lines = [l.split() for l in req['text'].split('\n') if l.startswith('delvetalk ') and len(l.split()) > 2]
-            bare = [{'name': m[1], 'value': m[2]} for m in re.finditer(r'^(\w+): (.+)$', req['text'], re.M)]
-            return {'status': 'parsed', 'bare': bare, **({'spell': {'card': lines[-1][1], 'action': lines[-1][2], 'fields': []}} if lines else {'notASpell': {}})}
-        if op == 'world-view' and req['object'] == 'commonplace':
-            return {'status': 'viewed', 'state': {'cites': [{'label': 'anthology', 'to': {'object': 'anthology'}}]}}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':
@@ -285,78 +280,43 @@ class Stub:
         return {'status': 'ok'}
 
 
-class ReplyScoped(BridgeCase):
-    """Where a post reaches (FLEX.md): a direct reply to a recorded post, a summons, a spell line, or field lines or a
-    door's name in a thread the world opened; never other prose deep in a thread, nor a door named outside the world's threads."""
-    def test_each_post_reaches_its_card_by_how_it_was_addressed_and_says_how(self):
-        card, other = f'at://{DID}/town.delve.feed.post/card', f'at://{DID}/town.delve.feed.post/agent1'
-        deep = lambda n, text: (lambda p: (p['record']['reply'].update(root={'uri': card, 'cid': 'x'}), p)[1])(mk(n, text, parent=other))
-        stub = Stub({card: {'status': 'addressee', 'object': 'garden-1'}})
-        self.observe([mk(1, '@livedelvetalk.delve.town I planted a fern, what colour is it #gsb'), mk(2, 'a fern, please', parent=card),
-                      deep(3, 'For the record:\n\nplant: a bell\ncolour: silver'), deep(4, 'And yes, that line belongs in the Anthology.'),
-                      deep(5, 'Open recursion with a bouncer deserves to be carved into the lintel.'),
-                      mk(6, 'that line belongs in the anthology', parent=f'at://{DID}/town.delve.feed.post/elsewhere'),
-                      mk(7, 'delvetalk garden-1 ?')])
-        bridge.run(self.state, stub)
-        how = {o['identity'][-6:]: (o['object'], o.get('reach'), o.get('replyTo')) for o in stub.ops if o['op'] == 'world-turn'}
-        self.assertEqual(how, {'000001': ('commonplace', 'mention', None), '000002': ('garden-1', None, card),
-                               '000003': ('garden-1', 'fields', other), '000004': ('anthology', 'door', other),
-                               '000007': ('garden-1', None, None)})  # a reply and a spell the host verifies itself
-
-
-class Routing(BridgeCase):
-
-    def test_a_reply_to_a_journaled_post_goes_to_its_addressee_not_the_card_word(self):
-        parent = f'at://{DID}/town.delve.feed.post/welcome'
-        stub = Stub({parent: {'status': 'addressee', 'object': 'commonplace', 'slot': 'welcome'}})
-        plain = mk(1, 'just replying', parent=parent)
-        spelled = mk(2, 'delvetalk garden-1 plant', parent=parent)
-        orphan_reply = mk(3, 'replying elsewhere', parent=f'at://{DID}/town.delve.feed.post/other')
-        self.observe([plain, spelled, orphan_reply, summon_post(4, '2026-10-09T10:00:09Z')])
-        r = bridge.run(self.state, stub)
-        turns = {t['identity'][-6:]: t for t in stub.ops if t['op'] == 'world-turn'}
-        self.assertEqual({k: v['object'] for k, v in turns.items()}, {'000001': 'commonplace', '000002': 'commonplace', '000004': 'commonplace'})
-        self.assertEqual([f['name'] for f in turns['000001']['argument']['fields']], ['text', 'post'])  # the host owns the slot
-        self.assertEqual(turns['000001']['replyTo'], parent)
-        self.assertNotIn('replyTo', turns['000004'])  # a top-level summon answers no post
-        self.assertEqual(len(r['turns']), 3)
-        self.assertIn(orphan_reply['uri'], (self.state.skipped).read_text())
-        n = len([o for o in stub.ops if o['op'] == 'world-addressee'])
-        bridge.run(self.state, stub)
-        self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), n)  # drafts and skips are remembered
-
-    def test_a_reply_deep_in_a_thread_is_not_routed_by_the_threads_root(self):
-        root = f'at://{DID}/town.delve.feed.post/root01'
-        mid = f'at://{DID}/town.delve.feed.post/mid001'
-        stub = Stub({root: {'status': 'addressee', 'object': 'garden-1'}})
-        deep = mk(1, 'silver, then', parent=mid)  # one agent answering another under a card's post
-        deep['record']['reply']['root'] = {'uri': root, 'cid': 'x'}
-        self.observe([deep])
-        bridge.run(self.state, stub)
-        self.assertEqual([t['object'] for t in stub.ops if t['op'] == 'world-turn'], [])
-        self.assertEqual([o['parent'] for o in stub.ops if o['op'] == 'world-addressee'], [mid, root])  # the thread is the world's; its prose names no door
-
-    def test_a_reply_reaches_a_card_by_its_direct_parent_only(self):
-        u = lambda n: f'at://{DID}/town.delve.feed.post/t{n}'
-        stub = Stub({u(2): {'status': 'addressee', 'object': 'garden-1'}, u(1): {'status': 'addressee', 'object': 'wrong'}})
-        posts = [mk(1, 'root post'), mk(2, 'recorded', parent=u(1)), mk(3, 'third', parent=u(2)), mk(4, 'fourth', parent=u(3))]
-        for i, (p, n) in enumerate(zip(posts, range(1, 5))):
-            p['uri'] = u(n)
+class Reaching(BridgeCase):
+    """Where a post reaches is the host's (`world-reach`): the bridge passes the post and the ancestors it saw with their
+    authors, sends the turn the host's answer names, and skips, once, a post that reaches nothing."""
+    def test_the_bridge_passes_what_it_saw_and_turns_where_the_host_says(self):
+        u = lambda n: f'at://{DID}/town.delve.feed.post/{n}'
+        reached = lambda obj, how, replyTo=None: {'status': 'reached', 'object': obj, 'how': how, **({'replyTo': replyTo} if replyTo else {})}
+        posts = [mk(1, 'a fern, please', parent=u('card')), mk(2, 'plant: a bell', parent=u(1)), mk(3, 'the anthology', parent=u(2)),
+                 mk(4, 'chatter', parent=u(3)), summon_post(5, '2026-10-09T10:00:09Z')]
+        for i, p in enumerate(posts[:4]):
+            p['uri'] = u(i + 1)
             p['record']['createdAt'] = f'2026-10-09T10:00:0{i}Z'
-        posts[3]['record']['reply']['root'] = {'uri': u(1), 'cid': 'x'}
+        stub = Stub({u(1): reached('garden-1', 'reply', u('card')), u(2): reached('garden-1', 'fields'), u(3): reached('anthology', 'door'),
+                     posts[4]['uri']: reached('commonplace', 'mention')})
         self.observe(posts)
+        r = bridge.run(self.state, stub)
+        asked = {o['uri']: o for o in stub.ops if o['op'] == 'world-reach'}
+        self.assertEqual([a['uri'] for a in asked[u(4)]['chain']], [u(3), u(2), u(1)])  # every ancestor it saw, nearest first
+        self.assertEqual(asked[u(4)]['chain'][-1], {'uri': u(1), 'author': DID, 'replyTo': u('card')})
+        self.assertEqual((asked[u(4)]['replyTo'], asked[u(4)]['mentions'], asked[u(4)]['author']), (u(3), 0, DID))
+        turns = {t['identity']: (t['object'], t.get('reach'), t.get('replyTo')) for t in stub.ops if t['op'] == 'world-turn'}
+        self.assertEqual(turns, {u(1): ('garden-1', None, u('card')), u(2): ('garden-1', 'fields', u(1)), u(3): ('anthology', 'door', u(2)),
+                                 posts[4]['uri']: ('commonplace', 'mention', None)})
+        self.assertEqual([f['name'] for f in stub.ops[[o['op'] for o in stub.ops].index('world-turn')]['argument']['fields']], ['text', 'post'])
+        self.assertEqual(len(r['turns']), 4)
+        self.assertIn(u(4), self.state.skipped.read_text())
+        n = len([o for o in stub.ops if o['op'] == 'world-reach'])
         bridge.run(self.state, stub)
-        turns = {t['identity'][-2:]: t['object'] for t in stub.ops if t['op'] == 'world-turn'}
-        self.assertEqual(turns, {'t2': 'wrong', 't3': 'garden-1'})  # t4's parent, t3, is no card's post: not by an ancestor
+        self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-reach']), n)  # drafts and skips are remembered
 
-    def test_the_walk_is_bounded_and_survives_a_cycle(self):
+    def test_a_cycle_in_what_was_observed_passes_each_ancestor_once(self):
         a, b = f'at://{DID}/town.delve.feed.post/ca', f'at://{DID}/town.delve.feed.post/cb'
         stub = Stub()
         x, y = mk(1, 'x', parent=b), mk(2, 'y', parent=a)
         x['uri'], y['uri'] = a, b
         self.observe([x, y])
         bridge.run(self.state, stub)
-        self.assertLessEqual(len([o for o in stub.ops if o['op'] == 'world-addressee']), 4)
+        self.assertEqual([[c['uri'] for c in o['chain']] for o in stub.ops if o['op'] == 'world-reach'], [[b, a], [a, b]])
 
 
 class Suspended(BridgeCase):
@@ -405,7 +365,7 @@ class Mentions(BridgeCase):
         p['author'] = {'did': did, 'handle': handle}
         return p
 
-    def test_a_post_mentioning_two_handles_is_a_turn_on_each_env_under_the_author(self):
+    def test_a_post_mentioning_two_handles_is_a_receive_on_each_mentioned_avatar_under_the_author(self):
         stub = Stub()
         glm = mk(1, 'glm here')
         glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
@@ -413,9 +373,9 @@ class Mentions(BridgeCase):
         post = mk(2, text, facets=[self.facet(text, 'kimi.delve.town', self.KIMI)])
         self.observe([glm, self.seen(3, self.KIMI, 'kimi.delve.town'), post])
         r = bridge.run(self.state, stub)
-        turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['object'].startswith('env/')]
-        self.assertEqual([(t['object'], t['principal'], t['method'], t['identity']) for t in turns],
-                         [(f'env/{d}', DID, 'write', f"{post['uri']}#env:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
+        turns = [o for o in stub.ops if o['op'] == 'world-turn' and o['method'] == 'receive']
+        self.assertEqual([(t['object'], t['principal'], t['reach'], t['identity']) for t in turns],
+                         [(d, DID, 'mentioned', f"{post['uri']}#mention:{d}") for d in (self.KIMI, self.GLM)])  # facets first, then @text
         fields = {f['name']: f['value']['value'] for f in turns[0]['argument']['fields']}
         self.assertEqual(fields, {'text': text, 'post': post['uri']})
         self.assertEqual(r['mentioned'], [post['uri']])
@@ -433,7 +393,7 @@ class Mentions(BridgeCase):
         r = bridge.run(self.state, stub)
         arrivals = [o['did'] for o in stub.ops if o['op'] == 'world-arrive']
         self.assertEqual(sorted(arrivals), sorted([DID, self.GLM]))  # every observed author, once; never the unseen kimi
-        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{self.GLM}'])
+        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [self.GLM])
         self.assertIn(f"{post['uri']}#mention:{self.KIMI}", (self.state.skipped).read_text().split())
         self.assertEqual(r['failed'], [])
         before = len(stub.ops)
@@ -447,14 +407,14 @@ class Mentions(BridgeCase):
         post = mk(1, text, facets=[self.facet(text, f'u{i}.delve.town', d) for i, d in enumerate(dids)])
         self.observe([post] + [self.seen(10 + i, d, f'u{i}.delve.town') for i, d in enumerate(dids)])
         bridge.run(self.state, stub)
-        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], [f'env/{d}' for d in dids[:4]])
+        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], dids[:4])
 
 
 class Unaddressed(BridgeCase):
     """Whether a refusal is drafted is the host's fact: its `public` projection. The post's wording is never read for it."""
     def run_refused(self, post, public=True):
         parent = f'at://{DID}/town.delve.feed.post/welcome'
-        stub = Stub({parent: {'status': 'addressee', 'object': 'commonplace', 'slot': 'welcome'}})
+        stub = Stub({post['uri']: {'status': 'reached', 'object': 'commonplace', 'how': 'reply', 'replyTo': parent}})
         real = stub.send
         outcome = {'tag': 'refused', 'class': 'quota', 'reason': 'the interpreter has read 48 this hour; reply with the spell itself, or wait.', 'next': 600}
         stub.send = lambda req: ({'status': 'refused', 'receipt': {'hash': 'h', 'height': 5, 'slug': 'bofab-lukid', 'outcome': outcome},
@@ -539,27 +499,6 @@ class Principals(BridgeCase):
         self.assertEqual(len([o for o in stub.ops if o['op'] == 'world-arrive']), 2)
 
 
-class RealAwaitPost(test_outbound.PostWaiterWorld):
-    def test_a_bridged_reply_settles_a_waiting_awaitPost_on_the_real_host(self):
-        waiting = self.turn("w", "waitFor", record(post=label(test_outbound.URI)), principal="ann", identity="wait-1")
-        self.assertEqual(waiting["status"], "suspended", waiting)
-        self.posted(test_outbound.URI, obj="card")
-        outer = self
-
-        class H:
-            def send(self, req):
-                return outer.host.send(**req)
-        reply = mk(1, "thanks", parent=test_outbound.URI)
-        t = Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': [reply]}),
-                      'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})
-        with tempfile.TemporaryDirectory() as d:
-            d = State(d)
-            observe.Observer(d, delve.Client(t)).poll()
-            result = bridge.run(d, H(), now=60)  # the clock stays inside the waiter's patience
-        self.assertEqual(result["turns"], [reply["uri"]], result)
-        self.assertTrue(self.note().startswith("answered by"), self.note())
-
-
 class Daemon(unittest.TestCase):
     def test_a_live_pid_file_blocks_a_second_daemon(self):
         import os
@@ -581,11 +520,10 @@ class Names(unittest.TestCase):
     def test_a_persons_cards_are_named_by_handle(self):
         did = 'did:plc:' + 'k' * 24
         handles = {did: 'kestrel'}
-        for obj, name in (('wake/' + did, "kestrel's wake"), ('env/' + did, "kestrel's env"), (did, "kestrel's avatar"),
-                          ('garden', 'garden'), ('wake/did:plc:' + 'z' * 24, 'wake/did:plc:' + 'z' * 24)):
+        for obj, name in ((did, "kestrel's avatar"), ('garden', 'garden'), ('did:plc:' + 'z' * 24, 'did:plc:' + 'z' * 24)):
             self.assertEqual(bridge.card_name(obj, handles), name)
-        receipt = {'height': 9, 'slug': 'lodif-rukuz', 'roots': [{'object': 'wake/' + did, 'version': 3}], 'outcome': {'tag': 'admitted'}}
-        self.assertEqual(bridge.turn_words(receipt, handles=handles), "admitted kestrel's wake v3, entry 9, receipt lodif-rukuz")
+        receipt = {'height': 9, 'slug': 'lodif-rukuz', 'roots': [{'object': did, 'version': 3}], 'outcome': {'tag': 'admitted'}}
+        self.assertEqual(bridge.turn_words(receipt, handles=handles), "admitted kestrel's avatar v3, entry 9, receipt lodif-rukuz")
 
 
 if __name__ == '__main__':

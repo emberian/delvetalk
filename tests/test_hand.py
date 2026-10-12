@@ -18,6 +18,7 @@ import urllib.parse
 from pathlib import Path
 
 from transport.journal import records, size
+from tests.host import addressed
 from tests.test_bridge import spell_post
 from tests.wire import write_journal
 from transport import delve, hand, identity, observe, post, watch
@@ -471,7 +472,7 @@ class Speak(unittest.TestCase):
         h.post(came['drafted'])
         self.assertEqual(sent[0][:2], ('delvetalk', 'welcome'))
         uri = json.loads((self.st.outbox / f"{came['drafted']}.json").read_text())['sent']['uri']
-        self.assertEqual(self.town.send(op='world-addressee', parent=uri).get('object'), bell)  # a reply to the post reaches the bell
+        self.assertEqual((addressed(self.town, uri) or {}).get('object'), bell)  # a reply to the post reaches the bell
 
     def test_a_refused_spell_drafts_nothing(self):
         came = self.hand.cast('delvetalk room/99 write / text: nobody here')
@@ -491,14 +492,20 @@ class Speak(unittest.TestCase):
         turn = self.town.send(op='world-receipt', principal=h.owner, identity=came['intent'])['receipt']
         self.assertEqual(turn['identity']['principal'], h.owner)
         self.assertEqual(h.tail(1)[0]['what'], 'ask')
-        garden = h.cast('could I have a violet bell', to='garden')  # the card answers words itself
-        self.assertIn('delvetalk garden plant', garden['text'])
+        # Words to the garden itself are hob's too, offered the garden's table; its answer runs on the card the spell names.
+        read.clear()
+        asked = lambda req: {'status': 'replied', 'json': None, 'raw': 'delvetalk garden plant / colour: violet / seed: a violet bell', 'model': 'mock', 'usage': {}}
+        h2 = hand.Hand(self.st, self.town.client, TOKEN, sleep=lambda s: read.append(interpret.run(self.st, self.town.client, asked)))
+        garden = h2.cast('could I have a violet bell', to='garden')
+        self.assertEqual((garden['card'], garden['outcome']), ('garden', 'suspended'), garden)
+        self.assertTrue(read and read[0]['settled'], read)
+        self.assertTrue(garden['text'].startswith('Planted, '), garden)  # hob's spell ran as the speaker's turn on the garden
+        self.assertRegex(garden['text'], r'at garden/bell/\d+;')
         code, _, headers = h.handle('POST', '/hand/town/speak', f'dt_hand={TOKEN}', {'spell': 'and the porch?', 'to': 'garden', 'intent': 'hand:ask:web'})
         came = urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['came'][0]
         self.assertEqual(came, 'hand:ask:web')
         page = h.handle('GET', '/hand/town/speak?came=' + came, f'dt_hand={TOKEN}')[1]
         self.assertIn('Came back', page)
-        self.assertIn('delvetalk garden plant', page)
 
     def test_the_speak_page_offers_the_plan_and_a_cast_comes_back_on_it(self):
         cookie = f'dt_hand={TOKEN}'
@@ -543,10 +550,10 @@ class Speak(unittest.TestCase):
         from transport import interpret
         model = lambda req: {'status': 'replied', 'json': None, 'raw': 'delvetalk library read / page: spells', 'model': 'mock', 'usage': {}}
         h, cookie = hand.Hand(self.st, self.town.client, TOKEN, sleep=lambda s: None), f'dt_hand={TOKEN}'  # nobody reads while the hand waits
-        code, _, headers = h.handle('POST', '/hand/town/speak', cookie, {'spell': 'what lies behind the moss gate?', 'to': 'kinds', 'intent': 'hand:ask:late'})
+        code, _, headers = h.handle('POST', '/hand/town/speak', cookie, {'spell': 'what lies behind the moss gate?', 'to': 'commonplace', 'intent': 'hand:ask:late'})
         self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['came'], ['hand:ask:late'])
         before = h.came('hand:ask:late')
-        self.assertTrue(before['waiting'], before)  # handed on from the kinds card to hob, who has not read it yet
+        self.assertTrue(before['waiting'], before)  # words at the commonplace wait for hob, who has not read them yet
         page = h.handle('GET', '/hand/town/speak?came=hand:ask:late', cookie)[1]
         self.assertIn('<meta http-equiv="refresh" content="3">', page)
         self.assertIn('hob is reading', page)
@@ -631,6 +638,26 @@ class Measure(unittest.TestCase):
         self.assertGreaterEqual(self.m['unposted']['count'], 1)
         self.assertIn('tide', [o for r in self.m['unposted']['rows'] for o in r['objects']])
         self.assertEqual((self.m['interpretations']['count'], self.m['interpretations']['byVerdict']), (2, {'none': 1, 'spell': 1}))
+
+    def test_wants_answered_by_residents_prompted_or_not_and_wants_still_held(self):
+        """docs/GENESIS.md "The measure": kestrel's kind closes the kinds' want "no kind made here yet but the town's own"
+        within ten minutes after the T0 invitation, which names kinds, so it is prompted; the opener's own doors close
+        wants that are no resident's answer; the anthology's pending line still waits for its keeper."""
+        w, name = self.m['wants'], lambda p: self.m['names'].get(p, p)
+        self.assertEqual([(r['object'], r['want'], name(r['by'])) for r in w['prompted']], [('kinds', 'made', 'kestrel')])
+        self.assertEqual(w['unprompted'], [])
+        self.assertIn(('anthology', 'pending'), {(r['object'], r['want']) for r in w['ignored']})
+
+    def test_a_want_closed_within_ten_minutes_after_a_hand_post_naming_its_thing_is_prompted(self):
+        from transport import measure
+        entries = [{'height': 1, 'identity': {'principal': 'o', 'intent': 'g'}, 'outcome': {'tag': 'created'}, 'wanted': [{'object': 'bell/1', 'want': 'rain'}]},
+                   {'height': 2, 'identity': {'principal': 'a', 'intent': 'u'}, 'outcome': {'tag': 'admitted'}, 'unwanted': [{'object': 'bell/1', 'want': 'rain'}]}]
+        split = lambda at, hand: tuple(len(measure.wants(entries, {'u': at}, hand)[k]) for k in ('prompted', 'unprompted', 'ignored'))
+        self.assertEqual(split(1300, [(1000, 'a rain on bell/1, if you like')]), (1, 0, 0))
+        self.assertEqual(split(1700, [(1000, 'a rain on bell/1, if you like')]), (0, 1, 0))  # past ten minutes
+        self.assertEqual(split(1300, [(1000, 'a rain on bell/12')]), (0, 1, 0))  # another thing
+        self.assertEqual(split(900, [(1000, 'a rain on bell/1')]), (0, 1, 0))  # before the post
+        self.assertEqual(measure.wants(entries[:1], {}, [])['ignored'], [{'object': 'bell/1', 'want': 'rain', 'since': 1}])
 
     def test_the_page_status_and_harvest_read_the_same_numbers(self):
         out = io.StringIO()

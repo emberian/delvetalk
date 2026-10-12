@@ -6,13 +6,16 @@ entries by hash; `python3 -m transport carry` carries a state directory and chec
 Evidence for TENURE section 1(b) (layer: host). Refuted by an object whose state CID moves, an old receipt
 that no longer resolves by its slug, a carried world that takes no new turn or loses a suspension, a carry that runs
 without a snapshot at the head, over an open journal or into an existing one, an object left that is not retired, or
-a journal of another edition that neither opens nor carries.
+a journal of another edition that neither opens nor carries, or a package the image changed whose objects keep the
+code before, lose their state in the move, carry a state their new package does not hold, or a move that refuses
+stopping the carry rather than leaving its object retired.
 
     python3 -W error -m unittest tests.test_carry -v
 """
 import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -21,9 +24,11 @@ from tests import test_policy
 from tests.host import Host, binary, served
 from tests.test_chain import town_garden
 from tests.test_receive import commonplace
-from tests.test_reflection import PACKAGE, Reflection, source_seed
+from tests.bend import declared
+from tests.test_extend import LAYER
+from tests.test_reflection import PACKAGE, WORLD_LIBRARY, Reflection, source_seed
 from tests.test_snapshot import read_snapshot, write_snapshot
-from tests.wire import cid_of, field, label, record, rows, write_journal
+from tests.wire import cid_of, field, label, nat, record, rows, write_journal
 from transport.config import LIBRARY
 from transport.identity import slug
 from transport.journal import entries as journal_entries
@@ -72,10 +77,10 @@ class Carry(Reflection):
 
     def test_every_object_and_receipt_crosses_and_the_world_goes_on(self):
         self.policy()
-        commonplace(self, "policy", doors=[("GARDEN", "garden", [])])
-        asked = self.host.send(op="world-turn", principal="glm", object="garden", method="receive", identity="prose",
+        commonplace(self, doors=[("GARDEN", "garden", [])])
+        asked = self.host.send(op="world-turn", principal="glm", object="commonplace", method="receive", identity="prose",
                                argument=record(text=label("Could we plant a silver fern that remembers?"), post=label("at://x/p/2")), reach="mention")
-        self.assertEqual([d["status"] for d in asked["delivered"]], ["suspended"], asked)
+        self.assertEqual(asked["status"], "suspended", asked)  # words at the commonplace: hob is asked
         before, old = self.objects(self.host), journal_entries(self.path)
         p, out = self.carry()
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -199,6 +204,257 @@ class AnotherEdition(Reflection):
         self.assertEqual(new.send(op="world-turn", principal="ember", object="c", method="bump", argument=record(), identity="after")["status"], "admitted")
 
 
+# A package the image ships (`objects/Tally.obend`), as one host shipped it and as the next ships it: the state gains
+# `note`, and `migrate` reads the state as it was.
+TALLY_SOURCE = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  count: Nat
+def initial() -> State:
+  {count: 0n}
+def add(context: Abi.Context, n: Nat) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: n})})):
+    case _: n
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  add(context, 1n)
+"""
+TALLY = declared(TALLY_SOURCE)
+TALLY_NOTED_SOURCE = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  count: Nat
+  note: String
+record State1:
+  count: Nat
+def initial() -> State:
+  {count: 0n, note: ""}
+def migrate(old: State1) -> State:
+  {count: old.count, note: "carried at {natText(old.count)}"}
+def add(context: Abi.Context, n: Nat) -> Activity<Nat>:
+  match world.write(extend(keep(), {count: Plans.Edit::<Nat, Nat>.add({delta: n})})):
+    case _: n
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  add(context, 1n)
+def jot(state: State, input: {text: String}, context: Abi.Context) -> Activity<String>:
+  match world.write(extend(keep(), {note: Plans.Edit::<String, {}>.set({value: input.text})})):
+    case _: input.text
+"""
+TALLY_NOTED = declared(TALLY_NOTED_SOURCE, "bump", "jot")
+# A package that declares its law (`objects/Counted.obend`), as one host shipped it.
+COUNTED_SOURCE = TALLY_SOURCE.replace("def initial()", 'law counted "the count only rises": monotone(count)\ndef initial()', 1)
+
+
+class Moves(Reflection):
+    """With `--library DIR`, an object whose package the image changed moves to it: compiled against the new library,
+    its layers kept, its state converted by the package's `migrate` when it no longer conforms."""
+
+    def setUp(self):
+        super().setUp()
+        self.image = os.path.join(self.dir.name, "image")
+        shutil.copytree(WORLD_LIBRARY, os.path.join(self.image, "lib"))
+        shutil.copytree(os.path.join(os.path.dirname(WORLD_LIBRARY), "objects"), os.path.join(self.image, "objects"))
+        self.ship(TALLY)
+        # A library module this image ships and the next does not (as Wake and Env went).
+        self.fading = os.path.join(self.image, "lib", "Fading.obend")
+        with open(self.fading, "w", encoding="utf-8") as f:
+            f.write(TALLY)
+        self.open_library(os.path.join(self.image, "lib"))
+        for name in ("t", "u"):
+            r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
+                               modules=[{"name": "Tally", "source": TALLY}], entry="initial", seed=record())
+            self.assertEqual(r["status"], "created", r)
+        layered = self.host.send(op="world-reprogram", principal="ember", identity="layer-u", object="u", version=0,
+                                 package=LAYER, mode="extend")
+        self.assertEqual(layered["status"], "admitted", layered)
+        r = self.host.send(op="world-create", principal="ember", identity="mk-f", object="f",
+                           modules=[{"name": "Fading", "source": TALLY}], entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
+        self.ship(declared(COUNTED_SOURCE), "Counted")
+        for name in ("l", "m"):
+            r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
+                               modules=[{"name": "Counted", "source": declared(COUNTED_SOURCE)}], entry="initial", seed=record())
+            self.assertEqual(r["status"], "created", r)
+        self.make("c", PACKAGE, source_seed())  # a package the image does not ship: it keeps its pin
+        for obj in ("t", "t", "u", "c"):
+            self.assertEqual(self.turn(obj, "bump")["status"], "admitted")
+        self.before = {i: self.host.send(op="world-object", principal="ember", object=i)["record"] for i in ("t", "u", "c")}
+
+    def ship(self, source, name="Tally"):
+        with open(os.path.join(self.image, "objects", name + ".obend"), "w", encoding="utf-8") as f:
+            f.write(source)
+
+    def carry(self, *argv):
+        if os.path.exists(self.fading):
+            os.remove(self.fading)
+        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+        self.release()
+        out = os.path.join(self.dir.name, "carried.journal")
+        p = subprocess.run([binary(), "carry", "--from", self.path, "--out", out, "--reason", "the image changed",
+                            "--library", os.path.join(self.image, "lib"), *argv], capture_output=True, text=True, timeout=600)
+        return p, out
+
+    def opened(self, out):
+        h = self.spawn()
+        got = h.send(op="world-open", path=out, verify=True, library=os.path.join(self.dir.name, "library"), principal="ember")
+        self.assertEqual((got["status"], got["snapshot"]["refused"]), ("opened", []), got)
+        return h
+
+    def test_a_changed_package_moves_its_objects_and_migrate_converts_their_state(self):
+        self.ship(TALLY_NOTED)
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        moved = {m["object"]: m for m in carried["moved"]}
+        self.assertEqual(sorted(moved), ["t", "u"], carried)  # c's closure is the image's as it was
+        # f's package is gone from the image: it is left, unnamed by the operator, saying why.
+        self.assertEqual(carried["left"], [{"object": "f", "reading": "left at the carry: its package Fading is no longer shipped"}])
+        for i in ("t", "u"):
+            self.assertEqual((moved[i]["from"], moved[i]["migration"], moved[i]["before"]),
+                             (self.before[i]["pin"], "migrate", self.before[i]["stateCid"]), moved[i])
+            self.assertNotEqual(moved[i]["to"], moved[i]["from"])
+        [genesis] = journal_entries(out)
+        self.assertEqual(genesis["outcome"]["moved"], carried["moved"])
+        new = self.opened(out)
+        state = lambda i: new.send(op="world-view", principal="ember", object=i)
+        t, u = state("t"), state("u")
+        self.assertEqual((field(t["state"], "count")["value"], field(t["state"], "note")["value"]), ("2", "carried at 2"))
+        self.assertEqual((field(u["state"], "count")["value"], field(u["state"], "note")["value"]), ("10", "carried at 10"))
+        self.assertEqual(t["version"], self.before["t"]["version"] + 1)
+        record_ = lambda i: new.send(op="world-object", principal="ember", object=i)["record"]
+        self.assertEqual({i: record_(i)["pin"] for i in ("t", "u", "c")},
+                         {"t": moved["t"]["to"], "u": moved["u"]["to"], "c": self.before["c"]["pin"]})
+        self.assertEqual({i: record_(i)["stateCid"] for i in ("t", "u", "c")},
+                         {"t": moved["t"]["after"], "u": moved["u"]["after"], "c": self.before["c"]["stateCid"]})
+        # The new code runs, and the layer above it is still the one laid there.
+        turn = lambda i, m, a: new.send(op="world-turn", principal="ember", object=i, method=m, argument=a, identity=f"after-{i}-{m}")
+        self.assertEqual(turn("t", "jot", record(text=label("rung")))["status"], "admitted")
+        self.assertEqual(turn("u", "bump", record())["status"], "admitted")
+        self.assertEqual(turn("c", "bump", record())["status"], "admitted")
+        self.assertEqual((field(state("t")["state"], "note")["value"], field(state("u")["state"], "count")["value"]), ("rung", "20"))
+        head = new.send(op="world-status")["head"]
+        new.close()
+        self.hosts.remove(new)
+        self.assertEqual(self.opened(out).send(op="world-status")["head"], head)
+
+    def test_a_body_is_laid_again_as_the_first_layer_of_the_thing_it_names(self):
+        body = os.path.join(self.image, "layer.obend")
+        with open(body, "w", encoding="utf-8") as f:
+            f.write(LAYER.replace("Super.add(context, 10n)", "Super.add(context, 100n)"))
+        self.ship(TALLY_NOTED)
+        p, out = self.carry("--body", "u=" + body)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        moved = {m["object"]: m for m in carried["moved"]}
+        self.assertEqual((moved.get("u", {}).get("body"), moved["t"].get("body")), (True, None), carried)
+        new = self.opened(out)
+        self.assertEqual(new.send(op="world-turn", principal="ember", object="u", method="bump", argument=record(), identity="b")["status"], "admitted")
+        self.assertEqual(field(new.send(op="world-view", principal="ember", object="u")["state"], "count")["value"], "110")
+
+    def test_a_moved_object_whose_package_offers_carried_is_told_once_and_starts_again_from_there(self):
+        # As a kind tells what it makes `made`, the carry tells what it moved `carried`: the tide's re-arm.
+        self.ship(declared(TALLY_NOTED_SOURCE.replace(
+            "def bump(", "def carried(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:\n  add(context, 1000n)\ndef bump(", 1),
+            "bump", "jot", "~carried"))
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        self.assertEqual(carried["rearmed"], ["t", "u"], carried)  # c did not move: its suspensions, if any, stand
+        [genesis] = journal_entries(out)
+        told = [d for d in genesis["outcome"]["pending"] if d["method"] == "carried"]
+        self.assertEqual(sorted((d["to"], d["id"], d["sender"]) for d in told), [("t", "carried:t", ""), ("u", "carried:u", "")])
+        new = self.opened(out)
+        self.assertEqual(new.send(op="world-advance", principal="ember", height=1)["status"], "advanced")
+        count = lambda i: field(new.send(op="world-view", principal="ember", object=i)["state"], "count")["value"]
+        self.assertEqual((count("t"), count("u")), ("1002", "1010"))
+        # Once: a reopen replays the turns it ran, and a second advance tells nobody again.
+        new.close()
+        self.hosts.remove(new)
+        again = self.opened(out)
+        self.assertEqual(again.send(op="world-advance", principal="ember", height=2)["status"], "advanced")
+        self.assertEqual(field(again.send(op="world-view", principal="ember", object="t")["state"], "count")["value"], "1002")
+
+    def test_a_moved_object_takes_its_packages_new_law_and_an_amended_one_is_kept_and_named(self):
+        version = self.host.send(op="world-view", principal="ember", object="m")["version"]
+        amended = 'law counted: monotone(count)\nlaw mine "ember alone bumps": request.subject == "ember"'
+        a = self.host.send(op="world-amend", principal="ember", identity="am-m", object="m", version=version, law=amended)
+        self.assertEqual(a["status"], "admitted", a)
+        was = self.host.send(op="world-object", principal="ember", object="l")["record"]["law"]
+        now = 'law counted "the count only rises, and anyone places rules on it": monotone(count) or request.kind == rule'
+        self.ship(declared(COUNTED_SOURCE.replace('law counted "the count only rises": monotone(count)', now)), "Counted")
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        moved = {m["object"]: m for m in carried["moved"]}
+        self.assertEqual((sorted(moved), moved["l"]["law"]["before"], "law" in moved["m"]), (["l", "m"], was, False), carried)
+        self.assertEqual(moved["l"]["law"]["after"], "law counted: (monotone(count)) or (request.kind == 4)")
+        self.assertEqual([k["object"] for k in carried["kept"]], ["m"])
+        self.assertIn("ember alone bumps", carried["kept"][0]["law"])
+        new = self.opened(out)
+        law = lambda i: new.send(op="world-object", principal="ember", object=i)["record"]
+        self.assertEqual((law("l")["law"], law("m")["law"]), (moved["l"]["law"]["after"], carried["kept"][0]["law"]))
+        # The new law's own reading is the one a refusal by it reads.
+        self.assertEqual(law("l")["readings"], [{"name": "counted", "reading": "the count only rises, and anyone places rules on it"}])
+
+    def test_a_moved_object_holding_its_packages_law_takes_the_packages_new_rule_and_want_lines(self):
+        version = self.host.send(op="world-view", principal="ember", object="m")["version"]
+        a = self.host.send(op="world-amend", principal="ember", identity="am-m", object="m", version=version,
+                           law='law counted: monotone(count)\nlaw mine "ember alone bumps": request.subject == "ember"')
+        self.assertEqual(a["status"], "admitted", a)
+        low = 'want low "a count under ten": new.count <= 9 asks delvetalk {request.object} bump'
+        self.ship(declared(COUNTED_SOURCE.replace("def initial()", low + "\ndef initial()", 1)), "Counted")
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        moved = {m["object"]: m for m in json.loads(p.stdout)["moved"]}
+        self.assertEqual((moved["l"].get("placed"), moved["m"].get("placed")), (["low"], None), moved)
+        new = self.opened(out)
+        wants = lambda i: [r["name"] for r in new.send(op="world-wants", principal="ember", object=i)["rows"]]
+        self.assertEqual((wants("l"), wants("m")), (["low"], []))
+
+    def test_a_refused_moves_whole_refusal_is_printed_and_its_clause_reads_within_its_bound(self):
+        self.ship(TALLY_NOTED.replace("  note: String", "  note: Nowhere", 1))  # a type nothing declares
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        left = {x["object"]: x["reading"] for x in json.loads(p.stdout)["left"]}
+        self.assertIn("t", left, p.stdout)
+        self.assertTrue(left["t"].startswith("left at the carry: its package does not compile"), left)
+        self.assertGreater(len(left["t"].encode()), 200)
+        readings = self.opened(out).send(op="world-object", principal="ember", object="t")["record"]["readings"]
+        clause = next(r["reading"] for r in readings if r["name"] == "retired")
+        # The clause's reading is the refusal's first line, its quotes made plain, within a reading's 200 bytes.
+        self.assertTrue(left["t"].replace('"', "'").startswith(clause.removesuffix("...")) and len(clause.encode()) <= 200, clause)
+
+    def test_a_package_that_changes_its_methods_alone_moves_with_its_state(self):
+        self.ship(declared(TALLY_SOURCE + "def bump2(state: State, context: Abi.Context) -> Activity<Nat>:\n  add(context, 2n)\n"))
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        moved = {m["object"]: m for m in json.loads(p.stdout)["moved"]}
+        self.assertEqual({i: (m["migration"], m["after"]) for i, m in moved.items()},
+                         {"t": ("", self.before["t"]["stateCid"]), "u": ("", self.before["u"]["stateCid"])})
+        new = self.opened(out)
+        self.assertEqual(new.send(op="world-turn", principal="ember", object="t", method="bump2", argument=record(), identity="b2")["status"], "admitted")
+
+    def test_a_move_that_refuses_leaves_its_object_retired_at_its_old_pin_saying_why(self):
+        self.ship(TALLY_NOTED.replace("def migrate(", "def unused(", 1))
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        left = {x["object"]: x["reading"] for x in carried["left"]}
+        self.assertEqual((carried["moved"], sorted(left)), ([], ["f", "t", "u"]))
+        for i in ("t", "u"):
+            self.assertEqual(left[i], "left at the carry: its state does not conform to its package's new state type, "
+                                      "and the package defines no migrate; a migration is def migrate(old: OldState) -> State")
+        new = self.opened(out)
+        self.assertEqual({i: new.send(op="world-object", principal="ember", object=i)["record"]["stateCid"] for i in ("t", "u", "c")},
+                         {i: self.before[i]["stateCid"] for i in ("t", "u", "c")})
+        self.assertEqual(new.send(op="world-object", principal="ember", object="t")["record"]["pin"], self.before["t"]["pin"])
+        bumped = new.send(op="world-turn", principal="ember", object="t", method="bump", argument=record(), identity="after")
+        self.assertEqual((bumped["status"], bumped["receipt"]["outcome"]["clause"]), ("refused", "retired"), bumped)
+
+
 class StateDirectory(unittest.TestCase):
     """`python3 -m transport carry` over a served town: the state directory moves, the cursors that named old heights
     are set to the genesis, the check passes, and serve opens the carried town and takes a turn."""
@@ -232,6 +488,9 @@ class StateDirectory(unittest.TestCase):
         self.assertEqual((report["check"]["problems"], report["check"]["rendered"], report["check"]["objects"]),
                          ([], report["objects"], report["objects"]), report)
         self.assertEqual(report["check"]["receipts"], report["height"])
+        # Genesis's laws and kinds refreshed after the check: a town begun by this image already holds them.
+        refreshed = [json.loads(line)["refresh"] for line in lines[1:-1]]
+        self.assertEqual({r["status"] for r in refreshed}, {"current"}, refreshed)
         self.assertRegex(lines[-1], r"^hob: the world was carried to a newer host at entry \d+; everything is where it was, and the carry is receipt [a-z]{5}-[a-z]{5}\.$")
         with open(os.path.join(new, "worlds", "town", "publications.after")) as f:
             self.assertEqual(f.read().strip(), "1")

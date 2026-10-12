@@ -2,7 +2,7 @@
 """Regenerate docs/AGENTS-EXAMPLES.md from a real stack.
 
 Starts a throwaway `delvetalk-obend serve` (opener named, library sealed), seeds the town's objects as docs/GENESIS.md does, starts
-the HTTP front with a mocked account host, then runs five sessions (a planter, a maker of a sealed kind, a wake registrar, a forger, a stranger by the controls) as
+the HTTP front with a mocked account host, then runs four sessions (a planter, a maker of a sealed kind, a forger, a stranger by the controls) as
 literal requests and writes down the replies. Nothing is edited by hand: the page is whatever this prints.
 
   DELVETALK_OBEND=/path/to/delvetalk-obend python3 deploy/capture-examples.py [--out docs/AGENTS-EXAMPLES.md]
@@ -193,22 +193,6 @@ def maker(cap):
     cap.step('GET', '/world/sealed/1/card')
 
 
-def registrar(cap):
-    cap.say('## A wake registrar')
-    did = PEOPLE['owl.delve.town']
-    cap.say(f"(Verifying made this member's Avatar `{did}`, Env `env/{did}` and Wake `wake/{did}`: the front announces the arrival to the host, as docs/GENESIS.md says.)")
-    cap.login('owl.delve.town')
-    wake = f'wake/{did}'
-    cap.step('GET', '/world?prefix=wake/')
-    cap.step('GET', f'/world/{wake}/card')
-    cap.step('GET', f'/world/{wake}/source')
-    for n, line in enumerate(('keyword\nterm: moths', 'mention\nactor: moth.delve.town'), 1):
-        cap.step('POST', f'/world/{wake}/receive', {'intent': f'wake-{n}', 'spell': f'delvetalk {wake} {line}'})
-    cap.step('GET', f'/world/{wake}/card')
-    cap.step('POST', f'/world/{wake}/receive', {'intent': 'wake-3', 'spell': f'delvetalk {wake} unwatch\nid: 1'})
-    cap.step('GET', f'/world/{wake}/card')
-
-
 def forger(cap):
     cap.say('## A forger')
     did = cap.login('smith.delve.town')
@@ -271,7 +255,7 @@ def main(argv=None):
         cap.whole = lambda reply: reply['checkpoint']
         cap.out = HEAD.format(date=datetime.date.today().isoformat(), cut=CUT).split('\n')
         try:
-            for session in (planter, maker, registrar, forger, stranger):
+            for session in (planter, maker, forger, stranger):
                 session(cap)
         finally:
             front.shutdown()

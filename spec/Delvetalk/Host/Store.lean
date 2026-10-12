@@ -23,10 +23,6 @@ def maxObjectIdBytes : Nat := 128
 def spellsPerReply : Nat := 3
 /-- The characters of a card an interpretation shows the model (docs/FLEX.md §2). -/
 def cardShownChars : Nat := 1400
-/-- hob's answer to a question (`say: <text>`, the verdict `said`): at most this many sentences and
-    characters, cut at a sentence end. -/
-def saySentences : Nat := 2
-def sayChars : Nat := 300
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
     with every change to what replay derives (judging, a derived field, an index replay checks).
@@ -100,12 +96,19 @@ def deliveriesPerSettle : Nat := 64
     refusal is its last: each retry waits for the clock to move past the refusal's. -/
 def deliveryAttempts : Nat := 4
 def sendsPerTurn : Nat := 32
-/-- Subscriptions to one object (`subscribe`, WHOLENESS §3). -/
-def subscribersPerObject : Nat := 64
 /-- Rules placed on one object, and wants (docs/OVERHAUL.md §2 conflict 2): what its text carries and
     its kind's `under` carries are bounded by `maxLawClauses` in each text. -/
 def rulesPerObject : Nat := 32
 def wantsPerObject : Nat := 32
+/-- Verbs grown on one object (docs/COLLABORATOR.md §3: sixteen a thing; `ungrow` makes room). -/
+def verbsPerObject : Nat := 16
+/-- A grown verb's reading, in characters: what the verb does, as the grower says it. -/
+def verbReadingMax : Nat := 200
+def verbNameMax : Nat := 32
+/-- Clock units in a day: the chronicle's day (docs/TENURE.md §2), and the model's day (`modelQuota`). -/
+def clockDay : Nat := 1440
+/-- Lines one day's chronicle says before `and N more`. -/
+def chronicleLines : Nat := 48
 /-- Rules one commit fires, over every object it wrote; the rest are journaled `unfired`. -/
 def rulesPerCommit : Nat := 8
 /-- How many rule firings deep a chain goes: a turn a rule's spell delivered fires its own rules one
@@ -269,6 +272,29 @@ def Placed.ofJson (j : Json) : Except String Placed := do
   return { name := ← j.getObjValAs? String "name", owner := ← j.getObjValAs? String "owner",
            since := ← j.getObjValAs? Nat "since", line, clause }
 
+/-- A verb grown on a thing (docs/COLLABORATOR.md §3; OVERHAUL §2): its name, which a spell names as
+    it names a declared form (`delvetalk <thing> <name>`) and which the act carries as `request.verb`;
+    who grew it and the height of the entry that grew it; what it does, in the grower's words; what it
+    takes (`text`, a line, or "" for none); and `does`, the rule placed with it in the same entry that
+    gives it consequence (`when: request.verb == "<name>"`), "" for a gesture (a line and a tend). -/
+structure Verb where
+  name : String
+  grower : String
+  height : Nat
+  reading : String
+  takes : String := "text"
+  does : String := ""
+  deriving BEq, Inhabited
+
+def Verb.json (v : Verb) : Json :=
+  Json.mkObj ([("name", toJson v.name), ("by", toJson v.grower), ("at", toJson v.height), ("reading", toJson v.reading),
+    ("takes", toJson v.takes)] ++ (if v.does.isEmpty then [] else [("does", toJson v.does)]))
+
+def Verb.ofJson (j : Json) : Except String Verb := do
+  return { name := ← j.getObjValAs? String "name", grower := ← j.getObjValAs? String "by",
+           height := ← j.getObjValAs? Nat "at", reading := ← j.getObjValAs? String "reading",
+           takes := ← j.getObjValAs? String "takes", does := (j.getObjValAs? String "does").toOption.getD "" }
+
 /-- Who may `view` an object; fixed at creation and journaled with it. -/
 inductive ReadPolicy where
   | exposed
@@ -353,6 +379,9 @@ structure Object where
       order placed; what its text and its kind carry are read from the texts (`Ops.carried`). -/
   rules : List Placed := []
   wants : List Placed := []
+  /-- The verbs hands grew on it (`grow`), in the order grown: its spells after the forms its package
+      declares, each run by its `act`. -/
+  verbs : List Verb := []
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/
@@ -435,33 +464,6 @@ structure Built where
   /-- The rules and wants its entry module's text declares: placed on an object made of it with no law
       text given, owned by its creator (`Ops.makeObject`). -/
   lines : List Delvetalk.Compiler.ObjectiveBendLaw.Clause := []
-
-/-- A standing subscription (WHOLENESS §3): after every admitted write that touches `field` of
-    `object`, `subscriber`'s receiver `method` (`changed` unless the subscription named another) is
-    sent the change, run under `principal` (who subscribed it and must still be permitted to view
-    `object`). One per (subscriber, object, field). -/
-structure Subscription where
-  subscriber : String
-  principal : String
-  object : String
-  field : String
-  method : String := "changed"
-  deriving BEq, Repr, Inhabited
-
-/-- The method is written only when it is not `changed`. -/
-def Subscription.json (x : Subscription) : Json :=
-  Json.mkObj ([("subscriber", toJson x.subscriber), ("principal", toJson x.principal),
-    ("object", toJson x.object), ("field", toJson x.field)] ++
-    (if x.method == "changed" then [] else [("method", toJson x.method)]))
-
-def Subscription.ofJson (j : Json) : Except String Subscription := do
-  return ⟨← j.getObjValAs? String "subscriber", ← j.getObjValAs? String "principal",
-    ← j.getObjValAs? String "object", ← j.getObjValAs? String "field",
-    (j.getObjValAs? String "method").toOption.getD "changed"⟩
-
-/-- Do two subscriptions stand for the same (subscriber, object, field)? -/
-def Subscription.sameAs (x y : Subscription) : Bool :=
-  x.subscriber == y.subscriber && x.object == y.object && x.field == y.field
 
 /-- One change of an object's version, as the moved-root rule reads it (`Ops.movedRootAdmits`): the
     version it produced and the height of the entry that made it. Its edits are read from that entry
@@ -563,9 +565,6 @@ structure World where
   objectBound : Nat := Limits.maxObjects
   /-- Memory only, set per request by `serve`: the other worlds it serves, for reads (`Foreign`). -/
   foreign : Foreign := {}
-  /-- Standing subscriptions by the object they watch, in the order they were made; derived by
-      `record` from entries' `subscribes`/`unsubscribes`. -/
-  subscriptions : Std.HashMap String (Array Subscription) := {}
   /-- Per object, each rule's last firing or refusal to fire, by rule name: `{height, id}` (fired: the
       delivery it staged) or `{height, why}` (unfired), the newest replacing. Derived by `record` from
       admitted entries' `fired` and `unfired`. -/
@@ -573,6 +572,10 @@ structure World where
   /-- Per object, the wants that held of it after the newest entry that wrote it, each with the height
       of the entry that made it true (a want's `since`). Derived by `record` from `wanted`/`unwanted`. -/
   wanting : Std.HashMap String (List (String × Nat)) := {}
+  /-- Where each clock day's entries begin: `(day, height)` for every day an entry was journaled in,
+      the day of an entry the clock before it over `Limits.clockDay`. Derived by `record`; the
+      chronicle reads a day's span of the journal by it (docs/TENURE.md §2). -/
+  days : Array (Nat × Nat) := #[]
   /-- Memory only, never journaled: compiled methods by `inputsKey/method`. -/
   compiled : Std.HashMap String Compiled := {}
   /-- Undelivered sends in journal order, derived from the journal. -/
@@ -610,9 +613,6 @@ structure World where
   /-- Model attempts by interpretation id: the transient failures journaled `attempted` and the clock
       at which the next may be asked. Derived by `record`. -/
   attempts : Std.HashMap String (Nat × Nat) := {}
-  /-- Reply-is-address: the identity of the first turn that answered each recorded post (an
-      entry's `replyTo`), which `awaitPost` settles on. -/
-  replies : Std.HashMap String (String × String) := {}
   /-- Checkpoint blocks by CID, as the index of the entry whose `blocks` carries each: a suspension
       journals each block of its checkpoint's tokens once, and names the rest (`tokenTree`). Derived by `record`. -/
   blocks : Std.HashMap String Nat := {}

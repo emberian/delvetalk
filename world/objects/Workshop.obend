@@ -14,15 +14,23 @@ import ./Rows.obend as Rows
 # proposer to withdraw. Keyed {n}, numbered in order, so past twelve the host drops the
 # oldest.
 type Held = Rows.Held
-# policy: the interpreter's teaching, which `make` asks for a draft (nobody: no drafts).
 record State:
   owner: String
   title: String
   held: Relations.Relation<Held>
   next: Nat
+# The workshop as edition 8 kept it (a carry lays this package over it, `migrate`): with its own
+# policy, which `make` now finds as the world's one, `policy`.
+record State8:
+  owner: String
+  title: String
+  held: Relations.Relation<Held>
+  next: Nat
   policy: Plans.Reference
-# What the workshop did, as data: nothing is a silent default (`silent` is prose handed on
-# to the commonplace). `held` names the clause the target's law refused.
+def migrate(old: State8) -> State:
+  {owner: old.owner, title: old.title, held: old.held, next: old.next}
+# What the workshop did, as data: nothing is a silent default (`silent`: words it leaves to
+# hob). `held` names the clause the target's law refused.
 sum Verdict:
   clean: {}
   flawed: {diagnostics: Form.Names}
@@ -33,10 +41,10 @@ sum Verdict:
   usage: {}
   refused: Card.Refusal
   silent: {}
-law owner "only its owner reprograms or amends it; anyone uses its spells": unchanged(owner) and (request.kind == 0 or request.subject == new.owner)
+law owner "only its owner reprograms or amends it; anyone uses its spells and places rules, wants and verbs on it": unchanged(owner) and (request.kind == 0 or request.kind == rule or request.subject == new.owner)
 law methods "Only its own methods write it; a proposed write is refused.": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))
 def initial() -> State:
-  {owner: "", title: "Workshop", held: Relations.empty(), next: 1n, policy: Plans.nobody()}
+  {owner: "", title: "Workshop", held: Relations.empty(), next: 1n}
 def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "held", key: Text.words("n"), limit: 12n})
 def heldKey(held: Held) -> {n: Nat}:
@@ -66,7 +74,7 @@ def checkedCard(diagnostics: Form.Names) -> Document.Document:
 def reprogrammedCard(target: String, version: Nat) -> Document.Document:
   Document.text("✾ WORKSHOP\n\nReprogrammed {target}.\nWas: {target} v{natText(version)}\nNow: {target} v{natText(version + 1n)}\n")
 def usage() -> Document.Document:
-  Document.text("✾ WORKSHOP: Bend checked, proposed to a card, or made from words. A block is a ```obend block under the spell, or source: <<BEND … BEND.\n  delvetalk workshop check\n» it compiles, or each problem with its line\n  delvetalk workshop check / target: garden/bell/1\n» the source that card runs, checked\n  delvetalk workshop propose / target: garden/bell/1 / migration:\n» reprogrammed, or held as #n for its owner to adopt\n  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n» hob drafts the Bend; checked, held as #n for you to adopt\n  delvetalk workshop draft / name: lamp\n» your own block, checked and held the same way\n  delvetalk workshop create / like: porch/goblet\n» a copy, yours, unless its owner said no\n")
+  Document.text("✾ WORKSHOP: Bend checked, proposed to a card, or made from words. A block is a ```obend block under the spell, or source: <<BEND … BEND.\n  delvetalk workshop check\n» it compiles, or each problem with its line\n  delvetalk workshop check / target: bell/1\n» the source that card runs, checked\n  delvetalk workshop propose / target: bell/1 / migration:\n» reprogrammed, or held as #n for its owner to adopt\n  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n» hob drafts the Bend; checked, held as #n for you to adopt\n  delvetalk workshop draft / name: lamp\n» your own block, checked and held the same way\n  delvetalk workshop create / like: porch/goblet\n» a copy, yours, unless its owner said no\n")
 def verdictOf(diagnostics: Form.Names) -> Verdict:
   match diagnostics:
     case nil(_): Verdict.clean({})
@@ -135,7 +143,7 @@ def adoptWritten(held: Held, pin: String, context: Abi.Context) -> Activity<Verd
   let written(_) = write {held: retract heldKey(held)}
   Card.tell(Verdict.reprogrammed({pin: pin}), Document.text("✾ WORKSHOP\n\nAdopted #{natText(held.n)} from {Card.shown(held.proposer, held.proposerHandle, context)}: {held.target} is reprogrammed.\n"))
 # `make / name / description`: hob is asked for Bend from the description, offered `check` alone
-# (the policy's drafting prompt: a package, answered as one ```obend block that fills its source);
+# (the world's policy's drafting prompt: a package, answered as one ```obend block that fills its source);
 # the draft it answers is checked and held, as a `draft` spell's is. Words that bring no Bend are
 # refused by name, with the spell that sends source directly.
 form make:
@@ -145,9 +153,9 @@ form draft:
   name: text 1..32
   source: source
 def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Verdict>:
-  if Plans.isNobody(state.policy) then refusing("noInterpreter", "Nobody reads words here; send the source: delvetalk workshop draft / name: {input.name} / source: <<BEND … BEND", context) else asked(input.name, input.description, context, state)
+  asked(input.name, input.description, context, state)
 def asked(name: String, description: String, context: Abi.Context, state: State) -> Activity<Verdict>:
-  match world.interpret::<{target: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(checkForm(), context.object), tail: Lists.List.nil()}), policy: state.policy, model: "", held: "", misfit: ""}):
+  match world.interpret::<{target: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(checkForm(), context.object), tail: Lists.List.nil()}), policy: {world: context.world, object: "policy"}, model: "", held: "", misfit: ""}):
     case proposal(p): drafting(name, p.argument.source, context, state)
     case _: refusing("noDraft", "hob drew no Bend from that. Say what it holds and what it does, or send the source: delvetalk workshop draft / name: {name} / source: <<BEND … BEND", context)
 def draft(state: State, input: DraftInput, context: Abi.Context) -> Activity<Verdict>:

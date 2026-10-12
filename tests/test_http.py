@@ -256,7 +256,7 @@ class Claim(FrontCase):
         self.assertIn(b'Claimed', page)
         self.assertIn(f'{HANDLE}: this browser is you'.encode(), page)
         self.assertNotIn(b'did:plc', page)
-        self.assertIn(b'Enter the commonplace', self.request('GET', '/', headers={'Cookie': cookie, 'Accept': 'text/html'})[2])  # logged in
+        self.assertIn(b'ENTER THE WORLD', self.request('GET', '/', headers={'Cookie': cookie, 'Accept': 'text/html'})[2])  # logged in
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=cookie.split('=', 1)[1])[1]['handle'], HANDLE)
 
     def test_someone_elses_newer_challenge_neither_shows_its_word_nor_displaces_mine(self):
@@ -656,8 +656,10 @@ class Play(FrontCase):
     def setUpClass(cls):
         super().setUpClass()
         from deploy import genesis
+        from tests.town import furnish
         made, refusal = genesis.run(cls.root, cls.OPENER)
         assert refusal is None, refusal
+        furnish(cls.root, cls.OPENER)
 
     def setUp(self):
         super().setUp()
@@ -706,10 +708,10 @@ class Play(FrontCase):
                  'a refusal': self.request('GET', '/o/nowhere', headers={'Accept': 'text/html'})[2]}
         for name, page in pages.items():
             self.assertIsNone(self.BANNED.search(self.words(page)), (name, self.BANNED.search(self.words(page))))
-        self.assertIn('A town of things that answer.', self.words(pages['home']))
+        self.assertIn('every thing a card, every reply a receipt', self.words(pages['home']))
         self.assertRegex(self.words(pages['home, logged in']), r'entry \d+')  # the shelf mark
         self.assertRegex(self.words(pages['home, logged in']), r'\d+ cards')
-        self.assertIn('journal, the newest', self.words(pages['object']))
+        self.assertIn('Receipts', self.words(pages['object']))
 
 
     def test_a_refused_receipt_with_no_roots_answers_on_the_receipt_turn_and_play_routes(self):
@@ -740,33 +742,15 @@ class Play(FrontCase):
         s, r = self.call('GET', '/AGENTS.md/receipt/' + line[3].decode(), token=tok)
         self.assertEqual((s, r['receipt']['height']), (200, int(line[2])), r)
 
-    def test_a_reply_is_speech_its_spells_are_suggestions_and_its_receipt_waits_to_be_asked_for(self):
-        """docs/WEB.md: what came back leads as prose; the line that introduces a spell labels it as a suggestion that only
-        fills the box (?say=, with no script); the admitted line is folded under `receipt`; a refusal is never folded."""
-        s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: violet\nseed: a bell that hums')
-        page = page.decode()
-        self.assertRegex(page, r'<p class="spoken">Planted, [^<]*a bell that hums')
-        self.assertRegex(page, r'<details class="receipt"><summary>receipt</summary><p class="turn admitted"><span class="stamp">●</span> admitted garden')
-        rain = re.search(r'<a class="say" href="(/play/garden\?say=([^"#]+)#say)">Rain on it</a>', page)
-        self.assertIsNotNone(rain, page)
-        spell = urllib.parse.unquote(rain[2])
-        self.assertTrue(spell.startswith('delvetalk garden/bell/') and '\ntext: ' in spell, spell)
-        self.assertEqual(page.count('<form'), 1)  # one box
-        s, _, filled = self.play(html.unescape(rain[1]).split('#')[0])
-        self.assertIn('>' + html.escape(spell) + '</textarea>', filled.decode())
-        self.assertIn('>how to say it</a>', filled.decode())
-        s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: gold\nseed: a')
-        self.assertIn('<p class="turn refused"><span class="stamp">§</span> refused badValue', page.decode())
-
     def test_the_paint_stands_above_the_exact_card_and_never_without_it(self):
         """OVERHAUL §4 (c): /play/ and /o/ show a card's verified paint above its exact card; with no worker attending, the
         exact card alone, at once; a refused paint never."""
         from transport import interpret
-        frame = b'<pre class="card">'
+        frame = b'<figure class="frame"><pre class="card">'
         for path in ('/play/garden', '/play/'):
             s, _, page = self.play(path)
-            self.assertEqual((s, page.count(b'class="paint"')), (200, 0))  # nobody paints: the exact card, unkept, and open
-            self.assertIn(b'<details class="card" open><summary>the card</summary>' + frame, page)
+            self.assertEqual((s, page.count(b'class="paint"')), (200, 0))  # nobody paints: the exact card, unkept
+            self.assertIn(frame, page)
         self.host.send({'op': 'world-renders'})  # the worker arrives, and finds both queued
         paint = 'The night garden lies open under the moon, its beds waiting for a seed.'
         replied = lambda text: {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {}}
@@ -776,7 +760,6 @@ class Play(FrontCase):
                      self.request('GET', '/o/garden')[2]):
             at = page.find(b'<p class="paint">' + html.escape(paint).encode() + b'</p>')
             self.assertTrue(0 <= at < page.find(frame), page[:2000])
-            self.assertIn(b'</p><details class="card"><summary>the card</summary>' + frame, page)  # painted: the card folded, never gone
         # A card whose paint the host refused (second person, a welcome) shows exact alone.
         s, _, page = self.play('/play/')
         self.assertEqual((s, page.count(b'class="paint"')), (200, 0))
@@ -790,27 +773,21 @@ class Play(FrontCase):
         self.assertIn(b'suspended, entry', out['page'])
         self.assertIn(b'a bell for the owls', out['page'])  # the interpreter's proposal, as the offer to this turn
 
-    def test_a_question_to_a_card_in_words_waits_for_hobs_answer_and_names_the_card(self):
-        """The owner's question on /play/kinds (2026-10-11): the card hands the prose on, hob answers (`say:`), and the
-        page waits for that answer; the turn line names kinds, the card the words were addressed to."""
-        out = {}
-        t = threading.Thread(target=lambda: out.update(page=self.play('/play/kinds', 'what is a kind? what is the things in a cistern?')[2]))
-        t.start()
-        for _ in range(300):
-            pending = self.host.send({'op': 'world-interpretations'}).get('pending') or []
-            if pending:
-                break
-            time.sleep(0.1)
-        answer = 'A kind is a template for a made thing. The kinds make form takes a name and an of.'
-        r = self.host.send({'op': 'world-interpretation', 'id': pending[-1]['id'],
-                            'reply': {'status': 'replied', 'model': 'claude-haiku-5-5', 'json': None, 'raw': 'say: ' + answer}})
-        self.assertEqual((r['status'], r['receipt']['outcome']['verdict']), ('interpreted', {'tag': 'said', 'text': answer}), r)
-        t.join(60)
-        self.assertFalse(t.is_alive())
-        self.assertRegex(self.words(out['page']), r'admitted kinds v\d+, entry \d+')
-        self.assertNotIn('admitted commonplace', self.words(out['page']))
-        # hob's answer stands beside the kinds card, above it, never inside its facts
-        self.assertIn('<span>hob: ' + answer + '</span></p><p class="spoken">KIND kinds:', out['page'].decode())
+    def test_prose_at_a_card_on_the_play_page_is_hobs_with_that_cards_table(self):
+        """The owner's question on /play/kinds (2026-10-11): words at a card go to hob (HOST-HANDOFF 5.163), who is offered
+        that card's table; the turn waits as a pending interpretation on kinds, and hob's `none` is silence."""
+        words = 'what is a kind? what is the things in a cistern?'
+        self.front.sleep = lambda seconds: None
+        page = self.play('/play/kinds', words)[2]
+        self.assertRegex(self.words(page), r'suspended, entry \d+')
+        self.assertNotIn('hob: ', page.decode())
+        [item] = [p for p in self.host.send({'op': 'world-interpretations'}).get('pending') or [] if p['utterance'] == words]
+        self.assertEqual((item['object'], [(o['card'], o['action']) for o in item['offers']][:1]), ('kinds', [('kinds', 'make')]), item)
+        settled = self.host.send({'op': 'world-interpretation', 'id': item['id'],
+                                  'reply': {'status': 'replied', 'model': 'm', 'json': None, 'raw': 'none'}})
+        self.assertEqual(settled['status'], 'interpreted', settled)
+        [resumed] = settled['resumed']
+        self.assertEqual((resumed['status'], resumed['receipt']['outcome'].get('tag'), resumed['receipt'].get('offers', [])), ('admitted', 'admitted', []), resumed)
 
     def test_a_suspended_turn_is_a_line_under_a_kilobyte_and_its_full_reply_elides_the_blocks(self):
         tok = self.cookie.split('=', 1)[1]
@@ -829,7 +806,7 @@ class Play(FrontCase):
         for i in range(48):
             self.play('/play/', f'something green, number {i}')
         s, _, page = self.play('/play/', 'one more')
-        self.assertIn('<p class="turn refused"><span class="stamp">§</span> refused quota'.encode(), page)
+        self.assertIn('<span class="stamp">§</span><span class="line">refused quota'.encode(), page)
         self.assertIn(b'next at', page)
 
 

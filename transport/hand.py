@@ -162,7 +162,8 @@ class Hand:
             if d:
                 fate = f'{d["object"]} / {r.get("slug") or "no slug"} / {outcome_of(r)}'
             elif awaiting_path(self.st, o['uri']).exists():
-                fate = 'waiting on an interpretation'
+                settled = json.loads(awaiting_path(self.st, o['uri']).read_text()).get('settled')
+                fate = 'read by hob; nothing to answer' if settled else 'waiting on an interpretation'
             elif o['uri'] in skip:
                 fate = 'skipped: addressed to nobody (no recorded parent, no card word, no summon)'
             else:

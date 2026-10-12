@@ -6,7 +6,6 @@ has its drafts posted by transport/zulip.py. Principals here are the observed au
 import hashlib
 import ipaddress
 import json
-import re
 import sqlite3
 import urllib.parse
 import time
@@ -61,12 +60,9 @@ def turn_root(receipt, addressed=None):
 
 
 def card_name(object_, handles=None):
-    """How a line names a card: a person's own cards by their handle (`kestrel's wake`, `kestrel's env`, `kestrel's avatar`,
-    the avatar's id being the DID), a DID never reaching a post; any other card by its id."""
+    """How a line names a card: a person's avatar by their handle (`kestrel's avatar`, the avatar's id being the DID), a
+    DID never reaching a post; any other card by its id."""
     handles = handles or {}
-    for prefix in ('wake/', 'env/'):
-        if object_.startswith(prefix) and object_[len(prefix):] in handles:
-            return f"{handles[object_[len(prefix):]]}'s {prefix[:-1]}"
     return f"{handles[object_]}'s avatar" if object_ in handles else object_
 
 
@@ -153,9 +149,12 @@ def awaiting_path(st, uri):
 def offer_drafts(st, host):
     """Draft what resumed turns offered. A suspended turn leaves an `awaiting` record; once its interpretation
     settles the resumed entry's offer is in the host's outbox for the author, under the turn's identity (the
-    post). One draft per (addressee, identity), so a retry never drafts twice; no offer, no draft. The draft ends
-    with the receipt of the author's turn on that post, as the host names it (`world-receipt`)."""
-    waiting = [json.loads(p.read_text()) for p in sorted(st.awaiting.glob('*.json'))]
+    post). One draft per (addressee, identity), so a retry never drafts twice. The draft ends with the receipt
+    of the author's turn on that post, as the host names it (`world-receipt`). A resumption the host refused (hob's
+    act refused by a law, a misfit hob read nothing better for) is drafted as any refusal is, from what the host
+    makes public; a resumption with no offer and no refusal (hob's `none`) drafts nothing. Either is marked
+    `settled` and never asked again."""
+    waiting = [json.loads(p.read_text()) for p in sorted(st.awaiting.glob('*.json')) if not json.loads(p.read_text()).get('settled')]
     drafted, handles = [], {o['author']['did']: o['author']['handle'] for o in all_observations(st)} if waiting else {}
     for principal in dict.fromkeys(w['principal'] for w in waiting):
         mine = {(w['principal'], w['uri']): w for w in waiting if w['principal'] == principal}
@@ -184,6 +183,23 @@ def offer_drafts(st, host):
                 'offer': {'height': offers[-1]['height'], 'identity': uri},
                 'text': text, 'posted': False})
             drafted.append(uri)
+        for (_, uri), w in mine.items():
+            key = hashlib.sha256(f'{principal}\0{uri}'.encode()).hexdigest()[:16]
+            if not w.get('suspended') or (principal, uri) in grouped or any(st.outbox.glob(f'*-off-{key}.json')):
+                continue
+            got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri})
+            rc = got.get('receipt') or {}
+            tag = (rc.get('outcome') or {}).get('tag')
+            if tag in (None, 'suspended'):
+                continue
+            text = draft_text({'status': 'refused', 'receipt': rc, 'public': got['public']}, st.config.origin, w.get('object'), handles) \
+                if tag == 'refused' and got.get('public') else ''
+            if text:
+                st.write(st.outbox / f"{rc['height']}-off-{key}.json", {
+                    'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
+                    'object': w.get('object'), 'slot': w.get('slot'), 'receipt': rc, 'text': text, 'posted': False})
+                drafted.append(uri)
+            st.write(awaiting_path(st, uri), {**w, 'settled': True})
     return drafted
 
 
@@ -202,30 +218,16 @@ def pending_observations(rows):
                   key=lambda o: (o['createdAt'], o['uri']))
 
 
-def parsed(host, obs):
-    """The host's reading of the post (`spell-parse`): {spell: {card, …}} or {notASpell}, with `bare` field lines; {} for
-    a text the parser has nothing to read in (no `delvetalk` line, no `:`) and for a wiki post, which is a page."""
-    if obs['kind'].startswith('wiki') or ('delvetalk' not in obs['text'] and ':' not in obs['text']):
-        return {}
-    got = host.send({'op': 'spell-parse', 'text': obs['text']})
-    if got.get('status') != 'parsed':
-        raise Unread(got.get('message', got.get('status')))  # the host did not read it: the post waits for the next run
-    return got
-
-
-class Unread(Exception):
-    pass
-
-
-MAX_HOPS = 32
+MAX_HOPS = 32  # the host's `reachHops`: the ancestors passed with a post
 MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ignored
 
 
 def mention_turns(st, host, obs, authors, handles):
     """A mention is addressed to the mentioned: one turn per mention (a facet's DID, or an @handle that is a known
-    author) to env/<did>.write {text, post} under the author (Env's own method: a stranger's
-    `receive` carrying a spell line is retargeted by the host, so a quoted spell would run). Once per post. Only an arrived principal has an Env:
-    a mentioned principal the observer has seen is arrived first; one it has not is skipped, with a note in skipped.txt."""
+    author) to the mentioned principal's avatar, `<did>`.receive {text, post} under the author with reach `mentioned`:
+    the avatar keeps it as a note, and the host never reads it as a spell (its spell lines are the author's, routed to the
+    cards they name). Once per post. Only an arrived principal has an avatar: a mentioned principal the observer has seen
+    is arrived first; one it has not is skipped, with a note in skipped.txt."""
     done = st.words(st.mentioned)
     dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:MENTIONS]) if d))
     if obs['uri'] in done or not dids:
@@ -236,10 +238,11 @@ def mention_turns(st, host, obs, authors, handles):
     replies = []
     for did in dids:
         if did not in handles or not register(st, host, did, handles[did]):
-            st.append(st.skipped, f"{obs['uri']}#mention:{did}")  # not arrived, so no Env: nothing to send
+            st.append(st.skipped, f"{obs['uri']}#mention:{did}")  # not arrived, so no avatar: nothing to send
             continue
-        replies.append(host.send({'op': 'world-turn', 'principal': author['did'], 'object': f'env/{did}', 'method': 'write',
-                                  'argument': {'tag': 'record', 'fields': fields}, 'identity': f"{obs['uri']}#env:{did}"}))
+        replies.append(host.send({'op': 'world-turn', 'principal': author['did'], 'object': did, 'method': 'receive',
+                                  'argument': {'tag': 'record', 'fields': fields}, 'reach': 'mentioned',
+                                  'identity': f"{obs['uri']}#mention:{did}"}))
     if all('receipt' in r for r in replies):  # else retry next run: the host answers a repeated identity with its first receipt
         st.append(st.mentioned, obs['uri'])
     return bool(replies)
@@ -265,63 +268,26 @@ def door_rows(view):
     return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
 
 
-def route(host, obs, known=None):
-    """-> (object, slot|None, how) or None: where a post reaches (FLEX.md), and how, for the host to judge: `replyTo`, the
-    recorded post it answers (the host verifies a reply), or `reach`, the rule it matched (HOST-HANDOFF 118). (a) A reply reaches the card whose recorded post
-    (the card's, or any of the world's replies under it) is its direct parent; on Zulip, where a topic is one thread, the
-    nearest recorded message above it in the topic past only its author's own, unless it @-mentions only other residents:
-    prose under another resident's message answers that resident and reaches nothing. (b) A spell line reaches
-    its card, as the host reads it; a summons (a mention of the world, #gsb) reaches the commonplace, whose interpreter
-    may answer `none`. (c) Field lines anywhere in a thread the world opened reach that thread's card, which completes
-    them, and (d) prose there that names one of the commonplace's doors reaches that door's card. Other prose deeper in a
-    thread, addressed to another resident, does not reach by the thread's root."""
-    zulip = obs['uri'].startswith('zulip://')
-    known, ancestor = known or {}, obs['replyTo']
-    hops = 0 if zulip and obs['mentions'] and obs['kind'] != 'summon' else MAX_HOPS if zulip else 1
-    asked = set()
-    found = walk(host, ancestor, known, hops, asked, obs['author']['did'] if zulip else None)
-    if found:
-        return found[0], found[1], {'replyTo': found[2]}
-    read = parsed(host, obs)
-    if (read.get('spell') or {}).get('card'):
-        return read['spell']['card'], None, {}  # the host reads the spell itself
-    if obs['kind'] == 'summon':
-        return 'commonplace', None, {'reach': 'mention'}
-    if zulip or not ancestor:
+def reach(host, obs, known):
+    """-> (object, slot|None, how) or None: where the host says the post reaches (`world-reach`, docs/FLEX.md §2). The
+    bridge passes only what it observed: the post, and the ancestors it saw above it with their authors."""
+    chain, above = [], obs['replyTo']
+    while above in known and len(chain) < MAX_HOPS and all(a['uri'] != above for a in chain):
+        seen = known[above]
+        chain.append({'uri': above, 'author': seen['author']['did'], **({'replyTo': seen['replyTo']} if seen['replyTo'] else {})})
+        above = seen['replyTo']
+    got = host.send({'op': 'world-reach', 'uri': obs['uri'], 'text': obs['text'], 'kind': obs['kind'], 'author': obs['author']['did'],
+                     **({'replyTo': obs['replyTo']} if obs['replyTo'] else {}), **({'root': obs['root']} if obs.get('root') else {}),
+                     'mentions': len(obs['mentions']), 'chain': chain})
+    if got.get('status') != 'reached':
+        if got.get('status') != 'unreached':
+            raise Unread(got.get('message', got.get('status')))  # the host did not answer: the post waits for the next run
         return None
-    root = obs.get('root')  # the thread's card: its nearest recorded ancestor, or its root
-    thread = walk(host, (known.get(ancestor) or {}).get('replyTo'), known, MAX_HOPS, asked) or (lambda got: (
-        got['object'], got.get('slot')) if got.get('object') else None)(host.send({'op': 'world-addressee', 'parent': root}) if root and root != ancestor else {})
-    if not thread:
-        return None
-    if read.get('bare'):  # (c) field lines: the thread's card completes them
-        return thread[0], thread[1], {'reach': 'fields'}
-    door = named_door(host, obs)  # (d) prose naming a door reaches that door's card
-    return (door, None, {'reach': 'door'}) if door else None
+    return got['object'], got.get('slot'), got
 
 
-def named_door(host, obs):
-    """The card of the first door (of the commonplace's, as the host shows them) whose label the text names as a word."""
-    doors = {str(d.get('label', '')).lower(): d['to']['object'] for d in door_rows(host.send({'op': 'world-view', 'principal': CLOCK, 'object': 'commonplace'}))}
-    return next((doors[w] for w in re.findall(r"[\w'-]+", obs['text'].lower()) if w in doors), None)
-
-
-def walk(host, ancestor, known, hops, seen, author=None):
-    """The addressee of the nearest recorded post among `hops` ancestors, walking replyTo through what was observed;
-    `seen` holds the posts already asked about, so a cycle or a second walk never asks twice. With `author` (Zulip), the
-    walk passes only that author's own messages: another resident's message above is who the words answer."""
-    for _ in range(hops):
-        if not ancestor or ancestor in seen:
-            return None
-        seen.add(ancestor)
-        got = host.send({'op': 'world-addressee', 'parent': ancestor})
-        if got.get('object'):
-            return got['object'], got.get('slot'), ancestor
-        above = known.get(ancestor) or {}
-        if author and (above.get('author') or {}).get('did') != author:
-            return None
-        ancestor = above.get('replyTo')
-    return None
+class Unread(Exception):
+    pass
 
 
 def publication_text(p):
@@ -391,7 +357,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists():
             continue
         try:
-            target = route(host, obs, known)
+            target = reach(host, obs, known)
         except Unread as e:
             failed.append({'uri': obs['uri'], 'message': str(e)})
             continue
@@ -409,8 +375,8 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
                    'argument': {'tag': 'record', 'fields': fields}, 'identity': obs['uri']}
         if how.get('replyTo') or obs['replyTo']:  # on Zulip the recorded message found up the topic, so the host verifies it
             request['replyTo'] = how.get('replyTo') or obs['replyTo']
-        if how.get('reach'):
-            request['reach'] = how['reach']  # what the bridge saw: mention, door or fields (HOST-HANDOFF 118)
+        if how['how'] in ('mention', 'door', 'fields'):
+            request['reach'] = how['how']  # the reach the host found; a reply and a spell it finds again at the turn
         reply = host.send(request)
         if reply.get('status') == 'spells':  # several spells at a line's start: a turn each, one reply carrying every line
             turns = reply.get('turns') or []
@@ -439,7 +405,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if reply.get('status') == 'suspended' or reply['receipt'].get('outcome', {}).get('tag') == 'suspended':
             # Nothing was committed and nothing is offered yet: no draft until the interpretation settles.
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot),
-                                                     'height': reply['receipt']['height']})
+                                                     'height': reply['receipt']['height'], 'suspended': True})
             continue
         obj = reply.get('object') or obj  # the card the host ran the turn on: a spell's card as it resolved it
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {

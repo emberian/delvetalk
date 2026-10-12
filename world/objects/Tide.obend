@@ -7,98 +7,85 @@ import ./Plan.obend as Plans
 import ./World.obend as World
 import ./Card.obend as Card
 import ./Relation.obend as Relations
-import ./Rows.obend as Rows
 import ./Text.obend as Text
-# kimik3's tide: programmable wakes as an object. Anyone subscribes themselves (the
-# subscriber is the turn's principal, never an argument); anyone may tick, but a tick
-# sooner than `gap` clock units after the last is refused tooSoon, naming when the next may
-# come. A tick sends each due subscriber's Avatar (its id is the DID) a note.
-# handle: the subscriber's handle as the host knew it at subscribe, shown as a bell
-# shows its planter's. The subscriptions are a relation keyed {who}: one per principal,
-# subscribing again is an upsert of the row, and the card lists them in key order.
-# owner: who alone reprograms or amends it (the host fills it with the creating principal).
-type Sub = Rows.Subscription
+# kimik3's tide: the town's one clock thing. It ticks itself, once every `gap` clock minutes (an
+# hour): each tick is its own turn, which sends the tide `due {at}`, a turn that waits for the
+# clock on a slot nobody settles and then sends the next `tick`. A turn that only waits writes
+# nothing, so a resumed wait never meets a stale root; a wait the clock passed by a jump ticks
+# once, at the clock it wakes to (missed ticks are not made up). What happens at a tick is the
+# rules written on the tide (`delvetalk tide rules`): the weather's, once a clock day, is `new.ticks
+# % 24 == 0`; a front's clock reads the tick too. Its owner starts it (`tick`, the first); a tick
+# sooner than `gap` after the last is refused tooSoon, so a second chain dies at its first tick.
+# owner: who alone starts, reprograms or amends it (the host fills it with the creating principal).
 record State:
   owner: String
   ticks: Nat
   last: Nat
   gap: Nat
-  subs: Relations.Relation<Sub>
 law clock "ticks only count up": monotone(ticks)
 law last "the last tick only moves forward": monotone(last)
 law gap "the gap never changes": unchanged(gap)
-law owner "the owner never changes; only the owner reprograms or amends it; anyone ticks and subscribes": unchanged(owner) and (request.kind == 0 or request.subject == new.owner)
+law owner "the owner never changes; only the owner reprograms or amends it; anyone places rules, wants and verbs on it": unchanged(owner) and (request.kind == 0 or request.kind == rule or request.subject == new.owner)
 law tooSoon "A tick may not come sooner than the gap after the last.": new.ticks <= old.ticks or old.ticks == 0 or request.clock == old.last + old.gap or not (request.clock <= old.last + old.gap)
-law self "Only you change your own subscription.": changed(new.subs.who) by request.subject
 law methods "Only its own methods write it; a proposed write is refused.": not (request.kind == proposed) and (request.kind == 0 implies not (request.method == ""))
-def subKey(sub: Sub) -> {who: String}:
-  {who: sub.who}
-def relations() -> Relations.Decls:
-  Lists.append(Relations.Decls.nil(), {field: "subs", key: Text.words("who"), limit: subsMax()})
-# Subscribers at most: a tick sends to every due one in its own turn, which sends at most 32
-# (the host's sendsPerTurn; a thirty-third send would abort the tick), and a new principal past
-# them is refused by name (the host's limit would drop someone else's row).
-def subsMax() -> Nat:
-  32n
 def initial() -> State:
-  {owner: "", ticks: 0n, last: 0n, gap: 1n, subs: Relations.empty()}
+  {owner: "", ticks: 0n, last: 0n, gap: 60n}
+# The tide as edition 8 kept it: `subs`, the notes a tick owed, and a gap the opener's wake kept to
+# an hour. A carry lays this package over it: `subs` goes (a rule on the tide is how a tick reaches
+# anyone now), and it ticks itself hourly.
+record Subscription8:
+  who: String
+  every: Nat
+  note: String
+  since: Nat
+  handle: String
+record State8:
+  owner: String
+  ticks: Nat
+  last: Nat
+  gap: Nat
+  subs: Relations.Relation<Subscription8>
+def migrate(old: State8) -> State:
+  {owner: old.owner, ticks: old.ticks, last: old.last, gap: 60n}
 sum Done:
-  subscribed: {since: Nat}
-  ticked: {tick: Nat, sent: Nat}
-  tooSoon: {next: Nat}
+  ticked: {tick: Nat}
+  waited: {}
   refused: Card.Refusal
-# Why a subscription is refused: each arm a clause and its reading.
-sum Why:
-  everyZero: {}
-  full: {}
-def refusal(w: Why) -> Card.Refusal:
-  match w:
-    case everyZero(_): {clause: "everyZero", reading: "every is at least 1."}
-    case full(_): {clause: "full", reading: "The tide holds {natText(subsMax())} subscribers."}
-def refused(w: Why, context: Abi.Context) -> Activity<Done>:
-  Card.refusing(Done.refused(refusal(w)), refusal(w), context)
-# One subscription per principal (the key): subscribing again replaces it.
-# Every subscribe and tick ends by offering what happened and the Tide's card as the
-# write leaves it; a refusal is answered by name (Card.refusing).
-def told(done: Done, card: Document.Document) -> Activity<Done>:
-  Card.tell(done, Document.concat(Document.text(doneLine(done)), card))
-def doneLine(done: Done) -> String:
-  match done:
-    case subscribed(s): "Subscribed, from tick {natText(s.since)}.\n\n"
-    case ticked(t): "Tick {natText(t.tick)}: {natText(t.sent)} {if t.sent == 1n then \"note\" else \"notes\"} sent.\n\n"
-    case _: ""
-def subscribe(state: State, input: {every: Nat, note: String}, context: Abi.Context) -> Activity<Done>:
-  if input.every == 0n then refused(Why.everyZero({}), context) else subscribing({who: context.principal, every: input.every, note: input.note, since: state.ticks, handle: context.handle}, state, context)
-def subscribing(sub: Sub, state: State, context: Abi.Context) -> Activity<Done>:
-  if Relations.count(state.subs) < subsMax() || Relations.has(state.subs, {who: sub.who}) then subWritten(sub, render(extend(state, {subs: Relations.upsert(state.subs, sub, subKey)}), context)) else refused(Why.full({}), context)
-def subWritten(sub: Sub, card: Document.Document) -> Activity<Done>:
-  let written(_) = write {subs: upsert sub}
-  told(Done.subscribed({since: sub.since}), card)
-def due(sub: Sub, tick: Nat) -> Bool:
-  (tick - sub.since) % sub.every == 0n
-# The first tick may come at once; after it, not before last + gap.
+# A tick: the tide's own (the turn its `due` sent), or its owner's first. Too soon is refused
+# by name; a tick from anyone else is told that the tide ticks itself.
 def tick(state: State, context: Abi.Context) -> Activity<Done>:
-  if state.ticks > 0n && context.clock < state.last + state.gap then Card.refusing(Done.tooSoon({next: state.last + state.gap}), {clause: "tooSoon", reading: "the next tick may come at clock {natText(state.last + state.gap)}"}, context) else tickWritten(context, state)
-def tickWritten(context: Abi.Context, state: State) -> Activity<Done>:
+  if context.caller != context.object && (context.principal != state.owner || state.ticks > 0n) then refusing({clause: "itself", reading: "the tide ticks itself every {natText(state.gap)} clock minutes; the next from clock {natText(state.last + state.gap)}"}, context) else if state.ticks > 0n && context.clock < state.last + state.gap then refusing({clause: "tooSoon", reading: "the next tick may come at clock {natText(state.last + state.gap)}"}, context) else ticked(state, context)
+def refusing(refusal: Card.Refusal, context: Abi.Context) -> Activity<Done>:
+  Card.refusing(Done.refused(refusal), refusal, context)
+def ticked(state: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {ticks: add 1n, last: set context.clock}
-  woken(Relations.rows(state.subs), state.ticks + 1n, 0n, render(extend(state, {ticks: state.ticks + 1n, last: context.clock}), context))
-# Sends to each due subscriber in turn, by explicit recursion.
-def woken(subs: Lists.List<Sub>, tick: Nat, sent: Nat, card: Document.Document) -> Activity<Done>:
-  match subs:
-    case nil(_): told(Done.ticked({tick: tick, sent: sent}), card)
-    case cons(c): if due(c.head, tick) then noted(c.head, c.tail, tick, sent, card) else woken(c.tail, tick, sent, card)
-def noted(sub: Sub, rest: Lists.List<Sub>, tick: Nat, sent: Nat, card: Document.Document) -> Activity<Done>:
-  match world.send({object: {world: "", object: sub.who}, method: "note", argument: {text: "tide {natText(tick)}: {sub.note}"}}):
-    case delivery(_): woken(rest, tick, sent + 1n, card)
-    case _: woken(rest, tick, sent, card)
-form subscribe:
-  every: natural 1..1000
-  note: text 1..140
+  match world.send({object: Plans.self(context), method: "due", argument: {at: context.clock + state.gap}}):
+    case _: Card.tell(Done.ticked({tick: state.ticks + 1n}), Document.concat(Document.text("Tick {natText(state.ticks + 1n)}.\n\n"), render(extend(state, {ticks: state.ticks + 1n, last: context.clock}), context)))
+# Carried to a newer host (the carry's `carried`, as a kind's `made`): the wait the move dropped is waited
+# again, for the tick the last one scheduled; a tide not yet begun waits for its owner's first.
+def carried(state: State, input: {}, context: Abi.Context) -> Activity<Done>:
+  if state.ticks == 0n then Done.waited({}) else rearmed(state, context)
+def rearmed(state: State, context: Abi.Context) -> Activity<Done>:
+  match world.send({object: Plans.self(context), method: "due", argument: {at: state.last + state.gap}}):
+    case _: Done.waited({})
+# The wait between ticks: the tide's own send alone; the clock reaching `at` sends the next tick.
+def due(state: State, input: {at: Nat}, context: Abi.Context) -> Activity<Done>:
+  if context.caller != context.object then Done.waited({}) else waiting(input.at, context)
+def waiting(at: Nat, context: Abi.Context) -> Activity<Done>:
+  match world.awaitUntil({slot: {principal: context.object, intent: "tide/{context.intent}"}, until: at}):
+    case timedOut(_): next(context)
+    case _: Done.waited({})
+def next(context: Abi.Context) -> Activity<Done>:
+  match world.send({object: Plans.self(context), method: "tick", argument: Plans.nothing()}):
+    case _: Done.waited({})
 form tick:
+def methods() -> Lists.List<String>:
+  Text.words("~due ~carried")
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  if context.principal == state.owner && state.ticks == 0n then Text.words("tick") else Text.words("")
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))
-def line(context: Abi.Context) -> Sub -> Document.Document:
-  fn(sub: Sub) -> Document.Document: Document.text("{Card.shown(sub.who, sub.handle, context)}{Card.mine(sub.who, context)} every {natText(sub.every)} from tick {natText(sub.since)}: {sub.note}\n")
 def render(state: State, context: Abi.Context) -> Document.Document:
   let id = Card.called(context, "tide")
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text("THE TIDE, tick {natText(state.ticks)}; last at clock {natText(state.last)}, next from {natText(state.last + state.gap)}. Anyone ticks:\n  delvetalk {id} tick\n» tick N, and each due subscriber's avatar noted; too soon: refused tooSoon\nSubscribe:\n  delvetalk {id} subscribe / every: <1 to 1000 ticks> / note: <1 to 140 characters>\n"), tail: Card.clipped(Lists.map(Relations.rows(state.subs), line(context)), 8n)})})
+  let when = if state.ticks == 0n then "it has not begun" else "last at clock {natText(state.last)}, the next from clock {natText(state.last + state.gap)}"
+  Document.text("THE TIDE, tick {natText(state.ticks)}; {when}. It ticks itself every {natText(state.gap)} clock minutes, and what happens at a tick is the rules written on it:\n  delvetalk {id} rules\n» each rule, who wrote it, and when it last fired\nWrite one:\n  delvetalk {id} rule / name: <a name> / when: request.method == \"tick\" and new.ticks % 24 == 0 / then: <a spell>\n")

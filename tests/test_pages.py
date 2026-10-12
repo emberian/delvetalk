@@ -91,8 +91,10 @@ class Pages(FrontCase):
     def setUpClass(cls):
         super().setUpClass()
         from deploy import genesis
+        from tests.town import furnish
         made, refusal = genesis.run(cls.root, cls.OPENER)
         assert refusal is None, refusal
+        furnish(cls.root, cls.OPENER)
         r = cls.root.send({'op': 'world-create', 'principal': cls.OPENER, 'identity': 'mk-picker', 'object': 'picker',
                                          'modules': closure('World') + [{'name': 'Picker', 'source': PICKER}], 'entry': 'initial', 'seed': {'tag': 'record', 'fields': []}})
         assert r['status'] == 'created', r
@@ -120,14 +122,14 @@ class Pages(FrontCase):
                                'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0))})
         self.assertEqual(made['status'], 'created', made)
         home = read(self.page('/'))
-        self.assertIn('env/talkie.delve.town', home)
+        self.assertIn('talkie.delve.town', home)
         self.assertIn('note/a stranger …wxyz', home)
-        self.assertIn(f'href="/o/env%2F{DID}"', self.page('/'))  # the link still names the object by its id
+        self.assertIn(f'href="/o/{DID}"', self.page('/'))  # the link still names the object by its id
         slips = read(self.page(f'/o/{self.c}'))
         self.assertIn('talkie.delve.town', slips)
         tok = self.cookie.split('=', 1)[1]
         s, h, body = self.request('GET', '/AGENTS.md/world', headers={'Authorization': 'Bearer ' + tok})
-        self.assertIn('env/' + DID, json.loads(body)['ids'])  # an agent's JSON keeps the DID
+        self.assertIn(DID, json.loads(body)['ids'])  # an agent's JSON keeps the DID
 
     def test_an_objects_text_view_is_brief_unless_all_is_asked(self):
         for i in range(7):  # more receipts than the brief view keeps

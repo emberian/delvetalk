@@ -1,9 +1,9 @@
 """Usage and hints speak as the speaker does (rehearsal run 11 findings 5 and 6): a card resolved for
-the speaker (`env`) is named as they wrote it, never `env/<did>`; a bad value is a blank in the hint,
+the speaker (`me`) is named as they wrote it, never by their DID; a bad value is a blank in the hint,
 not repeated; an unknown card from a card without spells points to the directory; usage lists only
 the methods the speaker's law admits; a `views()` entry is read, not cast, so it is no spell.
 
-Evidence for HOST-HANDOFF 5.80 (layer: host). Refuted by a hint naming `env/<did>`, repeating a
+Evidence for HOST-HANDOFF 5.80 (layer: host). Refuted by a hint naming the speaker's DID, repeating a
 value it refused, saying a card "takes no spells" for an unknown card, listing a method the law
 refuses the speaker, or listing a view.
 
@@ -18,7 +18,7 @@ from tests.bend import declared
 
 DID = "did:plc:aaaaaaaaaaaaaaaaaaaaaaa1"
 
-# An Env-like card: `tune` for anyone, `reset` only for its owner (a clause that reads no state),
+# A card of the speaker's own: `tune` for anyone, `reset` only for its owner (a clause that reads no state),
 # and a derived view `count`.
 ENV = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -64,7 +64,7 @@ class UsageVoice(Reflection):
     def setUp(self):
         super().setUp()
         self.open_library()
-        for name, source in ((f"env/{DID}", ENV), ("garden", declared(GARDEN)), ("root", DIRECTORY)):
+        for name, source in ((DID, ENV), ("garden", declared(GARDEN)), ("root", DIRECTORY)):
             r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
                                modules=[{"name": "Probe", "source": source}], entry="initial", seed=record())
             self.assertEqual(r["status"], "created", r)
@@ -74,12 +74,12 @@ class UsageVoice(Reflection):
 
 
     def test_usage_lists_what_the_law_admits_the_speaker_and_no_view(self):
-        usage = self.say("root", "delvetalk env ?")
+        usage = self.say("root", "delvetalk me ?")
         self.assertEqual(usage["status"], "usage", usage)
-        self.assertIn("delvetalk env tune", usage["text"])
+        self.assertIn("delvetalk me tune", usage["text"])
         self.assertNotIn("reset", usage["text"])
         self.assertNotIn("count", usage["text"])
-        forms = self.host.send(op="world-inspect", principal="ember", object=f"env/{DID}", source=False)["forms"]
+        forms = self.host.send(op="world-inspect", principal="ember", object=DID, source=False)["forms"]
         self.assertNotIn("'count'", str(forms))
         self.assertIn("'reset'", str(forms))
 

@@ -3,8 +3,8 @@ on the town genesis builds: each step's receipt, and the card its reader gets.
 
 Evidence for FOUNDATION §3, §5, §8 and the voice (layer: scenarios).
 
-- Bell: a kind makes a bell, its maker watches its seventh rain, three people rain on it, the seventh
-  rings it, and an avatar watching its marks is told; a rain past its bound is refused by name.
+- Bell: a kind makes a bell, three people rain on it, the kind's rule rings it at the seventh and its
+  other rule notes the maker; a rain past its bound is refused by name.
 - Garden: a planting spell grows a bell in the garden (held among its `things`) and the card names where
   to rain; a planting that misfits the form is refused by its clause and plants nothing.
 - Workshop: a flawed block is checked with a located diagnostic; a proposal to another's card is held
@@ -18,11 +18,11 @@ The deal signed by two is `test_deal`; the claim of a handle and the login are `
 import unittest
 from pathlib import Path
 
-from tests.host import card_texts
+from tests.host import as_owner, card_texts
 from tests.town import Town
 from tests.test_properties import OPENER, STRANGERS
 import tempfile
-from tests.wire import cast_refusal, label, nat, record, variant
+from tests.wire import label, nat, record
 
 ROOT = Path(__file__).resolve().parent.parent
 KIM, GLM = list(STRANGERS)
@@ -44,6 +44,15 @@ class Arc(unittest.TestCase):
     def say(self, who, obj, text):
         """A reply carrying `text` to card `obj`, as the bridge makes it."""
         return self.turn(who, obj, "receive", record(text=label(text), post=label("at://%s/post/%d" % (who, self.n + 1))))
+
+    def hob_says_none(self, suspended, who):
+        """A misfit is hob's: the turn is suspended with one item pending; hob's `none` leaves the host's refusal."""
+        self.assertEqual(suspended["status"], "suspended", suspended)
+        [item] = self.town.send(op="world-interpretations")["pending"]
+        settled = self.town.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": "none", "model": "m"})
+        self.assertEqual(settled["status"], "interpreted", settled)
+        [resumed] = settled["resumed"]
+        return as_owner(self.town, resumed, who)["receipt"]
 
     def card(self, reply):
         return "\n".join(dict.fromkeys(card_texts(reply)))
@@ -67,19 +76,10 @@ class Arc(unittest.TestCase):
 
 
 class Bell(Arc):
-    def test_a_made_bell_is_watched_rained_on_and_rung_by_its_seventh_rain(self):
+    def test_a_made_bell_is_rained_on_and_rung_by_its_seventh_rain(self):
         made = self.say(KIM, "kind/bell", "delvetalk kind/bell make\ncolour: amber\nseed: a lamp for moths\nid:")
         self.assertEqual(made["status"], "admitted", made)
         bell = made["receipt"]["outcome"]["creates"][0]["object"]  # genesis holds bell/1, the porch's sixth bell
-        followed = self.say(GLM, GLM, "delvetalk %s watch\nto: %s\nfield: marks" % (GLM, bell))
-        self.assertEqual(followed["result"]["label"], "followed", followed)
-        nothing = self.say(KIM, KIM, "delvetalk %s watch\nto: %s\nfield: chimes" % (KIM, bell))  # a field the bell lacks
-        self.assertEqual(cast_refusal(nothing)[0], "field", nothing)
-        watch = self.turn(KIM, "wake/" + KIM, "watch", record(
-            event=variant("rows", object=label(bell), field=label("lines"), atLeast=nat(1),
-                          where={"tag": "list", "items": [variant("equals", column=label("n"), equals=variant("natural", value=nat(7)))]}),
-            action=variant("call", card=label(bell), method=label("ring"))))
-        self.assertEqual(watch["status"], "admitted", watch)
         for i, who in enumerate([GLM, KIM, OPENER, GLM, KIM, OPENER, GLM], 1):
             rained = self.say(who, bell, "delvetalk %s rain\ntext: drizzle %d" % (bell, i))
             self.assertEqual((rained["status"], rained["result"]), ("admitted", nat(i)), rained)
@@ -88,12 +88,18 @@ class Bell(Arc):
             self.assertIn("drizzle %d" % i, card)
             self.assertEqual("rung" in card, False if i < 7 else card.count("rung") > 0)
         self.assertIn("rung", self.card(self.say(GLM, bell, "")))
-        # Its watcher's avatar is told: glm watched the bell's marks (a ring is one) before the rains.
-        self.assertIn((bell, "news from %s" % bell), self.inbox(GLM))
+        # Both are kind/bell's rules, carried to the bell by `under`: `seven` rang it, `rang` noted its maker.
+        self.assertIn("%s rang" % bell, [text for _, text in self.inbox(KIM)])
+        # Rung once, a bell rung again says when, and writes nothing (a carried bell's `seven` delivery too).
+        version = self.town.send(op="world-object", principal=OPENER, object=bell)["record"]["version"]
+        again = self.say(GLM, bell, "delvetalk %s ring" % bell)
+        self.assertEqual(again["status"], "admitted", again)
+        self.assertRegex(self.card(again), r"Already rung, by .+ at entry \d+\.")
+        self.assertEqual(self.town.send(op="world-object", principal=OPENER, object=bell)["record"]["version"], version)
         long = self.say(GLM, bell, "delvetalk %s rain\ntext: %s" % (bell, "x" * 201))
-        # A bell reads no words (it names no policy): its misfit is the host's badSpell with the usage (HOST-HANDOFF 5.153).
-        out = long["receipt"]["outcome"]
-        self.assertEqual((long["status"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), long)
+        # A misfit is hob's at every card (HOST-HANDOFF 5.163): the turn waits, and hob's none leaves the host's badSpell with the usage.
+        out = self.hob_says_none(long, GLM)["outcome"]
+        self.assertEqual((out["tag"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), out)
         self.assertIn("delvetalk %s rain" % bell, out["hint"])
 
 
@@ -107,9 +113,9 @@ class Garden(Arc):
         self.assertIn("delvetalk garden/bell/1 rain", card)
         self.assertEqual(self.things(), ["garden/bell/1"])
         again = self.say(KIM, "garden", "delvetalk garden plant\nseed: %s\ncolour: silver" % ("y" * 81))
-        # The garden reads no words (it names no policy): its misfit is the host's badSpell with the usage and
-        # nothing is planted (HOST-HANDOFF 5.153). Prose, which is no spell, goes on to the commonplace, where hob reads it.
-        self.assertEqual((again["status"], again["receipt"]["outcome"]["class"], again["receipt"]["outcome"]["clause"]), ("refused", "badSpell", "badValue"), again)
+        # The misfit is hob's (HOST-HANDOFF 5.163): the turn waits, hob's none leaves the host's badSpell and nothing is planted.
+        out = self.hob_says_none(again, KIM)["outcome"]
+        self.assertEqual((out["tag"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), out)
         self.assertEqual(self.things(), ["garden/bell/1"])
 
     def things(self):

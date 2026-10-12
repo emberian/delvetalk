@@ -104,9 +104,10 @@ def reader(row, opener):
     return owner
 
 
-def check(obend, old_journal, new_journal):
+def check(obend, old_journal, new_journal, moved=()):
     """The carried world against the snapshot it was carried from, in a throwaway copy: {objects, rendered, receipts,
-    turn, problems}."""
+    turn, problems}. An object the carry moved to the image's packages (`moved`) is at its migrated state."""
+    after = {m['object']: m['after'] for m in moved}
     links = journal.links(old_journal)
     body = journal.snapshot(dict(journal.snapshots(old_journal))[len(links)])
     opener = (body.get('settings') or {}).get('opener') or ''
@@ -124,9 +125,9 @@ def check(obend, old_journal, new_journal):
             for row in body['objects']:
                 who = reader(row, opener)
                 got = host.send(op='world-object', principal=who, object=row['id'])
-                after = (got.get('record') or {}).get('stateCid')
-                if after != row['stateCid']:
-                    problems.append(f"{row['id']}: state {after or got.get('status')} after, {row['stateCid']} before")
+                now, expected = (got.get('record') or {}).get('stateCid'), after.get(row['id'], row['stateCid'])
+                if now != expected:
+                    problems.append(f"{row['id']}: state {now or got.get('status')} after, {expected} expected")
                 card = host.send(op='world-card', principal=who, object=row['id'])
                 if card.get('status') == 'card':
                     rendered += 1
@@ -162,6 +163,16 @@ def lock_free(old):
     return True
 
 
+def body_args(library):
+    """`--body OBJ=FILE` for each body genesis lays (deploy/genesis.py KINDS, and the commonplace's), from the
+    image's `bodies/` beside its library: the carry sets each kind's `body` to it and lays it over that kind's
+    things, and lays the commonplace's over the commonplace."""
+    from deploy import genesis
+    bodies = Path(library).parent / 'bodies'
+    pairs = [('kind/' + name, body) for name, _, _, _, _, body in genesis.KINDS if body] + [('commonplace', 'commonplace')]
+    return [a for obj, body in pairs for a in ('--body', f'{obj}={bodies / (body + ".obend")}')]
+
+
 def command(a, out):
     old, new = Path(a.source), Path(a.to)
     names = worlds(old)
@@ -177,7 +188,7 @@ def command(a, out):
         shutil.copy2(old / 'delvetalk.toml', new / 'delvetalk.toml')
     config = Config.load(new)
     obend = a.obend or config.obend
-    library = ['--library', str(config.library)] if config.library else []  # serve's: the library ships with the host
+    library = ['--library', str(config.library), *body_args(config.library)] if config.library else []  # serve's: the library ships with the host
     written, carried = [], {}
     for w in names:
         target = new / f'{w}.journal'
@@ -198,11 +209,20 @@ def command(a, out):
     failed = False
     for w in names:
         r = carried[w]
-        checked = check(obend, str(old / f'{w}.journal'), str(new / f'{w}.journal'))
+        checked = check(obend, str(old / f'{w}.journal'), str(new / f'{w}.journal'), r['moved'])
         failed = failed or bool(checked['problems'])
         out.write(json.dumps({'world': w, 'slug': r['slug'], 'hash': r['hash'], 'height': r['carriedFrom']['height'],
                               'replay': [r['carriedFrom']['replay'], r['replay']], 'library': r['library'], 'objects': r['objects'], 'left': r['left'],
-                              'dropped': r['dropped'], 'check': checked}, sort_keys=True) + '\n')
+                              'moved': r['moved'],
+                              'dropped': r['dropped'], 'kept': r['kept'], 'rearmed': r['rearmed'], 'check': checked}, sort_keys=True) + '\n')
+        if checked['problems']:
+            continue
+        # Then genesis's own laws and kinds as the image stands (`deploy.genesis refresh`, as the opener): after the
+        # check, which compares the carried states with the carry's own `moved`.
+        from deploy import genesis
+        for row in genesis.carried(obend, str(new / f'{w}.journal')):
+            out.write(json.dumps({'world': w, 'refresh': row}, sort_keys=True) + '\n')
+            failed = failed or row.get('status') not in ('refreshed', 'current', 'left')
     town = carried['town']
     out.write(f"hob: the world was carried to a newer host at entry {town['carriedFrom']['height']}; everything is where it was, "
               f"and the carry is receipt {town['slug']}.\n")

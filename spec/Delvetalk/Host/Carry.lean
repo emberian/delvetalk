@@ -16,13 +16,34 @@
 
    A carry is where the host changes, and the library ships with the host: `--library DIR` (serve's
    `--library`, the image's `world/lib`) is sealed as serve seals it, into OUT's directory, and becomes the
-   carried world's current library when its pin differs (`carriedFrom.library {from, to}`); every object keeps
-   the pin it was compiled under, its library among the world's, and what is made afterwards compiles against
-   the new one. Without it the world's library is carried as it was.
+   carried world's current library when its pin differs (`carriedFrom.library {from, to}`). The image's
+   packages are that library's modules and `DIR/../objects` (as `deploy/seed.py` names them), so an object
+   moves with the host: its own modules named as the image names one take the image's source, any module
+   the new source imports comes with it, layers above stay, and it compiles against the new library. One
+   whose closure is unchanged keeps its pin. One that moves keeps its state when the state conforms to the
+   new type; else the package's `migrate(old: State8) -> State` (a reprogram's migration, `Ops.runMigration`)
+   converts it, the old state read through `migrate`'s argument type. The genesis lists each move (`moved
+   [{object, from, to, migration, before, after}]`, pins and state CIDs) and the moved object's version moves
+   once; its suspensions (taken in the code before) are dropped, their supervisors told, and when its package
+   offers `carried` the genesis holds a delivery of `carried {}` to it (`rearmed`), as a kind sends what it makes
+   `made`: the first settling of the carried world runs it, and a self-ticking tide schedules its next `due`
+   there. A moved object holding its package's law as it was (unamended) takes the package's new law when it
+   changed (`law {before, after}` on its move); one whose law an owner amended keeps it, named (`kept`). An
+   object whose
+   move refuses (its package does not compile against the image, or its state does not conform and it has
+   no `migrate`, or `migrate` refuses) is carried retired at its old pin, the refusal its reading; so is one
+   whose own package the image no longer ships (Wake, Env), and one the owner names with `--leave`. Only an
+   object that does not rebuild under its own pin refuses the carry, by name.
+
+   A thing's body is a layer, and the image's bodies are genesis's (`--body OBJ=FILE`, which
+   transport/carry.py derives from `deploy/genesis.py`'s KINDS): a kind takes FILE as its `body`, and each
+   thing whose `kind` names it takes FILE as its first layer, as the commonplace takes its own; each such
+   change is a move (`body: true`). Without `--library` the
+   world's library and every pin are carried as they were.
 
    The old journal is only read: J must verify as a chain, not be open, and OUT must not exist. The new
-   journal is replayed from its genesis, and every object's state CID compared with the snapshot's, before
-   it is written. -/
+   journal is replayed from its genesis, and every object's state CID compared with the snapshot's (a moved
+   object's with its migrated state's), before it is written. -/
 import Delvetalk.Host.Snapshot
 import Delvetalk.Host.RootEdit
 import Delvetalk.Serve
@@ -76,8 +97,10 @@ def rebuilt (w : World) (o : Object) : Except String (Object × Built) := do
                    packet := ← b.artifact.getObjValAs? String "packetSha256", fixed := fixedOf b.artifact,
                    declares := declaresOf b.artifact }, b)
 
-/-- Whether a suspended entry's checkpoint decodes under the packet this binary compiles for its method. -/
+/-- Whether a suspended entry's checkpoint decodes under the packet this binary compiles for its method (one
+    the host resumes itself holds none). -/
 def resumable (w : World) (e : Json) : Except String World := do
+  if hostResumed e then return w
   let id := Snapshot.suspendedObject e
   let some o := w.objects[id]? | throw s!"it suspends {id}, which the store does not hold"
   let method ← ((← e.getObjVal? "outcome").getObjVal? "activity") >>= (·.getObjValAs? String "method")
@@ -94,38 +117,243 @@ def resumable (w : World) (e : Json) : Except String World := do
     throw "its checkpoint does not decode under this host's kernel"
   return w
 
+/-- The packages the image ships: the library sealed from `--library DIR`, the modules of
+    `DIR/../objects` by name, and the bodies `--body OBJ=FILE` names (genesis's, from transport/carry.py):
+    a kind's, set as its `body` and laid over every thing of that kind, or a thing's own. -/
+structure Shipped where
+  library : Library
+  objects : List (String × String)
+  bodies : List (String × String) := []
+
+/-- An object's move: its pin before and after, the migration that converted its state ("" when the state
+    conformed), and the state's CID before and after. -/
+structure Moved where
+  object : String
+  before : String
+  after : String
+  migration : String
+  stateBefore : String
+  stateAfter : String
+  /-- The image's body it took: as its layer (a thing of a kind, the commonplace) or as its `body` (a kind). -/
+  body : Bool := false
+  /-- Its law text before and after, when it held its package's law and the image's package declares another. -/
+  law : Option (String × String) := none
+  /-- The package's own rule and want lines placed on it at the move (by name), and those it took off. -/
+  placed : List String := []
+  unplaced : List String := []
+
+def Moved.json (m : Moved) : Json :=
+  Json.mkObj ([("object", toJson m.object), ("from", toJson m.before), ("to", toJson m.after),
+    ("migration", toJson m.migration), ("before", toJson m.stateBefore), ("after", toJson m.stateAfter)] ++
+    (if m.body then [("body", toJson true)] else []) ++
+    ((m.law.map fun (b, a) => [("law", Json.mkObj [("before", toJson b), ("after", toJson a)])]).getD []) ++
+    (if m.placed.isEmpty then [] else [("placed", toJson m.placed)]) ++
+    (if m.unplaced.isEmpty then [] else [("unplaced", toJson m.unplaced)]))
+
 /-- What a carry made of a world: the world as this binary holds it, the objects left (retired, with the
-    reading), the suspensions dropped (the entry and why), and what refused the carry (by name). -/
+    whole refusal; its retired clause reads the first line within 200 bytes), the objects moved to the image's packages, the suspensions dropped (the entry and why), and what
+    refused the carry (by name). -/
 structure Carried where
   world : World
   left : List (String × String) := []
+  moved : List Moved := []
   dropped : List (Json × String) := []
   refused : List (String × String) := []
+  /-- Moved objects whose package's law changed but whose own law is not the package's as it was (an owner's
+      amendment): their law is kept, each named with it. -/
+  kept : List (String × String) := []
 
-/-- Every object rebuilt and every suspension checked; an object named in `leave` is carried retired
-    whether or not it fails, and its suspensions are dropped. -/
-def carryWorld (w : World) (leave : List String) (reason : String) : Except String Carried := do
+/-- The method a package declares to be told it was carried (`carried(state, input: {}, context)`), as a kind
+    tells what it makes `made`: what the carry's move dropped (a self-ticking tide's waiting `due`) it starts
+    again from there. -/
+def rearmMethod : String := "carried"
+
+/-- The moved objects whose package offers `carried`, each told once, after the move. -/
+def Carried.rearmed (c : Carried) : List String :=
+  c.moved.filterMap fun m => (c.world.objects[m.object]?).bind fun o => if o.offers rearmMethod then some m.object else none
+
+/-- The delivery telling `id` it was carried: a pending send from no object (the carry, the opener's act), so it
+    runs as the first turn that settles the carried world, under the carry's principal and a fresh ledger. -/
+def rearm (principal id : String) : Json :=
+  Json.mkObj [("id", toJson s!"carried:{id}"), ("to", toJson id), ("method", toJson rearmMethod),
+    ("argument", Delvetalk.Compiler.ObjectiveBendDataWire.dataJson (.record [])), ("sender", toJson ""), ("from", identityJson principal "carry"),
+    ("principal", toJson principal), ("ledger", Ledger.start.json)]
+
+/-- The modules a source depends on: those it imports, and the one a layer is laid over. -/
+def dependsOn (source : String) : List String :=
+  importsOf source ++ ((source.splitOn "\n").head?.bind fun l =>
+    (l.trimAscii.toString.dropPrefix? "layer over ./").bind fun r => (r.toString.splitOn ".obend").head?).toList
+
+/-- `inputs` as the image ships them: the library its new pin, each own module the image names its source, the
+    first layer `body` when one is given, and before each the image's modules it newly needs (neither the
+    library's nor already its own). Inputs naming no library are as they were. -/
+def movedInputs (s : Shipped) (inputs : Json) (body : Option String := none) : Except String Json := do
+  unless (inputs.getObjValAs? String "library").toOption.isSome do return inputs
+  let .ok m := inputs.getObjVal? "modules" | return inputs.setObjVal! "library" (toJson s.library.pin)
+  let image := fun (n : String) => (s.library.modules.lookup n).orElse fun _ => s.objects.lookup n
+  let modules ← parseModules m
+  -- A body laid again is laid as extend lays one: over the module below it (`Ops.layerLine`).
+  let laid := fun (below src : String) =>
+    if (src.splitOn "\n").head?.map (·.trimAscii.toString) == some (layerLine below) then src else layerLine below ++ "\n" ++ src
+  let own := (modules.zip (("" :: modules.map (·.1)).take modules.length)).map fun ((n, src), below) =>
+    (n, if n == "Layer1" then ((body.map (laid below)).getD src) else (image n).getD src)
+  let mut out : Array (String × String) := #[]
+  for (n, src) in own do
+    -- What the image's source newly imports, depth first, each once.
+    let mut todo := (dependsOn src).reverse
+    let mut needed : Array (String × String) := #[]
+    for _ in [0:(s.objects.length + 1) * 64] do
+      let some d := todo.head? | break
+      todo := todo.tail
+      if (s.library.modules.lookup d).isSome || own.any (·.1 == d) || out.any (·.1 == d) || needed.any (·.1 == d) then continue
+      let some dsrc := s.objects.lookup d | continue
+      needed := #[(d, dsrc)] ++ needed
+      todo := (dependsOn dsrc).reverse ++ todo
+    out := out ++ needed |>.push (n, src)
+  return (inputs.setObjVal! "modules" (modulesJson out.toList)).setObjVal! "library" (toJson s.library.pin)
+
+/-- The package `o` was made from (its entry module, below any layers), when it was its library's and the
+    image ships it no longer, in its library or among its packages (Wake, Env): the object has nothing to move to. -/
+def gone (w : World) (s : Shipped) (o : Object) : Option String := do
+  let pin ← (o.inputs.getObjValAs? String "library").toOption
+  let lib ← w.libraries[pin]?
+  let own ← (o.inputs.getObjVal? "modules").toOption.bind (parseModules · |>.toOption)
+  let (name, _) ← own[own.length - layersOf o.inputs - 1]?
+  if (lib.modules.lookup name).isSome && (s.library.modules.lookup name).isNone && (s.objects.lookup name).isNone then
+    some name else none
+
+/-- The law a moved object holds under the image: its package's new law when it held its package's law as it
+    was (as made, unamended) and the package's law changed, with its readings; else its own, and
+    `amended` when the package's law changed and the object's is not the package's as it was. Only a
+    package-declared law is the carry's: a law given at creation is the maker's, and genesis's (`deploy.genesis
+    refresh`) lays the image's. -/
+def lawUnder (w : World) (id : String) (o : Object) (old new : Built) :
+    Except String (Law × String × List (String × String) × Bool) := do
+  let was := renderLaw old.laws
+  if old.laws.isEmpty || new.laws.isEmpty || renderLaw new.laws == was then return (o.law, o.lawText, o.readings, false)
+  if renderLaw o.law != was then return (o.law, o.lawText, o.readings, true)
+  if let some message := citationRefusal w id new.laws then throw s!"its package's law: {message}"
+  let readings := (artifactReadings new.artifact).filter fun (n, _) => (new.laws.lookup n).isSome
+  return (new.laws, renderLaw new.laws, readings, false)
+
+/-- The rules and wants of a moved object holding its package's law (as `makeObject` places a package's lines on
+    what is made of it with no law text given): each placed row its old package placed (the same line, by name)
+    that the new package changes or drops taken off, and each line of the new package whose name its text and
+    rows leave free placed, owned by its owner (else the opener), `since` the carried genesis. Its own and hands'
+    rows stay. -/
+def placedUnder (w : World) (o : Object) (old new : Built) (state : Delvetalk.Theory.ObjectiveBendDemandData.Data) :
+    List Placed × List Placed × List String × List String := Id.run do
+  if old.laws.isEmpty || renderLaw o.law != renderLaw old.laws then return (o.rules, o.wants, [], [])
+  let packaged := fun (r : Placed) => old.lines.any fun c => c.name == r.name && c.render == r.line
+  let kept := fun (r : Placed) => !packaged r || new.lines.any fun c => c.name == r.name && c.render == r.line
+  let rules := o.rules.filter kept
+  let wants := o.wants.filter kept
+  let gone := ((o.rules ++ o.wants).filter (!kept ·)).map (·.name)
+  let taken := ((parseClauses o.lawText).toOption.getD []).map (·.name) ++ (rules ++ wants).map (·.name)
+  let owner := if (ownerOf state).isEmpty then w.opener else ownerOf state
+  let fresh := (new.lines.filter fun c => !taken.contains c.name).map fun c =>
+    ({ name := c.name, owner, since := 1, line := c.render, clause := c } : Placed)
+  return (rules ++ fresh.filter (Law.isRule ·.clause), wants ++ fresh.filter (Law.isWant ·.clause), fresh.map (·.name), gone)
+
+/-- `o` (built as `old` under its own pin) moved to the image's packages, or none when its closure there is
+    its pin's; else why it cannot move. -/
+def moved (w : World) (s : Shipped) (id : String) (o : Object) (old : Built) :
+    Except String (Option (Object × Built × Moved × Bool)) := do
+  -- Its body: a kind (holding a `body`) takes its own as that field; a thing of a kind takes its kind's, and
+  -- the commonplace its own, laid as its first layer.
+  let kind := match Law.rawField "kind" o.state with
+    | some (.label k) => some k
+    | _ => none
+  let held := (s.bodies.lookup id).filter fun _ => (Law.rawField "body" o.state).isSome
+  let layer := if layersOf o.inputs == 0 || held.isSome then none
+    else (s.bodies.lookup id).orElse fun _ => kind.bind fun k => s.bodies.lookup k
+  let inputs ← movedInputs s o.inputs layer
+  let b ← compileObject w inputs |>.mapError (s!"its package does not compile against the library this host ships: " ++ ·)
+  let pin ← b.artifact.getObjValAs? String "sourcesSha256"
+  let relaid := held.any fun src => match Law.rawField "body" o.state with
+    | some (.label b) => b != src
+    | _ => true
+  if pin == o.pin && !relaid then return none
+  let (state, migration) ← if o.state.conformsUnder b.assumptions.bounds b.ty then pure (o.state, "") else do
+    let m ← compileMigration w inputs "migrate" b.ty (fun dom bounds => o.state.conformsUnder bounds dom)
+        "its migrate does not read the state as it was"
+      |>.mapError fun (_, e) => s!"its state does not conform to its package's new state type, and {e}"
+    let next ← runMigration m o.state |>.mapError (s!"its migrate: " ++ ·)
+    unless next.conformsUnder b.assumptions.bounds b.ty do
+      throw "its migrate's result does not conform to the new state type"
+    pure (next, "migrate")
+  let state := match held, state with
+    | some src, .record fs => .record (fs.map fun (k, v) => if k == "body" then (k, .label src) else (k, v))
+    | _, st => st
+  let (relations, state) ← relationsFor b state |>.mapError (s!"its state under the new relations: " ++ ·)
+  if let some cell := Delvetalk.Turn.cellOverBound (cellDecls relations) state then
+    throw (((cellRefusal id cell).reason).getD "a cell passes maxCellBytes")
+  let fixed := fixedOf b.artifact
+  if let some f := movedFixed (o.fixed ++ fixed.filter (!o.fixed.contains ·)) o.state state then
+    throw s!"its migrate moves {f}, which is fixed"
+  if let some f := o.fixed.find? (!fixed.contains ·) then
+    throw s!"{f} is fixed, and its package no longer fixes it"
+  let (methods, predicate, predicateReads) := b.shape
+  let (law, lawText, readings, amended) ← lawUnder w id o old b
+  let (rules, wants, placed, unplaced) := placedUnder w o old b state
+  let o' := { o with inputs, inputsKey := inputsKeyOf inputs, pin, state, version := o.version + 1, stateType := b.ty,
+                     bounds := b.assumptions.bounds, methods, predicate, predicateReads, relations, fixed,
+                     packet := ← b.artifact.getObjValAs? String "packetSha256", declares := declaresOf b.artifact,
+                     law, lawText, readings, rules, wants }
+  return some (o', b, { object := id, before := o.pin, after := pin, migration,
+                        stateBefore := stateCid o.state, stateAfter := stateCid state,
+                        body := layer.isSome || relaid,
+                        law := if lawText == o.lawText then none else some (o.lawText, lawText), placed, unplaced }, amended)
+
+/-- Every object rebuilt and, with the image's packages, moved to them; every suspension checked. An
+    object named in `leave` is carried retired whether or not it fails, at its own pin, and its suspensions
+    are dropped; a moved object's are dropped too. -/
+def carryWorld (w : World) (leave : List String) (reason : String) (shipped : Option Shipped := none) :
+    Except String Carried := do
   for id in leave do
     unless w.objects.contains id do throw s!"--leave {id}: the world holds no {id}"
+  let w := match shipped with
+    | some s => { w with libraries := w.libraries.insert s.library.pin s.library }
+    | none => w
   let mut c : Carried := { world := w }
   let opener := if w.opener.isEmpty then w.clockPrincipal else w.opener
+  let retire := fun (o : Object) (why : String) => { o with lawText := (retiredLaw o.lawText why opener).getD o.lawText }
+  -- Left: what the owner names, each object whose package the image no longer ships, and each whose move to
+  -- the image's packages refuses (its compile or its migration), at its own pin, the refusal its reading.
+  let named : List (String × String) := (w.objects.toList.filterMap fun (id, o) =>
+      if leave.contains id then some (id, s!"left at the carry: {reason}") else do
+        let name ← gone w (← shipped) o
+        some (id, s!"left at the carry: its package {name} is no longer shipped"))
   for (id, o) in Snapshot.sortedBy w.objects.toList (·.1) do
     match rebuilt c.world o with
-    | .ok (o', b) =>
-      let o' := if leave.contains id then { o' with lawText := (retiredLaw o.lawText (reading s!"left at the carry: {reason}") opener).getD o.lawText } else o'
-      c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o' } o.inputs b }
-      if leave.contains id then c := { c with left := c.left ++ [(id, s!"left at the carry: {reason}")] }
     | .error e =>
-      if leave.contains id then
-        let why := reading s!"carried retired: {e}"
-        let o' := { o with lawText := (retiredLaw o.lawText why opener).getD o.lawText }
-        c := { c with world := { c.world with objects := c.world.objects.insert id o' }, left := c.left ++ [(id, why)] }
+      if let some _ := named.lookup id then
+        let why := s!"carried retired: {e}"
+        c := { c with world := { c.world with objects := c.world.objects.insert id (retire o (reading why)) }, left := c.left ++ [(id, why)] }
       else c := { c with refused := c.refused ++ [(id, e)] }
+    | .ok (o', b) =>
+      let step : Except String (Option (Object × Built × Moved × Bool)) := match named.lookup id, shipped with
+        | some why, _ => .error why
+        | none, none => .ok none
+        | none, some s => (moved c.world s id o' b).mapError (s!"left at the carry: " ++ ·)
+      match step with
+      | .ok (some (o'', b', m, amended)) =>
+        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o'' } o''.inputs b', moved := c.moved ++ [m],
+                      kept := if amended then c.kept ++ [(id, o''.lawText)] else c.kept }
+      | .ok none =>
+        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o' } o'.inputs b }
+      | .error why =>
+        -- The whole refusal is the carry's output; the retired clause reads its first line, within a reading's bound.
+        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id (retire o' (reading why)) } o'.inputs b,
+                      left := c.left ++ [(id, why)] }
   let mut kept : Array Json := #[]
   for e in w.suspended do
     let id := Snapshot.suspendedObject e
-    if leave.contains id then
+    if c.left.any (·.1 == id) then
       c := { c with dropped := c.dropped ++ [(e, "its object was left")] }
+      continue
+    if let some m := c.moved.find? (·.object == id) then
+      c := { c with dropped := c.dropped ++ [(e, s!"its object moved to pin {m.after}: the code it waited in is gone")] }
       continue
     match resumable c.world e with
     | .ok w' => c := { c with world := w' }; kept := kept.push e
@@ -164,24 +392,28 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
     ("replay", toJson replay), ("reason", toJson reason), ("entries", entries)] ++
     (changed.map fun l => [("library", Json.mkObj [("from", toJson previous), ("to", toJson l.pin)])]).getD [] ++ earlier)
   let suspended ← w.suspended.mapM (Snapshot.wholeSuspension w)
-  let pending := w.pending ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray
+  let principal := if !w.opener.isEmpty then w.opener else if !w.clockPrincipal.isEmpty then w.clockPrincipal else "host"
+  let pending := w.pending ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray ++ (c.rearmed.map (rearm principal)).toArray
   let all := Snapshot.indexJson w
   let index := Json.mkObj (Snapshot.carriedKeys.filterMap fun k => (all.getObjVal? k).toOption.map (k, ·))
-  let principal := if !w.opener.isEmpty then w.opener else if !w.clockPrincipal.isEmpty then w.clockPrincipal else "host"
   Snapshot.genesisEntry w w "carried" principal "carry" cid ("carriedFrom", origin) pending suspended
     ([("index", index)] ++
      (if c.left.isEmpty then [] else [("left", Json.arr (c.left.toArray.map fun (id, why) =>
         Json.mkObj [("object", toJson id), ("reading", toJson why)]))]) ++
+     (if c.moved.isEmpty then [] else [("moved", Json.arr (c.moved.toArray.map (·.json)))]) ++
      (if c.dropped.isEmpty then [] else [("dropped", Json.arr (c.dropped.toArray.map fun (e, why) =>
         Json.mkObj [("hash", (e.getObjVal? "hash").toOption.getD Json.null), ("object", toJson (Snapshot.suspendedObject e)),
-          ("reason", toJson why)]))]))
+          ("reason", toJson why)]))]) ++
+     (if c.kept.isEmpty then [] else [("kept", Json.arr (c.kept.toArray.map fun (id, law) =>
+        Json.mkObj [("object", toJson id), ("law", toJson law)]))]) ++
+     (if c.rearmed.isEmpty then [] else [("rearmed", toJson c.rearmed)]))
 
 def fail (message : String) (code : UInt32 := 1) : IO UInt32 := do
   (← IO.getStderr).putStrLn s!"carry: {message}"
   return code
 
 def usage : String :=
-  "usage: delvetalk-obend carry --from J --out J2 --reason R [--library DIR] [--leave OBJ]...\n" ++
+  "usage: delvetalk-obend carry --from J --out J2 --reason R [--library DIR [--body OBJ=FILE]...] [--leave OBJ]...\n" ++
   "       J's snapshot at its head, written by the binary of J's edition, is read; J2 must not exist"
 
 def main (args : List String) : IO UInt32 := do
@@ -216,22 +448,34 @@ def main (args : List String) : IO UInt32 := do
   let w ← match readWorld body src height with
     | .ok w => pure w
     | .error e => return ← fail s!"{file} does not read here: {e}"
-  let carried ← match carryWorld w leave reason with
-    | .ok c => pure c
-    | .error e => return ← fail e 64
-  -- The library this host ships, sealed as serve seals it, beside the new journal.
-  let library ← match RootEdit.textArg args "--library" with
+  -- The library this host ships, sealed as serve seals it, beside the new journal; and its packages.
+  let shipped ← match RootEdit.textArg args "--library" with
     | none => pure none
     | some dir =>
       let target := ((out : System.FilePath).parent.getD ".") / "library"
       try Delvetalk.Serve.sealLibrary dir target catch e => return ← fail s!"--library {dir}: {e}"
-      match ← loadLibrary target.toString with
-      | .ok l => pure (some l)
-      | .error e => return ← fail s!"--library {dir}: {e}"
+      let library ← match ← loadLibrary target.toString with
+        | .ok l => pure l
+        | .error e => return ← fail s!"--library {dir}: {e}"
+      let objects := ((dir : System.FilePath).parent.getD ".") / "objects"
+      let mut packages : List (String × String) := []
+      if ← objects.isDir then
+        for f in ← objects.readDir do
+          if f.fileName.endsWith ".obend" then
+            packages := packages ++ [((f.fileName.dropEnd 6).toString, ← IO.FS.readFile f.path)]
+      let mut bodies : List (String × String) := []
+      for spec in allArgs args "--body" do
+        let some (obj, file) := (match spec.splitOn "=" with | [o, f] => some (o, f) | _ => none)
+          | return ← fail s!"--body {spec}: a body is OBJ=FILE" 64
+        bodies := bodies ++ [(obj, ← IO.FS.readFile file)]
+      pure (some ({ library, objects := packages, bodies } : Shipped))
+  let carried ← match carryWorld w leave reason shipped with
+    | .ok c => pure c
+    | .error e => return ← fail e 64
   unless carried.refused.isEmpty do
     return ← fail ("refused, each by name (list an object as --leave OBJ to carry it retired):\n" ++
       "\n".intercalate (carried.refused.map fun (what, why) => s!"  {what}: {why}"))
-  let entry ← match carryGenesis carried src journal reason height head replay first library with
+  let entry ← match carryGenesis carried src journal reason height head replay first (shipped.map (·.library)) with
     | .ok e => pure e
     | .error e => return ← fail e
   -- The new journal replays from its genesis, and holds every object at the state the snapshot held.
@@ -240,7 +484,8 @@ def main (args : List String) : IO UInt32 := do
     | .error e => return ← fail s!"the carried genesis does not replay: {e}"
   for (id, o) in w.objects.toList do
     let some o' := replayed.objects[id]? | return ← fail s!"{id} was not carried"
-    unless stateCid o'.state == stateCid o.state do return ← fail s!"the state of {id} moved in the carry"
+    let expected := ((carried.moved.find? (·.object == id)).map (·.stateAfter)).getD (stateCid o.state)
+    unless stateCid o'.state == expected do return ← fail s!"the state of {id} moved in the carry"
   unless replayed.objects.size == w.objects.size do return ← fail "the carried world holds another set of objects"
   if let .error e ← Snapshot.writeJournal out #[entry] then return ← fail e
   handle.unlock
@@ -254,8 +499,11 @@ def main (args : List String) : IO UInt32 := do
     ("suspended", toJson replayed.suspended.size), ("grants", toJson replayed.grants.size),
     ("posts", toJson replayed.posts.size), ("receipts", toJson height),
     ("left", Json.arr (carried.left.toArray.map fun (id, why) => Json.mkObj [("object", toJson id), ("reading", toJson why)])),
+    ("moved", Json.arr (carried.moved.toArray.map (·.json))),
     ("dropped", Json.arr (carried.dropped.toArray.map fun (e, why) => Json.mkObj [("hash", (e.getObjVal? "hash").toOption.getD Json.null),
-      ("object", toJson (Snapshot.suspendedObject e)), ("reason", toJson why)]))])
+      ("object", toJson (Snapshot.suspendedObject e)), ("reason", toJson why)])),
+    ("kept", Json.arr (carried.kept.toArray.map fun (id, law) => Json.mkObj [("object", toJson id), ("law", toJson law)])),
+    ("rearmed", toJson carried.rearmed)])
   return 0
 
 end Delvetalk.Host.Carry

@@ -91,7 +91,7 @@ def extras(m, cap):
     moth = m.PEOPLE['moth.delve.town']
     cap.token = cap.tokens['moth.delve.town']
     for obj in ('commonplace', 'garden', 'garden/bell/1', 'tide', 'anthology', 'workshop', 'rooms', 'cistern',
-                'policy', 'yard', f'env/{moth}', f'wake/{moth}', moth):
+                'policy', 'yard', moth):
         cap.step('GET', f'/world/{obj}/card')
     cap.step('GET', '/world/commonplace')
     for href in ('/world/garden?text=1', '/world/garden/bell/1?text=1', ''):
@@ -201,8 +201,7 @@ def town_cards(cap):
         mt = re.fullmatch(r'/AGENTS\.md/world/(.+)/card', e['path'])
         if e['section'] == 'town' and mt and e['status'] == 200:
             obj = mt.group(1)
-            label = 'env' if obj.startswith('env/') else 'wake' if obj.startswith('wake/') else 'avatar' if obj.startswith('did:') else \
-                'place' if obj == 'yard' else 'bell' if '/bell/' in obj else obj
+            label = 'avatar' if obj.startswith('did:') else 'place' if obj == 'yard' else 'bell' if '/bell/' in obj else obj
             out[label] = field(e, 'text')
     return out
 

@@ -7,7 +7,7 @@
    of `body`'s canonical bytes. `body` holds the store (`storeJson`: objects with their state, law,
    read policy, ledger, compile inputs by CID, method table; the state types by pin; libraries;
    grants; posts; settings; the clock) and the indexes (`indexJson`: receipts, the history and
-   change indexes, subscriptions, pending deliveries, suspensions, the outbox, publications, where
+   change indexes, the rules' last firings, the wants that hold, the clock days, pending deliveries, suspensions, the outbox, publications, where
    each source and block lies, reservations, attempts, the root and moderation indexes, the hour's
    and the day's counts).
 
@@ -80,10 +80,6 @@ def pairOf (j : Json) : Except String (Nat × Nat) := do
   let #[a, b] := ← j.getArr? | throw "an index pair is not two naturals"
   return (← a.getNat?, ← b.getNat?)
 
-def textPairOf (j : Json) : Except String (String × String) := do
-  let #[a, b] := ← j.getArr? | throw "an index pair is not two texts"
-  return (← a.getStr?, ← b.getStr?)
-
 def arrOf {α : Type} (j : Json) (f : Json → Except String α) : Except String (Array α) := do
   (← j.getArr?).mapM f
 
@@ -96,12 +92,11 @@ def indexJson (w : World) : Json :=
     ("touches", mapJson w.touches fun ts => Json.arr (ts.map fun t => pairJson t.version t.height)),
     ("anchors", mapJson w.anchors fun a => Json.arr #[toJson a.version, toJson a.pin, toJson a.law]),
     ("changes", Json.arr (w.changes.map fun c => Json.arr #[toJson c.height, toJson c.object, toJson c.version, toJson c.principal])),
-    ("subscriptions", mapJson w.subscriptions fun xs => Json.arr (xs.map (·.json))),
     ("ruleLog", mapJson w.ruleLog fun xs => Json.mkObj xs),
     ("wanting", mapJson w.wanting fun xs => Json.mkObj (xs.map fun (n, h) => (n, toJson h))),
+    ("days", Json.arr (w.days.map fun (d, h) => pairJson d h)),
     ("pending", Json.arr w.pending),
     ("suspended", Json.arr w.suspended),
-    ("replies", mapJson w.replies fun (p, i) => Json.arr #[toJson p, toJson i]),
     ("handles", mapJson w.handles toJson),
     ("modules", mapJson w.modules toJson),
     ("blocks", mapJson w.blocks toJson),
@@ -139,12 +134,11 @@ def installIndex (w : World) (j : Json) : Except String World := do
       let #[v, p, l] := ← x.getArr? | throw "an anchor is not three heights"
       return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat? } : Anchor)
     changes := ← arrOf (← field "changes") change
-    subscriptions := ← mapOf (← field "subscriptions") fun x => arrOf x Subscription.ofJson
     ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
     wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
+    days := ← arrOf (← field "days") pairOf
     pending := ← (← field "pending").getArr?
     suspended := ← (← field "suspended").getArr?
-    replies := ← mapOf (← field "replies") textPairOf
     handles := ← mapOf (← field "handles") (·.getStr?)
     modules := ← mapOf (← field "modules") (·.getNat?)
     blocks := ← mapOf (← field "blocks") (·.getNat?)
@@ -193,7 +187,8 @@ def storeJson (w : World) : Except String Json := do
       (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)]) ++
       (if o.declares.isEmpty then [] else [("declares", toJson o.declares)]) ++
       (if o.rules.isEmpty then [] else [("rules", Json.arr (o.rules.toArray.map (·.json)))]) ++
-      (if o.wants.isEmpty then [] else [("wants", Json.arr (o.wants.toArray.map (·.json)))])))
+      (if o.wants.isEmpty then [] else [("wants", Json.arr (o.wants.toArray.map (·.json)))]) ++
+      (if o.verbs.isEmpty then [] else [("verbs", Json.arr (o.verbs.toArray.map (·.json)))])))
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
@@ -347,7 +342,8 @@ def install (b : Json) (base : World) : Except String World := do
         fixed := (o.getObjValAs? (List String) "fixed").toOption.getD []
         declares := (o.getObjValAs? (List String) "declares").toOption.getD []
         rules := ← placedOf "rules"
-        wants := ← placedOf "wants" }
+        wants := ← placedOf "wants"
+        verbs := ← (((o.getObjVal? "verbs").toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Verb.ofJson }
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do
@@ -375,7 +371,7 @@ from the installed genesis (`installGenesis`) and never reads the world before i
 def wholeSuspension (w : World) (e : Json) : Except String Json := do
   let outcome ← e.getObjVal? "outcome"
   let activity ← outcome.getObjVal? "activity"
-  let activity := activity.setObjVal! "checkpoint" (← expandSuspended w e)
+  let activity ← if hostResumed e then pure activity else pure (activity.setObjVal! "checkpoint" (← expandSuspended w e))
   let activity := Json.mkObj ((((activity.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "argumentBlock")) ++
     [("argument", ← activityArgument w activity)])
   let outcome := outcome.setObjVal! "activity" activity
@@ -390,11 +386,11 @@ def suspendedObject (e : Json) : String :=
     |>.bind (·.getObjValAs? String "object" |>.toOption)).getD ""
 
 /-- The indexes a carry keeps beyond the store, the pending deliveries, the suspensions and the handles,
-    each as `indexJson` writes it: what the world stands on that no object's state holds (subscriptions,
-    the posts replies answered, posting reservations, model attempts, the quotas' counts, the root acts'
+    each as `indexJson` writes it: what the world stands on that no object's state holds (the rules'
+    last firings, the wants that hold, posting reservations, model attempts, the quotas' counts, the root acts'
     count, the moderation: cards, quiets, hidden). Every other index names entries of the old chain. -/
 def carriedKeys : List String :=
-  ["subscriptions", "ruleLog", "wanting", "replies", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
+  ["ruleLog", "wanting", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
    "hidden", "modelDay", "hour"]
 
 /-- A genesis entry chained to `cid`: `tag` and its origin, the store of `shown` with every source its

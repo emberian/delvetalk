@@ -74,7 +74,7 @@ class Tending(Chain):
         forgetful = ("layer over ./Layer1.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Card.obend as Card\nimport ./Relation.obend as Relations\nimport ./Rows.obend as Rows\nimport ./Text.obend as Text\nimport ./Scenes.obend as Scenes\n"
                      "type State = Super.State\nform pour:\n  text: text 1..200\n"
                      "def pour(state: State, input: PourInput, context: Abi.Context) -> Activity<Nat>:\n"
-                     "  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, text: input.text, at: context.height, n: state.next}, next: add 1n}\n"
+                     "  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: \"pour\", text: input.text, at: context.height, n: state.next}, next: add 1n}\n"
                      "  state.next\n")
         laid = self.host.send(op="world-reprogram", principal=GLM, identity="forget", object="bell/1",
                               version=self.host.send(op="world-view", principal=GLM, object="bell/1")["version"], package=forgetful, mode="extend")

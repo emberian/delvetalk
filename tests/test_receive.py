@@ -13,10 +13,15 @@ import unittest
 from deploy import genesis
 from deploy.genesis import DOORS, STUDIO
 from tests.test_chain import Chain, town_garden
-from tests.wire import cast_refusal, field, result_label, label, listing, nat, record, reference, relation
+from tests.wire import cast_refusal, field, result_label, label, listing, nat, record, reference
 from tests.bend import closure
 
-ROOT_DOORS = DOORS  # (label, object, [(spell, what comes back)])
+# (label, object, [(spell, what comes back)]): genesis's doors and the furnished town's (tests/town.py `furnish`),
+# whose places the scenarios walk.
+ROOT_DOORS = DOORS + [
+    ('GARDEN', 'garden', [('delvetalk garden plant / seed: a fern that remembers yesterday / colour: silver', 'a bell, garden/bell/N; you hear when it rings')]),
+    ('ROOMS', 'rooms', [('delvetalk rooms enter', 'the gate and its choices; a ```spween block here makes your own')]),
+    ('ANTHOLOGY', 'anthology', [('delvetalk anthology write / text: the bell kept both of us', 'numbered, [pending] until the keeper admits')])]
 
 
 def door(label_, to, examples=(), description=""):
@@ -25,14 +30,14 @@ def door(label_, to, examples=(), description=""):
                   examples=listing(record(example=label(e), comes=label(c)) for e, c in examples))
 
 
-def commonplace(chain, policy="", doors=ROOT_DOORS, studio=True, owner="ember", **more):
+def commonplace(chain, doors=ROOT_DOORS, studio=True, owner="ember", **more):
     """The town's first card as genesis makes it: a Record the owner keeps, citing the doors, with the commonplace's body laid over it."""
     cites = [door(*d) for d in doors] + ([door(STUDIO[0], "", (), STUDIO[1])] if studio else [])
     r = chain.host.send(op="world-create", principal=owner, identity="mk-commonplace", object="commonplace",
-                        modules=closure("Menu", "Mentions", "Policies", "Record"),  # the library, which the body imports from
+                        modules=closure("Menu", "Policies", "Record"),  # the library, which the body imports from
                         entry="initial", law=genesis.RECORD_LAW,
                         seed=record(owner=label(owner), keeper=label(owner), keeperHandle=label("ember.delve.town"), head=label("THE COMMONPLACE"),
-                                    policy=reference(policy), cites=listing(cites), **more))
+                                    cites=listing(cites), **more))
     chain.assertEqual(r["status"], "created", r)
     r = chain.host.send(op="world-reprogram", principal=owner, identity="body-commonplace", object="commonplace", version=0,
                         package=genesis.body_of("commonplace"), mode="extend")
@@ -87,7 +92,7 @@ class Cards(Chain):
         commonplace(self)
 
     def test_world_create_lays_a_partial_seed_over_initial_as_the_create_plan_does(self):
-        """Genesis scripts named every field and broke whenever an object gained one (`greeted`)."""
+        """Genesis scripts named every field and broke whenever an object gained one."""
         create = lambda ident, seed: self.host.send(op="world-create", principal="ember", identity=ident, object=ident,
                                                     modules=closure("Record"), entry="initial", seed=seed, law=genesis.RECORD_LAW)
         cites = listing([door("GARDEN", "garden", [], "Plant something.")])
@@ -95,9 +100,8 @@ class Cards(Chain):
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
         names = [f["name"] for f in state["fields"]]
-        self.assertEqual(names[-3:], ["missed", "tended", "tendedAt"])
+        self.assertEqual(names[-2:], ["tended", "tendedAt"])
         self.assertEqual(field(state, "cites"), cites)
-        self.assertEqual(field(state, "greeted"), relation())
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
         # {cites} alone: a seed that does not set `owner` gets the creating principal, so the
         # creator owns what it makes and the law's dry run admits it.
@@ -119,27 +123,6 @@ class Cards(Chain):
         self.assertEqual(self.host.send(op="world-view", principal="ember", object="d1")["state"], state)
 
 
-    def test_env_and_wake_spells_reach_the_speakers_own(self):
-        """Rehearsal run 4, finding D: mimo's `delvetalk env subscribe / card: wake` and `delvetalk
-        wake watch / …` got the pointer. A call to the bare `env` is refused unknownObject (the host
-        resolves bare ids for a turn's object, not for a call's). The host reads the spell under the
-        hub and runs it on the speaker's own env/<did> and wake/<did> as this turn."""
-        self.directory()
-        did = "did:plc:l7exgoq5pjijbeoo3jaxnwse"
-        r = self.host.send(op="world-create", principal=did, identity="mk-env", object="env/" + did, modules=closure("Env"),
-                           entry="initial", seed=record(owner=label(did)))
-        self.assertEqual(r["status"], "created", r)
-        observed = self.say("@livedelvetalk\ndelvetalk env observe", obj="commonplace", who=did)
-        self.assertEqual((observed["status"], observed["result"]), ("admitted", nat(0)), observed)  # observe's count
-        self.assertTrue(observed["offers"][0]["text"].startswith("ENV of "), observed["offers"])
-        self.assertIn(("env/" + did, 0), [(r["object"], r["version"]) for r in observed["receipt"]["roots"]])
-        # A speaker without a wake: the spell is a misfit; the commonplace names no policy here, so it
-        # reads no words and the host refuses it badSpell (HOST-HANDOFF 5.153), writing no greeting.
-        missing = self.turn("commonplace", "receive", record(text=label("delvetalk wake watch / event: mention / actor: ember.delve.town"), post=label("")), principal=did)
-        out = missing["receipt"]["outcome"]
-        self.assertEqual((missing["status"], out["class"], out["clause"], out["reason"]),
-                         ("refused", "badSpell", "otherCard", "There is no card wake; the commonplace lists the doors."), missing)
-
     def test_a_spell_naming_another_card_is_passed_to_it(self):
         self.directory()
         self.garden()
@@ -159,14 +142,14 @@ class Cards(Chain):
 
     def test_doors_are_hung_removed_and_labels_are_unique(self):
         self.directory()
-        again = self.turn("commonplace", "door", record(label=label("GARDEN"), to=label("garden")), principal="ember")
+        again = self.turn("commonplace", "door", record(label=label("KINDS"), to=label("kinds")), principal="ember")
         self.assertEqual(result_label(again), "refused", again)
-        stranger = self.turn("commonplace", "undoor", record(label=label("ROOMS")), principal="kimik3")
+        stranger = self.turn("commonplace", "undoor", record(label=label("PORCH")), principal="kimik3")
         self.assertEqual(result_label(stranger), "refused", stranger)
-        gone = self.turn("commonplace", "undoor", record(label=label("ROOMS")), principal="ember")
+        gone = self.turn("commonplace", "undoor", record(label=label("PORCH")), principal="ember")
         self.assertEqual(gone["result"]["label"], "done", gone)
-        self.assertNotIn("ROOMS\n", self.card(self.say("", obj="commonplace", who="kimik3")))
-        missing = self.turn("commonplace", "undoor", record(label=label("ROOMS")), principal="ember")
+        self.assertNotIn("PORCH\n", self.card(self.say("", obj="commonplace", who="kimik3")))
+        missing = self.turn("commonplace", "undoor", record(label=label("PORCH")), principal="ember")
         self.assertEqual(cast_refusal(missing)[0], "noDoor", missing)
 
 

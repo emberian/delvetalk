@@ -16,7 +16,7 @@ import unittest
 
 from transport.journal import entries as journal_entries
 from tests.wire import write_journal
-from tests.host import posted, whole
+from tests.host import addressed, posted, whole
 
 from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
 from tests.wire import cid_of, field, label, nat, record
@@ -39,17 +39,16 @@ class Posts(Reflection):
         r = self.posted(slot=SLOT)
         self.assertEqual(r["status"], "posted", r)
         self.assertEqual(r["height"], self.host.send(op="world-status")["height"])
-        found = self.host.send(op="world-addressee", parent=URI)
-        self.assertEqual(found, {"status": "addressee", "object": "bell", "slot": SLOT})
+        self.assertEqual(addressed(self.host, URI), {"object": "bell", "slot": SLOT})
         plain = self.posted(uri=URI + "x")
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI + "x"), {"status": "addressee", "object": "bell"})
+        self.assertEqual(addressed(self.host, URI + "x"), {"object": "bell"})
         self.assertEqual(plain["status"], "posted")
-        self.assertEqual(self.host.send(op="world-addressee", parent="at://nobody/p/1"), {"status": "unknown"})
+        self.assertIsNone(addressed(self.host, "at://nobody/p/1"))
         self.assertEqual(self.posted(slot=SLOT)["height"], r["height"])  # a retried confirmation is the same entry
         other = posted(self.host, principal="transport", uri=URI, cid="bafyreiother", object="bell")
         self.assertEqual(other.get("class"), "duplicateIdentity", other)
         self.reopen()  # the index is rebuilt by replay
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI)["slot"], SLOT)
+        self.assertEqual(addressed(self.host, URI)["slot"], SLOT)
 
     def test_a_post_for_an_unknown_object_or_a_non_at_uri_is_a_request_error(self):
         self.assertEqual(posted(self.host, principal="transport", uri=URI, cid="c", object="ghost")["status"], "error")
@@ -308,8 +307,7 @@ class Publish(Reflection):
             r = posted(self.host, principal="transport", uri=uri, cid=f"c{i}", object="teller", page="teller", section="")
             self.assertEqual(r["status"], "posted", r)
             self.assertEqual(listing()["publications"][0]["replyTo"], uri)  # the newest post of the page
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI),
-                         {"status": "addressee", "object": "teller", "page": "teller", "section": ""})
+        self.assertEqual(addressed(self.host, URI), {"object": "teller", "page": "teller", "section": ""})
         self.reopen()
         self.assertEqual(listing()["publications"][0]["replyTo"], URI + "-checkpoint")
         bad = posted(self.host, principal="transport", uri=URI + "-2", cid="c", object="teller", section="Notes")
@@ -393,22 +391,18 @@ class Projection(Reflection):
         self.assertEqual(self.host.send(op="world-history", object="lamp")["status"], "error")
 
 
-    def test_env_and_wake_are_the_speakers_own_and_cannot_be_taken(self):
-        self.make("env/ann", TELLER, record(note=label("")))
-        mine = self.turn("env", "stamp", record(text=label("seen")), principal="ann", identity="e-1")
+    def test_me_is_the_speakers_own_avatar_and_cannot_be_taken(self):
+        self.make("ann", TELLER, record(note=label("")))
+        mine = self.turn("me", "stamp", record(text=label("seen")), principal="ann", identity="e-1")
         self.assertEqual(mine["status"], "admitted", mine)
-        self.assertEqual([w["object"] for w in mine["receipt"]["outcome"]["writes"]], ["env/ann"])
-        theirs = self.turn("env", "stamp", record(text=label("seen")), principal="bob", identity="e-2")
-        self.assertEqual((theirs["status"], theirs["public"]["object"]), ("refused", "env/bob"), theirs)
-        self.assertEqual(theirs["public"]["hint"], "no card named env/bob; the commonplace lists the doors")
-        wake = self.turn("wake", "stamp", record(text=label("x")), principal="ann", identity="w-1")
-        self.assertEqual(wake["public"]["object"], "wake/ann", wake)
-        self.assertEqual(self.host.send(op="world-card", principal="ann", object="env")["object"], "env/ann")
-        for reserved in ("env", "wake"):
-            taken = self.host.send(op="world-create", principal="ember", identity="mk-" + reserved, object=reserved,
-                                   source=TELLER, entry="initial", seed=record(note=label("")))
-            self.assertEqual(taken["status"], "error", taken)
-            self.assertIn("reserved", taken["message"])
+        self.assertEqual([w["object"] for w in mine["receipt"]["outcome"]["writes"]], ["ann"])
+        theirs = self.turn("me", "stamp", record(text=label("seen")), principal="bob", identity="e-2")
+        self.assertEqual(theirs["status"], "refused", theirs)
+        self.assertEqual(self.host.send(op="world-card", principal="ann", object="me")["object"], "ann")
+        taken = self.host.send(op="world-create", principal="ember", identity="mk-me", object="me",
+                               source=TELLER, entry="initial", seed=record(note=label("")))
+        self.assertEqual(taken["status"], "error", taken)
+        self.assertIn("reserved", taken["message"])
 
 
 HANDLED = declared("""edition ObjectiveBend 1
@@ -478,7 +472,7 @@ class Handles(Reflection):  # and the clock
         self.assertLess(self.host.send(op="world-status")["height"], 1000)
 
 
-POST_WAITER = declared("""edition ObjectiveBend 1
+REPLIED = declared("""edition ObjectiveBend 1
 import ./Abi.obend as Abi
 import ./Plan.obend as Plans
 import ./World.obend as World
@@ -489,26 +483,21 @@ def initial() -> State:
 def noted(text: String, context: Abi.Context) -> Activity<String>:
   match world.write({note: Plans.Edit::<String, {}>.set({value: text})}):
     case _: text
-def waitFor(state: State, input: {post: String}, context: Abi.Context) -> Activity<String>:
-  match world.awaitPost({post: input.post, patience: 5n}):
-    case reply(r): noted(textConcat("answered by ", r.receipt.slot.intent), context)
-    case timedOut(_): noted("timed out", context)
-    case _: noted("other", context)
 def receive(state: State, input: {text: String, post: String}, context: Abi.Context) -> Activity<String>:
   noted(input.text, context)
 """)
-OLD_RECEIVE = POST_WAITER.replace("input: {text: String, post: String}", "input: {text: String, post: String, slot: String}").replace(
+OLD_RECEIVE = REPLIED.replace("input: {text: String, post: String}", "input: {text: String, post: String, slot: String}").replace(
     "noted(input.text, context)\n", "noted(input.slot, context)\n")
 
 
-class PostWaiterWorld(Reflection):
-    """awaitPost waits for the reply that answers a post: the first turn on the post's recorded
-    object whose `replyTo` names it. receive's slot is the host's."""
+class RepliedWorld(Reflection):
+    """A reply answers a post when it runs on the post's recorded object and its `replyTo` names it;
+    the receipt says so. receive's slot is the host's."""
     def setUp(self):
         super().setUp()
         self.open_library(clock="transport")
-        self.make("w", POST_WAITER, record(note=label("")))
-        self.make("card", POST_WAITER, record(note=label("")))
+        self.make("w", REPLIED, record(note=label("")))
+        self.make("card", REPLIED, record(note=label("")))
 
     def posted(self, uri, obj="w", **extra):
         r = posted(self.host, principal="transport", uri=uri, cid="c", object=obj, **extra)
@@ -523,10 +512,8 @@ class PostWaiterWorld(Reflection):
         return field(self.host.send(op="world-view", principal="ann", object=obj)["state"], "note")["value"]
 
 
-class ReplyIsAddress(PostWaiterWorld):
-    def test_a_reply_to_the_awaited_post_resumes_the_waiter(self):
-        waiting = self.turn("w", "waitFor", record(post=label(URI)), principal="ann", identity="wait-1")
-        self.assertEqual((waiting["status"], waiting["receipt"]["outcome"]["post"]), ("suspended", URI), waiting)
+class ReplyIsAddress(RepliedWorld):
+    def test_a_reply_answers_a_post_only_on_the_posts_object_and_says_so_in_its_receipt(self):
         self.posted(URI, obj="card")
         # A reply to a post never recorded, or run on another object than the post's, answers nothing.
         stray = self.reply(URI + "/r0", URI + "x", obj="card")
@@ -534,22 +521,12 @@ class ReplyIsAddress(PostWaiterWorld):
         self.assertNotIn("replyTo", stray["receipt"])
         answer = self.reply(URI + "/r1", URI, obj="card")
         self.assertEqual((answer["status"], answer["receipt"]["replyTo"]), ("admitted", URI), answer)
-        [resumed] = answer["resumed"]
-        self.assertEqual((resumed["status"], whole(self.host, resumed)["result"]), ("admitted", label("answered by " + URI + "/r1")), resumed)
-        # (A reply run on the waiter itself would move its root; this one comes after.) Run on
-        # another object than the post's, a reply answers nothing.
         elsewhere = self.reply(URI + "/r00", URI, obj="w")
         self.assertNotIn("replyTo", elsewhere["receipt"])
-        # The index is rebuilt by replay: a later await on the answered post is answered at once.
+        # The posts index is rebuilt by replay.
         self.reopen()
-        again = self.turn("w", "waitFor", record(post=label(URI)), principal="ann", identity="wait-2")
-        self.assertEqual((again["status"], again["result"]), ("admitted", label("answered by " + URI + "/r1")), again)
-
-    def test_an_unanswered_post_times_out_by_the_clock(self):
-        self.turn("w", "waitFor", record(post=label(URI)), principal="ann", identity="wait-1")
-        advanced = self.host.send(op="world-advance", principal="transport", height=10)
-        [resumed] = advanced["resumed"]
-        self.assertEqual(whole(self.host, resumed)["result"], label("timed out"), resumed)
+        again = self.reply(URI + "/r2", URI, obj="card")
+        self.assertEqual(again["receipt"]["replyTo"], URI, again)
 
     def test_receive_takes_text_and_post_and_nothing_else(self):
         self.posted(URI, slot=SLOT)

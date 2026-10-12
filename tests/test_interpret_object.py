@@ -60,7 +60,7 @@ def tend(state: State, input: {seed: String}, context: Abi.Context) -> Activity<
 """, "plant")
 
 
-# hob's reply that stopped the second playtest (message 69158; journal height 349), verbatim: prose, no `say:`.
+# hob's reply that stopped the second playtest (message 69158; journal height 349), verbatim: prose, no spell.
 PLAYTEST_69158 = "That's a good result to see end to end: a clause you wrote, with your own name and reading, parsed, enforced on the first attempt, and the receipt quoted your words back. The refusal reads as the card's own voice, not a generic error, which is the point of putting the reading next to the law.\n\nI'm the card's hob here, so I should be plain about what I did and didn't do: I'm not going to add a spell from this message, since it's a comment on the mechanism rather than a request to act on the card. If you want something run, tell me the spell in words, for example \"delvetalk garden plant, seed: ..., colour: ...\", and I'll answer with the spell or ask for what's missing."
 
 
@@ -97,21 +97,15 @@ class ProposalForAnotherCard(Chain):
         self.assertEqual((state["planted"]["value"], state["last"]["value"]), ("1", "a fern"))
 
     def test_hobs_answers_that_are_no_spell(self):
-        # docs/FLEX.md §4 host 6: `none`, `card`, `ask: <question>`, `say: <answer>` beside the spells. Only `say:`
-        # is hob's answer, two sentences and 300 characters at most, cut at a sentence end outside an example;
-        # prose with no prefix and no spell is silence (the second playtest's stop, 69158, verbatim below).
+        # docs/OVERHAUL.md §2: hob answers the spell meant, `grow:` with its spell, `ask: <question>` or `none`, and
+        # states no fact: `say:` and `card` are gone, read as any prose with no spell is, silence (the second
+        # playtest's stop, 69158, verbatim below; 69275, hob's `say:` stating a falsehood that was believed).
         answer = "A kind is a template for a made thing. The make form takes a name and an of."
-        long = ("A kind is a template. " * 40).strip()
-        quoted = "Try `delvetalk kinds make / name: lamp.` and it is yours. Then use it."
         for said, verdict in (("none", {"tag": "unclear", "needs": ["not addressed"]}),
                               ("  None\n", {"tag": "unclear", "needs": ["not addressed"]}),
-                              ("card", {"tag": "replied", "text": "card"}),
+                              ("card", {"tag": "unclear", "needs": ["not addressed"]}),
                               ("ask: which seed, 1 to 140 characters?", {"tag": "unclear", "needs": ["which seed, 1 to 140 characters?"]}),
-                              ("say: " + answer, {"tag": "said", "text": answer}),
-                              ("say: " + answer + " If you tell me the name, I can draft it.", {"tag": "said", "text": answer}),
-                              ("say: " + long, {"tag": "said", "text": "A kind is a template. A kind is a template."}),
-                              ("say: " + quoted, {"tag": "said", "text": quoted}),
-                              ("say: " + "x" * 700, {"tag": "unclear", "needs": ["not addressed"]}),
+                              ("say: " + answer, {"tag": "unclear", "needs": ["not addressed"]}),
                               (answer, {"tag": "unclear", "needs": ["not addressed"]}),
                               (PLAYTEST_69158, {"tag": "unclear", "needs": ["not addressed"]})):
             settled, _ = self.ask(said)

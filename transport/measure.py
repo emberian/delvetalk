@@ -16,7 +16,7 @@ from transport import journal
 from transport.bridge import plain
 
 SPELL = re.compile(r'^\s*delvetalk\s+\S', re.M)  # a spell at a line's start, as the host casts one
-GENESIS = re.compile(r'^(?:did:|zulip:|env/|wake/)')  # a principal's own objects, made at its arrival
+GENESIS = re.compile(r'^(?:did:|zulip:)')  # a principal's own object, its avatar, made at its arrival
 
 
 def counted(n, word, plural=None):
@@ -79,11 +79,44 @@ def no_reply(st, observed, entries):
     """Posts addressed to the world (a summons, or a spell at a line's start, as the host casts one) that it heard (a turn
     under the post's own uri) and answered with nothing: no draft with text replies, and the turn is not still waiting on
     hob. Prose in a thread that hob reads as `none` is quiet by design, and residents talking to each other reach only
-    each other's avatars (`<uri>#env:`)."""
+    each other's avatars (`<uri>#mention:`)."""
     last = {(x.get('identity') or {}).get('intent'): (x.get('outcome') or {}).get('tag') for x in entries}
     said = {d.get('replyTo') for _, d in st.drafts() if d.get('text')} if st.outbox.exists() else set()
     asked = [o for o in observed if o['kind'] == 'summon' or SPELL.search(o.get('text') or '')]
     return [o['uri'] for o in asked if o['uri'] in last and o['uri'] not in said and last[o['uri']] != 'suspended']
+
+
+def hand_posts(st):
+    """[(wall seconds, text)] of every draft the hand posted (its log's `post` lines), oldest first."""
+    drafts = {p.stem: d for p, d in st.drafts()} if st.outbox.exists() else {}
+    lines = [json.loads(l) for l in st.hand_log.read_text().splitlines()] if st.hand_log.exists() else []
+    return [(l['at'], (drafts.get(l.get('draft')) or {}).get('text') or '') for l in lines if l.get('what') == 'post' and l.get('world') == st.world]
+
+
+PROMPTED = 600  # seconds after a hand post naming a thing within which an act on it counts as prompted (docs/GENESIS.md)
+
+
+def wants(entries, posted_at, hand, resident=lambda p: True):
+    """docs/GENESIS.md "The measure": each want that held (an entry's `wanted`) and a resident's write stopped holding
+    (`unwanted`; one the opener or the hand closed is no answer), with that hand, `prompted` when that write came within PROMPTED seconds after a hand post naming the
+    thing, else unprompted; and each want still holding at the end, ignored. A want true or false by the clock alone is
+    journaled only when its thing is next written."""
+    holding, answered, clock = {}, [], 0
+    for x in entries:
+        out, ident = x.get('outcome') or {}, x.get('identity') or {}
+        clock = out.get('to') or clock if out.get('tag') == 'advanced' else clock
+        for w in x.get('wanted') or []:
+            holding.setdefault((w.get('object'), w.get('want')), x.get('height'))
+        for w in x.get('unwanted') or []:
+            since = holding.pop((w.get('object'), w.get('want')), None)
+            by = ((x.get('delivery') or {}).get('from') or {}).get('principal') or ident.get('principal')
+            if since is None or not resident(by):
+                continue
+            at = posted_at.get(ident.get('intent'), clock * 60)
+            near = any(t <= at <= t + PROMPTED and re.search(rf'(?<![\w/]){re.escape(w.get("object") or "")}(?![\w/])', text) for t, text in hand)
+            answered.append({'object': w.get('object'), 'want': w.get('want'), 'since': since, 'height': x.get('height'), 'by': by, 'prompted': near})
+    return {'prompted': [a for a in answered if a['prompted']], 'unprompted': [a for a in answered if not a['prompted']],
+            'ignored': [{'object': o, 'want': n, 'since': h} for (o, n), h in holding.items()]}
 
 
 def measures(st, entries=None):
@@ -139,7 +172,7 @@ def measures(st, entries=None):
         sender = by_identity.get((((x.get('delivery') or {}).get('from') or {}).get('principal'), ((x.get('delivery') or {}).get('from') or {}).get('intent')))
         if (x.get('resumes') and 'delivery' in x) or (sender is not None and sender in moved):
             moved.add(height)
-            wrote = [w.get('object') for w in out.get('writes') or [] if w.get('object') and not str(w.get('object')).startswith('wake/')]
+            wrote = [w.get('object') for w in out.get('writes') or [] if w.get('object')]
             if wrote and (start is None or now_clock >= start // 60):
                 unposted.append({'height': height, 'objects': wrote, 'notes': sum(1 for o in wrote if str(o).startswith(('did:', 'zulip:')))})
         if not direct or not resident(p):
@@ -151,7 +184,7 @@ def measures(st, entries=None):
             continue
         for w in out.get('writes') or []:
             obj = w.get('object')
-            if obj and makers.get(obj) not in (None, p) and obj not in (p, f'env/{p}', f'wake/{p}'):
+            if obj and makers.get(obj) not in (None, p) and obj != p:
                 used.setdefault((obj, p), {'object': obj, 'by': who(p), 'maker': who(makers[obj]), 'height': height, 'residentMade': resident(makers[obj])})
             hung = doors(w)
             for to in hung:
@@ -177,7 +210,7 @@ def measures(st, entries=None):
     verdict = lambda i: 'failed' if (i.get('reply') or {}).get('status') == 'failed' else \
         next((w for w in ('delvetalk', 'none', 'unclear') if (i.get('reply') or {}).get('raw', '').strip().lower().startswith(w)), 'other').replace('delvetalk', 'spell')
     return {
-        'world': st.world, 'height': entries[-1].get('height') if entries else 0, 'clock': now_clock,
+        'world': st.world, 'names': names, 'height': entries[-1].get('height') if entries else 0, 'clock': now_clock,
         'T0': None if start is None else time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(start)),
         'made': {'count': len(made), 'byKind': count(made, 'kind'), 'byMaker': count(made, 'maker'), 'rows': made},
         'used': {'count': len(used), 'residentMade': len(theirs), 'makers': len({u['maker'] for u in theirs}), 'rows': list(used.values())},
@@ -191,6 +224,7 @@ def measures(st, entries=None):
         'firstMade': {'secondsFromT0': round(made[0]['at'] - start) if made and start is not None else None,
                       'byResident': {who(p): round(m['at'] - first[p]) if p in first else None for p, m in makes.items()}},
         'noReply': no_reply(st, obs, entries),
+        'wants': wants(entries, posted_at, hand_posts(st), resident),
         'goNoGo': {'used by another, at least 3 by at least 2 makers': len(theirs) >= 3 and len({u['maker'] for u in theirs}) >= 2}}
 
 
@@ -198,7 +232,8 @@ def table(m):
     """§4's rows as the lessons file prints them and the hand shows them: (measure, the number, what it breaks into,
     the ids behind it)."""
     split = lambda d: ', '.join(f'{k} {v}' for k, v in d.items())
-    made, used, laws, cit, rain, i, ref, first = (m[k] for k in ('made', 'used', 'laws', 'citations', 'unposted', 'interpretations', 'refusals', 'firstMade'))
+    made, used, laws, cit, rain, i, ref, first, w = (m[k] for k in ('made', 'used', 'laws', 'citations', 'unposted', 'interpretations', 'refusals', 'firstMade', 'wants'))
+    who = lambda p: m['names'].get(p, p)
     return [
         ('things made by residents', made['count'], f"by kind: {split(made['byKind']) or 'none'}; by maker: {split(made['byMaker']) or 'none'}",
          [f"{r['object']} by {r['maker']}, entry {r['height']}" for r in made['rows']]),
@@ -214,4 +249,7 @@ def table(m):
         ('seconds to the first resident-made thing', first['secondsFromT0'], f"T0 {m['T0'] or 'not yet'}",
          [f"{h}: {v} s from their first post" for h, v in first['byResident'].items()]),
         ('addressed posts with no reply', len(m['noReply']), 'heard by the world, answered with nothing', m['noReply']),
+        ('wants answered unprompted', len(w['unprompted']), f"{len(w['prompted'])} prompted (within ten minutes of a hand post naming the thing); {len(w['ignored'])} still wanted",
+         [f"{r['object']} {r['want']} by {who(r['by'])}, entry {r['height']} (wanted since {r['since']})" for r in w['unprompted']]
+         + [f"still wanted: {r['object']} {r['want']}, since entry {r['since']}" for r in w['ignored']]),
     ]

@@ -1,11 +1,11 @@
-"""An arrival records a principal's handle and creates their Avatar, Env and Wake from the world's
-library, owned by their DID, once.
+"""An arrival records a principal's handle and creates their Avatar from the world's library,
+owned by their DID, once.
 
 Evidence for FOUNDATION §3 Context (layer: host).
 
 Arrival: `world-arrive {principal, did, handle}` from the clock principal records the handle and
-creates the newcomer's Avatar (`<did>`), Env (`env/<did>`) and Wake (`wake/<did>`) from the world's
-library, owned by the DID, as ordinary creates by the world's opener. Each case names what would
+creates the newcomer's Avatar (`<did>`) from the world's library, owned by the DID, as an ordinary
+create by the world's opener. Each case names what would
 refute it.
 
     python3 -W error -m unittest tests.test_arrive -v
@@ -16,24 +16,19 @@ import tempfile
 import unittest
 
 from tests.host import HostCase, ROOT
-from tests.wire import field, label, nat, record, rows
-from tests.bend import closure, declared
+from tests.wire import field, label, record
 
 DID = "did:plc:abcdefghijklmnopqrstuvwx"
 OBJECTS = os.path.join(ROOT, "world", "objects")
 
 
-def opened(case, wake=None):
+def opened(case):
     """Open the case's world on the deployed library (world/lib, which the Avatar
-    imports) joined by the newcomer's packages; `wake` replaces Wake's source."""
+    imports) joined by the newcomer's package."""
     case.lib = tempfile.mkdtemp(prefix="dt-arrive-lib-")
     case.addCleanup(shutil.rmtree, case.lib, True)
     shutil.copytree(os.path.join(ROOT, "world", "lib"), case.lib, dirs_exist_ok=True)
-    for name in ("Avatar", "Env", "Wake"):
-        shutil.copy(os.path.join(OBJECTS, name + ".obend"), case.lib)
-    if wake:
-        with open(os.path.join(case.lib, "Wake.obend"), "w", encoding="utf-8") as f:
-            f.write(wake)
+    shutil.copy(os.path.join(OBJECTS, "Avatar.obend"), case.lib)
     r = case.host.send(op="world-open", path=case.path, library=case.lib, principal="ember", clock="transport", opener="ember")
     case.assertEqual(r["status"], "opened", r)
 
@@ -74,26 +69,21 @@ class Arrive(HostCase):
                               entry="initial", seed=record())
         self.assertEqual(made["status"], "error", made)
 
-    def test_an_arrival_creates_the_newcomers_three_objects_owned_by_the_did(self):
-        self.assertEqual(self.host.send(op="world-card", principal=DID, object="env")["status"], "unknown")
+    def test_an_arrival_creates_the_newcomers_avatar_owned_by_the_did(self):
         before = self.host.send(op="world-status")["height"]
         r = self.arrive()
         self.assertEqual(r["status"], "arrived", r)
-        self.assertEqual([c["object"] for c in r["created"]], [DID, "env/" + DID, "wake/" + DID])
+        self.assertEqual([c["object"] for c in r["created"]], [DID])
         self.assertEqual(r["principal"]["outcome"]["handle"], "newt.delve.town")
-        self.assertEqual(self.host.send(op="world-status")["height"], before + 5)   # the principal, three creates, the Wake's arrived turn
+        self.assertEqual(self.host.send(op="world-status")["height"], before + 2)   # the principal, the create
         self.assertEqual(field(self.view(DID), "handle")["value"], "newt.delve.town")
-        self.assertEqual(field(self.view("env/" + DID), "owner")["value"], DID)
-        wake = self.view("wake/" + DID)
-        self.assertEqual(field(wake, "owner")["value"], DID)
-        self.assertEqual(field(field(wake, "env"), "object")["value"], "env/" + DID)
         # Ordinary creates by the opener, for the owner; the default law names the DID.
-        receipt = self.host.send(op="world-receipt", principal="ember", identity="arrive:env/" + DID)
+        receipt = self.host.send(op="world-receipt", principal="ember", identity="arrive:" + DID)
         self.assertEqual((receipt["receipt"]["outcome"]["tag"], receipt["receipt"]["outcome"]["owner"]), ("created", DID), receipt)
         avatar = self.host.send(op="world-inspect", principal=DID, object=DID)
         self.assertIn(DID, avatar["law"])
-        card = self.host.send(op="world-card", principal=DID, object="env")  # env resolves to the speaker's own
-        self.assertEqual((card["status"], card["object"]), ("card", "env/" + DID), card)
+        card = self.host.send(op="world-card", principal=DID, object="me")  # me resolves to the speaker's own
+        self.assertEqual((card["status"], card["object"]), ("card", DID), card)
 
     def test_a_second_arrival_creates_nothing_and_a_new_handle_is_one_entry(self):
         self.arrive()
@@ -115,103 +105,6 @@ class Arrive(HostCase):
         self.assertEqual(r["status"], "error", r)
         self.assertIn("clock principal", r["message"])
         self.assertEqual(self.host.send(op="world-view", principal=DID, object=DID)["status"], "unknown")
-
-# A Wake whose `arrived` subscribes its owner's wake to the garden's `n` (the objects lane's
-# `Wake.arrived` does the same for the real garden).
-ARRIVING_WAKE = declared("""edition ObjectiveBend 1
-import ./Abi.obend as Abi
-import ./List.obend as Lists
-import ./Plan.obend as Plans
-import ./World.obend as World
-record State:
-  owner: String
-  env: Plans.Reference
-def initial() -> State:
-  {owner: "", env: {world: "", object: ""}}
-def arrived(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:
-  match world.subscribe({object: {world: "", object: "garden"}, field: "n", method: "changed"}):
-    case subscribed(_): 1n
-    case _: 0n
-def changed(state: State, input: World.Changed, context: Abi.Context) -> Activity<Nat>:
-  0n
-""", "arrived", "changed")
-
-GARDEN = declared("""edition ObjectiveBend 1
-import ./Abi.obend as Abi
-import ./Plan.obend as Plans
-import ./World.obend as World
-record State:
-  n: Nat
-def initial() -> State:
-  {n: 0n}
-def bump(state: State, context: Abi.Context) -> Activity<Nat>:
-  let written(_) = write {n: add 1n}
-  state.n + 1n
-""", "bump")
-
-
-class Arrived(HostCase):
-    arrive = Arrive.arrive
-
-    def setUp(self):
-        super().setUp()
-        opened(self, wake=ARRIVING_WAKE)
-        r = self.host.send(op="world-create", principal="ember", identity="mk-garden", object="garden",
-                           modules=[{"name": "Probe", "source": GARDEN}], entry="initial", seed=record())
-        self.assertEqual(r["status"], "created", r)
-
-    def test_the_wakes_arrived_runs_once_as_the_newcomers_turn(self):
-        r = self.arrive()
-        turned = r["arrivedTurn"]
-        self.assertEqual((turned["status"], turned["result"]), ("admitted", nat(1)), turned)
-        self.assertEqual(turned["receipt"]["identity"], {"principal": DID, "intent": "arrive-" + DID})
-        bumped = self.host.send(op="world-turn", principal="ember", object="garden", method="bump", argument=record(), identity="b1")
-        self.assertEqual([c["to"] for c in bumped["receipt"].get("changes", [])], ["wake/" + DID], bumped)
-        again = self.arrive()
-        self.assertNotIn("arrivedTurn", again)
-        self.reopen()
-        bumped = self.host.send(op="world-turn", principal="ember", object="garden", method="bump", argument=record(), identity="b2")
-        self.assertEqual([c["to"] for c in bumped["receipt"].get("changes", [])], ["wake/" + DID], bumped)
-
-
-class ToldWithoutPosting(HostCase):
-    """OFFERING §4: the world moves when nobody posts. A newcomer's Wake, in the turn arrival
-    runs as theirs (`Wake.arrived`), subscribes to every thing the garden grows (a row of its `things`); the bell
-    its kind finishes calls the planter's `Wake.watchBell`, so the planter hears when that bell rings. Each
-    reaches the avatar's inbox as a note in the settle pass of the turn that wrote it."""
-
-    arrive, view = Arrive.arrive, Arrive.view
-
-    def setUp(self):
-        super().setUp()
-        opened(self)
-        from tests.test_chain import town_garden
-        town_garden(self.host.send)
-
-    def inbox(self, did=DID):
-        return [field(n, "text")["value"] for n in rows(field(self.view(did), "inbox"))]
-
-    def plant(self, who, seed, ident):
-        r = self.host.send(op="world-turn", principal=who, object="garden", method="receive", identity=ident,
-                           argument=record(text={"tag": "label", "value": "delvetalk garden plant\nseed: %s\ncolour: silver" % seed}, post={"tag": "label", "value": "at://x/" + ident}))
-        self.assertEqual(r["status"], "admitted", r)
-        self.assertIn("Planted, ", r["offers"][0]["text"])
-        return r
-
-    def test_a_newcomer_hears_each_planting_and_its_own_bell_ring(self):
-        arrived = self.arrive()
-        self.assertEqual((arrived["arrivedTurn"]["status"], arrived["arrivedTurn"]["result"]["label"]), ("admitted", "watching"), arrived)
-        self.assertEqual(self.arrive().get("arrivedTurn"), None)
-        self.plant("ember", "a lamp", "p1")
-        self.assertEqual(self.inbox(), ["garden's things: 1 new row"])
-        self.plant(DID, "a fern", "p2")
-        self.assertEqual(self.inbox(), ["garden's things: 1 new row", "garden's things: 1 new row"])
-        rung = self.host.send(op="world-turn", principal="ember", object="garden/bell/2", method="ring", argument=record(), identity="r1")
-        self.assertEqual(rung["status"], "admitted", rung)
-        self.assertEqual(self.inbox(), ["garden's things: 1 new row", "garden's things: 1 new row", "garden/bell/2's marks: 1 new row"])
-        # Ember has no wake: the planting stands, and nobody hears bell 1 ring.
-        self.assertEqual(self.host.send(op="world-turn", principal="ember", object="garden/bell/1", method="ring", argument=record(), identity="r2")["status"], "admitted")
-        self.assertEqual(len(self.inbox()), 3)
 
 
 if __name__ == "__main__":

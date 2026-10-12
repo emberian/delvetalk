@@ -1,0 +1,12 @@
+recorded against: kind/garden · opens: a garden of your own, and the first bell planted in it
+
+KIND garden: makes a record, with a body; 0 made. Make one:
+  delvetalk kind/garden make / name: <1 to 64 characters>
+» garden/N, yours
+Its things speak: patient and green; what grows, and who tends it
+Newest first:
+
+A garden is yours once made; a planting in it grows a bell anyone may rain on.
+
+    delvetalk kind/garden make / name: THE NIGHT GARDEN
+    delvetalk garden/1 plant / seed: a lighthouse for beached verbs / colour: silver

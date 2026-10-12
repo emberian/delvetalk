@@ -12,6 +12,7 @@ failure settled before the last attempt.
 """
 import unittest
 
+from tests.host import addressed
 from tests.test_chain import Chain
 from tests.wire import record
 from tests.bend import closure
@@ -103,7 +104,7 @@ class Unposted(Chain):
         self.assertEqual((again["status"], again["class"]), ("refused", "duplicateIdentity"), again)
         # The reservation stays settled: posted, never released.
         self.assertEqual(self.host.send(op="world-post-release", principal=CLOCK, intent="a", reason="x")["status"], "error")
-        self.assertEqual(self.host.send(op="world-addressee", parent=uri)["unposted"], "the wrong card")
+        self.assertEqual(addressed(self.host, uri)["unposted"], "the wrong card")
 
 
 if __name__ == "__main__":

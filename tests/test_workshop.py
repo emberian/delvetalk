@@ -156,10 +156,10 @@ class Workshop(Chain):
         settles the interpretation by binding it to the offered form's `source` field, so the draft is held."""
         from tests.wire import nil
         r = self.host.send(op="world-create", principal="ember", identity="mk-policy", object="policy", modules=closure("Policy"),
-                           entry="initial", seed=record(owner=label("ember"), model=label("m"), system=label("S"), lexicon=nil(),
-                                                        examples=nil(), macros=nil(), confirmFor={"tag": "list", "items": []}))
+                           entry="initial", seed=record(owner=label("ember"), model=label("m"),
+                                                        examples=nil(), confirmFor={"tag": "list", "items": []}))
         self.assertEqual(r["status"], "created", r)
-        self.make("workshop", closure("Workshop"), record(title=label("Workshop"), policy=record(world=label(""), object=label("policy"))))
+        self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
         asked = self.turn("workshop", "receive", record(text=label("delvetalk workshop make\nname: lamp\ndescription: a lamp anyone lights"),
                                                          post=label("")), principal="glm", identity="make-lamp")
         self.assertEqual(asked["status"], "suspended", asked)

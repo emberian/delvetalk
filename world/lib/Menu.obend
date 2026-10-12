@@ -27,42 +27,22 @@ def newestId(items: Lists.List<World.Change>) -> String:
 def changeLine(c: World.Change) -> String:
   "{c.object.object} v{natText(c.version)} by {Card.handle(c.by)}, entry {natText(c.height)}\n"
 # The doors as a trie (docs/MENU.md section 1): per door its word, then each spell indented,
-# typed back whole, and `» <what comes back>`, then its arcs' spells. `first` names the door
-# that leads ("" for the owner's order); the head, what changed and the tail are said once, and
+# typed back whole, and `» <what comes back>`, then its arcs' spells. The head, what changed and the tail are said once, and
 # the branches get what they leave of the card's room (Card.left, the receipt line under it
 # counted) (a clipped reader sees whole branches). A link
 # door (STUDIO) is never clipped: it is said after the clipped branches, before the tail.
-def trie(all: Lists.List<Door>, changed: String, first: String, context: Abi.Context) -> Document.Document:
-  trieUnder("", all, changed, first, context)
-def trieUnder(line: String, all: Lists.List<Door>, changed: String, first: String, context: Abi.Context) -> Document.Document:
-  let top = firstOf(Lists.filter(all, fn(d: Door) -> Bool: isArc(all, d) == false), first)
+def trie(all: Lists.List<Door>, changed: String, context: Abi.Context) -> Document.Document:
+  let top = Lists.filter(all, fn(d: Door) -> Bool: isArc(all, d) == false)
   let links = textJoin(Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to)), fn(d: Door) -> String: Document.plain(branch(d, all))), "")
-  let head = if line == "" then trieHead(Lists.length(top)) else "{line}\n{greetedHead(Lists.length(top))}"
-  framed("{head}{changed}", Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false), fn(d: Door) -> Document.Document: branch(d, all)), "{links}{trieTail()}", context)
-# hob's greeting, above the card a principal's first words get (docs/VOICE.md, the surfaces).
-def greetingLine() -> String:
-  "hob: words reach me, spells reach the cards. The doors:"
-# The trie pruned to some doors under another head, and no tail: hob's question's card.
-def pruned(head: String, doors: Lists.List<Door>, all: Lists.List<Door>, context: Abi.Context) -> Document.Document:
-  framed("{head}\n", Lists.map(doors, fn(d: Door) -> Document.Document: branch(d, all)), "", context)
+  framed("{trieHead(Lists.length(top))}{changed}", Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false), fn(d: Door) -> Document.Document: branch(d, all)), "{links}{trieTail()}", context)
 def title() -> String:
   "✾ DELVETALK · THE COMMONPLACE"
 def trieHead(count: Nat) -> String:
   "{title()}\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back; words reach hob.\n"
-# Under hob's greeting the head leaves out what hob's line says.
-def greetedHead(count: Nat) -> String:
-  "{title()}\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back.\n"
 def trieTail() -> String:
-  "YOURS · me, env and wake\n  delvetalk env observe\n  » what addressed you since you looked\nEvery reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"
-# The card for words that named nothing.
-def nothingHead() -> String:
-  "hob: no door, spell or field in that. The doors:\n{title()}\n"
+  "YOURS · me\n  delvetalk me ?\n  » what you hold; notes left by rules and mentions\nEvery reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"
 def framed(head: String, branches: Document.Documents, tail: String, context: Abi.Context) -> Document.Document:
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(head), tail: Lists.append(Card.clippedWithin(branches, 64n, Card.left(context, textLength(head) + textLength(tail))), Document.text(tail))})})
-def firstOf(top: Lists.List<Door>, first: String) -> Lists.List<Door>:
-  match Lists.find(top, fn(d: Door) -> Bool: first != "" && d.label == first):
-    case some(d): Lists.List.cons({head: d.value, tail: Lists.filter(top, fn(o: Door) -> Bool: o.label != first)})
-    case none(_): top
 # An arc: a door whose object is a card under another door's object.
 def arcOf(parent: Door, door: Door) -> Bool:
   Plans.isNobody(parent.to) == false && Text.starts(door.to.object, "{parent.to.object}/")
@@ -75,8 +55,3 @@ def spellLines(examples: Card.Examples) -> String:
   textJoin(Lists.map(examples, fn(e: Card.Example) -> String: if e.comes == "" then "  {e.example}\n" else "  {e.example}\n  » {e.comes}\n"), "")
 def linkLine(door: Door) -> String:
   if door.description == "" then "" else " · {door.description}"
-# Several spells' card: each spell said, with what came of it.
-def ran(lines: Card.Examples) -> Document.Document:
-  Document.text("{title()}\n\n{Text.counted(Lists.length(lines))} spells, in the order said:\n{spellLines(lines)}")
-def refusedLine(clause: String, reading: String, object: String) -> String:
-  if reading == "" then "refused {clause}: Not done at {object}." else "refused {clause}: {reading}"

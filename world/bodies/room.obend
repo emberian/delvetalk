@@ -175,10 +175,6 @@ form door:
   to: text 1..128
 form undoor:
   label: text 1..32
-form example:
-  label: text 1..32
-  spell: text 1..280
-  comes: text 0..200
 def enter(state: State, context: Abi.Context) -> Activity<Done>:
   done(enterVerdict(context, state), context, state)
 def choose(state: State, input: ChooseInput, context: Abi.Context) -> Activity<Done>:
@@ -221,8 +217,6 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
   Super.door(state, {label: input.label, to: input.to}, context)
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
-def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity<Card.Replied>:
-  Super.example(state, {label: input.label, spell: input.spell, comes: input.comes}, context)
 # A thing takes itself off the floor into the hands of the principal, who must be here, and puts
 # itself down where its holder stands, or where the room's owner lays it; only the thing itself
 # (the calling object) does either. A thing lying here that is inspirited gives the room its line,
@@ -230,7 +224,7 @@ def example(state: State, input: ExampleInput, context: Abi.Context) -> Activity
 def inspirited(state: State, input: {line: String}, context: Abi.Context) -> Activity<Done>:
   if context.caller == "" then roomRefused({clause: "notAThing", reading: "Only a thing is inspirited."}, context) else if holds(state.things, {world: context.world, object: context.caller}) == false then roomRefused({clause: "notLying", reading: "That is not lying here."}, context) else spirited(input.line, context, state)
 def spirited(line: String, context: Abi.Context, state: State) -> Activity<Done>:
-  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, text: if textLength(line) > 280n then "{textTake(line, 279n)}…" else line, at: context.height, n: state.next}, next: add 1n, marks: insert {name: claimMark(context.caller), who: context.principal, handle: context.handle, at: context.height}}
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "inspirit", text: if textLength(line) > 280n then "{textTake(line, 279n)}…" else line, at: context.height, n: state.next}, next: add 1n, marks: insert {name: claimMark(context.caller), who: context.principal, handle: context.handle, at: context.height}}
   Done.done({})
 def claimMark(thing: String) -> String:
   "inspirited {thing}"
@@ -249,13 +243,13 @@ def laid(context: Abi.Context) -> Activity<Done>:
 def methods() -> Lists.List<String>:
   Text.words("take put inspirited")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Text.words("enter choose leave say emote whisper write lines"), if context.principal == state.owner then Text.words("door undoor example") else Text.words(""))
+  Lists.concat(Text.words("enter choose leave say emote whisper write lines"), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
 # A ```spween block makes a room under this one, by this room's kind (its `makeUnder`, which reads
 # the block); anything else is the card's default.
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Card.Replied>:
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   match Spween.block(input.text):
     case some(b): authored(b.value, Spween.parse(b.value), context, state)
-    case none(_): if input.misfit.clause != "" then Super.misfitted(input.misfit, state, context) else Card.answer(Card.heard(input), context, forms(), Super.render(state, context))
+    case none(_): Card.answer(input, context, forms(), Super.render(state, context))
 def authored(block: String, parsed: Spween.Parsed, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match parsed:
     case refused(r): Super.refused({clause: "spween", reading: r.reason}, context)

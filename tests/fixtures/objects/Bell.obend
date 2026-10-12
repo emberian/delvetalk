@@ -10,19 +10,17 @@ import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Text.obend as Text
 # A test fixture: the world's bell is made by kind/bell, a Record with world/bodies/bell.obend
-# laid over it. This package stays the subject of the host's tests of views, subscriptions,
-# layers, awaits and limits.
+# laid over it. This package stays the subject of the host's tests of views, layers and limits.
 type Colour = Rows.Colour
 # A rain keeps its author's DID and the handle the host knew when it fell, the height its
 # turn read (`at`) and `n`, the bell's count of rains at that read. The key is {author, at,
 # n}: two rains of one author read at one height are two rows whenever the bell counted a
 # rain between them. The host keeps the rains in key order, n first (canonical bytes order
 # the columns by name length), so in the order they fell; the bell keeps 1,024, the host
-# dropping the first past them, after which n stays 1,024 and `at` orders them. Whoever
-# wants to know of rains or a ring subscribes to `rains` or `rung` (a Wake, a door).
+# dropping the first past them, after which n stays 1,024 and `at` orders them.
 type Rain = Rows.Line
-# planting: the uri of the post that planted the bell, which the strike awaits the
-# answer to; planter: the principal of the planting turn (the garden writes both).
+# planting: the uri of the post that planted the bell; planter: the principal of the planting
+# turn (the garden writes both).
 record State:
   colour: fixed Colour
   seed: fixed String
@@ -41,23 +39,10 @@ def rainKey(rain: Rain) -> {author: String, at: Nat, n: Nat}:
 # The author of a rain is the turn's principal, never an argument. The rain is answered with
 # the bell as it now stands, to its author, and with the count of rains.
 def rain(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
-  let rain = {author: context.principal, handle: context.handle, text: input.text, at: context.height, n: Relations.count(state.rains)}
+  let rain = {author: context.principal, handle: context.handle, verb: "", text: input.text, at: context.height, n: Relations.count(state.rains)}
   let written(_) = write {rains: insert rain}
   Card.tellTo(Relations.count(state.rains) + 1n, context.principal, render(extend(state, {rains: Relations.insert(state.rains, rain, rainKey)}), context))
-# The strike waits for the reply that answers the planting post (awaitPost: the first
-# turn on the post's recorded object whose replyTo names it), and rings if that turn was
-# admitted. A bell planted with no post has nothing to await and stays as it is.
-def strike(state: State, context: Abi.Context) -> Activity<Bool>:
-  if state.planting == "" then state.rung else awaitPlanting(state.planting, state.rung, context)
-def awaitPlanting(planting: String, rung: Bool, context: Abi.Context) -> Activity<Bool>:
-  match world.awaitPost({post: planting, patience: 8n}):
-    case reply(r): ringOn(r.receipt.outcome, rung, context)
-    case _: rung
-def ringOn(outcome: Plans.Outcome, rung: Bool, context: Abi.Context) -> Activity<Bool>:
-  match outcome:
-    case admitted(_): rang(context)
-    case refused(_): rung
-# Rings: marks the bell rung; its subscribers (a door) are told by the host.
+# Rings: marks the bell rung.
 def rang(context: Abi.Context) -> Activity<Bool>:
   let written(_) = write {rung: set true}
   true
@@ -71,8 +56,6 @@ form door:
   to: text 1..160
 form undoor:
   label: text 1..32
-def methods() -> Lists.List<String>:
-  Text.words("strike")
 # What the host offers a reader (HOST-HANDOFF 103): doors are the planter's, so no one else is
 # shown `door` or `undoor` (nor reads them as a word the directory interprets).
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:

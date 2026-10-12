@@ -8,14 +8,18 @@ principal named a method other than `receive`), `delivery` (an object sent it), 
 transport saw of the post and states: `mention`, `door`, `fields` (the host checks the field line)
 or `direct` (asked on the card itself). An `interpret` of a turn with none is answered `unclear
 {needs: ["not addressed"]}` at once: no suspension, no model, no quota. Every interpretation
-journals its reach. Refuted by: prose with no reach suspending or listed for the model, a reached
+journals its reach. Where a post reaches at all is the host's too (`world-reach`, 5.162): the bridge passes
+the post and the ancestors it saw with their authors. Refuted by: prose with no reach suspending or listed for the model, a reached
 interpretation listed without its reach, a stated `fields` with no field line or an unknown reach
-admitted, or a reach left out of the retry digest.
+admitted, or a reach left out of the retry digest; a reply reaching a card other than its direct parent's,
+prose deep in a thread reaching its root, a door named outside the world's threads reaching that door, a Zulip
+message under another resident's reaching the card above it, or a walk looping on a cycle.
 """
 import unittest
 
 from tests.host import posted
-from tests.test_chain import Chain
+from tests.test_chain import Chain, town_garden
+from tests.test_receive import commonplace
 import tests.test_policy as policy_tests
 from tests.wire import label, record
 from tests.bend import closure, declared
@@ -139,6 +143,61 @@ class Reach(Chain):
         self.say(identity="same")
         again = self.say(identity="same", reach="mention")
         self.assertEqual(again.get("class"), "duplicateIdentity", again)
+
+
+DID, OTHER = 'did:plc:glm', 'did:plc:kim'
+U = lambda n: f'at://{DID}/town.delve.feed.post/{n}'
+Z = lambda n: f'zulip://delvetalk/t/{n}'
+
+
+class WorldReach(Chain):
+    """`world-reach`: where an observed post reaches, found by the host from what the bridge saw (5.162)."""
+    def setUp(self):
+        super().setUp()
+        town_garden(self.host.send)
+        commonplace(self, doors=[('anthology', 'anthology', [])], studio=False)
+        for uri, obj in ((U('card'), 'garden'), (U('welcome'), 'commonplace'), (Z(1), 'garden')):
+            self.assertEqual(posted(self.host, principal='transport', uri=uri, cid='bafy' + uri[-4:], object=obj)['status'], 'posted')
+
+    def reach(self, text, uri=None, kind='post', author=DID, replyTo=None, root=None, mentions=0, chain=()):
+        got = self.host.send(op='world-reach', uri=uri or U('new'), text=text, kind=kind, author=author, mentions=mentions,
+                             chain=[{'uri': u, 'author': a, **({'replyTo': r} if r else {})} for u, a, r in chain],
+                             **({'replyTo': replyTo} if replyTo else {}), **({'root': root} if root else {}))
+        return (got['object'], got['how'], got.get('replyTo')) if got['status'] == 'reached' else got['status']
+
+    def test_a_reply_reaches_its_direct_parents_card_and_names_the_post_it_answers(self):
+        self.assertEqual(self.reach('a fern, please', replyTo=U('card')), ('garden', 'reply', U('card')))
+        self.assertEqual(self.reach('delvetalk garden plant', replyTo=U('welcome')), ('commonplace', 'reply', U('welcome')))
+        # Its parent is no card's post: not by an ancestor, and its prose names no door.
+        self.assertEqual(self.reach('fourth', replyTo=U('t3'), root=U('welcome'), chain=[(U('t3'), OTHER, U('card'))]), 'unreached')
+
+    def test_a_spell_line_reaches_its_card_and_a_summons_the_commonplace(self):
+        self.assertEqual(self.reach('delvetalk garden ?'), ('garden', 'spell', None))
+        self.assertEqual(self.reach('I planted a fern #gsb', kind='summon'), ('commonplace', 'mention', None))
+        self.assertEqual(self.reach('delvetalk garden ?', kind='wiki'), 'unreached')  # a page is no spell
+        self.assertEqual(self.reach('replying elsewhere', replyTo=U('other')), 'unreached')
+
+    def test_in_a_thread_the_world_opened_field_lines_reach_its_card_and_a_named_door_its_door(self):
+        deep = dict(replyTo=U('agent1'), root=U('card'), chain=[(U('agent1'), OTHER, U('card'))])
+        self.assertEqual(self.reach('For the record:\n\nplant: a bell\ncolour: silver', **deep), ('garden', 'fields', None))
+        self.assertEqual(self.reach('And yes, that line belongs in the Anthology.', **deep), ('anthology', 'door', None))
+        self.assertEqual(self.reach('Open recursion deserves to be carved into the lintel.', **deep), 'unreached')
+        # The thread is the root's when the walk finds nothing recorded above.
+        self.assertEqual(self.reach('plant: moss', replyTo=U('mid'), root=U('card')), ('garden', 'fields', None))
+        # A door named outside the world's threads reaches nothing.
+        self.assertEqual(self.reach('that line belongs in the anthology', replyTo=U('elsewhere')), 'unreached')
+
+    def test_a_cycle_ends_the_walk(self):
+        self.assertEqual(self.reach('x', replyTo=U('ca'), chain=[(U('ca'), OTHER, U('cb')), (U('cb'), OTHER, U('ca'))]), 'unreached')
+
+    def test_on_zulip_the_walk_passes_only_the_authors_own_messages(self):
+        mine = [(Z(2), DID, Z(1))]
+        self.assertEqual(self.reach('and a last thought', uri=Z(3), replyTo=Z(2), chain=mine), ('garden', 'reply', Z(1)))
+        # Under another resident's message: the words answer them, and reach nothing.
+        self.assertEqual(self.reach('me too', uri=Z(3), replyTo=Z(2), chain=[(Z(2), OTHER, Z(1))]), 'unreached')
+        # A message mentioning only other residents is theirs.
+        self.assertEqual(self.reach('@**Carol** nice fern', uri=Z(3), replyTo=Z(1), mentions=1), 'unreached')
+        self.assertEqual(self.reach('plant: moss', uri=Z(3), replyTo=Z(9)), 'unreached')  # no thread rule on Zulip
 
 
 if __name__ == "__main__":
