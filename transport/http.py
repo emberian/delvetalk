@@ -161,14 +161,16 @@ def compact(reply):
 
 
 def turn_view(reply):
-    """A turn reply's default rendering: the turn line with its stamp, the offered texts and where the receipt sits. The whole
-    receipt is `?full=1` and `GET /receipt/<slug>`."""
+    """A turn reply's default rendering: the turn line with its stamp, what the act fired, opened and where it stands (the
+    host's `revealed` lines, when it has any), the offered texts and where the receipt sits. The whole receipt is
+    `?full=1` and `GET /receipt/<slug>`."""
     rc = reply['receipt']
     line = turn_line(reply)
     outcome = rc.get('outcome') or {}
     cls = reply.get('class') or outcome.get('class')
     return {'status': reply.get('status'), **({'class': cls} if cls and reply.get('status') == 'refused' else {}),
             'line': f"{pages.stamp(reply.get('status'), word=False)} {line}",
+            **({'revealed': reply['revealed']} if reply.get('revealed') else {}),
             'offers': [o['text'] for o in reply.get('offers') or []],
             'receipt': {'slug': rc.get('slug'), 'height': rc.get('height')}}
 
