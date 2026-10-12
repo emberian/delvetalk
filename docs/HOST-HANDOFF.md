@@ -2392,9 +2392,10 @@ failing input as a test first, merging foundation before each commit:
    form, shaped once from v8's form, still takes `garden`. `genesis.carried_fields` reads the text, so it kept
    `over: porch` and the spell misfit. Fixed by 5.199 (lane/refresh-fix) and deployed: v9 carried into v10 at 446,
    every refresh row `refreshed`/`current`, kind/errand's `made` the opener's `genesis-kind-errand` (DEPLOY "It
-   carries"). The two things the live checks found are fixed, undeployed: (a) bell/1's "untended since entry 27"
-   (v8's height) by tending read by the clock, 5.200; (b) `hand morning`'s "Answered so far:" by the morning's wants
-   read as still wanted, 5.201. Both move objects (Record, Thing, Kind, the bell's body): the deploy carries (5.202).
+   carries"). The two things the live checks found are fixed and deployed by the v10-to-v11 carry of 550c0478
+   (lane/deploy13): (a) bell/1's "untended since entry 27" (v8's height) by tending read by the clock, 5.200 (bell/1's
+   `tended` is a clock minute, its card names no entry); (b) `hand morning`'s "Answered so far:" by the morning's wants
+   read as still wanted, 5.201 (the live morning card lists only what still wants a hand).
 3. **`shownSpell` scans for `did:` tokens** (5.181): a `fired` row keeps the filled spell, not its holes, so a DID the
    speaker typed is shown by handle too. Keep the rule's template and its fills on the row (edition 12 is undeployed:
    it can ride it) and show the fills by handle; delete the scan.

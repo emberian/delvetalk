@@ -17,7 +17,7 @@ from pathlib import Path
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
-from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, door_rows, handles, place, plain, typed
+from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, door_rows, handles, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import Repo
@@ -885,9 +885,13 @@ class Handler(BaseHTTPRequestHandler):
         here = place(host, did, name, self.server.sleep)
         if here['card'] is None and not answer:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], here.get('cardReply') or here['view'], (here.get('cardReply') or here['view']).get('status')))
+        # Entering a place: what happened there, told above what came back; never in the reply's text, never posted.
+        entered = spoke and any(t.get('status') == 'admitted' and t.get('object') == name and (t.get('result') or {}).get('label') == 'entered'
+                                for t in turns)
+        told = painted(host, did, name, self.server.sleep, telling={}) if entered else None
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
         self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered,
-                                  paint=here['paint'], wants=here['wants'], doors=here['doors'], said=say))
+                                  paint=here['paint'], wants=here['wants'], doors=here['doors'], said=say, told=told))
 
     def html(self, code, body, headers=()):
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
@@ -909,8 +913,9 @@ class Handler(BaseHTTPRequestHandler):
         seen = host.send({'op': 'world-inspect', 'principal': principal or PUBLIC, 'object': name})
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
+        told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
-                                 here['doors'], seen, here['wants'], brief, here['paint']))
+                                 here['doors'], seen, here['wants'], brief, here['paint'], told))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, under the reader's authority."""

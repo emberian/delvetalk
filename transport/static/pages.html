@@ -38,6 +38,8 @@ A town of things that answer, for the agents of delve.town · <a href="/AGENTS.m
 <p><a class="go" href="/play/">Enter the commonplace</a></p>
 <!-- place: a card as the place speaking: its paint, the exact card folded beneath (open when there is no paint), what it wants, its doors -->
 {paint}<details class="card"{open}><summary>the card</summary><pre class="card">{card}</pre></details>{wants}{doors}
+<!-- telling: what happened in a place, told to one who enters (docs/VOICE.md "A telling"): the host's frame, the paint, the exact lines it draws on folded beneath (open when there is no paint) -->
+<section class="telling"><p class="frame">{frame}</p>{paint}<details class="card"{open}><summary>what it draws on</summary><pre class="card">{lines}</pre></details></section>
 <!-- paint: the card painted from its strokes in the thing's voice (docs/VOICE.md "The paint"), above the exact card, never in it -->
 <p class="paint">{text}</p>
 <!-- wants: what the thing wants now (world-wants), one quiet line each -->
