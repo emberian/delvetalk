@@ -225,7 +225,7 @@ class Render(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        env = mock.patch.dict(os.environ, {'DELVETALK_COMPILE_CACHE': os.path.join(cls.tmp.name, 'cache')})
+        env = mock.patch.dict(os.environ, {'DELVETALK_RENDER_CACHE': os.path.join(cls.tmp.name, 'cache')})
         env.start()
         cls.addClassCleanup(env.stop)
         cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)

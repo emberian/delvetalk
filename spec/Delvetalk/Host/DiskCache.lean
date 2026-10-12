@@ -1,5 +1,6 @@
 /- The on-disk compile cache (HOST-HANDOFF 5.66): compiled packages and definitions kept across
-   processes (a restarted serve, a test's many hosts), under `$DELVETALK_COMPILE_CACHE/<stamp>`, where the stamp names this
+   processes (a restarted serve, a test's many hosts), under `$DELVETALK_COMPILE_CACHE/<stamp>` (paint renders under
+   `$DELVETALK_RENDER_CACHE/<stamp>`), where the stamp names this
    binary (the size and modification time of `IO.appPath`), so a new compiler never reads an old
    one's packets. Off unless the variable names a directory.
 
@@ -15,14 +16,15 @@ import Delvetalk.Host.Journal
 namespace Delvetalk.Host.DiskCache
 open Lean (Json toJson)
 
-/-- `<DELVETALK_COMPILE_CACHE>/<stamp>`, or none when the variable is unset or empty. -/
-def locate : IO (Option System.FilePath) := do
-  let some dir ← IO.getEnv "DELVETALK_COMPILE_CACHE" | return none
+/-- `<var>/<stamp>`, or none when the variable is unset or empty. -/
+def locate (var : String) : IO (Option System.FilePath) := do
+  let some dir ← IO.getEnv var | return none
   if dir.isEmpty then return none
   let md ← (← IO.appPath).metadata
   return some (System.FilePath.mk dir / s!"{md.byteSize}-{md.modified.sec}-{md.modified.nsec}")
 
 initialize directory : IO.Ref (Option (Option System.FilePath)) ← IO.mkRef none
+initialize renderDirectory : IO.Ref (Option (Option System.FilePath)) ← IO.mkRef none
 /-- Files read and used, and files this process wrote (`world-status.compileCache`). -/
 initialize hits : IO.Ref Nat ← IO.mkRef 0
 initialize written : IO.Ref (Std.HashSet String) ← IO.mkRef {}
@@ -31,15 +33,29 @@ def dir : IO (Option System.FilePath) := do
   match ← directory.get with
   | some d => return d
   | none =>
-    let d ← locate
+    let d ← locate "DELVETALK_COMPILE_CACHE"
     directory.set (some d)
     return d
+
+/-- Paint renders (kind `render`, `Host/Enchant.lean`) are kept apart, under `DELVETALK_RENDER_CACHE`: a paint is the
+    model's answer about one world's strokes, not a function of source, so processes sharing compiled packages (a test
+    run's classes) need not share paints. -/
+def renderDir : IO (Option System.FilePath) := do
+  match ← renderDirectory.get with
+  | some d => return d
+  | none =>
+    let d ← locate "DELVETALK_RENDER_CACHE"
+    renderDirectory.set (some d)
+    return d
+
+def dirOf (kind : String) : IO (Option System.FilePath) :=
+  if kind == "render" then renderDir else dir
 
 /-- The file of `key` among `kind`'s (`build`, `def`): named by the key's CID. -/
 def fileName (kind key : String) : String := s!"{kind}-{Journal.bodyHash (toJson key)}.json"
 
 def readIO (kind key : String) : IO (Option Json) := do
-  let some d ← dir | return none
+  let some d ← dirOf kind | return none
   let path := d / fileName kind key
   unless ← path.pathExists do return none
   match Json.parse (← IO.FS.readFile path) with
@@ -63,7 +79,7 @@ def hit {α : Type} (value : α) : α := value
 /-- Write `body` (which carries `key`) for `key` unless this process wrote or read it, or the file exists.
     Written to a fresh name and renamed, so a concurrent reader sees a whole file or none. -/
 def write (kind key : String) (body : Lean.Json) : IO Unit := do
-  let some d ← dir | return
+  let some d ← dirOf kind | return
   let seen := kind ++ "/" ++ key
   if (← written.get).contains seen then return
   written.modify (·.insert seen)
