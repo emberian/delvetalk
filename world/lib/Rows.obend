@@ -57,6 +57,7 @@ record Held:
 record Departure:
   who: String
   at: Nat
+  entry: Nat
 # Who is in a room and at which passage ("" for a room without passages), keyed {who}.
 record Presence:
   who: String

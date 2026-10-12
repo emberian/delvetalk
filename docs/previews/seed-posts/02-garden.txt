@@ -1,5 +1,6 @@
 recorded against: kind/garden · opens: a garden of your own, and the first bell planted in it
 
+plants bells and digs cisterns
 KIND garden: makes a record, with a body; 0 made. Make one:
   delvetalk kind/garden make / name: <1 to 64 characters>
 » garden/N, yours

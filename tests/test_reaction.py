@@ -157,7 +157,7 @@ class Tide(Reaction):
         """Move the clock; the tide's own `awaitUntil` wakes and it ticks (once, however far the clock moved)."""
         reply = self.town.send(op="world-advance", principal="transport", height=clock)
         self.assertEqual(reply["status"], "advanced", reply)
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
 
     def test_the_tide_writes_the_weather_only_while_the_garden_was_tended_today(self):
         """A rule on the tide reads the garden through a cited bell: `request.clock <= "<bell>".tended + 1440`,
@@ -166,22 +166,22 @@ class Tide(Reaction):
         tick within a day of the bell's tending fires; one after a day nobody tended it does not (`rules`
         keeps the earlier height, the weather gains no line); a tend and a later tick fire again."""
         bell = self.plant(GLM)
-        self.place(OPENER, "tide", "company / when: request.method == \"tick\" and request.clock <= \"%s\".tended + 1440 / then: delvetalk weather write / text: someone has been in the garden" % bell)
+        self.place(OPENER, "tide", "company / when: request.method == \"tick\" and request.clock <= \"%s\".tended + 1440 / then: delvetalk garden/weather write / text: someone has been in the garden" % bell)
         said = "someone has been in the garden"
         self.advance(100)
         near = self.row("tide", "company")["fired"]
-        self.assertIn(said, self.texts("weather"))
+        self.assertIn(said, self.texts("garden/weather"))
         refused = self.say(OPENER, "tide", "delvetalk tide tick")
         self.assertEqual((refused["status"], refused["receipt"]["outcome"]["clause"]), ("refused", "itself"), refused)
-        count = self.texts("weather").count(said)
+        count = self.texts("garden/weather").count(said)
         self.advance(3000)
         self.assertEqual(self.row("tide", "company")["fired"], near)
-        self.assertEqual(self.texts("weather").count(said), count)
+        self.assertEqual(self.texts("garden/weather").count(said), count)
         self.admitted(self.say(KIM, bell, "delvetalk %s tend" % bell))
         self.advance(3100)
         back = self.row("tide", "company")["fired"]
         self.assertGreater(back["height"], near["height"])
-        self.assertEqual(self.texts("weather").count(said), count + 1)
+        self.assertEqual(self.texts("garden/weather").count(said), count + 1)
 
 
 class Quest(Reaction):
@@ -245,13 +245,13 @@ class Errand(Reaction):
         self.assertIn("_v" + identifier(errand), [u["rule"] for u in self.fired_and_unfired(crowded)[1]])
         clock = int(self.field("tide", "last")["value"]) + 61
         self.town.send(op="world-advance", principal="transport", height=clock)
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         self.assertEqual(self.marks(errand), [])
         self.assertEqual(grants(), [])
         self.assertIn("Not paid yet: the pay to …gggggggg was not cast.", self.card(self.say(GLM, errand, "")))
         self.admitted(self.say(KIM, bell, "delvetalk %s unrule / name: n7" % bell))
         self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: the third" % bell))
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         self.assertEqual([(m, who) for m, who in self.marks(errand)], [("done", GLM)])
         self.assertEqual(grants(), [("admit", GLM)])
         self.assertEqual([r for r in self.town.send(op="world-rules", principal=OPENER, object=bell)["rows"] if r["name"] in (identifier(errand), "_v" + identifier(errand))], [])
@@ -304,10 +304,10 @@ class Forged(Tide):
         self.place(GLM, door, "sneak / when: request.method == \"write\" / then: delvetalk %s light" % lantern)
         self.place(OPENER, door, "early / when: request.method == \"write\" / then: delvetalk %s light" % lantern)
         self.admitted(self.say(GLM, door, "delvetalk %s write / text: a line, not a knock" % door))
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         self.assertNotIn("lit", self.names(lantern))
         self.admitted(self.say(KIM, door, "delvetalk %s knock" % door))
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         self.assertIn("lit", self.names(lantern))
 
         bell = self.plant(KIM)
@@ -316,17 +316,17 @@ class Forged(Tide):
                            "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
         self.place(GLM, bell, "claim / when: request.method == \"rain\" / then: delvetalk %s settle / by: {request.subject}" % errand)
         self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: one rain only" % bell))
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         self.assertNotIn("done", self.names(errand))
 
         front = self.made(KIM, "kind/front", "\nname: THE STILL\nfills: new.ticks %% 1000 == 999\nsegments: 2\n"
                           "move: delvetalk %s ring\ntide: tide" % bell)
         self.place(GLM, "tide", "push / when: request.method == \"tick\" / then: delvetalk %s fill" % front)
-        self.place(GLM, "tide", "drench / when: request.method == \"tick\" / then: delvetalk weather rain")
-        rains = len(self.texts("weather"))
+        self.place(GLM, "tide", "drench / when: request.method == \"tick\" / then: delvetalk garden/weather rain")
+        rains = len(self.texts("garden/weather"))
         self.advance(100)
         self.assertEqual([t for t in self.texts(front) if "segment" in t], [])
-        self.assertEqual(len(self.texts("weather")), rains)
+        self.assertEqual(len(self.texts("garden/weather")), rains)
 
 
 class Seventh(Reaction):
@@ -339,11 +339,11 @@ class Seventh(Reaction):
             self.admitted(self.say(KIM, bell, "delvetalk %s water / text: water %d" % (bell, i)))
         for i in range(6):
             self.admitted(self.say(KIM if i % 2 else GLM, bell, "delvetalk %s rain / text: rain %d" % (bell, i)))
-            self.town.send(op="world-deliver", principal="transport", limit=64)
+            self.town.send(op="world-deliver", principal="transport", limit=16)
             self.assertNotIn("rung", self.names(bell), i)
         seventh = self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: the seventh" % bell))
         self.assertFired(seventh, bell, "seven", "delvetalk %s ring" % bell)
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         self.assertIn("rung", self.names(bell))
 
 
@@ -360,11 +360,11 @@ class Names(Reaction):
         door = self.made(OPENER, "kind/door", "\nname: gate")
         for lamp in ("lamp-a", "lamp_a"):
             self.admitted(self.say(OPENER, "kind/lantern", "delvetalk kind/lantern place / name: %s / door: %s / id: %s" % (lamp, door, lamp)))
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         names = sorted(r["name"] for r in self.town.send(op="world-rules", principal=OPENER, object=door)["rows"] if r["from"] == door)
         self.assertEqual(names, sorted(identifier(l) for l in ("lamp-a", "lamp_a")))
         self.admitted(self.say(KIM, door, "delvetalk %s knock" % door))
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         for lamp in ("lamp-a", "lamp_a"):
             self.assertIn("lit", self.names(lamp))
 
@@ -376,7 +376,7 @@ class Unarmed(Reaction):
         its maker arms it again; a lantern on a door that took its rule shows no such line."""
         errand = self.made(GLM, "kind/errand", "\nasks: a model set\non: policy\ndone: count(new.examples) >= 9\n"
                            "pays: delvetalk me note / text: thanks")
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         card = self.card(self.say(GLM, errand, ""))
         self.assertIn("Inactive: its rule on policy was refused: ", card)
         self.assertIn("Its maker arms it again: delvetalk %s arm" % errand, card)
@@ -386,8 +386,22 @@ class Unarmed(Reaction):
         self.assertIn("Inactive: its rule on policy was refused: ", self.card(self.say(GLM, errand, "")))
         door = self.made(OPENER, "kind/door", "\nname: gate")
         lantern = self.made(OPENER, "kind/lantern", "\nname: lamp\ndoor: %s" % door)
-        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
         self.assertNotIn("Inactive", self.card(self.say(OPENER, lantern, "")))
+
+
+class Away(Reaction):
+    def test_one_who_comes_back_to_a_room_is_told_what_happened_while_away(self):
+        """lane/attend's open item: a room entered again leads with what happened there since the reader left (the
+        departure keeps the height it was at), three lines at most; a first entering says nothing of it."""
+        first = self.admitted(self.say(KIM, "porch", "delvetalk porch enter"))
+        self.assertNotIn("While you were away", self.card(first))
+        left = self.admitted(self.say(KIM, "porch", "delvetalk porch leave"))
+        self.admitted(self.say(GLM, "porch", "delvetalk porch write / text: the lintel creaked"))
+        back = self.admitted(self.say(KIM, "porch", "delvetalk porch enter"))
+        card = self.card(back)
+        self.assertTrue(card.startswith("While you were away (since entry %d):\n" % (left["receipt"]["height"] - 1)), card)  # the entry it read
+        self.assertIn(": the lintel creaked", card.split("\n\n")[0])
 
 
 class LongFront(Tide):

@@ -96,7 +96,11 @@ class Archive(unittest.TestCase):
                           (KIMIK3, 'a coup and an amendment both change the rules; only one leaves a record of who did it under which rule')],
                          self.r['anthology'])
         gemini, *under = self.steps('6.')
-        self.assertEqual([(e['tag'], e['to'], e['writes']) for e in gemini['entries']], [('admitted', 'garden/bell/1', ['garden/bell/1'])], gemini)
+        rained, *heard = [(e['tag'], e['to'], e['writes']) for e in gemini['entries']]
+        self.assertEqual(rained, ('admitted', 'garden/bell/1', ['garden/bell/1']), gemini)
+        # The bell's planter hears the rain on their avatar (tests/test_attention), a turn of its own.
+        self.assertEqual([(tag, [to]) for tag, to, _ in heard], [('admitted', writes) for _, _, writes in heard], gemini)
+        self.assertTrue(all(to.startswith('did:') for _, to, _ in heard), gemini)
         self.assertTrue(gemini['entries'][0]['offers'][0].startswith('#2 is written: silver wash from the verb-light'), gemini)
         for g in under:
             self.assertEqual([(e['tag'], e['to'], e['writes']) for e in g['entries']],

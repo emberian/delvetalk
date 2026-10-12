@@ -117,4 +117,4 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   let name = if state.head == "" then "A FRONT" else state.head
   let fills = Super.field(state, "fills")
   let move = Super.field(state, "move")
-  Document.text("{name}, a front set by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}. Its clock: {clock(state)}.\nA segment fills at a tick of {tide(state)} when: {fills}\nWhen full: {move}\n{Super.inactiveLine(state, id)}")
+  Document.text("{name}, a front set by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: a slow pressure with a clock that fills while its condition holds, and moves when full. Its clock: {clock(state)}.\nA segment fills at a tick of {tide(state)} when: {fills}\nWhen full: {move}\n{Super.inactiveLine(state, id)}")

@@ -12,20 +12,23 @@ import ./Rows.obend as Rows
 import ./Relation.obend as Relations
 import ./Text.obend as Text
 # The weather's body, over RECORD (docs/METAPHYSICS.md §7.2, §7.4 "feed"; TENURE §2): a record made
-# with the garden and the tide it serves (`garden`, `tide`, fixed). As its kind finishes it, it
-# places a rule on its tide under its maker (`made`): at every twenty-fourth tick, a clock day,
-# while the garden was tended within the day, the tide casts `delvetalk <weather> rain`. A rain
-# writes the weather's line and the garden's (the garden cites it, which lets it: Record.forecast)
-# and sends a rain to each bell the garden holds: thirty in the rain's own turn (it also sends the
-# forecast, and one turn sends at most 32), then a `drizzle` it sends itself carries on, thirty-one
-# bells to a turn, until none remain. A bell takes the weather's rain as the weather's line and is
-# not tended by it, so a bell nobody visits still goes quiet; a quiet bell takes nothing. Only its maker's rule on the tide rains: a hand's `rain` is
-# refused by name.
+# over a place and the tide it reads (`over`, `tide`, fixed). As its kind finishes it, it places a rule
+# on its tide under its maker (`made`): at every twenty-fourth tick, a clock day, while someone has
+# been at the place within the day (it was tended: a garden's planting, a room's entering), the tide
+# casts `delvetalk <weather> rain`. A rain writes the weather's line, the place's weather line when the
+# place hangs a door to it (Record.forecast), and sends a rain to each bell the place holds or hangs a
+# door to (the first 48 of those, by their kind), sixteen of them a turn: a `drizzle` it sends itself
+# carries on while any remain (one turn sends at most 32, and reads each candidate's kind), and the
+# last writes the line and the forecast. A bell takes the weather's rain as the weather's line and is not
+# tended by it, so a bell nobody has been near goes quiet and takes nothing. Only its maker's rule on
+# the tide rains, and only while the place was tended within the day: a hand's `rain`, or another's
+# rule there, is refused by name.
 type State = Super.State
 form rain:
 form arm:
 form drizzle:
   from: natural 0..1000000000
+  rained: natural 0..1000000000
 form write:
   text: text 1..280
 form lines:
@@ -47,8 +50,8 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(if context.principal == state.owner then Text.words("rain write lines door undoor") else Text.words("rain write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
 def methods() -> Lists.List<String>:
   Text.words("~made ~act ~drizzle")
-def garden(state: State) -> String:
-  Super.field(state, "garden")
+def over(state: State) -> String:
+  Super.field(state, "over")
 def tide(state: State) -> String:
   Super.field(state, "tide")
 # How often it rains, in ticks of its tide (an hour each): once a clock day.
@@ -58,7 +61,7 @@ def every() -> Nat:
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
   if context.caller != state.kind then false else placing(state, context)
 def placing(state: State, context: Abi.Context) -> Activity<Bool>:
-  match world.rule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object), when: "request.method == \"tick\" and new.ticks % {natText(every())} == 0 and request.clock <= \"{garden(state)}\".tended + 1440", then: "delvetalk {context.object} rain"}):
+  match world.rule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object), when: "request.method == \"tick\" and new.ticks % {natText(every())} == 0 and request.clock <= \"{over(state)}\".tended + 1440", then: "delvetalk {context.object} rain"}):
     case placed(_): Super.armedNow(state, context)
     case refused(r): Super.unarmed(state, tide(state), r.clause, r.reading, context)
 # Its maker places its rule again (taken off first, if it stood).
@@ -67,54 +70,64 @@ def arm(state: State, context: Abi.Context) -> Activity<Bool>:
 def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.unrule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object)}):
     case _: placing(state, context)
-# Its maker's rule on the tide rains, while the garden was tended within the day; anyone else, or
+# Its maker's rule on the tide rains, while the place was tended within the day; anyone else, or
 # another's rule there, is told what does.
 def rain(state: State, context: Abi.Context) -> Activity<Nat>:
   if Super.ruledFrom(state, tide(state), context) == false then unruled(state, context) else tended(state, context)
 def unruled(state: State, context: Abi.Context) -> Activity<Nat>:
-  Card.refusing(0n, {clause: "ruled", reading: "the weather rains by its rule on {tide(state)}, once a clock day while {garden(state)} is tended: delvetalk {tide(state)} rules"}, context)
-# Its garden was tended within the day, read again as the rain comes.
+  Card.refusing(0n, {clause: "ruled", reading: "the weather rains by its rule on {tide(state)}, once a clock day while someone has been at {over(state)}: delvetalk {tide(state)} rules"}, context)
+# The place was tended within the day, read again as the rain comes.
 def tended(state: State, context: Abi.Context) -> Activity<Nat>:
-  match world.viewField::<Nat>({object: {world: context.world, object: garden(state)}, field: "tended"}):
-    case viewed(v): if context.clock <= v.state + 1440n then gardened(state, context) else unruled(state, context)
+  match world.viewField::<Nat>({object: placeOf(state, context), field: "tended"}):
+    case viewed(v): if context.clock <= v.state + 1440n then reaching(state, 0n, 0n, context) else unruled(state, context)
     case _: unruled(state, context)
-def gardened(state: State, context: Abi.Context) -> Activity<Nat>:
-  match world.viewField::<Relations.Relation<Plans.Reference>>({object: {world: context.world, object: garden(state)}, field: "things"}):
-    case viewed(v): forecasting(bells(v.state), state, context)
-    case _: 0n
-def bells(things: Relations.Relation<Plans.Reference>) -> Lists.List<Plans.Reference>:
-  Lists.filter(Relations.rows(things), fn(t: Plans.Reference) -> Bool: Text.contains(t.object, "/bell/"))
+def placeOf(state: State, context: Abi.Context) -> Plans.Reference:
+  {world: context.world, object: over(state)}
+# What the place holds, then what it hangs doors to (the first 48), and whether one of its doors is to
+# this weather. A rain begins at the first; a drizzle carries on from where the last turn stopped,
+# with the count of bells rained on so far.
+def reaching(state: State, from: Nat, rained: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Relations.Relation<Plans.Reference>>({object: placeOf(state, context), field: "things"}):
+    case viewed(v): opened(Relations.rows(v.state), state, from, rained, context)
+    case _: opened(Lists.List.nil(), state, from, rained, context)
+def opened(things: Lists.List<Plans.Reference>, state: State, from: Nat, rained: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Card.Doorways>({object: placeOf(state, context), field: "cites"}):
+    case viewed(v): chunk(skipping(Lists.take(Lists.concat(things, Lists.map(v.state, fn(d: Card.Doorway) -> Plans.Reference: d.to)), 48n), from), Lists.any(v.state, fn(d: Card.Doorway) -> Bool: d.to.object == context.object), state, from, rained, context)
+    case _: chunk(skipping(Lists.take(things, 48n), from), false, state, from, rained, context)
+# Sixteen of them a turn: each a bell by its kind is rained on; while any remain, the weather sends
+# itself the next `drizzle`; after the last, it writes its line and the place's forecast.
+def chunk(candidates: Lists.List<Plans.Reference>, cited: Bool, state: State, from: Nat, rained: Nat, context: Abi.Context) -> Activity<Nat>:
+  sorting(Lists.take(candidates, 16n), Lists.length(candidates) > 16n, cited, state, from + 16n, rained, context)
+def sorting(candidates: Lists.List<Plans.Reference>, more: Bool, cited: Bool, state: State, next: Nat, rained: Nat, context: Abi.Context) -> Activity<Nat>:
+  match candidates:
+    case nil(_): if more then continuing(next, rained, context) else forecasting(rained, cited, state, context)
+    case cons(c): kinded(c.head, c.tail, more, cited, state, next, rained, context)
+def kinded(thing: Plans.Reference, rest: Lists.List<Plans.Reference>, more: Bool, cited: Bool, state: State, next: Nat, rained: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<String>({object: thing, field: "kind"}):
+    case viewed(v): if v.state == "kind/bell" then wetting(thing, rest, more, cited, state, next, rained, context) else sorting(rest, more, cited, state, next, rained, context)
+    case _: sorting(rest, more, cited, state, next, rained, context)
+def wetting(thing: Plans.Reference, rest: Lists.List<Plans.Reference>, more: Bool, cited: Bool, state: State, next: Nat, count: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: thing, method: "rain", argument: {text: rainText(context)}}):
+    case delivery(_): sorting(rest, more, cited, state, next, count + 1n, context)
+    case _: sorting(rest, more, cited, state, next, count, context)
 def skipping(things: Lists.List<Plans.Reference>, count: Nat) -> Lists.List<Plans.Reference>:
   match things:
     case nil(_): things
     case cons(c): if count == 0n then things else skipping(c.tail, count - 1n)
 def rainText(context: Abi.Context) -> String:
   "{context.object}'s rain, clock {natText(context.clock)}"
-def forecasting(things: Lists.List<Plans.Reference>, state: State, context: Abi.Context) -> Activity<Nat>:
-  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "rain", text: "rain at clock {natText(context.clock)} on {natText(Lists.length(things))}", at: context.height, n: state.next}, next: add 1n}
-  match world.send({object: {world: context.world, object: garden(state)}, method: "forecast", argument: {line: "rain at clock {natText(context.clock)}, on {natText(Lists.length(things))}"}}):
-    case _: raining(things, 30n, 0n, 0n, state, context)
-# Sends a rain to the bells in turn while `room` sends remain; bells left over are the next drizzle's, from
-# `start` plus those sent.
-def raining(things: Lists.List<Plans.Reference>, room: Nat, sent: Nat, start: Nat, state: State, context: Abi.Context) -> Activity<Nat>:
-  match things:
-    case nil(_): sent
-    case cons(c): if room == 0n then continuing(start + sent, sent, context) else rained(c.head, c.tail, room, sent, start, state, context)
-def rained(thing: Plans.Reference, rest: Lists.List<Plans.Reference>, room: Nat, sent: Nat, start: Nat, state: State, context: Abi.Context) -> Activity<Nat>:
-  match world.send({object: thing, method: "rain", argument: {text: rainText(context)}}):
-    case delivery(_): raining(rest, room - 1n, sent + 1n, start, state, context)
-    case _: raining(rest, room, sent, start, state, context)
-def continuing(from: Nat, sent: Nat, context: Abi.Context) -> Activity<Nat>:
-  match world.send({object: {world: context.world, object: context.object}, method: "drizzle", argument: {from: from}}):
-    case _: sent
-# The rain's own continuation, sent by the weather to itself: the bells from `from`, thirty-one of them.
+def forecasting(rained: Nat, cited: Bool, state: State, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "rain", text: "rain at clock {natText(context.clock)} on {natText(rained)}", at: context.height, n: state.next}, next: add 1n}
+  if cited then forecastSent(rained, state, context) else rained
+def forecastSent(rained: Nat, state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: placeOf(state, context), method: "forecast", argument: {line: "rain at clock {natText(context.clock)}, on {natText(rained)}"}}):
+    case _: rained
+def continuing(from: Nat, rained: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: Plans.self(context), method: "drizzle", argument: {from: from, rained: rained}}):
+    case _: rained
+# The rain's own continuation, sent by the weather to itself.
 def drizzle(state: State, input: DrizzleInput, context: Abi.Context) -> Activity<Nat>:
-  if context.sender != context.object then Card.refusing(0n, {clause: "ruled", reading: "the drizzle is the weather's own; delvetalk {context.object} rain"}, context) else drizzling(input.from, state, context)
-def drizzling(from: Nat, state: State, context: Abi.Context) -> Activity<Nat>:
-  match world.viewField::<Relations.Relation<Plans.Reference>>({object: {world: context.world, object: garden(state)}, field: "things"}):
-    case viewed(v): raining(skipping(bells(v.state), from), 31n, 0n, from, state, context)
-    case _: 0n
+  if context.sender != context.object then Card.refusing(0n, {clause: "ruled", reading: "the drizzle is the weather's own; delvetalk {context.object} rain"}, context) else reaching(state, input.from, input.rained, context)
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
-  let rained = if Relations.count(state.lines) == 0n then "; it has not rained yet.\n" else ".\n"
-  let rains = if Relations.count(state.lines) == 0n then "" else "Its rains:\n"
-  Document.text("WEATHER over {garden(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: it rains on every bell {garden(state)} holds once a clock day, by its rule on {tide(state)}, while someone has tended {garden(state)} that day{rained}{Super.inactiveLine(state, id)}{rains}")
+  let rains = if Relations.count(state.lines) == 0n then "; it has not rained yet." else ". Its rains:"
+  Document.text("WEATHER over {over(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: once a clock day, while someone has been at {over(state)} that day, it rains on every bell {over(state)} holds or hangs a door to, by its rule on {tide(state)}:\n  delvetalk {tide(state)} rules\n{Super.inactiveLine(state, id)}A bell nobody has been near takes nothing{rains}\n")

@@ -36,9 +36,9 @@ def furnish(host, opener):
     out = []
     for kind, fields in (('kind/garden', [('id', 'garden'), ('name', 'THE NIGHT GARDEN')]),
                          ('kind/room', [('id', 'rooms'), ('name', 'The Moss Gate'), ('spween', MOSS_GATE)]),
-                         ('kind/weather', [('id', 'weather'), ('garden', 'garden'), ('tide', 'tide')])):
+                         ('kind/weather', [('id', 'garden/weather'), ('over', 'garden'), ('tide', 'tide')])):
         out.append(genesis.said(host, opener, kind, 'place', fields, 'furnish-' + dict(fields)['id'], dict(fields)['id']))
-    out.append(genesis.said(host, opener, 'garden', 'door', [('label', 'weather'), ('to', 'weather')], 'furnish-garden-door'))
+    out.append(genesis.said(host, opener, 'garden', 'door', [('label', 'weather'), ('to', 'garden/weather')], 'furnish-garden-door'))
     anthology = create(host, opener, 'anthology', 'Record', 'furnish-anthology',
                        genesis.rec(owner=genesis.lab(opener), keeper=genesis.lab(opener), keeperHandle=genesis.lab(genesis.HANDLE),
                                    head=genesis.lab('THE ANTHOLOGY')), genesis.RECORD_LAW)
