@@ -9,11 +9,9 @@ import json
 import subprocess
 import time
 import tomllib
-import urllib.error
-import urllib.request
 from pathlib import Path
 
-from transport.delve import _NoRedirect, canonical
+from transport.delve import Failure, canonical, http_transport
 
 URL = 'https://api.anthropic.com/v1/messages'
 DEFAULT_MODEL = 'claude-haiku-5-5'
@@ -44,13 +42,10 @@ def request_hash(request):
 
 
 def http(method, url, headers, body):
-    req = urllib.request.Request(url, body, headers, method=method)
+    """-> (status, bytes, headers); status 0 when the network failed."""
     try:
-        with urllib.request.build_opener(_NoRedirect).open(req, timeout=TIMEOUT) as resp:
-            return resp.status, resp.read(MAX_RESPONSE + 1), dict(resp.headers)
-    except urllib.error.HTTPError as err:
-        return err.code, err.read(MAX_RESPONSE + 1), dict(err.headers)
-    except (urllib.error.URLError, TimeoutError, OSError):
+        return http_transport(method, url, headers, body, MAX_RESPONSE, TIMEOUT)
+    except Failure:
         return 0, b'', {}
 
 

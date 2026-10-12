@@ -14,16 +14,14 @@ import json
 import secrets
 import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
 from transport import pages
-from transport.delve import MAX_RESPONSE, TIMEOUT, Failure, _NoRedirect
+from transport.delve import MAX_RESPONSE, Failure, http_transport
 from transport.identity import DID, HANDLE, digest
 
 PLC = 'https://plc.directory'
@@ -47,16 +45,8 @@ def b64(raw):
 
 def fetch(method, url, headers=None, body=None):
     """-> (status, lower-cased headers, bytes). No redirects; size-capped; the transport's timeout."""
-    req = urllib.request.Request(url, body, {'User-Agent': 'DelveTalk/2 oauth', 'Accept': 'application/json', **(headers or {})}, method=method)
-    try:
-        resp = urllib.request.build_opener(_NoRedirect).open(req, timeout=TIMEOUT)
-    except urllib.error.HTTPError as error:
-        resp = error
-    except (urllib.error.URLError, TimeoutError, OSError) as error:
-        raise Failure('network_error', type(error).__name__) from None
-    with resp:
-        raw = resp.read(MAX_RESPONSE + 1)
-        return resp.status, {k.lower(): v for k, v in resp.headers.items()}, raw[:MAX_RESPONSE]
+    status, raw, got = http_transport(method, url, {'User-Agent': 'DelveTalk/2 oauth', 'Accept': 'application/json', **(headers or {})}, body)
+    return status, {k.lower(): v for k, v in got.items()}, raw[:MAX_RESPONSE]
 
 
 def as_json(status, raw, want=200):

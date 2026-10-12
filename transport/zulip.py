@@ -63,7 +63,7 @@ class Client:
             url += '?' + encoded
         elif method != 'GET':
             body, headers['Content-Type'] = encoded.encode(), 'application/x-www-form-urlencoded'
-        status, raw = self.transport(method, url, headers, body)
+        status, raw, *_ = self.transport(method, url, headers, body)
         try:
             got = json.loads(raw)
         except ValueError:
