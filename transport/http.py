@@ -885,9 +885,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.html(404, pages.refusal(name, who['handle'], card, card.get('status')))
         shown = card.get('status') == 'card'
         paint = painted(host, did, name, self.server.sleep).get('text') if shown else None
+        # Entering a place: what happened there, told above what came back; never in the reply's text, never posted.
+        entered = spoke and any(t.get('status') == 'admitted' and t.get('object') == name and (t.get('result') or {}).get('label') == 'entered'
+                                for t in turns)
+        told = painted(host, did, name, self.server.sleep, telling={}) if entered else None
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
         self.html(200, pages.play(name, who['handle'], oid(name), card.get('text', '') if shown else None, answer=answer, offered=offered,
-                                  paint=paint, wants=self.wants(host, did, name) if shown else (), doors=door_rows(view), said=say))
+                                  paint=paint, wants=self.wants(host, did, name) if shown else (), doors=door_rows(view), said=say, told=told))
 
     def wants(self, host, principal, name):
         """What the thing wants now, as the reader may see it (world-wants); nothing from a host without the op."""
@@ -916,8 +920,9 @@ class Handler(BaseHTTPRequestHandler):
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
         shown = card.get('status') == 'card'
         paint = painted(host, principal or 'anonymous', name, self.server.sleep).get('text') if shown else None
+        told = painted(host, principal, name, self.server.sleep, telling={}) if shown and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, view, card.get('text') if shown else None, self.history(host, name, principal), principal,
-                                 door_rows(view), seen, self.wants(host, principal, name) if shown else (), brief, paint))
+                                 door_rows(view), seen, self.wants(host, principal, name) if shown else (), brief, paint, told))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, under the reader's authority."""
