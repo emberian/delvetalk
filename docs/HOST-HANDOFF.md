@@ -1966,6 +1966,14 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    needed" is not built: hob has no such answer; a question it asks back stays `ask:`. Test: `test_heard.Heard` (a
    rendered card with a placed want: the question answered by its text and its wants; prose stays silent).
 
+172. **Root sets one field of a state (host27; the live town's entry 129).** `world-root {act: {kind: set, object, field:
+   "state.F", value}}` (`hand root set --object kinds --field state.count --value 12`): `stateFieldOf` (one top-level
+   field; a nested path refuses), `fieldValue` (typed wire data, or a plain JSON number, text or boolean standing for
+   a field of that kind), `withField`; the state as set must conform to the object's type. Journaled as `state` is:
+   `before` and `after` that field's value, `version` + 1 and the whole state's `cid`, so anchors and replay read it
+   as any root `set`; `rootBefore` and `applyRoot` read the same field. Tests: `test_root.Root` (plain and typed
+   values, four refusals, a bump after it, a reopen), `test_root_console` (the CLI's flags).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

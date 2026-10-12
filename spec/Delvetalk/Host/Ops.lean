@@ -4012,6 +4012,28 @@ replay call the same three. -/
 def rootFields : List String :=
   ["state", "law", "program", "pin", "owner", "read", "version", "fixed", "supervisor", "ledger", "readings", "activities"]
 
+/-- The one top-level state field a root `set` of `state.F` names: F; none for any other field (a nested path refuses). -/
+def stateFieldOf (field : String) : Option String :=
+  if !field.startsWith "state." then none else
+  let f := (field.drop "state.".length).toString
+  if f.isEmpty || f.any (· == '.') then none else some f
+
+/-- A state field's new value as a root `set` gives it: typed wire data, or a plain JSON number, text or boolean
+    standing for a field of that kind (`--value 12` for a natural). -/
+def fieldValue (current : Data) (j : Json) : Except String Data :=
+  match decodeData Limits.dataDepth j, current, j with
+  | .ok d, _, _ => .ok d
+  | .error _, .natural _, .num _ => return .natural (← j.getNat?)
+  | .error _, .label _, .str t => .ok (.label t)
+  | .error _, .boolean _, .bool b => .ok (.boolean b)
+  | .error e, _, _ => .error s!"the value is not typed data, nor a plain value of the field's kind: {e}"
+
+/-- `state` with its top-level field `f` replaced by `v`, when it has it. -/
+def withField (state : Data) (f : String) (v : Data) : Except String Data :=
+  match state with
+  | .record fs => if fs.any (·.1 == f) then .ok (.record (replaceField fs f v)) else .error s!"the state has no field {f}"
+  | _ => .error "the state is not a record"
+
 def readingsJson (rs : List (String × String)) : Json :=
   Json.arr (rs.toArray.map fun (n, r) => Json.mkObj [("name", toJson n), ("reading", toJson r)])
 
@@ -4052,6 +4074,12 @@ def rootBefore (w : World) (outcome : Json) : Except String Json := do
     let o ← object ()
     match text "field" with
     | "state" => return dataJson o.state
+    | f@_ =>
+    if let some name := stateFieldOf f then
+      match Law.rawField name o.state with
+      | some v => return dataJson v
+      | none => throw s!"the state of {text "object"} has no field {name}"
+    else match f with
     | "law" => return toJson o.lawText
     | "program" => return o.inputs
     | "pin" => return toJson o.pin
@@ -4098,7 +4126,10 @@ def applyRoot (w : World) (outcome : Json) : Except String World := do
   | "set" =>
     let some o := w.objects[id]? | throw s!"no object {id}"
     let version := (outcome.getObjValAs? Nat "version").toOption.getD (o.version + 1)
-    match (outcome.getObjValAs? String "field").toOption.getD "" with
+    let field := (outcome.getObjValAs? String "field").toOption.getD ""
+    if let some name := stateFieldOf field then
+      return put { o with state := ← withField o.state name (← decodeData Limits.dataDepth after), version }
+    match field with
     | "state" => return put { o with state := ← decodeData Limits.dataDepth after, version }
     | "owner" =>
       let owner ← after.getStr?
