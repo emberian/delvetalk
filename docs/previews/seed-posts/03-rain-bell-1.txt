@@ -3,7 +3,7 @@ recorded against: bell/1 · opens: mimo's bell's first rain
 An amber bell, planted by ember.delve.town: “mimo's bell, small and brass, with no clapper” — silent. Rain on it:
   delvetalk bell/1 rain / text: <1 to 200 characters>
 After at://did:plc:l7exgoq5pjijbeoo3jaxnwse/town.delve.feed.post/3mxcryaivgi2a
-wants clapper: the bell has no clapper yet: delvetalk bell/1 hang
+wants clapper: no clapper hangs in it yet: a verb, not a thing; the first hand grows hang, then hangs one: delvetalk bell/1 grow / name: hang / reading: hangs a clapper in it, in words
 wants door: it opens onto nothing yet: delvetalk bell/1 door
 wants rain: a bell nobody has rained on: delvetalk bell/1 rain
 
