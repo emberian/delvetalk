@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/host28: calls and sends across worlds, 5.164, the scratch REPL, 5.165; lane/host23 continued by host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -62,10 +62,10 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 
 - Open and status: `world-open {path, library?, principal?, libraryLaw?, sync?, verify?, snapshotEvery?, maxJournalBytes?, clock?, postQuota?, opener?}`, `world-status`, `world-snapshot`.
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
-- Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-reach` (5.162).
+- Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-reach` (5.162), `world-wanting` (5.164).
 - Paint (5.161, never journaled): `world-render {principal, object, version?}`, `world-renders`, `world-render-submit {key, reply}`; `world-status.renders {cached, rejected, pending}`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
-- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card`/`world-inspect` of `<world>:<object>`; the root act `expire`, and the owner's `delvetalk world expire / scratch: <name>` (a `world-turn` on `world`, method `expire`, or the spell as words: `Serve.expiryAsked`; journaled nowhere). `world-relay` and `world-cross` (5.164) are serve's own, refused on both sockets.
+- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card`/`world-inspect` of `<world>:<object>`; the root act `expire`, and the owner's `delvetalk world expire / scratch: <name>` (a `world-turn` on `world`, method `expire`, or the spell as words: `Serve.expiryAsked`; journaled nowhere). `world-relay` and `world-cross` (5.173) are serve's own, refused on both sockets.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
 - `bounds` (stateless): `{kernel, host, refusalClasses, transientClasses}`, every `Nat` definition of `Delvetalk.Bounds` (and `Generics.maxInstances`) and of `Limits` by its name (`natsIn%`, Ops), so the front's `limits`, its module checks and the tests read the bounds rather than restate them (`tests/host.py` `bounds()`).
 
@@ -89,7 +89,7 @@ A state is named once, by the entry that wrote it: `writes[].cid`, or a created 
 
 Sources are carried once per journal: compile inputs name each module `{name, cid}`; the first entry needing a source carries it in top-level `sources [{cid, source}]` (checked against its CID on replay). Compiled packages are cached by input digest (`world.builds`, `buildKey`, `maxBuilds`), so creation and replay compile each distinct package once. Reprogram `source` fields are verbatim.
 
-Optional top-level fields (all inside the hash): `absent [id]`, `turnRequest`, `ticksUsed`, `ledger {depth, work, storage}`, `result`, `sends [{id, to, method, argument, ledger, world?}]` (`world`: a send across, 5.164), `delivery {id, from}`, `resumes` (hash of the suspension it continues), `offers [{to, text}]`, `replyTo`, `rerun`, `ended`, `publishes`, `blocks`.
+Optional top-level fields (all inside the hash): `absent [id]`, `turnRequest`, `ticksUsed`, `ledger {depth, work, storage}`, `result`, `sends [{id, to, method, argument, ledger, world?}]` (`world`: a send across, 5.173), `delivery {id, from}`, `resumes` (hash of the suspension it continues), `offers [{to, text}]`, `replyTo`, `rerun`, `ended`, `publishes`, `blocks`.
 
 Outcomes:
 
@@ -97,7 +97,7 @@ Outcomes:
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
 - `refused`: `{class, clause?, object?, reason?, reading?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient), cardRefused (5.157). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a law refusal with a reading journals it as `reading` and `voiced` writes `reason: "refused <clause>: <reading>"` from it (5.154), as for a card's own refusal (5.157). Replay checks only that the class is known; `publicRefusal` shows a law refusal's reason and reading.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
-- `relayed` `{world, receipt, height}` with one `sends` row, and `crossed` `{world, answer {tag, class?, clause?, reason?}, receipt? {hash, height}}` with `result?` and, for a send, `delivery`: the two halves of a call or send across (5.164). A `suspended` entry's `crossing {world, to, method, argument, sender, ledger}` is a call across waiting.
+- `relayed` `{world, receipt, height}` with one `sends` row, and `crossed` `{world, answer {tag, class?, clause?, reason?}, receipt? {hash, height}}` with `result?` and, for a send, `delivery`: the two halves of a call or send across (5.173). A `suspended` entry's `crossing {world, to, method, argument, sender, ledger}` is a call across waiting.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
 Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes`):
@@ -177,7 +177,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name. Th
 - `world-interpretations` lists pending items with the Policy's state as `{model, system, examples}`; `policy.system` is the Policy's pure `prompt(state, offers, utterance)` (`policyPrompt`) else its `system` field; `policy.model` is the item's `model` when non-empty (at most 128 bytes), else the Policy's.
 - `world-interpretation {id, reply}` journals an `interpreted` entry and the settle pass resumes the turn. Verdicts, as `Interpreted<R>`: `proposal {object, method, argument, spell}` (the spell fits an offered form, or a JSON `{method, argument}` for the asking object; the method is one its object offers and the argument conforms; `interpretVerdict`, `spellVerdict`, `proposalVerdict`), `replied {text}` (prose, or reply `json` not `{method, argument}` with `raw`), `unclear {needs}` (a misfit or missing fields; a failed reply gives `needs: ["model: <reason>"]`). `denied {}` when the Policy is not readable by the turn's principal (TurnLoop, `interpret`); Garden and the Directory refuse it with clause `policy`.
 - Capacity: `mayWait … (interpreting := true)` counts interpretations apart (`waitFull`); `interpretGate` is the hour's and the day's quotas. Test: `test_interpret_text`, `test_policy`.
-- The host starts a reading itself for words a card heard (5.163, `heardTurn`): a suspension with no checkpoint (`hostResumed`), resumed by `resumeHeard`, which runs hob's answer as the speaker's turn on the card. `world-interpretations` gives a Policy's `prompt(state, asked)` the card's `wants` (each with its filled `asks`) and the library's `pages` beside `{utterance, offers, card, held, misfit}`.
+- The host starts a reading itself for words a card heard (5.163, `heardTurn`): a suspension with no checkpoint (`hostResumed`), resumed by `resumeHeard`, which runs hob's answer as the speaker's turn on the card. `world-interpretations` gives a Policy's `prompt(state, asked)` the card's `wants` (each with its filled `asks`) and the library's `pages` beside `{utterance, offers, card, misfit}` (`misfit` the host's own, from `heardTurn`; the `interpret` arm takes no `held` or `misfit`, 5.168).
 
 ### 5.5 Cards, offers, publish, posts
 
@@ -952,14 +952,11 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `tests/test_spell.py` `test_a_prose_line_with_a_colon_after_the_fields_ends_them`,
    `test_a_name_outside_the_identifier_alphabet_is_no_field_and_ends_the_fields`.
 
-117. **What the model sees, and hob's answers (host12; docs/FLEX.md §4 host 5, 6).** The `interpret`
-   Plan may name `held` (what the card holds for this speaker: a pending question, a held proposal)
-   and `misfit` (a misfit spell's clause and reason), both journaled on the interpretation (a World
-   line for the objects lane: `interpret<R>({utterance, offers, policy, model, held, misfit})`).
-   `world-interpretations` lists, beside the utterance and offers, `card` (the asking card as the
-   speaker reads it now, `cardText`, at most `Limits.cardShownChars` 1,400 characters), `held` and
-   `misfit`, and the policy's `lexicon`; a Policy whose `prompt` takes `(state, asked)` gets `asked =
-   {utterance, offers, card, held, misfit}` fitted to its type (the old `(state, offers, utterance)`
+117. **What the model sees, and hob's answers (host12; docs/FLEX.md §4 host 5, 6; `held` and the arm's `misfit`
+   deleted by 5.168).** `world-interpretations` lists, beside the utterance and offers, `card` (the asking card as the
+   speaker reads it now, `cardText`, at most `Limits.cardShownChars` 1,400 characters), `misfit` (the misfit spells
+   a host reading reads past), and the policy's `lexicon`; a Policy whose `prompt` takes `(state, asked)` gets `asked =
+   {utterance, offers, card, misfit, wants, pages}` fitted to its type (the old `(state, offers, utterance)`
    still runs). `interpretVerdict` reads hob's three non-spell answers before the spells: `none` is
    `unclear {needs: ["not addressed"]}`, `card` is `replied {text: "card"}` (`unclear ["card"]` where
    the Response has no `replied`), `ask: <one line>` is `unclear {needs: [<question>]}`; spells and
@@ -1869,13 +1866,116 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (prose past them is refused `quota` or `capacity`, transient). `resumeHeard` settles it under the turn's identity,
    the card its root: a spell, or `grow:` and its use, runs as the speaker's turn (`runHeard`, origin `interpreted`);
    an action in the policy's `confirmFor` is offered back indented; `ask:` naming offered fields offers "hob: that
-   still needs …" with the spells, naming none one fixed line; `none`, a failed model or the deadline is silence.
+   still needs …" with the spells, naming none "hob: none of <card>'s spells takes that; its spells: delvetalk <card> ?"; `none`, a failed model or the deadline is silence.
    A misfit spell (`misfitClauses`) is hob's for every card; anything but a proposal settles as the host's
    `badSpell`, which is the answer at once without a policy. `readsWords` and `misfitData` are gone.
    `world-receipt` gives a refusal's owner its `public` projection, and the bridge drafts a refused resumption and
    marks a settled one (`awaiting.settled`). Tests: `test_heard`, `test_spell_turns.Misfits`/`MisfitsWithoutPolicy`.
 
-164. **Calls and sends across worlds (host28; docs/FEDERATION.md §2; no edition change).** A `call`, `callVia`, `send`
+164. **What wants a hand (host27; §7 item 1a; no edition change).** `world.wanting({after: Nat, limit: Nat}) ->
+   Wanting {wanting {rows [Want {object, name, reading, asks, since}], more} | refused}` (the objects lane's
+   World.obend) and `world-wanting {principal?, after?, limit?}` → `{status: wanting, rows [{object, name, reading?,
+   asks, since}], more}`, one function (`Ops.wanting`): each row of the wanting index (`World.wanting`) whose want
+   still holds of its thing as it stands (`posing`), for things the reader may view (the arm's reader is the turn's
+   subject), newest first by `since`, then thing and name. A page holds whole heights below `after` (0: from the
+   newest) within `limit` rows (0 or past `listPage` 64 is 64); its first height is whole whatever its size, so
+   `after` set to a page's last `since` reads on without a gap. A want true by the clock alone, which no entry
+   made true, is not in the index (the thing's `wants` reads it). `asks` is filled at the read (`wantAsks`, shared
+   with `world-wants`; `wantFacts` is the one set of facts `posing` and both reads judge and fill by). Derived, no
+   root. Tests: `tests/test_wanting.py` (the index by whole heights for whom may view, a closed want leaving,
+   unchanged by a reopen and a snapshot; the Bend arm, on the pair).
+
+165. **What a thing stands at: `request.laws`, `request.refusedBy` (host27; §7 item 1a; no edition change: edition 9
+   is not deployed).** Two facts in the kernel grammar (`LawFact.laws`, `.refusedBy`; `LawFact.atRead` names the four
+   a want may read: `clock`, `object`, `laws`, `refusedBy`), read of `request.object` by laws, rules and wants alike:
+   `laws` the count of its law clauses, its own and each one its `under` citations' texts hold, followed through
+   their own `under` within `lawDepth`, each (holder, clause) once (`Law.followedLaws`, `Law.lawClauses`; a Bend
+   law is not a clause); `refusedBy` the count of journaled `lawRefused` entries naming it (`Ops.lawRefusedOf`; every
+   `lawRefused`, the host's clauses such as `noGrant` or `notPlacer` too; never `cardRefused`), the index
+   `World.refusedBy` that `record` derives (snapshot `v4` key `refusedBy`, a carried key; a carry from `v3` starts
+   it empty). `Law.Facts.standing` holds a `Standing {laws, refusedBy}` for the written thing and every thing it
+   cites (`Ops.standings`), so a cited want (`"seal" wants tried`, judged `asItStands` the seal) reads the seal's;
+   every site that builds facts fills it (`judge`, `wantFacts`, `amendable` at creation and amendment, `methodAdmits`,
+   `kindAdmits`, a layer's check); none reads as no reading (fails closed). A law's refusal moves its thing's
+   `refusedBy`, so `push` journals on every `lawRefused` entry the wants it opens and closes (`refusalWants`, `wanted`/
+   `unwanted` as an admitted write's; `wantFlips`, `flipFields` shared with `reactions`); `wantingAfter` and the
+   chronicle read them on a refused entry too, and replay re-derives and compares them. A want reading
+   `laws` moves only when its own thing is written (an amendment is), not when a cited kind's text changes (§7 item
+   3's citing-want limit). Tests: `Law.lean`'s `#guard`s (counts, a cited want reading its own thing's standing), the
+   kernel's accept lists, `tests/test_wanting.py` `Standing` (a seal's "a law and a second hand's try" opened by the
+   refusal, listed, in `wants` and the chronicle, across a replay and a snapshot; a law reading `refusedBy`).
+
+166. **A post is read by hob at most once (host27; §7 item 1's double ask; no edition change).** The archive's sentry
+   post (`3mxhfzx7rlk2f`) was asked twice, and the wake post (`3mxhg3bqrds2f`) three times, because a post's spells
+   are a turn each (5.148) and each misfit spell was its own reading. Now `runSpells` runs the spells that fit, then
+   reads the post's misfit spells (`misfitOf`: what `spellTurn` would refuse with a `misfitClauses` clause) as one
+   reading, under the first one's identity (`#k`), a retry answered from it: the utterance those spells, blank-line
+   separated; offered each one's card's table and doors (`heardTurn` takes the cards, rooted on the first that
+   exists, offers deduplicated); the misfit `clause` the first's, `reason` each spell's first line and reason, `hint`
+   each hint, which a non-proposal settles as one `badSpell`. Where hob cannot read (no policy, quota, slots), each
+   misfit is refused alone as before. The reply lists the run turns, the reading last. The archive (on foundation
+   d02fd11c + host27): 81 reached, 72 model calls over 72 posts (67 `none`, 3 proposals, 2 asks), no post asked
+   twice (was 75). Tests: `test_spell_turns.Misfits`/`MisfitsWithoutPolicy` (a post of a misfit, a fitting spell and
+   a misfit: one reading after the plant, a retry asks nothing, hob's spell runs), `test_archive`.
+
+167. **A frame reads its object as the turn has written it (host27; §7 item 1's known limit; no edition change).**
+   hob's several spells run as one turn (`runHeard`), each a frame on its card; a frame read its object as committed,
+   so `enter` then `say` on a room said as one who had not entered (a guard refused; a pure method's whole-state `set`
+   overwrote the earlier edits). Now every frame reads its object `asWritten`: the committed state with the edits the
+   turn has staged on it applied in order, as `judge` applies them at commit (as committed when none, or when they do
+   not apply, which the commit refuses). This is the turn's model generally, not hob's alone: a call back into an
+   object the turn wrote reads its writes too. What stays committed: the frame's version and the roots its cells are
+   recorded at, and `view`/`viewField`/`viewAt`, which answer a state at a named version. Nothing is journaled
+   differently (edits are edits; replay applies what was recorded). Tests: `test_heard.Heard` (hob's `enter` and `say`
+   on a room in one answer: entered, then said as one of 1 here).
+
+168. **`interpret` takes no `held` or `misfit` (host27; OVERHAUL §3's deletions; the coordinator's docs pass).** The
+   arm reads `utterance`, `offers`, `policy` and `model` only; a Plan naming `held` or `misfit` (World.obend still
+   declares them) has them ignored, and nothing journals or lists `held`. `misfit` stays only as the host's own: the
+   misfit spells a host reading reads past (`heardTurn`, 5.166), shown to `Policy.prompt` as `asked.misfit`.
+   `Policy.prompt`'s `asked` drops `held` (`heldPart` gone) in the same commit, since a prompt naming a field the host
+   no longer supplies would not fit and fall back to the bare `system` text. Left for the objects lane: World.obend's
+   `interpret<R>({utterance, offers, policy, model, held, misfit})` loses `held`, `misfit` (and, per OVERHAUL §3,
+   `policy`: the world's one is `policy`, which the host's own readings already use), with its eight callers
+   (Workshop's `make`; `test_interpret_object` ×2, `test_verbs`, `test_spell_turns`, `test_reach`, `test_reflection`,
+   `test_sum_words`). Tests: `test_policy` (the misfit prompt; no `held` listed).
+
+169. **A grown verb is offered by the law alone (host27; found capturing AGENTS-EXAMPLES on the minimal genesis).** A
+   card whose `actions` names what a reader sees (the town's bells: `rain tend ring lines`) hid every verb a hand grew
+   on it, since `offeredTo` asked `actions` for `act`: the bell's `verbs` listed `hum`, but `delvetalk bell/1 hum` was a
+   misfit and hob was not offered it; and the bodies offer `act` to nobody (`~act`), so `methodForms` gave it no form
+   and `withVerbs` made no grown verb a form at all. `offeredTo` now judges a grown verb by the law (`methodAdmits` of
+   `act` with the verb) alone, a card's `actions` speaking for its declared methods; `methodForms` keeps an unoffered
+   `act`'s form, whose `text` field the verbs take (`act` is still no spell). Test: `test_verbs.Verbs` (a card with
+   `~act` listing only `rain`: the grown `water` offered, a stranger's spell admitted).
+
+170. **Every `receive` is heard with what the host fills (host27; the v8 deploy's lost mentions).** The bridge delivers a
+   mention as `receive {text, post}` (reach `mentioned`) to the mentioned resident's avatar, whose `receive` takes
+   `Card.Reply {text, post, fields, spell}`: each was refused `typeMismatch` (ten on gsb, entry 77 the first). `runFrame`
+   now fills any `receive` whose argument does not fit as the spell path fills it (`heardArgument`: `fields` empty,
+   `spell` read from the text, `castData "" ""` for a mention, which is heard and never cast; `misfit` none), whoever
+   sends it (a mention, a rule's firing, a send). Test: `test_bridge.Mentions` (a mention through the bridge on a
+   genesis town, admitted on the avatar).
+
+171. **A question hob reads nothing into is answered by the card (host27; the v8 deploy's silent question; the
+   coordinator's decision).** "does the bell have a clapper?" to bell/1, which wants one, came back `none` and so
+   silence. Now `resumeHeard`, when hob replied with no spell and no ask (`none`, `unclear: not addressed`) to words
+   ending in `?`, offers the speaker `cardAnswer`: the card's exact text as they read it (`cardRendered`, whole; the
+   model's copy is `cardText`, within `cardShownChars`) and then `wantsText` when it wants anything. Data, not
+   narration. Other words stay silence, and so do a failed model and the deadline. The paint is not in the offer:
+   renders live per process in the session (`Open.renders`), outside the world a turn commits; the front places a
+   painting above the exact card where one exists (5.161), and the bridge drafts exact. "Or hob says ask is not
+   needed" is not built: hob has no such answer; a question it asks back stays `ask:`. Test: `test_heard.Heard` (a
+   rendered card with a placed want: the question answered by its text and its wants; prose stays silent).
+
+172. **Root sets one field of a state (host27; the live town's entry 129).** `world-root {act: {kind: set, object, field:
+   "state.F", value}}` (`hand root set --object kinds --field state.count --value 12`): `stateFieldOf` (one top-level
+   field; a nested path refuses), `fieldValue` (typed wire data, or a plain JSON number, text or boolean standing for
+   a field of that kind), `withField`; the state as set must conform to the object's type. Journaled as `state` is:
+   `before` and `after` that field's value, `version` + 1 and the whole state's `cid`, so anchors and replay read it
+   as any root `set`; `rootBefore` and `applyRoot` read the same field. Tests: `test_root.Root` (plain and typed
+   values, four refusals, a bump after it, a reopen), `test_root_console` (the CLI's flags).
+173. **Calls and sends across worlds (host28; docs/FEDERATION.md §2; no edition change).** A `call`, `callVia`, `send`
    or `sendVia` whose `Reference` names a world (`foreignRef`) crosses to it. Each is refused by name when it cannot:
    `noGrant` under a grant (a grant serves the world it was made in), `foreignWorld` for a world not served here
    (`Foreign.serves`, which `serve` builds per request), and `crossing` for a turn's second (`crossingsPerTurn` 1,
@@ -1898,7 +1998,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `inspect`: `foreignReads`) are one path: `Foreign.read` runs the same Plan in that world (`readIn`, the object
    named locally, under the reader, the turn's ticks) and the turn journals the citation. Tests: `test_scratch` (a
    call resumed with the lab's receipt cited, a send once per turn, `foreignWorld`, both journals replayed alone).
-165. **The REPL is a scratch world's (host28; docs/FEDERATION.md §3).** `world-repl {principal, identity, entry,
+174. **The REPL is a scratch world's (host28; docs/FEDERATION.md §3).** `world-repl {principal, identity, entry,
    source?, object?, argument?, arguments?}` (`PackageSession.repl`; serve refuses it outside a scratch world) compiles
    `source` over the world's library: an entry that is not an Activity runs on `arguments` and answers its value,
    journaling nothing; an Activity is a method of the object `object` (default `repl`) the module defines, made from it
@@ -1946,60 +2046,27 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host25 (5.159 *Moves* finished, 5.162 reach), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
+The queue after host27 (5.164 to 5.172) and host28 (5.173, 5.174), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
 standing order binds every item: "maturify and take forward everything that we've started and bring it to its full
 sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
 called for); let's not leave behind 'old things', no scar and growth tissue." So each replacement deletes what it
 replaces in the same commit, and this file describes only what is. A merge touching the host runs
 `deploy/carry-check.sh` on hbox first (5.159).
 
-0. **The paired merge (now the objects lane's rewrite16, pair/rewrite14).** Done on lane/host23 (host25): a moved
-   object offering `carried` is told once (the tide's re-arm); a moved object holding its package's law takes the
-   package's changed law (`kept` names an amended one) and its `rule`/`want` lines; a refused move's whole refusal
-   printed; `python3 -m transport carry` runs `deploy.genesis.carried` (the objects lane's refresh) after its check;
-   `world-reach` (5.162). The objects lane owes the tide's `carried` (patch handed over: when `ticks > 0`, send itself
-   `due {at: last + gap}`; `~carried` in `methods()`). Playtest 3 carried on pair 66cfa62b + host25 + that patch: 43
-   of 51 moved, the 8 env/wake left, 7 package laws taken, nothing kept, `rearmed [tide]`, the porch things' `claimed`
-   placed, the check clean, refresh 18 refreshed and 7 current; the tide ticks 3 to 7 over four advances; `rules` on
-   garden/bell/2 lists the kind's `seven` and `rang` and the seventh rain fires `seven`. The carried state is kept at
-   hbox `~/scratch/p3-carried-host25/` (the transport's output beside it, `p3.out`). Left:
-   - The ring `seven` fires on garden/bell/2 is admitted and writes nothing (`writes: []`), so `rang` never fires on
-     the carried bell: the objects lane's (bell/2 may be rung already in playtest 3; the bell body's `ring`).
-   - The pair's full run green on hbox, then carry-check (item 1).
-   - Test the Bend arms from a body (`world.rule` from a `made`, `world.grow`, `world.act`, `world.chronicle`).
-   - What a carry still does not carry: a default-law object (an avatar made under the host's default before edition 9)
-     keeps the old default (no `or request.kind == rule`), since its creator is not recorded apart from the law's
-     subject; a law given at creation is genesis's refresh's, not the carry's.
-1. **Words a card heard: what is left after host26 (5.163; c08615a2, 80bb2a74).** The host half is built and its
-   own tests pass (`test_heard`, `test_spell_turns`, `test_verbs`, `test_interpret_quota`, `test_interpret_object`).
-   Left, in order:
-   - **The objects lane's half**, as a patch on the pair (scratchpad `host26-objects.patch`, built and run on a
-     throwaway merge of pair 36ed6b48 + these commits): the commonplace stops reading words (its `learning`,
-     `doorLearned`, `childListed`, `childLearned`, `childInspected`, `learnedAll`, `Next`, `fieldsOrProse`, `fielded`,
-     `unaddressed`, `consulted`, `interpreting`, `hobbed`, `missLine`, `proposed`, `callingDoor`, `folding`,
-     `foldOne`, `foldCall`, `folded`, `passOn`, `toldThen`, its `Mentions` import and its misfit branch go; a door
-     word stays, everything else is `silent`); `test_policy`, `test_lenses`, `test_interpret_text` move to the new
-     answers. Then delete `Mentions.obend` (and from `test_receive`/`test_bridge` closures and the pins), Card's
-     `interpretation`, `Hob`, `hobNeeds`, `fieldNeeds`, `fieldNames`, `misfitLine`, `confirms`, `Replied.passed`/
-     `asked`/`several`, `Record.misfitted`, room's misfit arm, the `misfit` field of `Heard` (5.153's fold), the
-     `policy` field on records and the workshop (the world's one is `policy`; Workshop's `make` still asks
-     `world.interpret` with it), and `Policy.prompt` may show `asked.wants` and `asked.pages`.
-   - **World tests still red on that merge** (all asserted the old commonplace path or "a card hears a verb or
-     nothing"): `test_hub` (Hub ×9, BellsHearVerbsOrNothing, LinkDoors, RootReadsDoorForms), `test_scenarios` (Garden,
-     Bell: a misfit now waits on hob), `test_fork` (a suspended reading carried), `test_hand.Speak`,
-     `test_http.Play`. Each moves to: prose at a card suspends, hob's answer runs on it.
-   - **The archive** on that merge: the three anthology lines are written (four lines, gemini's and three under the
-     anthology card); model asks 37 → 75 (69 `none`, 3 proposals, 3 asks), since prose at every reached card now asks
-     hob; one post (`3mxhfzx7rlk2f`) is asked twice: find why (two spells of one post, or a reading re-asked) before
-     setting `INTERPRETATIONS`. `test_archive`'s constants and docstring are then the objects lane's to move.
-   - Not built: several hob spells run in one turn each read their card as committed (a second on the same card does
-     not see the first's writes: `enter` then `say` on a room); hob's `ask:` naming no field is one fixed line.
-1a. **For the minimal genesis (the coordinator, after item 1), one commit each.** (1) `world.wanting({after: Nat, limit:
-   Nat}) -> Wanting {rows [{object, name, reading, asks, since}]}`: the world's wanting index (`World.wanting`), newest
-   first, only objects the reader may view, as a Bend world arm and a host op, so the commonplace lists "what wants a
-   hand" (the objects lane declares the arm in World.obend). (2) Two facts a want reads: `laws` (the count of an
-   object's law clauses, its own and those it follows by `under`) and `refusedBy` (writes this object's law refused,
-   from an index of the journal), so a seal can want "a law and a second resident's try".
+0. **For the objects lane, from host27.** (a) World.obend's `interpret` drops `held`, `misfit` and `policy` with its
+   eight callers (5.168; the host already ignores them). (b) World.obend's `wanting` comment and GENESIS.md say
+   "oldest first": the host answers newest first, pages of whole heights by `after` (5.164); the commonplace's
+   "What wants a hand" reads it so. (c) A seal's want can now read `request.laws` and `request.refusedBy` (5.165); a
+   law refusal journals the wants it opens. (d) Bend arm tests from a body: `wanting` is covered
+   (`test_wanting`); `rule`, `grow`, `act`, `chronicle` from a `made` are not.
+1. **Left from host27.** `test_http`'s four page-markup assertions (Claim, Play: home's words, the quota page's
+   stamp markup, the paint frame) fail on foundation's web redesign: the transport lane's. The question answer
+   (5.171) offers the exact card: whether the front or the bridge shows the paint above it is the transport's
+   (renders are per session). "hob says ask is not needed" has no answer to read: decide whether hob gains one.
+   The fold of a post's misfits (5.166) runs after its fitting spells: a misfit that hob reads into a spell on a
+   card an earlier spell wrote reads it as written (5.167).
+   From the pair merge, still open: the ring `seven` fires on a carried garden/bell/2 writes nothing (objects lane);
+   a default-law object carried from before edition 9 keeps the old default (no `or request.kind == rule`).
 2. **Edition and carry.** Edition 9 is not deployed; 5.161 and the pair change what it derives, so they need no
    bump if they merge before any edition-9 world is. If one is deployed first, the pair is edition 10 and ships
    `carry-check.sh` green on the newest v7 backup and the playtest-3 copy, as OVERHAUL plans.
@@ -2040,12 +2107,10 @@ replaces in the same commit, and this file describes only what is. A merge touch
    frame bound checked once; H12 `Store.lean`'s `Limits` referencing `Bounds` (`maxTurnTicks` = `ticksMax`,
    `plainDepth` = `plainJsonDepth`, the 1400s); H13 `compressedSize`; H14 the duplicates; H15 one list codec
    (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls.
-7. **FEDERATION's remainder (5.140):** cross-world `call` and `send` are built (5.164), and the foreign reads with
-   them; the REPL, `check` and `cite` of a scratch are built (5.165), and the owner's `delvetalk world expire /
-   scratch:` (section 2). Left: `world-history` across worlds; the hand's SCRATCHES page;
-   `docs/AGENTS-EXAMPLES.md` still shows `/AGENTS.md/repl` and `/check`: `deploy/capture-examples.py` (its steps moved
-   to the scratch routes) stops at the planter's `interpret` step on foundation (no pending interpretation since
-   5.163), so it is regenerated once that step is moved.
+7. **FEDERATION's remainder (5.140):** cross-world `call` and `send` are built (5.173), and the foreign reads with
+   them; the REPL, `check` and `cite` of a scratch are built (5.174), and the owner's `delvetalk world expire /
+   scratch:` (section 2). Left: `world-history` across worlds; the hand's SCRATCHES page; a `Returned` that carries
+   the target's receipt (World.obend's, so every pin moves: the objects lane's); `world-repl` of several modules.
 8. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
    the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
    per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).

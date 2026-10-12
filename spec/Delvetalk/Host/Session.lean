@@ -419,6 +419,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-rules" => return (session, rulesOp s.world request false)
       | "world-wants" => return (session, rulesOp s.world request true)
       | "world-chronicle" => return (session, chronicleOp s.world request)
+      | "world-wanting" => return (session, wantingOp s.world request)
       | "world-receipt" => return (session, receipt s.world request)
       | "world-history" => return (session, history s.world request)
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
