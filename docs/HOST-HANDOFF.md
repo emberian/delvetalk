@@ -81,7 +81,7 @@ Rules:
 
 ## 3. Journal
 
-A journal at `J` is two files (5.137): `J`, the chain, one line per entry `{at, bytes, hash, height, previous}`, and `J.blocks`, the block store, where each entry's record (its canonical DAG-CBOR without `hash`, whose CID is the `hash`) lies at `at`. An entry's common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?}]` (5.136), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
+A journal at `J` is two files (5.137): `J`, the chain, one line per entry `{at, bytes, hash, height, previous}`, and `J.blocks`, the block store, where each entry's record (its canonical DAG-CBOR without `hash`, whose CID is the `hash`) lies at `at`. An entry's common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?, gaps?}]` (5.136; `gaps` kernel18), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
 
 `world.receipts` maps `identityKey` to the entry index (first wins, except that a suspension or a transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`) are journaled but do not bind; admitted outcomes and every other refusal bind.
 
@@ -2006,9 +2006,9 @@ replaces in the same commit, and this file describes only what is. A merge touch
    `inspect` and `viewField` of a foreign object; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
    `delvetalk world expire / scratch:` spell; a front route for `world-cite`; `world-history` across worlds; the
    hand's SCRATCHES page.
-8. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
-   the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
-   per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).
+8. **The stored path's remainder (5.136): done by lane/kernel18** (KERNEL-HANDOFF §15 "The state as cells"; replay
+   edition 10): a write is checked, bounded, charged and named per changed cell, `storeOf` is gone (`Held` holds
+   the object's cells), and a lookup reads its key or its gap (roots' `gaps [{field, after?, before?}]`).
 9. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
    sources, grants and slugs; CIDs as bytes; one record encoding; `serve --snapshot-every`; held worlds never closed;
    `world-inspect`'s `cites` per clause.

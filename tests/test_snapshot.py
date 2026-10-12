@@ -15,7 +15,7 @@ import os
 import unittest
 
 from tests.test_reflection import PACKAGE, Reflection, source_seed
-from tests.wire import cbor, cbor_head, cid_of, field
+from tests.wire import cbor, cbor_head, cid_of, field, state_cid
 
 
 def read_cbor(data, i=0):
@@ -177,10 +177,11 @@ class Snapshots(Reflection):
 
         def state(recompute):
             def forge(obj):
-                self.assertEqual(obj["stateCid"], cid_of(obj["state"]))
+                relations = [d["field"] for d in obj.get("relations", [])]
+                self.assertEqual(obj["stateCid"], state_cid(obj["state"], relations))
                 obj["state"]["fields"][0]["value"]["value"] = "41"
                 if recompute:
-                    obj["stateCid"] = cid_of(obj["state"])
+                    obj["stateCid"] = state_cid(obj["state"], relations)
             return forge
 
         for forge, reason in ((state(False), "the state of a is not its CID's"),

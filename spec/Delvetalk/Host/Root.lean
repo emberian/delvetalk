@@ -42,14 +42,16 @@ def rootFieldsOf (w : World) (kind : String) (act : Json) (reason : String) : Ex
     let base := [("object", toJson id), ("field", toJson field)]
     match field with
     | "state" =>
-      let state ← decodeData Limits.dataDepth value
-      return base ++ [("after", value), ("version", toJson (o.version + 1)), ("cid", toJson (stateCid state))]
+      let state ← canonicalState o.relations (← decodeData Limits.dataDepth value)
+      -- A held state conforms to its type: a write is checked by the cells it changes on that ground.
+      unless state.conformsUnder o.bounds o.stateType do throw s!"the state does not conform to the type of {id}"
+      return base ++ [("after", value), ("version", toJson (o.version + 1)), ("cid", toJson (o.withState state).stateCid)]
     | "owner" =>
       let owner ← value.getStr?
       let state := match o.state with
         | .record fs => Data.record (if fs.any (·.1 == "owner") then replaceField fs "owner" (.label owner) else fs ++ [("owner", .label owner)])
         | d => d
-      return base ++ [("after", value), ("version", toJson (o.version + 1)), ("cid", toJson (stateCid state))]
+      return base ++ [("after", value), ("version", toJson (o.version + 1)), ("cid", toJson (o.withState state).stateCid)]
     | "program" =>
       -- `{modules: [{name, source}]}` over the object's entry and limits; the host recompiles.
       let inputs := o.inputs.setObjVal! "modules" (← value.getObjVal? "modules")

@@ -171,33 +171,44 @@ class AnotherEdition(Reflection):
         self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
         cid = self.host.send(op="world-object", principal="ember", object="c")["record"]["stateCid"]
         self.release()
-        # The same world as a host of edition 7 wrote it: every entry sealed again, the snapshot's head with it.
+        # The same world as a host of edition 9 wrote it: a state named by the CID of its wire JSON (a creation
+        # by none), every entry sealed again, the snapshot's head with it.
+        [snap] = [f for f in os.listdir(self.dir.name) if ".snapshot." in f]
+        body = read_snapshot(os.path.join(self.dir.name, snap))
+        named = {o["id"]: (o["version"], cid_of(o["state"])) for o in body["objects"]}
+        for o in body["objects"]:
+            o["stateCid"] = named[o["id"]][1]
         old, previous = journal_entries(self.path), "0" * 64
         for e in old:
             e.pop("hash")
             e["previous"] = previous
             if e["height"] == 1:
-                e["replay"] = 7
+                e["replay"] = 9
+            e["outcome"].pop("cid", None)
+            for x in e["outcome"].get("writes", []):
+                version, wire = named[x["object"]]
+                if x["version"] == version:
+                    x["cid"] = wire
+                else:
+                    x.pop("cid", None)
             e["hash"] = previous = cid_of(e)
         os.remove(self.path)
         os.remove(self.path + ".blocks")
         write_journal(self.path, old)
-        [snap] = [f for f in os.listdir(self.dir.name) if ".snapshot." in f]
-        body = read_snapshot(os.path.join(self.dir.name, snap))
         body["head"] = old[-1]["hash"]
         write_snapshot(os.path.join(self.dir.name, snap), body)
         h = self.spawn()
         refused = h.send(op="world-open", path=self.path)
         self.assertEqual(refused["status"], "error")
-        self.assertIn("journal replay edition 7", refused["message"])
+        self.assertIn("journal replay edition 9", refused["message"])
         self.assertIn("carry it", refused["message"])
         h.close()
         self.hosts.remove(h)
         out = os.path.join(self.dir.name, "carried.journal")
-        p = subprocess.run([binary(), "carry", "--from", self.path, "--out", out, "--reason", "edition 7 to this"],
+        p = subprocess.run([binary(), "carry", "--from", self.path, "--out", out, "--reason", "edition 9 to this"],
                            capture_output=True, text=True, timeout=600)
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(json.loads(p.stdout)["carriedFrom"]["replay"], 7)
+        self.assertEqual(json.loads(p.stdout)["carriedFrom"]["replay"], 9)
         new = self.spawn()
         self.assertEqual(new.send(op="world-open", path=out, verify=True)["status"], "opened")
         self.assertEqual(new.send(op="world-object", principal="ember", object="c")["record"]["stateCid"], cid)

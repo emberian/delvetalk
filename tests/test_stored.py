@@ -9,7 +9,7 @@ Each test names what would refute it.
 import unittest
 
 from tests.test_turn import PLANS_WORLD, BINDING, TurnCase
-from tests.wire import nat
+from tests.wire import nat, record
 
 LIST = """edition ObjectiveBend 1
 sum List<T>:
@@ -309,11 +309,13 @@ class RelationPrimitives(StoredCase):
         self.assertNotIn("fetch.row", rows)
 
     def test_a_lookup_fetches_the_one_row_it_reads(self):
-        # Refuted if a hit over 2,048 rows fetches any row but its own or reports a span past it.
+        # Refuted if a hit over 2,048 rows fetches any row but its own or reports a span (it reads its key,
+        # not the keys below it: KERNEL-HANDOFF §16 item 15b).
         reply = self.run_entry("rainAt", state(2048), nat(1500))
         self.assertEqual(reply["value"], {"tag": "label", "value": "rain 1500"})
         self.assertEqual(self.keys(reply), [1500])
-        self.assertEqual(reply["reads"]["spans"], [{"field": "rains", "reach": 1501}])
+        self.assertEqual((reply["reads"]["spans"], reply["reads"]["found"]),
+                         ([], [{"field": "rains", "key": record(n=nat(1500))}]))
 
     def test_a_lookup_pays_its_row_and_its_probes(self):
         # Refuted if the found row is not charged 1 + 2 bytes, or a search probes more than
@@ -335,8 +337,9 @@ class RelationPrimitives(StoredCase):
         hit, miss = self.run_entry("rainHere", state(2048), nat(7)), self.run_entry("rainHere", state(2048), nat(5000))
         self.assertEqual((hit["value"], miss["value"]), ({"tag": "boolean", "value": True}, {"tag": "boolean", "value": False}))
         self.assertEqual((hit["reads"]["rows"], miss["reads"]["rows"]), ([], []))
-        self.assertEqual(hit["reads"]["spans"], [{"field": "rains", "reach": 8}])
-        self.assertEqual(miss["reads"]["spans"], [{"field": "rains", "reach": 2049}])
+        # A hit reads its key; a miss the gap its key falls in (here past the last key), no span either.
+        self.assertEqual((hit["reads"]["spans"], hit["reads"]["found"]), ([], [{"field": "rains", "key": record(n=nat(7))}]))
+        self.assertEqual((miss["reads"]["spans"], miss["reads"]["gaps"]), ([], [{"field": "rains", "after": record(n=nat(2047))}]))
 
     def test_a_lookup_by_columns_that_are_not_the_key_is_refused(self):
         # Refuted if a stored relation searched by a non-key column answers (its rows are not in

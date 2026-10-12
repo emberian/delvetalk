@@ -206,18 +206,21 @@ structure Cells where
   /-- Relation rows forced, by field and key, outside every span of their field. -/
   rows : List (String × Data) := []
   /-- The key set a forced spine observed, by relation field: every key up to and including
-      `some k`, or the whole key set (`none`: a count, a failed search, a scan to the end). -/
+      `some k`, or the whole key set (`none`: a count, a scan to the end). -/
   spans : List (String × Option Data) := []
+  /-- The gaps a lookup that missed observed, by relation field: no key strictly between `after` and
+      `before` (none: past that end of the key order). -/
+  gaps : List (String × Option Data × Option Data) := []
   deriving Inhabited
 
 /-- How many roots a root's cells add beyond its object's own (the turn's `maxRoots` counts them). -/
-def Cells.extra (r : Cells) : Nat := r.fields.length + r.rows.length + r.spans.length
+def Cells.extra (r : Cells) : Nat := r.fields.length + r.rows.length + r.spans.length + r.gaps.length
 
 /-- `a ≤ b` for keys, by their canonical bytes: the relation's order (`canonicalRowsDropping`). -/
 def keyAtMost (a b : Data) : Bool :=
   let x := Delvetalk.Canonical.encode a
   let y := Delvetalk.Canonical.encode b
-  x == y || Law.bytesLt x y
+  x == y || Delvetalk.Canonical.bytesLt x y
 
 /-- One span over another: the whole key set holds every prefix, a longer prefix a shorter one. -/
 def spanJoin : Option Data → Option Data → Option Data
@@ -236,17 +239,26 @@ def Cells.join (a b : Cells) : Cells :=
   let rows := (a.rows ++ b.rows).foldl (fun acc (f, k) =>
     if covered f k || acc.any (fun (g, k') => g == f && Delvetalk.Canonical.encode k' == Delvetalk.Canonical.encode k)
     then acc else acc ++ [(f, k)]) []
-  { scalar := a.scalar || b.scalar, fields := (a.fields ++ b.fields).eraseDups, rows := rows, spans := spans }
+  let same := fun (x y : Option Data) => (x.map Delvetalk.Canonical.encode) == (y.map Delvetalk.Canonical.encode)
+  let gaps := (a.gaps ++ b.gaps).foldl (fun acc (f, after, before) =>
+    if (match before, spans.lookup f with
+        | some k, _ => covered f k
+        | none, some none => true
+        | none, _ => false) ||
+        acc.any (fun (g, x, y) => g == f && same x after && same y before)
+    then acc else acc ++ [(f, after, before)]) []
+  { scalar := a.scalar || b.scalar, fields := (a.fields ++ b.fields).eraseDups, rows, spans, gaps }
 
 /-- What a stored segment read of an object (`Turn.Reads`), against the rows its store held: each
-    span becomes the key of the last row it reached, or the whole key set once it reached the end. -/
-def cellsOf (relations : List (RelDecl × Array Data)) (reads : Delvetalk.Turn.Reads) : Cells :=
+    span becomes the key of the last row it reached, or the whole key set once it reached the end; a
+    key a lookup found is a row read, a gap it observed a gap. -/
+def cellsOf (cells : Delvetalk.Turn.StateCells) (reads : Delvetalk.Turn.Reads) : Cells :=
   let spans := reads.spans.filterMap fun (f, reach) => do
-    let (d, rows) ← relations.find? (·.1.field == f)
+    let r ← cells.relation? f
     if reach == 0 then none
-    else if reach > rows.size then some (f, none)
-    else (rows[reach - 1]?).map fun row => (f, some (Delvetalk.Turn.keyProjection d.key row))
-  Cells.join { scalar := true, spans := spans } { rows := reads.rows.map fun r => (r.field, r.key) }
+    else if reach > r.rows.size then some (f, none)
+    else (r.rows[reach - 1]?).map fun c => (f, some (Delvetalk.Turn.keyProjection r.key c.row))
+  Cells.join { scalar := true, spans, gaps := reads.gaps } { rows := reads.rows.map (fun r => (r.field, r.key)) ++ reads.found }
 
 /-- What a placement places: a rule, a want, or a verb grown (docs/COLLABORATOR.md §3). -/
 inductive Placing where
@@ -402,30 +414,11 @@ partial def compressedSize : Json → Nat
     bytes of tags and names (the Anthology refused its 631st short line). -/
 def stateBytes (state : Data) : Nat := (Delvetalk.Canonical.encode state).size
 
-/-- A relation declaration as the kernel's cell functions take it: field and key columns. -/
-def cellDecls (decls : List RelDecl) : List (String × List String) := decls.map fun d => (d.field, d.key)
-
-/-- The canonical bytes a write from `before` to `after` changes (`Turn.changedCellBytes`): what the
-    storage ledger charges, over the relations `edited` names (every one when none is given). A
-    created object's `before` is none: every cell is new. -/
-def cellBytes (decls : List RelDecl) (before : Option Data) (after : Data) (edited : Option (List String) := none) : Nat :=
-  Delvetalk.Turn.changedCellBytes (cellDecls decls) (before.getD (.record [])) after
-    (edited.getD (decls.map (·.field)))
-
-/-- The fields a write's edits reach: any edit but `keep`. Another relation's rows are as they were. -/
-def editedFields (changes : List Written) : List String :=
-  (changes.flatMap fun c => c.edits.filterMap fun e => match e.kind with
-    | .keep => none
-    | _ => some e.field).eraseDups
-
-/-- The CID of an object's state: its canonical bytes as the journal hashes them, so a root
-    names exactly the card version a turn was judged against. -/
-def stateCid (state : Data) : String := Journal.bodyHash (dataJson state)
 
 /-- Roots as an entry records them: `{object, version}` for a root read whole, and for one read by
     its cells (`Cells`) what was read: `scalar: true`, `fields [f]`, `rows [{field, key}]`, `spans
-    [{field, through?}]` (no `through`: the whole key set). The state at that version is named by the
-    entry that wrote it (`writes[].cid`, `world-state-cid`). -/
+    [{field, through?}]` (no `through`: the whole key set), `gaps [{field, after?, before?}]`. The state
+    at that version is named by the entry that wrote it (`writes[].cid`, `world-state-cid`). -/
 def rootsJson (roots : List (String × Nat)) (cells : List (String × Cells) := []) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj ([("object", toJson o), ("version", toJson v)] ++
     match cells.lookup o with
@@ -436,7 +429,10 @@ def rootsJson (roots : List (String × Nat)) (cells : List (String × Cells) := 
       (if r.rows.isEmpty then [] else [("rows", Json.arr (r.rows.toArray.map fun (f, k) =>
         Json.mkObj [("field", toJson f), ("key", dataJson k)]))]) ++
       (if r.spans.isEmpty then [] else [("spans", Json.arr (r.spans.toArray.map fun (f, t) =>
-        Json.mkObj ([("field", toJson f)] ++ (t.map fun k => [("through", dataJson k)]).getD [])))])))
+        Json.mkObj ([("field", toJson f)] ++ (t.map fun k => [("through", dataJson k)]).getD [])))]) ++
+      (if r.gaps.isEmpty then [] else [("gaps", Json.arr (r.gaps.toArray.map fun (f, after, before) =>
+        Json.mkObj ([("field", toJson f)] ++ (after.map fun k => [("after", dataJson k)]).getD [] ++
+          (before.map fun k => [("before", dataJson k)]).getD [])))])))
 
 /-- The fields recording who made each change: parallel arrays of steps, callers, kinds. -/
 def writtenFields (ws : List Written) : List (String × Json) :=
@@ -470,8 +466,13 @@ def parseRoots (j : Json) : Except String (List (String × Nat) × List (String 
       return (← x.getObjValAs? String "field", ← match x.getObjVal? "through" with
         | .ok k => some <$> decodeData Limits.dataDepth k
         | .error _ => pure none)
-    if scalar || !fields.isEmpty || !rows.isEmpty || !spans.isEmpty then
-      cells := cells ++ [(object, { scalar := scalar, fields := fields, rows := rows, spans := spans })]
+    let key : Json → String → Except String (Option Data) := fun x k => match x.getObjVal? k with
+      | .ok d => some <$> decodeData Limits.dataDepth d
+      | .error _ => pure none
+    let gaps ← (← list "gaps").mapM fun x => do
+      return (← x.getObjValAs? String "field", ← key x "after", ← key x "before")
+    if scalar || !fields.isEmpty || !rows.isEmpty || !spans.isEmpty || !gaps.isEmpty then
+      cells := cells ++ [(object, ({ scalar := scalar, fields, rows, spans, gaps } : Cells))]
   if out.length + (cells.map (·.2.extra)).sum > Limits.maxRoots then throw "too many roots"
   return (out, cells)
 
@@ -762,7 +763,7 @@ def keyAsDeclared (d : RelDecl) (key : Data) : EditResult Data := keyOf d key
     order dropped past the declared limit; with the rows dropped. -/
 def canonicalRowsDropping (d : RelDecl) (rows : List Data) : EditResult (List Data × List Data) := do
   let keyed ← rows.mapM fun r => do return (Delvetalk.Canonical.encode (← keyOf d r), r)
-  let sorted := (keyed.toArray.qsort fun a b => Law.bytesLt a.1 b.1).toList
+  let sorted := (keyed.toArray.qsort fun a b => Delvetalk.Canonical.bytesLt a.1 b.1).toList
   let mut prev : Option ByteArray := none
   for (k, _) in sorted do
     if prev == some k then throw "duplicateKey"
@@ -784,69 +785,115 @@ def canonicalState (decls : List RelDecl) : Data → EditResult Data
       | none => pure (k, v))
   | other => if decls.isEmpty then pure other else throw "typeMismatch"
 
-/-- One relation edit on a canonical relation (the table of RELATIONAL.md §3):
+/-- A row's cell under `d`; `typeMismatch` when it lacks a key column. -/
+def rowCell (d : RelDecl) (row : Data) : EditResult Delvetalk.Turn.RowCell := do
+  discard <| keyOf d row
+  return Delvetalk.Turn.RowCell.of d.key row
+
+/-- A relation after `put` was inserted, within its declared limit: the oldest rows by key order
+    (the first) dropped, with them. -/
+def withinLimit (d : RelDecl) (r : Delvetalk.Turn.RelationCells) (put : Delvetalk.Turn.RowCell) :
+    Delvetalk.Turn.RelationCells × List Data × Option Delvetalk.Turn.RowCell :=
+  let over := r.rows.size - d.cap
+  ((List.range over).foldl (fun r _ => r.eraseAt 0) r, (r.rows.extract 0 over).toList.map (·.row), some put)
+
+/-- One relation edit on a relation's cells (the table of RELATIONAL.md §3), by binary search on the
+    key's canonical bytes; with the rows the declared retention dropped to keep it within its limit
+    (the oldest by key order) and the row it put, if any:
 
     | edit    | key absent | key present, same row | key present, other row |
     | insert  | add        | no change             | refused `keyTaken`     |
     | upsert  | add        | no change             | replace                |
     | retract | no change  | remove                | remove                 | -/
-def relationEdit (d : RelDecl) (old : Data) (kind : EditKind) : EditResult (Data × List Data) := do
-  let rows ← relationRows old
-  let keyed ← rows.mapM fun r => do return (Delvetalk.Canonical.encode (← keyOf d r), r)
-  let others := fun (k : ByteArray) => (keyed.filter (·.1 != k)).map (·.2)
-  -- The rows the declared retention drops to keep the relation within its limit go with it.
-  let kept := fun (rows : List Data) => do
-    let (rows, dropped) ← canonicalRowsDropping d rows
-    return (relationOf rows, dropped)
+def relationEdit (d : RelDecl) (old : Delvetalk.Turn.RelationCells) (kind : EditKind) :
+    EditResult (Delvetalk.Turn.RelationCells × List Data × Option Delvetalk.Turn.RowCell) := do
   match kind with
   | .insert row | .upsert row =>
-    let k := Delvetalk.Canonical.encode (← keyOf d row)
-    match keyed.find? (·.1 == k) with
-    | none => kept (rows ++ [row])
-    | some (_, r) =>
-      if Delvetalk.Canonical.encode r == Delvetalk.Canonical.encode row then pure (old, [])
+    let c ← rowCell d row
+    let i := old.position c.key
+    match old.rows[i]? with
+    | some x =>
+      if x.key != c.key then return withinLimit d (old.insertAt i c) c
+      else if x.cid == c.cid then return (old, [], none)
       else match kind with
         | .insert _ => throw "keyTaken"
-        | _ => kept (others k ++ [row])
+        | _ => return (old.setAt i c, [], some c)
+    | none => return withinLimit d (old.insertAt i c) c
   | .retract key =>
-    let k := Delvetalk.Canonical.encode (← keyAsDeclared d key)
-    if keyed.any (·.1 == k) then pure (relationOf (others k), []) else pure (old, [])
+    match old.find? (Delvetalk.Canonical.encode (← keyAsDeclared d key)) with
+    | some (i, _) => return (old.eraseAt i, [], none)
+    | none => return (old, [], none)
   | _ => throw "typeMismatch"
 
+/-- A state under a write: its scalar fields (a relation's holding the empty relation) and its
+    relations' cells, with the rows retention evicted and the rows put, by field. -/
+structure Editing where
+  scalar : List (String × Data)
+  relations : List Delvetalk.Turn.RelationCells
+  evicted : List (String × Data) := []
+  put : List (String × Delvetalk.Turn.RowCell) := []
+
 /-- All edits of a step read the state before the step. A relation field takes `insert`, `upsert`,
-    `retract` (`relationEdit`); any other edit of it is followed by putting it back in canonical form. -/
-def applyStep (decls : List RelDecl) (state : List (String × Data) × List (String × Data)) (step : Step) :
-    EditResult (List (String × Data) × List (String × Data)) :=
-  let (fields, evicted) := state
-  step.foldlM (init := (fields, evicted)) fun (acc, evicted) e => do
-    let some old := fields.lookup e.field | throw "typeMismatch"
-    let decl := decls.find? (·.field == e.field)
-    let put := fun (v : Data) => match decl with
-      | some d => do return (replaceField acc e.field (← canonicalRelation d v), evicted)
-      | none => pure (replaceField acc e.field v, evicted)
-    match e.kind with
-    | .keep => pure (acc, evicted)
-    | .set v => put v
-    | .add n => match old with
-        | .natural m => put (.natural (m + n))
+    `retract` (`relationEdit`) and `set` (its rows put in canonical form); a scalar field every other
+    edit. -/
+def applyStep (decls : List RelDecl) (state : Editing) (step : Step) : EditResult Editing :=
+  step.foldlM (init := state) fun acc e => do
+    let some old := state.scalar.lookup e.field | throw "typeMismatch"
+    match decls.find? (·.field == e.field) with
+    | some d =>
+      let some rel := state.relations.find? (·.field == e.field) | throw "typeMismatch"
+      let (rel, dropped, put) ← match e.kind with
+        | .keep => pure (rel, [], [])
+        | .set v => do
+          let rows ← (← canonicalRows d (← relationRows v)).mapM (rowCell d)
+          pure (Delvetalk.Turn.RelationCells.of rel.field rel.key rows.toArray, [], rows)
+        | .insert _ | .upsert _ | .retract _ => do
+          let (rel, dropped, put) ← relationEdit d rel e.kind
+          pure (rel, dropped, put.toList)
         | _ => throw "typeMismatch"
-    | .append item => put (← appendItem item old)
-    | .amendItem item c => put (← editByItem item (some c) old)
-    | .removeItem item => put (← editByItem item none old)
-    | .insert _ | .upsert _ | .retract _ => match decl with
-      | some d =>
-        let (v, dropped) ← relationEdit d old e.kind
-        pure (replaceField acc e.field v, evicted ++ dropped.map (e.field, ·))
-      | none => throw "typeMismatch"
+      return { acc with relations := acc.relations.map fun r => if r.field == e.field then rel else r,
+                        evicted := acc.evicted ++ dropped.map (e.field, ·), put := acc.put ++ put.map (e.field, ·) }
+    | none =>
+      let put := fun (v : Data) => pure { acc with scalar := replaceField acc.scalar e.field v }
+      match e.kind with
+      | .keep => pure acc
+      | .set v => put v
+      | .add n => match old with
+          | .natural m => put (.natural (m + n))
+          | _ => throw "typeMismatch"
+      | .append item => put (← appendItem item old)
+      | .amendItem item c => put (← editByItem item (some c) old)
+      | .removeItem item => put (← editByItem item none old)
+      | .insert _ | .upsert _ | .retract _ => throw "typeMismatch"
 
-/-- The steps applied in order, with the rows the declared retention evicted to make room for an
-    insert or an upsert, by field (codex host 8, 10: `insertOnly` and the conflict index read them). -/
-def applyEditsEvicting (decls : List RelDecl) : Data → List Step → EditResult (Data × List (String × Data))
-  | .record fields, steps => (steps.foldlM (applyStep decls) (fields, [])).map fun (fs, ev) => (.record fs, ev)
-  | _, _ => throw "typeMismatch"
+/-- What a write made: the state's cells after it, the rows the declared retention evicted to make
+    room for an insert or an upsert, by field (codex host 8, 10: `insertOnly` and the conflict index
+    read them), and the cells it changed (`Turn.Changes`: what is checked, bounded and charged). -/
+structure Applied where
+  cells : Delvetalk.Turn.StateCells
+  evicted : List (String × Data)
+  changes : Delvetalk.Turn.Changes
 
-def applyEdits (decls : List RelDecl) (state : Data) (steps : List Step) : EditResult Data :=
-  (·.1) <$> applyEditsEvicting decls state steps
+/-- The steps applied in order to `before`'s cells. Only the cells they reach are touched. -/
+def applyEdits (decls : List RelDecl) (before : Delvetalk.Turn.StateCells) (steps : List Step) : EditResult Applied := do
+  let .record fields := before.scalar | throw "typeMismatch"
+  let e ← steps.foldlM (applyStep decls) { scalar := fields, relations := before.relations }
+  let cells := Delvetalk.Turn.StateCells.make (.record e.scalar) e.relations
+  return { cells, evicted := e.evicted, changes := Delvetalk.Turn.Changes.of before cells e.put }
+
+/-- The rows a write's edits put, by field, as cells: what `Turn.Changes.of` weighs. -/
+def putRows (decls : List RelDecl) (changes : List Written) : List (String × Delvetalk.Turn.RowCell) :=
+  changes.flatMap fun c => c.edits.flatMap fun e => match decls.find? (·.field == e.field), e.kind with
+    | some d, .insert row | some d, .upsert row => [(e.field, Delvetalk.Turn.RowCell.of d.key row)]
+    | some d, .set v => ((relationRows v).toOption.getD []).map fun row => (e.field, Delvetalk.Turn.RowCell.of d.key row)
+    | _, _ => []
+
+/-- The canonical bytes the cells a turn's writes changed hold (`Turn.Changes`): what the storage
+    ledger charges. A created object's every cell is new. -/
+def chargedBytes (before : Option Object) (after : Object) (changes : List Written) : Nat :=
+  match before with
+  | some b => (Delvetalk.Turn.Changes.of b.cells after.cells (putRows after.relations changes)).bytes after.cells
+  | none => (Delvetalk.Turn.Changes.all after.cells).bytes after.cells
 
 /-! ## Law as state, and programs -/
 
@@ -1159,9 +1206,13 @@ partial def recordFieldTypes (bounds : DataBounds) (fuel : Nat) : Delvetalk.Theo
   | .emptyRow => some []
   | _ => none
 
-/-- The first of `fixed` whose value in `after` is not its value in `before` (by canonical bytes). -/
-def movedFixed (fixed : List String) (before after : Data) : Option String :=
-  fixed.find? fun f => ((Law.rawField f before).map Law.canon) != ((Law.rawField f after).map Law.canon)
+/-- The first of `fixed` whose value in `after` is not its value in `before` (by canonical bytes; a
+    relation's by its rows' CIDs). -/
+def movedFixed (fixed : List String) (before after : Delvetalk.Turn.StateCells) : Option String :=
+  fixed.find? fun f => match before.relation? f, after.relation? f with
+    | some a, some b => a.rows.map (·.cid) != b.rows.map (·.cid)
+    | none, none => ((Law.rawField f before.scalar).map Law.canon) != ((Law.rawField f after.scalar).map Law.canon)
+    | _, _ => ((Law.rawField f before.state).map Law.canon) != ((Law.rawField f after.state).map Law.canon)
 
 /-- The State fields an artifact lists as `fixed` (none when absent). -/
 def fixedOf (artifact : Json) : List String :=
@@ -1338,10 +1389,20 @@ partial def wordsAsCases (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveB
       | none => pure d
   | _ => pure d
 
-/-- The columns of a relation field's rows, read from the state type: `rows {items: List<T>}` with `T` a record. -/
+/-- The row type of a relation field's type through the packet's bounds: a genuine `Relation<T>`, the
+    closed one-case sum `rows {items: List<T>}` (`Ty.relationItem`), which types a relation exactly when
+    it types each row (`Theory.ObjectiveBendCellConformance.relation_typed_iff`): what lets a write be
+    checked by the rows it changes. -/
+def relationItemOf (bounds : DataBounds) : Nat → Delvetalk.Theory.ObjectiveBendTypes.Ty → Option Delvetalk.Theory.ObjectiveBendTypes.Ty
+  | fuel + 1, .variable i => (bounds.lookup i).bind (relationItemOf bounds fuel)
+  | _, ty => ty.relationItem bounds
+
+/-- The columns of a relation field's rows, read from the state type: `rows {items: List<T>}` with `T` a
+    record, the field a genuine `Relation<T>` (`relationItemOf`). -/
 def rowColumns (bounds : DataBounds) (stateType : Delvetalk.Theory.ObjectiveBendTypes.Ty) (field : String) : Option (List String) := do
   let fuel := bounds.length + 1
   let fieldTy ← (← recordFieldTypes bounds fuel stateType).lookup field
+  discard <| relationItemOf bounds fuel fieldTy
   let payload ← (← variantCases bounds fuel fieldTy).lookup "rows"
   let items ← (← recordFieldTypes bounds fuel payload).lookup "items"
   let cons ← (← variantCases bounds fuel items).lookup "cons"
@@ -1828,7 +1889,7 @@ def noteRecompiled (w : World) (o : Object) : World :=
 def createRecJson (id : String) (c : CreateRec) : Json :=
   Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin),
     ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
-    ("seed", c.seed), ("law", toJson c.object.lawText)] |> fun j =>
+    ("seed", c.seed), ("cid", toJson c.object.stateCid), ("law", toJson c.object.lawText)] |> fun j =>
     (if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)) |> fun j =>
     match c.madeFrom with
     | some m => j.setObjVal! "madeFrom" m
@@ -2355,7 +2416,9 @@ def movedRootAdmits (w : World) (writes : List (String × List Written)) (id : S
     declared relation changed. A field read whole: unchanged. A row: no write touched its key
     (`keysChangedSince`). A span: no write touched a key at or before its last (any key, for the
     whole key set): an insert or a retract there moves what the spine showed, and an upsert there
-    may change a row the turn passed. -/
+    may change a row the turn passed. A gap: no write touched a key strictly inside it (an insert
+    there could be the key the lookup missed); a write below or above a looked-up key leaves the
+    lookup as it was. -/
 def cellsCurrent (w : World) (id : String) (seen : Nat) (r : Cells) : Bool := Id.run do
   let some changed := fieldsChangedSince w id seen | return false
   let decls := ((w.objects[id]?).map (·.relations)).getD []
@@ -2373,6 +2436,12 @@ def cellsCurrent (w : World) (id : String) (seen : Nat) (r : Cells) : Bool := Id
     | some keys, none => if !keys.isEmpty then return false
     | some keys, some last => if keys.any (keyAtMost · last) then return false
     | none, _ => return false
+  let below := fun (a b : Data) => keyAtMost a b && Delvetalk.Canonical.encode a != Delvetalk.Canonical.encode b
+  for (f, after, before) in r.gaps do
+    match touched f with
+    | some keys =>
+      if keys.any (fun k => (after.all (below · k)) && (before.all (below k ·))) then return false
+    | none => return false
   return true
 
 /-- A root `id` read at `seen` that has moved since may still commit: by the turn's changes of it
@@ -2399,6 +2468,15 @@ def openerActs (w : World) (principal : String) : Bool :=
     rather than checking every law for a clause no package could write; `world-inspect` shows it as
     the law's first row. -/
 def openerAmends (w : World) (subject : String) : Bool := openerActs w subject
+
+/-- A state as clauses reading `names` see it: every scalar field, and only the relations they name
+    (a clause citing another object's law by `under` may read any field: then the whole state). A
+    clause reads a state by its top-level fields alone, so to it this is the whole state, made without
+    the rows of relations it does not name. -/
+def viewFor (names : List Delvetalk.Compiler.ObjectiveBendLaw.LawName) (cells : Delvetalk.Turn.StateCells) : Data :=
+  if names.any (fun | .law _ => true | _ => false) then cells.state
+  else Delvetalk.Turn.wholeOf cells.scalar
+    ((cells.relations.filter fun r => names.contains (.field r.field)).map fun r => (r.field, r.rows))
 
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
@@ -2449,39 +2527,42 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   let mut factsOf : List (String × List Law.Facts) := []
   for (id, changes) in writes do
     let some o := w.objects[id]? | throw { cls := "unknownObject", object := id }
-    let (written, evicted) ← match applyEditsEvicting o.relations o.state (changes.map (·.edits)) with
-      | .ok d => pure d
+    let applied ← match applyEdits o.relations o.cells (changes.map (·.edits)) with
+      | .ok a => pure a
       | .error clause => throw { cls := clause, object := id }
-    let evictedKeys := evicted.toArray.filterMap fun (f, row) => do
+    let evictedKeys := applied.evicted.toArray.filterMap fun (f, row) => do
       let d ← o.relations.find? (·.field == f)
       let k ← (keyOf d row).toOption
       return Json.mkObj [("field", toJson f), ("key", dataJson k)]
     unless evictedKeys.isEmpty do evictions := evictions ++ [(id, evictedKeys)]
-    unless written.conformsUnder o.bounds o.stateType do throw { cls := "typeMismatch", object := id }
+    -- Checked by its changed cells: every row it left as it was conformed when it was written
+    -- (`Turn.Changes.checked`).
+    unless (applied.changes.checked applied.cells).conformsUnder o.bounds o.stateType do
+      throw { cls := "typeMismatch", object := id }
     -- A fixed field is set when the object is made and never after: no write changes it (a
     -- proposal's edits are not the kernel's, which refuses such a write at compile).
-    if let some f := movedFixed o.fixed o.state written then
+    if let some f := movedFixed o.fixed o.cells applied.cells then
       throw { cls := "lawRefused", clause := some "fixed", object := some id,
               reading := some s!"{f} is fixed; it is set when {id} is made and never after." }
-    if let some cell := Delvetalk.Turn.cellOverBound (cellDecls o.relations) written (editedFields changes) then
+    if let some cell := applied.changes.overBound applied.cells then
       throw (cellRefusal id cell)
     -- A reprogram replaces code and, through its migration, the state's type.
     let mut next := o
-    let mut state := written
+    let mut cells := applied.cells
     if let some (source, migration) := p.programs.lookup id then
       let refuse := fun (clause message : String) => ({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal)
       let extend := p.layered.contains id
       let prog ← match programFor w o source migration extend with
         | .ok prog => pure prog
         | .error (clause, message) => throw (refuse clause message)
+      let written := applied.cells.state
+      let mut state := written
       if let some m := prog.migration then
         match runMigration m written with
         | .ok value => state := value
         | .error e => throw (refuse "migration" e)
       unless state.conformsUnder prog.bounds prog.stateType do
         throw (refuse "migration" "the converted state does not conform to the new state type")
-      if let some cell := Delvetalk.Turn.cellOverBound (cellDecls prog.relations) state then
-        throw (cellRefusal id cell "programRefused")
       -- A fixed field stays fixed: new code must fix it too (codex host 5, docs 1).
       if let some f := o.fixed.find? (!prog.fixed.contains ·) then
         throw (refuse "fixed" s!"{f} is fixed; it is set when {id} is made and never after, so the new code must keep it fixed")
@@ -2489,9 +2570,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       state ← match canonicalState prog.relations state with
         | .ok s => pure s
         | .error e => throw (refuse "migration" s!"{e}: the converted state's relations are not canonical")
+      cells := Delvetalk.Turn.StateCells.of (cellDecls prog.relations) state
+      if let some cell := (Delvetalk.Turn.Changes.all cells).overBound cells then
+        throw (cellRefusal id cell "programRefused")
       -- No migration sets a fixed field: one fixed before, or one the new code fixes that the old
       -- state had, keeps the value it had, judged on the state as it will be held.
-      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) written state then
+      if let some f := movedFixed (prog.fixed.filter fun f => (Law.rawField f written).isSome) applied.cells cells then
         throw (refuse "fixed" s!"the migration sets {f}, which is fixed")
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
@@ -2534,13 +2618,14 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         throw { cls := "lawRefused", clause := some "lawReads", object := some id,
                 reading := some s!"the law of {id} cites {r}, which {subject} may not view." }
       let facts : Law.Facts := { subject, caller, height, turn := p.turn, pin := next.pin, kind, method,
-                                 verb := if verb.isEmpty then method else verb, evicted, clock := w.clock, object := id,
+                                 verb := if verb.isEmpty then method else verb, evicted := applied.evicted, clock := w.clock, object := id,
                                  reads := cited, wants := wantsCited w (lawNames o.law) }
       judgedBy := judgedBy ++ [facts]
       -- The metarule, widened (docs/ROOT.md §2.1): no law locks out the hand that opened the world.
       -- An amendment by the opener is the host's to admit; every other change is the law's.
       unless kind == 2 && openerAmends w subject do
-        if let some (clause, cited) := Law.refusal o.law facts (some o.state) state then
+        let names := o.law.flatMap (·.2.names)
+        if let some (clause, cited) := Law.refusal o.law facts (some (viewFor names o.cells)) (viewFor names cells) then
           throw { cls := "lawRefused", clause, object := id, reading := cited <|> o.readings.lookup clause }
     -- The Bend law, after the text admits: once for each write of edits (the object's own or a
     -- proposed one, its `kind` saying which), with its argument. A migration's state is the text
@@ -2551,7 +2636,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         if acc.any (·.1 == key) then acc else acc ++ [(key, c)]) []
       for (_, c) in seen do
         let subject := if c.via.isEmpty then p.principal else ((grantStands w c.via id c.method).map (·.grantor)).getD p.principal
-        if let some r := bendLaw w p id o state subject c.caller c.method c.argument c.kind next.pin then throw r
+        if let some r := bendLaw w p id o cells.state subject c.caller c.method c.argument c.kind next.pin then throw r
     if let some text := p.laws.lookup id then
       let refuse := fun (clause reading : String) => ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
       let law ← match parseLawText text with
@@ -2561,7 +2646,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       -- The opener's amendment needs no clause for itself: the host admits it whatever the law (`openerAmends`).
       if let some message := citationRefusal w id law then throw (refuse "under" ((message.drop "under: ".length).toString))
       unless openerAmends w p.principal do
-        if let some message := amendable law p.principal amender height p.turn next.pin state w.clock id (citedStates w law) then throw (refuse "amendable" message)
+        if let some message := amendable law p.principal amender height p.turn next.pin cells.state w.clock id (citedStates w law) then throw (refuse "amendable" message)
       -- A reading stays with its clause only while the amendment leaves that clause as it was.
       -- The amendment's own readings; a clause it leaves as it was without one keeps its reading.
       let given := ((parseLawTextReadings text).toOption.map (·.2)).getD []
@@ -2635,7 +2720,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- A placing (rule, want, verb, or one taken off) is not a state move: the version roots judge, and a
     -- suspended turn rooted on the thing, stay where they were.
     let moves := changes.any (·.kind != 4)
-    out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version, state })]
+    out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version, cells })]
     factsOf := factsOf ++ [(id, judgedBy)]
   return { updates := out, reprograms, amendments, evicted := evictions, facts := factsOf,
            creations := p.creates.map fun (id, c) => (id, c.object),
@@ -2839,18 +2924,33 @@ def lawIn (entry : Json) (id : String) : Option String :=
   | "forked" | "carried" => (genesisRow outcome id).bind (·.getObjValAs? String "law" |>.toOption)
   | _ => none
 
-/-- The state CID the entry names for `id` at `version`: a created seed's, a write's `cid`, a root
-    `set`'s, a store-installing genesis's `stateCid`; none when it names none. -/
-def stateCidIn (entry : Json) (id : String) (version : Nat) : Option String :=
+/-- How a journal names an object's state. From replay edition 10, the CID of its cells' block
+    (`Object.stateCid`), journaled as `cid` on every creation, write and root `set`, and as a genesis
+    row's `stateCid`; before it, the CID of the state's wire JSON, a creation named by its seed's. A
+    carry reads a world of an earlier edition by that edition's naming (`Naming.ofEdition`). -/
+structure Naming where
+  state : Object → String
+  seed : Json → Option String
+
+def Naming.cells : Naming := ⟨Object.stateCid, fun _ => none⟩
+
+def Naming.ofEdition (edition : Nat) : Naming :=
+  if edition < 10 then ⟨fun o => Journal.bodyHash (dataJson o.state), fun seed => some (Journal.bodyHash seed)⟩
+  else Naming.cells
+
+/-- The state CID the entry names for `id` at `version`: a creation's `cid` (an earlier edition's
+    seed's, by `naming`), a write's `cid`, a root `set`'s, a store-installing genesis's `stateCid`; none
+    when it names none. -/
+def stateCidIn (entry : Json) (id : String) (version : Nat) (naming : Naming := .cells) : Option String :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
   let named := (outcome.getObjValAs? String "object").toOption == some id
+  let created := fun (j : Json) => (j.getObjValAs? String "cid").toOption <|> ((j.getObjVal? "seed").toOption.bind naming.seed)
   match tagOf entry with
-  | "created" => if version == 0 && named then (outcome.getObjVal? "seed").toOption.map Journal.bodyHash else none
+  | "created" => if version == 0 && named then created outcome else none
   | "admitted" =>
     match ((rowsNaming outcome "writes" id).filter fun x => (x.getObjValAs? Nat "version").toOption == some version).back? with
     | some x => (x.getObjValAs? String "cid").toOption
-    | none => if version != 0 then none else
-      (rowsNaming outcome "creates" id).back?.bind fun c => (c.getObjVal? "seed").toOption.map Journal.bodyHash
+    | none => if version != 0 then none else (rowsNaming outcome "creates" id).back?.bind created
   | "root" =>
     if named && (outcome.getObjValAs? Nat "version").toOption == some version then (outcome.getObjValAs? String "cid").toOption else none
   | "forked" | "carried" => (genesisRow outcome id).bind (·.getObjValAs? String "stateCid" |>.toOption)
@@ -3114,9 +3214,7 @@ def deliveryId (principal intent : String) (ordinal : Nat) : String :=
     created). -/
 def childLedger (w : World) (ledger : Ledger) (used : Nat) (updates : List (String × Object))
     (writes : List (String × List Written)) : Ledger :=
-  let added := updates.foldl (fun n (id, o) => n + match w.objects[id]? with
-    | some before => cellBytes o.relations (some before.state) o.state ((writes.lookup id).map editedFields)
-    | none => cellBytes o.relations none o.state) 0
+  let added := updates.foldl (fun n (id, o) => n + chargedBytes w.objects[id]? o ((writes.lookup id).getD [])) 0
   ⟨ledger.depth - 1, ledger.work - used, ledger.storage - added⟩
 
 def ledgerOf (j : Json) : Except String Ledger := do
@@ -3207,15 +3305,17 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
     let rules := carriedRules before id o
     if rules.isEmpty then continue
     let reads := statesOf before (objectCitations before id o)
-    let wants := wantsCited before (rules.flatMap (·.clause.names))
+    let names := rules.flatMap (·.clause.names)
+    let wants := wantsCited before names
+    let (oldState, newState) := (viewFor names old.cells, viewFor names o.cells)
     for r in rules do
       let held := ((judged.facts.lookup id).getD []).find? fun f =>
-        !(Law.fires { f with reads, wants } (some old.state) o.state [r.clause]).isEmpty
+        !(Law.fires { f with reads, wants } (some oldState) newState [r.clause]).isEmpty
       let some f := held | continue
       let facts := { f with reads, wants }
       let refuse := fun (why : String) => Json.mkObj [("object", toJson id), ("rule", toJson r.clause.name),
         ("owner", toJson r.owner), ("why", toJson why)]
-      let text := (r.clause.modality.spell?).bind (Law.fill facts (some old.state) o.state)
+      let text := (r.clause.modality.spell?).bind (Law.fill facts (some oldState) newState)
       let quiet := ((before.quiets[r.owner]?).map fun q => decide (q.1 > before.clock)).getD false
       match text, text.bind (spellCard before r.owner) with
       | none, _ => unfired := unfired.push (refuse "hole")
@@ -3298,7 +3398,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
       let w := judged.creations.foldl (fun w (id, o) => noteMinted { w with objects := w.objects.insert id o } id) w
       let w := applyGrants w p.grants p.revokes p.spent
       let writes := Json.arr (updates.toArray.map fun (id, o) => Json.mkObj
-        (("object", toJson id) :: ("version", toJson o.version) :: ("cid", toJson (stateCid o.state)) ::
+        (("object", toJson id) :: ("version", toJson o.version) :: ("cid", toJson o.stateCid) ::
           writtenFields ((p.allWrites.lookup id).getD []) ++
           ((judged.evicted.lookup id).map (fun ks => [("evicted", Json.arr ks)])).getD []))
       let outcome := Json.mkObj ([("tag", toJson "admitted"), ("writes", writes)] ++
@@ -3378,7 +3478,8 @@ def makeObject (w : World) (b : Built) (inputs : Json) (state : Data) (read : Op
     (chain : Option Json := none) (creator : String := "") (height : Nat := 1)
     (lawText : Option String := none) : Except String (Object × String) := do
   unless state.conformsUnder b.assumptions.bounds b.ty do throw "seed does not conform to the package state type"
-  if let some cell := Delvetalk.Turn.cellOverBound (cellDecls b.relations) state then
+  let cells := Delvetalk.Turn.StateCells.of (cellDecls b.relations) state
+  if let some cell := (Delvetalk.Turn.Changes.all cells).overBound cells then
     throw ((cellRefusal "the seed" cell).reason.getD "")
   -- The pin is the source closure's CID; the compiled packet is only observed beside it.
   let packet ← b.artifact.getObjValAs? String "packetSha256"
@@ -3398,11 +3499,11 @@ def makeObject (w : World) (b : Built) (inputs : Json) (state : Data) (read : Op
   -- A package's rules and wants are placed on what is made of it, by its creator, when no text is given.
   let placed := if lawText.isSome then [] else b.lines.map fun c =>
     ({ name := c.name, owner := creator, since := height, line := c.render, clause := c } : Placed)
-  return ({ pin, law := laws, lawText := lawText.getD (renderLaw laws), version := 0, state, stateType := b.ty, readings,
+  return ({ pin, law := laws, lawText := lawText.getD (renderLaw laws), version := 0, cells, stateType := b.ty, readings,
             rules := placed.filter (Law.isRule ·.clause), wants := placed.filter (Law.isWant ·.clause),
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet,
-            fixed := fixedOf b.artifact, declares := declaresOf b.artifact }, sources)
+            relations := b.relations, fixed := fixedOf b.artifact, declares := declaresOf b.artifact }, sources)
 
 def cacheBuild (w : World) (inputs : Json) (b : Built) : World :=
   if w.builds.size < Limits.maxBuilds then { w with builds := w.builds.insert (buildKey inputs) b } else w
@@ -3412,9 +3513,9 @@ def buildObjectIn (w : World) (inputs seed : Json) (read : Option Json := none) 
     (creator : String := "") (height : Nat := 1) (lawText : Option String := none) :
     Except String (Object × String × World) := do
   let built ← compileObject w inputs
-  let (relations, state) ← relationsFor built (← decodeData Limits.dataDepth seed)
+  let (_, state) ← relationsFor built (← decodeData Limits.dataDepth seed)
   let (o, sources) ← makeObject w built inputs state read chain creator height lawText
-  return ({ o with relations }, sources, cacheBuild w inputs built)
+  return (o, sources, cacheBuild w inputs built)
 
 def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
     (creator : String := "") (height : Nat := 1) (lawText : Option String := none) : Except String (Object × String) := do
@@ -3423,7 +3524,7 @@ def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (c
 
 def createOutcome (id : String) (o : Object) (artifact seed : Json) : Json :=
   Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
-    ("compile", artifact), ("seed", seed)]
+    ("compile", artifact), ("seed", seed), ("cid", toJson o.stateCid)]
 
 /-- A seed (a `Data` payload) is a whole state, or a record naming some fields of it (the rest
     come from `initial()`), for `world-create` and the `create` Plan alike. -/
@@ -4052,13 +4153,13 @@ def applyRoot (w : World) (outcome : Json) : Except String World := do
     let some o := w.objects[id]? | throw s!"no object {id}"
     let version := (outcome.getObjValAs? Nat "version").toOption.getD (o.version + 1)
     match (outcome.getObjValAs? String "field").toOption.getD "" with
-    | "state" => return put { o with state := ← decodeData Limits.dataDepth after, version }
+    | "state" => return put { o.withState (← canonicalState o.relations (← decodeData Limits.dataDepth after)) with version }
     | "owner" =>
       let owner ← after.getStr?
       let state := match o.state with
         | .record fs => Data.record (if fs.any (·.1 == "owner") then replaceField fs "owner" (.label owner) else fs ++ [("owner", .label owner)])
         | d => d
-      return put { o with state, version }
+      return put { o.withState state with version }
     | "law" => withLaw o (← after.getStr?)
     | "program" =>
       let built ← compileObject w after
@@ -4292,6 +4393,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       throw s!"object {id} is not the source closure its pin names"
     if let .ok text := outcome.getObjValAs? String "lawText" then
       unless text == o.lawText do throw s!"object {id} is not made with the law its creation journaled"
+    unless (outcome.getObjValAs? String "cid").toOption == some o.stateCid do
+      throw s!"object {id} is not made at the state CID its creation journaled"
     let w := noteRecompiled w o
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
     return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]
@@ -4357,7 +4460,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         unless (← natField raw "version") == o.version do throw "write version out of sequence"
         -- The state an admitted write commits to (host7; earlier entries name none).
         if let some cid := (raw.getObjValAs? String "cid").toOption then
-          unless cid == stateCid o.state do throw s!"the state of {id} does not replay to the CID its write recorded"
+          unless cid == o.stateCid do throw s!"the state of {id} does not replay to the CID its write recorded"
       let entryLedger ← match entry.getObjVal? "ledger" with
         | .ok l => ledgerOf l
         | .error _ => pure Ledger.start
@@ -4453,7 +4556,7 @@ def view (w : World) (j : Json) : Except String Json := do
     write journaled before names none). -/
 def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.run do
   let some o := w.objects[id]? | return none
-  if o.version == version then return some (stateCid o.state)
+  if o.version == version then return some o.stateCid
   for i in (w.touched[id]?).getD #[] do
     let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -4462,7 +4565,7 @@ def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.r
     match tagOf entry with
     | "created" =>
       if version == 0 && named outcome then
-        if let .ok seed := outcome.getObjVal? "seed" then return some (Journal.bodyHash seed)
+        if let .ok cid := outcome.getObjValAs? String "cid" then return some cid
     | "admitted" =>
       for x in arr "writes" do
         if named x && (x.getObjValAs? Nat "version").toOption == some version then
@@ -4470,7 +4573,7 @@ def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.r
       if version == 0 then
         for c in arr "creates" do
           if named c then
-            if let .ok seed := c.getObjVal? "seed" then return some (Journal.bodyHash seed)
+            if let .ok cid := c.getObjValAs? String "cid" then return some cid
     | _ => pure ()
   return none
 
@@ -4483,13 +4586,19 @@ def stateAt (w : World) (id : String) (version : Nat) : Option Data := Id.run do
   let some o := w.objects[id]? | return none
   if version == o.version then return some o.state
   if version > o.version then return none
-  let mut state : Option Data := none
+  let decls := cellDecls o.relations
+  -- A seed is the state at version 0 when its cells are those the creation journaled (a seed may name
+  -- only some fields, the rest from `initial()`).
+  let seedOf := fun (j : Json) => do
+    let seed ← (decodeData Limits.dataDepth (← (j.getObjVal? "seed").toOption)).toOption
+    let cells := Delvetalk.Turn.StateCells.of decls (← (canonicalState o.relations seed).toOption)
+    if (j.getObjValAs? String "cid").toOption == some cells.cid then some cells else none
+  let mut state : Option Delvetalk.Turn.StateCells := none
   for i in (w.touched[id]?).getD #[] do
     let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let arr := fun (k : String) => ((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
     let named := fun (j : Json) => (j.getObjValAs? String "object").toOption == some id
-    let seedOf := fun (j : Json) => (j.getObjVal? "seed").toOption.bind fun s => (decodeData Limits.dataDepth s).toOption
     match tagOf entry with
     | "created" => if named outcome then state := seedOf outcome
     | "admitted" =>
@@ -4498,18 +4607,19 @@ def stateAt (w : World) (id : String) (version : Nat) : Option Data := Id.run do
       for x in arr "writes" do
         unless named x do continue
         let some v := (x.getObjValAs? Nat "version").toOption | return none
-        if v > version then return state
+        if v > version then return state.map (·.state)
         let some before := state | return none
-        let next? : Option Data := match (arr "reprograms").find? named with
-          | some r => (r.getObjVal? "result").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
+        let next? : Option Delvetalk.Turn.StateCells := match (arr "reprograms").find? named with
+          | some r => (r.getObjVal? "result").toOption.bind fun j =>
+            (decodeData Limits.dataDepth j).toOption.map (Delvetalk.Turn.StateCells.of decls)
           | none => ((x.getObjVal? "edits").toOption.bind (parseSteps · |>.toOption)).bind fun steps =>
-            (applyEdits o.relations before steps).toOption
+            (applyEdits o.relations before steps).toOption.map (·.cells)
         let some next := next? | return none
         if let .ok cid := x.getObjValAs? String "cid" then
-          if cid != stateCid next then return none
+          if cid != next.cid then return none
         state := some next
     | _ => pure ()
-    if version == 0 && state.isSome then return state
+    if version == 0 && state.isSome then return state.map (·.state)
   return none
 
 /-- `world-state-cid {principal, object, version}`: the CID of the object's state at that version, for
@@ -4976,12 +5086,12 @@ def slugTargets (w : World) (reader : String) : Array (String × String) := Id.r
     | "created" =>
       if seen (object outcome) then
         if let .ok p := outcome.getObjValAs? String "pin" then out := out.push (p, "pin")
-        if let .ok seed := outcome.getObjVal? "seed" then out := out.push (Journal.bodyHash seed, "state")
+        if let .ok cid := outcome.getObjValAs? String "cid" then out := out.push (cid, "state")
     | "admitted" =>
       for c in arr "creates" do
         if seen (object c) then
           if let .ok p := c.getObjValAs? String "pin" then out := out.push (p, "pin")
-          if let .ok seed := c.getObjVal? "seed" then out := out.push (Journal.bodyHash seed, "state")
+          if let .ok cid := c.getObjValAs? String "cid" then out := out.push (cid, "state")
       for r in arr "reprograms" do
         if seen (object r) then
           if let .ok p := r.getObjValAs? String "newPin" then out := out.push (p, "pin")

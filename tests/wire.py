@@ -130,3 +130,75 @@ def cid_of(value):
     """CIDv1, dag-cbor, sha2-256, base32 lower with the `b` prefix."""
     digest = hashlib.sha256(cbor(value)).digest()
     return "b" + base64.b32encode(bytes([1, 0x71, 0x12, 0x20]) + digest).decode().lower().rstrip("=")
+
+
+def cid_bytes(raw):
+    """The binary CID of DAG-CBOR bytes: version 1, dag-cbor, sha2-256."""
+    return bytes([1, 0x71, 0x12, 0x20]) + hashlib.sha256(raw).digest()
+
+
+def data_cbor(d):
+    """The canonical DAG-CBOR of Data on the wire (Canonical.lean): a natural an integer (a byte string past
+    2^64), a label text, a list an array, a record a map (sorted keys, the first of a repeated name kept), a
+    variant a one-key map."""
+    tag = d["tag"]
+    if tag == "natural":
+        n = int(d["value"])
+        if n < 1 << 64:
+            return cbor_head(0, n)
+        raw = n.to_bytes((n.bit_length() + 7) // 8, "big")
+        return cbor_head(2, len(raw)) + raw
+    if tag == "boolean":
+        return b"\xf5" if d["value"] else b"\xf4"
+    if tag == "label":
+        return cbor(d["value"])
+    if tag == "list":
+        return cbor_head(4, len(d["items"])) + b"".join(data_cbor(i) for i in d["items"])
+    if tag == "variant":
+        return cbor_head(5, 1) + cbor(d["label"]) + data_cbor(d["payload"])
+    first = {}
+    for f in d["fields"]:
+        first.setdefault(f["name"], f["value"])
+    keys = sorted(first, key=lambda k: (len(k.encode()), k.encode()))
+    return cbor_head(5, len(keys)) + b"".join(cbor(k) + data_cbor(first[k]) for k in keys)
+
+
+def link(cid):
+    """A DAG-CBOR link: tag 42 over the binary CID with its identity-multibase prefix."""
+    return b"\xd8\x2a" + cbor_head(2, len(cid) + 1) + b"\x00" + cid
+
+
+def chunk_links(items):
+    """A relation's rows as the state's block links them (Turn.StateCells): runs of rows in key order, each
+    ending at a row whose CID's last byte is below 4 or at the last row, each run an array of its rows'
+    links; the links of the runs' blocks."""
+    out, run = [], []
+    for row in items:
+        cid = cid_bytes(data_cbor(row))
+        run.append(link(cid))
+        if cid[-1] < 4:
+            out.append(link(cid_bytes(cbor_head(4, len(run)) + b"".join(run))))
+            run = []
+    if run:
+        out.append(link(cid_bytes(cbor_head(4, len(run)) + b"".join(run))))
+    return out
+
+
+def state_cid(state, relations=()):
+    """An object's state CID (Turn.StateCells): the CID of its block, the state's canonical DAG-CBOR with each
+    relation field in `relations` written `{rows: {items: [links]}}`, linking the chunks of its rows in the
+    order the host holds them (key order)."""
+    first = {}
+    for f in state["fields"]:
+        first.setdefault(f["name"], f["value"])
+    keys = sorted(first, key=lambda k: (len(k.encode()), k.encode()))
+    out = cbor_head(5, len(keys))
+    for k in keys:
+        out += cbor(k)
+        if k in relations:
+            chunks = chunk_links(rows(first[k]))
+            out += cbor_head(5, 1) + cbor("rows") + cbor_head(5, 1) + cbor("items") + cbor_head(4, len(chunks))
+            out += b"".join(chunks)
+        else:
+            out += data_cbor(first[k])
+    return "b" + base64.b32encode(cid_bytes(out)).decode().lower().rstrip("=")

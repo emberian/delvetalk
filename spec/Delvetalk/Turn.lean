@@ -15,6 +15,7 @@ import Theory.ObjectiveBendDemandCollect
 import Theory.ObjectiveBendDemandSettleProofs
 import Theory.ObjectiveBendDemandCollectProofs
 import Theory.ObjectiveBendDataConformance
+import Theory.ObjectiveBendCellConformance
 import Delvetalk.Limits
 import Delvetalk.Canonical
 import Delvetalk.Profile
@@ -472,24 +473,52 @@ structure Read where
   key : Data
   bytes : Nat
 
-/-- A segment's reads: the rows it forced and, per stored field, how far into its key order it
-looked (`storedReach`: a spine forced, a lookup's answer, a count; `n + 1` is the whole key set). -/
+/-- A segment's reads of its stored relations, as the host judges them (WHOLENESS §3a): the rows it
+forced; per field, the prefix of the key order a walk or a count observed (`spans`: through position
+`reach - 1`, `n + 1` the whole key set: a spine forced at `j` reaches `j + 1`, a count `n + 1`); the
+keys a lookup found (`found`, the row forced or not); and the gaps a lookup that missed observed
+(`gaps`: no key between the keys at `position - 1` and `position`, none past either end). A lookup
+reads its answer, not the prefix below it, and its probes read nothing: where the sought key falls
+decides it. -/
 structure Reads where
   rows : List Read
   spans : List (String × Nat)
+  found : List (String × Data) := []
+  gaps : List (String × Option Data × Option Data) := []
 
 def Store.readsOf (store : Store) (state : State) : Reads :=
+  let keyAt := fun (field : String) (position : Nat) => do
+    let relation ← store.relations.find? (·.field == field)
+    return keyProjection relation.key (← store.fetch field position)
+  let reached := fun (reach : List (String × Nat)) (field : String) (here : Nat) =>
+    match reach.lookup field with
+    | some r => if here > r then (field, here) :: reach.filter (·.1 != field) else reach
+    | none => (field, here) :: reach
+  let (spans, found, gaps) := state.heap.foldl (fun (spans, found, gaps) cell => match cell with
+    | .stored (.spine field position _) (some _) => (reached spans field (position + 1), found, gaps)
+    | .stored (.size field size) _ => (reached spans field (size + 1), found, gaps)
+    | .stored (.found field position) _ => match keyAt field position with
+      | some key => (spans, found ++ [(field, key)], gaps)
+      | none => (reached spans field (position + 1), found, gaps)
+    | .stored (.absent field position) _ =>
+      (spans, found, gaps ++ [(field, if position == 0 then none else keyAt field (position - 1), keyAt field position)])
+    | _ => (spans, found, gaps)) ([], [], [])
   { rows := (forcedRows state).filterMap fun (field, position) => do
       let relation ← store.relations.find? (·.field == field)
       let row ← store.fetch field position
       return ⟨field, keyProjection relation.key row, row.canonicalBytes⟩
-    spans := storedReach state }
+    spans, found, gaps }
 
 def Reads.toJson (r : Reads) : Json :=
-  Json.mkObj [("rows", Json.arr (r.rows.map fun read => Json.mkObj [("field", Lean.toJson read.field),
+  let key := fun (name : String) (k : Option Data) => (k.map fun k => [(name, dataJson k)]).getD []
+  Json.mkObj <| [("rows", Json.arr (r.rows.map fun read => Json.mkObj [("field", Lean.toJson read.field),
       ("key", dataJson read.key), ("bytes", Lean.toJson read.bytes)]).toArray),
     ("spans", Json.arr (r.spans.map fun (field, reach) =>
-      Json.mkObj [("field", Lean.toJson field), ("reach", Lean.toJson reach)]).toArray)]
+      Json.mkObj [("field", Lean.toJson field), ("reach", Lean.toJson reach)]).toArray)] ++
+    (if r.found.isEmpty then [] else
+      [("found", Json.arr (r.found.map fun (field, k) => Json.mkObj [("field", Lean.toJson field), ("key", dataJson k)]).toArray)]) ++
+    (if r.gaps.isEmpty then [] else [("gaps", Json.arr (r.gaps.map fun (field, after, before) =>
+      Json.mkObj ([("field", Lean.toJson field)] ++ key "after" after ++ key "before" before)).toArray)])
 
 /-- The state with its stored relations emptied (`rows {items: []}`): what the kernel checks
 of a stored state, and the scalar part the host bounds by `Bounds.maxCellBytes`. -/
@@ -499,12 +528,16 @@ def scalarPart (stored : List String) : Data → Data
       else (name, value))
   | state => state
 
-/-! ### The per-cell bound (KERNEL-HANDOFF §15, step 4)
+/-! ### The state as cells (KERNEL-HANDOFF §15)
 
-A state is bounded per cell: its scalar part (`scalarPart`) and each row of a stored relation are
-at most `Bounds.maxCellBytes` canonical bytes. A write pays the canonical bytes of the cells it
-changes: the scalar part when a scalar field changed, and each row whose key is new or whose row
-changed. The host calls these at write (the bound, the storage ledger). -/
+The host holds an object's state as its cells: the scalar part (`scalarPart`) and, for each
+declared relation, its rows in key order, each with its key's canonical bytes and its own block's
+size and CID. A write changes cells; the whole state is made from them only when something reads it
+whole (`StateCells.whole`). The state's block is the scalar part's canonical encoding with each
+relation's `items` the CID links (DAG-CBOR tag 42) of its chunks, runs of rows whose ends depend on
+the rows alone, and the state's CID that block's: a write of one row encodes and hashes that row, its
+chunk and the state's block. A changed cell is checked, bounded by `Bounds.maxCellBytes` and charged
+its canonical bytes (`Changes`). -/
 
 /-- The rows of a stored relation field of a state record (`rows {items}`), or none. -/
 def relationRows (state : Data) (field : String) : Array Data :=
@@ -514,45 +547,250 @@ def relationRows (state : Data) (field : String) : Array Data :=
     | _ => #[]
   | _ => #[]
 
-/-- The first cell of `state` past the cell bound: `"scalar"` for its scalar part, else the
-relation field and the key of a row (of the relations named in `rows`, by default all: a write
-names those it edited); none when every cell fits. -/
-def cellOverBound (relations : List (String × List String)) (state : Data)
-    (rows : List String := relations.map (·.1)) : Option (String × Data) :=
-  let stored := relations.map (·.1)
-  if (Canonical.encode (scalarPart stored state)).size > Bounds.maxCellBytes then some ("scalar", .record [])
-  else (relations.filter (rows.contains ·.1)).findSome? fun (field, key) =>
-    (relationRows state field).findSome? fun row =>
-      if (Canonical.encode row).size > Bounds.maxCellBytes then some (field, keyProjection key row) else none
+/-- A row as the host holds it: the row, its key projection's canonical bytes (its place in the
+relation's order), and its block's size and binary CID. -/
+structure RowCell where
+  row : Data
+  key : ByteArray
+  bytes : Nat
+  cid : ByteArray
 
-/-- The canonical bytes a write from `before` to `after` changes: the scalar part's when a scalar
-field differs, plus each row of `after` whose key is new or whose row differs (in the relations
-named in `rows`, by default all: a write names those it edited, the rest being unchanged). -/
-def changedCellBytes (relations : List (String × List String)) (before after : Data)
-    (rows : List String := relations.map (·.1)) : Nat :=
-  let stored := relations.map (·.1)
-  let scalar := Canonical.encode (scalarPart stored after)
-  let scalarBytes := if scalar == Canonical.encode (scalarPart stored before) then 0 else scalar.size
-  -- A row is unchanged when the same bytes stood before: its key is a projection of them.
-  (relations.filter (rows.contains ·.1)).foldl (fun total (field, _) =>
-    let old : Std.HashSet ByteArray := (relationRows before field).foldl (fun s row => s.insert (Canonical.encode row)) {}
-    (relationRows after field).foldl (fun total row =>
-      let bytes := Canonical.encode row
-      if old.contains bytes then total else total + bytes.size) total) scalarBytes
+instance : Inhabited RowCell := ⟨{ row := .record [], key := .empty, bytes := 0, cid := .empty }⟩
 
--- A changed scalar pays the scalar part; an inserted row pays its bytes; an unchanged row nothing.
+def RowCell.of (key : List String) (row : Data) : RowCell :=
+  let block := Canonical.encode row
+  { row, key := Canonical.encode (keyProjection key row), bytes := block.size, cid := Canonical.cidBytes block }
+
+/-- A CID link: tag 42 over the binary CID with its multibase identity prefix. -/
+def link (out : ByteArray) (cid : ByteArray) : ByteArray :=
+  ((Canonical.head (Canonical.head out 6 42) 2 (cid.size + 1)).push 0).append cid
+
+/-- A row ends a chunk when its CID's last byte is below 4 (about one row in 64). Chunk boundaries
+depend only on the rows, so an edit re-forms only the chunks it falls in. -/
+def RowCell.ends (c : RowCell) : Bool := c.cid.get! (c.cid.size - 1) < 4
+
+/-- A run of a relation's rows in key order, ending at a row that `ends` or at the last row: the
+position after its last row, and the binary CID of its block (the array of its rows' links). -/
+structure Chunk where
+  stop : Nat
+  cid : ByteArray
+  deriving Inhabited
+
+def chunkOf (rows : Array RowCell) (start stop : Nat) : Chunk :=
+  let out := Canonical.head (ByteArray.emptyWithCapacity (3 + 41 * (stop - start))) 4 (stop - start)
+  { stop, cid := Canonical.cidBytes ((rows.extract start stop).foldl (fun out c => link out c.cid) out) }
+
+/-- The chunks of `rows` from `start` (where a chunk starts) to the end, after `before`; with
+`reuse`, the first re-formed chunk past position `past` that ends where a chunk of `reuse` ended
+(`shift` rows earlier) is followed by the rest of `reuse`, shifted. -/
+def chunksFrom (rows : Array RowCell) (start : Nat) (before : Array Chunk)
+    (reuse : Array Chunk := #[]) (past : Nat := 0) (shift : Int := 0) : Array Chunk := Id.run do
+  let mut out := before
+  let mut first := start
+  for position in [start:rows.size] do
+    if rows[position]!.ends || position + 1 == rows.size then
+      out := out.push (chunkOf rows first (position + 1))
+      first := position + 1
+      if position + 1 > past then
+        if let some j := reuse.findIdx? fun c => (c.stop : Int) + shift == position + 1 then
+          return out ++ (reuse.extract (j + 1) reuse.size).map fun c => { c with stop := ((c.stop : Int) + shift).toNat }
+  return out
+
+/-- A declared relation's rows in key order (strictly increasing `key` bytes), and their chunks. -/
+structure RelationCells where
+  field : String
+  key : List String
+  rows : Array RowCell
+  chunks : Array Chunk
+
+def RelationCells.of (field : String) (key : List String) (rows : Array RowCell) : RelationCells :=
+  { field, key, rows, chunks := chunksFrom rows 0 #[] }
+
+/-- `r` with `rows`, the result of an edit at `position` that left `shift` more rows: the chunks
+before the one holding `position` are kept, and those after the first re-formed chunk past it that
+ends where one did. -/
+def RelationCells.edited (r : RelationCells) (rows : Array RowCell) (position : Nat) (shift : Int) : RelationCells :=
+  let i := (r.chunks.findIdx? (·.stop > position)).getD (r.chunks.size - 1)
+  let start := if i == 0 then 0 else r.chunks[i - 1]!.stop
+  { r with rows, chunks := chunksFrom rows start (r.chunks.extract 0 i) (r.chunks.extract i r.chunks.size) position shift }
+
+def RelationCells.insertAt (r : RelationCells) (position : Nat) (c : RowCell) : RelationCells :=
+  r.edited (r.rows.insertIdx! position c) position 1
+
+def RelationCells.setAt (r : RelationCells) (position : Nat) (c : RowCell) : RelationCells :=
+  r.edited (r.rows.set! position c) position 0
+
+def RelationCells.eraseAt (r : RelationCells) (position : Nat) : RelationCells :=
+  r.edited (r.rows.eraseIdx! position) position (-1)
+
+/-- The first position whose key is not below `key`: where a row of that key is, or would go. -/
+def RelationCells.position (r : RelationCells) (key : ByteArray) : Nat :=
+  go 0 r.rows.size
+where
+  go (low high : Nat) : Nat :=
+    if low < high then
+      let middle := (low + high) / 2
+      if Canonical.bytesLt r.rows[middle]!.key key then go (middle + 1) high else go low middle
+    else low
+  termination_by high - low
+
+/-- The row of that key, with its position. -/
+def RelationCells.find? (r : RelationCells) (key : ByteArray) : Option (Nat × RowCell) :=
+  let i := r.position key
+  match r.rows[i]? with
+  | some c => if c.key == key then some (i, c) else none
+  | none => none
+
+/-- The relation value rows make: `rows {items: [...]}`. -/
+def relationValue (rows : Array RowCell) : Data :=
+  .variant "rows" (.record [("items", listData (rows.map (·.row)))])
+
+/-- The state's block: the scalar part's canonical encoding (`Canonical.writeData`), each relation
+field's value `rows {items}` holding the links of its chunks in key order, each chunk the array of
+its rows' links. -/
+def stateBlock (scalar : Data) (relations : List RelationCells) : ByteArray :=
+  match scalar with
+  | .record fields =>
+    let sorted := Canonical.sortedUnique fields
+    sorted.foldl (fun out (name, value) =>
+      let out := Canonical.text out name
+      match relations.find? (·.field == name) with
+      | some r =>
+        let out := Canonical.text (Canonical.head (Canonical.text (Canonical.head out 5 1) "rows") 5 1) "items"
+        r.chunks.foldl (fun out c => link out c.cid) (Canonical.head out 4 r.chunks.size)
+      | none => Canonical.writeData out value)
+      (Canonical.head (ByteArray.emptyWithCapacity (64 + relations.foldl (fun n r => n + 41 * r.chunks.size) 0)) 5 sorted.length)
+  | other => Canonical.encode other
+
+/-- The whole state the cells make. -/
+def wholeOf (scalar : Data) (relations : List (String × Array RowCell)) : Data :=
+  match scalar with
+  | .record fields => .record (fields.map fun (name, value) =>
+      match relations.lookup name with
+      | some rows => (name, relationValue rows)
+      | none => (name, value))
+  | other => other
+
+/-- An object's state as its cells: the scalar part, its relations (in declaration order), the
+state's CID, and the whole state, made from the cells when it is first read. -/
+structure StateCells where
+  scalar : Data
+  relations : List RelationCells
+  cid : String
+  whole : Thunk Data
+
+def StateCells.make (scalar : Data) (relations : List RelationCells) : StateCells :=
+  { scalar, relations, cid := Canonical.cid (stateBlock scalar relations),
+    whole := Thunk.mk fun _ => wholeOf scalar (relations.map fun r => (r.field, r.rows)) }
+
+/-- A state's cells under `relations` (`[(field, key)]`); its rows are read in the order they stand,
+which the host keeps the key order. -/
+def StateCells.of (relations : List (String × List String)) (state : Data) : StateCells :=
+  let cells := relations.map fun (field, key) => RelationCells.of field key ((relationRows state field).map (RowCell.of key))
+  { StateCells.make (scalarPart (relations.map (·.1)) state) cells with whole := Thunk.pure state }
+
+def StateCells.state (c : StateCells) : Data := c.whole.get
+
+def StateCells.relation? (c : StateCells) (field : String) : Option RelationCells :=
+  c.relations.find? (·.field == field)
+
+/-- The store a stored turn of this state fetches from: each relation's rows by position. -/
+def StateCells.store (c : StateCells) : Store :=
+  { relations := c.relations.map fun r => { field := r.field, size := r.rows.size, key := r.key }
+    fetch := fun field position => (c.relation? field).bind fun r => r.rows[position]?.map (·.row) }
+
+/-- The cells a write changed: the scalar part when it changed, and each row it put whose key is new
+or whose row is (`Changes.of`). -/
+structure Changes where
+  scalar : Bool
+  rows : List (String × RowCell)
+
+/-- What `after` changed of `before` among the rows `put` (the rows a write inserted, upserted or set,
+by field): those `after` holds and `before` did not, each once, and the scalar part if its bytes
+moved. -/
+def Changes.of (before after : StateCells) (put : List (String × RowCell)) : Changes :=
+  let held := fun (c : StateCells) (field : String) (row : RowCell) =>
+    ((c.relation? field).bind (·.find? row.key)).any (·.2.cid == row.cid)
+  let rows := put.foldl (fun acc (field, row) =>
+    if held after field row && !held before field row && !acc.any (fun (f, r) => f == field && r.key == row.key)
+    then acc ++ [(field, row)] else acc) []
+  { scalar := Canonical.encode before.scalar != Canonical.encode after.scalar, rows }
+
+/-- Every cell of a state: what a created object pays. -/
+def Changes.all (c : StateCells) : Changes :=
+  { scalar := true, rows := c.relations.flatMap fun r => r.rows.toList.map (r.field, ·) }
+
+/-- The canonical bytes a write pays: the scalar part's when it changed, and each changed row's. -/
+def Changes.bytes (changes : Changes) (after : StateCells) : Nat :=
+  (if changes.scalar then (Canonical.encode after.scalar).size else 0) +
+    changes.rows.foldl (fun n (_, row) => n + row.bytes) 0
+
+/-- The first changed cell past the cell bound: `"scalar"` for the scalar part, else the relation
+field and the key projection of a row; none when every changed cell fits. -/
+def Changes.overBound (changes : Changes) (after : StateCells) : Option (String × Data) :=
+  if changes.scalar && (Canonical.encode after.scalar).size > Bounds.maxCellBytes then some ("scalar", .record [])
+  else changes.rows.findSome? fun (field, row) =>
+    if row.bytes > Bounds.maxCellBytes then
+      (after.relation? field).map fun r => (field, keyProjection r.key row.row)
+    else none
+
+/-- The list `listData` makes is the chain the conformance theorems speak of. -/
+theorem listData_chain (items : Array Data) :
+    listData items = Delvetalk.Theory.ObjectiveBendCellConformance.chain items.toList := by
+  unfold listData
+  rw [← Array.foldr_toList]
+  generalize items.toList = l
+  induction l with
+  | nil => rfl
+  | cons x xs ih => simp [List.foldr, ih, Delvetalk.Theory.ObjectiveBendCellConformance.chain]
+
+#assert_axioms listData_chain
+
+/-- The state the changed cells alone make: the scalar part with each relation holding only its
+changed rows. When every row a write left as it was conformed, the state after it conforms exactly
+when this does (`listData_chain` with `Theory.ObjectiveBendCellConformance`: `field_typed_iff` per
+relation field, `relation_typed_iff` per row, for a relation the host declares only over a genuine
+`Relation<T>`), so a write is checked on this. -/
+def Changes.checked (changes : Changes) (after : StateCells) : Data :=
+  wholeOf after.scalar (after.relations.map fun r => (r.field, (changes.rows.filter (·.1 == r.field)).toArray.map (·.2)))
+
+-- The block of a state without relations is its canonical encoding; a relation's items are links,
+-- one per row in key order; a changed scalar pays the scalar part, an inserted or replaced row its
+-- bytes, an unchanged row nothing; a row past the bound is named by its key.
 #guard
   let row := fun (n : Nat) (t : String) => Data.record [("n", .natural n), ("text", .label t)]
-  let rel := fun (rows : List Data) => Data.variant "rows" (.record [("items", rows.foldr
-    (fun r tail => .variant "cons" (.record [("head", r), ("tail", tail)])) (.variant "nil" (.record [])))])
-  let s := fun (count : Nat) (rows : List Data) => Data.record [("count", .natural count), ("rains", rel rows)]
+  let s := fun (count : Nat) (rows : List Data) =>
+    Data.record [("count", .natural count), ("rains", .variant "rows" (.record [("items", listData rows.toArray)]))]
   let decl := [("rains", ["n"])]
-  changedCellBytes decl (s 1 [row 0 "a"]) (s 1 [row 0 "a"]) == 0 &&
-  changedCellBytes decl (s 1 [row 0 "a"]) (s 1 [row 0 "a", row 1 "b"]) == (Canonical.encode (row 1 "b")).size &&
-  changedCellBytes decl (s 1 [row 0 "a"]) (s 1 [row 0 "z"]) == (Canonical.encode (row 0 "z")).size &&
-  changedCellBytes decl (s 1 [row 0 "a"]) (s 2 [row 0 "a"]) == (Canonical.encode (scalarPart ["rains"] (s 2 []))).size &&
-  (cellOverBound decl (s 1 [row 0 "a"])).isNone &&
-  (cellOverBound decl (s 1 [row 0 (String.mk (List.replicate 262144 (Char.ofNat 120)))])).map (·.1) == some "rains"
+  let c := fun (count : Nat) (rows : List Data) => StateCells.of decl (s count rows)
+  let changed := fun (a b : StateCells) => Changes.of a b (b.relations.flatMap fun r => r.rows.toList.map (r.field, ·))
+  (StateCells.of [] (s 1 [row 0 "a"])).cid == Canonical.cidOf (s 1 [row 0 "a"]) &&
+  (let expected := Canonical.text (Canonical.natural (Canonical.text (Canonical.head .empty 5 2) "count") 1) "rains"
+   let expected := Canonical.head (Canonical.text (Canonical.head (Canonical.text (Canonical.head expected 5 1) "rows") 5 1) "items") 4 1
+   let chunk := Canonical.cidBytes (link (Canonical.head .empty 4 1) (Canonical.cidBytes (Canonical.encode (row 0 "a"))))
+   (c 1 [row 0 "a"]).cid == Canonical.cid (link expected chunk)) &&
+  (changed (c 1 [row 0 "a"]) (c 1 [row 0 "a"])).bytes (c 1 [row 0 "a"]) == 0 &&
+  (changed (c 1 [row 0 "a"]) (c 1 [row 0 "a", row 1 "b"])).bytes (c 1 []) == (Canonical.encode (row 1 "b")).size &&
+  (changed (c 1 [row 0 "a"]) (c 1 [row 0 "z"])).bytes (c 1 []) == (Canonical.encode (row 0 "z")).size &&
+  (changed (c 1 [row 0 "a"]) (c 2 [row 0 "a"])).bytes (c 2 [row 0 "a"]) == (Canonical.encode (scalarPart ["rains"] (s 2 []))).size &&
+  ((Changes.all (c 1 [row 0 "a"])).overBound (c 1 [row 0 "a"])).isNone &&
+  (let big := c 1 [row 0 (String.ofList (List.replicate 262144 (Char.ofNat 120)))]
+   ((Changes.all big).overBound big).map (·.1) == some "rains") &&
+  ((c 1 [row 0 "a", row 1 "b"]).relation? "rains").map (fun r => (r.find? (Canonical.encode (Data.record [("n", .natural 1)]))).map (·.1)) == some (some 1)
+
+-- An edit re-forms only the chunks it falls in, and the chunks it keeps are those a fresh chunking
+-- of the rows after it makes: inserts, replacements and erasures at the front, inside, at a chunk's
+-- end and at the end of 400 rows (about six chunks).
+#guard
+  let cell := fun (n : Nat) (t : String) => RowCell.of ["n"] (Data.record [("n", .natural n), ("text", .label t)])
+  let r := RelationCells.of "rains" ["n"] ((List.range 400).toArray.map fun i => cell (2 * i) "t")
+  let same := fun (a : RelationCells) =>
+    a.chunks.map (fun c => (c.stop, c.cid)) == (RelationCells.of a.field a.key a.rows).chunks.map (fun c => (c.stop, c.cid))
+  let ends := r.chunks.map (·.stop)
+  r.chunks.size > 2 &&
+  ([0, 1, 57, 199, 398, 399] ++ ends.toList.map (· - 1)).all fun p =>
+    same (r.insertAt p (cell (2 * p + 1) "new")) && same (r.setAt p (cell (2 * p) "changed")) && same (r.eraseAt p) &&
+    same (r.insertAt 400 (cell 9999 "last")) && same ((r.eraseAt p).eraseAt 0)
 
 /-- The machine state a stored turn starts from, with its activity shape: `entry` applied to
 the state (one stored object cell at address 0) and the remaining arguments natively. -/

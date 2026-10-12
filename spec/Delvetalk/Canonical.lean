@@ -60,6 +60,21 @@ points, so for keys of one byte length the bytewise order is `String`'s. -/
 def keyLess (a b : String) : Bool :=
   if a.utf8ByteSize != b.utf8ByteSize then a.utf8ByteSize < b.utf8ByteSize else a < b
 
+/-- Bytewise order, a proper prefix first: the order of canonical encodings, and so of a relation's
+keys (RELATIONAL §2). -/
+def bytesLt (a b : ByteArray) : Bool := go 0
+where
+  go (i : Nat) : Bool :=
+    if h : i < a.size ∧ i < b.size then
+      let x := a[i]'h.1
+      let y := b[i]'h.2
+      if x == y then go (i + 1) else x < y
+    else a.size < b.size
+  termination_by a.size - i
+
+#guard bytesLt ⟨#[1, 2]⟩ ⟨#[1, 3]⟩ && bytesLt ⟨#[1]⟩ ⟨#[1, 0]⟩ && !bytesLt ⟨#[1, 0]⟩ ⟨#[1]⟩ &&
+  !bytesLt ⟨#[2]⟩ ⟨#[1, 9]⟩ && !bytesLt ⟨#[1, 2]⟩ ⟨#[1, 2]⟩
+
 /-- Entries sorted into canonical order; a repeated key keeps its first value. -/
 def sortedUnique {α : Type} (entries : List (String × α)) : List (String × α) :=
   let unique := entries.foldl (fun acc (k, v) => if acc.any (·.1 == k) then acc else acc ++ [(k, v)]) []

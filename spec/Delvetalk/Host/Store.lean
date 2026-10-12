@@ -37,8 +37,11 @@ def cardShownChars : Nat := 1400
     (a card's own refusal is the class `cardRefused`, its reason a term: checkpoint term tag 26 and the
     packets of every refusing program changed shape); 9: host22 (rules and wants placed on things as
     kind-4 changes, rules fired and wants posed at commit, journaled `placed`, `fired`, `unfired`,
-    `wanted`, `unwanted` and re-derived; `request.verb` from `act`; the last bump the overhaul plans). -/
-def replayEdition : Nat := 9
+    `wanted`, `unwanted` and re-derived; `request.verb` from `act`; the last bump the overhaul plans);
+    10: kernel18 (a state is named by its cells: `cid` is the CID of the scalar part's canonical block
+    with each relation's rows as links (`Turn.StateCells`), journaled on creations too; a write is
+    checked, bounded and charged by the cells it changes). -/
+def replayEdition : Nat := 10
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -337,7 +340,9 @@ structure Object where
   /-- The law as text, the form it is amended in; `law` is its parse. -/
   lawText : String := ""
   version : Nat
-  state : Data
+  /-- Its state as cells (`Turn.StateCells`): the scalar part and each declared relation's rows in
+      key order, with the state's CID; `state` is the whole value they make. -/
+  cells : Delvetalk.Turn.StateCells
   /-- The entry definition's type: a closed record of first-order data. -/
   stateType : Ty
   bounds : DataBounds := []
@@ -382,6 +387,19 @@ structure Object where
   /-- The verbs hands grew on it (`grow`), in the order grown: its spells after the forms its package
       declares, each run by its `act`. -/
   verbs : List Verb := []
+
+/-- The object's whole state, made from its cells when first read. -/
+def Object.state (o : Object) : Data := o.cells.state
+
+/-- The relations as the cells take them: `[(field, key)]`. -/
+def cellDecls (decls : List RelDecl) : List (String × List String) := decls.map fun d => (d.field, d.key)
+
+/-- `o` holding `state` (in canonical form under `o.relations`), its cells read from it whole. -/
+def Object.withState (o : Object) (state : Data) : Object :=
+  { o with cells := Delvetalk.Turn.StateCells.of (cellDecls o.relations) state }
+
+/-- The CID of the object's state (`Turn.StateCells`): the journal names a version by it. -/
+def Object.stateCid (o : Object) : String := o.cells.cid
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/

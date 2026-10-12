@@ -104,10 +104,12 @@ def reader(row, opener):
     return owner
 
 
-def check(obend, old_journal, new_journal, moved=()):
+def check(obend, old_journal, new_journal, moved=(), renamed=()):
     """The carried world against the snapshot it was carried from, in a throwaway copy: {objects, rendered, receipts,
-    turn, problems}. An object the carry moved to the image's packages (`moved`) is at its migrated state."""
-    after = {m['object']: m['after'] for m in moved}
+    turn, problems}. An object the carry moved to the image's packages (`moved`) is at its migrated state; one whose
+    state the new edition names otherwise (`renamed`) at the same state under its new name."""
+    after = {m['object']: m['after'] for m in renamed}
+    after.update({m['object']: m['after'] for m in moved})
     links = journal.links(old_journal)
     body = journal.snapshot(dict(journal.snapshots(old_journal))[len(links)])
     opener = (body.get('settings') or {}).get('opener') or ''
@@ -209,7 +211,7 @@ def command(a, out):
     failed = False
     for w in names:
         r = carried[w]
-        checked = check(obend, str(old / f'{w}.journal'), str(new / f'{w}.journal'), r['moved'])
+        checked = check(obend, str(old / f'{w}.journal'), str(new / f'{w}.journal'), r['moved'], r.get('renamed', []))
         failed = failed or bool(checked['problems'])
         out.write(json.dumps({'world': w, 'slug': r['slug'], 'hash': r['hash'], 'height': r['carriedFrom']['height'],
                               'replay': [r['carriedFrom']['replay'], r['replay']], 'library': r['library'], 'objects': r['objects'], 'left': r['left'],

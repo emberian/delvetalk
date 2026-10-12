@@ -674,7 +674,7 @@ def executeDataEntryStored (entry : Delvetalk.CheckedEntry) (arguments : Array D
   let argumentBytes := 2 + admitted.foldl (fun n value => n + dataJsonBytes value) 0 + (admitted.size - 1)
   let (execution, ended) ← executePreparedNativeFrom
     (PackageData.prepareNativeChecked entry.source entry.checked entry.fuel admitted) argumentBytes limits (some store)
-  return (execution, (ended.map store.readsOf).getD ⟨[], []⟩)
+  return (execution, (ended.map store.readsOf).getD { rows := [], spans := [] })
 
 /-- `run` with `stored: [{field, key}]`: the first argument's named relations held as stored
 cells over its own rows; the reply carries `reads`. -/

@@ -129,12 +129,6 @@ partial def rowsOf : Data → Option (List Data)
     return head :: (← rowsOf (← f.lookup "tail"))
   | _ => none
 
-/-- Byte order of canonical encodings: the order `canonicalRows` sorts keys in. -/
-def bytesLt (a b : ByteArray) : Bool := Id.run do
-  for i in [0:min a.size b.size] do
-    if a[i]! != b[i]! then return a[i]! < b[i]!
-  return a.size < b.size
-
 /-- `old` is a prefix of `new`. -/
 def isPrefix : List String → List String → Bool
   | [], _ => true
