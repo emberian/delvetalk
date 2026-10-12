@@ -38,6 +38,8 @@ and drops those no longer in the tree. The slug and CID stay as `getRecord` alia
   (`world-advance`'s intent; minutes since the epoch; 0 before the first tick, so a fresh world's first revs
   read as 1970). Strictly increasing: the clock never goes back and the height always goes up. The same TID
   is the record's key.
+- A carried journal begins at the height the world before reached (HOST-HANDOFF 5.182; the live v10 town's first
+  entry is 447): its first commit is that height's, with `prev` null, and `since` and the cursors count from it.
 - `prev` = the commit of height − 1 (null at height 1): the journal's chain, signed. The spec allows it and
   most repositories leave it null.
 - `sig` = ECDSA over sha-256 of the unsigned commit's DAG-CBOR: k256, deterministic (RFC 6979), low-S, 64 raw

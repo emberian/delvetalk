@@ -77,17 +77,24 @@ class Signed:
     """The journal as a signed repository. Height h adds the record {$type: entry, entry: <hash link>, height: h}
     under `town.delvetalk.entry/<rev>` and the commit {did, version: 3, data: <MST root>, rev, prev: <commit h-1>},
     rev = TID(clock minute * 60e6 + h), the clock the latest `advance:<minute>` entry set. Every input is in every
-    reader's projection of the entry; the key signs deterministically, so the chain is a function of the journal."""
+    reader's projection of the entry; the key signs deterministically, so the chain is a function of the journal.
+
+    A carried journal continues the heights of the world before (HOST-HANDOFF 5.182): its first entry is height
+    `base` + 1, not 1. `heights` and `revs` count positions in this journal (1 the first entry), and a height read
+    from the host becomes a position by `position`."""
 
     def __init__(self, did, key):
-        self.did, self.key, self.tree, self.heights, self.revs, self.clock = did, key, Tree(), [], {}, 0
+        self.did, self.key, self.tree, self.heights, self.revs, self.clock, self.base = did, key, Tree(), [], {}, 0, 0
         self.lock = threading.Lock()
+
+    def position(self, height):
+        return height - self.base if isinstance(height, int) else None
 
     def catch_up(self, host):
         """Append every entry past the last height seen; the journal only appends, so nothing else is recomputed."""
         with self.lock:
             while True:
-                reply = host.send({'op': 'world-entries', 'principal': PUBLIC, 'after': len(self.heights), 'limit': MAX_LIMIT})
+                reply = host.send({'op': 'world-entries', 'principal': PUBLIC, 'after': self.base + len(self.heights), 'limit': MAX_LIMIT})
                 if 'entries' not in reply:
                     raise refused(reply)
                 for entry in reply['entries']:
@@ -96,7 +103,9 @@ class Signed:
                     return self.heights[-1] if self.heights else None
 
     def add(self, entry):
-        h = len(self.heights) + 1
+        if not self.heights and isinstance(entry.get('height'), int) and entry['height'] >= 1:
+            self.base = entry['height'] - 1  # the journal's first entry, whatever height a carry began it at
+        h = self.base + len(self.heights) + 1
         if entry.get('height') != h or not isinstance(entry.get('hash'), str):
             raise Refusal(503, 'HostUnavailable', f"the journal's entry {entry.get('height')} is not height {h} with a hash")
         who = entry.get('identity') or {}
@@ -108,7 +117,7 @@ class Signed:
         self.tree.append(f'{ENTRY}/{rev}'.encode(), record[0])
         commit = self.key.commit(self.did, self.tree.root(), rev, self.heights[-1].commit[0] if self.heights else None)
         self.heights.append(Height(rev, entry['hash'], record, commit))
-        self.revs[rev] = h
+        self.revs[rev] = len(self.heights)
 
     def repo(self, since=None):
         """The CAR of the head commit, the MST and the records; with `since` (a rev), what was added after it."""
@@ -228,7 +237,7 @@ class Repo:
     def signed_height(self, host, rkey, who):
         """The height a receipt key names: a rev (the signed record key), a slug or an entry CID."""
         head = self.head(host, {}, None)
-        h = self.signed.revs.get(rkey) if TID.fullmatch(rkey) else self.entry(host, rkey, who)['receipt'].get('height')
+        h = self.signed.revs.get(rkey) if TID.fullmatch(rkey) else self.signed.position(self.entry(host, rkey, who)['receipt'].get('height'))
         if not isinstance(h, int) or not 1 <= h <= len(self.signed.heights):
             raise Refusal(400, 'RecordNotFound', f'no receipt here is {rkey}')
         return h, head
