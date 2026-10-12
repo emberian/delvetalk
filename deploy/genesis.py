@@ -120,7 +120,9 @@ ALIVE_LAW = f'law alive "answers while tended within {QUIET_AFTER} minutes": req
 # What a bell does of itself and what it wants (docs/OVERHAUL.md §3; SEEDING §4, the seventh rain), carried to every
 # bell by `under` and owned by the kind's owner: it rings at its seventh rain, notes its planter when it rings, and
 # wants a first rain, a rain from a second hand, and tending once it has gone quiet.
-BELL_TEXT = ('rule seven "rings at its seventh rain": count(new.lines) >= 7 and count(old.lines) <= 6 then delvetalk {request.object} ring\n'
+# A rain is a line whose verb is `rain` (the hand's, the weather's) or "" (a line carried from edition 8, which kept no
+# verb); a grown verb's gesture is no rain.
+BELL_TEXT = ('rule seven "rings at its seventh rain": not (count(new.lines where verb == "rain") + count(new.lines where verb == "") <= 6) and count(old.lines where verb == "rain") + count(old.lines where verb == "") <= 6 then delvetalk {request.object} ring\n'
              'rule rang "notes its planter when it rings": "rung" in new.marks.name and not "rung" in old.marks.name then delvetalk {new.maker} note / text: {request.object} rang\n'
              'want rain "a bell nobody has rained on": count(new.lines) == 0 asks delvetalk {request.object} rain\n'
              'want second "a bell only its planter has rained on": count(new.lines) >= 1 and count(new.lines where author == new.maker) >= count(new.lines) asks delvetalk {request.object} rain\n'

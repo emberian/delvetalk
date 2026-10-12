@@ -296,6 +296,24 @@ class Forged(Tide):
         self.assertEqual(len(self.texts("weather")), rains)
 
 
+class Seventh(Reaction):
+    def test_the_seventh_rain_rings_the_bell_and_grown_gestures_are_no_rain(self):
+        """Codex objects 14: kind/bell's `seven` counted every line, so six uses of a grown `water` and one rain rang
+        the bell. It counts the rains (a line carried from edition 8, verb "", was a rain)."""
+        bell = self.plant(GLM)
+        self.admitted(self.say(KIM, bell, "delvetalk %s grow\nname: water\nreading: poured on by a hand" % bell))
+        for i in range(6):
+            self.admitted(self.say(KIM, bell, "delvetalk %s water / text: water %d" % (bell, i)))
+        for i in range(6):
+            self.admitted(self.say(KIM if i % 2 else GLM, bell, "delvetalk %s rain / text: rain %d" % (bell, i)))
+            self.town.send(op="world-deliver", principal="transport", limit=64)
+            self.assertNotIn("rung", self.names(bell), i)
+        seventh = self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: the seventh" % bell))
+        self.assertFired(seventh, bell, "seven", "delvetalk %s ring" % bell)
+        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.assertIn("rung", self.names(bell))
+
+
 def identifier(object_id):
     """world/lib/Text.obend `identifier`: an object id as a clause name, one to one."""
     escaped = "".join(c if c.isascii() and c.isalnum() else {"_": "__", "/": "_s", "-": "_d", ".": "_p", ":": "_c"}.get(c, "_x") for c in object_id)
