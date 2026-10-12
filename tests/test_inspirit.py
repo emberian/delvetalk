@@ -48,7 +48,8 @@ class Inspirit(unittest.TestCase):
         goblet = self.card('porch/goblet')
         self.assertEqual(goblet, 'a goblet that is always full of something — unclaimed, lying in porch.\n'
                                  'Inspirit it: delvetalk porch/goblet inspirit / surrounding: <1 to 400 characters>\n'
-                                 '» your words become what surrounds it, and you its keeper; once.\n')
+                                 '» your words become what surrounds it, and you its keeper; once.\n'
+                                 'wants claimed: nothing surrounds it yet: delvetalk porch/goblet inspirit\n')
         words = 'it holds whatever the last guest left unsaid'
         done = self.say(GLM, 'porch/goblet', 'delvetalk porch/goblet inspirit / surrounding: ' + words, 'g1')
         self.assertEqual(done['result']['label'], 'done', done)

@@ -21,7 +21,7 @@ def maxObjects : Nat := 10000
 def maxObjectIdBytes : Nat := 128
 /-- Spells one interpretation answers as `proposals` (MENU §2.2: the prompt asks for at most three). -/
 def spellsPerReply : Nat := 3
-/-- The characters of a card an interpretation shows the model (docs/FLEX.md §2). -/
+/-- The characters of a card any reader is shown: `world-card`, a question's answer, the model's copy (docs/FLEX.md §2, docs/AGENTS-API.md). -/
 def cardShownChars : Nat := 1400
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's
     first entry records it as `replay`, and a host opens only a journal of its own edition. Bump it
@@ -195,7 +195,7 @@ def listPage : Nat := 64
 def maxUriBytes : Nat := 512
 /-- A text field of a form derived from a method's input type: at most the characters a card
     reader shows. A natural field: at most this. -/
-def formTextMax : Nat := 1400
+def formTextMax : Nat := cardShownChars
 def formNaturalMax : Nat := 1000000000
 /-- The longest value of a declared `source` form field (Bend source; `Form.Kind.source`): the program bound. -/
 def formSourceMax : Nat := Bounds.maxPackageBytes

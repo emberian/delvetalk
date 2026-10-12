@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (host30: 5.176, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (host30: 5.176, 5.177, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -132,7 +132,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `deliveryAttempts` 4, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
 | programs, laws | `maxPackageBytes` 131072 (`Bounds.maxPackageBytes`), `maxLawBytes` 4096, `maxLawClauses` 16, `maxPreparedPrograms` 16, `maxCompiledPackets` 256, `maxBuilds` 1024, `maxReaders` 256, `maxLibraryModules` 256, `maxLibraryBytes` 786432 |
 | interpret | `maxUtteranceBytes` 8192, `maxOffersBytes` 65536, `maxReplyBytes` 262144 |
-| forms | `formTextMax` 1400, `formNaturalMax` 1000000000 |
+| forms | `formTextMax` (= `cardShownChars`) 1400, `formNaturalMax` 1000000000 |
 
 A full count refuses the turn with class `capacity`, reason the limit's name. The `bounds` op answers every one of them by name.
 
@@ -1973,8 +1973,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 171. **A question hob reads nothing into is answered by the card (host27; the v8 deploy's silent question; the
    coordinator's decision).** "does the bell have a clapper?" to bell/1, which wants one, came back `none` and so
    silence. Now `resumeHeard`, when hob replied with no spell and no ask (`none`, `unclear: not addressed`) to words
-   ending in `?`, offers the speaker `cardAnswer`: the card's exact text as they read it (`cardRendered`, whole; the
-   model's copy is `cardText`, within `cardShownChars`) and then `wantsText` when it wants anything. Data, not
+   ending in `?`, offers the speaker `cardAnswer`: the card's exact text as they read it (`shownCard`, what `world-card`
+   answers, wants lines and bound included, 5.177; the model's copy is `cardText`). Data, not
    narration. Other words stay silence, and so do a failed model and the deadline. The paint is not in the offer:
    renders live per process in the session (`Open.renders`), outside the world a turn commits; the front places a
    painting above the exact card where one exists (5.161), and the bridge drafts exact. "Or hob says ask is not
@@ -2128,6 +2128,25 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    - *Dropped by decision* (docs 7). `carryWorld` drops a suspension only for an object named `--leave`, or a moved
      one whose package offers `carried`; any other the carry cannot keep refuses it by name. Test:
      `test_carry.Moves.test_a_moved_objects_suspension_refuses_the_carry_until_its_object_is_left_by_name`.
+177. **A card is shown within one bound, with the wants it holds (host30; codex docs 14; the attend lane's wants; no edition change).**
+   `Limits.cardShownChars` 1,400 is the one bound of a card any reader is shown (`formTextMax` is defined as it).
+   `clipCard id text block` is the one place it is applied: `text` then `block` (whole lines) when they fit; else
+   `text` cut to leave room for `\n[clipped at 1400 characters; world-inspect <id> reads its source]\n` and then
+   `block`, so the answer is exactly the bound. `shownCard w id reader text` is `clipCard` with `block` = one line
+   per want the thing holds (`wantRows` for the reader), `wants <name>: <reading>: <spell>` (the reading omitted when
+   there is none, the spell's lines joined by ` / `), taken in order while together within a quarter of the bound.
+   `cardOp` answers `shownCard` for both a rendered card and a root's `card` override; `cardAnswer` (5.171's
+   question answered by the card) is `shownCard` of the same render, so a hob offer equals `world-card`'s text;
+   `cardText` (the model's copy, whose wants go as `asked.wants`) is `clipCard` with no block. `world-card`'s
+   `document` is the render's data, unclipped, and the transport's GET `/card` leaves it out unless `?full=1`. The
+   transport adds nothing: `GET /AGENTS.md/world/<id>/card` is the host's `text`. Bound by the card only: the
+   reply's receipt line the bridge stamps is not in it (FOUNDATION's `Card.limit` leaves room for it in a
+   world card's own Bend). Previews re-cut from the live cards: `seed-posts/01-porch.txt`, `03-rain-bell-1.txt`.
+   Tests: `test_heard.Heard.test_a_card_shows_at_most_the_bound_and_says_where_the_rest_is_read` (at the bound whole,
+   one over and 2,000 clipped to the bound with the closing line, a want kept at the bound, hob's answer equal to
+   `world-card`), `test_root.Root.test_a_card_override_is_clipped_to_the_card_bound`,
+   `test_rules.Wants.test_a_card_shows_the_wants_it_holds_one_line_each_within_the_bound`;
+   `test_heard`'s question test and `test_inspirit`'s goblet card pin the line.
 
 ## 6. Gotchas
 
@@ -2180,7 +2199,6 @@ Each with its failing input as a test first, merging foundation before each comm
 - host 12: `world.judge` merges its dependency roots into the turn (`TurnState.roots`) before answering.
 - host 13: meter `Law.denote` (rows × clauses) against `lawTicks`; reuse canonical rows across clauses.
 - docs 12: a scratch's last-use clock persisted (Serve.lean:189), not reset at a restart.
-- docs 14: the 1,400-character card bound enforced where every card response is built.
 - agent 10: hob is offered the host's permitted spells (`rule`, `want`, `adopt`…) and its proposals of them run
   through `hostSpell`.
 - The coordinator's simplify hand-back: (1) an offer's public projection answered by the host (transport stops

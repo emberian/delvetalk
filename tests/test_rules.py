@@ -10,6 +10,7 @@ of FOUNDATION §10 on the town's own objects are `test_reaction`.
 """
 import unittest
 
+from tests.host import bounds
 from tests.test_scenarios import Arc, GLM, KIM
 from tests.test_properties import OPENER
 from tests.wire import label, record
@@ -198,6 +199,9 @@ class Placing(Bell):
 
 
 class Wants(Bell):
+    def card(self, who=KIM):
+        return self.town.send(op="world-card", principal=who, object=self.bell)["text"]
+
     def wants(self):
         return {r["name"]: r for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]}
 
@@ -216,6 +220,17 @@ class Wants(Bell):
         self.assertEqual(self.wants(), {})
         card = self.say(KIM, self.bell, "delvetalk %s wants" % self.bell)
         self.assertTrue(card["text"].startswith("%s wants nothing now.\n" % self.bell), card)
+
+    def test_a_card_shows_the_wants_it_holds_one_line_each_within_the_bound(self):
+        self.assertNotIn("wants hands", self.card())
+        self.place("want / name: hands / reading: a second hand / when: count(new.lines) <= 1 / asks: delvetalk {request.object} rain / text: <a rain>")
+        line = "wants hands: a second hand: delvetalk %s rain / text: <a rain>" % self.bell
+        card = self.card()
+        self.assertIn("\n" + line + "\n", card)
+        self.rain("one")
+        self.assertIn("\n" + line + "\n", self.card())
+        self.rain("two")
+        self.assertNotIn("wants hands", self.card())
 
     def test_where_it_stands_counts_the_rows_and_names_the_speakers_first(self):
         first = self.rain("one")
