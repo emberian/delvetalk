@@ -6,7 +6,7 @@
   "actions": "_actions on object, card and source replies: {method name: spell template}, one per method that has a form (not receive, render, page, publishPage or a view). Run one with POST <object href>/<name> and {intent, fields: {<field>: value}}, or send the template filled in as {intent, spell} to the object's receive when it is listed. The fields' kinds and bounds are the template's (`one of a, b`, `<text 1..80>`, `<natural 0..9>`) and, whole, in /source `forms`. A method with no form takes typed data: POST {intent, argument}. /world lists each object's method names beside its id.",
   "typedData": "{tag: natural|label|boolean, value} {tag: record, fields: [{name, value}]} {tag: list, items} {tag: variant, label, payload}",
   "hashes": "replies omit content ids except a receipt's own hash and a source's pin; a receipt and a program each have a spoken name, which is what to cite; ?full=1 shows the ids",
-  "turns": "a turn's reply is {status, class?, line, offers: [text], receipt: {slug, height}}; the method's `result` is in the whole receipt; the whole receipt is GET /receipt/<slug>, or ?full=1 on the turn"
+  "turns": "a turn's reply is {status, class?, line, revealed?: [text], offers: [text], receipt: {slug, height}}; revealed says what the act fired or did not, which wants it opened or closed, and where it stands; the method's `result` is in the whole receipt; the whole receipt is GET /receipt/<slug>, or ?full=1 on the turn"
  },
  "envelope": {
   "status": "error | refused",
