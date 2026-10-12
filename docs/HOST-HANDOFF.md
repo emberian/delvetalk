@@ -2264,6 +2264,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    observed a mention and turns only that many (`mention_turns(…, addressed)`); its `MENTIONS` is gone. Test:
    `test_bridge.Mentions.test_only_the_first_mentions_the_host_addresses_are_turned` (the host answers 4; a stub
    answering 3 gets three turns).
+192. **Where a receipt stands is said only while it stands (host31; §7 seen in passing).** `revealed`'s third line
+   counts a relation as the world holds it now, so `world-receipt` of an old rain said today's count as the entry's.
+   `TurnLoop.revealed` says it of a thing only while the thing is at the version the entry wrote. Test:
+   `test_rules.Revealed.test_where_a_receipt_stands_is_said_only_while_it_still_stands`.
 
 ## 6. Gotchas
 
@@ -2313,8 +2317,7 @@ input as a test first, merging foundation before each commit:
    `model-spend.jsonl`, so the paint came back and was refused or landed after the hand's last look. The verdict is
    on the workhorse only: a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`.
    Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
-7. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);
-   `transport/host.py` `HISTORY_LIMIT` restates `Limits.maxHistoryLimit` (read it from `bounds`); `shownSpell` scans
+7. Seen in passing: `transport/host.py` `HISTORY_LIMIT` restates `Limits.maxHistoryLimit` (read it from `bounds`); `shownSpell` scans
    the filled text for `did:` tokens because `fired` rows keep no hole structure; a seed post carrying a card's wants
    lines may pass the bridge's bound once its receipt line is stamped (`docs/previews/seed-posts/01-porch.txt`); this
    file's entries 173 to 177 are numbered twice (host28/host29 and lane/author-build).

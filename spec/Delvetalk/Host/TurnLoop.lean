@@ -2448,7 +2448,8 @@ def textField (state : Data) (name : String) : Option String :=
     its owner's name, or why one that held did not fire), **what it opened or closed** (each want of a
     written thing that came to hold, with the spell that answers it, or stopped holding), and **where it
     stands** (each relation it added rows to: how many it holds now, and the first by the speaker when it
-    is). From the entry and the world after it; no model. -/
+    is), said only while the thing is at the version the entry wrote, so a later read of an old receipt
+    never gives today's count as the entry's. From the entry and the world after it; no model. -/
 def revealed (w : World) (entry : Json) : List String := Id.run do
   if tagOf entry != "admitted" then return []
   let principal := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
@@ -2470,9 +2471,13 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
   -- Where it stands: each relation a write inserted into, its count now, and the speaker's first row.
   let writes := ((((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)).map
     fun j => (parseRecordedWrites j).toOption.getD []).getD [])
+  let wrote := fun (id : String) => ((((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)).bind
+    (·.getArr?.toOption)).getD #[]).findSome? fun x =>
+      if (x.getObjValAs? String "object").toOption == some id then (x.getObjValAs? Nat "version").toOption else none
   let mut stands : List String := []
   for (id, ws) in writes do
     let some o := w.objects[id]? | continue
+    unless wrote id == some o.version do continue
     let inserted := ws.flatMap fun x => x.edits.filterMap fun e => match e.kind with
       | .insert row | .upsert row => some (e.field, row)
       | _ => none

@@ -270,3 +270,14 @@ class Revealed(Bell):
         # Another reader of the same entry is shown its projection and no more.
         other = self.town.send(op="world-receipt", principal=GLM, identity=intent, of=KIM)
         self.assertNotIn("revealed", other)
+
+    def test_where_a_receipt_stands_is_said_only_while_it_still_stands(self):
+        # §7 item 7: `world-receipt` of an old rain read today's count ("bell's lines: 3" for the first of three).
+        first = self.rain("first")
+        stands = [l for l in first["revealed"] if "'s lines: " in l]
+        self.assertTrue(stands, first["revealed"])
+        intent = first["receipt"]["identity"]["intent"]
+        self.assertEqual(self.town.send(op="world-receipt", principal=KIM, identity=intent)["revealed"], first["revealed"])
+        self.rain("second")
+        later = self.town.send(op="world-receipt", principal=KIM, identity=intent)
+        self.assertFalse([l for l in later.get("revealed", []) if "'s lines: " in l], later)
