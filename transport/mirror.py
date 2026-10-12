@@ -64,25 +64,38 @@ def ids(host, reader=PUBLIC):
         after = out[-1]
 
 
-def records(host, sleep=time.sleep, paint=True):
-    """{(collection, rkey): value}: the whole mirror as the public reads the world now."""
-    out, cards = {}, []
-    for oid in ids(host):
-        record = card_record(host, oid, PUBLIC, sleep, paint)
-        if record:
-            out[CARD, card_key(oid)] = record
-            cards.append(oid)
-    pages = library_pages(host)
-    for p in pages:
-        out[PAGE, p['name']] = page_record(p)
-    out[INDEX, 'self'] = index_record(host, cards, pages)
+def height(host):
+    return host.send({'op': 'world-status'}).get('height')
+
+
+def records(host, sleep=time.sleep, paint=True, tries=3):
+    """{(collection, rkey): value}: the whole mirror as the public reads the world at one height. The cards and pages
+    are read between two looks at the height; when the world moved meanwhile they are read again (up to `tries`),
+    and an index read across a move says so (`coherent: false`, its `heights`)."""
+    for _ in range(tries):
+        before, out, cards = height(host), {}, {}
+        for oid in ids(host):
+            record = card_record(host, oid, PUBLIC, sleep, paint)
+            if record:
+                out[CARD, card_key(oid)] = record
+                cards[oid] = record['version']
+        pages = library_pages(host)
+        for p in pages:
+            out[PAGE, p['name']] = page_record(p)
+        after = height(host)
+        if after == before:
+            break
+    out[INDEX, 'self'] = index_record(cards, pages, before, after)
     return out
 
 
-def index_record(host, cards, pages):
-    """What the mirror holds and the height it was read at: the ids with a card, the pages by name."""
-    return {'$type': INDEX, 'height': host.send({'op': 'world-status'}).get('height'), 'cards': cards, 'pages': [p['name'] for p in pages],
-            'read': 'each card is town.delvetalk.card/<id, / as ~>; each page town.delvetalk.page/<name>'}
+def index_record(cards, pages, before, after=None):
+    """The manifest: the height the records were read at, each card's version (a reader holding a card of another
+    version holds another generation) and the pages by name. Written last, only when every record it lists landed."""
+    after = before if after is None else after
+    return {'$type': INDEX, 'height': before, 'coherent': before == after, **({} if before == after else {'heights': {'from': before, 'to': after}}),
+            'cards': cards, 'pages': [p['name'] for p in pages],
+            'read': 'each card is town.delvetalk.card/<id, / as ~>, at the version listed here; each page town.delvetalk.page/<name>'}
 
 
 def digest(value):
@@ -107,20 +120,27 @@ def run(st, host, writer=None, sleep=lambda _: None, limit=200):
     writes, deletes, ledger = plan(st, records(host, sleep))
     if writer is None:
         return {'dry_run': True, 'writes': sorted(writes), 'deletes': sorted(deletes)}
+    index = f'{INDEX} self'
+    manifest = writes.pop(index, None)
     done = []
-    for key, value in list(writes.items())[:limit]:
+
+    def put(key, value):
         collection, rkey = key.split(' ', 1)
         writer(collection, rkey, value)
-        ledger[key] = digest({**value, 'height': None} if collection == INDEX else value)
+        if value is None:
+            ledger.pop(key, None)
+        else:
+            ledger[key] = digest({**value, 'height': None} if collection == INDEX else value)
         st.write(st.mirror, ledger)
         done.append(key)
+    for key, value in list(writes.items())[:limit]:
+        put(key, value)
     for key in deletes[:max(0, limit - len(done))]:
-        collection, rkey = key.split(' ', 1)
-        writer(collection, rkey, None)
-        ledger.pop(key, None)
-        st.write(st.mirror, ledger)
-        done.append(key)
-    return {'written': done, 'left': max(0, len(writes) + len(deletes) - len(done))}
+        put(key, None)
+    left = len(writes) + len(deletes) - len(done)
+    if manifest is not None and left == 0:  # the manifest moves only once everything it lists is there
+        put(index, manifest)
+    return {'written': done, 'left': left + (manifest is not None and left > 0)}
 
 
 def command(st, a, out, client=None):

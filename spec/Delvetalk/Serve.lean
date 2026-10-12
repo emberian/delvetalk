@@ -453,8 +453,74 @@ def expiryAsked (request : Json) : Option String := do
     | _ => none
   | _, _ => none
 
+/-- A typed record whose text field `name` is set to `value` (`fieldText`'s inverse). -/
+def withFieldText (record : Json) (name value : String) : Json :=
+  match (record.getObjVal? "fields").toOption.bind (·.getArr?.toOption) with
+  | none => record
+  | some fields => record.setObjVal! "fields" (Json.arr (fields.map fun f =>
+      if (f.getObjValAs? String "name").toOption == some name then
+        f.setObjVal! "value" (Json.mkObj [("tag", toJson "label"), ("value", toJson value)])
+      else f))
+
+def blankLine (line : String) : Bool := line.toList.all (·.isWhitespace)
+def indentOf (line : String) : Nat := (line.toList.takeWhile fun c => c == ' ' || c == '\t').length
+
+/-- `if: bell/2 v3, kind/bell v2`: the roots an act was read at (a try's `roots`), or none when the line is not one. -/
+def ifRoots (line : String) : Option Json := do
+  let low := String.ofList (line.toList.dropWhile (·.isWhitespace))
+  guard ((low.take 3).toString.toLower == "if:")
+  let roots ← ((low.drop 3).toString.splitOn ",").mapM fun part => do
+    let words := (part.splitOn " ").filter (!·.isEmpty)
+    let [id, v] := words | none
+    guard (v.startsWith "v")
+    let version ← (v.drop 1).toString.toNat?
+    pure (Json.mkObj [("object", toJson id), ("version", toJson version)])
+  guard (!roots.isEmpty)
+  return Json.arr roots.toArray
+
+/-- A post's spells as `serve` reads them before any world does (docs/POSTING.md §2): a margin line `if: <id> v<n>, …`
+    ahead of the spells becomes the act's `if` (refused `moved` when a root moved since), and `delvetalk try`
+    with spells indented under it (an indented spell is a quotation, never cast) becomes `world-try` of those spells,
+    dedented, as words to the commonplace: the host runs them where they name, then drops what they wrote. -/
+def postShaped (request : Json) : Json := Id.run do
+  unless (request.getObjValAs? String "op").toOption == some "world-turn" &&
+      (request.getObjValAs? String "method").toOption == some "receive" do return request
+  let some argument := (request.getObjVal? "argument").toOption | return request
+  let some text := fieldText argument "text" | return request
+  let mut lines := (text.splitOn "\n").dropWhile blankLine
+  let mut request := request
+  if let some first := lines.head? then
+    let guard := (String.ofList (first.toList.dropWhile (·.isWhitespace))).toLower.startsWith "if:"
+    if guard then
+      -- A guard that does not read is kept as written, so the host refuses it: an act never runs unguarded.
+      request := (request.setObjVal! "if" ((ifRoots first).getD (toJson first))).setObjVal! "argument" (withFieldText argument "text" ("\n".intercalate lines.tail))
+      lines := lines.tail.dropWhile blankLine
+  let some first := lines.head? | return request
+  let .spell card _ _ := Host.Spell.parse first | return request
+  unless card == Host.tryCard do return request
+  let block := lines.tail.takeWhile fun l => blankLine l || indentOf l > 0
+  let cut := ((block.filter (!blankLine ·)).map indentOf).foldl min 4096
+  let inner := "\n".intercalate (block.map fun l => String.ofList (l.toList.drop cut))
+  return (((request.setObjVal! "op" (toJson "world-try")).setObjVal! "object" (toJson "commonplace")).setObjVal! "reach" (toJson "direct"))
+    |>.setObjVal! "argument" (withFieldText argument "text" inner)
+
+/-- What `delvetalk receipt / of: <slug or at:// post>` asks (docs/POSTING.md): the receipt a slug names, or the one a
+    post of the asker's own became, so a resident with no HTTP finds an act's outcome, and tells a receipt a host
+    issued from one typed by hand. -/
+def receiptAsked (request : Json) : Option String := do
+  guard ((request.getObjValAs? String "op").toOption == some "world-turn" && (request.getObjValAs? String "method").toOption == some "receive")
+  let text ← fieldText ((request.getObjVal? "argument").toOption.getD Json.null) "text"
+  let .spell card _ _ := Host.Spell.parse text | none
+  guard (card == Host.receiptCard)
+  -- The value as written to the line's end: an at:// address holds the `/` an inline field would end at.
+  let after := match text.splitOn "of:" with
+    | _ :: rest@(_ :: _) => "of:".intercalate rest
+    | _ => ""
+  return ((after.splitOn "\n").headD "").trimAscii.toString
+
 /-- One request, as the socket it came on may ask it. -/
 def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) := do
+  let request := postShaped request
   let some fields := request.getObj?.toOption | return (srv, errorJson "request is not a JSON object")
   let op := (request.getObjValAs? String "op").toOption.getD ""
   if op == "serve-status" then return (srv, ← serveStatus srv)
@@ -483,6 +549,16 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
       unless srv.scratches.contains key do return (srv, errorJson s!"no scratch/{name} of yours is open")
       let (srv, clock) ← homeClock srv
       return (← discard srv key clock, Json.mkObj [("status", toJson "expired"), ("scratch", scratchRow key clock)])
+  -- A receipt looked up by post: the home world's `world-resolve` (a slug) or `world-receipt` (a post), journaled nowhere.
+  if let some of_ := receiptAsked request then
+    let principal := (request.getObjValAs? String "principal").toOption.getD ""
+    let (srv, home) ← world srv srv.config.home
+    let .ok session := home | return (srv, errorJson (match home with | .error e => e | .ok _ => ""))
+    let ask := if of_.startsWith "at://" then Json.mkObj [("op", toJson "world-receipt"), ("principal", toJson principal), ("identity", toJson of_)]
+      else Json.mkObj [("op", toJson "world-resolve"), ("principal", toJson principal), ("slug", toJson of_)]
+    let (session, r) ← PackageSession.stepIO session ask
+    let srv := { srv with worlds := srv.worlds.insert srv.config.home session }
+    return (srv, Json.mkObj [("status", toJson "looked"), ("of", toJson of_), ("found", match r with | .ok j => j | .error e => errorJson e)])
   -- Every public request is a resident's, whoever it names: the opener's privileges are the root socket's.
   let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "resident")
   match keyOf srv request with

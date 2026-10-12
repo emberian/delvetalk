@@ -2342,6 +2342,39 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    in its frame and at the commit leaves nothing; holes; too many acts; a fence; later acts read earlier writes),
    `test_bridge.Bridging.test_a_plan_is_one_turn_one_draft_and_one_post_of_the_quota`,
    `test_heard.Heard.test_hob_may_answer_with_a_plan_that_runs_as_one_turn_and_stands_or_falls_whole`.
+204. **`world-try`: the commit with the write switched off; `if` and `moved` (lane/posting; docs/POSTING.md §2; no
+   edition change).** `Session.settledStep` is a step and its settling pass, the world they leave and the reply;
+   `durableIO` makes that durable, and `world-try` (`tryTurn`) drops it, answering the turn's own reply with `tried:
+   true` and `against {height, hash}`: its receipt the entry that would be journaled (roots with versions, writes
+   with their state CIDs, which a `world-turn` at the same head lands byte for byte), its offers the exact cards.
+   `world-turn` and `world-try` take `if: [{object, version}]` (at most `maxRoots`); a root that moved, or that the
+   principal may not view, answers `{status: refused, class: moved, moved: [{object, was, now}], line}` with nothing
+   journaled (`movedRoots`, `movedReply`). A post says both (`Serve.postShaped`, beside `expiryAsked`): a margin
+   line `if: bell/1 v0, kind/bell v2` ahead of the spells is the act's `if`, and `delvetalk try` with spells
+   indented under it is `world-try` of them, dedented, as direct words to the commonplace (`Spell.heading` reads the
+   line alone as card `try`, `Ops.tryCard`, an id no object takes). The front's action takes
+   `try: true` and `if`; the bridge drafts a try as `preview, nothing done` (`bridge.preview_text`, no receipt name,
+   its last line the `if:` to send it under, `then …` for what the settling pass ran, and what it leaves for later,
+   `unresolved {pending, suspended}`, counted) and a `moved` as its line. An `if` that does not read (`if: bell/1`) is
+   refused `moved` too: a guard fails closed. The observer keeps a post's leading indent (`observe.LEADING_BLANK`), so
+   an indented spell among words stays a quotation through the bridge as it is to the parser. Tests: `test_try` (the CIDs shown are the
+   CIDs landed, a moved act journals nothing, a post's indented spells never cast, the bridge's preview and its
+   guard).
+205. **A receipt looked up by post (lane/posting; the astra posting review (7); emergence §10's as-if receipts).**
+   `delvetalk receipt / of: <slug or at:// post>` (`Spell.heading` reads card `receipt`, `Ops.receiptCard`, an id no
+   object takes) is answered by serve (`Serve.receiptAsked`) from the home world's `world-resolve` (a slug) or
+   `world-receipt` (the asker's own post), journaled nowhere: `{status: "looked", of, found}`. The value is read to the
+   line's end, so an at:// address keeps its `/`. The bridge drafts the receipt's line, or "no receipt here is named
+   X: no host issued it, so it records nothing" (`bridge.lookup_text`). Test: `test_posting`.
+206. **One resident's share of the hour's posts (lane/posting; the astra posting review (6); no edition change).**
+   `world-post-reserve` takes `for`, the resident a post answers; it is journaled on the `reserved` outcome and kept
+   on the `Reservation` (`resident`, in the snapshot only when set). `postShare` is a quarter of `postQuota`, at least
+   one; past it the reservation is refused `quota` with `share: true` and the reason naming the share, while other
+   residents' and the hand's own posts (no `for`) go on. Replay holds a reservation to the share as to the quota. An
+   entry without `for` (every one before) counts against no share. `world-status.posts` adds `share` and
+   `residents {principal: used}`. The transport passes the draft's author (`post.answering`: not the hand's own
+   drafts, not publications) and a thread sizes itself by the smaller room (`post.room`). Test:
+   `test_post_reserve.Shares`.
 
 ## 6. Gotchas
 

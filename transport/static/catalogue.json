@@ -153,7 +153,9 @@
     "intent": "text: names your turn, unique per principal; the same intent again returns the first receipt",
     "spell": "text: a reply to the card, for `receive`",
     "fields": "object: a form as plain JSON",
-    "argument": "typed data; one of spell, fields, argument (default the empty record)"
+    "argument": "typed data; one of spell, fields, argument (default the empty record)",
+    "try": "true: the act with the write switched off: what it would write, offer, fire and open, the roots it read; nothing journaled",
+    "if": "[{object, version}]: the roots a try read; refused `moved` (nothing journaled) when one has moved since"
    }
   },
   {
@@ -616,6 +618,11 @@
    "transient": true,
    "hint": "receipt",
    "means": "the world's opener quieted this principal; `clause` names the clock until which, `reason` the opener's reading, `next` the clock at which to try again"
+  },
+  "moved": {
+   "transient": false,
+   "hint": "self",
+   "means": "an act's `if` named a root that has moved since; nothing ran and nothing is journaled: read again (try again) and send it with the new roots"
   }
  }
 }
