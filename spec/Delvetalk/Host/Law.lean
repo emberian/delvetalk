@@ -17,11 +17,29 @@ def renderLaw (law : Law) : String :=
 
 /-- A thing's text, every modality: one clause a line (`law`, `rule`, `want`), as the kernel parses
     it, within the text's byte and clause bounds. -/
-def parseClauses (text : String) : Except String (List Delvetalk.Compiler.ObjectiveBendLaw.Clause) := do
+def parseClausesCold (text : String) : Except String (List Delvetalk.Compiler.ObjectiveBendLaw.Clause) := do
   if text.utf8ByteSize > Limits.maxLawBytes then throw "law text exceeds its byte capacity"
   let clauses ← Delvetalk.Compiler.ObjectiveBendLaw.parseText text
   if clauses.length > Limits.maxLawClauses then throw "law has too many clauses"
   return clauses
+
+/-- This process's parsed texts, by the text: a kind's text is read at every judgement of every thing
+    under it (`under`, `followed`, `carried`, a cited want), and parsing is a function of the text alone.
+    A constant, not an `initialize`: this module's own `#guard`s evaluate `parseClauses`. -/
+@[noinline] unsafe def clauseMemo : IO.Ref (Std.HashMap String (Except String (List Delvetalk.Compiler.ObjectiveBendLaw.Clause))) :=
+  unsafeBaseIO (IO.mkRef {})
+
+unsafe def parseClausesImpl (text : String) : Except String (List Delvetalk.Compiler.ObjectiveBendLaw.Clause) :=
+  unsafeBaseIO do
+    if let some r := (← clauseMemo.get)[text]? then return r
+    let r := parseClausesCold text
+    clauseMemo.modify fun m => boundedInsert m Limits.maxBuilds text r
+    return r
+
+/-- `parseClausesCold`, once per process for a text. -/
+@[implemented_by parseClausesImpl]
+def parseClauses (text : String) : Except String (List Delvetalk.Compiler.ObjectiveBendLaw.Clause) :=
+  parseClausesCold text
 
 /-- A text's laws and their readings, by clause name: its `law` clauses (its rules and wants are
     `parseClauses`'). -/

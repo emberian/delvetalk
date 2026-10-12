@@ -202,6 +202,14 @@ def snapshotEvery : Nat := 1000
 def maxSnapshotBytes : Nat := 268435456
 end Limits
 
+/-- `m` with `k ↦ v`, holding at most `bound` keys: when full, one other key goes (never the whole map, which
+    would recompile everything a full cache held). -/
+def boundedInsert {α : Type} (m : Std.HashMap String α) (bound : Nat) (k : String) (v : α) : Std.HashMap String α :=
+  if m.size < bound || m.contains k then m.insert k v else
+  match m.fold (init := none) fun (acc : Option String) key _ => acc <|> (if key == k then none else some key) with
+  | some old => (m.erase old).insert k v
+  | none => m.insert k v
+
 /-- A parsed `law NAME: EXPR` list; empty is "no law". -/
 abbrev Law := List (String × LawExpr)
 
