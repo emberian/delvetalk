@@ -448,8 +448,8 @@ structure Lowering where
   modules : List SourceModule
   limits : Json
   typeFuel : Nat
-  /-- The package's text: the entry module's top-level clauses (a clause in any other module
-  refuses). Its laws (`Lowering.laws`) the artifact commits and the host judges every write of an
+  /-- The package's text: the top-level clauses of the entry module and of every module it is a
+  layer over, the lowest first (a clause in any other module refuses). Its laws (`Lowering.laws`) the artifact commits and the host judges every write of an
   object pinned to the artifact by (`Delvetalk.Host.Law.denote`); its rules and wants are the host's
   to place on every object it makes (KERNEL-HANDOFF §27). -/
   clauses : List ObjectiveBendLaw.Clause
@@ -499,11 +499,16 @@ def lowerElaborated (modules : List SourceModule) (decoded : List ObjectiveBendE
   let term := output.term
   let some entry := modules[entryModule]? | throw (elaborationRefusal "missing selected entry")
   unless templatesChecked do checkTemplates output typeFuel
-  for (m, index) in decoded.zipIdx do
-    if index != entryModule && !m.clauses.isEmpty then
-      throw (elaborationRefusal ("a clause belongs to the package's entry module; " ++ m.name ++
-        " is imported and declares " ++ toString m.clauses.length ++ " clause(s)"))
-  let clauses := (decoded[entryModule]?.map (·.clauses)).getD []
+  -- The entry's text is its own clauses and those of every module it is a layer over, the lowest
+  -- first: a layer extends a package and keeps its laws, rules and wants (names unique across).
+  let ancestry := ObjectiveBendElaborate.layerAncestry decoded entry.name
+  for m in decoded do
+    if !ancestry.contains m.name && !m.clauses.isEmpty then
+      throw (elaborationRefusal ("a clause belongs to the package's entry module or a module it is a layer over; " ++
+        m.name ++ " is imported and declares " ++ toString m.clauses.length ++ " clause(s)"))
+  let clauses := ancestry.reverse.flatMap fun name => ((decoded.find? (·.name == name)).map (·.clauses)).getD []
+  if let .error e := ObjectiveBendLaw.checkNames (clauses.map (·.name)) then
+    throw (elaborationRefusal (e ++ " (a layer's clauses join those below it; it renames, never overrides, one)"))
   return Lowering.make output term (entry.name ++ "." ++ entryDefinition) modules limits typeFuel clauses
 
 /-- The front end on parsed, checked modules: elaborate the selected declaration. -/

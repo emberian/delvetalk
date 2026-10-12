@@ -286,7 +286,9 @@ def Held.note (h : Held) (reads : Delvetalk.Turn.Reads) : M Unit :=
     resumption needs no store at that version; what the rest of the turn may read of those
     relations is their whole key set then. -/
 def Held.kept (h : Held) (s : Delvetalk.Turn.Suspension) : M Delvetalk.Turn.Suspension := do
-  let (state, fields) := Delvetalk.Turn.materializeStored h.store s.state
+  let (state, fields) ← match Delvetalk.Turn.materializeStored h.store s.state Limits.maxCheckpointBytes with
+    | .ok kept => pure kept
+    | .error e => evaluation e
   unless fields.isEmpty do recordCells h.object h.version { spans := fields.map (·, none) }
   return { s with state }
 
