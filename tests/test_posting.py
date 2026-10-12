@@ -8,6 +8,7 @@ the guide teaches that a poster cannot make.
 """
 import tempfile
 import unittest
+from unittest import mock
 
 from deploy import genesis
 from tests.poster import Poster
@@ -88,6 +89,18 @@ class Resident(unittest.TestCase):
         self.assertTrue(read['text'].startswith(paint + '\n\nhob:'), read['text'][:200])
         self.assertLessEqual(len(read['text']), post.CLIP)
 
+
+    def test_entering_a_place_by_post_tells_what_happened_there_above_the_reply(self):
+        host = self.town.client
+        self.poster.say('delvetalk porch ?')  # the poster has arrived
+        host.send({'op': 'world-renders'})  # a worker attends: the bridge waits the host's patience for it
+        told = 'The porch was swept and quiet, its lamp lit over the step.'
+        model = lambda req: {'status': 'replied', 'raw': told if 'a telling of porch' in req['user'][:80] else 'A plain thing.',  # noqa: E731
+                             'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 1, 'output_tokens': 1}}
+        with mock.patch('transport.bridge.time.sleep', lambda _: interpret.paint(host, model)):  # the worker paints while the bridge waits
+            [entered] = self.poster.say('delvetalk porch enter')
+        self.assertTrue(entered['text'].startswith('Before you arrived\n' + told + '\n\n'), entered['text'][:300])
+        self.assertLessEqual(len(entered['text']), post.CLIP)
 
 if __name__ == '__main__':
     unittest.main()

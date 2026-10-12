@@ -154,8 +154,9 @@ four before arrival (500), and is checked as a card's is: the frame above it, "W
 arrived", is the host's, so the paint addresses nobody and `secondPerson` stands. Beneath it, folded, the exact lines
 it draws on (`telling.exact`, with their entries), in its place when there is none; on entering a room its reply's
 own "While you were away" lead stands below as well. Nothing happened while away is `quiet`: no model, nothing shown.
-Shown on `/play/<place>` after an admitted `enter` and on `/o/<place>` to a signed-in reader; never posted, never in
-a reply, a receipt or a draft.
+Shown on `/play/<place>` after an admitted `enter` and on `/o/<place>` to a signed-in reader, and by post above the
+reply to an `enter` when painted and it fits the post (the owner: posting is the most accessible way in;
+`bridge.with_telling`); never in a receipt or a refusal.
 
 **The prompt** is `Paint.contract()`, the one prompt file. **The check** is `Enchant.verify`, the table
 `Enchant.clauses` in order, the first failed refusing; `Enchant.table` holds every word a clause reads:

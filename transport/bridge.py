@@ -118,13 +118,26 @@ def offered_object(reply, addressed=None):
     return (made or [reply.get('object') or addressed])[0]
 
 
-def with_paint(host, obj, text, sleep=time.sleep):
+def with_paint(host, obj, text, sleep=None):
     """`text` with the thing's verified paint above it (docs/OVERHAUL.md section 4; the owner: posting paint is fine, it
     is what the place says), as the public reads it, when one is verified and the two fit one post; else `text`. The
     paint is the one `painted` the front's pages show: the host's, checked, cached per version."""
     from transport.post import CLIP
-    paint = painted(host, PUBLIC, obj, sleep).get('text') if obj and text else None
+    paint = painted(host, PUBLIC, obj, sleep or time.sleep).get('text') if obj and text else None
     return f'{paint.rstrip()}\n\n{text}' if paint and len(paint.rstrip()) + 2 + len(text) <= CLIP else text
+
+
+def with_telling(host, principal, reply, obj, text, sleep=None):
+    """`text` with the place's telling above it when the turn entered the place (`result` `entered`): the host's frame
+    ("Before you arrived", "While you were away") and the verified paint of what happened there, as the front shows
+    it on `/play` (docs/VOICE.md "A telling"), when painted and it fits one post with the rest; else `text`."""
+    from transport.post import CLIP
+    if reply.get('status') != 'admitted' or (reply.get('result') or {}).get('label') != 'entered' or not text:
+        return text
+    told = painted(host, principal, obj, sleep or time.sleep, telling={})
+    frame, paint = ((told.get('telling') or {}).get('frame') or '').strip(), (told.get('text') or '').strip()
+    block = f'{frame}\n{paint}' if frame and paint else paint
+    return f'{block}\n\n{text}' if paint and len(block) + 2 + len(text) <= CLIP else text
 
 
 def draft_public(reply, origin=None, addressed=None, handles=None):
@@ -482,6 +495,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         text = draft_public(reply, origin, obj, handles)
         if reply.get('status') == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
             text = with_paint(host, offered_object(reply, obj), text)  # the place speaking, above its exact card
+        text = with_telling(host, did, reply, obj, text)  # entering a place: what happened there, above it all
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,
