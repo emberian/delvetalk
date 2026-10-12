@@ -270,6 +270,23 @@ class Kinds(Chain):
         print("\n  fullest room: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(card)))
         self.assertLess(reply["ticksUsed"], 1000000)
 
+    def test_a_kept_record_wants_its_keeper_while_a_line_waits_past_its_retention(self):
+        """Codex objects 9: `pending` compared counts of lines and admissions, which retention drops on their own: past
+        128 lines, the keeper having admitted them all, line 129 waited while both counts stood at 128 and the record
+        wanted nothing. A kept record keeps its waiting lines' numbers, dropped on admission and with their lines."""
+        r = self.host.send(op="world-create", principal="ember", identity="mk-ledger", object="ledger", modules=closure("Record"),
+                           entry="initial", seed=record(owner=label("ember"), keeper=label("ember")), law=genesis.RECORD_LAW)
+        self.assertEqual(r["status"], "created", r)
+        wants = lambda: [w["name"] for w in self.host.send(op="world-wants", principal="ember", object="ledger")["rows"]]
+        for n in range(1, 129):
+            self.assertEqual(self.turn("ledger", "write", record(text=label("line %d" % n)), principal=KIM)["status"], "admitted")
+            self.assertEqual(self.turn("ledger", "admit", record(number={"tag": "natural", "value": str(n)}), principal="ember")["status"], "admitted")
+        self.assertNotIn("pending", wants())
+        self.assertEqual(self.turn("ledger", "write", record(text=label("line 129")), principal=KIM)["status"], "admitted")
+        self.assertIn("pending", wants())
+        self.assertEqual(self.turn("ledger", "admit", record(number={"tag": "natural", "value": "129"}), principal="ember")["status"], "admitted")
+        self.assertNotIn("pending", wants())
+
     def test_a_kinds_law_is_the_package_s_own(self):
         from tests.test_objects import run_pure
         self.assertEqual(run_pure("Kind", "lawText")["value"]["value"], genesis.KIND_LAW)

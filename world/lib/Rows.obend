@@ -19,6 +19,9 @@ record Line:
 record Admission:
   n: Nat
   at: Nat
+# A kept record's line its keeper has not admitted, by number.
+record Pending:
+  n: Nat
 # A record's named moment (a bell's `rung`), once each, keyed {name}.
 record Mark:
   name: String

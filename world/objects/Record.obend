@@ -16,9 +16,11 @@ import ./Spween.obend as Spween
 # with no keeper lets every line stand as written. The commonplace is a record its owner keeps; a
 # bell, a cistern and a room are records with a body laid over them (world/bodies).
 #
-# A line is keyed {author, n}: `n` is `next` when it came, which only counts up, so key order
-# is the order of writing, a line keeps its number after older lines are dropped, and two
-# writers who read one `next` both stand. `admitted` holds the keeper's admissions by number;
+# A line is keyed {n, author}: `n` is `next` when it came, which only counts up, so key order
+# is the order of writing (the oldest is what retention drops), a line keeps its number after
+# older lines are dropped, and two writers who read one `next` both stand. `pending` holds the
+# numbers of a kept record's lines its keeper has not admitted, dropped as their lines are;
+# `admitted` holds the keeper's admissions by number;
 # `marks` the record's named moments, each once (a bell's `rung`). `head`, `kind`, `fields`,
 # `maker`, `makerHandle` and `post` are set when it is made (KIND's `make`) and never after.
 #
@@ -61,6 +63,7 @@ record State:
   makerHandle: fixed String
   post: fixed String
   lines: Relations.Relation<Line>
+  pending: Relations.Relation<Pending>
   admitted: Relations.Relation<Rows.Admission>
   marks: Relations.Relation<Rows.Mark>
   next: Nat
@@ -76,23 +79,12 @@ record State:
   weather: String
   tended: Nat
   tendedAt: Nat
+type Pending = Rows.Pending
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, tendedAt: 0n}
-# A record as edition 8 kept it (a carry lays this package over it, `migrate`): lines without their
-# verb, the commonplace's greetings and misses, and a record's own policy (the world's one is
-# `policy`), which are no longer kept.
-record Line8:
-  author: String
-  handle: String
-  text: String
-  at: Nat
-  n: Nat
-record Greeted8:
-  principal: String
-record Missed8:
-  principal: String
-  at: Nat
-record State8:
+  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), pending: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, tendedAt: 0n}
+# A record as edition 9 keeps it (the live town's; a carry lays this package over it, `migrate`):
+# no `pending`. A kept record's lines it has not admitted are its pending ones.
+record State9:
   owner: String
   keeper: String
   keeperHandle: String
@@ -102,7 +94,7 @@ record State8:
   maker: String
   makerHandle: String
   post: String
-  lines: Relations.Relation<Line8>
+  lines: Relations.Relation<Line>
   admitted: Relations.Relation<Rows.Admission>
   marks: Relations.Relation<Rows.Mark>
   next: Nat
@@ -116,20 +108,18 @@ record State8:
   left: Relations.Relation<Departure>
   things: Relations.Relation<Plans.Reference>
   weather: String
-  policy: Plans.Reference
-  greeted: Relations.Relation<Greeted8>
-  missed: Relations.Relation<Missed8>
   tended: Nat
   tendedAt: Nat
-# A line carried from edition 8 has no verb ("": written before verbs were kept).
-def migrate(old: State8) -> State:
-  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: Relations.Relation.rows({items: Lists.map(Relations.rows(old.lines), fn(l: Line8) -> Line: {author: l.author, handle: l.handle, verb: "", text: l.text, at: l.at, n: l.n})}), admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, tended: old.tended, tendedAt: old.tendedAt}
+def migrate(old: State9) -> State:
+  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: Relations.Relation.rows({items: waiting(old)}), admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, tended: old.tended, tendedAt: old.tendedAt}
+def waiting(old: State9) -> Lists.List<Pending>:
+  if old.keeper == "" then Lists.List.nil() else Lists.map(Lists.filter(Relations.rows(old.lines), fn(l: Line) -> Bool: Relations.has(old.admitted, {n: l.n}) == false), fn(l: Line) -> Pending: {n: l.n})
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
-# A body that keeps shorter lines keeps more of them (`relationsWith`).
+# A body that keeps shorter lines keeps more of them (`relationsWith`); `pending` keeps as many.
 def relations() -> Relations.Decls:
   relationsWith(128n)
 def relationsWith(lines: Nat) -> Relations.Decls:
-  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("author n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("n author"), limit: lines}), {field: "pending", key: Text.words("n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 16n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n})
 # Who may be in a room at once: one turn offers a line to at most 32 (the host's sendsPerTurn).
 def presenceMax() -> Nat:
   32n
@@ -142,9 +132,11 @@ def leftMax() -> Nat:
 # admissions, marks, presence, departures, variables, the floor) no proposal writes, the owner's
 # included; a kept record wants its keeper while a line waits, and any record a door while it has none.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the keeper, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission or a mark is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\nwant pending \"a line waits for its keeper\": not (new.keeper == \"\") and count(new.lines) >= count(new.admitted) + 1 asks delvetalk {{request.object}} admit\nwant door \"it opens onto nothing yet\": count(new.cites) == 0 asks delvetalk {{request.object}} door"
-def lineKey(line: Line) -> {author: String, n: Nat}:
-  {author: line.author, n: line.n}
+  "law owner \"the owner stays; only the owner changes the keeper, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission or a mark is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, waits, was admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(pending) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\nwant pending \"a line waits for its keeper\": not (new.keeper == \"\") and count(new.pending) >= 1 asks delvetalk {{request.object}} admit\nwant door \"it opens onto nothing yet\": count(new.cites) == 0 asks delvetalk {{request.object}} door"
+def pendingKey(p: Pending) -> {n: Nat}:
+  {n: p.n}
+def lineKey(line: Line) -> {n: Nat, author: String}:
+  {n: line.n, author: line.author}
 # A line's author is the turn's principal, never an argument. A hand's line tends the record; the
 # writer is answered with the line's number and the record as it now stands; the result is the number.
 def write(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
@@ -156,8 +148,29 @@ def act(state: State, input: {verb: String, text: String}, context: Abi.Context)
 def inscribe(state: State, verb: String, text: String, context: Abi.Context) -> Activity<Nat>:
   let line = {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}
   let written(_) = write {lines: insert line, next: add 1n, tended: set context.clock, tendedAt: set context.height}
+  waits(state, line, context)
+# On a kept record the line waits for its keeper (`pending`); the line retention drops at capacity,
+# the oldest, stops waiting with it.
+def waits(state: State, line: Line, context: Abi.Context) -> Activity<Nat>:
+  if state.keeper == "" then inscribed(state, line, context) else dropping(state, line, context)
+def dropping(state: State, line: Line, context: Abi.Context) -> Activity<Nat>:
+  match Lists.at(Relations.order(state.lines, fn(l: Line) -> Nat: l.n), 0n):
+    case some(o): if Relations.count(state.lines) >= linesKept() && Relations.has(state.pending, {n: o.value.n}) then dropped(state, o.value.n, line, context) else pended(state, line, context)
+    case none(_): pended(state, line, context)
+def dropped(state: State, n: Nat, line: Line, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {pending: retract {n: n}}
+  pended(state, line, context)
+def pended(state: State, line: Line, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {pending: insert {n: line.n}}
+  inscribed(extend(state, {pending: Relations.insert(state.pending, {n: line.n}, pendingKey)}), line, context)
+def inscribed(state: State, line: Line, context: Abi.Context) -> Activity<Nat>:
   let said = Document.text("#{natText(line.n)} is written: {line.text}\n\n")
   Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n, tended: context.clock, tendedAt: context.height}), context, 0n, Document.size(said))))
+# How many lines the record keeps (its `relations()`, a body's own).
+def linesKept() -> Nat:
+  match Lists.find(relations(), fn(d: Relations.Decl) -> Bool: d.field == "lines"):
+    case some(d): d.value.limit
+    case none(_): 128n
 # Tending: the clock minute and the entry of this attention, answered with the card.
 def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = write {tended: set context.clock, tendedAt: set context.height}
@@ -173,7 +186,7 @@ def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Card.
     case none(_): refused({clause: "noLine", reading: "No line numbered {natText(number)}; the card numbers them"}, context)
     case some(l): admitted(state, l.value, context)
 def admitted(state: State, line: Line, context: Abi.Context) -> Activity<Card.Replied>:
-  let written(_) = write {admitted: insert {n: line.n, at: context.height}, keeperHandle: set context.handle}
+  let written(_) = write {admitted: insert {n: line.n, at: context.height}, pending: retract {n: line.n}, keeperHandle: set context.handle}
   Card.tell(Card.Replied.done({action: "admit"}), Document.text("#{natText(line.n)} admitted: {line.text}\n"))
 def keeperReading(state: State, context: Abi.Context) -> String:
   if state.keeper == "" then "Nobody keeps this record; every line stands as written" else "Only the keeper, {Card.shown(state.keeper, state.keeperHandle, context)}, admits"
@@ -316,7 +329,7 @@ def numberedLine(state: State, context: Abi.Context, line: Document.Document, ro
 def moreLine(from: Nat, left: Nat, id: String) -> Document.Document:
   Document.text("… and {natText(left)} more: delvetalk {id} lines / from: {natText(from)}\n")
 def status(state: State, n: Nat) -> String:
-  if state.keeper == "" then "" else if isAdmitted(state, n) then "[admitted] " else "[pending] "
+  if state.keeper == "" then "" else if isAdmitted(state, n) then "[admitted] " else if Relations.has(state.pending, {n: n}) then "[pending] " else ""
 def entry(state: State, context: Abi.Context, line: Line) -> Document.Document:
   Document.text("#{natText(line.n)} {status(state, line.n)}{Card.shown(line.author, line.handle, context)}{Card.mine(line.author, context)}: {line.text}\n")
 # The head: the record's own first line, who keeps it, and the spell that writes in it.
