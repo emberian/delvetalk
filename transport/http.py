@@ -146,7 +146,7 @@ def compact(reply):
 
 def turn_view(reply):
     """A turn reply's default rendering: the turn line with its stamp, what the act fired, opened and where it stands (the
-    host's `revealed` lines, when it has any), the offered texts and where the receipt sits. The whole receipt is
+    host's `revealed` lines, when it has any), a refusal's `hint`, the offered texts and where the receipt sits. The whole receipt is
     `?full=1` and `GET /receipt/<slug>`."""
     rc = reply['receipt']
     line = turn_line(reply)
@@ -155,6 +155,7 @@ def turn_view(reply):
     return {'status': reply.get('status'), **({'class': cls} if cls and reply.get('status') == 'refused' else {}),
             'line': f"{pages.stamp(reply.get('status'), word=False)} {line}",
             **({'revealed': reply['revealed']} if reply.get('revealed') else {}),
+            **({'hint': outcome['hint']} if outcome.get('hint') else {}),  # a refusal's fix, as the host wrote it
             'offers': [o['text'] for o in reply.get('offers') or []],
             'receipt': {'slug': rc.get('slug'), 'height': rc.get('height')}}
 
@@ -902,7 +903,9 @@ class Handler(BaseHTTPRequestHandler):
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
             for t in turns:
                 self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
-            offers = [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)[0]]
+            revealed = [line for t in turns for line in t.get('revealed') or []]  # what the act fired, opened, closed: said first
+            offers = ['\n'.join(revealed)] * bool(revealed) + \
+                [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)[0]]
             names = self.server.handles(pages.A_DID.findall(name))
             usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
             answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))

@@ -13,6 +13,7 @@ import threading
 import unittest
 import urllib.parse
 from pathlib import Path
+from unittest import mock
 
 from tests.wire import label, nat, record, variant
 from tests.bend import closure, counter_modules, declared
@@ -749,6 +750,18 @@ class Play(InTown):
         self.assertEqual(s, 200)
         drafts = [json.loads(p.read_text()) for p in sorted(self.outbox.glob('*.json'))] if self.outbox.exists() else []
         self.assertTrue([d for d in drafts if d['http']['intent'].startswith('play:')], drafts)  # cracks R6: a public write from the play page waits for Post
+
+    def test_what_an_act_revealed_is_said_on_the_play_page(self):
+        real = self.front.host.send
+        said = 'rule seven fired: the bell rang at its seventh rain'
+
+        def revealing(req):  # the host's revealed lines, as it writes them on an admitted reply
+            got = real(req)
+            return {**got, 'revealed': [said]} if req.get('op') == 'world-turn' and got.get('status') == 'admitted' else got
+        with mock.patch.object(self.front.host, 'send', side_effect=revealing):
+            s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a bell that says so')
+        self.assertEqual(s, 200)
+        self.assertIn(said, self.words(page))
 
     def test_plant_by_spell_and_read_the_receipt(self):
         s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths')

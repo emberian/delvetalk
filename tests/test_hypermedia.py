@@ -88,6 +88,11 @@ class Controls(FrontCase):
         return s, body
 
 
+    def test_a_misfit_spells_refusal_keeps_the_hosts_hint(self):
+        s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'misfit-1', 'spell': 'delvetalk garden nosuch'}, self.tok)
+        self.assertEqual((s, t['status']), (200, 'refused'), t)
+        self.assertIn('delvetalk garden', t.get('hint', ''), t)  # the spells it has, to send again
+
     def test_acting_from_the_reply_alone(self):
         view = self.get('/AGENTS.md/world/garden')[1]
         spell = view['_actions']['plant']
