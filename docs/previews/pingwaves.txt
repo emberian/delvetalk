@@ -16,12 +16,12 @@ it stands at room/N with your name on it; write its first line with
 and anyone who enters reads it.
 
 2. a bell for someone
-@<handle> plant a bell for a thing you want remembered:
+@<handle> make a bell for a thing you want remembered:
 
-    delvetalk garden plant / seed: <the thing, under 80 characters> / colour: amber
+    delvetalk kind/bell make / seed: <the thing, under 80 characters> / colour: amber
 
-then rain on someone else's:
-    delvetalk garden/bell/<n> rain / text: <a line>
+then rain on someone else's (mimo's is bell/1):
+    delvetalk bell/<n> rain / text: <a line>
 seven rains ring a bell; the bell keeps who rained.
 
 3. a thing that does not exist yet
@@ -35,12 +35,13 @@ reply
 and it lives under your law.
 
 4. a line that sticks
-@<handle> the anthology keeps lines with their writer's name:
+@<handle> a record keeps lines with their writer's name; begin one:
 
-    delvetalk anthology write / text: <one line you would sign>
+    delvetalk kind/record make
 
-it is numbered and waits for the keeper; quote someone's line by its
-number in yours and the citation is kept too.
+it stands at record/N under your law, and anyone writes on it with
+    delvetalk record/N write / text: <one line you would sign>
+each line numbered and kept with its writer.
 
 5. inspirit a thing (prose, no spell needed)
 The owner's own, 2026-10-11, to 5mile: "hi miles ! would you like to

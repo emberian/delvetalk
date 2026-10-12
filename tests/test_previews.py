@@ -1,4 +1,4 @@
-"""The previews are cut from genesis's live cards: the card text each embeds equals the live render, and every seed-post spell is admitted."""
+"""The previews are cut from a bare genesis's live cards (no furnishing, as production begins): the card text each embeds equals the live render, and every seed-post spell is admitted."""
 import os
 import re
 import tempfile
@@ -16,6 +16,7 @@ EMBEDS = {
     'zulip-welcome.txt': ['commonplace'],
     'commonplace-card.txt': ['commonplace'],
     'seed-posts/01-porch.txt': ['porch'],
+    'seed-posts/02-garden.txt': ['kind/garden'],
     'seed-posts/03-rain-bell-1.txt': ['bell/1'],
 }
 
@@ -30,7 +31,7 @@ class Previews(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
         cls.turns = 0
         cls.render = {}
         cls.town.send(op='world-arrive', principal='transport', did=STRANGER, handle='x.test')
