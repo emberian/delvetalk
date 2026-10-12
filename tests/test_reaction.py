@@ -369,6 +369,50 @@ class Names(Reaction):
             self.assertIn("lit", self.names(lamp))
 
 
+class Unarmed(Reaction):
+    def test_a_reactive_thing_whose_rule_was_refused_says_it_is_inactive_until_armed(self):
+        """Codex objects 10: an errand whose rule `policy`'s law refused was made all the same, its card advertising
+        its condition and pay though it could never settle. The refusal is kept and shown, the errand inactive until
+        its maker arms it again; a lantern on a door that took its rule shows no such line."""
+        errand = self.made(GLM, "kind/errand", "\nasks: a model set\non: policy\ndone: count(new.examples) >= 9\n"
+                           "pays: delvetalk me note / text: thanks")
+        self.town.send(op="world-deliver", principal="transport", limit=64)
+        card = self.card(self.say(GLM, errand, ""))
+        self.assertIn("Inactive: its rule on policy was refused: ", card)
+        self.assertIn("Its maker arms it again: delvetalk %s arm" % errand, card)
+        stranger = self.say(KIM, errand, "delvetalk %s arm" % errand)
+        self.assertEqual((stranger["status"], stranger["receipt"]["outcome"]["clause"]), ("refused", "notMaker"), stranger)
+        again = self.admitted(self.say(GLM, errand, "delvetalk %s arm" % errand))
+        self.assertIn("Inactive: its rule on policy was refused: ", self.card(self.say(GLM, errand, "")))
+        door = self.made(OPENER, "kind/door", "\nname: gate")
+        lantern = self.made(OPENER, "kind/lantern", "\nname: lamp\ndoor: %s" % door)
+        self.town.send(op="world-deliver", principal="transport", limit=64)
+        self.assertNotIn("Inactive", self.card(self.say(OPENER, lantern, "")))
+
+
+class LongFront(Tide):
+    def test_a_fronts_clock_keeps_counting_past_its_retained_lines(self):
+        """Codex objects 8: the clock and the move counted the front's retained `fill` lines, and a record keeps 128
+        lines, dropping the oldest: once its fills are dropped (by more fills, or by lines anyone writes) the count
+        falls back or stands still, and the card and the move with it. The front keeps a fill count that only rises."""
+        front = self.made(KIM, "kind/front", "\nname: THE LONG\nfills: new.ticks >= 0\nsegments: 4\n"
+                          "move: delvetalk me note / text: the long front moved\ntide: tide")
+        clock = 100
+        for _ in range(9):
+            self.advance(clock)
+            clock += 100
+        self.assertIn("Its clock: 1 of 4; it has moved two times.", self.card(self.say(GLM, front, "")))
+        for n in range(128):
+            self.admitted(self.say(GLM, front, "delvetalk %s write / text: line %d" % (front, n)))
+        self.assertEqual([t for t in self.texts(front) if t.startswith("segment ")], [])
+        self.assertIn("Its clock: 1 of 4; it has moved two times.", self.card(self.say(GLM, front, "")))
+        for _ in range(3):
+            self.advance(clock)
+            clock += 100
+        self.assertIn("Its clock: 0 of 4; it has moved three times.", self.card(self.say(GLM, front, "")))
+        self.assertEqual(sum(1 for _, text in self.inbox(KIM) if text == "the long front moved"), 3)
+
+
 class Replay(Reaction):
     def test_a_fired_rule_replays_after_the_host_restarts(self):
         door = self.made(OPENER, "kind/door", "\nname: sluice")

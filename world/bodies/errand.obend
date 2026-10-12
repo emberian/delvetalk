@@ -24,6 +24,7 @@ import ./Text.obend as Text
 # rules), leaves it open with a line saying so, and the next write doing it settles again.
 # kind/errand's want `open` puts an errand nobody has done on "What wants a hand".
 type State = Super.State
+form arm:
 form settle:
   by: text 1..128
 form write:
@@ -44,7 +45,7 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("settle write lines door undoor") else Text.words("settle write lines")
+  Lists.concat(if context.principal == state.owner then Text.words("settle write lines door undoor") else Text.words("settle write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
 def methods() -> Lists.List<String>:
   Text.words("~made ~act")
 def on(state: State) -> String:
@@ -60,11 +61,20 @@ def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
 def placing(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: on(state)}, name: settles(context), when: Super.field(state, "done"), then: "delvetalk {context.object} settle / by: {{request.subject}}"}):
     case placed(_): payPlaced(state, context)
-    case refused(_): false
+    case refused(r): Super.unarmed(state, on(state), r.clause, r.reading, context)
 def payPlaced(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: on(state)}, name: paying(context), when: Super.field(state, "done"), then: Super.field(state, "pays")}):
-    case placed(_): true
-    case refused(_): false
+    case placed(_): Super.armedNow(state, context)
+    case refused(r): Super.unarmed(state, on(state), r.clause, r.reading, context)
+# Its maker places its rules again (taken off first, where they stood), while it is open.
+def arm(state: State, context: Abi.Context) -> Activity<Bool>:
+  if context.principal != state.maker then Super.armRefused(state, context) else if Super.marked(state, "done") then false else rearming(state, context)
+def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: {world: context.world, object: on(state)}, name: settles(context)}):
+    case _: unpayRule(state, context)
+def unpayRule(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: {world: context.world, object: on(state)}, name: paying(context)}):
+    case _: placing(state, context)
 # Its maker's rule on `on` settles it; anyone else, or another's rule there, is told what does.
 def settle(state: State, input: SettleInput, context: Abi.Context) -> Activity<Bool>:
   if Super.ruledFrom(state, on(state), context) == false then Card.refusing(false, {clause: "ruled", reading: ruled(state)}, context) else if Super.marked(state, "done") then false else awaiting(state, input.by, context)
@@ -99,7 +109,7 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   let asks = Super.field(state, "asks")
   let condition = Super.field(state, "done")
   let pays = Super.field(state, "pays")
-  Document.text("ERRAND from {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}, {doneBy(state, context)}: {asks}\nOn {on(state)}, done when: {condition}\nPays: {pays}\n{payLine(state, context)}")
+  Document.text("ERRAND from {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}, {doneBy(state, context)}: {asks}\nOn {on(state)}, done when: {condition}\nPays: {pays}\n{payLine(state, context)}{Super.inactiveLine(state, id)}")
 # The last pay not admitted, while it is open.
 def payLine(state: State, context: Abi.Context) -> String:
   if Super.marked(state, "done") then "" else lastPay(state)

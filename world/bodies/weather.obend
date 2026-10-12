@@ -23,6 +23,7 @@ import ./Text.obend as Text
 # refused by name.
 type State = Super.State
 form rain:
+form arm:
 form drizzle:
   from: natural 0..1000000000
 form write:
@@ -43,7 +44,7 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("rain write lines door undoor") else Text.words("rain write lines")
+  Lists.concat(if context.principal == state.owner then Text.words("rain write lines door undoor") else Text.words("rain write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
 def methods() -> Lists.List<String>:
   Text.words("~made ~act ~drizzle")
 def garden(state: State) -> String:
@@ -58,8 +59,14 @@ def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
   if context.caller != state.kind then false else placing(state, context)
 def placing(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object), when: "request.method == \"tick\" and new.ticks % {natText(every())} == 0 and request.clock <= \"{garden(state)}\".tended + 1440", then: "delvetalk {context.object} rain"}):
-    case placed(_): true
-    case refused(_): false
+    case placed(_): Super.armedNow(state, context)
+    case refused(r): Super.unarmed(state, tide(state), r.clause, r.reading, context)
+# Its maker places its rule again (taken off first, if it stood).
+def arm(state: State, context: Abi.Context) -> Activity<Bool>:
+  if context.principal != state.maker then Super.armRefused(state, context) else rearming(state, context)
+def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object)}):
+    case _: placing(state, context)
 # Its maker's rule on the tide rains, while the garden was tended within the day; anyone else, or
 # another's rule there, is told what does.
 def rain(state: State, context: Abi.Context) -> Activity<Nat>:
@@ -108,4 +115,6 @@ def drizzling(from: Nat, state: State, context: Abi.Context) -> Activity<Nat>:
     case viewed(v): raining(skipping(bells(v.state), from), 31n, 0n, from, state, context)
     case _: 0n
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
-  Document.text("WEATHER over {garden(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: it rains on every bell {garden(state)} holds once a clock day, by its rule on {tide(state)}, while someone has tended {garden(state)} that day{if Relations.count(state.lines) == 0n then \"; it has not rained yet.\" else \". Its rains:\"}\n")
+  let rained = if Relations.count(state.lines) == 0n then "; it has not rained yet.\n" else ".\n"
+  let rains = if Relations.count(state.lines) == 0n then "" else "Its rains:\n"
+  Document.text("WEATHER over {garden(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: it rains on every bell {garden(state)} holds once a clock day, by its rule on {tide(state)}, while someone has tended {garden(state)} that day{rained}{Super.inactiveLine(state, id)}{rains}")

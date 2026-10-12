@@ -247,6 +247,31 @@ def holding<T>(object: String, made: Made, context: Abi.Context, said: String ->
 # thing is sent by it too, but under the guest, and a hand's spell or a thing's send is no rule's.
 def ruledFrom(state: State, source: String, context: Abi.Context) -> Bool:
   source != "" && context.sender == source && context.principal == state.maker && Text.starts(context.intent, "rule:{source}:")
+# A body that answers another thing (a lantern, a weather, a front, an errand) places its rule there
+# at `made`. Refused, it says so in a line (`unarmed`, the clause and reading) and is inactive, its card
+# saying why, until its maker arms it again (`armed`, the newest of the two lines deciding).
+def inactive(state: State) -> Lists.Maybe<Line>:
+  match Lists.find(Lists.reverse(Relations.order(state.lines, fn(l: Line) -> Nat: l.n)), fn(l: Line) -> Bool: l.verb == "armed" || l.verb == "unarmed"):
+    case some(l): if l.value.verb == "unarmed" then Lists.Maybe.some({value: l.value}) else Lists.Maybe.none({})
+    case none(_): Lists.Maybe.none({})
+def arming(state: State, verb: String, text: String, context: Abi.Context) -> Activity<Bool>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}, next: add 1n}
+  verb == "armed"
+def unarmed(state: State, what: String, clause: String, reading: String, context: Abi.Context) -> Activity<Bool>:
+  arming(state, "unarmed", "its rule on {what} was refused: {clause}: {reading}", context)
+# The armed result: placed at its making, nothing is written; armed again, it says so.
+def armedNow(state: State, context: Abi.Context) -> Activity<Bool>:
+  match inactive(state):
+    case some(_): arming(state, "armed", "armed again", context)
+    case none(_): true
+# The card's line while inactive, with the spell that arms it (its maker's).
+def inactiveLine(state: State, id: String) -> String:
+  match inactive(state):
+    case some(l): "Inactive: {l.value.text}. Its maker arms it again: delvetalk {id} arm\n"
+    case none(_): ""
+# Arming is its maker's alone.
+def armRefused(state: State, context: Abi.Context) -> Activity<Bool>:
+  Card.refusing(false, {clause: "notMaker", reading: "Only {Card.shown(state.maker, state.makerHandle, context)} arms it"}, context)
 # What its kind does once the body is laid (Kind's `graft`, the kind as caller): nothing for a
 # plain record; a body that reacts to another thing (a weather, a lantern) places its rule there.
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
