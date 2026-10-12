@@ -39,6 +39,14 @@ namespace Delvetalk.Host.Law
 open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 open Delvetalk.Compiler.ObjectiveBendLaw (LawExpr LawTerm LawSide Clause Modality Spell)
 
+/-- What a thing stands at, as a law, a rule or a want reads it (`request.laws`, `request.refusedBy`): the
+    count of its law clauses, its own and those its `under` citations' texts hold (`lawClauses`), and the
+    count of writes its law has refused (the journal's `lawRefused` entries naming it). -/
+structure Standing where
+  laws : Nat
+  refusedBy : Nat
+  deriving BEq
+
 structure Facts where
   subject : String
   caller : String
@@ -66,6 +74,9 @@ structure Facts where
   /-- The want clauses of every object cited by `"O" wants N`: its placed wants, then those its
       `under` citations carry (`followed`), by object. -/
   wants : List (String × List Clause) := []
+  /-- What the written object and each object it cites stand at, by object (`Standing`): read for
+      `object`, so a cited want (`asItStands`) reads its own thing's. -/
+  standing : List (String × Standing) := []
 
 /-- The kinds of change a law tells apart by `request.kind`, by name. `proposed` is a state write
     that does not come from the object's own method: a `world-propose`, or the state a reprogram's
@@ -197,6 +208,8 @@ partial def read (facts : Facts) (old : Option Data) (new : Data) : LawTerm → 
   | .fact .verb => some (.text facts.verb)
   | .fact .clock => some (.num facts.clock)
   | .fact .object => some (.text facts.object)
+  | .fact .laws => (facts.standing.lookup facts.object).map fun s => .num s.laws
+  | .fact .refusedBy => (facts.standing.lookup facts.object).map fun s => .num s.refusedBy
   | .count side field .all => (rowsAt facts old new side field).map fun rows => .num rows.length
   | .int value => some (.num value)
   | .text text => some (.text text)
@@ -424,6 +437,19 @@ partial def followed (reads : List (String × Data)) (law : Law) (depth : Nat :=
       | .error _ => []
     | _ => []).eraseDups
 
+/-- The law clauses a law's `under` citations carry, each with the object whose text holds it, followed
+    through the cited texts' own `under` to `depth`, each once, as `followed` follows rules and wants. -/
+partial def followedLaws (reads : List (String × Data)) (law : Law) (depth : Nat := Limits.lawDepth) : List (String × String) :=
+  if depth == 0 then [] else
+  ((citations law).flatMap fun object => match (reads.lookup object).bind (rawField "law") with
+    | some (.label text) => match parseLawText text with
+      | .ok cited => cited.map (fun (name, _) => (object, name)) ++ followedLaws reads cited (depth - 1)
+      | .error _ => []
+    | _ => []).eraseDups
+
+/-- `request.laws` of a thing whose law is `law`: its own clauses and those `followedLaws` carries. -/
+def lawClauses (reads : List (String × Data)) (law : Law) : Nat := law.length + (followedLaws reads law).length
+
 /-! Small tests. Parsed laws go through the real parser. -/
 
 private def parsed (text : String) : LawExpr :=
@@ -432,7 +458,7 @@ private def parsed (text : String) : LawExpr :=
   | .error _ => .or (.eq (.fact .height) (.int 0)) (.not (.eq (.fact .height) (.int 0)))
 
 private def rec1 (n : Nat) : Data := .record [("count", .natural n), ("open", .boolean true)]
-private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", [], 0, "", [], "", []⟩
+private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", [], 0, "", [], "", [], []⟩
 
 #guard denote facts (some (rec1 3)) (rec1 4) (parsed "monotone(count)")
 #guard !denote facts (some (rec1 3)) (rec1 2) (parsed "monotone(count)")
@@ -449,18 +475,18 @@ private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", [], 0, "", [], "", []
 #guard !denote facts none (rec1 3) (parsed "new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count in [1, 3]")
 #guard denote facts none (rec1 3) (parsed "request.subject == request.caller")
-#guard !denote ⟨"a", "b", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (rec1 3) (parsed "request.subject == request.caller")
+#guard !denote ⟨"a", "b", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (rec1 3) (parsed "request.subject == request.caller")
 #guard denote facts none (rec1 3) (parsed "request.height == 3")
-#guard denote ⟨"a", "a", 1, 0, "", 2, "", [], 0, "", [], "", []⟩ none (rec1 3) (parsed "request.kind == 2")
+#guard denote ⟨"a", "a", 1, 0, "", 2, "", [], 0, "", [], "", [], []⟩ none (rec1 3) (parsed "request.kind == 2")
 #guard !denote facts none (rec1 3) (parsed "request.kind == 1")
-#guard !denote ⟨"a", "a", 1, 0, "", proposedKind, "", [], 0, "", [], "", []⟩ none (rec1 3) (parsed "request.kind == 0 or request.subject == \"b\"")
-#guard denote ⟨"a", "a", 1, 0, "", proposedKind, "", [], 0, "", [], "", []⟩ none (rec1 3) (parsed "request.kind == 3")
+#guard !denote ⟨"a", "a", 1, 0, "", proposedKind, "", [], 0, "", [], "", [], []⟩ none (rec1 3) (parsed "request.kind == 0 or request.subject == \"b\"")
+#guard denote ⟨"a", "a", 1, 0, "", proposedKind, "", [], 0, "", [], "", [], []⟩ none (rec1 3) (parsed "request.kind == 3")
 #guard denote facts none (rec1 3) (parsed "request.subject == \"7\"")
-#guard denote ⟨"ember", "ember", 1, 0, "abc", 0, "", [], 0, "", [], "", []⟩ none (rec1 3) (parsed "request.subject == \"ember\" and request.pin == \"abc\"")
-#guard !denote ⟨"kim", "kim", 1, 0, "abc", 0, "", [], 0, "", [], "", []⟩ none (rec1 3) (parsed "request.subject == \"ember\"")
+#guard denote ⟨"ember", "ember", 1, 0, "abc", 0, "", [], 0, "", [], "", [], []⟩ none (rec1 3) (parsed "request.subject == \"ember\" and request.pin == \"abc\"")
+#guard !denote ⟨"kim", "kim", 1, 0, "abc", 0, "", [], 0, "", [], "", [], []⟩ none (rec1 3) (parsed "request.subject == \"ember\"")
 #guard !denote facts none (rec1 3) (parsed "request.subject == \"ember\"")
 #guard denote facts none (rec1 3) (parsed "request.subject == 7")
-#guard !denote ⟨"ember", "ember", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (rec1 3) (parsed "request.subject == 7")
+#guard !denote ⟨"ember", "ember", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (rec1 3) (parsed "request.subject == 7")
 #guard denote facts none (rec1 3) (parsed "new.open == 1 and not new.count <= 2")
 #guard denote facts none (rec1 3) (parsed "new.count <= 2 implies new.open == 0")
 #guard !denote facts none (rec1 3) (parsed "new.missing == 0")
@@ -469,10 +495,10 @@ private def lst (xs : List String) : Data :=
 private def withList (xs : List String) (by_ : String) : Data :=
   .record [("entries", lst xs), ("lastBy", .label by_), ("count", .natural 1)]
 
-#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (withList [] "kim") (parsed "new.lastBy == request.subject")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (withList [] "bob") (parsed "new.lastBy == request.subject")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (withList [] "kim") (parsed "new.entries == request.subject")
-#guard denote ⟨"7", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (.record [("n", .natural 7)]) (parsed "new.n == request.subject")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList [] "kim") (parsed "new.lastBy == request.subject")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList [] "bob") (parsed "new.lastBy == request.subject")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList [] "kim") (parsed "new.entries == request.subject")
+#guard denote ⟨"7", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (.record [("n", .natural 7)]) (parsed "new.n == request.subject")
 #guard denote facts (some (withList ["a"] "x")) (withList ["a", "b", "c"] "x") (parsed "appendOnly(entries)")
 #guard denote facts (some (withList ["a"] "x")) (withList ["a"] "x") (parsed "appendOnly(entries)")
 #guard !denote facts (some (withList ["a", "b"] "x")) (withList ["a", "c"] "x") (parsed "appendOnly(entries)")
@@ -482,12 +508,12 @@ private def withList (xs : List String) (by_ : String) : Data :=
 #guard !denote facts (some (withList ["a"] "x")) (withList ["a"] "y") (parsed "unchanged(lastBy)")
 #guard !denote facts (some (withList ["a"] "x")) (withList ["a", "b"] "x") (parsed "unchanged(entries)")
 #guard denote facts (some (rec1 3)) (.record [("open", .boolean true), ("count", .natural 3)]) (parsed "new.count == 3")
-#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
-#guard !denote ⟨"bob", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.lastBy")
-#guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (withList ["forge"] "x") (parsed "request.caller in new.entries")
-#guard denote ⟨"a", "", 1, 0, "", 0, "ring", [], 0, "", [], "", []⟩ none (rec1 1) (parsed "request.method == \"ring\"")
-#guard !denote ⟨"a", "", 1, 0, "", 0, "toll", [], 0, "", [], "", []⟩ none (rec1 1) (parsed "request.method == \"ring\"")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
+#guard !denote ⟨"bob", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.entries")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList ["ann", "kim"] "x") (parsed "request.subject in new.lastBy")
+#guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (withList ["forge"] "x") (parsed "request.caller in new.entries")
+#guard denote ⟨"a", "", 1, 0, "", 0, "ring", [], 0, "", [], "", [], []⟩ none (rec1 1) (parsed "request.method == \"ring\"")
+#guard !denote ⟨"a", "", 1, 0, "", 0, "toll", [], 0, "", [], "", [], []⟩ none (rec1 1) (parsed "request.method == \"ring\"")
 #guard (Delvetalk.Compiler.ObjectiveBendLaw.parse "request.height in new.entries").toBool == false
 #guard denote facts none (withList ["a", "x"] "x") (parsed "new.lastBy in new.entries")
 #guard !denote facts none (withList ["a"] "x") (parsed "new.lastBy in new.entries")
@@ -518,10 +544,10 @@ private def limited : Facts := { facts with evicted := [("rains", rain "ann" 1 "
 #guard denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(old.rains) + 1")
 #guard !denote facts (some (rel [])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "count(new.rains) <= count(old.rains) + 1")
 #guard denote facts none (rel [rain "ann" 1 "a"]) (parsed "count(new.rains) <= count(old.rains) + 1")
-#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
-#guard !denote ⟨"bob", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
-#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.text")
-#guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, "", [], "", []⟩ none (rel [rain "forge" 1 "a"]) (parsed "request.caller in new.rains.author")
+#guard denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
+#guard !denote ⟨"bob", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
+#guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.text")
+#guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (rel [rain "forge" 1 "a"]) (parsed "request.caller in new.rains.author")
 
 -- The clock, the written object and `old.F` (LAW §4 A, E, H): METAPHYSICS's `alive` clause, admitted
 -- for a tend or within 1440 minutes of the last tending, refused past it; `old.F` at creation is the
@@ -634,6 +660,22 @@ private def oneRain : Data := rel [rain "ann" 1 "a"]
 private def twoRains : Data := rel [rain "ann" 1 "a", rain "kim" 2 "b"]
 #guard (fires kim2 (some oneRain) twoRains (clausesOf bellText)).map (·.name) == ["two"]
 #guard (fires kim2 (some twoRains) (rel [rain "ann" 1 "a", rain "kim" 2 "b", rain "eve" 3 "c"]) (clausesOf bellText)).isEmpty
+-- What a thing stands at: its clauses, own and followed (a kind cited twice counts once), and its refusals.
+private def kindTexts : List (String × Data) :=
+  [("kind/x", .record [("law", .label "law a: new.count <= 3\nlaw b: under \"kind/base\"")]),
+   ("kind/base", .record [("law", .label "law c: new.open == 1")])]
+#guard lawClauses kindTexts [("own", parsed "under \"kind/x\""), ("too", parsed "under \"kind/base\"")] == 5
+#guard lawClauses [] [("own", parsed "new.count <= 3")] == 1
+private def standing (laws refusedBy : Nat) : Facts := { facts with object := "seal", standing := [("seal", { laws, refusedBy })] }
+#guard denote (standing 2 1) none (rec1 0) (parsed "request.laws >= 2 and request.refusedBy >= 1")
+#guard !denote (standing 2 0) none (rec1 0) (parsed "request.laws >= 2 and request.refusedBy >= 1")
+#guard !denote facts none (rec1 0) (parsed "request.laws >= 0")
+-- A cited want reads its own thing's standing.
+private def citing : Facts :=
+  { standing 2 1 with object := "bell", reads := [("seal", rec1 0)],
+                      wants := [("seal", clausesOf "want tried: request.refusedBy >= 1 asks delvetalk {request.object} seal")] }
+#guard denote citing none (rec1 0) (parsed "\"seal\" wants tried")
+#guard !denote { citing with standing := [("seal", { laws := 2, refusedBy := 0 })] } none (rec1 0) (parsed "\"seal\" wants tried")
 #guard (poses { facts with clock := 2000 } "bell/2" (.record [("rains", (rawField "rains" oneRain).getD (.boolean false)), ("tended", .natural 100)]) (clausesOf bellText)).map (·.name) == ["second", "tended"]
 #guard (poses { facts with clock := 2000 } "bell/2" (.record [("rains", (rawField "rains" twoRains).getD (.boolean false)), ("tended", .natural 1000)]) (clausesOf bellText)).isEmpty
 #guard (((clausesOf bellText)[1]?.bind (·.modality.spell?)).bind (fill kim2 (some oneRain) twoRains)) ==
