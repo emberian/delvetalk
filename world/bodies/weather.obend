@@ -16,12 +16,15 @@ import ./Text.obend as Text
 # places a rule on its tide under its maker (`made`): at every twenty-fourth tick, a clock day,
 # while the garden was tended within the day, the tide casts `delvetalk <weather> rain`. A rain
 # writes the weather's line and the garden's (the garden cites it, which lets it: Record.forecast)
-# and sends a rain to each bell the garden holds, the first 32 (one turn sends at most 32). A bell
-# takes the weather's rain as the weather's line and is not tended by it, so a bell nobody visits
-# still goes quiet; a quiet bell takes nothing. Only its maker's rule on the tide rains: a hand's `rain` is
+# and sends a rain to each bell the garden holds: thirty in the rain's own turn (it also sends the
+# forecast, and one turn sends at most 32), then a `drizzle` it sends itself carries on, thirty-one
+# bells to a turn, until none remain. A bell takes the weather's rain as the weather's line and is
+# not tended by it, so a bell nobody visits still goes quiet; a quiet bell takes nothing. Only its maker's rule on the tide rains: a hand's `rain` is
 # refused by name.
 type State = Super.State
 form rain:
+form drizzle:
+  from: natural 0..1000000000
 form write:
   text: text 1..280
 form lines:
@@ -42,7 +45,7 @@ def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<C
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner then Text.words("rain write lines door undoor") else Text.words("rain write lines")
 def methods() -> Lists.List<String>:
-  Text.words("~made ~act")
+  Text.words("~made ~act ~drizzle")
 def garden(state: State) -> String:
   Super.field(state, "garden")
 def tide(state: State) -> String:
@@ -70,21 +73,39 @@ def tended(state: State, context: Abi.Context) -> Activity<Nat>:
     case _: unruled(state, context)
 def gardened(state: State, context: Abi.Context) -> Activity<Nat>:
   match world.viewField::<Relations.Relation<Plans.Reference>>({object: {world: context.world, object: garden(state)}, field: "things"}):
-    case viewed(v): forecasting(Lists.take(Lists.filter(Relations.rows(v.state), fn(t: Plans.Reference) -> Bool: Text.contains(t.object, "/bell/")), 32n), state, context)
+    case viewed(v): forecasting(bells(v.state), state, context)
     case _: 0n
+def bells(things: Relations.Relation<Plans.Reference>) -> Lists.List<Plans.Reference>:
+  Lists.filter(Relations.rows(things), fn(t: Plans.Reference) -> Bool: Text.contains(t.object, "/bell/"))
+def skipping(things: Lists.List<Plans.Reference>, count: Nat) -> Lists.List<Plans.Reference>:
+  match things:
+    case nil(_): things
+    case cons(c): if count == 0n then things else skipping(c.tail, count - 1n)
 def rainText(context: Abi.Context) -> String:
   "{context.object}'s rain, clock {natText(context.clock)}"
 def forecasting(things: Lists.List<Plans.Reference>, state: State, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "rain", text: "rain at clock {natText(context.clock)} on {natText(Lists.length(things))}", at: context.height, n: state.next}, next: add 1n}
   match world.send({object: {world: context.world, object: garden(state)}, method: "forecast", argument: {line: "rain at clock {natText(context.clock)}, on {natText(Lists.length(things))}"}}):
-    case _: raining(things, 0n, context)
-def raining(things: Lists.List<Plans.Reference>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+    case _: raining(things, 30n, 0n, 0n, state, context)
+# Sends a rain to the bells in turn while `room` sends remain; bells left over are the next drizzle's, from
+# `start` plus those sent.
+def raining(things: Lists.List<Plans.Reference>, room: Nat, sent: Nat, start: Nat, state: State, context: Abi.Context) -> Activity<Nat>:
   match things:
     case nil(_): sent
-    case cons(c): rained(c.head, c.tail, sent, context)
-def rained(thing: Plans.Reference, rest: Lists.List<Plans.Reference>, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+    case cons(c): if room == 0n then continuing(start + sent, sent, context) else rained(c.head, c.tail, room, sent, start, state, context)
+def rained(thing: Plans.Reference, rest: Lists.List<Plans.Reference>, room: Nat, sent: Nat, start: Nat, state: State, context: Abi.Context) -> Activity<Nat>:
   match world.send({object: thing, method: "rain", argument: {text: rainText(context)}}):
-    case delivery(_): raining(rest, sent + 1n, context)
-    case _: raining(rest, sent, context)
+    case delivery(_): raining(rest, room - 1n, sent + 1n, start, state, context)
+    case _: raining(rest, room, sent, start, state, context)
+def continuing(from: Nat, sent: Nat, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: {world: context.world, object: context.object}, method: "drizzle", argument: {from: from}}):
+    case _: sent
+# The rain's own continuation, sent by the weather to itself: the bells from `from`, thirty-one of them.
+def drizzle(state: State, input: DrizzleInput, context: Abi.Context) -> Activity<Nat>:
+  if context.sender != context.object then Card.refusing(0n, {clause: "ruled", reading: "the drizzle is the weather's own; delvetalk {context.object} rain"}, context) else drizzling(input.from, state, context)
+def drizzling(from: Nat, state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Relations.Relation<Plans.Reference>>({object: {world: context.world, object: garden(state)}, field: "things"}):
+    case viewed(v): raining(skipping(bells(v.state), from), 31n, 0n, from, state, context)
+    case _: 0n
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   Document.text("WEATHER over {garden(state)}, made by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: it rains on every bell {garden(state)} holds once a clock day, by its rule on {tide(state)}, while someone has tended {garden(state)} that day{if Relations.count(state.lines) == 0n then \"; it has not rained yet.\" else \". Its rains:\"}\n")
