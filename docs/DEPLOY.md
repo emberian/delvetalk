@@ -912,6 +912,18 @@ Post, a receipt no host issued (`hand search` finds none): the draft was skipped
 `hand.cast` say a try as the bridge does (not yet deployed). The chronicle's day counts the carry's 58 refresh entries
 as admitted acts and names refresh entries as the porch's and bell/1's firsts.
 
+Restarted in place twice the same evening on v12, the same binary (`d3e359371492`; carry-check plain green on
+`delvetalk-20261012T205022Z`): 3bc540ca (transport image `31d45c6d…de19`; suite 1184 tests, one flaky failure,
+`test_hypermedia.Envelope`'s temporary directory removed while a front handler thread still wrote, green five times
+alone) put the hand's try as a preview, but `hand speak` of the bell/2 try then raised `KeyError: 'object'`: the
+settling pass delivered the tide's carried tick 64 times, each answered by the receipt `carried:tide` is bound to in
+v9 (entry 3, `luhuk-mukiz`, no roots). lane/preview aba77045 (transport image `98222199…d511`; 1185 tests, 0 failed)
+names such a delivery by its card and says each receipt once; the try then answered `preview, nothing done (as of entry
+1038)`, no slug, no draft, height and bell/2 unchanged. The running image is tagged by its commit before each roll
+(`delvetalk:d943a90ed6d6`, `delvetalk:3bc540ca4db2`) so the old one stays loadable. The tide itself has not ticked
+since minute 29863631 (v9, about 15:11 UTC): each carry since v8's rearms it under `carried:tide`, which the carried
+identities bind to v9's entry, so the tick is never admitted (a host fix, and a carry, to come).
+
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
     cd /var/lib/delvetalk/v7/state && mkdir -p worlds/town && mv observe.sqlite* since outbox awaiting principals.txt \
