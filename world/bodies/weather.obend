@@ -18,7 +18,7 @@ import ./Text.obend as Text
 # writes the weather's line and the garden's (the garden cites it, which lets it: Record.forecast)
 # and sends a rain to each bell the garden holds, the first 32 (one turn sends at most 32). A bell
 # takes the weather's rain as the weather's line and is not tended by it, so a bell nobody visits
-# still goes quiet; a quiet bell takes nothing. Only the tide's rule rains: a hand's `rain` is
+# still goes quiet; a quiet bell takes nothing. Only its maker's rule on the tide rains: a hand's `rain` is
 # refused by name.
 type State = Super.State
 form rain:
@@ -57,9 +57,17 @@ def placing(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object), when: "request.method == \"tick\" and new.ticks % {natText(every())} == 0 and request.clock <= \"{garden(state)}\".tended + 1440", then: "delvetalk {context.object} rain"}):
     case placed(_): true
     case refused(_): false
-# The tide's rule rains; anyone else is told what does.
+# Its maker's rule on the tide rains, while the garden was tended within the day; anyone else, or
+# another's rule there, is told what does.
 def rain(state: State, context: Abi.Context) -> Activity<Nat>:
-  if context.sender != tide(state) then Card.refusing(0n, {clause: "ruled", reading: "the weather rains by its rule on {tide(state)}, once a clock day while {garden(state)} is tended: delvetalk {tide(state)} rules"}, context) else gardened(state, context)
+  if Super.ruledFrom(state, tide(state), context) == false then unruled(state, context) else tended(state, context)
+def unruled(state: State, context: Abi.Context) -> Activity<Nat>:
+  Card.refusing(0n, {clause: "ruled", reading: "the weather rains by its rule on {tide(state)}, once a clock day while {garden(state)} is tended: delvetalk {tide(state)} rules"}, context)
+# Its garden was tended within the day, read again as the rain comes.
+def tended(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Nat>({object: {world: context.world, object: garden(state)}, field: "tended"}):
+    case viewed(v): if context.clock <= v.state + 1440n then gardened(state, context) else unruled(state, context)
+    case _: unruled(state, context)
 def gardened(state: State, context: Abi.Context) -> Activity<Nat>:
   match world.viewField::<Relations.Relation<Plans.Reference>>({object: {world: context.world, object: garden(state)}, field: "things"}):
     case viewed(v): forecasting(Lists.take(Lists.filter(Relations.rows(v.state), fn(t: Plans.Reference) -> Bool: Text.contains(t.object, "/bell/")), 32n), state, context)

@@ -26,7 +26,7 @@ def doors(state: State) -> Lists.List<Door>:
   state.cites
 # The card without what changed (render is pure): the doors, with the spell that asks.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  Menu.trie(state.cites, "  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n", Lists.List.nil(), context)
+  Menu.trie(state.cites, Menu.unread("  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n"), Lists.List.nil(), context)
 # What changed since an entry, over the doors.
 def since(state: State, input: SinceInput, context: Abi.Context) -> Activity<Card.Replied>:
   withChanges(Card.Replied.done({action: "since"}), input.entry, context, state)
@@ -76,10 +76,10 @@ def withChanges(result: Card.Replied, since: Nat, context: Abi.Context, state: S
   match world.changed({since: since, prefix: "", after: ""}):
     case changed(c): wanted(result, Menu.changes(Lists.filter(c.items, fn(i: World.Change) -> Bool: i.object.object != context.object && ownCard(i.object.object) == false)), context, state)
     case denied(_): wanted(result, Menu.changes(Lists.List.nil()), context, state)
-# Then, after the doors, what wants a hand (`world.wanting`, the host's index of wants that hold
-# now, newest first), eight at most, each the thing, its want's reading and the spell that answers
-# it, within what the doors leave (Menu.trie); a world whose host does not answer it shows none.
-def wanted(result: Card.Replied, changes: String, context: Abi.Context, state: State) -> Activity<Card.Replied>:
+# And what wants a hand (`world.wanting`, the host's index of wants that hold now, newest first),
+# eight at most, each the thing, its want's reading and the spell that answers it: it leads the
+# card, and what changed yields it room (Menu.trie); a world whose host does not answer it shows none.
+def wanted(result: Card.Replied, changes: Menu.Changed, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match world.wanting({after: 0n, limit: 8n}):
     case wanting(w): Card.tell(result, Menu.trie(state.cites, changes, Lists.map(w.rows, wantLine), context))
     case refused(_): Card.tell(result, Menu.trie(state.cites, changes, Lists.List.nil(), context))

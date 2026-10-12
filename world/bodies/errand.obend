@@ -18,7 +18,7 @@ import ./Text.obend as Text
 # `on` under its maker (`made`): when `done` holds of a write there, one casts `delvetalk <errand>
 # settle / by: {request.subject}` and the other casts `pays`, both the maker's turns, so a pay is
 # whatever the maker may cast (a `lend` of a method they own, an `offer` of a thing they hold) and the
-# law of what it touches judges it. `settle` takes the call from `on`'s rule alone, marks the errand
+# law of what it touches judges it. `settle` takes the call from its maker's rule on `on` alone, marks the errand
 # `done` by that hand, once, and takes both rules off `on`. kind/errand's want `open` puts an errand
 # nobody has done on "What wants a hand".
 type State = Super.State
@@ -62,9 +62,9 @@ def payPlaced(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: on(state)}, name: paying(context), when: Super.field(state, "done"), then: Super.field(state, "pays")}):
     case placed(_): true
     case refused(_): false
-# `on`'s rule settles it; anyone else is told what does.
+# Its maker's rule on `on` settles it; anyone else, or another's rule there, is told what does.
 def settle(state: State, input: SettleInput, context: Abi.Context) -> Activity<Bool>:
-  if context.sender != on(state) then Card.refusing(false, {clause: "ruled", reading: ruled(state)}, context) else if Super.marked(state, "done") then false else settled(state, input.by, context)
+  if Super.ruledFrom(state, on(state), context) == false then Card.refusing(false, {clause: "ruled", reading: ruled(state)}, context) else if Super.marked(state, "done") then false else settled(state, input.by, context)
 def ruled(state: State) -> String:
   "it settles when {Super.field(state, \"done\")} holds of a write on {on(state)}"
 def settled(state: State, by: String, context: Abi.Context) -> Activity<Bool>:
