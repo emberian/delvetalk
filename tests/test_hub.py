@@ -134,8 +134,7 @@ class Hub(test_chain.Chain):
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # hob shows no card (docs/OVERHAUL.md §2: four answers): `card` is prose with no spell, silence.
         self.assertEqual(self.say("is there a map of the town?", KIMI, uri="at://x/post/4")["status"], "suspended")
-        carded = self.interpret("card")
-        self.assertEqual((carded["result"]["label"], carded["receipt"].get("offers", [])), ("silent", []), carded)
+        self.silent(self.interpret("card"))
         # hob's none is quiet: nothing offered.
         self.assertEqual(self.say("is the garden open on the wiki today?", KIMI, uri="at://x/post/3")["status"], "suspended")
         self.silent(self.interpret("none"))
