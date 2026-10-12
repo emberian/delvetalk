@@ -11,6 +11,7 @@ turn; a stale `if` admitted; an answer whose CID differs between the façade and
 to another service or one created before the world began observing being run; an answer carrying a private turn's
 offers; a request whose key sorts below one already read being missed.
 """
+import dataclasses
 import json
 import tempfile
 import unittest
@@ -33,6 +34,7 @@ from transport.delve import canonical
 from transport.host import HostClient
 from transport.repo import Repo, world_did
 from transport.requests import COLLECTION, Poller
+from transport.config import Config
 from transport.state import State
 from tests.wire import nat, record
 
@@ -312,6 +314,30 @@ class Held(unittest.TestCase):
         self.assertEqual(record_problems(a), [])
         self.assertEqual((a['outcome']['status'], a['offers'], a['receipt']['slug']), ('admitted', ['Planted.'], 'lodif-rukuz'))
         self.assertNotIn('offered', step())
+
+
+
+class Switch(unittest.TestCase):
+    """The poller reads every repository pds.delve.town lists: the bridge runs it only when the owner turns `requests` on."""
+
+    def observer(self, **config):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        st = State(Path(tmp.name) / 'state', config=dataclasses.replace(LOOPBACK, **config))
+        ob = bridge.delve_observer(st, '2026-10-12T00:00:00Z')
+        self.addCleanup(ob.db.close)
+        return ob
+
+    def test_the_live_bridge_polls_no_request_records_until_requests_is_on(self):
+        self.assertIsNone(self.observer().requests)
+        self.assertIsInstance(self.observer(requests=True).requests, Poller)
+
+    def test_fixture_posts_never_poll_the_pds(self):
+        self.assertIsNone(self.observer(requests=True, delve_mock='fixtures').requests)
+
+    def test_the_environment_turns_it_on(self):
+        self.assertFalse(Config.load(environ={}).requests)
+        self.assertTrue(Config.load(environ={'DELVETALK_REQUESTS': 'on'}).requests)
 
 
 if __name__ == '__main__':
