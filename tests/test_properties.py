@@ -308,10 +308,13 @@ class Run:
             return None
         return self.send(op="world-deliver", limit=16)
 
-    def call_every_method(self, rounds):
-        """Every public method of every object: well-typed inside its form, outside it, and malformed."""
+    def call_every_method(self, rounds, only=None):
+        """Every public method of every object (of `only`, when given): well-typed inside its form, outside it,
+        and malformed."""
         listed = self.objects()
         for obj in listed["ids"]:
+            if only is not None and obj not in only:
+                continue
             table = {m["name"]: m for m in self.inspect(obj).get("methods") or []}
             for name in listed["methods"].get(obj, []):
                 m = table.get(name)
@@ -329,14 +332,17 @@ class Run:
                     if got.get("status") != "refused":
                         self.fail("a value the method does not take was not refused", got.get("request"), got.get("status"))
 
-    def call_helpers(self):
+    def call_helpers(self, only=None):
         """Invariant 11: a name no declaration of the object exposes is noMethod to a direct turn: any
-        definition of any world module (its helpers, and the other objects' methods) not in its table."""
+        definition of any world module (its helpers, and the other objects' methods) not in its table.
+        Six such names an object (of `only`, when given)."""
         listed = self.objects()
         names = sorted(set(re.findall(r"^def (\w+)\(", "\n".join(p.read_text() for p in (ROOT / "world").rglob("*.obend")), re.M)))
         unoffered = set(re.findall(r"~(\w+)", " ".join(re.findall(r"^  Text\.words\(\"([^\"]*)\"\)", "\n".join(p.read_text() for p in (ROOT / "world").rglob("*.obend")), re.M))))
         probed = 0
         for obj in listed["ids"]:
+            if only is not None and obj not in only:
+                continue
             # "~m": declared, callable, not offered; a record
             # with a body lists its package's (Record's `~made`), not its body's, so those are read
             # from the sources' `methods()` for every object
@@ -348,9 +354,11 @@ class Run:
                     self.fail("an undeclared name ran from outside", got.get("request"), got.get("status"), (got.get("receipt") or {}).get("outcome"))
         return probed
 
-    def cards(self):
-        """Every object's card for its owner, a stranger and an anonymous reader."""
+    def cards(self, only=None):
+        """Every object's card (of `only`, when given) for its owner, a stranger and an anonymous reader."""
         for obj in self.objects()["ids"]:
+            if only is not None and obj not in only:
+                continue
             for reader in (OPENER, *STRANGERS, ""):
                 c = self.send(op="world-card", principal=reader, object=obj)
                 if c.get("status") == "card" and isinstance(c.get("text"), str):
@@ -370,12 +378,33 @@ class Property(unittest.TestCase):
 
 
 class EveryMethod(Property):
-    def test_every_public_method_takes_a_typed_value_and_refuses_a_malformed_one_by_name(self):
-        run = self.town("methods", 1)
-        run.call_every_method(rounds=3)
-        self.assertGreater(run.call_helpers(), 50)
-        run.cards()
+    """Every object of a furnished town, dealt into GROUPS by its place in id order, each group on a town of
+    its own (so side by side): the same objects, methods, rounds and probes as one town, other random draws."""
+    independent = True
+    GROUPS = 4
+
+    def group(self, i):
+        run = self.town("methods", 1 + i)
+        ids = run.objects()["ids"]
+        # Six probes an object over more than fifty in all, as when one town took every object.
+        self.assertGreater(6 * len(ids), 50)
+        only = set(sorted(ids)[i::self.GROUPS])
+        run.call_every_method(rounds=3, only=only)
+        self.assertEqual(run.call_helpers(only=only), 6 * len(only))
+        run.cards(only=only)
         self.assertFalse(run.violations, run.report())
+
+    def test_every_public_method_takes_a_typed_value_and_refuses_a_malformed_one_by_name_1(self):
+        self.group(0)
+
+    def test_every_public_method_takes_a_typed_value_and_refuses_a_malformed_one_by_name_2(self):
+        self.group(1)
+
+    def test_every_public_method_takes_a_typed_value_and_refuses_a_malformed_one_by_name_3(self):
+        self.group(2)
+
+    def test_every_public_method_takes_a_typed_value_and_refuses_a_malformed_one_by_name_4(self):
+        self.group(3)
 
 
 class RandomHour(Property):
