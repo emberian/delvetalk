@@ -734,7 +734,9 @@ candidate under the candidate tree's `world/lib` sealed as serve seals it (`veri
 --binary`; `--library LIB` names another), then carries the state to the candidate (`python3 -m transport carry`, below)
 and checks the carried world: every object at the state CID of the backup's head snapshot and rendering for its owner,
 every old receipt resolving by its slug, a new entry admitted. The tarball is never written. *green*: it replays under that
-library and carries: a restart in place. *green, breaking: the deploy must carry*: it does not replay, or it replays but
+library, carries, and the carry moves no object: a restart in place. *green, moving: the deploy must carry*: it replays
+under that library, but the image's packages or bodies move objects (the carry's `moved`, named), and a restart in place
+keeps each at the code its journal sealed. *green, breaking: the deploy must carry*: it does not replay, or it replays but
 the journal sealed another library (serve refuses that at start, "the bytes differ"), and it carries ("A new binary").
 The roll of b1fbdded onto v8 (2026-10-12) met the second case after a carry-check that compared no library said plain
 green; the host refused the town and the old images went back. *RED*: it does not
@@ -752,7 +754,7 @@ existing objects keep their pins; replay recompiles each one under the new binar
 hash match the journal. `deploy/carry-check.sh` on hbox ("Before a merge that touches the host") has said which of two
 cases the binary is, and the world is never begun again in either.
 
-*It replays* (green): the same replay edition and the same library. A restart in place:
+*It replays* (green): the same replay edition and the same library, and no object the image moves. A restart in place:
 
     deploy/backup.sh --image delvetalk-host:<old> /var/lib/delvetalk/v10 /var/backups/delvetalk      # first
     deploy/build.sh; docker save ... | ssh ... docker load  # new sha
@@ -764,7 +766,8 @@ If the new compiler refuses an old object, `world-open` fails, the healthcheck s
 set the old tag back and `up` again. If the image's `world/lib` differs from the library the world sealed, serve
 refuses the open ("library at ... has pin X but the journal records Y"): that binary carries.
 
-*It carries* (green, breaking): another replay edition, or another library. The world moves to a new data directory
+*It carries* (green, moving or breaking): another replay edition, another library, or packages and bodies that move
+objects. The world moves to a new data directory
 under the new binary: every object at its state, name, law and pin, every grant, pending delivery, suspension, post,
 handle and setting, the moderation and the quotas' counts, and every receipt of the world before resolving by its
 slug ("entry N of the world before the carry"). The carried genesis cites the old head; the old directory stays as it
@@ -849,7 +852,8 @@ from v8's journal through `/towns`). `serve-status`: the new SHA, replay 12. v10
 and `porch/lamp`: 104. Old receipts resolve by slug as "entry N of the world before the carry
 (/towns/v9/state/town.journal)". The backup and `verify.sh --full` of v10 were ok at 468, and hbox's pull replayed it.
 The switch took two minutes. Still wrong after it: bell/1 says "untended since entry 27", a height of v8's chain
-(v9's heights began again at 1, before edition 12), which this chain's entry 27 (a clock advance in v9) does not mean.
+(v9's heights began again at 1, before edition 12), which this chain's entry 27 (a clock advance in v9) does not mean
+(HOST-HANDOFF 5.200 reads tending by the clock; the next carry moves the records to it).
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 

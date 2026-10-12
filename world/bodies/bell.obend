@@ -18,7 +18,8 @@ import ./Text.obend as Text
 # rings, and it wants a first rain, a rain from a second hand, and tending when it has gone quiet.
 #
 # A hand's rain tends the bell; untended for `quietAfter()` minutes it goes quiet and takes `tend`
-# alone, as kind/bell's law says (`alive`), and its card says since which entry. A rain a thing
+# alone, as kind/bell's law says (`alive`), and its card says for how many days, by the clock the
+# law reads (never, when made before the clock was set). A rain a thing
 # sends (the weather's) is that thing's line and tends nothing, so a bell nobody visits goes quiet
 # under any weather; a quiet bell takes a thing's rain as nothing.
 type State = Super.State
@@ -58,9 +59,14 @@ def aliveReading() -> String:
   "answers while tended within {natText(quietAfter())} minutes"
 def quiet(state: State, context: Abi.Context) -> Bool:
   context.clock > state.tended + quietAfter()
-# Since which entry a quiet bell has been untended; 0 while it answers.
+# Since which clock minute a quiet bell has been untended (0 for one never tended); 0 while it answers.
 def quietSince(state: State, context: Abi.Context) -> Nat:
-  if quiet(state, context) then state.tendedAt else 0n
+  if quiet(state, context) then state.tended else 0n
+# How long a quiet bell has been untended, in whole days of the clock; one tended at clock 0, before
+# the transport set the clock (made at a genesis), was never tended.
+def untended(state: State, context: Abi.Context) -> String:
+  let days = (context.clock - state.tended) / 1440n
+  if state.tended == 0n then "never tended" else if days == 1n then "untended a day" else "untended {Text.countWord(days)} days"
 def views() -> Lists.List<String>:
   Text.words("quietSince")
 def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>:
@@ -88,7 +94,7 @@ def entry(state: State, context: Abi.Context, line: Rows.Line) -> Document.Docum
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let colour = Super.field(state, "colour")
   let article = if colour == "amber" then "An" else "A"
-  let sound = if quiet(state, context) then "quiet, untended since entry {natText(state.tendedAt)}" else if Super.marked(state, "rung") then "rung" else "silent"
+  let sound = if quiet(state, context) then "quiet, {untended(state, context)}" else if Super.marked(state, "rung") then "rung" else "silent"
   let seed = Super.field(state, "seed")
   let next = if quiet(state, context) then "Tend it:\n  delvetalk {id} tend\n" else "Rain on it:\n  delvetalk {id} rain / text: <1 to 200 characters>\n"
   Document.text("{article} {colour} bell, planted by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: “{seed}” — {sound}. {next}")

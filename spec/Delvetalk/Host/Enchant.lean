@@ -90,7 +90,8 @@ structure Strokes where
   coined : Bool := false
   coiner : String := ""
   made : Nat := 0
-  /-- The entry it was last tended at (0: never), and how long ago, in words. -/
+  /-- The clock minute it was last tended at (0: never; the transport keeps a world's clock past 0), and how long ago,
+      in words. -/
   tended : Nat := 0
   tendedAgo : String := ""
   keeper : String := ""
@@ -198,9 +199,9 @@ def Strokes.text (s : Strokes) : String := Id.run do
       (if l.handle.isEmpty then "someone" else l.handle) ++ on ++ (if tag.isEmpty then "" else s!" ({tag})") ++ ": " ++ quoted l.text) ++
     part "Marks:" (s.marks.map fun m => if m.handle.isEmpty then m.name else s!"{m.name}, by {m.handle}") ++
     part "Counts:" (s.quantities.map Quantity.text) ++
-    part (if s.day.isSome then "What wants a hand, oldest first:" else "What it wants now:") (s.wants.map fun x =>
+    part (if s.day.isSome then "What still wants a hand, oldest first:" else "What it wants now:") (s.wants.map fun x =>
       (if x.object.isEmpty then "" else s!"{x.object}, ") ++ x.name ++ (if x.reading.isEmpty then "" else ": " ++ quoted x.reading) ++
-        (if x.spell.isEmpty then "" else s!"; answered by: {x.spell}")) ++
+        (if x.spell.isEmpty then "" else s!"; the spell it asks for: {x.spell}")) ++
     part "Rules on it:" (s.rules.map fun r =>
       s!"{r.name}, {if r.owner.isEmpty then "its kind's" else r.owner ++ "'s"}: {quoted r.reading}" ++ (if r.fired == 0 then " (has not fired)" else " (has fired)")) ++
     part "What its kind holds it to:" (s.laws.map fun (n, r) => if r.isEmpty then n else s!"{n}: {quoted r}") ++
@@ -409,10 +410,8 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
     (others.filter (·.2 > 0)).map fun (k, n) => ({ n, unit := k } : Quantity)
   let fields := (rows fs "fields").filterMap fun r => do pure (← text? r "name", ← text? r "value")
   let made := (nat? fs "made").getD (((w.touched[id]?).bind (·[0]?)).map (· + 1) |>.getD 0)
-  let tendedAt := (nat? fs "tendedAt").getD 0
-  let tendedAgo := match nat? fs "tended" with
-    | some at_ => if tendedAt == 0 && at_ == 0 then "" else ago (w.clock - at_)
-    | none => ""
+  let tended := (nat? fs "tended").getD 0
+  let tendedAgo := if tended == 0 then "" else ago (w.clock - tended)
   let maker := handleIn w fs "makerHandle" "maker"
   -- A coinage: made after a post that is not its maker's own (`Record.credit`), crediting its coiner.
   let post := (text? fs "post").getD ""
@@ -423,7 +422,7 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
   let kindHere := if kind.isEmpty then kindOf w around else kind
   return { object := id, version, kind, voice := kindText w kindHere "voice", about := kindText w kindHere "about",
            head := (text? fs "head").getD ((text? fs "name").getD ""), fields,
-           maker, coined, coiner, made, tended := tendedAt, tendedAgo,
+           maker, coined, coiner, made, tended, tendedAgo,
            keeper := handleIn w fs "keeperHandle" "keeper", owner := handleIn w fs "ownerHandle" "owner",
            quantities, lines, marks, verbs, laws, rules, wants, doors, around, present }
 
@@ -458,9 +457,11 @@ def eventSentence (w : World) (e : DayEvent) : String :=
   | "wanted" => s!"{e.object} came to want {e.name}{r true}"
   | _ => s!"{e.object} stopped wanting {e.name}"
 
-/-- What wants a hand across the world now (`Ops.wanting`, the commonplace's list), the oldest eight. -/
+/-- What still wants a hand across the world now (`Ops.wanting`), the eight that have waited longest, oldest first,
+    as `hand morning` lists them exact beneath the paint: by their readings, without spells, since a morning's paint
+    names no spell (`Paint.contract`) and the `spells` clause holds it to that. -/
 def wantsOfDay (w : World) (reader : String) : List Want :=
-  (wanting w reader 0 newestLines).1.map fun r => { object := r.object, name := r.name, reading := r.reading, spell := r.asks }
+  (wanting w reader 0 newestLines (oldest := true)).1.map fun r => { object := r.object, name := r.name, reading := r.reading, spell := "" }
 
 /-- How many of a day's newest events its strokes carry. -/
 def dayEvents : Nat := 16

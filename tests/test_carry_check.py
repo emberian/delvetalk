@@ -6,7 +6,8 @@ carry". deploy/verify.sh --library seals a tree's world/lib as serve does (its f
 Evidence for docs/DEPLOY.md "Before a merge that touches the host" (layer: ops). Refuted by a carry-check that answers
 plain green for a candidate whose world/lib differs from the sealed one (the deploy of b1fbdded: carry-check said
 "replays and carries" and serve refused "the bytes differ"), or by verify.sh --library refusing the very library serve
-sealed.
+sealed, or that answers plain green for one whose packages move an object, which a restart in place keeps at its old
+code.
 
     python3 -W error -m unittest tests.test_carry_check -v
 """
@@ -45,6 +46,11 @@ class CarryCheck(unittest.TestCase):
         shutil.copytree(Path(LIBRARY).parent, cls.other)
         with open(cls.other / 'lib' / 'Text.obend', 'a') as f:
             f.write('# a byte the journal never sealed\n')
+        # A third: the same library, a package of the image's changed (a comment in Record's), so its records move.
+        cls.moved = cls.tmp / 'moved' / 'world'
+        shutil.copytree(Path(LIBRARY).parent, cls.moved)
+        with open(cls.moved / 'objects' / 'Record.obend', 'a') as f:
+            f.write('# a byte the records were never made with\n')
 
     @staticmethod
     def verify(flags, data):
@@ -71,6 +77,15 @@ class CarryCheck(unittest.TestCase):
         self.assertIn('carry-check: green, breaking: the deploy must carry: the backup replays under this binary, but library at', other.stdout)
         self.assertIn('the bytes differ', other.stdout)
         self.assertNotIn('carry-check: green: the backup replays', other.stdout)
+
+    def test_carry_check_says_a_deploy_carries_when_the_image_moves_an_object(self):
+        # host32: the bell's tending read by the clock reaches the live bells only through a carry; a restart in place
+        # keeps every object at the code its journal sealed, and carry-check said plain green.
+        moved = self.check('--library', str(self.moved / 'lib'))
+        self.assertEqual(moved.returncode, 0, moved.stderr)
+        self.assertIn('carry-check: green, moving: the deploy must carry: the backup replays under this binary and its library, but the image moves ', moved.stdout)
+        self.assertRegex(moved.stdout.splitlines()[-1], r'moves [1-9][0-9]* objects \(')
+        self.assertNotIn('carry-check: green: the backup replays', moved.stdout)
 
 
 if __name__ == '__main__':

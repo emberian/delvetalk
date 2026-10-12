@@ -137,7 +137,8 @@ name. Never an entry number, a version or a line number: the reader never needs 
 sentences with no entry numbers, rules and wants by their readings, avatars left out; the day's lines with the thing
 each is on; counts (acts admitted, refusals, hands, things made by what they are called, the day's lines by the verb
 that wrote them: rains as rains); with `morning: true`, what
-wants a hand, oldest first. Up to 600 characters. That is the morning card; without `morning`, the chronicle's day.
+still wants a hand, the eight longest waiting, oldest first, by their readings and without spells (the exact list
+beneath carries them). Up to 600 characters. That is the morning card; without `morning`, the chronicle's day.
 
 **The prompt** is `Paint.contract()`, the one prompt file. **The check** is `Enchant.verify`, the table
 `Enchant.clauses` in order, the first failed refusing; `Enchant.table` holds every word a clause reads:

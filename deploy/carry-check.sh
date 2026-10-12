@@ -15,7 +15,8 @@
 # The carry reads each journal's snapshot at its head, which backup.sh writes into every tarball with the binary
 # that replayed it (verify.sh --snapshot). A tarball from before that takes --old-binary or --old-image: the binary
 # of the backup's own edition writes the snapshot first. --leave is the carry's: an object carried retired.
-# Exit 0: green (the backup replays under LIB, or it does not and carries: "green, breaking: the deploy must carry").
+# Exit 0: green (the backup replays under LIB and the image moves no object; or the image moves some, "green, moving:
+# the deploy must carry"; or it does not replay and carries: "green, breaking: the deploy must carry").
 # Exit 1: red, named.
 # The backup is never written.
 set -euo pipefail
@@ -65,8 +66,16 @@ if ! (cd "$here/.." && DELVETALK_LIBRARY=$library python3 -m transport carry --f
   exit 1
 fi
 grep -v '^hob:' "$work/carry.out"
-if [[ $replays == 1 ]]; then
+# The objects the image's packages and bodies move (each world line's `moved`): a restart in place keeps each at the code
+# its journal sealed, so only a carry brings them the image's.
+moving=$(python3 -c '
+import json, sys
+ids = [m["object"] for line in sys.stdin if line.startswith("{") for j in [json.loads(line)] if "check" in j for m in j.get("moved", [])]
+print("%d objects (%s%s)" % (len(ids), ", ".join(ids[:8]), ", ..." if len(ids) > 8 else "") if ids else "")' <"$work/carry.out")
+if [[ $replays == 1 && -z $moving ]]; then
   echo "carry-check: green: the backup replays under this binary and its library, and carries"
+elif [[ $replays == 1 ]]; then
+  echo "carry-check: green, moving: the deploy must carry: the backup replays under this binary and its library, but the image moves $moving, which a restart in place keeps at the code they had; it carries"
 elif [[ -n $sealed && $unreplayed == 0 ]]; then
   echo "carry-check: green, breaking: the deploy must carry: the backup replays under this binary, but $sealed, so serve refuses it at start; it carries"
 else

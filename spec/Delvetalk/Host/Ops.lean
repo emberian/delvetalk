@@ -5374,12 +5374,14 @@ structure Wanted where
 
 /-- What wants a hand across the world (`world.wanting {after, limit}`, `world-wanting`): each row of the
     wanting index (`World.wanting`) whose want still holds of its thing as it stands, for things `reader`
-    may view, newest first (by `since`, then thing and name). A page holds whole heights, each below
-    `after` (0: from the newest), while it stays within `limit` rows (0, or past `Limits.listPage`, is
-    `listPage`); its first height is whole whatever its size, so `after` set to a page's last `since`
-    reads on without a gap. `more` when older rows remain. A want that came true by the clock alone,
-    with no entry to make it, is not in the index: the thing's `wants` reads it. Derived, no root. -/
-def wanting (w : World) (reader : String) (after limit : Nat) : List Wanted × Bool := Id.run do
+    may view, newest first (by `since`, then thing and name), or with `oldest` oldest first (what has
+    waited longest: the morning card's). A page holds whole heights, each past `after` in that order
+    (below it, or with `oldest` above it; 0: from the first), while it stays within `limit` rows (0, or
+    past `Limits.listPage`, is `listPage`); its first height is whole whatever its size, so `after` set
+    to a page's last `since` reads on without a gap. `more` when rows remain past the page. A want that
+    came true by the clock alone, with no entry to make it, is not in the index: the thing's `wants`
+    reads it. Derived, no root. -/
+def wanting (w : World) (reader : String) (after limit : Nat) (oldest : Bool := false) : List Wanted × Bool := Id.run do
   let rows : List Wanted := w.wanting.toList.flatMap fun (id, xs) => match w.objects[id]? with
     | none => []
     | some o =>
@@ -5387,11 +5389,12 @@ def wanting (w : World) (reader : String) (after limit : Nat) : List Wanted × B
       let holding := posing w w.height id o
       let facts := wantFacts w w.height id o
       xs.filterMap fun (name, since) =>
-        if after != 0 && since ≥ after then none else
+        if after != 0 && (if oldest then since ≤ after else since ≥ after) then none else
         (holding.find? (·.clause.name == name)).map fun c =>
           { object := id, name, reading := c.clause.reading, asks := wantAsks w reader facts id o c, since }
   let sorted := (rows.toArray.qsort fun (a b : Wanted) =>
-    a.since > b.since || (a.since == b.since && (a.object < b.object || (a.object == b.object && a.name < b.name)))).toList
+    (if oldest then a.since < b.since else a.since > b.since) ||
+      (a.since == b.since && (a.object < b.object || (a.object == b.object && a.name < b.name)))).toList
   let cap := if limit == 0 then Limits.listPage else min limit Limits.listPage
   let mut page : Array Wanted := #[]
   let mut rest := sorted
@@ -5407,12 +5410,12 @@ def wanting (w : World) (reader : String) (after limit : Nat) : List Wanted × B
 def wantedData (r : Wanted) : Data := .record [("object", .label r.object), ("name", .label r.name),
   ("reading", .label r.reading), ("asks", .label r.asks), ("since", .natural r.since)]
 
-/-- `world-wanting {principal?, after?, limit?}` → `{status: wanting, rows: [{object, name, reading?, asks,
+/-- `world-wanting {principal?, after?, limit?, oldest?}` → `{status: wanting, rows: [{object, name, reading?, asks,
     since}], more}` (`wanting`). -/
 def wantingOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let nat := fun (k : String) => (j.getObjValAs? Nat k).toOption.getD 0
-  let (rows, more) := wanting w reader (nat "after") (nat "limit")
+  let (rows, more) := wanting w reader (nat "after") (nat "limit") ((j.getObjValAs? Bool "oldest").toOption.getD false)
   return Json.mkObj [("status", toJson "wanting"), ("more", toJson more), ("rows", Json.arr (rows.toArray.map fun r =>
     Json.mkObj ([("object", toJson r.object), ("name", toJson r.name), ("asks", toJson r.asks), ("since", toJson r.since)] ++
       (if r.reading.isEmpty then [] else [("reading", toJson r.reading)]))))]
