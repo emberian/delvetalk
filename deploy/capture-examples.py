@@ -218,7 +218,7 @@ def maker(cap):
 
 def forger(cap):
     cap.say('## A forger')
-    did = cap.login('smith.delve.town')
+    cap.login('smith.delve.town')
     cap.step('POST', '/check', {'entry': 'flip', 'source': FLIP})
     cap.step('POST', '/check', {'entry': 'bump', 'source': TALLY})
     cap.step('POST', '/scratch', {'name': 'try'})

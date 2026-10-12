@@ -61,7 +61,6 @@ def main():
         assert raw.send({'op': 'world-create', 'principal': OWNER, 'identity': 'mk', 'object': 'c', 'entry': 'initial',
                          'modules': closure('Counter', modules_with_counter()), 'seed': EMPTY})['status'] == 'created'
         status = lambda i: {'op': 'world-status'}
-        count = [0]
 
         def bump(tag):
             return lambda i: {'op': 'world-turn', 'principal': OWNER, 'object': 'c', 'method': 'bump', 'argument': EMPTY, 'identity': f'{tag}-{i}'}
