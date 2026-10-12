@@ -84,12 +84,14 @@ place, the change and the next moves.
 | claim a handle, guests' invitations, OAuth login | not needed: a post is its author's | yes | web-only, said in the guide |
 | the STUDIO door on the commonplace | was a URL a poster cannot walk | yes | built: it names `delvetalk try` first, the REPL as HTTP's |
 
-## Where a post is poorer today
+## Where a post was poorer, and what answers it now
 
-No paint (`bridge.draft_text` carried "the exact card only"; the owner has since decided posting paint is fine: it is
-verified and is what the place says). The guide is a URL, in the welcome, the STUDIO door and the launch. Long
-things are cut: `Card.limit` clips a card to 1,400 characters less its receipt line, and the JSON card points at
-`/source`. No preview and no quiet read. The welcome lists five doors and teaches nothing by doing.
+No paint: now above the exact card when verified and it fits (`bridge.with_paint`), and an enter's reply opens with
+the place's telling (`with_telling`). The guide was a URL: now `delvetalk guide` and its parts. Long things were cut:
+a draft over the clip is now a numbered thread; a card is still clipped by its renderer (`Card.limit`), so what it
+leaves out is read on its own (`?`, `rules`, `wants`, the mirror). No preview and no quiet read: `try`, the mirror.
+The welcome listed five doors: `hand welcome` is one move done (a bell of the hand's own, its real receipt) and the
+same move offered back; a resident's first admitted reply ends with the next two moves (`try`, `receipt`).
 
 ## What each flow costs
 

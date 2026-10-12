@@ -140,6 +140,18 @@ def with_telling(host, principal, reply, obj, text, sleep=None):
     return f'{block}\n\n{text}' if paint and len(block) + 2 + len(text) <= CLIP else text
 
 
+def first_move(st, did, reply, text):
+    """A resident's first admitted reply teaches the next move by its spells (docs/POSTING.md build 8): try before an
+    act is real, and find this one again by its receipt. Once a resident; only when it fits the post."""
+    from transport.post import CLIP
+    slug = (reply.get('receipt') or {}).get('slug')
+    if reply.get('status') != 'admitted' or not text or not slug or did in st.words(st.taught):
+        return text
+    st.append(st.taught, did)
+    line = f'Next, see it before it is real: delvetalk try, a spell indented under it. This act again: delvetalk receipt / of: {slug}\n'
+    return text + line if len(text) + len(line) <= CLIP else text
+
+
 def draft_public(reply, origin=None, addressed=None, handles=None):
     """`draft_text`, or for an admitted turn that read or wrote what the public may not read (the host's `inPublic`: a
     post is read by everyone), its receipt line."""
@@ -496,6 +508,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if reply.get('status') == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
             text = with_paint(host, offered_object(reply, obj), text)  # the place speaking, above its exact card
         text = with_telling(host, did, reply, obj, text)  # entering a place: what happened there, above it all
+        text = first_move(st, did, reply, text)
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,

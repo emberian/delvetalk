@@ -13,6 +13,7 @@ from unittest import mock
 from deploy import genesis
 from tests.poster import Poster
 from transport import interpret, post
+from transport.hand import WELCOME, Hand
 from tests.town import Town
 
 
@@ -101,6 +102,24 @@ class Resident(unittest.TestCase):
             [entered] = self.poster.say('delvetalk porch enter')
         self.assertTrue(entered['text'].startswith('Before you arrived\n' + told + '\n\n'), entered['text'][:300])
         self.assertLessEqual(len(entered['text']), post.CLIP)
+
+    def test_the_welcome_is_one_move_done_and_offered_back_and_a_first_reply_teaches_the_next(self):
+        h = Hand(self.poster.st, self.town.client, sleep=lambda _: None)
+        came = h.welcome()
+        text = came['text']
+        self.assertTrue(text.startswith('hob: the frog on the quiet line'), text)
+        self.assertIn('    ' + WELCOME, text)  # the move as cast, quoted: never cast again by being posted
+        self.assertIn(f"receipt {came['slug']}", text)  # a real receipt, which resolves
+        self.assertIn('Yours: reply under this post with\n    delvetalk kind/bell make / seed: <your words> / colour: silver', text)
+        self.assertLessEqual(len(text), post.CLIP)
+        self.assertEqual(h.welcome()['drafted'], came['drafted'])  # once: the same intent is the same move
+        newcomer = Poster(self.tmp.name + '/n', self.town.client, did='did:plc:newcomer', handle='newcomer.delve.town')
+        [first] = newcomer.say('delvetalk kind/bell make / seed: a bell of my own / colour: amber')
+        self.assertIn('Next, see it before it is real: delvetalk try', first['text'])
+        self.assertIn(f"delvetalk receipt / of: {first['receipt']['slug']}", first['text'])
+        [second] = newcomer.say('delvetalk library read / page: laws')
+        self.assertNotIn('Next, see it before it is real', second['text'])
+
 
 if __name__ == '__main__':
     unittest.main()
