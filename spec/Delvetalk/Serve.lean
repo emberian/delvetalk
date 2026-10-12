@@ -22,7 +22,8 @@ opaque closeAll : IO Unit
 
 /-- With `DELVETALK_TIMING=1`, one stderr line per op: its name, what it names (object, method,
     principal), the milliseconds from reading the request to writing the reply, and how many
-    turns the settling pass after it resumed and delivered. -/
+    turns the settling pass after it resumed and delivered. With `DELVETALK_TIMING_FILE=<path>` the same lines
+    (and no start lines) are appended to that file instead, one write each, so a whole suite's serves can share one. -/
 def timingLine (request : Json) (reply : Json) (ms : Nat) : String :=
   let text := fun (k : String) => (request.getObjValAs? String k).toOption.getD ""
   let count := fun (k : String) => ((reply.getObjVal? k).toOption.bind (·.getArr?.toOption)).map (·.size) |>.getD 0
@@ -554,6 +555,9 @@ def main (args : List String) : IO UInt32 := do
     errors.putStrLn s!"serve: {lockPath} is held: another process owns the journal; refusing to start a second writer"
     return 75
   let timing := (← IO.getEnv "DELVETALK_TIMING") == some "1"
+  let timingFile ← match ← IO.getEnv "DELVETALK_TIMING_FILE" with
+    | some path => if path.isEmpty then pure none else some <$> IO.FS.Handle.mk path .append
+    | none => pure none
   -- With timing, one stderr line per start stage: `start\t<stage>\t<ms>`.
   let mut mark ← IO.monoMsNow
   let stage := fun (name : String) (since : Nat) => do
@@ -604,9 +608,11 @@ def main (args : List String) : IO UInt32 := do
     reply id.toUInt64 out.compress
     -- What the request left waiting to cross goes after its reply, before the next request is read.
     srv ← cross next
-    if timing then
-      errors.putStrLn (timingLine (request.toOption.getD Json.null) out ((← IO.monoMsNow) - started))
-      errors.flush
+    if timing || timingFile.isSome then
+      let line := timingLine (request.toOption.getD Json.null) out ((← IO.monoMsNow) - started)
+      match timingFile with
+      | some h => h.putStr (line ++ "\n"); h.flush
+      | none => errors.putStrLn line; errors.flush
   closeAll
   if let some held := srv.lock then held.unlock
   for p in [config.socket, config.rootSocket, pidfile] do
