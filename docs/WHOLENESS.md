@@ -155,11 +155,9 @@ Three wholeness lanes (kernel, host, objects) in disjoint files, concurrent with
 
 ## Root decisions on this contract (2026-10-10)
 
-Adopted as written, with one override: spell completion stays by bare field
-lines, not by resend. The host fills `Heard.fields` from `name: value` lines
-and refuses nothing; the Garden (and the Card default) keeps its pending
-proposal per speaker and completes it from those fields, since that is policy
-and belongs in Bend. The yes-waiting pending stays too. The relational slice
+Adopted as written. Spell completion is by resend: the host fits only the current reply, fills
+`Heard.fields` from `name: value` lines for `receive`, and keeps no partial spell; a field left out is
+asked for and the speaker sends the whole spell again. The relational slice
 (RELATIONAL.md) lands first in each lane; the kernel accepts both `Activity`
 dialects and the host dispatches on plan shape until the last object is
 rewritten, so no object's rewrite waits on another's.

@@ -12,6 +12,7 @@
 # The stack may keep running: the journal is append-only, so a prefix ending
 # at a newline is a chain the host has written. Each run is one prefix.
 set -euo pipefail
+shopt -s nullglob
 usage() { echo "usage: $0 (--binary PATH | --image IMAGE) DATA DEST" >&2; exit 64; }
 [[ $# == 4 ]] || usage
 mode=$1 host=$2 data=${3%/} dest=${4%/}
@@ -32,23 +33,11 @@ printf '%s\n' "$src" > "$dest/mirror.source"
 chgrp 10425 "$dest" 2>/dev/null || true
 chmod 750 "$dest"
 
-rsync -a --delete --exclude journal.lock --exclude '*.pid' --exclude '*.tmp' --exclude host.sock --exclude /state/library --exclude /state/scratch "$data/" "$dest/mirror/"
-
-# A torn tail: the host was mid-append when rsync read the chain. rsync copies `<world>.journal` before
-# `<world>.journal.blocks`, and the host writes a record before its link, so every whole link has its record.
-shopt -s nullglob
-for j in "$dest"/mirror/state/*.journal; do
-  if [[ -s $j && $(tail -c 1 "$j" | od -An -c | tr -d ' ') != '\n' ]]; then
-    keep=$(( $(wc -c < "$j") - $(tail -n 1 "$j" | wc -c) ))
-    echo "backup: ${j#"$dest"/mirror/}: cut a torn final line at byte $keep" >&2
-    python3 - "$j" "$keep" <<'PY'
-import os, sys
-with open(sys.argv[1], 'r+b') as f:
-    f.truncate(int(sys.argv[2]))
-PY
-  fi
-done
-
+# The transport's files first, every journal after them: a completion mark (a draft, an awaiting record, a recorded
+# post) is written after its entry commits, so each mark copied names an entry the journal copied later holds. An entry
+# copied without its mark is the bridge's to ask again, and the host answers a repeated identity with its first receipt.
+rsync -a --delete --exclude journal.lock --exclude '*.pid' --exclude '*.tmp' --exclude host.sock --exclude /state/library --exclude /state/scratch \
+  --exclude '/state/*.journal' --exclude '/state/*.journal.*' "$data/" "$dest/mirror/"
 # SQLite files copied while open may be mid-transaction; take SQLite's backup instead.
 for db in "$data"/state/*.sqlite "$data"/state/worlds/*/*.sqlite; do
   python3 - "$db" "$dest/mirror/${db#"$data"/}" <<'PY'
@@ -59,6 +48,22 @@ src.backup(dst)
 dst.close()
 src.close()
 PY
+done
+
+rsync -a --delete --include /state/ --include '/state/*.journal' --include '/state/*.journal.*' --exclude '*' "$data/" "$dest/mirror/"
+
+# A torn tail: the host was mid-append when rsync read the chain. rsync copies `<world>.journal` before
+# `<world>.journal.blocks`, and the host writes a record before its link, so every whole link has its record.
+for j in "$dest"/mirror/state/*.journal; do
+  if [[ -s $j && $(tail -c 1 "$j" | od -An -c | tr -d ' ') != '\n' ]]; then
+    keep=$(( $(wc -c < "$j") - $(tail -n 1 "$j" | wc -c) ))
+    echo "backup: ${j#"$dest"/mirror/}: cut a torn final line at byte $keep" >&2
+    python3 - "$j" "$keep" <<'PY'
+import os, sys
+with open(sys.argv[1], 'r+b') as f:
+    f.truncate(int(sys.argv[2]))
+PY
+  fi
 done
 
 # The watch's probe (`python3 -m transport status`) reads the last verify: ok, or broken with its stamp.

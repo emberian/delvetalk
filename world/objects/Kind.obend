@@ -105,7 +105,14 @@ def lastSegment(id: String) -> String:
   let at = textBreak(id, "/")
   if at == textLength(id) then id else lastSegment(textDrop(id, at + 1n))
 def kindSeed(fields: Lists.List<Rows.Field>, context: Abi.Context) -> Data:
-  {owner: context.principal, ownerHandle: context.handle, name: valueOf(fields, "name"), of: valueOf(fields, "of"), form: valueOf(fields, "form"), law: valueOf(fields, "law"), head: valueOf(fields, "head"), voice: valueOf(fields, "voice"), body: valueOf(fields, "body")}
+  {owner: context.principal, ownerHandle: context.handle, name: valueOf(fields, "name"), of: valueOf(fields, "of"), form: valueOf(fields, "form"), law: lawFor(valueOf(fields, "of"), Text.trim(valueOf(fields, "law"))), head: valueOf(fields, "head"), voice: valueOf(fields, "voice"), body: valueOf(fields, "body")}
+# The text a made kind holds for its things: a text with no law clause (none at all, or rules and
+# wants alone) is its package's own law with them after it, so what it makes is its maker's to amend
+# and reprogram, never anyone's (an empty text cited by `under` admits every request).
+def lawFor(of: String, text: String) -> String:
+  if Lists.any(clauseLines(text), fn(line: String) -> Bool: Text.starts(line, "law ")) then text else if text == "" then baseLaw(of) else "{baseLaw(of)}\n{text}"
+def baseLaw(of: String) -> String:
+  if of == "kind" then lawText() else Record.lawText()
 # What a made thing is created under: its kind's `law`, cited (LAW §4 F), so the kind's owner
 # amends the law of every instance at once and a refusal reads the kind's clause.
 def lawOf(context: Abi.Context) -> String:

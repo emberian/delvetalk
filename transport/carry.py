@@ -1,5 +1,5 @@
 """`python3 -m transport carry --from OLD --to NEW --reason R [--leave [WORLD=]OBJ]...`: a state directory carried to
-the host binary the configuration names (docs/TENURE.md section 1; docs/DEPLOY.md "A new binary").
+the host binary the configuration names (docs/FOUNDATION.md §2; docs/DEPLOY.md "A new binary").
 
 Every world journal of OLD (`<world>.journal`; `scratch/` is not custody) is carried by `delvetalk-obend carry`, which
 reads the world from the snapshot at its head (written by the binary of its edition: `deploy/verify.sh --snapshot`)
@@ -8,7 +8,7 @@ cursors that named the old chain's entries set to the new genesis (`publications
 the carried worlds are checked in a throwaway copy, independently of the binary's own check: every object at the state
 CID the snapshot held and rendering for its owner, every old receipt resolving by its slug, and a new turn admitted.
 OLD is only read; its journal lock must be free (serve stopped). NEW must hold no journal. The channel line the hand
-posts once is printed last (TENURE section 1, rule 5).
+posts once is printed last (FOUNDATION §2).
 """
 import fcntl
 import json
@@ -22,6 +22,7 @@ from pathlib import Path
 
 from transport import journal
 from transport.config import Config
+from transport.host import HostProcess
 from transport.identity import slug
 
 # What is serve's and is made again, never copied: journals (carried instead), snapshots, the lock, the sealed library
@@ -32,7 +33,7 @@ SKIP_DIRS = {'library', 'root', 'scratch'}
 
 def skipped(name):
     return (name.endswith(('.journal', '.journal.blocks', '.cbor', '.sock', '.pid', '.tmp')) or '.journal.snapshot.' in name
-            or name == 'journal.lock')
+            or name in ('journal.lock', 'delvetalk.toml'))  # the configuration: the new state's own, or the old one copied first
 
 
 def worlds(old):
@@ -77,23 +78,6 @@ def reset_cursors(new, world):
         p.write_text(json.dumps(dict(record, height=1), sort_keys=True) + '\n')
 
 
-class Driver:
-    """The host binary as a JSON-lines process over one journal (the throwaway copy the check opens)."""
-
-    def __init__(self, obend):
-        self.p = subprocess.Popen([obend], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-
-    def send(self, **request):
-        self.p.stdin.write(json.dumps(request) + '\n')
-        self.p.stdin.flush()
-        return json.loads(self.p.stdout.readline())
-
-    def close(self):
-        self.p.stdin.close()
-        self.p.wait(timeout=60)
-        self.p.stdout.close()
-
-
 def reader(row, opener):
     """Who may read a snapshot's object row, to read it as: its owner, else a named reader, else the opener."""
     fields = {f['name']: f['value'] for f in (row['state'].get('fields') or [])} if isinstance(row['state'], dict) else {}
@@ -117,7 +101,7 @@ def check(obend, old_journal, new_journal, moved=()):
     with tempfile.TemporaryDirectory(prefix='.carry-check-', dir=os.path.dirname(os.path.abspath(new_journal))) as tmp:
         copy = os.path.join(tmp, 'w.journal')
         journal.copy(new_journal, copy)
-        host = Driver(obend)
+        host = HostProcess(obend)
         try:
             opened = host.send(op='world-open', path=copy, sync='none', verify=True)
             if opened.get('status') != 'opened':
