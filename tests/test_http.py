@@ -773,15 +773,21 @@ class Play(FrontCase):
         self.assertIn(b'suspended, entry', out['page'])
         self.assertIn(b'a bell for the owls', out['page'])  # the interpreter's proposal, as the offer to this turn
 
-    def test_words_to_a_card_on_the_play_page_are_heard_by_no_one(self):
-        """The owner's question on /play/kinds (2026-10-11) was handed on to the commonplace and answered by hob's
-        `say:`, which OVERHAUL section 2 deletes (69275, a `say:` stating a falsehood that was believed): a card hears a
-        verb or nothing, so the words are admitted at kinds, nothing waits for hob and no hob line is on the page."""
-        page = self.play('/play/kinds', 'what is a kind? what is the things in a cistern?')[2]
-        self.assertRegex(self.words(page), r'admitted kinds v\d+, entry \d+')
+    def test_prose_at_a_card_on_the_play_page_is_hobs_with_that_cards_table(self):
+        """The owner's question on /play/kinds (2026-10-11): words at a card go to hob (HOST-HANDOFF 5.163), who is offered
+        that card's table; the turn waits as a pending interpretation on kinds, and hob's `none` is silence."""
         words = 'what is a kind? what is the things in a cistern?'
-        self.assertEqual([p for p in self.host.send({'op': 'world-interpretations'}).get('pending') or [] if p['utterance'] == words], [])
+        self.front.sleep = lambda seconds: None
+        page = self.play('/play/kinds', words)[2]
+        self.assertRegex(self.words(page), r'suspended, entry \d+')
         self.assertNotIn('hob: ', page.decode())
+        [item] = [p for p in self.host.send({'op': 'world-interpretations'}).get('pending') or [] if p['utterance'] == words]
+        self.assertEqual((item['object'], [(o['card'], o['action']) for o in item['offers']][:1]), ('kinds', [('kinds', 'make')]), item)
+        settled = self.host.send({'op': 'world-interpretation', 'id': item['id'],
+                                  'reply': {'status': 'replied', 'model': 'm', 'json': None, 'raw': 'none'}})
+        self.assertEqual(settled['status'], 'interpreted', settled)
+        [resumed] = settled['resumed']
+        self.assertEqual((resumed['status'], resumed['receipt']['outcome'].get('tag'), resumed['receipt'].get('offers', [])), ('admitted', 'admitted', []), resumed)
 
     def test_a_suspended_turn_is_a_line_under_a_kilobyte_and_its_full_reply_elides_the_blocks(self):
         tok = self.cookie.split('=', 1)[1]

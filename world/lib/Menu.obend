@@ -35,9 +35,6 @@ def trie(all: Lists.List<Door>, changed: String, context: Abi.Context) -> Docume
   let top = Lists.filter(all, fn(d: Door) -> Bool: isArc(all, d) == false)
   let links = textJoin(Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to)), fn(d: Door) -> String: Document.plain(branch(d, all))), "")
   framed("{trieHead(Lists.length(top))}{changed}", Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false), fn(d: Door) -> Document.Document: branch(d, all)), "{links}{trieTail()}", context)
-# The doors under hob's question, and no tail: the card its ask gets.
-def asked(head: String, all: Lists.List<Door>, context: Abi.Context) -> Document.Document:
-  framed("{head}\n", Lists.map(Lists.filter(all, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false && isArc(all, d) == false), fn(d: Door) -> Document.Document: branch(d, all)), "", context)
 def title() -> String:
   "✾ DELVETALK · THE COMMONPLACE"
 def trieHead(count: Nat) -> String:
@@ -58,8 +55,3 @@ def spellLines(examples: Card.Examples) -> String:
   textJoin(Lists.map(examples, fn(e: Card.Example) -> String: if e.comes == "" then "  {e.example}\n" else "  {e.example}\n  » {e.comes}\n"), "")
 def linkLine(door: Door) -> String:
   if door.description == "" then "" else " · {door.description}"
-# Several spells' card: each spell said, with what came of it.
-def ran(lines: Card.Examples) -> Document.Document:
-  Document.text("{title()}\n\n{Text.counted(Lists.length(lines))} spells, in the order said:\n{spellLines(lines)}")
-def refusedLine(clause: String, reading: String, object: String) -> String:
-  if reading == "" then "refused {clause}: Not done at {object}." else "refused {clause}: {reading}"

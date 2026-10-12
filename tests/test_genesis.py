@@ -414,10 +414,14 @@ class Commonplace(unittest.TestCase):
         reader = 'did:plc:newcomer'
         hello = self.say(reader, 'commonplace', 'hello', 'hello')
         self.assertEqual((hello['status'], hello['result']['label'], hello.get('offers', [])), ('admitted', 'silent', []), hello)
-        # A field line naming a door's action goes to that door, whose card answers.
-        passed = self.say(reader, 'commonplace', 'choose: Open', 'by-field-line')
-        self.assertEqual(passed['result']['label'], 'passed', passed)
-        self.assertEqual(passed['offers'][-1]['text'], 'refused notHere: Enter the room first.\n', passed)
+        # A field line that reached the commonplace and names a door's action is the host's to fit (HOST-HANDOFF
+        # 5.163): it runs at once, no model, as the reader's turn on the first door taking it (the porch, a room),
+        # whose card refuses it by its own clause.
+        got = self.host.send({'op': 'world-turn', 'principal': reader, 'object': 'commonplace', 'method': 'receive', 'reach': 'fields',
+                              'argument': record(text=label('choose: Open'), post=label('at://x/p/by-field-line')), 'identity': 'by-field-line'})
+        out = got['receipt']['outcome']
+        self.assertEqual((got['status'], out['class'], out['object'], out['reason']), ('refused', 'cardRefused', 'porch', 'refused notHere: Enter the room first.'), got)
+        self.assertEqual(self.host.send({'op': 'world-interpretations'})['pending'], [])
 
 
 if __name__ == '__main__':

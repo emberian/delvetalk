@@ -111,7 +111,7 @@ class DirectReplies(BridgeCase):
     def test_replies_in_the_commonplaces_thread_get_one_card_an_hour(self):
         cites = [door(*d) for d in DOORS] + [door(STUDIO[0], '', (), STUDIO[1])]
         made = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-commonplace', 'object': 'commonplace',
-                               'modules': closure('Menu', 'Mentions', 'Policies', 'Record'), 'entry': 'initial', 'law': genesis.RECORD_LAW,
+                               'modules': closure('Menu', 'Policies', 'Record'), 'entry': 'initial', 'law': genesis.RECORD_LAW,
                                'seed': record(owner=label('ember'), keeper=label('ember'), head=label('THE COMMONPLACE'), cites=listing(cites))})
         self.assertEqual(made['status'], 'created', made)
         body = self.host.send({'op': 'world-reprogram', 'principal': 'ember', 'identity': 'body-commonplace', 'object': 'commonplace', 'version': 0,

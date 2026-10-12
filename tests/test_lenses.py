@@ -15,6 +15,7 @@ two fields, a field without a lens, or `?` omitting a lens.
 import unittest
 
 from tests import test_chain, test_policy
+from tests.host import as_owner
 from tests.test_rooms import avatar_seed
 from tests.wire import cast_refusal, label, record
 from tests.bend import closure
@@ -41,6 +42,14 @@ class Lenses(test_chain.Chain):
             self.assertEqual(r["status"], "admitted", r)
         return r
 
+    def misfit(self, text):
+        """A misfit spell waits on hob (OVERHAUL §2.7); hob's `none` leaves the host's refusal of it."""
+        r = self.turn("policy", "receive", heard(text), principal="ember")
+        self.assertEqual(r["status"], "suspended", r)
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": "none", "model": "m"})
+        return as_owner(self.host, settled["resumed"][0], "ember")
+
     def field(self, name, obj="policy"):
         return [f["value"]["value"] for f in self.state(obj)["fields"] if f["name"] == name][0]
 
@@ -60,9 +69,9 @@ class Lenses(test_chain.Chain):
         self.assertEqual(self.say("delvetalk policy set\nmodel: " + "s" * 64)["result"]["label"], "done")
         self.assertEqual(len(self.field("model")), 64)
         # The host judges the value against the lens's kind (HOST-HANDOFF 5.54).
-        over = self.turn("policy", "receive", record(text=label("delvetalk policy set\nmodel: " + "s" * 65), post=label("")), principal="ember")
+        over = self.misfit("delvetalk policy set\nmodel: " + "s" * 65)
         out = over["receipt"]["outcome"]
-        self.assertEqual((over["status"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "badValue", "model takes 1 to 64 characters."), over)
+        self.assertEqual((out["tag"], out["class"], out["clause"], out["reason"]), ("refused", "badSpell", "badValue", "model takes 1 to 64 characters."), over)
         self.assertEqual(self.version(), 1)
 
     def test_a_stranger_a_bad_value_two_fields_and_an_unlensed_field_change_nothing(self):
@@ -78,8 +87,8 @@ class Lenses(test_chain.Chain):
         ]
         for text, clause in cases:
             with self.subTest(text=text[:40]):
-                r = self.turn("policy", "receive", record(text=label(text), post=label("")), principal="ember")
-                self.assertEqual((r["status"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["clause"]), ("refused", "badSpell", clause), r)
+                r = self.misfit(text)
+                self.assertEqual((r["receipt"]["outcome"]["tag"], r["receipt"]["outcome"]["class"], r["receipt"]["outcome"]["clause"]), ("refused", "badSpell", clause), r)
         # No field line: the reply reaches receive, which answers with the card.
         self.assertEqual(self.say("delvetalk policy set", principal="ember")["result"]["label"], "usage")
         self.assertEqual((self.version(), self.field("model"), self.field("owner")), (0, "claude-haiku", "ember"))

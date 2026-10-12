@@ -491,10 +491,15 @@ class Speak(unittest.TestCase):
         turn = self.town.send(op='world-receipt', principal=h.owner, identity=came['intent'])['receipt']
         self.assertEqual(turn['identity']['principal'], h.owner)
         self.assertEqual(h.tail(1)[0]['what'], 'ask')
-        # A card hears a verb or nothing: words to the garden itself are admitted and answered by no one (until the
-        # host's reach sends them to hob with the card's table, OVERHAUL section 5 step 5).
-        garden = h.cast('could I have a violet bell', to='garden')
-        self.assertEqual((garden['outcome'], garden['text'].strip()), ('admitted', ''), garden)
+        # Words to the garden itself are hob's too, offered the garden's table; its answer runs on the card the spell names.
+        read.clear()
+        asked = lambda req: {'status': 'replied', 'json': None, 'raw': 'delvetalk garden plant / colour: violet / seed: a violet bell', 'model': 'mock', 'usage': {}}
+        h2 = hand.Hand(self.st, self.town.client, TOKEN, sleep=lambda s: read.append(interpret.run(self.st, self.town.client, asked)))
+        garden = h2.cast('could I have a violet bell', to='garden')
+        self.assertEqual((garden['card'], garden['outcome']), ('garden', 'suspended'), garden)
+        self.assertTrue(read and read[0]['settled'], read)
+        self.assertTrue(garden['text'].startswith('Planted, '), garden)  # hob's spell ran as the speaker's turn on the garden
+        self.assertRegex(garden['text'], r'at garden/bell/\d+;')
         code, _, headers = h.handle('POST', '/hand/town/speak', f'dt_hand={TOKEN}', {'spell': 'and the porch?', 'to': 'garden', 'intent': 'hand:ask:web'})
         came = urllib.parse.parse_qs(urllib.parse.urlsplit(dict(headers)['Location']).query)['came'][0]
         self.assertEqual(came, 'hand:ask:web')

@@ -18,7 +18,7 @@ The deal signed by two is `test_deal`; the claim of a handle and the login are `
 import unittest
 from pathlib import Path
 
-from tests.host import card_texts
+from tests.host import as_owner, card_texts
 from tests.town import Town
 from tests.test_properties import OPENER, STRANGERS
 import tempfile
@@ -44,6 +44,15 @@ class Arc(unittest.TestCase):
     def say(self, who, obj, text):
         """A reply carrying `text` to card `obj`, as the bridge makes it."""
         return self.turn(who, obj, "receive", record(text=label(text), post=label("at://%s/post/%d" % (who, self.n + 1))))
+
+    def hob_says_none(self, suspended, who):
+        """A misfit is hob's: the turn is suspended with one item pending; hob's `none` leaves the host's refusal."""
+        self.assertEqual(suspended["status"], "suspended", suspended)
+        [item] = self.town.send(op="world-interpretations")["pending"]
+        settled = self.town.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": "none", "model": "m"})
+        self.assertEqual(settled["status"], "interpreted", settled)
+        [resumed] = settled["resumed"]
+        return as_owner(self.town, resumed, who)["receipt"]
 
     def card(self, reply):
         return "\n".join(dict.fromkeys(card_texts(reply)))
@@ -87,10 +96,10 @@ class Bell(Arc):
         self.assertEqual(again["status"], "admitted", again)
         self.assertRegex(self.card(again), r"Already rung, by .+ at entry \d+\.")
         self.assertEqual(self.town.send(op="world-object", principal=OPENER, object=bell)["record"]["version"], version)
-        long =self.say(GLM, bell, "delvetalk %s rain\ntext: %s" % (bell, "x" * 201))
-        # A bell reads no words (it names no policy): its misfit is the host's badSpell with the usage (HOST-HANDOFF 5.153).
-        out = long["receipt"]["outcome"]
-        self.assertEqual((long["status"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), long)
+        long = self.say(GLM, bell, "delvetalk %s rain\ntext: %s" % (bell, "x" * 201))
+        # A misfit is hob's at every card (HOST-HANDOFF 5.163): the turn waits, and hob's none leaves the host's badSpell with the usage.
+        out = self.hob_says_none(long, GLM)["outcome"]
+        self.assertEqual((out["tag"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), out)
         self.assertIn("delvetalk %s rain" % bell, out["hint"])
 
 
@@ -104,9 +113,9 @@ class Garden(Arc):
         self.assertIn("delvetalk garden/bell/1 rain", card)
         self.assertEqual(self.things(), ["garden/bell/1"])
         again = self.say(KIM, "garden", "delvetalk garden plant\nseed: %s\ncolour: silver" % ("y" * 81))
-        # The garden reads no words (it names no policy): its misfit is the host's badSpell with the usage and
-        # nothing is planted (HOST-HANDOFF 5.153). Prose, which is no spell, goes on to the commonplace, where hob reads it.
-        self.assertEqual((again["status"], again["receipt"]["outcome"]["class"], again["receipt"]["outcome"]["clause"]), ("refused", "badSpell", "badValue"), again)
+        # The misfit is hob's (HOST-HANDOFF 5.163): the turn waits, hob's none leaves the host's badSpell and nothing is planted.
+        out = self.hob_says_none(again, KIM)["outcome"]
+        self.assertEqual((out["tag"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), out)
         self.assertEqual(self.things(), ["garden/bell/1"])
 
     def things(self):

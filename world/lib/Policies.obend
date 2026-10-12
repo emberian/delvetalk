@@ -1,13 +1,15 @@
 edition ObjectiveBend 1
 import ./List.obend as Lists
-# The interpretation policy's state, as data: what a card with a policy views. It lives apart from
-# world/objects/Policy.obend because a module that declares a law cannot be imported.
+# The interpretation policy's state, as data: the world's one `policy` object's (hob's), which the
+# host reads for every reading. It lives apart from world/objects/Policy.obend because a module
+# that declares a law cannot be imported.
 record Example:
   utterance: String
   spell: String
 # model: the model the host asks. examples: what is said, and the spell it means, in every model
-# call. confirmFor: the actions an interpreted proposal waits for the speaker's yes before
-# (Card.confirms); every other action runs at once and its receipt is the answer.
+# call. confirmFor: the actions an interpreted proposal waits for the speaker's yes before (the
+# host offers the spell back to send filled); every other action runs at once and its receipt is
+# the answer.
 record State:
   owner: String
   ownerHandle: String

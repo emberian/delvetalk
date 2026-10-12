@@ -246,10 +246,10 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("enter choose leave say emote whisper write lines"), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
 # A ```spween block makes a room under this one, by this room's kind (its `makeUnder`, which reads
 # the block); anything else is the card's default.
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Card.Replied>:
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   match Spween.block(input.text):
     case some(b): authored(b.value, Spween.parse(b.value), context, state)
-    case none(_): if input.misfit.clause != "" then Super.misfitted(input.misfit, state, context) else Card.answer(Card.heard(input), context, forms(), Super.render(state, context))
+    case none(_): Card.answer(input, context, forms(), Super.render(state, context))
 def authored(block: String, parsed: Spween.Parsed, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match parsed:
     case refused(r): Super.refused({clause: "spween", reading: r.reason}, context)

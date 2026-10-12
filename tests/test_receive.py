@@ -30,14 +30,14 @@ def door(label_, to, examples=(), description=""):
                   examples=listing(record(example=label(e), comes=label(c)) for e, c in examples))
 
 
-def commonplace(chain, policy="", doors=ROOT_DOORS, studio=True, owner="ember", **more):
+def commonplace(chain, doors=ROOT_DOORS, studio=True, owner="ember", **more):
     """The town's first card as genesis makes it: a Record the owner keeps, citing the doors, with the commonplace's body laid over it."""
     cites = [door(*d) for d in doors] + ([door(STUDIO[0], "", (), STUDIO[1])] if studio else [])
     r = chain.host.send(op="world-create", principal=owner, identity="mk-commonplace", object="commonplace",
-                        modules=closure("Menu", "Mentions", "Policies", "Record"),  # the library, which the body imports from
+                        modules=closure("Menu", "Policies", "Record"),  # the library, which the body imports from
                         entry="initial", law=genesis.RECORD_LAW,
                         seed=record(owner=label(owner), keeper=label(owner), keeperHandle=label("ember.delve.town"), head=label("THE COMMONPLACE"),
-                                    policy=reference(policy), cites=listing(cites), **more))
+                                    cites=listing(cites), **more))
     chain.assertEqual(r["status"], "created", r)
     r = chain.host.send(op="world-reprogram", principal=owner, identity="body-commonplace", object="commonplace", version=0,
                         package=genesis.body_of("commonplace"), mode="extend")
