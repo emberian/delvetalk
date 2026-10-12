@@ -140,5 +140,23 @@ class ByPost(unittest.TestCase):
         self.assertTrue(moved['text'].startswith('refused moved: bell/1 is at v'), moved['text'])
 
 
+
+class Settled(unittest.TestCase):
+    """What a try would settle in the same write, as the live v12 town's settling pass met it (2026-10-12): the tide's
+    carried tick delivered 64 times, each answered by the receipt its identity was bound to in v9 (no roots, no
+    writes). The preview names the card and says that receipt once; it crashed on `KeyError: 'object'` before."""
+
+    def test_a_delivery_with_no_roots_is_named_by_its_card_and_one_receipt_is_said_once(self):
+        from transport import bridge
+        bound = {'hash': 'bafyreid5g2', 'height': 3, 'outcome': {'tag': 'admitted'}, 'slug': 'luhuk-mukiz'}
+        rain = {'status': 'admitted', 'object': 'bell/2', 'inPublic': True,
+                'receipt': {'outcome': {'tag': 'admitted', 'writes': [{'object': 'bell/2', 'version': 8}]}, 'roots': [{'object': 'bell/2', 'version': 7}]}}
+        reply = {**rain, 'tried': True, 'against': {'height': 1013}, 'delivered': [{'object': 'tide', 'status': 'admitted', 'receipt': bound}] * 64}
+        text = bridge.preview_text(reply)
+        self.assertEqual(text.count('then would be admitted tide'), 1, text)
+        self.assertTrue(text.startswith('preview, nothing done (as of entry 1013):\nwould be admitted bell/2 v8\n'), text)
+        self.assertNotIn('luhuk-mukiz', text)
+
+
 if __name__ == '__main__':
     unittest.main()
