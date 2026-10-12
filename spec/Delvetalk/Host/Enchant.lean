@@ -658,7 +658,9 @@ def tellingOf (w : World) (asker id : String) (o : Object) (j : Json) : Except S
   let comings := (acts.toList.filter (·.what == "came")).length
   let quantities : List Quantity := (if all.isEmpty then [] else lineQuantities (all.map (·.verb))) ++
     (if comings == 0 then [] else [{ n := comings, unit := "visit" }]) ++
-    (if visitors.isEmpty then [] else [{ n := visitors.length, unit := "visitor" }])
+    (if visitors.isEmpty then [] else [{ n := visitors.length, unit := "visitor" }]) ++
+    -- What stands, counted as the place's own strokes count it: its doors.
+    (if away || base.doors.isEmpty then [] else [{ n := base.doors.length, unit := "door" }])
   -- The exact lines it draws on, the host's words with their entries: the making (a past), then the span's acts
   -- and lines in order, the newest `tellingExact`, then what it still wants.
   let rows' := ((acts.toList.map fun a => (a.entry, a.sentence)) ++ (all.map fun l =>

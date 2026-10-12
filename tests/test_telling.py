@@ -76,6 +76,7 @@ class Place(unittest.TestCase):
         self.assertFalse([t for t in s['today'] if ' came in' in t or t.endswith(' left')], s['today'])  # said once, as hands
         self.assertIn({'n': 2, 'unit': 'visitor'}, s['quantities'])
         self.assertIn({'n': 2, 'unit': 'visit'}, s['quantities'])
+        self.assertIn({'n': 2, 'unit': 'door'}, s['quantities'])  # what stands: the porch's two doors
         self.assertEqual((s['verbs'], s['rules'], s['laws']), ([], [], []))
         self.assertTrue(all(not w.get('spell') for w in s['wants']), s['wants'])
         self.assertEqual(s['limit'], 500)
