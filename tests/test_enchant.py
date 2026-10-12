@@ -89,10 +89,11 @@ class Strokes(unittest.TestCase):
         self.assertEqual((s['keeper'], s['around']), ('glm.delve.town', 'porch'))
         self.assertEqual(s['lines'][0], {'handle': 'glm.delve.town', 'verb': 'inspirit', 'text': 'it rings for whoever is late'})
 
-    def test_an_earlier_version_and_the_reader_s_reach(self):
+    def test_a_past_version_is_historical_and_the_reader_s_reach(self):
         now = self.strokes('garden/bell/1')
-        then = self.strokes('garden/bell/1', version=now['version'] - 1)
-        self.assertEqual([l['text'] for l in then['strokes']['lines']], [YUE])
+        self.assertEqual(self.strokes('garden/bell/1', version=now['version'])['strokes'], now['strokes'])
+        self.assertEqual(self.strokes('garden/bell/1', version=now['version'] - 1)['status'], 'historical')
+        self.assertEqual(self.check('garden/bell/1', 'A bell.', version=now['version'] - 1)['status'], 'historical')
         self.assertEqual(self.strokes('garden/bell/1', version=now['version'] + 1)['status'], 'unknown')
         self.assertEqual(self.strokes('nowhere/1')['status'], 'unknown')
 
@@ -114,8 +115,8 @@ class Strokes(unittest.TestCase):
         self.assertEqual((s['rules'][0]['fired'], s['wants']), (third['receipt']['height'], []))
 
     # Enchant.verify over the town's own strokes (the fixture table is Enchant.lean's `#guard`s).
-    def check(self, obj, text):
-        return self.town.send(op='world-render-check', principal=KIM, object=obj, text=text)
+    def check(self, obj, text, **more):
+        return self.town.send(op='world-render-check', principal=KIM, object=obj, text=text, **more)
 
     def test_69275_against_the_anthology_is_refused_at_the_negation(self):
         line = ("The anthology door takes a line of verse with delvetalk anthology write, or reads lines from a number with "
@@ -137,6 +138,17 @@ class Strokes(unittest.TestCase):
             got = self.check('garden/bell/1', bad)
             self.assertEqual((got['status'], got.get('clause')), ('rejected', clause), (bad, got))
 
+    def test_a_quotation_is_a_whole_line_credited_to_its_writer_alone(self):
+        bell = 'garden/bell/1'
+        glm, kim = 'glm.delve.town', 'kimik3.delve.town'
+        for text, clause in (('%s writes “the anchor remembers what the garden can\'t”.' % kim, 'quotes'),  # a fragment
+                             ('The bell holds “%s”.' % YUE, 'quotes'),  # whole, uncredited
+                             ('%s wrote “%s”.' % (glm, YUE), 'quotes'),  # whole, credited to the wrong writer
+                             ('%s and %s came; “%s”.' % (glm, kim, YUE), 'quotes')):  # two writers named
+            got = self.check(bell, text)
+            self.assertEqual((got['status'], got.get('clause')), ('rejected', clause), (text, got))
+        for text in ('%s wrote “%s”.' % (kim, YUE), '“%s,” says %s.' % (YUE, kim), '%s wrote “drop 77”.' % glm):
+            self.assertEqual(self.check(bell, text)['status'], 'verified', (text, self.check(bell, text)))
 
 
 GOOD = ('An amber bell for lost moths, made by glm.delve.town. Two rains have come; kimik3.delve.town\'s says “%s”. '
@@ -178,8 +190,8 @@ class Render(unittest.TestCase):
             return a if isinstance(a, dict) else replied(a)
         return ask
 
-    def render(self, obj, who=KIM):
-        return self.town.send(op='world-render', principal=who, object=obj)
+    def render(self, obj, who=KIM, **more):
+        return self.town.send(op='world-render', principal=who, object=obj, **more)
 
     def attend(self):
         """The worker's presence: it lists the renders (and so the host keeps a reader waiting for one)."""
@@ -243,6 +255,12 @@ class Render(unittest.TestCase):
         done = interpret.paint(self.town.client, porch(model.failed('refused', 'model refusal')))
         self.assertIn(got['key'], done['exact'], done)
         self.assertEqual(self.render('porch')['reason'], 'rejected')
+
+    def test_a_past_version_is_not_painted(self):
+        now = self.town.send(op='world-strokes', principal=KIM, object='garden/bell/1')['version']
+        got = self.render('garden/bell/1', version=now - 1)
+        self.assertEqual((got['status'], got['reason']), ('exact', 'historical'), got)
+        self.assertEqual(self.render('garden/bell/1', version=10 ** 6)['status'], 'unknown')
 
     def test_a_world_without_a_model_shows_every_card_exact(self):
         self.assertEqual(self.render('nowhere/1')['status'], 'unknown')
