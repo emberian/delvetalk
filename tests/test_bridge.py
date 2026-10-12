@@ -383,6 +383,21 @@ class Mentions(BridgeCase):
         self.assertNotIn('mentioned', bridge.run(self.state, stub))  # once per post
         self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
 
+    def test_a_mention_through_the_bridge_is_admitted_on_the_mentioned_avatar_of_a_real_host(self):
+        """The v8 deploy's lost mentions: the bridge sends `{text, post}`, and the avatar's `receive` takes `fields` and
+        `spell` too, which the host fills (empty, and no cast: a mention is heard, never cast)."""
+        from tests.town import Town
+        town = Town(str(Path(self.tmp.name) / 'town'), cleanup=self.addCleanup)
+        host = type('TownHost', (), {'send': lambda _, req: town.send(**req)})()
+        glm = mk(1, 'glm here')
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        post = mk(2, 'a bell for @glm.delve.town')
+        self.observe([glm, post])
+        r = bridge.run(self.state, host)
+        self.assertEqual((r['mentioned'], r['failed']), ([post['uri']], []), r)
+        got = host.send({'op': 'world-receipt', 'principal': DID, 'identity': f"{post['uri']}#mention:{self.GLM}"})
+        self.assertEqual((got['status'], got['receipt']['outcome']['tag']), ('receipt', 'admitted'), got)
+
     def test_a_never_seen_handle_gets_no_turn_and_an_observed_author_is_arrived_and_reached(self):
         stub = Stub()
         glm = mk(1, 'glm only chats')  # an author whose post is no spell, reply or mention

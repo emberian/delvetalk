@@ -46,6 +46,7 @@ class Shapes(unittest.TestCase):
         (self.state.root / 'card.txt').write_text('a card the hand wrote')
         cases = [
             (('set', '--object', 'garden', '--field', 'state', '--value', json.dumps(EMPTY)), {'kind': 'set', 'object': 'garden', 'field': 'state', 'value': EMPTY}),
+            (('set', '--object', 'kinds', '--field', 'state.count', '--value', '12'), {'kind': 'set', 'object': 'kinds', 'field': 'state.count', 'value': 12}),
             (('delete', '--object', 'garden/bell/1'), {'kind': 'delete', 'object': 'garden/bell/1'}),
             (('as', '--principal', 'did:plc:x', '--object', 'c', '--method', 'bump', '--argument', json.dumps(EMPTY), '--intent', 'i1'),
              {'kind': 'as', 'principal': 'did:plc:x', 'turn': {'object': 'c', 'method': 'bump', 'argument': EMPTY, 'identity': 'i1'}}),
@@ -60,7 +61,7 @@ class Shapes(unittest.TestCase):
         for flags, act in cases:
             self.assertEqual(self.root(*flags, '--reason', 'because'), {'op': 'world-root', 'principal': OPENER, 'reason': 'because', 'act': act}, flags)
         logged = [json.loads(l) for l in self.state.hand_log.read_text().splitlines()]
-        self.assertEqual([l['what'] for l in logged][:2], ['root:set', 'root:delete'])
+        self.assertEqual([l['what'] for l in logged][:3], ['root:set', 'root:set', 'root:delete'])
         self.assertEqual({l['reason'] for l in logged}, {'because'})
 
     def test_no_act_without_a_reason_and_no_power_without_a_reading(self):
