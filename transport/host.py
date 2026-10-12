@@ -123,6 +123,9 @@ class HostProcess:
         self.proc.stdout.close()
 
 
+HISTORY_LIMIT = 100  # `world-history`'s page bound (`Limits.maxHistoryLimit`)
+
+
 def paged(host, request, field):
     """Every item of a paged read (`world-offers`, `world-history`): `request` again `after` the last item's height while
     the host says there is `more`."""

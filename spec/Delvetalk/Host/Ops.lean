@@ -5642,19 +5642,16 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
       ("message", toJson s!"ambiguous: {many.length} matches; cite the object and version")]
 
 
+/-- `world-history {principal, object, after?, before?, reverse?, cursor?, limit?}`: the admitted entries
+    that touched an object, each as the reader may see it, paged by height (`pageByHeight`). -/
 def history (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let id ← j.getObjValAs? String "object"
-  let after := (← optNat j "after").getD 0
-  let asked := (← optNat j "limit").getD Limits.maxHistoryLimit
-  if asked == 0 || asked > Limits.maxHistoryLimit then throw s!"limit must be 1..{Limits.maxHistoryLimit}"
   if !w.objects.contains id then return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
   if !viewable w reader id then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
-  let all := (w.touched.getD id #[]).filter fun index => index + 1 > after
-  let page := all.extract 0 asked
-  return Json.mkObj [("status", toJson "history"), ("object", toJson id),
-    ("entries", Json.arr (page.map fun index => projectEntry w reader (w.entries.getD index))),
-    ("more", toJson (decide (all.size > asked)))]
+  let (shown, more, cursor) ← pageByHeight j ((w.touched.getD id #[]).map fun index => (index + 1, index))
+  return Json.mkObj ([("status", toJson "history"), ("object", toJson id),
+    ("entries", Json.arr (shown.map fun index => projectEntry w reader (w.entries.getD index)))] ++ pageFields more cursor)
 
 /-- The principal transport reads publications as: the world's clock principal, or "transport". -/
 def publisher (w : World) : String := if w.clockPrincipal.isEmpty then "transport" else w.clockPrincipal
