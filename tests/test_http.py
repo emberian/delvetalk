@@ -256,7 +256,7 @@ class Claim(FrontCase):
         self.assertIn(b'Claimed', page)
         self.assertIn(f'{HANDLE}: this browser is you'.encode(), page)
         self.assertNotIn(b'did:plc', page)
-        self.assertIn(b'ENTER THE WORLD', self.request('GET', '/', headers={'Cookie': cookie, 'Accept': 'text/html'})[2])  # logged in
+        self.assertIn(b'Enter the commonplace', self.request('GET', '/', headers={'Cookie': cookie, 'Accept': 'text/html'})[2])  # logged in
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=cookie.split('=', 1)[1])[1]['handle'], HANDLE)
 
     def test_someone_elses_newer_challenge_neither_shows_its_word_nor_displaces_mine(self):
@@ -706,10 +706,10 @@ class Play(FrontCase):
                  'a refusal': self.request('GET', '/o/nowhere', headers={'Accept': 'text/html'})[2]}
         for name, page in pages.items():
             self.assertIsNone(self.BANNED.search(self.words(page)), (name, self.BANNED.search(self.words(page))))
-        self.assertIn('every thing a card, every reply a receipt', self.words(pages['home']))
+        self.assertIn('A town of things that answer.', self.words(pages['home']))
         self.assertRegex(self.words(pages['home, logged in']), r'entry \d+')  # the shelf mark
         self.assertRegex(self.words(pages['home, logged in']), r'\d+ cards')
-        self.assertIn('Receipts', self.words(pages['object']))
+        self.assertIn('journal, the newest', self.words(pages['object']))
 
 
     def test_a_refused_receipt_with_no_roots_answers_on_the_receipt_turn_and_play_routes(self):
@@ -740,15 +740,33 @@ class Play(FrontCase):
         s, r = self.call('GET', '/AGENTS.md/receipt/' + line[3].decode(), token=tok)
         self.assertEqual((s, r['receipt']['height']), (200, int(line[2])), r)
 
+    def test_a_reply_is_speech_its_spells_are_suggestions_and_its_receipt_waits_to_be_asked_for(self):
+        """docs/WEB.md: what came back leads as prose; the line that introduces a spell labels it as a suggestion that only
+        fills the box (?say=, with no script); the admitted line is folded under `receipt`; a refusal is never folded."""
+        s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: violet\nseed: a bell that hums')
+        page = page.decode()
+        self.assertRegex(page, r'<p class="spoken">Planted, [^<]*a bell that hums')
+        self.assertRegex(page, r'<details class="receipt"><summary>receipt</summary><p class="turn admitted"><span class="stamp">●</span> admitted garden')
+        rain = re.search(r'<a class="say" href="(/play/garden\?say=([^"#]+)#say)">Rain on it</a>', page)
+        self.assertIsNotNone(rain, page)
+        spell = urllib.parse.unquote(rain[2])
+        self.assertTrue(spell.startswith('delvetalk garden/bell/') and '\ntext: ' in spell, spell)
+        self.assertEqual(page.count('<form'), 1)  # one box
+        s, _, filled = self.play(html.unescape(rain[1]).split('#')[0])
+        self.assertIn('>' + html.escape(spell) + '</textarea>', filled.decode())
+        self.assertIn('>how to say it</a>', filled.decode())
+        s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: gold\nseed: a')
+        self.assertIn('<p class="turn refused"><span class="stamp">§</span> refused badValue', page.decode())
+
     def test_the_paint_stands_above_the_exact_card_and_never_without_it(self):
         """OVERHAUL §4 (c): /play/ and /o/ show a card's verified paint above its exact card; with no worker attending, the
         exact card alone, at once; a refused paint never."""
         from transport import interpret
-        frame = b'<figure class="frame"><pre class="card">'
+        frame = b'<pre class="card">'
         for path in ('/play/garden', '/play/'):
             s, _, page = self.play(path)
-            self.assertEqual((s, page.count(b'class="paint"')), (200, 0))  # nobody paints: the exact card, unkept
-            self.assertIn(frame, page)
+            self.assertEqual((s, page.count(b'class="paint"')), (200, 0))  # nobody paints: the exact card, unkept, and open
+            self.assertIn(b'<details class="card" open><summary>the card</summary>' + frame, page)
         self.host.send({'op': 'world-renders'})  # the worker arrives, and finds both queued
         paint = 'The night garden lies open under the moon, its beds waiting for a seed.'
         replied = lambda text: {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {}}
@@ -758,6 +776,7 @@ class Play(FrontCase):
                      self.request('GET', '/o/garden')[2]):
             at = page.find(b'<p class="paint">' + html.escape(paint).encode() + b'</p>')
             self.assertTrue(0 <= at < page.find(frame), page[:2000])
+            self.assertIn(b'</p><details class="card"><summary>the card</summary>' + frame, page)  # painted: the card folded, never gone
         # A card whose paint the host refused (second person, a welcome) shows exact alone.
         s, _, page = self.play('/play/')
         self.assertEqual((s, page.count(b'class="paint"')), (200, 0))
@@ -791,7 +810,7 @@ class Play(FrontCase):
         self.assertRegex(self.words(out['page']), r'admitted kinds v\d+, entry \d+')
         self.assertNotIn('admitted commonplace', self.words(out['page']))
         # hob's answer stands beside the kinds card, above it, never inside its facts
-        self.assertIn('<span>hob: ' + answer + '</span></p><figure class="frame offer"><pre class="card">KIND kinds:', out['page'].decode())
+        self.assertIn('<span>hob: ' + answer + '</span></p><p class="spoken">KIND kinds:', out['page'].decode())
 
     def test_a_suspended_turn_is_a_line_under_a_kilobyte_and_its_full_reply_elides_the_blocks(self):
         tok = self.cookie.split('=', 1)[1]
@@ -810,7 +829,7 @@ class Play(FrontCase):
         for i in range(48):
             self.play('/play/', f'something green, number {i}')
         s, _, page = self.play('/play/', 'one more')
-        self.assertIn('<span class="stamp">§</span><span class="line">refused quota'.encode(), page)
+        self.assertIn('<p class="turn refused"><span class="stamp">§</span> refused quota'.encode(), page)
         self.assertIn(b'next at', page)
 
 

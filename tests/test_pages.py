@@ -136,12 +136,10 @@ class Pages(FrontCase):
         s, h, body = self.request('GET', '/o/garden?text=1', headers={'Cookie': self.cookie})
         brief = body.decode()
         card = html.unescape(re.search(r'<pre class="card">(.*?)</pre>', full, re.S)[1])
-        self.assertIn(card, brief)
-        self.assertIn('delvetalk garden plant\ncolour: one of amber, violet, silver', brief)  # the forms as spell templates
-        self.assertIn('delvetalk garden ?', brief)
+        self.assertIn(card, brief)  # the card, its spells in it
         self.assertEqual(len(re.findall(r'^[●§…◦] ', brief, re.M)), 5)  # the newest five receipts
         self.assertGreater(len(re.findall(r'class="slip ', full)), 5)
-        for gone in ('--- law ---', '## Source', 'POST /play/garden', 'takes typed data'):
+        for gone in ('--- law ---', 'POST /play/garden'):
             self.assertNotIn(gone, brief)
         self.assertIn('/o/garden?all=1&text=1', brief)
         self.assertLess(len(brief), len(pages_text(full)))
@@ -190,7 +188,8 @@ class Pages(FrontCase):
             self.assertEqual(A_DID.findall(prose), [], path)
             seen = Actions(page)
             links, forms = text_actions(text)
-            self.assertEqual((sorted(links), sorted(forms)), (sorted(seen.links), sorted(seen.forms)), path)
+            made = lambda hrefs: sorted(re.sub(r'%2F\d+%20', '%2FN%20', h or '') for h in hrefs)  # a POST twice plants two bells
+            self.assertEqual((made(links), sorted(forms)), (made(seen.links), sorted(seen.forms)), path)
             for kind, inner in re.findall(r'<pre class="([^"]*)">(.*?)</pre>', page, re.S) if method == 'GET' else ():  # verbatim
                 self.assertIn(html.unescape(re.sub(r'<[^>]+>', '', inner)), text, (path, kind))  # the card, the spell, the law
             for stamp in re.findall(r'<span class="stamp">([^<]*)</span>', page) if method == 'GET' else ():
@@ -201,7 +200,7 @@ class Pages(FrontCase):
         tok = self.cookie.split('=', 1)[1]
         s, h, body = self.request('GET', '/o/garden', headers={'Accept': 'text/plain', 'Cookie': self.cookie})
         self.assertEqual(dict(h)['Content-Type'], 'text/plain; charset=utf-8')
-        self.assertIn('[ PLAY garden ] /play/garden', body.decode())
+        self.assertIn('Speak to it </play/garden>', body.decode())
         s, h, body = self.request('GET', '/AGENTS.md/world/garden', headers={'Accept': 'application/json, text/plain', 'Authorization': 'Bearer ' + tok})
         self.assertEqual(dict(h)['Content-Type'], 'application/json; charset=utf-8')  # an agent that also takes text still gets JSON
 

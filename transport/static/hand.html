@@ -1,10 +1,7 @@
-<!-- shell: every page of the hand; {css} is style.css and hand.css inlined (the hand's listener serves /hand/ and nothing else), {refresh} a meta refresh or nothing -->
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">{refresh}
-<title>{title} · the hand</title><style>{css}</style></head><body>
-<header><a class="mark" href="/hand/">the hand</a><nav>{nav}</nav><span class="who">{world}</span></header>
-<main>{body}</main><footer>The owner's console. Nothing reaches a town without Post; every act is a line in the hand's log, every root act an entry in the journal.</footer></body></html>
+<!-- foot: the hand's footer -->
+The owner's console. Nothing reaches a town without Post; every act is a line in the hand's log, every root act an entry in the journal.
 <!-- nav: one world's pages -->
-<a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a>
+<nav><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
 <!-- worlds: every world serve holds, and the scratch worlds -->
 <h1 class="title">The worlds<small>every world this host holds, each a journal with a name; beneath them the scratch worlds, with their owners and their hours</small></h1>{note}
 <p class="codes">{codes}</p>
@@ -78,7 +75,7 @@
 <!-- note -->
 <p class="hint">{text}</p>
 <!-- card -->
-<figure class="frame"><pre class="card">{text}</pre></figure>
+<pre class="card">{text}</pre>
 <!-- group: a post and the drafts that answer it -->
 <div class="entry">{original}{drafts}</div>
 <!-- draft: a slip with the receipt line, the draft to edit, and the three bracketed buttons -->

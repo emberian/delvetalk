@@ -7,7 +7,9 @@ It binds `transport/pages.py`, `transport/static/` and the rendering half of `tr
 
 Screenshots are under `docs/web/`: `before-*` was taken on 2026-10-11 from https://gsb.fg-goose.online (`/`, `/o/garden`,
 `/o/porch`) and from a genesis town on hbox (`/play/`, `/play/kinds`, `/play/garden`, a planted reply). The `after-*`
-set is the same paths on this lane. Each is at 1280 and 390 px wide.
+set is the same paths on this lane, all from a genesis town on hbox (`/`, `/o/garden`, `/o/porch` logged out; the rest as
+an invited guest). Each is at 1280 and 390 px wide. The binary those ran on has no render op, so the paint in the `after-*`
+set is stand-in text answered at the front's host client, not a worker's verified paint; it shows where paint stands.
 
 ## What assaults
 
