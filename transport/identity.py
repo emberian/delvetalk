@@ -28,7 +28,7 @@ NEWEST = 20  # posts listed when a claim looks for its word
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS challenges(nonce TEXT PRIMARY KEY, handle TEXT, did TEXT, text TEXT,
   credential TEXT, created REAL, expires REAL, attempts INTEGER NOT NULL DEFAULT 0,
-  state TEXT NOT NULL, uri TEXT, cid TEXT, verified REAL, revoked REAL, address TEXT);
+  state TEXT NOT NULL, uri TEXT, cid TEXT, verified REAL, revoked REAL, address TEXT, ends REAL);
 CREATE TABLE IF NOT EXISTS invitations(name TEXT PRIMARY KEY, principal TEXT NOT NULL, code TEXT NOT NULL, note TEXT,
   created REAL, expires REAL, state TEXT NOT NULL, accepted REAL, revoked REAL, used REAL);
 '''
@@ -76,8 +76,11 @@ class Identity:
         self.db = sqlite3.connect(st.identity, isolation_level=None, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
-        if 'address' not in {r['name'] for r in self.db.execute('PRAGMA table_info(challenges)')}:
+        have = {r['name'] for r in self.db.execute('PRAGMA table_info(challenges)')}
+        if 'address' not in have:
             self.db.execute('ALTER TABLE challenges ADD COLUMN address TEXT')  # a table from before the per-address count
+        if 'ends' not in have:
+            self.db.execute('ALTER TABLE challenges ADD COLUMN ends REAL')  # a table from before sessions could end
         self.client, self.origin, self.clock = client, st.config.origin.rstrip('/'), clock
         self.lock = threading.Lock()  # the one connection is shared by the front's threads; every use of it holds this
 
@@ -106,15 +109,17 @@ class Identity:
                             (nonce, handle, did, text, digest(credential), now, now + TTL, 'pending', address))
         return {'handle': handle, 'did': did, 'text': text, 'expires': now + TTL, 'credential': credential}
 
-    def _rows(self, handle, credential):
-        """The handle's challenges newest first; only the requester's own when its credential names one."""
+    def _rows(self, handle, credential, strict=True):
+        """The handle's challenges newest first: only the requester's own, named by its credential. Without one (`strict`
+        off, to show a waiting word) every challenge of the handle."""
         rows = self.db.execute('SELECT * FROM challenges WHERE handle=? ORDER BY created DESC', (handle,)).fetchall()
         mine = hashlib.sha256(credential.encode()).hexdigest() if isinstance(credential, str) and CREDENTIAL.fullmatch(credential) else None
-        return [r for r in rows if r['credential'] == mine] or rows
+        own = [r for r in rows if r['credential'] == mine]
+        return own if strict or own else rows
 
     def _begin(self, handle, credential=None):
-        """The challenges a proof may answer: the requester's own (its credential), else every live one of the handle, so a
-        newer challenge someone else asked for never displaces it. One attempt is counted, on the first, before any
+        """The requester's own challenge, named by its credential and never another's: a stranger spends none of the owner's
+        attempts, and a request holding no challenge of the handle is `no_challenge`. One attempt is counted before any
         network read; the 9th is refused outright."""
         now = self.clock()
         with self.lock:
@@ -147,8 +152,8 @@ class Identity:
 
     def verify(self, handle, at_uri, credential=None):
         """The agent's way: the post's URI is given and its record read; its text names the challenge it answers."""
-        rows = self._begin(handle, credential)
         repo, rkey = self._parse(at_uri)
+        rows = self._begin(handle, credential)
         if repo != rows[0]['did']:
             raise IdentityError('wrong_author')
         try:
@@ -186,7 +191,7 @@ class Identity:
         """The word the requester's challenge (its credential's, else the handle's latest) waits for, and when it lapses;
         None once answered or lapsed."""
         with self.lock:
-            rows = self._rows(handle, credential)
+            rows = self._rows(handle, credential, strict=False)
         row = rows[0] if rows else None
         return {'text': row['text'], 'expires': row['expires']} if row and row['state'] == 'pending' and self.clock() < row['expires'] else None
 
@@ -200,7 +205,8 @@ class Identity:
 
     def authenticate(self, credential):
         with self.lock:
-            row = self.db.execute("SELECT did,handle,verified FROM challenges WHERE credential=? AND state='verified'", (digest(credential),)).fetchone()
+            row = self.db.execute("SELECT did,handle,verified FROM challenges WHERE credential=? AND state='verified' AND (ends IS NULL OR ends>?)",
+                                  (digest(credential), self.clock())).fetchone()
             if row is not None and row['did'].startswith('guest:'):  # the operator's `invites` shows a guest's last use
                 self.db.execute('UPDATE invitations SET used=? WHERE principal=?', (self.clock(), row['did']))
         if row is None:

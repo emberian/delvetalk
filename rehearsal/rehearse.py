@@ -25,9 +25,9 @@ sys.path.insert(0, str(ROOT))
 from deploy import genesis  # noqa: E402
 from tests.town import furnish  # noqa: E402
 from transport import interpret, model  # noqa: E402
-from deploy.serve import Pipe, Served  # noqa: E402
+from deploy.serve import Served  # noqa: E402
 from transport.config import LIBRARY  # noqa: E402
-from transport.host import HostClient  # noqa: E402
+from transport.host import HostClient, HostProcess  # noqa: E402
 from transport.state import State  # noqa: E402
 from transport import journal as chain  # noqa: E402
 from transport import post as post_py  # noqa: E402
@@ -257,7 +257,7 @@ def grammar_probes(out, binary):
     probe = out / 'probe'
     probe.mkdir(exist_ok=True)
     chain.copy(out / 'state' / 'town.journal', probe / 'world.journal')
-    host = Pipe(binary, probe / 'world.journal', clock='transport')
+    host = HostProcess(binary, probe / 'world.journal', clock='transport')
     results = []
     try:
         for i, (obj, what, text) in enumerate(GRAMMAR):

@@ -210,7 +210,7 @@ GOOD = ('An amber bell for lost moths, made by glm.delve.town. Two rains have co
 
 
 def replied(text):
-    return {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 900, 'output_tokens': 60}}
+    return {'status': 'replied', 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 900, 'output_tokens': 60}}
 
 
 class Render(unittest.TestCase):

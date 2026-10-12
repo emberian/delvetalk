@@ -14,7 +14,6 @@ import urllib.request
 from pathlib import Path
 
 from transport import journal as chain, model, post
-from transport.bridge import all_observations
 
 DEDUPE, URGENT = 6 * 3600, 3600  # seconds between two lines for one condition; for the two that page
 
@@ -23,7 +22,7 @@ def probe(st, host, clock=time.time):
     """Every number a threshold reads: the front's 5xx, the host's hour, the model's spend, reservations, interpretations,
     the journal, the clock, the backups and the disks."""
     now, status, c = clock(), host.send({'op': 'world-status'}), st.config
-    rows = [l.split() for p in (st.access_log.with_name(st.access_log.name + '.1'), st.access_log) if p.exists() for l in p.read_text().splitlines()]
+    rows = st.access()
     when = lambda x: calendar.timegm(time.strptime(x[0], '%Y-%m-%dT%H:%M:%SZ'))
     recent = lambda secs: [x for x in rows if len(x) >= 4 and now - when(x) < secs]
     waiting = host.send({'op': 'world-interpretations'}).get('pending') or []
@@ -42,7 +41,7 @@ def probe(st, host, clock=time.time):
             'journal': {'height': status.get('height'), 'bytes': chain.size(st.journal) if st.journal.exists() else None,
                         'medianSuspendedBytes': sizes[len(sizes) // 2] if sizes else None},
             'clock': {'world': status.get('clock'), 'behindMinutes': int(now // 60) - (status.get('clock') or 0)},
-            'observed': len(all_observations(st)),
+            'observed': len(st.observations()),
             'backup': {'newest': tars[-1].name if tars else None, 'ageSeconds': int(now - tars[-1].stat().st_mtime) if tars else None,
                        'verify': verify[0] if verify else None},
             'freeFraction': disk}
@@ -144,7 +143,7 @@ def watch(st, a, out, send=None):
         p = probe(st, host)
     finally:
         host.close()
-    history = [json.loads(l) for l in st.watch_log.read_text().splitlines()[-48:]] if st.watch_log.exists() else []  # four hours at five minutes
+    history = st.lines(st.watch_log)[-48:]  # four hours at five minutes
     alerted = json.loads(st.alerted.read_text()) if st.alerted.exists() else {}
     lines = [(k, line + (f' (playbook {book})' if book else '')) for k, line, book in conditions(p, history, a.unhealthy) if due(alerted, k, p['at'])]
     if a.dry_run:

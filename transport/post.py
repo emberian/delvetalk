@@ -2,6 +2,8 @@
 exact request it would send and exits 2 without reading credentials or touching the network. A world whose bridge row
 is a Zulip channel, the owner's own, is posted to at once.
 """
+import contextlib
+import fcntl
 import hashlib
 import json
 import sys
@@ -57,14 +59,6 @@ def reserve(host, intent, source):
     return got
 
 
-def slot_record(text):
-    """`principal:intent` -> {principal, intent}, split at the last colon (DIDs contain colons)."""
-    principal, sep, intent = (text or '').rpartition(':')
-    if not (principal and sep and intent):
-        raise Failure('bad_slot', 'expected principal:intent')
-    return {'principal': principal, 'intent': intent}
-
-
 def draft_object(d):
     """The object a draft addresses: a reply's `object`, a publication's `publication.object`."""
     return d.get('object') or (d.get('publication') or {}).get('object')
@@ -98,6 +92,16 @@ def build_request(text, reply=None, facets=None):
             'body': {'repo': '<session did>', 'collection': COLLECTION, 'record': record}}
 
 
+@contextlib.contextmanager
+def held(st):
+    """The posting ledger held by this process alone, from an intent's first read to its last write: two posts of one
+    intent at once are one post (another waits, then finds the first's record)."""
+    st.posting.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with open(st.posting / '.lock', 'w') as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+
+
 def ledger(st, intent):
     """The posting ledger, one file per intent: what was fixed before the network was touched (the record key, or Zulip's
     anchor) and what came back. A retry reads it, so an intent is posted at most once and its quota slot taken once."""
@@ -110,35 +114,36 @@ def send(request, intent, st, host, client=None, now=time.time):
     key is fixed in the ledger before the first attempt, and a retry that finds a record under it adopts that record. The
     reservation is released only when the post certainly did not leave (the credentials unreadable). Credentials go only to
     the fixed PDS via Client."""
-    path, got = ledger(st, intent)
-    if got and got.get('result'):
-        return got['result']
-    client, found, fresh = client or Client(http_transport, allow_write=True), None, got is None
-    if fresh:
-        reserve(host, intent, 'delve')
-    try:
-        cred = json.loads(Path(st.config.credentials).expanduser().read_text())
-    except (OSError, ValueError):
+    with held(st):
+        path, got = ledger(st, intent)
+        if got and got.get('result'):
+            return got['result']
+        client, found, fresh = client or Client(http_transport, allow_write=True), None, got is None
         if fresh:
-            host.send({'op': 'world-post-release', 'principal': CLOCK, 'intent': intent, 'reason': 'credentials unreadable'})
-        raise
-    if fresh:
-        got = {'intent': intent, 'rkey': tid(int(now() * 1e6), int(hashlib.sha256(intent.encode()).hexdigest()[:4], 16) & 1023)}
-        st.write(path, got)
-    session = client.write('com.atproto.server.createSession',
-                           {'identifier': cred['identifier'], 'password': cred['password']})
-    if not fresh:  # an earlier attempt may have landed with its reply lost
+            reserve(host, intent, 'delve')
         try:
-            found = client.record(f"at://{session['did']}/{COLLECTION}/{got['rkey']}")
-        except Failure as f:
-            if 'RecordNotFound' not in f.detail:
-                raise
-    if found is None:
-        found = client.write('com.atproto.repo.createRecord', dict(request['body'], repo=session['did'], rkey=got['rkey']),
-                             token=session['accessJwt'])
-    result = {'uri': found['uri'], 'cid': found['cid']}
-    st.write(path, dict(got, result=result))
-    return result
+            cred = json.loads(Path(st.config.credentials).expanduser().read_text())
+        except (OSError, ValueError):
+            if fresh:
+                host.send({'op': 'world-post-release', 'principal': CLOCK, 'intent': intent, 'reason': 'credentials unreadable'})
+            raise
+        if fresh:
+            got = {'intent': intent, 'rkey': tid(int(now() * 1e6), int(hashlib.sha256(intent.encode()).hexdigest()[:4], 16) & 1023)}
+            st.write(path, got)
+        session = client.write('com.atproto.server.createSession',
+                               {'identifier': cred['identifier'], 'password': cred['password']})
+        if not fresh:  # an earlier attempt may have landed with its reply lost
+            try:
+                found = client.record(f"at://{session['did']}/{COLLECTION}/{got['rkey']}")
+            except Failure as f:
+                if 'RecordNotFound' not in f.detail:
+                    raise
+        if found is None:
+            found = client.write('com.atproto.repo.createRecord', dict(request['body'], repo=session['did'], rkey=got['rkey']),
+                                 token=session['accessJwt'])
+        result = {'uri': found['uri'], 'cid': found['cid']}
+        st.write(path, dict(got, result=result))
+        return result
 
 
 def unsend(uri, credentials, client=None):
@@ -160,7 +165,7 @@ def record_sent(st, host):
     for path, d in st.drafts():
         obj = draft_object(d)
         if d.get('posted') and d.get('sent') and obj and (d.get('recorded') or {}).get('status') in (None, 'error'):
-            got = record_posted(host, d['sent'], obj, slot_record(d['slot']) if d.get('slot') else None, wiki_target(d['text']), d.get('intent'))
+            got = record_posted(host, d['sent'], obj, d.get('slot'), wiki_target(d['text']), d.get('intent'))
             st.write(path, dict(d, recorded=got))
             done += [path.name] if got.get('status') != 'error' else []
     return done
@@ -188,7 +193,7 @@ def post_draft(path, st, host, text=None, reader=None, client=None, intent=None,
     d = dict(d, text=body, posted=True, sent=result, intent=intent, **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
     st.write(path, d)  # sent, whatever the host says next: record_sent retries the registration alone
     if object:
-        result = dict(result, recorded=record_posted(host, result, object, slot_record(d['slot']) if d.get('slot') else None, wiki_target(body), intent))
+        result = dict(result, recorded=record_posted(host, result, object, d.get('slot'), wiki_target(body), intent))
         st.write(path, dict(d, recorded=result['recorded']))
     return result
 
@@ -198,13 +203,13 @@ def command(st, a, out, client=None, zulip=None):
     world lives; a text to delve.town is a dry run without the authorizing flag; to a Zulip world, a message in `--topic`."""
     try:
         d = json.loads(Path(a.draft).read_text()) if a.draft else {}
-        reply_to, obj, slot = a.reply_to or d.get('replyTo'), a.object or draft_object(d), a.slot or d.get('slot')
+        reply_to, obj, slot = a.reply_to or d.get('replyTo'), a.object or draft_object(d), json.loads(a.slot) if a.slot else d.get('slot')
         if bool(a.text_file) == bool(a.draft):
             raise Failure('choose_one_of', '--text-file | --draft')
         text = d['text'] if a.draft else Path(a.text_file).read_text()
         for h in a.mention:
             text = text.rstrip('\n') + f'\n@{h.lstrip("@")}'
-        slot, host, row = slot_record(slot) if slot else None, st.host(), st.bridge()
+        host, row = st.host(), st.bridge()
         zulip_world = row['transport'] == 'zulip'  # the owner's own Zulip: no flag and no quota
         try:
             if d.get('posted'):

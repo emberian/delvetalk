@@ -421,7 +421,7 @@ def countPlan : M Unit := do
   set { s with plans := s.plans + 1 }
 
 /-- The verb an act names when it is not its method (`request.verb`): `act {verb, text}`'s verb, a grown
-    one (docs/COLLABORATOR.md); "" otherwise, read as the method. -/
+    one (docs/FOUNDATION.md §10); "" otherwise, read as the method. -/
 def actVerb (method : String) (argument : Data) : String :=
   if method != actMethod then "" else match argument with
     | .record fs => match fs.lookup "verb" with
@@ -724,7 +724,7 @@ def withVerbs (id : String) (o : Object) (declared : List Data) : List Data :=
 
 /-- An object's forms (`methodForms`) with the kinds its `forms()` declares: a spell is judged by the
     card's own bounds, and the type's default holds only for a field no form names. Then its grown verbs
-    (docs/COLLABORATOR.md §3), each a form as a declared one is; `act` itself is no spell: its spells
+    (docs/FOUNDATION.md §10), each a form as a declared one is; `act` itself is no spell: its spells
     are the verbs. -/
 def formsOf (id : String) (o : Object) : M (List Data) := do
   return withVerbs id o (methodForms id o.methods (← declaredForms o).1)
@@ -1237,7 +1237,7 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   | some name, some code => fields ++ [{ name, value := code }]
   | _, _ => fields
 
-/-- `delvetalk <card> rules` (docs/REACTION.md §5): every rule the card carries, by name, owner,
+/-- `delvetalk <card> rules` (docs/FOUNDATION.md §10): every rule the card carries, by name, owner,
     reading, condition and spell, and when it last fired (the entry and the receipt of the turn it
     delivered) or why it did not. -/
 def rulesText (w : World) (id : String) (o : Object) (shown : String) : String :=
@@ -1271,7 +1271,7 @@ def wantsText (w : World) (id : String) (o : Object) (shown : String) : String :
     s!"» {text "name"}{reading} ({since}):\n{text "asks"}\n"
   s!"What {shown} wants now:\n\n" ++ String.join (rows.map line)
 
-/-- `delvetalk <card> verbs` (docs/COLLABORATOR.md §3): the verbs the card takes, the ones its kind
+/-- `delvetalk <card> verbs` (docs/FOUNDATION.md §10): the verbs the card takes, the ones its kind
     declares first, then each grown one with its grower, the entry that grew it, its reading, what it
     takes and the rule it does. -/
 def verbsText (w : World) (id : String) (o : Object) (shown : String) (declared : List Spell.Form) : String :=
@@ -1410,7 +1410,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let fields := withFence w target action argument (Spell.bind form fields)
   match Spell.fit (.spell id action fields) form with
   | .proposal _ _ entries => match grownAct target action (spellArgument entries) with
-    -- A grown verb runs the card's `act` with the verb (docs/COLLABORATOR.md §3).
+    -- A grown verb runs the card's `act` with the verb (docs/FOUNDATION.md §10).
     | some a => return .run id actMethod a (spellLine card action)
     | none => match spellArgumentFor w target action entries with
     | .ok a => return .run id action a (spellLine card action)
@@ -1448,7 +1448,7 @@ def routeSpell (w : World) (principal id method : String) (argument : Data) (ret
     | none => return receiveHeard w id o argument bare
 
 /-- The placements a placing spell names on `o` (`rule`, `want`, `grow` and their removals; KERNEL-HANDOFF
-    §27, docs/COLLABORATOR.md §3), from its fields (`value`) and the field that holds a spell (`spell`:
+    §27, docs/FOUNDATION.md §10), from its fields (`value`) and the field that holds a spell (`spell`:
     `then`, `asks`, `does`, which a typed spell writes last), or the refusal `(clause, reason)`. A spell
     cast on a card, a world call (`world.rule` …) and a `call` of one on a card that does not declare it
     place alike.
@@ -1572,7 +1572,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   let some obj := (s.world.objects[id]?).map (asWritten · ((s.writes.lookup id).getD [])) | evaluation s!"unknown object {id}"
   -- Only a method the package makes public is asked from outside (a call or a run checked it).
   if depth == 0 && !s.receiver && !obj.offers method then throw (.refused "noMethod" (noMethodReason id method))
-  -- `act` runs a verb grown on the card, never another (docs/COLLABORATOR.md §3): its `request.verb`.
+  -- `act` runs a verb grown on the card, never another (docs/FOUNDATION.md §10): its `request.verb`.
   if method == actMethod then
     let verb := actVerb method argument
     -- A verb this turn grew is used in it (hob's `grow:` and the spell that uses it, one turn).
@@ -2276,7 +2276,7 @@ def textField (state : Data) (name : String) : Option String :=
   | some (.label t) => some t
   | _ => none
 
-/-- An admitted entry's three host-rendered lines (docs/TENURE.md §4; docs/OVERHAUL.md §2 "The revealing
+/-- An admitted entry's three host-rendered lines (docs/FOUNDATION.md §5; docs/OVERHAUL.md §2 "The revealing
     reply"), each left out when empty: **what it moved** (each rule it fired, with the spell it cast under
     its owner's name, or why one that held did not fire), **what it opened or closed** (each want of a
     written thing that came to hold, with the spell that answers it, or stopped holding), and **where it
@@ -2950,7 +2950,7 @@ def spellVerdict (offered : List OfferedForm) (text : String) : Option (Except (
       | [offer] => some (fitted offer [])
       | _ => none
 
-/-! ## Words a card heard (docs/OVERHAUL.md §2.7; docs/COLLABORATOR.md §3): hob reads them for that card
+/-! ## Words a card heard (docs/OVERHAUL.md §2.7; docs/FOUNDATION.md §10): hob reads them for that card
 
 Words that reach a card (`reachOf`: a reply, a door's word, field lines, a summons, a turn asked on the
 card) and name none of its spells are read by the host for that card. The card's `receive` hears them
@@ -4109,7 +4109,7 @@ def proposalVerdict (w : World) (target self : String) (obj : Object) (carries :
   return (w, Json.mkObj [("tag", toJson "proposal"), ("object", toJson target), ("method", toJson method),
     ("argument", dataJson argument), ("spell", toJson spell)])
 
-/-- hob's `grow: NAME "reading"` (docs/COLLABORATOR.md §3): a verb the words mean that the card does
+/-- hob's `grow: NAME "reading"` (docs/FOUNDATION.md §10): a verb the words mean that the card does
     not take yet, with the spell that uses it on the lines after, answered as two proposals in order, the
     grow (the host's placing spell, which a `call` stages: `placementsOf`) and the use (the card's `act`
     with the verb). The spell must name the verb grown; the card is the one it names. -/
@@ -4174,7 +4174,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     | match raw with
       | some text =>
         let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
-        -- hob's four answers (docs/OVERHAUL.md §2; COLLABORATOR §3): the spell meant, `grow: NAME
+        -- hob's four answers (docs/OVERHAUL.md §2; FOUNDATION §10): the spell meant, `grow: NAME
         -- "reading"` with the spell that uses it, `ask: <question>`, or `none`. hob states no fact and
         -- shows no card: there is no fifth.
         let said := text.trimAscii.toString
