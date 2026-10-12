@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/host29: the second codex review's host findings, 5.175; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -81,7 +81,7 @@ Rules:
 
 ## 3. Journal
 
-A journal at `J` is two files (5.137): `J`, the chain, one line per entry `{at, bytes, hash, height, previous}`, and `J.blocks`, the block store, where each entry's record (its canonical DAG-CBOR without `hash`, whose CID is the `hash`) lies at `at`. An entry's common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?}]` (5.136), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
+A journal at `J` is two files (5.137): `J`, the chain, one line per entry `{at, bytes, hash, height, previous}`, and `J.blocks`, the block store, where each entry's record (its canonical DAG-CBOR without `hash`, whose CID is the `hash`) lies at `at`. An entry's common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?, gaps?}]` (5.136; `gaps` kernel18), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
 
 `world.receipts` maps `identityKey` to the entry index (first wins, except that a suspension or a transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`) are journaled but do not bind; admitted outcomes and every other refusal bind.
 
@@ -2024,8 +2024,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (`world-check` on the scratch) and `/cite` (`world-cite`); `/AGENTS.md/repl` and `/check` are gone. Tests:
    `test_http.Repl`, `test_hypermedia` (the stranger's walk), `test_serve`.
 
-175. **The second codex review's host findings (host29; docs/review/codex-2026-10-12; snapshot `v5`; no replay
-   edition change).** Each with its failing input as a test, red on foundation:
+175. **The second codex review's host findings (host29; docs/review/codex-2026-10-12; snapshot `v5`; deployed
+   with kernel18's replay edition 10, which its carry needs no more of).** Each with its failing input as a test, red on foundation:
    - *What a clause cites* (host 1, 10, 11). `Ops.citesOf` is the one closure of what names cite (`"O".F` the
      object; `under "O"` what O's law text names; `"O" wants N` what O's want N names, with every want clause of a
      want-cited object), `Limits.lawDepth` deep; `citing w law names facts` sets `reads`, `wants` and `standing`
@@ -2079,7 +2079,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   ledger; 5.136); 5 is host17 (a layered package's shape is its stack's, 5.138; the relational atoms judged and
   their citations roots, 5.139); 6 is host18 (a send refused transiently stays pending, 5.150); 7 is host19
   (`context.sender`, 5.155); 8 is kernel16 (`cardRefused`, 5.157); 9 is host22 (rules and wants placed, fired and
-  posed, `request.verb`, 5.160), with snapshot `v4`, the last bump OVERHAUL plans. Test: `tests/test_replay_edition.py`.
+  posed, `request.verb`, 5.160), with snapshot `v4`; 10 is kernel18 (a state named by its cells,
+  KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
+  anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
+  anchors alone). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.
@@ -2100,20 +2103,17 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 **First, host29's remainder (the second codex review, docs/review/codex-2026-10-12; stopped at its token budget).**
 Each with its failing input as a test first, merging foundation before each commit:
-- **First: merge foundation a5676b4c (lane/kernel18, replay edition 10, state as cells).** Twelve conflicts, all in
-  host29's braid: `judge` (kernel18's `applied`/`cells` beside host29's two phases over `cand`: build `cand` from
-  the applied cells, judge `citing cand`, `bendLaw cand … cells.state`), `reactions` (kernel18's `viewFor` with
-  `citing after`, the `reads` check kept), `amendable`/`createRecJson` (kernel18's `cid` beside `lines`),
-  `quietOf` beside `viewFor`, `placedIn`/`readPolicyIn` beside kernel18's `*In`, Snapshot's anchors (five heights)
-  and `checkAnchors` with kernel18's `Naming`, Carry's `readWorld` (`carriedIds` and the edition-`whole` check with
-  `Naming.ofEdition`). Then the narrow runs of 5.175's tests, the full run and `carry-check.sh` (green
-  non-breaking before kernel18 on delvetalk-20261012T090950Z, 41 s; kernel18 makes it edition 10).
-- Full run before that merge (994 tests): red `test_artifact_pins.Pins11` (Paint's pin, lane/paint's),
-  `test_archive.Archive` (the sentry post read by hob), `test_previews` (below): none in host29's files.
+- The kernel18 merge is done (host30): `judge` stages each write's applied cells, builds `cand` from them and
+  judges every law, Bend law, amendment and placing against it (`viewFor` of the cells for the written object,
+  `citing cand` for what it cites); `reactions` reads `viewFor` with `citing after` and the `reads` check;
+  creations journal `cid` and `placed`; `checkAnchors w naming whole`. Full run after it (1,000 tests): red only
+  `test_artifact_pins.Pins11` (Paint's pin), `test_archive.Archive` (the sentry post read by hob),
+  `test_previews` (below), as before it. `carry-check.sh` on delvetalk-20261012T090950Z: green, breaking (26 s);
+  `bench-write.py` 200 turns: 0.95 / 1.00 / 0.95 ms median at 16 / 256 / 2,048 rows under the suite's load.
 - host 7 (P1): a placed rule named as an inherited one shares `rule:<object>:<name>:<height>` and consuming one
   delivery removes both: the firing id names its holder (`CarriedClause.holder`), and placing refuses a name the
-  thing's kind carries. Changes `fired` ids: edition 10 with `carry-check.sh` green, or derive the old id where
-  holder = object.
+  thing's kind carries. Changes `fired` ids: edition 10 ships before it, so derive the old id where holder =
+  object (no bump), or edition 11 with `carry-check.sh` green.
 - host 9 (P1): carry admits a suspended write on cells a migration moved: install a touch barrier per moved object
   (`touches` noncommuting at the genesis) so `cellsCurrent` refuses the old roots.
 - docs 7: a moved object's suspensions are dropped without `--leave`: refuse the move unless named.
@@ -2192,9 +2192,9 @@ replaces in the same commit, and this file describes only what is. A merge touch
    them; the REPL, `check` and `cite` of a scratch are built (5.174), and the owner's `delvetalk world expire /
    scratch:` (section 2). Left: `world-history` across worlds; the hand's SCRATCHES page; a `Returned` that carries
    the target's receipt (World.obend's, so every pin moves: the objects lane's); `world-repl` of several modules.
-8. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
-   the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
-   per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).
+8. **The stored path's remainder (5.136): done by lane/kernel18** (KERNEL-HANDOFF §15 "The state as cells"; replay
+   edition 10): a write is checked, bounded, charged and named per changed cell, `storeOf` is gone (`Held` holds
+   the object's cells), and a lookup reads its key or its gap (roots' `gaps [{field, after?, before?}]`).
 9. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
    sources, grants and slugs; CIDs as bytes; one record encoding; `serve --snapshot-every`; held worlds never closed;
    `world-inspect`'s `cites` per clause.

@@ -343,10 +343,12 @@ fills. `sender` is the object whose send the turn delivers (a `send`, a fired ru
 activity's `ended`), "" for a turn a principal began: so the weather's rain can be credited to the weather
 (replay edition 8).
 
-**The stored path.** A frame reads its object by cells (`Cells {scalar, fields, rows, spans}`): each declared
-relation's rows are fetched only when the code forces them, so a lookup by key is a probe, not a walk, and a root is
-recorded per cell read; the per-cell bound and ledger replace the whole-state bound (HOST-HANDOFF 5.136,
-KERNEL-HANDOFF §15). A write still costs O(state) in conformance and the state CID (HOST-HANDOFF §7 item 4).
+**The stored path.** An object's state is held as its cells: the scalar part and each declared relation's rows in
+key order. A frame reads its object by cells (`Cells {scalar, fields, rows, spans, gaps}`): rows are fetched only when
+the code forces them, a lookup by key is a probe that reads its answer (the key it found, or the gap its key falls in),
+and a root is recorded per cell read. A write is checked, bounded, charged and named by the cells it changes: a state's
+CID is its block's, the scalar part with each relation's rows linked in content-defined chunks (replay edition 10;
+KERNEL-HANDOFF §15).
 
 ## 4. Law
 
@@ -673,8 +675,8 @@ or a field that is not a relation, is refused by name at creation (`key`).
 relation canonical (`canonicalRows`): rows sorted by the canonical DAG-CBOR bytes
 of their key projection, no key twice (`duplicateKey`), at most `limit` rows (0
 means `Limits.maxRelationRows`, 4,096), the first rows in key order dropped past
-it. Equal rows have one CID whatever the order of insertion, so `writes[].cid`
-and snapshot state CIDs are order-independent. Growth is a stated decision; an
+it. Equal rows have one CID whatever the order of insertion, and chunk ends depend
+only on the rows, so `writes[].cid` and snapshot state CIDs are order-independent. Growth is a stated decision; an
 unbounded collection is a sequence of child objects (`anthology/page/n`), never
 one relation.
 

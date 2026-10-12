@@ -182,7 +182,7 @@ def storeJson (w : World) : Except String Json := do
         ("bounds", boundsJson o.bounds), ("methods", o.methods), ("predicate", toJson o.predicate),
         ("predicateReads", toJson o.predicateReads)])]
     out := out.push (Json.mkObj ([("id", toJson id), ("pin", toJson o.pin), ("law", toJson o.lawText),
-      ("version", toJson o.version), ("state", dataJson o.state), ("stateCid", toJson (stateCid o.state)), ("read", o.read.json),
+      ("version", toJson o.version), ("state", dataJson o.state), ("stateCid", toJson o.stateCid), ("read", o.read.json),
       ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)] ++
       (if o.minted == 0 then [] else [("minted", toJson o.minted)]) ++
       (if o.packet.isEmpty then [] else [("packet", toJson o.packet)]) ++
@@ -281,7 +281,7 @@ def write (journal : String) (w : World) : IO (Except String Nat) := do
 
 /-- `base` with the store a snapshot body (or a fork's genesis) holds: objects, types, libraries,
     grants, posts, settings, the clock. Compile inputs name sources through `base`'s journal. -/
-def install (b : Json) (base : World) : Except String World := do
+def install (b : Json) (base : World) (naming : Naming := .cells) : Except String World := do
   let mut w := base
   let mut libraries : Std.HashMap String Library := {}
   for l in ← (← b.getObjVal? "libraries").getArr? do
@@ -316,7 +316,10 @@ def install (b : Json) (base : World) : Except String World := do
     let state ← decodeData Limits.dataDepth (← o.getObjVal? "state")
     unless state.conformsUnder bounds stateType do throw s!"the state of {id} does not conform to its type"
     let some cid := (o.getObjValAs? String "stateCid").toOption | throw s!"object {id} carries no state CID"
-    unless cid == stateCid state do throw s!"the state of {id} is not its CID's"
+    let relations : List RelDecl := (((o.getObjVal? "relations").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun d =>
+      match d.getObjValAs? String "field", d.getObjValAs? (List String) "key", d.getObjValAs? Nat "limit" with
+      | .ok field, .ok key, .ok limit => some { field, key, limit }
+      | _, _, _ => none
     let law ← parseLawText lawText
     let version ← natField o "version"
     let read ← parseRead (some (← o.getObjVal? "read"))
@@ -327,7 +330,7 @@ def install (b : Json) (base : World) : Except String World := do
         law := law
         lawText := lawText
         version := version
-        state := state
+        cells := Delvetalk.Turn.StateCells.of (cellDecls relations) state
         stateType := stateType
         bounds := bounds
         read := read
@@ -341,15 +344,13 @@ def install (b : Json) (base : World) : Except String World := do
         minted := (o.getObjValAs? Nat "minted").toOption.getD 0
         packet := (o.getObjValAs? String "packet").toOption.getD ""
         readings := artifactReadings (Json.mkObj [("laws", (o.getObjVal? "readings").toOption.getD (Json.arr #[]))])
-        relations := (((o.getObjVal? "relations").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap fun d =>
-          match d.getObjValAs? String "field", d.getObjValAs? (List String) "key", d.getObjValAs? Nat "limit" with
-          | .ok field, .ok key, .ok limit => some { field, key, limit }
-          | _, _, _ => none
+        relations := relations
         fixed := (o.getObjValAs? (List String) "fixed").toOption.getD []
         declares := (o.getObjValAs? (List String) "declares").toOption.getD []
         rules := ← placedOf "rules"
         wants := ← placedOf "wants"
         verbs := ← (((o.getObjVal? "verbs").toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Verb.ofJson }
+    unless cid == naming.state obj do throw s!"the state of {id} is not its CID's"
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do
@@ -486,12 +487,12 @@ def installBody (b : Json) (entries : Entries) (caches : Caches) : Except String
     cachedPackets := w.objects.fold (fun m _ o => if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {} }
 
 /-- Each object against the entries its anchors name (`World.anchors`): the version, the state's CID
-    where that entry names one, the pin, the law text, the read policy, and the rules, wants and verbs
-    placed on it (their CID, `placedIn`; an object with rows no entry commits to is not the journal's, and
-    a world whose rows predate their CIDs is replayed whole). A forger who recomputes a snapshot's CIDs
-    moves no entry. A carry reading `previousEdition`, whose anchors hold the first three alone, checks
-    those (`whole` false). -/
-def checkAnchors (w : World) (whole : Bool := true) : Except String Unit := do
+    where that entry names one (by `naming`, the journal's edition's), the pin, the law text, the read policy,
+    and the rules, wants and verbs placed on it (their CID, `placedIn`; an object with rows no entry commits to
+    is not the journal's, and a world whose rows predate their CIDs is replayed whole). A forger who recomputes
+    a snapshot's CIDs moves no entry. A carry reading `previousEdition`, whose anchors hold the first three
+    alone, checks those (`whole` false). -/
+def checkAnchors (w : World) (naming : Naming := .cells) (whole : Bool := true) : Except String Unit := do
   let mut read : Std.HashMap Nat Json := {}
   for (id, o) in w.objects.toList do
     let some a := w.anchors[id]? | throw s!"object {id} is not the journal's"
@@ -505,8 +506,8 @@ def checkAnchors (w : World) (whole : Bool := true) : Except String Unit := do
         entries := (h, e) :: entries
     let at_ := fun (h : Nat) => (entries.lookup h).getD Json.null
     unless versionIn (at_ a.version) id == some o.version do throw s!"object {id} is not at the journal's version and pin"
-    if let some cid := stateCidIn (at_ a.version) id o.version then
-      unless cid == stateCid o.state do throw s!"the state of {id} is not the one the journal commits to at version {o.version}"
+    if let some cid := stateCidIn (at_ a.version) id o.version naming then
+      unless cid == naming.state o do throw s!"the state of {id} is not the one the journal commits to at version {o.version}"
     unless pinIn (at_ a.pin) id == some o.pin do throw s!"object {id} is not at the journal's version and pin"
     if let some law := lawIn (at_ a.law) id then
       unless law == o.lawText do throw s!"the law of {id} is not the journal's"

@@ -46,19 +46,21 @@ def rootFieldsOf (w : World) (kind : String) (act : Json) (reason : String) : Ex
     if let some name := stateFieldOf field then
       let some current := Law.rawField name o.state | throw s!"the state of {id} has no field {name}"
       let v ← fieldValue current value
-      let state ← withField o.state name v
+      let state ← canonicalState o.relations (← withField o.state name v)
       unless state.conformsUnder o.bounds o.stateType do throw s!"{(dataJson v).compress} is not of the type of {id}'s field {name}"
-      return base ++ [("after", dataJson v), ("version", toJson (o.version + 1)), ("cid", toJson (stateCid state))]
+      return base ++ [("after", dataJson v), ("version", toJson (o.version + 1)), ("cid", toJson (o.withState state).stateCid)]
     match field with
     | "state" =>
-      let state ← decodeData Limits.dataDepth value
-      return base ++ [("after", value), ("version", toJson (o.version + 1)), ("cid", toJson (stateCid state))]
+      let state ← canonicalState o.relations (← decodeData Limits.dataDepth value)
+      -- A held state conforms to its type: a write is checked by the cells it changes on that ground.
+      unless state.conformsUnder o.bounds o.stateType do throw s!"the state does not conform to the type of {id}"
+      return base ++ [("after", value), ("version", toJson (o.version + 1)), ("cid", toJson (o.withState state).stateCid)]
     | "owner" =>
       let owner ← value.getStr?
       let state := match o.state with
         | .record fs => Data.record (if fs.any (·.1 == "owner") then replaceField fs "owner" (.label owner) else fs ++ [("owner", .label owner)])
         | d => d
-      return base ++ [("after", value), ("version", toJson (o.version + 1)), ("cid", toJson (stateCid state))]
+      return base ++ [("after", value), ("version", toJson (o.version + 1)), ("cid", toJson (o.withState state).stateCid)]
     | "program" =>
       -- `{modules: [{name, source}]}` over the object's entry and limits; the host recompiles.
       let inputs := o.inputs.setObjVal! "modules" (← value.getObjVal? "modules")

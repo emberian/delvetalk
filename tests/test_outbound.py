@@ -19,7 +19,7 @@ from tests.wire import write_journal
 from tests.host import addressed, posted, whole
 
 from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
-from tests.wire import cid_of, field, label, nat, record
+from tests.wire import cid_of, field, label, nat, record, state_cid
 from tests.bend import declared
 
 URI = "at://did:plc:world/town.delve.feed.post/3abc"
@@ -354,19 +354,19 @@ class Projection(Reflection):
         entry that wrote it (`writes[].cid`), and read with world-state-cid by a reader who may view it."""
         state = lambda name: self.host.send(op="world-view", principal="ann", object=name)["state"]
         cid_at = lambda who, name, v: self.host.send(op="world-state-cid", principal=who, object=name, version=v)
-        before = {name: cid_of(state(name)) for name in ("vault", "lamp")}
+        before = {name: state_cid(state(name)) for name in ("vault", "lamp")}
         r = self.turn("vault", "pokeOther", record(target=label("lamp")), principal="ann", identity="poke")
         self.assertEqual(r["receipt"]["roots"], [{"object": "vault", "version": 0, "scalar": True},
                                                 {"object": "lamp", "version": 0, "scalar": True}])
         writes = {w["object"]: w for w in r["receipt"]["outcome"]["writes"]}
-        self.assertEqual(writes["lamp"]["cid"], cid_of(state("lamp")))
+        self.assertEqual(writes["lamp"]["cid"], state_cid(state("lamp")))
         for name in ("lamp", "vault"):
             self.assertEqual(cid_at("ann", name, 0)["cid"], before[name])
         bad = self.turn("lamp", "stamp", record(wrong=label("x")), principal="ann", identity="bad-lamp")
         self.assertEqual(bad["receipt"]["roots"], [{"object": "lamp", "version": 1, "scalar": True}])
         lamp = self.host.send(op="world-receipt", principal="bob", identity="bad-lamp", of="ann")
         self.assertEqual(lamp["root"], {"object": "lamp", "version": 1})
-        self.assertEqual(cid_at("bob", "lamp", 1), {"status": "stateCid", "object": "lamp", "version": 1, "cid": cid_of(state("lamp"))})
+        self.assertEqual(cid_at("bob", "lamp", 1), {"status": "stateCid", "object": "lamp", "version": 1, "cid": state_cid(state("lamp"))})
         self.assertEqual(cid_at("bob", "vault", 0)["status"], "denied")
         # An entry from before carrying a root `cid` replays: the field is ignored.
         self.release()

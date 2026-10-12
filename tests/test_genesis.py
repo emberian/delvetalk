@@ -182,7 +182,7 @@ class NoWipe(unittest.TestCase):
         code, err = self.genesis()
         self.assertEqual(code, 1, err)
         self.assertIn('v1/state/town.journal (height 2)', err)
-        self.assertNotIn('v2', err)  # its own journal is not a town it would abandon
+        self.assertNotIn(os.path.join(self.towns, 'v2') + os.sep, err)  # its own journal is not a town it would abandon (a path, since the temp dir's random name may hold 'v2')
         self.assertEqual(genesis.existing(self.town.client, genesis.OPENER), [])
         self.assertEqual(self.genesis('--wipe-with-the-owners-word', 'two\nlines')[0], 64)
         word = 'the town begins again by the owner\'s word'
