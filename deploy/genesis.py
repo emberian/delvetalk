@@ -316,33 +316,36 @@ def station_wings():
     return [parts[0] + parts[1]] + parts[2:]
 
 
-def gas_station(host, opener):
-    """The all-night station, by the opener's spells after genesis; -> made rows. Stops (Stopped) at a refusal."""
+def gas_station(host, opener, prefix='genesis'):
+    """The all-night station, by the opener's spells after genesis; -> made rows. Stops (Stopped) at a refusal. A carry's
+    refresh makes it the same way under `refresh-*` identities (`prefix`), a refresh as any other (`Ops.carryRefresh`);
+    a kind/station the town has already is kept, not made again."""
     turn = lambda obj, method, argument, identity: host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': method,
                                                               'argument': argument, 'identity': identity})
     made = []
     f = STATION_KIND
-    kind = turn('kinds', 'make', rec(name=lab('station'), of=lab(f['of']), form=lab(''), head=lab(''), voice=lab(f.get('voice', '')),
-                                    about=lab(f.get('about', '')), law=lab(''), body=lab(body_of(f['body']))), 'genesis-kind-station')
-    made.append({'object': 'kind/station', 'module': 'kinds make', 'status': kind.get('status'), 'creator': opener, 'reply': kind})
-    turned('kinds make station', kind)
+    if 'kind/station' not in existing(host, opener):
+        kind = turn('kinds', 'make', rec(name=lab('station'), of=lab(f['of']), form=lab(''), head=lab(''), voice=lab(f.get('voice', '')),
+                                        about=lab(f.get('about', '')), law=lab(''), body=lab(body_of(f['body']))), f'{prefix}-kind-station')
+        made.append({'object': 'kind/station', 'module': 'kinds make', 'status': kind.get('status'), 'creator': opener, 'reply': kind})
+        turned('kinds make station', kind)
     made.append(said(host, opener, 'kind/station', 'place', [('id', 'station'), ('name', 'THE ALL-NIGHT STATION')],
-                     'genesis-station', 'station', STATION_CALL))
+                     f'{prefix}-station', 'station', STATION_CALL))
     turned('kind/station place station', made[-1]['reply'])
     for k, wing in enumerate(station_wings(), 1):
-        made.append(said(host, opener, 'station', 'stitch', [('spween', wing)], f'genesis-station-wing-{k}'))
+        made.append(said(host, opener, 'station', 'stitch', [('spween', wing)], f'{prefix}-station-wing-{k}'))
         turned(f'station stitch wing {k}', made[-1]['reply'])
     for thing, name, description in STATION_THINGS + [('station/register', 'a register, open by the till', '')]:
-        identity = 'genesis-' + thing.replace('/', '-')
+        identity = f'{prefix}-' + thing.replace('/', '-')
         reply = create(host, opener, thing, 'Thing', identity, rec(owner=lab(opener), name=lab(name), description=lab(description)))
         made.append({'object': thing, 'module': 'Thing', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
         turned('create ' + thing, reply, 'created')
-    turned('station/register drop', turn('station/register', 'drop', rec(at=ref('station')), 'genesis-station-register-drop'))
+    turned('station/register drop', turn('station/register', 'drop', rec(at=ref('station')), f'{prefix}-station-register-drop'))
     for card, action, fields, identity in (
-            ('station/register', 'grow', [('name', 'sign'), ('reading', "an arrival, in the arrival's own words; no time is written")], 'genesis-station-sign'),
-            ('station', 'want', [('name', STATION_WANT[0]), ('reading', STATION_WANT[1]), ('when', STATION_WANT[2]), ('asks', STATION_WANT[3])], 'genesis-station-want'),
-            ('station', 'door', [('label', 'the road back'), ('to', 'porch')], 'genesis-station-door'),
-            ('porch', 'door', [('label', 'the lit station'), ('to', 'station')], 'genesis-porch-door-station')):
+            ('station/register', 'grow', [('name', 'sign'), ('reading', "an arrival, in the arrival's own words; no time is written")], f'{prefix}-station-sign'),
+            ('station', 'want', [('name', STATION_WANT[0]), ('reading', STATION_WANT[1]), ('when', STATION_WANT[2]), ('asks', STATION_WANT[3])], f'{prefix}-station-want'),
+            ('station', 'door', [('label', 'the road back'), ('to', 'porch')], f'{prefix}-station-door'),
+            ('porch', 'door', [('label', 'the lit station'), ('to', 'station')], f'{prefix}-porch-door-station')):
         made.append(said(host, opener, card, action, fields, identity))
         turned(f'{card} {action}', made[-1]['reply'])
     return made
@@ -577,11 +580,13 @@ def standing(host, opener, obj):
                                     '.form': fields.get('form', ''), '.about': fields.get('about', '')}
 
 
-def refresh(host, opener, journals):
+def refresh(host, opener, journals, station=False):
     """Re-writes every slot genesis made to its text today, as the opener: an object's law by one amendment, a kind's
-    fields by one write; a town kind the world lacks is made (`refreshed`, reading `made`). -> [{object, slot, status,
-    reading?, reply?}] in genesis's order: `refreshed`, `current` (genesis's text already), `left` (the reading says
-    why), `absent`, or the host's status for a turn not admitted."""
+    fields by one write; a town kind the world lacks is made (`refreshed`, reading `made`). With `station` (the config's,
+    `DELVETALK_STATION`), the all-night station is made on a town that lacks it, as `--with-gas-station` makes it at
+    genesis (`gas_station`, one row a step, reading `placed`). -> [{object, slot, status, reading?, reply?}] in genesis's
+    order: `refreshed`, `current` (genesis's text already), `left` (the reading says why), `absent`, or the host's
+    status for a turn not admitted."""
     gave, today, out = given(journals, opener), texts(opener), rebased(host, opener)
     for obj in dict.fromkeys(o for o, _ in today):
         now = standing(host, opener, obj)
@@ -633,6 +638,14 @@ def refresh(host, opener, journals):
             continue
         placed = said(host, opener, kind, 'place', carried_fields(host, opener, kind, fields), f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
+    if station and 'station' in have:
+        out.append({'object': 'station', 'slot': 'placed', 'status': 'current'})
+    elif station:
+        try:
+            out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
+                    for m in gas_station(host, opener, 'refresh')]
+        except Stopped as e:  # a step not admitted: the carry exits 1, naming it
+            out.append({'object': 'station', 'slot': 'placed', 'status': 'refused', 'reading': str(e)})
     return out
 
 
@@ -720,16 +733,17 @@ def opener_of(path):
     return (first.get('state') or {}).get('settings', first).get('opener') or OPENER
 
 
-def carried(obend, path):
+def carried(obend, path, station=False):
     """The refresh of the journal a carry just wrote at `path`, opened by the host binary `obend` as `python3 -m
-    transport carry` leaves it (serve not yet started on it), as the world's opener. -> refresh's rows."""
+    transport carry` leaves it (serve not yet started on it), as the world's opener; `station` as `refresh`'s. -> refresh's
+    rows."""
     from transport.host import HostProcess
     host = HostProcess(obend)
     try:
         opened = host.send(op='world-open', path=path)
         if opened.get('status') != 'opened':
             raise RuntimeError(f'the carried journal does not open: {opened}')
-        return refresh(host, opener_of(path), ancestry(path))
+        return refresh(host, opener_of(path), ancestry(path), station)
     finally:
         host.close()
 
@@ -786,11 +800,13 @@ def refresh_main(argv):
     ap.add_argument('--world', default='town')
     ap.add_argument('--state', default=os.environ.get('DELVETALK_STATE'), required=not os.environ.get('DELVETALK_STATE'),
                     help="the state directory holding the world's journal (DELVETALK_STATE)")
+    ap.add_argument('--with-gas-station', action='store_true',
+                    help='also make the all-night station on a town that lacks it, as genesis --with-gas-station makes it')
     a = ap.parse_args(argv)
     path = os.path.join(a.state, f'{a.world}.journal')
     host = HostClient(a.root_socket, a.world)
     try:
-        rows = refresh(host, opener_of(path), ancestry(path))
+        rows = refresh(host, opener_of(path), ancestry(path), a.with_gas_station)
     finally:
         host.close()
     for row in rows:

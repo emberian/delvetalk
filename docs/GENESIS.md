@@ -160,6 +160,12 @@ mirror ring bell/1, the counter, hook, cooler, mirror and tape offer things into
 keeper signs from the counter, the book reads up only once a line is in it, and twelve windings of the wall clock open
 what the town keyed to them. Nothing there reads or writes the clock.
 
+On a carried town that lacks it, the carry's refresh makes it the same way when the config's `station` is on
+(`DELVETALK_STATION=on` in the workhorse's `.env`, passed by compose; `deploy/genesis.py refresh --with-gas-station`
+by hand): `refresh(..., station=True)` runs `gas_station` under `refresh-*` identities, the opener's journaled refresh
+like any other (no act of the chronicle's day), one `placed` row a step, `current` once the station stands, and a
+refused step fails the carry by name (tests/test_station.py `Carried`).
+
 ## The measure
 
 Whether wants are quests or chores (the owner: quests must not read as chores) is measured from the journal, by

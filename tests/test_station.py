@@ -287,5 +287,74 @@ class Station(test_scenarios.Arc):
         self.assertIn("a scene holds thirty-two passages", str(full))
 
 
+
+class Carried(unittest.TestCase):
+    """The station on a carried town that lacks it (the live town, carried 2026-10-12): the carry's refresh, with the
+    config's `station` on, makes it as genesis --with-gas-station does (kind/station, the station placed empty and
+    stitched in its four wings, its things, the register lying there with `sign`, the want, the doors to and from the
+    porch), every step a journaled refresh (`refresh-*`, the opener's); a second refresh finds it `current`; without
+    `station` the refresh places none. Refuted by a station a carry leaves unmade, made twice, or made otherwise than
+    genesis makes it."""
+
+    def test_a_carry_with_station_on_makes_it_as_genesis_does_once(self):
+        import os
+        import subprocess
+        import tempfile
+        from tests.host import binary
+        from tests.town import Town
+        from transport import journal as journal_
+        from transport.host import HostProcess
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        town = Town(os.path.join(tmp.name, "v1"), cleanup=self.addCleanup)
+        self.assertNotIn("station", town.send(op="world-objects", principal=OPENER)["ids"])
+        self.assertEqual(town.send(op="world-snapshot")["status"], "snapshot")
+        town.close()
+        outs = []
+        for n in (1, 2):
+            out = os.path.join(tmp.name, f"v{n + 1}.journal")
+            p = subprocess.run([binary(), "carry", "--from", town.journal, "--out", out, "--reason", "the station"],
+                               capture_output=True, text=True, timeout=600)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            outs.append(out)
+        # Without `station`, nothing of it is made.
+        self.assertFalse([r for r in genesis.carried(binary(), outs[1]) if r["object"].startswith(("station", "kind/station"))])
+        rows = genesis.carried(binary(), outs[0], station=True)
+        self.assertTrue(all(r["status"] in ("refreshed", "current", "left") for r in rows), [r for r in rows if r["status"] not in ("refreshed", "current", "left")])
+        placed = [r for r in rows if r["slot"] == "placed" and r.get("reading", "").startswith("placed: ")]
+        made = {r["object"] for r in placed}
+        self.assertEqual(made, {"kind/station", "station", "station/register", "porch"} | {t for t, _, _ in genesis.STATION_THINGS})
+        self.assertEqual(sum(r["reading"] == "placed: station stitch" for r in placed), len(genesis.station_wings()))
+        host = HostProcess(binary(), outs[0])
+        self.addCleanup(host.close)
+        # Every step is the opener's journaled refresh.
+        steps = [e for e in journal_.entries(outs[0]) if (e.get("identity") or {}).get("intent", "").startswith("refresh-station")
+                 or "station" in (e.get("identity") or {}).get("intent", "")]
+        self.assertTrue(steps and all(e["identity"]["principal"] == OPENER and e["identity"]["intent"].startswith("refresh-") for e in steps),
+                        [e["identity"] for e in steps])
+        field = lambda obj, name: next(f["value"] for f in host.send(op="world-view", principal=OPENER, object=obj)["state"]["fields"] if f["name"] == name)
+        self.assertIn("'station'", str(field("station/register", "location")))  # lying in the station
+        door = lambda obj: [f["value"] for f in host.send(op="world-view", principal=OPENER, object=obj)["state"]["fields"] if f["name"] == "cites"]
+        self.assertIn("station", str(door("porch")))
+        self.assertIn("porch", str(door("station")))
+        # The scene the four wings stitched, and the want: once the register is kept, a visitor come and gone opens it.
+        say = lambda who, card, text, n=iter(range(100)): host.send(op="world-turn", principal=who, object=card, method="receive",
+                                                                    identity=f"s{next(n)}", argument={"tag": "record", "fields": [
+                                                                        {"name": "text", "value": label(text)}, {"name": "post", "value": label("")}]})
+        wants = lambda: [w["name"] for w in host.send(op="world-wants", principal=OPENER, object="station")["rows"]]
+        for did, handle in ((KIM, "kimik3.delve.town"), (GLM, "glm.delve.town")):
+            host.send(op="world-arrive", principal="transport", did=did, handle=handle)
+        self.assertEqual(say(GLM, "station/register", "delvetalk station/register inspirit / surrounding: a ledger with no column for the hour")["status"], "admitted")
+        self.assertEqual(say(KIM, "station", "delvetalk station enter")["status"], "admitted")
+        self.assertNotIn("register", wants())
+        left = say(KIM, "station", "delvetalk station choose / choice: Go home")
+        self.assertEqual(left["result"]["label"], "left", left.get("result"))
+        self.assertIn("register", wants())
+        # A second refresh finds it there.
+        host.close()
+        again = genesis.carried(binary(), outs[0], station=True)
+        self.assertEqual([r for r in again if r["object"] == "station" and r["slot"] == "placed"], [{"object": "station", "slot": "placed", "status": "current"}])
+
+
 if __name__ == "__main__":
     unittest.main()

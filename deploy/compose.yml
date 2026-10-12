@@ -39,6 +39,8 @@ x-env: &env
   DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
   # The bridge's request poller reads every repository pds.delve.town lists (transport/requests.py): .env turns it on.
   DELVETALK_REQUESTS: ${DELVETALK_REQUESTS:-off}
+  # A carry's refresh makes the all-night station on a town that lacks it (deploy/genesis.py gas_station): .env turns it on.
+  DELVETALK_STATION: ${DELVETALK_STATION:-off}
 
 x-service: &service
   image: ${DELVETALK_IMAGE:-delvetalk:current}
