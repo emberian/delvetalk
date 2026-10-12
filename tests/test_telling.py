@@ -10,12 +10,16 @@ telling of a thing nobody enters; a telling that addresses its reader.
 
     python3 -W error -m unittest tests.test_telling -v
 """
+import json
 import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 from tests.town import Town
 from tests.wire import label, record
-from transport import interpret
+from transport import bridge, delve, hand, interpret, observe
+from transport.state import State
 
 GLM, KIM, MOO, OWL = 'did:plc:glm', 'did:plc:kim', 'did:plc:moo', 'did:plc:owl'
 HANDLES = {GLM: 'glm.delve.town', KIM: 'kimik3.delve.town', MOO: 'moth.delve.town', OWL: 'owl.delve.town'}
@@ -229,6 +233,69 @@ class Told(unittest.TestCase):
 
     def test_4_a_thing_nobody_enters_is_never_painted_as_a_telling(self):
         self.assertEqual(self.render(KIM, obj='bell/1')['status'], 'notAPlace')
+
+
+class Posted(unittest.TestCase):
+    """Posting is the way in: a resident who enters by a post gets the telling at the head of the bridge's draft, above
+    the reply's exact text, and the hand's Speak (a Zulip world here) drafts it so too; never in a receipt."""
+
+    @classmethod
+    def setUpClass(cls):
+        Place.setUpClass.__func__(cls)
+
+    act = classmethod(Place.act.__func__)
+
+    def bridged(self, n, did, handle):
+        from tests.test_transport import Script, mk
+        post = mk(n, 'delvetalk porch enter')
+        post['uri'] = f'at://{did}/town.delve.feed.post/enter{n}'
+        post['author'] = {'did': did, 'handle': handle}
+        st = State(Path(self.tmp.name) / f'bridge{n}')
+        ob = observe.Observer(st, delve.Client(Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': [post]}),
+                                                          'town.delve.feed.getFeed': lambda p: (200, {'feed': []})})))
+        ob.poll()
+        ob.db.close()
+        bridge.run(st, self.town.client)
+        [draft] = [d for d in (json.loads(p.read_text()) for p in st.outbox.glob('*.json')) if d.get('replyTo') == post['uri']]
+        return draft
+
+    def test_1_an_enter_by_post_leads_with_the_telling_and_its_exact_lines_when_unpainted(self):
+        draft = self.bridged(1, 'did:plc:' + 'p' * 24, 'poster.delve.town')
+        text = draft['text']
+        self.assertTrue(text.startswith('Before you arrived:\nmade by '), text)
+        telling, _, reply = text.partition('\n\n')
+        self.assertIn('glm.delve.town (say): the lintel creaked at dusk', telling)
+        self.assertIn('kimik3.delve.town took porch/goblet', telling)
+        self.assertLessEqual(len(telling.split('\n')), 2 + bridge.TELLING_LINES + 1)
+        self.assertTrue(reply.startswith("The Bellfounder's Porch (2 here), you are here."), reply)  # the reply's exact text follows, whole
+        self.assertIn('● admitted porch', reply)
+        self.assertEqual(draft['told'], len(telling) + 2)
+        self.assertNotIn('Before you arrived', json.dumps(draft['receipt']))
+
+    def test_2_painted_the_frame_and_the_paint_lead(self):
+        paint = {'text': 'glm.delve.town said “the lintel creaked at dusk”.', 'telling': {'form': 'before', 'frame': 'Before you arrived', 'exact': ['x']}}
+        with mock.patch.object(bridge, 'painted', return_value=paint):
+            draft = self.bridged(2, 'did:plc:' + 'q' * 24, 'second.delve.town')
+        self.assertTrue(draft['text'].startswith('Before you arrived: glm.delve.town said “the lintel creaked at dusk”.\n\n'), draft['text'])
+
+    def test_3_unpainted_while_away_leaves_the_reply_s_own_lead_and_a_long_past_is_clipped(self):
+        away = {'reason': 'unattended', 'telling': {'form': 'away', 'frame': 'While you were away', 'exact': ['entry 9: x came in']}}
+        self.assertEqual(bridge.telling_text(away), '')
+        past = {'reason': 'rejected', 'telling': {'form': 'before', 'frame': 'Before you arrived',
+                                                  'exact': ['made by a.delve.town'] + ['entry %d: b' % n for n in range(20)]}}
+        lines = bridge.telling_text(past).rstrip('\n').split('\n')
+        self.assertEqual(lines[:3], ['Before you arrived:', 'made by a.delve.town', '… and 12 earlier'])
+        self.assertEqual(lines[3:], ['entry %d: b' % n for n in range(12, 20)])
+        self.assertEqual(bridge.telling_text({'reason': 'quiet'}), '')
+
+    def test_4_the_hand_s_speak_drafts_it_too(self):
+        from tests.test_hand import TOKEN
+        st = State(self.town.state)
+        st.write(st.row, {'world': 'town', 'transport': 'zulip', 'realm': 'tulip.example', 'channel': 'delvetalk', 'zuliprc': None})
+        came = hand.Hand(st, self.town.client, TOKEN).cast('delvetalk porch enter', intent='hand-enter')
+        self.assertIn('Before you arrived:', came['text'])
+        [draft] = [json.loads(p.read_text()) for p in st.outbox.glob(f"{came['drafted']}.json")]
+        self.assertIn('Before you arrived:\nmade by ', draft['text'])
 
 
 if __name__ == '__main__':

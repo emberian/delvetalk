@@ -10,11 +10,12 @@ import urllib.parse
 import time
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.host import CLOCK, paged
+from transport.host import CLOCK, paged, painted
 from transport import observe
 from transport.observe import Observer
 
 DELIVER_ROUNDS = 8
+TELLING_LINES = 8  # the exact lines an unpainted telling before arrival leads a post with, the newest
 
 
 def uri_hash(uri):
@@ -111,6 +112,45 @@ def revealed_lines(reply):
     return ''.join(f'{line}\n' for line in reply.get('revealed') or [])
 
 
+def telling_text(told):
+    """A place's telling as a post leads with it (docs/VOICE.md "A telling"), above the reply's exact text: the host's frame
+    and the paint; unpainted before arrival, the frame and the exact lines it draws on (its making, then the newest
+    TELLING_LINES, how many earlier counted); unpainted while away, nothing, since the reply's own "While you were away"
+    lead holds the exact lines. Never in a receipt."""
+    t = (told or {}).get('telling')
+    if not t:
+        return ''
+    if told.get('text'):
+        return f"{t['frame']}: {told['text']}\n\n"
+    exact = t.get('exact') or []
+    if t.get('form') != 'before' or not exact:
+        return ''
+    head = exact[:1] if exact[0].startswith('made by ') else []
+    rest = exact[len(head):]
+    shown = rest[-TELLING_LINES:]
+    earlier = [f'… and {len(rest) - len(shown)} earlier'] if len(rest) > len(shown) else []
+    return f"{t['frame']}:\n" + '\n'.join(head + earlier + shown) + '\n\n'
+
+
+def told_fields(tell):
+    """What a draft says of the telling it leads with, for whoever posts or threads it: `told: <its characters>`."""
+    return {'told': len(tell)} if tell else {}
+
+
+def entered(reply):
+    """Did this admitted turn enter a place (a room's `enter`)?"""
+    return reply.get('status') == 'admitted' and (reply.get('result') or {}).get('label') == 'entered'
+
+
+def told(host, principal, reply, sleep=time.sleep):
+    """The telling a reply that entered a place leads with, for `principal` who entered (`world-render {telling}`, waiting
+    the host's patience for the paint), as `telling_text` sets it; '' for any other reply and for one whose draft is its
+    receipt line alone (it read what the public may not)."""
+    if not entered(reply) or not reply.get('inPublic') or not reply.get('object'):
+        return ''
+    return telling_text(painted(host, principal, reply['object'], sleep, telling={}))
+
+
 def draft_public(reply, origin=None, addressed=None, handles=None):
     """`draft_text`, or for an admitted turn that read or wrote what the public may not read (the host's `inPublic`: a
     post is read by everyone), its receipt line."""
@@ -123,9 +163,10 @@ def draft_public(reply, origin=None, addressed=None, handles=None):
 def draft_text(reply, origin=None, addressed=None, handles=None):
     """The only text a draft carries. A refusal is drafted when the host gives it a `public` projection (whether to say it
     is the host's fact; the post's wording is never read for it): the turn line, the host's hint when it gives one, and the
-    receipt's name; no state, hash or CID. A usage answer is the host's text. An admitted reply carries the exact card
-    only, never its paint (`world-render`): whether a post carries paint is the fourth playtest's question (OVERHAUL §4);
-    one that offered nothing but changed something, its revealed lines and receipt line."""
+    receipt's name; no state, hash or CID. A usage answer is the host's text. An admitted reply carries the exact card,
+    never a card's paint (`world-render`: whether a post carries a card's paint is the fourth playtest's question, OVERHAUL
+    §4); a reply that entered a place is led by its telling (`told`), which the caller sets above this text; one that
+    offered nothing but changed something, its revealed lines and receipt line."""
     if reply.get('status') == 'usage':
         return str(reply.get('text', ''))
     receipt = reply['receipt']
@@ -361,11 +402,12 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
                 failed.append({'uri': obs['uri'], 'message': lost[0].get('message') if lost else 'no turns'})
                 continue
             ran = [t for t in turns if 'receipt' in t]
-            text = ''.join(draft_text(t).rstrip('\n') + '\n' if 'receipt' not in t else spell_line(t, origin, handles) for t in turns)
+            tell = next((x for x in (told(host, did, t) for t in ran) if x), '')  # a spell that entered a place leads with its telling
+            text = tell + ''.join(draft_text(t).rstrip('\n') + '\n' if 'receipt' not in t else spell_line(t, origin, handles) for t in turns)
             st.write(st.outbox / f"{ran[-1]['receipt']['height'] if ran else 0}-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': turns[0].get('object') or obj, 'slot': slot,
-                'receipt': ran[-1]['receipt'] if ran else None, 'posted': False, 'text': text})
+                'receipt': ran[-1]['receipt'] if ran else None, 'posted': False, **told_fields(tell), 'text': text})
             for t in ran:  # a suspended spell's own answer comes when hob has read it, as a reply to the same post
                 if (t['receipt'].get('outcome') or {}).get('tag') == 'suspended':
                     intent = t['receipt']['identity']['intent']
@@ -391,7 +433,8 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,
-            'receipt': reply['receipt'], 'posted': False, 'text': draft_public(reply, origin, obj, handles)})  # text '': journaled, hidden from outbox
+            'receipt': reply['receipt'], 'posted': False, **told_fields(tell := told(host, did, reply)),
+            'text': tell + draft_public(reply, origin, obj, handles)})  # text '': journaled, hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot, 'height': reply['receipt']['height']})
         done.append(obs['uri'])

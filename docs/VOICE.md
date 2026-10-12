@@ -154,8 +154,11 @@ four before arrival (500), and is checked as a card's is: the frame above it, "W
 arrived", is the host's, so the paint addresses nobody and `secondPerson` stands. Beneath it, folded, the exact lines
 it draws on (`telling.exact`, with their entries), in its place when there is none; on entering a room its reply's
 own "While you were away" lead stands below as well. Nothing happened while away is `quiet`: no model, nothing shown.
-Shown on `/play/<place>` after an admitted `enter` and on `/o/<place>` to a signed-in reader; never posted, never in
-a reply, a receipt or a draft.
+Shown on `/play/<place>` after an admitted `enter` and on `/o/<place>` to a signed-in reader, and, since posting is
+how most residents come in, at the head of the `enter` reply's post: the bridge's draft (and so Zulip's) and the hand's
+Speak lead with `{frame}: {paint}`, or unpainted before arrival with the frame and the exact lines (its making, the
+newest eight, how many earlier), then a blank line and the reply's exact text; unpainted while away, the reply's own
+lead alone. The draft notes `told: <characters>` for whoever posts or threads it. Never in a receipt.
 
 **The prompt** is `Paint.contract()`, the one prompt file. **The check** is `Enchant.verify`, the table
 `Enchant.clauses` in order, the first failed refusing; `Enchant.table` holds every word a clause reads:
@@ -186,7 +189,7 @@ morning card and the chronicle's day by `world-render {day?, morning?}`; `hand m
 morning card") paints it, shows it and drafts it once a day for Post, what wants a hand exact beneath and the
 chronicle's exact lines in the paint's place when there is none; it never posts by itself.
 Never: a receipt or refusal line, the revealing lines, `?`'s usage, a law line or reading, the library's pages, hob's
-own lines, and the bridge's drafts: a post carries the exact card alone until the fourth playtest decides whether a
+own lines, and the bridge's drafts (a telling aside): a post carries the exact card alone until the fourth playtest decides whether a
 post carries paint. An owner's `plain: yes` shows a thing exact alone; a root `card` override is shown exact.
 
 **Time.** One model call per version, on its first read; every later read is the cached paint. "Last tended" is
