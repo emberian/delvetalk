@@ -1,10 +1,11 @@
 /- Enchantment (docs/OVERHAUL.md §4): every act leaves strokes on a thing; the card a resident reads may
    be painted from them by the world's model, and the exact card stands beneath it.
 
-   `Strokes` is the thing as exact data at a version, assembled by the host from the store and nothing
+   `Strokes` is the thing as exact data as it stands now, assembled by the host from the store and nothing
    authored for it: its head, maker, keeper, owner, counts, the eight newest lines and the marks
    verbatim, its verbs with their spells and growers, its laws' readings, its rules and wants, its
-   doors, where it lies and who is here. Read-only: `world-strokes {principal, object, version?}`. -/
+   doors, where it lies and who is here. Read-only: `world-strokes {principal, object, version?}`; a version other
+   than the current one is `historical`, for the store keeps no past wants, verbs or rule firings to assemble it from. -/
 import Delvetalk.Host.TurnLoop
 
 namespace Delvetalk.Host.Enchant
@@ -184,9 +185,11 @@ def madeUnder (w : World) (id : String) : String := Id.run do
     if w.objects.contains pfx then return pfx
   return ""
 
-/-- The strokes of object `id` with `state` and `lawText` (its own at `version`). -/
-def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Data) (lawText : String) : Strokes := Id.run do
-  let fs := fieldsOf state
+/-- The strokes of object `id` as it stands now. -/
+def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
+  let fs := fieldsOf o.state
+  let lawText := o.lawText
+  let version := o.version
   let kind := (text? fs "kind").getD ""
   let voice := match w.objects[kind]? with
     | some k => (text? (fieldsOf k.state) "voice").getD ""
@@ -249,18 +252,19 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
            keeper := handleIn w fs "keeperHandle" "keeper", owner := handleIn w fs "ownerHandle" "owner",
            counts, lines, marks, verbs, laws, rules, wants, doors, around, present }
 
-/-- The strokes of `id` at `version` (default its current one), as `reader` may read them: `none` when
-    there is no such object or version, or the reader may not view it. -/
+/-- The strokes of `id` (`version`, when given, is its current one), as `reader` may read them: `unknown` when
+    there is no such object or version, `denied` when the reader may not view it, `historical` for a past
+    version. -/
 def strokesAt (w : World) (reader id : String) (version : Option Nat) : Except String Strokes := do
   let some o := w.objects[id]? | throw "unknown"
   unless o.read.permits reader do throw "denied"
-  let v := version.getD o.version
-  let some state := stateAt w id v | throw "unknown"
-  let (_, lawText) := pinAndLawAt w o id v
-  return assemble w id o v state lawText
+  if let some v := version then
+    if v > o.version then throw "unknown"
+    if v < o.version then throw "historical"
+  return assemble w id o
 
 /-- `world-strokes {principal, object, version?}`: `{status: "strokes", object, version, strokes}`, or
-    `unknown` / `denied`. Nothing is written. -/
+    `unknown` / `denied` / `historical`. Nothing is written. -/
 def strokesOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let id := resolveCard reader (← j.getObjValAs? String "object")
@@ -280,7 +284,9 @@ by the first clause it fails, in this order:
 - `handles`: every handle-shaped token (`ember.delve.town`) is a handle the strokes hold, or its domain;
 - `spells`: every line that begins `delvetalk` is a stroke's spell byte for byte, whole or its first line, and
   every `delvetalk CARD ACTION` inside a line is a stroke spell's first line;
-- `quotes`: every quoted span is a substring of a stroke's text, and every quotation is closed;
+- `quotes`: every quotation is closed; a quoted span is a substring of a stroke's text other than a line (a field,
+  a reading, a spell), or a resident's whole line (a closing stop of the quotation aside), and a whole line stands
+  in a sentence that carries its recorded writer's handle and no other handle (a line with no recorded writer, none);
 - `heads`: no line begins `●`, `§`, `refused`, `law `, `rule `, `want ` or `hob:`;
 - `forbidden`: no word of `forbidden` outside a quotation;
 - `secondPerson`: nobody is addressed;
@@ -367,6 +373,11 @@ def Strokes.texts (s : Strokes) : List String :=
   ([s.head] ++ s.fields.map (·.2) ++ s.lines.map (·.text) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
     s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
 
+/-- The texts a paint may quote part of: every stroke text but a resident's line. -/
+def Strokes.otherTexts (s : Strokes) : List String :=
+  ([s.head] ++ s.fields.map (·.2) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
+    s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
+
 def Strokes.spells (s : Strokes) : List String :=
   (s.verbs.map (·.spell) ++ s.wants.map (·.spell)).filter (!·.isEmpty)
 
@@ -401,9 +412,9 @@ def Strokes.empty (s : Strokes) (field : String) : Bool :=
 def Strokes.named (s : Strokes) : List (String × List String) :=
   fieldWords ++ (s.verbs.map (·.name) ++ s.wants.map (·.name)).eraseDups.map fun n => (n, inflections n)
 
-/-- The quoted spans of a text (between `“ ”`, `« »` or a pair of `"`), and the text with each replaced by one
-    word; `none` when a quotation is left open. -/
-def quotations (text : String) : Option (List String × String) := Id.run do
+/-- The quoted spans of a text (between `“ ”`, `« »` or a pair of `"`), and the text with each replaced by `mark`;
+    `none` when a quotation is left open. -/
+def quotations (text : String) (mark : String := " quoted ") : Option (List String × String) := Id.run do
   let mut spans : List String := []
   let mut out : List Char := []
   let mut cur : List Char := []
@@ -415,7 +426,7 @@ def quotations (text : String) : Option (List String × String) := Id.run do
         spans := spans ++ [String.ofList cur.reverse]
         cur := []
         closer := none
-        out := out ++ " quoted ".toList
+        out := out ++ mark.toList
       else cur := c :: cur
     | none =>
       if c == '“' then closer := some '”'
@@ -434,6 +445,26 @@ def inlineSpell (ts : List String) (i : Nat) : Option String := do
   if a.isEmpty || b.isEmpty then none else some s!"delvetalk {a} {b}"
 
 def isSpellLine (line : String) : Bool := line == "delvetalk" || line.startsWith "delvetalk "
+
+/-- A quotation without its closing stop (“… late.”): the sentence's, not the line's. -/
+def stopTrimmed (span : String) : String :=
+  trimmed (String.ofList ((trimmed span).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse)
+
+/-- The words of `lines` in sentences; a sentence ends at a word whose last mark is . ! ? or ;. -/
+def sentencesOf (lines : List String) : List (List String) :=
+  lines.flatMap fun line =>
+    let (cur, acc) := (words line).foldl (fun (cur, acc) w =>
+      let cur := cur ++ [w]
+      if w.endsWith "." || w.endsWith "!" || w.endsWith "?" || w.endsWith ";" then ([], acc ++ [cur]) else (cur, acc))
+      (([] : List String), ([] : List (List String)))
+    acc ++ (if cur.isEmpty then [] else [cur])
+
+/-- The marker `verify` puts where a quotation stood, to find the sentence it was in. -/
+def quoteMark : String := "\uE000"
+
+/-- The handles a sentence names, as the strokes hold them. -/
+def namedHandles (ws : List String) : List String :=
+  (ws.map normal).filter handleShaped |>.map fun t => (if t.startsWith "@" then String.ofList (t.toList.drop 1) else t).toLower
 
 /-- `verify strokes text`: `ok`, or the first clause the paint fails and what failed it. -/
 def verify (s : Strokes) (text : String) : Except (String × String) Unit := do
@@ -462,24 +493,31 @@ def verify (s : Strokes) (text : String) : Except (String × String) Unit := do
           | some head => unless spells.any (spellHead · == head) do throw ("spells", head)
           | none => throw ("spells", "delvetalk")
   let some (spans, unquoted) := quotations text | throw ("quotes", "a quotation left open")
-  let texts := s.texts ++ spells
+  let others := s.otherTexts ++ spells
   let plain := fun (t : String) => String.ofList (t.toList.map fun c => if c == '’' then '\'' else c)
-  for span in spans do
-    -- A quotation's own closing stop (“… late.”) is the sentence's, not the line's.
-    let q := trimmed (String.ofList ((trimmed span).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse)
-    unless q.isEmpty || texts.any (fun t => holdsIn t q || holdsIn (plain t) (plain q)) do throw ("quotes", q)
+  let quoteds := spans.map stopTrimmed
+  let inOthers := fun (q : String) => others.any fun t => holdsIn t q || holdsIn (plain t) (plain q)
+  let wholeLines := fun (q : String) => s.lines.filter fun l => plain (stopTrimmed l.text) == plain q
+  for q in quoteds do
+    unless q.isEmpty || inOthers q || !(wholeLines q).isEmpty do throw ("quotes", q)
+  -- A whole line stands in a sentence naming its writer and nobody else.
+  let some (_, marked) := quotations text (" " ++ quoteMark ++ " ") | throw ("quotes", "a quotation left open")
+  let mut k := 0
+  for ws in sentencesOf (marked.splitOn "\n") do
+    let named := namedHandles ws
+    for w in ws do
+      unless w == quoteMark do continue
+      let q := quoteds[k]?.getD ""
+      k := k + 1
+      if q.isEmpty || inOthers q then continue
+      let credited := (wholeLines q).any fun l =>
+        if l.handle.isEmpty then named.isEmpty else !named.isEmpty && named.all (· == l.handle.toLower)
+      unless credited do throw ("quotes", s!"{q}: not credited to its writer alone")
   for line in lines do
     let low := line.toLower
     if let some h := lineHeads.find? (fun h => low.startsWith h) then throw ("heads", h)
   -- The prose: the text without its quotations and its spells, in sentences of words.
-  let sentences := ((unquoted.splitOn "\n").filter (!isSpellLine ·.trimAscii.toString)).flatMap fun line =>
-    let raw := words line
-    -- A sentence ends at a word whose last mark is . ! ? or ;
-    let (cur, acc) := raw.foldl (fun (cur, acc) w =>
-      let cur := cur ++ [w]
-      if w.endsWith "." || w.endsWith "!" || w.endsWith "?" || w.endsWith ";" then ([], acc ++ [cur]) else (cur, acc))
-      (([] : List String), ([] : List (List String)))
-    acc ++ (if cur.isEmpty then [] else [cur])
+  let sentences := sentencesOf ((unquoted.splitOn "\n").filter (!isSpellLine ·.trimAscii.toString))
   let sentences := sentences.map fun ws => Id.run do
     -- An inline spell's three words are the spell's, not the prose's.
     let mut out : List String := []
@@ -647,7 +685,7 @@ def toDisk (key : String) (r : Render) : IO Unit :=
 
 /-- `world-render {principal, object, version?}`: `painted {text, key, version}`; `pending {key, patience}` while
     the worker paints (the first read of a version queues it); `exact {reason}` when there is no paint to show
-    (`rejected` with its clause, `override` for a root card, `unavailable` without a model or contract, `busy`,
+    (`historical` for a past version, `rejected` with its clause, `override` for a root card, `unavailable` without a model or contract, `busy`,
     `unattended` while no worker has asked for renders within `workerGraceMs`, the render queued for when one
     does); `plain` when the owner opted out; `unknown` / `denied` as `world-card`. Nothing is journaled. -/
 def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String (Cache × World × Json)) := do
@@ -656,6 +694,7 @@ def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String 
   let .ok version := optNat j "version" | return .error "version must be a natural number"
   let id := resolveCard reader given
   match strokesAt w reader id version with
+  | .error "historical" => return .ok (c, w, answer "exact" id [("version", toJson (version.getD 0)), ("reason", toJson "historical")])
   | .error why => return .ok (c, w, answer why id [])
   | .ok s =>
     if plainOf w id then return .ok (c, w, answer "plain" id [("version", toJson s.version)])
@@ -759,7 +798,7 @@ def line69275 : String :=
 -- Admitted: the paint's own order and dress over the strokes, Yuè's line whole and credited, a stroke spell.
 #guard verdict fixtureBell "A silver bell for whoever comes late, hung in the garden by kestrel.delve.town at entry 172. Four rains have reached it; yue.delve.town's says “rain is the sky's erratum”. It has never rung.\ndelvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" == ""
 #guard verdict fixtureBell "garden/bell/2 hangs silent over the soil, v4, four rains deep.\ndelvetalk garden/bell/2 ring" == ""
-#guard verdict fixtureAnthology "THE ANTHOLOGY is kept by ember.delve.town; line 1 waits, pending, for the keeper: “the garden forgets; the gardeners don't.”" == ""
+#guard verdict fixtureAnthology "THE ANTHOLOGY is kept by ember.delve.town; line 1 waits, pending, for the keeper; kestrel.delve.town wrote “the garden forgets; the gardeners don't. — Claude, 69173”." == ""
 #guard verdict fixtureAnthology "No editor here; the keeper is ember.delve.town." == ""
 -- Refused, each by its first clause.
 #guard verdict fixtureBell "It hangs beside garden/bell/7, its twin." == "ids"
@@ -769,6 +808,12 @@ def line69275 : String :=
 #guard verdict fixtureBell "It answers delvetalk garden/bell/2 strike at once." == "spells"
 #guard verdict fixtureBell "yue.delve.town wrote “rain is the sky's mistake”." == "quotes"
 #guard verdict fixtureBell "yue.delve.town wrote “rain is the sky's erratum.”" == ""
+#guard verdict fixtureBell "claude.delve.town writes “rain is the sky”." == "quotes"
+#guard verdict fixtureBell "The bell holds “rain is the sky's erratum”." == "quotes"
+#guard verdict fixtureBell "claude.delve.town wrote “rain is the sky's erratum”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town and claude.delve.town came; “rain is the sky's erratum”." == "quotes"
+#guard verdict fixtureBell "“weather's rain, tide tick 2” is anyone's." == ""
+#guard verdict fixtureBell "yue.delve.town wrote “weather's rain, tide tick 2”." == "quotes"
 #guard verdict fixtureBell "A silver bell. Rain on it if you like." == "secondPerson"
 #guard verdict fixtureBell "Thanks to every rain, it hums." == "forbidden"
 #guard verdict fixtureBell "refused maker: only its maker writes" == "heads"
