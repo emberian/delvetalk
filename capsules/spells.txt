@@ -1,7 +1,7 @@
 SPELLS as the host reads them (spec/Delvetalk/Host/Spell.lean; Bend reads none; op spell-parse {text, form?}
 shows a parse).
 LINE delvetalk CARD ACTION. CARD 1-128 bytes of [A-Za-z0-9:/._-], the object-id rule
-(Limits.nameAlphabet); ACTION [a-z0-9-]+ or ?. env, wake = your env/<did>, wake/<did>; me = your avatar.
+(Limits.nameAlphabet); ACTION [a-z0-9-]+ or ?. me = your avatar.
 CAST Only a delvetalk line at a line's start casts. An indented one is a quotation (every card prints its
 spells indented). A post holding a card's header (✾ , KIND , a line ending Make one:) beside a delvetalk line
 quotes that card: badSpell quotation, nothing cast. A post that is one spell block and nothing else
@@ -10,7 +10,7 @@ each (identity #1..#3), in order; a fourth is refused tooManySpells.
 FIELDS On the line: / name: v / name: v. Then name: value lines, value trimmed. Blank, #, > and fence
 lines skipped; a line whose name the form lacks, or prose, ends the fields.
 BLOCK name: <<DELIM ... a line exactly DELIM. DELIM 1-32 of [A-Z0-9_]; lines joined by newline.
-BARE On a reply to a card, `delvetalk` may go: a first line naming one of its actions (plant / seed: x)
+BARE On a reply to a card, `delvetalk` may go: a first line naming one of its actions (rain / text: x)
 is its spell. Any case; a value without its name fills the field its type fits (amber -> colour).
 ? delvetalk CARD ? -> the card's spells, blanks shown; nothing journaled.
 FIT A field is judged by the card's form: text A..B (a text 0..N may be left out); natural in plain digits,
@@ -18,9 +18,13 @@ FIT A field is judged by the card's form: text A..B (a text 0..N may be left out
 MISSING fields: no refusal; the card answers with the spell and its blanks; that line alone completes it.
 MISFIT A spell that does not fit is badSpell, a refused turn, intent bound, public {clause, reason,
 hint}: otherCard noAction unknownField duplicateField badValue unclosedBlock quotation tooManySpells, and
-fixed (a set naming a fixed field). On a card that reads words (its policy names an object: the
-commonplace) an otherCard/noAction/unknownField/badValue misfit goes to receive instead, and hob asks.
-PROSE receive gets the text: a card with a policy asks hob (spells, ask: a question, card, say: two
-sentences, or none; a proposal, never authority); one without hands it on to the commonplace.
+fixed (a set naming a fixed field). A misfit is hob's first, on every card, under the world's one
+policy; hob's answer is the badSpell when it proposes nothing, or at once with no policy.
+GROW An action the card lacks: noAction names `delvetalk CARD grow / name: ACTION / reading: ...`;
+a grown verb is then cast like any spell (it runs the card's act). HOST on every card: rule want
+grow unrule unwant ungrow (placings), rules wants verbs (reads), become adopt lend set.
+PROSE words a card leaves silent are hob's, read with the card's verbs, wants and doors. Four answers:
+the spell meant (run as your turn), grow: NAME "reading" and its use, ask: a question, or none
+(talk near a card is not addressed to it). A proposal, never authority.
 REFUSALS. unknownField/badValue: fix that line per the hint, resend. noAction/otherCard: the hint lists
 the real spells. unclosedBlock: end with a line that is exactly DELIM. quotation: write the spell alone.

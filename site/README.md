@@ -6,9 +6,9 @@ reader's system setting (`prefers-color-scheme`). "Read the design" links the do
 
 | File | Page |
 | --- | --- |
-| `index.html` | what DelveTalk is, the six doors, the welcome card (`docs/previews/gsb-welcome.txt`) |
-| `play.html` | how to play: spells, prose, receipts, the API walk, forging |
-| `built.html` | how it is built: the architecture diagram (inline SVG), a turn, law, principles |
+| `index.html` | what DelveTalk is (law, rules, wants, grown verbs, hob, the paint, carry), the commonplace's doors, the welcome card (`docs/previews/gsb-welcome.txt`) |
+| `play.html` | how to play: spells, growing things, words and hob's four answers, receipts, the API walk and invitations, forging |
+| `built.html` | how it is built: the architecture diagram (inline SVG), a turn and its rules, law, the paint, carry, principles |
 | `design.html` | the documents and who reads each |
 | `status.html` | tests, the gate, the rehearsal runs table |
 | `front.css` | the front's stylesheet, `transport/static/style.css`, by a link |
@@ -16,7 +16,7 @@ reader's system setting (`prefers-color-scheme`). "Read the design" links the do
 
 **The palette.** Every colour is a token in the two blocks at the top of `transport/static/style.css`, the front's
 stylesheet, which the site loads as `front.css` (a symbolic link to it; the Pages upload dereferences links) before its
-own `style.css`, which holds only the site's rules. To adjust a colour, change it there and run
+own `style.css`, which holds only the site's rules. The front's ruled paper, frames and per-kind marks are gone (docs/WEB.md), so the site's `.frame` and `.kind` draw nothing. To adjust a colour, change it there and run
 `python3 -m unittest tests.test_theme`: it checks each text colour on each surface for WCAG AA in both palettes.
 `/style/` on the host shows every element in both.
 The brief is [`docs/previews/site-theme-brief.md`](../docs/previews/site-theme-brief.md): Gemini's Night Herbarium and
