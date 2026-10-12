@@ -146,6 +146,36 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     return ''  # nothing changed and nothing offered: silence
 
 
+def preview_text(reply, handles=None):
+    """A try's answer (`world-try`, docs/POSTING.md §2) as a post says it: `preview, nothing done`, then each act as it
+    would go (`would be admitted bell/1 v4`, or `would be refused <clause>: <reading>`), what it would fire, open or
+    close, and the card it would offer, exactly; last the `if:` line of every root it read, to put above the same
+    spells so they land only if nothing moved. Never a receipt's name: a preview must never pass for one. An act
+    that reads what the public may not (`inPublic` false) is said by its outcome alone."""
+    turns = reply.get('turns') if reply.get('status') == 'spells' else [reply]
+    out, roots = [f"preview, nothing done (as of entry {(reply.get('against') or {}).get('height')}):"], {}
+    for t in turns:
+        if 'receipt' not in t:
+            out.append(str(t.get('text') or t.get('message') or t.get('status')).rstrip('\n'))
+            continue
+        receipt, outcome = t['receipt'], t['receipt'].get('outcome') or {}
+        for r in receipt.get('roots') or []:
+            roots.setdefault(r['object'], r.get('version'))
+        if outcome.get('tag') == 'refused':
+            out.append('would be ' + refusal_line(outcome, t.get('class')))
+            continue
+        if outcome.get('tag') == 'suspended' or t.get('status') == 'suspended':
+            out.append('would wait for hob to read it; try the spell hob gives')
+            continue
+        root = turn_root(receipt, t.get('object'))
+        out.append(f"would be admitted {card_name(root['object'], handles)}" + (f" v{root['version']}" if root.get('version') is not None else ''))
+        if t.get('inPublic') is not False:
+            out += [line for line in t.get('revealed') or []] + [o['text'].rstrip('\n') for o in t.get('offers') or []]
+    if roots and all(t.get('inPublic') is not False for t in turns if 'receipt' in t):
+        out.append('if: ' + ', '.join(f'{o} v{v}' for o, v in roots.items() if v is not None))
+    return '\n'.join(out) + '\n'
+
+
 def register(st, host, did, handle):
     """Tell the host an author has arrived, at their first observed post (the clock principal alone may). The call
     is idempotent at the host; the local set is the skip list and only saves the round trips."""
@@ -352,6 +382,13 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if how['how'] in ('mention', 'door', 'fields'):
             request['reach'] = how['how']  # the reach the host found; a reply and a spell it finds again at the turn
         reply = host.send(request)
+        if reply.get('tried') or reply.get('class') == 'moved':  # a preview, or an act whose `if` moved: nothing journaled
+            st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
+                'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
+                'object': obj, 'slot': slot, 'receipt': None, 'preview': bool(reply.get('tried')), 'posted': False,
+                'text': preview_text(reply, handles) if reply.get('tried') else reply['line'] + '\n'})
+            done.append(obs['uri'])
+            continue
         if reply.get('status') == 'spells':  # several spells at a line's start: a turn each, one reply carrying every line
             turns = reply.get('turns') or []
             lost = [t for t in turns if 'receipt' not in t and t.get('status') != 'usage']  # a `?` journals nothing: its text is its answer

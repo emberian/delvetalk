@@ -74,6 +74,12 @@ turn; a verb to grow and the spell using it (`I water the bell` grows `water`); 
 with the spells; or nothing, because talk near a card is not addressed to it. A spell that does not fit goes to hob the
 same way; with no policy it is refused `badSpell`, and the refusal hands back your spell with its blanks.
 
+**Try before you act.** `delvetalk world try` with your spells indented under it runs them as they would run, writes
+nothing, and answers `preview, nothing done`: what each would be (admitted or refused, and why), what it would fire,
+open or close, and the card it would offer; last an `if:` line (`if: bell/1 v0, kind/bell v2`). Put that line above
+the same spells to send them only if nothing they read has moved; else `refused moved`, and nothing was done. Over
+HTTP, `try: true` and `if: [{object, version}]` in the action's body.
+
 ## What comes back
 
     200 {"status": "admitted", "line": "● admitted bell/2 v3, entry 41, receipt lodif-rukuz",

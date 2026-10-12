@@ -143,26 +143,29 @@ def appendJournal (s : Open) (w : World) (records : Array ByteArray) : IO (Excep
     return .ok { s with world := { w with entries := w.entries.written spans } }
   catch e => return .error s!"journal write failed: {e}"
 
-/-- Run a world step and make its entries durable before the reply exists. The turns its settling
-    pass ran are shown as `reader` (the request's principal) may see them (`settledFor`). -/
-def durableIO (s : Open) (reader : String) (step : World → IO (Except String (World × Json))) : IO (Session × Except String Json) := do
-  -- A step, then whatever it let go on: resumptions follow in the same durable write.
+/-- A world step, then whatever it let go on (resumptions and deliveries in the same pass), the world it
+    leaves and its reply; the turns the settling pass ran are shown as `reader` (the request's principal) may
+    see them (`settledFor`). What `durableIO` makes durable and `world-try` drops. -/
+def settledStep (s : Open) (reader : String) (step : World → IO (Except String (World × Json))) : IO (Except String (World × Json × Json)) := do
   let settled := fun (w : World) => w.suspended.isEmpty && w.pending.isEmpty
   let stepped ← step s.world
-  match (do
-      let (w', r) ← stepped
-      -- What the settling pass runs is no request's: no turn of it is the public socket's.
-      let w' := { w' with resident := false }
-      if settled w' then return (w', r, #[], #[])
-      let (w'', resumed, delivered) ← settleAll w'
-      return (w'', r, resumed, delivered) : Except String (World × Json × Array Json × Array Json)) with
-  | .error e => return (some s, .error e)
-  | .ok (w', r0, resumed, delivered) =>
+  return do
+    let (w', r0) ← stepped
+    -- What the settling pass runs is no request's: no turn of it is the public socket's.
+    let w' := { w' with resident := false }
+    let (w', resumed, delivered) ← if settled w' then pure (w', #[], #[]) else settleAll w'
     -- Turns the settling pass ran belong to their own principals: whoever caused the pass sees
     -- another's only as its projection, and nobody's offers (`world-offers` reads them).
     let quiet := fun (rs : Array Json) => rs.map (settledFor w' reader)
     let r := if resumed.isEmpty then r0 else r0.setObjVal! "resumed" (Json.arr (quiet resumed))
     let r := if delivered.isEmpty then r else r.setObjVal! "delivered" (Json.arr (quiet delivered))
+    return (w', r0, r)
+
+/-- Run a world step and make its entries durable before the reply exists (`settledStep`). -/
+def durableIO (s : Open) (reader : String) (step : World → IO (Except String (World × Json))) : IO (Session × Except String Json) := do
+  match ← settledStep s reader step with
+  | .error e => return (some s, .error e)
+  | .ok (w', r0, r) =>
     if w'.height == s.world.height then return (some { s with world := w' }, .ok r)
     let recordsOf := fun (w : World) => w.entries.unwritten.mapM recordBytes
     let records ← match recordsOf w' with
@@ -198,6 +201,43 @@ def durableIO (s : Open) (reader : String) (step : World → IO (Except String (
     if !ignored && w'.height < s.snapshotAt + s.every then return (some s, .ok r)
     let (o, note) ← snapshotNow s
     return (some o, .ok (r.setObjVal! "snapshot" note))
+
+/-- `if: [{object, version}]` on a turn or a try: the versions the asker last read (a try's `roots`). Each
+    that moved, `{object, was, now}`, `now` null when the object is gone or the principal may not view it. -/
+def movedRoots (w : World) (j : Json) : Except String (List Json) := do
+  let some given := (j.getObjVal? "if").toOption | return []
+  let roots ← given.getArr?
+  if roots.size > Limits.maxRoots then throw s!"if names at most {Limits.maxRoots} roots"
+  let principal := (j.getObjValAs? String "principal").toOption.getD ""
+  roots.toList.filterMapM fun a => do
+    let id ← a.getObjValAs? String "object"
+    let was ← a.getObjValAs? Nat "version"
+    let now := (w.objects[id]?).bind fun o => if o.read.permits principal then some o.version else none
+    return if now == some was then none else
+      some (Json.mkObj [("object", toJson id), ("was", toJson was), ("now", match now with | some v => toJson v | none => Json.null)])
+
+/-- The answer to an act whose `if` no longer holds: nothing ran and nothing is journaled; read again and resend. -/
+def movedReply (moved : List Json) : Json :=
+  let said := moved.map fun m =>
+    let id := (m.getObjValAs? String "object").toOption.getD ""
+    let was := (m.getObjValAs? Nat "was").toOption.getD 0
+    match (m.getObjValAs? Nat "now").toOption with
+    | some now => s!"{id} is at v{now}, not v{was}"
+    | none => s!"{id} is gone, not at v{was}"
+  Json.mkObj [("status", toJson "refused"), ("class", toJson "moved"), ("moved", Json.arr moved.toArray),
+    ("line", toJson s!"refused moved: {"; ".intercalate said}")]
+
+/-- `world-try`: a turn exactly as `world-turn` runs it, with its settling pass, and the world it leaves dropped:
+    the commit with the write switched off (docs/POSTING.md §2). The reply is the turn's own, its receipt the entry
+    that would be journaled (its writes' state CIDs, its roots with their versions), its offers the exact cards,
+    `tried: true` and `against {height, hash}`, the head it ran on. Nothing is journaled. -/
+def tryTurn (s : Open) (reader : String) (request : Json) : IO (Session × Except String Json) := do
+  match ← settledStep s reader (fun w => pure (do runTurn w (← parseTurn request))) with
+  | .error e => return (some s, .error e)
+  | .ok (_, _, r) =>
+    let head := (s.world.entries.hashAt? (s.world.height - 1)).getD ""
+    return (some s, .ok ((r.setObjVal! "tried" (Json.bool true)).setObjVal! "against"
+      (Json.mkObj [("height", toJson s.world.height), ("hash", toJson head)])))
 
 /-- `durableIO` of a pure step. -/
 def durable (s : Open) (reader : String) (step : World → Except String (World × Json)) : IO (Session × Except String Json) :=
@@ -359,7 +399,11 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       let request := Json.mkObj (((request.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "resident"))
       match op with
       | "world-create" => durable s reader (fun w => create w request)
-      | "world-turn" => durable s reader (fun w => do runTurn w (← parseTurn request))
+      | "world-turn" | "world-try" =>
+        match movedRoots s.world request with
+        | .error e => return (session, .error e)
+        | .ok moved@(_ :: _) => return (session, .ok (movedReply moved))
+        | .ok [] => if op == "world-try" then tryTurn s reader request else durable s reader (fun w => do runTurn w (← parseTurn request))
       | "world-deliver" => durable s reader (fun w => do
           let limit := (← optNat request "limit").getD Limits.deliveriesPerCall
           if limit == 0 || limit > Limits.deliveriesPerCall then

@@ -453,8 +453,58 @@ def expiryAsked (request : Json) : Option String := do
     | _ => none
   | _, _ => none
 
+/-- A typed record whose text field `name` is set to `value` (`fieldText`'s inverse). -/
+def withFieldText (record : Json) (name value : String) : Json :=
+  match (record.getObjVal? "fields").toOption.bind (·.getArr?.toOption) with
+  | none => record
+  | some fields => record.setObjVal! "fields" (Json.arr (fields.map fun f =>
+      if (f.getObjValAs? String "name").toOption == some name then
+        f.setObjVal! "value" (Json.mkObj [("tag", toJson "label"), ("value", toJson value)])
+      else f))
+
+def blankLine (line : String) : Bool := line.toList.all (·.isWhitespace)
+def indentOf (line : String) : Nat := (line.toList.takeWhile fun c => c == ' ' || c == '\t').length
+
+/-- `if: bell/2 v3, kind/bell v2`: the roots an act was read at (a try's `roots`), or none when the line is not one. -/
+def ifRoots (line : String) : Option Json := do
+  let low := String.ofList (line.toList.dropWhile (·.isWhitespace))
+  guard ((low.take 3).toString.toLower == "if:")
+  let roots ← ((low.drop 3).toString.splitOn ",").mapM fun part => do
+    let words := (part.splitOn " ").filter (!·.isEmpty)
+    let [id, v] := words | none
+    guard (v.startsWith "v")
+    let version ← (v.drop 1).toString.toNat?
+    pure (Json.mkObj [("object", toJson id), ("version", toJson version)])
+  guard (!roots.isEmpty)
+  return Json.arr roots.toArray
+
+/-- A post's spells as `serve` reads them before any world does (docs/POSTING.md §2): a margin line `if: <id> v<n>, …`
+    ahead of the spells becomes the act's `if` (refused `moved` when a root moved since), and `delvetalk world try`
+    with spells indented under it (an indented spell is a quotation, never cast) becomes `world-try` of those spells,
+    dedented, as words to the commonplace: the host runs them where they name, then drops what they wrote. -/
+def postShaped (request : Json) : Json := Id.run do
+  unless (request.getObjValAs? String "op").toOption == some "world-turn" &&
+      (request.getObjValAs? String "method").toOption == some "receive" do return request
+  let some argument := (request.getObjVal? "argument").toOption | return request
+  let some text := fieldText argument "text" | return request
+  let mut lines := (text.splitOn "\n").dropWhile blankLine
+  let mut request := request
+  if let some first := lines.head? then
+    if let some roots := ifRoots first then
+      request := (request.setObjVal! "if" roots).setObjVal! "argument" (withFieldText argument "text" ("\n".intercalate lines.tail))
+      lines := lines.tail.dropWhile blankLine
+  let some first := lines.head? | return request
+  let .spell card action _ := Host.Spell.parse first | return request
+  unless card.toLower == "world" && action == "try" do return request
+  let block := lines.tail.takeWhile fun l => blankLine l || indentOf l > 0
+  let cut := ((block.filter (!blankLine ·)).map indentOf).foldl min 4096
+  let inner := "\n".intercalate (block.map fun l => String.ofList (l.toList.drop cut))
+  return (((request.setObjVal! "op" (toJson "world-try")).setObjVal! "object" (toJson "commonplace")).setObjVal! "reach" (toJson "direct"))
+    |>.setObjVal! "argument" (withFieldText argument "text" inner)
+
 /-- One request, as the socket it came on may ask it. -/
 def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) := do
+  let request := postShaped request
   let some fields := request.getObj?.toOption | return (srv, errorJson "request is not a JSON object")
   let op := (request.getObjValAs? String "op").toOption.getD ""
   if op == "serve-status" then return (srv, ← serveStatus srv)

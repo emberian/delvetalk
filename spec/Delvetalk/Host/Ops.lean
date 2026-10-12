@@ -556,11 +556,11 @@ def Proposal.digest (p : Proposal) : String :=
 
 /-! ## Judging -/
 
-/-- The closed set of refusal classes. -/
+/-- The closed set of refusal classes (`moved`, an act whose `if` no longer holds, is answered and never journaled). -/
 def refusalClasses : List String :=
   ["staleRoot", "typeMismatch", "capacity", "absentItem", "lawRefused", "unknownObject",
    "duplicateIdentity", "evaluation", "budget", "budgetExhausted", "programRefused", "requiredAbsence",
-   "keyTaken", "duplicateKey", "badSpell", "quota", "noMethod", "quiet", "cardRefused"]
+   "keyTaken", "duplicateKey", "badSpell", "quota", "noMethod", "quiet", "cardRefused", "moved"]
 
 open Lean Elab Term in
 /-- `natsIn% N`: every `Nat` definition of namespace `N`, as `[(its name, its value)]` in name order, so a

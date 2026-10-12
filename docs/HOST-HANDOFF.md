@@ -2314,6 +2314,20 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    journal sealed. carry-check reads each world line's `moved`: "green, moving: the deploy must carry: … the image moves
    N objects (…), which a restart in place keeps at the code they had; it carries". Test:
    `test_carry_check.CarryCheck.test_carry_check_says_a_deploy_carries_when_the_image_moves_an_object`.
+203. **`world-try`: the commit with the write switched off; `if` and `moved` (lane/posting; docs/POSTING.md §2; no
+   edition change).** `Session.settledStep` is a step and its settling pass, the world they leave and the reply;
+   `durableIO` makes that durable, and `world-try` (`tryTurn`) drops it, answering the turn's own reply with `tried:
+   true` and `against {height, hash}`: its receipt the entry that would be journaled (roots with versions, writes
+   with their state CIDs, which a `world-turn` at the same head lands byte for byte), its offers the exact cards.
+   `world-turn` and `world-try` take `if: [{object, version}]` (at most `maxRoots`); a root that moved, or that the
+   principal may not view, answers `{status: refused, class: moved, moved: [{object, was, now}], line}` with nothing
+   journaled (`movedRoots`, `movedReply`). A post says both (`Serve.postShaped`, beside `expiryAsked`): a margin
+   line `if: bell/1 v0, kind/bell v2` ahead of the spells is the act's `if`, and `delvetalk world try` with spells
+   indented under it is `world-try` of them, dedented, as direct words to the commonplace. The front's action takes
+   `try: true` and `if`; the bridge drafts a try as `preview, nothing done` (`bridge.preview_text`, no receipt name,
+   its last line the `if:` to send it under) and a `moved` as its line. Tests: `test_try` (the CIDs shown are the
+   CIDs landed, a moved act journals nothing, a post's indented spells never cast, the bridge's preview and its
+   guard).
 
 ## 6. Gotchas
 

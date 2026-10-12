@@ -32,18 +32,20 @@ the PDS (`listRepos`, `getRepo`, `listRecords`, `getRecord`, all unauthenticated
 the authorizing flag, as `post` is. Only the public reader's projection is mirrored. The did:web façade
 (docs/REPO.md) answers the same collection from the same function: one rendering.
 
-**2. A preview: `try`.** `delvetalk try` with spells indented under it (an indented spell is a quotation and never
-casts) runs them on a copy of the town as it stands, in a scratch the host makes for the try and discards after,
-and answers what they would do: admitted or refused with its clause, the exact card each would offer, what each
-would write, which rules would fire and which wants would open or close. Nothing is written in the town and nothing
-carries a receipt: a preview's lines say `would be admitted` and name no slug, so it can never pass for a real
-receipt. By post its reply opens `preview, nothing done:`. Quietly: a resident writes a `town.delvetalk.request`
-record (`{text}`) in their own repo, and the bridge answers it with a `town.delvetalk.preview` record in the bot's
-repo, keyed by the request, never a post.
+**2. A preview: `try`, and `if:`.** `delvetalk world try` with spells indented under it (an indented spell is a
+quotation and never casts) is `world-try` of them: the turn exactly as `world-turn` runs it, settling pass and all,
+with the write switched off (one program, not a simulation). It answers what they would do: admitted or refused with
+its clause, the exact card each would offer, what each would fire, open or close, each write's state CID (the bytes
+that land if the act is sent at the same head) and the roots it read with their versions, against `{height, hash}`.
+Nothing is journaled and no receipt is named: a preview says `would be admitted` and can never pass for a real
+receipt. By post its reply opens `preview, nothing done` and ends with an `if:` line (`if: bell/1 v0, kind/bell v2`);
+that line above the same spells sends them only if nothing they read has moved, else `refused moved: bell/1 is at
+v1, not v0`, journaled nowhere. The JSON route takes `try: true` and `if: [{object, version}]`. A preview is the
+caller's: AT records are public and a deleted one is never recalled from mirrors, so no preview or draft is a record.
 
-**3. A scratch by post.** `delvetalk scratch` with indented spells runs them, in order, in the poster's own scratch
+**3. A scratch by post.** `delvetalk world scratch` with indented spells runs them, in order, in the poster's own scratch
 world `post` (a fork of the town, opened at the first use, expiring six clock hours after the last), answering the
-transcript; its receipts are the scratch's and say so (`in scratch/post: admitted …`). `delvetalk cite / scratch:
+transcript; its receipts are the scratch's and say so (`in scratch/post: admitted …`). `delvetalk world cite / scratch:
 post / receipt: <slug>` keeps one of them in the town; `delvetalk world expire / scratch: post` drops it.
 
 **4. More per post, and answered ahead.** Three spells a post are three turns, each judged alone. An all-or-nothing
@@ -92,7 +94,7 @@ are one reply.
 | make a kind and one of it | 1 (two spells in a post) | 1, or 0 + 1 after a quiet preview |
 | grow a verb and use it | 1 (hob reads "I water the bell" as both) | 1 |
 | place a rule, then see it fire | 2 (place; the write that fires it) | 1 (both spells in a post) after a preview |
-| try an act before it is real | impossible | 1 reply, or 0 by request record |
+| try an act before it is real | impossible | 1 reply (`world try`), then the act under its `if:` |
 
 The guide as a thread is half the town's hour; it is answered in full when the hour has room and otherwise up to the
 room, its last post naming the next part's spell (`delvetalk library read / page: guide-4`).
@@ -100,7 +102,7 @@ room, its last post naming the next part's spell (`delvetalk library read / page
 ## Build order
 
 1. The mirror (`transport/mirror.py`, `town.delvetalk.card`, `.page`, `.index`).
-2. `try`: by post and by request record.
+2. `try` and `if:`: the host's `world-try`, by post and by JSON.
 3. Long replies threaded: a draft over the clip is posted as numbered parts, each a reply to the one before, each
    reserved against `postQuota`; when the hour binds, the posted parts stand and the last says how to ask for the
    next.
