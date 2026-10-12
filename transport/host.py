@@ -109,6 +109,36 @@ def painted(host, principal, obj, sleep=time.sleep, **day):
     return {**{k: v for k, v in why.items() if v}, **told}
 
 
+def door_rows(view):
+    """The doors a record cites (its `cites` list, in the owner's order), those with an object."""
+    state = plain(view.get('state') or {})
+    doors = (state.get('cites') if isinstance(state, dict) else None) or []
+    return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
+
+
+def wanted(host, reader, obj):
+    """What the thing wants now, as the reader may see it (world-wants); nothing from a host without the op."""
+    r = host.send({'op': 'world-wants', 'principal': reader or PUBLIC, 'object': obj})
+    return [w for w in r.get('rows') or [] if isinstance(w, dict)] if r.get('status') == 'wants' else []
+
+
+def place(host, reader, obj, sleep=time.sleep, paint=True):
+    """A thing as `reader` reads it, the one rendering the web's pages, a reply's draft and the mirror share:
+    {status: place, object, version, view, card, paint, wants, doors}; `card` None when the card is refused
+    (the view still stands), `paint` None when none is verified (or `paint` is False: no model is waited for).
+    A thing the reader may not view: {status, object} as `world-view` answers it."""
+    reader = reader or PUBLIC
+    view = host.send({'op': 'world-view', 'principal': reader, 'object': obj})
+    if view.get('status') != 'viewed':
+        return {'status': view.get('status') or 'error', 'object': obj, 'version': None, 'view': view, 'card': None, 'paint': None,
+                'wants': [], 'doors': []}
+    card = host.send({'op': 'world-card', 'principal': reader, 'object': obj})
+    shown = card.get('status') == 'card'
+    return {'status': 'place', 'object': obj, 'version': view.get('version'), 'view': view, 'cardReply': card,
+            'card': card.get('text') if shown else None, 'paint': painted(host, reader, obj, sleep).get('text') if shown and paint else None,
+            'wants': wanted(host, reader, obj) if shown else [], 'doors': door_rows(view)}
+
+
 def fell_back(paint):
     """Why a paint fell back, in a line (`painted`'s reason, the paint check's clause, its detail), or None when painted."""
     if paint.get('text') is not None:

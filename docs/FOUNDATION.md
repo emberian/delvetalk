@@ -1,6 +1,6 @@
 # Foundation
 
-State on 2026-10-12 (foundation d02fd11c, replay edition 9, snapshot `v4`): docs/OVERHAUL.md's steps 0 to 4 and 3b
+State on 2026-10-12 (replay edition 12, snapshot `v5`; the live town carried to edition 12 into v10): docs/OVERHAUL.md's steps 0 to 4 and 3b
 are built. Every thing carries a law, rules, wants and grown verbs; hob reads words at any card; worlds are carried
 across editions, never wiped; cards are painted above the exact card.
 

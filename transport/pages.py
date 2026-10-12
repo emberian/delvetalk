@@ -144,13 +144,6 @@ def telling(told):
                                lines=e('\n'.join(t.get('exact') or [])))
 
 
-def door_rows(view):
-    """The doors a record cites (its `cites` list, in the owner's order), those with an object."""
-    state = plain(view.get('state') or {})
-    doors = (state.get('cites') if isinstance(state, dict) else None) or []
-    return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
-
-
 def door_line(doors, href):
     items = ' · '.join(T['door'].format(href=e(href(d['to']['object'])), label=e(d.get('label') or d['to']['object']), description=e(d.get('description', '')))
                        for d in doors)
