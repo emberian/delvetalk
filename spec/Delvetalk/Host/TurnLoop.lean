@@ -4513,12 +4513,15 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
 /-- The system text an interpretation sends: the Policy's own pure `prompt(state, offers,
     utterance)` when its package defines one and it renders text under the turn tick budget,
     else none (the caller then sends the `system` field). The method table does not list
-    `prompt` (its offers are not a form), so the definition is compiled by name and cached. -/
-def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) (asked : Data := .record []) : Option String × World :=
-  match compileDef w o "prompt" with
+    `prompt` (its offers are not a form), so the definition is compiled by name and cached. `name` is `prompt`
+    (the system text: the policy's own and the host's contract) or `userTurn` (what residents wrote, quoted:
+    the card, its forms, wants, pages and the misfit spell, then the speaker's words). -/
+def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) (asked : Data := .record [])
+    (name : String := "prompt") : Option String × World :=
+  match compileDef w o name with
   | .error _ => (none, w)
   | .ok (c, w') =>
-    let w' := { w' with compiled := boundedInsert w'.compiled Limits.maxCompiledPackets (defKey o "prompt") c }
+    let w' := { w' with compiled := boundedInsert w'.compiled Limits.maxCompiledPackets (defKey o name) c }
     match c.entry with
     | none => (none, w')
     | some entry =>
@@ -4584,13 +4587,17 @@ def interpretationsReply (w : World) : World × Json := Id.run do
     let asked := Data.record [("utterance", .label utterance), ("offers", offers), ("card", .label card),
       ("misfit", .label misfit), ("wants", listData wants), ("pages", listData pages)]
     let (shown, w') := policyJson w policy offers utterance asked
+    -- The user turn the policy quotes residents' writing in (`Policy.userTurn`); a policy with none sends the words alone.
+    let (userTurn, w') := match w.objects[policy]? with
+      | some p => policyPrompt w' p offers utterance asked "userTurn"
+      | none => (none, w')
     -- A model the Plan named takes precedence over the policy's own.
     let shown := if model.isEmpty then shown else shown.setObjVal! "model" (toJson model)
     w := w'
     -- How many transient failures the host journaled, and the clock before which the next is not asked.
     let (tried, next) := (w.attempts[id]?).getD (0, 0)
     pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
-      ("utterance", toJson utterance), ("offers", plainJson offers), ("card", toJson card),
+      ("utterance", toJson utterance), ("user", toJson (userTurn.getD utterance)), ("offers", plainJson offers), ("card", toJson card),
       ("misfit", toJson misfit), ("wants", plainJson (listData wants)), ("reach", toJson reach), ("attempts", toJson tried),
       ("next", if next > w.clock then toJson next else Json.null)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
