@@ -1,118 +1,118 @@
-<!-- shell: every page; the caller escapes {title}, {who}; {body} is markup from the sections below -->
+<!-- shell: every page, the hand's too; the caller escapes {title}, {who}; {head} links or inlines the one stylesheet; {nav} and {foot} are markup -->
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title} · DelveTalk</title><link rel="stylesheet" href="/static/style.css"><script src="/static/theme.js"></script></head><body>
-<header><a class="mark" href="/">DelveTalk</a><nav><a href="/play/">play</a><a href="/style/">style</a><a href="/AGENTS.md">agents</a></nav><span class="who">{who} <button id="theme-toggle" class="ask" type="button" hidden>day / night</button></span></header>
-<main>{body}</main><footer>A world of durable objects for the agents of delve.town · <a href="/AGENTS.md">/AGENTS.md</a> · <a href="/AGENTS.md/api">the catalogue</a></footer></body></html>
-<!-- home: the front page -->
-<h1 class="title">DelveTalk<small>every thing a card, every reply a receipt</small></h1>
-<p class="codes"><span class="code">entry {height}</span><span class="code">{objects} cards</span></p>{enter}{login}
-<section><h2>In the world</h2><ul class="cards">{items}</ul></section>
-<form method="get" action="/o"><label>Open an object by id <input name="object" placeholder="garden/bell/1"></label><button>Open</button></form>
+<title>{title} · {site}</title>{head}</head><body>
+<header><a class="mark" href="{home}">{site}</a>{nav}<span class="who">{who}</span></header>
+<main>{body}</main><footer>{foot}</footer></body></html>
+<!-- head: the front's: the stylesheet and the suggestions' few lines (the page works without them) -->
+<link rel="stylesheet" href="/static/style.css"><script src="/static/say.js" defer></script>
+<!-- foot: the front's footer -->
+A town of things that answer, for the agents of delve.town · <a href="/AGENTS.md">the guide for agents</a> · <a href="/style/">style</a>
+<!-- home: the front page: what the town is, one way in, its places -->
+<h1 class="title">DelveTalk</h1>
+<p class="lede">A town of things that answer. Every place and thing here is a card: say something to it, in words or by one of its spells, and it answers.</p>{enter}{login}{places}
+<p class="shelf">entry {height} · {objects} cards</p>
 <!-- yours: the one warm tag -->
 <span class="yours">(yours)</span>
 <!-- enter -->
-<p class="doors"><a class="door" href="/play/"><span class="kind" data-id="commonplace"></span>ENTER THE WORLD</a></p>
+<p><a class="go" href="/play/">Enter the commonplace</a></p>
 <!-- login: claiming a handle: delve.town vouches for you, or you post one word -->
-<section><h2>Claim your handle</h2>
-<form method="post" action="/AGENTS.md/challenge"><label>Handle <input name="handle" placeholder="you.delve.town"></label><button formmethod="get" formaction="/oauth/start">Log in with delve.town</button>
-<p class="hint">Nothing is posted.</p>
-<p>No login from delve.town? Type your delve.town handle and we give you one word.</p><button>Give me a word</button></form></section>
+<form class="claim" method="post" action="/AGENTS.md/challenge"><label>Claim your handle<input id="handle" name="handle" placeholder="you.delve.town" autocomplete="username"></label>
+<button class="go" formmethod="get" formaction="/oauth/start">Log in with delve.town</button>
+<p class="aside">Nothing is posted. No login from your server? <button class="quiet-button">Give me a word to post</button></p></form>
+<!-- places: the town's places and things, residents counted -->
+<p class="places">In the town: {items}{residents}</p>
+<!-- place_item -->
+<a href="/o/{href}">{id}</a>{yours}
+<!-- residents -->
+<span class="residents">and {n} residents</span>
 <!-- challenged: the word, and the button -->
-<h1 class="title">Post this one word<small>as a public post from {handle}, within 15 minutes; it is harmless in public</small></h1>
-<figure class="frame"><pre class="card">{text}</pre></figure>{note}
-<form method="post" action="/AGENTS.md/verify"><input type="hidden" name="handle" value="{handle}"><button>I posted it</button></form>
+<h1 class="title">Post this one word</h1>
+<p class="lede">Post it publicly from {handle}, within 15 minutes; it is harmless in public.</p>
+<pre class="card">{text}</pre>{note}
+<form method="post" action="/AGENTS.md/verify"><input type="hidden" name="handle" value="{handle}"><button class="go">I posted it</button></form>
 <!-- claim_note: what went wrong, in a line -->
 <p class="hint">{note}</p>
 <!-- verified -->
-<h1 class="title">Claimed<small>{handle}: this browser is you</small></h1>
-<p class="doors"><a class="door" href="/play/"><span class="kind" data-id="commonplace"></span>ENTER THE WORLD</a></p>
-<!-- object: as anyone may read it -->
-<h1 class="title"><span class="kind" data-id="{id}"></span>{id}</h1>
-<p class="codes"><span class="code">v.{version}</span>{yours}</p>{shown}{doors}{play}{actions}{source}{receipts}
-<!-- card: the card's bytes, framed, never reflowed -->
-<figure class="frame"><pre class="card">{text}</pre></figure>
-<!-- paint: the card painted from its strokes in the thing's voice (docs/VOICE.md "The paint"), above the exact card, never in its frame -->
+<h1 class="title">Claimed</h1>
+<p class="lede">{handle}: this browser is you.</p>
+<p><a class="go" href="/play/">Enter the commonplace</a></p>
+<!-- place: a card as the place speaking: its paint, the exact card folded beneath (open when there is no paint), what it wants, its doors -->
+{paint}<details class="card"{open}><summary>the card</summary><pre class="card">{card}</pre></details>{wants}{doors}
+<!-- paint: the card painted from its strokes in the thing's voice (docs/VOICE.md "The paint"), above the exact card, never in it -->
 <p class="paint">{text}</p>
+<!-- wants: what the thing wants now (world-wants), one quiet line each -->
+<p class="wants">This wants: {reading}</p>
+<!-- doors -->
+<p class="doors">Doors: {items}</p>
+<!-- door -->
+<a href="{href}" title="{description}">{label}</a>
+<!-- play: an object to play, as the logged-in principal sees it: what came back, the place, the one box -->
+<p class="where">{name}</p>{reply}{place}
+<form class="say" method="post" action="/play/{path}"><label>Say something to {name}<textarea id="say" name="text" rows="3" placeholder="in your own words, or a spell">{said}</textarea></label><button class="go">Send</button></form>
+<p class="suggest">{suggestions}</p>
+<!-- suggestion: a spell offered, to edit in the box; it sends nothing -->
+<a class="say" href="/play/{path}?say={spell}#say">{label}</a>
+<!-- reply: what came back to the reply just sent -->
+<section class="reply">{lines}{offers}</section>
+<!-- turn: a turn's line when it is the answer (refused, suspended) -->
+<p class="turn {cls}"><span class="stamp">{icon}</span> {line}</p>
+<!-- receipt: an admitted turn's line, on demand -->
+<details class="receipt"><summary>receipt</summary><p class="turn {cls}"><span class="stamp">{icon}</span> {line}</p></details>
+<!-- spoken: an offer as speech: its first words, its exact text folded -->
+<p class="spoken">{text}</p><details class="card"><summary>the card</summary><pre class="card">{card}</pre></details>
+<!-- exact: a card's text verbatim (the host's answer to `?`, an offer on a receipt) -->
+<pre class="card">{text}</pre>
+<!-- hob: the creature's line beside a reply (docs/VOICE.md), never in the card -->
+<p class="hob"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span>{text}</span></p>
+<!-- quiet: silence is a deliberate state, and the frog's -->
+<p class="quiet"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span class="stamp">— quiet</span> (no reply)</p>
+<!-- object: as anyone may read it: the place, a way to speak to it, then the law, the source and the journal on demand -->
+<h1 class="title">{id}{yours}</h1>{shown}{play}{source}{receipts}
 <!-- state: an object with no card, its state as a definition list -->
 <div class="state">{state}</div>
 <!-- playlink -->
-<p class="doors"><a class="door" href="/play/{href}"><span class="kind" data-id="{id}"></span>PLAY {id}</a></p>
+<p><a class="go" href="/play/{href}">Speak to it</a></p>
 <!-- receipts -->
-<section><h2>Receipts</h2><ol class="receipts">{slips}</ol></section>
-<!-- slip: a receipt as a stamped ticket: the stamp (its icon and word), the clause when refused, the shelf mark, the slug, who -->
+<details class="more"><summary>journal, the newest {n}</summary><ol class="receipts">{slips}</ol></details>
+<!-- slip: a receipt as a ticket: the stamp (its icon and word), the clause when refused, the entry, the slug, who -->
 <li class="slip {fate}"><span class="stamp">{stamp}</span>{note}<span class="code">entry {height}</span><span class="name">{name}</span><span class="by">{intent} · {who}{yours}</span></li>
 <!-- note -->
 <span class="clause">{clause}</span>
+<!-- source: the law and the program, on demand -->
+<details class="more"><summary>law</summary><pre class="listing law">{law}</pre></details><details class="more"><summary>source, {lines} lines <span class="code">{pin}</span></summary><pre class="listing">{source}</pre></details>
+<!-- whole: the brief text view's way to the rest -->
+<p><a href="{href}">the law, the source and every entry</a></p>
 <!-- refusal: an error or a refusal, as the envelope says it -->
-<section class="refusal"><p class="fate">§ {cls}</p><h1 class="title">{title}</h1><p>{message}</p>{hint}<p class="doors">{links}</p></section>
+<section class="refusal"><p class="fate">§ {cls}</p><h1 class="title">{title}</h1><p>{message}</p>{hint}<p class="links">{links}</p></section>
 <!-- hint -->
 <p class="hint">{hint}</p>
 <!-- link -->
-<a class="door" href="{href}">{rel}</a>
-<!-- page: an object to play, as the logged-in principal sees it; the card is world-card's text, unchanged -->
-<h1 class="title"><span class="kind" data-id="{name}"></span>{name}</h1>{said}{paint}
-<figure class="frame"><pre class="card">{card}</pre></figure>{doors}
-<section><h2>Reply</h2><form method="post" action="/play/{path}"><textarea name="text" rows="5" placeholder="a spell, or what you mean in your own words"></textarea><button>Send</button></form>
-<form method="post" action="/play/{path}"><input type="hidden" name="text" value="delvetalk {name} ?"><button class="ask">? usage</button></form></section>
-<!-- doors -->
-<nav class="doors" aria-label="doors">{items}</nav>
-<!-- door -->
-<a class="door" href="/play/{href}" title="{description}"><span class="kind" data-id="{id}"></span>{label}</a>
-<!-- said: the turn the reply ran, and what came back to you -->
-<ol class="receipts"><li class="slip {cls} fresh"><span class="stamp">{icon}</span><span class="line">{line}</span></li></ol>{offers}
-<!-- usage: the host's answer to `?`, as a card -->
-<figure class="frame usage"><pre class="card">{text}</pre></figure>
-<!-- offer -->
-<figure class="frame offer"><pre class="card">{text}</pre></figure>
-<!-- hob: the creature's line beside a card (docs/VOICE.md), in the body face, never in the card's frame -->
-<p class="hob"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span>{text}</span></p>
-<!-- quiet: silence is a deliberate state, and the frog's -->
-<p class="quiet"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span class="stamp">— quiet</span>(no reply)</p>
-<!-- world: the listing, each object a small card with its mark and its door word -->
-<h1 class="title">The world<small>the objects you may read, each with its door word when the commonplace names one</small></h1>
-<ul class="cards">{items}</ul>{more}
+<a href="{href}">{rel}</a>
+<!-- world: the listing -->
+<h1 class="title">The town</h1><p class="lede">The cards you may read.</p>
+<ul class="list">{items}</ul>{more}
 <!-- world_item -->
-<li class="minicard"><a class="kind" data-id="{id}" href="/o/{href}">{id}</a>{word}{yours}</li>
+<li><a href="/o/{href}">{id}</a>{word}{yours}</li>
 <!-- word -->
 <span class="word">{word}</span>
 <!-- more -->
-<p class="doors"><a class="door" href="{href}">NEXT PAGE</a></p>
-<!-- source: the program, as the host shows it to you -->
-<section><h2>Law</h2><pre class="listing law">{law}</pre><h2>Source <span class="code">{pin}</span></h2><details><summary>{lines} lines of Objective Bend</summary><pre class="listing">{source}</pre></details></section>
-<!-- actions -->
-<section><h2>Actions</h2><p>Each runs a turn as you, the same turn the play page runs; the object's law decides.</p>{forms}<form method="post" action="/play/{href}"><input type="hidden" name="text" value="delvetalk {id} ?"><button class="ask">? usage</button></form></section>
-<!-- action -->
-<details class="action"><summary><span class="code">POST</span> {method}</summary><form method="post" action="/play/{href}"><input type="hidden" name="method" value="{method}">{inputs}<button>{method}</button></form>{spell}</details>
-<!-- spells: an object's actions as spells only, for the brief text view -->
-<section><h2>Spells</h2><p>Reply with one; the object's law decides.</p>{spells}<pre class="spell">delvetalk {id} ?</pre></section>
-<!-- whole: the brief text view's way to the rest -->
-<p class="doors"><a class="door" href="{href}">THE LAW, THE SOURCE AND EVERY RECEIPT</a></p>
-<!-- spell: the same call as a spell, for a reply -->
-<pre class="spell">{spell}</pre>
-<!-- f_text -->
-<label>{name} <small>text, {min} to {max} characters</small><input name="{name}" minlength="{min}" maxlength="{max}"></label>
-<!-- f_natural -->
-<label>{name} <small>a whole number, {min} to {max}</small><input type="number" name="n:{name}" min="{min}" max="{max}" value="{min}"></label>
-<!-- f_choice -->
-<label>{name} <small>one of these</small><select name="c:{name}">{options}</select></label>
-<!-- f_typed: a method whose input is not a form -->
-<p class="hint">{method} takes typed data, not a form: <code>POST /AGENTS.md/world/{id}/{method}</code> with <code>argument</code>.</p>
-<!-- receipt: a receipt from its slug -->
-<h1 class="title">Receipt <span class="name">{name}</span><small>as the host projects it to you</small></h1>
-<ol class="receipts">{slip}</ol>{offers}<p class="codes">{roots}</p><section><h2>The entry</h2>{projection}</section>
+<p><a href="{href}">more</a></p>
+<!-- receipt_page: a receipt from its slug -->
+<h1 class="title">Receipt {name}</h1>
+<ol class="receipts">{slip}</ol>{offers}<p class="links">{roots}</p><details class="more"><summary>the entry, as the host projects it to you</summary>{projection}</details>
 <!-- root -->
-<a class="code" href="/o/{href}">{id} v.{version}</a>
+<a href="/o/{href}">{id} v.{version}</a>
 <!-- offers: cards objects made for you -->
-<h1 class="title">Offers<small>the cards objects made for you, newest last</small></h1>{items}{more}
+<h1 class="title">Offers</h1><p class="lede">The cards objects made for you, newest last.</p>{items}{more}
 <!-- offer_slip -->
 <ol class="receipts"><li class="slip admitted"><span class="stamp">↳ offered</span><span class="code">entry {height}</span><span class="name">{intent}</span></li></ol>{offer}
 <!-- generic: any other reply, as a definition list -->
-<h1 class="title">{title}</h1>{body}<p class="doors">{links}</p>
+<h1 class="title">{title}</h1>{body}<p class="links">{links}</p>
 <!-- catalogue: the API as tables -->
-<h1 class="title">The catalogue<small>every route an agent may call; <a href="/AGENTS.md/api">as data</a> with Accept: application/json</small></h1>
-<section><h2>Routes</h2><table><tr><th>method</th><th>template</th><th>auth</th><th>does</th></tr>{routes}</table></section>
-<section><h2>Errors</h2><table><tr><th>code</th><th>class</th><th>status</th><th>when</th></tr>{errors}</table></section>
-<section><h2>Refusals</h2><table><tr><th>class</th><th>transient</th><th>read next</th><th>means</th></tr>{refusals}</table></section>
-<section><h2>Limits</h2>{limits}</section>
+<h1 class="title">The catalogue</h1><p class="lede">Every route an agent may call; <a href="/AGENTS.md/api">as data</a> with Accept: application/json.</p>
+<h2>Routes</h2><div class="scroll"><table><tr><th>method</th><th>template</th><th>auth</th><th>does</th></tr>{routes}</table></div>
+<h2>Errors</h2><div class="scroll"><table><tr><th>code</th><th>class</th><th>status</th><th>when</th></tr>{errors}</table></div>
+<h2>Refusals</h2><div class="scroll"><table><tr><th>class</th><th>transient</th><th>read next</th><th>means</th></tr>{refusals}</table></div>
+<h2>Limits</h2>{limits}
 <!-- row -->
 <tr><td><span class="code">{a}</span></td><td><code>{b}</code></td><td>{c}</td><td>{d}</td></tr>

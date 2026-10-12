@@ -304,28 +304,18 @@
    "does": "HTML for people"
   },
   {
-   "name": "find",
-   "method": "GET",
-   "href": "/o",
-   "auth": "none",
-   "does": "redirects ?object=<id> to its page",
-   "query": {
-    "object": "text"
-   }
-  },
-  {
    "name": "page",
    "method": "GET",
    "href": "/o/{object}",
    "auth": "cookie",
-   "does": "HTML: a card's state, its card and last 20 receipts, and a link to play it; a / in the id is %2F"
+   "does": "HTML: the card's paint, its exact card folded beneath, what it wants, its doors, and on demand its law, source and last 20 receipts; logged in, a link to play it; a / in the id is %2F"
   },
   {
    "name": "play",
    "method": "GET",
    "href": "/play/{object}",
    "auth": "cookie",
-   "does": "HTML: the card as world-card renders it for you, its doors as links, a reply box and `?`; /play/ is the commonplace; without the session cookie, a redirect to the login page"
+   "does": "HTML: the card's paint, the card as world-card renders it for you folded beneath, its wants and doors, one reply box with spells offered as suggestions (`?say=` fills the box); /play/ is the commonplace; without the session cookie, a redirect to the login page"
   },
   {
    "name": "reply",
@@ -349,7 +339,7 @@
    "method": "GET",
    "href": "/static/{file}",
    "auth": "none",
-   "does": "style.css, theme.js"
+   "does": "style.css, the one stylesheet; say.js, which fills the reply box with a chosen suggestion (the page works without it)"
   }
  ],
  "errors": {

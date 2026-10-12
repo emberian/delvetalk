@@ -656,8 +656,10 @@ class Play(FrontCase):
     def setUpClass(cls):
         super().setUpClass()
         from deploy import genesis
+        from tests.town import furnish
         made, refusal = genesis.run(cls.root, cls.OPENER)
         assert refusal is None, refusal
+        furnish(cls.root, cls.OPENER)
 
     def setUp(self):
         super().setUp()
@@ -771,27 +773,21 @@ class Play(FrontCase):
         self.assertIn(b'suspended, entry', out['page'])
         self.assertIn(b'a bell for the owls', out['page'])  # the interpreter's proposal, as the offer to this turn
 
-    def test_a_question_to_a_card_in_words_waits_for_hob_and_names_the_card(self):
-        """The owner's question on /play/kinds (2026-10-11): the card hands the prose on and the page waits for hob;
-        the turn line names kinds, the card the words were addressed to. hob states no fact (docs/OVERHAUL.md §2):
-        an answer headed `say:` is prose with no spell, silence, and no hob line stands beside the card."""
-        out = {}
-        t = threading.Thread(target=lambda: out.update(page=self.play('/play/kinds', 'what is a kind? what is the things in a cistern?')[2]))
-        t.start()
-        for _ in range(300):
-            pending = self.host.send({'op': 'world-interpretations'}).get('pending') or []
-            if pending:
-                break
-            time.sleep(0.1)
-        answer = 'A kind is a template for a made thing. The kinds make form takes a name and an of.'
-        r = self.host.send({'op': 'world-interpretation', 'id': pending[-1]['id'],
-                            'reply': {'status': 'replied', 'model': 'claude-haiku-5-5', 'json': None, 'raw': 'say: ' + answer}})
-        self.assertEqual((r['status'], r['receipt']['outcome']['verdict']), ('interpreted', {'tag': 'unclear', 'needs': ['not addressed']}), r)
-        t.join(60)
-        self.assertFalse(t.is_alive())
-        self.assertRegex(self.words(out['page']), r'admitted kinds v\d+, entry \d+')
-        self.assertNotIn('admitted commonplace', self.words(out['page']))
-        self.assertNotIn('hob: ' + answer, out['page'].decode())
+    def test_prose_at_a_card_on_the_play_page_is_hobs_with_that_cards_table(self):
+        """The owner's question on /play/kinds (2026-10-11): words at a card go to hob (HOST-HANDOFF 5.163), who is offered
+        that card's table; the turn waits as a pending interpretation on kinds, and hob's `none` is silence."""
+        words = 'what is a kind? what is the things in a cistern?'
+        self.front.sleep = lambda seconds: None
+        page = self.play('/play/kinds', words)[2]
+        self.assertRegex(self.words(page), r'suspended, entry \d+')
+        self.assertNotIn('hob: ', page.decode())
+        [item] = [p for p in self.host.send({'op': 'world-interpretations'}).get('pending') or [] if p['utterance'] == words]
+        self.assertEqual((item['object'], [(o['card'], o['action']) for o in item['offers']][:1]), ('kinds', [('kinds', 'make')]), item)
+        settled = self.host.send({'op': 'world-interpretation', 'id': item['id'],
+                                  'reply': {'status': 'replied', 'model': 'm', 'json': None, 'raw': 'none'}})
+        self.assertEqual(settled['status'], 'interpreted', settled)
+        [resumed] = settled['resumed']
+        self.assertEqual((resumed['status'], resumed['receipt']['outcome'].get('tag'), resumed['receipt'].get('offers', [])), ('admitted', 'admitted', []), resumed)
 
     def test_a_suspended_turn_is_a_line_under_a_kilobyte_and_its_full_reply_elides_the_blocks(self):
         tok = self.cookie.split('=', 1)[1]

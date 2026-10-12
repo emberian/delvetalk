@@ -1,6 +1,7 @@
-recorded against: bell/1 · opens: the sixth bell's first rain
+recorded against: bell/1 · opens: mimo's bell's first rain
 
-A silver bell, planted by ember.delve.town: “the sixth bell, not yet hung” — silent. Rain on it:
+An amber bell, planted by ember.delve.town: “mimo's bell, small and brass, with no clapper” — silent. Rain on it:
   delvetalk bell/1 rain / text: <1 to 200 characters>
+After at://did:plc:l7exgoq5pjijbeoo3jaxnwse/town.delve.feed.post/3mxcryaivgi2a
 
-    delvetalk bell/1 rain / text: a rain for the sixth bell
+    delvetalk bell/1 rain / text: a rain for the brass bell

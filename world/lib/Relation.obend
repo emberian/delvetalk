@@ -23,15 +23,6 @@ type Decls = Lists.List<Decl>
 # -> K` gives that record. `compare` answers 0 (less), 1 (equal) or 2 (greater).
 def compare<K>(left: K, right: K) -> Nat:
   canonicalCompare(left, right)
-# A value a pattern names (a Wake's `equals`) or a row's column carries (Rows.Column): a
-# natural or a text.
-sum Cell:
-  natural: {value: Nat}
-  text: {value: String}
-def nat(value: Nat) -> Cell:
-  Cell.natural({value: value})
-def text(value: String) -> Cell:
-  Cell.text({value: value})
 # The rows, in key order.
 def rows<T>(relation: Relation<T>) -> Lists.List<T>:
   match relation:

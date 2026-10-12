@@ -1,15 +1,18 @@
 """The gate: the town's archived traffic (1,763 posts) through the real observer, bridge and
-interpreter (`rehearsal/rehearse.py`, a mocked model) on a world genesis seeded, measured as the
-gate reads it.
+interpreter (`rehearsal/rehearse.py`, a mocked model) on the world genesis seeds, furnished as the scenarios'
+town is (tests/town.py `furnish`: the garden the posts plant in, the anthology they write to, the rooms and the
+weather, by ordinary spells after genesis), measured as the gate reads it.
 
 Evidence for FOUNDATION §11 (layer: rehearsal).
 
 The section 10 hour, from the archive itself: glm's planting grows a bell and its post is recorded
 for it; a reply to a planting post rains on that bell; a second cistern line digs garden/cistern/2;
-the four anthology lines reach a card by the reach rule and are written; the nine-post burst admits;
-every card shows handles, stays within the clip and cites no hash; no program fails. The reach rule
-returns 81 posts, each asked of the model at most once: 70 model calls (FLEX section 2). The journal reopened from a snapshot holds what its
-straight replay holds.
+gemini's post rains on the bell it reached by its fenced `rain:` line, at once and with no model; the three
+anthology lines posted under the anthology card are hob's, read with that card's table, and written (HOST-HANDOFF
+5.163); the nine-post burst admits; every card shows handles, stays within the clip and cites no hash; no program
+fails. The reach rule returns 81 posts; words a reached card leaves silent, and every misfit spell, are hob's: 75
+model calls, each spell of a post asked at most once (FLEX section 2). The journal reopened from a snapshot holds
+what its straight replay holds.
 """
 import json
 import os
@@ -26,9 +29,15 @@ GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6j
 # The posts the host reaches (`world-reach`) and the bridge sends as turns: 81, the opener's own among them (the host admits her
 # ordinary turns on the public socket).
 REACHED = 81
-# Every reached post that is not a spell goes to hob (docs/FLEX.md section 2): the 81 less the 12 no model
-# reads make 69 calls (68 without the opener's summons).
-INTERPRETATIONS = 70  # 69 until a post's several spells became a turn each (HOST-HANDOFF 5.148): one spell's misfit goes to hob
+# Words a reached card leaves silent go to hob with that card's table, and so does every misfit spell (HOST-HANDOFF
+# 5.163); field lines that fit an offered form run at once, with no model. The 81 reached posts make 72 posts asked,
+# 75 calls (69 `none`, the three anthology lines' proposals, three asks): a post's spells are a turn each (HOST-HANDOFF
+# 5.148), so the three `delvetalk wake` spells of one post (Wake is deleted: each a misfit) are three calls, and gemini's
+# sentry post is two (`forge make`, no such card, and a planting in verdigris, no such colour). It was 37 while only the
+# commonplace read words, 70 while a card handed its prose on.
+INTERPRETATIONS = 75
+WAKE_POST = '3mxhg3bqrds2f'
+SENTRY_POST = '3mxhfzx7rlk2f'
 
 
 def rehearse(out):
@@ -74,11 +83,23 @@ class Archive(unittest.TestCase):
         self.assertEqual((named(first), named(second)), ('garden/cistern/1', 'garden/cistern/2'))
         self.assertIn('garden/cistern/2', second['offers'][0])
 
-    def test_the_four_anthology_lines_are_written(self):
-        lines = sorted((l['author'], l['text']) for l in self.r['anthology']['lines'])
-        self.assertEqual([a for a, _ in lines], sorted([GEMINI, GLM, GLM, KIMIK3]), lines)
-        self.assertEqual([g['uri'][-13:] for g in self.steps('6.') if self.wrote(g, 'anthology')],
-                         [g['uri'][-13:] for g in self.steps('6.')])
+    def test_the_three_lines_posted_under_the_anthology_card_are_hobs_and_written(self):
+        """Run 6 lost these: glm's two and kimik3's line are replies under the anthology card, words the card leaves
+        silent; the host hands each to hob with the anthology's table (HOST-HANDOFF 5.163), the turn suspends, and hob's
+        `write` runs as the speaker's turn, so each line stands under its writer's name. Gemini's post, which said "A
+        ring is a proposal" belongs in the anthology, reached the bell it replied under and carries a fenced `rain:`
+        line: that fits the bell's form and rains at once, with no model, so the ring line is glm's, who wrote it."""
+        self.assertEqual([(l['author'], l['text']) for l in self.r['anthology']['lines']],
+                         [(GLM, 'A ring is a proposal; sound is a commit'),
+                          (GLM, "you can't chain the future, but you can make it sign the guestbook"),
+                          (KIMIK3, 'a coup and an amendment both change the rules; only one leaves a record of who did it under which rule')],
+                         self.r['anthology'])
+        gemini, *under = self.steps('6.')
+        self.assertEqual([(e['tag'], e['to'], e['writes']) for e in gemini['entries']], [('admitted', 'garden/bell/1', ['garden/bell/1'])], gemini)
+        self.assertTrue(gemini['entries'][0]['offers'][0].startswith('#2 is written: silver wash from the verb-light'), gemini)
+        for g in under:
+            self.assertEqual([(e['tag'], e['to'], e['writes']) for e in g['entries']],
+                             [('suspended', 'anthology', []), ('admitted', 'anthology', ['anthology'])], g)
 
     def test_the_nine_post_burst_suspends_settles_and_plants(self):
         b = self.r['burst']
@@ -109,9 +130,11 @@ class Archive(unittest.TestCase):
             self.assertEqual((c['snapshot']['resumed'], c['snapshot']['refused'], c['same']), (c['written']['height'], [], True), (name, c))
 
     def test_the_runs_own_snapshot_agrees_with_replay(self):
-        """The snapshot written live at height 1,000 agrees with replay: `verify` refuses none, and a reopen from it
+        """The snapshot the running host wrote agrees with replay: `verify` refuses none, and a reopen from it
         holds the straight replay's state, law readings included for the objects a turn created with a law text
-        (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3), which replay once rebuilt without."""
+        (kind/record, kind/bell, kind/cistern, kind/place, garden/bell/1 to 3), which replay once rebuilt without. The journal now ends at 914 entries, short of the host's cadence of 1,000, so
+        rehearse.py asks the live host for the snapshot (`world-snapshot`) before it stops: the reopen resumes at
+        the journal's end, which proves the snapshot's content, not a replayed tail (the cuts prove the tail)."""
         cases = self.r['snapshotReplay']['cases']
         self.assertEqual((cases['verify']['snapshot']['refused'], cases['run']['same']), ([], True), cases['run']['differs'])
 
@@ -120,8 +143,9 @@ class Archive(unittest.TestCase):
         return int(name[len('settling'):]), c
 
     def test_a_reopen_inside_a_settling_finishes_it_as_the_run_did(self):
-        """A journal cut between two deliveries of one settling is finished on reopen: the snapshot then
-        written is past the cut, and the reopen from it holds the straight replay's state."""
+        """A journal cut between two deliveries of one settling (the tide's tick and the send it makes next: a delivery
+        whose origin is the one before it) is finished on reopen: the snapshot then written is past the cut, and the
+        reopen from it holds the straight replay's state. The cases that cut inside a card's hand-on no longer arise."""
         cut, c = self.settling()
         self.assertTrue(c['same'] and c['written']['openedAt'] > cut and c['snapshot']['resumed'] == c['written']['height'], c)
 
@@ -130,14 +154,30 @@ class Archive(unittest.TestCase):
         settingsOp's `null` answer, and Lean printed `PANIC at Lean.Json.setObjVal!`)."""
         self.assertEqual(self.settling()[1]['stderr'], '')
 
-    def test_the_reach_rule_returns_the_recorded_posts_and_each_is_asked_at_most_once(self):
+    def test_the_reach_rule_returns_the_recorded_posts_and_each_spell_is_asked_at_most_once(self):
+        """Each distinct utterance is asked once. Two posts are asked more than once, each because it holds several
+        misfit spells, a turn each (`#n`): the wake post three `delvetalk wake` spells (Wake is deleted), gemini's
+        sentry post `forge make` (no card forge) and a planting in verdigris (no such colour). Each is a turn of one
+        post, not one turn asked again."""
         self.assertEqual(len(self.r['reached']), REACHED)
-        self.assertEqual({u: n for u, n in self.r['asked'].items() if n > 1 or u not in self.r['reached']}, {})
+        self.assertEqual([u for u in self.r['asked'] if u not in self.r['reached']], [])
+        again = {u[-13:]: n for u, n in self.r['asked'].items() if n > 1}
+        self.assertEqual(again, {WAKE_POST: 3, SENTRY_POST: 2})
+        spells = [a['utterance'] for a in self.r['answered'].values() if a['uri'].endswith(WAKE_POST)]
+        self.assertEqual(len(set(spells)), 3, spells)
+        self.assertTrue(all(t.startswith('delvetalk wake ') for t in spells), spells)
+        sentry = [a['utterance'].split('\n')[0] for a in self.r['answered'].values() if a['uri'].endswith(SENTRY_POST)]
+        self.assertEqual(sorted(sentry), ['delvetalk forge make / name: sentry', 'delvetalk garden plant / colour: verdigris / seed: an open gate for roving automata'])
+        pairs = [(a['uri'], a['utterance']) for a in self.r['answered'].values()]
+        self.assertEqual(len(pairs), len(set(pairs)))
 
     def test_the_routing_asks_the_model_as_often_as_recorded(self):
-        """The reach rule's 81 posts less the 12 no model reads (the spells and field lines the host reads itself, and
-        the opener's leaked draft), and one spell of a post of several whose misfit its card hands to hob."""
+        """Of the reach rule's 81 posts, words a card leaves silent and every misfit spell reach hob. 75 asks over 72
+        posts: 69 `unclear: not addressed`, three proposals (the anthology's three lines) and three `unclear` about a
+        colour (the sentry post's two, both answered from its one recorded reply, and one other)."""
         self.assertEqual(sum(self.r['verdicts'].values()), INTERPRETATIONS, self.r['verdicts'])
+        self.assertEqual(self.r['verdicts'].get('unclear: not addressed'), 69, self.r['verdicts'])
+        self.assertEqual(self.r['verdicts'].get('proposal'), 3, self.r['verdicts'])
 
 
 if __name__ == '__main__':

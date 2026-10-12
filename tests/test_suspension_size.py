@@ -41,8 +41,7 @@ class SuspensionSize(test_hub.Hub):
 
     def suspensions(self, speakers):
         self.policy()
-        self.commonplace("policy")
-        self.greet(*WHO)
+        self.commonplace()
         start = len(self.entries())
         for who, text in zip(speakers, PROSE):
             self.assertEqual(self.say(text, who)["status"], "suspended")

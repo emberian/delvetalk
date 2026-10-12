@@ -1,0 +1,86 @@
+layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Card.obend as Card
+import ./Scenes.obend as Scenes
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+import ./Text.obend as Text
+# The front's body, over RECORD (docs/OVERHAUL.md §2, a front is a rule held by a director under law;
+# TENURE §3C, a visible clock): a record made with a name, the condition that fills a segment
+# (`fills`, in the law grammar, judged on its tide at each tick: `new.ticks % 24 == 0` is a clock
+# day), how many segments its clock has (`segments`), the spell it casts when the clock is full
+# (`move`) and the tide it reads (`tide`), all fixed. As its kind finishes it, it places two rules
+# under its maker (`made`): on the tide, `request.method == "tick" and (<fills>)` casts `delvetalk
+# <front> fill`; on itself, a fill that brings its count of segments to a whole clock casts `move`.
+# So the move is the maker's turn, judged by the law of whatever it touches, and the clock empties as
+# it moves (its segments are the `fill` lines, counted modulo the clock). Only the tide's rule fills:
+# a hand's `fill` is refused by name. The card shows the clock: "2 of 4".
+type State = Super.State
+form fill:
+form write:
+  text: text 1..280
+form lines:
+  from: natural 1..1000000000
+form door:
+  label: text 1..32
+  to: text 1..128
+form undoor:
+  label: text 1..32
+def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:
+  Super.write(state, {text: input.text}, context)
+def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.lines(state, {from: input.from}, context)
+def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.door(state, {label: input.label, to: input.to}, context)
+def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.undoor(state, {label: input.label}, context)
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  if context.principal == state.owner then Text.words("fill write lines door undoor") else Text.words("fill write lines")
+def methods() -> Lists.List<String>:
+  Text.words("~made ~act")
+def tide(state: State) -> String:
+  Super.field(state, "tide")
+def segments(state: State) -> Nat:
+  match Text.number(Super.field(state, "segments")):
+    case yes(n): if n.value == 0n then 1n else n.value
+    case no(_): 1n
+# The fills so far: its `fill` lines; a whole clock of them has moved and emptied it.
+def fills(state: State) -> Nat:
+  Lists.length(Lists.filter(Relations.rows(state.lines), fn(l: Rows.Line) -> Bool: l.verb == "fill"))
+def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
+  if context.caller != state.kind then false else placing(state, context)
+def placing(state: State, context: Abi.Context) -> Activity<Bool>:
+  let fills = Super.field(state, "fills")
+  match world.rule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object), when: "request.method == \"tick\" and ({fills})", then: "delvetalk {context.object} fill"}):
+    case placed(_): moving(state, context)
+    case refused(_): false
+def moving(state: State, context: Abi.Context) -> Activity<Bool>:
+  let n = natText(segments(state))
+  match world.rule({object: Plans.self(context), name: "move", when: "count(new.lines where verb == \"fill\") % {n} == 0 and count(new.lines where verb == \"fill\") >= count(old.lines where verb == \"fill\") + 1", then: Super.field(state, "move")}):
+    case placed(_): true
+    case refused(_): false
+# The tide's rule fills a segment; anyone else is told what does.
+def fill(state: State, context: Abi.Context) -> Activity<Nat>:
+  let fills = Super.field(state, "fills")
+  if context.sender != tide(state) then Card.refusing(0n, {clause: "ruled", reading: "a segment fills at a tick of {tide(state)} when {fills}: delvetalk {tide(state)} rules"}, context) else filled(state, context)
+def filled(state: State, context: Abi.Context) -> Activity<Nat>:
+  let at = fills(state) % segments(state) + 1n
+  let written(_) = write {lines: insert {author: context.sender, handle: "", verb: "fill", text: "segment {natText(at)} of {natText(segments(state))}, at clock {natText(context.clock)}", at: context.height, n: state.next}, next: add 1n}
+  at
+def clock(state: State) -> String:
+  let moved = fills(state) / segments(state)
+  let times = if moved == 0n then "it has not moved yet" else if moved == 1n then "it has moved once" else "it has moved {Text.countWord(moved)} times"
+  "{natText(fills(state) % segments(state))} of {natText(segments(state))}; {times}"
+def entry(state: State, context: Abi.Context, line: Rows.Line) -> Document.Document:
+  if line.verb == "fill" then Document.text("{line.text}\n") else Super.entry(state, context, line)
+def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
+  let name = if state.head == "" then "A FRONT" else state.head
+  let fills = Super.field(state, "fills")
+  let move = Super.field(state, "move")
+  Document.text("{name}, a front set by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}. Its clock: {clock(state)}.\nA segment fills at a tick of {tide(state)} when: {fills}\nWhen full: {move}\n")

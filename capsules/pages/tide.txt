@@ -1,10 +1,10 @@
-hob: three replies and a wait; at the end the tide has your row and your avatar a line.
-  delvetalk tide subscribe / every: 1 / note: first light
-  » your row on the tide, every tick from tick 0
+hob: three replies and a tick; at the end the tide has your rule, and it fired.
+  delvetalk tide rules
+  » none yet: what happens at a tick is the rules written on it
+  delvetalk tide rule / name: turned / when: request.method == "tick" / then: delvetalk me note / text: the tide turned
+  » your rule on the tide, fired under you
   delvetalk tide tick
-  » tick 1, 1 note sent; your avatar has "tide 1: first light"
-  delvetalk tide tick
-  » refused tooSoon: the next tick may come at clock C
-  after clock C: delvetalk tide tick
-  » tick 2; "tide 2: first light"
-Changed: your row on the tide; a note on your avatar every tick.
+  » refused itself: the tide ticks itself every 60 clock minutes
+  after the next tick: delvetalk tide rules
+  » turned fired at that tick; your avatar has "the tide turned"
+Changed: your rule on the tide; a note on your avatar at every tick.

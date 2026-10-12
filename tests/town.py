@@ -7,11 +7,53 @@ import os
 
 from tests.host import served
 
+MOSS_GATE = """---
+id: gate
+title: The Moss Gate
+---
+=== gate
+A moss gate, ajar.
+* [Open]
+  ~ gate = open
+  -> yard
+* [Wait] -> gate
+=== yard
+A quiet yard.
+* [Back] -> gate
+* [Knock]
+  ~ knock = twice
+  -> yard
+"""
+
+
+def furnish(host, opener):
+    """The town after its first day, as the scenarios meet it: genesis makes the frame and the town's coinages
+    (deploy/genesis.py), and the places the scenarios walk are made after it by ordinary spells and one create, as
+    any hand could: THE NIGHT GARDEN, the Moss Gate (`rooms`), the weather over the garden on the tide, the
+    anthology the opener keeps, and the commonplace's doors to the three."""
+    from deploy import genesis
+    from deploy.seed import create
+    out = []
+    for kind, fields in (('kind/garden', [('id', 'garden'), ('name', 'THE NIGHT GARDEN')]),
+                         ('kind/room', [('id', 'rooms'), ('name', 'The Moss Gate'), ('spween', MOSS_GATE)]),
+                         ('kind/weather', [('id', 'weather'), ('garden', 'garden'), ('tide', 'tide')])):
+        out.append(genesis.said(host, opener, kind, 'place', fields, 'furnish-' + dict(fields)['id'], dict(fields)['id']))
+    out.append(genesis.said(host, opener, 'garden', 'door', [('label', 'weather'), ('to', 'weather')], 'furnish-garden-door'))
+    anthology = create(host, opener, 'anthology', 'Record', 'furnish-anthology',
+                       genesis.rec(owner=genesis.lab(opener), keeper=genesis.lab(opener), keeperHandle=genesis.lab(genesis.HANDLE),
+                                   head=genesis.lab('THE ANTHOLOGY')), genesis.RECORD_LAW)
+    out.append({'object': 'anthology', 'module': 'Record', 'status': anthology.get('status'), 'creator': opener, 'reply': anthology})
+    for label, to in (('GARDEN', 'garden'), ('ROOMS', 'rooms'), ('ANTHOLOGY', 'anthology')):
+        out.append(genesis.said(host, opener, 'commonplace', 'door', [('label', label), ('to', to)], 'furnish-door-' + to))
+    assert all(m['status'] in ('created', 'admitted') for m in out), out
+    return out
+
 
 class Town:
-    """`cleanup` (a test's addCleanup or addClassCleanup) receives close() before serve first starts."""
+    """`cleanup` (a test's addCleanup or addClassCleanup) receives close() before serve first starts; `furnished`
+    False leaves the town as genesis made it."""
 
-    def __init__(self, directory, run_genesis=True, *, cleanup):
+    def __init__(self, directory, run_genesis=True, *, cleanup, furnished=True):
         from deploy import genesis
         from transport.config import LIBRARY
         from transport.host import HostClient
@@ -28,6 +70,8 @@ class Town:
         if run_genesis:
             self.made, self.refusal = genesis.run(self.client)
             assert self.refusal is None and all(m["status"] in ("created", "admitted") for m in self.made), (self.refusal, self.made)
+            if furnished:
+                self.made += furnish(self.client, self.opener)
 
     def send(self, **request):
         return self.client.send(request)

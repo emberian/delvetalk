@@ -42,6 +42,11 @@ def words(text: String) -> Lists.List<String>:
   wordsFrom(trimStart(text))
 def wordsFrom(text: String) -> Lists.List<String>:
   if text == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(text, textBreak(text, blanks())), tail: words(textDrop(text, textBreak(text, blanks())))})
+# A text as a clause's name (an identifier): each character outside letters, digits and `_` as `_`
+# (`garden/weather/2` is `garden_weather_2`).
+def identifier(text: String) -> String:
+  let kept = textSpan(text, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+  if kept == textLength(text) then text else "{textTake(text, kept)}_{identifier(textDrop(text, kept + 1n))}"
 def joined(names: Lists.List<String>) -> String:
   textJoin(names, ", ")
 # A natural in plain digits (no sign, no leading zero, at most 18 digits), or no.

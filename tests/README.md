@@ -53,7 +53,7 @@ The compiler, the evaluator and the canonical codec, on one stateless process: w
 
 One Lean process per world: the store, the journal, turns, Plans and laws, through `world-*` ops on a fresh journal per test.
 
-- `test_arrive` (§3 Context): An arrival records a principal's handle and creates their Avatar, Env and Wake from the world's library, owned by their DID, once.
+- `test_arrive` (§3 Context): An arrival records a principal's handle and creates their Avatar from the world's library, owned by their DID, once.
 - `test_authority` (§3, §4): A write changes only the running object; a change to another object is a call its own law judges, and the law sees who called.
 - `test_await` (§3): Objects are born in turns by create, and a turn suspended on another turn's receipt or a post resumes when it lands, times out by the clock, and survives restart.
 - `test_call_reading` (§3): A refused `call` carries the refusal's reading, so a directory handing a reply on can say why.
@@ -113,7 +113,7 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_laws` (§4): The world's objects carry their laws in source: only owners change directories and admit anthology lines, and Tide's and Wake's predicates refuse what their code would.
 - `test_kinds` (§8 extend): `kinds` makes a kind, a kind makes an instance of its package under its law, and a kind with a body grafts it on each instance.
 - `test_lenses` (§5 Spell grammar): An object's exposed fields are lenses: `set` writes one through its kind and its owner, `?` lists every form and lens.
-- `test_mailbox` (§8 claims): An avatar subscribes to an object and is told of its news; its principal's send reaches up to 32 observers, and the inbox keeps the newest 64.
+- `test_mailbox` (§8 claims): A post that mentions an avatar's resident is a note from its author and offers nothing; the principal marks the entry it has read through; the inbox keeps the newest 64.
 - `test_objects` (§5): The library holds one Context and no dynamic universe; objects claim the Plans they perform; cards render in under 1,400 characters at their fullest.
 - `test_rooms` (§8 MUD floor): Rooms, things and avatars are ordinary objects (a room is a record with the room's body, world/bodies/room.obend): entering, leaving, choosing, talking, taking and putting down, offering and accepting, scoped commands and copies, each refused by name where it should be.
 - `test_policy` (§6): The interpretation policy is an object its owner teaches; prose to the garden suspends on it, and the model's answer plants, asks first, or is refused by name.
@@ -125,7 +125,6 @@ One Lean process per world: the store, the journal, turns, Plans and laws, throu
 - `test_strangers` (§4): The review's objects findings 1 to 8: a stranger's proposed write, reprogram or amendment does none of what the object's own methods refuse them.
 - `test_table` (§3): Automatafl on commit-reveal seats: one opening round played through the host resolves to the qualified game's own result.
 - `test_views` (§8 render): Render with a point of view: the same state shows its owner, its parties and a stranger different cards, and names people by handle.
-- `test_wakes` (§8 claims): Env, Wake and Tide, the cards the town designed: senses owned by their DID, triggers only their owner changes, a tide never too soon.
 - `test_workshop` (§8 forge): The workshop checks a fenced block or a target's source and offers diagnostics; a clean proposal reprograms the target under the target's own law.
 
 ## Transport

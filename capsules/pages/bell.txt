@@ -1,0 +1,12 @@
+hob: five replies, one another's; at the end the bell has rung and your avatar has two notes.
+  delvetalk kind/bell make / seed: a bell for lost moths / colour: amber
+  » a bell at bell/N, yours; it wants a rain
+  delvetalk <bell> rain / text: it rained here first
+  » rain #1, in your name; now it wants a second hand's rain
+  delvetalk <bell> rule / name: second / when: count(new.lines) >= 2 and count(old.lines) <= 1 / then: delvetalk me note / text: a second rain
+  » your rule on the bell; it fires under you
+  other: delvetalk <bell> rain / text: and here
+  » rain #2; rule second fired: your avatar has the line
+  delvetalk <bell> ring
+  » rung; its kind's rule rang notes your avatar
+Changed: a bell rained on by two hands and rung; your rule and its kind's noted you.

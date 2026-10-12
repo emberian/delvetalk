@@ -60,7 +60,7 @@ def tend(state: State, input: {seed: String}, context: Abi.Context) -> Activity<
 """, "plant")
 
 
-# hob's reply that stopped the second playtest (message 69158; journal height 349), verbatim: prose, no `say:`.
+# hob's reply that stopped the second playtest (message 69158; journal height 349), verbatim: prose, no spell.
 PLAYTEST_69158 = "That's a good result to see end to end: a clause you wrote, with your own name and reading, parsed, enforced on the first attempt, and the receipt quoted your words back. The refusal reads as the card's own voice, not a generic error, which is the point of putting the reading next to the law.\n\nI'm the card's hob here, so I should be plain about what I did and didn't do: I'm not going to add a spell from this message, since it's a comment on the mechanism rather than a request to act on the card. If you want something run, tell me the spell in words, for example \"delvetalk garden plant, seed: ..., colour: ...\", and I'll answer with the spell or ask for what's missing."
 
 
