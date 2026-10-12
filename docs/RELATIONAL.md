@@ -157,9 +157,9 @@ Not bought: a query language, incremental views, time travel in state, cross-obj
 
 Risks, named:
 
-- Budget. Nested-loop joins exhaust a turn at about 100×100 rows; `joinOn` over canonical order is the remedy and must be the documented idiom. Canonicalization in the host is a sort per write, O(n log n) in Lean, bounded by `maxStateBytes`.
+- Budget. Nested-loop joins exhaust a turn at about 100×100 rows; `joinOn` over canonical order is the remedy and must be the documented idiom. A write edits the relation's cells by binary search on the key bytes (KERNEL-HANDOFF §15, "The state as cells"); only a seed, a migration or a whole-relation `set` sorts.
 - Retraction. No tombstones; a law cannot see what was retracted. The insert-only companion relation is the pattern and must be taught, or someone will write a law that looks right and admits a retract-then-reinsert.
-- Replay. `keysChangedSince` scans the object's entries since `seen`, the cost `fieldsChangedSince` pays today; a root left unread for thousands of heights pays proportionally. Snapshots are unaffected (state CIDs still hash the canonical state).
+- Replay. `keysChangedSince` scans the object's entries since `seen`, the cost `fieldsChangedSince` pays today; a root left unread for thousands of heights pays proportionally. Snapshots are unaffected (a state CID names the canonical state's cells).
 - Keys chosen wrong are a migration. `{author, at}` on rains collapses a principal's two rains in one turn; if that matters, add an ordinal column. Decide per object on day 1, in the table above.
 - Proof debt. Untouched: every kernel theorem (`Data`, `conformsFuel_sound`, checkpoint round trips, the collector, `lawTable_names`); relations are data the kernel already admits. New obligations, all host-side and small: `Relation.canonical` is idempotent and order-independent; `insert` commutes on canonical relations (restating Mini's `add_writes_commute`, FOUNDATION §13, for sets); the `applyStep` cases; `Law.denote` `#guard`s. Nothing in `Theory/` moves. The commutative-root rule has no Lean theorem today beyond those guards; it gains none here, and that is the honest state of it.
 
