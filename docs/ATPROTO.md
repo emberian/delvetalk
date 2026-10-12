@@ -9,10 +9,12 @@ section ends with its decision.
 **Ground.** DelveTalk's repository, `did:web:gsb.fg-goose.online` (docs/REPO.md): one signed commit per journal
 height over an MST of `town.delvetalk.entry/<rev>`, plus façade collections (`receipt`, `object`, `source`, `law`,
 `grant`, `publication`; since lane/posting `card`, `page`, `index`); getRepo, `since` and listRecords work for a
-carried journal (74cc83a8); subscribeRepos is 501. The posting account on pds.delve.town is
-`claude-of-tulip.delve.town` (`did:plc:oq2mrkwsuts7dqbkqqm2ntiz`, the handle in the posting credential);
-`python3 -m transport mirror` puts `town.delvetalk.card`, `.page` and `.index/self` there by putRecord/deleteRecord,
-no feed post (POSTING §1). In progress on lane/posting: `world-try` (the commit with the write switched off: exact
+carried journal (74cc83a8); subscribeRepos is 501. The posting account on pds.delve.town is the
+owner's, `ember.delve.town` (`did:plc:6amo7col5h4ciq2gpm5eur7b`, the handle in the posting credential, which the
+owner configures and the repository never holds): the town's replies go out through it, and its address, the one
+residents mention, is the fictional `@livedelvetalk.delve.town`, matched as text (`summon_handle`). `python3 -m
+transport mirror` would put `town.delvetalk.card`, `.page` and `.index/self` there by putRecord/deleteRecord, no feed
+post (POSTING §1); it is built and not running: the owner has not approved it, and it runs dry unless authorized. In progress on lane/posting: `world-try` (the commit with the write switched off: exact
 card bytes, roots read with versions, each written object's new stateCid) and `if: [{object, version}]` on any turn,
 refused `moved` with `[{object, was, now}]`.
 
@@ -75,7 +77,7 @@ rotation; `#sync` when a rotation or carry re-signs the chain. `cursor` replays 
 are recomputed from the journal. Revs stay `TID(clock minute × 6·10⁷ + height)`; the world's clock trails wall time,
 so no rev is in the future, which [sync] tells consumers to reject.
 
-**Mirrored on delve.town.** `mirror.py` writes the same records into the posting account, adding `answer`, `paint`,
+**Mirrored on delve.town (built, not running).** `mirror.py`, once the owner authorizes it, writes the same records into the posting account, adding `answer`, `paint`,
 `verb`, `chronicle`, `book`, `door`. A resident's mirror (listRepos, then listRecords or getRepo) then holds the town
 as it holds everyone's posts. The mirror cannot prove the bytes are the host's; the cross-check is the CID, equal in
 both repositories for every journal-derived record, and the `index` naming the signed head `{did, rev, commit}`.
@@ -88,26 +90,39 @@ copies the same bytes and names the signed head.
 
 **(a) Records in the resident's own repository: public acts only.** Anyone who can `createRecord` can act:
 
-    at://did:plc:corf…/town.delvetalk.request/3mxq…   {mode: "act", calls: [{spell: "delvetalk bell/2 rain\ntext: …"}],
+    at://did:plc:corf…/town.delvetalk.request/3mxq…   {service: "did:web:gsb.fg-goose.online", mode: "act",
+                                                       calls: [{spell: "delvetalk bell/2 rain\ntext: …"}],
                                                        if: [{object: "bell/2", version: 4}], createdAt}
 
-`mode` is `act` (one call, one turn) or `plan` (up to eight calls judged as one turn, all or nothing; a host turn not
-yet built, answered `unsupported` until then). A call is a spell's text or `{object, verb, fields}`, the front's
-`_actions` form. The request is public from the moment it is written and stays copied after deletion, so there is no
+`service` is the DID of the DelveTalk host it is addressed to, required: a request is run only by that service and only
+by the bridge of its `world` (default the town), so two deployments watching one repository never both run it. A request
+created before the world began observing (its `since`, set at the bridge's first start) is never run, so a new
+consumer does not execute years-old requests. `mode` is `act` (one call, one turn) or `plan` (up to eight calls judged
+as one turn, all or nothing: spells only, run as the host's `delvetalk plan` with each spell after it, one receipt). A
+call is a spell's text or `{object, verb, fields}`, the front's `_actions` form. The request is public from the moment it is written and stays copied after deletion, so there is no
 `try` mode: a preview by record would publish the draft it previews.
 
-*Seeing it.* pds.delve.town's firehose is gated, so a poller pages `listRepos` (public, about 300 repos, one call)
-every 15 s and, for each repo whose `rev` moved, `listRecords collection=town.delvetalk.request reverse=true` past
-the last rkey answered. If delve grants a subscribeRepos credential (deepfates' to give), the same consumer reads
-`#commit` ops instead.
+*Seeing it* (built, `transport/requests.py`). pds.delve.town's firehose is gated, so the bridge's observer pages
+`listRepos` (public, one call) at each step and, for each repo whose `rev` moved, lists its whole request collection
+and takes every record not yet consumed (an observation by uri) or refused at that CID. Record keys are not an
+insertion order (a resident may write an older TID, or fix a request below one already read), so there is no key
+watermark; the rev is only a skip. A request must stay in its repository until its answer is written: one created and
+deleted between two polls is never seen, and that is the author's to avoid. If delve grants a subscribeRepos
+credential (deepfates' to give), the same consumer reads `#commit` ops instead.
 
 *Authenticity.* The bridge treats observed post authors as UNVERIFIED (`bridge.py`). A request is fetched by
 `com.atproto.sync.getRecord`: the signed commit and the MST path. The transport checks the signature against the
-DID document's `#atproto` key (plc.directory, as `oauth.py` resolves) and the path to the record's CID; a record that
-fails is no turn. The first act in the town whose author is proven, not observed.
+DID document's `#atproto` key (did:plc from plc.directory; a hostname-level did:web from its host, refused unless the
+host resolves only to global addresses) and the path to the record's CID (`mst.find`); a record that fails is no turn,
+and its uri and CID are kept as refused. The proof is read from the PDS the DID document names now, and only when that
+is the PDS polled: a repository that moved away is not read from its old host, whose copy may be stale (a reader of
+other PDSes is §8's). The first act in the town whose author is proven, not observed.
 
-*Identity.* The turn's identity is `(did, at-uri)`: a second read answers the first receipt; a recreated request is a
-new rkey and a new intent; a `putRecord` over an answered request is not re-run (the answer names the CID it answered).
+*Identity.* The turn's identity is `(did, at-uri)`, the same machinery as a post's spell: the observation is the
+post's, `world-reach` finds the spell's card, `world-turn` runs it with `identity` the at-uri (a verb call goes to its
+object with its fields, as the front's `_actions`). A second read answers the first receipt; a recreated request is a
+new rkey and a new intent; a uri is consumed once, under the first CID proven, so a `putRecord` over an answered request
+is not re-run (the answer names the CID it answered).
 
 *Commit-if-unchanged.* `if: [{object, version, cid?}]` is the host's `if` verbatim, refused `moved` with `[{object,
 was, now}]`; `cid`, when given, is the object's `stateCid` at that version, checked too. A strongRef to a `card`
@@ -117,10 +132,17 @@ moves at every tick.
 
 *The answer.* `town.delvetalk.answer/<did>.<rkey>` (DIDs and TIDs are record-key characters): `request` (strongRef),
 `outcome {status, line, class?, clause?, reason?, moved?}`, `receipt {slug, height, entry}` (`entry` a cid-link),
-`card` (the exact bytes offered), `cardCid` (the CID of the `card` record they make), `offers`, and `trace {roots,
-writes [{object, version, stateCid}], fired, wanted, unwanted, revealed}` over objects the public may view. It is
-journal-derived (the entry whose intent is the request URI), so it is in that height's signed commit, and the
-mirror copies it where the resident's window reaches. The entry's whole bytes are the principal's (FOUNDATION §2):
+`offers`, and `trace {roots, writes [{object, version, stateCid}], revealed}`, and for a call of several spells
+`turns`, one answerView each. It is the anonymous reader's projection, never the caller's: offers and trace only when
+everything the turn read and wrote is public (the host's `inPublic`, the rule a post's draft follows), a refusal's words
+only from the host's `public` projection, a `moved` object's versions only when the public views it; otherwise the
+line is `admitted, entry N, receipt <slug>` and the receipt. A request that names no card is answered `unreached`, a
+malformed one (an act of more than one call, a plan of a verb call, a spell and an object together) `invalid` with why; a `try`, another service's or world's, and one from before `since` get no
+answer. `card` and `cardCid` wait for the paint split (L3), until which a card record's CID moves with its paint.
+Built (L1): the bridge writes it at the turn (`bridge.answer_turn`; a turn hob holds is answered when it settles) to
+`<state>/worlds/<world>/answers/`, the façade serves it and the mirror copies the same JSON, so its CID is one in both
+repositories (the PDS hashes `{$link}` as a link, as `cbor.from_json` does). In L3 it joins that height's signed
+commit. The entry's whole bytes are the principal's (FOUNDATION §2):
 `town.delvetalk.getEntry` returns them as a CAR rooted at the entry's CID to a service-auth `iss` that is the
 entry's principal. A post is the optional witness (`witness: true`, inside `postQuota`); default off.
 
@@ -268,14 +290,14 @@ public is a record; every act is a record or an XRPC call.
 
 | # | Lane | Work | Control |
 | --- | --- | --- | --- |
-| L1 | transport | **first slice**: the `requests` poller (listRepos rev diff, listRecords, sync.getRecord with signature and path checked); identity `(did, at-uri)`; `if` passed through; `answer` records by the mirror's writer and the façade | fixture Delve: a request gives one entry with intent = its URI and one `answer`; read twice, one entry; a commit signed by another key, no turn; stale `if`, `moved` with was/now; `mode: try`, refused with no entry and no answer |
+| L1 | transport | **first slice**: the `requests` poller (listRepos rev diff, listRecords, sync.getRecord with signature and path checked); identity `(did, at-uri)`; `if` passed through; `answer` records by the mirror's writer and the façade | fixture Delve: a request gives one entry with intent = its URI and one `answer`; read twice, one entry; a commit signed by another key, no turn; stale `if`, `moved` with was/now; `mode: try`, refused with no entry and no answer. **Built** (`tests/test_requests.py`), every control on a real host; a `delvetalk try` spell by record is likewise never answered |
 | L2 | docs, transport | lexicon test; `delvetalk.town`, TXT, schema records (owner) | every emitted record validates; `_lexicon.delvetalk.town` resolves |
 | L3 | host, transport | `world-projection`; MST `put`/`delete`; per-height ops; paint split | `goat` or @atproto/repo verifies getRepo; CIDs equal in both repositories; a restart re-derives a byte-identical head |
 | L4 | transport | subscribeRepos, cursor, `#identity`, `#sync` | a consumer inverting over `prevData` follows 1,000 heights, resumes from a cursor; workers free under ten subscribers |
 | L5 | transport | service-auth verifier; `#delvetalk` in did.json; `act`, `try`, `plan`, `getEntry` | wrong `aud`, `lxm`, past `exp`, reused `jti`, high-S: 401; the posting account's getServiceAuth token: admitted; through pds.delve.town's proxy: admitted (live, owner's word) |
 | L6 | host, transport | sessions: `readers`, `shareSession`, `openSession`, `getSession`, `listSessionRecords`, acts with `world` | unnamed DID: 403, nothing returned; named reader: the records; the mirror ledger, getRepo CAR and access log never hold session contents; after expiry, refused, and the town's cited CID still matches |
-| L7 | ops, transport, host | wildcard DNS and certificates; hosted did:web for guests and Zulip; `link`; REPO and FEDERATION's path-based DIDs corrected | a guest's request in its hosted repo admits as that DID; a Zulip message becomes a request in the user's repo |
-| L8 | host | `plan` as one turn | three calls, the third refused: nothing written, one receipt |
+| L7 | ops, transport, host | wildcard DNS and certificates; hosted did:web for guests and Zulip; `link`; each world's hostname resolving | a guest's request in its hosted repo admits as that DID; a Zulip message becomes a request in the user's repo |
+| L8 | host | `plan` as one turn (built, lane/plan; by record since L1) | three calls, the third refused: nothing written, one receipt |
 
 L1 ∥ L2 ∥ L5 (L5 is what gives a PDS-only resident `try`); L3 after L1; L4 after L3; L6 after L5; L7 after L5; L8 any
 time. Each lane commits named files and keeps `make check`'s narrow targets green.
@@ -283,15 +305,47 @@ time. Each lane commits named files and keeps `make check`'s narrow targets gree
 **The first slice is L1, on what lane/posting built.** selene's mirror can read the town now: the posting account
 holds every card, page and the index, and her mirror walks it with listRecords like any repo (the owner's step: run
 `mirror` authorized). L1 adds acting: a resident writes `town.delvetalk.request` in their own repo, the poller proves
-and runs it, and the answer (exact card, its CID, the entry CID, the trace) appears as
+and runs it, and the answer (the receipt with its entry CID, and the offers and trace when all of it is public) appears as
 `town.delvetalk.answer/<did>.<rkey>` in the account their mirror already reads. No post, no HTTP beyond their PDS, no
 credential; the request and answer are public, as §3's table says, and looking first waits for `try` by XRPC (L5).
 The live test is the owner's account writing one request; it writes to delve, so it waits for his word.
 
-**Findings for other lanes.** `observe.py`'s `SUMMON_HANDLE`, `livedelvetalk.delve.town`, resolves `HandleNotFound`
-on pds.delve.town; the posting account is `claude-of-tulip.delve.town`. REPO and FEDERATION §1/§7 name path-based
-did:web DIDs, which atproto rejects. `delvetalk.town` and `delvetalk.org` are unregistered. Nothing reads the clerk's
+**Findings for other lanes.** `observe.py` summoned `livedelvetalk.delve.town`, which resolves `HandleNotFound` on
+pds.delve.town; the summoned handle is the config field `summon_handle`. The owner's decision (2026-10-12): it stays
+`livedelvetalk.delve.town`, a fictional address matched as the post's text, never resolved to a DID, while the
+replies go out through the owner's account (`credentials`); the two need not be one account. REPO and FEDERATION §7 named path-based
+did:web DIDs, which atproto rejects; each world is now `did:web:<world>.<host>` (`repo.world_origin`). `delvetalk.town` and `delvetalk.org` are unregistered. Nothing reads the clerk's
 `org.delvetalk.*` records; they stay until the owner says.
 
 **Decision:** L1 first; L3 and L4 make our repository the full signed record; L5 serves agents with HTTP and through
 the PDS proxy; L6 gives hidden sessions; the owner registers `delvetalk.town` and gives the word for live probes.
+
+## 8. The review of 2026-10-12, decided
+
+docs/review/astra-2026-10-12/atproto.md, each finding checked against the code and the cited spec. Fixed in L1:
+
+| # | Finding | Decision |
+| --- | --- | --- |
+| 1 | requests bound to no service; old requests replayable | fixed: `service` (our DID) required, `world` matched by the bridge, `createdAt` before the world's `since` never run; a uri consumed once under its first proven CID |
+| 2 | the answer discloses what only the caller reads | fixed: the answer is the anonymous projection (§2 "The answer"); `answerView` stays the shape of an authenticated XRPC response (L5) |
+| 6 | three lexicons nest objects inline | fixed: `card#door`, `openSession#fork`, `listSessionRecords#sessionRecord`; `tests/test_lexicons.py` checks every document and every answer the bridge writes |
+| 7 | a key watermark loses requests | fixed: a moved rev re-reads the whole collection; consumed and refused are kept by uri and CID, apart from scan progress; a request stays until answered |
+| 8 | discovery tied to one PDS and DID method | in part: did:plc and hostname-level did:web resolve; a proof is read only from the PDS the document names now. Next (L4 lane): a registry of participant DIDs, each read at its own PDS, so a resident who moves keeps acting |
+
+For the next slices, each with its decision:
+
+| # | Finding | Decision | Lane |
+| --- | --- | --- | --- |
+| 3 | OAuth discovery reaches internal addresses | accepted: `oauth.py`'s discovered URLs go through the global-address check `delve.Client.did_document` now applies to did:web hosts, and the connection is made to the address checked (today's check leaves DNS rebinding between check and connect) | L5 |
+| 4 | carry and key rotation break rev continuity | accepted: a durable rev floor kept beside the key (the last rev served); a carried journal's first commit and every commit after a rotation take revs above it, rotation re-signing the same MST root under a new, higher rev and announcing `#sync` | L3 |
+| 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | accepted: `receipt`, `object`, `source`, `grant`, `publication`, `law` move to `town.delvetalk.getEntry`/`getObject`/… procedures; `com.atproto.repo.*` and `sync.*` keep only records whose `cid` is their value's (entry, and the mirrored collections, whose CID is the value's since L1) | L3 |
+| 9 | the bare-audience exception cannot know the forwarder | accepted: no forwarder-based exception. `aud` is our DID with `#delvetalk` or bare (both name only us; `lxm` binds the method), `typ` `JWT`, `iat` not in the future, `exp` within five minutes, `jti` once | L5 |
+| 10 | height cannot be the firehose `seq` | accepted: an endpoint-wide durable event log with its own `seq`, a stated backfill window, `OutdatedCursor`/`FutureCursor` | L4 |
+| 11 | one commit event per height can overflow | accepted: events budgeted under 200 ops and 2,000,000 bytes, `#sync` and resync past that, `rebase: false` sent, proofs built and tested for inversion of updates and deletes | L4 |
+| 12 | the signed index naming its own head is a cycle | accepted: the signed `index` names no head; the mirror writes a `town.delvetalk.checkpoint/self` of its own naming the source commit it copied from | L3 |
+| 13 | proxied sessions are visible to the resident's PDS | accepted: §3's table counts the resident's PDS inside the trust boundary of every proxied call; privacy from it needs a direct call | L6 |
+| 14 | equal CIDs do not make strongRefs portable | accepted: the canonical URI of a journal-derived record is the did:web repository's; the mirror's index maps it; a strongRef names the canonical URI; versions a book or paint cites are kept under versioned keys | L3 |
+| 15 | sessions have no unambiguous address | accepted: `openSession` returns an opaque id binding holder and incarnation, used by every call; read, act, share and publish permissions separate, the host's | L6 |
+| 16 | XRPC acts cannot make request-keyed answers | accepted: an XRPC act's public answer is keyed `xrpc.<did>.<sha-256 of intent, 26 base32>`, its provenance `{iss, intent}` in place of `request` | L5 |
+| 17 | constraints only in prose | in part: the bridge answers a malformed request `invalid` with why (one call an act, spells only a plan, a spell or an object with its verb); next, discriminated call unions, byte and count budgets per record, previews structurally apart from receipts | L2 |
+| 18 | labels on the canonical record do not reach the copy | accepted: moderation subjects are the canonical URIs; the mirror's index names the mapping; copies get no labels of their own | L2 |

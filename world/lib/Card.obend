@@ -110,7 +110,11 @@ def post() -> Nat:
 def receipt(object: String) -> Nat:
   2n * textLength(object) + 120n
 def limit(context: Abi.Context) -> Nat:
-  if receipt(context.object) >= post() then 0n else post() - receipt(context.object)
+  if context.inputOrigin.kind == "whole" then whole() else if receipt(context.object) >= post() then 0n else post() - receipt(context.object)
+# A card rendered whole (the host's `world-card {whole}`, a read's `whole`) has no limit: a transport that threads a
+# long text into parts (transport/post.py `parts`) cuts it itself.
+def whole() -> Nat:
+  1000000000n
 def left(context: Abi.Context, used: Nat) -> Nat:
   if used >= limit(context) then 0n else limit(context) - used
 def clipped(lines: Document.Documents, shown: Nat) -> Document.Documents:
@@ -291,3 +295,31 @@ def publishPage(word: String, page: Page) -> Activity<String>:
   match world.publish({page: word, section: "", body: pageText(page)}):
     case published(p): p.post
     case refused(r): r.clause
+# A read's pages (the book, the history, the map; docs/VOICE.md): its lines, each ending "\n", as pages of whole
+# lines within `room` characters, a line longer than the room cut to it; at least one page. The first page is
+# what a reply carries; each further one is its own spell's answer, so a thread reads them in turn.
+type Pages = Lists.List<Lists.List<String>>
+def paged(lines: Lists.List<String>, room: Nat) -> Pages:
+  Lists.reverse(pagesOnto(lines, room, Lists.List.nil(), 0n, Lists.List.nil()))
+def pagesOnto(lines: Lists.List<String>, room: Nat, page: Lists.List<String>, used: Nat, done: Pages) -> Pages:
+  match lines:
+    case nil(_): Lists.List.cons({head: Lists.reverse(page), tail: done})
+    case cons(c): pageLine(textTake(c.head, room), c.tail, room, page, used, done)
+def pageLine(line: String, rest: Lists.List<String>, room: Nat, page: Lists.List<String>, used: Nat, done: Pages) -> Pages:
+  if used + textLength(line) > room && Lists.length(page) > 0n then pagesOnto(rest, room, Lists.List.cons({head: line, tail: Lists.List.nil()}), textLength(line), Lists.List.cons({head: Lists.reverse(page), tail: done})) else pagesOnto(rest, room, Lists.List.cons({head: line, tail: page}), used + textLength(line), done)
+# Page `n` (from 1) of `pages`, and the line under it: `Page 2 of 3.` and the next page's spell (`next`, the
+# spell without its page field) while one follows; a page past the last is the last. Page 0 is every page, whole.
+def pageOf(pages: Pages, n: Nat, next: String) -> Document.Document:
+  let count = Lists.length(pages)
+  if n == 0n then Document.text(textJoin(Lists.map(pages, fn(p: Lists.List<String>) -> String: textJoin(p, "")), "")) else pageShown(pages, if n > count then count else n, count, next)
+def pageShown(pages: Pages, shown: Nat, count: Nat, next: String) -> Document.Document:
+  let body = textJoin(pageAt(pages, shown), "")
+  let foot = if count < 2n then "" else if shown < count then "Page {natText(shown)} of {natText(count)}; the next: {next} / page: {natText(shown + 1n)}\n" else "Page {natText(shown)} of {natText(count)}.\n"
+  Document.text("{body}{foot}")
+def pageAt(pages: Pages, n: Nat) -> Lists.List<String>:
+  match Lists.at(pages, n - 1n):
+    case some(p): p.value
+    case none(_): Lists.List.nil()
+# A line's words cut to `n` characters, "…" marking the cut.
+def cut(text: String, n: Nat) -> String:
+  if textLength(text) > n then "{textTake(text, n - 1n)}…" else text

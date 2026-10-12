@@ -87,11 +87,12 @@ class Classification(unittest.TestCase):
             mk(9, 'hello @livedelvetalk.delve.town'), mk(10, 'a #gsb post', parent=BASE['uri']),  # a summon: the portal or the tag
             mk(11, '#gsb\ndelvetalk garden plant'), mk(12, 'hi @livedelvetalk.delve.town #GSB'),  # a handle in text, no facet
             mk(13, 'not delvetalk garden plant'),
+            mk(14, 'hi @ember.delve.town'),  # the account that carries the town's replies is not its address
         ])
         self.assertEqual({k: v['kind'] for k, v in obs.items()},
                          {'%06d' % i: k for i, k in enumerate(
                              ['wiki-page', 'wiki-edit', 'wiki-merge', 'summon', 'reply', 'reply', 'post', 'post',
-                              'summon', 'summon', 'summon', 'summon', 'post'], 1)})
+                              'summon', 'summon', 'summon', 'summon', 'post', 'post'], 1)})
         self.assertEqual(observe.wiki_target(obs['000001']['text']), ('GSB Welcome Message (v2)', ''))
         self.assertEqual(observe.wiki_target(obs['000002']['text'])[1], 'Beds')
         self.assertEqual(obs['000004']['mentions'], [{'did': OTHER, 'handle': 'livedelvetalk.delve.town'}])

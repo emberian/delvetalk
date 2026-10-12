@@ -1,4 +1,6 @@
-"""Observed posts -> host turns -> reply drafts for a human to post (`python3 -m transport bridge`).
+"""Observed posts -> host turns -> reply drafts for a human to post (`python3 -m transport bridge`); observed request
+records (transport/requests.py) -> the same turns -> `town.delvetalk.answer` records, which the façade serves (the
+mirror would copy them; it is built and not running).
 
 Never posts to delve.town: `post` is the only writer there. A world whose bridge row is a Zulip channel, the owner's own,
 has its drafts posted by transport/zulip.py. Principals here are the observed authors' DIDs, which are UNVERIFIED.
@@ -10,11 +12,14 @@ import urllib.parse
 import time
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.host import CLOCK, PUBLIC, paged, painted
+from transport.host import CLOCK, PUBLIC, paged, painted, typed
 from transport import observe
 from transport.observe import Observer
 
 DELIVER_ROUNDS = 8
+TELLING_LINES = 8  # the exact lines an unpainted telling before arrival leads a post with, the newest
+TELLING_LINE = 120  # each of them at most, clipped
+TELLING_CLIP = 700  # the telling a post leads with, at most: half of what one post holds (post.CLIP)
 
 
 def uri_hash(uri):
@@ -127,17 +132,48 @@ def with_paint(host, obj, text, sleep=None):
     return f'{paint.rstrip()}\n\n{text}' if paint and len(paint.rstrip()) + 2 + len(text) <= CLIP else text
 
 
+def telling_lead(told):
+    """A place's telling as a post leads with it (docs/VOICE.md "A telling"), as `/play` shows it: the host's frame above
+    the paint; unpainted before arrival, the frame above the exact lines it draws on (its making, then the newest
+    TELLING_LINES, how many earlier counted, each at most TELLING_LINE, the whole within TELLING_CLIP, so the reply's own
+    text starts in the post the telling leads when `post.parts` threads it); unpainted while away, nothing, the reply's
+    own "While you were away" lead holding the exact lines. Then a blank line."""
+    t = (told or {}).get('telling')
+    if not t:
+        return ''
+    if (told.get('text') or '').strip():
+        return f"{t['frame']}\n{told['text'].strip()}\n\n"
+    exact = t.get('exact') or []
+    if t.get('form') != 'before' or not exact:
+        return ''
+    clip = lambda line: line if len(line) <= TELLING_LINE else line[:TELLING_LINE - 1] + '…'  # noqa: E731
+    head = [clip(exact[0])] if exact[0].startswith('made by ') else []
+    rest = [clip(x) for x in exact[len(head):]]
+    shown = rest[-TELLING_LINES:]
+    while True:
+        earlier = [f'… and {len(rest) - len(shown)} earlier'] if len(rest) > len(shown) else []
+        text = f"{t['frame']}\n" + '\n'.join(head + earlier + shown) + '\n\n'
+        if len(text) <= TELLING_CLIP or not shown:
+            return text
+        shown = shown[1:]
+
+
 def with_telling(host, principal, reply, obj, text, sleep=None):
-    """`text` with the place's telling above it when the turn entered the place (`result` `entered`): the host's frame
-    ("Before you arrived", "While you were away") and the verified paint of what happened there, as the front shows
-    it on `/play` (docs/VOICE.md "A telling"), when painted and it fits one post with the rest; else `text`."""
-    from transport.post import CLIP
-    if reply.get('status') != 'admitted' or (reply.get('result') or {}).get('label') != 'entered' or not text:
-        return text
-    told = painted(host, principal, obj, sleep or time.sleep, telling={})
-    frame, paint = ((told.get('telling') or {}).get('frame') or '').strip(), (told.get('text') or '').strip()
-    block = f'{frame}\n{paint}' if frame and paint else paint
-    return f'{block}\n\n{text}' if paint and len(block) + 2 + len(text) <= CLIP else text
+    """`text` led by the place's telling when the turn entered the place (an admitted `enter`, `result` `entered`) and its
+    draft is the reply itself, not its receipt line alone (`inPublic`), for `principal` who entered (`world-render
+    {telling}`, waiting the host's patience for the paint), as `telling_lead` sets it; else `text`. -> (the text, the
+    telling's characters at its head, 0 for none), which a draft notes as `told` for whoever posts or threads it. A
+    receipt never carries it."""
+    obj = reply.get('object') or obj
+    if reply.get('status') != 'admitted' or (reply.get('result') or {}).get('label') != 'entered' or not reply.get('inPublic') or not obj or not text:
+        return text, 0
+    lead = telling_lead(painted(host, principal, obj, sleep or time.sleep, telling={}))
+    return lead + text, len(lead)
+
+
+def told_field(told):
+    """A draft's note of the telling at its head: `told: <its characters>`, or nothing."""
+    return {'told': told} if told else {}
 
 
 def first_move(st, did, reply, text):
@@ -155,6 +191,17 @@ def first_move(st, did, reply, text):
     return f'{head}\n{line}{last}\n' if head and last.startswith('●') else line + text  # the receipt's line stays the last
 
 
+def read_text(host, principal, reply, sleep=time.sleep):
+    """A usage reply's draft: its text (`draft_text`), and for a read the host says a day paints (the chronicle's
+    `paint {day}`), that day's verified paint above it when there is one within the host's patience (docs/VOICE.md "The
+    book, the history, the map"); the exact lines alone otherwise."""
+    text = draft_text(reply)
+    if not isinstance(reply.get('paint'), dict):
+        return text
+    paint = painted(host, principal, None, sleep, **reply['paint']).get('text')
+    return f"{paint}\n\n{text}" if paint else text
+
+
 def draft_public(reply, origin=None, addressed=None, handles=None):
     """`draft_text`, or for an admitted turn that read or wrote what the public may not read (the host's `inPublic`: a
     post is read by everyone), its receipt line."""
@@ -170,8 +217,8 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     receipt's name; no state, hash or CID. A usage answer is the host's text. An admitted reply carries the exact card
     (the paint above it is `with_paint`'s, which needs the host); one that offered nothing but changed something, its
     revealed lines and receipt line."""
-    if reply.get('status') == 'usage':
-        return str(reply.get('text', ''))
+    if reply.get('status') == 'usage':  # a read's every page as one text (`whole`), which the poster threads into parts
+        return str(reply.get('whole') or reply.get('text', ''))
     receipt = reply['receipt']
     outcome = receipt.get('outcome', {})
     if reply.get('status') == 'refused' or outcome.get('tag') == 'refused':
@@ -190,6 +237,74 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     if outcome.get('writes') and not receipt.get('sends'):  # it changed something and handed nothing on: its receipt answers
         return revealed_lines(reply) + receipt_line(receipt, origin, addressed, handles)
     return ''  # nothing changed and nothing offered: silence
+
+
+ANSWER = 'town.delvetalk.answer'
+
+
+def answer_path(st, uri):
+    """`<did>.<rkey>.json`: the answer's record key, DIDs and TIDs being record-key characters."""
+    did, _, rkey = uri.removeprefix('at://').partition('/')
+    return st.answers / f"{did}.{rkey.rsplit('/', 1)[-1]}.json"
+
+
+def public_view(host, reply):
+    """What the anonymous reader may read of a turn reply (an answerView, lexicons/town/delvetalk/defs.json): the line,
+    receipt and, only when everything the turn read and wrote is public (the host's `inPublic`), its offers and trace; a
+    refusal's words only from the host's `public` projection; a `moved` object's versions only when the public views it."""
+    if reply.get('class') == 'moved':
+        public = [m for m in reply.get('moved') or []
+                  if host.send({'op': 'world-view', 'principal': PUBLIC, 'object': m.get('object')}).get('status') == 'viewed']
+        line = reply.get('line') if len(public) == len(reply.get('moved') or []) else 'refused moved'
+        return {'outcome': {'status': 'moved', 'line': line, 'moved': public}}
+    if reply.get('status') == 'usage':
+        return {'outcome': {'status': 'usage', 'line': "a `?` or a read is its reader's, not by request: a card's spells are its own record's "
+                                                       "(town.delvetalk.card); a book, the chronicle and the map are the web's"}}
+    rc = reply.get('receipt') or {}
+    tag = (rc.get('outcome') or {}).get('tag') or reply.get('status')
+    receipt = {'slug': rc['slug'], 'height': rc['height'], 'entry': {'$link': rc['hash']}} if {'hash', 'slug', 'height'} <= set(rc) else None
+    view = {'receipt': receipt} if receipt else {}
+    if tag == 'refused':
+        out = reply.get('public')
+        return {'outcome': {'status': 'refused', 'line': refusal_line(out, reply.get('class')),
+                            **{k: out[k] for k in ('class', 'clause', 'reason') if isinstance(out.get(k), str)}} if out else
+                {'status': 'refused', 'line': 'refused'}, **view}
+    if tag == 'suspended':
+        return {'outcome': {'status': 'suspended', 'line': f"suspended, entry {rc.get('height')}"}, **view}
+    if not reply.get('inPublic'):
+        return {'outcome': {'status': tag, 'line': f"{tag}, entry {rc.get('height')}, receipt {rc.get('slug')}"}, **view}
+    keep = lambda rows, *keys: [{k: r[k] for k in keys if k in r} for r in rows]
+    writes = [{**{k: w[k] for k in ('object', 'version') if k in w}, **({'stateCid': w['cid']} if 'cid' in w else {})}
+              for w in (rc.get('outcome') or {}).get('writes') or []]
+    return {'outcome': {'status': tag, 'line': turn_line({**reply, 'status': 'admitted'} if tag == 'admitted' else reply)}, **view,
+            **({'offers': [o['text'] for o in reply['offers']]} if reply.get('offers') else {}),
+            'trace': {'roots': keep(rc.get('roots') or [], 'object', 'version'), 'writes': writes, 'revealed': reply.get('revealed') or []}}
+
+
+def write_answer(st, obs, view):
+    """The answer record of a request observation: `view` with the request it answers and the height that answered."""
+    height = ((view.get('receipt') or {}).get('height') or max([(t.get('receipt') or {}).get('height') or 0 for t in view.get('turns') or []] + [0]))
+    st.write(answer_path(st, obs['uri']), {'$type': ANSWER, 'request': {'uri': obs['uri'], 'cid': obs['cid']}, **view,
+                                           **({'height': height} if height else {})})
+
+
+def answer_turn(st, host, obs, reply):
+    """Answer a request's turn as its record (no draft, no post). -> None when answered or waiting on hob, else why not yet."""
+    if reply.get('status') == 'spells':
+        turns = reply.get('turns') or []
+        if not turns or any('receipt' not in t and t.get('status') != 'usage' for t in turns):
+            return 'a spell of it has no receipt'
+        views = [public_view(host, t) for t in turns]
+        return write_answer(st, obs, {'outcome': {'status': 'spells', 'line': '\n'.join(v['outcome']['line'] for v in views)}, 'turns': views})
+    if reply.get('status') == 'looked':  # `delvetalk receipt / of:`: whose receipt is the caller's, not the public's
+        return write_answer(st, obs, {'outcome': {'status': 'invalid', 'line': 'a receipt is read from the repository (town.delvetalk.receipt), not by request'}})
+    if 'receipt' not in reply and reply.get('class') != 'moved' and reply.get('status') != 'usage':
+        return reply.get('message', reply.get('status'))  # the host gave no answer: read again next run
+    if reply.get('status') == 'suspended' or (reply.get('receipt', {}).get('outcome') or {}).get('tag') == 'suspended':
+        st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': obs['author']['did'], 'request': obs,
+                                                 'height': reply['receipt']['height'], 'suspended': True})
+        return None
+    return write_answer(st, obs, public_view(host, reply))
 
 
 def would_line(t, handles=None):
@@ -276,7 +391,18 @@ def offer_drafts(st, host):
     waiting = [json.loads(p.read_text()) for p in sorted(st.awaiting.glob('*.json')) if not json.loads(p.read_text()).get('settled')]
     drafted, handles = [], {o['author']['did']: o['author']['handle'] for o in st.observations()} if waiting else {}
     for principal in dict.fromkeys(w['principal'] for w in waiting):
-        mine = {(w['principal'], w['uri']): w for w in waiting if w['principal'] == principal}
+        for w in [w for w in waiting if w['principal'] == principal and w.get('request')]:  # a request: its answer, once settled
+            got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': w['uri']})
+            if ((got.get('receipt') or {}).get('outcome') or {}).get('tag') in (None, 'suspended'):
+                continue
+            offers = [o for o in paged(host, {'op': 'world-offers', 'principal': principal, 'after': w['height'] - 1}, 'offers')
+                      if (o.get('from') or o.get('identity') or {}).get('intent') == w['uri']] if got.get('inPublic') else []
+            write_answer(st, w['request'], public_view(host, {**got, 'offers': offers}))
+            st.write(awaiting_path(st, w['uri']), {**w, 'settled': True})
+            drafted.append(w['uri'])
+        mine = {(w['principal'], w['uri']): w for w in waiting if w['principal'] == principal and not w.get('request')}
+        if not mine:
+            continue
         grouped = {}
         for o in paged(host, {'op': 'world-offers', 'principal': principal, 'after': max(0, min(w['height'] for w in mine.values()) - 1)}, 'offers'):
             who = o.get('from') or o['identity']  # {principal, intent}: `from` is the originating post of a handed-on turn
@@ -433,12 +559,23 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     addressed = host.send({'op': 'bounds'})['host']['mentionsAddressed'] if any(obs['mentions'] for obs in observed) else 0
     mentioned = [obs['uri'] for obs in observed if obs['mentions'] and mention_turns(st, host, obs, authors, handles, addressed)]
     for obs in observed:
-        if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists():
+        if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists() or \
+                (obs['kind'] == 'request' and answer_path(st, obs['uri']).exists()):
+            continue
+        asked = obs.get('request')  # a proven request record: the same turn as a post's spell, answered by a record
+        if asked and asked.get('invalid'):
+            write_answer(st, obs, {'outcome': {'status': 'invalid', 'line': asked['invalid']}})
+            done.append(obs['uri'])
             continue
         try:
-            target = reach(host, obs, known)
+            target = (asked['call']['object'], None, {'how': 'direct'}) if asked and 'object' in asked['call'] else reach(host, obs, known)
         except Unread as e:
             failed.append({'uri': obs['uri'], 'message': str(e)})
+            continue
+        if target is None and asked:
+            write_answer(st, obs, {'outcome': {'status': 'unreached', 'line': 'no card reached: a call is a spell, `delvetalk <card> <verb>` '
+                                                                             'and its field lines, or {object, verb, fields}'}})
+            done.append(obs['uri'])
             continue
         if target is None:
             st.append(st.skipped, obs['uri'])
@@ -454,9 +591,23 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
                    'argument': {'tag': 'record', 'fields': fields}, 'identity': obs['uri']}
         if how.get('replyTo') or obs['replyTo']:  # on Zulip the recorded message found up the topic, so the host verifies it
             request['replyTo'] = how.get('replyTo') or obs['replyTo']
-        if how['how'] in ('mention', 'door', 'fields'):
+        if how['how'] in ('mention', 'door', 'fields', 'direct'):
             request['reach'] = how['how']  # the reach the host found; a reply and a spell it finds again at the turn
+        if asked and 'object' in asked['call']:  # the front's _actions form: the verb on the object, its fields typed
+            request.update(method=asked['call']['verb'], argument=typed(asked['call'].get('fields') or {}))
+        if asked and 'if' in asked:
+            request['if'] = asked['if']  # the host's commit-if-unchanged, verbatim: refused `moved` with what moved
         reply = host.send(request)
+        if asked and reply.get('tried'):  # a `delvetalk try` spell by record: never answered, a preview would publish its draft
+            st.append(st.skipped, obs['uri'])
+            continue
+        if asked:
+            why = answer_turn(st, host, obs, reply)
+            if why:
+                failed.append({'uri': obs['uri'], 'message': why})
+            else:
+                done.append(obs['uri'])
+            continue
         if reply.get('status') == 'looked':  # a receipt looked up: nothing journaled, its line is the answer
             st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
@@ -477,14 +628,18 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
                 failed.append({'uri': obs['uri'], 'message': lost[0].get('message') if lost else 'no turns'})
                 continue
             ran = [t for t in turns if 'receipt' in t]
-            text = ''.join(draft_text(t).rstrip('\n') + '\n' if 'receipt' not in t else spell_line(t, origin, handles) for t in turns)
+            text, told = ''.join(draft_text(t).rstrip('\n') + '\n' if 'receipt' not in t else spell_line(t, origin, handles) for t in turns), 0
+            for t in ran:  # the first spell that entered a place leads the reply with its telling
+                text, told = with_telling(host, did, t, t.get('object') or obj, text)
+                if told:
+                    break
             # A reply answering several cards is no one card's: a bare verb under it would reach whichever came first,
             # so its address is the commonplace, where words go to hob and a spell names its card.
             cards = {t.get('object') or obj for t in turns}
             st.write(st.outbox / f"{ran[-1]['receipt']['height'] if ran else 0}-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': cards.pop() if len(cards) == 1 else 'commonplace', 'slot': slot,
-                'receipt': ran[-1]['receipt'] if ran else None, 'posted': False, 'text': text})
+                'receipt': ran[-1]['receipt'] if ran else None, 'posted': False, **told_field(told), 'text': text})
             for t in ran:  # a suspended spell's own answer comes when hob has read it, as a reply to the same post
                 if (t['receipt'].get('outcome') or {}).get('tag') == 'suspended':
                     intent = t['receipt']['identity']['intent']
@@ -495,7 +650,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
             st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
-                'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
+                'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False, 'text': read_text(host, did, reply)})
             done.append(obs['uri'])
             continue
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
@@ -510,12 +665,12 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         text = draft_public(reply, origin, obj, handles)
         if reply.get('status') == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
             text = with_paint(host, offered_object(reply, obj), text)  # the place speaking, above its exact card
-        text = with_telling(host, did, reply, obj, text)  # entering a place: what happened there, above it all
         text = first_move(st, did, reply, text)
+        text, told = with_telling(host, did, reply, obj, text)  # entering a place: what happened there, above it all
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,
-            'receipt': reply['receipt'], 'posted': False, 'text': text})  # text '': journaled, hidden from outbox
+            'receipt': reply['receipt'], 'posted': False, **told_field(told), 'text': text})  # text '': journaled, hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot, 'height': reply['receipt']['height']})
         done.append(obs['uri'])
@@ -527,6 +682,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     published, problem = publication_drafts(st, host)
     if problem:
         failed.append({'publications': problem})
+    failed += [{'requests': p} for p in getattr(observer, 'problems', None) or []]
     return {'turns': done, 'failed': failed, **({'recorded': recorded} if recorded else {}), **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
 
 
@@ -541,7 +697,9 @@ def command(st, a, out):
         observer = zulip.ZulipObserver(st, client, row['channel'], since, row.get('topic'))
         after = lambda: zulip.post_drafts(st, host, client)
     else:
-        observer, after = Observer(st, Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else http_transport), since), dict
+        from transport.requests import Poller
+        client = Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else http_transport)
+        observer, after = Observer(st, client, since, None if st.config.delve_mock else Poller(st, client)), dict
     step = lambda: out.write(canonical({**run(st, host, observer, now=a.now), **after()}) + '\n') and out.flush()
     try:
         step() if a.once else st.daemon('bridge', step)

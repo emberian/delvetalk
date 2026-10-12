@@ -2,21 +2,22 @@
 
 A resident whose window is the PDS reads, walks doors and counts from a mirror of it, with no post. So the world's
 readable state is written as records in the posting account's own repository: every card as the public reads it
-(`town.delvetalk.card`), the library's pages and walks and the guide's parts (`town.delvetalk.page`) and an index
-(`town.delvetalk.index/self`). Each record is what `place` renders (transport/host.py), the rendering the web's pages
-and a reply's draft share; the did:web façade (transport/repo.py) answers the same collections from these functions.
-Only the public reader's projection is written. Without the authorizing flag the run prints what it would write and
+(`town.delvetalk.card`), the library's pages and walks and the guide's parts (`town.delvetalk.page`), an index
+(`town.delvetalk.index/self`) and the answers to residents' requests (`town.delvetalk.answer`, the bridge's). Each
+card and page is what `place` renders (transport/host.py), the rendering the web's pages and a reply's draft share;
+the did:web façade (transport/repo.py) answers the same collections from these functions. Only the public reader's projection is written. Without the authorizing flag the run prints what it would write and
 touches nothing; with it, `post.put_records` writes what changed since the last run and deletes what is gone.
 """
 import hashlib
 import json
 import time
+from pathlib import Path
 
 from transport.delve import canonical
 from transport.host import PUBLIC, place, plain
 
 NS = 'town.delvetalk.'
-CARD, PAGE, INDEX = NS + 'card', NS + 'page', NS + 'index'
+CARD, PAGE, INDEX, ANSWER = NS + 'card', NS + 'page', NS + 'index', NS + 'answer'
 LIBRARY = 'library'
 
 
@@ -64,16 +65,23 @@ def ids(host, reader=PUBLIC):
         after = out[-1]
 
 
+def answer_records(directory):
+    """{rkey: value}: the answers the bridge wrote to requests (transport/bridge.py), each the public's projection."""
+    if not directory or not Path(directory).is_dir():
+        return {}
+    return {p.stem: json.loads(p.read_text()) for p in sorted(Path(directory).glob('*.json'))}
+
+
 def height(host):
     return host.send({'op': 'world-status'}).get('height')
 
 
-def records(host, sleep=time.sleep, paint=True, tries=3):
-    """{(collection, rkey): value}: the whole mirror as the public reads the world at one height. The cards and pages
-    are read between two looks at the height; when the world moved meanwhile they are read again (up to `tries`),
-    and an index read across a move says so (`coherent: false`, its `heights`)."""
+def records(host, sleep=time.sleep, paint=True, tries=3, answers=None):
+    """{(collection, rkey): value}: the whole mirror as the public reads the world at one height, with the `answers`
+    directory's. The cards and pages are read between two looks at the height; when the world moved meanwhile they are
+    read again (up to `tries`), and an index read across a move says so (`coherent: false`, its `heights`)."""
     for _ in range(tries):
-        before, out, cards = height(host), {}, {}
+        before, out, cards = height(host), {(ANSWER, k): v for k, v in answer_records(answers).items()}, {}
         for oid in ids(host):
             record = card_record(host, oid, PUBLIC, sleep, paint)
             if record:
@@ -117,7 +125,7 @@ def run(st, host, writer=None, sleep=lambda _: None, limit=200):
     """One mirror step: the plan, and with a `writer` (post.record_writer) at most `limit` writes of it, the ledger
     saved after each record that landed. A paint not ready is not waited for (`sleep`): asking starts it, and the
     next step writes it."""
-    writes, deletes, ledger = plan(st, records(host, sleep))
+    writes, deletes, ledger = plan(st, records(host, sleep, answers=st.answers))
     if writer is None:
         return {'dry_run': True, 'writes': sorted(writes), 'deletes': sorted(deletes)}
     index = f'{INDEX} self'

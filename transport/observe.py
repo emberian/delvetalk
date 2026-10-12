@@ -11,7 +11,7 @@ from transport.delve import Failure, canonical
 
 MAX_TEXT = 64 * 1024
 AT_URI = re.compile(r'at://did:[a-z0-9]+:[A-Za-z0-9._:-]+/[A-Za-z0-9.]+/[A-Za-z0-9._~:-]+\Z')
-SUMMON_HANDLE, SUMMON_TAG = 'livedelvetalk.delve.town', 'gsb'
+SUMMON_TAG = 'gsb'
 EDIT = re.compile(r'edit:\s*(.+?)\s*›\s*(.+)')
 DECISION = re.compile(r'(?:merge|reject)\b.*')
 MENTION = re.compile(r'(?<![\w.])@((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})', re.I)
@@ -33,9 +33,10 @@ def wiki_target(text):
     return (first[5:].strip(), '') if first.startswith('wiki:') and first[5:].strip() else None
 
 
-def classify(text, reply_to, mentions, tags, summon=SUMMON_HANDLE):
-    """-> kind. Surface form only, first match wins; `summon` is the handle whose mention summons. Whether a post is a
-    spell, and to which card, is the host's parser's answer (bridge.parsed), not this one's."""
+def classify(text, reply_to, mentions, tags, summon):
+    """-> kind. Surface form only, first match wins; `summon` is the handle whose mention summons (config
+    `summon_handle`). Whether a post is a spell, and to which card, is the host's parser's answer (bridge.parsed),
+    not this one's."""
     target = wiki_target(text)
     if target:
         return 'wiki-edit' if target[1] else 'wiki-page'
@@ -69,8 +70,8 @@ def mentions_of(text, record):
 LEADING_BLANK = re.compile(r'\A(?:[ \t]*\n)+')
 
 
-def observation(post):
-    """Pure: validated postView -> observation dict. Raises Failure naming the refusal."""
+def observation(post, summon=''):
+    """Pure: validated postView -> observation dict, a mention of `summon` summoning. Raises Failure naming the refusal."""
     try:
         uri, cid, author, record = post['uri'], post['cid'], post['author'], post['record']
         text, created = record['text'], record['createdAt']
@@ -87,7 +88,7 @@ def observation(post):
     text = LEADING_BLANK.sub('', text).rstrip()  # an indented first line keeps its indent: an indented spell is quoted, not cast
     tags = list(dict.fromkeys(TAG.findall(text)))
     return {'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': created, 'text': text,
-            'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': classify(text, parent, mentions, tags)}
+            'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': classify(text, parent, mentions, tags, summon)}
 
 
 def posts_of(page):
@@ -117,14 +118,15 @@ def start_cursor(st, explicit=None, now=None):
 
 
 class Observer:
-    def __init__(self, st, client, since=None):
+    def __init__(self, st, client, since=None, requests=None):
         st.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.since = instant(since) if since else None  # posts created before it are not observed
         self.db = sqlite3.connect(st.observed, isolation_level=None)
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('PRAGMA synchronous=NORMAL')
         self.db.executescript(SCHEMA)
-        self.client = client
+        self.client, self.summon = client, st.config.summon_handle
+        self.requests, self.problems = requests, []  # a requests.Poller: residents' request records, proven
 
     def before_start(self, created):
         try:
@@ -135,12 +137,19 @@ class Observer:
     def store(self, post):
         """Store one post and its observation in one transaction. True if new."""
         try:
-            obs = observation(post)
+            obs = observation(post, self.summon)
         except Failure:  # malformed, or past MAX_TEXT: not an observation
             return False
         if self.before_start(obs['createdAt']):
             return False
-        body = canonical({'uri': obs['uri'], 'cid': obs['cid'], 'author': obs['author'], 'record': post['record']})
+        return self.insert(obs, post['record'])
+
+    def seen(self, uri):
+        return bool(self.db.execute('SELECT 1 FROM posts WHERE uri=?', (uri,)).fetchone())
+
+    def insert(self, obs, record):
+        """Keep `obs` and the record it was read from, once per uri. True if new."""
+        body = canonical({'uri': obs['uri'], 'cid': obs['cid'], 'author': obs['author'], 'record': record})
         digest = hashlib.sha256(body.encode()).hexdigest()
         self.db.execute('BEGIN IMMEDIATE')
         try:
@@ -156,7 +165,8 @@ class Observer:
         return True
 
     def poll(self, query='#gsb', pages=3, limit=50):
-        """Page search then feed; stop a source at its first page with nothing new."""
+        """Page search then feed, stopping a source at its first page with nothing new; then the request records
+        (transport/requests.py)."""
         sources = (lambda c: self.client.search(query, limit, c), lambda c: self.client.feed(limit, c))
         for fetch in sources:
             cursor = None
@@ -166,4 +176,6 @@ class Observer:
                 cursor = page.get('cursor')
                 if not cursor or not fresh:
                     break
+        if self.requests:
+            self.problems = self.requests.poll(self)
 

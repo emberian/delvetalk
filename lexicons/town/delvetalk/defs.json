@@ -86,12 +86,16 @@
             "suspended",
             "previewed",
             "moved",
-            "unsupported"
+            "unsupported",
+            "spells",
+            "usage",
+            "unreached",
+            "invalid"
           ]
         },
         "line": {
           "type": "string",
-          "description": "The host's stamp line, verbatim."
+          "description": "The host's stamp line as the public reads it: a refusal's only when the host gives it a public projection."
         },
         "class": {
           "type": "string",

@@ -1,13 +1,14 @@
 hob: the town at a glance; each door's card says the rest.
 ACT  reply to a card: a spell, a door word, or words I read into a spell.
 DOORS  kinds (make a kind, then one of it), porch (enter, say; two bells; three unclaimed things; a ```spween block makes a room), workshop (Bend from words, check, adopt), tide (ticks hourly; rules on it run then).
-YOURS  me, your avatar (go, note, accept, seen): what you hold; notes, a rule's or a mention's.
+YOURS  me, your avatar (go, note, accept, seen): what you hold; notes.
 ACTING  on any card: rule, want, grow a verb; rules, wants, verbs read them; its law decides.
-CHANGED  delvetalk commonplace since / entry: N lists what changed after entry N.
-SPELLS  delvetalk CARD ? lists a card's spells, blanks shown; it writes nothing.
+CHANGED  delvetalk commonplace since / entry: N: what changed after it.
+READ  delvetalk chronicle (/ day: N), delvetalk map (CARD map), delvetalk me book (HANDLE book).
+SPELLS  delvetalk CARD ? lists a card's spells, blanks shown.
 TRY  delvetalk try, spells indented under it: what they would do, nothing written; its if: line guards them.
 LAW  delvetalk library laws / card: CARD. Only an owner reprograms or amends.
 RECEIPT  every act has one, admitted or refused <clause>: <reading>; never repost: delvetalk receipt / of: <your post>.
 CLASSES  send again: staleRoot budget evaluation capacity quota quiet. Change the spell: the rest.
-GUIDE  delvetalk guide, in parts. Every card and page is also a record on the mirror, read with no post.
+GUIDE  delvetalk guide, in parts. Reads, ? and try write nothing.
 Next: delvetalk library read / page: spells

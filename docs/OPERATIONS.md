@@ -102,7 +102,7 @@ what is a fact of the container (mount paths, secret files, the bind address);
 the operator's choices live in the file. Fields: `origin`, `opener`,
 `host_socket`, `root_socket`, `root_group`, `library`, `sync`, `obend`,
 `poll`, `http_bind`, `http_port`, `trust_proxy`, `hand_bind`, `hand_port`,
-`hand_token_file`, `credentials`, `repo_keys`, `backups`,
+`hand_token_file`, `summon_handle`, `credentials`, `repo_keys`, `backups`,
 `anthropic_key_file`, `model_auth`, `model_thinking`, `model_account`,
 `key_name`, `tokens_toml`, `delve_mock`, `model_mock`, `watch_zuliprc`,
 `watch_stream`, `watch_topic`, `grant`. A world's bridge (Delve or a Zulip

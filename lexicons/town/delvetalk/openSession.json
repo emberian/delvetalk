@@ -19,16 +19,8 @@
               "maxLength": 32
             },
             "from": {
-              "type": "object",
-              "properties": {
-                "world": {
-                  "type": "string"
-                },
-                "height": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              }
+              "type": "ref",
+              "ref": "#fork"
             },
             "readers": {
               "type": "array",
@@ -87,6 +79,18 @@
           "name": "HostUnavailable"
         }
       ]
+    },
+    "fork": {
+      "type": "object",
+      "properties": {
+        "world": {
+          "type": "string"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
     }
   }
 }

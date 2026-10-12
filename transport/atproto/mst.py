@@ -12,7 +12,7 @@ recomputes only the nodes on the tree's right edge.
 import bisect
 import hashlib
 
-from transport.atproto.cbor import block
+from transport.atproto.cbor import block, decode
 
 
 def layer(key):
@@ -111,3 +111,22 @@ class Tree:
                 return out
             n = bisect.bisect_left(here, position)
             i, j, L = (here[n - 1] + 1 if n else i), (here[n] if n < len(here) else j), L - 1
+
+
+def find(blocks, root, key):
+    """The value CID at `key` (bytes) in the tree rooted at `root`, walked through `blocks` ({CID: bytes}, each already
+    checked against its CID, as `cbor.read_car` gives them); None when the walk shows the key absent. A node the walk
+    needs and `blocks` lacks is a KeyError: a proof that does not reach the key proves nothing."""
+    node = root
+    while node is not None:
+        here, prev = decode(blocks[node]), b''
+        below = here['l']
+        for e in here['e']:
+            full = prev[:e['p']] + e['k']
+            if full == key:
+                return e['v']
+            if key < full:
+                break
+            below, prev = e['t'], full
+        node = below
+    return None

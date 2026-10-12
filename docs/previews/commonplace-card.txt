@@ -6,9 +6,7 @@ porch/lamp: it opens onto nothing yet
   delvetalk porch/lamp door
 weather: it opens onto nothing yet
   delvetalk weather door
-kinds: no kind made here yet but the town's own
-  delvetalk kinds ?
-… and 5 more
+… and 6 more
   delvetalk commonplace since / entry: 0
   » what changed since that entry, newest first
 KINDS
@@ -27,4 +25,5 @@ STUDIO · try first: delvetalk try, your spells indented under it; a REPL by HTT
 YOURS · me
   delvetalk me since
   » what others did to what you made since you were here; what you hold; your notes
+READ · delvetalk chronicle · delvetalk map · delvetalk me book
 Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.

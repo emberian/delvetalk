@@ -130,6 +130,18 @@ def _decode(d, i):
     raise ValueError('floats and other simple values are not DAG-CBOR here')
 
 
+def from_json(v):
+    """A record in the AT Protocol's JSON form as the data model holds it: `{$link}` a CID link, `{$bytes}` bytes (what
+    a PDS does to a record it is given, so the CID computed here is the one it computes)."""
+    if isinstance(v, dict):
+        if set(v) == {'$link'}:
+            return CID.parse(v['$link'])
+        if set(v) == {'$bytes'}:
+            return base64.b64decode(v['$bytes'] + '=' * (-len(v['$bytes']) % 4))
+        return {k: from_json(x) for k, x in v.items()}
+    return [from_json(x) for x in v] if isinstance(v, list) else v
+
+
 def block(value):
     """-> (CID, bytes): a value's canonical block."""
     data = encode(value)

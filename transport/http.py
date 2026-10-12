@@ -79,6 +79,12 @@ def resolve(method, path):
         return ('play' if method == 'GET' else 'reply'), {'object': '/'.join(parts[1:])}
     if parts[:1] == ['o'] and len(parts) == 2 and method == 'GET':
         return 'page', {'object': parts[1]}
+    if parts[:1] == ['o'] and len(parts) == 3 and parts[2] == 'book' and method == 'GET':
+        return 'book', {'object': parts[1]}
+    if parts == ['history'] and method == 'GET':
+        return 'history', {}
+    if parts == ['map'] and method == 'GET':
+        return 'map', {}
     return None, None
 
 
@@ -296,7 +302,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
         self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
         self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
-        self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None)  # the journal as AT Protocol records, read only
+        self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None, st.world, st.answers)  # the journal as AT Protocol records, read only
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
@@ -588,7 +594,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
         if name in ('xrpc', 'did'):
             return self.xrpc(method, p.get('nsid', 'did.json'))
-        if name in ('home', 'page'):  # pages ask the host: limited per account, or per address, before they do
+        if name in ('home', 'page', 'book', 'history', 'map'):  # pages ask the host: limited per account, or per address, before they do
             key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
             wait = self.server.limited(key)
             if wait:
@@ -601,6 +607,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.play(p['object'] or 'commonplace', name == 'reply')
         if name == 'page':
             return self.object_page(p['object'])
+        if name == 'book':
+            return self.surface('book', p['object'])
+        if name == 'history':
+            return self.surface('chronicle', None)
+        if name == 'map':
+            return self.surface('map', urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('from', [None])[0])
         return self.agents(name, p['scratch'], p['object'], p['method'])
 
     def options(self):
@@ -916,6 +928,25 @@ class Handler(BaseHTTPRequestHandler):
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
                                  here['doors'], seen, here['wants'], brief, here['paint'], told))
+
+    SURFACE_FIELDS = ('page', 'day', 'from', 'to')
+    TITLES = {'chronicle': "the town's history", 'map': 'the door map'}
+
+    def surface(self, read, name):
+        """A read (docs/VOICE.md "The book, the history, the map") as its reader may see it: the text a post of its spell
+        carries (`world-surface`, the query's `page`, `day`, `from`, `to` its fields), and the day's paint above the
+        history; the host renders it, the page only shows it."""
+        who = self.principal(self.cookie())
+        handle, principal, host = who and who['handle'], who and who['did'], self.server.host
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        fields = {k: q[k][0] for k in self.SURFACE_FIELDS if q.get(k)}
+        r = host.send({'op': 'world-surface', 'principal': principal or 'anonymous', 'read': read, 'fields': fields, **({'object': name} if name else {})})
+        title = self.TITLES.get(read) or f"{name}'s {read}"
+        if r.get('status') != 'surface':
+            return self.html(404, pages.refusal(title, handle, {'message': r.get('reason') or f"no {read} of {name} that you may see"}, r.get('status')))
+        paint = painted(host, principal or 'anonymous', None, self.server.sleep, **r['paint']).get('text') if isinstance(r.get('paint'), dict) else None
+        drawing = pages.door_map(r['ways'], r.get('root') or 'commonplace') if isinstance(r.get('ways'), list) else ''
+        self.html(200, pages.surface(title, handle, r['text'], paint, drawing))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, under the reader's authority."""

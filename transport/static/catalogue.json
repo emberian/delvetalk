@@ -320,6 +320,27 @@
    "does": "HTML: the card's paint, its exact card folded beneath, what it wants, its doors, and on demand its law, source and last 20 receipts; logged in, a link to play it; a / in the id is %2F"
   },
   {
+   "name": "book",
+   "method": "GET",
+   "href": "/o/{handle}/book",
+   "auth": "cookie",
+   "does": "HTML: a resident's commonplace book (what they made and what others did with it, the verbs they grew, the rules and wants they placed, the lines they wrote, the places they visited), the same text `delvetalk <handle> book` answers; ?page=N"
+  },
+  {
+   "name": "history",
+   "method": "GET",
+   "href": "/history",
+   "auth": "cookie",
+   "does": "HTML: the town's history, a clock day painted above the chronicle's exact lines and the town's firsts credited, the same text `delvetalk chronicle` answers; ?day=N, ?from=N&to=M (a day a page), ?page=N"
+  },
+  {
+   "name": "map",
+   "method": "GET",
+   "href": "/map",
+   "auth": "cookie",
+   "does": "HTML: the door map, which cards open onto which, the text `delvetalk map` answers and a small drawing of it; ?from=<card> for a card's own (`delvetalk <card> map`), ?page=N"
+  },
+  {
    "name": "play",
    "method": "GET",
    "href": "/play/{object}",

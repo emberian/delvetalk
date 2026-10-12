@@ -43,18 +43,22 @@
           "doors": {
             "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "label": {
-                  "type": "string"
-                },
-                "to": {
-                  "type": "string",
-                  "description": "The object the door opens on."
-                }
-              }
+              "type": "ref",
+              "ref": "#door"
             }
           }
+        }
+      }
+    },
+    "door": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string",
+          "description": "The object the door opens on."
         }
       }
     }

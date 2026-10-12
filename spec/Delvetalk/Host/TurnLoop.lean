@@ -8,6 +8,7 @@ import Delvetalk.Host.Ops
 import Delvetalk.Turn
 import Delvetalk.Document
 import Delvetalk.Host.Spell
+import Delvetalk.Host.Surfaces
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -791,8 +792,8 @@ def hasMethod (o : Object) (name : String) : Bool :=
 
 /-- The Context a card is rendered for: the reader (`principal`), the card's object, the asking
     object (`caller`, "" for `world-card`), and the turn's intent and height. -/
-def cardContext (w : World) (id reader caller intent : String) (height : Nat) (method : String) : Data :=
-  contextData id reader (handleOf w reader) caller intent height w.clock "card" method
+def cardContext (w : World) (id reader caller intent : String) (height : Nat) (method : String) (whole : Bool := false) : Data :=
+  contextData id reader (handleOf w reader) caller intent height w.clock (if whole then Card.wholeKind else "card") method
 
 /-- A pure definition of `id`'s package run on its committed state (the first argument) through the
     stored path under this turn's ticks (KERNEL-HANDOFF §15): only the rows it forces are fetched,
@@ -818,12 +819,12 @@ def storedPure (id : String) (o : Object) (c : Compiled) (rest : List Data) : M 
     newest `Limits.cardWanting`, each `wantedData`; derived, no root) as it is handed the reader; else
     `render`, which may take the state alone or `(state, context)`. `noCard` when it has neither, `render`
     when it fails or runs out. It runs on the stored state (`storedPure`): what it read of `id` is a root. -/
-def renderCard (id : String) (o : Object) (reader caller intent : String) : M (Except String Data) := do
+def renderCard (id : String) (o : Object) (reader caller intent : String) (whole : Bool := false) : M (Except String Data) := do
   let name := if o.declaresDef "renderWanting" then "renderWanting" else "render"
   let compiled ← tryCatch (some <$> compiledMethod o name) fun _ => pure none
   let some c := compiled | return .error "noCard"
   let w := (← get).world
-  let context := fun ct => fitRecord c.bounds ct (cardContext w id reader caller intent w.height name)
+  let context := fun ct => fitRecord c.bounds ct (cardContext w id reader caller intent w.height name whole)
   let arguments := match arrowDomains 3 c.type with
     | [_, ct] => [context ct]
     | [_, ct, _] => [context ct, listData ((wanting w reader 0 Limits.cardWanting).1.map wantedData)]
@@ -1256,6 +1257,9 @@ inductive SpellRoute where
       method (the turn's `inputOrigin.kind` is then `spell`), "" when it is `receive` with the bare fields. -/
   | run (object method : String) (argument : Data) (command : String)
   | usage (object text : String)
+  /-- A read the card renders (`Surfaces.answer`: the book, the chronicle, the map), answered as `?` is, with
+      what a transport needs beside its text (`paint`, `ways`). -/
+  | read (object text : String) (extra : List (String × Json))
   | refuse (object clause reason hint : String)
   /-- One of the host's own spells on any card (`become`, `adopt`, `lend`; `hostSpell`), a direct
       turn's only. -/
@@ -1454,9 +1458,8 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   -- A card's name is read in any case (docs/FLEX.md §4 host 2): `me` folded, and a name
   -- no object has as written is the one object whose id it folds to.
   let card := if Spell.fold card == meCard then meCard else card
-  let id := resolveCard principal card
-  let id := if w.objects.contains id then id else (foldedId w id).getD id
-  -- The card as the speaker named it (`me`, never the DID): usage and reasons speak it.
+  let id := namedCard w principal card
+  -- The card as the speaker named it (`me`, a handle, never the DID): usage and reasons speak it.
   let shown := card
   -- The answering card's own spells when it has some; else where the doors are listed. What a reply only
   -- shows on a refusal (this usage, the target's offered forms and lenses) is built on the branch that shows it.
@@ -1482,10 +1485,21 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let usage := fun (_ : Unit) =>
     let offered := offeredTo w id target principal
     (forms.filter (offered ·.action), if offered "set" then declaredLenses w target else [])
+  -- A read the card renders (the book, the chronicle, the map): its own definition, else, unless the card has
+  -- a spell of that name, the square's from this card.
+  if Surfaces.reads.contains action then
+    let owns := forms.any (·.action == action) || target.verbs.any (·.name == action)
+    match Surfaces.answer w principal id target action fields (fallback := !owns) with
+    | some (.ok a) => return .read a.object a.text a.extra
+    | some (.error (clause, reason)) =>
+      let (shownForms, shownLenses) := usage ()
+      return .refuse id clause reason (spellUsage shown (shownForms.filter (·.action == action)) shownLenses)
+    | none => pure ()
   if action == "?" then
     let lineage := lineageLine w target
     let (shownForms, shownLenses) := usage ()
     return .usage id (spellUsage shown shownForms shownLenses ++ (if lineage.isEmpty then "" else "\n" ++ lineage) ++
+      Surfaces.usage w principal id target shown (forms.map (·.action) ++ target.verbs.map (·.name)) ++
       hostUsage w target principal shown ++ objectsLine)
   if hostReads.contains action && !forms.any (·.action == action) then
     return .usage id (match action with
@@ -3484,6 +3498,7 @@ where
         return (object, "ran", r)
       | .host object action fields => stageHost n line object action fields; return (object, "staged", emptyRecord)
       | .usage object usage => return (object, "read", .label usage)
+      | .read object text _ => return (object, "read", .label text)
       | .refuse object clause reason hint => throw (actRefusal n line object clause reason hint)
       | .asIs => throw (actRefusal n line receiver "noAction" "this act is no spell.")
 
@@ -3566,7 +3581,7 @@ structure Seen where
   replyTo : String
 
 /-- The world's square (genesis's commonplace): where a summons lands, and whose doors prose may name. -/
-def commonplaceId : String := "commonplace"
+def commonplaceId : String := Spell.townCard
 
 /-- The longest walk up a thread (Zulip's topic, the doors' threads on Delve). -/
 def reachHops : Nat := 32
@@ -3680,6 +3695,8 @@ def spellTurn (w : World) (req : TurnRequest) (routed : Option SpellRoute := non
   | .usage object text =>
     some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object),
       ("text", toJson (hobTail w req.principal text hobUsageLine))]))
+  | .read object text extra =>
+    some (.ok (w, Json.mkObj ([("status", toJson "usage"), ("object", toJson object), ("text", toJson text)] ++ extra)))
   | .refuse object clause reason hint =>
     let hint := hobTail w req.principal hint hobHintLine
     let refused := refuseSpell w req object clause reason hint
@@ -3715,12 +3732,12 @@ def runTurnHeard (w : World) (req : TurnRequest) (routed : Option SpellRoute := 
   | some r => r
   | none => runTurnWith w req { via := lentVia w req.principal req.object req.method }
 
-/-- A direct turn; `me` names the principal's avatar (`resolveCard`), refused `noAvatar` while it has
+/-- A direct turn; `me` names the principal's avatar and a handle a resident's (`namedCard`), `me` refused `noAvatar` while it has
     none. A `receive` to a card of the message
     dialect is read as a spell first (`spellTurn`). -/
 def runOne (w : World) (req : TurnRequest) (routed : Option SpellRoute := none) : Except String (World × Json) :=
   let asked := req.object
-  let req := { req with object := resolveCard req.principal req.object }
+  let req := { req with object := namedCard w req.principal req.object }
   -- `me` before the speaker has an avatar: refused by name, saying what makes one.
   if asked == meCard && !w.objects.contains req.object && (retainedTurn w req).isNone then
     refuseSpell w req meCard "noAvatar" noAvatarReason "" else
@@ -3735,7 +3752,7 @@ def runOne (w : World) (req : TurnRequest) (routed : Option SpellRoute := none) 
 /-- How `runOne` would route a direct turn's spell on `w` (`spellTurn`'s `routeSpell`): none for a quieted
     speaker or a mention. Handed to `runOne`, the spell is not read twice. -/
 def routedOf (w : World) (req : TurnRequest) : Option SpellRoute := do
-  let req := { req with object := resolveCard req.principal req.object }
+  let req := { req with object := namedCard w req.principal req.object }
   guard (quietOf w req.principal "").isNone
   let req := { req with reach := reachOf w req }
   guard (req.reach != "mentioned")
@@ -4499,7 +4516,9 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
         ("text", toJson (shownCard w id principal text)), ("override", toJson true)])
     let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    let (r, st) := (renderCard id o principal "" "").run.run init
+    -- `whole`: the card unclipped (`Card.limit` none), for a transport that threads it into parts itself.
+    let whole := (j.getObjValAs? Bool "whole").toOption.getD false
+    let (r, st) := (renderCard id o principal "" "" whole).run.run init
     -- The render definition compiled here stays compiled for the next read.
     let w := w.withCachesOf st.world
     match r with

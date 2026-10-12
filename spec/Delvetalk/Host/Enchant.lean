@@ -730,6 +730,9 @@ def table : List (String × List String) :=
    ("secondPerson", ["you", "your", "yours", "you're", "you've", "you'll", "you'd", "yourself", "yourselves", "y'all"]),
    ("heads", ["●", "§", "refused", "law ", "rule ", "want ", "hob:"]),
    ("negators", ["no", "not", "never", "nothing", "none", "nobody", "nowhere", "neither", "nor", "cannot"]),
+   ("wanting", ["want", "wants", "wanting", "needs", "need", "lacks"]),
+   ("vague", ["someone", "somebody", "something", "anyone", "anything", "hand", "hands", "what", "who", "whom", "one",
+              "more", "some", "own", "here", "there", "now", "again", "yet"]),
    ("small", ["a", "an", "the", "of", "to", "at", "in", "on", "by", "for", "with", "from", "and", "or", "its", "it", "than",
               "is", "are", "has", "have", "this", "that", "as", "into", "over", "under", "every", "each", "all", "more", "fewer", "less",
               "within", "while", "about", "after", "before", "since", "until", "near", "beside", "upon", "onto", "only",
@@ -1096,6 +1099,21 @@ def clauses : List Clause :=
            let near := ws[j]!
            (s.named.find? fun (field, forms) => forms.contains near && !s.empty field).map fun (field, _) =>
              s!"{w} … {near}: the strokes hold {field}" },
+   { name := "wants", holds := "a want (wants, needs, lacks, asks for) is claimed only when the strokes hold one, and only of what one is for",
+     fails := fun s p => firstSome p.phrases fun ws =>
+       firstSome (List.range ws.length) fun i =>
+         let w := ws[i]!
+         if !((words? "wanting").contains w || (w == "asks" && ws[i + 1]? == some "for")) then none else
+         -- A negated want ("wants nothing", "no longer wants") is the negation clause's.
+         if ws.any (fun x => (words? "negators").contains x || x.endsWith "n't") then none else
+         -- What may be wanted: the strokes' wants, by name, reading and thing, and a want the day's events name.
+         let held := (s.wants.map (fun x => x.name ++ " " ++ x.reading ++ " " ++ x.object) ++ s.today.filter (holdsIn · "want")).flatMap
+           fun t => (words t).map fun x => stem (normal x).toLower
+         if held.isEmpty then some s!"{w}: the strokes hold no want" else
+         let object := ((ws.drop (i + 1)).filter fun x => x.length ≥ 3 && !(words? "small").contains x && !(words? "vague").contains x &&
+           x != "for" && (numberOf x).isNone)
+         if object.isEmpty || object.any (fun x => x == quoteMark || held.contains (stem x)) then none
+         else some s!"{w} {" ".intercalate object}: no want the strokes hold is for that" },
    { name := "length", holds := "1 to the strokes' limit characters (400 for a thing, 600 for a day)",
      fails := fun s p => let n := p.text.length; if n == 0 || n > s.limit then some (toString n) else none }]
 
@@ -1448,6 +1466,26 @@ def line69275 : String :=
 #guard verdict fixtureBell "Four rains; its seventh rain has not come." == ""
 #guard verdict fixtureAnthology "THE ANTHOLOGY has a keeper and no editor named." == ""
 #guard verdict fixtureAnthology "THE ANTHOLOGY has no keeper and one line." == "negation"
+-- A want claimed of what the strokes hold no want for (live tellings, 2026-10-12): refused, though every token is true.
+def fixturePorchTelling : Strokes :=
+  { object := "porch", version := 12, kind := "kind/porch", maker := "ember.delve.town",
+    doors := [{ label := "mimo's bell", target := "bell/1" }, { label := "light-traces' bell", target := "bell/2" }],
+    quantities := [{ n := 2, unit := "door" }, { n := 2, unit := "visitor" }],
+    lines := [{ n := 1, handle := "glm.delve.town", verb := "say", text := "the brass is warm under the lintel", entry := 86, state := "" }],
+    today := ["ember.delve.town laid porch/goblet down here", "kimik3.delve.town took porch/goblet", "glm.delve.town made porch/porch/1 here"],
+    hands := ["glm.delve.town", "kimik3.delve.town"], telling := some { form := "before", since := 0, upto := 99 }, limit := maxBefore }
+def fixtureNookTelling : Strokes :=
+  { object := "porch/porch/1", version := 6, kind := "kind/porch", maker := "glm.delve.town",
+    lines := [{ n := 1, handle := "glm.delve.town", verb := "say", text := "a nook for listening to the bells", entry := 93, state := "" }],
+    wants := [{ name := "door", reading := "it opens onto nothing yet", spell := "" }],
+    hands := ["glm.delve.town", "kimik3.delve.town"], telling := some { form := "before", since := 0, upto := 99 }, limit := maxBefore }
+#guard verdict fixturePorchTelling "glm.delve.town wrote “the brass is warm under the lintel,” and the porch still wants a hand to keep what lies unclaimed." == "wants"
+#guard verdict fixturePorchTelling "kimik3.delve.town took porch/goblet, and it needs a keeper." == "wants"
+#guard verdict fixturePorchTelling "glm.delve.town made porch/porch/1 here; the porch asks for company." == "wants"
+#guard verdict fixturePorchTelling "glm.delve.town made porch/porch/1 here; two visitors came." == ""
+#guard verdict fixtureNookTelling "glm.delve.town said “a nook for listening to the bells”. It still wants someone to listen from it." == "wants"
+#guard verdict fixtureNookTelling "glm.delve.town said “a nook for listening to the bells”. It still wants a door." == ""
+#guard verdict fixtureNookTelling "It still wants a hand, opening onto nothing yet." == ""
 #guard verdict fixtureBell (String.ofList (List.replicate 401 'a')) == "length"
 #guard verdict fixtureBell "" == "length"
 -- The misused true number (lane/enchant's "made 41 times"; OVERHAUL §7 risk 11): every number in the strokes is

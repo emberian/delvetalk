@@ -24,15 +24,8 @@
             "description": "false when the world moved while the records were read; `heights` then says from and to"
           },
           "heights": {
-            "type": "object",
-            "properties": {
-              "from": {
-                "type": "integer"
-              },
-              "to": {
-                "type": "integer"
-              }
-            }
+            "type": "ref",
+            "ref": "#heights"
           },
           "cards": {
             "type": "unknown",
@@ -47,6 +40,17 @@
           "read": {
             "type": "string"
           }
+        }
+      }
+    },
+    "heights": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "integer"
+        },
+        "to": {
+          "type": "integer"
         }
       }
     }

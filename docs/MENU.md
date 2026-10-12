@@ -74,7 +74,7 @@ set. The system text is `Policy.prompt`: hob's instruction, a line saying the us
 answers; only what the policy's owner and the host wrote. The user turn is `Policy.userTurn`: the card the speaker
 answered as they see it, the offered forms in the spell grammar, what the card holds for the speaker, the library's
 pages by title and the misfit when there is one, every line marked `| ` because residents wrote it (HOST-HANDOFF
-5.211), then the utterance, at most 8,192 bytes, once. The four answers, as `resumeHeard` settles them:
+5.212), then the utterance, at most 8,192 bytes, once. The four answers, as `resumeHeard` settles them:
 
 - **the spell meant**, up to three: each runs as the speaker's turn on the card it names; an action in the policy's
   `confirmFor` (reprogram, amend, offer, countersign, adopt) is offered back indented as `hob: that asks first; send it
