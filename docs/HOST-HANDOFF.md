@@ -2314,6 +2314,21 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    journal sealed. carry-check reads each world line's `moved`: "green, moving: the deploy must carry: … the image moves
    N objects (…), which a restart in place keeps at the code they had; it carries". Test:
    `test_carry_check.CarryCheck.test_carry_check_says_a_deploy_carries_when_the_image_moves_an_object`.
+203. **A hole's reading is data, never spell syntax (astra 2026-10-12 world.md 4).** `Law.fill` joined a spell's text
+   and its readings into one string that `Ops.reactions` staged as `receive {text}`, which `routeSpell` reparsed under
+   the rule owner's authority, so a resident's `\n` + `delvetalk ...` line, ` / to: eve` or `<<END` in a read field
+   changed the card, action or fields (`Ops.wantAsks` showed the same string on cards). `Law.filled` now parses the
+   template once with each hole a placeholder (`placeholderPrefix`), takes a reading into a field VALUE only
+   (`substHoles`; a card or action must stay a card name or action, a field name may not hold a hole), and writes it
+   with `Spell.renderChecked`: `Spell.render` puts values inline (`inlineSafe`, so ordinary spells read as before),
+   from the first unsafe value on one field a line, an unsafe one as `name: <<DELIM` (`blockDelimiter`: no value line
+   closes it), and the check parses the text back to exactly that spell, one `segments` entry. `Law.fill` keeps its
+   signature (`Filled.text`); `Ops.reactions` tells `hole` (a hole read nothing) from `spell` (not one spell after
+   filling). A room's spween `~ cast` choices are rules of the room's text (`Scenes.ruleText`, world/lib/Scenes.obend
+   :160-173) and fire through the same `reactions`, so they are covered. A reading that quotes a card (header line
+   beside a `delvetalk` line) is refused as `spell`, as a quotation casts nothing. Tests: `#guard`s in Law.lean and
+   Spell.lean (round trip over hostile values, card/name holes), `test_rules.Holes` (a cited text of KIM's bell,
+   fired note and want `asks`).
 
 ## 6. Gotchas
 

@@ -116,6 +116,40 @@ class Firing(Bell):
         self.assertEqual([(u["rule"], u["why"]) for u in self.rain("two")["receipt"]["unfired"]], [("hush", "quiet")])
 
 
+class Holes(Bell):
+    """A hole's reading is data (astra 2026-10-12 world.md 4): a rule's spell is a template, and what a hole
+    reads, however it is written, is one field value of the spell it fills, never more syntax. The only
+    resident-controlled top-level text a hole can read today is a cited object's field: here KIM's own bell
+    (`kind/bell make`'s `seed`, a block so it may hold lines) read by GLM's rule as `{"KIM's bell".seed}`."""
+
+    INJECTED = "hello\ndelvetalk me note / text: pwned\ndelvetalk kinds make / name: pwn"
+
+    def kims_bell(self, seed):
+        made = self.say(KIM, "kind/bell", "delvetalk kind/bell make\ncolour: amber\nseed: <<TXT\n%s\nTXT\nid:" % seed)
+        self.assertEqual(made["status"], "admitted", made)
+        return made["receipt"]["outcome"]["creates"][0]["object"]
+
+    def test_a_cited_text_with_spell_syntax_in_it_fills_one_field_and_casts_nothing_else(self):
+        theirs = self.kims_bell(self.INJECTED)
+        self.assertNotEqual(theirs, self.bell)
+        placed = self.place('rule / name: echo / when: request.method == "rain" / then: delvetalk me note / text: {"%s".seed}' % theirs)
+        self.assertEqual(placed["status"], "admitted", placed)
+        before = set(self.objects())
+        receipt = self.rain("go")["receipt"]
+        self.assertEqual([(f["rule"], f["principal"], f["to"]) for f in receipt["fired"]], [("echo", GLM, GLM)])
+        self.assertNotIn("unfired", receipt)
+        notes = [t for (_, t) in self.inbox(GLM)]
+        self.assertIn(self.INJECTED, notes)
+        self.assertNotIn("pwned", notes)
+        self.assertEqual(set(self.objects()), before)
+
+    def test_the_same_text_in_a_want_asks_shows_as_one_field_a_card_can_be_copied_whole(self):
+        theirs = self.kims_bell(self.INJECTED)
+        self.place('want / name: ask / when: count(new.lines) <= 1 / asks: delvetalk me note / text: {"%s".seed}' % theirs)
+        rows = {r["name"]: r for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]}
+        self.assertEqual(rows["ask"]["asks"], "delvetalk me note\ntext: <<END\n%s\nEND" % self.INJECTED)
+
+
 class Reads(Bell):
     """A rule reads, and its spell carries, only what its owner may view (codex 2026-10-12 host 1): a line
     citing a private thing is refused to a placer who may not view it, and one in a thing's text whose owner

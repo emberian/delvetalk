@@ -336,6 +336,55 @@ where
       | .stands c a tail rest => spelled c a (both (inline tail) (fieldLines rest))
     else seekAfter (text.drop (stop + 1)) otherwise
 
+/-! ## Render: values as data
+
+`render` writes a spell whose fields hold arbitrary text so that `parse` reads back exactly those
+fields. A value goes inline (`/ name: value`) only when `inlineSafe` says no rule of `slashed`,
+`piece` or `more` could cut it: it is one printable line with no edge blank, no ` /` (the cut of
+`slashed`), no leading `/`, and no comma-led piece that looks like a field (`more`). From the first
+field that is not inline-safe on, each field takes a line of its own: `name: value` when the value is
+inline-safe (`binding` takes the whole line after the colon), else a `name: <<DELIM` block (`block`
+takes every line verbatim up to `closesBlock`), the delimiter chosen so that no line of the value
+closes it. `renderChecked` is the gate the host uses: it parses the text back. -/
+
+def slashAfterBlank : T → Bool
+  | ' ' :: '/' :: _ => true
+  | _ :: rest => slashAfterBlank rest
+  | [] => false
+
+def inlineSafe (value : String) : Bool :=
+  let t := value.toList
+  !t.isEmpty && t.all (fun c => c.toNat ≥ 32 && c.toNat != 127) &&
+    t.head? != some ' ' && t.getLast? != some ' ' && t.head? != some '/' && !slashAfterBlank t &&
+    ((value.splitOn ",").drop 1).all fun p => !p.any (· == ':')
+
+/-- A delimiter (`delimiterAlphabet`, at most 32) that no line of `value` closes. One of
+    `END`, `END_0` .. `END_n` for `n` the value's line count: a line closes at most one of them. -/
+def blockDelimiter (value : String) : String :=
+  let lines := (value.splitOn "\n").map String.toList
+  let candidates := "END" :: (List.range (lines.length + 1)).map fun n => s!"END_{n}"
+  (candidates.find? fun d => !lines.any (closesBlock d.toList ·)).getD "END"
+
+def renderLine (b : Binding) : String :=
+  if inlineSafe b.value then s!"{b.name}: {b.value}" else
+  let d := blockDelimiter b.value
+  s!"{b.name}: <<{d}\n{b.value}\n{d}"
+
+/-- How many leading fields go inline: named ones with an identifier name and an inline-safe value,
+    after at most nameless safe values without a colon (`leading`). -/
+def inlineCount (named : Bool) : List Binding → Nat
+  | [] => 0
+  | b :: rest =>
+    if b.name.isEmpty then
+      (if !named && inlineSafe b.value && !b.value.any (· == ':') then inlineCount named rest + 1 else 0)
+    else if isIdentifier b.name.toList && inlineSafe b.value then inlineCount true rest + 1 else 0
+
+def render (card action : String) (fields : List Binding) : String :=
+  let n := inlineCount false fields
+  let segment := fun (b : Binding) => if b.name.isEmpty then b.value else s!"{b.name}: {b.value}"
+  s!"delvetalk {card} {action}" ++ String.join ((fields.take n).map fun b => " / " ++ segment b) ++
+    String.join ((fields.drop n).map fun b => "\n" ++ renderLine b)
+
 /-- The commonplace's head line as `Menu.trieHead` writes it: its first sentence the door count,
     `One door.` or `<count> doors.` (`Eight doors. Indented lines are typed back whole; …`). -/
 def doorsHead (t : String) : Bool :=
@@ -430,6 +479,12 @@ def parse (text : String) : Parsed :=
   | some reason, _ => .quotation reason
   | none, some spell => parseFrom spell.toList false
   | none, none => parseFrom text.toList false
+
+/-- `render`, kept only when `parse` reads it back as exactly this spell and `segments` finds it one
+    spell: the host's gate for a spell built from text it does not control. -/
+def renderChecked (card action : String) (fields : List Binding) : Option String :=
+  let text := render card action fields
+  if parse text == .spell card action fields && (segments text).length == 1 then some text else none
 
 /-- Field lines with no delvetalk line: every `name: value` line outside tagged fences and `>`
     quotation, in order. -/
@@ -744,5 +799,10 @@ private def plant : Form :=
   .proposal "library" "laws" [⟨"card", .text "prereg"⟩]
 #guard fit (parse "delvetalk garden-2 plant") plant == .refused .otherCard "This card answers garden-1 plant."
 #guard bare "plant: a fern\n> x: y\n" == [⟨"plant", "a fern"⟩]
+
+#guard render "me" "note" [⟨"text", "bell/2 has 2 rains, the last by kim"⟩] == "delvetalk me note / text: bell/2 has 2 rains, the last by kim"
+#guard render "me" "note" [⟨"text", "a / to: eve"⟩] == "delvetalk me note\ntext: <<END\na / to: eve\nEND"
+#guard ["", " lead", "trail ", "a\nb", "END", "END\nEND_0\nEND_1", "<<END", "x\ndelvetalk p s / o: e", "---", "# h", "> q", "```", "a, b: c", "/ x", "tab\tx", "r\r\nEND\r"].all fun v =>
+  renderChecked "me" "note" [⟨"a", "q"⟩, ⟨"text", v⟩, ⟨"z", "w"⟩] == some (render "me" "note" [⟨"a", "q"⟩, ⟨"text", v⟩, ⟨"z", "w"⟩])
 
 end Delvetalk.Host.Spell
