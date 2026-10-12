@@ -3437,10 +3437,6 @@ def crossesOver (p : Json) : Bool :=
   (p.getObjValAs? String "world").toOption.any (!·.isEmpty) &&
     ((p.getObjVal? "ledger").toOption.bind fun l => (ledgerOf l).toOption.bind (·.exhausted)).isNone
 
-/-- A pending send ready to deliver here: not one crossing over, and not one a transient refusal put back
-    until the clock passes it. -/
-def deliverable (w : World) (p : Json) : Bool :=
-  !crossesOver p && ((p.getObjValAs? Nat "next").toOption.map fun n => decide (n ≤ w.clock)).getD true
 
 /-- A send whose delivery was refused transiently, put back to be delivered again once the clock moves,
     unless that was its last attempt (`Limits.deliveryAttempts`). -/
@@ -3700,14 +3696,24 @@ def identityRow (entry : Json) : Json :=
   Json.mkObj ((["identity", "request", "turnRequest", "hash", "height"].filterMap fun k => (entry.getObjVal? k).toOption.map (k, ·)) ++
     [("outcome", Json.mkObj ((["tag", "class"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·))))])
 
-/-- The bindings a `carried` genesis keeps (`identities`), by identity key. -/
+/-- A carry's re-arm intent (`Carry.rearm`): `carried:<object>:<the carried genesis's height>`, its own per carry. Until
+    2026-10-12 it was `carried:<object>` in every carry, so a world carried twice found its re-arm bound to the first
+    carry's receipt and never ran it again (the live tide, stopped from v10 on). -/
+def rearmIntent (intent : String) : Bool := intent.startsWith "carried:"
+
+/-- The intent an entry, or a kept identity row, was journaled under. -/
+def identityIntent (e : Json) : String :=
+  ((e.getObjVal? "identity").toOption.bind (·.getObjValAs? String "intent" |>.toOption)).getD ""
+
+/-- The bindings a `carried` genesis keeps (`identities`), by identity key. A re-arm's (`rearmIntent`) is never kept:
+    it is the world before's own, and binding it here would answer this world's re-arm with that receipt. -/
 def carriedIdentities (genesis : Json) : Std.HashMap String Json :=
   if tagOf genesis != "carried" then {} else
   ((((genesis.getObjVal? "outcome").toOption.bind (·.getObjVal? "identities" |>.toOption)).bind (·.getArr?.toOption)).getD #[]).foldl
     (fun (m : Std.HashMap String Json) row =>
       let who := fun (k : String) => (row.getObjVal? "identity").toOption.bind (·.getObjValAs? String k |>.toOption)
       match who "principal", who "intent" with
-      | some p, some i => m.insert (identityKey p i) row
+      | some p, some i => if rearmIntent i then m else m.insert (identityKey p i) row
       | _, _ => m) {}
 
 /-- The entry an identity is bound to: this chain's (`receipts`), else the one a carry kept (`carriedIds`). -/
@@ -3715,6 +3721,21 @@ def boundEntry (w : World) (principal intent : String) : Option Json :=
   match w.receipts[identityKey principal intent]? with
   | some index => some (w.entries.getD index)
   | none => w.carriedIds[identityKey principal intent]?
+
+/-- Whether pending delivery `p` is answered already: its turn's identity (its principal, its id) is bound to an entry
+    that is no transient refusal, so running it would only answer that receipt again, consume nothing, and be found
+    first by the next pass of the same settling loop. It is never run (`deliverable`); a try counts it (`answered`). -/
+def answered (w : World) (p : Json) : Bool :=
+  match (p.getObjValAs? String "principal").toOption, (p.getObjValAs? String "id").toOption with
+  | some principal, some id => match boundEntry w principal id with
+    | some entry => !isTransient entry
+    | none => false
+  | _, _ => false
+
+/-- A pending send ready to deliver here: not one crossing over, not one a transient refusal put back until the
+    clock passes it, and not one `answered` already. -/
+def deliverable (w : World) (p : Json) : Bool :=
+  !crossesOver p && ((p.getObjValAs? Nat "next").toOption.map fun n => decide (n ≤ w.clock)).getD true && !answered w p
 
 /-- Retry rule shared by every journaled op: the same identity and request returns
     the retained receipt without an entry; the same identity with another request

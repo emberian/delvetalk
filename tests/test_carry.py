@@ -480,7 +480,8 @@ class Moves(Reflection):
         self.assertEqual(carried["rearmed"], ["t", "u"], carried)  # c did not move: its suspensions, if any, stand
         [genesis] = journal_entries(out)
         told = [d for d in genesis["outcome"]["pending"] if d["method"] == "carried"]
-        self.assertEqual(sorted((d["to"], d["id"], d["sender"]) for d in told), [("t", "carried:t", ""), ("u", "carried:u", "")])
+        at = genesis["height"]  # each carry's re-arm is its own: carried:<object>:<the carried genesis's height>
+        self.assertEqual(sorted((d["to"], d["id"], d["sender"]) for d in told), [("t", f"carried:t:{at}", ""), ("u", f"carried:u:{at}", "")])
         new = self.opened(out)
         self.assertEqual(new.send(op="world-advance", principal="ember", height=1)["status"], "advanced")
         count = lambda i: field(new.send(op="world-view", principal="ember", object=i)["state"], "count")["value"]
@@ -491,6 +492,35 @@ class Moves(Reflection):
         again = self.opened(out)
         self.assertEqual(again.send(op="world-advance", principal="ember", height=2)["status"], "advanced")
         self.assertEqual(field(again.send(op="world-view", principal="ember", object="t")["state"], "count")["value"], "1002")
+
+    def test_a_send_answered_already_is_never_run_and_a_try_says_so(self):
+        # The live v12 tide's re-arm: a pending send whose identity the world binds already. Run, it would only answer
+        # that receipt again and stay pending, first in the queue: a settling pass met it 64 times in one try.
+        self.ship(declared(TALLY_NOTED_SOURCE.replace(
+            "def bump(", "def carried(state: State, input: {}, context: Abi.Context) -> Activity<Nat>:\n  add(context, 1000n)\ndef bump(", 1),
+            "bump", "jot", "~carried"))
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        [g] = journal_entries(out)
+        [told] = [d for d in g["outcome"]["pending"] if d["to"] == "t" and d["method"] == "carried"]
+        told["id"] = "already"
+        g["outcome"].setdefault("identities", []).append({"identity": {"principal": told["principal"], "intent": "already"},
+                                                          "request": "x", "height": 1, "outcome": {"tag": "admitted"}})
+        g.pop("hash")
+        g["hash"] = cid_of(g)
+        os.remove(out)
+        os.remove(out + ".blocks")
+        write_journal(out, [g])
+        new = self.opened(out)
+        tried = new.send(op="world-try", principal="ember", object="c", method="bump", argument=record(), identity="try-1")
+        self.assertTrue(tried.get("tried"), tried)
+        self.assertEqual(tried["unresolved"].get("answered"), 1, tried["unresolved"])
+        ran = [d["receipt"]["identity"]["intent"] for d in tried.get("delivered") or []]
+        self.assertEqual(sorted(ran), [f"carried:u:{g['height']}"], ran)  # u's re-arm runs once; t's answered one never
+        self.assertEqual(new.send(op="world-advance", principal="ember", height=1)["status"], "advanced")
+        count = lambda i: field(new.send(op="world-view", principal="ember", object=i)["state"], "count")["value"]
+        self.assertEqual((count("t"), count("u")), ("2", "1010"))
+        self.assertEqual(new.send(op="world-pending")["ids"], ["already"])
 
     def test_a_moved_object_takes_its_packages_new_law_and_an_amended_one_is_kept_and_named(self):
         version = self.host.send(op="world-view", principal="ember", object="m")["version"]
@@ -603,6 +633,59 @@ class Moves(Reflection):
         self.assertEqual(p.returncode, 0, p.stderr)
         carried = json.loads(p.stdout)
         self.assertEqual([(d["object"], d["reason"]) for d in carried["dropped"]], [("z", "its object was left")], carried)
+
+
+class CarriedTwice(unittest.TestCase):
+    """The town's tide, carried twice, each carry moving it (so its waiting tick is dropped and the carry re-arms it):
+    after each carry it ticks again. Until 2026-10-12 every carry re-armed it as `carried:tide`, and a carried world
+    kept the first carry's binding of that intent, so from the second carry on the re-arm was answered by the old
+    receipt, never ran, and stood at the head of the pending queue: the live tide stopped at v10, and every send
+    behind it waited (2026-10-12). Here: each re-arm's intent names its carry, no `carried:` binding crosses, and the
+    tide ticks after each carry."""
+
+    def test_the_tide_ticks_after_each_of_two_carries(self):
+        from tests.town import Town
+        from transport.host import HostProcess
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        town = Town(os.path.join(tmp.name, "v1"), cleanup=self.addCleanup, furnished=False)
+        image = os.path.join(tmp.name, "image")
+        shutil.copytree(os.path.dirname(WORLD_LIBRARY), image, ignore=shutil.ignore_patterns("__pycache__"))
+        def ticks(send):
+            fields = send(op="world-view", principal="transport", object="tide")["state"]["fields"]
+            return int({f["name"]: f["value"] for f in fields}["ticks"]["value"])
+        def tide_ticks(send):
+            # One minute on: the settling pass runs the re-arm (which sends the tide `due`); then past the gap: it ticks.
+            for minutes in (1, 62):
+                clock = send(op="world-status")["clock"]
+                self.assertEqual(send(op="world-advance", principal="transport", height=clock + minutes)["status"], "advanced")
+                send(op="world-deliver", principal="transport", limit=64)
+        self.assertEqual(ticks(town.send), 1)
+        self.assertEqual(town.send(op="world-snapshot")["status"], "snapshot")
+        town.close()
+        journal, host = town.journal, None
+        for n in (1, 2):
+            with open(os.path.join(image, "objects", "Tide.obend"), "a", encoding="utf-8") as f:
+                f.write(f"# carried {n}\n")  # the image's tide differs: it moves, and the carry re-arms it
+            out = os.path.join(tmp.name, f"v{n + 1}.journal")
+            p = subprocess.run([binary(), "carry", "--from", journal, "--out", out, "--reason", f"carry {n}",
+                                "--library", os.path.join(image, "lib")], capture_output=True, text=True, timeout=600)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            carried = json.loads(p.stdout)
+            self.assertIn("tide", carried["rearmed"], carried)
+            [genesis] = journal_entries(out)
+            rearms = [d["id"] for d in genesis["outcome"]["pending"] if d.get("method") == "carried"]
+            self.assertEqual(rearms, [f"carried:tide:{genesis['height']}"], genesis["outcome"]["pending"])
+            kept = [r["identity"]["intent"] for r in genesis["outcome"].get("identities") or []]
+            self.assertFalse([i for i in kept if i.startswith("carried:")], kept)
+            host = HostProcess(binary(), out)
+            before = ticks(host.send)
+            tide_ticks(host.send)
+            self.assertGreater(ticks(host.send), before, f"the tide did not tick after carry {n}")
+            self.assertEqual(host.send(op="world-pending")["ids"], [], "nothing waits behind a re-arm")
+            self.assertEqual(host.send(op="world-snapshot")["status"], "snapshot")
+            host.close()
+            journal = out
 
 
 class StateDirectory(unittest.TestCase):

@@ -188,9 +188,10 @@ def Carried.rearmed (c : Carried) : List String :=
   c.moved.filterMap fun m => (c.world.objects[m.object]?).bind fun o => if o.offers rearmMethod then some m.object else none
 
 /-- The delivery telling `id` it was carried: a pending send from no object (the carry, the opener's act), so it
-    runs as the first turn that settles the carried world, under the carry's principal and a fresh ledger. -/
-def rearm (principal id : String) : Json :=
-  Json.mkObj [("id", toJson s!"carried:{id}"), ("to", toJson id), ("method", toJson rearmMethod),
+    runs as the first turn that settles the carried world, under the carry's principal and a fresh ledger. Its id,
+    the turn's intent, is this carry's own (`carried:<id>:<the carried genesis's height>`, `Ops.rearmIntent`). -/
+def rearm (principal : String) (at_ : Nat) (id : String) : Json :=
+  Json.mkObj [("id", toJson s!"carried:{id}:{at_}"), ("to", toJson id), ("method", toJson rearmMethod),
     ("argument", Delvetalk.Compiler.ObjectiveBendDataWire.dataJson (.record [])), ("sender", toJson ""), ("from", identityJson principal "carry"),
     ("principal", toJson principal), ("ledger", Ledger.start.json)]
 
@@ -452,14 +453,19 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
     (changed.map fun l => [("library", Json.mkObj [("from", toJson previous), ("to", toJson l.pin)])]).getD [] ++ earlier)
   let suspended ← w.suspended.mapM (Snapshot.wholeSuspension w)
   let principal := if !w.opener.isEmpty then w.opener else if !w.clockPrincipal.isEmpty then w.clockPrincipal else "host"
-  let pending := w.pending ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray ++ (c.rearmed.map (rearm principal)).toArray
+  -- A re-arm an earlier carry left pending (never run: until 2026-10-12 its intent was bound to the first carry's
+  -- receipt) is superseded by this carry's of the same object.
+  let stale := fun (p : Json) => rearmIntent ((p.getObjValAs? String "id").toOption.getD "") &&
+    c.rearmed.contains ((p.getObjValAs? String "to").toOption.getD "")
+  let pending := w.pending.filter (!stale ·) ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray ++
+    (c.rearmed.map (rearm principal (height + 1))).toArray
   let all := Snapshot.indexJson w
   let index := Json.mkObj (Snapshot.carriedKeys.filterMap fun k => (all.getObjVal? k).toOption.map (k, ·))
   -- Every identity the world binds (a suspension's is carried with it; a transient refusal binds none), and
   -- those its own carry kept: a retry after the carry answers the receipt it had (`Ops.boundEntry`).
   let bound := w.receipts.toArray.filterMap (fun (_, i) => (src.get? i).bind fun e =>
-      if tagOf e == "suspended" || isTransient e then none else some (identityRow e))
-  let identities := (bound ++ w.carriedIds.toArray.map (·.2)).qsort (fun a b => a.compress < b.compress)
+      if tagOf e == "suspended" || isTransient e || rearmIntent (identityIntent e) then none else some (identityRow e))
+  let identities := (bound ++ (w.carriedIds.toArray.filter fun (_, row) => !rearmIntent (identityIntent row)).map (·.2)).qsort (fun a b => a.compress < b.compress)
   Snapshot.genesisEntry w w "carried" principal "carry" cid ("carriedFrom", origin) pending suspended
     ([("index", index)] ++ (if identities.isEmpty then [] else [("identities", Json.arr identities)]) ++
      (if c.left.isEmpty then [] else [("left", Json.arr (c.left.toArray.map fun (id, why) =>
