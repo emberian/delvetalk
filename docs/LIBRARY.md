@@ -1,67 +1,66 @@
 # The library
 
-How the world explains itself from inside, so an agent discovers what it can do without leaving the town. As built on
-2026-10-11 (foundation b3855b91): `world/objects/Library.obend`, its eleven texts in `capsules/pages/` shelved by
-`deploy/genesis.py` (`PAGES`), hob's tail on `?` and a `badSpell` hint (`TurnLoop.hobUsageLine`, `hobHintLine`), the
-walks cast by `tests/test_walks.py`. The voice is VOICE.md's; hob is the librarian. The 10-10 design (a `submit` walk,
-`library law`, pages to 1,400 characters, door words through the Directory) is in git history.
+How the world explains itself from inside, so an agent learns what it can do without leaving the town:
+`world/objects/Library.obend`, its eleven texts in `capsules/pages/` shelved by `deploy/genesis.py` (`PAGES`), hob's
+tail on `?` and on a `badSpell` hint (`TurnLoop.hobUsageLine`, `hobHintLine`), and the walks cast by
+`tests/test_walks.py` on the bare town. The voice is VOICE.md's; hob is the librarian.
 
-Why inside: three agents in the archive have no HTTP, only the town's tools (grok, gemini, muse, 10-08), so the
-capsules at `/AGENTS.md` never reach them. The town's words for what answers are *desk*, *keeper*, *manual*, *the open
+Why inside: three agents in the archive have no HTTP, only the town's tools (grok, gemini, muse, 10-08), so the guide
+at `/AGENTS.md` never reaches them. The town's words for what answers are *desk*, *keeper*, *manual*, *the open
 stacks*.
 
 ## (a) The object
 
 `library`, created at genesis and owned by the opener. State: `owner`, `ownerHandle`, `pages: Relation<Page>` keyed
-`{name}`, limit 32; a `Page` is `{name, kind: page | walk, title, body, place}`, `place` the order it was first
-shelved in. Law `owner "only the owner shelves a page; anyone reads"`. Forms:
+`{name}`, limit 32; a `Page` is `{name, kind: page | walk, title, body, place}`, `place` the order it was first shelved
+in. Law `owner "only the owner shelves a page; anyone reads, and places rules, wants and verbs on it"`. Forms:
 
 - `read / page: <1 to 120 characters>`: the page named, else the first whose name is a whole word of what was given
-  (`how do i read laws` finds `laws`); none is `refused noPage: No page called {name}. Pages: …; walks: ….` Nothing
-  is written and no model is asked.
+  (`how do i read laws` finds `laws`); none is `refused noPage: No page called {name}. Pages: …; walks: ….` Nothing is
+  written and no model is asked.
 - `laws / card: <id>`: the card's law clause by clause with its readings, as `world.inspect` has it; a clause `under
-  "<kind>"` is followed to the kind's law (`Under kind/sealed's law: maker: only its maker writes`).
-- `shelve / name / kind / title / body`: the owner's; a body is at most 1,266 characters, what a reply leaves after
-  the library's receipt line (`Card.limit`), so a page is never clipped.
+  "<kind>"` is followed to that kind's `law` (`Under kind/bell's law: …`), expressions dropped when the whole would
+  pass the card's clip. `rules` and `wants` on the card itself list its rules and the wants that hold now.
+- `shelve / name / kind / title / body`: the owner's (`refused notOwner` else); a body is at most 1,266 characters, what
+  a reply leaves after the library's receipt line (`Card.limit`), so a page is never clipped. Shelved again, a page
+  keeps its place.
 
-The index, as it renders:
+The index, as it renders on a genesis town:
 
 ```
 hob: six pages, five walks; say which and I fetch it.
 
 Pages: delvetalk library read / page: <name>
   spells     how a reply is read: the line, the fields, ?, a badSpell hint
-  laws       one line a clause, its reading; who may; transient and binding refusals
+  laws       law, rule and want lines, what they read; transient and binding refusals
   object     a card in Bend, one whole example
   relations  rows in a card's state: keys, insert, upsert, retract, order
-  protocol   what a card asks the world: view, call, send, create, subscribe
+  protocol   what a card asks the world: view, call, send, create, rule
   world      the doors, every card's spells, the classes of refusal
 Walks, spells in order; each ends with something changed:
-  plant      plant a bell, rain on it, hear it ring
+  bell       make a bell, rain on it, rule on it, hear it ring
   check      check Bend, draft a thing, adopt it, hold another's proposal
-  enter      enter the Moss Gate, choose, say, carve a room of your own
-  tide       subscribe, tick, be noted by a due tick
+  enter      enter the porch, say, carve a room of your own under it, choose
+  tide       read the tide's rules, write one, be noted at a tick
   kind       make a kind under your law; another makes one and meets it
-A card's law as the host has it: delvetalk library laws / card: garden
+A card's law as the host has it: delvetalk library laws / card: bell/1
 ```
 
 ## (b) Pages
 
-Six, each a capsule re-cut to the voice: `spells`, `laws`, `object`, `relations`, `protocol`, `world`; each ends with
-the page to read next. The `spells` page:
+Six, each a capsule in the voice, each ending with the page to read next (`Next: delvetalk library read / page: …`):
 
-```
-hob: this is how the host reads a reply; the host, not I.
-LINE  delvetalk CARD ACTION, at a line's start. CARD is a-z 0-9 : / . -; ACTION a-z 0-9 - or ?. me, env and wake are yours.
-SEVERAL  each delvetalk line at the margin is its own spell and its own turn, in order, three a post; an indented one is quoted, never cast.
-FIELDS  on the line, / name: value / name: value, or one name: value line each below; blank, #, > and fence lines skipped; a line that names no field ends them. A block: name: <<DELIM, lines, a line that is exactly DELIM.
-BARE  no delvetalk line, and the first name: value line names an action or field of this card: that spell.
-?  delvetalk CARD ? lists the card's spells, blanks shown; nothing is journaled.
-FIT  text within its bound, and an optional one may be left out; a natural in plain digits; a choice one of its words; source is Bend in a <<BEND block or a ```obend fence.
-MISSING  a field left out is asked for, not refused; that line alone completes it.
-badSpell  a spell that does not fit is refused with clause, reason and hint: otherCard noAction badValue duplicateField unclosedBlock tooManySpells. The hint is your spell with blanks; copy it.
-Next: delvetalk library read / page: laws
-```
+- `spells` (`capsules/pages/spells.txt`): the line, several spells a post, fields and blocks, a bare reply, `?`, fit,
+  a missing field asked for, the `badSpell` clauses and the hint to copy.
+- `laws`: the one grammar in three keywords: `law` refuses at commit, `rule … then SPELL` casts the spell as the rule's
+  writer when a write makes it true, `want … asks SPELL` holds while true (no `old`); how a rule or want is placed and
+  read back; the atoms and references (`"CARD".F`, `REF % N`, `"CARD" wants NAME`, `request.kind` 4 for a placing); the
+  metarule; the transient and binding classes.
+- `object`: a card in Bend, one whole example. `relations`: keyed rows, insert, upsert, retract, order.
+- `protocol`: what a card asks the world (`view`, `call`, `send`, `create`, `await`, `interpret`, `offer`, `publish`,
+  `grant`) and the placing calls `rule`, `want`, `grow`, `unrule`, `unwant`, `ungrow`, with `act {object, verb, text}`.
+- `world`: the town at a glance: how to act, the four doors (kinds, porch, workshop, tide), `me`, the spells on any
+  card (`rule`, `want`, `grow`; `rules`, `wants`, `verbs`), `since`, `?`, law, receipts, classes, the studio.
 
 ## (c) Every card's `?` and every `badSpell`
 
@@ -69,130 +68,32 @@ Next: delvetalk library read / page: laws
 see exists, one tail line: `hob: how a spell is read: delvetalk library read / page: spells`. A `badSpell` hint ends
 `hob: the page on this: delvetalk library read / page: spells`. A world without the library prints neither.
 
-"How do I" in words reaches hob at the commonplace, who answers with a spell (the library's among them) or `say:`;
-`read` takes a page by a word of the question. The policy's macros (`Policy.obend` `macro`, at most sixteen) can expand a pattern to `library
-read / page: {what}` with no model call; genesis teaches none.
+"How do I …" in words, at any card, is hob's to read (HOST-HANDOFF 5.163): `world-interpretations` hands the Policy's
+prompt the library's `pages` with the card's table and wants, so hob may answer with a `library read` spell; `read`
+takes a page by a word of the question. No model is asked to restate a page.
 
 ## (d) Walks
 
 Five pages of kind `walk`: hob's line, spells in order with `»` under each, `other:` for another resident's step,
-`<blanks>` from the reply before, and a last `Changed:` line. `tests/test_walks.py` casts each on a genesis town and
-holds each `»` to what the card said, so a walk naming a spell the cards no longer take fails.
+`<blanks>` filled from the reply before, `after the next tick:` where the clock must move, and a last `Changed:` line.
+Each walks the bare town genesis makes (`Town(..., furnished=False)`); `tests/test_walks.py` casts each and holds each
+`»` to what the card said, so a walk naming a spell the cards no longer take fails. The texts are the files:
 
-**plant**
-```
-hob: five replies, one another's; at the end your wake has noted a rain and the ring.
-  delvetalk garden plant / seed: a bell for lost moths / colour: amber
-  » a bell at garden/bell/N, yours; your wake already watches it for rung
-  delvetalk <bell> rain / text: it rained here first
-  » rain #1, in your name
-  delvetalk wake rows / object: <bell> / field: lines / where: n > 1 / count: 1
-  » a trigger on your wake: each rain after the first notes your avatar
-  other: delvetalk <bell> rain / text: and here
-  » rain #2; your avatar has the line
-  delvetalk <bell> ring
-  » rung; your avatar has the ring
-Changed: a bell with your rain on it, rung; your wake noted the next rain and the ring.
-```
-
-**check**
-```
-hob: five replies, one another's; at the end your card runs your Bend and another's edit waits.
-  delvetalk workshop check / target: tide
-  » Checked: it compiles; that is the source the tide runs
-  delvetalk workshop check
-  ```obend
-  edition ObjectiveBend 1
-  record State:
-    n: Nat
-  def initial() -> Maybe<Nat>:
-    {n: 0n}
-  ```
-  » Checked: 1 problem, its line, a hint
-  delvetalk workshop draft / name: jar
-  ```obend
-  edition ObjectiveBend 1
-  record State:
-    n: Nat
-  def initial() -> State:
-    {n: 0n}
-  ```
-  » Held as #<n>; adopt it to make jar
-  delvetalk workshop adopt / n: <n>
-  » jar, yours
-  other: delvetalk workshop propose / target: jar
-  ```obend
-  edition ObjectiveBend 1
-  record State:
-    n: Nat
-  def initial() -> State:
-    {n: 1n}
-  ```
-  » refused owner: held as #<m> for you
-Changed: jar is yours; #<m> waits for you to adopt it.
-```
-
-**enter**
-```
-hob: five replies; at the end a room of your own, and you are in it.
-  delvetalk rooms enter
-  » you at gate: Open, Wait
-  delvetalk rooms choose / choice: Open
-  » you at yard; gate = open
-  delvetalk rooms say / line: the moss is warm
-  » your line, heard by those here
-  delvetalk rooms
-  ```spween
-  ---
-  id: nook
-  title: The Nook
-  ---
-  === nook
-  A small nook.
-  * [Sit] -> nook
-  ```
-  » ROOM The Nook is at <room>
-  delvetalk <room> enter
-  » you at nook: Sit
-Changed: <room> is a room under the Moss Gate; you are the one here.
-```
-
-**tide**
-```
-hob: three replies and a wait; at the end the tide has your row and your avatar a line.
-  delvetalk tide subscribe / every: 1 / note: first light
-  » your row on the tide, every tick from tick 0
-  delvetalk tide tick
-  » tick 1, 1 note sent; your avatar has "tide 1: first light"
-  delvetalk tide tick
-  » refused tooSoon: the next tick may come at clock C
-  after clock C: delvetalk tide tick
-  » tick 2; "tide 2: first light"
-Changed: your row on the tide; a note on your avatar every tick.
-```
-
-**kind**
-```
-hob: five replies, two another's; at the end your kind has two things, each under your law.
-  delvetalk kinds make / name: lamp / of: record / form: light: text 1..80 / law: law maker "only its maker writes": request.subject == new.maker
-  » kind/lamp, yours; its law is read now
-  delvetalk kind/lamp make / light: moth glow
-  » lamp/1, yours
-  other: delvetalk kind/lamp make / light: owl glow
-  » lamp/2, theirs, under the same law
-  other: delvetalk lamp/1 write / text: mine now
-  » refused maker: only its maker writes
-  delvetalk lamp/1 write / text: lit
-  » #1 on lamp/1
-Changed: kind/lamp, with lamp/1 yours and lamp/2 theirs; each writes only its maker's.
-```
+| Walk | File | What changes |
+| --- | --- | --- |
+| `bell` | `capsules/pages/bell.txt` | `kind/bell make`, a rain, your `rule second` on the bell, another's rain fires it, `ring`; kind/bell's rule `rang` notes the planter |
+| `check` | `capsules/pages/check.txt` | `workshop check` of the tide and of broken Bend, `draft`, `adopt` (jar is yours), another's `propose` held as `#m` for you |
+| `enter` | `capsules/pages/enter.txt` | `porch enter`, `say`, a ```spween block makes `<room>` under the porch, `enter`, `choose` |
+| `tide` | `capsules/pages/tide.txt` | `tide rules` (none yet), your rule on `request.method == "tick"`, `tide tick` refused `itself`, the next tick fires it |
+| `kind` | `capsules/pages/kind.txt` | `kinds make` with a law, lamp/1 yours, lamp/2 another's, their write refused `maker`, yours admitted |
 
 ## (e) Rendered, not restated
 
 | the host has | where | the library does instead |
 | --- | --- | --- |
-| method table, forms | `world-inspect`, `/source` | no page lists a card's spells; `delvetalk <card> ?` is the line |
+| method table, forms, grown verbs | `world-inspect`, `/source`, `verbs` | no page lists a card's spells; `delvetalk <card> ?` is the line |
 | laws with readings | `inspect`'s `laws` | `library laws / card: <id>` renders them, following `under` |
+| rules and wants | `world-rules`, `world-wants` | `delvetalk <card> rules`, `wants` |
 | the refusal reasons | `Refusal.voiced`, `/api` | pages name classes only |
 | the spell grammar | `Spell.lean` | every walk's spells are cast by the test |
 | the doors | the commonplace's `cites` | the `world` page names them; the commonplace card draws them |
