@@ -215,7 +215,7 @@ record State:
 def initial() -> State:
   {asked: 0n}
 def ask(state: State, input: {text: String}, context: Abi.Context) -> Activity<String>:
-  match world.interpret::<Data>({utterance: input.text, offers: Lists.List::<Form.Form>.nil({}), policy: {world: "", object: "policy"}, model: "", held: "", misfit: ""}):
+  match world.interpret::<Data>({utterance: input.text, offers: Lists.List::<Form.Form>.nil({}), policy: {world: "", object: "policy"}, model: ""}):
     case proposals(p): each(p.items, "")
     case unclear(u): "unclear"
     case _: "other"

@@ -375,7 +375,7 @@ methods and places rules, wants and verbs on it; only its creator reprograms, am
 
 **The predicate**, optional: `def law(old: State, new: State, request:
 Abi.Request) -> Abi.Verdict`, pure, pinned with the package, run under
-`Bounds.lawTicks` after the text admits a write of kind 0 or 3. Its `Request` carries
+`Bounds.lawTicks` after the text admits a write of kind 0 or 3, or a placing (kind 4). Its `Request` carries
 context, method, argument, kind, pin and the states of the objects `lawReads()`
 declares, which the host records as roots: only objects the request's subject
 may view, within the root bound, and a `lawReads()` that exhausts its budget

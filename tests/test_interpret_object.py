@@ -33,7 +33,7 @@ def initial() -> State:
 def offered(card: String, action: String) -> World.Forms:
   Lists.List::<Form.Form>.cons({head: {card: card, action: action, fields: Lists.List::<Form.Field>.cons({head: {name: "seed", kind: Form.Kind.text({min: 1n, max: 140n})}, tail: Lists.List::<Form.Field>.nil({})})}, tail: Lists.List::<Form.Form>.nil({})})
 def ask(state: State, input: {text: String, card: String, action: String}, context: Abi.Context) -> Activity<String>:
-  match world.interpret::<Data>({utterance: input.text, offers: offered(input.card, input.action), policy: {world: "", object: "policy"}, model: "", held: "", misfit: ""}):
+  match world.interpret::<Data>({utterance: input.text, offers: offered(input.card, input.action), policy: {world: "", object: "policy"}, model: ""}):
     case proposal(p): passOn(p.object, p.method, p.argument)
     case unclear(u): "unclear"
     case _: "other"
@@ -128,7 +128,7 @@ def form(action: String) -> Form.Form:
 def offered() -> World.Forms:
   Lists.List::<Form.Form>.cons({head: form("plant"), tail: Lists.List::<Form.Form>.cons({head: form("tend"), tail: Lists.List::<Form.Form>.nil({})})})
 def ask(state: State, input: {text: String}, context: Abi.Context) -> Activity<String>:
-  match world.interpret::<Data>({utterance: input.text, offers: offered(), policy: {world: "", object: "policy"}, model: "", held: "", misfit: ""}):
+  match world.interpret::<Data>({utterance: input.text, offers: offered(), policy: {world: "", object: "policy"}, model: ""}):
     case proposals(p): passAll(p.items, "")
     case proposal(p): "one {p.method}"
     case unclear(u): "unclear"
