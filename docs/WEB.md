@@ -75,11 +75,12 @@ a handle box and "Log in with delve.town", and below it a small "or post a word"
 In: "Enter the commonplace". Then a short line of the town's places (objects that are not a resident's avatar, as
 links) and a count of residents. The shelf mark (`entry N · N cards`) is the colophon line.
 
-**`/play/<card>`.** The place's name, small. If a reply was sent: hob's line, what came back as prose, its exact card
-folded, its receipt folded (a refusal shown whole). Then the paint, the card disclosure, the wants line, the doors line.
+**`/play/<card>`.** The place's name, small. If the reply sent entered a place: its telling first (VOICE "A telling":
+the host's frame, the paint, the exact lines it draws on folded). If a reply was sent: hob's line, what came back as
+prose, its exact card folded, its receipt folded (a refusal shown whole). Then the paint, the card disclosure, the wants line, the doors line.
 Then the box and its suggestions. `/play/` is the commonplace.
 
-**`/o/<id>`.** The thing's name; its paint; the card disclosure; wants; doors; "Speak to it" when logged in. Then three
+**`/o/<id>`.** The thing's name; a place's telling to a signed-in reader; its paint; the card disclosure; wants; doors; "Speak to it" when logged in. Then three
 disclosures: "law", "source", "journal" (the newest twenty entries, as before, each a slip). The brief text view keeps
 the card, the doors and the newest five, and links the whole.
 

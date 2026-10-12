@@ -172,6 +172,10 @@ class Told(unittest.TestCase):
         self.assertEqual((first['telling']['form'], first['telling']['frame']), ('before', 'Before you arrived'))
         listed = next(i for i in self.town.send(op='world-renders')['pending'] if i['key'] == first['key'])
         self.assertEqual(listed['request']['user'], 'Strokes:\n' + self.telling(MOO)['text'])
+        # The one contract, with what a telling asks of the painter: past and present tense, its lengths, no frame.
+        for asked in ('For a telling of a place', 'The past tense for what happened', 'never with the frame',
+                      '300 for a telling while away and 500 before arrival'):
+            self.assertIn(asked, listed['request']['system'])
         done = self.paint(lambda user: BEFORE)
         self.assertIn(first['key'], done['painted'], done)
         for _ in range(3):
