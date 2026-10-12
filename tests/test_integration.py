@@ -61,7 +61,7 @@ def kind(k: Form.Kind) -> String:
 def paint(state: State, input: {colour: Colour, note: String}, context: Abi.Context) -> Activity<String>:
   said(context, input.note)
 def checkAll(state: State, input: {package: String}, context: Abi.Context) -> Activity<String>:
-  match world.check({package: input.package}):
+  match world.check({package: input.package, layers: Lists.List.nil()}):
     case checked(c): said(context, lines(c.diagnostics))
     case _: said(context, "other")
 def lines(items: Lists.List<String>) -> String:

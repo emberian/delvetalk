@@ -2062,6 +2062,57 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      fence (`blockOpener`, `closesBlock`, one reader with the binding parser); `fit` refuses an unknown field with a
      known one after it (`unknownField`), an unknown one last still ends the fields (D7).
    - Objects 4 was lane/objrev's (the Bend law judges placings); agent 4, 5, 12 were host27's (5.169, 5.167, 5.164).
+173. **A layer checked over what it is laid on; a making takes a stack (lane/author-build; AUTHORING §5 host 1, steps
+   2, 3, 5; no edition change).** `world.check {package, layers}`: `package` as `create` takes it (a module of the
+   checking object's closure, or source), each of `layers` laid over it as `extend` lays one (`layeredInputs`), compiled
+   for `initial` (`TurnLoop.checkStack`, `Ops.checkInputs`); a package of source with no layers is `checkSource`'s, as
+   before. `world.checkObject {object, layers}`: what the object runs with `layers` over it (`Ops.checkObject`). Both
+   count against `checksPerTurn`. `extendInputs` writes the right `layer over ./<entry>.obend` in place of an author's
+   own first `layer over` line (a body written over RECORD laid over a bell's body), so a layer's line numbers are its
+   author's. A making takes several layers (`CreateRec.layers`, bottom first; `extendCreation` builds the creation
+   again with all of them, each judged by the made thing's law; the `duplicate` refusal is gone). A typed `view` whose
+   state does not conform to the call site's `S` answers `refused typeMismatch`, no longer an evaluation error. KIND
+   (Bend) uses all three: `stackOf` climbs `of` through kinds (four deep) to the root package and the bodies above
+   it; `kinds make` checks the body over that stack and refuses `body` with the checker's lines (the instance-time
+   `refused body` is gone); a kind's things are made with one `extend` a body; `~checkBody` serves the workshop's
+   `check / over:`. Tests: `test_authoring.Authoring`.
+
+174. **A clause reads a made thing's form fields; a spell's field binds in any case (lane/author-build; AUTHORING §5
+   host 2, step 6).** `Law.fieldReading`: a name the state has no field for is read from its `fields` rows (`{name,
+   value}`, what its kind's make took; `namedValue`), digits as a number, so `count(new.lines where verb == "rain") ==
+   new.ringAt` holds at the number the maker chose; `#guard`s beside `monotone`'s. `Spell.spelled`: a binding whose
+   folded name is a form field's takes the form's spelling (`ringAt: 3` was folded to `ringat` and never bound a
+   camelCase field). Test: `test_authoring.Authoring` (§6.1's tally, its law corrected: a rule fires under the kind's
+   owner, so "only its maker rings it" refused the rule's own ring; the build's law says "at its number, not before").
+
+175. **What a check says of reach; every missing import at once (lane/author-build; AUTHORING §5 step 4, D-receive,
+   D-imports).** `check`/`checkObject` answer `checked {diagnostics, reaches}`: `reaches` is whether what compiled has
+   a `receive` (`Ops.answersSpells` on the artifact's methods; `checkDiagnostics` compiles once, lawful, and returns
+   both; `TurnLoop.checkedData` answers `{diagnostics}` alone to a call site compiled before `reaches`). The workshop
+   refuses a draft no spell reaches (`noReceive`) and says so under a clean `check`. The kernel's package loader
+   (`Package.missingLibraries`, called in `modulesAndAsts` before each module is parsed) names in one refusal every
+   library import a module needs and lacks when there are two or more (`Form` and `List` for form blocks, `Plan` for
+   `write {…}`/`keep()` beside a State, `World` for `Activity<…>` with no World module in the package); one alone is
+   still refused where it is used. The workshop writes a layer's header itself (`Forms.layer`, shared by KIND's
+   bodies and `draft / over:`); a held draft over a kind is made by the kind (`~makeDrafted`), over a thing laid on it.
+   Tests: `test_authoring`, `test_sugar`, `test_workshop`.
+
+176. **Where a thing's code came from (lane/author-build; AUTHORING §5 host 3, step 7).** `Object.madeFrom`: the
+   journaled `madeFrom {object, pin, receipt}` of the `make` that made it or of a reprogram that carried one
+   (`become`), set as the commit installs it (`Ops.judge`: `creations`, and the reprogrammed `next`, keeping an earlier
+   one when the reprogram carries none), live and replayed alike; the snapshot keeps it under `madeFrom` when present
+   (an older snapshot has none). A `make` whose `madeFrom.receipt` is "" cites the turn that made `object`
+   (`TurnLoop.madeReceipt`). `?` prints `lineageLine`, "After kind/tapper by yue.delve.town, entry 66.", the principal
+   of the cited entry; `world-inspect` answers `madeFrom` and `lineage`. KIND's `~makeFork` (by `kinds`) makes a kind
+   forked whole with that lineage; the workshop's `draft / from:` holds one. Test: `test_authoring`.
+
+177. **A verb grown with a body (lane/author-build; AUTHORING §3 (b), §5 objects 4).** `castSpell`: a direct `grow`
+   carrying `body` runs `workshop`'s `growBody {object, name, reading, takes, body}` (`workshopId`) as the speaker's
+   turn; `growLine` shows the field. The workshop (Bend) writes the one method (`verbLayer`: its `form`, and a `def`
+   whose result is a number), lays the header (`Forms.layer`), checks it over the thing and `extend`s it when the
+   thing's law lets the grower reprogram it, else holds it over the thing for whoever its law lets lay it (`adopt /
+   n`, `laidOn`). A grown verb with a body is a declared method, so no verb row is placed. Test: `test_authoring`
+   (with the verb library: a one-verb kind laid by `become`, `?` saying what it is after).
 
 ## 6. Gotchas
 
