@@ -4928,16 +4928,33 @@ def unfiredWords : String → String
   | "pending" => s!"the world holds {Limits.maxPending} undelivered sends"
   | other => other
 
-/-- `world-chronicle {principal, day}` (docs/FOUNDATION.md §10; OVERHAUL §2 conflict 6): one clock day of the
-    journal folded into lines, derived at the read and never written. The day's span is `World.days`;
-    each line names what an entry of it did to a thing the reader may view: made, grown (a verb), fired
-    or not, came to want or stopped; then the refusals by class and the hands that acted, by handle.
-    At most `Limits.chronicleLines` lines of things, the rest counted. -/
-def chronicle (w : World) (reader : String) (day : Nat) : List String := Id.run do
-  let some i := w.days.findIdx? (·.1 == day) | return [s!"day {day}: nothing was journaled."]
+/-- One thing a day of the journal did to a thing (`chronicleDay`): `made`, `grew` (a verb), `fired` or
+    `unfired` (a rule), `wanted` or `unwanted`; `who` is the hand or the rule's owner as shown, `name` the
+    verb, rule or want, `why` an unfired rule's reason, `entry` the height. -/
+structure DayEvent where
+  what : String
+  object : String
+  who : String := ""
+  name : String := ""
+  why : String := ""
+  entry : Nat
+
+/-- A clock day of the journal (`World.days`), folded: its entries, what they did to things the reader may
+    view, the refusals by class and the hands that acted, by handle. `none` when nothing was journaled. -/
+structure Day where
+  day : Nat
+  start : Nat
+  stop : Nat
+  admitted : Nat
+  events : List DayEvent
+  refusals : List (String × Nat)
+  hands : List String
+
+def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.run do
+  let some i := w.days.findIdx? (·.1 == day) | return none
   let start := w.days[i]!.2
   let stop := ((w.days[i + 1]?).map (·.2)).getD (w.height + 1)
-  let mut things : Array String := #[]
+  let mut events : Array DayEvent := #[]
   let mut refusals : List (String × Nat) := []
   let mut hands : Array String := #[]
   let mut admitted := 0
@@ -4955,33 +4972,55 @@ def chronicle (w : World) (reader : String) (day : Nat) : List String := Id.run 
         else refusals ++ [(cls, 1)]
     | "created" =>
       if !hands.contains (shownName w who) then hands := hands.push (shownName w who)
-      if seen (text outcome "object") then things := things.push s!"made {text outcome "object"} ({shownName w who}, entry {h})"
+      if seen (text outcome "object") then events := events.push { what := "made", object := text outcome "object", who := shownName w who, entry := h }
     | "admitted" =>
       admitted := admitted + 1
       if !who.isEmpty && !hands.contains (shownName w who) then hands := hands.push (shownName w who)
       for c in rows outcome "creates" do
-        if seen (text c "object") then things := things.push s!"made {text c "object"} ({shownName w who}, entry {h})"
+        if seen (text c "object") then events := events.push { what := "made", object := text c "object", who := shownName w who, entry := h }
       for x in rows outcome "placements" do
         if seen (text x "object") && !(text x "verb").isEmpty && !(text x "reading").isEmpty then
-          things := things.push s!"grew {text x "verb"} on {text x "object"} ({shownName w who}, entry {h})"
+          events := events.push { what := "grew", object := text x "object", who := shownName w who, name := text x "verb", entry := h }
       for f in rows e "fired" do
         if seen (text f "sender") then
-          things := things.push s!"rule {text f "rule"} of {shownName w (text f "principal")} fired on {text f "sender"} at entry {h}"
+          events := events.push { what := "fired", object := text f "sender", who := shownName w (text f "principal"), name := text f "rule", entry := h }
       for f in rows e "unfired" do
         if seen (text f "object") then
-          things := things.push s!"rule {text f "rule"} of {shownName w (text f "owner")} did not fire on {text f "object"} at entry {h}: {unfiredWords (text f "why")}"
+          events := events.push { what := "unfired", object := text f "object", who := shownName w (text f "owner"), name := text f "rule",
+                                  why := unfiredWords (text f "why"), entry := h }
     | _ => pure ()
     -- An admitted write's wants, and a law refusal's (`refusalWants`).
     for x in rows e "wanted" do
-      if seen (text x "object") then things := things.push s!"{text x "object"} came to want {text x "want"} at entry {h}"
+      if seen (text x "object") then events := events.push { what := "wanted", object := text x "object", name := text x "want", entry := h }
     for x in rows e "unwanted" do
-      if seen (text x "object") then things := things.push s!"{text x "object"} stopped wanting {text x "want"} at entry {h}"
-  let shown := things.toList.take Limits.chronicleLines
-  let more := things.size - shown.length
-  return [s!"day {day}: entries {start} to {stop - 1}, {admitted} admitted."] ++ shown ++
-    (if more == 0 then [] else [s!"and {more} more."]) ++
-    (if refusals.isEmpty then [] else ["refused: " ++ ", ".intercalate (refusals.map fun (c, n) => s!"{n} {c}")]) ++
-    (if hands.isEmpty then [] else ["hands: " ++ ", ".intercalate hands.toList])
+      if seen (text x "object") then events := events.push { what := "unwanted", object := text x "object", name := text x "want", entry := h }
+  return some { day, start, stop, admitted, events := events.toList, refusals, hands := hands.toList }
+
+/-- A day event as the chronicle's line. -/
+def DayEvent.line (e : DayEvent) : String :=
+  match e.what with
+  | "made" => s!"made {e.object} ({e.who}, entry {e.entry})"
+  | "grew" => s!"grew {e.name} on {e.object} ({e.who}, entry {e.entry})"
+  | "fired" => s!"rule {e.name} of {e.who} fired on {e.object} at entry {e.entry}"
+  | "unfired" => s!"rule {e.name} of {e.who} did not fire on {e.object} at entry {e.entry}: {e.why}"
+  | "wanted" => s!"{e.object} came to want {e.name} at entry {e.entry}"
+  | _ => s!"{e.object} stopped wanting {e.name} at entry {e.entry}"
+
+/-- `world-chronicle {principal, day}` (docs/FOUNDATION.md §10; OVERHAUL §2 conflict 6): one clock day of the
+    journal folded into lines (`chronicleDay`), derived at the read and never written. The day's span is
+    `World.days`; each line names what an entry of it did to a thing the reader may view: made, grown (a
+    verb), fired or not, came to want or stopped; then the refusals by class and the hands that acted, by
+    handle. At most `Limits.chronicleLines` lines of things, the rest counted. -/
+def chronicle (w : World) (reader : String) (day : Nat) : List String :=
+  match chronicleDay w reader day with
+  | none => [s!"day {day}: nothing was journaled."]
+  | some d =>
+    let shown := (d.events.take Limits.chronicleLines).map DayEvent.line
+    let more := d.events.length - shown.length
+    [s!"day {day}: entries {d.start} to {d.stop - 1}, {d.admitted} admitted."] ++ shown ++
+      (if more == 0 then [] else [s!"and {more} more."]) ++
+      (if d.refusals.isEmpty then [] else ["refused: " ++ ", ".intercalate (d.refusals.map fun (c, n) => s!"{n} {c}")]) ++
+      (if d.hands.isEmpty then [] else ["hands: " ++ ", ".intercalate d.hands])
 
 def chronicleOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
