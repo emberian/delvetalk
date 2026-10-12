@@ -1974,6 +1974,21 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    as any root `set`; `rootBefore` and `applyRoot` read the same field. Tests: `test_root.Root` (plain and typed
    values, four refusals, a bump after it, a reopen), `test_root_console` (the CLI's flags).
 
+173. **A layer checked over what it is laid on; a making takes a stack (lane/author-build; AUTHORING §5 host 1, steps
+   2, 3, 5; no edition change).** `world.check {package, layers}`: `package` as `create` takes it (a module of the
+   checking object's closure, or source), each of `layers` laid over it as `extend` lays one (`layeredInputs`), compiled
+   for `initial` (`TurnLoop.checkStack`, `Ops.checkInputs`); a package of source with no layers is `checkSource`'s, as
+   before. `world.checkObject {object, layers}`: what the object runs with `layers` over it (`Ops.checkObject`). Both
+   count against `checksPerTurn`. `extendInputs` writes the right `layer over ./<entry>.obend` in place of an author's
+   own first `layer over` line (a body written over RECORD laid over a bell's body), so a layer's line numbers are its
+   author's. A making takes several layers (`CreateRec.layers`, bottom first; `extendCreation` builds the creation
+   again with all of them, each judged by the made thing's law; the `duplicate` refusal is gone). A typed `view` whose
+   state does not conform to the call site's `S` answers `refused typeMismatch`, no longer an evaluation error. KIND
+   (Bend) uses all three: `stackOf` climbs `of` through kinds (four deep) to the root package and the bodies above
+   it; `kinds make` checks the body over that stack and refuses `body` with the checker's lines (the instance-time
+   `refused body` is gone); a kind's things are made with one `extend` a body; `~checkBody` serves the workshop's
+   `check / over:`. Tests: `test_authoring.Authoring`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

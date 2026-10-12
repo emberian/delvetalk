@@ -74,7 +74,7 @@ def checkedCard(diagnostics: Form.Names) -> Document.Document:
 def reprogrammedCard(target: String, version: Nat) -> Document.Document:
   Document.text("✾ WORKSHOP\n\nReprogrammed {target}.\nWas: {target} v{natText(version)}\nNow: {target} v{natText(version + 1n)}\n")
 def usage() -> Document.Document:
-  Document.text("✾ WORKSHOP: Bend checked, proposed to a card, or made from words. A block is a ```obend block under the spell, or source: <<BEND … BEND.\n  delvetalk workshop check\n» it compiles, or each problem with its line\n  delvetalk workshop check / target: bell/1\n» the source that card runs, checked\n  delvetalk workshop propose / target: bell/1 / migration:\n» reprogrammed, or held as #n for its owner to adopt\n  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n» hob drafts the Bend; checked, held as #n for you to adopt\n  delvetalk workshop draft / name: lamp\n» your own block, checked and held the same way\n  delvetalk workshop create / like: porch/goblet\n» a copy, yours, unless its owner said no\n")
+  Document.text("✾ WORKSHOP: Bend checked, proposed to a card, or made from words. A block is a ```obend block under the spell, or source: <<BEND … BEND.\n  delvetalk workshop check\n» it compiles, or each problem with its line\n  delvetalk workshop check / target: bell/1\n» the source that card runs, checked\n  delvetalk workshop check / over: kind/record\n» your layer, checked over what that kind's things run (or over a thing)\n  delvetalk workshop propose / target: bell/1 / migration:\n» reprogrammed, or held as #n for its owner to adopt\n  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n» hob drafts the Bend; checked, held as #n for you to adopt\n  delvetalk workshop draft / name: lamp\n» your own block, checked and held the same way\n  delvetalk workshop create / like: porch/goblet\n» a copy, yours, unless its owner said no\n")
 def verdictOf(diagnostics: Form.Names) -> Verdict:
   match diagnostics:
     case nil(_): Verdict.clean({})
@@ -83,12 +83,26 @@ def verdictOf(diagnostics: Form.Names) -> Verdict:
 def refusing(clause: String, reading: String, context: Abi.Context) -> Activity<Verdict>:
   Card.refusing(Verdict.refused({clause: clause, reading: reading}), {clause: clause, reading: reading}, context)
 def runCheck(package: String, context: Abi.Context) -> Activity<Verdict>:
-  match world.check({package: package}):
+  match world.check({package: package, layers: Lists.List.nil()}):
     case checked(c): Card.tell(verdictOf(c.diagnostics), checkedCard(c.diagnostics))
     case refused(r): refusing(r.clause, "The workshop could not check it.", context)
+# A layer checked over what it would be laid on (`over:`): a kind's things, through the kind's own
+# stack (KIND's `checkBody`: its package and the bodies below), or a thing as it runs now.
+def checkOver(over: String, layer: String, context: Abi.Context) -> Activity<Verdict>:
+  match world.call::<World.Checked>({object: {world: context.world, object: over}, method: "checkBody", argument: {body: layer}}):
+    case returned(r): overAnswered(over, r.result, context)
+    case _: overThing(over, layer, context)
+def overThing(over: String, layer: String, context: Abi.Context) -> Activity<Verdict>:
+  match world.checkObject({object: {world: context.world, object: over}, layers: Lists.List.cons({head: layer, tail: Lists.List.nil()})}):
+    case checked(c): Card.tell(verdictOf(c.diagnostics), checkedCard(c.diagnostics))
+    case refused(_): refusing("noObject", "No kind or thing called {over}", context)
+def overAnswered(over: String, checked: World.Checked, context: Abi.Context) -> Activity<Verdict>:
+  match checked:
+    case checked(c): Card.tell(verdictOf(c.diagnostics), checkedCard(c.diagnostics))
+    case refused(r): refusing(r.clause, "{over} could not check it ({r.clause}).", context)
 # Check what an object runs now: its whole source, the package and every layer over it.
 def checkTarget(target: String, context: Abi.Context) -> Activity<Verdict>:
-  match world.checkObject({object: {world: context.world, object: target}}):
+  match world.checkObject({object: {world: context.world, object: target}, layers: Lists.List.nil()}):
     case checked(c): Card.tell(verdictOf(c.diagnostics), checkedCard(c.diagnostics))
     case refused(_): refusing("noObject", "No object called {target}", context)
 # View the target (its state is Data here, for the version a card cites; a card never shows
@@ -98,7 +112,7 @@ def runPropose(target: String, package: String, migration: String, context: Abi.
     case viewed(v): vetted(target, v.version, package, migration, context, state)
     case _: refusing("noObject", "No object called {target}", context)
 def vetted(target: String, was: Nat, package: String, migration: String, context: Abi.Context, state: State) -> Activity<Verdict>:
-  match world.check({package: package}):
+  match world.check({package: package, layers: Lists.List.nil()}):
     case checked(c): adopted(target, was, package, migration, context, c.diagnostics, state)
     case refused(r): refusing(r.clause, "The workshop could not check it.", context)
 def adopted(target: String, was: Nat, package: String, migration: String, context: Abi.Context, diagnostics: Form.Names, state: State) -> Activity<Verdict>:
@@ -155,14 +169,14 @@ form draft:
 def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Verdict>:
   asked(input.name, input.description, context, state)
 def asked(name: String, description: String, context: Abi.Context, state: State) -> Activity<Verdict>:
-  match world.interpret::<{target: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(checkForm(), context.object), tail: Lists.List.nil()}), policy: {world: context.world, object: "policy"}, model: "", held: "", misfit: ""}):
+  match world.interpret::<{target: String, over: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(checkForm(), context.object), tail: Lists.List.nil()}), policy: {world: context.world, object: "policy"}, model: "", held: "", misfit: ""}):
     case proposal(p): drafting(name, p.argument.source, context, state)
     case _: refusing("noDraft", "hob drew no Bend from that. Say what it holds and what it does, or send the source: delvetalk workshop draft / name: {name} / source: <<BEND … BEND", context)
 def draft(state: State, input: DraftInput, context: Abi.Context) -> Activity<Verdict>:
   drafting(input.name, input.source, context, state)
 # A clean draft is held for its describer as #n; a flawed one is answered with its problems.
 def drafting(name: String, source: String, context: Abi.Context, state: State) -> Activity<Verdict>:
-  match world.check({package: source}):
+  match world.check({package: source, layers: Lists.List.nil()}):
     case checked(c): if Lists.length(c.diagnostics) == 0n then heldDraft({n: state.next, target: "", package: source, migration: "", proposer: context.principal, proposerHandle: context.handle, name: name, intent: context.intent}, state, context) else Card.tell(Verdict.flawed({diagnostics: c.diagnostics}), checkedCard(c.diagnostics))
     case refused(r): refusing(r.clause, "The workshop could not check it.", context)
 def heldDraft(held: Held, state: State, context: Abi.Context) -> Activity<Verdict>:
@@ -194,10 +208,10 @@ def withdrawn(held: Held) -> Activity<Verdict>:
   Card.tell(Verdict.withdrawn({n: held.n}), Document.text("✾ WORKSHOP\n\nWithdrew #{natText(held.n)}.\n"))
 # The code is the `source` field: a `source: <<BEND` block, or the reply's ```obend block,
 # which the host reads as that field.
-def check(state: State, input: {target: String, source: String}, context: Abi.Context) -> Activity<Verdict>:
-  checking(input.target, input.source, context)
-def checking(target: String, source: String, context: Abi.Context) -> Activity<Verdict>:
-  if source != "" then runCheck(source, context) else if target != "" then checkTarget(target, context) else refusing("noSource", "Put a ```obend block under the spell, or source: <<BEND … BEND.", context)
+def check(state: State, input: {target: String, over: String, source: String}, context: Abi.Context) -> Activity<Verdict>:
+  checking(input.target, input.over, input.source, context)
+def checking(target: String, over: String, source: String, context: Abi.Context) -> Activity<Verdict>:
+  if source != "" && over != "" then checkOver(over, source, context) else if source != "" then runCheck(source, context) else if target != "" then checkTarget(target, context) else refusing("noSource", "Put a ```obend block under the spell, or source: <<BEND … BEND.", context)
 def propose(state: State, input: {target: String, migration: String, source: String}, context: Abi.Context) -> Activity<Verdict>:
   proposing(input.target, input.migration, input.source, context, state)
 def proposing(target: String, migration: String, source: String, context: Abi.Context, state: State) -> Activity<Verdict>:
@@ -214,7 +228,7 @@ def create(state: State, input: {like: String}, context: Abi.Context) -> Activit
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Verdict>:
   completing(input.spell.action, input, context, state)
 def completing(action: String, input: Card.Reply, context: Abi.Context, state: State) -> Activity<Verdict>:
-  if action == "check" then checking(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "source"), context) else if action == "propose" then proposing(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "migration"), Spell.valueOf(input.fields, "source"), context, state) else Card.answerAs(input, context, forms(), render(state, context), answered)
+  if action == "check" then checking(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "over"), Spell.valueOf(input.fields, "source"), context) else if action == "propose" then proposing(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "migration"), Spell.valueOf(input.fields, "source"), context, state) else Card.answerAs(input, context, forms(), render(state, context), answered)
 def answered(replied: Card.Replied) -> Verdict:
   match replied:
     case silent(_): Verdict.silent({})
@@ -224,6 +238,7 @@ def answered(replied: Card.Replied) -> Verdict:
 # block, which the host reads as the field.
 form check:
   target: text 0..128
+  over: text 0..128
   source: source
 form propose:
   target: text 1..128

@@ -163,8 +163,8 @@ protocol world:
   extend({object: Plans.Reference, package: String, migration: String}) -> Programmed
   amend({object: Plans.Reference, law: String}) -> Amended
   inspect({object: Plans.Reference, source: Bool}) -> Inspected
-  check({package: String}) -> Checked
-  checkObject({object: Plans.Reference}) -> Checked
+  check({package: String, layers: Lists.List<String>}) -> Checked
+  checkObject({object: Plans.Reference, layers: Lists.List<String>}) -> Checked
   grant({to: String, object: Plans.Reference, method: String, until: Nat}) -> Granted
   grantWith({to: String, object: Plans.Reference, method: String, until: Nat, fixed: Data, uses: Nat}) -> Granted
   revoke({id: String}) -> Revoked

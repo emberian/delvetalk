@@ -107,7 +107,7 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
 
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
 # Kind.lawText() (tests/test_kinds.py compares the two).
-KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nvoice: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
+KINDS_FORM = 'name: text 1..32\nof: text 1..64\nform: text 0..1000\nhead: text 0..200\nvoice: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
 KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head, the voice or the body; anyone makes, and places rules, wants and verbs on it": '
             'unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(form) and unchanged(law) '
             'and unchanged(head) and unchanged(voice) and unchanged(body)))')

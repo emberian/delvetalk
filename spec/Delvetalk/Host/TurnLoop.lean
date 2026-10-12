@@ -539,14 +539,22 @@ def creationInputs (creator : Object) (package : String) : Except (String × Str
     if package.startsWith "edition" then return finish [("source", toJson package)]
     else throw ("unknownPackage", "the creator has no sealed modules to name")
 
+/-- What `creator`'s `create` of `package`, then an `extend` of each of `layers`, would compile, checked
+    (`checkInputs`): a kind checks the stack its instances will run, its ancestors' bodies and its own
+    (`world.check {package, layers}`). A package of source with no layers is checked as one entry module
+    over the library (`checkSource`). -/
+def checkStack (w : World) (creator : Object) (package : String) (layers : List String) : List String :=
+  if layers.isEmpty && package.startsWith "edition" then checkSource w package else
+  match (creationInputs creator package).mapError (·.2) >>= (layeredInputs · layers) with
+  | .ok inputs => checkInputs w inputs
+  | .error e => [s!"Checked:0: package-request: {e}"]
+
 def buildCreated (w : World) (creator : Object) (package : String) (seed : Data) (lawArg principal : String)
-    (height : Nat) (layer : String := "") : Except (String × String) (CreateRec × Built) := do
+    (height : Nat) (layers : List String := []) : Except (String × String) (CreateRec × Built) := do
   let inputs ← creationInputs creator package
-  -- A layer an `extend` of the same turn lays into the making: one closure, one pin.
-  let inputs ← if layer.isEmpty then pure inputs else do
-    if layer.utf8ByteSize > Limits.maxPackageBytes then
-      throw ("packageBytes", s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)")
-    (extendInputs inputs layer).mapError (("compile", ·))
+  -- The layers `extend`s of the same turn lay into the making: one closure, one pin.
+  let inputs ← (layeredInputs inputs layers).mapError fun e =>
+    (if e.startsWith "package source exceeds" then "packageBytes" else "compile", e)
   let built ← (compileObject w inputs).mapError (("compile", ·))
   let initial ← (initialState built).mapError (("compile", ·))
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
@@ -560,17 +568,17 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   return ({ object := { object with relations }, sources, seed := dataJson state }, built)
 
 /-- An `extend` (or `reprogram {mode: extend}`) of `id`, which this turn created (`made`): the creation
-    built again with the layer over its package, judged by the made thing's own law as a reprogram
-    (kind 1) proposed by `self`. A replacing reprogram, a migration or a second layer of a thing not
-    made yet is refused; the creation journals one closure and its pin. -/
+    built again with the layer over its package and the layers laid before it (a kind's instance takes
+    its ancestors' bodies, then its own), judged by the made thing's own law as a reprogram (kind 1)
+    proposed by `self`. A replacing reprogram or a migration of a thing not made yet is refused; the
+    creation journals one closure and its pin. -/
 def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) (made : CreateRec)
     (source migration : String) (extend : Bool) : M Data := do
   let s ← get
   if !extend then return ← refusedReading bounds responseType "unknownObject" s!"{id} is not made until this turn ends; a layer may be laid into the making with extend"
   if !migration.isEmpty then return ← refusedReading bounds responseType "migration" s!"{id} is being made: its state has no older type to migrate"
-  if !made.layer.isEmpty then return ← refusedWith bounds responseType "duplicate"
   let some creator := s.world.objects[made.creator]? | evaluation "the creating object vanished"
-  match buildCreated s.world creator made.package made.seedArg made.lawArg s.principal (s.world.height + 1) source with
+  match buildCreated s.world creator made.package made.seedArg made.lawArg s.principal (s.world.height + 1) (made.layers ++ [source]) with
   | .error (clause, message) =>
     refusedReading bounds responseType clause
       ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
@@ -583,7 +591,7 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
       return ← refusedReading bounds responseType clause ((o.readings.lookup clause).getD s!"the law of {id} does not admit this layer.")
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
                               creator := made.creator, package := made.package, seedArg := made.seedArg,
-                              lawArg := made.lawArg, layer := source }
+                              lawArg := made.lawArg, layers := made.layers ++ [source] }
     set { s with creates := s.creates.map (fun (k, c) => if k == id then (k, again) else (k, c)),
                  world := cacheBuild s.world o.inputs built }
     respond bounds responseType "reprogrammed" [.record [("pin", .label o.pin)]]
@@ -1776,7 +1784,11 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       | some o =>
         if !o.read.permits (← get).subject then respond bounds responseType "denied" [emptyRecord] else
         recordRoot id o.version
-        respond bounds responseType "viewed" [.record [("version", .natural o.version), ("state", o.state)]]
+        -- A state of another type than the call site's `S` is refused by name (a kind asking whether
+        -- `of` names a kind), never an evaluation error.
+        let viewed := Data.variant "viewed" (.record [("version", .natural o.version), ("state", o.state)])
+        if viewed.conformsUnder bounds responseType then return viewed
+        refusedWith bounds responseType "typeMismatch"
   | .variant "write" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed write plan"
     let some step := (f.lookup "edits").bind parseStep | evaluation "malformed write plan"
@@ -2090,15 +2102,20 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       match ← derivedView id o view context with
       | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause
+  -- `check {package, layers}`: `package` as `create` takes it, with `layers` laid over it (`checkStack`).
   | .variant "check" (.record f) =>
     let some (.label source) := f.lookup "package" | evaluation "malformed check plan"
+    let some layers := (f.lookup "layers").bind (labels []) | evaluation "malformed check plan"
     let s ← get
+    let some creator := s.world.objects[self]? | evaluation "the checking object vanished"
     if s.checks ≥ Limits.checksPerTurn then evaluation "turn exceeds the check capacity"
     set { s with checks := s.checks + 1 }
     respond bounds responseType "checked"
-      [.record [("diagnostics", listData ((checkSource s.world source).map Data.label))]]
-  -- `checkObject {object}`: what a readable object runs, its whole closure (`Ops.checkObject`).
+      [.record [("diagnostics", listData ((checkStack s.world creator source layers).map Data.label))]]
+  -- `checkObject {object, layers}`: what a readable object runs, its whole closure, with `layers` laid
+  -- over it (`Ops.checkObject`).
   | .variant "checkObject" (.record f) =>
+    let some layers := (f.lookup "layers").bind (labels []) | evaluation "malformed check plan"
     let s ← get
     match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?) with
     | some o =>
@@ -2106,7 +2123,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       if s.checks ≥ Limits.checksPerTurn then evaluation "turn exceeds the check capacity"
       set { s with checks := s.checks + 1 }
       respond bounds responseType "checked"
-        [.record [("diagnostics", listData ((checkObject s.world o).map Data.label))]]
+        [.record [("diagnostics", listData ((checkObject s.world o layers).map Data.label))]]
     | none => refusedWith bounds responseType "unknownObject"
   | .variant "create" (.record f) | .variant "createUnder" (.record f) | .variant "make" (.record f) =>
     let some package := (f.lookup "package").bind labelOf | evaluation "malformed create plan"

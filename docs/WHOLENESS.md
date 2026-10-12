@@ -42,8 +42,8 @@ protocol world:
   extend({object: Reference, package: String, migration: String}) -> Programmed
   amend({object: Reference, law: String}) -> Amended
   inspect({object: Reference}) -> Inspected
-  check({package: String}) -> Checked
-  checkObject({object: Plans.Reference}) -> Checked
+  check({package: String, layers: List<String>}) -> Checked
+  checkObject({object: Plans.Reference, layers: List<String>}) -> Checked
   grant({to: String, object: Reference, method: String, until: Nat}) -> Granted
   grantWith({to: String, object: Reference, method: String, until: Nat, fixed: Data, uses: Nat}) -> Granted
   revoke({id: String}) -> Revoked
