@@ -185,7 +185,11 @@ CLAIM_LINES = {'no_post_yet': 'No post with that word from {handle} yet. Post it
 ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever invited you',
                 'invitation_spent': 'that invitation was accepted already; the credential it gave speaks for you, and the operator can invite you again',
                 'invitation_expired': 'that invitation lapsed before it was accepted; ask for a new one',
-                'invitation_revoked': 'that invitation was revoked'}
+                'invitation_revoked': 'that invitation was revoked',
+                'name_required': 'that invitation leaves your name to you; send {"code": ..., "name": ...}, a name like [a-z][a-z0-9-]{0,31}',
+                'invalid_guest_name': 'a name is a lowercase letter, then up to 31 lowercase letters, digits or hyphens',
+                'name_fixed': 'that invitation already names its guest; send that name, or none',
+                'taken': 'that name is taken; the code is still unused, so choose another'}
 
 
 def digits(text):
@@ -781,7 +785,7 @@ class Handler(BaseHTTPRequestHandler):
         mine = auth[7:] if auth.startswith('Bearer ') else self.cookie()
         text = lambda k: data.get(k) if isinstance(data.get(k), str) else ''
         if which == 'accept':
-            return self.accept(text('code'))
+            return self.accept(text('code'), data.get('name') or None)
         try:
             if which == 'challenge':
                 out = self.server.identity.challenge(text('handle'), address=self.client_ip())
@@ -806,11 +810,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.html(200, pages.page('claimed', out['handle'], pages.T['verified'].format(handle=html.escape(out['handle']))), keep)
         self.reply(200, canonical({**terse(out), '_links': links}), headers=keep)
 
-    def accept(self, code):
-        """An invitation's code -> its guest's credential, once (transport/identity.py): the front maps a code to a principal and
-        tells the host it has arrived, as a claim does; everything after is the host's, as for anyone."""
+    def accept(self, code, name=None):
+        """An invitation's code (and, for an open one, the name the guest registers) -> its guest's credential, once
+        (transport/identity.py): the front maps a code to a principal and tells the host it has arrived, as a claim does;
+        everything after is the host's, as for anyone."""
         try:
-            out = self.server.identity.accept(code)
+            out = self.server.identity.accept(code, name)
         except IdentityError as err:
             return self.fail('identity', f'{err.code}: {ACCEPT_LINES[err.code]}', more={'reason': err.code})
         self.server.record_handle(out['principal'], out['handle'])

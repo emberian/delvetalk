@@ -387,6 +387,57 @@ class Guests(HandCase):
         self.assertEqual(self.js('invite', 'claude46')['principal'], 'guest:gsb.fg-goose.online:claude46')  # revoked: invited again, the same guest
         self.assertEqual([l['what'] for l in self.logged()], ['invite-guest', 'revoke-invite', 'invite-guest'])
 
+    def test_an_open_code_lists_as_open_then_with_the_name_chosen_and_count_mints_codes_one_per_line(self):
+        got = self.js('invite', '--note', 'for whoever', '--expires', '14')
+        self.assertEqual((got['name'], got['principal']), (None, None))
+        self.assertAlmostEqual(got['expires'] - __import__('time').time(), 14 * 86400, delta=60)
+        code, text = self.cmd('invite', '--count', '3')
+        lines = text.split()
+        self.assertEqual((code, len(lines), len(set(lines))), (0, 3, 3))
+        self.assertTrue(all(identity.INVITE_CODE.fullmatch(l) for l in lines), text)
+        self.assertEqual(self.cmd('invite', 'named', '--count', '2')[0], 1)
+        rows = self.js('invites')
+        self.assertEqual([r['name'] for r in rows], ['(open)'] * 4)
+        cred = self.ident().accept(got['code'], 'chose-this')['credential']
+        self.assertEqual(self.ident().authenticate(cred)['did'], 'guest:gsb.fg-goose.online:chose-this')
+        self.assertEqual(sorted(r['name'] for r in self.js('invites')), ['(open)'] * 3 + ['chose-this'])
+        self.assertNotIn(got['code'], json.dumps(self.js('invites')) + self.state.hand_log.read_text())
+        self.assertEqual(self.cmd('invite', 'chose-this')[0], 1)  # the chosen name is held
+        open_id = next(r['id'] for r in self.js('invites') if r['name'] == '(open)')
+        self.assertEqual(self.js('revoke-invite', str(open_id))['credentials'], 0)
+        self.assertEqual(sum(r['state'] == 'revoked' for r in self.js('invites')), 1)
+
+    def test_two_accepts_of_names_on_one_open_code_race_and_exactly_one_wins(self):
+        code = self.ident().invite(None)['code']
+        barrier, results = threading.Barrier(2), {}
+
+        def go(name):
+            ident = self.ident()  # its own connection, as another process would have
+            barrier.wait()
+            try:
+                results[name] = ident.accept(code, name)['handle']
+            except identity.IdentityError as err:
+                results[name] = err.code
+        threads = [threading.Thread(target=go, args=(n,)) for n in ('left', 'right')]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        self.assertEqual(sum(v in ('left', 'right') for v in results.values()), 1, results)
+        self.assertEqual(sorted(v for v in results.values() if v not in ('left', 'right')), ['invitation_spent'], results)
+        (row,) = self.js('invites')
+        self.assertEqual(row['state'], 'accepted')
+        self.assertIn(row['name'], ('left', 'right'))
+
+    def test_a_table_from_before_open_codes_is_carried_over(self):
+        import sqlite3
+        db = sqlite3.connect(self.state.identity)
+        db.executescript('DROP TABLE IF EXISTS invitations; CREATE TABLE invitations(name TEXT PRIMARY KEY, principal TEXT NOT NULL, code TEXT NOT NULL, note TEXT, created REAL, expires REAL, state TEXT NOT NULL, accepted REAL, revoked REAL, used REAL);'
+                         "INSERT INTO invitations VALUES('old','guest:gsb.fg-goose.online:old','h','n',1,2,'accepted',1,NULL,NULL);")
+        db.commit()
+        db.close()
+        (row,) = self.js('invites')
+        self.assertEqual((row['name'], row['principal'], row['state']), ('old', 'guest:gsb.fg-goose.online:old', 'accepted'))
+        self.assertEqual(self.js('invite')['name'], None)
+
     def test_the_worlds_page_invites_and_revokes_showing_the_code_once_on_the_page_never_in_a_url(self):
         code, page, headers = self.req('POST', '/hand/', {'guest': 'invite', 'name': 'claude46', 'note': 'phencounting'}, f'dt_hand={TOKEN}')
         self.assertEqual(code, 200)

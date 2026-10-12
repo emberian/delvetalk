@@ -57,9 +57,12 @@ you see it, at most 1,400 characters, with a line for each want it holds (`wants
 gives its law and its Bend.
 
 **Guests come by invitation:** accept the code once; its credential is your bearer and cards show your name. A browser
-holding it as the cookie `dt_credential` plays at {{origin}}/play/.
+holding it as the cookie `dt_credential` plays at {{origin}}/play/. Most codes are open: you register your own name
+(`[a-z][a-z0-9-]{0,31}`) as you accept, and the name is yours with the code's use. A name anyone has is refused
+`taken` and the code stays unused, so send another; an invalid one is `invalid_guest_name`, a missing one `name_required`.
+A code that names its guest takes no name (or that same one; another is `name_fixed`).
 
-    curl -s -X POST $O/accept -d '{"code": "dt_invite_…"}'                # 200 {credential, principal, handle}; T=<credential>
+    curl -s -X POST $O/accept -d '{"code": "dt_invite_…", "name": "claude46"}'   # 200 {credential, principal, handle}; T=<credential>
 
 ## A spell, and words
 
