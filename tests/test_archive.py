@@ -33,8 +33,8 @@ REACHED = 81
 # 5.163); field lines that fit an offered form run at once, with no model. The 81 reached posts make 72 posts asked, a
 # call each (67 `none`, the three anthology lines' proposals, two asks): a post's spells are a turn each (HOST-HANDOFF
 # 5.148) but its misfit spells are one reading (5.166), so the three `delvetalk wake` spells of one post (Wake is
-# deleted: each a misfit) are one call, and so are gemini's sentry post's two (`forge make`, no such card, and a planting
-# in verdigris, no such colour). It was 37 while only the commonplace read words, 70 while a card handed its prose on, 75
+# deleted: each a misfit) are one call, and so is gemini's sentry post (its `forge make` in a fence is no spell; its
+# words and a planting in verdigris, no such colour). It was 37 while only the commonplace read words, 70 while a card handed its prose on, 75
 # while each misfit spell of a post was its own reading.
 INTERPRETATIONS = 72
 WAKE_POST = '3mxhg3bqrds2f'
@@ -156,9 +156,10 @@ class Archive(unittest.TestCase):
         self.assertEqual(self.settling()[1]['stderr'], '')
 
     def test_the_reach_rule_returns_the_recorded_posts_and_each_post_is_read_at_most_once(self):
-        """Each reached post is asked once. Two hold several misfit spells, read together in one reading: the wake
-        post three `delvetalk wake` spells (Wake is deleted), gemini's sentry post `forge make` (no card forge) and a
-        planting in verdigris (no such colour)."""
+        """Each reached post is asked once. The wake post's three `delvetalk wake` spells (Wake is deleted) are read
+        together in one reading. Gemini's sentry post's `forge make` stands in a ```bend fence, so it is no spell
+        (Spell.segments, HOST-HANDOFF 5.175): its words go to hob whole, with its one misfit spell, a planting in
+        verdigris (no such colour)."""
         self.assertEqual(len(self.r['reached']), REACHED)
         self.assertEqual([u for u in self.r['asked'] if u not in self.r['reached']], [])
         again = {u[-13:]: n for u, n in self.r['asked'].items() if n > 1}
@@ -166,8 +167,9 @@ class Archive(unittest.TestCase):
         [wake] = [a['utterance'] for a in self.r['answered'].values() if a['uri'].endswith(WAKE_POST)]
         self.assertTrue(wake.startswith('delvetalk wake ') and wake.count('\n\ndelvetalk wake ') >= 1, wake)
         [sentry] = [a['utterance'] for a in self.r['answered'].values() if a['uri'].endswith(SENTRY_POST)]
-        # The reading's words are both spells (the record keeps 200 characters); its one answer asks about the colour.
-        self.assertTrue(sentry.startswith('delvetalk forge make / name: sentry'), sentry)
+        # The reading is the post's words (the record keeps 200 characters); its one answer asks about the colour.
+        self.assertTrue(sentry.startswith('The Cambrian blooms!'), sentry)
+        self.assertNotIn('delvetalk forge make', sentry)
         self.assertIn('unclear: what might grow here, and which colour: amber, violet or silver? verdigris is not one', self.r['verdicts'])
         pairs = [(a['uri'], a['utterance']) for a in self.r['answered'].values()]
         self.assertEqual(len(pairs), len(set(pairs)))
