@@ -1825,10 +1825,13 @@ def noteRecompiled (w : World) (o : Object) : World :=
   | some p => if p != o.packet then { w with recompiledDifferently := w.recompiledDifferently + 1 } else w
   | none => w
 
+/-- A creation as a turn journals it, in its entry or its suspended activity; `lines` when its package's
+    rules and wants were placed on it (no law given: `makeObject`), so it is built again so (`createdLaw`). -/
 def createRecJson (id : String) (c : CreateRec) : Json :=
   Json.mkObj [("object", toJson id), ("pin", toJson c.object.pin),
     ("read", c.object.read.json), ("chain", c.object.chain.json), ("compile", compactInputs c.object.inputs),
     ("seed", c.seed), ("law", toJson c.object.lawText)] |> fun j =>
+    (if c.object.rules.isEmpty && c.object.wants.isEmpty then j else j.setObjVal! "lines" (toJson true)) |> fun j =>
     (if c.object.supervisor.isEmpty then j else j.setObjVal! "supervisor" (toJson c.object.supervisor)) |> fun j =>
     match c.madeFrom with
     | some m => j.setObjVal! "madeFrom" m
@@ -4422,6 +4425,12 @@ def applyRoot (w : World) (outcome : Json) : Except String World := do
 def isIgnoreAct (e : Json) : Bool :=
   tagOf e == "root" && ["ignore", "unignore"].contains (actOf ((e.getObjVal? "outcome").toOption.getD Json.null))
 
+/-- The law a journaled creation is built again with: none when its package's lines were placed (the law
+    was its package's, given by nobody), else the law text it was made with. -/
+def createdLaw (r : Json) : Except String (Option String) := do
+  if (r.getObjValAs? Bool "lines").toOption == some true then return none
+  return some (← r.getObjValAs? String "law")
+
 /-- The objects an admitted entry created, rebuilt from their journaled inputs. -/
 def rebuildCreates (w : World) (principal : String) (recorded : Array Json) :
     Except String (World × List (String × CreateRec)) := do
@@ -4431,7 +4440,7 @@ def rebuildCreates (w : World) (principal : String) (recorded : Array Json) :
     let id ← r.getObjValAs? String "object"
     let seed ← r.getObjVal? "seed"
     let (o, sources, w') ← buildObjectIn w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
-      (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
+      (r.getObjVal? "chain").toOption principal (w.height + 1) (← createdLaw r)
     w := w'
     let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
     creates := creates ++ [(id, ({ object := o, sources, seed, madeFrom := (r.getObjVal? "madeFrom").toOption } : CreateRec))]

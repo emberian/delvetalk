@@ -3605,7 +3605,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
     let id ← r.getObjValAs? String "object"
     let seed ← r.getObjVal? "seed"
     let (o, sources) ← buildObject w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
-      (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
+      (r.getObjVal? "chain").toOption principal (w.height + 1) (← createdLaw r)
     let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
     return (id, ({ object := o, sources, seed } : CreateRec)))
   let programs ← ((← (← activityArray act "programs").getArr?).toList.mapM fun r => do
