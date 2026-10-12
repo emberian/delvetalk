@@ -10,10 +10,11 @@ The interpretation policy as an object, and the commonplace's hob reading the ga
 against the offered forms (the garden's plant) before resuming the commonplace's turn.
 """
 import json
+import os
 import unittest
 
 from deploy import genesis
-from tests.host import as_owner
+from tests.host import ROOT, as_owner
 
 from tests.test_chain import Chain, town_garden
 from tests.test_receive import commonplace
@@ -34,15 +35,21 @@ def plantForm(context: Abi.Context) -> Form.Form:
 def forms(context: Abi.Context) -> Lists.List<Form.Form>:
   Lists.List::<Form.Form>.cons({head: plantForm(context), tail: Lists.List::<Form.Form>.nil()})
 def plantPrompt(context: Abi.Context) -> String:
-  Policy.prompt(sample(), {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: ""})
+  Policy.prompt(sample(), {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: "", wants: Lists.List::<Policy.Want>.nil(), pages: Lists.List::<Policy.Page>.nil()})
 def misfitPrompt(context: Abi.Context) -> String:
-  Policy.prompt(sample(), {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: "badValue, colour is one of: amber, violet, silver"})
+  Policy.prompt(sample(), {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: "badValue, colour is one of: amber, violet, silver", wants: Lists.List::<Policy.Want>.nil(), pages: Lists.List::<Policy.Page>.nil()})
+def shelf() -> Lists.List<Policy.Page>:
+  Lists.List::<Policy.Page>.cons({head: {name: "laws", kind: Policy.Kind.page({}), title: "How a card's law reads", body: "THE WHOLE LAW BODY", place: 0n}, tail: Lists.List::<Policy.Page>.cons({head: {name: "tend", kind: Policy.Kind.walk({}), title: "Tending a garden", body: "THE WALK BODY", place: 1n}, tail: Lists.List::<Policy.Page>.nil()})})
+def owed() -> Lists.List<Policy.Want>:
+  Lists.List::<Policy.Want>.cons({head: {name: "third", reading: "a third rain", asks: "delvetalk garden-1 rain / text: <a rain>"}, tail: Lists.List::<Policy.Want>.nil()})
+def wantPrompt(context: Abi.Context) -> String:
+  Policy.prompt(sample(), {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: "", wants: owed(), pages: shelf()})
 def examples(n: Nat) -> Lists.List<Policy.Example>:
   match n:
     case 0: Lists.List::<Policy.Example>.nil()
     case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
 def many(n: Nat, context: Abi.Context) -> Nat:
-  textLength(Policy.prompt({owner: "ember", ownerHandle: "", model: "m", examples: examples(n), confirmFor: Lists.List::<String>.nil()}, {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: ""}))
+  textLength(Policy.prompt({owner: "ember", ownerHandle: "", model: "m", examples: examples(n), confirmFor: Lists.List::<String>.nil()}, {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: "", wants: Lists.List::<Policy.Want>.nil(), pages: Lists.List::<Policy.Page>.nil()}))
 """)
 
 
@@ -71,6 +78,25 @@ HOB_ANSWERS = (
     "- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n"
     "- none when the words are not addressed to the card, or are conversation.\n")
 SPELL = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
+
+
+class ObjectPackages(unittest.TestCase):
+    def compiles(self, package):
+        modules = closure("Abi", "List", "Document", "Form", "Relation", "Text", "Plan", "World") + [{"name": "Jar", "source": package}]
+        return compile_job(modules, "initial")
+
+    def test_the_library_pages_jar_compiles_as_an_entry_module_over_the_world_library(self):
+        lines = genesis.page_body("object").splitlines()[1:]
+        package = "".join(line + "\n" for line in lines if not line.startswith(("METHODS", "Check:", "Next:")))
+        compiled = self.compiles(package)
+        self.assertEqual(compiled["status"], "compiled", compiled)
+
+    def test_the_capsules_object_package_compiles_the_same_way(self):
+        with open(os.path.join(ROOT, "capsules", "object.txt")) as handle:
+            lines = handle.read().splitlines()[1:]
+        package = "".join(line + "\n" for line in lines[:lines.index(next(l for l in lines if l.startswith("NOTES.")))])
+        compiled = self.compiles(package)
+        self.assertEqual(compiled["status"], "compiled", compiled)
 
 
 class PolicyObject(Chain):
@@ -129,6 +155,23 @@ class PolicyObject(Chain):
         plain = run("plantPrompt", context())["value"]["value"]
         self.assertNotIn("Misfit:", plain)
         self.assertNotIn("plant me a moth", plain)  # the utterance is the user turn, not the system text (docs/FLEX.md section 2)
+
+    def test_the_prompt_lists_the_cards_wants_with_their_spells_and_the_librarys_pages_by_title_after_the_forms(self):
+        prompt = run("wantPrompt", context())["value"]["value"]
+        wants = ("What the card wants (each with the spell that answers it):\n"
+                 "- third: a third rain\n  delvetalk garden-1 rain / text: <a rain>\n")
+        pages = ("The library's pages (delvetalk library read / page: <name>):\n"
+                 "  laws: How a card's law reads\n  tend: Tending a garden\n")
+        self.assertIn(wants, prompt)
+        self.assertIn(pages, prompt)
+        self.assertNotIn("WHOLE LAW BODY", prompt)
+        self.assertNotIn("WALK BODY", prompt)
+        self.assertLess(prompt.index("  seed: text of 1 to 80 characters\n"), prompt.index(wants))
+        self.assertLess(prompt.index(wants), prompt.index(pages))
+        self.assertLess(prompt.index(pages), prompt.index("\nSaid, and the answer:\n"))
+        plain = run("plantPrompt", context())["value"]["value"]
+        self.assertNotIn("What the card wants", plain)
+        self.assertNotIn("The library's pages", plain)
 
     # --- prose at the commonplace, which hob reads ------------------------------------
 
@@ -294,6 +337,15 @@ class PolicyObject(Chain):
         self.assertNotIn("Could we plant", system)
         self.assertEqual((item["utterance"], item["misfit"]), ("Could we plant a silver fern that remembers?", ""))
         self.assertNotIn("held", item)
+
+    def test_a_want_placed_on_the_card_is_in_the_prompt_the_host_sends(self):
+        self.policy()
+        self.garden()
+        placed = self.say('delvetalk commonplace want / name: tick / reading: a tick is owed / when: request.clock >= 0 / asks: delvetalk garden plant / seed: <a seed> / colour: silver', principal="ember")
+        self.assertEqual(placed["status"], "admitted", placed)
+        self.say("Could we plant a silver fern that remembers?")
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        self.assertIn("What the card wants (each with the spell that answers it):\n- tick: a tick is owed\n  delvetalk garden plant", item["policy"]["system"])
 
     def test_the_workshops_make_asks_for_a_package_with_no_card_and_no_spell_in_the_prompt(self):
         """Playtest 2's D3: the dry run's `workshop make / name: lamp / description: a lamp anyone lights` was answered
