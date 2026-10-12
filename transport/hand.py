@@ -438,6 +438,7 @@ class Hand:
         when = lambda t: time.strftime('%Y-%m-%d %H:%M', time.gmtime(t)) if t else 'never'
         guests = ''.join(H['guest'].format(fate='admitted' if g['state'] == 'accepted' else 'suspended' if g['state'] == 'open' else 'refused',
                                            state=q(g['state']), name=q(g['name']), principal=q(g['principal'] or 'name to be registered'), note=q(g['note'] or 'no note'),
+                                           taken=q(f"taken by {g['name']} on {when(g['accepted'])}" if g['state'] == 'accepted' or g.get('accepted') else 'not taken yet'),
                                            created=q(when(g['created'])), expires=q(when(g['expires'])), used=q(when(g['used'])),
                                            revoke=H['guest_revoke'].format(name=q(g['id'] if g['name'] == '(open)' else g['name'])) if g['state'] != 'revoked' else '')
                          for g in self.guests()) or '<li class="quiet">— nobody is invited —</li>'
