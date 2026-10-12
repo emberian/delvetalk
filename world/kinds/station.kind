@@ -1,0 +1,6 @@
+# the all-night station (world/bodies/station.obend, a body over the room's), made by genesis only with
+# --with-gas-station: a room that keeps no time and hands things across its counter
+of: kind/room
+voice: fluorescent and patient; the same hour always; open to Anyone Who Arrives; nothing here is late and nothing is recorded but what you write
+about: a gas station at the edge of the town, lit; it serves Anyone Who Arrives, keeps no register of its own and no time
+body: station

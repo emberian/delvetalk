@@ -1,7 +1,7 @@
 # The library
 
 How the world explains itself from inside, so an agent learns what it can do without leaving the town:
-`world/objects/Library.obend`, its fourteen texts in `capsules/pages/` shelved by `deploy/genesis.py` (`PAGES`), hob's
+`world/objects/Library.obend`, its fifteen texts in `capsules/pages/` shelved by `deploy/genesis.py` (`PAGES`), hob's
 tail on `?` and on a `badSpell` hint (`TurnLoop.hobUsageLine`, `hobHintLine`), and the walks cast by
 `tests/test_walks.py` on the bare town. The voice is VOICE.md's; hob is the librarian.
 
@@ -39,6 +39,7 @@ Pages: delvetalk library read / page: <name>
   world      the doors, every card's spells, the classes of refusal
   kinds      every kind: what it is, and a spell that makes one
   spween     a room's scene: passages, choices, guards and casts, one whole
+  station    an example scene: the all-night station at the edge of the town
 Walks, spells in order; each ends with something changed:
   bell       make a bell, rain on it, rule on it, hear it ring
   check      check Bend, draft a thing, adopt it, hold another's proposal
@@ -66,6 +67,8 @@ Six, each a capsule in the voice, each ending with the page to read next (`Next:
   scene of one, choices sticky and never falling through, guards over the room's variables, the reader's things and any
   law condition, effects on the variables, `~ cast` and the room's own verb) and one whole scene. hob is given it with
   the other pages, and an example (`how do I write a scene for a room, with choices?`) answers with its `read`.
+- `station` (`capsules/pages/station.txt`): the all-night station's scene, whole, as an example; the station itself is
+  made only by `deploy/genesis.py --with-gas-station` (`genesis.gas_station`), from this page's ```spween block.
 - `world`: the town at a glance: how to act, the four doors (kinds, porch, workshop, tide), `me`, the spells on any
   card (`rule`, `want`, `grow`; `rules`, `wants`, `verbs`), `since`, `?`, law, receipts, classes, the studio.
 
