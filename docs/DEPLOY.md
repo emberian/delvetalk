@@ -43,6 +43,41 @@ The lock holds where one kernel sees the file: a local Linux
 filesystem (measured on ext4). Docker Desktop's file sharing on a Mac does not
 enforce it across containers (measured), so test the stack there on a named volume.
 
+## Firehose
+
+`transport http` runs `com.atproto.sync.subscribeRepos` on a separate TCP listener in the same
+`delvetalk-http` process, with one selector thread for all sockets and production. `firehose_bind` defaults to
+`127.0.0.1`, `firehose_port` to `0` (off). Enable it only with the world's signing key in `repo_keys`.
+The listener is public through the edge; it requires no subscriber credential. Its durable log is
+`/data/state/worlds/<world>/events`, kept in state backups and copied by carry alongside `repo.json` (REPO).
+
+`deploy/compose.yml` publishes `delvetalk-http`'s HTTP port 8765 on the private address 10.10.1.10, and uses
+Docker's default service network. The hand uses 8766. To enable the firehose, add this overlay for
+`delvetalk-http` (its inherited HTTP settings, state/key mounts and HTTP port remain):
+
+```yaml
+services:
+  delvetalk-http:
+    environment:
+      DELVETALK_FIREHOSE_BIND: 0.0.0.0
+      DELVETALK_FIREHOSE_PORT: "8767"
+    ports:
+      - "10.10.1.10:8767:8767/tcp"
+```
+
+Compose merges the environment mapping and port list. The 0.0.0.0 bind is inside the container; the
+published port is on the workhorse's private network, reached by Caddy on the anchor. For a drill, change
+both the setting and mapping to the same unused port. Add this route in the gsb site's Caddy block before
+the general `reverse_proxy 10.10.1.10:8765` (the Caddyfile is outside this repository):
+
+    reverse_proxy /xrpc/com.atproto.sync.subscribeRepos 10.10.1.10:8767
+
+Caddy forwards the WebSocket upgrade. The HTTP front's same XRPC path answers 426 `UpgradeRequired`
+with `Upgrade: websocket` when enabled, or 501 with `firehose_port` named when off. Do not send the
+WebSocket route to port 8765: subscribers use 8767 and take no HTTP worker. Stop the front before carry
+or state restoration so the event log is quiescent; restart reconciles missed heights with a head-only sync,
+and a key rotation emits identity before sync. An unchanged restart adds no event.
+
 ## Costs
 
 The boundary between the Python programs and the host process, measured on hbox with `deploy/bench-boundary.py` (median

@@ -536,6 +536,10 @@
    "code": 501,
    "when": "not served here"
   },
+  "UpgradeRequired": {
+   "code": 426,
+   "when": "subscribeRepos requires WebSocket on the configured firehose listener"
+  },
   "RateLimitExceeded": {
    "code": 429,
    "when": "over the rate limit"

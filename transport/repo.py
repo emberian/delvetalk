@@ -20,8 +20,9 @@ from pathlib import Path
 
 from transport.atproto.cbor import CID, block, decode, from_json
 from transport.atproto.cbor import car as car_of
-from transport.atproto.mst import Tree
+from transport.atproto.mst import Tree, invert
 from transport.atproto.sign import Key, multikey, tid
+from transport.firehose import create_op
 from transport.host import PUBLIC
 from transport.identity import SLUG
 from transport.mirror import NS
@@ -40,10 +41,9 @@ PAGED = {'receipt': ('world-entries', 'entries', 'slug', 'hash'), 'source': ('wo
 ERRORS = {'unknown': (400, 'RecordNotFound'), 'denied': (403, 'Denied'), 'ambiguous': (400, 'AmbiguousSlug')}
 XRPC_ERRORS = json.loads((Path(__file__).resolve().parent / 'static' / 'catalogue.json').read_text())['xrpcErrors']  # name -> {code, when}
 NOT_SERVED = f'no signing key on this box: read projections with {NS}getProjection and {NS}listProjections'
-NOT_LIVE = 'no live subscription: poll com.atproto.sync.getLatestCommit, then com.atproto.sync.getRepo?since=<your rev>'
 TID = re.compile(r'[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}')
 MINUTE = 60_000_000  # microseconds: the world's clock counts minutes since the epoch
-Height = namedtuple('Height', 'rev hash record commit')  # (CID, bytes); commit None before the current signing epoch
+Height = namedtuple('Height', 'rev hash record commit prev_data data blocks')  # blocks: inversion-complete event CAR
 
 
 class Refusal(Exception):
@@ -158,12 +158,20 @@ class Signed:
             self.clock = max(self.clock, int(intent[8:]))
         rev = tid(self.clock * MINUTE + h)
         record = block({'$type': ENTRY, 'entry': CID.parse(entry['hash']), 'height': h})
-        self.tree.append(f'{ENTRY}/{rev}'.encode(), record[0])
+        prev_data = self.tree.root() if self.tree.keys else None
+        op = create_op(rev, record)
+        self.tree.append(op['path'].encode(), record[0])
         root = self.tree.root()  # node creation heights must be identical even when old commits cannot be signed
         latest = self.epochs[-1] if self.epochs else None
         sign_height = not latest or h > latest['height'] or (h == latest['height'] and latest['cause'] == 'carry')
         commit = self.key.commit(self.did, root, rev, self.head.commit[0] if self.head else None) if sign_height else None
-        self.heights.append(Height(rev, entry['hash'], record, commit))
+        blocks = None
+        if commit:
+            restored, nodes = invert(self.tree, [op])
+            if restored != prev_data:
+                raise ValueError('entry inversion does not restore the preceding MST root')
+            blocks = car_of(commit[0], [commit, *nodes, record])
+        self.heights.append(Height(rev, entry['hash'], record, commit, prev_data, root, blocks))
         self.revs[rev] = len(self.heights)
         if commit:
             self.head = self.heights[-1]
@@ -173,7 +181,7 @@ class Signed:
                 sync_rev = tid(self.clock * MINUTE)
                 self.revs[sync_rev] = len(self.heights)
                 if epoch is latest:
-                    self.head = Height(sync_rev, entry['hash'], record, self.key.commit(self.did, root, sync_rev, None))
+                    self.head = Height(sync_rev, entry['hash'], record, self.key.commit(self.did, root, sync_rev, None), root, root, None)
 
     def repo(self, since=None):
         """The CAR of the head commit, the MST and the records; with `since` (a rev), what was added after it."""
@@ -220,11 +228,13 @@ class Repo:
                'com.atproto.sync.subscribeRepos': 'subscribe',
                NS + 'getProjection': 'get_projection', NS + 'listProjections': 'list_projections'}
 
-    def __init__(self, origin, key=None, world='town', answers=None, ledger=None):
+    def __init__(self, origin, key=None, world='town', answers=None, ledger=None, firehose_port=0):
         """`key`: a transport.atproto.sign.Key, or None for an unsigned repository; `world` names its host (`world_origin`);
         `answers` the bridge's answer directory (`State.answers`); `ledger` the durable chain epochs
-        (`State.repo_ledger`), required when signing."""
+        (`State.repo_ledger`), required when signing; `firehose_port` advertises the configured WebSocket listener
+        on the HTTP route (0 answers 501)."""
         self.answers = answers
+        self.firehose_port = firehose_port
         self.origin = world_origin(origin, world)
         self.did, self.handle = world_did(origin, world)
         if key and ledger is None:
@@ -328,7 +338,10 @@ class Repo:
         return {'cids': []}  # the journal holds no blobs: long text is a DAG-CBOR block (labelBlock), not a blob
 
     def subscribe(self, host, q, who):
-        raise Refusal(501, 'MethodNotImplemented', 'com.atproto.sync.subscribeRepos is not served here', hint=NOT_LIVE)
+        if not self.firehose_port:
+            raise Refusal(501, 'MethodNotImplemented', 'subscribeRepos is off; configure firehose_port to serve it')
+        raise Refusal(XRPC_ERRORS['UpgradeRequired']['code'], 'UpgradeRequired',
+                      f'use WebSocket {self.origin}/xrpc/com.atproto.sync.subscribeRepos (firehose port {self.firehose_port})')
 
     def signed_height(self, host, rkey):
         """The journal position of the requested entry record's rev, excluding rotation sync revs."""

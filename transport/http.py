@@ -21,6 +21,7 @@ from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, door_rows, handles, pain
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import Repo
+from transport.firehose import Firehose
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
@@ -296,7 +297,8 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, st, host, identity, address=None, clock=time.time, sleep=time.sleep, hand=None, workers=WORKERS):
+    def __init__(self, st, host, identity, address=None, clock=time.time, sleep=time.sleep, hand=None, workers=WORKERS,
+                 firehose_address=None):
         """The public front over `st`'s world, or with `hand` the hand's console, which logs no access and drafts nothing."""
         c = st.config
         super().__init__(address or ((c.hand_bind, c.hand_port) if hand else (c.http_bind, c.http_port)), Handler)
@@ -307,7 +309,8 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
         self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
         self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None,
-                         st.world, st.answers, st.repo_ledger)  # the journal as AT Protocol records, read only
+                         st.world, st.answers, st.repo_ledger, c.firehose_port if not hand else 0)
+        self.firehose = None
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
@@ -315,6 +318,19 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         info = host.send({'op': 'serve-status'})
         self.host_sha256, self.host_timeout = info.get('hostSha256', 'unknown'), getattr(host, 'timeout', HOST_TIMEOUT)
         self.bounds = host.send({'op': 'bounds'})  # the kernel's and the host's bounds: the front restates none
+        if not hand and c.firehose_port:
+            try:
+                self.firehose = Firehose(self.repo, host, st.firehose,
+                                         firehose_address or (c.firehose_bind, c.firehose_port)).start()
+                self.repo.firehose_port = self.firehose.address[1]
+            except Exception:
+                self.server_close()
+                raise
+
+    def server_close(self):
+        if getattr(self, 'firehose', None):
+            self.firehose.close()
+        super().server_close()
 
     def process_request(self, request, client_address):
         if not self.slots.acquire(blocking=False):  # every worker is taken: say so at once rather than queue behind them
@@ -760,6 +776,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, canonical(self.server.repo.did_document()), 'application/did+json')
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
         code, body, ctype = self.server.repo.serve(self.server.host, method, nsid, q, who.get('did'))
+        if code == 426:
+            return self.xrpc_reply(code, body, [('Upgrade', 'websocket')])
         self.reply(code, body if isinstance(body, bytes) else canonical(body), ctype) if code < 400 else self.xrpc_reply(code, body)
 
     def xrpc_reply(self, code, body, headers=()):
@@ -965,4 +983,5 @@ def command(st, a, out):
     try:
         front.serve_forever()
     finally:
+        front.server_close()
         front.host.close()

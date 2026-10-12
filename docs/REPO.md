@@ -10,7 +10,8 @@ journals' heights do not interleave. A world's hostname needs the wildcard DNS r
 docs/ATPROTO.md §4 (L7) before its document resolves. `transport/repo.py` is mounted by the front (`transport/http.py`) at `/xrpc/<nsid>` and
 `/.well-known/did.json`; the primitives are `transport/atproto/` (DAG-CBOR, CIDs and CAR in `cbor.py`, the
 MST in `mst.py`, keys, TIDs and commits in `sign.py`; standard library and `cryptography`). Record types are
-in `lexicons/`. Tests: `tests/test_repo.py` (the interop vectors, a fake world on loopback, a real serve).
+in `lexicons/`. Tests: `tests/test_repo.py` (interop vectors, fake world and real serve), `tests/test_repo_epochs.py`,
+`tests/test_firehose.py` and `tests/test_firehose_consumer.py` (sparse inversion and a real WebSocket consumer).
 
 The transport decides nothing: it renders the journal, and the signature is over bytes the host produced or
 over their CIDs. Two layers: the **signed repository** (below), the same for every reader; and the
@@ -72,12 +73,12 @@ head leave the ledger bytes untouched. The carry copies the ledger with the tran
 must keep it. Deleting the ledger is the one way to regress revs: the next start writes a new ledger from the
 journal and key, and followers must re-sync.
 
-**Cache.** Per height: rev, entry hash, record block, commit block (absent before the current signing epoch);
+**Cache.** Per height: rev, entry hash, record block, commit block (absent before the current signing epoch),
+MST root before and after, and the inversion-complete event CAR captured when the height is appended;
 the served head, which can be a rotation's sync commit; the current tree's nodes, each with the height that
 made it (what `since` filters on). Every signed read first pages
-`world-entries` (as `anonymous`, `after` the last height, 100 a page) and appends what is new. Cost on the
-Mac: 0.2 ms of MST and 0.23 ms of signing a height, so a cold 10,000-entry journal is about 4.5 s on its first
-read; about 3,300 nodes live per 10,000 entries.
+`world-entries` (as `anonymous`, `after` the last height, 100 a page) and appends what is new. Cold start signs and captures event CARs for the current signing epoch; warm catch-ups process only new
+heights. The firehose polls the same cache once a second.
 
 **The key.** One per world: k256, PKCS#8 PEM, `/etc/delvetalk/repo/<world>.key`, mode 0400, owner 10425, in
 a 0700 directory owned by 10425. `python3 -m transport repokey` makes it at first start (DEPLOY "First start"), refuses an
@@ -113,13 +114,60 @@ data, prev, sig, bytes}`, the host's own commit for that height under the key th
 | `com.atproto.repo.getRecord?…&collection=online.fg-goose.gsb.entry&rkey=<rev>` | `{uri, cid, value}`, the signed record itself, `entry` as `{$link}` |
 | `com.atproto.repo.listRecords?…&collection=online.fg-goose.gsb.entry` | those records by height (`reverse`; the cursor is the last rev listed) |
 | `com.atproto.repo.describeRepo` | `collections` lists `card`, `page`, `index`, `answer`, plus `online.fg-goose.gsb.entry` when signed |
-| `com.atproto.sync.subscribeRepos` | 501, with the hint below |
+| `com.atproto.sync.subscribeRepos?cursor?` | binary WebSocket event stream on `firehose_port`; the HTTP front answers 426 `UpgradeRequired` with `Upgrade: websocket`, or 501 when the port is off |
 
-**Live subscription is deferred.** The standard library has no websocket server, and each subscriber would pin
-one of the front's 48 workers for its life. A follower polls `getLatestCommit` and fetches
-`getRepo?since=<its rev>`: the same blocks a `#commit` frame's CAR slice carries. When built, a frame is
-`{op: 1, t: "#commit"}` then `{seq: height, repo, commit, rev, since, blocks, ops: [{action: "create", path,
-cid}], prevData, blobs: [], time, rebase: false, tooBig: false}`, one per height, on its own listener.
+**Live subscription.** `transport/firehose.py` runs one thread in the front process. Its `selectors` loop
+owns its own TCP listener and every subscriber socket, polls `Signed.catch_up(host)` once a second, and emits
+new journal heights independently of the front's 48 HTTP workers. `firehose_bind` defaults to `127.0.0.1`,
+`firehose_port` to `0` (off); a signing key is required. RFC 6455 handshake, binary messages, validated masked
+client controls, ping/pong and close use the standard library. Application frames from clients are closed.
+The edge Caddy route (before the general HTTP proxy), with the deployment's port 8767:
+
+    reverse_proxy /xrpc/com.atproto.sync.subscribeRepos 10.10.1.10:8767
+
+The `delvetalk-http` service needs that port published on the private network (DEPLOY "Firehose").
+Each binary WebSocket message contains a DAG-CBOR header `{op: 1, t: "#commit"}` followed by its body:
+`{seq, rebase: false, tooBig: false, repo, commit, rev, since, blocks, ops, blobs: [], prevData, time}`.
+A live height makes one create op at `online.fg-goose.gsb.entry/<rev>` with its record CID and no `prev`.
+`since` is the preceding commit's rev (null at an epoch start); `prevData` is the preceding MST root,
+null for an empty tree. `time` is ISO-8601 UTC at log append. The CAR is rooted at the commit and contains it,
+the create/update records and every MST node read by server-side inversion: new paths plus neighbours
+needed by merges or root shrink. `mst.invert` walks a partial tree, including general update/delete inverses;
+`Tree` itself remains append-only. The independent consumer in the tests restores `prevData` using only
+those blocks, including rightmost creates at a new highest layer. Event construction never calls `getRepo(since)`.
+`fits(ops, blocks)` enforces at most 200 operations and 2,000,000 CAR bytes, inclusive: overflow emits `#sync`
+instead. Current height records are small, fixed-shape creates; synthetic budget tests exercise both overflow cases.
+
+**Event positions and custody.** `State.firehose`, `<state>/worlds/<world>/events`, is one length-prefixed
+DAG-CBOR file. Each record stores `{seq, kind, epoch, height, frame}`: exact header/body bytes plus the epoch
+count and head height covered. Append is fsynced before delivery; the file's directory is fsynced on creation
+and replacement. `seq` starts at 1 and increases by exactly 1 across commits, syncs and identities, independently
+of heights and revs. Each endpoint serves its world's repository; worlds' overlapping heights never share a cursor.
+Carry's `copy_transport` copies `events` unchanged (it is not a `skipped()` file); state backups keep it with
+`repo.json`. A partial final record is truncated on restart because it could not have been delivered; a malformed or discontinuous
+complete record refuses startup. One front owns each log. Deleting it destroys cursor continuity.
+
+Starting over an empty journal emits no initial event; its first live append is a commit with null
+`since` and `prevData`. A first firehose start over an existing journal, unannounced carry/rotation epochs, and journal heights appended
+while the firehose was down produce one `#sync` of the current head, rather than reconstructed historical commits.
+Its body is `{seq, did, blocks, rev, time}`; `blocks` contains only the head commit, so consumers fetch `getRepo`.
+Rotation additionally appends `#identity {seq, did, handle, time}` before sync; carry does not. An unchanged
+restart appends nothing. Coverage is in the event records themselves; no second watermark file exists.
+Identity is emitted for a key rotation, never at connect. If stopped between identity and sync, restart finishes
+the sync without repeating that identity.
+
+**Replay.** `WINDOW = 10_000` events in `transport/firehose.py`, irrespective of kind. The newest 10,000 are
+retained for cursors; at 20,000 physical records an atomic rewrite retains that window with identical bytes and
+sequence positions. No cursor means live events from the subscription handshake, without replay. `cursor=N`
+replays all retained seqs greater than N, then live events; the tail snapshot and live registration are ordered
+under the log lock, and live frames wait behind replay. N below the oldest retained seq gets an unsequenced
+`#info {name: "OutdatedCursor"}` before replay from the oldest. N above the newest gets `{op: -1}` followed by
+`{error: "FutureCursor", message}`, then close; a non-integer or repeated cursor gets `InvalidRequest` and close.
+`#info` and errors are connection controls, outside the durable event sequence. Each subscriber has at most
+32 MiB of queued bytes, with 128 MiB allowed across all sockets; a reader exceeding a queue budget
+is disconnected and can resume by cursor. The listener accepts at most
+128 sockets, gives handshakes ten seconds, and sends a ping after thirty seconds without client controls,
+closing after a further thirty seconds without a matching pong.
 
 **Vectors** (`tests/fixtures/atproto/`, from bluesky-social/atproto-interop-tests at 056e5741, CC0): the MST key
 layers and common prefixes, all six commit-proof root pairs and their proof blocks, the three data-model

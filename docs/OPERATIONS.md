@@ -101,7 +101,7 @@ Precedence: default, file, environment. Compose's environment carries only
 what is a fact of the container (mount paths, secret files, the bind address);
 the operator's choices live in the file. Fields: `origin`, `opener`,
 `host_socket`, `root_socket`, `root_group`, `library`, `sync`, `obend`,
-`poll`, `http_bind`, `http_port`, `trust_proxy`, `hand_bind`, `hand_port`,
+`poll`, `http_bind`, `http_port`, `firehose_bind`, `firehose_port`, `trust_proxy`, `hand_bind`, `hand_port`,
 `hand_token_file`, `summon_handle`, `credentials`, `repo_keys`, `backups`,
 `anthropic_key_file`, `model_auth`, `model_thinking`, `model_account`,
 `key_name`, `tokens_toml`, `delve_mock`, `model_mock`, `watch_zuliprc`,
@@ -124,8 +124,14 @@ directory per world for everything that is the world's, the town's included
     <state>/worlds/<world>/           observe.sqlite, since; outbox/, awaiting/;
                                       principals.txt, mentioned.txt, skipped.txt,
                                       publications.after; posting/; interpretations/;
-                                      bridge.pid, interpret.pid; watch.jsonl, alerted.json
+                                      bridge.pid, interpret.pid; watch.jsonl, alerted.json;
+                                      repo.json (chain epochs), events (durable firehose log)
     <repo_keys>/<world>.key           the repository's signing key
+
+`events` is fsynced before emission; its independent seq survives carry and front restart. Backups keep it
+with `repo.json`. The newest 10,000 events are replayable, compacted by atomic rewrite at 20,000; loss of
+`events` loses cursor continuity. `firehose_port = 0` disables the listener; enabling it requires the world's
+signing key, a private port mapping on `delvetalk-http` and the edge WebSocket route (DEPLOY "Firehose").
 
 `State` also hands out the host clients (`host()`, `root()`),
 `write` (atomic, the one `write_atomic`), the outbox reads, the daemon loop

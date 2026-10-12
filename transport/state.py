@@ -43,6 +43,8 @@ class State:
         self.watch_log, self.alerted = h / 'watch.jsonl', h / 'alerted.json'
         self.mirror = h / 'mirror.json'  # what the mirror last wrote to the PDS: {collection rkey: digest}
         self.repo_ledger = h / 'repo.json'  # signing key, journal base, chain epochs and last served head
+        self.firehose = h / 'events'  # length-prefixed DAG-CBOR records: seq, kind, epoch, height, exact event frame bytes;
+        # fsynced before delivery, newest 10,000 retained, atomic rewrite at 20,000; copied by carry and state backups
         self.taught = h / 'taught.txt'  # the residents whose first admitted reply carried the next move
         self.requests = h / 'requests.json'  # the request poller's ledger: each repo's rev read, each record refused
         self.answers = h / 'answers'  # online.fg-goose.gsb.answer records, <did>.<rkey>.json: the façade and the mirror serve them

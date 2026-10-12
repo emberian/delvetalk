@@ -31,6 +31,8 @@ class Config:
     model_poll: float = field(1.0, "seconds between two rounds of the model worker (interpretations and paints): a paint must come inside the host's patience")
     http_bind: str = field('127.0.0.1', "the front's listening address")
     http_port: int = field(8765, "the front's port (the one the edge's Caddy route names)")
+    firehose_bind: str = field('127.0.0.1', "subscribeRepos listener's address, independent of HTTP workers")
+    firehose_port: int = field(0, "subscribeRepos listener's TCP port; 0 disables it; the edge routes its WebSocket path here")
     trust_proxy: bool = field(False, "key the front's unauthenticated limits on the last X-Forwarded-For entry")
     hand_bind: str = field('127.0.0.1', "the hand's listening address: loopback, reached by an ssh forward")
     hand_port: int = field(8766, "the hand's port")

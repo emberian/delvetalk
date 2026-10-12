@@ -878,7 +878,7 @@ class SignedRepository(unittest.TestCase):
         self.assertEqual(self.xrpc('com.atproto.sync.listBlobs', did=REPO), (200, {'cids': []}))
         s, e = self.xrpc('com.atproto.sync.subscribeRepos')
         self.assertEqual((s, e['error']), (501, 'MethodNotImplemented'))
-        self.assertIn('getRepo?since', e['hint'])
+        self.assertIn('firehose_port', e['message'])
         twin = Repo(ORIGIN, self.key, ledger=self.front.st.repo_ledger)  # another process with the same inputs signs the same chain
         self.assertEqual(twin.serve(self.world, 'GET', 'com.atproto.sync.getRepo', {'did': REPO}, None)[1], car)
 

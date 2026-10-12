@@ -8,7 +8,7 @@ section ends with its decision.
 
 **Ground.** DelveTalk's repository, `did:web:gsb.fg-goose.online` (docs/REPO.md): one signed commit per journal
 height over an MST of `online.fg-goose.gsb.entry/<rev>` and a higher-rev sync commit at key rotation, plus public mirrored collections (`card`, `page`, `index`, `answer`) and per-reader projection queries; getRepo, `since` and listRecords work for a
-carried journal (74cc83a8); subscribeRepos is 501. The posting account on pds.delve.town is the
+carried journal (74cc83a8); subscribeRepos is built on its own configured listener (off by default). The posting account on pds.delve.town is the
 owner's, `ember.delve.town` (`did:plc:6amo7col5h4ciq2gpm5eur7b`, the handle in the posting credential, which the
 owner configures and the repository never holds): the town's replies go out through it, and its address, the one
 residents mention, is the fictional `@livedelvetalk.delve.town`, matched as text (`summon_handle`). `python3 -m
@@ -85,15 +85,32 @@ proofs); and which cards a height changes is the host's knowledge (a card reads 
 want), so a host op `world-projection {height}` answers `[{collection, rkey, value | null}]` from the renders' read
 sets. Paint is served by the façade and the delve mirror, outside the signed tree.
 
-**A real firehose.** `com.atproto.sync.subscribeRepos` on its own listener: one thread over `selectors`, RFC 6455
-handshake and binary frames (standard library; no front worker pinned), each frame a DRISL-CBOR header `{op: 1, t:
-"#commit"}` and body [event-stream]. One `#commit` per height: `seq` (journal position), `repo`, `commit`, `rev`,
-`since`, `blocks` (the CAR slice `getRepo?since` already builds), `ops [{action, path, cid, prev?}]`, `prevData` (the
-previous MST root, needed for inversion [sync]), `blobs: []`, `time`, `tooBig: false`. `#identity` at connect and on
-rotation; `#sync` announces each carry or rotation epoch (L4, not built). `cursor` replays within the durable event
-log's backfill window (§8 finding 10). Commits are recomputed from journal, key and ledger. Entry revs stay
-`TID(clock minute × 6·10⁷ + height)` with the epoch clock floor; rotation sync revs use height offset 0.
-Consumers reject future revs [sync]; the clock and its epoch floor must remain behind wall time.
+**A real firehose (built, L4).** `com.atproto.sync.subscribeRepos` has its own listener (`firehose_bind`,
+`firehose_port`, default 0 = off), one thread owning production and all sockets through `selectors`; RFC 6455,
+binary messages, masked client controls, ping/pong and close are standard library. No front worker is pinned.
+The edge routes the XRPC path to this port; the HTTP front answers 426 with `Upgrade: websocket` when enabled,
+501 when off (DEPLOY, REPO). A message is a DAG-CBOR header `{op: 1, t: "#commit"}` followed by its body
+[event-stream]: `seq`, `rebase: false`, `tooBig: false`, `repo`, `commit`, `rev`, `since`, `blocks`,
+`ops [{action, path, cid, prev?}]`, `prevData`, `blobs: []`, UTC append `time`. Today each live height creates
+one entry record. `Signed` captures each height's CAR separately from `getRepo(since)`: commit, new paths,
+create/update records, and the neighbours read when inverting operations, including merges and root shrink.
+A partial-tree inverse records its reads; an independent test consumer restores `prevData` using only these blocks.
+General updates/deletes are covered without extending the journal's append-only `Tree`. `fits` permits at most
+200 ops and 2,000,000 CAR bytes; overflow chooses `#sync`, tested with synthetic budgets.
+
+`State.firehose` is `<state>/worlds/<world>/events`, a fsynced event log storing exact frame bytes with its own
+endpoint sequence, kind and epoch/head-height coverage. `seq` increases by one across all event kinds; cursors
+replay stored bytes, never reconstructed events. Carry copies the log. An empty start waits for its first live commit (null since/prevData). A first start over an existing journal,
+unannounced epochs or heights appended while down emits one `#sync {seq, did, blocks, rev, time}` of the head
+commit only; consumers fetch `getRepo`. Rotation appends `#identity {seq, did, handle, time}` before sync;
+carry does not. Identity is never emitted at connect; restart after identity finishes sync without repeating it.
+An unchanged restart appends nothing. Retention is the newest 10,000 events, atomically compacted at 20,000.
+No cursor means live only; `cursor=N` replays retained seqs > N then live with an ordered handoff. An older cursor
+gets `#info {name: "OutdatedCursor"}` then replay; a future cursor gets `FutureCursor` and close; a malformed
+cursor gets `InvalidRequest` and close. REPO specifies limits and custody; `tests/test_firehose_consumer.py`
+follows 1,000 commits with inversion, exact resumption, ten subscribers, downtime, rotation and carry.
+Entry revs remain `TID(clock minute × 6·10⁷ + height)` with the epoch clock floor; rotation sync revs use
+height offset 0. Consumers reject future revs [sync]; the clock and its floor must remain behind wall time.
 
 **Mirrored on delve.town (built, not running).** `mirror.py`, once the owner authorizes it, writes `card`, `page`,
 `index` and `answer` into the posting account; `paint`, `verb`, `chronicle`, `book`, `door` follow their lanes.
@@ -345,13 +362,13 @@ public is a record; every act is a record or an XRPC call.
 | L1 | transport | **first slice**: the `requests` poller (listRepos rev diff, listRecords, sync.getRecord with signature and path checked); identity `(did, at-uri)`; `if` passed through; `answer` records by the mirror's writer and the façade | fixture Delve: a request gives one entry with intent = its URI and one `answer`; read twice, one entry; a commit signed by another key, no turn; stale `if`, `moved` with was/now; `mode: try`, refused with no entry and no answer. **Built** (`tests/test_requests.py`), every control on a real host; a `delvetalk try` spell by record is likewise never answered |
 | L2 | docs, transport | lexicon test; `_lexicon.gsb.fg-goose.online` TXT, schema records (owner) | every emitted record validates; `_lexicon.gsb.fg-goose.online` resolves to the posting account |
 | L3 | host, transport | `world-projection`; MST `put`/`delete`; per-height ops; paint split | `goat` or @atproto/repo verifies getRepo; CIDs equal in both repositories; a restart re-derives a byte-identical head |
-| L4 | transport | subscribeRepos, cursor, `#identity`, `#sync` announcing every carry and rotation epoch (not built) | a consumer inverting over `prevData` follows 1,000 heights, resumes from a cursor; workers free under ten subscribers |
+| L4 | transport | **Built**: subscribeRepos, durable event seq/log, bounded cursor replay, rotation `#identity` and epoch/downtime `#sync` | a consumer inverting over `prevData` follows 1,000 heights, resumes from a cursor; workers free under ten subscribers |
 | L5 | transport | service-auth verifier; `#delvetalk` in did.json; `act`, `try`, `plan`, `getEntry` | wrong `aud`, `lxm`, past `exp`, reused `jti`, high-S: 401; the posting account's getServiceAuth token: admitted; through pds.delve.town's proxy: admitted (live, owner's word) |
 | L6 | host, transport | sessions: `readers`, `shareSession`, `openSession`, `getSession`, `listSessionRecords`, acts with `world` | unnamed DID: 403, nothing returned; named reader: the records; the mirror ledger, getRepo CAR and access log never hold session contents; after expiry, refused, and the town's cited CID still matches |
 | L7 | ops, transport, host | wildcard DNS and certificates; hosted did:web for guests and Zulip; `link`; each world's hostname resolving | a guest's request in its hosted repo admits as that DID; a Zulip message becomes a request in the user's repo |
 | L8 | host | `plan` as one turn (built, lane/plan; by record since L1) | three calls, the third refused: nothing written, one receipt |
 
-L1 ∥ L2 ∥ L5 (L5 is what gives a PDS-only resident `try`); L3 after L1; L4 after L3; L6 after L5; L7 after L5; L8 any
+L1 ∥ L2 ∥ L5 (L5 is what gives a PDS-only resident `try`); L3 after L1; L4 serves the signed entry tree today; L6 after L5; L7 after L5; L8 any
 time. Each lane commits named files and keeps `make check`'s narrow targets green.
 
 **The first slice is L1, on what lane/posting built.** selene's mirror can read the town now: the posting account
@@ -388,10 +405,17 @@ Fixed in L3:
 
 | # | Finding | Decision |
 | --- | --- | --- |
-| 4 | carry and key rotation break rev continuity | fixed: one durable epoch ledger at `State.repo_ledger` (`worlds/<world>/repo.json`), atomic writes inside `Signed.lock`; `{key, base, epochs: [{height, clock, cause}], head: {height, rev, clock}}`. A changed base raises the floor to `head.clock + 1` at the first carried height, tree empty, `prev` null, pre-carry entries reconciled away. A changed key on the same journal raises the floor after head height H, signs the same root once at `TID((head.clock + 1) × 60,000,000)`, `prev` null; H+1 chains from it. Old commits are not rebuilt, old record revs remain `since` cursors. Restart depends only on journal, key and ledger and changes no bytes. Carry copies the ledger with state; deletion requires follower re-sync. L4 announces each epoch with `#sync` |
+| 4 | carry and key rotation break rev continuity | fixed: one durable epoch ledger at `State.repo_ledger` (`worlds/<world>/repo.json`), atomic writes inside `Signed.lock`; `{key, base, epochs: [{height, clock, cause}], head: {height, rev, clock}}`. A changed base raises the floor to `head.clock + 1` at the first carried height, tree empty, `prev` null, pre-carry entries reconciled away. A changed key on the same journal raises the floor after head height H, signs the same root once at `TID((head.clock + 1) × 60,000,000)`, `prev` null; H+1 chains from it. Old commits are not rebuilt, old record revs remain `since` cursors. Restart depends only on journal, key and ledger and changes no bytes. Carry copies the ledger with state; deletion requires follower re-sync. L4 announces epochs with `#sync`, and rotations with `#identity` before it |
 | 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | fixed: one pair of queries, `online.fg-goose.gsb.getProjection`/`listProjections`, for receipt/object/source/publication/grant/law; `{kind, key, of?, value, signed?}` with host values untagged, `of` the subject CID. Receipt `signed` points to `entry/<rev>` when in the current tree. Repo record methods accept only public entry/card/page/index/answer, each `cid` hashes `value`; sync.getRecord proves only the requested entry path and includes whole bytes for its principal. `getEntry` remains L5 work |
 | 12 | the signed index naming its own head is a cycle | fixed: `index` never carries did/rev/commit/head in either repository; its bytes depend on the journal alone. The posting-only `online.fg-goose.gsb.checkpoint/self` names `{did, rev, commit, height}`, fetched from the world's front before host reads, written after the index or alone when the source head changes, through the same plan/digest/ledger. Unavailable source: records proceed, reason reported, held checkpoint retained. No timestamp; no did:web façade or signed-tree checkpoint; dry run only reads (§1, `tests/test_mirror.py`) |
 | 14 | canonical strongRef URI and mirror mapping | fixed in the design: a journal-derived record's canonical URI is `at://did:web:gsb.fg-goose.online/<collection>/<rkey>` (or its world's did:web DID). A strongRef names that URI; checkpoint + index map the copy by collection and unchanged rkey, with identical bytes/CID. CID equality verifies bytes against the canonical repository, never retargets a URI or proves commit membership. Version retention remains below |
+
+Fixed in L4:
+
+| # | Finding | Decision |
+| --- | --- | --- |
+| 10 | height cannot be the firehose `seq` | fixed: `State.firehose` (`worlds/<world>/events`) stores each exact frame once, fsynced, with endpoint-wide consecutive seq and epoch/head-height coverage. Carry copies it; restart reconciles downtime with one head sync. Rotation identity precedes sync, never connect. Newest 10,000 retained, atomic compaction at 20,000; live-only without cursor, ordered replay > cursor, OutdatedCursor then oldest replay, FutureCursor/InvalidRequest then close |
+| 11 | one commit event per height can overflow; deltas need inversion context | fixed: one `fits` decision enforces ≤200 ops and ≤2,000,000 CAR bytes, otherwise head-only sync; `rebase: false`, `tooBig: false`, empty blobs. Per-height CARs contain nodes read by partial-tree inversion, separate from getRepo slices. Independent inversion tests cover creates, new layers/root shrink, updates and deletes; real consumer follows 1,000 commits and resumes identical bytes |
 
 For the next slices, each with its decision:
 
@@ -399,8 +423,6 @@ For the next slices, each with its decision:
 | --- | --- | --- | --- |
 | 3 | OAuth discovery reaches internal addresses | accepted: `oauth.py`'s discovered URLs go through the global-address check `delve.Client.did_document` now applies to did:web hosts, and the connection is made to the address checked (today's check leaves DNS rebinding between check and connect) | L5 |
 | 9 | the bare-audience exception cannot know the forwarder | accepted: no forwarder-based exception. `aud` is our DID with `#delvetalk` or bare (both name only us; `lxm` binds the method), `typ` `JWT`, `iat` not in the future, `exp` within five minutes, `jti` once | L5 |
-| 10 | height cannot be the firehose `seq` | accepted: an endpoint-wide durable event log with its own `seq`, a stated backfill window, `OutdatedCursor`/`FutureCursor` | L4 |
-| 11 | one commit event per height can overflow | accepted: events budgeted under 200 ops and 2,000,000 bytes, `#sync` and resync past that, `rebase: false` sent, proofs built and tested for inversion of updates and deletes | L4 |
 | 13 | proxied sessions are visible to the resident's PDS | accepted: §3's table counts the resident's PDS inside the trust boundary of every proxied call; privacy from it needs a direct call | L6 |
 | 14 | retrieving versions cited by book or paint | required when those records land: immutable versioned keys for book/paint and every card/page version they cite; no claim of historical retrieval from overwritten singleton keys (§1) | L3 |
 | 15 | sessions have no unambiguous address | accepted: `openSession` returns an opaque id binding holder and incarnation, used by every call; read, act, share and publish permissions separate, the host's | L6 |
