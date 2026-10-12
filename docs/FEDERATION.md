@@ -161,9 +161,10 @@ height: 1200}}`: the town as it stood, yours to run.
    the scratch's rendered text is an ordinary turn on the home world's
    library object; the scratch only rendered it.
 
-The REPL and `check` run in the scratch (`/scratch/<name>/repl`, `/check`),
-so a REPL checkpoint survives a restart for the scratch's life (today it dies
-with hostd, `replRestarted`), and the stateless process goes.
+The REPL and `check` run in the scratch (`/scratch/<name>/repl`, `/check`)
+through the ordinary HTTP REPL, whose checkpoints live for the process: a
+restart of serve answers a held checkpoint `replRestarted` even while the
+scratch is alive, and the REPL is begun again from the scratch's state.
 
 **Cost and limits.** At most 2 open scratches per principal
 (`scratchPerPrincipal`); a third is refused `capacity` naming the oldest. Each at most

@@ -1601,7 +1601,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    Pins re-recorded (World is in every closure). Test: `test_genesis.Checked` (bell/1 and the garden, each
    `layer over`, check clean; a missing card is named).
 
-159. **Carry and the no-wipe gate (host21; OVERHAUL steps 0 and 1; TENURE §1).** No replay edition change: a
+159. **Carry and the no-wipe gate (host21; OVERHAUL steps 0 and 1; FOUNDATION §2).** No replay edition change: a
    `carried` genesis is a new tag, and every journal that exists replays as before.
    - *The gate.* `deploy.genesis` lists every world journal under `--towns` (`DELVETALK_TOWNS`; compose mounts
      `/var/lib/delvetalk` read-only into `delvetalk-ops` at `/towns`) other than its own and refuses, naming each
@@ -1731,7 +1731,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `fired`, `unfired`, `wanted`, `unwanted` and compares each.
    - *`request.verb`.* `Written.verb` (`act {verb, text}`'s verb, else "" for the method; journaled `verbs`;
      `TurnLoop.actVerb`). No body has `act` yet (objects lane); `#guard`s and Law's own guards cover it.
-   - *The revealing reply* (TENURE §4). `turnReply` carries `revealed`: up to three host-rendered lines of an
+   - *The revealing reply* (FOUNDATION §5). `turnReply` carries `revealed`: up to three host-rendered lines of an
      admitted entry (`TurnLoop.revealed`), each left out when empty: what it moved (`rule two of glm.delve.town
      fired: delvetalk me note / text: …`, or `… did not fire: <why in words>`), what it opened or closed
      (`garden/bell/1 now wants second: delvetalk garden/bell/1 rain`, `… no longer wants second`), where it stands
@@ -1748,7 +1748,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `--leave wake/did:plc:6amo7col5h4ciq2gpm5eur7b`): green, breaking, carries (51 objects, 489 receipts).
    - *Tests.* `tests/test_rules.py` (the controls: a rule fired once and read back with its receipt, forty rules
      firing eight, a chain four deep, `hole` and `quiet`, placing and taking off, a want's flips and `since`, where a
-     write stands; each across a reopen) and `tests/test_reaction.py` (REACTION §5's five outcomes on the town's own
+     write stands; each across a reopen) and `tests/test_reaction.py` (FOUNDATION §10's five outcomes on the town's own
      objects, and a firing replayed after a restart).
    - *For the objects lane.* The world-call arms (`rule`, `unrule`, `want`, `unwant` from Bend) are not built:
      World.obend's protocol must declare them in the same change that deletes `subscribe` and `awaitPost` (one pin
@@ -1853,7 +1853,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `test_bridge.Reaching` (what the bridge passes and sends), `test_zulip`, `test_outbound`, `test_archive` unchanged
    (81 reached). Words a reached card leaves silent are hob's (5.163).
 
-163. **Words a card heard are hob's (host26; OVERHAUL §2.7; COLLABORATOR §3; no edition change).** A direct `receive`
+163. **Words a card heard are hob's (host26; OVERHAUL §2.7; FOUNDATION §10; no edition change).** A direct `receive`
    whose words reached a card (`reach` not empty) and run none of its spells goes to the card's `receive` first; what
    it leaves `silent` (`heardSilent`: admitted, result `silent`, nothing written, sent, offered or published) is
    discarded and the host reads the words itself (`heard`, `heardTurn`), never the card's Bend. A card opts out of hob
@@ -2018,7 +2018,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   too), `world-status` answers it, and `Snapshot.openJournal` refuses a journal of another edition before
   replaying anything: "journal replay edition 1; this host is 2; a world from another host's edition does not
   reopen here: carry it (`delvetalk-obend carry --from J --out NEW`, ...)" (a journal without the field is edition
-  1). The check stands: a world replayed under rules it was not judged by would lie. The policy is TENURE §1's:
+  1). The check stands: a world replayed under rules it was not judged by would lie. The policy is FOUNDATION §2's:
   an additive derived field is compared when present and derived when absent, with no bump; a bump is a breaking
   change, which ships with `deploy/carry-check.sh` green on the newest town backup (the deploy then carries,
   5.159) or does not merge; a world is never begun again for one. 2 is host12 (evictions and changes owed as

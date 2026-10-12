@@ -191,7 +191,7 @@ structure Written where
       Journaled (`arguments`) only for an object whose package declares a Bend law. -/
   argument : Data := .record []
   /-- The verb the act named when it is not the method (`request.verb`): `act {verb, text}`'s verb, a
-      grown one (docs/COLLABORATOR.md); "" reads as the method. Journaled (`verbs`) when any is given. -/
+      grown one (docs/FOUNDATION.md §10); "" reads as the method. Journaled (`verbs`) when any is given. -/
   verb : String := ""
 
 /-- How a turn read a root it did not read whole (KERNEL-HANDOFF §15, WHOLENESS §3a). A frame that
@@ -248,7 +248,7 @@ def cellsOf (relations : List (RelDecl × Array Data)) (reads : Delvetalk.Turn.R
     else (rows[reach - 1]?).map fun row => (f, some (Delvetalk.Turn.keyProjection d.key row))
   Cells.join { scalar := true, spans := spans } { rows := reads.rows.map fun r => (r.field, r.key) }
 
-/-- What a placement places: a rule, a want, or a verb grown (docs/COLLABORATOR.md §3). -/
+/-- What a placement places: a rule, a want, or a verb grown (docs/FOUNDATION.md §10). -/
 inductive Placing where
   | rule
   | want
@@ -332,7 +332,7 @@ structure Proposal where
   /-- Rules, wants and verbs the turn places and takes off; they take effect with the commit. -/
   placements : List Placement := []
 
-/-- The method a grown verb runs (`act {verb, text}`, docs/COLLABORATOR.md §3): its `request.verb` is the verb. -/
+/-- The method a grown verb runs (`act {verb, text}`, docs/FOUNDATION.md §10): its `request.verb` is the verb. -/
 def actMethod : String := "act"
 
 /-- The host's own spells on every card (docs/CATALOGUE.md §2, higher-order cards), and its reads,
@@ -2558,7 +2558,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- proposed one, its `kind` saying which), with its argument. A migration's state is the text
     -- law's alone: the old code's law does not read the new type.
     if o.predicate then
-      let seen := (changes.filter (Law.editKind ·.kind)).foldl (fun (acc : List (String × Written)) c =>
+      -- A placing (a rule, want or verb placed, kind 4 with its verb) is judged too: its state is unchanged,
+      -- and a predicate refusing `request.kind == 4` keeps its card from strangers' rules (codex objects 4).
+      let judged := changes.filter fun c => Law.editKind c.kind || (c.kind == 4 && !c.verb.isEmpty)
+      let seen := judged.foldl (fun (acc : List (String × Written)) c =>
         let key := (Json.arr #[toJson c.caller, toJson c.kind, toJson c.method, toJson c.via, dataJson c.argument]).compress
         if acc.any (·.1 == key) then acc else acc ++ [(key, c)]) []
       for (_, c) in seen do
@@ -2581,7 +2584,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       let kept := o.readings.filter fun (n, _) => law.lookup n == o.law.lookup n && (given.lookup n).isNone
       next := { next with law, lawText := text, readings := given ++ kept }
       amendments := amendments ++ [Json.mkObj [("object", toJson id), ("old", toJson o.lawText), ("new", toJson text)]]
-    -- Rules, wants and verbs placed and taken off (KERNEL-HANDOFF §27 item 1; COLLABORATOR §3): a rule's
+    -- Rules, wants and verbs placed and taken off (KERNEL-HANDOFF §27 item 1; FOUNDATION §10): a rule's
     -- or a want's line parsed by the one parser, of the modality it is placed as, its name new across
     -- the thing's text and placed lines; a verb's name a spell's action word new to the thing's forms,
     -- the host's spells and its verbs, on a thing with an `act`; each within its bound; a removal by
@@ -3219,7 +3222,7 @@ def endedField (w : World) (object principal intent how : String) (ledger : Ledg
       ("ledger", child.json)])]
   | none => []
 
-/-! ## What a write sets off and opens (docs/OVERHAUL.md §3 "Commit"; REACTION §4; TENURE §4) -/
+/-! ## What a write sets off and opens (docs/OVERHAUL.md §3 "Commit"; FOUNDATION §10; FOUNDATION §5) -/
 
 /-- The delivery id, and the delivered turn's intent, of rule `name` of `object` fired at `height`. -/
 def ruleDeliveryId (object name : String) (height : Nat) : String := s!"rule:{object}:{name}:{height}"
@@ -4820,7 +4823,7 @@ def lawRows (o : Object) : Json :=
     Json.mkObj ([("name", toJson name), ("keyword", toJson keyword), ("clause", toJson body)] ++
       ((reading.orElse fun _ => o.readings.lookup name).map fun r => [("reading", toJson r)]).getD []))
 
-/-- A rule a thing carries, as `rules` reads it (docs/REACTION.md §4, the readback a wake never had): its
+/-- A rule a thing carries, as `rules` reads it (docs/FOUNDATION.md §10, the readback a wake never had): its
     name, owner (and handle), reading, condition, spell, line and the object holding it; when a hand
     placed it, the height; its last firing (`fired {height, id, receipt}`, the receipt the slug of the
     turn it delivered once that ran) or refusal to fire (`unfired {height, why}`). -/
@@ -4925,7 +4928,7 @@ def unfiredWords : String → String
   | "pending" => s!"the world holds {Limits.maxPending} undelivered sends"
   | other => other
 
-/-- `world-chronicle {principal, day}` (docs/TENURE.md §2; OVERHAUL §2 conflict 6): one clock day of the
+/-- `world-chronicle {principal, day}` (docs/FOUNDATION.md §10; OVERHAUL §2 conflict 6): one clock day of the
     journal folded into lines, derived at the read and never written. The day's span is `World.days`;
     each line names what an entry of it did to a thing the reader may view: made, grown (a verb), fired
     or not, came to want or stopped; then the refusals by class and the hands that acted, by handle.

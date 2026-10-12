@@ -94,7 +94,8 @@ YOURS · me
 Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.
 ```
 
-Once the host answers `world.wanting`, the card adds "What wants a hand, oldest first" under what changed.
+A blank reply or `since` adds, after the doors, "What wants a hand, newest first" (`world.wanting`), within what the
+doors leave of the clip.
 
 ## Wants
 

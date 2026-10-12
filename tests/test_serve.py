@@ -2,8 +2,8 @@
 docs/ROOT.md §1.4): named worlds and the root socket beside the public one.
 
 Evidence for FOUNDATION §7 (layer: host). Refuted by a socket others may open, a second writer that starts, a
-chain broken under concurrent clients, a restart that answers a retried turn differently, a scratch world or the
-stateless session that sees the world, a library without arrival's packages, a world opened under another name, or an
+chain broken under concurrent clients, a restart that answers a retried turn differently, a scratch world that
+sees the world, a REPL or a crossing op the sockets take, a library without arrival's packages, a world opened under another name, or an
 opener's op or a root op that the public socket takes. A test's serve outlives its test process: refuted by a serve
 still running seconds after the process that started it died of SIGTERM or (Linux) SIGKILL.
 """
@@ -239,6 +239,22 @@ class Placement(unittest.TestCase):
             p = subprocess.run([binary(), 'serve', '--state', str(Path(d) / 'other'), '--root-group', 'no-such-group-here'],
                                capture_output=True, text=True, timeout=60)
             self.assertNotEqual(p.returncode, 0)
+
+
+class LibraryUpdate(unittest.TestCase):
+    def test_deploy_library_update_reseals_the_live_library_and_journals_it(self):
+        from transport.config import LIBRARY
+        opener = 'did:plc:' + 'a' * 24
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d) / 'state'
+            Served(str(state), cleanup=self.addCleanup, opener=opener, library=LIBRARY)
+            (state / 'delvetalk.toml').write_text(f'opener = "{opener}"\n')
+            before = sorted(p.name for p in (state / 'library').iterdir())
+            p = subprocess.run(['deploy/library-update.sh', '--state', str(state)], capture_output=True, text=True, timeout=120,
+                               cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertRegex(p.stdout, r'^library: ')
+            self.assertEqual(sorted(p.name for p in (state / 'library').iterdir()), before)
 
 
 class Restart(unittest.TestCase):

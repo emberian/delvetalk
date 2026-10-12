@@ -1,4 +1,4 @@
-"""One request to the Anthropic Messages API; strict JSON back, returned verbatim to the host.
+"""One request to the Anthropic Messages API; the model's text back as `raw`, returned verbatim to the host.
 
 The key comes from the file the config's `anthropic_key_file` names, never from the repo; without a key nothing is
 sent. With `model_mock` the answer is the fixture <sha256 of the canonical request>.json (a raw Messages API response
@@ -9,11 +9,9 @@ import json
 import subprocess
 import time
 import tomllib
-import urllib.error
-import urllib.request
 from pathlib import Path
 
-from transport.delve import _NoRedirect, canonical
+from transport.delve import Failure, canonical, http_transport
 
 URL = 'https://api.anthropic.com/v1/messages'
 DEFAULT_MODEL = 'claude-haiku-5-5'
@@ -44,26 +42,11 @@ def request_hash(request):
 
 
 def http(method, url, headers, body):
-    req = urllib.request.Request(url, body, headers, method=method)
+    """-> (status, bytes, headers); status 0 when the network failed."""
     try:
-        with urllib.request.build_opener(_NoRedirect).open(req, timeout=TIMEOUT) as resp:
-            return resp.status, resp.read(MAX_RESPONSE + 1), dict(resp.headers)
-    except urllib.error.HTTPError as err:
-        return err.code, err.read(MAX_RESPONSE + 1), dict(err.headers)
-    except (urllib.error.URLError, TimeoutError, OSError):
+        return http_transport(method, url, headers, body, MAX_RESPONSE, TIMEOUT)
+    except Failure:
         return 0, b'', {}
-
-
-def extract(text):
-    """The first JSON value in text: whole, inside a fence, or after leading prose."""
-    decoder = json.JSONDecoder()
-    for i, ch in enumerate(text):
-        if ch in '{[':
-            try:
-                return decoder.raw_decode(text[i:])[0]
-            except ValueError:
-                continue
-    raise ValueError('no JSON')
 
 
 def interpret_body(status, raw, model):
@@ -82,15 +65,7 @@ def interpret_body(status, raw, model):
         text = ''.join(b.get('text', '') for b in body['content'] if b.get('type') == 'text')
     except (ValueError, KeyError, TypeError, AttributeError):
         return failed('malformed')
-    # A reply is the model's text; `json` is the first JSON value in it when there is one.
-    # The Policy prompt asks for a plain spell, so a text-only reply is not malformed: the object
-    # fits `raw` against the offered forms, and `json` is for callers that asked for JSON.
-    try:
-        value = extract(text)
-    except ValueError:
-        value = None
-    return {'status': 'replied', 'json': value, 'raw': text, 'model': body.get('model', model),
-            'usage': body.get('usage', {})}
+    return {'status': 'replied', 'raw': text, 'model': body.get('model', model), 'usage': body.get('usage', {})}  # the host reads `raw`
 
 
 def call(transport, headers, wire, model_id):
@@ -115,7 +90,7 @@ def spent(st, start=0):
     """{UTC month: {calls, inputTokens, outputTokens, dollars}} of the replied calls at or after unix time `start`, every
     world's, with `all` their sum."""
     out = {}
-    for row in map(json.loads, st.spend.read_text().splitlines() if st.spend.exists() else []):
+    for row in st.lines(st.spend):
         for k in ('all', time.strftime('%Y-%m', time.gmtime(row['at']))) if row['at'] >= start else ():
             t = out.setdefault(k, {'calls': 0, 'inputTokens': 0, 'outputTokens': 0})
             t['calls'] += 1

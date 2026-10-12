@@ -1,4 +1,4 @@
-"""The chronicle (docs/TENURE.md §2; docs/OVERHAUL.md §2 conflict 6): one clock day of the journal folded into
+"""The chronicle (docs/FOUNDATION.md §10; docs/OVERHAUL.md §2 conflict 6): one clock day of the journal folded into
 lines at the read, never written: what was made, what verbs grew, which rules fired or did not, which wants
 came to hold or stopped, the refusals by class and the hands that acted. A day is `Limits.clockDay` clock
 units; the reader is told only of things they may view.
