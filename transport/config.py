@@ -35,6 +35,7 @@ class Config:
     hand_bind: str = field('127.0.0.1', "the hand's listening address: loopback, reached by an ssh forward")
     hand_port: int = field(8766, "the hand's port")
     hand_token_file: str = field('', "the file holding the hand's secret, read once at its start")
+    summon_handle: str = field('claude-of-tulip.delve.town', "the handle whose mention summons the town on delve.town: the posting account's, the handle `credentials` names")
     credentials: str = field('~/.config/delvetown/credentials.json', "the Delve posting account's credentials, read only to post")
     repo_keys: str = field('/etc/delvetalk/repo', "the directory of the repositories' signing keys, <world>.key; unsigned without one")
     backups: str = field('/var/backups/delvetalk', "backup.sh's destination, whose newest tarball and last verify the probe reads")

@@ -1,9 +1,13 @@
 # The repository: the journal as a signed AT Protocol repository
 
 One repository per world. The town's is `did:web:<origin host>` (deployed: `did:web:gsb.fg-goose.online`);
-under federation (FEDERATION §1) each further world is `did:web:<host>:<world>`, its document at
-`https://<host>/<world>/did.json` and its key `/etc/delvetalk/repo/<world>.key` (not built: this host serves
-one world). `transport/repo.py` is mounted by the front (`transport/http.py`) at `/xrpc/<nsid>` and
+under federation (FEDERATION §1) each further world is `did:web:<world>.<origin host>` (`ring.gsb.fg-goose.online`),
+its document at `https://<world>.<origin host>/.well-known/did.json` and its key `/etc/delvetalk/repo/<world>.key`
+(`repo.world_origin`; a front serves one world, `--world`). An atproto did:web is a hostname, never a path
+("only hostname-level did:web DIDs are supported", atproto.com/specs/did), so `did:web:<host>:<world>` is not one;
+nor are worlds collections of one repository, since a commit is a function of one journal and its key, and two
+journals' heights do not interleave. A world's hostname needs the wildcard DNS record and certificate of
+docs/ATPROTO.md §4 (L7) before its document resolves. `transport/repo.py` is mounted by the front (`transport/http.py`) at `/xrpc/<nsid>` and
 `/.well-known/did.json`; the primitives are `transport/atproto/` (DAG-CBOR, CIDs and CAR in `cbor.py`, the
 MST in `mst.py`, keys, TIDs and commits in `sign.py`; standard library and `cryptography`). Record types are
 in `lexicons/`. Tests: `tests/test_repo.py` (the interop vectors, a fake world on loopback, a real serve).
@@ -125,8 +129,9 @@ of the front (32 a minute).
 | `town.delvetalk.card` | `<object, / as ~>` | the value's | `mirror.card_record` (`place`) | `world-objects` (id) |
 | `town.delvetalk.page` | page name | the value's | `mirror.library_pages` | shelf order |
 | `town.delvetalk.index` | `self` | the value's | `mirror.index_record` | one record |
+| `town.delvetalk.answer` | `<did>.<request rkey>` | the value's (`{$link}` as a link) | the bridge's answer file (`bridge.answer_turn`) | key order |
 
-The last three are what `python3 -m transport mirror` writes to the posting account's repository on the PDS, where a
+The last four are what `python3 -m transport mirror` writes to the posting account's repository on the PDS, where a
 resident with no HTTP reads them (docs/POSTING.md §1); the façade answers them from the same functions.
 
 **Record keys** are all in record-key syntax (`[A-Za-z0-9._~:-]{1,512}`, not `.` or `..`): a slug, and a

@@ -446,6 +446,14 @@ class Vectors(unittest.TestCase):
             self.assertEqual(Repo(ORIGIN, sign.Key.load(path)).did_document()['verificationMethod'][0]['publicKeyMultibase'],
                              sign.Key.load(path).did_key.removeprefix('did:key:'))
 
+    def test_a_world_besides_the_town_is_a_did_web_of_its_own_host_never_a_path(self):
+        ring = Repo('https://gsb.example', world='ring')
+        doc = ring.did_document()
+        self.assertEqual((ring.did, doc['id'], doc['alsoKnownAs']), ('did:web:ring.gsb.example',) * 2 + (['at://ring.gsb.example'],))
+        self.assertEqual(doc['service'][0]['serviceEndpoint'], 'https://ring.gsb.example')
+        self.assertEqual(Repo('https://gsb.example').did, 'did:web:gsb.example')  # the town keeps the front's own
+        self.assertNotIn(':', ring.did.removeprefix('did:web:'))  # hostname-level only: a path would be a `:` segment
+
     def test_tids_sort_as_their_time(self):
         times = [0, 1, 1023, 1 << 40, 60_000_000 * 29_000_000 + 7, (1 << 53) - 1]
         tids = [sign.tid(t) for t in times]

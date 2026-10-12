@@ -1,4 +1,4 @@
-"""DelveTalk's own repository: the journal as AT Protocol records under did:web:<origin host>, read only, and,
+"""DelveTalk's own repository: the journal as AT Protocol records under did:web:<the world's host>, read only, and,
 with a signing key on the box, as a signed repository: one commit per journal height over a Merkle search tree
 of the entries' CIDs.
 
@@ -17,7 +17,7 @@ import urllib.parse
 from collections import namedtuple
 from pathlib import Path
 
-from transport.atproto.cbor import CID, block, decode
+from transport.atproto.cbor import CID, block, decode, from_json
 from transport.atproto.cbor import car as car_of
 from transport.atproto.mst import Tree
 from transport.atproto.sign import Key, multikey, tid
@@ -25,8 +25,8 @@ from transport.host import PUBLIC
 from transport.identity import SLUG
 
 NS = 'town.delvetalk.'
-COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law', 'card', 'page', 'index'))
-MIRRORED = ('card', 'page', 'index')  # transport/mirror.py renders them, for the PDS and for this façade alike
+COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law', 'card', 'page', 'index', 'answer'))
+MIRRORED = ('card', 'page', 'index', 'answer')  # transport/mirror.py renders them, for the PDS and for this façade alike
 ENTRY = NS + 'entry'  # the signed repository's one collection: an entry's CID and height under its rev
 LIMIT, MAX_LIMIT = 50, 100
 CAR = 'application/vnd.ipld.car'
@@ -136,6 +136,21 @@ class Signed:
         return car_of(head.commit[0], [head.commit, *path, self.heights[h - 1].record, *extra])
 
 
+def world_origin(origin, world):
+    """The origin a world's repository is named by: the front's own for the town, else `<world>.<its host>`. An atproto
+    did:web is a hostname and never a path (atproto.com/specs/did), so each world is a host of its own (docs/REPO.md)."""
+    if world == 'town':
+        return origin.rstrip('/')
+    parts = urllib.parse.urlsplit(origin)
+    return f'{parts.scheme}://{world}.{parts.netloc}'
+
+
+def world_did(origin, world='town'):
+    """-> (did, handle): the did:web of a world's repository and the hostname that is its handle."""
+    parts = urllib.parse.urlsplit(world_origin(origin, world))
+    return 'did:web:' + parts.netloc.replace(':', '%3A'), parts.hostname
+
+
 def object_key(oid, tail):
     """`<object with / as ~>.<tail>`: a record key for every id the host creates (`[A-Za-z0-9._:/-]`)."""
     return f"{oid.replace('/', '~')}.{tail}"
@@ -149,11 +164,12 @@ class Repo:
                'com.atproto.sync.listRepos': 'list_repos', 'com.atproto.sync.listBlobs': 'list_blobs',
                'com.atproto.sync.subscribeRepos': 'subscribe'}
 
-    def __init__(self, origin, key=None):
-        """`key`: a transport.atproto.sign.Key, or None for an unsigned repository."""
-        self.origin = origin.rstrip('/')
-        parts = urllib.parse.urlsplit(self.origin)
-        self.handle, self.did = parts.hostname, 'did:web:' + parts.netloc.replace(':', '%3A')
+    def __init__(self, origin, key=None, world='town', answers=None):
+        """`key`: a transport.atproto.sign.Key, or None for an unsigned repository; `world` names its host (`world_origin`);
+        `answers` the directory of the world's answer records (`State.answers`), the bridge's."""
+        self.answers = answers
+        self.origin = world_origin(origin, world)
+        self.did, self.handle = world_did(origin, world)
         self.signed = Signed(self.did, key) if key else None
 
     def did_document(self):
@@ -285,6 +301,8 @@ class Repo:
     def mirrored(self, host, collection, rkey, who):
         """A record the mirror writes to the PDS, as `who` reads it here (transport/mirror.py), or None."""
         from transport import mirror
+        if collection == 'answer':
+            return mirror.answer_records(self.answers).get(rkey)
         if collection == 'card':
             return mirror.card_record(host, rkey.replace('~', '/'), who)
         pages = mirror.library_pages(host, who)
@@ -301,6 +319,8 @@ class Repo:
         from transport import mirror
         if collection == 'index':
             keys = ['self']
+        elif collection == 'answer':
+            keys = sorted(mirror.answer_records(self.answers))
         elif collection == 'page':
             keys = [p['name'] for p in mirror.library_pages(host, who)]
         else:
@@ -313,7 +333,7 @@ class Repo:
         while at < len(keys) and len(out) < limit:
             value = self.mirrored(host, collection, keys[at], who)
             if value is not None:
-                out.append({'uri': f'at://{self.did}/{NS}{collection}/{keys[at]}', 'cid': str(block(value)[0]), 'value': value})
+                out.append({'uri': f'at://{self.did}/{NS}{collection}/{keys[at]}', 'cid': str(block(from_json(value))[0]), 'value': value})
             at += 1
         return {'records': out, **({'cursor': keys[at - 1]} if at < len(keys) else {})}
 
@@ -361,7 +381,7 @@ class Repo:
             value = self.mirrored(host, collection, rkey, who)
             if value is None:
                 raise Refusal(400, 'RecordNotFound', f'no {NS}{collection} here is {rkey}')
-            return {'uri': f'at://{self.did}/{NS}{collection}/{rkey}', 'cid': str(block(value)[0]), 'value': value}
+            return {'uri': f'at://{self.did}/{NS}{collection}/{rkey}', 'cid': str(block(from_json(value))[0]), 'value': value}
         if collection == 'receipt':
             item = self.entry(host, rkey, who)['receipt']
             cid = item.get('hash')

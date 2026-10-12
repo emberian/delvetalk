@@ -40,23 +40,8 @@
             "records": {
               "type": "array",
               "items": {
-                "type": "object",
-                "required": [
-                  "key",
-                  "value"
-                ],
-                "properties": {
-                  "key": {
-                    "type": "string"
-                  },
-                  "cid": {
-                    "type": "string",
-                    "format": "cid"
-                  },
-                  "value": {
-                    "type": "unknown"
-                  }
-                }
+                "type": "ref",
+                "ref": "#sessionRecord"
               }
             },
             "cursor": {
@@ -76,6 +61,25 @@
           "name": "SessionExpired"
         }
       ]
+    },
+    "sessionRecord": {
+      "type": "object",
+      "required": [
+        "key",
+        "value"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "cid": {
+          "type": "string",
+          "format": "cid"
+        },
+        "value": {
+          "type": "unknown"
+        }
+      }
     }
   }
 }
