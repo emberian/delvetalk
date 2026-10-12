@@ -61,7 +61,7 @@ def door(label, to, examples, description=''):
 def commonplace(opener):
     """The town's first card: a record the opener keeps, reading words with hob's policy, citing the doors."""
     return rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE COMMONPLACE'),
-               policy=ref('policy'), cites=lst(*[door(*d) for d in DOORS], door(STUDIO[0], '', [], STUDIO[1])))
+               cites=lst(*[door(*d) for d in DOORS], door(STUDIO[0], '', [], STUDIO[1])))
 
 
 EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make\ncolour: silver\nseed: a bell that remembers yesterday'),
@@ -93,8 +93,8 @@ def page_body(name):
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
 # package it makes; its creator passes it (tests/test_genesis.py compares the two).
-RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it": '
-              'unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(policy) and unchanged(cites) '
+RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it": '
+              'unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(cites) '
               'and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\n'
               'law kept "a line, an admission or a mark is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) '
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
@@ -209,7 +209,7 @@ def seeds(opener):
                                      examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
             ('tide', 'Tide', rec()),
-            ('workshop', 'Workshop', rec(title=lab('Workshop'), policy=ref('policy'))),
+            ('workshop', 'Workshop', rec(title=lab('Workshop'))),
             ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW))),  # shaped, then makes KINDS, each under KIND_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
 

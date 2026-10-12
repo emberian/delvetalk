@@ -74,13 +74,13 @@ record State:
   left: Relations.Relation<Departure>
   things: Relations.Relation<Plans.Reference>
   weather: String
-  policy: Plans.Reference
   tended: Nat
   tendedAt: Nat
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", policy: Plans.nobody(), tended: 0n, tendedAt: 0n}
+  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, tendedAt: 0n}
 # A record as edition 8 kept it (a carry lays this package over it, `migrate`): lines without their
-# verb, and the commonplace's greetings and misses, which are no longer kept.
+# verb, the commonplace's greetings and misses, and a record's own policy (the world's one is
+# `policy`), which are no longer kept.
 record Line8:
   author: String
   handle: String
@@ -123,7 +123,7 @@ record State8:
   tendedAt: Nat
 # A line carried from edition 8 has no verb ("": written before verbs were kept).
 def migrate(old: State8) -> State:
-  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: Relations.Relation.rows({items: Lists.map(Relations.rows(old.lines), fn(l: Line8) -> Line: {author: l.author, handle: l.handle, verb: "", text: l.text, at: l.at, n: l.n})}), admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, policy: old.policy, tended: old.tended, tendedAt: old.tendedAt}
+  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: Relations.Relation.rows({items: Lists.map(Relations.rows(old.lines), fn(l: Line8) -> Line: {author: l.author, handle: l.handle, verb: "", text: l.text, at: l.at, n: l.n})}), admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, tended: old.tended, tendedAt: old.tendedAt}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes.
 # A body that keeps shorter lines keeps more of them (`relationsWith`).
 def relations() -> Relations.Decls:
@@ -142,7 +142,7 @@ def leftMax() -> Nat:
 # admissions, marks, presence, departures, variables, the floor) no proposal writes, the owner's
 # included; a kept record wants its keeper while a line waits, and any record a door while it has none.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the keeper, the policy, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(policy) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission or a mark is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\nwant pending \"a line waits for its keeper\": not (new.keeper == \"\") and count(new.lines) >= count(new.admitted) + 1 asks delvetalk {{request.object}} admit\nwant door \"it opens onto nothing yet\": count(new.cites) == 0 asks delvetalk {{request.object}} door"
+  "law owner \"the owner stays; only the owner changes the keeper, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission or a mark is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\nwant pending \"a line waits for its keeper\": not (new.keeper == \"\") and count(new.lines) >= count(new.admitted) + 1 asks delvetalk {{request.object}} admit\nwant door \"it opens onto nothing yet\": count(new.cites) == 0 asks delvetalk {{request.object}} door"
 def lineKey(line: Line) -> {author: String, n: Nat}:
   {author: line.author, n: line.n}
 # A line's author is the turn's principal, never an argument. A hand's line tends the record; the
@@ -270,16 +270,9 @@ form undoor:
 # What the host offers a reader (HOST-HANDOFF 103): admit to the keeper, doors to the owner.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words("")))
-# Words take the record's card by default (Card.answer). A spell that misfit this card's forms
-# reaches here with its clause (FLEX §2): a record that reads words (the commonplace, with a
-# policy) shows hob; any other refuses it by that clause, writing nothing.
-def receive(state: State, input: Card.Heard, context: Abi.Context) -> Activity<Card.Replied>:
-  if input.misfit.clause != "" then misfitted(input.misfit, state, context) else Card.answer(Card.heard(input), context, forms(), render(state, context))
-def misfitted(misfit: Card.Misfit, state: State, context: Abi.Context) -> Activity<Card.Replied>:
-  refused({clause: misfit.clause, reading: misfitReading(misfit.reason)}, context)
-# The host's reason, without the clause that leads into a usage list ("…; it has these:").
-def misfitReading(reason: String) -> String:
-  if Text.ends(reason, ":") then textTake(reason, Text.indexOf(reason, "; ")) else reason
+# Words take the record's card by default (Card.answer); prose it leaves silent is hob's.
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 # At most eight lines and Card.budget() characters; when lines remain, the last row says how
 # many and the spell that shows them, and its characters are kept for it.
 def numbered(state: State, context: Abi.Context, lines: Lists.List<Line>, shown: Nat, room: Nat, id: String) -> Document.Documents:

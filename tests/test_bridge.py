@@ -111,7 +111,7 @@ class DirectReplies(BridgeCase):
     def test_prose_naming_nothing_in_the_commonplaces_thread_is_heard_and_drafts_no_reply(self):
         cites = [door(*d) for d in DOORS] + [door(STUDIO[0], '', (), STUDIO[1])]
         made = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-commonplace', 'object': 'commonplace',
-                               'modules': closure('Menu', 'Mentions', 'Policies', 'Record'), 'entry': 'initial', 'law': genesis.RECORD_LAW,
+                               'modules': closure('Menu', 'Policies', 'Record'), 'entry': 'initial', 'law': genesis.RECORD_LAW,
                                'seed': record(owner=label('ember'), keeper=label('ember'), head=label('THE COMMONPLACE'), cites=listing(cites))})
         self.assertEqual(made['status'], 'created', made)
         body = self.host.send({'op': 'world-reprogram', 'principal': 'ember', 'identity': 'body-commonplace', 'object': 'commonplace', 'version': 0,

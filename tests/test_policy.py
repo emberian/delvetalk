@@ -9,6 +9,7 @@ The interpretation policy as an object, and the commonplace's hob reading the ga
 `world-interpretation {id, reply}` settles it with the model's reply, which the host checks
 against the offered forms (the garden's plant) before resuming the commonplace's turn.
 """
+import json
 import unittest
 
 from deploy import genesis
@@ -133,23 +134,23 @@ class PolicyObject(Chain):
 
     # --- prose at the commonplace, which hob reads ------------------------------------
 
-    def garden(self, policy="policy"):
-        """The town garden, and the commonplace (with `policy`, or none) that cites it."""
+    def garden(self):
+        """The town garden, and the commonplace that cites it; the world's `policy` is made apart (`policy`)."""
         town_garden(self.host.send)
-        commonplace(self, policy, doors=[("GARDEN", "garden", [])])
+        commonplace(self, doors=[("GARDEN", "garden", [])])
 
     def say(self, text, principal="glm", identity=None, obj="commonplace", reach="mention"):
         """Words at the commonplace (or at `obj`)."""
         return self.turn(obj, "receive", record(text=label(text), post=label("at://glm/p/1")), principal=principal,
                          identity=identity, reach=reach)
 
-    def interpret(self, reply):
+    def interpret(self, reply, principal="glm"):
         pending = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual(len(pending), 1, pending)
         settled = self.host.send(op="world-interpretation", id=pending[0]["id"], reply=reply)
         self.assertEqual(settled["status"], "interpreted", settled)
         [resumed] = settled["resumed"]
-        resumed = as_owner(self.host, resumed)
+        resumed = as_owner(self.host, resumed, principal)
         # A resumed turn's offers are retained on its receipt as {to, text}.
         resumed.setdefault("offers", [{"principal": o["to"], "text": o["text"]} for o in resumed["receipt"].get("offers", [])])
         return resumed
@@ -161,20 +162,24 @@ class PolicyObject(Chain):
         return [field(r, "object")["value"] for r in rows(field(self.state("garden"), "things"))]
 
     def test_without_a_policy_prose_at_the_commonplace_asks_no_one(self):
-        self.garden("")
+        self.garden()
         reply = self.say("Could we plant a silver fern?")
         self.assertEqual((reply["status"], reply["result"]["label"], reply.get("offers", [])), ("admitted", "silent", []), reply)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         self.assertEqual(self.things(), [])
 
-    def test_prose_at_a_card_is_silent_and_handed_on_to_no_one(self):
-        """A card hears a verb or nothing: prose at the garden gets no card, no offer and no reading."""
+    def test_prose_at_a_card_is_read_by_hob_with_that_cards_table(self):
+        """OVERHAUL §2.7: words reaching any card are hob's to read with that card's table, and its spell runs as
+        the speaker's turn on that card."""
         self.policy()
         self.garden()
         reply = self.say("Could we plant a silver fern that remembers?", obj="garden")
-        self.assertEqual((reply["status"], reply["result"]["label"], reply.get("offers", [])), ("admitted", "silent", []), reply)
-        self.assertNotIn("delivered", reply)
-        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+        self.assertEqual(reply["status"], "suspended", reply)
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        self.assertEqual((item["object"], [o["action"] for o in item["offers"]]), ("garden", ["plant", "dig", "lines"]), item)
+        planted = self.interpret(self.raw(SPELL))
+        self.assertEqual((planted["receipt"]["outcome"]["tag"], planted["receipt"]["identity"]["principal"]), ("admitted", "glm"), planted)
+        self.assertEqual(self.things(), ["garden/bell/1"])
 
     def test_a_typed_spell_missing_a_field_never_asks_the_policy(self):
         self.policy()
@@ -189,10 +194,12 @@ class PolicyObject(Chain):
         reply = self.say("Could we plant a silver fern that remembers?")
         self.assertEqual(reply["status"], "suspended", reply)
         [item] = self.host.send(op="world-interpretations")["pending"]
-        self.assertEqual({o["card"] for o in item["offers"]}, {"garden"}, item["offers"])
-        self.assertEqual([o["action"] for o in item["offers"]], ["plant", "dig", "lines"], item["offers"])
+        # The commonplace's own table, then its doors' (each door's card and the first three under it).
+        self.assertEqual([(o["card"], o["action"]) for o in item["offers"]],
+                         [("commonplace", "since"), ("commonplace", "write"), ("commonplace", "lines"),
+                          ("garden", "plant"), ("garden", "dig"), ("garden", "lines")], item["offers"])
         planted = self.interpret(self.raw(SPELL))
-        self.assertEqual((planted["status"], planted["result"]["label"]), ("admitted", "passed"), planted)
+        self.assertEqual(planted["receipt"]["outcome"]["tag"], "admitted", planted)
         self.assertTrue(planted["offers"][0]["text"].startswith("Planted, glm: a silver bell, “a fern that remembers”, at garden/bell/1; 1 planted.\n"), planted["offers"])
         self.assertEqual(self.things(), ["garden/bell/1"])
         # The bell awaits a reply to the post that was read (codex objects 12).
@@ -213,7 +220,7 @@ class PolicyObject(Chain):
         # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF 5.107):
         # `model: refused` is no question for the speaker, so hob's answer is none.
         silent = self.interpret({"status": "failed", "reason": "refused", "detail": "400"})
-        self.assertEqual((silent["status"], silent["result"]["label"], silent.get("offers", [])), ("admitted", "silent", []), silent)
+        self.assertEqual((silent["receipt"]["outcome"], silent["offers"]), ({"tag": "admitted", "writes": []}, []), silent)
         self.assertEqual(self.things(), [])
 
     def test_hob_none_at_the_commonplace_is_silence(self):
@@ -221,7 +228,7 @@ class PolicyObject(Chain):
         self.garden()
         self.say("my cat is called Pip, by the way")
         silent = self.interpret(self.NONE)
-        self.assertEqual((silent["status"], silent["result"]["label"], silent.get("offers", [])), ("admitted", "silent", []), silent)
+        self.assertEqual((silent["receipt"]["outcome"], silent["offers"]), ({"tag": "admitted", "writes": []}, []), silent)
         self.assertEqual(self.things(), [])
 
     def test_a_colour_the_form_does_not_take_comes_back_as_hobs_one_question_over_the_doors(self):
@@ -231,22 +238,23 @@ class PolicyObject(Chain):
         green = self.interpret(self.raw("delvetalk garden plant / colour: green / seed: a fern"))
         # The host reads the colour's word as its case: one naming none is `unclear` (HOST-HANDOFF
         # 5.52). hob is asked once: its line names the field the need names (never the model's or the
-        # host's words: VOICE's fixed line), over the doors.
-        self.assertEqual((green["status"], green["result"]["label"]), ("admitted", "unclear"), green)
+        # host's words: VOICE's fixed line), with the spell that takes it.
+        self.assertEqual(green["receipt"]["outcome"]["tag"], "admitted", green)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])  # hob is asked once
-        self.assertEqual(green["offers"][0]["text"], "hob: no door takes that as said; still needs colour. The doors:\nGARDEN\n")
+        self.assertTrue(green["offers"][0]["text"].startswith("hob: that still needs colour; send it filled:\n\n    delvetalk garden plant\n"), green["offers"])
         self.assertEqual(self.things(), [])
 
-    def test_a_misfit_to_the_garden_which_reads_no_words_is_the_hosts_refusal_and_asks_no_one(self):
-        # HOST-HANDOFF 5.153: the garden names no policy, so its misfit is the host's badSpell with the usage; it is no prose.
+    def test_a_misfit_to_the_garden_is_hobs_and_none_leaves_the_hosts_refusal(self):
+        # OVERHAUL §2.7: every card's misfit is hob's to read past; hob's none leaves the host's badSpell with the usage.
         self.policy()
         self.garden()
         misfit = self.say("delvetalk garden plant\nseed: a fern\ncolour: green", obj="garden")
-        out = misfit["receipt"]["outcome"]
-        self.assertEqual((misfit["status"], out["class"], out["clause"], out["reason"]),
-                         ("refused", "badSpell", "badValue", "colour is one of: amber, violet, silver"), misfit)
+        self.assertEqual(misfit["status"], "suspended", misfit)
+        refused = self.interpret(self.NONE)
+        out = refused["receipt"]["outcome"]
+        self.assertEqual((out["tag"], out["class"], out["clause"], out["reason"]),
+                         ("refused", "badSpell", "badValue", "colour is one of: amber, violet, silver"), refused)
         self.assertIn("delvetalk garden plant", out["hint"])
-        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         self.assertEqual(self.things(), [])
 
     def test_a_misfit_spell_the_commonplace_takes_is_read_by_hob_with_its_clause_and_reason(self):
@@ -258,9 +266,10 @@ class PolicyObject(Chain):
         [item] = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual(item["misfit"], "otherCard, There is no card orchard; the commonplace lists the doors.")
         self.assertIn("\nMisfit: otherCard, There is no card orchard; the commonplace lists the doors.\n", item["policy"]["system"])
-        asked = self.interpret(self.hob_says("ask: Which card: the garden?"))
-        self.assertEqual(asked["result"]["label"], "unclear", asked)
-        self.assertNotIn("Which card", asked["offers"][0]["text"])  # the model's words never reach the card
+        refused = self.interpret(self.hob_says("ask: Which card: the garden?"))
+        out = refused["receipt"]["outcome"]
+        self.assertEqual((out["tag"], out["clause"]), ("refused", "otherCard"), refused)
+        self.assertNotIn("Which card", json.dumps(refused))  # the model's words never reach the card
 
     def test_prose_with_no_stated_reach_is_not_addressed_at_once(self):
         # HOST-HANDOFF 118: no reach, no model, no suspension, no quota.
@@ -292,7 +301,7 @@ class PolicyObject(Chain):
         with the workshop's own spell copied from its card. The drafting prompt holds no card and no spell, shows one
         whole package (the library's `object` page's), and asks for one ```obend block alone."""
         self.policy()
-        self.make("workshop", closure("Workshop"), record(title=label("Workshop"), policy=record(world=label(""), object=label("policy"))))
+        self.make("workshop", closure("Workshop"), record(title=label("Workshop")))
         asked = self.turn("workshop", "make", record(name=label("lamp"), description=label("a lamp anyone lights")), principal="glm")
         self.assertEqual(asked["status"], "suspended", asked)
         [item] = self.host.send(op="world-interpretations")["pending"]
@@ -315,14 +324,14 @@ class PolicyObject(Chain):
         verdict = settled["receipt"]["outcome"]["verdict"]
         self.assertEqual((verdict["tag"], verdict["method"]), ("proposal", "plant"), settled)
         [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
-        self.assertEqual((resumed["status"], resumed["result"]["label"]), ("admitted", "passed"), resumed)
+        self.assertEqual(resumed["receipt"]["outcome"]["tag"], "admitted", resumed)
         self.assertIn("Planted, glm: a silver bell, “a fern that remembers”, at garden/bell/1", resumed["receipt"]["offers"][0]["text"])
 
     def test_a_resumed_interpretation_whose_commonplace_moved_meanwhile_still_admits(self):
         """Rehearsal run 5, finding 6: inkling's prose resumed after another write had moved the commonplace
         was refused staleRoot, and nobody retried it. Here the owner hangs a door while hob reads."""
         self.policy()
-        commonplace(self, "policy", doors=[("GARDEN", "garden", [])])
+        commonplace(self, doors=[("GARDEN", "garden", [])])
         waiting = self.turn("commonplace", "receive", record(text=label("an interface card for the garden, perhaps?"), post=label("at://i-2")),
                             principal="inkling", identity="i-2", reach="mention")
         self.assertEqual(waiting["status"], "suspended", waiting)
@@ -341,7 +350,7 @@ class PolicyObject(Chain):
         # One principal starts 65 here: the hourly interpretation quota (48 by default) is lifted.
         self.assertEqual(self.host.send(op="world-open", path=self.path, interpretQuota=1000)["status"], "opened")
         self.policy()
-        self.garden("policy")
+        self.garden()
         for i in range(64):
             r = self.say("a fern, maybe %d" % i, identity="p%d" % i)
             self.assertEqual(r["status"], "suspended", (i, r))
