@@ -6,79 +6,206 @@
    Data:   natural  -> unsigned integer, or a big-endian byte string at 2^64 and above
            boolean  -> true / false          label -> text string
            record   -> map (keys sorted; the first of a repeated field name is kept)
-           variant  -> a one-key map {label: payload}
            a proper list (nil / cons chain) -> array
-   Decoding is canonical-only and bounded by `Delvetalk.Bounds`. A one-key map decodes as a
-   record: a variant is told from a one-field record only by its type, so `decodeAs` re-tags
-   a decoded value against a type. An array decodes as the list chain. -/
+           any other variant -> the array [null, label, payload]
+   No Data item is null, so a variant's array is no list's, and a variant is never a map: the bytes
+   alone tell every value from every other, whatever its type (`encode_injective`).
+   Decoding is canonical-only and bounded by `Delvetalk.Bounds`; `decode (encode d)` is
+   `normalize d`. -/
 import Lean.Data.Json
 import Compiler.Sha256
 import Compiler.ObjectiveBendDataWire
 import Theory.ObjectiveBendDemandData
-import Theory.ObjectiveBendTypes
 import Delvetalk.Limits
+import Theory.AxiomPin
 
 namespace Delvetalk.Canonical
 open Lean (Json toJson)
-open Delvetalk.Theory.ObjectiveBendDemandData (Data rowMember)
-open Delvetalk.Theory.ObjectiveBendTypes (Ty DataBounds)
+open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 open Delvetalk.Compiler.ObjectiveBendDataWire (listItems? listData)
 
-/-! ## Writing -/
+/-! ## Writing
+
+Every writer is total and has a list-of-bytes specification (`headList`, `textList`, `naturalList`,
+`encodeList`), so `encode_injective` below is a theorem about the bytes the host compares. -/
+
+/-- The low `width` bytes of `k`, big-endian. -/
+def beBytes : Nat → Nat → List UInt8
+  | 0, _ => []
+  | w + 1, k => beBytes w (k / 256) ++ [UInt8.ofNat (k % 256)]
+
+/-- A head's additional information for argument `n`: `n` itself below 24, else 24 to 27 for one,
+two, four or eight argument bytes. -/
+def headInfo (n : Nat) : Nat :=
+  if n < 24 then n else if n < 256 then 24 else if n < 65536 then 25 else if n < 4294967296 then 26 else 27
+
+/-- The argument bytes after the initial byte, by the additional information. -/
+def widthOf (info : Nat) : Nat :=
+  if info < 24 then 0 else if info = 24 then 1 else if info = 25 then 2 else if info = 26 then 4 else 8
+
+def headWidth (n : Nat) : Nat := widthOf (headInfo n)
+
+/-- A CBOR head's bytes: major type and argument, in the shortest form. An argument at 2^64 or
+above has no head; it would keep its low eight bytes, which is why `encode_injective` asks that
+the encoding be shorter than 2^64 bytes (every argument written is at most its length). -/
+def headList (major n : Nat) : List UInt8 :=
+  UInt8.ofNat (32 * major + headInfo n) :: beBytes (headWidth n) n
+
+def pushAll (out : ByteArray) (bytes : List UInt8) : ByteArray := bytes.foldl ByteArray.push out
 
 /-- A CBOR head: major type and argument, in the shortest form. -/
-def head (out : ByteArray) (major : UInt8) (n : Nat) : ByteArray :=
-  let m := major <<< 5
-  let be := fun (width k : Nat) (o : ByteArray) =>
-    (List.range width).foldl (fun o i => o.push (UInt8.ofNat ((k >>> (8 * (width - 1 - i))) % 256))) o
-  if n < 24 then out.push (m ||| UInt8.ofNat n)
-  else if n < 256 then be 1 n (out.push (m ||| 24))
-  else if n < 65536 then be 2 n (out.push (m ||| 25))
-  else if n < 4294967296 then be 4 n (out.push (m ||| 26))
-  else be 8 n (out.push (m ||| 27))
+def head (out : ByteArray) (major : UInt8) (n : Nat) : ByteArray := pushAll out (headList major.toNat n)
 
-def bigEndian (n : Nat) : ByteArray := Id.run do
-  let mut bytes : List UInt8 := []
-  let mut k := n
-  while k > 0 do
-    bytes := UInt8.ofNat (k % 256) :: bytes
-    k := k / 256
-  return ByteArray.mk bytes.toArray
+/-- The big-endian bytes of `n`, none for zero. -/
+def bigEndianList (n : Nat) : List UInt8 :=
+  if n = 0 then [] else bigEndianList (n / 256) ++ [UInt8.ofNat (n % 256)]
+termination_by n
+decreasing_by omega
+
+def bigEndian (n : Nat) : ByteArray := ⟨(bigEndianList n).toArray⟩
+
+def textList (s : String) : List UInt8 := headList 3 s.utf8ByteSize ++ s.toUTF8.data.toList
 
 def text (out : ByteArray) (s : String) : ByteArray :=
-  (head out 3 s.utf8ByteSize).append s.toUTF8
+  head out 3 s.utf8ByteSize ++ s.toUTF8
 
 def twoTo64 : Nat := 18446744073709551616
 
-def natural (out : ByteArray) (n : Nat) : ByteArray :=
-  if n < twoTo64 then head out 0 n else
-  let b := bigEndian n
-  (head out 2 b.size).append b
+/-- A natural: an unsigned integer below 2^64, else a byte string of its big-endian magnitude. -/
+def naturalList (n : Nat) : List UInt8 :=
+  if n < twoTo64 then headList 0 n else headList 2 (bigEndianList n).length ++ bigEndianList n
+
+def natural (out : ByteArray) (n : Nat) : ByteArray := pushAll out (naturalList n)
 
 /-- Keys by byte length, then bytewise: the DAG-CBOR order. UTF-8 orders bytes as code
 points, so for keys of one byte length the bytewise order is `String`'s. -/
 def keyLess (a b : String) : Bool :=
   if a.utf8ByteSize != b.utf8ByteSize then a.utf8ByteSize < b.utf8ByteSize else a < b
 
-/-- Entries sorted into canonical order; a repeated key keeps its first value. -/
-def sortedUnique {α : Type} (entries : List (String × α)) : List (String × α) :=
-  let unique := entries.foldl (fun acc (k, v) => if acc.any (·.1 == k) then acc else acc ++ [(k, v)]) []
-  (unique.toArray.qsort fun a b => keyLess a.1 b.1).toList
+/-- The first entry of each key, in order. -/
+def firstOfEach {α : Type} (entries : List (String × α)) : List (String × α) :=
+  entries.foldl (fun acc (k, v) => if acc.any (·.1 == k) then acc else acc ++ [(k, v)]) []
 
-partial def writeData (out : ByteArray) (d : Data) : ByteArray :=
-  match listItems? d with
-  | some items => items.foldl writeData (head out 4 items.size)
+/-- Entries sorted into canonical order; a repeated key keeps its first value. The keys are
+distinct and `keyLess` is total on distinct keys, so the order is the one sorted order. -/
+def sortedUnique {α : Type} (entries : List (String × α)) : List (String × α) :=
+  (firstOfEach entries).mergeSort fun a b => keyLess a.1 b.1
+
+/-- A proper `nil` / `cons` chain's items (a list, which encodes as an array); none otherwise.
+Tail-recursive: a list may be long. -/
+def listViewFrom : Data → List Data → Option (List Data)
+  | .variant "nil" (.record []), acc => some acc.reverse
+  | .variant "cons" (.record [("head", h), ("tail", t)]), acc => listViewFrom t (h :: acc)
+  | .variant "cons" (.record [("tail", t), ("head", h)]), acc => listViewFrom t (h :: acc)
+  | _, _ => none
+
+def listView (d : Data) : Option (List Data) := listViewFrom d []
+
+/-- What a variant that is not a list begins with: a three-item array whose first item is null.
+No Data item is null, so this is neither a list's array nor a record's map: a variant `{x: 1}`
+and a record `{x: 1}` have different bytes, whatever their type. -/
+def variantPrefix : List UInt8 := [0x83, 0xf6]
+
+theorem listViewFrom_mem (d : Data) (acc : List Data) : ∀ items, listViewFrom d acc = some items →
+    ∀ x ∈ items, x ∈ acc ∨ sizeOf x < sizeOf d := by
+  fun_induction listViewFrom d acc with
+  | case1 acc =>
+    intro items h x hx
+    simp only [Option.some.injEq] at h; subst h; exact .inl (List.mem_reverse.mp hx)
+  | case2 hd t acc ih | case3 hd t acc ih =>
+    intro items h x hx
+    rcases ih items h x hx with m | m
+    · rcases List.mem_cons.mp m with rfl | m
+      · exact .inr (by simp; omega)
+      · exact .inl m
+    · exact .inr (by simp; omega)
+  | case4 => intro items h; simp at h
+
+theorem listView_mem {d : Data} {items : List Data} (h : listView d = some items) {x : Data}
+    (hx : x ∈ items) : sizeOf x < sizeOf d :=
+  (listViewFrom_mem d [] items h x hx).resolve_left (by simp)
+
+theorem firstOfEach_mem {α : Type} (entries : List (String × α)) (p : String × α)
+    (h : p ∈ firstOfEach entries) : p ∈ entries := by
+  suffices ∀ (acc : List (String × α)), p ∈ entries.foldl
+      (fun acc (k, v) => if acc.any (·.1 == k) then acc else acc ++ [(k, v)]) acc → p ∈ acc ∨ p ∈ entries by
+    rcases this [] h with m | m
+    · simp at m
+    · exact m
+  clear h
+  intro acc
+  induction entries generalizing acc with
+  | nil => exact .inl
+  | cons e rest ih =>
+    intro m
+    simp only [List.foldl_cons] at m
+    rcases ih _ m with m | m
+    · split at m
+      · exact .inl m
+      · rcases List.mem_append.mp m with m | m
+        · exact .inl m
+        · simp at m; subst m; exact .inr (by simp)
+    · exact .inr (List.mem_cons_of_mem _ m)
+
+theorem sortedUnique_mem {α : Type} {entries : List (String × α)} {p : String × α}
+    (h : p ∈ sortedUnique entries) : p ∈ entries :=
+  firstOfEach_mem entries p (List.mem_mergeSort.mp h)
+
+theorem sortedUnique_value_size {fields : List (String × Data)} {p : String × Data}
+    (h : p ∈ sortedUnique fields) : sizeOf p.2 < sizeOf (Data.record fields) := by
+  have := List.sizeOf_lt_of_mem (sortedUnique_mem h)
+  rcases p with ⟨k, v⟩
+  simp only [Prod.mk.sizeOf_spec, Data.record.sizeOf_spec] at *
+  omega
+
+/-- The canonical bytes of Data, as a list: the specification `writeData` meets (`writeData_spec`). -/
+def encodeList (d : Data) : List UInt8 :=
+  match _h : listView d with
+  | some items => headList 4 items.length ++ items.attach.flatMap fun x => encodeList x.1
   | none => match d with
-  | .natural n => natural out n
-  | .boolean b => out.push (if b then 0xf5 else 0xf4)
-  | .label s => text out s
-  | .record fields =>
+    | .natural n => naturalList n
+    | .boolean b => [if b then 0xf5 else 0xf4]
+    | .label s => textList s
+    | .record fields =>
+      headList 5 (sortedUnique fields).length ++
+        (sortedUnique fields).attach.flatMap fun x => textList x.1.1 ++ encodeList x.1.2
+    | .variant label payload => variantPrefix ++ textList label ++ encodeList payload
+termination_by sizeOf d
+decreasing_by
+  · exact listView_mem _h x.2
+  · exact sortedUnique_value_size x.2
+  · simp; omega
+
+def writeData (out : ByteArray) (d : Data) : ByteArray :=
+  match _h : listView d with
+  | some items => items.attach.foldl (fun o x => writeData o x.1) (head out 4 items.length)
+  | none => match d with
+    | .natural n => natural out n
+    | .boolean b => out.push (if b then 0xf5 else 0xf4)
+    | .label s => text out s
+    | .record fields =>
       let sorted := sortedUnique fields
-      sorted.foldl (fun o (k, v) => writeData (text o k) v) (head out 5 sorted.length)
-  | .variant label payload => writeData (text (head out 5 1) label) payload
+      sorted.attach.foldl (fun o x => writeData (text o x.1.1) x.1.2) (head out 5 sorted.length)
+    | .variant label payload => writeData (text (pushAll out variantPrefix) label) payload
+termination_by sizeOf d
+decreasing_by
+  · exact listView_mem _h x.2
+  · exact sortedUnique_value_size x.2
+  · simp; omega
 
 /-- The canonical bytes of Data. -/
 def encode (d : Data) : ByteArray := writeData ByteArray.empty d
+
+/-- A variant's opening bytes, for a writer that writes its payload itself. -/
+def variantHead (out : ByteArray) (label : String) : ByteArray := text (pushAll out variantPrefix) label
+
+-- A variant is not the one-field record of its label, whatever their type (review 2026-10-12
+-- kernel 1: a grant fixing `.variant "x" 1` admitted `{x: 1}`); a list is not a variant either.
+#guard encode (.variant "x" (.natural 1)) != encode (.record [("x", .natural 1)])
+#guard encode (.variant "nil" (.record [("x", .natural 1)])) != encode (.record [("nil", .record [("x", .natural 1)])])
+#guard (encode (.variant "ok" (.record []))).toList == [0x83, 0xf6, 0x62, 0x6f, 0x6b, 0xa0]
+#guard encode (.variant "cons" (.record [("head", .label "a"), ("tail", .variant "nil" (.record []))])) !=
+  encode (.variant "c" (.record [("head", .label "a"), ("tail", .variant "nil" (.record []))]))
 
 -- The byte budget's measure (`Data.canonicalBytes`, in the machine's module) is the size of
 -- these bytes: every head width, a bignum, a list, a chain that is not one, a repeated field.
@@ -93,8 +220,527 @@ def encode (d : Data) : ByteArray := writeData ByteArray.empty d
     .variant "nil" (.record [("x", .natural 1)]),
     .record [("bb", .natural 1), ("a", .label "x"), ("bb", .natural 99999)],
     .record ((List.range 30).map fun i => (toString i, .boolean true)),
-    .variant "tree" (.record [("kids", listData #[.variant "leaf" (.record [])])])]
+    .variant "tree" (.record [("kids", listData #[.variant "leaf" (.record [])])]),
+    .variant "x" (.natural 1), .record [("x", .natural 1)], .variant "ok" (.record [])]
   cases.all fun d => d.canonicalBytes == (encode d).size
+
+/-! ## The encoding is injective
+
+Equal bytes are equal values up to what a map cannot hold: record field order, and a repeated
+field (a map keeps the first). `normalize` is that quotient, the value `decode` answers. The one
+hypothesis is that the bytes are fewer than 2^64: a head holds an argument below 2^64 only, and
+every argument written (a length, a count) is at most the number of bytes. -/
+
+/-- The value the bytes of `d` stand for: record fields in canonical order, repeats dropped. -/
+def normalize (d : Data) : Data :=
+  match _h : listView d with
+  | some items => listData (items.attach.map fun x => normalize x.1).toArray
+  | none => match d with
+    | .record fields => .record ((sortedUnique fields).attach.map fun x => (x.1.1, normalize x.1.2))
+    | .variant label payload => .variant label (normalize payload)
+    | other => other
+termination_by sizeOf d
+decreasing_by
+  · exact listView_mem _h x.2
+  · exact sortedUnique_value_size x.2
+  · simp; omega
+
+theorem pushAll_data (out : ByteArray) (l : List UInt8) :
+    (pushAll out l).data.toList = out.data.toList ++ l := by
+  induction l generalizing out with
+  | nil => simp [pushAll]
+  | cons b l ih =>
+    simp only [pushAll, List.foldl_cons] at ih ⊢
+    rw [ih]; simp [ByteArray.data_push]
+
+theorem head_data (out : ByteArray) (major : UInt8) (n : Nat) :
+    (head out major n).data.toList = out.data.toList ++ headList major.toNat n := pushAll_data ..
+
+theorem text_data (out : ByteArray) (s : String) :
+    (text out s).data.toList = out.data.toList ++ textList s := by
+  simp [text, textList, head_data, ByteArray.data_append]
+
+theorem foldl_attach_data {α : Type} (l : List α) (F : ByteArray → α → ByteArray) (E : α → List UInt8)
+    (hF : ∀ x ∈ l, ∀ o, (F o x).data.toList = o.data.toList ++ E x) (out : ByteArray) :
+    (l.attach.foldl (fun o x => F o x.1) out).data.toList = out.data.toList ++ l.attach.flatMap (fun x => E x.1) := by
+  rw [List.foldl_attach (f := F), List.flatMap_subtype (g := E) (fun _ _ => rfl), List.unattach_attach]
+  induction l generalizing out with
+  | nil => simp
+  | cons x l ih =>
+    simp only [List.foldl_cons, List.flatMap_cons]
+    rw [ih (fun y hy => hF y (List.mem_cons_of_mem _ hy)), hF x (by simp)]
+    simp
+
+theorem writeData_spec (out : ByteArray) (d : Data) :
+    (writeData out d).data.toList = out.data.toList ++ encodeList d := by
+  rw [writeData, encodeList]
+  split
+  · rename_i items h
+    rw [foldl_attach_data items writeData encodeList (fun x _ o => writeData_spec o x), head_data]
+    simp
+  · split
+    · exact pushAll_data ..
+    · simp [ByteArray.data_push]
+    · exact text_data ..
+    · simp only
+      rw [foldl_attach_data _ (fun o (p : String × Data) => writeData (text o p.1) p.2)
+        (fun (p : String × Data) => textList p.1 ++ encodeList p.2)
+        (fun p _ o => by rw [writeData_spec, text_data, List.append_assoc]), head_data]
+      simp
+    · rw [writeData_spec, text_data, pushAll_data]
+      simp
+termination_by sizeOf d
+decreasing_by
+  all_goals (try subst_vars); first
+    | exact listView_mem (by assumption) (by assumption)
+    | exact sortedUnique_value_size (by assumption)
+    | (simp; omega)
+
+theorem encode_data (d : Data) : (encode d).data.toList = encodeList d := by
+  simp [encode, writeData_spec]
+
+theorem beBytes_length : ∀ (w k : Nat), (beBytes w k).length = w
+  | 0, _ => rfl
+  | w + 1, k => by simp [beBytes, beBytes_length w]
+
+/-- Big-endian bytes read back. -/
+def fromBE (l : List UInt8) : Nat := l.foldl (fun acc b => acc * 256 + b.toNat) 0
+
+theorem fromBE_append (l : List UInt8) (b : UInt8) : fromBE (l ++ [b]) = fromBE l * 256 + b.toNat := by
+  simp [fromBE, List.foldl_append]
+
+theorem fromBE_beBytes : ∀ (w k : Nat), fromBE (beBytes w k) = k % 256 ^ w
+  | 0, k => by simp [fromBE, beBytes, Nat.mod_one]
+  | w + 1, k => by
+    rw [beBytes, fromBE_append, fromBE_beBytes w, UInt8.toNat_ofNat']
+    have e : (2 : Nat) ^ 8 = 256 := rfl
+    rw [e, Nat.mod_mod, show 256 ^ (w + 1) = 256 * 256 ^ w by rw [Nat.pow_succ, Nat.mul_comm], Nat.mod_mul]
+    generalize k / 256 % 256 ^ w = q
+    omega
+
+theorem fromBE_bigEndianList (n : Nat) : fromBE (bigEndianList n) = n := by
+  rw [bigEndianList]
+  split
+  · simp_all [fromBE]
+  · rw [fromBE_append, fromBE_bigEndianList (n / 256), UInt8.toNat_ofNat']
+    have : (2 : Nat) ^ 8 = 256 := rfl
+    rw [this]
+    omega
+termination_by n
+decreasing_by omega
+
+theorem beBytes_prefix {w k k' : Nat} {r s : List UInt8} (h : beBytes w k ++ r = beBytes w k' ++ s) :
+    k % 256 ^ w = k' % 256 ^ w ∧ r = s := by
+  obtain ⟨h1, h2⟩ := List.append_inj h (by simp [beBytes_length])
+  exact ⟨by rw [← fromBE_beBytes, h1, fromBE_beBytes], h2⟩
+
+theorem headInfo_lt (n : Nat) : headInfo n < 28 := by
+  unfold headInfo; repeat' (first | omega | split)
+
+theorem headInfo_cases (n : Nat) (hn : n < twoTo64) : (n < 24 ∧ 0 ≤ n ∧ headInfo n = n) ∨
+    (24 ≤ n ∧ n < 256 ∧ headInfo n = 24) ∨ (256 ≤ n ∧ n < 65536 ∧ headInfo n = 25) ∨
+    (65536 ≤ n ∧ n < 4294967296 ∧ headInfo n = 26) ∨ (4294967296 ≤ n ∧ n < twoTo64 ∧ headInfo n = 27) := by
+  unfold headInfo; unfold twoTo64 at *; repeat' (first | omega | split)
+
+theorem headList_prefix {m m' n n' : Nat} {r s : List UInt8} (hm : m < 8) (hm' : m' < 8)
+    (hn : n < twoTo64) (hn' : n' < twoTo64) (h : headList m n ++ r = headList m' n' ++ s) :
+    m = m' ∧ n = n' ∧ r = s := by
+  simp only [headList, List.cons_append, List.cons.injEq] at h
+  obtain ⟨h0, h1⟩ := h
+  have b0 := congrArg UInt8.toNat h0
+  have i1 := headInfo_lt n
+  have i2 := headInfo_lt n'
+  have : (2 : Nat) ^ 8 = 256 := rfl
+  simp only [UInt8.toNat_ofNat', this] at b0
+  rw [Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)] at b0
+  have hmm : m = m' := by omega
+  have hi : headInfo n = headInfo n' := by omega
+  subst hmm
+  have hw : headWidth n = headWidth n' := by unfold headWidth; rw [hi]
+  rw [hw] at h1
+  obtain ⟨hk, hrs⟩ := beBytes_prefix h1
+  refine ⟨rfl, ?_, hrs⟩
+  rcases headInfo_cases n hn with ⟨a1, a2, a3⟩ | ⟨a1, a2, a3⟩ | ⟨a1, a2, a3⟩ | ⟨a1, a2, a3⟩ | ⟨a1, a2, a3⟩ <;>
+  rcases headInfo_cases n' hn' with ⟨b1, b2, b3⟩ | ⟨b1, b2, b3⟩ | ⟨b1, b2, b3⟩ | ⟨b1, b2, b3⟩ | ⟨b1, b2, b3⟩ <;>
+  (try omega) <;>
+  (simp [headWidth, b3, widthOf] at hk; unfold twoTo64 at *; omega)
+
+theorem textList_length (t : String) : t.utf8ByteSize ≤ (textList t).length := by
+  simp [textList, String.size_toByteArray]
+
+theorem textList_prefix {t t' : String} {r s : List UInt8} (hl : (textList t ++ r).length < twoTo64)
+    (h : textList t ++ r = textList t' ++ s) : t = t' ∧ r = s := by
+  have hl' : (textList t' ++ s).length < twoTo64 := h ▸ hl
+  have a := textList_length t
+  have b := textList_length t'
+  simp only [List.length_append] at hl hl'
+  simp only [textList, List.append_assoc] at h
+  obtain ⟨-, hsz, h⟩ := headList_prefix (by omega) (by omega) (by omega) (by omega) h
+  obtain ⟨hb, hrs⟩ := List.append_inj h (by simp [String.size_toByteArray, hsz])
+  refine ⟨?_, hrs⟩
+  apply String.toByteArray_inj.mp
+  simp only [String.toUTF8_eq_toByteArray] at hb
+  exact ByteArray.ext (Array.toList_inj.mp hb)
+
+/-- The first byte of a value's encoding, as a number. -/
+def firstByte (d : Data) : Nat :=
+  match listView d with
+  | some items => 128 + headInfo items.length
+  | none => match d with
+    | .natural n => if n < twoTo64 then headInfo n else 64 + headInfo (bigEndianList n).length
+    | .boolean b => if b then 245 else 244
+    | .label s => 96 + headInfo s.utf8ByteSize
+    | .record fields => 160 + headInfo (sortedUnique fields).length
+    | .variant _ _ => 131
+
+theorem listView_atom : (∀ n, listView (.natural n) = none) ∧ (∀ b, listView (.boolean b) = none) ∧
+    (∀ s, listView (.label s) = none) ∧ (∀ f, listView (.record f) = none) := by
+  refine ⟨?_, ?_, ?_, ?_⟩ <;> intros <;> simp [listView, listViewFrom]
+
+theorem encodeList_list {d : Data} {items : List Data} (h : listView d = some items) :
+    encodeList d = headList 4 items.length ++ items.flatMap encodeList := by
+  rw [encodeList]
+  split
+  · rename_i h'
+    rw [h] at h'; cases h'
+    rw [List.flatMap_subtype (g := encodeList) (fun _ _ => rfl), List.unattach_attach]
+  · rename_i h'; rw [h] at h'; cases h'
+
+theorem encodeList_variant {label : String} {payload : Data} (h : listView (.variant label payload) = none) :
+    encodeList (.variant label payload) = variantPrefix ++ textList label ++ encodeList payload := by
+  rw [encodeList]
+  split
+  · rename_i h'; rw [h] at h'; cases h'
+  · rfl
+
+theorem encodeList_record (fields : List (String × Data)) :
+    encodeList (.record fields) = headList 5 (sortedUnique fields).length ++
+      (sortedUnique fields).flatMap fun p => textList p.1 ++ encodeList p.2 := by
+  rw [encodeList]
+  split
+  · rename_i h'; rw [listView_atom.2.2.2] at h'; cases h'
+  · dsimp only
+    rw [List.flatMap_subtype (g := fun (p : String × Data) => textList p.1 ++ encodeList p.2) (fun _ _ => rfl),
+      List.unattach_attach]
+
+theorem encodeList_natural (n : Nat) : encodeList (.natural n) = naturalList n := by
+  rw [encodeList]; split
+  · rename_i h'; rw [listView_atom.1] at h'; cases h'
+  · rfl
+
+theorem encodeList_boolean (b : Bool) : encodeList (.boolean b) = [if b then 0xf5 else 0xf4] := by
+  rw [encodeList]; split
+  · rename_i h'; rw [listView_atom.2.1] at h'; cases h'
+  · rfl
+
+theorem encodeList_label (t : String) : encodeList (.label t) = textList t := by
+  rw [encodeList]; split
+  · rename_i h'; rw [listView_atom.2.2.1] at h'; cases h'
+  · rfl
+
+theorem headList_cons (m n : Nat) : ∃ rest, headList m n = UInt8.ofNat (32 * m + headInfo n) :: rest :=
+  ⟨_, rfl⟩
+
+/-- Every encoding begins with `firstByte`, which is never null's 0xf6. -/
+theorem encodeList_first (d : Data) : ∃ rest, encodeList d = UInt8.ofNat (firstByte d) :: rest := by
+  cases h : listView d with
+  | some items =>
+    rw [encodeList_list h]; simp only [firstByte, h]
+    exact ⟨_, rfl⟩
+  | none =>
+    cases d with
+    | natural n =>
+      rw [encodeList_natural]; simp only [firstByte, h, naturalList]
+      split
+      · exact ⟨beBytes (headWidth n) n, by simp [headList]⟩
+      · exact ⟨_, rfl⟩
+    | boolean b =>
+      rw [encodeList_boolean]; simp only [firstByte, h]
+      cases b
+      · exact ⟨[], rfl⟩
+      · exact ⟨[], rfl⟩
+    | label t => rw [encodeList_label]; simp only [firstByte, h]; exact ⟨_, rfl⟩
+    | record f => rw [encodeList_record]; simp only [firstByte, h]; exact ⟨_, rfl⟩
+    | variant l p => rw [encodeList_variant h]; simp only [firstByte, h]; exact ⟨_, rfl⟩
+
+theorem firstByte_lt (d : Data) : firstByte d < 246 := by
+  unfold firstByte
+  cases h : listView d with
+  | some items => have := headInfo_lt items.length; simp only; omega
+  | none =>
+    cases d with
+    | natural n =>
+      simp only
+      split
+      · have := headInfo_lt n; omega
+      · have := headInfo_lt (bigEndianList n).length; omega
+    | boolean b => cases b <;> simp
+    | label t => have := headInfo_lt t.utf8ByteSize; simp only; omega
+    | record f => have := headInfo_lt (sortedUnique f).length; simp only; omega
+    | variant => simp
+
+theorem encodeList_ne_nil (d : Data) : 1 ≤ (encodeList d).length := by
+  obtain ⟨rest, h⟩ := encodeList_first d; simp [h]
+
+theorem le_flatMap_length {α : Type} (l : List α) (f : α → List UInt8) (h : ∀ x ∈ l, 1 ≤ (f x).length) :
+    l.length ≤ (l.flatMap f).length := by
+  induction l with
+  | nil => simp
+  | cons x l ih =>
+    simp only [List.flatMap_cons, List.length_append, List.length_cons]
+    have := h x (by simp)
+    have := ih (fun y hy => h y (List.mem_cons_of_mem _ hy))
+    omega
+
+/-- Two encodings that agree on their first bytes begin with the same byte. -/
+theorem firstByte_eq {a b : Data} {r s : List UInt8} (h : encodeList a ++ r = encodeList b ++ s) :
+    firstByte a = firstByte b := by
+  obtain ⟨x, hx⟩ := encodeList_first a
+  obtain ⟨y, hy⟩ := encodeList_first b
+  rw [hx, hy] at h
+  have := congrArg UInt8.toNat (List.cons.inj h).1
+  have : (2 : Nat) ^ 8 = 256 := rfl
+  simp only [UInt8.toNat_ofNat', this] at *
+  have := firstByte_lt a
+  have := firstByte_lt b
+  rw [Nat.mod_eq_of_lt (by omega), Nat.mod_eq_of_lt (by omega)] at *
+  assumption
+
+theorem normalize_list {d : Data} {items : List Data} (h : listView d = some items) :
+    normalize d = listData (items.map normalize).toArray := by
+  rw [normalize]
+  split
+  · rename_i h'; rw [h] at h'; cases h'; rw [List.attach_map_val]
+  · rename_i h'; rw [h] at h'; cases h'
+
+theorem normalize_record (fields : List (String × Data)) :
+    normalize (.record fields) = .record ((sortedUnique fields).map fun p => (p.1, normalize p.2)) := by
+  rw [normalize]
+  split
+  · rename_i h'; rw [listView_atom.2.2.2] at h'; cases h'
+  · dsimp only; rw [List.attach_map_val (f := fun (p : String × Data) => (p.1, normalize p.2))]
+
+theorem normalize_variant {label : String} {payload : Data} (h : listView (.variant label payload) = none) :
+    normalize (.variant label payload) = .variant label (normalize payload) := by
+  rw [normalize]
+  split
+  · rename_i h'; rw [h] at h'; cases h'
+  · rfl
+
+theorem normalize_atom : (∀ n, normalize (.natural n) = .natural n) ∧ (∀ b, normalize (.boolean b) = .boolean b) ∧
+    (∀ t, normalize (.label t) = .label t) := by
+  refine ⟨fun n => ?_, fun b => ?_, fun t => ?_⟩ <;> rw [normalize] <;> split <;>
+    first | rfl | (rename_i h'; simp [listView, listViewFrom] at h')
+
+theorem items_prefix (la lb : List Data)
+    (P : ∀ x ∈ la, ∀ (y : Data) (r s : List UInt8), encodeList x ++ r = encodeList y ++ s →
+      (encodeList x ++ r).length < twoTo64 → normalize x = normalize y ∧ r = s)
+    (hl : la.length = lb.length) (r s : List UInt8) (h : la.flatMap encodeList ++ r = lb.flatMap encodeList ++ s)
+    (fits : (la.flatMap encodeList ++ r).length < twoTo64) :
+    la.map normalize = lb.map normalize ∧ r = s := by
+  induction la generalizing lb r s with
+  | nil => cases lb with
+    | nil => simpa using h
+    | cons => simp at hl
+  | cons x la ih => cases lb with
+    | nil => simp at hl
+    | cons y lb =>
+      simp only [List.flatMap_cons, List.append_assoc] at h fits
+      obtain ⟨hx, hrest⟩ := P x (by simp) y _ _ h fits
+      obtain ⟨hm, hrs⟩ := ih lb (fun x hx => P x (List.mem_cons_of_mem _ hx)) (by simpa using hl) r s hrest
+        (by simp only [List.length_append] at fits ⊢; omega)
+      simp [hx, hm, hrs]
+
+theorem fields_prefix (fa fb : List (String × Data))
+    (P : ∀ p ∈ fa, ∀ (y : Data) (r s : List UInt8), encodeList p.2 ++ r = encodeList y ++ s →
+      (encodeList p.2 ++ r).length < twoTo64 → normalize p.2 = normalize y ∧ r = s)
+    (hl : fa.length = fb.length) (r s : List UInt8)
+    (h : fa.flatMap (fun p => textList p.1 ++ encodeList p.2) ++ r = fb.flatMap (fun p => textList p.1 ++ encodeList p.2) ++ s)
+    (fits : (fa.flatMap (fun p => textList p.1 ++ encodeList p.2) ++ r).length < twoTo64) :
+    fa.map (fun p => (p.1, normalize p.2)) = fb.map (fun p => (p.1, normalize p.2)) ∧ r = s := by
+  induction fa generalizing fb r s with
+  | nil => cases fb with
+    | nil => simpa using h
+    | cons => simp at hl
+  | cons x fa ih => cases fb with
+    | nil => simp at hl
+    | cons y fb =>
+      simp only [List.flatMap_cons, List.append_assoc] at h fits
+      obtain ⟨hk, h⟩ := textList_prefix fits h
+      obtain ⟨hx, hrest⟩ := P x (by simp) y.2 _ _ h (by simp only [List.length_append] at fits ⊢; omega)
+      obtain ⟨hm, hrs⟩ := ih fb (fun x hx => P x (List.mem_cons_of_mem _ hx)) (by simpa using hl) r s hrest
+        (by simp only [List.length_append] at fits ⊢; omega)
+      simp [hk, hx, hm, hrs]
+
+theorem firstByte_list {d : Data} {items : List Data} (h : listView d = some items) :
+    firstByte d = 128 + headInfo items.length := by
+  simp [firstByte, h]
+
+/-- Where each kind of value's first byte lies: the majors are disjoint, but for a list of three
+items and a variant, whose second bytes differ instead. -/
+theorem firstByte_range (d : Data) (h : listView d = none) : match d with
+    | .natural _ => firstByte d < 28 ∨ (64 ≤ firstByte d ∧ firstByte d < 92)
+    | .boolean _ => 244 ≤ firstByte d
+    | .label _ => 96 ≤ firstByte d ∧ firstByte d < 124
+    | .record _ => 160 ≤ firstByte d ∧ firstByte d < 188
+    | .variant _ _ => firstByte d = 131 := by
+  cases d with
+  | natural n =>
+    simp only [firstByte, h]
+    split
+    · have := headInfo_lt n; omega
+    · have := headInfo_lt (bigEndianList n).length; omega
+  | boolean b => simp only [firstByte, h]; cases b <;> simp
+  | label t => simp only [firstByte, h]; have := headInfo_lt t.utf8ByteSize; omega
+  | record f => simp only [firstByte, h]; have := headInfo_lt (sortedUnique f).length; omega
+  | variant => simp only [firstByte, h]
+
+/-- A list of three items is not a variant: its second byte is its first item's, never null. -/
+theorem list_not_variant {d : Data} {items : List Data} {l : String} {p : Data} {r s : List UInt8}
+    (ha : listView d = some items) (hb : listView (.variant l p) = none)
+    (h : encodeList d ++ r = encodeList (.variant l p) ++ s) : False := by
+  have fb := firstByte_eq h
+  rw [firstByte_list ha, (firstByte_range _ hb : firstByte (.variant l p) = 131)] at fb
+  have l3 : items.length = 3 := by
+    have := headInfo_cases items.length
+    unfold headInfo at fb; revert fb; repeat' (first | omega | split)
+  match items, l3 with
+  | [x, y, z], _ =>
+    rw [encodeList_list ha, encodeList_variant hb] at h
+    have e : headList 4 [x, y, z].length = [0x83] := rfl
+    obtain ⟨rest, hx⟩ := encodeList_first x
+    rw [e] at h
+    simp only [List.flatMap_cons, hx, variantPrefix, List.cons_append, List.nil_append, List.append_assoc] at h
+    have h2 := congrArg UInt8.toNat (List.cons.inj (List.cons.inj h).2).1
+    have := firstByte_lt x
+    have e8 : (2 : Nat) ^ 8 = 256 := rfl
+    simp only [UInt8.toNat_ofNat', e8] at h2
+    rw [Nat.mod_eq_of_lt (by omega)] at h2
+    simp at h2
+    omega
+
+/-- The prefix property: an encoding followed by anything determines its value (up to `normalize`)
+and where it ends. -/
+theorem encodeList_prefix (a : Data) : ∀ (b : Data) (r s : List UInt8), encodeList a ++ r = encodeList b ++ s →
+    (encodeList a ++ r).length < twoTo64 → normalize a = normalize b ∧ r = s := by
+  intro b r s h fits
+  have fits' : (encodeList b ++ s).length < twoTo64 := h ▸ fits
+  have fb := firstByte_eq h
+  cases ha : listView a with
+  | some la =>
+    have lena : la.length < twoTo64 := by
+      have := le_flatMap_length la encodeList (fun x _ => encodeList_ne_nil x)
+      rw [encodeList_list ha] at fits; simp only [List.length_append] at fits; omega
+    cases hb : listView b with
+    | some lb =>
+      have lenb : lb.length < twoTo64 := by
+        have := le_flatMap_length lb encodeList (fun x _ => encodeList_ne_nil x)
+        rw [encodeList_list hb] at fits'; simp only [List.length_append] at fits'; omega
+      rw [encodeList_list ha, encodeList_list hb, List.append_assoc, List.append_assoc] at h
+      obtain ⟨-, hlen, h⟩ := headList_prefix (by omega) (by omega) lena lenb h
+      rw [encodeList_list ha, List.append_assoc] at fits
+      obtain ⟨hm, hrs⟩ := items_prefix la lb (fun x hx => encodeList_prefix x) hlen r s h
+        (by simp only [List.length_append] at fits ⊢; omega)
+      rw [normalize_list ha, normalize_list hb, hm]
+      exact ⟨rfl, hrs⟩
+    | none =>
+      exfalso
+      cases b with
+      | variant l p => exact list_not_variant ha hb h
+      | _ =>
+        have rb := firstByte_range _ hb
+        simp only at rb
+        rw [firstByte_list ha] at fb
+        have := headInfo_lt la.length
+        omega
+  | none =>
+    cases hb : listView b with
+    | some lb =>
+      exfalso
+      cases a with
+      | variant l p => exact list_not_variant hb ha h.symm
+      | _ =>
+        have ra := firstByte_range _ ha
+        simp only at ra
+        rw [firstByte_list hb] at fb
+        have := headInfo_lt lb.length
+        omega
+    | none =>
+      have ra := firstByte_range _ ha
+      have rb := firstByte_range _ hb
+      cases a <;> cases b <;> simp only at ra rb
+      all_goals first
+        | (exfalso; omega)
+        | skip
+      case natural.natural n n' =>
+        rw [encodeList_natural, encodeList_natural] at h
+        rw [encodeList_natural] at fits; rw [encodeList_natural] at fits'
+        rw [normalize_atom.1, normalize_atom.1]
+        simp only [firstByte, ha, hb] at fb
+        unfold naturalList at h fits fits'
+        by_cases c1 : n < twoTo64 <;> by_cases c2 : n' < twoTo64 <;>
+          simp only [c1, c2, ↓reduceIte] at h fits fits' fb
+        · obtain ⟨-, e, hrs⟩ := headList_prefix (by omega) (by omega) c1 c2 h
+          exact ⟨by rw [e], hrs⟩
+        · exfalso; have := headInfo_lt n; have := headInfo_lt (bigEndianList n').length; omega
+        · exfalso; have := headInfo_lt n'; have := headInfo_lt (bigEndianList n).length; omega
+        · rw [List.append_assoc, List.append_assoc] at h
+          simp only [List.length_append] at fits fits'
+          obtain ⟨-, e, h⟩ := headList_prefix (by omega) (by omega) (by omega) (by omega) h
+          obtain ⟨hb, hrs⟩ := List.append_inj h e
+          refine ⟨?_, hrs⟩
+          rw [← fromBE_bigEndianList n, ← fromBE_bigEndianList n', hb]
+      case boolean.boolean x y =>
+        rw [encodeList_boolean, encodeList_boolean] at h
+        rw [normalize_atom.2.1, normalize_atom.2.1]
+        cases x <;> cases y <;> simp_all
+      case label.label t t' =>
+        rw [encodeList_label, encodeList_label] at h
+        rw [encodeList_label] at fits
+        obtain ⟨e, hrs⟩ := textList_prefix fits h
+        rw [normalize_atom.2.2, normalize_atom.2.2, e]
+        exact ⟨rfl, hrs⟩
+      case record.record fa fb' =>
+        rw [encodeList_record, encodeList_record, List.append_assoc, List.append_assoc] at h
+        rw [encodeList_record, List.append_assoc] at fits
+        rw [encodeList_record, List.append_assoc] at fits'
+        have la := le_flatMap_length (sortedUnique fa) (fun p => textList p.1 ++ encodeList p.2)
+          (fun p _ => by simp only [List.length_append]; have := encodeList_ne_nil p.2; omega)
+        have lb := le_flatMap_length (sortedUnique fb') (fun p => textList p.1 ++ encodeList p.2)
+          (fun p _ => by simp only [List.length_append]; have := encodeList_ne_nil p.2; omega)
+        simp only [List.length_append] at fits fits'
+        obtain ⟨-, hlen, h⟩ := headList_prefix (by omega) (by omega) (by omega) (by omega) h
+        obtain ⟨hm, hrs⟩ := fields_prefix (sortedUnique fa) (sortedUnique fb')
+          (fun p _ => encodeList_prefix p.2) hlen r s h (by simp only [List.length_append]; omega)
+        rw [normalize_record, normalize_record, hm]
+        exact ⟨rfl, hrs⟩
+      case variant.variant l p l' p' =>
+        rw [encodeList_variant ha, encodeList_variant hb] at h
+        rw [encodeList_variant ha] at fits
+        simp only [variantPrefix, List.append_assoc, List.cons_append, List.nil_append] at h fits
+        have h := (List.cons.inj (List.cons.inj h).2).2
+        simp only [List.length_cons] at fits
+        obtain ⟨e, h⟩ := textList_prefix (by simp only [List.length_append] at fits ⊢; omega) h
+        obtain ⟨hp, hrs⟩ := encodeList_prefix p p' r s h (by simp only [List.length_append] at fits ⊢; omega)
+        rw [normalize_variant ha, normalize_variant hb, e, hp]
+        exact ⟨rfl, hrs⟩
+termination_by sizeOf a
+decreasing_by
+  all_goals (try subst_vars); first
+    | exact listView_mem (by assumption) (by assumption)
+    | exact sortedUnique_value_size (by assumption)
+    | (simp; omega)
+
+/-- **The canonical encoding is injective**: values with the same canonical bytes are the same
+value, up to record field order and repeated fields (`normalize`). A variant is told from a record,
+and a list from a variant, by the bytes alone (review 2026-10-12, kernel 1). -/
+theorem encode_injective {a b : Data} (h : encode a = encode b) (fits : (encode a).size < twoTo64) :
+    normalize a = normalize b := by
+  have h' : encodeList a ++ [] = encodeList b ++ [] := by rw [← encode_data, ← encode_data, h]
+  refine (encodeList_prefix a b [] [] h' ?_).1
+  rw [← encode_data]; simpa using fits
+
+#assert_axioms writeData_spec encode_injective
 
 /-- As `encode`, refusing a record that repeats a field name (a map cannot). -/
 partial def encodeChecked (d : Data) : Except String ByteArray :=
@@ -321,6 +967,17 @@ partial def readItem (depth : Nat) : R Data := do
   | 4 =>
       let r ← get
       if n > r.bytes.size - r.pos then throw "truncated CBOR"
+      if n == 3 && r.bytes[r.pos]! == 0xf6 then
+        -- [null, label, payload]: a variant (`variantPrefix`)
+        set { r with pos := r.pos + 1 }
+        count
+        let (km, kn) ← readHead
+        if km != 3 then throw "CBOR variant label is not text"
+        if kn > Bounds.bytesMax then throw "CBOR exceeds the byte bound"
+        let label ← utf8 (← takeBytes kn)
+        let v := Data.variant label (← readItem (depth - 1))
+        if (listView v).isSome then throw "non-canonical CBOR: a list is an array, not a variant"
+        return v
       let mut items : Array Data := #[]
       for _ in [0:n] do items := items.push (← readItem (depth - 1))
       return listData items
@@ -353,36 +1010,15 @@ def decode (bytes : ByteArray) : Except String Data := do
   if r.pos != bytes.size then throw "trailing bytes after CBOR item"
   return d
 
-/-- Re-tag a decoded value against its type: a one-key map is a variant where the type says
-variant. Recursive types unfold through the bounds. -/
-partial def retype (bounds : DataBounds) (ty : Ty) (d : Data) : Except String Data :=
-  match ty, d with
-  | .variable i, _ => match bounds.lookup i with
-      | some bound => retype bounds bound d
-      | none => throw "type variable without a bound"
-  | .variant row, .record [(k, v)] => match rowMember row k with
-      | some member => return .variant k (← retype bounds member v)
-      | none => throw s!"variant {k} is not in the type"
-  | .variant row, .variant k v => match rowMember row k with
-      | some member => return .variant k (← retype bounds member v)
-      | none => throw s!"variant {k} is not in the type"
-  | .field .., .record fields => do
-      let fields ← fields.mapM fun (k, v) => do
-        match rowMember ty k with
-        | some member => return (k, ← retype bounds member v)
-        | none => return (k, v)
-      return .record fields
-  | _, d => pure d
-
-def decodeAs (bounds : DataBounds) (ty : Ty) (bytes : ByteArray) : Except String Data := do
-  retype bounds ty (← decode bytes)
-
-/-- The value `decode (encode d)` yields: record fields in canonical order, repeats dropped. -/
-partial def normalize : Data → Data
-  | .record fields => .record ((sortedUnique fields).map fun (k, v) => (k, normalize v))
-  | .variant "nil" (.record []) => .variant "nil" (.record [])
-  | .variant l p => .variant l (normalize p)
-  | other => other
+-- Decoding is `normalize`, and a variant comes back a variant, whatever its label.
+#guard [Data.variant "x" (.natural 1), .record [("x", .natural 1)], .variant "ok" (.record []),
+    .variant "nil" (.record [("x", .natural 1)]), .variant "cons" (.record [("head", .natural 1), ("tail", .natural 2)]),
+    listData #[.variant "some" (.label "a"), .record [("b", .boolean true), ("a", .natural 300)]]].all fun d =>
+  match decode (encode d) with
+  | .ok back => encode back == encode d && (repr back).pretty == (repr (normalize d)).pretty
+  | .error _ => false
+-- A list written as a variant is not canonical.
+#guard (decode ⟨#[0x83, 0xf6, 0x63, 0x6e, 0x69, 0x6c, 0xa0]⟩).toOption.isNone
 
 /-! ## Hex, for the wire ops -/
 

@@ -113,11 +113,11 @@ def naturalCanonicalBytes (n : Nat) : Nat :=
 def textCanonicalBytes (s : String) : Nat := cborHeadBytes s.utf8ByteSize + s.utf8ByteSize
 
 /-- A `cons` cell's size from its head's bytes and its tail's shape: an array one longer
-when the tail is a proper list, else the one-key map `{cons: {head, tail}}`. -/
+when the tail is a proper list, else the variant `[null, "cons", {head, tail}]`. -/
 def consCanonicalShape (head : Nat) (tail : Option (Nat × Nat) × Nat) : Option (Nat × Nat) × Nat :=
   match tail.1 with
   | some (k, items) => (some (k + 1, items + head), cborHeadBytes (k + 1) + items + head)
-  | none => (none, 1 + textCanonicalBytes "cons" + 1 + textCanonicalBytes "head" + head +
+  | none => (none, 2 + textCanonicalBytes "cons" + 1 + textCanonicalBytes "head" + head +
       textCanonicalBytes "tail" + tail.2)
 
 /-- A value's canonical size and, when it is a proper `nil`/`cons` chain (an array in
@@ -132,7 +132,7 @@ def Data.canonicalShape : Data → Option (Nat × Nat) × Nat
       consCanonicalShape (Data.canonicalShape h).2 (Data.canonicalShape t)
   | .variant "cons" (.record [("tail", t), ("head", h)]) =>
       consCanonicalShape (Data.canonicalShape h).2 (Data.canonicalShape t)
-  | .variant name payload => (none, 1 + textCanonicalBytes name + (Data.canonicalShape payload).2)
+  | .variant name payload => (none, 2 + textCanonicalBytes name + (Data.canonicalShape payload).2)
   | .record fields =>
     let unique := fields.attach.foldl (fun (acc : List String × Nat) field =>
       if acc.1.contains field.1.1 then acc
