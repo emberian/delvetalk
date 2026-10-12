@@ -1419,12 +1419,16 @@ def deriveForms (index : Nat) : M DerivedForms := do
     text := text ++ (if fields.isEmpty then "type " ++ block.input ++ " = {}\n"
       else "record " ++ block.input ++ ":\n" ++ String.join fields.toList)
     forms := forms.push { block with fields := resolved.toList }
-  if !ast.decls.any (·.name == "forms") then
-    let some lists := (ast.imports.find? (fileOf ·.path == "List.obend")).map (·.importAlias)
-      | derivedAt module ((ast.forms.head?.map (·.span)).getD default) "forms() is derived as a List of the form blocks' values; import ./List.obend" "derived-forms"
-    let list := ast.forms.foldr (fun b acc => lists ++ ".List.cons({head: " ++ b.value ++ "(), tail: " ++ acc ++ "})")
-      (lists ++ ".List.nil({})")
-    text := text ++ "def forms() -> " ++ lists ++ ".List<" ++ formAlias ++ ".Form>:\n  " ++ list ++ "\n"
+  -- A hand-written forms() beside the blocks is refused: the host validates a direct action
+  -- against forms() alone, so one that omits or loosens a block would drop its bounds.
+  if let some own := ast.decls.find? (·.name == "forms") then
+    derivedAt module own.span ("forms() is derived from the form blocks, whose bounds the host checks " ++
+      "through it; a hand-written one beside them could drop a block: delete it") "derived-forms"
+  let some lists := (ast.imports.find? (fileOf ·.path == "List.obend")).map (·.importAlias)
+    | derivedAt module ((ast.forms.head?.map (·.span)).getD default) "forms() is derived as a List of the form blocks' values; import ./List.obend" "derived-forms"
+  let list := ast.forms.foldr (fun b acc => lists ++ ".List.cons({head: " ++ b.value ++ "(), tail: " ++ acc ++ "})")
+    (lists ++ ".List.nil({})")
+  text := text ++ "def forms() -> " ++ lists ++ ".List<" ++ formAlias ++ ".Form>:\n  " ++ list ++ "\n"
   match ObjectiveBendParse.parseObjective text with
   | .ok parsed =>
     let span := (ast.forms.head?.map (·.span)).getD default

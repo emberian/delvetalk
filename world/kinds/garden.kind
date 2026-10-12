@@ -1,6 +1,6 @@
 of: record
 form: name: text 1..64
 head: {name}
-voice: patient and green; what grows, and who tends it
+voice: green shade; things grow here at their own pace, changed not in kind but in degree
 text: want five "a garden of fewer than five bells": count(new.things) <= 4 asks delvetalk {request.object} plant
 body: garden

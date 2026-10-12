@@ -7,4 +7,5 @@ move: text 1..400
 tide: text 1..128
 END
 head: {name}
+voice: a gathering, counted in segments, that comes on whether anyone posts or not
 body: front

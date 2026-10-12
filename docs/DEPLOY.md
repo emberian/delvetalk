@@ -722,10 +722,14 @@ The root runs, on hbox, before each merge touching `spec/Delvetalk/Host/`, `spec
     deploy/carry-check.sh <candidate>/.lake/build/bin/delvetalk-obend /tank/delvetalk-backups
 
 It untars the newest pulled tarball into a throwaway directory, replays every journal in it from its genesis with the
-candidate (`verify.sh --full --binary`), then carries the state to the candidate (`python3 -m transport carry`, below)
+candidate under the candidate tree's `world/lib` sealed as serve seals it (`verify.sh --full --library <tree>/world/lib
+--binary`; `--library LIB` names another), then carries the state to the candidate (`python3 -m transport carry`, below)
 and checks the carried world: every object at the state CID of the backup's head snapshot and rendering for its owner,
-every old receipt resolving by its slug, a new entry admitted. The tarball is never written. *green*: it replays and
-carries. *green, breaking*: it does not replay and carries, so the deploy carries ("A new binary"). *RED*: it does not
+every old receipt resolving by its slug, a new entry admitted. The tarball is never written. *green*: it replays under that
+library and carries: a restart in place. *green, breaking: the deploy must carry*: it does not replay, or it replays but
+the journal sealed another library (serve refuses that at start, "the bytes differ"), and it carries ("A new binary").
+The roll of b1fbdded onto v8 (2026-10-12) met the second case after a carry-check that compared no library said plain
+green; the host refused the town and the old images went back. *RED*: it does not
 carry; the commit does not merge. A tarball from before head snapshots takes `--old-image delvetalk-host:<sha12>` (the
 image that wrote it); an object the candidate cannot carry is refused by name, and only the owner adds `--leave OBJ`,
 which carries it retired. Run 2026-10-11 against `delvetalk-20261011T183505Z` (the v7 town, height 73, 28 objects) with

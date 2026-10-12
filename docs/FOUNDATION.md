@@ -343,10 +343,12 @@ fills. `sender` is the object whose send the turn delivers (a `send`, a fired ru
 activity's `ended`), "" for a turn a principal began: so the weather's rain can be credited to the weather
 (replay edition 8).
 
-**The stored path.** A frame reads its object by cells (`Cells {scalar, fields, rows, spans}`): each declared
-relation's rows are fetched only when the code forces them, so a lookup by key is a probe, not a walk, and a root is
-recorded per cell read; the per-cell bound and ledger replace the whole-state bound (HOST-HANDOFF 5.136,
-KERNEL-HANDOFF §15). A write still costs O(state) in conformance and the state CID (HOST-HANDOFF §7 item 4).
+**The stored path.** An object's state is held as its cells: the scalar part and each declared relation's rows in
+key order. A frame reads its object by cells (`Cells {scalar, fields, rows, spans, gaps}`): rows are fetched only when
+the code forces them, a lookup by key is a probe that reads its answer (the key it found, or the gap its key falls in),
+and a root is recorded per cell read. A write is checked, bounded, charged and named by the cells it changes: a state's
+CID is its block's, the scalar part with each relation's rows linked in content-defined chunks (replay edition 10;
+KERNEL-HANDOFF §15).
 
 ## 4. Law
 
@@ -446,8 +448,8 @@ method's input record `PlantInput` (a choice of empty cases, or a closed sum
 `T` already in scope) and, when the module writes none, `forms()` in source
 order (it needs `import ./List.obend`). A module that declares the input
 record itself, or a method that does not take its form's input, is refused
-`(form-input)` (`checkFormInputs`); a hand-written `forms()` beside blocks is
-not yet refused (§12). The method table carries each form's fields; the host
+`(form-input)` (`checkFormInputs`), and so is a hand-written `forms()` beside
+blocks `(derived-forms)`. The method table carries each form's fields; the host
 judges spells and direct turns by their bounds. `?`, `inspect`'s forms and a
 reader's controls list only the actions the law, judged on the state as it
 stands, and the card's own `actions(state, context)` leave that reader.
@@ -673,8 +675,8 @@ or a field that is not a relation, is refused by name at creation (`key`).
 relation canonical (`canonicalRows`): rows sorted by the canonical DAG-CBOR bytes
 of their key projection, no key twice (`duplicateKey`), at most `limit` rows (0
 means `Limits.maxRelationRows`, 4,096), the first rows in key order dropped past
-it. Equal rows have one CID whatever the order of insertion, so `writes[].cid`
-and snapshot state CIDs are order-independent. Growth is a stated decision; an
+it. Equal rows have one CID whatever the order of insertion, and chunk ends depend
+only on the rows, so `writes[].cid` and snapshot state CIDs are order-independent. Growth is a stated decision; an
 unbounded collection is a sequence of child objects (`anthology/page/n`), never
 one relation.
 
@@ -877,7 +879,7 @@ each handoff keeps the detail, this table the order across lanes:
 | FEDERATION's remainder (HOST §7 item 7) | host, transport | each by its test in `test_serve`/`test_http` |
 | the stored path's, block store's and law atoms' remainders (HOST §7 items 8, 9) | host, kernel | as listed there |
 | interval spans (KERNEL §16 15b) | kernel, host | a write below a looked-up key no longer conflicts with the lookup |
-| a hand-written `forms()` beside form blocks refused; `Package.localize` deleted; a stored refusal's text (KERNEL §16 items 10, 17, 19; §9) | kernel | each by its test |
+| `Package.localize` deleted; a stored refusal's text (KERNEL §16 items 17, 19) | kernel | each by its test |
 | the regenerated `/examples` (`docs/AGENTS-EXAMPLES.md`, still env, wake, the garden and eight doors) | transport | `deploy/capture-examples.py` re-run on a genesis of this head |
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |

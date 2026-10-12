@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -65,7 +65,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 - Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-reach` (5.162), `world-wanting` (5.164).
 - Paint (5.161, never journaled): `world-render {principal, object, version?}`, `world-renders`, `world-render-submit {key, reply}`; `world-status.renders {cached, rejected, pending}`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
-- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
+- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card`/`world-inspect` of `<world>:<object>`; the root act `expire`, and the owner's `delvetalk world expire / scratch: <name>` (a `world-turn` on `world`, method `expire`, or the spell as words: `Serve.expiryAsked`; journaled nowhere). `world-relay` and `world-cross` (5.173) are serve's own, refused on both sockets.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
 - `bounds` (stateless): `{kernel, host, refusalClasses, transientClasses}`, every `Nat` definition of `Delvetalk.Bounds` (and `Generics.maxInstances`) and of `Limits` by its name (`natsIn%`, Ops), so the front's `limits`, its module checks and the tests read the bounds rather than restate them (`tests/host.py` `bounds()`).
 
@@ -81,7 +81,7 @@ Rules:
 
 ## 3. Journal
 
-A journal at `J` is two files (5.137): `J`, the chain, one line per entry `{at, bytes, hash, height, previous}`, and `J.blocks`, the block store, where each entry's record (its canonical DAG-CBOR without `hash`, whose CID is the `hash`) lies at `at`. An entry's common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?}]` (5.136), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
+A journal at `J` is two files (5.137): `J`, the chain, one line per entry `{at, bytes, hash, height, previous}`, and `J.blocks`, the block store, where each entry's record (its canonical DAG-CBOR without `hash`, whose CID is the `hash`) lies at `at`. An entry's common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?, gaps?}]` (5.136; `gaps` kernel18), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
 
 `world.receipts` maps `identityKey` to the entry index (first wins, except that a suspension or a transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`) are journaled but do not bind; admitted outcomes and every other refusal bind.
 
@@ -89,7 +89,7 @@ A state is named once, by the entry that wrote it: `writes[].cid`, or a created 
 
 Sources are carried once per journal: compile inputs name each module `{name, cid}`; the first entry needing a source carries it in top-level `sources [{cid, source}]` (checked against its CID on replay). Compiled packages are cached by input digest (`world.builds`, `buildKey`, `maxBuilds`), so creation and replay compile each distinct package once. Reprogram `source` fields are verbatim.
 
-Optional top-level fields (all inside the hash): `absent [id]`, `turnRequest`, `ticksUsed`, `ledger {depth, work, storage}`, `result`, `sends [{id, to, method, argument, ledger}]`, `delivery {id, from}`, `resumes` (hash of the suspension it continues), `offers [{to, text}]`, `replyTo`, `rerun`, `ended`, `publishes`, `blocks`.
+Optional top-level fields (all inside the hash): `absent [id]`, `turnRequest`, `ticksUsed`, `ledger {depth, work, storage}`, `result`, `sends [{id, to, method, argument, ledger, world?}]` (`world`: a send across, 5.173), `delivery {id, from}`, `resumes` (hash of the suspension it continues), `offers [{to, text}]`, `replyTo`, `rerun`, `ended`, `publishes`, `blocks`.
 
 Outcomes:
 
@@ -97,6 +97,7 @@ Outcomes:
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
 - `refused`: `{class, clause?, object?, reason?, reading?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient), cardRefused (5.157). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a law refusal with a reading journals it as `reading` and `voiced` writes `reason: "refused <clause>: <reading>"` from it (5.154), as for a card's own refusal (5.157). Replay checks only that the class is known; `publicRefusal` shows a law refusal's reason and reading.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
+- `relayed` `{world, receipt, height}` with one `sends` row, and `crossed` `{world, answer {tag, class?, clause?, reason?}, receipt? {hash, height}}` with `result?` and, for a send, `delivery`: the two halves of a call or send across (5.173). A `suspended` entry's `crossing {world, to, method, argument, sender, ledger}` is a call across waiting.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
 Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes`):
@@ -126,7 +127,8 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | data | `dataDepth` 8192, `plainDepth` 64, `Bounds.maxCellBytes` 262144 (the scalar part and each relation row, 5.136), `maxObjects` 10000 |
 | journal | `maxEntryBytes` 1 MiB (a record), `maxJournalEntries` 1,000,000, `maxJournalBytes` 4 GiB (chain and store), `maxHistoryLimit` 100, `maxCheckpointBytes` 512 KiB, `snapshotEvery` 1000 (`world-open {snapshotEvery}` per process), `maxSnapshotBytes` 256 MiB |
 | ledger | `maxDepth` 100, `chainWork` 10,000,000, `chainStorage` 1 MiB (creation may lower, never raise) |
-| time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64 |
+| time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64, `crossingPatience` 60 |
+| worlds | `scratchPerPrincipal` 2, `scratchJournalBytes` 16 MiB, `scratchObjects` 1,000, `scratchMinutes` 360, `crossingsPerTurn` 1 |
 | delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `deliveryAttempts` 4, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
 | programs, laws | `maxPackageBytes` 131072 (`Bounds.maxPackageBytes`), `maxLawBytes` 4096, `maxLawClauses` 16, `maxPreparedPrograms` 16, `maxCompiledPackets` 256, `maxBuilds` 1024, `maxReaders` 256, `maxLibraryModules` 256, `maxLibraryBytes` 786432 |
 | interpret | `maxUtteranceBytes` 8192, `maxOffersBytes` 65536, `maxReplyBytes` 262144 |
@@ -1401,7 +1403,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      what the principal may view. Its turns name `world: scratch/<name>` beside the principal. At most
      `Limits.scratchPerPrincipal` (2) at once (a third is refused `capacity`, naming the oldest), each under
      `scratchJournalBytes` (16 MiB) and `scratchObjects` (1,000; `world-open {maxObjects}`, `World.objectBound`).
-   - *Expiry*: `serve` keeps each scratch's home-world clock at its last op (`Server.scratches`; at start, now)
+   - *Expiry*: `serve` keeps each scratch's home-world clock at its last op (`Server.scratches`, and `<name>.last` beside its journal, so a restart does not renew it: `used`)
      and, on the home world's `world-advance`, discards each `Limits.scratchMinutes` (360) past it: session,
      journal, block store, snapshots (`discard`, the one deletion; a scratch is not custody). An op on it then
      is "scratch/<name> expired at clock N; open it again with world-scratch". The root act `expire {principal,
@@ -1799,6 +1801,21 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `DELVETALK_COMPILE_CACHE` paints each card once more (deploy does not set it; set it, or accept the call);
      (5) the paint is dry, a field-guide catalogue; once kinds carry `voice` read a dozen live paints and tune
      `Paint.contract()` (it is library text: a library change, not a host one).
+   - *lane/paint* (2026-10-12; no edition change): the strokes carry meaning, not ledger (`Strokes.text` is what the
+     painter reads: no entry number, version or line number; counts as `Quantity` with unit and meaning, a rule's
+     `count(new.lines) >= N` as the Nth; a coinage's credit; the kind's added law only); `numbers` holds a number,
+     digits or words, beside the unit the strokes count it in (the misused true number, "made 41 times", refused;
+     `#guard`s); `verify` is the table `clauses`, its words `table`; a thing paints in at most 400 characters, a day 600.
+     The day (`dayStrokes` over `Ops.chronicleDay`, which `chronicle` now formats): `world-render`, `world-strokes`
+     and `world-render-check` with no `object` and `{day?, morning?}` (the morning card with what wants a hand; `quiet`
+     for an empty day). Voices for every town kind (genesis `VOICES`); a thing of no kind speaks in its place's. Live,
+     hbox, five runs of the minimal genesis's five things, the day and the morning: 7 calls a run, $0.0014 to $0.0018.
+     Then: the coiner is the coining post's author (handle when the registry knows the DID, else the DID); the
+     strokes credit each text (`Strokes.authored`) and the `attribution` clause refuses a quotation credited to anyone
+     else; a paint refused for length alone is asked once more with its length (`renders.retried`); the morning reads
+     `Ops.wanting`; the day counts its lines by verb (rains as rains); `hand morning` paints, shows and drafts the morning
+     card once a day for Post (never posts). Open: a coinage's own voice needs a field on the thing (objects); the porch
+     names gemini only once gemini's DID has a handle here (arrival).
 
 161. **Grown verbs, the chronicle, the world arms; Wake's host support deleted (lane/host23; OVERHAUL §5 steps
    3 and 4's host half).** No edition bump: edition 9 is not deployed, and these change what it derives.
@@ -1928,15 +1945,13 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    on a room in one answer: entered, then said as one of 1 here).
 
 168. **`interpret` takes no `held` or `misfit` (host27; OVERHAUL §3's deletions; the coordinator's docs pass).** The
-   arm reads `utterance`, `offers`, `policy` and `model` only; a Plan naming `held` or `misfit` (World.obend still
-   declares them) has them ignored, and nothing journals or lists `held`. `misfit` stays only as the host's own: the
+   arm reads `utterance`, `offers`, `policy` and `model` only, and nothing journals or lists `held`. `misfit` stays only as the host's own: the
    misfit spells a host reading reads past (`heardTurn`, 5.166), shown to `Policy.prompt` as `asked.misfit`.
    `Policy.prompt`'s `asked` drops `held` (`heldPart` gone) in the same commit, since a prompt naming a field the host
-   no longer supplies would not fit and fall back to the bare `system` text. Left for the objects lane: World.obend's
-   `interpret<R>({utterance, offers, policy, model, held, misfit})` loses `held`, `misfit` (and, per OVERHAUL §3,
-   `policy`: the world's one is `policy`, which the host's own readings already use), with its eight callers
-   (Workshop's `make`; `test_interpret_object` ×2, `test_verbs`, `test_spell_turns`, `test_reach`, `test_reflection`,
-   `test_sum_words`). Tests: `test_policy` (the misfit prompt; no `held` listed).
+   no longer supplies would not fit and fall back to the bare `system` text. World.obend's arm is
+   `interpret<R>({utterance, offers, policy, model})` (lane/objrev), its eight callers with it; `policy` stays, since
+   `interpretPlan` reads it (a Plan without it is `malformed interpret plan`; one the speaker cannot read, `denied`).
+   Tests: `test_policy` (the misfit prompt; no `held` listed).
 
 169. **A grown verb is offered by the law alone (host27; found capturing AGENTS-EXAMPLES on the minimal genesis).** A
    card whose `actions` names what a reader sees (the town's bells: `rain tend ring lines`) hid every verb a hand grew
@@ -1973,6 +1988,41 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `before` and `after` that field's value, `version` + 1 and the whole state's `cid`, so anchors and replay read it
    as any root `set`; `rootBefore` and `applyRoot` read the same field. Tests: `test_root.Root` (plain and typed
    values, four refusals, a bump after it, a reopen), `test_root_console` (the CLI's flags).
+173. **Calls and sends across worlds (host28; docs/FEDERATION.md §2; no edition change).** A `call`, `callVia`, `send`
+   or `sendVia` whose `Reference` names a world (`foreignRef`) crosses to it. Each is refused by name when it cannot:
+   `noGrant` under a grant (a grant serves the world it was made in), `foreignWorld` for a world not served here
+   (`Foreign.serves`, which `serve` builds per request), and `crossing` for a turn's second (`crossingsPerTurn` 1,
+   `TurnState.crossings`, journaled with a suspension) or a call from inside a call (only the turn's own frame may
+   wait). A send stages a `Send` with `world` (the send row's `world`), pending at commit but never delivered here
+   (`Ops.crossesOver`, `deliverable`), unless its ledger is spent, when it is refused here `budgetExhausted`. A call
+   suspends (`TurnLoop.crossCall`) on the slot `(principal, id)` with `crossing {world, to, method, argument, sender,
+   ledger}` on the entry, `crossingPatience` (60) its deadline. `serve` carries both after every reply (`Serve.cross`
+   over each held world's `Ops.outbound`, `carry`): the target journals `relayed` under `(principal, "<home>:<id>")`
+   with one send (`relayOp`; sender `<home>:<object>`, the ledger as it crossed), delivered by its own settling pass
+   as any send, under the caller's principal and judged by its law alone (`request.caller` `<home>:<object>`); once
+   that delivery has a receipt, the home world journals `crossed` (`crossOp`) under `(principal, id)` with the
+   target's answer, receipt `{hash, height}` and result: a send's consumes its pending delivery (`checkDelivery`),
+   a call's settles the slot, and the settling pass resumes it (`crossedResponse`: `returned {result}` or `refused
+   {clause, reading}` as the target voiced it; `timedOut` past the patience). A world not served or not opening
+   when carried, or a spent call, is answered `refused` at once. Each step is idempotent (a relay retained by
+   identity, a crossing found by `outbound`), so a stop between the two journals is carried on at the next start.
+   Replay of either journal alone reads the other's receipt as data (`relayed`: one send; `crossed`: something here
+   waited for it). The read Plans of another world's object (`view`, `viewField`, `viewAt`, `viewDerived`, `card`,
+   `inspect`: `foreignReads`) are one path: `Foreign.read` runs the same Plan in that world (`readIn`, the object
+   named locally, under the reader, the turn's ticks) and the turn journals the citation. Tests: `test_scratch` (a
+   call resumed with the lab's receipt cited, a send once per turn, `foreignWorld`, both journals replayed alone).
+174. **The REPL is a scratch world's (host28; docs/FEDERATION.md §3).** `world-repl {principal, identity, entry,
+   source?, object?, argument?, arguments?}` (`PackageSession.repl`; serve refuses it outside a scratch world) compiles
+   `source` over the world's library: an entry that is not an Activity runs on `arguments` and answers its value,
+   journaling nothing; an Activity is a method of the object `object` (default `repl`) the module defines, made from it
+   when absent and reprogrammed to it when its source differs (identity `<identity>/defined`, answered as `defined`),
+   then run as the principal's turn `identity` on `argument`. With no source the method runs on the object as it stands.
+   So a REPL's state, what it made and what it waits for are the scratch's, and outlive a restart for the scratch's
+   life: the client-held checkpoint, `replRestarted`, `badModules`, serve's journal-less session and its `stateless`
+   envelope, `HostClient(stateless=)` and the front's library-pin tracking are gone (`compile` and `check-package` by
+   pin go to the town, whose library resolves it). The front's routes are `/AGENTS.md/scratch/<name>/repl`, `/check`
+   (`world-check` on the scratch) and `/cite` (`world-cite`); `/AGENTS.md/repl` and `/check` are gone. Tests:
+   `test_http.Repl`, `test_hypermedia` (the stranger's walk), `test_serve`.
 
 173. **A layer checked over what it is laid on; a making takes a stack (lane/author-build; AUTHORING §5 host 1, steps
    2, 3, 5; no edition change).** `world.check {package, layers}`: `package` as `create` takes it (a module of the
@@ -2061,18 +2111,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host27 (5.164 to 5.172), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
+The queue after host27 (5.164 to 5.172) and host28 (5.173, 5.174), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
 standing order binds every item: "maturify and take forward everything that we've started and bring it to its full
 sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
 called for); let's not leave behind 'old things', no scar and growth tissue." So each replacement deletes what it
 replaces in the same commit, and this file describes only what is. A merge touching the host runs
 `deploy/carry-check.sh` on hbox first (5.159).
 
-0. **For the objects lane, from host27.** (a) World.obend's `interpret` drops `held`, `misfit` and `policy` with its
-   eight callers (5.168; the host already ignores them). (b) World.obend's `wanting` comment and GENESIS.md say
-   "oldest first": the host answers newest first, pages of whole heights by `after` (5.164); the commonplace's
-   "What wants a hand" reads it so. (c) A seal's want can now read `request.laws` and `request.refusedBy` (5.165); a
-   law refusal journals the wants it opens. (d) Bend arm tests from a body: `wanting` is covered
+0. **For the objects lane, from host27.** (a) A seal's want can now read `request.laws` and `request.refusedBy` (5.165); a
+   law refusal journals the wants it opens. (b) Bend arm tests from a body: `wanting` is covered
    (`test_wanting`); `rule`, `grow`, `act`, `chronicle` from a `made` are not.
 1. **Left from host27.** `test_http`'s four page-markup assertions (Claim, Play: home's words, the quota page's
    stamp markup, the paint frame) fail on foundation's web redesign: the transport lane's. The question answer
@@ -2122,13 +2169,13 @@ replaces in the same commit, and this file describes only what is. A merge touch
    frame bound checked once; H12 `Store.lean`'s `Limits` referencing `Bounds` (`maxTurnTicks` = `ticksMax`,
    `plainDepth` = `plainJsonDepth`, the 1400s); H13 `compressedSize`; H14 the duplicates; H15 one list codec
    (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls.
-7. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
-   `inspect` and `viewField` of a foreign object; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
-   `delvetalk world expire / scratch:` spell; a front route for `world-cite`; `world-history` across worlds; the
-   hand's SCRATCHES page.
-8. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
-   the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
-   per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).
+7. **FEDERATION's remainder (5.140):** cross-world `call` and `send` are built (5.173), and the foreign reads with
+   them; the REPL, `check` and `cite` of a scratch are built (5.174), and the owner's `delvetalk world expire /
+   scratch:` (section 2). Left: `world-history` across worlds; the hand's SCRATCHES page; a `Returned` that carries
+   the target's receipt (World.obend's, so every pin moves: the objects lane's); `world-repl` of several modules.
+8. **The stored path's remainder (5.136): done by lane/kernel18** (KERNEL-HANDOFF §15 "The state as cells"; replay
+   edition 10): a write is checked, bounded, charged and named per changed cell, `storeOf` is gone (`Held` holds
+   the object's cells), and a lookup reads its key or its gap (roots' `gaps [{field, after?, before?}]`).
 9. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
    sources, grants and slugs; CIDs as bytes; one record encoding; `serve --snapshot-every`; held worlds never closed;
    `world-inspect`'s `cites` per clause.

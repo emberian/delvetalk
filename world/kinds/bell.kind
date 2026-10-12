@@ -9,7 +9,7 @@ form: <<END
 colour: amber | violet | silver
 seed: text 1..80
 END
-voice: moon-flavoured; short; the present tense
+voice: small and brass, tuned rather than struck; it waits for rain, and scatters light when it rings
 text: <<END
 law alive "answers while tended within 1440 minutes": request.method == "tend" or request.kind == rule or request.clock <= old.tended + 1440
 rule seven "rings at its seventh rain": count(new.lines) >= 7 and count(old.lines) <= 6 then delvetalk {request.object} ring

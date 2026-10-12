@@ -115,9 +115,10 @@ inductive Abort where
   /-- The turn's principal has started its hour's interpretations (`interpretQuota`): a transient
       refusal of class `quota`, naming the clock at which the next may start. -/
   | quota (reason : String) (next : Nat)
-  /-- The turn awaits a slot: its activity is checkpointed and journaled. -/
+  /-- The turn awaits a slot: its activity is checkpointed and journaled. A `crossing` is a call of
+      another world's object, which `serve` carries (`crossCall`). -/
   | suspend (principal intent : String) (patience : Nat) (checkpoint : Delvetalk.Turn.Checkpoint)
-      (interpretation : Option Json := none)
+      (interpretation : Option Json := none) (crossing : Option Json := none)
   deriving Inhabited
 
 /-- A `send` staged by a turn: it leaves with the commit. `sender` is the sending object (the
@@ -133,6 +134,9 @@ structure Send where
       forwarding a reply to the commonplace), so the receiver's interpretation is judged by it: "" is
       words that reached nobody, none a send that carries no reach (a delivery). -/
   reach : Option String := none
+  /-- Another world this send goes to (`world:` of its `Reference`; "" this world's): `serve` carries it
+      there (`Ops.outbound`), never this world's delivery. -/
+  world : String := ""
 
 structure TurnState where
   world : World
@@ -140,6 +144,8 @@ structure TurnState where
       head}` each, journaled as `cites` on the entry it ends in. Not roots: two journals do not commit
       together, so a foreign read can go stale without refusing the turn. -/
   cites : Array Json := #[]
+  /-- Calls and sends this turn sent to other worlds, across its suspensions (`Limits.crossingsPerTurn`). -/
+  crossings : Nat := 0
   roots : List (String × Nat) := []
   writes : List (String × List Written) := []
   /-- How each root not read whole was read (`Cells`, by object): a stored frame's scalar part,
@@ -248,39 +254,35 @@ def recordCells (id : String) (version : Nat) (r : Cells) : M Unit := do
 def recordFieldRoot (id field : String) (version : Nat) : M Unit :=
   recordCells id version { fields := [field] }
 
-/-- The store a stored frame of `o` fetches from (KERNEL-HANDOFF §15): each declared relation's rows
-    at the object's committed version, in key order (`canonicalRowsDropping` keeps them so). -/
-def storeOf (o : Object) : List (RelDecl × Array Data) × Delvetalk.Turn.Store :=
-  let rels := o.relations.map fun d => (d, Delvetalk.Turn.relationRows o.state d.field)
-  (rels, { relations := rels.map fun (d, rows) => { field := d.field, size := rows.size, key := d.key }
-           fetch := fun f j => (rels.find? (·.1.field == f)).bind fun (_, rows) => rows[j]? })
-
-/-- A stored frame's store, kept for its resumed segments in this process: the object and the
-    version it was read at, and its relations' rows there (`storeOf`). -/
+/-- A stored frame's store, kept for its resumed segments in this process: the object, the version
+    it was read at, and its cells there (KERNEL-HANDOFF §15: each declared relation's rows in key
+    order, fetched by position). -/
 structure Held where
   object : String
   version : Nat
-  rels : List (RelDecl × Array Data)
-  store : Delvetalk.Turn.Store
+  cells : Delvetalk.Turn.StateCells
 
-def Held.of (id : String) (version : Nat) (o : Object) : Held :=
-  let (rels, store) := storeOf o
-  { object := id, version, rels, store }
+def Held.of (id : String) (version : Nat) (o : Object) : Held := { object := id, version, cells := o.cells }
+
+def Held.store (h : Held) : Delvetalk.Turn.Store := h.cells.store
 
 /-- The frame of a journaled resumption: its checkpoint holds no stored cell (`Held.kept`), so it
     fetches nothing and reads its object through what the checkpoint carries. -/
-def Held.journaled (id : String) (version : Nat) : Held := { object := id, version, rels := [], store := Delvetalk.Turn.Store.empty }
+def Held.journaled (id : String) (version : Nat) : Held :=
+  { object := id, version, cells := Delvetalk.Turn.StateCells.make (.record []) [] }
 
 /-- What a stored segment of a held frame read is a root (`cellsOf`). -/
 def Held.note (h : Held) (reads : Delvetalk.Turn.Reads) : M Unit :=
-  recordCells h.object h.version (cellsOf h.rels reads)
+  recordCells h.object h.version (cellsOf h.cells reads)
 
 /-- A yield as a checkpoint kept past this process holds it: every stored cell not yet forced made
     the native rows it stands for at the version read (`Turn.materializeStored`), so a journaled
     resumption needs no store at that version; what the rest of the turn may read of those
     relations is their whole key set then. -/
 def Held.kept (h : Held) (s : Delvetalk.Turn.Suspension) : M Delvetalk.Turn.Suspension := do
-  let (state, fields) := Delvetalk.Turn.materializeStored h.store s.state
+  let (state, fields) ← match Delvetalk.Turn.materializeStored h.store s.state Limits.maxCheckpointBytes with
+    | .ok kept => pure kept
+    | .error e => evaluation e
   unless fields.isEmpty do recordCells h.object h.version { spans := fields.map (·, none) }
   return { s with state }
 
@@ -291,13 +293,13 @@ def Held.kept (h : Held) (s : Delvetalk.Turn.Suspension) : M Delvetalk.Turn.Susp
     committed one, which the frame's cells are roots at. -/
 def asWritten (o : Object) (staged : List Written) : Object :=
   if staged.isEmpty then o else
-  match applyEdits o.relations o.state (staged.map (·.edits)) with
-  | .ok state => { o with state }
+  match applyEdits o.relations o.cells (staged.map (·.edits)) with
+  | .ok applied => { o with cells := applied.cells }
   | .error _ => o
 
-/-- The state a stored frame starts from: its relations emptied (`Turn.scalarPart`), their rows held
+/-- The state a stored frame starts from: its scalar part (its relations emptied), their rows held
     by the store, so neither the machine nor a checkpoint carries a row it did not force. -/
-def storedState (o : Object) : Data := Delvetalk.Turn.scalarPart (o.relations.map (·.field)) o.state
+def storedState (o : Object) : Data := o.cells.scalar
 
 def field? (fields : List (String × Data)) (name : String) : Option Data := fields.lookup name
 
@@ -345,20 +347,37 @@ def refusedReading (bounds : DataBounds) (responseType : Ty) (clause reading : S
   respond bounds responseType "refused"
     [.record [("clause", .label clause), ("reading", .label reading)], .record [("clause", .label clause)], emptyRecord]
 
-/-- A read of another world's object (`World.foreign`): that world's own answer, shaped for the call site
-    by `shape`, and its citation kept for the entry (`TurnState.cites`); `denied` when that world denies
-    the reader or has no such object; `foreignWorld` when no world of that name is served here. -/
-def foreignRead (bounds : DataBounds) (responseType : Ty) (world op id : String)
-    (shape : Json → Option (String × Data)) : M Data := do
+/-- The read Plans another world answers of an object of its own (`Foreign.read`): what a turn may read
+    there it reads as a resident of that world would. -/
+def foreignReads : List String := ["view", "viewField", "viewAt", "viewDerived", "card", "inspect"]
+
+/-- A read Plan naming another world's object (`World.foreign`): that world's own answer to the same Plan
+    with the object named locally, judged there under the turn's subject, and its citation kept for the
+    entry (`TurnState.cites`); `foreignWorld` when no world of that name is served here. -/
+def foreignRead (bounds : DataBounds) (responseType : Ty) (tag : String) (f : List (String × Data))
+    (world id : String) : M Data := do
   let s ← get
-  match s.world.foreign.read world op id s.subject with
+  let here := Data.variant tag (.record (f.map fun (k, v) =>
+    if k == "object" then (k, .record [("world", .label ""), ("object", .label id)]) else (k, v)))
+  match s.world.foreign.read world here responseType bounds s.subject s.ticks with
   | none => refusedReading bounds responseType "foreignWorld" s!"{world} is not a world served here"
-  | some (reply, cite) =>
-    match shape reply with
-    | some (label, payload) =>
-      modify fun s => { s with cites := s.cites.push cite }
-      respond bounds responseType label [payload]
-    | none => respond bounds responseType "denied" [emptyRecord]
+  | some (answer, cite, ticks) =>
+    modify fun s => { s with ticks, cites := if cite.isNull then s.cites else s.cites.push cite }
+    return answer
+
+/-- Why a `call` or `send` to `world` does not cross, as a clause and its reading: a grant serves turns
+    in the world it was made in; a world not served here; a turn's second crossing; and, for a call
+    (which waits for the target's receipt), any frame but the turn's own. -/
+def crossingRefusal (s : TurnState) (world via : String) (depth : Option Nat) : Option (String × String) :=
+  if !via.isEmpty then some ("noGrant", s!"a grant serves turns in the world it was made in; nothing here is granted in {world}.")
+  else if !s.world.foreign.serves world s.subject then some ("foreignWorld", s!"{world} is not a world served here")
+  else if s.crossings ≥ Limits.crossingsPerTurn then
+    some ("crossing", s!"a turn sends to another world once; this one has; send the rest from the turn that answers there.")
+  else match depth with
+    | some d => if d != 0 then
+        some ("crossing", s!"a call to {world} waits for its receipt, and only a turn's own method may wait; send it instead.")
+      else none
+    | none => none
 
 /-- The reading of a refused call: the voiced reason of the refusal it names. -/
 def callReading (cls object : String) (expected : Option Json := none) : String :=
@@ -367,7 +386,7 @@ def callReading (cls object : String) (expected : Option Json := none) : String 
 def compiledMethod (obj : Object) (method : String) : M Compiled := do
   let key := obj.inputsKey ++ "/" ++ method
   let s ← get
-  match s.world.compiled[key]? <|> diskCompiled key with
+  match s.world.compiled[key]? <|> memoRead key <|> diskCompiled key with
   | some c =>
     unless s.world.compiled.contains key do
       let cache := if s.world.compiled.size < Limits.maxCompiledPackets then s.world.compiled else {}
@@ -379,6 +398,7 @@ def compiledMethod (obj : Object) (method : String) : M Compiled := do
     match compileEntryIn s.world obj.inputs method >>= fun (ec, w) => do return (← compiledOf ec, w) with
     | .error e => throw (.request s!"method {method} does not compile: {e}")
     | .ok (c, w) =>
+      let c := memoKeep key c
       -- A full cache is emptied and refilled, never left full (which would compile every turn).
       let cache := if w.compiled.size < Limits.maxCompiledPackets then w.compiled else {}
       set { s with world := { w with compiled := cache.insert key c } }
@@ -469,6 +489,8 @@ def receiptData (entry : Json) : Data :=
   let identity := (entry.getObjVal? "identity").toOption.getD Json.null
   let text := fun (j : Json) (k : String) => ((j.getObjValAs? String k).toOption).getD ""
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  -- A `crossed` entry's outcome is the other world's, as it answered.
+  let outcome := if tagOf entry == "crossed" then (outcome.getObjVal? "answer").toOption.getD outcome else outcome
   let result : Data := match outcome.getObjValAs? String "tag" with
     | .ok "refused" => .variant "refused" (.record [("class", .label (text outcome "class")),
         ("root", .label (text outcome "object"))])
@@ -757,16 +779,15 @@ def cardContext (w : World) (id reader caller intent : String) (height : Nat) (m
     and what it read of `id` is a root (`recordReading`). -/
 def storedPure (id : String) (o : Object) (c : Compiled) (rest : List Data) : M (Except String Data) := do
   let entry ← entryOf c
-  let (rels, store) := storeOf o
   let st ← get
-  match Package.executeDataEntryStored entry (#[storedState o] ++ rest.toArray) store
+  match Package.executeDataEntryStored entry (#[storedState o] ++ rest.toArray) o.cells.store
       (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
   | .ok (.finished value _ _ usage, reads) =>
-    recordCells id o.version (cellsOf rels reads)
+    recordCells id o.version (cellsOf o.cells reads)
     spend (usage.ticksUsed + usage.conversionNodes)
     return .ok value
   | .ok (.refused failure usage, reads) =>
-    recordCells id o.version (cellsOf rels reads)
+    recordCells id o.version (cellsOf o.cells reads)
     spend (usage.ticksUsed + usage.conversionNodes)
     return .error failure
   | .error e => return .error e
@@ -1715,9 +1736,16 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
         for (installed, handler) in (← get).handlers do
           if handled.isNone && installed ≤ depth then
             handled ← handleWith handler self message compiled.bounds responseType
-        match handled with
-        | some response => pure response
-        | none => answer depth self caller compiled.bounds plan responseType
+        match handled, plan with
+        | some response, _ => pure response
+        | none, .variant tag (.record f) =>
+          -- A call of another world's object suspends the turn (only `callVia` names a grant).
+          match if tag == "call" || tag == "callVia" then (f.lookup "object").bind foreignRef else none with
+          | some (world, id) =>
+            let via := if tag == "callVia" then ((f.lookup "via").bind labelOf).getD "" else ""
+            crossCall depth self compiled.bounds f world id via responseType (← held.kept suspension).checkpoint
+          | none => answer depth self caller compiled.bounds plan responseType
+        | none, _ => answer depth self caller compiled.bounds plan responseType
     let b ← budgetsNow
     let entry ← entryOf compiled
     -- A yield held in this process resumes from its machine state over the frame's store; no
@@ -1756,6 +1784,26 @@ partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : L
       else
         mayWait depth self checkpoint
         throw (.suspend sp si patience checkpoint)
+
+/-- `call` of another world's object (docs/FEDERATION.md §2): the turn suspends on the slot `(principal,
+    id)` and `serve` carries the call there (`Ops.outbound`), where it is a delivered turn under this turn's
+    principal judged by that world's law alone; the `crossed` entry citing that world's receipt settles the
+    slot, and the turn goes on with its result or its refusal (`crossedResponse`), or `timedOut` past
+    `Limits.crossingPatience`. -/
+partial def crossCall (depth : Nat) (self : String) (bounds : DataBounds) (f : List (String × Data))
+    (world id via : String) (responseType : Ty) (checkpoint : Delvetalk.Turn.Checkpoint) : M Data := do
+  let some method := (f.lookup "method").bind labelOf | evaluation "malformed call plan"
+  let some argument := f.lookup "argument" | evaluation "malformed call plan"
+  let s ← get
+  if let some (clause, reading) := crossingRefusal s world via (some depth) then
+    return ← refusedReading bounds responseType clause reading
+  if s.awaits ≥ Limits.awaitsPerTurn then evaluation "turn exceeds the await capacity"
+  mayWait depth self checkpoint
+  let slot := Journal.bodyHash (Json.arr #[toJson s.principal, toJson s.intent, toJson world, toJson s.awaits])
+  set { s with awaits := s.awaits + 1, crossings := s.crossings + 1 }
+  throw (.suspend s.principal slot Limits.crossingPatience checkpoint (crossing := some (Json.mkObj
+    [("world", toJson world), ("to", toJson id), ("method", toJson method), ("argument", dataJson argument),
+     ("sender", toJson self)])))
 
 /-- The capacities every suspension is held to; only the top of a turn may wait. Awaits and
     interpretations waiting on one object are counted apart (`pendingActivitiesPerObject`,
@@ -1804,12 +1852,15 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
           (if model.isEmpty then [] else [("model", toJson model)])))))
 
 partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (plan : Data) (responseType : Ty) : M Data := do
+  -- Another world's object: a read is that world's answer; a call waits, which only `drive` may suspend.
+  if let .variant tag (.record f) := plan then
+    if let some (world, id) := (f.lookup "object").bind foreignRef then
+      if foreignReads.contains tag then return ← foreignRead bounds responseType tag f world id
+      if tag == "call" || tag == "callVia" then
+        return ← refusedReading bounds responseType "crossing"
+          s!"a call to {world} waits for its receipt, and only a turn's own method may wait; send it instead."
   match plan with
   | .variant "view" (.record f) =>
-    if let some (world, id) := (f.lookup "object").bind foreignRef then
-      return ← foreignRead bounds responseType world "view" id fun r => do
-        let state ← (r.getObjVal? "state").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
-        return ("viewed", .record [("version", .natural ((r.getObjValAs? Nat "version").toOption.getD 0)), ("state", state)])
     match (f.lookup "object").bind referenceId with
     | none => respond bounds responseType "denied" [emptyRecord]
     | some id =>
@@ -2074,10 +2125,6 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         ("by", .label (if handle.isEmpty then c.principal else handle))]
     respond bounds responseType "changed" [.record [("items", listData (items.map item)), ("more", .boolean more)]]
   | .variant "card" (.record f) =>
-    if let some (world, id) := (f.lookup "object").bind foreignRef then
-      return ← foreignRead bounds responseType world "card" id fun r => do
-        let document ← (r.getObjVal? "document").toOption.bind (decodeData Limits.dataDepth · |>.toOption)
-        return ("carded", .record [("document", document)])
     let s ← get
     match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?).map (id, ·) with
     | none => respond bounds responseType "denied" [emptyRecord]
@@ -2226,7 +2273,17 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       | .variant "sendVia" _ => ((f.lookup "via").bind labelOf).getD ""
       | _ => ""
     match referenceId target with
-    | none => refusedWith bounds responseType "foreignWorld"
+    | none =>
+      -- A send to another world's object leaves with the commit for `serve` to carry (`Ops.outbound`).
+      let some (world, id) := foreignRef target | refusedWith bounds responseType "foreignWorld"
+      let s ← get
+      if let some (clause, _) := crossingRefusal s world via none then return ← refusedWith bounds responseType clause
+      if s.sends.length ≥ Limits.sendsPerTurn then evaluation "turn exceeds the send capacity"
+      if s.world.pending.size + s.sends.length ≥ Limits.maxPending then
+        evaluation "world exceeds the pending delivery capacity"
+      let delivery := deliveryId s.principal s.intent s.sends.length
+      set { s with sends := s.sends ++ [({ to := id, world, method, argument, sender := self } : Send)], crossings := s.crossings + 1 }
+      respond bounds responseType "delivery" [.record [("id", .label delivery)]]
     | some id =>
       if helperOf (← get).world self id method then refusedWith bounds responseType "noMethod" else
       match ← grantFor via self id method argument with
@@ -2318,6 +2375,29 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
   | _ => evaluation "plan is not a variant"
 end
 
+/-- A read Plan of world `w`'s object, answered as `answer` answers it there for `reader` (`Foreign.read`):
+    what `serve` runs for a turn of another world that reads it. Nothing it records is kept but the ticks
+    it spent and the citation of the object read (`{world, object, version, stateCid, height, head}`, `world`
+    as the reader named it), which is null when the reader was denied or refused. -/
+def readIn (w : World) (world : String) (plan : Data) (responseType : Ty) (bounds : DataBounds) (reader : String)
+    (ticks : Nat) : Data × Json × Nat :=
+  let init : TurnState := { world := w, principal := reader, intent := "", subject := reader, ticks,
+                            limits := Json.mkObj [] }
+  match (answer 0 "" "" bounds plan responseType).run.run init with
+  | (.ok answer, st) =>
+    let id := match plan with
+      | .variant _ (.record f) => ((f.lookup "object").bind referenceId).getD ""
+      | _ => ""
+    let read := match answer with
+      | .variant tag _ => tag != "denied" && tag != "refused"
+      | _ => false
+    let cite := match w.objects[id]? with
+      | some o => if !read then Json.null else Json.mkObj [("world", toJson world), ("object", toJson id),
+          ("version", toJson o.version), ("stateCid", toJson o.stateCid), ("height", toJson w.height), ("head", toJson w.head)]
+      | none => Json.null
+    (answer, cite, st.ticks)
+  | (.error _, st) => (.variant "denied" (.record []), Json.null, st.ticks)
+
 def offersJson (offers : List (String × String)) : Json :=
   Json.arr (offers.toArray.map fun (to, text) => Json.mkObj [("to", toJson to), ("text", toJson text)])
 
@@ -2361,12 +2441,12 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
       | .insert row | .upsert row => some (e.field, row)
       | _ => none
     for field in (inserted.map (·.1)).eraseDups do
-      let some now := (Law.rawField field o.state).bind Law.rowsOf | continue
+      let some now := o.cells.relation? field | continue
       let mine := fun (r : Data) => (Law.rawField "author" r).bind (fun | .label a => some a | _ => none) == some principal
       let added := (inserted.filter (·.1 == field)).map (·.2)
-      let addedCanon := added.map Law.canon
-      let first := added.any mine && !(now.any fun r => mine r && !addedCanon.contains (Law.canon r))
-      stands := stands ++ [s!"{id}'s {field}: {now.length}" ++ (if first then s!", the first by {shownName w principal}" else "")]
+      let addedKeys := added.map fun r => (Delvetalk.Turn.RowCell.of now.key r).key
+      let first := added.any mine && !(now.rows.any fun c => mine c.row && !addedKeys.contains c.key)
+      stands := stands ++ [s!"{id}'s {field}: {now.rows.size}" ++ (if first then s!", the first by {shownName w principal}" else "")]
   return [moved, opened, stands].filterMap fun ls => if ls.isEmpty then none else some ("; ".intercalate ls)
 
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
@@ -2432,7 +2512,8 @@ def sendsJson (w : World) (principal intent : String) (ledger : Ledger) (used : 
     ([("id", toJson (deliveryId principal intent i)), ("to", toJson x.to), ("method", toJson x.method),
      ("argument", dataJson x.argument), ("sender", toJson x.sender), ("ledger", child.json)] ++
      (if x.via.isEmpty then [] else [("via", toJson x.via), ("principal", toJson x.grantor)]) ++
-     ((x.reach.map fun r => [("reach", toJson r)]).getD []))))]
+     ((x.reach.map fun r => [("reach", toJson r)]).getD []) ++
+     (if x.world.isEmpty then [] else [("world", toJson x.world)]))))]
 
 /-- What a turn segment carries into its end: who it is, how it began, what it has spent. -/
 structure Ctx where
@@ -2467,7 +2548,8 @@ def sendJson (s : Send) : Json :=
   Json.mkObj ([("to", toJson s.to), ("method", toJson s.method), ("argument", dataJson s.argument),
     ("sender", toJson s.sender)] ++
     (if s.via.isEmpty then [] else [("via", toJson s.via), ("grantor", toJson s.grantor)]) ++
-    ((s.reach.map fun r => [("reach", toJson r)]).getD []))
+    ((s.reach.map fun r => [("reach", toJson r)]).getD []) ++
+    (if s.world.isEmpty then [] else [("world", toJson s.world)]))
 
 def sendOfJson (j : Json) : Except String Send := do
   return { to := ← j.getObjValAs? String "to", method := ← j.getObjValAs? String "method",
@@ -2475,7 +2557,8 @@ def sendOfJson (j : Json) : Except String Send := do
            sender := ← j.getObjValAs? String "sender",
            via := (j.getObjValAs? String "via").toOption.getD "",
            grantor := (j.getObjValAs? String "grantor").toOption.getD "",
-           reach := (j.getObjValAs? String "reach").toOption }
+           reach := (j.getObjValAs? String "reach").toOption,
+           world := (j.getObjValAs? String "world").toOption.getD "" }
 
 def entryBase (ctx : Ctx) (used : Nat) : List (String × Json) :=
   [("turnRequest", toJson ctx.digest), ("ticksUsed", toJson used), ("ledger", ctx.ledger.json)] ++
@@ -2539,7 +2622,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls := "quota", reason := some reason, next := some next })
     return (w', turnReply w' r)
-  | .error (.suspend sp si patience checkpoint interpretation) =>
+  | .error (.suspend sp si patience checkpoint interpretation crossing) =>
     let interpretation := interpretation.map (compactInterpretation · ctx.argument)
     -- An argument's long texts are blocks, the same the checkpoint holds them in (`activityArgument`
     -- restores them): a reply's text is journaled once.
@@ -2561,7 +2644,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       ("programs", Json.arr (st.programs.toArray.map fun (id, (src, mig)) => Json.mkObj
         [("object", toJson id), ("source", toJson src), ("migration", toJson mig)])),
       ("laws", Json.arr (st.laws.toArray.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)])),
-      ("ticks", toJson st.ticks), ("awaited", toJson st.awaited), ("awaits", toJson st.awaits),
+      ("ticks", toJson st.ticks), ("awaited", toJson st.awaited), ("awaits", toJson st.awaits), ("crossings", toJson st.crossings),
       ("offers", offersJson st.offers), ("publishes", Json.arr st.publishes.toArray), ("caller", toJson ctx.caller), ("checks", toJson st.checks),
       ("grants", Json.arr (st.grants.toArray.map Grant.json)), ("revokes", toJson st.revokes),
       ("placements", Json.arr (st.placements.toArray.map (·.json))),
@@ -2574,7 +2657,10 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let waitsOn := ("slot", Json.mkObj [("principal", toJson sp), ("intent", toJson si)])
     let outcome := Json.mkObj <| [("tag", toJson "suspended"), waitsOn,
       ("deadline", toJson (w.clock + patience)), ("activity", activity)] ++
-      (interpretation.map fun i => [("interpretation", i)]).getD []
+      (interpretation.map fun i => [("interpretation", i)]).getD [] ++
+      -- A call across carries the ledger a send would: one level less deep, the work this turn used spent.
+      (crossing.map fun c => [("crossing", c.setObjVal! "ledger"
+        (Ledger.json ⟨ctx.ledger.depth - 1, ctx.ledger.work - used, ctx.ledger.storage⟩))]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
       ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots st.cells),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
@@ -3471,6 +3557,17 @@ def interpretedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M
     let needs := strings (verdict.getObjVal? "needs").toOption
     respond bounds responseType "unclear" [.record [("needs", listData (needs.map Data.label))]]
 
+/-- The response a `crossed` entry resumes a call across with: the target's result, or its refusal as the
+    target voiced it. -/
+def crossedResponse (bounds : DataBounds) (responseType : Ty) (e : Json) : M Data := do
+  let answer := ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "answer" |>.toOption)).getD Json.null
+  let text := fun (k : String) => (answer.getObjValAs? String k).toOption.getD ""
+  if text "tag" == "admitted" then
+    let result ← liftEval (decodeData Limits.dataDepth ((e.getObjVal? "result").toOption.getD (dataJson emptyRecord)))
+    respond bounds responseType "returned" [.record [("result", result)]]
+  else
+    refusedReading bounds responseType (if (text "clause").isEmpty then text "class" else text "clause") (text "reason")
+
 /-- A list field of a journaled activity: `[]` when left out (an empty one is not journaled). -/
 def activityArray (act : Json) (key : String) : Except String Json :=
   match act.getObjVal? key with
@@ -3584,6 +3681,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       violator := (act.getObjValAs? String "violator").toOption.getD ""
       awaited := strings (act.getObjVal? "awaited").toOption
       awaits := ← activityNat act "awaits"
+      crossings := ← activityNat act "crossings"
       publishes := (((act.getObjVal? "publishes").toOption.bind (·.getArr?.toOption)).getD #[]).toList
       checks := ← activityNat act "checks"
       post := (act.getObjValAs? String "post").toOption.getD ""
@@ -3598,11 +3696,17 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
     let some obj := s.world.objects[object]? | evaluation s!"unknown object {object}"
     let compiled ← compiledMethod obj method
     let some (_, responseType, _) := computationParts compiled.type | evaluation "the method is not an activity"
+    let crossing := (outcome.getObjVal? "crossing").toOption
     let response ← match kind with
       | .reply e =>
         if tagOf e == "interpreted" then interpretedResponse compiled.bounds responseType e
+        else if tagOf e == "crossed" then crossedResponse compiled.bounds responseType e
         else respond compiled.bounds responseType "reply" [receiptReply e]
-      | .timedOut => respond compiled.bounds responseType "timedOut" [emptyRecord]
+      | .timedOut => match crossing with
+        | some c =>
+          let world := (c.getObjValAs? String "world").toOption.getD ""
+          refusedReading compiled.bounds responseType "timedOut" s!"{world} did not answer within {Limits.crossingPatience} clock minutes."
+        | none => respond compiled.bounds responseType "timedOut" [emptyRecord]
     -- The activity began with only its own object as a root.
     let binding := Delvetalk.Turn.Binding.make object principal intent
       (roots.filter (·.1 == object))
@@ -3987,7 +4091,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("supervisor", toJson o.supervisor),
       -- Its canonical bytes, and its scalar part's, which `Bounds.maxCellBytes` bounds as it bounds each row.
       ("stateBytes", toJson (stateBytes o.state)),
-      ("scalarBytes", toJson (Delvetalk.Canonical.encode (Delvetalk.Turn.scalarPart (o.relations.map (·.field)) o.state)).size),
+      ("scalarBytes", toJson (Delvetalk.Canonical.encode o.cells.scalar).size),
       ("forms", dataJson (listData ((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)))),
       -- The actions the reader is offered, by name (what a card's usage lists for them).
       ("offered", toJson (((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)).map formAction)),

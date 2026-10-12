@@ -182,7 +182,8 @@ class Hand:
             key = d.get('replyTo') or d.get('publication', {}).get('id', i)
             groups.setdefault(key, []).append(self.summary(i, d))
             if d.get('speak'):
-                said[key] = {'handle': 'the hand', 'text': d['speak'].get('spell') or f"the invitation at T+{d['speak'].get('invitation')}"}
+                said[key] = {'handle': 'the hand', 'text': d['speak'].get('spell') or (f"the morning card of day {d['speak']['morning']}" if 'morning' in d['speak']
+                                                                                      else f"the invitation at T+{d['speak'].get('invitation')}")}
         return [{'post': k, 'original': {'handle': seen[k]['author']['handle'], 'text': clip(seen[k]['text'])} if k in seen else said.get(k), 'drafts': v}
                 for k, v in groups.items()]
 
@@ -315,6 +316,27 @@ class Hand:
         self.log('invite', name, minute=row['minute'])
         return {'drafted': name}
 
+    def morning(self, day=None, topic=None, reply_to=None):
+        """The morning card (docs/OVERHAUL.md section 4 (c)): the town's day painted from its strokes, what wants a hand
+        exact beneath, drafted once a day for Post; never posted by itself. Unpainted (no worker, refused, past the host's
+        patience), the chronicle's exact lines stand in the paint's place."""
+        chronicled = self.host.send({'op': 'world-chronicle', 'principal': self.owner, **({'day': int(day)} if day is not None else {})})
+        if chronicled.get('status') != 'chronicled':
+            raise HandError(f"the chronicle: {chronicled.get('message') or chronicled.get('status')}")
+        day = chronicled['day']
+        for i, _, d in self.drafts():
+            if (d.get('speak') or {}).get('morning') == day:
+                raise HandError(f'the morning card of day {day} is drafted already: {i}')
+        paint = painted(self.host, self.owner, None, self.sleep, day=day, morning=True)
+        rows = self.host.send({'op': 'world-wanting', 'principal': self.owner, 'limit': 8}).get('rows') or []
+        wants = ''.join(f"{r['object']}: {r.get('reading') or r['name']}\n  {r['asks']}\n" for r in rows)
+        text = (paint or '\n'.join(chronicled['lines'])) + ('\n\nWhat wants a hand, oldest first:\n' + wants if wants else '')
+        where, name = self.where(topic, reply_to), f'{int(self.clock())}-morning-{day}'
+        self.st.write(self.st.outbox / f'{name}.json', {'speak': {'morning': day}, **where, 'principal': self.owner, 'principalVerified': True,
+                                                        'object': None, 'slot': None, 'text': text.rstrip('\n'), 'posted': False, 'hand': True})
+        self.log('morning', name, day=day, painted=paint is not None)
+        return {'drafted': name, 'day': day, 'painted': paint is not None, 'text': text.rstrip('\n')}
+
     def spoken(self):
         """The plan as it stands in this world: each seed with its cast (from the hand's log), each invitation with its draft."""
         cast = {l.get('intent'): l for l in self.tail(10 ** 6) if l.get('what') == 'speak' and l.get('world') == self.st.world}
@@ -444,7 +466,7 @@ class Hand:
             if height:
                 by_height.setdefault(height, []).append(row)
             elif row['state'] == 'waiting' and d['text']:
-                loose.append(dict(row, who='the hand', turn=f"invitation T+{speak['invitation']}" if 'invitation' in speak else 'by hand',
+                loose.append(dict(row, who='the hand', turn=f"invitation T+{speak['invitation']}" if 'invitation' in speak else f"morning card, day {speak['morning']}" if 'morning' in speak else 'by hand',
                                   object=d.get('object'), outcome='drafted', tag='', height=None, slug=None, drafts=[]))
         return spells, by_height, loose[::-1]
 
@@ -635,7 +657,8 @@ class Hand:
         else:
             act = {'retry': lambda: self.retry(form.get('uri', '')), 'reply': lambda: self.reply(form.get('uri', ''), form.get('text', ''), form.get('object', '')),
                    'speak': lambda: self.spoke(self.cast(form.get('spell', ''), form.get('topic'), form.get('replyTo'), form.get('intent'), form.get('to'), wait=0)),
-                   'invite': lambda: self.invite(form.get('minute', ''), form.get('topic'), form.get('replyTo'))}.get(rest)
+                   'invite': lambda: self.invite(form.get('minute', ''), form.get('topic'), form.get('replyTo')),
+                   'morning': lambda: {'drafted': self.morning(None, form.get('topic'), form.get('replyTo'))['drafted']}}.get(rest)
         return act and act()
 
     @staticmethod
@@ -687,6 +710,7 @@ class Hand:
                                         card=pages.painting(came.get('paint')) + (H['card'].format(text=q(came['text'])) if came['text'] else '') +
                                         (H['note'].format(text=quiet) if came['waiting'] or not came['text'] else ''))
         return shell('speak', self.st.world, H['speak'].format(base=base, world=q(self.st.world), note=self.note(query), spoken=spoken,
+                                                               morning=H['morning'].format(base=base, where=where),
                                                                intent=q(f'hand:speak:{int(self.clock() * 1000)}'), where=where,
                                                                plan=q(Path(self.plan['path']).name), seeds=seeds, invitations=invitations),
                      refresh=3 if came and came['waiting'] else 0)
@@ -835,6 +859,7 @@ def parser(p, common):
                       ('--topic', dict(help='a Zulip world: the topic (default its one topic, else welcome)')),
                       ('--reply-to', dict(metavar='AT_URI', help='a Delve world: the thread to answer')), ('--intent', dict(help='casting twice under one intent is one turn')),
                       ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
+            'morning': [('--day', dict(type=int, help='the clock day (default today)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))],
             'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [],
             'invite': [('name', dict(help='the guest: [a-z][a-z0-9-]{0,31}, its handle on cards')), ('--note', dict(default='', metavar='TEXT')),
                        ('--expires', dict(type=float, default=INVITE_DAYS, metavar='DAYS', help=f'the code may be accepted for DAYS (default {INVITE_DAYS})'))],
@@ -869,7 +894,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'status': h.status, 'search': lambda: h.search(a.slug), 'spend': lambda: h.spend(a.month),
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
-                'speak': lambda: cli_speak(h, a), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
+                'speak': lambda: cli_speak(h, a), 'morning': lambda: h.morning(a.day, a.topic, a.reply_to), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
                 'root': lambda: cli_root(h, a), 'invite': lambda: h.invite_guest(a.name, a.note, a.expires), 'invites': h.guests,
                 'revoke-invite': lambda: h.revoke_guest(a.name), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
     except (HandError, OSError) as err:

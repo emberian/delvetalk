@@ -45,9 +45,11 @@ re-renders from them; nothing else is kept to draw it. An arc is a door whose ob
 spell, and a blank reply to the commonplace, answer the trie with `world.changed` read at that moment: at most eight
 lines `<id> v<n> by <handle>, entry N`, newest first (the commonplace's own change and every principal's avatar left
 out), then `delvetalk kinds make …` and `delvetalk <the newest id> ?`; with nothing changed, "Nothing has changed
-yet." After the doors the body asks `world.wanting {after: 0, limit: 8}` and prints "What wants a hand, newest first:",
-each row `<id>: <reading>` with its answering spell indented, within what the doors leave of the clip ("… and N more"
-counted; nothing when not even one row fits); the wants a thing holds are on its own card and `delvetalk <card> wants`.
+yet." The body asks `world.wanting {after: 0, limit: 8}` and leads with "What wants a hand, newest first:", each row
+`<id>: <reading>` with its answering spell indented. One budget: the head, the spells under what changed and the tail are
+said whole, the doors get what they leave, the wants what the doors leave, and what changed yields the rest ("… and N
+more" counted; a list that cannot show its first row is not shown). The wants a thing holds are on its own card and
+`delvetalk <card> wants`.
 
 ## 2. Words at the commonplace
 

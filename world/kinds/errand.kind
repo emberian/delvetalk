@@ -1,4 +1,5 @@
 of: record
+voice: what is asked and what it pays; a ping is not a debt
 form: <<END
 asks: text 1..200
 on: text 1..128

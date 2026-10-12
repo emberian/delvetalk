@@ -11,7 +11,7 @@ import unittest
 
 from tests.host import HostCase
 from tests.bend import closure, counter_modules, declared
-from tests.wire import cid_of, label, nat, record
+from tests.wire import label, nat, record, state_cid
 
 FIXTURE_HEAD = """edition ObjectiveBend 1
 import ./Abi.obend as Abi
@@ -96,7 +96,7 @@ class CounterTurns(TurnWorld):
 
     def test_the_receipt_names_its_root_and_ticks_and_unknown_object_method_and_budget_are_refused(self):
         self.create("c1", counter_modules(), 4)
-        read = cid_of(self.host.send(op="world-view", principal="ember", object="c1")["state"])
+        read = state_cid(self.host.send(op="world-view", principal="ember", object="c1")["state"])
         r = self.turn("c1", "bump")
         # The root names the version the turn read; that state's CID is read from the journal.
         self.assertEqual(r["receipt"]["roots"], [{"object": "c1", "version": 0, "scalar": True}])

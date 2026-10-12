@@ -182,7 +182,7 @@ class NoWipe(unittest.TestCase):
         code, err = self.genesis()
         self.assertEqual(code, 1, err)
         self.assertIn('v1/state/town.journal (height 2)', err)
-        self.assertNotIn('v2', err)  # its own journal is not a town it would abandon
+        self.assertNotIn(os.path.join(self.towns, 'v2') + os.sep, err)  # its own journal is not a town it would abandon (a path, since the temp dir's random name may hold 'v2')
         self.assertEqual(genesis.existing(self.town.client, genesis.OPENER), [])
         self.assertEqual(self.genesis('--wipe-with-the-owners-word', 'two\nlines')[0], 64)
         word = 'the town begins again by the owner\'s word'
@@ -388,7 +388,7 @@ class Commonplace(unittest.TestCase):
         self.assertIn(got['status'], ('admitted', 'refused'), got)
         return got
 
-    def test_what_changed_leads_and_the_doors_follow_within_the_clip(self):
+    def test_what_wants_a_hand_leads_what_changed_yields_and_the_doors_follow_within_the_clip(self):
         stranger, glm, kimi = 'did:plc:stranger', 'did:plc:glm', 'did:plc:kimi'
         card = self.host.send({'op': 'world-card', 'principal': stranger, 'object': 'commonplace'})['text']
         self.assertTrue(card.startswith('✾ DELVETALK · THE COMMONPLACE\n\nEight doors.'), card)
@@ -405,9 +405,12 @@ class Commonplace(unittest.TestCase):
         self.assertEqual(self.owner('door', 'arc-door', label='BELL', to='garden/bell/1')['result']['label'], 'done')
         blank = self.say(stranger, 'commonplace', '', 'blank')['offers'][-1]['text']
         self.assertLessEqual(len(blank), 1400, blank)
-        changed = blank[blank.index('What changed, newest first:\n'):].split('\n')[1:9]
-        self.assertEqual(changed[0], 'garden/bell/1 v%s by kimi, entry %d' % (changed[0].split(' v')[1].split(' ')[0], rain['receipt']['height']), changed)
-        self.assertTrue(all(' by ' in c and ', entry ' in c for c in changed), changed)
+        # What wants a hand leads (the onboarding); what changed yields it room, and is said only when its first row fits.
+        self.assertEqual(blank.split('\n')[3], 'What wants a hand, newest first:', blank)
+        self.assertIn('\ngarden/bell/2: a bell nobody has rained on\n  delvetalk garden/bell/2 rain\n', blank)
+        if 'What changed, newest first:\n' in blank:
+            changed = blank[blank.index('What changed, newest first:\n'):].split('\n')[1]
+            self.assertTrue(changed.startswith('garden/bell/1 v') and changed.endswith(' by kimi, entry %d' % rain['receipt']['height']), changed)
         self.assertNotIn('commonplace v', blank)  # its own doors are not news
         self.assertIn('  delvetalk kinds make / name: lamp / of: record\n  » kind/lamp, a kind anyone makes\n  delvetalk garden/bell/1 ?\n', blank)
         # KINDS and WORKSHOP lead (playtest 2, F1): what is clipped is the places, from the end.
@@ -417,8 +420,11 @@ class Commonplace(unittest.TestCase):
         # since an entry: only what changed after it
         since = self.host.send({'op': 'world-turn', 'principal': stranger, 'object': 'commonplace', 'method': 'since', 'identity': 'since',
                                 'argument': record(entry=nat(rain['receipt']['height'] - 1))})
-        self.assertEqual(since['offers'][-1]['text'].split('What changed, newest first:\n')[1].split('\n')[0].split(' v')[0], 'garden/bell/1')
-        self.assertEqual(since['offers'][-1]['text'].split('What changed, newest first:\n')[1].split('\n')[1], '  delvetalk kinds make / name: lamp / of: record')
+        news = since['offers'][-1]['text']
+        self.assertLessEqual(len(news), 1400, news)
+        self.assertIn('  delvetalk kinds make / name: lamp / of: record\n  » kind/lamp, a kind anyone makes\n  delvetalk garden/bell/1 ?\n', news)
+        if 'What changed, newest first:\n' in news:
+            self.assertEqual(news.split('What changed, newest first:\n')[1].split('\n')[0].split(' v')[0], 'garden/bell/1')
         # A stranger hangs no door.
         refused = self.host.send({'op': 'world-turn', 'principal': stranger, 'object': 'commonplace', 'method': 'door', 'identity': 'stranger-door',
                                   'argument': record(label=label('MINE'), to=label('garden'))})

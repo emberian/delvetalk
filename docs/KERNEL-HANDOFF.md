@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-11 (lane/kernel17 after foundation 57d1c580: one clause language, `law`, `rule` and `want` on a thing's text, OVERHAUL §5 step 2, §27; before it lane/kernel16 after foundation 1de640d7: a computed refusal, `refuse(line)`, §26; before it lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
+State on 2026-10-12 (lane/kernel19 after foundation b45ccef6: the second codex review's nine kernel findings, §28; before it lane/kernel17 after foundation 57d1c580: one clause language, `law`, `rule` and `want` on a thing's text, OVERHAUL §5 step 2, §27; before it lane/kernel16 after foundation 1de640d7: a computed refusal, `refuse(line)`, §26; before it lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
 
 ## Summary
 
@@ -9,9 +9,9 @@ The kernel is the Objective Bend edition: source text to a checked typed packet,
 - Language: `spec/bend/Compiler/` (Surface, Parse, Elaborate, FrontEnd, Blame, Law, TermWire, DataWire, Sha256) and `spec/bend/Theory/` (OpenRecursion, Types, Typing, DemandMachine, DemandMachineFast, DemandData, Checkpoint, CheckpointV3, DemandCollect and the proofs). Delvetalk side: `spec/Delvetalk/` `FrontEnd`, `Generics`, `DocumentTemplate`, `Hints`, `Package`, `PackageSession`, `Turn`, `Entry`, `Limits`, `Canonical`, `Document`, `Profile`, `EvaluateTerm`, `PackageData*`; driver `spec/PackageMain.lean`.
 - Binary: `.lake/build/bin/delvetalk-obend` (`lake build`; `make build` also builds the proof-only modules in `PROOF_ONLY`). No `sorry` in `spec/`.
 - One dialect (§21): an activity is `Activity<A>` = `computation Message Data A`; its only yields are world calls `world.X(arg)` / `world.X::<T>(arg)` against `world/lib/World.obend`'s `protocol world` (§17), each resumed at its site's type. Surface `perform` and `Activity<P, R, A>` are refused by name.
-- The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and, absent a hand-written one, `forms()`; a hand-written one beside blocks is not yet refused (§9).
+- The State is the schema (§23): `Edits`/`keep()` derived from `record State` (a `fixed` field has no edit); a `form` block declares its method's input record `NameInput` and `forms()`; a hand-written `forms()` beside blocks is refused (§28).
 - Relations (§14, §22, §15): law atoms `insertOnly`, `count`, column membership; `insert`/`upsert`/`retract` in `write {...}`; `canonicalCompare`; `relationCount(r)` and `relationLookup(r, key)` (core forms: a stored relation answers a count from its handle and a lookup by its declared key by binary search); the artifact's `relations: [{field, key, limit, retain?}]`, evaluated once per package.
-- Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR, CID = `b` + base32lower(`01 71 12 20` + sha256).
+- Wire: Data JSON `{"tag":"natural","value":"123"}`, lists as `{"tag":"list","items":[…]}`; canonical form is DAG-CBOR (a variant `[null, label, payload]`, injective: `encode_injective`, §3), CID = `b` + base32lower(`01 71 12 20` + sha256).
 - Checkpoints: edition v3 only (`decodeCheckpoint`); v1 and v2 no longer decode (day 4, §21).
 - Pins: a world object's pin is the CID of its source closure (host), not `packetSha256`. `tests/test_artifact_pins.py` guards that world sources keep compiling.
 - Tests: 1,241 `def test_` across 109 files (foundation b0f3618). Kernel-narrow: `test_turn`, `test_canonical`, `test_conformance`, `test_document`, `test_data_type`, `test_tariff`, `test_sugar`, `test_located`, `test_hints`, `test_layers`, `test_artifact_pins`.
@@ -97,8 +97,8 @@ Artifact extras: `methods` (`Package.methodTable`; `stackMethodTable` for a laye
 Data JSON (`Compiler/ObjectiveBendDataWire.lean`): `natural` (decimal string), `boolean`, `label`, `record {fields:[{name,value}]}`, `variant {label,payload}`, `list {items}`. `dataJson` emits `list` whenever `listItems?` finds a proper `nil`/`cons` chain. `decodeData` refuses a variant chain that forms a proper list ("cons chains are no longer accepted on the wire; send a list", `consChainRefusal`); `PackageData.decode` applies the same rule. Decode depth is nesting, not elements (`Bounds.dataWireDepth` 256; chains cost 2 levels per cell, arrays do not). A decoded list is a `cons` chain in memory. `dataJsonBytes` must equal `(dataJson d).compress.utf8ByteSize` (keep in sync by hand).
 
 Canonical bytes (`Delvetalk/Canonical.lean`, DAG-CBOR as AT Protocol):
-- Unsigned int, shortest head; Nat >= 2^64 a big-endian byte string; false/true = f4/f5; label = text; JSON null = f6; list = definite array; record = definite map with keys sorted by UTF-8 byte length then bytes (a repeated field keeps the first); variant = one-key map `{label: payload}`.
-- Untyped decode turns every one-key map into a record; `decodeAs bounds ty bytes` re-tags against a type. Round trip is `decode (encode d) = normalize d` for variant-free `d`, and `encode (decode b) = b` for everything; not exposed on the wire; not proved. Never `decodeAs` against `.data` expecting variants back.
+- Unsigned int, shortest head; Nat >= 2^64 a big-endian byte string; false/true = f4/f5; label = text; JSON null = f6; list = definite array; record = definite map with keys sorted by UTF-8 byte length then bytes (a repeated field keeps the first); any other variant = the array `[null, label, payload]` (`variantPrefix` 83 f6; `variantHead` for a writer that writes the payload itself). No Data item is null, so the bytes tell a variant from a record and from a list whatever the type.
+- `encode_injective` (`#assert_axioms`): `encode a = encode b` and fewer than 2^64 bytes give `normalize a = normalize b` (field order, repeated fields), through `writeData_spec` (the ByteArray writer meets `encodeList`) and the prefix property `encodeList_prefix`. Decode is untyped and canonical-only (a list written as a variant is refused); `decode (encode d) = normalize d` is `#guard`ed, not proved.
 - `decode` refuses non-shortest heads, unsorted/duplicate keys, indefinite lengths, tags, floats, null, negative ints, non-canonical bignums, bad UTF-8, trailing bytes, by name ("non-canonical CBOR: …", "CBOR nesting capacity", "CBOR exceeds the node bound").
 - `encodeJson`: objects->maps, arrays, strings, bools, null, ints; a fraction is refused, and so is a negative integer below -2^64 ("a negative integer below -2^64 has no canonical form": DAG-CBOR has no negative bignum, and the eight-byte head kept only the low 64 bits, so -2^64-1 and -2^65-1 shared `3b0000000000000000`; kernel10). `cidJson` is total (falls back to the CID of the printed text on an unencodable value).
 - CID = `"b" ++ base32lower(0x01 0x71 0x12 0x20 ++ sha256(bytes))`, 59 chars, `bafyrei…`. All 166 `record`/`cid` pairs in `tests/fixtures/delve/*.json` encode to the AppView's CID; `tests/wire.py` is an independent Python encoder.
@@ -182,7 +182,6 @@ Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): G
 - Parse is the largest front-end stage (13 ms for Garden at 7d90f1b): a direct scanner per line regex, checked against the `Re` values the way `tokenLength` was (`compile-profile self-check`).
 - An activity entry's packet is 200-250 KB that must be rendered, hashed, decoded and checked per entry.
 - A checkpoint-local term table was built and measured: no gain on forced literal lists, worse nine-prose dedup; not committed (the edition name v3 now means relative addresses, §14).
-- A hand-written `forms()` beside form blocks is accepted, and wins over the derived one (`Generics.lean`, the `forms` check); refusing it by name closes FOUNDATION §12's row. Closed by a diagnostic in `test_sugar`.
 - The `Not proved` list in section 1.
 - Turn performance: docs/PERF.md (lane/perf2). The machine runs 25 to 37 million ticks a second; a directory turn spends about two thirds of its drive loop encoding, digesting, re-digesting and decoding a checkpoint per segment the host answers in process. Its items 1, 2 and 4 are this lane's (`Turn.lean`, `ObjectiveBendTyping.infer`).
 
@@ -342,17 +341,21 @@ re-checked: the host checked each when it was written (RELATIONAL §11 item 2). 
 stored path differ from the quoted path's (a native argument is one tick a node where a
 quoted one is three); no `test_tariff` pin moved when the host switched (host16).
 
-**Reads.** `structure Read where field : String; key : Data; bytes : Nat` (a forced row: its
-key projection onto `StoredRelation.key`, as a record of those columns, and its canonical
-bytes), `structure Reads where rows : List Read; spans : List (String × Nat)`. A segment's
-reads are read off its final state before any collection: every `stored (row f j) (some _)`
-cell is a row read, and `spans` gives, per field, the furthest spine cell forced (`j + 1` for
-`spine f j n` forced; `n + 1` when the `nil` was forced). The host records `{object, field,
-key}` per row and, per span, the key range it observed: up to and including row `reach - 1`'s
-key, or the whole key set when `reach = n + 1` (a `count`, an `exists` that fails, a scan to
-the end). The judging rule (WHOLENESS §3a): no admitted write since the read touched a read
-key, or inserted or retracted a key inside a read span. A turn's reads are the union over its
-segments (a resumed segment reports again what is still live; the union is idempotent).
+**Reads.** `structure Read where field : String; key : Data; bytes : Nat` (a forced row: its key
+projection onto `StoredRelation.key`, a record of those columns, and its canonical bytes) and
+`structure Reads where rows : List Read; spans : List (String × Nat); found : List (String × Data);
+gaps : List (String × Option Data × Option Data)`, read off a segment's final state before any
+collection (`Store.readsOf`): every `stored (row f j) (some _)` cell is a row read; `spans` gives, per
+field, the prefix a walk or a count observed (`j + 1` for `spine f j n` forced, `n + 1` for a `size` or
+the forced `nil`: the whole key set); a lookup that hit (`found f j`) reads its key, row forced or not
+(`found`); one that missed (`absent f low`) reads the gap its key falls in, between the keys at
+`low - 1` and `low` (`gaps`, none past an end). A lookup's probes read nothing: where the sought key
+falls decides it. The host journals them on the root as `rows [{field, key}]` (found keys among them),
+`spans [{field, through?}]` and `gaps [{field, after?, before?}]` (`Ops.Cells`, `cellsOf`) and judges
+(`cellsCurrent`, WHOLENESS §3a): stale when a write since touched a read key, any key at or before a
+span's last, or a key strictly inside a gap; a write below or above a looked-up key leaves the lookup
+current (`test_relation.Lookups`). A turn's reads are the union over its segments (`Cells.join`: a span
+covers the rows and gaps below its last key).
 
 **The invariant.** A forced row is `store.fetch f j` for the turn's store, and the host builds that
 store from the object's state at the turn's read height (the version `recordRoot` records):
@@ -383,14 +386,13 @@ reading none, some or all of its rows) which `evaluate-term` runs with `{argumen
 (the named relation fields held as stored cells, fetched from the argument's own rows) and the
 evaluators run substituted; both must agree on status, shape and plans.
 
-**Bounds (step 4).** A cell, not an object, is bounded: `Bounds.maxCellBytes` (262,144) bounds
-a fetched row (the kernel refuses a larger one, "stored row exceeds the cell bound") and the
-state's scalar part (the state with each stored relation emptied, `Turn.scalarPart`), which the
-host checks at write as it checks `stateBytes` today; a turn's forced rows are reported with
-their bytes; a write is charged the canonical bytes of the cells it changes (the scalar part
-if a scalar changed, each inserted or replaced row). FOUNDATION's sentence: "State is bounded
-per cell: the scalar fields together and each relation row are at most 256 KiB of canonical
-bytes, a relation's length is its declared limit, and a write pays for the cells it changes."
+**Bounds.** A cell, not an object, is bounded: `Bounds.maxCellBytes` (262,144) bounds a fetched row
+(the kernel refuses a larger one as unfetched) and, at write, each changed cell (`Turn.Changes.overBound`:
+the scalar part when it changed, each row put), refused `capacity`, clause `maxCellBytes`, naming the
+cell; a seed and a migration's result are bounded by every cell (`Changes.all`). A write is charged the
+canonical bytes of the cells it changes (`Changes.bytes`, `Ops.chargedBytes`: the storage ledger). FOUNDATION's
+sentence: "State is bounded per cell: the scalar fields together and each relation row are at most 256 KiB
+of canonical bytes, a relation's length is its declared limit, and a write pays for the cells it changes."
 
 **Two primitives (built, lane/kernel15).** `Term.relationCount relation` and `Term.relationLookup
 relation key probe` (`key` the columns, `probe` a function of a row's projection onto them to 0
@@ -416,11 +418,7 @@ written by the elaborator: `relationLookup(r, key)` is `(λk. relationLookup r c
 canonicalCompare(x, k))) key`, the columns being the key record's fields, each refused by name
 unless a column of the row type of the same type ("refused (relation-lookup): …").
 
-Reads: `storedReach` is the furthest of `Cell.reach` per field: a forced spine at `j` (`j + 1`), a
-`found`/`absent` at `j`, forced or not (`j + 1`, `n + 1` past the end), a `size` (`n + 1`). Probed
-keys add nothing: the answer depends only on where the sought key falls. A hit's span is the prefix
-up to its key, as the Bend walk's was; an interval span (only the gap a miss observed, only the key
-a hit read) is a host-and-kernel follow-up (§16).
+Reads: a hit reads its key and a miss its gap (**Reads** above); probed keys add nothing.
 
 Typing: `Ty.relationItem` (the closed one-case sum `rows {items: List<T>}`, `Ty.listItem` for the
 list, which `isTextList` folded into), `Ty.projection` (the key's record type), `Ty.maybe`; rules
@@ -473,20 +471,6 @@ that reads no row, or one row, spends the same ticks over 0 or 2,048 rows; a row
 canonical bytes costs exactly 202 more ticks; a card render, a scan and a merge join report
 exactly the rows they read (the join none past the shorter relation's end).
 
-Step 4 (bound): `Turn.relationRows state field`, `Turn.cellOverBound relations state : Option
-(String × Data)` (`("scalar", {})` for the scalar part, else the field and the key of the first
-row past `Bounds.maxCellBytes`) and `Turn.changedCellBytes relations before after : Nat` (the
-scalar part's bytes when a scalar field changed, plus each row whose key is new or whose row
-changed), `relations` being the artifact's `[(field, key)]`; `#guard`ed. The host's half, by
-site: `Ops.lean` 1960 and 1979 (`stateBytes written ≤ Limits.maxStateBytes`) become
-`cellOverBound decls written = none`, refused `capacity` with reason `maxCellBytes` and the
-cell; 2450 (`maxSeedBytes`), with `TurnLoop.lean` 1757 for a fixed seed, the same over the seed; the storage ledger at 2919 charges
-`changedCellBytes decls before after` instead of the difference of `stateBytes`; `world-inspect` (`TurnLoop.lean` 2765)
-keeps `stateBytes` and gains `scalarBytes` (`Canonical.encode (scalarPart …)`). FOUNDATION §9's
-scale rule becomes: "State is bounded per cell: the scalar fields together and each relation row
-are at most 256 KiB of canonical bytes, a relation's length is its declared limit, and a write
-pays for the cells it changes."
-
 Step 5 (measured on hbox, P-cores, lane against foundation f7865b0). `compile-profile stored
 REQUEST ROWS R` runs `tests/test_stored.py`'s `third` (a write, then row 3's text) from a state of
 ROWS rains, quoted and stored. At 2,048 rows the start and resume take 2,853 us quoted and 45 us
@@ -500,50 +484,90 @@ noise; directory `receive` 1,501 ms against 1,511). The Counter bump replay (R =
 three): 120 us a bump on both, 102 ticks, 21.73 G instructions on both. `fetchable` is
 `@[inline]` so the hosted runner's fetch test costs nothing on a run without stored cells.
 
-**The host's entry points (switched by lane/host16, HOST-HANDOFF 5.136).** All in `Delvetalk.Turn`
-unless named: `Store`, `StoredRelation`, `Store.bounded`, `startEntry`, `resumeSuspended`,
-`resumeEntry`, `materializeStored` (a checkpoint kept past the process, its unforced stored cells
-made native) (each `Except String (Step × Reads)`), `Package.executeDataEntryStored`
-for cards and views, `Read`/`Reads`/`Reads.toJson`, `keyProjection`, `scalarPart`,
-`relationRows`, `cellOverBound`, `changedCellBytes`, `Bounds.maxCellBytes`, and `storeOfState state
-[{field, key}]` (a `Store` over the state's own rows, as the tests and the profile build it). The host builds a
-`Store` per turn from the object's state at its read height (`relations` from the artifact's
-`[{field, key}]` with each relation's row count, `fetch f j` its row j in key order), records each
-`Read` as `{object, field, key}` and each span as the key range above, and keeps that store for
-the turn's resumed segments. When every turn takes the stored path, `test_tariff`'s pins are
-re-recorded (one commit, the reason being the native argument's one tick a node) and the quoted
-entry points are deleted.
+**The host's entry points.** All in `Delvetalk.Turn` unless named: `Store`, `StoredRelation`,
+`Store.bounded`, `startEntry`, `resumeSuspended`, `resumeEntry`, `materializeStored` (a checkpoint kept
+past the process, its unforced stored cells made native) (each `Except String (Step × Reads)`),
+`Package.executeDataEntryStored` for cards and views, `Read`/`Reads`/`Reads.toJson`, `keyProjection`,
+`scalarPart`, `relationRows`, `StateCells` and its parts below, `Bounds.maxCellBytes`, and
+`storeOfState state [{field, key}]` (a `Store` over a state's own rows, as the tests, the evaluators'
+harness and the profile build it). The host's frame store is its object's cells (`Held.of`,
+`StateCells.store`), kept for the turn's resumed segments.
 
-**Estimate.** Kernel: cells, fetch, codecs, Fast, proofs, generator (step 2) 2 days; runner and
-reads (step 3) 1 day; bound (step 4) half a day; the primitives 2 days. Host: `Store` over its
-state (rows per relation as an array per version), `Reads` into `recordRows`/`judge` with
-`keysChangedSince` and the span rule, the per-cell bound and ledger: 3 days.
+**The state as cells (lane/kernel18).** The host holds an object's state as its cells, `Object.cells :
+Turn.StateCells {scalar, relations, cid, whole}`: the scalar part (`scalarPart`), each declared relation's
+rows in key order (`RelationCells {field, key, rows : Array RowCell, chunks}`, a `RowCell {row, key, bytes,
+cid}` holding the row, its key projection's canonical bytes, its own canonical size and its block's binary
+CID), the state's CID, and the whole state as a `Thunk` made from the cells when something reads it whole
+(`Object.state`; a law and rules read `Ops.viewFor`: every scalar field and only the relations their
+clauses name, the whole state when one cites another's law by `under`). A write never walks the state:
+- *Edits* (`Ops.applyEdits` over `Editing`, `relationEdit`): a relation edit is a binary search on the
+  key bytes (`RelationCells.position`, `Canonical.bytesLt`) and one `insertAt`/`setAt`/`eraseAt`; retention
+  is `eraseAt 0` past the limit (`withinLimit`); a relation `set` is the whole relation, made canonical. It
+  answers `Applied {cells, evicted, changes}`, `changes : Changes {scalar, rows}` being the cells it changed
+  (`Changes.of`: the rows put that the state after holds and the state before did not, the scalar part when
+  its bytes moved).
+- *Check*: `Changes.checked` (the scalar part, each relation holding only its changed rows) conforms. This
+  is exact: with every row left as it was conforming, the state after conforms iff the checked one does
+  (`Theory.ObjectiveBendCellConformance`: `field_typed_iff` per field, `relation_typed_iff` per row,
+  `chain_typed_iff` per item; `Turn.listData_chain`; each `#assert_axioms`). The host declares a relation
+  only over a genuine `Relation<T>` (`Ops.relationItemOf` in `rowColumns`), where per-row conformance holds.
+- *Bound and charge*: `Changes.overBound`, `Changes.bytes` (**Bounds** above).
+- *Name*: the state's block is the scalar part's canonical encoding with each relation (the variant `rows`, written
+  by `Canonical.variantHead` as `encode` writes a variant, §28) holding as its `items` the links
+  (DAG-CBOR tag 42) of its chunks, a chunk being a run of rows in key order ending at a row whose CID's last
+  byte is below 4 (about one in 64) or at the last row, its block the array of its rows' links
+  (`stateBlock`, `chunkOf`). Chunk ends depend only on the rows, so an edit re-forms the chunk it falls in
+  and the rest are kept (`RelationCells.edited`; a `#guard` checks inserts, replacements and erasures at
+  the front, inside, at chunk ends and at the end against a fresh chunking). A one-row write hashes its
+  row, its chunk and the state block (32 chunk links at 2,048 rows). `tests/wire.py` `state_cid` is an
+  independent encoder; `test_relation.StateCid` compares it with every journaled `cid` over random edits
+  and retention. Every creation journals its `cid` too (the replay checks it), so `stateCidIn`,
+  `stateCidAt` and slugs read no seed. Replay edition 10: a carry reads an edition-9 world by its naming
+  (`Ops.Naming.ofEdition`: the CID of the wire JSON, a creation by its seed) and lists each state's two
+  names (`renamed [{object, before, after}]`; `transport/carry.py` checks them). `deploy/carry-check.sh` on
+  `delvetalk-20261012T090950Z.tar.gz` (edition 9): green, breaking (the deploy carries).
+- *Store*: `StateCells.store` fetches row `j` from the array; `storedState` is `cells.scalar`.
 
-## 16. Queue for the successor (lane/kernel15, after foundation 8f69bd7e)
+Measured on hbox under load (`deploy/bench-write.py`: 200 turns of `upsert` replacing the middle row of a
+relation of ROWS rows through the pipe to one host, two runs interleaved with foundation 5db9aa79's binary;
+median, best in brackets; 120 ticks a turn on both):
+
+| rows | foundation 5db9aa79 | kernel18 |
+|---|---|---|
+| 16 | 0.72-1.02 ms (0.66) | 0.72-0.81 ms (0.49) |
+| 256 | 4.45-4.57 ms (2.69) | 0.90-0.94 ms (0.58) |
+| 2,048 | 43.2-48.1 ms (25.2) | 0.84-0.93 ms (0.57) |
+
+On a quieter box the foundation's 2,048 rows took 17.6 ms. Before content-defined chunks, a flat spine of
+row links made 2,048 rows 2.7 ms against 0.8 (its 84 KB block hashed per write).
+
+## 16. Queue for the successor (after lane/kernel18 and lane/kernel19)
 
 Done: items 1-6 (kernel7, kernel8: §19-§22); item 8 (kernel9, §23); the codex findings (kernel10,
 §24); lazy cells (kernel11, §15); the package and instance bounds, located generics refusals and
 LAW §4 A/E/H (kernel13, §25); the law term language (kernel14, §25 M, N); item 15, the relation
-primitives (kernel15, §15 "Two primitives"). Remaining, in order:
+primitives (kernel15, §15 "Two primitives"); the second codex review's kernel findings 1-9 (kernel19,
+§28); 15a (the objects lane: every lookup is
+`Relations.lookup(r, key)`); the stored path's remainder and 15b (kernel18, §15 "The state as cells":
+a write checked, bounded, charged and named per changed cell; a lookup reads its key or its gap); 19 and 21
+(kernel18: the state block writes the relation's `rows` by `Canonical.variantHead`, as `encode` does; a card's or view's refusal says why, `Turn.refusalText`, its own `refuse(line)` the line).
+Remaining, in order:
 
-15a. (Objects lane.) `Relation.obend`'s `count` and `lookup` are the primitives now, so every caller
-   already pays the stored tariff; what is left is theirs, by site:
-   - drop `keyOf` from every `Relations.lookup(r, key, keyOf)` (the primitive reads the key's own
-     columns; the parameter is unused until then, and then `lookup`'s signature is `(relation, key)`):
-     Library 56 and 82, commonplace 43 and 275, room 38, Workshop 124, Record 123 and 128, Deal 76,
-     Garden 206, Rows 96 (`presentAs`). Each was a walk of every row before the key (about 190 ticks a
-     row passed: 292,448 for row 1,536); it is now at most twelve probes over 2,048 rows and one row.
-   - Tide 94 `Relations.exists(state.subs, fn(s) -> s.who == sub.who)` is a lookup by the key `{who}`:
-     `relationLookup(state.subs, {who: sub.who})` (a presence test, no row fetched) instead of a scan.
-   - the `Relations.count` callers (Tide 94, room 69/79/287-292, Avatar 84/105/106/142/152/163/356/362,
-     Workshop 121/234, Garden 377, Env 61/62) already moved: about 24 ticks a row to one tick.
-15b. (Host and kernel.) Interval spans: a lookup reads the gap its key falls in (a miss) or one key (a
-   hit), not the prefix below it. `Reads.spans` as `{field, from, reach}`, the host's judging rule over
-   key intervals; the kernel's `found`/`absent` cells already name the positions. Closes when a write
-   below a looked-up key no longer conflicts with the lookup.
+23. What still reads a whole state per write, each made once per version from the cells when it does:
+   a Bend law (`predicate`: `bendLaw` runs `law(old, new, request)` on whole states natively; through the
+   stored path it would fetch only the rows it forces, as a card does), a text law citing another's by
+   `under` (`viewFor` gives it the whole state), `posing` (wants), `revealed`'s "first by the speaker"
+   (a scan of the rows' `author`, no encoding), a reprogram's migration and a whole-relation `set`
+   (inherent: every cell is new). Measure on a law-bearing object (`deploy/bench-write.py` with a
+   package declaring `law`) before building.
+24. The commit's argument that `Changes.of` holds every row a write put is by construction
+   (`applyStep`, `relationEdit`, `withinLimit`), with `test_relation.StateCid` and the chunking `#guard`
+   as evidence; the conformance half is proved (`ObjectiveBendCellConformance`). A Lean statement over
+   `applyEdits` (the rows after are the rows before, less the removed, plus `put`) would close it.
+25. `Theory.storedReach` (a prefix per field over spines, lookups and counts) now serves only
+   `EvaluateTerm`'s `reach` in the evaluators' harness; the host reads `Store.readsOf`. Fold the harness
+   onto `Reads` (found, gaps) when the conformance generator next moves, and delete `storedReach`.
 7. `textWords(s) -> List<String>`: only if an object asks; none does (kernel13 grep of docs/, world/).
-10. `Form.obend` `type Forms = Lists.List<Form>` (objects lane) would let the derived `forms()`
-   be `F.Forms` and drop its List.obend requirement (Counter, Loop).
 12. (Done; the standing caveat.) `expandSuspended` recomputes a digest a compacted journal entry lacks:
    the journal is the trust root, so that is sound, but a host that ever resumes a checkpoint from
    outside its journal must look its digest up there.
@@ -554,11 +578,19 @@ primitives (kernel15, §15 "Two primitives"). Remaining, in order:
    2.5 s on a 32 KB package. With the generics pass located (§25 items 2, 4) its remaining callers
    are elaborator refusals without a span; find them by making `localize` count its calls in
    `test_sugar` and `test_located`-style fixtures, then delete it when none is left.
-19. A card's stored refusal answers the `Failure` name (`…Failure.refused`), not `Turn.refusalText`
-   (a turn's does): `Package.executeDataEntryStored` should say why, as the turn path does.
+20. (Kernel, then host; replay edition.) Charge argument admission to the turn (§28 item 7): `admits`
+   bounds the conformance and well-formedness walks by the turn's ticks but does not deduct them, so
+   `ticksUsed` excludes them, as a card's preparation does not (`executePreparedNativeFrom` deducts).
+   Charging moves every turn's ticks: re-record `test_tariff`, and a replay edition. Closes when
+   `startEntry` deducts the work `admissionLeft` counts and `ticksUsed` includes it.
+22. (Host.) The grant and relation consumers compare Data by canonical bytes (`Ops.attenuate`,
+   `relationEdit`, `keyAtMost`); with `encode_injective` that is equality up to `normalize`. A host
+   test of a grant fixing a Data-typed variant and a holder supplying the one-field record (now
+   `grantConflict`) belongs in `test_grants`.
 
-Done since kernel10 and no longer queued: 9 (located generics refusals, kernel13), 13 (`52ad1b2`),
-18 (LAW §6 items 2 and 3, kernel halves, kernel14: §25 item M), 15 (kernel15).
+Done since kernel10 and no longer queued: 10 (Counter and Loop import List.obend; a hand-written
+`forms()` beside blocks is refused, §28 item 9), 9 (located generics refusals, kernel13), 13 (`52ad1b2`),
+18 (LAW §6 items 2 and 3, kernel halves, kernel14: §25 item M), 15 (kernel15), 15a, 15b, 19, 21 (kernel18).
 
 ## 17. World calls (WHOLENESS §1, lane/kernel6)
 
@@ -1156,3 +1188,47 @@ does next.
    `Package.EntryCompiled` should carry them to `Built` so `makeObject` places them (owner the
    creator) when no law text is given. (Objects lane: `Kind.obend`'s `lawChecked` still refuses lines
    not starting `law `; `world.check` accepts `rule` and `want` lines now.)
+
+## 28. The second codex review's kernel findings (lane/kernel19, after foundation b45ccef6)
+
+`docs/review/codex-2026-10-12/kernel.md`, all nine, each verified on the tree first and refuted by a
+test or a `#guard` that fails on the previous binary.
+
+1. **Canonical collisions (P1).** A variant was the one-key map `{label: payload}`: the bytes of the
+   one-field record, so at type `Data` (a grant's fixed argument, a relation row) a holder could pass
+   a record where a variant was fixed. A variant that is not a list is now `[null, label, payload]`
+   (no Data item is null). The writer is total with a byte-list specification (`writeData_spec`),
+   and `encode_injective` (`#assert_axioms`) proves equal bytes, fewer than 2^64, are equal values up
+   to `normalize`. `Data.canonicalBytes` counts the extra byte; no packet, pin or tariff moved.
+   `retype`/`decodeAs` deleted (no caller; decoding is untyped now that variants are self-describing).
+2. **Re-exported law unenforced (P1).** `Package.signaturesAt` reads `export Alias.f [as g]` as the
+   function it names (through imports); a re-exported parameter typed `State` keeps the name only if
+   the exporting module's State is the defining module's (`recordAt`), else `law` is refused by shape.
+   Methods and `relations()` read it too. `test_methods`.
+3. **Alias chain dropping fixed fields (P1).** `recordAt` walks State's aliases and layers on fuel
+   equal to the package's alias declarations and modules; running out is a cycle and refused, as is an
+   alias naming an import its module lacks ("refused (fixed)"), never read as no fixed fields.
+   `test_sugar` (a 64-alias chain).
+4. **Checkpoint materialized before its bound (P2).** `materializeStored store state allowance`
+   measures each stored part row by row before building it and refuses past the allowance; the host's
+   `Held.kept` passes `Limits.maxCheckpointBytes`. `#guard` (1,024 rows of 4 KiB).
+5. **Another stack's metadata (P2).** `layerAncestry` (the entry module's own layer chain) replaces the
+   closure-wide stack for entry selection, methods, declares and law readings; the context's stack
+   still decides package-wide overrides. `test_layers`.
+6. **Uncharged re-execution on node exhaustion (P2).** `Failure.nodes` (every node check of
+   `materializeWith`) is split from `Failure.budget` (bytes): `concludeStep` no longer re-materializes a
+   Plan with 2^40 nodes, and a result wider than the nodes left is `exhausted nodes` (it read `bytes`).
+   `test_turn`.
+7. **Unmetered argument admission (P2).** `admissionLeft` counts the conformance and well-formedness
+   work (a visit per node per check, a record's names pairwise) against the turn's ticks and stops at
+   them: `startEntry`, `resumeSuspended` and `resumeEntry` answer `exhausted ticks` without the walk.
+   Bounded, not charged (§16 item 20). `#guard`.
+8. **Clauses block layering (P2).** The entry's text is its ancestry's clauses, lowest first, names
+   unique across them (a layer adds, never overrides, a clause); a clause in a module the entry only
+   imports is still refused. `test_layers`.
+9. **Hand-written `forms()` erasing bounds (P2).** Refused beside form blocks, at its declaration
+   ("refused (derived-forms)"). `test_sugar`.
+
+Pins: none re-recorded (no packet moved). Replay: see the lane report (carry-check on the newest
+backup).
+

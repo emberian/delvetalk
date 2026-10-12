@@ -439,7 +439,6 @@ OTHER_WRITTEN = without_state(OTHER) + ("record Edits:\n  exits: P.Entries<Lib.E
                                         "  name: P.Edit<String, {}>\ndef keep() -> Edits:\n"
                                         "  {exits: P.Entries.keep({}), count: P.Edit.keep({}), name: P.Edit.keep({})}\n")
 OWN_FORMS = "def forms() -> Lists.List<F.Form>:\n  Lists.List.cons({head: waterForm(), tail: Lists.List.nil({})})\n"
-INPUTS = FORM_INPUTS_EXPLICIT[:FORM_INPUTS_EXPLICIT.index("def forms()")]
 
 # (what, explicit, sugared, entries, library, world, extra): each pair compiles to one packet.
 EQUIVALENT = (
@@ -451,8 +450,6 @@ EQUIVALENT = (
     + [("a form block", FORM_EXPLICIT, FORM_SUGARED, ("planting",), FORM_LIB, False, ()),
        ("form blocks: values, inputs and the derived forms()", FORM_STATE + FORM_BLOCKS_EXPLICIT + FORM_INPUTS_EXPLICIT,
         FORM_STATE + FORM_BLOCKS, ("plant", "water", "planting", "waterForm", "forms"), FORM_LIB, False, ()),
-       ("a hand-written forms() is kept", FORM_STATE + FORM_BLOCKS_EXPLICIT + INPUTS + OWN_FORMS,
-        FORM_STATE + FORM_BLOCKS + OWN_FORMS, ("forms",), FORM_LIB, False, ()),
        ("write {...}", WRITE_EXPLICIT, WRITE_SUGARED, ("plant",), ABI_LIB, False, ())]
     # RELATIONAL section 3: insert/upsert/retract; `remove ITEM` is removeItem, `amend ITEM with CHANGE` amendItem.
     + [("write " + s.split(": ")[1].split(" ")[0], *edit(s, x), ("plant",), ABI_LIB, False, ()) for s, x in (
@@ -485,6 +482,10 @@ FIXED_REFUSAL = "refused (fixed): note is fixed; no edit names it"
 
 # (source, entry, library, world, extra, words the refusal carries); None: the package checks.
 REFUSED = [
+    # Review 2026-10-12 kernel 9: a hand-written forms() beside the blocks (here one omitting plant's)
+    # was kept, and the host, which validates against forms(), admitted what plant's block bounds.
+    (FORM_STATE + FORM_BLOCKS + OWN_FORMS, "forms", FORM_LIB, False, (),
+     ["refused (derived-forms): forms() is derived from the form blocks"]),
     (DATA_PLANS + WORDS + "def f(n: Nat) -> Nat:\n  wrap(fn(x: Nat) -> Nat: x, n)\n", "f", (), True, (),
      ["refused (data-injection): this value is a function"]),
     (DATA_PLANS + "def go(n: Nat) -> Activity<Nat>:\n  match world.send({object: {world: \"\", object: \"b\"}, method: \"m\", argument: {}}):\n"
@@ -599,7 +600,8 @@ class Sugar(unittest.TestCase):
     def test_each_derived_refusal_names_its_source_line(self):
         # `compile` does not localize (check-package's `localize` recompiles each function alone to
         # find a spanless refusal): a span here is the generics pass's own (KERNEL-HANDOFF §16 item 9).
-        tags = ("refused (fixed): note", "refused (form-kind)", "refused (form-input): form", "refused (derived-edits): State.")
+        tags = ("refused (fixed): note", "refused (form-kind)", "refused (form-input): form", "refused (derived-edits): State.",
+                "refused (derived-forms): forms()")
         seen = set()
         for source, entry, library, world, extra, words in REFUSED:
             if not words or not words[0].startswith(tags):
@@ -619,8 +621,10 @@ class Sugar(unittest.TestCase):
                     self.assertIn("record PlantInput", line)
                 if "State.items" in words[0]:
                     self.assertIn("items: Outer.Items", line)
+                if "derived-forms" in words[0]:
+                    self.assertIn("def forms()", line)
                 seen.add(words[0][:24])
-        self.assertEqual(len(seen), 4, seen)
+        self.assertEqual(len(seen), 5, seen)
 
     def test_let_response_continues_on_its_response_and_refuses_any_other_by_name(self):
         art = self.compiled(BUMP_SUGARED, "bump", world=True)
@@ -681,6 +685,11 @@ class Sugar(unittest.TestCase):
         lib = ({"name": "Lib", "source": FIXED_HEAD + DERIVED_REST + "type Shared = State\n"},)
         aliased = HEAD + "import ./Lib.obend as Lib\ntype Again = Lib.Shared\ntype State = Again\ndef initial() -> State:\n  Lib.initial()\n"
         self.assertEqual(self.compiled(aliased, "initial", REL_LIB, extra=lib).get("fixed"), ["note", "owner"])
+        # Review 2026-10-12 kernel 3: a chain longer than four steps a module ran out of fuel and
+        # listed no fixed field; the chain is bounded by the alias declarations it crosses.
+        chain = "".join(f"type A{i} = A{i - 1}\n" for i in range(1, 64))
+        long = HEAD + "import ./Lib.obend as Lib\ntype A0 = Lib.Shared\n" + chain + "type State = A63\ndef initial() -> State:\n  Lib.initial()\n"
+        self.assertEqual(self.compiled(long, "initial", REL_LIB, extra=lib).get("fixed"), ["note", "owner"])
         # A layer that writes no forms() or initial() declares what its stack declares (review kernel 5).
         stack = ({"name": "Base", "source": FORM_STATE + FORM_BLOCKS + "def initial() -> State:\n  {planted: 0n}\ndef methods() -> Nat:\n  0n\n"},)
         for entry in ("extra", "plant"):

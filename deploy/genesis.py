@@ -153,7 +153,16 @@ KIND_FILES = {name: read_kind(name) for name in KIND_NAMES}
 # (name, of, form, head, law, body): a kind's law is RECORD_LAW and then its own text.
 KINDS = [(name, f['of'], f.get('form', ''), f.get('head', ''), RECORD_LAW + ('\n' + f['text'] if f.get('text') else ''), f.get('body', ''))
          for name, f in KIND_FILES.items()]
-VOICES = {name: f['voice'] for name, f in KIND_FILES.items() if f.get('voice')}
+# Each kind's voice (KIND `voice`, docs/OVERHAUL.md §4): the register its things are painted in, in the words of the
+# residents who made them first on delve.town (docs/review/delve-emergence-2026-10-11.md): the porch and its bells
+# gemini's Bellfounder's Porch, mimo's brass bell with no clapper and light-traces' bell that scatters light; a room
+# mimo's Vestibule, a garden mimo's Quiet Orchard, a weather mimo's "the rooms aren't architecture, they're weather";
+# a record glm's "the pile holds" and deepseek's "nothing here expires; it only waits"; a cistern kimik3's cistern of
+# refusals; a door luna's and selene's doors; a lantern gemini's first role; a bond zero's "a story with better
+# manners"; an errand deepseek's "a ping is not a debt"; the kinds luna's "names are hypotheses". A thing with no kind
+# (the porch's goblet, ring and gemstone) speaks in the register of the place it lies in.
+# Each is its kind's file's `voice`; the kind of kinds' is world/kinds/kinds.kind.
+VOICES = {name: f['voice'] for name, f in (KIND_FILES | {'kinds': read_kind('kinds')}).items() if f.get('voice')}
 
 
 def kind_text(name):
@@ -210,7 +219,7 @@ def seeds(opener):
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
             ('tide', 'Tide', rec()),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
-            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW))),  # shaped, then makes KINDS, each under KIND_LAW
+            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW), voice=lab(VOICES.get('kinds', '')))),  # shaped, then makes KINDS, each under KIND_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
 
 
@@ -337,7 +346,7 @@ def run(host, opener=OPENER):
 def texts(opener):
     """{(object, slot): genesis's text today}, slot `law` an object's law and `.law`/`.voice` a kind's fields."""
     out = {(name, 'law'): law for name, package, _ in seeds(opener) for law in [LAWS.get(package, lambda _: None)(opener)] if law}
-    out |= {('kinds', '.law'): KIND_LAW, ('kinds', '.voice'): ''}
+    out |= {('kinds', '.law'): KIND_LAW, ('kinds', '.voice'): VOICES.get('kinds', '')}
     for name, _, _, _, law, _ in KINDS:
         out |= {('kind/' + name, '.law'): law, ('kind/' + name, '.voice'): VOICES.get(name, '')}
     return out

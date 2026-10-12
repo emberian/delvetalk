@@ -225,11 +225,57 @@ structure Session where
   cache : Cache := {}
   world : Host.Session := none
 
+/-- `world-repl {principal, identity, entry, source?, object?, argument?, arguments?, limits?}`: the REPL of a
+    scratch world (docs/FEDERATION.md §3), against its state. `source` (one module) is compiled over the world's
+    library: an entry that is not an Activity runs on `arguments` and answers its value, journaling nothing; an
+    Activity is a method of the object `object` (default `repl`) the module defines, which is made from it when
+    absent and reprogrammed to it when its source differs, then run on `argument` as the principal's turn
+    `identity`: what it wrote, made and waits for persists with the world. With no `source` the entry runs on the
+    object as it stands. The answer is the turn's, with `defined`, the receipt that made or reprogrammed it. -/
+def repl (session : Session) (request : Json) (foreign : Host.Foreign) : IO (Session × Except String Json) := do
+  let text := fun (k : String) => (request.getObjValAs? String k).toOption
+  let some o := session.world | return (session, .error "no world is open; send world-open first")
+  let (some principal, some identity, some entry) := (text "principal", text "identity", text "entry")
+    | return (session, .error "a REPL step names its principal, identity and entry")
+  let object := (text "object").getD "repl"
+  let step := fun (session : Session) (fields : List (String × Json)) => do
+    let (world, r) ← Host.stepWorld session.world (Json.mkObj (fields ++ [("principal", toJson principal), ("object", toJson object)])) foreign
+    return ({ session with world }, r)
+  let turn := fun (session : Session) => step session [("op", toJson "world-turn"), ("method", toJson entry), ("identity", toJson identity),
+    ("argument", (request.getObjVal? "argument").toOption.getD (Json.mkObj [("tag", toJson "record"), ("fields", Json.arr #[])]))]
+  let some source := text "source" | return ← turn session
+  let modules ← match o.world.library with
+    | some lib => match Host.overLibrary lib [("Package", source)] with
+      | .ok m => pure m
+      | .error e => return (session, .error e)
+    | none => pure [("Package", source)]
+  let compiling := Json.mkObj [("modules", Host.modulesJson modules), ("entry", toJson entry), ("limits", Package.getLimits request)]
+  match Package.compileEntry compiling with
+  | .error d => return (session, .error (Package.Diagnostic.render (Package.withHint compiling d)))
+  | .ok compiled =>
+    if (Host.computationParts compiled.entry.type).isNone then
+      return (session, Package.executeEntry compiled.entry ((request.getObjVal? "arguments").toOption.getD (Json.arr #[])) (Package.getLimits request))
+    let defined ← match o.world.objects[object]? with
+      | none => step session [("op", toJson "world-create"), ("identity", toJson s!"{identity}/defined"), ("source", toJson source),
+          ("entry", toJson "initial"), ("seed", Json.mkObj [("tag", toJson "record"), ("fields", Json.arr #[])])]
+      | some held =>
+        if Host.entrySource held == source then pure (session, .ok Json.null)
+        else step session [("op", toJson "world-reprogram"), ("identity", toJson s!"{identity}/defined"), ("package", toJson source),
+          ("version", toJson held.version)]
+    match defined with
+    | (session, .error e) => return (session, .error e)
+    | (session, .ok made) =>
+      if !made.isNull && !["created", "admitted"].contains ((made.getObjValAs? String "status").toOption.getD "") then
+        return (session, .ok made)
+      let (session, r) ← turn session
+      return (session, r.map fun j => if made.isNull then j else j.setObjVal! "defined" ((made.getObjVal? "receipt").toOption.getD made))
+
 /-- World ops own their journal file; everything else is `step`. -/
 def stepIO (session : Session) (request : Json) (foreign : Host.Foreign := {}) : IO (Session × Except String Json) := do
   match request.getObjValAs? String "op" with
   | .ok op =>
-    if Host.isWorldOp op then
+    if op == "world-repl" then repl session request foreign
+    else if Host.isWorldOp op then
       let (world, result) ← Host.stepWorld session.world request foreign
       return ({ session with world }, result)
     else if op == "bounds" then return (session, .ok Host.bounds)

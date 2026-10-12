@@ -116,50 +116,64 @@ a rule.
 ## The paint
 
 OVERHAUL §4, as built (`spec/Delvetalk/Host/Enchant.lean`, `world/lib/Paint.obend`; HOST-HANDOFF 5.161). A card a
-resident reads may stand under a paint: two to four sentences of the thing as it stands, written by the world's model
+resident reads may stand under a paint: two or three sentences of the place as it stands, written by the world's model
 from the thing's **strokes** and checked by the host before anyone reads it. The paint is the thing's voice, not a
-fourth: third person, present tense, in the register its kind's `voice` gives (kind/bell's is "moon-flavoured; short;
-the present tense"), else plain. It has no `hob:` head. The exact card stands beneath it, always, and is the only text
-the law, rules, wants, hob's reading and the check read: no model reads a model's prose.
+fourth: third person, present tense, concrete, one image, in the register its kind's `voice` gives (a thing of no kind
+speaks in the register of the place it lies in: the porch's goblet in the porch's), under 400 characters. It has no
+`hob:` head. The exact card stands beneath it, always, and is the only text the law, rules, wants, hob's reading and
+the check read: no model reads a model's prose.
 
-**Strokes** (`Enchant.assemble` at a version): the head (else `name`), the kind's form values (a bell's colour and its
-maker's seed), the kind and its `voice`, maker, keeper and owner by handle, `made` and `tended` (entry numbers, never
-counts), relation counts, the eight newest lines verbatim with their handles (`admitted`/`pending` under a keeper),
-marks, verbs (the card's spells, then each grown verb with its grower and reading), laws' readings (a clause `under
-"K"` stands as K's), rules (name, owner, reading, the entry that last fired it), the wants that hold now with their
-spells, doors, where it lies, who is present. Nothing is authored for the paint.
+**Strokes** (`Enchant.assemble`; what the painter reads is `Strokes.text`): what it is and its kind, its head, its
+voice, its maker's words (the form values: a bell's colour and seed), a coinage's credit (made after another
+resident's post: the coiner, the post's author by handle when the registry knows them, else the at:// author's DID),
+the words it was made with credited to whose they are (the coiner's for a coinage, else the maker's), who made, owns and keeps it, where it lies, its
+doors, who is here, how long since it was tended, the eight newest lines verbatim with their handles and verbs, marks,
+**counts with their units and meanings** (`rains: 2`; `the 7th rain: rule seven, "rings at its seventh rain"`, read
+from a rule's `count(new.lines) >= N`; what lies here by what it is called), what it wants now with each want's spell,
+its rules with whether they have fired, the law its kind adds (the frame every record keeps left out), its verbs by
+name. Never an entry number, a version or a line number: the reader never needs "entry 78".
 
-**The contract** is `Paint.contract()`, the system text sent with the strokes: write the thing as a field guide writes
-a creature; order, selection, dwelling and dress are the paint's, the facts the strokes'; one spell at most, the one a
-want asks for or its first verb; at most 600 characters. **The check** is `Enchant.verify`, the first failed clause
-refusing:
+**A day** (`Enchant.dayStrokes`, `world-render` with no `object`): the chronicle's day (`Ops.chronicleDay`) as
+sentences with no entry numbers, rules and wants by their readings, avatars left out; the day's lines with the thing
+each is on; counts (acts admitted, refusals, hands, things made by what they are called, the day's lines by the verb
+that wrote them: rains as rains); with `morning: true`, what
+wants a hand, oldest first. Up to 600 characters. That is the morning card; without `morning`, the chronicle's day.
+
+**The prompt** is `Paint.contract()`, the one prompt file. **The check** is `Enchant.verify`, the table
+`Enchant.clauses` in order, the first failed refusing; `Enchant.table` holds every word a clause reads:
 
 | clause | what it holds |
 | --- | --- |
-| `ids` | every id-shaped token is a stroke's id |
-| `numbers` | every run of digits is a stroke's number (numbers in words are free) |
+| `ids` | every id-shaped token is a stroke's id (a sentence's capital aside) |
+| `numbers` | a number, in digits or in words (two, twice, seventh, 7th, forty-one), stands beside the unit the strokes count it in, and as they count it: "two rains" over `rains: 2`, "the 7th rain" over the rule's 7th; a stroke's own text pairs a number with the word beside it ("1440 minutes"); an ordinal beside no unit, and one, first and once, are free. "made 41 times", "entry 172", "version 4", "seven rains" over two, "two rains of seven" are refused |
 | `handles` | every handle is a stroke's |
 | `spells` | a `delvetalk` line equals a stroke's spell byte for byte, on its own line |
-| `quotes` | a quotation is a substring of a stroke line (its closing stop dropped) |
+| `quotes` | a quotation is a substring of a stroke's text (its closing stop dropped, its first letter raised or not) |
+| `attribution` | a quotation is credited, if at all, to the one whose words it is (`Strokes.authored`: a line its writer's, the made-with words and head its coiner's or maker's, a reading its placer's or grower's): the person named nearest before it back to the previous quotation, else after it, by handle, the handle's first label, or "maker"/"coiner". The bell/2 paint that gave light-traces' seed to its maker is refused |
 | `heads` | no line begins `●`, `§`, `refused`, `law `, `rule `, `want `, `hob:` |
-| `forbidden` | none of `Enchant.forbidden`: I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please (a quotation may hold any) |
+| `forbidden` | none of I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please (a quotation may hold any) |
 | `secondPerson` | no you, your, yours, you're, you've, you'll, you'd, yourself, yourselves, y'all |
-| `negation` | no "no", "not", "never" or "…n't" within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, a verb or want) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper |
-| `length` | 1 to 600 characters |
+| `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one |
+| `length` | 1 to 400 characters, a day 600 |
 
-A refused paint shows the card exact until its next version and is not asked again for that one; `world-status.renders`
-counts `cached`, `rejected` and `pending`. `world-render-check` judges any text against a thing's strokes without
-caching it.
+A paint refused for its length alone is asked for once more, told its length; any other refused paint, or a second
+long one, shows the card exact until its next version and is not asked again for that one; `world-status.renders`
+counts `cached`, `rejected`, `pending` and `retried`. `world-render-check` judges any text against a thing's (or a day's) strokes
+without caching it.
 
 **Where.** Painted, above the exact card and never inside it: `/play/<id>` after a reply or a look, the public
-`/o/<id>` (the exact card folded beneath under "the card", open when nothing is painted), and the hand's Speak.
+`/o/<id>` (the exact card folded beneath under "the card", open when nothing is painted), and the hand's Speak; the
+morning card and the chronicle's day by `world-render {day?, morning?}`; `hand morning` (CLI, and Speak's "The
+morning card") paints it, shows it and drafts it once a day for Post, what wants a hand exact beneath and the
+chronicle's exact lines in the paint's place when there is none; it never posts by itself.
 Never: a receipt or refusal line, the revealing lines, `?`'s usage, a law line or reading, the library's pages, hob's
 own lines, and the bridge's drafts: a post carries the exact card alone until the fourth playtest decides whether a
 post carries paint. An owner's `plain: yes` shows a thing exact alone; a root `card` override is shown exact.
 
-**Time.** One model call per version, on its first read; every later read is the cached paint. A reader waits for a
-fresh one at most `renderPatience` (3 s), and not at all while no worker is painting (`exact`, `unattended`): a world
-with no model reads whole, exact.
+**Time.** One model call per version, on its first read; every later read is the cached paint. "Last tended" is
+coarse (today, a day ago, N days ago), so a key moves at most once a day by the clock. A reader waits for a fresh one
+at most `renderPatience` (3 s), and not at all while no worker is painting (`exact`, `unattended`): a world with no
+model reads whole, exact.
 
 ## What a reply reveals
 

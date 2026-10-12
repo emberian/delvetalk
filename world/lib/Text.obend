@@ -42,11 +42,17 @@ def words(text: String) -> Lists.List<String>:
   wordsFrom(trimStart(text))
 def wordsFrom(text: String) -> Lists.List<String>:
   if text == "" then Lists.List.nil({}) else Lists.List.cons({head: textTake(text, textBreak(text, blanks())), tail: words(textDrop(text, textBreak(text, blanks())))})
-# A text as a clause's name (an identifier): each character outside letters, digits and `_` as `_`
-# (`garden/weather/2` is `garden_weather_2`).
+# An object id as a clause's name (an identifier), one to one, so two ids never share a rule's name:
+# letters and digits stand; `_` is `__`, `/` `_s`, `-` `_d`, `.` `_p`, `:` `_c` (an id holds no other
+# character; any other is `_x`); an id that begins with a digit begins `_n` (`garden/weather/2` is
+# `garden_sweather_s2`).
 def identifier(text: String) -> String:
-  let kept = textSpan(text, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
-  if kept == textLength(text) then text else "{textTake(text, kept)}_{identifier(textDrop(text, kept + 1n))}"
+  if textSpan(textTake(text, 1n), "0123456789") == 1n then "_n{escaped(text)}" else escaped(text)
+def escaped(text: String) -> String:
+  let kept = textSpan(text, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+  if kept == textLength(text) then text else "{textTake(text, kept)}{escape(textTake(textDrop(text, kept), 1n))}{escaped(textDrop(text, kept + 1n))}"
+def escape(c: String) -> String:
+  if c == "_" then "__" else if c == "/" then "_s" else if c == "-" then "_d" else if c == "." then "_p" else if c == ":" then "_c" else "_x"
 def joined(names: Lists.List<String>) -> String:
   textJoin(names, ", ")
 # A natural in plain digits (no sign, no leading zero, at most 18 digits), or no.

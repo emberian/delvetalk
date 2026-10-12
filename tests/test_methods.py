@@ -55,6 +55,32 @@ def law(old: State, new: State, request: Request) -> Answer:
         self.assertEqual(reply["status"], "error", reply)
         self.assertIn("law must return Verdict", reply["message"])
 
+    def test_a_reexported_law_is_enforced_and_a_reexported_method_is_listed(self):
+        # Review 2026-10-12 kernel 2: `export Base.law` compiled, but the artifact said
+        # `present: false`, so the wrapper's object admitted writes its exported law refuses.
+        base = {"name": "Base", "source": LAW_HEAD + """def law(old: State, new: State, request: Request) -> Verdict:
+  if new.count < old.count then Verdict.refused({clause: "monotone"}) else Verdict.admitted({})
+def grow(state: State, input: {}) -> Nat:
+  state.count + 1n
+"""}
+        wrapper = """edition ObjectiveBend 1
+import ./Base.obend as Base
+type State = Base.State
+export Base.law
+export Base.grow
+def poke(state: State, input: {}) -> Nat:
+  state.count
+"""
+        reply = compile_job(closure("World") + [base, {"name": "Wrapper", "source": wrapper}], "poke")
+        self.assertEqual(reply["status"], "compiled", reply)
+        self.assertEqual(reply["artifact"]["law"], {"present": True, "reads": False})
+        self.assertEqual(sorted(m["name"] for m in reply["artifact"]["methods"]), ["grow", "poke"])
+        # A law over another module's State is not this State's law: refused, not left unenforced.
+        own = wrapper.replace("type State = Base.State\n", "record State:\n  count: Nat\n")
+        reply = compile_job(closure("World") + [base, {"name": "Wrapper", "source": own}], "poke")
+        self.assertEqual(reply["status"], "error", reply)
+        self.assertIn("law takes (old: State, new: State, request: Request)", reply["message"])
+
 
 if __name__ == "__main__":
     unittest.main()
