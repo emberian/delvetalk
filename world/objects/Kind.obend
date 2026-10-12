@@ -143,7 +143,7 @@ def lastSegment(id: String) -> String:
   if at == textLength(id) then id else lastSegment(textDrop(id, at + 1n))
 # A kind of a kind takes the form, head and voice below it where it gives none, and cites its text.
 def kindSeed(fields: Lists.List<Rows.Field>, stack: Stack, context: Abi.Context) -> Data:
-  {owner: context.principal, ownerHandle: context.handle, name: valueOf(fields, "name"), of: valueOf(fields, "of"), form: orElse(valueOf(fields, "form"), stack.form), law: lawFor(valueOf(fields, "of"), Text.trim(valueOf(fields, "law"))), head: orElse(valueOf(fields, "head"), stack.head), voice: orElse(valueOf(fields, "voice"), stack.voice), body: valueOf(fields, "body")}
+  {owner: context.principal, ownerHandle: context.handle, name: valueOf(fields, "name"), of: valueOf(fields, "of"), form: orElse(valueOf(fields, "form"), stack.form), law: lawFor(valueOf(fields, "of"), Text.trim(valueOf(fields, "law"))), head: orElse(valueOf(fields, "head"), stack.head), voice: orElse(valueOf(fields, "voice"), stack.voice), body: bodyOf(fields)}
 # The text a made kind holds for its things: a text with no law clause (none at all, or rules and
 # wants alone) is its package's own law with them after it, so what it makes is its maker's to amend
 # and reprogram, never anyone's (an empty text cited by `under` admits every request). A kind of a
@@ -205,18 +205,22 @@ def scened(state: State, fields: Lists.List<Rows.Field>, under: String, context:
 # What is made runs a stack: a kind made by `kinds` the one its `of` and `body` name, checked; a
 # thing this kind's own.
 def stacking(state: State, fields: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Activity<Done>:
-  match stackOf(if state.of == "kind" then valueOf(fields, "of") else state.of, if state.of == "kind" then valueOf(fields, "body") else state.body, 4n, context):
-    case stacked(s): if state.of == "kind" && valueOf(fields, "body") != "" then bodyChecking(state, fields, under, s, context) else creating(state, fields, under, s, context)
+  match stackOf(if state.of == "kind" then valueOf(fields, "of") else state.of, if state.of == "kind" then bodyOf(fields) else state.body, 4n, context):
+    case stacked(s): if state.of == "kind" && bodyOf(fields) != "" then bodyChecking(state, fields, under, s, context) else creating(state, fields, under, s, context)
     case refused(r): refused(context, r)
 # A kind's body is checked over the stack its things will run, so a body that cannot compile is
 # refused here with the checker's lines, and no thing of it is ever refused for its body.
 def bodyChecking(state: State, fields: Lists.List<Rows.Field>, under: String, stack: Stack, context: Abi.Context) -> Activity<Done>:
   match world.check({package: stack.package, layers: stack.layers}):
-    case checked(c): if Lists.length(c.diagnostics) == 0n then creating(state, fields, under, stack, context) else refused(context, {clause: "body", reading: uncompiled(valueOf(fields, "of"), c.diagnostics)})
+    case checked(c): if Lists.length(c.diagnostics) == 0n then creating(state, fields, under, stack, context) else refused(context, {clause: "body", reading: uncompiled(valueOf(fields, "of"), valueOf(fields, "body"), c.diagnostics)})
     case refused(r): refused(context, {clause: r.clause, reading: "the workshop could not check it ({r.clause})"})
-def uncompiled(of: String, diagnostics: Form.Names) -> String:
+def uncompiled(of: String, body: String, diagnostics: Form.Names) -> String:
   let lines = textJoin(diagnostics, "\n")
-  "it does not compile over {of}, so nothing was made:\n{lines}"
+  "it does not compile over {of}, so nothing was made:\n{lines}\n{Forms.headerNote(body)}"
+# The body a kind is made with, as the layer it lays: forms and defs alone get the workshop's
+# header (`Forms.layer`).
+def bodyOf(fields: Lists.List<Rows.Field>) -> String:
+  Forms.layer(valueOf(fields, "body"))
 def creating(state: State, fields: Lists.List<Rows.Field>, under: String, stack: Stack, context: Abi.Context) -> Activity<Done>:
   match world.create({package: if state.of == "kind" then packageOf("kind") else stack.package, seed: seedOf(state, fields, under, stack, context), law: lawOf(context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
     case created(c): counted(state, c.object.object, under != "", layersOf(state, fields, stack), context)
@@ -251,7 +255,7 @@ def layersOf(state: State, fields: Lists.List<Rows.Field>, stack: Stack) -> List
 # `kinds make` checks a kind's own.
 def checkBody(state: State, input: {body: String}, context: Abi.Context) -> Activity<World.Checked>:
   match stackOf(state.of, state.body, 4n, context):
-    case stacked(s): world.check({package: s.package, layers: Lists.append(s.layers, input.body)})
+    case stacked(s): world.check({package: s.package, layers: Lists.append(s.layers, Forms.layer(input.body))})
     case refused(r): World.Checked.refused({clause: r.clause})
 def told(state: State, id: String, context: Abi.Context) -> Activity<Done>:
   Card.tellTo(Done.made({object: id}), context.principal, Document.text("Made, at {id}; {natText(state.count + 1n)} made. Its card: delvetalk {id} ?\n"))
@@ -280,8 +284,21 @@ def reshaped(state: State, context: Abi.Context) -> Activity<Done>:
   match world.extend({object: Plans.self(context), package: layerSource(state.of, state.form), migration: ""}):
     case reprogrammed(_): Card.tell(Done.made({object: context.object}), Document.text("Shaped. Make one:\n  {spellLine(Card.called(context, kindId(state.name)), Forms.specs(state.form))}\n"))
     case refused(r): refused(context, {clause: r.clause, reading: r.reading})
+# A draft held over this kind, adopted (the workshop's `adopt`): one thing at `name`, running this
+# kind's stack with the draft's layer on top, under this kind's law, made from the workshop's held
+# receipt (`madeFrom`).
+def makeDrafted(state: State, input: {name: String, layer: String, madeFrom: Plans.MadeFrom}, context: Abi.Context) -> Activity<Done>:
+  if state.of == "kind" then refused(context, {clause: "of", reading: "A draft is laid over a kind of things; {kindId(state.name)} makes kinds"}) else drafted(state, input.name, input.layer, input.madeFrom, context)
+def drafted(state: State, name: String, layer: String, from: Plans.MadeFrom, context: Abi.Context) -> Activity<Done>:
+  match stackOf(state.of, state.body, 4n, context):
+    case stacked(s): draftMade(state, name, Lists.append(s.layers, layer), s.package, from, context)
+    case refused(r): refused(context, r)
+def draftMade(state: State, name: String, layers: Lists.List<String>, package: String, from: Plans.MadeFrom, context: Abi.Context) -> Activity<Done>:
+  match world.make({package: package, seed: plainSeed(state, Lists.List.nil(), "", context), law: lawOf(context), requireAbsent: {world: context.world, object: name}, madeFrom: from}):
+    case created(c): counted(state, c.object.object, true, layers, context)
+    case refused(r): refused(context, {clause: r.clause, reading: if r.reading == "" then "{name} was not made" else r.reading})
 def methods() -> Lists.List<String>:
-  Text.words("~shape makeUnder ~checkBody")
+  Text.words("~shape makeUnder ~checkBody ~makeDrafted")
 # What the host offers a reader: the make to anyone, the exact id's `place` to the kind's owner.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner then Text.words("make place") else Text.words("make")

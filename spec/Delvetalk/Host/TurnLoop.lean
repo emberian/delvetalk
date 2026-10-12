@@ -543,11 +543,17 @@ def creationInputs (creator : Object) (package : String) : Except (String × Str
     (`checkInputs`): a kind checks the stack its instances will run, its ancestors' bodies and its own
     (`world.check {package, layers}`). A package of source with no layers is checked as one entry module
     over the library (`checkSource`). -/
-def checkStack (w : World) (creator : Object) (package : String) (layers : List String) : List String :=
+def checkStack (w : World) (creator : Object) (package : String) (layers : List String) : List String × Bool :=
   if layers.isEmpty && package.startsWith "edition" then checkSource w package else
   match (creationInputs creator package).mapError (·.2) >>= (layeredInputs · layers) with
   | .ok inputs => checkInputs w inputs
-  | .error e => [s!"Checked:0: package-request: {e}"]
+  | .error e => ([s!"Checked:0: package-request: {e}"], false)
+
+/-- `checked {diagnostics, reaches}`, or `{diagnostics}` where the call site's result has no `reaches`
+    (a package compiled before it). -/
+def checkedData (verdict : List String × Bool) : List Data :=
+  let diagnostics := ("diagnostics", listData (verdict.1.map Data.label))
+  [.record [diagnostics, ("reaches", .boolean verdict.2)], .record [diagnostics]]
 
 def buildCreated (w : World) (creator : Object) (package : String) (seed : Data) (lawArg principal : String)
     (height : Nat) (layers : List String := []) : Except (String × String) (CreateRec × Built) := do
@@ -2110,8 +2116,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let some creator := s.world.objects[self]? | evaluation "the checking object vanished"
     if s.checks ≥ Limits.checksPerTurn then evaluation "turn exceeds the check capacity"
     set { s with checks := s.checks + 1 }
-    respond bounds responseType "checked"
-      [.record [("diagnostics", listData ((checkStack s.world creator source layers).map Data.label))]]
+    respond bounds responseType "checked" (checkedData (checkStack s.world creator source layers))
   -- `checkObject {object, layers}`: what a readable object runs, its whole closure, with `layers` laid
   -- over it (`Ops.checkObject`).
   | .variant "checkObject" (.record f) =>
@@ -2122,8 +2127,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       if !o.read.permits s.subject then refusedWith bounds responseType "unknownObject" else
       if s.checks ≥ Limits.checksPerTurn then evaluation "turn exceeds the check capacity"
       set { s with checks := s.checks + 1 }
-      respond bounds responseType "checked"
-        [.record [("diagnostics", listData ((checkObject s.world o layers).map Data.label))]]
+      respond bounds responseType "checked" (checkedData (checkObject s.world o layers))
     | none => refusedWith bounds responseType "unknownObject"
   | .variant "create" (.record f) | .variant "createUnder" (.record f) | .variant "make" (.record f) =>
     let some package := (f.lookup "package").bind labelOf | evaluation "malformed create plan"

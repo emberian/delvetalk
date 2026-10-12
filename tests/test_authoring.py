@@ -60,6 +60,40 @@ def ring(state: State, context: Abi.Context) -> Activity<Bool>:
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Super.actions(state, context), Text.words("rain ring"))
 BEND"""
+TALLY_SHORT = TALLY.replace("name: tally", "name: rainy").replace("""layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Form.obend as Form
+import ./Text.obend as Text
+type State = Super.State
+""", "").replace("""def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  Lists.concat(Super.actions(state, context), Text.words("rain ring"))
+""", "")
+# AUTHORING §5 step 4's counter: what a resident types over kind/record.
+COUNTER = """form bump:
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  Super.inscribe(state, "bump", "{context.handle}", context)
+"""
+# §1's first counter: a whole package with no `receive`, which compiles and no spell reaches.
+BARE = """edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Form.obend as Form
+import ./Text.obend as Text
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  count: Nat
+def initial() -> State:
+  {count: 0n}
+form bump:
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {count: add 1n}
+  state.count + 1n
+def methods() -> Lists.List<String>:
+  Text.words("bump")
+"""
 # The same with §1's one bad reference, on line 11.
 BROKEN = CLICKER.replace("Relations.count(state.lines)", "Super.Relations.count(state.lines)")
 
@@ -159,6 +193,47 @@ class Authoring(unittest.TestCase):
         self.assertIn("rule chosen of yue.delve.town fired: delvetalk tally/1 ring", third["revealed"][0], third)
         [rang] = third["delivered"]
         self.assertEqual((rang["receipt"]["identity"]["intent"], rang["revealed"]), ("rule:tally/1:chosen:%d" % third["receipt"]["height"], ["tally/1's marks: 1"]), rang)
+
+    # §5 step 4: the workshop writes the header; §1's counter is four lines, and a package no spell reaches is refused.
+    def test_a_four_line_counter_drafted_over_a_kind_is_adopted_and_used_by_another(self):
+        held = self.admitted(YUE, "workshop", "delvetalk workshop draft / name: counter / over: kind/record\n```obend\n%s```\n" % COUNTER)
+        self.assertIn("Checked: it compiles. Held as #", told(held), held)
+        n = told(held).split("Held as #")[1].split(";")[0]
+        made = self.admitted(YUE, "workshop", "delvetalk workshop adopt / n: %s" % n)
+        self.assertIn("Made counter from #%s; it is yours." % n, told(made))
+        [create] = [c for c in outcome(made)["creates"] if c["object"] == "counter"]
+        self.assertEqual(create["madeFrom"]["object"], "workshop")
+        usage = told(self.say(KES, "counter", "delvetalk counter ?"))
+        self.assertIn("delvetalk counter bump", usage)
+        self.assertIn("#1 is written: kestrel.delve.town", told(self.admitted(KES, "counter", "delvetalk counter bump")))
+        # A body over a kind with a mistake: the checker's line, and where the body's own lines start.
+        r = self.admitted(YUE, "workshop", "delvetalk workshop draft / name: counter2 / over: kind/record\n```obend\n%s```\n"
+                          % COUNTER.replace("context.handle", "context.hand"))
+        self.assertIn("Layer1:18:", told(r))
+        self.assertIn("Lines 1 to 15 are the header the workshop wrote; your first line is line 16.", told(r))
+        # The bare counter of §1: it compiles, and nothing could ever cast a spell on it.
+        r = self.say(YUE, "workshop", "delvetalk workshop draft / name: bare\n```obend\n%s```\n" % BARE)
+        self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "noReceive"), r)
+        self.assertIn("No spell reaches it: it has no receive.", told(self.admitted(YUE, "workshop", "delvetalk workshop check\n```obend\n%s```\n" % BARE)))
+
+    # §6.1 as typed: the body is forms and defs, the workshop writing the header and `actions()`.
+    def test_a_kind_body_of_forms_and_defs_alone_gets_the_workshops_header(self):
+        self.admitted(YUE, "kinds", TALLY_SHORT)
+        self.admitted(KES, "kind/rainy", "delvetalk kind/rainy make / seed: on the sill / ringAt: 2")
+        usage = told(self.say(KES, "rainy/1", "delvetalk rainy/1 ?"))
+        self.assertIn("delvetalk rainy/1 rain\ntext:", usage)
+        self.admitted(KES, "rainy/1", "delvetalk rainy/1 rain / text: one")
+        second = self.admitted(YUE, "rainy/1", "delvetalk rainy/1 rain / text: two")
+        self.assertIn("rule chosen of yue.delve.town fired: delvetalk rainy/1 ring", second["revealed"][0], second)
+
+
+    # D-imports: every library import a module lacks, named in one refusal (§1 took a round each for Plan and World).
+    def test_the_checker_names_every_missing_import_at_once(self):
+        lacking = BARE.replace("import ./Plan.obend as Plans\n", "").replace("import ./World.obend as World\n", "")
+        got = told(self.admitted(YUE, "workshop", "delvetalk workshop check\n```obend\n%s```\n" % lacking))
+        self.assertIn("this module needs 2 library imports it does not name; add them: import ./Plan.obend as Plans; import ./World.obend as World", got)
+        self.assertIn("Checked: it compiles.", told(self.admitted(YUE, "workshop", "delvetalk workshop check\n```obend\n%s```\n" % BARE)))
+
 
 if __name__ == "__main__":
     unittest.main()

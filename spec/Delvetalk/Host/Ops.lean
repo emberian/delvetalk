@@ -997,24 +997,29 @@ def entrySource (o : Object) : String :=
   | .ok (.arr modules) => ((modules.back?.bind fun m => (m.getObjValAs? String "source").toOption)).getD ""
   | _ => (o.inputs.getObjValAs? String "source").toOption.getD ""
 
+/-- Does a compiled artifact answer spells: is `receive` among its methods (docs/AUTHORING.md D-receive)? -/
+def answersSpells (artifact : Json) : Bool :=
+  (((artifact.getObjVal? "methods").toOption.bind (·.getArr?.toOption)).getD #[]).any fun m =>
+    (m.getObjValAs? String "name").toOption == some "receive"
+
 /-- A dry-run compile's diagnostics, `"<module>:<line>: <stage>: <message>"` (the kernel's hint, when
     it has one, the next line at the same place), none when it is clean; `fallback` names the
-    module when the kernel names none. -/
-def checkDiagnostics (modules : List (String × String)) (entry fallback : String) : List String :=
-  match Package.checkPackage modules entry with
-  | .ok _ => []
-  | .error d =>
-    -- A package that declares laws compiles; only the pure profile has no adapter for them.
-    if (d.message.splitOn "package laws require").length > 1 then []
-    else
-      let at_ := s!"{d.sourceModule.getD fallback}:{(d.span.map (·.line)).getD 0}"
-      [s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD []
+    module when the kernel names none. A package that declares laws compiles, as it would at
+    `world-create`. With them, whether what compiled answers spells (`answersSpells`). -/
+def checkDiagnostics (modules : List (String × String)) (entry fallback : String) : List String × Bool :=
+  let request := Json.mkObj [("entry", toJson entry), ("limits", Package.defaultLimits), ("modules", modulesJson modules)]
+  match Package.compileStructured request with
+  | .ok (artifact, _, _) => ([], answersSpells artifact)
+  | .error e =>
+    let d := Package.localize modules Package.defaultLimits e
+    let at_ := s!"{d.sourceModule.getD fallback}:{(d.span.map (·.line)).getD 0}"
+    ([s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD [], false)
 
 /-- Dry-run compile of `source` as an entry module over the library: the diagnostics as
     `"<module>:<line>: <stage>: <message>"`, none when it is clean. Nothing is installed. -/
-def checkSource (w : World) (source : String) : List String :=
+def checkSource (w : World) (source : String) : List String × Bool :=
   if source.utf8ByteSize > Limits.maxPackageBytes then
-    [s!"Checked:0: package-request: package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)"]
+    ([s!"Checked:0: package-request: package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)"], false)
   else
     -- The front end elaborates every declaration of every module whatever entry is selected,
     -- so the entry only has to exist: `initial` when declared, else the first `def`, else a
@@ -1130,10 +1135,10 @@ def extendInputs (inputs : Json) (source : String) : Except String Json := do
 
 /-- Compile inputs checked: their whole source closure (the library modules the pin names, the base
     package and every layer over it, `resolveInputs`) compiled for `initial`, as `checkSource` answers. -/
-def checkInputs (w : World) (inputs : Json) : List String :=
+def checkInputs (w : World) (inputs : Json) : List String × Bool :=
   match resolveInputs w inputs >>= fun j => j.getObjVal? "modules" >>= parseModules with
   | .ok modules => checkDiagnostics modules "initial" ((modules.getLast?.map (·.1)).getD "Main")
-  | .error e => [s!"Main:0: package-request: {e}"]
+  | .error e => ([s!"Main:0: package-request: {e}"], false)
 
 /-- `inputs` with each of `layers` laid over them in order, as `extend` lays one (`extendInputs`),
     each within `maxPackageBytes`. -/
@@ -1145,10 +1150,10 @@ def layeredInputs (inputs : Json) (layers : List String) : Except String Json :=
 
 /-- What an object would run with `layers` laid over it, checked (`checkInputs`); `[]` is what it runs.
     A layer alone does not compile: its `layer over` names a module below it. -/
-def checkObject (w : World) (o : Object) (layers : List String := []) : List String :=
+def checkObject (w : World) (o : Object) (layers : List String := []) : List String × Bool :=
   match layeredInputs o.inputs layers with
   | .ok inputs => checkInputs w inputs
-  | .error e => [s!"Main:0: package-request: {e}"]
+  | .error e => ([s!"Main:0: package-request: {e}"], false)
 
 /-- The readings an artifact's `laws` table gives (`[{name, reading}]`), the empty ones left out. -/
 def artifactReadings (artifact : Json) : List (String × String) :=

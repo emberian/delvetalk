@@ -1997,6 +1997,18 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    camelCase field). Test: `test_authoring.Authoring` (§6.1's tally, its law corrected: a rule fires under the kind's
    owner, so "only its maker rings it" refused the rule's own ring; the build's law says "at its number, not before").
 
+175. **What a check says of reach; every missing import at once (lane/author-build; AUTHORING §5 step 4, D-receive,
+   D-imports).** `check`/`checkObject` answer `checked {diagnostics, reaches}`: `reaches` is whether what compiled has
+   a `receive` (`Ops.answersSpells` on the artifact's methods; `checkDiagnostics` compiles once, lawful, and returns
+   both; `TurnLoop.checkedData` answers `{diagnostics}` alone to a call site compiled before `reaches`). The workshop
+   refuses a draft no spell reaches (`noReceive`) and says so under a clean `check`. The kernel's package loader
+   (`Package.missingLibraries`, called in `modulesAndAsts` before each module is parsed) names in one refusal every
+   library import a module needs and lacks when there are two or more (`Form` and `List` for form blocks, `Plan` for
+   `write {…}`/`keep()` beside a State, `World` for `Activity<…>` with no World module in the package); one alone is
+   still refused where it is used. The workshop writes a layer's header itself (`Forms.layer`, shared by KIND's
+   bodies and `draft / over:`); a held draft over a kind is made by the kind (`~makeDrafted`), over a thing laid on it.
+   Tests: `test_authoring`, `test_sugar`, `test_workshop`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

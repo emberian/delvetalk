@@ -504,7 +504,7 @@ REFUSED = [
     (TURN_HEAD + "def g(n: Nat) -> Activity<Nat>:\n  refuse(n)\n", "g", (), True, (), ["refused (refuse-reason): refuse takes a String, the reason; this is Nat"]),
     *[(SCENE + "def f(s: State) -> String:\n  " + text + "\n", "f", (), False, (), [words])
       for text, words in (("\"a {s.title\"", "is not closed"), ("\"a } b\"", "written }}"), ("\"a {s.title s.title}\"", "holds one expression"))],
-    (HEAD + "form plant:\n  seed: text 1..80\n", "plantForm", FORM_LIB, False, (), ["a form block needs the Form library"]),
+    (HEAD + "form plant:\n  seed: text 1..80\n", "plantForm", FORM_LIB, False, (), ["this module needs 2 library imports it does not name; add them: import ./Form.obend as Form; import ./List.obend as Lists"]),
     (FORM_HEAD + "form plant:\n  seed: words 1..80\n", "plantForm", FORM_LIB, False, (),
      ["a form field is `name: text MIN..MAX`", "`name: source`"]),
     (FORM_HEAD + "form plant:\n  seed: text 1..80\n", "plantForm", FORM_LIB, False, (), None),  # the default name
@@ -533,7 +533,7 @@ REFUSED = [
      ["refused (derived-edits): State.items holds items of a type from a module Package does not import"]),
     (HEAD + "import ./Abi.obend as Abi\nrecord State:\n  count: Nat\n"
      "def bump(state: State, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {count: add 1n}\n  0n\n", "bump", ("Abi",), False, (),
-     ["refused (derived-edits): write {...} and keep() derive Edits from State through the Plan library"]),
+     ["this module needs 2 library imports it does not name; add them: import ./Plan.obend as Plans; import ./World.obend as World"]),
     (FIXED_HEAD + DERIVED_REST.replace("open: set true}", "open: set true, note: set input.name}"), "plant", REL_LIB, False, (), [FIXED_REFUSAL]),
     (FIXED_HEAD + DERIVED_REST.replace("let written(_) = write {", "let written(_) = world.write({note: P.Edit.set({value: \"\"})})\n  let again(_) = write {"),
      "plant", REL_LIB, False, (), [FIXED_REFUSAL]),
