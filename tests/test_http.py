@@ -47,7 +47,7 @@ from transport import delve, identity
 from tests.host import ServeCase, bounds, serve, served
 from transport.host import HostClient
 from transport.config import Config
-from transport.http import CATALOGUE, AccessLog, Front
+from transport.http import CATALOGUE, AccessLog, Front, turn_view
 from transport.state import State
 
 HANDLE = 'talkie.delve.town'
@@ -454,6 +454,17 @@ class Turns(FrontCase):
         self.assertEqual(self.call('GET', '/AGENTS.md/receipt?intent=sl1', token=tok)[1]['receipt']['slug'], older)
         s, e = self.call('GET', '/AGENTS.md/receipt/sl1', token=tok)  # a path names a slug, never an intent
         self.assertEqual((s, e['class'], e['_links']['hint']['href']), (404, 'unknown', '/AGENTS.md/receipt?intent=sl1'))
+
+
+class TurnView(unittest.TestCase):
+    def test_the_default_view_says_what_the_act_fired_and_opened(self):
+        """The host's `revealed` lines are the default view's, not only `?full=1`'s; a reply without them has none."""
+        reply = {'status': 'admitted', 'revealed': ['garden/bell/1 now wants second: delvetalk garden/bell/1 rain'],
+                 'receipt': {'slug': 'a-b-c', 'height': 9, 'outcome': {'tag': 'admitted', 'writes': [{'object': 'garden/bell/1', 'version': 2}]}}}
+        view = turn_view(reply)
+        self.assertEqual(view['revealed'], reply['revealed'])
+        self.assertEqual(list(view), ['status', 'line', 'revealed', 'offers', 'receipt'])
+        self.assertNotIn('revealed', turn_view({**reply, 'revealed': []}))
 
 
 class Repl(FrontCase):

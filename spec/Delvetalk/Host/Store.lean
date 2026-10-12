@@ -572,6 +572,9 @@ structure World where
   /-- Per object, the wants that held of it after the newest entry that wrote it, each with the height
       of the entry that made it true (a want's `since`). Derived by `record` from `wanted`/`unwanted`. -/
   wanting : Std.HashMap String (List (String × Nat)) := {}
+  /-- Per thing, the writes its law has refused (`request.refusedBy`): the entries whose outcome is
+      `lawRefused` naming it (`Ops.lawRefusedOf`). Derived by `record`. -/
+  refusedBy : Std.HashMap String Nat := {}
   /-- Where each clock day's entries begin: `(day, height)` for every day an entry was journaled in,
       the day of an entry the clock before it over `Limits.clockDay`. Derived by `record`; the
       chronicle reads a day's span of the journal by it (docs/FOUNDATION.md §10). -/

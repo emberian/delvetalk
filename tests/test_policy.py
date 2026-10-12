@@ -34,15 +34,15 @@ def plantForm(context: Abi.Context) -> Form.Form:
 def forms(context: Abi.Context) -> Lists.List<Form.Form>:
   Lists.List::<Form.Form>.cons({head: plantForm(context), tail: Lists.List::<Form.Form>.nil()})
 def plantPrompt(context: Abi.Context) -> String:
-  Policy.prompt(sample(), {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", held: "", misfit: ""})
-def heldPrompt(context: Abi.Context) -> String:
-  Policy.prompt(sample(), {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", held: "a planting with seed \\"moth\\"; still needs colour", misfit: "badValue, colour is one of: amber, violet, silver"})
+  Policy.prompt(sample(), {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: ""})
+def misfitPrompt(context: Abi.Context) -> String:
+  Policy.prompt(sample(), {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: "badValue, colour is one of: amber, violet, silver"})
 def examples(n: Nat) -> Lists.List<Policy.Example>:
   match n:
     case 0: Lists.List::<Policy.Example>.nil()
     case 1+p: Lists.List::<Policy.Example>.cons({head: {utterance: "a silver fern that remembers yesterday", spell: "delvetalk garden-1 plant seed: a fern that remembers yesterday, colour: silver"}, tail: examples(p)})
 def many(n: Nat, context: Abi.Context) -> Nat:
-  textLength(Policy.prompt({owner: "ember", ownerHandle: "", model: "m", examples: examples(n), confirmFor: Lists.List::<String>.nil()}, {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", held: "", misfit: ""}))
+  textLength(Policy.prompt({owner: "ember", ownerHandle: "", model: "m", examples: examples(n), confirmFor: Lists.List::<String>.nil()}, {utterance: "plant me a moth", offers: forms(context), card: "THE CARD\\n", misfit: ""}))
 """)
 
 
@@ -119,16 +119,14 @@ class PolicyObject(Chain):
         self.assertEqual(proposed["status"], "refused", proposed)
         self.assertEqual((proposed["receipt"]["outcome"]["class"], proposed["receipt"]["outcome"].get("clause")), ("lawRefused", "owner"))
 
-    def test_the_prompt_shows_what_the_card_holds_and_the_misfit_before_the_examples(self):
-        out = run("heldPrompt", context())
+    def test_the_prompt_shows_the_misfit_before_the_examples(self):
+        out = run("misfitPrompt", context())
         self.assertEqual(out["status"], "finished", out)
         prompt = out["value"]["value"]
-        self.assertIn('\n\nHeld for this participant: a planting with seed "moth"; still needs colour\n'
-                      "Misfit: badValue, colour is one of: amber, violet, silver\n"
+        self.assertIn("\n\nMisfit: badValue, colour is one of: amber, violet, silver\n"
                       "\nSaid, and the answer:\nSaid: a silver fern\n", prompt)
         self.assertTrue(prompt.endswith(HOB_ANSWERS), prompt)
         plain = run("plantPrompt", context())["value"]["value"]
-        self.assertNotIn("Held for this participant", plain)
         self.assertNotIn("Misfit:", plain)
         self.assertNotIn("plant me a moth", plain)  # the utterance is the user turn, not the system text (docs/FLEX.md section 2)
 
@@ -294,7 +292,8 @@ class PolicyObject(Chain):
         self.assertTrue(system.endswith(HOB_ANSWERS), system)
         # What the user turn carries is the utterance alone; no Held or Misfit line for a plain reply.
         self.assertNotIn("Could we plant", system)
-        self.assertEqual((item["utterance"], item["held"], item["misfit"]), ("Could we plant a silver fern that remembers?", "", ""))
+        self.assertEqual((item["utterance"], item["misfit"]), ("Could we plant a silver fern that remembers?", ""))
+        self.assertNotIn("held", item)
 
     def test_the_workshops_make_asks_for_a_package_with_no_card_and_no_spell_in_the_prompt(self):
         """Playtest 2's D3: the dry run's `workshop make / name: lamp / description: a lamp anyone lights` was answered
