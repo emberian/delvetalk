@@ -149,9 +149,12 @@ def awaiting_path(st, uri):
 def offer_drafts(st, host):
     """Draft what resumed turns offered. A suspended turn leaves an `awaiting` record; once its interpretation
     settles the resumed entry's offer is in the host's outbox for the author, under the turn's identity (the
-    post). One draft per (addressee, identity), so a retry never drafts twice; no offer, no draft. The draft ends
-    with the receipt of the author's turn on that post, as the host names it (`world-receipt`)."""
-    waiting = [json.loads(p.read_text()) for p in sorted(st.awaiting.glob('*.json'))]
+    post). One draft per (addressee, identity), so a retry never drafts twice. The draft ends with the receipt
+    of the author's turn on that post, as the host names it (`world-receipt`). A resumption the host refused (hob's
+    act refused by a law, a misfit hob read nothing better for) is drafted as any refusal is, from what the host
+    makes public; a resumption with no offer and no refusal (hob's `none`) drafts nothing. Either is marked
+    `settled` and never asked again."""
+    waiting = [json.loads(p.read_text()) for p in sorted(st.awaiting.glob('*.json')) if not json.loads(p.read_text()).get('settled')]
     drafted, handles = [], {o['author']['did']: o['author']['handle'] for o in all_observations(st)} if waiting else {}
     for principal in dict.fromkeys(w['principal'] for w in waiting):
         mine = {(w['principal'], w['uri']): w for w in waiting if w['principal'] == principal}
@@ -180,6 +183,23 @@ def offer_drafts(st, host):
                 'offer': {'height': offers[-1]['height'], 'identity': uri},
                 'text': text, 'posted': False})
             drafted.append(uri)
+        for (_, uri), w in mine.items():
+            key = hashlib.sha256(f'{principal}\0{uri}'.encode()).hexdigest()[:16]
+            if not w.get('suspended') or (principal, uri) in grouped or any(st.outbox.glob(f'*-off-{key}.json')):
+                continue
+            got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri})
+            rc = got.get('receipt') or {}
+            tag = (rc.get('outcome') or {}).get('tag')
+            if tag in (None, 'suspended'):
+                continue
+            text = draft_text({'status': 'refused', 'receipt': rc, 'public': got['public']}, st.config.origin, w.get('object'), handles) \
+                if tag == 'refused' and got.get('public') else ''
+            if text:
+                st.write(st.outbox / f"{rc['height']}-off-{key}.json", {
+                    'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
+                    'object': w.get('object'), 'slot': w.get('slot'), 'receipt': rc, 'text': text, 'posted': False})
+                drafted.append(uri)
+            st.write(awaiting_path(st, uri), {**w, 'settled': True})
     return drafted
 
 
@@ -385,7 +405,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if reply.get('status') == 'suspended' or reply['receipt'].get('outcome', {}).get('tag') == 'suspended':
             # Nothing was committed and nothing is offered yet: no draft until the interpretation settles.
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot),
-                                                     'height': reply['receipt']['height']})
+                                                     'height': reply['receipt']['height'], 'suspended': True})
             continue
         obj = reply.get('object') or obj  # the card the host ran the turn on: a spell's card as it resolved it
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
