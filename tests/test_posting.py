@@ -11,7 +11,7 @@ import unittest
 
 from deploy import genesis
 from tests.poster import Poster
-from transport import post
+from transport import interpret, post
 from tests.town import Town
 
 
@@ -54,11 +54,11 @@ class Resident(unittest.TestCase):
         pages = genesis.guide_pages()
         [contents] = self.poster.say('delvetalk guide')
         self.assertEqual(contents['object'], 'library')
-        self.assertTrue(contents['text'].startswith(pages[0][3]), contents['text'][:200])
+        self.assertIn(pages[0][3], contents['text'])  # the library's paint may stand above it
         bodies = []
         for name, _, _, body in pages[1:]:
             [part] = self.poster.say(f'delvetalk library read / page: {name}')
-            self.assertTrue(part['text'].startswith(body), (name, part['text'][:120]))
+            self.assertIn(body, part['text'], name)
             self.assertLessEqual(len(part['text']), post.CLIP, name)
             bodies.append('\n'.join(body.splitlines()[1:-1]))
         joined = ' '.join(' '.join(bodies).split())
@@ -71,8 +71,22 @@ class Resident(unittest.TestCase):
             if '-' in name:
                 continue
             [read] = self.poster.say(f'delvetalk library read / page: {name}')
-            self.assertTrue(read['text'].startswith(body.rstrip('\n')), name)
+            self.assertIn(body.rstrip('\n'), read['text'], name)
             self.assertTrue(all(len(p) <= post.CLIP for p in post.parts(read['text'])), name)
+
+
+    def test_a_reply_carries_the_things_verified_paint_above_its_exact_card(self):
+        host = self.town.client
+        host.send({'op': 'world-renders'})  # a worker attends
+        asked = host.send({'op': 'world-render', 'principal': 'anonymous', 'object': 'library'})
+        self.assertIn(asked['status'], ('pending', 'painted'), asked)
+        paint = 'A shelf of pages under a lamp, each one ending on the next to read.'
+        reply = lambda req: {'status': 'replied', 'raw': paint, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 1, 'output_tokens': 1}}  # noqa: E731
+        interpret.paint(host, reply)
+        self.assertEqual(host.send({'op': 'world-render', 'principal': 'anonymous', 'object': 'library'}).get('text'), paint)
+        [read] = self.poster.say('delvetalk library read / page: laws')
+        self.assertTrue(read['text'].startswith(paint + '\n\nhob:'), read['text'][:200])
+        self.assertLessEqual(len(read['text']), post.CLIP)
 
 
 if __name__ == '__main__':

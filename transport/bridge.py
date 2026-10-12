@@ -10,7 +10,7 @@ import urllib.parse
 import time
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.host import CLOCK, paged
+from transport.host import CLOCK, PUBLIC, paged, painted
 from transport import observe
 from transport.observe import Observer
 
@@ -111,6 +111,22 @@ def revealed_lines(reply):
     return ''.join(f'{line}\n' for line in reply.get('revealed') or [])
 
 
+def offered_object(reply, addressed=None):
+    """The thing whose card a turn's reply offers: the first it made (a kind's `make` offers the made thing's card),
+    else the card it ran on."""
+    made = [c['object'] for c in ((reply.get('receipt') or {}).get('outcome') or {}).get('creates') or [] if c.get('object')]
+    return (made or [reply.get('object') or addressed])[0]
+
+
+def with_paint(host, obj, text, sleep=time.sleep):
+    """`text` with the thing's verified paint above it (docs/OVERHAUL.md section 4; the owner: posting paint is fine, it
+    is what the place says), as the public reads it, when one is verified and the two fit one post; else `text`. The
+    paint is the one `painted` the front's pages show: the host's, checked, cached per version."""
+    from transport.post import CLIP
+    paint = painted(host, PUBLIC, obj, sleep).get('text') if obj and text else None
+    return f'{paint.rstrip()}\n\n{text}' if paint and len(paint.rstrip()) + 2 + len(text) <= CLIP else text
+
+
 def draft_public(reply, origin=None, addressed=None, handles=None):
     """`draft_text`, or for an admitted turn that read or wrote what the public may not read (the host's `inPublic`: a
     post is read by everyone), its receipt line."""
@@ -124,8 +140,8 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     """The only text a draft carries. A refusal is drafted when the host gives it a `public` projection (whether to say it
     is the host's fact; the post's wording is never read for it): the turn line, the host's hint when it gives one, and the
     receipt's name; no state, hash or CID. A usage answer is the host's text. An admitted reply carries the exact card
-    only, never its paint (`world-render`): whether a post carries paint is the fourth playtest's question (OVERHAUL §4);
-    one that offered nothing but changed something, its revealed lines and receipt line."""
+    (the paint above it is `with_paint`'s, which needs the host); one that offered nothing but changed something, its
+    revealed lines and receipt line."""
     if reply.get('status') == 'usage':
         return str(reply.get('text', ''))
     receipt = reply['receipt']
@@ -246,6 +262,8 @@ def offer_drafts(st, host):
             got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri})
             rc = got.get('receipt')
             text = ('\n'.join(o['text'] for o in offers).rstrip('\n') + '\n' if got.get('inPublic') else '') + receipt_line(rc, st.config.origin, w.get('object'), handles) if rc else ''
+            if rc and got.get('inPublic'):
+                text = with_paint(host, offered_object({'receipt': rc, 'object': w.get('object')}), text)
             st.write(st.outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': w.get('post', uri), 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
@@ -461,10 +479,13 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
                                                      'height': reply['receipt']['height'], 'suspended': True})
             continue
         obj = reply.get('object') or obj  # the card the host ran the turn on: a spell's card as it resolved it
+        text = draft_public(reply, origin, obj, handles)
+        if reply.get('status') == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
+            text = with_paint(host, offered_object(reply, obj), text)  # the place speaking, above its exact card
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,
-            'receipt': reply['receipt'], 'posted': False, 'text': draft_public(reply, origin, obj, handles)})  # text '': journaled, hidden from outbox
+            'receipt': reply['receipt'], 'posted': False, 'text': text})  # text '': journaled, hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot, 'height': reply['receipt']['height']})
         done.append(obs['uri'])

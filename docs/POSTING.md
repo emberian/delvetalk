@@ -74,7 +74,7 @@ place, the change and the next moves.
 | the library's pages and walks | yes, `library read` | yes | every page and walk answers within the clip (test_posting) |
 | the guide (`/AGENTS.md`) | yes: `delvetalk guide`, its contents; a part a read | yes | built: its parts shelved as pages from the one file, on the mirror too |
 | the examples (`/AGENTS.md/examples`, 101 KB) | **no** | yes | too long to post; the walks are the posted examples, and the guide says so |
-| a card's paint | **no**: drafts carry the exact card only | yes (`/play`, `/o`) | the paint above the card in a reply, when it fits |
+| a card's paint | yes: above the exact card in a reply, when verified and it fits one post | yes (`/play`, `/o`) | built: `bridge.with_paint`, the paint the pages show |
 | a card or reply over the clip | cut, with "… and N more" or a pointer to `/source` | whole | continued in numbered posts in the same thread |
 | a card's Bend source | **no** | `/world/<id>/source` | the mirror's card record names its pin; the source record follows in the façade's `town.delvetalk.source` (web) |
 | a receipt by slug or intent | yes: `delvetalk receipt / of: <slug or at:// post>`, nothing written | `/receipt/<slug>` | built: one typed by hand answers that no host issued it |

@@ -247,6 +247,8 @@ class Hand:
         made = [c['object'] for c in (receipt.get('outcome') or {}).get('creates') or [] if c.get('object')]
         obj = (made or [reply.get('object') or card])[0]
         text = bridge.draft_public(reply, self.st.config.origin, reply.get('object'))
+        if tag == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
+            text = bridge.with_paint(self.host, bridge.offered_object(reply, card), text, self.sleep)
         came = {'card': card, 'object': obj, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
                 'line': bridge.receipt_line(receipt, None, reply.get('object')).strip(), 'text': text}
         name = None
@@ -296,8 +298,8 @@ class Hand:
             rc = self.host.send({'op': 'world-receipt', 'principal': self.owner, 'identity': intent}).get('receipt') or {}
             said, waiting = trace(self.host, self.owner, intent, {'status': outcome_of(rc), 'receipt': rc}, wait=0) if rc else ([], True)
             text = '\n'.join(t.rstrip('\n') for t in said)
-        # The card the act left, painted from its strokes, above the exact text (never in the draft: posting paint is the
-        # fourth playtest's question).
+        # The card the act left, painted from its strokes, above the exact text (a spell's draft carries it too, when it
+        # fits one post: bridge.with_paint).
         paint = painted(self.host, self.owner, line['object'], self.sleep) if line.get('outcome') == 'admitted' and line.get('object') else {}
         return {**line, 'text': text, 'waiting': waiting, 'paint': paint.get('text'), 'fellBack': fell_back(paint) if paint else None}
 
