@@ -84,10 +84,9 @@ record State:
 type Pending = Rows.Pending
 def initial() -> State:
   {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), pending: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, chose: ""}
-# A record as edition 12 keeps it (the live town's; a carry lays this package over it, `migrate`):
-# with `tendedAt`, the entry it was last tended at. A height a carry from before edition 12 kept
-# counts another chain's entries (the live bell/1's "untended since entry 27" was v8's), so tending
-# is read by the clock alone, as the law reads it.
+# A record as the live town keeps it (edition 12 after tending was read by the clock, HOST-HANDOFF 5.200; a
+# carry lays this package over it, `migrate`): before `chose`, the last choice a room's scene took, which a
+# record carried gets none of ("").
 record State12:
   owner: String
   keeper: String
@@ -114,7 +113,6 @@ record State12:
   things: Relations.Relation<Plans.Reference>
   weather: String
   tended: Nat
-  tendedAt: Nat
 def migrate(old: State12) -> State:
   {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, tended: old.tended, chose: ""}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes. A

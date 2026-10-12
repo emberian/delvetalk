@@ -2439,6 +2439,13 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    wait at a time (`refused waiting`), so it cannot multiply, and every wait spent real clock time (`patience` is
    never 0). No schedule registry: the tide stays the one thing that writes on the clock. Test:
    `test_reaction.Ticking` (120 hourly ticks; 50 on foundation).
+213. **The edition-13 carry of the live town (lane/authority).** `deploy/carry-check.sh` with this lane's binary on
+   hbox against `/tank/delvetalk-backups/delvetalk-20261012T185249Z.tar.gz` (v12 at 725): "green, breaking: the deploy
+   must carry", 127 objects rendered, none left, no problem; the refresh rebases 18 objects whose law was their kind's
+   citation alone (the twelve town kinds; bell/1, bell/2, porch, porch/lamp, room/1, weather) and then gives each kind
+   its own clauses. On the way: Record's `migrate` read the edition-12 shape with `tendedAt`, but the live town has
+   been the shape after 5.200 since its v12 deploy, and lane/spween's `chose` made seven records "left at the carry";
+   `State12` is now that shape, `chose` "".
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
