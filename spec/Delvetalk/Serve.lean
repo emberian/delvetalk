@@ -422,6 +422,25 @@ def keyOf (srv : Server) (request : Json) : Except String String :=
   | .ok _ => .error "world must be a name"
   | .error _ => .ok srv.config.home
 
+/-- A typed record's field `name` as text (`{tag: record, fields: [{name, value: {tag: label, value}}]}`). -/
+def fieldText (record : Json) (name : String) : Option String := do
+  let fields ← (record.getObjVal? "fields").toOption.bind (·.getArr?.toOption)
+  let f ← fields.find? fun f => (f.getObjValAs? String "name").toOption == some name
+  (f.getObjVal? "value").toOption.bind (·.getObjValAs? String "value" |>.toOption)
+
+/-- The scratch a turn asks its owner's expiry of: `delvetalk world expire / scratch: <name>` as words (a
+    `receive` whose text is that spell) or as the method (`world-turn` on `world`, `expire {scratch}`). -/
+def expiryAsked (request : Json) : Option String := do
+  guard ((request.getObjValAs? String "op").toOption == some "world-turn")
+  let argument ← (request.getObjVal? "argument").toOption
+  match (request.getObjValAs? String "object").toOption, (request.getObjValAs? String "method").toOption with
+  | some "world", some "expire" => fieldText argument "scratch"
+  | _, some "receive" =>
+    match Host.Spell.parse (← fieldText argument "text") with
+    | .spell "world" "expire" fields => (fields.find? (·.name == "scratch")).map (·.value)
+    | _ => none
+  | _, _ => none
+
 /-- One request, as the socket it came on may ask it. -/
 def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) := do
   let some fields := request.getObj?.toOption | return (srv, errorJson "request is not a JSON object")
@@ -444,6 +463,14 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
       let srv ← discard srv key clock
       return (srv, Json.mkObj [("status", toJson "expired"), ("scratch", scratchRow key clock)])
   if op == "world-cite" then return ← citeOp srv request
+  -- A scratch's owner expires it now (docs/FEDERATION.md §3): serve's, like the hand's `expire`, and journaled nowhere.
+  if let some name := expiryAsked request then
+    match scratchKey ((request.getObjValAs? String "principal").toOption.getD "") name with
+    | .error e => return (srv, errorJson e)
+    | .ok key =>
+      unless srv.scratches.contains key do return (srv, errorJson s!"no scratch/{name} of yours is open")
+      let (srv, clock) ← homeClock srv
+      return (← discard srv key clock, Json.mkObj [("status", toJson "expired"), ("scratch", scratchRow key clock)])
   -- Every public request is a resident's, whoever it names: the opener's privileges are the root socket's.
   let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "resident")
   match keyOf srv request with

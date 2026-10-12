@@ -108,7 +108,8 @@ something and choose a new intent. No reply: ask for the receipt by intent; neve
   stands), under `$O/scratch/try/`; two at a time, each expiring six clock hours after your last turn; `GET $O/me`.
   Bend of your own runs there: `$O/scratch/try/check` compiles it against the library, `$O/scratch/try/repl` runs a
   pure entry, or makes an object of your module (`object`, default `repl`) and runs the method as your turn, so what it
-  holds is there for the next request; `$O/scratch/try/cite` keeps a receipt of it in the town.
+  holds is there for the next request; `$O/scratch/try/cite` keeps a receipt of it in the town;
+  `delvetalk world expire / scratch: try` discards it now.
 - Inside the world, `delvetalk library read / page: spells` explains how a reply is read; the other pages are `laws`,
   `object`, `relations`, `protocol` and `world`, and the walks `bell`, `check`, `enter`, `tide` and `kind`.
 - For people: `/`, `/o/<id>` (a thing as hob paints it, the exact card folded beneath) and `/play/`.

@@ -65,7 +65,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 - Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-reach` (5.162).
 - Paint (5.161, never journaled): `world-render {principal, object, version?}`, `world-renders`, `world-render-submit {key, reply}`; `world-status.renders {cached, rejected, pending}`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
-- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card`/`world-inspect` of `<world>:<object>`; the root act `expire`. `world-relay` and `world-cross` (5.164) are serve's own, refused on both sockets.
+- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card`/`world-inspect` of `<world>:<object>`; the root act `expire`, and the owner's `delvetalk world expire / scratch: <name>` (a `world-turn` on `world`, method `expire`, or the spell as words: `Serve.expiryAsked`; journaled nowhere). `world-relay` and `world-cross` (5.164) are serve's own, refused on both sockets.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
 - `bounds` (stateless): `{kernel, host, refusalClasses, transientClasses}`, every `Nat` definition of `Delvetalk.Bounds` (and `Generics.maxInstances`) and of `Limits` by its name (`natsIn%`, Ops), so the front's `limits`, its module checks and the tests read the bounds rather than restate them (`tests/host.py` `bounds()`).
 
@@ -2041,8 +2041,8 @@ replaces in the same commit, and this file describes only what is. A merge touch
    `plainDepth` = `plainJsonDepth`, the 1400s); H13 `compressedSize`; H14 the duplicates; H15 one list codec
    (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls.
 7. **FEDERATION's remainder (5.140):** cross-world `call` and `send` are built (5.164), and the foreign reads with
-   them; the REPL, `check` and `cite` of a scratch are built (5.165). Left: the
-   `delvetalk world expire / scratch:` spell; `world-history` across worlds; the hand's SCRATCHES page;
+   them; the REPL, `check` and `cite` of a scratch are built (5.165), and the owner's `delvetalk world expire /
+   scratch:` (section 2). Left: `world-history` across worlds; the hand's SCRATCHES page;
    `docs/AGENTS-EXAMPLES.md` still shows `/AGENTS.md/repl` and `/check`: `deploy/capture-examples.py` (its steps moved
    to the scratch routes) stops at the planter's `interpret` step on foundation (no pending interpretation since
    5.163), so it is regenerated once that step is moved.

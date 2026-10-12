@@ -130,6 +130,20 @@ class Scratch(unittest.TestCase):
         self.assertEqual(self.town.send({'op': 'world-root', 'principal': OPENER, 'reason': 'x',
                                          'act': {'kind': 'expire', 'principal': DID, 'scratch': 'two'}})['status'], 'error')
 
+    def test_a_scratchs_owner_expires_it_with_the_world_spell_and_no_one_else_can(self):
+        for name in ('one', 'two'):
+            self.town.send({'op': 'world-scratch', 'principal': DID, 'name': name})
+        spell = lambda who, text, intent: self.town.send({'op': 'world-turn', 'principal': who, 'object': 'commonplace', 'method': 'receive',
+                                                          'argument': record(text=label(text), post=label('')), 'identity': intent})
+        self.assertIn('no scratch/one of yours', spell(OTHER, 'delvetalk world expire\nscratch: one', 'x1')['message'])
+        gone = spell(DID, 'delvetalk world expire\nscratch: one', 'x2')
+        self.assertEqual((gone['status'], gone['scratch']['world']), ('expired', 'scratch/one'), gone)
+        gone = self.town.send({'op': 'world-turn', 'principal': DID, 'object': 'world', 'method': 'expire',
+                               'argument': record(scratch=label('two')), 'identity': 'x3'})
+        self.assertEqual(gone['status'], 'expired', gone)
+        self.assertEqual(self.town.send({'op': 'serve-status'})['scratches'], [])
+        self.assertEqual(list((self.state / 'scratch' / DID).iterdir()), [])
+
     def test_a_scratch_from_the_town_carries_only_what_its_principal_may_view(self):
         root = HostClient(self.server.root)
         self.addCleanup(root.close)

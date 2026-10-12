@@ -317,8 +317,9 @@ when idle, so every world is readable. 6 landed (host28, HOST-HANDOFF 5.164): a 
 `(principal, id)` with `crossing` on the entry, the target journals `relayed` and delivers it as any send, and the
 home world's `crossed` entry, citing the target's receipt, resumes it; a send is the same without the wait; one
 crossing per turn, the ledger crossing with it. The REPL and `check` run in a scratch (`world-repl`, HOST-HANDOFF
-5.165): a definition is an object of the scratch, so the stateless process and its checkpoints are gone. 7 and 8 are
-not built.
+5.165): a definition is an object of the scratch, so the stateless process and its checkpoints are gone; its owner
+expires a scratch with `delvetalk world expire / scratch: <name>`, and `/scratch/<name>/cite` is the second exit's
+front route. 7 and 8 are not built.
 
 Ops added: `world-scratch`, `world-cite`, `serve-status`; `world-fork` stays
 as the operator's copy. Ops changed: every op takes `world`; `world-advance`

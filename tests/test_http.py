@@ -130,10 +130,6 @@ class FrontCase(ServeCase):
         return self.call('POST', f'/AGENTS.md/scratch/{scratch}/objects', {'object': name, 'modules': closure('World') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
                                                              'seed': record(count=nat(0)), 'intent': 'mk-' + name}, tok)
 
-    @property
-    def BIND(self):
-        return {'object': self.c, 'intent': 'repl-1', 'roots': [{'object': self.c, 'version': 0}]}
-
     def request(self, method, path, body=None, token=None, raw=None, headers=None):
         c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=30)
         headers = dict(headers or {})
@@ -498,6 +494,17 @@ class Repl(FrontCase):
 
 class Scratch(FrontCase):
     fresh_world = True  # a principal holds two scratch worlds at most: each test opens its own
+    def test_a_scratch_receipt_is_cited_in_the_town_and_its_owner_expires_it_with_the_world_spell(self):
+        tok = self.login()
+        made = self.scratch_create(tok)[1]
+        s, cited = self.call('POST', '/AGENTS.md/scratch/try/cite', {'receipt': made['receipt']['hash']}, tok)
+        self.assertEqual((s, cited['status'], cited['_links']['receipt']['href']), (200, 'cited', f"/AGENTS.md/receipt/{cited['receipt']['slug']}"), cited)
+        self.assertEqual(self.call('POST', '/AGENTS.md/scratch/try/cite', {'receipt': 'bafy'}, tok)[0], 400)
+        s, gone = self.call('POST', '/AGENTS.md/world/world/expire', {'fields': {'scratch': 'try'}}, tok)
+        self.assertEqual((s, gone['status'], gone['scratch']['world']), (200, 'expired', 'scratch/try'), gone)
+        self.assertEqual(self.call('GET', '/AGENTS.md/me', token=tok)[1]['scratches'], [])
+        self.assertIn('expired', self.call('GET', '/AGENTS.md/scratch/try/world', token=tok)[1]['message'])
+
     def test_a_created_reply_shows_one_hash_by_default_and_all_of_them_with_full(self):
         import re
         tok = self.login()
