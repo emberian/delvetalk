@@ -19,7 +19,7 @@ import ./Text.obend as Text
 # under its maker (`made`): on the tide, `request.method == "tick" and (<fills>)` casts `delvetalk
 # <front> fill`; on itself, a fill that brings its count of segments to a whole clock casts `move`.
 # So the move is the maker's turn, judged by the law of whatever it touches, and the clock empties as
-# it moves (its segments are the `fill` lines, counted modulo the clock). Only the tide's rule fills:
+# it moves (its segments are the `fill` lines, counted modulo the clock). Only its maker's rule on the tide fills:
 # a hand's `fill` is refused by name. The card shows the clock: "2 of 4".
 type State = Super.State
 form fill:
@@ -65,10 +65,10 @@ def moving(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: Plans.self(context), name: "move", when: "count(new.lines where verb == \"fill\") % {n} == 0 and count(new.lines where verb == \"fill\") >= count(old.lines where verb == \"fill\") + 1", then: Super.field(state, "move")}):
     case placed(_): true
     case refused(_): false
-# The tide's rule fills a segment; anyone else is told what does.
+# Its maker's rule on the tide fills a segment; anyone else, or another's rule there, is told what does.
 def fill(state: State, context: Abi.Context) -> Activity<Nat>:
   let fills = Super.field(state, "fills")
-  if context.sender != tide(state) then Card.refusing(0n, {clause: "ruled", reading: "a segment fills at a tick of {tide(state)} when {fills}: delvetalk {tide(state)} rules"}, context) else filled(state, context)
+  if Super.ruledFrom(state, tide(state), context) == false then Card.refusing(0n, {clause: "ruled", reading: "a segment fills at a tick of {tide(state)} when {fills}: delvetalk {tide(state)} rules"}, context) else filled(state, context)
 def filled(state: State, context: Abi.Context) -> Activity<Nat>:
   let at = fills(state) % segments(state) + 1n
   let written(_) = write {lines: insert {author: context.sender, handle: "", verb: "fill", text: "segment {natText(at)} of {natText(segments(state))}, at clock {natText(context.clock)}", at: context.height, n: state.next}, next: add 1n}
