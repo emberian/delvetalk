@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/host23 continued by host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -2009,60 +2009,27 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-The queue after host25 (5.159 *Moves* finished, 5.162 reach), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
+The queue after host27 (5.164 to 5.172), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
 standing order binds every item: "maturify and take forward everything that we've started and bring it to its full
 sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
 called for); let's not leave behind 'old things', no scar and growth tissue." So each replacement deletes what it
 replaces in the same commit, and this file describes only what is. A merge touching the host runs
 `deploy/carry-check.sh` on hbox first (5.159).
 
-0. **The paired merge (now the objects lane's rewrite16, pair/rewrite14).** Done on lane/host23 (host25): a moved
-   object offering `carried` is told once (the tide's re-arm); a moved object holding its package's law takes the
-   package's changed law (`kept` names an amended one) and its `rule`/`want` lines; a refused move's whole refusal
-   printed; `python3 -m transport carry` runs `deploy.genesis.carried` (the objects lane's refresh) after its check;
-   `world-reach` (5.162). The objects lane owes the tide's `carried` (patch handed over: when `ticks > 0`, send itself
-   `due {at: last + gap}`; `~carried` in `methods()`). Playtest 3 carried on pair 66cfa62b + host25 + that patch: 43
-   of 51 moved, the 8 env/wake left, 7 package laws taken, nothing kept, `rearmed [tide]`, the porch things' `claimed`
-   placed, the check clean, refresh 18 refreshed and 7 current; the tide ticks 3 to 7 over four advances; `rules` on
-   garden/bell/2 lists the kind's `seven` and `rang` and the seventh rain fires `seven`. The carried state is kept at
-   hbox `~/scratch/p3-carried-host25/` (the transport's output beside it, `p3.out`). Left:
-   - The ring `seven` fires on garden/bell/2 is admitted and writes nothing (`writes: []`), so `rang` never fires on
-     the carried bell: the objects lane's (bell/2 may be rung already in playtest 3; the bell body's `ring`).
-   - The pair's full run green on hbox, then carry-check (item 1).
-   - Test the Bend arms from a body (`world.rule` from a `made`, `world.grow`, `world.act`, `world.chronicle`).
-   - What a carry still does not carry: a default-law object (an avatar made under the host's default before edition 9)
-     keeps the old default (no `or request.kind == rule`), since its creator is not recorded apart from the law's
-     subject; a law given at creation is genesis's refresh's, not the carry's.
-1. **Words a card heard: what is left after host26 (5.163; c08615a2, 80bb2a74).** The host half is built and its
-   own tests pass (`test_heard`, `test_spell_turns`, `test_verbs`, `test_interpret_quota`, `test_interpret_object`).
-   Left, in order:
-   - **The objects lane's half**, as a patch on the pair (scratchpad `host26-objects.patch`, built and run on a
-     throwaway merge of pair 36ed6b48 + these commits): the commonplace stops reading words (its `learning`,
-     `doorLearned`, `childListed`, `childLearned`, `childInspected`, `learnedAll`, `Next`, `fieldsOrProse`, `fielded`,
-     `unaddressed`, `consulted`, `interpreting`, `hobbed`, `missLine`, `proposed`, `callingDoor`, `folding`,
-     `foldOne`, `foldCall`, `folded`, `passOn`, `toldThen`, its `Mentions` import and its misfit branch go; a door
-     word stays, everything else is `silent`); `test_policy`, `test_lenses`, `test_interpret_text` move to the new
-     answers. Then delete `Mentions.obend` (and from `test_receive`/`test_bridge` closures and the pins), Card's
-     `interpretation`, `Hob`, `hobNeeds`, `fieldNeeds`, `fieldNames`, `misfitLine`, `confirms`, `Replied.passed`/
-     `asked`/`several`, `Record.misfitted`, room's misfit arm, the `misfit` field of `Heard` (5.153's fold), the
-     `policy` field on records and the workshop (the world's one is `policy`; Workshop's `make` still asks
-     `world.interpret` with it), and `Policy.prompt` may show `asked.wants` and `asked.pages`.
-   - **World tests still red on that merge** (all asserted the old commonplace path or "a card hears a verb or
-     nothing"): `test_hub` (Hub ×9, BellsHearVerbsOrNothing, LinkDoors, RootReadsDoorForms), `test_scenarios` (Garden,
-     Bell: a misfit now waits on hob), `test_fork` (a suspended reading carried), `test_hand.Speak`,
-     `test_http.Play`. Each moves to: prose at a card suspends, hob's answer runs on it.
-   - **The archive** on that merge: the three anthology lines are written (four lines, gemini's and three under the
-     anthology card); model asks 37 → 75 (69 `none`, 3 proposals, 3 asks), since prose at every reached card now asks
-     hob; one post (`3mxhfzx7rlk2f`) is asked twice: find why (two spells of one post, or a reading re-asked) before
-     setting `INTERPRETATIONS`. `test_archive`'s constants and docstring are then the objects lane's to move.
-   - Not built: several hob spells run in one turn each read their card as committed (a second on the same card does
-     not see the first's writes: `enter` then `say` on a room); hob's `ask:` naming no field is one fixed line.
-1a. **For the minimal genesis (the coordinator, after item 1), one commit each.** (1) `world.wanting({after: Nat, limit:
-   Nat}) -> Wanting {rows [{object, name, reading, asks, since}]}`: the world's wanting index (`World.wanting`), newest
-   first, only objects the reader may view, as a Bend world arm and a host op, so the commonplace lists "what wants a
-   hand" (the objects lane declares the arm in World.obend). (2) Two facts a want reads: `laws` (the count of an
-   object's law clauses, its own and those it follows by `under`) and `refusedBy` (writes this object's law refused,
-   from an index of the journal), so a seal can want "a law and a second resident's try".
+0. **For the objects lane, from host27.** (a) World.obend's `interpret` drops `held`, `misfit` and `policy` with its
+   eight callers (5.168; the host already ignores them). (b) World.obend's `wanting` comment and GENESIS.md say
+   "oldest first": the host answers newest first, pages of whole heights by `after` (5.164); the commonplace's
+   "What wants a hand" reads it so. (c) A seal's want can now read `request.laws` and `request.refusedBy` (5.165); a
+   law refusal journals the wants it opens. (d) Bend arm tests from a body: `wanting` is covered
+   (`test_wanting`); `rule`, `grow`, `act`, `chronicle` from a `made` are not.
+1. **Left from host27.** `test_http`'s four page-markup assertions (Claim, Play: home's words, the quota page's
+   stamp markup, the paint frame) fail on foundation's web redesign: the transport lane's. The question answer
+   (5.171) offers the exact card: whether the front or the bridge shows the paint above it is the transport's
+   (renders are per session). "hob says ask is not needed" has no answer to read: decide whether hob gains one.
+   The fold of a post's misfits (5.166) runs after its fitting spells: a misfit that hob reads into a spell on a
+   card an earlier spell wrote reads it as written (5.167).
+   From the pair merge, still open: the ring `seven` fires on a carried garden/bell/2 writes nothing (objects lane);
+   a default-law object carried from before edition 9 keeps the old default (no `or request.kind == rule`).
 2. **Edition and carry.** Edition 9 is not deployed; 5.161 and the pair change what it derives, so they need no
    bump if they merge before any edition-9 world is. If one is deployed first, the pair is edition 10 and ships
    `carry-check.sh` green on the newest v7 backup and the playtest-3 copy, as OVERHAUL plans.
