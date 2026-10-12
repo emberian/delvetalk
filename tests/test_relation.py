@@ -511,3 +511,26 @@ class StateCid(RelationCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LawWork(RelationCase):
+    """codex 2026-10-12 host 13: judging a law reads rows outside any budget. What a judgment's clauses read (a row a
+    side, per clause) is metered against `Bounds.lawTicks`: refuted if 16 clauses over 4,096 rows admit unmetered,
+    or the same law over 512 rows is refused."""
+
+    LAW = "\n".join("law c%d: changed(new.rains.author) by request.subject" % i for i in range(16))
+
+    def make(self, rows, name):
+        seed = record(rains=relation(*[rain("old", i, "t%d" % i) for i in range(rows)]))
+        source = PACKAGE.replace("LIMIT", "8192n")
+        made = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name, source=source,
+                              entry="initial", seed=seed, law=self.LAW)
+        self.assertEqual(made["status"], "created", made)
+
+    def test_a_judgment_reading_more_rows_than_its_ticks_is_refused_budget(self):
+        self.make(512, "small")
+        self.assertEqual(self.edit("insert", rain("ann", 1, "a"), name="small")["status"], "admitted")
+        self.make(4096, "big")
+        r = self.edit("insert", rain("ann", 1, "a"), name="big")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "budget"), r)
+        self.assertIn("law ticks", r["receipt"]["outcome"]["reason"])

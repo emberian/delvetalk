@@ -2113,8 +2113,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    thing's law lets the grower reprogram it, else holds it over the thing for whoever its law lets lay it (`adopt /
    n`, `laidOn`). A grown verb with a body is a declared method, so no verb row is placed. Test: `test_authoring`
    (with the verb library: a one-verb kind laid by `become`, `?` saying what it is after).
-176. **Firings named by their holder, carried roots behind a barrier, no suspension dropped unnamed (host30;
-   codex host 7, host 9, docs 7; replay edition 11).**
+176. **Firings named by their holder, carried roots behind a barrier, no suspension dropped unnamed, a judgment's
+   roots, law work metered (host30; codex host 7, host 9, docs 7, host 12, host 13; replay edition 11).**
    - *Holder* (host 7). `ruleDeliveryId object holder name height`: a rule the thing holds keeps
      `rule:<object>:<name>:<height>`; one it inherits through `under` (`CarriedClause.holder`) is
      `rule:<object>:<name>@<holder>:<height>` (no object id holds `@`; `Record.ruledFrom`'s prefix stands), so a
@@ -2128,6 +2128,14 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    - *Dropped by decision* (docs 7). `carryWorld` drops a suspension only for an object named `--leave`, or a moved
      one whose package offers `carried`; any other the carry cannot keep refuses it by name. Test:
      `test_carry.Moves.test_a_moved_objects_suspension_refuses_the_carry_until_its_object_is_left_by_name`.
+   - *A judgment's roots* (host 12). `world.judge` records what its proposal read (`withLawReads`) as the turn's
+     roots before answering, so a verdict another object's move withdrew is stale at commit. Test:
+     `test_law.Cited.test_a_judgment_that_read_another_object_is_stale_when_it_moves`.
+   - *Law work* (host 13). `Law.work`/`termWork`: a step per atom and a row per row a clause walks, each side,
+     through `under` and `wants`; `judge` meters the law's clauses and the rules and wants the thing carries
+     (`carried`) per judgment against `Bounds.lawTicks`, refused `budget` (`law ticks`). Row membership is one
+     pass over a set of canonical bytes (`canonSet`, `evictedIn`: `changedRows`, `insertOnly`). Test:
+     `test_relation.LawWork` (16 clauses over 4,096 rows refused, over 512 admitted).
 
 ## 6. Gotchas
 
@@ -2149,7 +2157,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
   anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
-  barriers, 5.176). Test: `tests/test_replay_edition.py`.
+  barriers, law work metered, 5.176). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.
@@ -2177,9 +2185,6 @@ Each with its failing input as a test first, merging foundation before each comm
   before it, now fixed: Paint's pin re-recorded (lane/paint's prompt), the sentry post's `forge make` in a fence is
   no spell (agent 2), the garden seed post re-cut from the live card. `carry-check.sh` on delvetalk-20261012T090950Z: green, breaking (26 s);
   `bench-write.py` 200 turns: 0.95 / 1.00 / 0.95 ms median at 16 / 256 / 2,048 rows under the suite's load.
-- host 12: `world.judge` merges its dependency roots into the turn (`TurnState.roots`) before answering.
-- host 13: meter `Law.denote` (rows × clauses) against `lawTicks`; reuse canonical rows across clauses.
-- docs 12: a scratch's last-use clock persisted (Serve.lean:189), not reset at a restart.
 - docs 14: the 1,400-character card bound enforced where every card response is built.
 - agent 10: hob is offered the host's permitted spells (`rule`, `want`, `adopt`…) and its proposals of them run
   through `hostSpell`.

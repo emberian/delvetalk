@@ -2715,6 +2715,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     let judgments := if judgments.isEmpty then [("", 0, "", "", "")] else
       judgments.filter fun (_, kind, _, _, verb) => kind != 4 || !verb.isEmpty
     let mut judgedBy : List Law.Facts := []
+    -- What judging reads is metered (codex host 13): the law's clauses and the rules and wants the thing carries,
+    -- which commit and replay judge of the same write, each judgment within `Bounds.lawTicks`.
+    let lines := (carried cand id next).map (·.clause)
+    let metered := lawNames o.law ++ lines.flatMap (·.names)
+    let conditions := o.law.map (·.2) ++ lines.map (·.condition)
+    let (meteredOld, meteredNew) := (viewFor metered o.cells, viewFor metered cells)
     for (caller, kind, method, via, verb) in judgments do
       let subject ← if via.isEmpty then pure p.principal else
         match grantStands w via id method with
@@ -2729,6 +2735,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       let facts : Law.Facts := citing cand o.law (lawNames o.law)
         { subject, caller, height, turn := p.turn, pin := next.pin, kind, method,
           verb := if verb.isEmpty then method else verb, evicted, clock := w.clock, object := id }
+      if conditions.foldl (fun n c => n + Law.work facts (some meteredOld) meteredNew c) 0 > Delvetalk.Bounds.lawTicks then
+        throw { cls := "budget", reason := some "law ticks", object := some id }
       judgedBy := judgedBy ++ [facts]
       -- The metarule, widened (docs/ROOT.md §2.1): no law locks out the hand that opened the world.
       -- An amendment by the opener is the host's to admit; every other change is the law's.
