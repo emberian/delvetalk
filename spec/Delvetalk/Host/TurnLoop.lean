@@ -606,13 +606,15 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
 def madeIn (w : World) (id : String) (made : CreateRec) : World :=
   { w with objects := w.objects.insert id { made.object with madeFrom := made.madeFrom } }
 
-/-- What a host spell other than a placing changes (`hostChange`): the roots it reads, and the program, law or
-    grant it stages, with the world its program is cached in; `refusal` when its code or its law does not read,
+/-- What a host spell changes (`hostChange`, `placingChange`): the roots it reads and the state edits,
+    placements, program, law or grant it stages, with the world its program is cached in; `refusal` when its code or its law does not read,
     which refuses the turn whole at its commit. A spell alone commits it (`hostSpell`); a plan's act stages it into
     its one turn (`stageHost`). -/
 structure HostChange where
   world : World
   roots : List (String × Nat) := []
+  writes : List (String × List Written) := []
+  placements : List Placement := []
   programs : List (String × (String × String)) := []
   layered : List String := []
   madeFrom : List (String × Json) := []
@@ -624,8 +626,19 @@ structure HostChange where
 def appendedLaw (o : Object) (id clauses : String) : Except (String × String) String := do
   let existing := ((textClauses o.lawText).map (·.2.1)) ++ (o.rules ++ o.wants).map (·.name)
   if let some (_, n, _, _) := (textClauses clauses).find? (existing.contains ·.2.1) then
-    throw ("lawClash", s!"{id}'s law already has a clause {n}; adopt a set whose names are new.")
+    throw ("lawClash", s!"{id}'s text already has a clause {n}; choose clause names new to this text.")
   return if o.lawText.isEmpty then clauses else s!"{o.lawText}\n{clauses}"
+
+/-- A kind's clause collection for its things, held beside its form and body in state. -/
+def thingsText (o : Object) : Option String := do
+  let _ ← textField o.state "of"
+  let _ ← textField o.state "body"
+  textField o.state "law"
+
+/-- The clauses each thing follows from a kind's text, through the same `carried` relation. -/
+def clausesForThings (w : World) (id : String) (o : Object) (text : String) : List CarriedClause :=
+  let collection := { o with lawText := text, law := (parseLawText text).toOption.getD [], rules := [], wants := [] }
+  (carried w id collection).map fun (c : CarriedClause) => { c with owner := thingPrincipal id }
 
 /-- Install a kind's component rows and cited text together. Ancestors already installed retain
     their position; a changed body replaces its layer there. The journaled lineage supplies replay
@@ -1378,26 +1391,33 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
     delivered) or why it did not. -/
 def rulesText (w : World) (id : String) (o : Object) (shown : String) : String :=
   let rules := carriedRules w id o
-  if rules.isEmpty then s!"{shown} carries no rules.\nTo place one: delvetalk {shown} rule / name: <name> / when: <condition> / then: <spell>\n" else
-  let line := fun (c : CarriedClause) =>
-    let row := ruleRow w id c
-    let text := fun (k : String) => (row.getObjValAs? String k).toOption.getD ""
-    let fired := (row.getObjVal? "fired").toOption.map fun f =>
-      s!"fired at entry {(f.getObjValAs? Nat "height").toOption.getD 0}" ++
-        ((f.getObjValAs? String "receipt").toOption.map (s!", receipt " ++ ·)).getD ""
-    let unfired := (row.getObjVal? "unfired").toOption.map fun f =>
-      s!"not fired at entry {(f.getObjValAs? Nat "height").toOption.getD 0}: {(f.getObjValAs? String "why").toOption.getD ""}"
+  let line := fun (things : Bool) (c : CarriedClause) =>
+    let history := if things then "" else
+      let row := ruleRow w id c
+      let fired := (row.getObjVal? "fired").toOption.map fun f =>
+        s!"fired at entry {(f.getObjValAs? Nat "height").toOption.getD 0}" ++
+          ((f.getObjValAs? String "receipt").toOption.map (s!", receipt " ++ ·)).getD ""
+      let unfired := (row.getObjVal? "unfired").toOption.map fun f =>
+        s!"not fired at entry {(f.getObjValAs? Nat "height").toOption.getD 0}: {(f.getObjValAs? String "why").toOption.getD ""}"
+      "  " ++ ((fired.orElse fun _ => unfired).getD "not fired yet") ++ "\n"
     let held := if c.holder == id then "" else s!", carried from {c.holder}"
     let reading := if c.clause.reading.isEmpty then "" else s!" {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading c.clause.reading}"
-    s!"» {c.clause.name} ({shownName w c.owner}{held}){reading}: when {text "when"} then {text "then"}\n  " ++
-      ((fired.orElse fun _ => unfired).getD "not fired yet") ++ "\n"
-  s!"The rules {shown} carries:\n\n" ++ String.join (rules.map line)
+    let owner := if things then "the thing" else shownName w c.owner
+    s!"» {c.clause.name} ({owner}{held}){reading}: when {c.clause.condition.render} then {(c.clause.modality.spell?.map (·.render)).getD ""}\n" ++ history
+  match thingsText o with
+  | some text =>
+    let things := (clausesForThings w id o text).filter (Law.isRule ·.clause)
+    s!"The rules of {shown}:\n\nfor its things (each acts as the thing):\n" ++
+      (if things.isEmpty then "No rules.\n" else String.join (things.map (line true))) ++
+      "\non the kind:\n" ++ (if rules.isEmpty then "No rules.\n" else String.join (rules.map (line false)))
+  | none =>
+    if rules.isEmpty then s!"{shown} carries no rules.\nTo place one: delvetalk {shown} rule / name: <name> / when: <condition> / then: <spell>\n" else
+    s!"The rules {shown} carries:\n\n" ++ String.join (rules.map (line false))
 
 /-- `delvetalk <card> wants`: the wants that hold of the card now, each with the spell that answers it
     and since when it has held. -/
 def wantsText (w : World) (reader id : String) (o : Object) (shown : String) : String :=
   let rows := wantRows w reader id o
-  if rows.isEmpty then s!"{shown} wants nothing now.\n" else
   let line := fun (row : Json) =>
     let text := fun (k : String) => (row.getObjValAs? String k).toOption.getD ""
     let since := match (row.getObjValAs? Nat "since").toOption with
@@ -1405,7 +1425,19 @@ def wantsText (w : World) (reader id : String) (o : Object) (shown : String) : S
       | none => "by the clock"
     let reading := if text "reading" == "" then "" else s!" {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading (text "reading")}"
     s!"» {text "name"}{reading} ({since}):\n{text "asks"}\n"
-  s!"What {shown} wants now:\n\n" ++ String.join (rows.map line)
+  match thingsText o with
+  | some text =>
+    let things := (clausesForThings w id o text).filter (Law.isWant ·.clause)
+    let clauseLine := fun (c : CarriedClause) =>
+      let held := if c.holder == id then "" else s!", carried from {c.holder}"
+      let reading := if c.clause.reading.isEmpty then "" else s!" {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading c.clause.reading}"
+      s!"» {c.clause.name} (the thing{held}){reading}: when {c.clause.condition.render} asks {(c.clause.modality.spell?.map (·.render)).getD ""}\n"
+    s!"The wants of {shown}:\n\nfor its things (each acts as the thing):\n" ++
+      (if things.isEmpty then "No wants.\n" else String.join (things.map clauseLine)) ++
+      "\non the kind (holding now):\n" ++ (if rows.isEmpty then "No wants.\n" else String.join (rows.map line))
+  | none =>
+    if rows.isEmpty then s!"{shown} wants nothing now.\n" else
+    s!"What {shown} wants now:\n\n" ++ String.join (rows.map line)
 
 /-- `delvetalk <card> verbs` (docs/FOUNDATION.md §10): the verbs the card takes, the ones its kind
     declares first, then each grown one with its grower, the entry that grew it, its reading, what it
@@ -1437,8 +1469,9 @@ def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : 
   kindAdmitsBy o (admitFacts w o principal id) kind verb
 
 /-- `rule`'s and `want`'s fields as the usage prints them: the spell last, since its own fields follow it. -/
-def ruleLine : String := "name: <a name>\nwhen: <a condition>\nthen: <a spell, holes {new.F} and {request.subject}>"
-def wantLine : String := "name: <a name>\nwhen: <a condition on the thing as it stands>\nasks: <the spell that answers it>"
+def ruleLine (target : String := "") : String := "name: <a name>\n" ++ target ++ "when: <a condition>\nthen: <a spell, holes {new.F} and {request.subject}>"
+def wantLine (target : String := "") : String := s!"name: <a name>\n{target}when: <a condition on the thing as it stands>\nasks: <the spell that answers it>"
+def forThingsLine : String := "for: <things, or leave it out for the kind itself>\n"
 def growLine : String := "name: <one word>\nreading: <what it does>\ntakes: <text, or nothing>\ndoes: <a spell its use casts, or leave it out>\nbody: <a few lines of Bend in a <<BEND block, or leave it out>"
 
 /-- `adopt`'s field as the usage prints it: a law written inline, or the id of what holds one. -/
@@ -1447,13 +1480,16 @@ def adoptLine : String := "law: law <name> \"<reading>\": <expression>, or a kin
 /-- The host spells' templates a card's usage shows `principal`: those its law would admit them. -/
 def hostUsage (w : World) (o : Object) (principal card : String) : String :=
   let facts := admitFacts w o principal
+  let target := if (thingsText o).isSome && principal == ownerOf o.state && kindAdmitsBy o facts 2 then forThingsLine else ""
   let lines := (if kindAdmitsBy o facts 1 then [s!"delvetalk {card} become\nkind: <a kind's id>\n"] else []) ++
     (if kindAdmitsBy o facts 2 then [s!"delvetalk {card} adopt\n{adoptLine}\n"] else []) ++
     (if ((offeredRows o.methods).getArr?.toOption.getD #[]).any (fun m => match (m.getObjValAs? String "name").toOption with
         | some n => isActionRow m && methodAdmitsBy o facts n == Json.bool true | none => false)
       then [s!"delvetalk {card} lend\nto: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n"] else []) ++
-    (if kindAdmitsBy o facts 4 (verb := "rule") then [s!"delvetalk {card} rule\n{ruleLine}\n"] else []) ++
-    (if kindAdmitsBy o facts 4 (verb := "want") then [s!"delvetalk {card} want\n{wantLine}\n"] else []) ++
+    (if kindAdmitsBy o facts 4 (verb := "rule") || !target.isEmpty then [s!"delvetalk {card} rule\n{ruleLine target}\n"] else []) ++
+    (if kindAdmitsBy o facts 4 (verb := "want") || !target.isEmpty then [s!"delvetalk {card} want\n{wantLine target}\n"] else []) ++
+    (if target.isEmpty then [] else [s!"delvetalk {card} unrule\nname: <the rule's name>\n{target}",
+      s!"delvetalk {card} unwant\nname: <the want's name>\n{target}"]) ++
     (if o.offers actMethod && kindAdmitsBy o facts 4 (verb := "grow") then [s!"delvetalk {card} grow\n{growLine}\n"] else []) ++
     [s!"delvetalk {card} rules\n", s!"delvetalk {card} wants\n"] ++
     (if o.offers actMethod then [s!"delvetalk {card} verbs\n"] else [])
@@ -1687,22 +1723,58 @@ def placementsOf (o : Object) (id action : String) (value spell : String → Opt
 /-- The host's spells that place on a card (`placementsOf`). -/
 def placingSpells : List String := ["rule", "want", "unrule", "unwant", "grow", "ungrow"]
 
-/-- Stage placements on `id` (a `call` of a placing spell on a card that does not declare it; the world's
-    `rule`, `want`, `grow` and their removals): judged now by `id`'s law as the commit will judge them, with
-    those the turn staged before, so the caller hears a refusal by its clause and reading (`some`); they
-    take effect with the commit, under the turn's principal. `check` judges without staging. -/
-def stagePlacements (id : String) (xs : List Placement) (check : Bool := false) : M (Option (String × String)) := do
+/-- A placing's target is the object itself, or a kind's text for its things. The latter is a
+    state amendment, judged by the kind's own law as kind 2 and journaled as its state edit. -/
+def placingChange (w : World) (o : Object) (id action : String) (value spell : String → Option String) :
+    Except (String × String) HostChange := do
+  let target := (value "for").getD ""
+  unless target.isEmpty || target == "things" do
+    throw ("badValue", "for: things edits a kind's text for its things; leave for out for the object itself.")
+  let xs ← placementsOf o id action value spell
+  if target != "things" then return { world := w, roots := [(id, o.version)], placements := xs }
+  unless ["rule", "want", "unrule", "unwant"].contains action do
+    throw ("badValue", "for: things takes rule, want, unrule or unwant.")
+  let some text := thingsText o | throw ("badValue", s!"{id} is no kind; for: things names a kind's text.")
+  let clauses ← (parseClauses text).mapError (("badValue", ·))
+  let some x := xs.head? | throw ("badValue", "Name one rule or want.")
+  let after ← if x.line.isEmpty then
+      let keyword := if action == "unwant" then "want" else "rule"
+      unless clauses.any (fun c => c.name == x.name && c.modality.keyword == keyword) do
+        throw ("badValue", s!"{id} has no {keyword} {x.name} for its things.")
+      pure ("\n".intercalate ((clauses.filter fun c => !(c.name == x.name && c.modality.keyword == keyword)).map (·.render)))
+    else appendedLaw { o with lawText := text, rules := [], wants := [] } id x.line
+  let _ ← (parseClauses after).mapError (("badValue", ·))
+  let written : Written :=
+    { caller := "", kind := 2, method := action,
+      edits := [(⟨"law", .set (.label after)⟩ : Edit)] }
+  return { world := w, roots := [(id, o.version)], writes := [(id, [written])] }
+
+/-- Stage the same placing a direct spell commits, including a kind's state-text amendment.
+    The target's law judges it with the target's earlier staged edits and placements; `check`
+    returns that judgment without staging the change. -/
+def stagePlacements (id action : String) (value spell : String → Option String) (check : Bool := false) :
+    M (Option (String × String)) := do
   let s ← get
   let some o := s.world.objects[id]? | return some ("unknownObject", s!"There is no card {id}.")
-  recordRoot id o.version
-  let p : Proposal := { principal := s.principal, intent := s.intent, roots := [(id, o.version)], writes := [],
-                        placements := s.placements.filter (·.object == id) ++ xs, turn := s.world.height + 1 }
-  match judge s.world (s.world.height + 1) p with
-  | .error r => return some (r.clause.getD r.cls, (r.reading <|> r.voiced.reason).getD "")
-  | .ok _ =>
-    unless check do
-      modify fun s => { s with placements := s.placements ++ xs }
-    return none
+  let o := asWritten o ((s.writes.lookup id).getD [])
+  match placingChange s.world o id action value spell with
+  | .error e => return some e
+  | .ok c =>
+    recordRoot id o.version
+    let steps := ((s.writes.lookup id).getD []) ++ ((c.writes.lookup id).getD [])
+    let writes := if steps.isEmpty then s.writes else
+      if s.writes.any (·.1 == id) then
+        s.writes.map fun (k, ws) => if k == id then (k, steps) else (k, ws)
+      else s.writes ++ [(id, steps)]
+    let p : Proposal :=
+      { principal := s.principal, intent := s.intent, roots := [(id, o.version)],
+        writes := if steps.isEmpty then [] else [(id, steps)], laws := s.laws.filter (·.1 == id),
+        placements := s.placements.filter (·.object == id) ++ c.placements, turn := s.world.height + 1 }
+    match judge s.world (s.world.height + 1) p with
+    | .error r => return some (r.clause.getD r.cls, (r.reading <|> r.voiced.reason).getD "")
+    | .ok _ =>
+      unless check do modify fun s => { s with writes, placements := s.placements ++ c.placements }
+      return none
 
 /-- A record's text fields by name, as a placing call's argument gives them. -/
 def labelsOf (argument : Data) : String → Option String := fun k => match argument with
@@ -2032,11 +2104,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       let some calleeObj := world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
       -- A placing spell called on a card that does not declare it is the host's, as cast (hob's `grow:`).
       if via.isEmpty && placingSpells.contains method && !calleeObj.offers method then
-        match placementsOf calleeObj id method (labelsOf argument) (labelsOf argument) with
-        | .error (clause, reason) => refusedReading bounds responseType clause reason
-        | .ok xs => match ← stagePlacements id xs with
-          | some (clause, reading) => refusedReading bounds responseType clause reading
-          | none => respond bounds responseType "returned" [.record [("result", emptyRecord)]]
+        match ← stagePlacements id method (labelsOf argument) (labelsOf argument) with
+        | some (clause, reading) => refusedReading bounds responseType clause reading
+        | none => respond bounds responseType "returned" [.record [("result", emptyRecord)]]
       else
       -- A grown verb called by name is its card's `act` with the verb, as a spell of it is.
       let (method, argument) := match grownAct calleeObj method argument with
@@ -2236,15 +2306,13 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
   | .variant "unwant" (.record f) | .variant "grow" (.record f) | .variant "ungrow" (.record f) =>
     let action := match plan with | .variant a _ => a | _ => ""
     let some id := (f.lookup "object").bind referenceId | refusedReading bounds responseType "foreignWorld" "a placing names an object of this world."
-    let some o := (← get).world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
+    let some _ := (← get).world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
     let check := match f.lookup "check" with
       | some (.boolean b) => b
       | _ => false
-    match placementsOf o id action (labelsOf (.record f)) (labelsOf (.record f)) with
-    | .error (clause, reason) => refusedReading bounds responseType clause reason
-    | .ok xs => match ← stagePlacements id xs (action == "ungrow" && check) with
-      | some (clause, reading) => refusedReading bounds responseType clause reading
-      | none => respond bounds responseType "placed" [emptyRecord]
+    match ← stagePlacements id action (labelsOf (.record f)) (labelsOf (.record f)) (action == "ungrow" && check) with
+    | some (clause, reading) => refusedReading bounds responseType clause reading
+    | none => respond bounds responseType "placed" [emptyRecord]
   -- `act {object, verb, text}`: a use of a grown verb, as its spell is (the target's `act`, `request.verb` the verb).
   | .variant "act" (.record f) =>
     let some object := f.lookup "object" | evaluation "malformed act plan"
@@ -3165,6 +3233,11 @@ def hostSpellFrom (fields : List Spell.Binding) (key : String) : Option String :
   (fields.findIdx? (·.name == key)).map fun i =>
     " / ".intercalate (((fields.drop i).take 1).map (·.value) ++ (fields.drop (i + 1)).map fun b => s!"{b.name}: {b.value}")
 
+/-- Fields before a placing's nested spell belong to the placing; later ones belong to that spell. -/
+def hostPlacingValue (fields : List Spell.Binding) : String → Option String :=
+  let stop := (fields.findIdx? fun b => ["then", "asks", "does"].contains b.name).getD fields.length
+  fun name => hostValue (if name == "for" then fields.take stop else fields) name
+
 /-- `become`, `adopt` and `lend` on card `id` (`o`) for `principal` (`hostSpell` says what each does), from the
     spell's fields (`value`); `ordinal` numbers the grant `lend` makes among the turn's. A misfit is `(clause, reason)`. -/
 def hostChange (w : World) (principal intent : String) (o : Object) (id action : String) (value : String → Option String)
@@ -3234,31 +3307,24 @@ def hostSpell (w : World) (req : TurnRequest) (id action : String) (fields : Lis
                      argument := req.argument, digest := req.digest, ledger := how.ledger.getD Ledger.start,
                      delivery := how.delivery, via := how.via, ticksStart := 0 }
   let base := entryBase ctx 0
+  let target := if (thingsText o).isSome then forThingsLine else ""
   let template := (s!"delvetalk {id} {action}\n" ++ match action with
     | "become" => "kind: <a kind's id>\n"
     | "adopt" => adoptLine ++ "\n"
-    | "rule" => ruleLine ++ "\n"
-    | "want" => wantLine ++ "\n"
-    | "unrule" | "unwant" => "name: <the name it was placed under>\n"
+    | "rule" => ruleLine target ++ "\n"
+    | "want" => wantLine target ++ "\n"
+    | "unrule" | "unwant" => "name: <the name it was placed under>\n" ++ target
     | "grow" => growLine ++ "\n"
     | "ungrow" => "name: <the verb's name>\n"
     | _ => "to: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n")
-  let spellFrom := hostSpellFrom fields
-  let placing := fun (placements : List Placement) =>
-    let p : Proposal := { principal := req.principal, intent := req.intent, roots := [(id, o.version)], writes := [],
-                          placements, turn := w.height + 1 }
-    let (w', r) := commit w p base
-    (w', turnReply w' r)
-  match action with
-  | "rule" | "want" | "unrule" | "unwant" | "grow" | "ungrow" =>
-    match placementsOf o id action value spellFrom with
-    | .ok xs => return placing xs
-    | .error (clause, reason) => refuseSpell w req id clause reason template
-  | _ =>
-  match hostChange w req.principal req.intent o id action value 0 with
+  let change := if placingSpells.contains action then
+      placingChange w o id action (hostPlacingValue fields) (hostSpellFrom fields)
+    else hostChange w req.principal req.intent o id action value 0
+  match change with
   | .error (clause, reason) => refuseSpell w req id clause reason template
   | .ok c =>
-    let p : Proposal := { principal := req.principal, intent := req.intent, roots := c.roots, writes := [],
+    let p : Proposal := { principal := req.principal, intent := req.intent, roots := c.roots, writes := c.writes,
+                          placements := c.placements,
                           programs := c.programs, layered := c.layered, madeFrom := c.madeFrom, laws := c.laws,
                           grants := c.grants, turn := w.height + 1 }
     let (w', r) := commit c.world p base c.refusal
@@ -3385,19 +3451,21 @@ def doorsOf (o : Object) : List (String × String) :=
       pure (← (r.lookup "label").bind labelOf, to)
   | _ => []
 
-/-- The host's placing spells hob may answer with on a card (`placementsOf`; `grow` is its own answer,
+/-- The host's placing spells hob may answer with on a card (`placingChange`; `grow` is its own answer,
     `growVerdict`), each a form whose fields are the usage's (`ruleLine`, `wantLine`: the spell last), for a
-    speaker the thing's law admits placing it (`kindAdmits`, kind 4 with the placing's verb). -/
+    speaker the thing's law admits placing it (kind 4), or the kind's owner amending its text (kind 2). -/
 def placingForms (w : World) (id principal : String) (o : Object) : List Data :=
   let text := fun (name : String) (max : Nat) => Data.record [("name", .label name),
     ("kind", .variant "text" (.record [("min", .natural 1), ("max", .natural max)]))]
   let named := text "name" Limits.maxMethodBytes
+  let target := if (thingsText o).isSome && principal == ownerOf o.state && kindAdmits w o principal 2 id then
+    [Data.record [("name", .label "for"), ("kind", .variant "text" (.record [("min", .natural 0), ("max", .natural 6)]))]] else []
   let fields := fun (action : String) => match action with
-    | "rule" => [named, text "when" Limits.maxLawBytes, text "then" Limits.maxLawBytes]
-    | "want" => [named, text "when" Limits.maxLawBytes, text "asks" Limits.maxLawBytes]
-    | _ => [named]
+    | "rule" => [named] ++ target ++ [text "when" Limits.maxLawBytes, text "then" Limits.maxLawBytes]
+    | "want" => [named] ++ target ++ [text "when" Limits.maxLawBytes, text "asks" Limits.maxLawBytes]
+    | _ => [named] ++ target
   (["rule", "want", "unrule", "unwant"].filter fun a =>
-      !o.offers a && kindAdmits w o principal 4 (verb := if a.startsWith "un" then (a.drop 2).toString else a)).map fun a =>
+      !o.offers a && (kindAdmits w o principal 4 (verb := if a.startsWith "un" then (a.drop 2).toString else a) || !target.isEmpty)).map fun a =>
     .record [("card", .label id), ("action", .label a), ("fields", listData (fields a))]
 
 /-- What hob is offered for words that reached `id`, read for `principal`: the card's table (its declared
@@ -3487,7 +3555,7 @@ def fillHoles (text : String) (made : Array (List String)) (n : Nat) : Except St
   return out
 
 /-- A refusal of a plan's act `n` (`line`), whole: its clause, the act named in its reason. -/
-def actRefusal (n : Nat) (line object clause reason : String) (hint : String := "") : Abort :=
+def actRefusal (_n : Nat) (_line object clause reason : String) (hint : String := "") : Abort :=
   .named { cls := "badSpell", clause := some clause, object := some object,
            reason := some reason, hint := if hint.isEmpty then none else some hint }
 
@@ -3508,9 +3576,8 @@ def stageHost (n : Nat) (line id action : String) (fields : List Spell.Binding) 
     throw (actRefusal n line id "notInPlan" s!"{action} is the hand's power, an entry of its own; cast it alone.")
   let some o := s.world.objects[id]? | throw (actRefusal n line id "otherCard" s!"There is no card {id}.")
   if placingSpells.contains action then
-    match placementsOf o id action (hostValue fields) (hostSpellFrom fields) with
-    | .error (clause, reason) => throw (actRefusal n line id clause reason)
-    | .ok xs => if let some (clause, reading) ← stagePlacements id xs then throw (actRefusal n line id clause reading)
+    if let some (clause, reading) ← stagePlacements id action (hostPlacingValue fields) (hostSpellFrom fields) then
+      throw (actRefusal n line id clause reading)
     return
   if s.creates.any (·.1 == id) then
     throw (actRefusal n line id "notMade" s!"{id} is made by this plan; it takes its law and body as its kind makes it.")
@@ -3576,9 +3643,8 @@ where
       let world := (← get).world
       let some obj := world.objects[step.object]? | throw (.refused "unknownObject" s!"There is no card {step.object}.")
       if placingSpells.contains step.method && !obj.offers step.method then
-        match placementsOf obj step.object step.method (labelsOf step.argument) (labelsOf step.argument) with
-        | .error (clause, reason) => throw (.refused clause reason)
-        | .ok xs => if let some (clause, reading) ← stagePlacements step.object xs then throw (.refused clause reading)
+        if let some (clause, reading) ← stagePlacements step.object step.method (labelsOf step.argument) (labelsOf step.argument) then
+          throw (.refused clause reading)
         return (step.object, "staged", emptyRecord)
       let (method, argument) := match grownAct obj step.method step.argument with
         | some a => (actMethod, a)
@@ -4754,7 +4820,7 @@ def proposalVerdict (w : World) (target self : String) (obj : Object) (carries :
   if placingSpells.contains method && !obj.offers method then
     unless carries (.variant "proposal" (proposalData target method argument spell)) do
       return (w, unclearVerdict [s!"the object cannot carry a proposal of {target} {method}"])
-    if let .error (_, reason) := placementsOf obj target method (labelsOf argument) (labelsOf argument) then
+    if let .error (_, reason) := placingChange w obj target method (labelsOf argument) (labelsOf argument) then
       return (w, unclearVerdict [reason])
     return (w, Json.mkObj [("tag", toJson "proposal"), ("object", toJson target), ("method", toJson method),
       ("argument", dataJson argument), ("spell", toJson spell)])

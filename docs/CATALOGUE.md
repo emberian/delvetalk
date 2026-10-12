@@ -52,7 +52,10 @@ card affords without a line of Bend per object is the host's: `?`, and the host 
 `become` (a kind's stack installed and its followable text cited on a live thing in one turn), `adopt` (law, rule and want lines added to a thing's law
 by `amend`), `lend` (a method lent as a grant, with a reading the holder's card shows), `retire`, `unretire`, `hide`,
 `show`; and the reads `rules`, `wants`, `verbs`. Every package's default law admits `request.kind == rule`, so anyone
-places on anything its law does not close.
+places on anything its law does not close. On a kind, `rule` and `want` with `for: things` amend its `law` state
+text, judged as kind 2 by the kind's own law; `unrule` and `unwant` take the same selector to remove from that
+text. Absent `for:` affects the object itself. `rules` and `wants` name both targets; the owner's `?`
+shows `for:` before `then` or `asks`. A non-kind is refused for `for: things`.
 
 | How | The smallest spell | What it composes |
 | --- | --- | --- |

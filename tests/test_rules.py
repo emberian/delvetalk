@@ -43,6 +43,134 @@ class Bell(Arc):
         return {r["name"]: r for r in self.town.send(op="world-rules", principal=who, object=self.bell)["rows"] if r["from"] == self.bell}
 
 
+class KindTargets(Bell):
+    """Astra world 14: a kind's things and the kind itself are separate, named targets of one spell."""
+
+    LINE = 'rule / name: shower / reading: a rain heard / when: request.method == "rain" / then: delvetalk {new.maker} note / text: {request.object} heard'
+
+    def setUp(self):
+        super().setUp()
+        self.kind_owner = self.field("kind/bell", "owner")["value"]
+
+    def on_kind(self, line, who=None):
+        return self.say(self.kind_owner if who is None else who, "kind/bell", "delvetalk kind/bell " + line)
+
+    def rows(self, obj):
+        return self.town.send(op="world-rules", principal=GLM, object=obj).get("rows", [])
+
+    def kind_text(self):
+        return self.say(GLM, "kind/bell", "delvetalk kind/bell rules")["text"]
+
+    def test_for_things_reaches_every_existing_and_new_bell_and_acts_as_each_bell(self):
+        bells = [o for o in self.objects() if any(r["from"] == "kind/bell" for r in self.rows(o))]
+        self.assertIn("bell/1", bells)
+        self.assertIn(self.bell, bells)
+        before = self.field("kind/bell", "law")["value"]
+        placed = self.on_kind(self.LINE.replace(" / when:", " / for: things / when:"))
+        self.assertEqual(placed["status"], "admitted", placed)
+        self.assertIn(before, self.field("kind/bell", "law")["value"])
+        self.assertEqual(placed["receipt"]["outcome"]["writes"][0]["kinds"], [2], placed)
+        made = self.say(KIM, "kind/bell", "delvetalk kind/bell make / colour: amber / seed: after the rule")
+        self.assertEqual(made["status"], "admitted", made)
+        bells.append(made["receipt"]["outcome"]["creates"][0]["object"])
+        for bell in bells:
+            row = next(r for r in self.rows(bell) if r["name"] == "shower")
+            self.assertEqual((row["from"], row["owner"]), ("kind/bell", "@" + bell), row)
+        shown = self.say(GLM, self.bell, "delvetalk %s rules" % self.bell)["text"]
+        self.assertIn("carried from kind/bell", shown)
+        fired = [f for f in self.rain("a shower")["receipt"]["fired"] if f["rule"] == "shower"]
+        self.assertEqual([(f["principal"], f["to"]) for f in fired], [("@" + self.bell, GLM)])
+        self.assertIn(("@" + self.bell, self.bell + " heard"), self.inbox(GLM))
+        things, kind = self.kind_text().split("on the kind", 1)
+        self.assertIn("for its things", things)
+        self.assertIn("» shower (the thing)", things)
+        self.assertNotIn("» shower", kind)
+        self.town.reopen()
+        self.assertTrue(all(any(r["name"] == "shower" for r in self.rows(b)) for b in bells))
+
+    def test_without_for_the_same_line_is_on_the_kind_alone_and_both_targets_remove_it(self):
+        here = self.on_kind(self.LINE)
+        self.assertEqual(here["status"], "admitted", here)
+        self.assertFalse(any(r["name"] == "shower" for r in self.rows(self.bell)))
+        self.assertNotIn("shower", self.field("kind/bell", "law")["value"])
+        things, kind = self.kind_text().split("on the kind", 1)
+        self.assertNotIn("» shower", things)
+        self.assertIn("» shower", kind)
+        there = self.on_kind(self.LINE.replace(" / when:", " / for: things / when:"))
+        self.assertEqual(there["status"], "admitted", there)
+        self.assertEqual(self.on_kind("unrule / name: shower")["status"], "admitted")
+        self.assertTrue(any(r["name"] == "shower" for r in self.rows(self.bell)))
+        self.assertFalse(any(r["name"] == "shower" for r in self.rows("kind/bell")))
+        self.assertEqual(self.on_kind("unrule / name: shower / for: things")["status"], "admitted")
+        self.assertFalse(any(r["name"] == "shower" for r in self.rows(self.bell)))
+        self.assertNotIn("shower", self.kind_text())
+        self.town.reopen()
+        self.assertNotIn("shower", self.field("kind/bell", "law")["value"])
+
+    def test_a_strangers_amendment_is_refused_by_the_kinds_owner_clause(self):
+        before = self.field("kind/bell", "law")["value"]
+        for line in (self.LINE.replace(" / when:", " / for: things / when:"), "unrule / name: seven / for: things"):
+            reply = self.on_kind(line, who=KIM)
+            outcome = reply["receipt"]["outcome"]
+            self.assertEqual((reply["status"], outcome.get("class"), outcome.get("clause")),
+                             ("refused", "lawRefused", "owner"), reply)
+            self.assertIn("only the owner changes", outcome["reading"])
+            self.assertEqual(self.field("kind/bell", "law")["value"], before)
+
+    def test_for_things_on_a_non_kind_and_an_unknown_target_are_refused(self):
+        for line, reason in ((self.LINE.replace(" / when:", " / for: things / when:"), "is no kind"),
+                             (self.LINE.replace(" / when:", " / for: elsewhere / when:"), "for: things")):
+            reply = self.place(line)
+            self.assertEqual(reply["status"], "refused", reply)
+            self.assertIn(reason, reply["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.rules(), {})
+
+    def test_for_inside_the_reaction_spell_names_that_spells_target(self):
+        placed = self.place('rule / name: echo / when: request.method == "rain" / then: delvetalk kind/bell unrule / name: seven / for: things')
+        self.assertEqual(placed["status"], "admitted", placed)
+        self.assertIn("echo", self.rules())
+        self.assertIn("for: things", self.rules()["echo"]["then"])
+
+    def test_wants_for_things_use_the_same_target_and_are_removed_by_unwant(self):
+        placed = self.on_kind('want / name: first / for: things / when: count(new.lines) == 0 / asks: delvetalk {request.object} rain')
+        self.assertEqual(placed["status"], "admitted", placed)
+        rows = self.town.send(op="world-wants", principal=GLM, object=self.bell)["rows"]
+        self.assertIn("first", [r["name"] for r in rows])
+        things, kind = self.say(GLM, "kind/bell", "delvetalk kind/bell wants")["text"].split("on the kind", 1)
+        self.assertIn("for its things", things)
+        self.assertIn("» first (the thing)", things)
+        self.assertNotIn("» first", kind)
+        self.assertEqual(self.on_kind("unwant / name: first / for: things")["status"], "admitted")
+        rows = self.town.send(op="world-wants", principal=GLM, object=self.bell)["rows"]
+        self.assertNotIn("first", [r["name"] for r in rows])
+
+    def test_kind_usage_offers_for_things_only_to_its_owner(self):
+        owner = self.say(self.kind_owner, "kind/bell", "delvetalk kind/bell ?")["text"]
+        stranger = self.say(KIM, "kind/bell", "delvetalk kind/bell ?")["text"]
+        self.assertIn("for: <things", owner)
+        self.assertNotIn("for:", stranger)
+
+    def test_the_kinds_text_keeps_its_clause_and_byte_bounds(self):
+        before = self.field("kind/bell", "law")["value"]
+        prefix = 'rule full: request.method == "rain" then delvetalk {new.maker} note / text: '
+        size = bounds()["host"]["maxLawBytes"]
+        payload = "x" * (size - len((before + "\n" + prefix).encode()))
+        placed = self.on_kind('rule / name: full / for: things / when: request.method == "rain" / then: delvetalk {new.maker} note / text: ' + payload)
+        self.assertEqual(placed["status"], "admitted", placed)
+        self.assertEqual(len(self.field("kind/bell", "law")["value"].encode()), size)
+        over = self.on_kind('rule / name: over / for: things / when: request.method == "rain" / then: delvetalk me note / text: x')
+        self.assertEqual(over["status"], "refused", over)
+        self.assertIn("byte capacity", over["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.on_kind("unrule / name: full / for: things")["status"], "admitted")
+        count = sum(l.strip().startswith(("law ", "rule ", "want ")) for l in before.splitlines())
+        for i in range(bounds()["host"]["maxLawClauses"] - count):
+            placed = self.on_kind('rule / name: c%d / for: things / when: request.method == "rain" / then: delvetalk me note / text: x' % i)
+            self.assertEqual(placed["status"], "admitted", placed)
+        over = self.on_kind('rule / name: extra / for: things / when: request.method == "rain" / then: delvetalk me note / text: x')
+        self.assertEqual(over["status"], "refused", over)
+        self.assertIn("too many clauses", over["receipt"]["outcome"]["reason"])
+
+
 class Firing(Bell):
     def test_a_rule_fires_once_at_the_write_that_makes_it_hold_under_its_placer_and_reads_back(self):
         placed = self.place("rule / name: two / when: %s / then: delvetalk me note / text: {request.object} has {count(new.lines)} rains" % TWO)

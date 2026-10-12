@@ -380,7 +380,14 @@ A SPELL's holes are terms (`{request.subject}`, `{request.object}`, `{new.F}`, `
 hole naming nothing refused when placed; a hole fills one field's value as data, never syntax (the filled spell is
 rendered so it parses back to exactly that card, verb and fields); `me` is the rule owner's avatar. A want reads no
 `old`. `under "kind/bell"` follows all three modalities to the kind, so a kind carries rules and wants for every
-instance and its owner changes them once.
+instance and its owner changes them once. On a kind, `rule … / for: things` and `want … / for: things` amend
+that collection in its state (`law`), judged by the kind's own law as `request.kind == amend` (2). `unrule` and
+`unwant` with the same selector remove their own modality from that text. Absent `for:` names the
+object itself: a placed row on the kind affects the kind alone and is judged as a placing (4). `rules` on a kind
+prints "for its things" and "on the kind"; `wants` prints the things' clause templates and the kind's holding
+wants under the same targets. The kind's owner is offered `for:` on `?`; a stranger's amendment is refused by
+the kind's law, and `for: things` on a non-kind is refused. The existing state-edit journal records the text
+amendment; replay derives it through the same judgment.
 
 **Tenure.** A thing a kind makes holds its owner's law in its own text (its root package's: RECORD's or KIND's),
 then `law kind: under "kind/<name>"`: the kind's text only adds to it, so a kind's maker cannot write a law line
@@ -909,7 +916,8 @@ inspirit and the porch's things; tending; several spells in a post; a card's own
 (KERNEL §27), rules firing and wants posing with the revealing reply (5.160, edition 9), the paint (5.161), grown
 verbs and the chronicle with Wake's host support deleted (5.161), reach as a host op (5.162), words a card heard as
 hob's (5.163), Wake, Env, Event, Mentions and subscriptions deleted from `world/`, errands and fronts, the minimal
-genesis with its coinages and wants, the web front (docs/WEB.md).
+genesis with its coinages and wants, the web front (docs/WEB.md); the astra world review's medium 14: explicit
+kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220).
 
 Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDOFF §16, OBJECTS-HANDOFF "Open");
 each handoff keeps the detail, this table the order across lanes:
@@ -938,7 +946,6 @@ each handoff keeps the detail, this table the order across lanes:
 | the regenerated `/examples` (`docs/AGENTS-EXAMPLES.md`, still env, wake, the garden and eight doors) | transport | `deploy/capture-examples.py` re-run on a genesis of this head |
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
-| the astra world review's medium 14, as decided in AUTHORING §4 | objects, host | its "done when" there |
 | the astra world review's 11 (archival and reclamation of objects, grants and journal), 15 (a behaviour revision in roots, offers and receipts), 16 (wants as tasks: eligible actors, blocked and cancelled; discovery that rotates past the permanently blocked), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
 | rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder); a placed line's verbs (`grow`) bounded per hand as rules are (world.md 6's remainder) | kernel, host | a level rule fires at its crossing alone unless written as a level; a stranger holds at most `placedPerHand` verbs |
 

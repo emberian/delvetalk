@@ -188,7 +188,7 @@ structure CreateRec where
 /-- One change to an object, by the object whose method made it. `caller` is the
     object that called the running one (empty when the running object was the turn's
     own method, or for a direct proposal). `kind` is 0 for a write of state, 1 for a
-    reprogram, 2 for an amendment; kinds 1 and 2 carry no edits. -/
+    reprogram, 2 for an amendment; a kind's clause-text amendment edits its state's `law` field. -/
 structure Written where
   caller : String
   kind : Nat := 0

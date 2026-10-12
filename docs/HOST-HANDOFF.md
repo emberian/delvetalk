@@ -2579,6 +2579,34 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    current-edition references in FOUNDATION and the document headers agree, while earlier editions' history stays.
    Lean and runtime validation are the supervisor's; this lane has no toolchain.
 
+220. **A kind's clauses name their target (lane/cx-world; astra 2026-10-12 world.md 14).** A resident's `rule`
+   on kind/bell placed a row on the kind itself, while bells inherited only the kind state's `law` text; neither
+   the editing spell nor `rules` named that difference. `TurnLoop.placingChange` uses `placementsOf`'s clause
+   parser for both targets: absent `for:` stages the ordinary placement; `for: things` appends through
+   `appendedLaw` to the kind's `law` field and stages a `Written` state edit of kind 2. `unrule` and `unwant` with
+   that selector remove only the named clause of their modality from that text; without it they remove the
+   placed row on the kind. `parseClauses` keeps the text's 4,096-byte and 16-clause bounds and rejects malformed
+   text before any edit is staged. The kind's existing law judges the amendment, naming its clause and reading
+   when a stranger asks; no separate owner gate substitutes for that judgment. `thingsText` recognizes the
+   state's kind fields, and a non-kind or an unknown target is refused `badValue` in plain words.
+   `hostSpell` commits the same `HostChange` for all host spells; `stagePlacements` stages and judges the same
+   placing for plans, calls and world arms, including earlier edits of the target. `hostPlacingValue` reads
+   `for:` before `then`, `asks` or `does`, so a nested spell's selector belongs to that spell. `ruleLine`,
+   `wantLine`, `hostUsage` and `placingForms` show the optional field before the nested spell on the kind
+   owner's usage and offers, and show removals with it. `rulesText` prints "for its things" and "on the kind";
+   `wantsText` prints the things' clause templates and the kind's holding wants under the same targets.
+   `clausesForThings` reads through `Ops.carried`, including ancestor clauses, with each line acting as the
+   thing; its template has no kind-object firing history. Bell cards retain their ordinary carried-from line.
+   No KIND editing method existed: the host spell uses the existing state-edit amendment judgment and journal,
+   preserving the kind's governing text. Journal derivation is unchanged: `judge`, `writtenFields` and
+   `parseRecordedWrites` already apply and replay the kind-2 edit, so this adds no edition change to 5.219's 14.
+   Tests written first in `test_rules.KindTargets`: live propagation to every existing and a new bell, firing
+   as the bell and noting its maker, both target sections, independent same-name placements and their removals,
+   a stranger refused by `owner` with its reading, non-kind and unknown targets, wants and their removal,
+   per-viewer usage, the full byte and clause bounds and refusal beyond each. A nested reaction's `for:` stays
+   in that reaction. Reopening exercises both the amendment and removal through replay. Lean and runtime
+   validation are the supervisor's; this lane has no toolchain.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
