@@ -16,7 +16,7 @@ import unittest
 
 from transport.journal import entries as journal_entries
 from tests.wire import write_journal
-from tests.host import posted, whole
+from tests.host import addressed, posted, whole
 
 from tests.test_reflection import LIBRARY, PACKAGE, Reflection, source_seed
 from tests.wire import cid_of, field, label, nat, record
@@ -39,17 +39,16 @@ class Posts(Reflection):
         r = self.posted(slot=SLOT)
         self.assertEqual(r["status"], "posted", r)
         self.assertEqual(r["height"], self.host.send(op="world-status")["height"])
-        found = self.host.send(op="world-addressee", parent=URI)
-        self.assertEqual(found, {"status": "addressee", "object": "bell", "slot": SLOT})
+        self.assertEqual(addressed(self.host, URI), {"object": "bell", "slot": SLOT})
         plain = self.posted(uri=URI + "x")
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI + "x"), {"status": "addressee", "object": "bell"})
+        self.assertEqual(addressed(self.host, URI + "x"), {"object": "bell"})
         self.assertEqual(plain["status"], "posted")
-        self.assertEqual(self.host.send(op="world-addressee", parent="at://nobody/p/1"), {"status": "unknown"})
+        self.assertIsNone(addressed(self.host, "at://nobody/p/1"))
         self.assertEqual(self.posted(slot=SLOT)["height"], r["height"])  # a retried confirmation is the same entry
         other = posted(self.host, principal="transport", uri=URI, cid="bafyreiother", object="bell")
         self.assertEqual(other.get("class"), "duplicateIdentity", other)
         self.reopen()  # the index is rebuilt by replay
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI)["slot"], SLOT)
+        self.assertEqual(addressed(self.host, URI)["slot"], SLOT)
 
     def test_a_post_for_an_unknown_object_or_a_non_at_uri_is_a_request_error(self):
         self.assertEqual(posted(self.host, principal="transport", uri=URI, cid="c", object="ghost")["status"], "error")
@@ -308,8 +307,7 @@ class Publish(Reflection):
             r = posted(self.host, principal="transport", uri=uri, cid=f"c{i}", object="teller", page="teller", section="")
             self.assertEqual(r["status"], "posted", r)
             self.assertEqual(listing()["publications"][0]["replyTo"], uri)  # the newest post of the page
-        self.assertEqual(self.host.send(op="world-addressee", parent=URI),
-                         {"status": "addressee", "object": "teller", "page": "teller", "section": ""})
+        self.assertEqual(addressed(self.host, URI), {"object": "teller", "page": "teller", "section": ""})
         self.reopen()
         self.assertEqual(listing()["publications"][0]["replyTo"], URI + "-checkpoint")
         bad = posted(self.host, principal="transport", uri=URI + "-2", cid="c", object="teller", section="Notes")

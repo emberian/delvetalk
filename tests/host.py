@@ -292,6 +292,17 @@ def as_owner(host, reply, principal=None):
     return out
 
 
+def addressed(host, uri):
+    """What a reply to the post at `uri` reaches (`world-reach`): its object and what the post was made for (slot, page and
+    section, why it left the town), or None for a post the world never recorded."""
+    request = dict(op="world-reach", uri=uri + "#reply", text="", kind="post", author="transport", replyTo=uri)
+    try:
+        got = host.send(request)
+    except TypeError:  # a driver that takes fields alone (tests.town.Town)
+        got = host.send(**request)
+    return {k: v for k, v in got.items() if k not in ("status", "how", "replyTo")} if got["status"] == "reached" else None
+
+
 def posted(host, intent=None, source="test", **request):
     """`world-posted` as the transport makes it (HOST-HANDOFF 5.107): the post's reservation first, under
     its intent (by default its uri; a source other than `delve` counts against no quota)."""

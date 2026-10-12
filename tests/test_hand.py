@@ -18,6 +18,7 @@ import urllib.parse
 from pathlib import Path
 
 from transport.journal import records, size
+from tests.host import addressed
 from tests.test_bridge import spell_post
 from tests.wire import write_journal
 from transport import delve, hand, identity, observe, post, watch
@@ -471,7 +472,7 @@ class Speak(unittest.TestCase):
         h.post(came['drafted'])
         self.assertEqual(sent[0][:2], ('delvetalk', 'welcome'))
         uri = json.loads((self.st.outbox / f"{came['drafted']}.json").read_text())['sent']['uri']
-        self.assertEqual(self.town.send(op='world-addressee', parent=uri).get('object'), bell)  # a reply to the post reaches the bell
+        self.assertEqual((addressed(self.town, uri) or {}).get('object'), bell)  # a reply to the post reaches the bell
 
     def test_a_refused_spell_drafts_nothing(self):
         came = self.hand.cast('delvetalk room/99 write / text: nobody here')

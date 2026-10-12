@@ -16,7 +16,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from tests.host import serve, served
+from tests.host import addressed, serve, served
 from tests.test_bridge import CARD, OFFERING
 from transport import zulip
 from transport.__main__ import main
@@ -195,7 +195,7 @@ class Bridging(ZulipCase):
         self.assertIn('zulip:127.0.0.1:1000', arrivals)
         self.assertIn('zulip:127.0.0.1:1001', arrivals)
         for uri in got['posted']:  # every posted draft is recorded, so the host knows who it addresses
-            self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': uri})['object'], 'garden-1')
+            self.assertEqual(addressed(self.host, uri)['object'], 'garden-1')
         self.assertEqual(self.bridge()['posted'], [], 'nothing is posted twice')
         used = {p['source']: p['used'] for p in self.host.send({'op': 'world-status'})['posts']['sources']}
         self.assertEqual((used['zulip'], used['delve']), (2, 0))  # each Zulip post reserved with the host, counted apart
@@ -252,7 +252,7 @@ class Bridging(ZulipCase):
         again = zulip.post_drafts(self.state, self.host, self.client())
         self.assertEqual(len(self.zulip.mine()), 1, 'the lost send is adopted, never repeated')
         self.assertEqual(again['posted'], [zulip.uri_of('delvetalk', 't', self.zulip.mine()[0]['id'])])
-        self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': again['posted'][0]})['object'], 'garden-1')
+        self.assertEqual(addressed(self.host, again['posted'][0])['object'], 'garden-1')
 
 
     def test_the_hands_post_goes_where_the_world_lives_its_zulip_topic(self):
@@ -264,7 +264,7 @@ class Bridging(ZulipCase):
         name = hand.reply(uri, 'a word by hand', 'garden-1')['drafted']
         got = hand.post(name)
         self.assertEqual([(m['subject'], m['content']) for m in self.zulip.mine()], [('t', '@**Alice**\na word by hand')])
-        self.assertEqual(self.host.send({'op': 'world-addressee', 'parent': got['uri']})['object'], 'garden-1')
+        self.assertEqual(addressed(self.host, got['uri'])['object'], 'garden-1')
 
 if __name__ == '__main__':
     unittest.main()

@@ -62,7 +62,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 
 - Open and status: `world-open {path, library?, principal?, libraryLaw?, sync?, verify?, snapshotEvery?, maxJournalBytes?, clock?, postQuota?, opener?}`, `world-status`, `world-snapshot`.
 - Turns: `world-create`, `world-turn` (`replyTo?`, `profile?`), `world-propose`, `world-deliver {limit}`, `world-pending`, `world-reprogram {mode: replace | extend}`, `world-amend`, `world-advance {height}`, `world-revoke`, `world-interpretations`, `world-interpretation {id, reply}`.
-- Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-addressee`.
+- Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-reach` (5.162).
 - Paint (5.161, never journaled): `world-render {principal, object, version?}`, `world-renders`, `world-render-submit {key, reply}`; `world-status.renders {cached, rejected, pending}`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
 - `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
@@ -76,7 +76,7 @@ Rules:
 - `clock` (the one principal that may `world-advance` and `world-posted`) and `postQuota` (hourly post cap, default 16) are journaled in a `settings` entry on first naming; a later open with other values is refused. `opener` goes in the same entry; the opener alone may `world-create {…, owner}`.
 - Reads take a principal through `readerOf`: 1..128 bytes, or `anonymous` / "" (public objects only). Object ids at creation are 1..128 bytes of letters, digits and `. _ : / -` (`validObjectId`); replay accepts any id a journal holds.
 - Optional request fields go through `optText`/`optNat`, which refuse a present but malformed value by name. `world-deliver.limit` is 1..16; `world-history` `after`/`limit` 1..100.
-- `world-posted {principal, uri, cid, object, slot?, page?, section?}` (`uri` an `at://` post or a `zulip://<stream>/<topic>/<id>` message, `postSchemes`) journals a `posted` entry (identity `posted:<uri>`) and indexes `world.posts`. `world-addressee {parent}` answers `{status: "addressee", object, slot?, page?, section?}` or `{status: "unknown"}`.
+- `world-posted {principal, uri, cid, object, slot?, page?, section?}` (`uri` an `at://` post or a `zulip://<stream>/<topic>/<id>` message, `postSchemes`) journals a `posted` entry (identity `posted:<uri>`) and indexes `world.posts`. A reply to a recorded post reaches what it was made for (`world-reach`, 5.162: `object`, `slot?`, `page?`, `section?`, `unposted?`).
 - `world-principal {principal, did, handle}` (clock principal only) journals a `principal` entry for the handle registry; "" forgets a handle.
 
 ## 3. Journal
@@ -1152,7 +1152,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      nobody exempt. `world-status` answers `modelQuota {quota, used, next}`, `hour {hour, turns, refused {class:
      n}, interpretations, attempts}` (`hourCounts`, derived by `record`), `shadowed` and `ignored`.
    - *`unposted`:* `world-posted {principal, uri, unposted: true, reason}` journals `unposted {uri, reason,
-     object}` (identity `unposted:<uri>`); the post's record (`Post.unposted`, `world-addressee`) says so; a uri
+     object}` (identity `unposted:<uri>`); the post's record (`Post.unposted`, a reply's `world-reach`) says so; a uri
      never recorded is a request error; the reservation stays settled.
    - Not built: a `before`/`after` past `maxEntryBytes` by CID in `blocks` (a root act that large is refused by
      `durable`'s entry bound); retries of a root act (every one is a new `root:<n>`). Tests: `tests/test_root.py`
@@ -1855,6 +1855,21 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      (`deliverOne`'s `caller`).
    - *Tests.* `test_verbs`, `test_chronicle`; `test_changes` deleted; the four answers in
      `test_interpret_object`, `test_interpret_text`, `test_hub`, `test_http`.
+
+162. **Reach is the host's (host25; OVERHAUL §5 step 5's host half; fungus T30; no edition change).** `world-reach {uri, text,
+   kind, author, replyTo?, root?, mentions?, chain?: [{uri, author, replyTo?}]}` (`TurnLoop.reachOp`) answers `{status:
+   reached, object, slot?, how, replyTo?, page?, section?, unposted?}` or `{status: unreached}`; nothing is journaled. The
+   bridge passes what it observed (the post, its mentions' count, the ancestors it saw nearest first, at most
+   `reachHops` 32) and sends the turn the answer names, `reach` set for `mention`, `door` and `fields` (the turn finds
+   `reply` and `spell` again itself). The rule, FLEX §2's as `bridge.route` had it: (a) a reply reaches its direct
+   parent's card (`walkTo` over `World.posts`, one hop on Delve; on Zulip up the topic past only the author's own
+   messages, none when it mentions residents); (b) a spell line its card, a summons `commonplaceId`; (c) in a thread
+   the world opened (the walk from the parent's parent, else the root's post) field lines reach the thread's card,
+   (d) prose naming a door of the commonplace's `cites` (`namedDoor`) that door. `bridge.py`'s `route`, `walk`,
+   `named_door`, `parsed` and the `world-addressee` op are gone (a reply's reach names what its parent was made for;
+   `tests.host.addressed`). Tests: `test_reach.WorldReach` (each rule, a cycle, Zulip's author walk),
+   `test_bridge.Reaching` (what the bridge passes and sends), `test_zulip`, `test_outbound`, `test_archive` unchanged
+   (81 reached). Not yet: hob for a reached card's words with its table (OVERHAUL §2.7; section 7).
 
 ## 6. Gotchas
 
