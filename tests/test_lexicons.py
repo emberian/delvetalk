@@ -151,6 +151,18 @@ class Lexicons(unittest.TestCase):
         self.assertEqual(record_problems({**good, 'receipt': {**good['receipt'], 'entry': 'bafy'}}), ['$.receipt.entry: not a cid-link'])
         self.assertEqual(record_problems({**good, 'height': 0}), ['$.height: below 1'])
 
+    def test_checkpoint_built_by_mirror_requires_source_did_rev_commit_and_positive_entry_height(self):
+        from transport import mirror
+        good = mirror.checkpoint_record('did:web:gsb.fg-goose.online', '3aaaaaaaaaaa2', 'bafyreia', 7)
+        self.assertEqual(set(good), {'$type', 'did', 'rev', 'commit', 'height'})
+        self.assertEqual(record_problems(good), [])
+        for field in ('did', 'rev', 'commit', 'height'):
+            self.assertEqual(record_problems({k: v for k, v in good.items() if k != field}), [f'$.{field}: required'])
+        for field in ('did', 'rev', 'commit'):
+            self.assertEqual(record_problems({**good, field: 1}), [f'$.{field}: not a string'])
+        for height, problem in [(0, '$.height: below 1'), (True, '$.height: not a integer')]:
+            self.assertEqual(record_problems({**good, 'height': height}), [problem])
+
 
 if __name__ == '__main__':
     unittest.main()

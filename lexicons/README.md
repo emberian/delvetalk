@@ -10,8 +10,9 @@ one shared envelope; `listProjections` references that envelope. `kind` selects 
 | `online.fg-goose.gsb.entry` | rev (TID) | height and entry hash as a link; the signed MST's one collection |
 | `online.fg-goose.gsb.card` | object id, `/` as `~` | `mirror.card_record`: public exact card, wants, doors |
 | `online.fg-goose.gsb.page` | page name | public library pages |
-| `online.fg-goose.gsb.index` | `self` | public manifest with height and card versions |
+| `online.fg-goose.gsb.index` | `self` | journal-derived public manifest with height and card versions; never names a head |
 | `online.fg-goose.gsb.answer` | `<did>.<rkey>` | bridge's public answer to a request |
+| `online.fg-goose.gsb.checkpoint` | `self` | mirror's `{did, rev, commit, height}` from the signed front before host reads; posting account only, never the did:web façade or signed tree |
 
 | Projection kind | Key | `of` | Host source |
 | --- | --- | --- | --- |
@@ -29,10 +30,14 @@ authenticated principal (PUBLIC anonymously). A receipt's `signed` points to the
 record when present in the current tree; that is the path `sync.getRecord` proves.
 
 Object ids map to keys by `/` → `~`, then a dot and version or clause. The host creates ids only in
-`[A-Za-z0-9._:/-]`. A slug, CID, publication or grant id is a key as it stands. Checkpoints, request
+`[A-Za-z0-9._:/-]`. A slug, CID, publication or grant id is a key as it stands. Activity checkpoints, request
 digests and pending sends appear only inside an entry when the host lets its principal see it whole;
 they have no collections. CIDs inside host replies are strings, as the journal stores them. The signed
 entry record's `entry` is a DAG-CBOR link; the journal block keeps its own bytes without `$type`.
+
+Journal-derived strongRef targets use the canonical did:web URI (ATPROTO §1). The mirror's checkpoint + index map
+a copy by collection and unchanged rkey; equal CIDs verify the bytes against that repository, without retargeting
+the reference. Book and paint must retain their cited versions under immutable versioned keys when built.
 
 ## Acting and sessions (docs/ATPROTO.md)
 

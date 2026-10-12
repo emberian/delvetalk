@@ -251,7 +251,8 @@ class Requests(unittest.TestCase):
         self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT))
         self.step()
         written = []
-        mirror.run(self.st, self.host, lambda c, k, v: written.append((c, k, v)))
+        mirror.run(self.st, self.host, lambda c, k, v: written.append((c, k, v)),
+                   fetch=lambda *args: (400, b'{"error":"RepoNotServed"}', {}))
         (value,) = [v for c, k, v in written if c == bridge.ANSWER and k == f'{DID}.3aaaaaaaaaaa2']
         pds_cid = block(from_json(json.loads(canonical(value))))[0]  # the PDS hashes the JSON it is sent
         repo = Repo(LOOPBACK.origin, answers=self.st.answers)

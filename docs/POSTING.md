@@ -28,11 +28,28 @@ the mirror; nothing runs it authorized, so today these records are read from the
 | --- | --- | --- |
 | `online.fg-goose.gsb.card` | object id, `/` as `~` | the card as the public reads it (`world-card`), its paint when one is verified, its wants with their spells, its doors, version and height |
 | `online.fg-goose.gsb.page` | page name | each library page and walk, and the guide's parts (`guide`, `guide-1`, …) |
-| `online.fg-goose.gsb.index` | `self` | the manifest: the height, each card's version, the pages; written last, only when every record it lists landed (`coherent: false` when the world moved during the read) |
+| `online.fg-goose.gsb.index` | `self` | the manifest: height, each card's version, pages; no did, rev, commit or head; written after every record it lists landed (`coherent: false` when the world moved during the read) |
+| `online.fg-goose.gsb.checkpoint` | `self` | `{did, rev, commit, height}` from the world's signed front before host reads; written last, posting account only; no timestamp |
 
 `python3 -m transport mirror` writes what changed (`putRecord`: no feed post, no `postQuota`), a dry run without
-the authorizing flag, as `post` is; no genesis, deploy, timer or hand step passes it. Only the public reader's projection is mirrored. The did:web façade
-(docs/REPO.md) answers the same collection from the same function: one rendering.
+the authorizing flag, as `post` is; no genesis, deploy, timer or hand step passes it. Only the public reader's projection
+is mirrored. The did:web façade (docs/REPO.md) answers the journal-derived collections from the same functions.
+The index never names a head; its journal-derived bytes and CID are identical in both repositories at the same
+projection. The checkpoint is never in the did:web façade or signed tree. Two GETs to the world's
+`repo.world_origin(config.origin, world)` front read `sync.getLatestCommit`'s `{cid, rev}` and
+`repo.getRecord`'s `entry/<rev>.value.height` before any host record read, through an injected fetch (default
+`http_transport`). A failed read, including `RepoNotServed`, gives the step's `checkpoint: <why>`; records proceed
+and an existing checkpoint is retained. An available checkpoint joins the same plan and digest ledger, landing
+after the index when it was written or alone when its own value changed, only after the whole plan lands.
+A changed head with unchanged records costs one checkpoint write after rereading; it names a lower bound on the
+reads, not a snapshot guarantee. Neither index nor checkpoint counts against the ordinary-record batch limit.
+The dry run reads only, lists a checkpoint it would write, and writes neither records nor the mirror ledger.
+
+A journal-derived record's canonical URI is `at://did:web:gsb.fg-goose.online/<collection>/<rkey>` for the town;
+its strongRef names that URI and CID. Checkpoint + index map the posting-account copy to the source DID with the
+same collection and rkey, bytes and CID (ATPROTO §1). Equal CIDs verify bytes against the canonical repository;
+copying does not retarget a strongRef or preserve an overwritten version. Book and paint must use immutable
+versioned keys and retain every referenced version when they land.
 
 **2. A preview: `try`, and `if:`.** `delvetalk try` with spells indented under it (an indented spell is a
 quotation and never casts) is `world-try` of them: the turn exactly as `world-turn` runs it, settling pass and all,
@@ -107,7 +124,7 @@ answers its contents in one post (each part's name and spell), and every part is
 
 ## Built, and where
 
-1. The mirror: `transport/mirror.py`, `online.fg-goose.gsb.card`, `.page`, `.index` (a manifest); getRepo of a carried journal.
+1. The mirror: `transport/mirror.py`, `online.fg-goose.gsb.card`, `.page`, `.index` (a headless manifest), `.checkpoint` (posting account only); getRepo of a carried journal. Built and not running.
 2. `try` and `if:`: `world-try` (Session.lean), `delvetalk try` and the `if:` line (Serve.lean), `bridge.preview_text`.
 3. Long replies threaded within the hour, each resident a quarter of it: `post.parts`, `post.thread`, `postShare`.
 4. The guide as library pages from the one file (`genesis.guide_pages`), `delvetalk guide`, refreshed with the file.

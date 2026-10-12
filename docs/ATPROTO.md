@@ -41,14 +41,15 @@ record there; and a repository is public, so it holds only what the public reade
 | collection | key | value |
 | --- | --- | --- |
 | `card` | object id, `/` as `~` | exact card, version, wants with spells, doors (built) |
-| `paint` | `<id>.<version>` | the verified paint; strongRef to the card it paints |
+| `paint` | `<id>.<version>` | the verified paint; canonical strongRef to the immutable card version it paints (versioned keys required when built) |
 | `page` | page name | library pages, walks, the guide's parts (built) |
 | `law` | `<id>.<clause>` | name, reading, clause (façade today) |
 | `verb` | `<id>.<verb>` | name, grower, reading, takes |
 | `chronicle` | clock day | `world.chronicle({day})`'s lines |
-| `book` | book id | pages in order, strongRefs to `page` |
+| `book` | `<id>.<version>` | pages in order, canonical strongRefs to immutable page versions (versioned keys required when built) |
 | `door` | `<from>.<label>` | the door map as edges |
-| `index` | `self` | ids, pages, height, and the signed head copied from (built, less the head) |
+| `index` | `self` | ids, pages, height, coherence; journal-derived bytes, identical in both repositories, never a did, rev, commit or head |
+| `checkpoint` | `self` | `{did, rev, commit, height}` observed before reading the host; posting account only, never the did:web façade or signed tree (built) |
 | `entry`, `answer` | rev; `<did>.<rkey>` | the journal (signed today); answers (§2) |
 
 Rules and wants stay on the card (they are its lines). `receipt`, `object`, `source`, `publication`, `grant` and
@@ -63,8 +64,11 @@ or PUBLIC anonymously. `repo.*` serves only entry and the four public mirrored c
 CIDs; `sync.getRecord` proves only `entry/<rev>` until the other public records join the tree.
 
 **Paint leaves the card.** Paint is model prose, cached, never journaled (OVERHAUL §4); everything else above is a
-function of the journal. Split out, a card record has the same bytes, so the same CID, in both repositories, which
-makes a strongRef to it portable. The mirror's `card.paint` moves to `paint` in L3.
+function of the journal. Split out, a card record has the same bytes, so the same CID, in both repositories: the
+bytes can be verified against the canonical did:web repository. A strongRef includes a URI and CID; copying the
+bytes does not retarget its URI. Journal-derived targets use their canonical did:web URI. The mirror's
+`card.paint` moves to `paint` in L3. When `paint` and `book` land, they and every card or page version they cite
+must use immutable versioned keys: overwriting `card/<id>` or `page/<name>` cannot preserve a strongRef's target.
 
 **The signed tree carries them.** The MST holds only `entry` today; commits are a deterministic function of
 (journal, key, epoch ledger) (REPO). The ledger is `<state>/worlds/<world>/repo.json`, copied by carry and kept in
@@ -73,7 +77,7 @@ the carried journal's records; pre-carry entry records leave the tree and follow
 A key rotation preserves the tree and record revs, signs one higher-rev sync commit with `prev` null, and raises
 the floor for subsequent heights. Old commit blocks are never re-signed under their old revs. An unchanged restart
 rebuilds the same head and writes nothing; loss of the ledger writes a new one and requires follower re-sync.
-Every collection above but `paint` is a function of the journal (cards and wants render from state and the
+Every collection above but `paint` and `checkpoint` is a function of the journal (cards and wants render from state and the
 journaled clock), so each height's commit carries an op for each public record that height changed: `create
 entry/<rev>`, `update card/<id>`, `create answer/…`, `update index/self`. Two pieces of work: `mst.py` appends only
 at the right edge and needs `put`/`delete` anywhere (the interop vectors in `tests/fixtures/atproto/` cover layers and
@@ -91,14 +95,46 @@ log's backfill window (§8 finding 10). Commits are recomputed from journal, key
 `TID(clock minute × 6·10⁷ + height)` with the epoch clock floor; rotation sync revs use height offset 0.
 Consumers reject future revs [sync]; the clock and its epoch floor must remain behind wall time.
 
-**Mirrored on delve.town (built, not running).** `mirror.py`, once the owner authorizes it, writes the same records into the posting account, adding `answer`, `paint`,
-`verb`, `chronicle`, `book`, `door`. A resident's mirror (listRepos, then listRecords or getRepo) then holds the town
-as it holds everyone's posts. The mirror cannot prove the bytes are the host's; the cross-check is the CID, equal in
-both repositories for every journal-derived record, and the `index` naming the signed head `{did, rev, commit}`.
+**Mirrored on delve.town (built, not running).** `mirror.py`, once the owner authorizes it, writes `card`, `page`,
+`index` and `answer` into the posting account; `paint`, `verb`, `chronicle`, `book`, `door` follow their lanes.
+A resident's mirror (listRepos, then listRecords or getRepo) then holds the town as it holds everyone's posts.
+The `index` names no head in either repository, ever; its bytes depend on the journal alone. Its bytes and CID
+are identical in both repositories at the same journal projection.
 
-**Decision:** ten collections; paint split out; the signed tree carries every journal-derived public record per
-height through a host `world-projection` op and a general MST; subscribeRepos on its own thread; the delve mirror
-copies the same bytes and names the signed head.
+Before reading any host records, the mirror reads the world's signed head from `repo.world_origin(config.origin,
+world)`: `com.atproto.sync.getLatestCommit?did=<world did>` gives `{cid, rev}`, then
+`com.atproto.repo.getRecord?repo=<did>&collection=online.fg-goose.gsb.entry&rkey=<rev>` gives `value.height`.
+The injected fetch defaults to `http_transport`; both calls are GETs. The posting account alone holds
+`online.fg-goose.gsb.checkpoint/self`: `{$type: online.fg-goose.gsb.checkpoint, did, rev, commit, height}`,
+where `commit` is the CID string and `height` that entry's journal height. There is no `createdAt`: the bytes
+depend only on what they name. A checkpoint never enters the did:web façade or signed tree, where it would
+name its own repository. If either read fails, including `RepoNotServed`, the step reports `checkpoint: <why>`,
+copies records as usual and leaves any held checkpoint alone, without deleting it. A rotation sync rev has no
+`entry/<rev>` today; that read fails and likewise leaves the checkpoint alone until an entry head is available.
+
+The index is written after all planned records and deletes land; an available checkpoint is written last,
+when the index was written this step or the checkpoint value changed. Both follow the ordinary-record batch
+limit only once the plan is complete and are digested in the same mirror ledger. With no changes, nothing is
+written. A moved head with unchanged record values rewrites only the checkpoint after rereading the records:
+it says those reads began after observing the newer commit. It does not assert that every value equals its
+projection at that commit; the host may advance during the reads. `index.coherent` and `heights` describe that
+read's coherence, and an unchanged manifest's height can lag the checkpoint. A dry run may read the front and
+lists the checkpoint it would write; without `--i-am-ember-and-authorize-posting`, it writes no records or ledger.
+
+The canonical URI of a journal-derived record is the world's did:web repository's:
+`at://did:web:gsb.fg-goose.online/<collection>/<rkey>` for the town. A strongRef to such a record names that URI
+and its CID. The mirror's checkpoint supplies the source DID; the index supplies the card keys/versions and
+page keys. A mirrored record maps by its collection and unchanged rkey to
+`at://<checkpoint.did>/<collection>/<rkey>`, with the same bytes and CID. Equal CIDs make those bytes verifiable
+against the canonical repository; they do not make references portable, prove membership in the checkpoint's
+commit, or promise historical retrieval. Until the public collections join the signed tree, their façade CIDs
+can be compared but their membership cannot be proven by sync.getRecord.
+
+**Decision:** the signed tree carries every journal-derived public record per height through a host
+`world-projection` op and a general MST; paint stays outside it; subscribeRepos on its own thread. The index
+never names a head; the posting-only checkpoint names the commit observed before the mirror's reads.
+Canonical strongRefs use the did:web URI; book and paint must retain cited versions under immutable versioned keys
+when built. The mirror remains built and not running.
 
 ## 2. Acting
 
@@ -222,6 +258,7 @@ publish what the holder chooses.
 | `request` in a resident's repo | no | anyone, via PDS, mirrors, copies; nothing | the resident may delete; the entry and `answer` remain, as do copies |
 | our repo's records (`entry`, `answer`, `card`, `page`, `law`, `verb`, `chronicle`, `book`, `door`, `index`) | no | anyone; nothing | never deleted: the journal appends; an update supersedes in the current tree, old bytes stay in commits, frames, mirrors |
 | the same in the posting account | no | anyone; nothing | putRecord supersedes, deleteRecord removes from the current tree; neither recalls copies |
+| posting account's `checkpoint/self` | no | anyone; nothing | superseded after complete mirror steps; retained when the source head is unavailable; never served in the did:web repository |
 | `paint` | no | anyone; nothing | replaced per version; old paint stays where copied |
 | lexicon schema records | no | anyone; nothing | edits supersede; history keeps the old |
 | non-public façade reads (whole receipt, private object, grant) | no | the principal the host lets view it; bearer or service auth, then the host's read policy | nothing written; the access log keeps method, path, status, DID |
@@ -260,7 +297,7 @@ delve are two DIDs. A link is a pair of `online.fg-goose.gsb.link {did}` records
 ## 5. Lexicons
 
 Every collection and procedure is a file under `lexicons/online/fg-goose/gsb/` [lexicon]. This commit adds `defs` (call,
-pin, outcome, trace, receipt), `request`, `answer`, `paint`, `act`, `try`, `plan`, `getEntry`, `openSession`,
+pin, outcome, trace, receipt), `request`, `answer`, `paint`, `checkpoint`, `act`, `try`, `plan`, `getEntry`, `openSession`,
 `getSession`, `listSessionRecords`; `verb`, `chronicle`, `book`, `door`, `link`, `shareSession` follow their lanes.
 All are one NSID group, `online.fg-goose.gsb.<name>`, because each group needs its own DNS record and resolution does not
 recurse [lexicon "Publication and Resolution"].
@@ -353,6 +390,8 @@ Fixed in L3:
 | --- | --- | --- |
 | 4 | carry and key rotation break rev continuity | fixed: one durable epoch ledger at `State.repo_ledger` (`worlds/<world>/repo.json`), atomic writes inside `Signed.lock`; `{key, base, epochs: [{height, clock, cause}], head: {height, rev, clock}}`. A changed base raises the floor to `head.clock + 1` at the first carried height, tree empty, `prev` null, pre-carry entries reconciled away. A changed key on the same journal raises the floor after head height H, signs the same root once at `TID((head.clock + 1) × 60,000,000)`, `prev` null; H+1 chains from it. Old commits are not rebuilt, old record revs remain `since` cursors. Restart depends only on journal, key and ledger and changes no bytes. Carry copies the ledger with state; deletion requires follower re-sync. L4 announces each epoch with `#sync` |
 | 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | fixed: one pair of queries, `online.fg-goose.gsb.getProjection`/`listProjections`, for receipt/object/source/publication/grant/law; `{kind, key, of?, value, signed?}` with host values untagged, `of` the subject CID. Receipt `signed` points to `entry/<rev>` when in the current tree. Repo record methods accept only public entry/card/page/index/answer, each `cid` hashes `value`; sync.getRecord proves only the requested entry path and includes whole bytes for its principal. `getEntry` remains L5 work |
+| 12 | the signed index naming its own head is a cycle | fixed: `index` never carries did/rev/commit/head in either repository; its bytes depend on the journal alone. The posting-only `online.fg-goose.gsb.checkpoint/self` names `{did, rev, commit, height}`, fetched from the world's front before host reads, written after the index or alone when the source head changes, through the same plan/digest/ledger. Unavailable source: records proceed, reason reported, held checkpoint retained. No timestamp; no did:web façade or signed-tree checkpoint; dry run only reads (§1, `tests/test_mirror.py`) |
+| 14 | canonical strongRef URI and mirror mapping | fixed in the design: a journal-derived record's canonical URI is `at://did:web:gsb.fg-goose.online/<collection>/<rkey>` (or its world's did:web DID). A strongRef names that URI; checkpoint + index map the copy by collection and unchanged rkey, with identical bytes/CID. CID equality verifies bytes against the canonical repository, never retargets a URI or proves commit membership. Version retention remains below |
 
 For the next slices, each with its decision:
 
@@ -362,9 +401,8 @@ For the next slices, each with its decision:
 | 9 | the bare-audience exception cannot know the forwarder | accepted: no forwarder-based exception. `aud` is our DID with `#delvetalk` or bare (both name only us; `lxm` binds the method), `typ` `JWT`, `iat` not in the future, `exp` within five minutes, `jti` once | L5 |
 | 10 | height cannot be the firehose `seq` | accepted: an endpoint-wide durable event log with its own `seq`, a stated backfill window, `OutdatedCursor`/`FutureCursor` | L4 |
 | 11 | one commit event per height can overflow | accepted: events budgeted under 200 ops and 2,000,000 bytes, `#sync` and resync past that, `rebase: false` sent, proofs built and tested for inversion of updates and deletes | L4 |
-| 12 | the signed index naming its own head is a cycle | accepted: the signed `index` names no head; the mirror writes a `online.fg-goose.gsb.checkpoint/self` of its own naming the source commit it copied from | L3 |
 | 13 | proxied sessions are visible to the resident's PDS | accepted: §3's table counts the resident's PDS inside the trust boundary of every proxied call; privacy from it needs a direct call | L6 |
-| 14 | equal CIDs do not make strongRefs portable | accepted: the canonical URI of a journal-derived record is the did:web repository's; the mirror's index maps it; a strongRef names the canonical URI; versions a book or paint cites are kept under versioned keys | L3 |
+| 14 | retrieving versions cited by book or paint | required when those records land: immutable versioned keys for book/paint and every card/page version they cite; no claim of historical retrieval from overwritten singleton keys (§1) | L3 |
 | 15 | sessions have no unambiguous address | accepted: `openSession` returns an opaque id binding holder and incarnation, used by every call; read, act, share and publish permissions separate, the host's | L6 |
 | 16 | XRPC acts cannot make request-keyed answers | accepted: an XRPC act's public answer is keyed `xrpc.<did>.<sha-256 of intent, 26 base32>`, its provenance `{iss, intent}` in place of `request` | L5 |
 | 17 | constraints only in prose | in part: the bridge answers a malformed request `invalid` with why (one call an act, spells only a plan, a spell or an object with its verb); next, discriminated call unions, byte and count budgets per record, previews structurally apart from receipts | L2 |
