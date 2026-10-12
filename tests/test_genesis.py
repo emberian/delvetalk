@@ -80,7 +80,7 @@ class Genesis(unittest.TestCase):
         each porch thing has nothing around it, each bell no door; each reading says what the thing lacks and asks no one."""
         wants = lambda obj: {r['name']: r for r in self.host.send({'op': 'world-wants', 'principal': 'did:plc:stranger', 'object': obj})['rows']}
         clapper = wants('bell/1')['clapper']
-        self.assertEqual((clapper['reading'], clapper['asks']), ('the bell has no clapper yet', 'delvetalk bell/1 hang'))
+        self.assertEqual((clapper['reading'], clapper['asks']), ('the bell has no clapper yet', genesis.WANTS[0][4]))
         self.assertEqual(wants('kinds')['made']['reading'], "no kind made here yet but the town's own")
         self.assertNotIn('made', wants('kind/bell'))  # the guard keeps kinds' want off the kinds that follow it
         self.assertEqual(wants('porch/goblet')['claimed']['reading'], 'nothing surrounds it yet')
@@ -154,6 +154,25 @@ class Genesis(unittest.TestCase):
                 self.assertTrue(body.startswith('hob: '), body[:40])
                 for named in re.findall(r'page: ([a-z]+)', body):
                     self.assertIn(named, names, (name, named))
+
+
+class Clapper(unittest.TestCase):
+    def test_the_clapper_wants_exact_spell_grows_the_verb_whose_use_answers_it(self):
+        """Codex docs 10: the clapper want asked `delvetalk bell/1 hang`, a verb nobody seeded, which with no model
+        is refused `noAction`. Its spell grows `hang`; cast by its name, it hangs the clapper and the want falls."""
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        town = Town(tmp.name, cleanup=self.addCleanup, furnished=False)
+        say = lambda text, n: town.send(op='world-turn', principal='did:plc:stranger', object='bell/1', method='receive', identity='c%d' % n,
+                                        argument=record(text=label(text), post=label('')))
+        wants = lambda: [r['name'] for r in town.send(op='world-wants', principal='did:plc:stranger', object='bell/1')['rows']]
+        [asks] = [r['asks'] for r in town.send(op='world-wants', principal='did:plc:stranger', object='bell/1')['rows'] if r['name'] == 'clapper']
+        grown = say(asks, 1)
+        self.assertEqual(grown['status'], 'admitted', grown)
+        self.assertIn('clapper', wants())
+        hung = say('delvetalk bell/1 hang', 2)
+        self.assertEqual(hung['status'], 'admitted', hung)
+        self.assertNotIn('clapper', wants())
 
 
 class NoWipe(unittest.TestCase):

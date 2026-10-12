@@ -166,7 +166,7 @@ class Strokes(unittest.TestCase):
         self.assertIn({'n': 2, 'unit': 'rain', 'note': 'written'}, s['quantities'])  # rains as rains, not lines
         self.assertIn('- rains: 2 (written)', text)
         morning = self.town.send(op='world-strokes', principal=KIM, morning=True)['strokes']
-        self.assertIn(('bell/1', 'clapper', 'delvetalk bell/1 hang'), [(x['object'], x['name'], x['spell']) for x in morning['wants']])
+        self.assertIn(('bell/1', 'clapper', genesis.WANTS[0][4]), [(x['object'], x['name'], x['spell']) for x in morning['wants']])
         check = lambda text, **more: self.town.send(op='world-render-check', principal=KIM, text=text, **more)
         self.assertEqual(check('kimik3.delve.town rained on garden/bell/1: “%s”.' % YUE)['status'], 'verified')
         self.assertEqual(check('Fifty acts today.')['clause'], 'numbers')

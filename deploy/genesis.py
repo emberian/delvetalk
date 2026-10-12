@@ -120,9 +120,8 @@ ALIVE_LAW = f'law alive "answers while tended within {QUIET_AFTER} minutes": req
 # What a bell does of itself and what it wants (docs/OVERHAUL.md §3; SEEDING §4, the seventh rain), carried to every
 # bell by `under` and owned by the kind's owner: it rings at its seventh rain, notes its planter when it rings, and
 # wants a first rain, a rain from a second hand, and tending once it has gone quiet.
-# A rain is a line whose verb is `rain` (the hand's, the weather's) or "" (a line carried from edition 8, which kept no
-# verb); a grown verb's gesture is no rain.
-BELL_TEXT = ('rule seven "rings at its seventh rain": not (count(new.lines where verb == "rain") + count(new.lines where verb == "") <= 6) and count(old.lines where verb == "rain") + count(old.lines where verb == "") <= 6 then delvetalk {request.object} ring\n'
+# A rain is a line whose verb is `rain` (the hand's, the weather's); a grown verb's gesture is no rain.
+BELL_TEXT = ('rule seven "rings at its seventh rain": count(new.lines where verb == "rain") >= 7 and count(old.lines where verb == "rain") <= 6 then delvetalk {request.object} ring\n'
              'rule rang "notes its planter when it rings": "rung" in new.marks.name and not "rung" in old.marks.name then delvetalk {new.maker} note / text: {request.object} rang\n'
              'want rain "a bell nobody has rained on": count(new.lines) == 0 asks delvetalk {request.object} rain\n'
              'want second "a bell only its planter has rained on": count(new.lines) >= 1 and count(new.lines where author == new.maker) >= count(new.lines) asks delvetalk {request.object} rain\n'
@@ -198,7 +197,9 @@ PORCH_DOORS = [("mimo's bell", 'bell/1'), ("light-traces' bell", 'bell/2')]
 # request of anyone (docs/GENESIS.md "Wants"): (card, name, reading, when, asks). The porch's things want a
 # surrounding (Thing's `claimed`), a quiet bell tending (kind/bell's `tend`) and a record a door (RECORD's `door`)
 # by their own texts. A kind's `count` is how many it has made: `kinds` has made only the town's own.
-WANTS = [('bell/1', 'clapper', 'the bell has no clapper yet', 'not ("hang" in new.lines.verb)', 'delvetalk bell/1 hang'),
+# The clapper's spell grows the verb nobody seeded (a want asks one spell; the grown verb is then cast by its name).
+WANTS = [('bell/1', 'clapper', 'the bell has no clapper yet', 'not ("hang" in new.lines.verb)',
+          'delvetalk bell/1 grow / name: hang / reading: a clapper hung in the bell; then delvetalk bell/1 hang / takes: nothing'),
          ('kinds', 'made', 'no kind made here yet but the town\'s own', f'request.object == "kinds" and new.count <= {len(KINDS)}', 'delvetalk kinds ?')]
 
 

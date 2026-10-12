@@ -303,9 +303,10 @@ def ago (minutes : Nat) : String :=
   let days := minutes / Limits.clockDay
   if days == 0 then "today" else if days == 1 then "a day ago" else s!"{days} days ago"
 
-/-- `count(new.F) >= N` in a rule's condition: the count it fires at. -/
+/-- `count(new.F) >= N` or `count(new.F where …) >= N` in a rule's condition: the count it fires at. -/
 def threshold (field condition : String) : Option Nat := do
-  let rest ← (condition.splitOn s!"count(new.{field}) >= ")[1]?
+  let counted ← (condition.splitOn s!"count(new.{field}")[1]?
+  let rest ← (counted.splitOn ") >= ")[1]?
   let n := (rest.takeWhile Char.isDigit).toString.toNat!
   if n == 0 then none else some n
 

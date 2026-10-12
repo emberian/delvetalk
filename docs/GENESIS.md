@@ -105,7 +105,7 @@ thing's own words, and none is a request of anyone. A want holds while its condi
 
 | Thing | Want | Reading | Spell | From |
 | --- | --- | --- | --- | --- |
-| `bell/1` | `clapper` | the bell has no clapper yet | `delvetalk bell/1 hang` (a verb nobody seeded: the first hand to use it grows it) | the opener's `want` |
+| `bell/1` | `clapper` | the bell has no clapper yet | `delvetalk bell/1 grow / name: hang / reading: … / takes: nothing` (a verb nobody seeded: the spell grows it, then `delvetalk bell/1 hang` hangs the clapper and the want falls) | the opener's `want` |
 | `bell/1`, `bell/2` | `rain` | a bell nobody has rained on | `delvetalk bell/N rain` | kind/bell |
 | | `second` | a bell only its planter has rained on | the same | kind/bell |
 | | `tend` | a bell gone quiet, untended a day | `delvetalk bell/N tend` | kind/bell |

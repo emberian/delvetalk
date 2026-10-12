@@ -89,7 +89,7 @@ No garden, room, weather or anthology is placed: they are kinds anyone makes. Ev
 spell, so each thing has a maker and a post.
 
 **The wants** are the onboarding (GENESIS "Wants" has the table). A bare genesis answers `delvetalk <card> wants` with:
-bell/1's `clapper` (`delvetalk bell/1 hang`, a verb nobody seeded, so the first hand to use it grows it), both bells'
+bell/1's `clapper` (its spell grows `hang`, a verb nobody seeded; `delvetalk bell/1 hang` then answers it), both bells'
 `rain`, the porch's `company`, each porch thing's `claimed`, and `kinds`' `made` (no kind made but the town's own);
 then, as the town moves, `second`, `tend`, `door`, `pending`, `five`, `shut` and an errand's `open`. The commonplace
 prints "What wants a hand, oldest first" once the host answers `world.wanting`.
@@ -123,9 +123,9 @@ seven of ember.delve.town fired: …`, the card reads `rung`, the planter's `me`
 lists both with when each last fired. A rung bell rung again says "Already rung, by X at entry N." (the `bell` walk is
 this arc in five replies, with a rule of your own beside the kind's).
 
-**The clapper.** Centre: `bell/1`, mimo's, which wants `clapper` ("the bell has no clapper yet") and asks `delvetalk
-bell/1 hang`. No bell has `hang`; the first hand to say it grows it (a spell naming no verb says how it grows, and hob
-proposes the grow from words), credited to them, and the want closes on the write. Left alone, bell/1 goes quiet a day
+**The clapper.** Centre: `bell/1`, mimo's, which wants `clapper` ("the bell has no clapper yet") and asks the spell
+that grows `hang` (`delvetalk bell/1 grow / name: hang / …`). No bell has `hang`; the first hand to cast it grows it,
+credited to them (hob proposes the same grow from words), and `delvetalk bell/1 hang` then closes the want on the write. Left alone, bell/1 goes quiet a day
 after genesis and wants `tend`.
 
 **The weather.** Nothing of it is seeded. Someone makes a garden (`kind/garden make`) and a weather over it and the
