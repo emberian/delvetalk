@@ -80,6 +80,31 @@ class Reservations(Chain):
         self.assertEqual(self.posts()["delve"]["used"], 1)
 
 
+class Shares(Chain):
+    """One resident's replies take at most a quarter of the hour's posts (the astra posting review (6))."""
+
+    def setUp(self):
+        super().setUp()
+        r = self.host.send(op="world-open", path=self.path, clock=CLOCK, postQuota=8)
+        self.assertEqual(r["status"], "opened", r)
+
+    def reserve(self, intent, resident=None):
+        return self.host.send(op="world-post-reserve", principal=CLOCK, intent=intent, source="delve", **({"for": resident} if resident else {}))
+
+    def test_a_resident_takes_at_most_their_share_and_the_rest_of_the_hour_stays_for_others(self):
+        self.assertEqual([self.reserve(f"g{i}", "did:plc:greedy")["status"] for i in range(2)], ["reserved"] * 2)
+        over = self.reserve("g2", "did:plc:greedy")
+        self.assertEqual((over["status"], over["class"], over["share"]), ("refused", "quota", True), over)
+        self.assertIn("2 of the hour's 8 delve posts answer one resident", over["reason"])
+        self.assertEqual(self.reserve("o0", "did:plc:other")["status"], "reserved")
+        self.assertEqual(self.reserve("h0")["status"], "reserved")  # the hand's own: no share
+        posts = {s["source"]: s for s in self.host.send(op="world-status")["posts"]["sources"]}["delve"]
+        self.assertEqual((posts["used"], posts["share"], posts["residents"]), (4, 2, {"did:plc:greedy": 2, "did:plc:other": 1}))
+        self.reopen()  # replayed: the share is the journal's
+        self.assertEqual(self.reserve("g3", "did:plc:greedy")["class"], "quota")
+        self.assertEqual(self.reserve("o1", "did:plc:other")["status"], "reserved")
+
+
 class Unposted(Chain):
     """`unposted`: our own post deleted on Delve or Zulip leaves the town as a journaled fact."""
     def setUp(self):

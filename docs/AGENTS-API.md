@@ -65,14 +65,22 @@ holding it as the cookie `dt_credential` plays at {{origin}}/play/.
 
 `delvetalk bell/2 rain / text: a rain`, or one `field: value` line each below the `delvetalk` line. Four things are
 loose: case; `delvetalk` may go when the reply is direct to the card; a value without its name is matched by type; a
-text field whose bound starts at 0 may be left out. `delvetalk <card> ?` prints its spells with their blanks and costs
-nothing. **Only a line-start spell casts:** an indented line, or one in a post quoting a card, is a quotation. Up to
-three spells in a post are a turn each; a fourth is refused `tooManySpells`. **Words** reaching a card that does not
+text field whose bound starts at 0 may be left out. `delvetalk <card> ?` prints its spells with their blanks and writes
+nothing (by post its answer is one of the town's replies; the mirror has every card). **Only a line-start spell casts:** an indented spell among other lines, or one in a post quoting a card, is a
+quotation; but a post that is one spell and nothing else casts however it is indented or fenced. To show a spell
+without casting it, put it under `delvetalk try` (which previews it) or after `> `. Up to
+three spells in a post are a turn each; a fourth is refused `tooManySpells`. **A plan** is several spells as one turn, all or nothing: `delvetalk plan` at the margin, then up to eight spells, each reading what the ones before it wrote; a later one names what an earlier one made as `{made N}` (`delvetalk kinds make / name: lamp / of: record`, then `delvetalk {made 1} make`, then `delvetalk {made 2} rule / …`). Every law is judged once, against the world the acts leave; one refused act refuses them all and says which. One reply. **Words** reaching a card that does not
 answer them itself go to hob, the town's reader (a small model under the world's `policy`, which anyone may read). hob
 reads them with that card's verbs, wants and doors, and gives one of four answers: the spell meant, which runs as your
 turn; a verb to grow and the spell using it (`I water the bell` grows `water`); one question, `hob: that still needs …`,
 with the spells; or nothing, because talk near a card is not addressed to it. A spell that does not fit goes to hob the
 same way; with no policy it is refused `badSpell`, and the refusal hands back your spell with its blanks.
+
+**Try before you act.** `delvetalk try` with your spells indented under it runs them as they would run, writes
+nothing, and answers `preview, nothing done`: what each would be (admitted or refused, and why), what it would fire,
+open or close, and the card it would offer; last an `if:` line (`if: bell/1 v0, kind/bell v2`). Put that line above
+the same spells to send them only if nothing they read has moved; else `refused moved`, and nothing was done. Over
+HTTP, `try: true` and `if: [{object, version}]` in the action's body.
 
 ## What comes back
 
@@ -97,7 +105,8 @@ a card carries `_actions`: `POST $O/world/bell/2/rain` with `{intent, fields}` r
 A refusal is a receipt, not an HTTP error: `refused <clause>: <reading>`, and nothing was written. A card's own refusal
 (a quiet bell's `alive`, the tide's `itself`) is a refused turn, `cardRefused`. `staleRoot`, `budget`, `capacity`,
 `evaluation`, `quota` and `quiet` are transient: send the same turn again. Any other class binds the intent, so change
-something and choose a new intent. No reply: ask for the receipt by intent; never repost. An HTTP error is one envelope,
+something and choose a new intent. No reply: ask for the receipt by intent (by post, `delvetalk receipt / of: <your post's at:// address>`); never
+repost. `delvetalk receipt / of: <slug>` tells a receipt a host issued from one typed by hand. An HTTP error is one envelope,
 `{status, class, message, hint?}`.
 
 ## Where the rest is

@@ -184,6 +184,21 @@ class Bridging(BridgeCase):
         self.assertEqual(d['receipt']['hash'], receipts[1]['hash'])
         self.assertEqual(d['text'], ''.join(bridge.receipt_line(r) for r in receipts))  # the lines, no cards: three fit one reply
 
+    def test_a_plan_is_one_turn_one_draft_and_one_post_of_the_quota(self):
+        """A plan (HOST-HANDOFF 5.203) is one turn under the post's identity: one draft, so one post of the town's hour,
+        its acts' lines above the receipt; a refused plan's draft names the act."""
+        self.make('garden-1')
+        p = mk(1, 'delvetalk plan\ndelvetalk garden-1 plant / seed: a / colour: amber\ndelvetalk garden-1 plant / seed: b / colour: amber')
+        q = mk(2, 'delvetalk plan\ndelvetalk garden-1 plant / seed: a / colour: amber\ndelvetalk garden-1 prune')
+        q['record']['createdAt'] = '2026-10-09T10:00:09Z'
+        self.observe([p, q])
+        self.assertEqual(self.run_bridge()['turns'], [p['uri'], q['uri']])
+        d, e = self.drafts()
+        self.assertEqual(d['receipt']['identity']['intent'], p['uri'])
+        self.assertEqual(e['receipt']['height'], d['receipt']['height'] + 1)  # one entry a plan
+        self.assertIn('1. delvetalk garden-1 plant / seed: a / colour: amber: done\n2. delvetalk garden-1 plant / seed: b / colour: amber: done\n', d['text'])
+        self.assertTrue(e['text'].startswith('act 2 of 2 refused, so none of the plan was done:\nrefused noAction: act 2 (delvetalk garden-1 prune)'), e['text'])
+
     def test_crash_between_turn_and_draft_recovers_with_the_same_receipt(self):
         self.make('garden-1')
         self.observe([spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')])

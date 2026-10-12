@@ -64,6 +64,8 @@ class Mirror(unittest.TestCase):
         index = held[mirror.INDEX, 'self']
         self.assertEqual(index['pages'], names)
         self.assertEqual(sorted(index['cards']), sorted(oid for c, oid in ((c, k.replace('~', '/')) for c, k in held) if c == mirror.CARD))
+        self.assertTrue(index['coherent'])
+        self.assertEqual({oid: held[mirror.CARD, mirror.card_key(oid)]['version'] for oid in index['cards']}, index['cards'])
         self.assertTrue(all(len(json.dumps(v)) < 64 * 1024 for v in held.values()))  # every record far under a PDS record's bound
 
     def test_a_dry_run_writes_nothing_then_a_run_writes_all_and_a_second_run_only_what_changed(self):
@@ -82,6 +84,16 @@ class Mirror(unittest.TestCase):
                                 'identity': 'mirror-read', 'argument': record(text=label('delvetalk library read / page: spells'), post=label(''))})
         self.assertEqual(reply['status'], 'admitted', reply)
         self.assertEqual(mirror.run(st, self.host, again)['written'], [])  # a read changes no card
+
+    def test_the_manifest_is_written_last_and_only_when_everything_it_lists_landed(self):
+        st = self.state()
+        w = Writer()
+        cut = mirror.run(st, self.host, w, limit=5)
+        self.assertGreater(cut['left'], 0)
+        self.assertNotIn(mirror.INDEX, [c for c, _, _ in w.calls])  # a cut run leaves the last complete manifest
+        while mirror.run(st, self.host, w, limit=50)['left']:
+            pass
+        self.assertEqual(w.calls[-1][0], mirror.INDEX)
 
     def test_a_record_the_world_no_longer_shows_is_deleted(self):
         st = self.state()

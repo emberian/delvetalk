@@ -709,8 +709,11 @@ class Handler(BaseHTTPRequestHandler):
             made = {k: typed(data[k]) if k == 'seed' else data[k] for k in CREATE_KEYS if k in data}
             reply = host.send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
             return self.answer(reply, links=receipt_links(base, reply))
-        reply = host.send({'op': 'world-turn', 'principal': principal, 'object': obj, 'method': tail,  # asked on the card itself
-                           'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct'})
+        # `try: true` is the act with the write switched off (docs/POSTING.md §2); `if` the roots a try read, else `moved`.
+        reply = host.send({'op': 'world-try' if data.get('try') is True else 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
+                           'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct', **({'if': data['if']} if 'if' in data else {})})
+        if reply.get('tried') or reply.get('class') == 'moved':  # nothing journaled: the whole answer, nothing drafted
+            return self.answer(reply, links=at(obj))
         turns = reply.get('turns') if reply.get('status') == 'spells' else [reply]  # several spells: a turn each
         if not scratch:  # a scratch turn drafts nothing for the town
             for t in turns:
