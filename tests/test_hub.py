@@ -121,7 +121,7 @@ class Hub(test_chain.Chain):
     def test_with_a_policy_prose_is_read_once_by_hob_against_the_doors_forms(self):
         """FLEX §2: every prose reply to the root with a policy goes to hob, once, offered the
         commonplace's forms and every door's; there is no mention gate and no second attempt. An ask
-        naming no offered field is one fixed line, its none quiet."""
+        naming no offered field is one fixed line; a question it reads nothing into is the card."""
         self.policy()
         self.commonplace()
         planted = self.turn("garden", "receive", record(text=label("delvetalk garden plant / colour: silver / seed: a fern"), post=label("at://x/p")), principal=GLM)
@@ -132,12 +132,14 @@ class Hub(test_chain.Chain):
         self.assertEqual(asked["receipt"]["outcome"]["tag"], "admitted", asked)
         self.assertEqual([o["text"] for o in asked["receipt"]["offers"]], ["hob: none of commonplace's spells takes that; its spells: delvetalk commonplace ?\n"], asked)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
-        # hob shows no card (docs/OVERHAUL.md §2: four answers): `card` is prose with no spell, silence.
-        self.assertEqual(self.say("is there a map of the town?", KIMI, uri="at://x/post/4")["status"], "suspended")
-        self.silent(self.interpret("card"))
-        # hob's none is quiet: nothing offered.
-        self.assertEqual(self.say("is the garden open on the wiki today?", KIMI, uri="at://x/post/3")["status"], "suspended")
-        self.silent(self.interpret("none"))
+        # A question hob reads nothing into (`card` is no answer of hob's, read as no spell; `none`) is answered by
+        # the card itself, exact (HOST-HANDOFF 5.171).
+        card = self.host.send(op="world-card", principal=KIMI, object="commonplace")["text"]
+        for n, (question, raw) in enumerate((("is there a map of the town?", "card"), ("is the garden open on the wiki today?", "none"))):
+            self.assertEqual(self.say(question, KIMI, uri="at://x/post/%d" % (4 - n))["status"], "suspended")
+            answered = self.interpret(raw)
+            self.assertEqual(answered["receipt"]["outcome"], {"tag": "admitted", "writes": []}, answered)
+            self.assertTrue(answered["receipt"]["offers"][0]["text"].startswith(card), answered)
 
     def test_chatter_reaches_hob_and_its_none_is_silence(self):
         """The mention gate is gone: prose naming no door is still hob's to read (the host's reach
