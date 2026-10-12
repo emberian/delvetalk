@@ -146,11 +146,23 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     return ''  # nothing changed and nothing offered: silence
 
 
+def would_line(t, handles=None):
+    """One turn of a try as it would go: `would be admitted bell/1 v1`, `would be refused <clause>: <reading>`, or
+    waiting on hob; never a receipt's name."""
+    outcome = (t.get('receipt') or {}).get('outcome') or {}
+    if outcome.get('tag') == 'refused' or t.get('status') == 'refused':
+        return 'would be ' + refusal_line(outcome, t.get('class'))
+    if outcome.get('tag') == 'suspended' or t.get('status') == 'suspended':
+        return 'would wait for hob to read it; try the spell hob gives'
+    root = turn_root(t['receipt'], t.get('object'))
+    return f"would be admitted {card_name(root['object'], handles)}" + (f" v{root['version']}" if root.get('version') is not None else '')
+
+
 def preview_text(reply, handles=None):
     """A try's answer (`world-try`, docs/POSTING.md §2) as a post says it: `preview, nothing done`, then each act as it
-    would go (`would be admitted bell/1 v4`, or `would be refused <clause>: <reading>`), what it would fire, open or
-    close, and the card it would offer, exactly; last the `if:` line of every root it read, to put above the same
-    spells so they land only if nothing moved. Never a receipt's name: a preview must never pass for one. An act
+    would go (`would_line`), what it would fire, open or close, and the card it would offer, exactly; then what the
+    host would settle in the same write (`then …`) and what it would leave for later, counted, not foreseen; last the
+    `if:` line of every root the acts read, to put above the same spells so they land only if none has moved. An act
     that reads what the public may not (`inPublic` false) is said by its outcome alone."""
     turns = reply.get('turns') if reply.get('status') == 'spells' else [reply]
     out, roots = [f"preview, nothing done (as of entry {(reply.get('against') or {}).get('height')}):"], {}
@@ -158,19 +170,15 @@ def preview_text(reply, handles=None):
         if 'receipt' not in t:
             out.append(str(t.get('text') or t.get('message') or t.get('status')).rstrip('\n'))
             continue
-        receipt, outcome = t['receipt'], t['receipt'].get('outcome') or {}
-        for r in receipt.get('roots') or []:
+        for r in t['receipt'].get('roots') or []:
             roots.setdefault(r['object'], r.get('version'))
-        if outcome.get('tag') == 'refused':
-            out.append('would be ' + refusal_line(outcome, t.get('class')))
-            continue
-        if outcome.get('tag') == 'suspended' or t.get('status') == 'suspended':
-            out.append('would wait for hob to read it; try the spell hob gives')
-            continue
-        root = turn_root(receipt, t.get('object'))
-        out.append(f"would be admitted {card_name(root['object'], handles)}" + (f" v{root['version']}" if root.get('version') is not None else ''))
-        if t.get('inPublic') is not False:
+        out.append(would_line(t, handles))
+        if t.get('inPublic') is not False and (t['receipt'].get('outcome') or {}).get('tag') not in ('refused', 'suspended'):
             out += [line for line in t.get('revealed') or []] + [o['text'].rstrip('\n') for o in t.get('offers') or []]
+    out += ['then ' + would_line(t, handles) for t in (reply.get('delivered') or []) + (reply.get('resumed') or []) if 'receipt' in t]
+    later = reply.get('unresolved') or {}
+    if later.get('pending') or later.get('suspended'):
+        out.append(f"left for later, not foreseen: {later.get('pending', 0)} sends, {later.get('suspended', 0)} waiting on hob")
     if roots and all(t.get('inPublic') is not False for t in turns if 'receipt' in t):
         out.append('if: ' + ', '.join(f'{o} v{v}' for o, v in roots.items() if v is not None))
     return '\n'.join(out) + '\n'

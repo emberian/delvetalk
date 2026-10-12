@@ -94,6 +94,12 @@ class Try(unittest.TestCase):
         held = self.turn(f'if: bell/1 v{v}, kind/bell v{self.version("kind/bell")}\ndelvetalk bell/1 rain / text: guarded')
         self.assertEqual(held['status'], 'admitted', held)
         self.assertNotIn('if:', ''.join(o['text'] for o in held.get('offers') or []))
+        v = self.version('bell/1')
+        for bad in ('if: bell/1', 'if: bell/1 version 3', 'IF:'):
+            refused = self.turn(f'{bad}\ndelvetalk bell/1 rain / text: guarded badly')
+            self.assertEqual(refused.get('class'), 'moved', refused)  # a guard that does not read fails closed
+            self.assertTrue(refused['line'].startswith('refused moved: the if: line does not read'), refused)
+        self.assertEqual(self.version('bell/1'), v)
 
 
 

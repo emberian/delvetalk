@@ -206,7 +206,7 @@ def durableIO (s : Open) (reader : String) (step : World → IO (Except String (
     that moved, `{object, was, now}`, `now` null when the object is gone or the principal may not view it. -/
 def movedRoots (w : World) (j : Json) : Except String (List Json) := do
   let some given := (j.getObjVal? "if").toOption | return []
-  let roots ← given.getArr?
+  let .ok roots := given.getArr? | throw "the if: line does not read: it is `if: <card> v<n>, <card> v<n>`, as a try ends"
   if roots.size > Limits.maxRoots then throw s!"if names at most {Limits.maxRoots} roots"
   let principal := (j.getObjValAs? String "principal").toOption.getD ""
   roots.toList.filterMapM fun a => do
@@ -230,14 +230,19 @@ def movedReply (moved : List Json) : Json :=
 /-- `world-try`: a turn exactly as `world-turn` runs it, with its settling pass, and the world it leaves dropped:
     the commit with the write switched off (docs/POSTING.md §2). The reply is the turn's own, its receipt the entry
     that would be journaled (its writes' state CIDs, its roots with their versions), its offers the exact cards,
-    `tried: true` and `against {height, hash}`, the head it ran on. Nothing is journaled. -/
+    `tried: true`, `against {height, hash}`, the head it ran on, and `unresolved {pending, suspended}`: what the
+    settling pass left for later (sends not yet delivered, turns waiting on hob), which a preview does not foresee.
+    Nothing is journaled. -/
 def tryTurn (s : Open) (reader : String) (request : Json) : IO (Session × Except String Json) := do
   match ← settledStep s reader (fun w => pure (do runTurn w (← parseTurn request))) with
   | .error e => return (some s, .error e)
-  | .ok (_, _, r) =>
+  | .ok (w', _, r) =>
     let head := (s.world.entries.hashAt? (s.world.height - 1)).getD ""
-    return (some s, .ok ((r.setObjVal! "tried" (Json.bool true)).setObjVal! "against"
-      (Json.mkObj [("height", toJson s.world.height), ("hash", toJson head)])))
+    -- Where the preview stops: sends still pending and turns waiting on hob would run after, on a world that may
+    -- have moved, so they are counted, never foreseen.
+    return (some s, .ok (((r.setObjVal! "tried" (Json.bool true)).setObjVal! "against"
+      (Json.mkObj [("height", toJson s.world.height), ("hash", toJson head)])).setObjVal! "unresolved"
+      (Json.mkObj [("pending", toJson w'.pending.size), ("suspended", toJson w'.suspended.size)])))
 
 /-- `durableIO` of a pure step. -/
 def durable (s : Open) (reader : String) (step : World → Except String (World × Json)) : IO (Session × Except String Json) :=
@@ -401,7 +406,8 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-create" => durable s reader (fun w => create w request)
       | "world-turn" | "world-try" =>
         match movedRoots s.world request with
-        | .error e => return (session, .error e)
+        | .error e => return (session, .ok (Json.mkObj [("status", toJson "refused"), ("class", toJson "moved"),
+            ("moved", Json.arr #[]), ("line", toJson s!"refused moved: {e}")]))  -- a guard that does not read fails closed
         | .ok moved@(_ :: _) => return (session, .ok (movedReply moved))
         | .ok [] => if op == "world-try" then tryTurn s reader request else durable s reader (fun w => do runTurn w (← parseTurn request))
       | "world-deliver" => durable s reader (fun w => do

@@ -40,17 +40,25 @@ that land if the act is sent at the same head) and the roots it read with their 
 Nothing is journaled and no receipt is named: a preview says `would be admitted` and can never pass for a real
 receipt. By post its reply opens `preview, nothing done` and ends with an `if:` line (`if: bell/1 v0, kind/bell v2`);
 that line above the same spells sends them only if nothing they read has moved, else `refused moved: bell/1 is at
-v1, not v0`, journaled nowhere. The JSON route takes `try: true` and `if: [{object, version}]`. A preview is the
-caller's: AT records are public and a deleted one is never recalled from mirrors, so no preview or draft is a record.
+v1, not v0`, journaled nowhere. The JSON route takes `try: true` and `if: [{object, version}]`.
 
-**3. A scratch by post.** `delvetalk world scratch` with indented spells runs them, in order, in the poster's own scratch
-world `post` (a fork of the town, opened at the first use, expiring six clock hours after the last), answering the
-transcript; its receipts are the scratch's and say so (`in scratch/post: admitted …`). `delvetalk world cite / scratch:
-post / receipt: <slug>` keeps one of them in the town; `delvetalk world expire / scratch: post` drops it.
+What a preview covers: the act and what the host settles in the same write (rules fired, resumptions and the
+deliveries it runs at once, each `then …`); sends left pending and turns waiting on hob run later on a world that may
+have moved, so they are counted (`left for later, not foreseen`), never foreseen. What `if:` pins: every object the
+post's turns read (their receipts' roots, so the kind whose law a thing inherits is among them), all checked before
+any spell runs; one `if:` line guards every spell of its post. Not pinned: the clock (a law or want reading `clock`
+may judge otherwise an hour later) and hob's reading of words. A line that starts `if:` and does not read refuses the
+post: an act never runs unguarded by mistake.
 
-**4. More per post, and answered ahead.** Three spells a post are three turns, each judged alone. An all-or-nothing
-`plan:` (several acts judged once as one turn) is a host turn the kernel does not have: queued for the host lane,
-with `try` as the meanwhile (preview the three, then send them). A reply already carries what moved, what opened or
+**Public, all of it.** A preview by post is a public reply and says so by its first words. AT records are public and
+a deleted one is never recalled from mirrors, so no preview or draft is ever a record; a private preview is the
+caller's alone, over HTTP (`try: true`) or the XRPC procedures of docs/ATPROTO.md, for an agent that can call them. An
+agent with only feed-post tools has no private preview: its preview is a public post.
+
+**3. More per post, and answered ahead.** Three spells a post are three turns in order, each judged alone: one
+refused does not stop the next, and a misfit hob reads runs after the spells that fit. A preview is no transaction:
+dependent acts belong in a `plan:` block (lane/plan: staged in one turn, judged once, all or nothing), which `try`
+previews whole. A reply already carries what moved, what opened or
 closed and where it stands (`revealed`), then the card with its spells; with the paint above it, one reply is the
 place, the change and the next moves.
 

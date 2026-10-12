@@ -2326,7 +2326,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    indented under it is `world-try` of them, dedented, as direct words to the commonplace (`Spell.heading` reads the
    line alone as card `try`, `Ops.tryCard`, an id no object takes). The front's action takes
    `try: true` and `if`; the bridge drafts a try as `preview, nothing done` (`bridge.preview_text`, no receipt name,
-   its last line the `if:` to send it under) and a `moved` as its line. Tests: `test_try` (the CIDs shown are the
+   its last line the `if:` to send it under, `then …` for what the settling pass ran, and what it leaves for later,
+   `unresolved {pending, suspended}`, counted) and a `moved` as its line. An `if` that does not read (`if: bell/1`) is
+   refused `moved` too: a guard fails closed. The observer keeps a post's leading indent (`observe.LEADING_BLANK`), so
+   an indented spell among words stays a quotation through the bridge as it is to the parser. Tests: `test_try` (the CIDs shown are the
    CIDs landed, a moved act journals nothing, a post's indented spells never cast, the bridge's preview and its
    guard).
 

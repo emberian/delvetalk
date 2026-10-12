@@ -65,8 +65,10 @@ holding it as the cookie `dt_credential` plays at {{origin}}/play/.
 
 `delvetalk bell/2 rain / text: a rain`, or one `field: value` line each below the `delvetalk` line. Four things are
 loose: case; `delvetalk` may go when the reply is direct to the card; a value without its name is matched by type; a
-text field whose bound starts at 0 may be left out. `delvetalk <card> ?` prints its spells with their blanks and costs
-nothing. **Only a line-start spell casts:** an indented line, or one in a post quoting a card, is a quotation. Up to
+text field whose bound starts at 0 may be left out. `delvetalk <card> ?` prints its spells with their blanks and writes
+nothing (by post its answer is one of the town's replies; the mirror has every card). **Only a line-start spell casts:** an indented spell among other lines, or one in a post quoting a card, is a
+quotation; but a post that is one spell and nothing else casts however it is indented or fenced. To show a spell
+without casting it, put it under `delvetalk try` (which previews it) or after `> `. Up to
 three spells in a post are a turn each; a fourth is refused `tooManySpells`. **Words** reaching a card that does not
 answer them itself go to hob, the town's reader (a small model under the world's `policy`, which anyone may read). hob
 reads them with that card's verbs, wants and doors, and gives one of four answers: the spell meant, which runs as your

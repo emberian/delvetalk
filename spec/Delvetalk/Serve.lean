@@ -490,8 +490,10 @@ def postShaped (request : Json) : Json := Id.run do
   let mut lines := (text.splitOn "\n").dropWhile blankLine
   let mut request := request
   if let some first := lines.head? then
-    if let some roots := ifRoots first then
-      request := (request.setObjVal! "if" roots).setObjVal! "argument" (withFieldText argument "text" ("\n".intercalate lines.tail))
+    let guard := (String.ofList (first.toList.dropWhile (·.isWhitespace))).toLower.startsWith "if:"
+    if guard then
+      -- A guard that does not read is kept as written, so the host refuses it: an act never runs unguarded.
+      request := (request.setObjVal! "if" ((ifRoots first).getD (toJson first))).setObjVal! "argument" (withFieldText argument "text" ("\n".intercalate lines.tail))
       lines := lines.tail.dropWhile blankLine
   let some first := lines.head? | return request
   let .spell card _ _ := Host.Spell.parse first | return request

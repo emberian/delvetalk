@@ -28,5 +28,11 @@ class Resident(unittest.TestCase):
         self.assertEqual(one['object'], 'library')
 
 
+    def test_an_indented_spell_among_words_is_a_quotation_and_casts_nothing(self):
+        v = self.town.client.send({'op': 'world-view', 'principal': 'anonymous', 'object': 'bell/1'})['version']
+        self.assertEqual(self.poster.say('  delvetalk bell/1 tend\nthat is how one tends it'), [])
+        self.assertEqual(self.town.client.send({'op': 'world-view', 'principal': 'anonymous', 'object': 'bell/1'})['version'], v)
+
+
 if __name__ == '__main__':
     unittest.main()
