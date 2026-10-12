@@ -294,60 +294,77 @@ def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activ
 """).replace("import ./World.obend as World", "import ./Form.obend as Form\nimport ./World.obend as World")
 
 
-HEARING = GARDEN.replace("  fields: Nat\n", "  fields: Nat\n  policy: Plans.Reference\n").replace(
-    "{planted: \"\", origin: \"\", heard: \"\", fields: 0n}", "{planted: \"\", origin: \"\", heard: \"\", fields: 0n, policy: Plans.nobody()}").replace(
-    "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Nat>:\n"
-    "  let written(_) = world.write(extend(keep(), {heard: Plans.Edit.set({value: input.text}), fields: Plans.Edit.set({value: Lists.length::<Binding>(input.fields)})}))",
-    "def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>, misfit: {clause: String, reason: String}}, context: Abi.Context) -> Activity<Nat>:\n"
-    "  let written(_) = world.write(extend(keep(), {heard: Plans.Edit.set({value: textConcat(input.misfit.clause, textConcat(\"|\", input.misfit.reason))}), fields: Plans.Edit.set({value: Lists.length::<Binding>(input.fields)})}))")
-
-
 class Misfits(Reflection):
-    """docs/FLEX.md §4 host 4, HOST-HANDOFF 5.153: a direct turn's misfit spell (unknownField,
-    noAction, badValue, otherCard) goes to the card's `receive` with `fields` and `misfit {clause,
-    reason}` only when the card reads words: its state's `policy` names an object here, the
-    interpreter it asks. Every other card's misfit is the host's `badSpell` with the usage hint,
-    whatever its `receive` declares; a duplicate field or an unclosed block is refused always."""
+    """docs/OVERHAUL.md §2.7, HOST-HANDOFF 5.163: a direct turn's misfit spell (unknownField, noAction,
+    badValue, otherCard) is hob's to read past, for every card and never by the card's `receive`: the turn
+    waits on hob, shown the clause and reason and the card's table. hob's spell runs on the card as the
+    speaker's turn; anything else settles as the host's `badSpell` with the usage hint, which is the answer
+    at once in a world with no policy. A duplicate field or an unclosed block is refused always."""
+
+    policy = True
 
     def setUp(self):
         super().setUp()
         self.open_library()
-        self.assertNotEqual(HEARING, GARDEN)
-        self.make("policy", POLICY, record(model=label("m"), system=label(""), examples=label("")))
-        for name, source, seed in (("garden", HEARING, record(policy=reference("policy"))), ("plain", GARDEN, record()),
-                                   ("deaf", HEARING, record()), ("stray", HEARING, record(policy=reference("gone")))):
-            r = self.host.send(op="world-create", principal="ember", identity="mk-" + name, object=name,
-                               modules=[{"name": "Garden", "source": declared(source)}], entry="initial", seed=seed)
-            self.assertEqual(r["status"], "created", r)
+        if self.policy:
+            self.make("policy", POLICY, record(model=label("m"), system=label(""), examples=label("")))
+        r = self.host.send(op="world-create", principal="ember", identity="mk-plain", object="plain",
+                           modules=[{"name": "Garden", "source": declared(GARDEN)}], entry="initial", seed=record())
+        self.assertEqual(r["status"], "created", r)
 
-    def say(self, text, card="garden", identity=None):
-        return self.turn(card, "receive", record(text=label(text), post=label("")), principal="glm", identity=identity)
+    def say(self, text, identity=None):
+        return self.turn("plain", "receive", record(text=label(text), post=label("")), principal="glm", identity=identity)
 
-    def heard(self, card="garden"):
-        return {f["name"]: f["value"] for f in self.state(card)["fields"]}["heard"]["value"]
+    def field(self, name):
+        return {f["name"]: f["value"] for f in self.state("plain")["fields"]}[name]
 
+    def settle(self, raw):
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=item["id"],
+                                 reply={"status": "replied", "model": "m", "json": None, "raw": raw})
+        return item, as_owner(self.host, settled["resumed"][0], "glm")
 
-    def test_a_card_that_reads_words_hears_the_misfit(self):
-        r = self.say("delvetalk garden water")
-        self.assertEqual((r["status"], r["result"]), ("admitted", nat(2)), r)
-        self.assertEqual(self.heard(), "noAction|garden has no spell water; it has these:")
+    def test_a_misfit_waits_on_hob_with_its_clause_and_none_is_the_hosts_refusal(self):
+        r = self.say("delvetalk plain water")
+        self.assertEqual(r["status"], "suspended", r)
+        item, resumed = self.settle("none")
+        self.assertEqual(item["object"], "plain")
+        self.assertTrue(item["misfit"].startswith("noAction, plain has no spell water"), item)
+        self.assertIn("plant", [o["action"] for o in item["offers"]])
+        out = resumed["receipt"]["outcome"]
+        self.assertEqual((out["tag"], out["class"], out["clause"]), ("refused", "badSpell", "noAction"), resumed)
+        self.assertIn("delvetalk plain plant", out["hint"])
+        # The card's `receive` never heard it.
+        self.assertEqual(self.field("heard"), label(""))
 
-    def test_a_card_that_reads_no_words_refuses_badSpell_with_its_usage_whatever_receive_declares(self):
-        for card in ("deaf", "stray", "plain"):
-            with self.subTest(card=card):
-                r = self.say("delvetalk %s water" % card, card=card)
-                out = r["receipt"]["outcome"]
-                self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "badSpell", "noAction"), r)
-                self.assertIn("delvetalk %s plant" % card, out["hint"])
-                self.assertEqual(self.heard(card) if card != "plain" else "", "")
+    def test_hobs_spell_for_a_misfit_runs_on_the_card(self):
+        self.assertEqual(self.say("delvetalk plain plant\ncolour: gold\nseed: rue")["status"], "suspended")
+        _, resumed = self.settle("delvetalk plain plant\ncolour: amber\nseed: rue")
+        self.assertEqual(resumed["receipt"]["outcome"]["tag"], "admitted", resumed)
+        self.assertEqual(self.field("planted"), label("amber:rue"))
+        self.assertEqual(self.field("origin"), label("interpreted|delvetalk plain plant\ncolour: amber\nseed: rue"))
 
-    def test_a_card_that_takes_no_misfit_and_the_strict_clauses_still_refuse(self):
-        r = self.say("delvetalk plain water", card="plain")
-        self.assertEqual((r["status"], r["receipt"]["outcome"]["clause"]), ("refused", "noAction"), r)
-        for i, (text, clause) in enumerate((("delvetalk garden plant\ncolour: amber\ncolour: amber\nseed: x", "duplicateField"),
-                                            ("delvetalk garden plant\nseed: <<END\nfern\n", "unclosedBlock"))):
+    def test_the_strict_clauses_refuse_at_once(self):
+        for i, (text, clause) in enumerate((("delvetalk plain plant\ncolour: amber\ncolour: amber\nseed: x", "duplicateField"),
+                                            ("delvetalk plain plant\nseed: <<END\nfern\n", "unclosedBlock"))):
             r = self.say(text, identity="s%d" % i)
             self.assertEqual((r["status"], r["receipt"]["outcome"]["clause"]), ("refused", clause), r)
+
+
+
+class MisfitsWithoutPolicy(Misfits):
+    """A world with no policy has no hob: a misfit is the host's refusal at once."""
+    policy = False
+
+    def test_a_misfit_waits_on_hob_with_its_clause_and_none_is_the_hosts_refusal(self):
+        r = self.say("delvetalk plain water")
+        out = r["receipt"]["outcome"]
+        self.assertEqual((r["status"], out["class"], out["clause"]), ("refused", "badSpell", "noAction"), r)
+        self.assertIn("delvetalk plain plant", out["hint"])
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+
+    def test_hobs_spell_for_a_misfit_runs_on_the_card(self):
+        self.assertEqual(self.say("delvetalk plain plant\ncolour: gold\nseed: rue")["receipt"]["outcome"]["clause"], "badValue")
 
 
 class Interpreted(Reflection):

@@ -97,8 +97,10 @@ def rebuilt (w : World) (o : Object) : Except String (Object × Built) := do
                    packet := ← b.artifact.getObjValAs? String "packetSha256", fixed := fixedOf b.artifact,
                    declares := declaresOf b.artifact }, b)
 
-/-- Whether a suspended entry's checkpoint decodes under the packet this binary compiles for its method. -/
+/-- Whether a suspended entry's checkpoint decodes under the packet this binary compiles for its method (one
+    the host resumes itself holds none). -/
 def resumable (w : World) (e : Json) : Except String World := do
+  if hostResumed e then return w
   let id := Snapshot.suspendedObject e
   let some o := w.objects[id]? | throw s!"it suspends {id}, which the store does not hold"
   let method ← ((← e.getObjVal? "outcome").getObjVal? "activity") >>= (·.getObjValAs? String "method")
