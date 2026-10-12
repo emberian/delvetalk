@@ -1087,7 +1087,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      its connection and socket; one thread answers it. SIGTERM/SIGINT end the loop after the op in hand,
      removing the sockets and pid file. The public socket refuses `rootOps` (`world-root`, `world-library`,
      `world-settings`, `world-fork`, `world-snapshot`, `library-load`) and every op whose `principal` is
-     the opener: "the opener speaks on the root socket".
+     the opener: a request error of class `opener`, "the opener speaks on the root socket" (5.188).
    - Ops are bounded by ticks, heap, ledger and entry bounds, and `HostClient`'s timeout answers
      `hostTimeout`. The clock is the bridge's `tick`.
    - *Transport (5.131):* `tests/host.py` `Served` starts it; the opener's ordinary turns go on the public socket
@@ -2241,6 +2241,11 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    reply in text: `test_reflection.Interpret` (its probe's offered form now names `n`; a JSON reply is an error),
    `test_sum_words` (its garden's offered `plant` names text fields, so the words are read as cases by
    `proposalVerdict`), `test_block_store`, `test_snapshot`; `test_policy`'s unused `planting` is gone.
+188. **The opener's root-only ops answer a class (host31; the simplify hand-back (4)).** A root op on the public socket
+   is `{status: error, class: "opener", message}` (`Serve.errorJson`'s `cls`), so a client matches the class, never
+   the prose. The bridge's match of that message (`transport/host.py` `ON_ROOT`) is gone: the bridge sends
+   `world-turn`, which never answers it (the opener's own posts run as a resident's turns, ROOT §1.4). Test:
+   `test_serve.Serve.test_the_root_ops_speak_on_the_root_socket_only`.
 
 ## 6. Gotchas
 
@@ -2291,7 +2296,7 @@ input as a test first, merging foundation before each commit:
    on the workhorse only: a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`.
    Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
 4. The coordinator's simplify hand-back, still open: (1) an offer's public projection answered by the host (the
-   transport stops `world-view` per object); (4) a refusal class for "the opener speaks on the root socket"; (6) the
+   transport stops `world-view` per object); (6) the
    REPL's retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
    mention cap of 4 as host answers.
 7. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);

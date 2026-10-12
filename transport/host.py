@@ -10,7 +10,7 @@ import threading
 import time
 
 HOST_TIMEOUT, CONNECT_WAIT = 150, 2  # seconds an op may take; seconds to wait for a socket not (yet) there
-CLOCK, ON_ROOT = 'transport', 'the opener speaks on the root socket'  # the clock principal serve opens each world with; its refusal
+CLOCK = 'transport'  # the clock principal serve opens each world with
 # Ops answered the same when sent twice (reads; a turn, by its identity): only these are re-sent after a broken connection.
 IDEMPOTENT = {'world-' + op for op in 'status view card objects offers history receipt resolve inspect entries entry object publications '
               'grants source sources state-cid addressee turn render strokes'.split()} | {'serve-status'}

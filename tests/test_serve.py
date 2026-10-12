@@ -181,7 +181,8 @@ class Serve(unittest.TestCase):
                         {'op': 'world-fork', 'principal': 'e', 'into': str(self.state.parent / 'f.journal')},
                         {'op': 'world-snapshot'}):
             r = send(self.sock, request)
-            self.assertEqual((r['status'], r['message']), ('error', 'the opener speaks on the root socket'), request)
+            # A class to match, never the prose (the simplify hand-back (4)).
+            self.assertEqual((r['status'], r.get('class'), r['message']), ('error', 'opener', 'the opener speaks on the root socket'), request)
         self.assertEqual(send(self.root, {'op': 'world-status', 'principal': OPENER})['status'], 'world')
         snap = send(self.root, {'op': 'world-snapshot'})
         self.assertNotEqual(snap['status'], 'error', snap)

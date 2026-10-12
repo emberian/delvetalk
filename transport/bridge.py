@@ -10,7 +10,7 @@ import urllib.parse
 import time
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.host import CLOCK, ON_ROOT, PUBLIC, paged
+from transport.host import CLOCK, PUBLIC, paged
 from transport import observe
 from transport.observe import Observer
 
@@ -382,9 +382,6 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
             done.append(obs['uri'])
-            continue
-        if reply.get('message') == ON_ROOT:  # the opener's own post: her authority is the root socket, which the bridge never holds
-            st.append(st.skipped, obs['uri'])
             continue
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})
