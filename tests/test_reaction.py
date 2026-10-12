@@ -9,6 +9,9 @@ that entry, is read back by `rules`, is named in the admitted reply's `revealed`
 - Tide: a rule on the tide writes the weather at a tick within a day of a garden bell's tending, not after.
 - Quest: a planted bell stands for `quest/1`, a second for `quest/2`; ringing the first (a mark) hangs a
   door to the second.
+- Errand: an errand's two rules on the thing it is about settle it by the hand whose write did it and pay from
+  its maker (OVERHAUL §2).
+- Front: a front's rule on the tide fills its clock, and its own rule moves it when full.
 
 Placement is judged by each card's law with `request.kind == rule`; the world's laws admit only owners yet,
 so each rule is placed by the card's owner (the opener for genesis objects, the planter or maker for made
@@ -16,6 +19,7 @@ ones), who is also the principal the fired spell runs under.
 
 Evidence for REACTION §5 (layer: scenarios).
 """
+import re
 import unittest
 
 from tests.test_scenarios import Arc, GLM, KIM
@@ -195,6 +199,65 @@ class Quest(Reaction):
         self.assertIn("Doors: garden \u00b7 next", self.card(self.say(KIM, first, "")))
         again = self.admitted(self.say(GLM, first, "delvetalk %s ring" % first))
         self.assertQuiet(again, first, "next", rung["receipt"]["height"])
+
+
+class Errand(Reaction):
+    def test_an_errand_settles_by_the_hand_that_did_it_and_pays_from_its_maker(self):
+        """The opener's errand on kim's bell: done at its second rain, pays a day of the anthology's `admit`. Its `made`
+        places two rules on the bell under the opener; glm's rain (the second) fires both: the errand is marked done
+        by glm and its rules leave the bell, and the opener lends `admit` to glm. A hand's settle is refused `ruled`;
+        the errand wants `open` until it is done."""
+        bell = self.plant(KIM)
+        errand = self.made(OPENER, "kind/errand", "\nasks: a second hand's rain on kim's bell\non: %s\n"
+                           "done: count(new.lines) >= 2 and count(old.lines) <= 1\n"
+                           "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
+        placed = sorted(r["name"] for r in self.town.send(op="world-rules", principal=OPENER, object=bell)["rows"] if r["from"] == bell)
+        self.assertEqual(len(placed), 2, placed)
+        self.assertEqual([w["name"] for w in self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"]], ["open"])
+        forged = self.say(GLM, errand, "delvetalk %s settle / by: glm" % errand)
+        self.assertEqual((forged["status"], forged["receipt"]["outcome"]["clause"]), ("refused", "ruled"), forged)
+        self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: the first" % bell))
+        second = self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: the second" % bell))
+        self.assertEqual(sorted(f["rule"] for f in self.fired(second)), placed, second)
+        self.assertEqual([(m, who) for m, who in self.marks(errand)], [("done", GLM)])
+        # The doer comes as the rule's `{request.subject}`, a principal: the card shows it as a card shows a DID.
+        at = int(re.search("done by \u2026%s at entry (\\d+)" % GLM[-8:], self.card(self.say(KIM, errand, ""))).group(1))
+        self.assertGreaterEqual(at, second["receipt"]["height"])  # the settle is the delivered turn the rain fired
+        self.assertEqual([r for r in self.town.send(op="world-rules", principal=OPENER, object=bell)["rows"] if r["from"] == bell], [])
+        self.assertEqual(self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"], [])
+        grants = [g for g in self.town.send(op="world-grants", principal=GLM)["grants"] if g["object"] == "anthology"]
+        self.assertEqual([(g["method"], g["to"]) for g in grants], [("admit", GLM)], grants)
+
+    def marks(self, obj):
+        rows = self.field(obj, "marks")["payload"]["fields"][0]["value"]["items"]
+        return [tuple(next(f["value"]["value"] for f in r["fields"] if f["name"] == k) for k in ("name", "who")) for r in rows]
+
+
+class Front(Tide):
+    def test_a_front_fills_at_the_ticks_its_condition_holds_and_moves_when_full(self):
+        """kim's front on the tide: a segment at every second tick, two to a clock, its move rings kim's bell. The
+        tide's rule fills it; the front's own rule casts the move as kim at the second fill, and the clock empties.
+        A hand's fill is refused `ruled`; the card shows the clock."""
+        bell = self.plant(KIM)
+        front = self.made(KIM, "kind/front", "\nname: THE DRUM\nfills: new.ticks %% 2 == 0\nsegments: 2\n"
+                          "move: delvetalk %s ring\ntide: tide" % bell)
+        self.assertIn(front, [r["name"].replace("_", "/") for r in self.town.send(op="world-rules", principal=OPENER, object="tide")["rows"]])
+        forged = self.say(GLM, front, "delvetalk %s fill" % front)
+        self.assertEqual((forged["status"], forged["receipt"]["outcome"]["clause"]), ("refused", "ruled"), forged)
+        ticks = lambda: int(self.field("tide", "ticks")["value"])
+        clock = 100
+        while ticks() % 2 == 0:  # the next tick is an even one
+            self.advance(clock)
+            clock += 100
+        self.assertIn("Its clock: 0 of 2; it has not moved yet.", self.card(self.say(GLM, front, "")))
+        self.advance(clock)
+        self.advance(clock + 100)
+        self.assertIn("Its clock: 1 of 2; it has not moved yet.", self.card(self.say(GLM, front, "")))
+        self.assertNotIn("rung", self.names(bell))
+        self.advance(clock + 200)
+        self.assertIn("Its clock: 0 of 2; it has moved once.", self.card(self.say(GLM, front, "")))
+        self.assertEqual(self.names(bell), ["rung"])
+        self.assertIsNotNone(self.row(front, "move").get("fired"))
 
 
 class Replay(Reaction):

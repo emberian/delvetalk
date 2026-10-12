@@ -150,6 +150,7 @@ BELL_TEXT = ('rule seven "rings at its seventh rain": count(new.lines) >= 7 and 
 GARDEN_TEXT = 'want five "a garden of fewer than five bells": count(new.things) <= 4 asks delvetalk {request.object} plant'
 ROOM_TEXT = 'want company "a room nobody is in": count(new.presence) == 0 asks delvetalk {request.object} enter'
 DOOR_TEXT = 'want shut "a door nobody has opened": not ("open" in new.marks.name) asks delvetalk {request.object} knock'
+ERRAND_TEXT = 'want open "an errand nobody has done": not ("done" in new.marks.name) asks delvetalk {request.object} ?'
 # Each kind's voice (KIND `voice`, docs/OVERHAUL.md §4): the register its maker gives its things' paint; a kind
 # with none is painted in the contract's plain register.
 VOICES = {'bell': 'moon-flavoured; short; the present tense',
@@ -178,7 +179,9 @@ KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
          ('weather', 'record', 'garden: text 1..128\ntide: text 1..128', '', RECORD_LAW, 'weather'),
          ('door', 'record', NAMED, '{name}', RECORD_LAW + '\n' + DOOR_TEXT, 'door'),
          ('lantern', 'record', NAMED + '\ndoor: text 1..128', '{name}', RECORD_LAW, 'lantern'),
-         ('bond', 'record', 'parties: text 1..400\nterms: text 1..400\namends: text 0..128\nlaw: text 0..4096', '', RECORD_LAW + '\n' + SIGNER_LAW, 'bond')]
+         ('bond', 'record', 'parties: text 1..400\nterms: text 1..400\namends: text 0..128\nlaw: text 0..4096', '', RECORD_LAW + '\n' + SIGNER_LAW, 'bond'),
+         ('errand', 'record', 'asks: text 1..200\non: text 1..128\ndone: text 1..400\npays: text 1..400', '', RECORD_LAW + '\n' + ERRAND_TEXT, 'errand'),
+         ('front', 'record', NAMED + '\nfills: text 1..400\nsegments: natural 1..24\nmove: text 1..400\ntide: text 1..128', '{name}', RECORD_LAW, 'front')]
 
 
 # The hand's own things, placed by spell on their kinds at genesis, each at an exact id (`place`, a kind's owner's alone), so
@@ -222,6 +225,13 @@ def seeds(opener):
             ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), law=lab(KIND_LAW))),  # shaped, then makes KINDS, each under KIND_LAW
             ('anthology', 'Record', rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE ANTHOLOGY'))),  # created with RECORD_LAW
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
+
+
+def making(name, bodies):
+    """The argument of `kinds make` for the town kind `name` (KINDS), its body from `bodies` (inputs())."""
+    _, of, form, head, law, body = next(k for k in KINDS if k[0] == name)
+    return rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), voice=lab(VOICES.get(name, '')), law=lab(law),
+               body=lab(bodies[body] if body else ''))
 
 
 def existing(host, opener):
@@ -291,9 +301,7 @@ def run(host, opener=OPENER):
         # `kinds` is given its make (`shape`), then makes the root kinds and the town's (docs/CATALOGUE.md §5).
         kinds = next(m for m in made if m['object'] == 'kinds')
         kinds['shape'] = turned('kinds shape', turn('kinds', 'shape', rec(object=lab('kinds')), 'genesis-kinds-shape'))
-        kinds['made'] = [turned('kinds make ' + name, turn('kinds', 'make', rec(name=lab(name), of=lab(of), form=lab(form), head=lab(head), voice=lab(VOICES.get(name, '')), law=lab(law),
-                                                                                    body=lab(bodies[body] if body else '')), 'genesis-kind-' + name))
-                         for name, of, form, head, law, body in KINDS]
+        kinds['made'] = [turned('kinds make ' + name, turn('kinds', 'make', making(name, bodies), 'genesis-kind-' + name)) for name, *_ in KINDS]
         next(m for m in made if m['object'] == 'commonplace')['body'] = turned('the commonplace body', host.send({
             'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-commonplace-body', 'object': 'commonplace', 'version': 0,
             'package': bodies['commonplace'], 'mode': 'extend'}))
@@ -403,11 +411,17 @@ def standing(host, opener, obj):
 
 def refresh(host, opener, journals):
     """Re-writes every slot genesis made to its text today, as the opener: an object's law by one amendment, a kind's
-    fields by one write. -> [{object, slot, status, reading?, reply?}] in genesis's order: `refreshed`, `current`
-    (genesis's text already), `left` (the reading says why), `absent`, or the host's status for a turn not admitted."""
+    fields by one write; a town kind the world lacks is made (`refreshed`, reading `made`). -> [{object, slot, status,
+    reading?, reply?}] in genesis's order: `refreshed`, `current` (genesis's text already), `left` (the reading says
+    why), `absent`, or the host's status for a turn not admitted."""
     gave, today, out = given(journals, opener), texts(opener), []
     for obj in dict.fromkeys(o for o, _ in today):
         now = standing(host, opener, obj)
+        if now is None and obj.startswith('kind/'):  # a kind genesis makes now and the town never had: made
+            reply = host.send({'op': 'world-turn', 'principal': opener, 'object': 'kinds', 'method': 'make', 'identity': f'refresh-{obj}-made',
+                               'argument': making(obj[len('kind/'):], inputs()[0])})
+            out += [{'object': obj, 'slot': slot, **done(reply), 'reading': 'made'} for o, slot in today if o == obj]
+            continue
         if now is None:
             out.append({'object': obj, 'status': 'absent'})
             continue

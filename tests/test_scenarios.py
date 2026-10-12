@@ -81,7 +81,13 @@ class Bell(Arc):
         self.assertIn("rung", self.card(self.say(GLM, bell, "")))
         # Both are kind/bell's rules, carried to the bell by `under`: `seven` rang it, `rang` noted its maker.
         self.assertIn("%s rang" % bell, [text for _, text in self.inbox(KIM)])
-        long = self.say(GLM, bell, "delvetalk %s rain\ntext: %s" % (bell, "x" * 201))
+        # Rung once, a bell rung again says when, and writes nothing (a carried bell's `seven` delivery too).
+        version = self.town.send(op="world-object", principal=OPENER, object=bell)["record"]["version"]
+        again = self.say(GLM, bell, "delvetalk %s ring" % bell)
+        self.assertEqual(again["status"], "admitted", again)
+        self.assertRegex(self.card(again), r"Already rung, by .+ at entry \d+\.")
+        self.assertEqual(self.town.send(op="world-object", principal=OPENER, object=bell)["record"]["version"], version)
+        long =self.say(GLM, bell, "delvetalk %s rain\ntext: %s" % (bell, "x" * 201))
         # A bell reads no words (it names no policy): its misfit is the host's badSpell with the usage (HOST-HANDOFF 5.153).
         out = long["receipt"]["outcome"]
         self.assertEqual((long["status"], out["class"], out["clause"]), ("refused", "badSpell", "badValue"), long)

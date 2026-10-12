@@ -229,8 +229,9 @@ class Checked(unittest.TestCase):
 
 class Refresh(unittest.TestCase):
     """`refresh` on a town genesis made with older texts (a record law with no `pending` want, a bell kind with no rules
-    or wants, no voices), as a carried town keeps them: the opener re-writes each slot to genesis's text today, each a
-    journaled turn; a slot another hand changed since is left and named; a second refresh finds every slot current."""
+    or wants, no voices, no kind/front), as a carried town keeps them: the opener re-writes each slot to genesis's text
+    today and makes the kind it lacks, each a journaled turn; a slot another hand changed since is left and named; a
+    second refresh finds every slot current."""
 
     @classmethod
     def setUpClass(cls):
@@ -238,7 +239,7 @@ class Refresh(unittest.TestCase):
         cls.addClassCleanup(cls.tmp.cleanup)
         old_record = genesis.RECORD_LAW.rsplit('\nwant pending', 1)[0]
         old_kinds = [(n, of, form, head, law.replace(genesis.RECORD_LAW, old_record).split('\nrule seven', 1)[0], body)
-                     for n, of, form, head, law, body in genesis.KINDS]
+                     for n, of, form, head, law, body in genesis.KINDS if n != 'front']  # a kind genesis makes since
         with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}):
             cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
         cls.send = cls.town.send
@@ -264,6 +265,8 @@ class Refresh(unittest.TestCase):
             with self.subTest(obj=obj, slot=slot):
                 self.assertEqual(self.status(self.rows, obj, slot), ('refreshed', None))
         self.assertEqual(self.status(self.rows, 'kinds', 'law'), ('current', None))  # KIND_LAW did not change
+        self.assertEqual(self.status(self.rows, 'kind/front', '.law'), ('refreshed', 'made'))
+        self.assertIn('kind/front', self.send(op='world-objects', principal=genesis.OPENER)['ids'])
         self.assertEqual(self.status(self.rows, 'anthology', 'law'), ('left', 'changed since genesis gave it'))
         self.assertEqual(self.status(self.rows, 'kind/door', '.law'), ('left', 'changed since genesis gave it'))
         self.assertEqual(self.send(op='world-object', principal=genesis.OPENER, object='commonplace')['record']['law'], genesis.RECORD_LAW)

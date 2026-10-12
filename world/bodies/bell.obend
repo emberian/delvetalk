@@ -71,8 +71,11 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
   Super.door(state, {label: input.label, to: input.to}, context)
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
+# A bell rings once: its mark `rung`, by whoever rang it; rung again, it says when it rang and writes nothing.
 def ring(state: State, context: Abi.Context) -> Activity<Bool>:
-  Super.mark(state, "rung", context)
+  match Relations.lookup(state.marks, {name: "rung"}):
+    case some(m): Card.tell(false, Document.text("Already rung, by {Card.shown(m.value.who, m.value.handle, context)} at entry {natText(m.value.at)}.\n"))
+    case none(_): Super.mark(state, "rung", context)
 def methods() -> Lists.List<String>:
   Text.words("~act")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
