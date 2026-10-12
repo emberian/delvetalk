@@ -30,6 +30,10 @@ def pin_cache(state, binary):
     real = os.path.realpath(binary)
     st = os.stat(real)
     key = (real, st.st_size, st.st_mtime_ns)
+    if key not in _pins and os.environ.get('DELVETALK_OBEND_PIN'):  # a test run's pin, hashed once for all its processes
+        given = json.loads(os.environ['DELVETALK_OBEND_PIN'])
+        if (given.get('path'), given.get('size'), given.get('mtimeNs')) == key:
+            _pins[key] = given['sha256']
     if key not in _pins:
         with open(real, 'rb') as f:
             _pins[key] = hashlib.sha256(f.read()).hexdigest()

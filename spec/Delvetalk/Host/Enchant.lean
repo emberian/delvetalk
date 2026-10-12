@@ -925,8 +925,8 @@ contract (`world/lib/Paint.obend`, `contract()`) go to the world's model (the `p
 through the one model worker, which lists `world-renders` beside `world-interpretations` and settles each
 with `world-render-submit {key, reply}`, the model's reply verbatim. The host verifies the paint and caches
 it by its key, the digest of the strokes (object and version among them), the library pin and the model:
-memory of this process (`Cache`, on the session) and, when `DELVETALK_COMPILE_CACHE` names one, the
-directory beside compiled packets, re-verified on every read. Never journaled: replay needs no model, and a
+memory of this process (`Cache`, on the session) and, when `DELVETALK_RENDER_CACHE` names one, that
+directory (never the compile cache's), re-verified on every read. Never journaled: replay needs no model, and a
 world opened with no model, or a reader past `renderPatience`, reads the exact card. A refused paint is not
 asked again for that version; the next version is a new key. -/
 

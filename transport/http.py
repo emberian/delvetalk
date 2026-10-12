@@ -303,6 +303,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.st, self.access, self.known = st, None if hand else AccessLog(st.access_log, st.world), {}
         self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
         self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
+        self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
         self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None)  # the journal as AT Protocol records, read only
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
@@ -881,7 +882,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
             revealed = [line for t in turns for line in t.get('revealed') or []]  # what the act fired, opened, closed: said first
             offers = ['\n'.join(revealed)] * bool(revealed) + \
-                [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)[0]]
+                [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep, self.server.play_wait)[0]]
             names = self.server.handles(pages.A_DID.findall(name))
             usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
             answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))

@@ -27,6 +27,7 @@ from tests.conformance.generate import BINARY, TAGS, UNARY, generate, size, tags
 from tests.host import ROOT, binary
 LEAN = binary()
 COUNT = int(os.environ.get("CONFORMANCE_CASES", "400"))
+REFERENCES = 4  # machine processes the cases are dealt over (each case is evaluated alone, in a fresh request)
 
 # Disagreements we chose not to fix. Key: the generator's case kind; value: why.
 # A disagreeing case of a listed kind is expected; any other disagreement fails.
@@ -200,17 +201,26 @@ def report(count=COUNT, impl=os.path.join(ROOT, "impl"), cases=None):
     cases = cases if cases is not None else generate(count)
     with tempfile.TemporaryDirectory() as scratch:
         evaluators, skipped = build_evaluators(impl, scratch)
-        ref = Reference()
-        try:
-            raw = {c["name"]: ref.evaluate(c) for c in cases}
-        finally:
-            ref.close()
+
+        def machine(part):
+            ref = Reference()
+            try:
+                return {c["name"]: ref.evaluate(c) for c in part}
+            finally:
+                ref.close()
+        import concurrent.futures
+        # The machine (in REFERENCES processes, each case on its own) and the three evaluators, side by side.
+        with concurrent.futures.ThreadPoolExecutor(REFERENCES + len(evaluators)) as pool:
+            parts = [pool.submit(machine, cases[i::REFERENCES]) for i in range(REFERENCES)]
+            runs = {ev.name: pool.submit(ev.run_all, cases) for ev in evaluators}
+            got = {}
+            for part in parts:
+                got.update(part.result())
+            ran = {name: run.result() for name, run in runs.items()}
+        raw = {c["name"]: got[c["name"]] for c in cases}
         reference = {name: normalize_reference(r) for name, r in raw.items()}
         out = {"cases": len(cases), "skipped": skipped, "evaluators": {},
                "unevaluated": [name for name, r in raw.items() if r["status"] == "reference-error"]}
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(len(evaluators) or 1) as pool:  # three processes side by side
-            ran = dict(zip([ev.name for ev in evaluators], pool.map(lambda ev: ev.run_all(cases), evaluators)))
         for ev in evaluators:
             raw = ran[ev.name]
             agree, first, bad = 0, {}, []

@@ -1053,7 +1053,7 @@ def answersSpells (artifact : Json) : Bool :=
     it has one, the next line at the same place), none when it is clean; `fallback` names the
     module when the kernel names none. A package that declares laws compiles, as it would at
     `world-create`. With them, whether what compiled answers spells (`answersSpells`). -/
-def checkDiagnostics (modules : List (String × String)) (entry fallback : String) : List String × Bool :=
+def checkDiagnosticsCold (modules : List (String × String)) (entry fallback : String) : List String × Bool :=
   let request := Json.mkObj [("entry", toJson entry), ("limits", Package.defaultLimits), ("modules", modulesJson modules)]
   match Package.compileStructured request with
   | .ok (artifact, _, _) => ([], answersSpells artifact)
@@ -1061,6 +1061,24 @@ def checkDiagnostics (modules : List (String × String)) (entry fallback : Strin
     let d := Package.localize modules Package.defaultLimits e
     let at_ := s!"{d.sourceModule.getD fallback}:{(d.span.map (·.line)).getD 0}"
     ([s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD [], false)
+
+/-- This process's dry-run diagnostics by the digest of what was checked (modules, entry, fallback): a check is
+    a pure function of them, and the workshop's `check` and `propose` re-check one draft (and the library under it)
+    many times. -/
+initialize checkMemo : IO.Ref (Std.HashMap String (List String × Bool)) ← IO.mkRef {}
+
+unsafe def checkDiagnosticsImpl (modules : List (String × String)) (entry fallback : String) : List String × Bool :=
+  unsafeBaseIO do
+    let key := Journal.bodyHash (Json.arr #[modulesJson modules, toJson entry, toJson fallback])
+    if let some d := (← checkMemo.get)[key]? then return d
+    let d := checkDiagnosticsCold modules entry fallback
+    checkMemo.modify fun m => boundedInsert m Limits.maxCompiledPackets key d
+    return d
+
+/-- `checkDiagnosticsCold`, once per process for the same modules, entry and fallback. -/
+@[implemented_by checkDiagnosticsImpl]
+def checkDiagnostics (modules : List (String × String)) (entry fallback : String) : List String × Bool :=
+  checkDiagnosticsCold modules entry fallback
 
 /-- Dry-run compile of `source` as an entry module over the library: the diagnostics as
     `"<module>:<line>: <stage>: <message>"`, none when it is clean. Nothing is installed. -/
@@ -1481,18 +1499,74 @@ def lowerInputs (inputs : Json) : Option Json := do
   let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) => k != "modules" && k != "layers"
   return Json.mkObj ([("modules", Json.arr ms.pop)] ++ (if n > 1 then [("layers", toJson (n - 1))] else []) ++ fields)
 
+/-- This process's prepared closures by `inputsKeyOf` (a content address: the inputs name their library
+    by pin), whichever world prepared them: preparing parses and expands the whole closure, library
+    included, and a caller that cannot keep the world it was handed (a pure read) would prepare it again. -/
+initialize requestMemo : IO.Ref (Std.HashMap String Package.PreparedRequest) ← IO.mkRef {}
+
+unsafe def requestReadImpl (key : String) : Option Package.PreparedRequest :=
+  unsafeBaseIO do return (← requestMemo.get)[key]?
+
+/-- The process's prepared closure of `key`; `none` in the model (prepare as if cold). -/
+@[implemented_by requestReadImpl]
+def requestRead (_key : String) : Option Package.PreparedRequest := none
+
+unsafe def requestKeepImpl (key : String) (r : Package.PreparedRequest) : Package.PreparedRequest :=
+  unsafeBaseIO do
+    requestMemo.modify fun m => boundedInsert m Limits.maxBuilds key r
+    return r
+
+/-- `r`, kept as the process's prepared closure of `key`. -/
+@[implemented_by requestKeepImpl]
+def requestKeep (_key : String) (r : Package.PreparedRequest) : Package.PreparedRequest := r
+
+/-- This process's compiled packages by `buildKey` (a content address), whichever world built them. -/
+initialize buildMemo : IO.Ref (Std.HashMap String Built) ← IO.mkRef {}
+
+unsafe def buildReadImpl (key : String) : Option Built :=
+  unsafeBaseIO do return (← buildMemo.get)[key]?
+
+/-- The process's compiled package of `key`; `none` in the model (compile as if cold). -/
+@[implemented_by buildReadImpl]
+def buildRead (_key : String) : Option Built := none
+
+unsafe def buildKeepImpl (key : String) (b : Built) : Built :=
+  unsafeBaseIO do
+    if (← buildMemo.get).contains key then return b
+    buildMemo.modify fun m => boundedInsert m Limits.maxBuilds key b
+    -- and the disk's, when there is one: a package no world holds (a reprogram's, a carry's) is never
+    -- written by `persistCaches`, and every process compiled it again.
+    (do if (← DiskCache.dir).isSome then DiskCache.write "build" key (builtJson key b)).catchExceptions fun _ => pure ()
+    return b
+
+/-- `b`, kept as the process's compiled package of `key` (and the disk cache's). -/
+@[implemented_by buildKeepImpl]
+def buildKeep (_key : String) (b : Built) : Built := b
+
+mutual
 /-- A package's compiled form. A layered package is a stack (HOST-HANDOFF 5.3): a layer keeps what the
     code below it declared public and may declare more, keeps the relations below when it declares
     none, and keeps the law shape below when it declares no Bend law; so whether an object was made
     layered, extended later or rebuilt by replay, its stack has one shape. -/
 partial def compileObject (w : World) (inputs : Json) : Except String Built := do
-  if let some b := w.builds[buildKey inputs]? then return b
-  if let some b := ((DiskCache.read "build" (buildKey inputs)).bind builtOf).map DiskCache.hit then return b
+  let key := buildKey inputs
+  if let some b := w.builds[key]? <|> buildRead key then return b
+  if let some b := ((DiskCache.read "build" key).bind builtOf).map DiskCache.hit then return buildKeep key b
+  return buildKeep key (← compileObjectCold w inputs)
+
+/-- `compileObject` with no cache to answer it. -/
+partial def compileObjectCold (w : World) (inputs : Json) : Except String Built := do
+  -- One prepared closure for the entry and, when the entry module declares them, `relations()`; the
+  -- process's, so the object's first definition (`compileEntryIn`: its `render`, `receive`, `forms`) is
+  -- lowered from it, not prepared again.
+  -- Only when this world holds the library the inputs name: an unknown pin is refused as before.
   let resolved ← resolveInputs w inputs
-  -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
-  let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
-  let c ← (Package.compileEntryFrom request (← resolved.getObjValAs? String "entry")).mapError
-    fun d => (Package.withHint resolved d).render
+  let own := inputsKeyOf inputs
+  let request ← match requestRead own with
+    | some r => pure r
+    | none => pure (requestKeep own (← (Package.prepareRequest resolved).mapError Package.Diagnostic.render))
+  let c ← (Package.compileEntryFrom request (← inputs.getObjValAs? String "entry")).mapError fun d =>
+    (Package.withHint resolved d).render
   let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet
@@ -1510,6 +1584,7 @@ partial def compileObject (w : World) (inputs : Json) : Except String Built := d
            relations := declared.getD ((below.map (·.relations)).getD []),
            exposed := exposed ++ ((below.map (·.exposed)).getD []).filter (!exposed.contains ·),
            lawShape := if predicate then (predicate, reads) else ((below.map (·.lawShape)).getD (false, false)) }
+end
 
 /-- The method table and law shape an object of `b` runs with (`Object.methods`, `predicate`, `predicateReads`). -/
 def Built.shape (b : Built) : Json × Bool × Bool :=
@@ -1606,7 +1681,23 @@ The journal carries each source module once: the first entry whose compile input
 source carries it in its `sources [{cid, source}]` field, and compile inputs in every entry
 name it as `{name, cid}` (or `sourceCid`). Objects keep the full inputs in memory. -/
 
-def sourceCid (source : String) : String := Journal.bodyHash (toJson source)
+def sourceCidCold (source : String) : String := Journal.bodyHash (toJson source)
+
+/-- This process's source CIDs, by the source: every entry that names compile inputs (a creation,
+    a fork's genesis, a snapshot's store) names each module of the closure by its CID, the library's
+    included, and hashing them is most of writing such an entry. -/
+@[noinline] unsafe def sourceCidMemo : IO.Ref (Std.HashMap String String) := unsafeBaseIO (IO.mkRef {})
+
+unsafe def sourceCidImpl (source : String) : String :=
+  unsafeBaseIO do
+    if let some c := (← sourceCidMemo.get)[source]? then return c
+    let c := sourceCidCold source
+    sourceCidMemo.modify fun m => boundedInsert m Limits.maxBuilds source c
+    return c
+
+/-- The CID a source is journaled under (`sourceCidCold`), hashed once per process. -/
+@[implemented_by sourceCidImpl]
+def sourceCid (source : String) : String := sourceCidCold source
 
 /-- Compile inputs as journaled: every source replaced by its CID. -/
 def compactInputs (inputs : Json) : Json :=
@@ -1982,16 +2073,19 @@ metarule is decided on the fragment, and no predicate, budget or bug can seal ou
 may amend or reprogram. -/
 
 /-- Compile definition `name` of a package (compile inputs without `entry`) from its prepared
-    closure, preparing the closure once per package; the world returned caches it. -/
+    closure, preparing the closure once per package and process; the world returned caches it. -/
 def compileEntryIn (w : World) (inputs : Json) (name : String) : Except String (Package.EntryCompiled × World) := do
-  let resolved ← resolveInputs w (Json.mkObj ((inputs.getObj?.toOption.map (·.toList)).getD [] |>.filter (·.1 != "entry")))
-  let key := Journal.bodyHash resolved
-  let (request, w) ← match w.requests[key]? with
+  let own := inputsKeyOf inputs
+  let (request, w) ← match requestRead own with
     | some r => pure (r, w)
     | none =>
-      let r ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
-      let cache := if w.requests.size < Limits.maxBuilds then w.requests else {}
-      pure (r, { w with requests := cache.insert key r })
+      let resolved ← resolveInputs w (Json.mkObj ((inputs.getObj?.toOption.map (·.toList)).getD [] |>.filter (·.1 != "entry")))
+      let key := Journal.bodyHash resolved
+      match w.requests[key]? with
+      | some r => pure (requestKeep own r, w)
+      | none =>
+        let r ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
+        pure (requestKeep own r, { w with requests := boundedInsert w.requests Limits.maxBuilds key r })
   let compiled ← (Package.compileEntryFrom request name).mapError Package.Diagnostic.render
   return (compiled, w)
 
@@ -2020,14 +2114,63 @@ unsafe def memoReadImpl (key : String) : Option Compiled :=
 @[implemented_by memoReadImpl]
 def memoRead (_key : String) : Option Compiled := none
 
+/-- The on-disk form of a compiled definition. -/
+def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJson key), ("packet", c.packet)]
+
 unsafe def memoKeepImpl (key : String) (c : Compiled) : Compiled :=
   unsafeBaseIO do
-    defMemo.modify fun m => (if m.size < Limits.maxCompiledPackets then m else {}).insert key c
+    if (← defMemo.get).contains key then return c
+    defMemo.modify fun m => boundedInsert m Limits.maxCompiledPackets key c
+    -- and the disk's, when there is one: a definition no world holds is never written by `persistCaches`
+    (DiskCache.write "def" key (compiledJson key c)).catchExceptions fun _ => pure ()
     return c
 
-/-- `c`, kept as the process's compiled definition of `key`. -/
+/-- `c`, kept as the process's compiled definition of `key` (and the disk cache's). -/
 @[implemented_by memoKeepImpl]
 def memoKeep (_key : String) (c : Compiled) : Compiled := c
+
+/-- Definitions that did not compile, by `defKey`, with why: asking again for a definition a package lacks (a
+    card's `actions`, `lenses`, `prompt`) is answered here, not by preparing and failing again. -/
+initialize failMemo : IO.Ref (Std.HashMap String String) ← IO.mkRef {}
+
+unsafe def failReadImpl (key : String) : Option String :=
+  unsafeBaseIO do return (← failMemo.get)[key]?
+
+/-- Why `key` did not compile in this process; `none` in the model. -/
+@[implemented_by failReadImpl]
+def failRead (_key : String) : Option String := none
+
+unsafe def failKeepImpl {α : Type} (key : String) (r : Except String α) : Except String α :=
+  unsafeBaseIO do
+    if let .error e := r then failMemo.modify fun m => boundedInsert m Limits.maxCompiledPackets key e
+    return r
+
+/-- `r`, its failure (if it is one) kept as the process's answer for `key`. -/
+@[implemented_by failKeepImpl]
+def failKeep {α : Type} (_key : String) (r : Except String α) : Except String α := r
+
+/-- Whether `w` resolves `inputs`' library (or they name none): only then is a compile failure the package's own,
+    the same in every world, and so the process's to remember. -/
+def resolvable (w : World) (inputs : Json) : Bool :=
+  match (inputs.getObjValAs? String "library").toOption with
+  | some pin => w.libraries.contains pin
+  | none => true
+
+/-- Zero-argument pure definitions run, by `defKey`: their value is a function of the compiled entry alone
+    (`forms()`, `views()`, `lenses()`, `lawReads()`), so it is computed once per process. -/
+initialize zeroMemo : IO.Ref (Std.HashMap String (Except String Data)) ← IO.mkRef {}
+
+unsafe def runZeroImpl (key : String) (entry : Delvetalk.CheckedEntry) : Except String Data :=
+  unsafeBaseIO do
+    if let some r := (← zeroMemo.get)[key]? then return r
+    let r := (runPure entry [] Delvetalk.Bounds.lawTicks).1
+    zeroMemo.modify fun m => boundedInsert m Limits.maxCompiledPackets key r
+    return r
+
+/-- `entry` (the definition `key`, of no arguments) run under the law's ticks. -/
+@[implemented_by runZeroImpl]
+def runZero (_key : String) (entry : Delvetalk.CheckedEntry) : Except String Data :=
+  (runPure entry [] Delvetalk.Bounds.lawTicks).1
 
 /-- A definition of the on-disk compile cache (`DiskCache`, kind `def`), when it holds `key`; once read,
     the process's. -/
@@ -2035,8 +2178,6 @@ def diskCompiled (key : String) : Option Compiled :=
   (DiskCache.read "def" key).bind fun j => ((j.getObjVal? "packet").toOption.bind compiledOfPacket).map fun c =>
     memoKeep key (DiskCache.hit c)
 
-/-- The on-disk form of a compiled definition. -/
-def compiledJson (key : String) (c : Compiled) : Json := Json.mkObj [("key", toJson key), ("packet", c.packet)]
 
 /-- The cache key of an object's compiled definition (`compiledMethod` uses the same). -/
 def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
@@ -2044,10 +2185,14 @@ def defKey (o : Object) (name : String) : String := o.inputsKey ++ "/" ++ name
 /-- An object's definition `name`, compiled and prepared (from the world's cache when warm, else
     the process's, else the disk's). -/
 def compileDef (w : World) (o : Object) (name : String) : Except String (Compiled × World) := do
-  if let some c := w.compiled[defKey o name]? then return (c, w)
-  if let some c := memoRead (defKey o name) <|> diskCompiled (defKey o name) then return (c, w)
-  let (c, w) ← compileEntryIn w o.inputs name
-  return (memoKeep (defKey o name) (← compiledOf c), w)
+  let key := defKey o name
+  if let some c := w.compiled[key]? then return (c, w)
+  if let some c := memoRead key <|> diskCompiled key then return (c, w)
+  let mine := resolvable w o.inputs
+  if mine then if let some e := failRead key then throw e
+  let compiled := compileEntryIn w o.inputs name >>= fun (c, w) => do return (← compiledOf c, w)
+  let (c, w) ← if mine then failKeep key compiled else compiled
+  return (memoKeep key c, w)
 
 /-- Compile the Bend law (and its reads) of the objects a proposal writes, into the world's
     cache, so the pure `judge` finds them. -/
@@ -2058,9 +2203,7 @@ def warmLaws (w : World) (ids : List String) : World :=
       (["law"] ++ (if o.predicateReads then ["lawReads"] else [])).foldl (fun w name =>
         if w.compiled.contains (defKey o name) then w else
         match compileDef w o name with
-        | .ok (c, w) =>
-          let cache := if w.compiled.size < Limits.maxCompiledPackets then w.compiled else {}
-          { w with compiled := cache.insert (defKey o name) c }
+        | .ok (c, w) => { w with compiled := boundedInsert w.compiled Limits.maxCompiledPackets (defKey o name) c }
         | .error _ => w) w
     | none => w) w
 
@@ -2069,7 +2212,7 @@ def lawReadsOf (w : World) (o : Object) : Except String (List String) := do
   if !o.predicateReads then return []
   let (c, _) ← compileDef w o "lawReads"
   let some entry := c.entry | throw "lawReads is not held"
-  match (runPure entry [] Delvetalk.Bounds.lawTicks).1 with
+  match runZero (defKey o "lawReads") entry with
   | .ok value => match labels [] value with
     | some ids => return ids.eraseDups.take Limits.maxRoots
     | none => throw "lawReads must return a List<String>"
@@ -3777,7 +3920,7 @@ def makeObject (w : World) (b : Built) (inputs : Json) (state : Data) (read : Op
             relations := b.relations, fixed := fixedOf b.artifact, declares := declaresOf b.artifact }, sources)
 
 def cacheBuild (w : World) (inputs : Json) (b : Built) : World :=
-  if w.builds.size < Limits.maxBuilds then { w with builds := w.builds.insert (buildKey inputs) b } else w
+  { w with builds := boundedInsert w.builds Limits.maxBuilds (buildKey inputs) b }
 
 /-- Build an object and remember its compiled package in the world. -/
 def buildObjectIn (w : World) (inputs seed : Json) (read : Option Json := none) (chain : Option Json := none)
@@ -4968,12 +5111,13 @@ def view (w : World) (j : Json) : Except String Json := do
     return Json.mkObj [("status", toJson "viewed"), ("object", toJson id),
       ("version", toJson o.version), ("state", dataJson o.state), ("pin", toJson o.pin)]
 
-/-- The CID of `id`'s state at `version`, as the journal names it: the current state's, a created
-    or child seed's (version 0), or the `cid` of the admitted write that made the version (host7; a
-    write journaled before names none). -/
-def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.run do
-  let some o := w.objects[id]? | return none
-  if o.version == version then return some o.stateCid
+/-- Every version of `id` the journal names a state CID for, by version (see `stateCidAt`), from one
+    walk of the entries that touched it: a created or child seed's at version 0, each admitted
+    write's `cid` at its version (a write journaled before host7 names none). -/
+def stateCidsCold (w : World) (id : String) : Std.HashMap Nat (Option String) := Id.run do
+  -- The first entry (in order) that answers for a version answers: a created seed with its CID, a write
+  -- naming the version (with its CID or, from before host7, none), a creating turn's child with its CID.
+  let mut out : Std.HashMap Nat (Option String) := {}
   for i in (w.touched[id]?).getD #[] do
     let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -4981,18 +5125,45 @@ def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.r
     let named := fun (j : Json) => (j.getObjValAs? String "object").toOption == some id
     match tagOf entry with
     | "created" =>
-      if version == 0 && named outcome then
-        if let .ok cid := outcome.getObjValAs? String "cid" then return some cid
+      if named outcome && !out.contains 0 then
+        if let .ok cid := outcome.getObjValAs? String "cid" then out := out.insert 0 (some cid)
     | "admitted" =>
       for x in arr "writes" do
-        if named x && (x.getObjValAs? Nat "version").toOption == some version then
-          return (x.getObjValAs? String "cid").toOption
-      if version == 0 then
-        for c in arr "creates" do
-          if named c then
-            if let .ok cid := c.getObjValAs? String "cid" then return some cid
+        if named x then
+          if let some v := (x.getObjValAs? Nat "version").toOption then
+            unless out.contains v do out := out.insert v (x.getObjValAs? String "cid").toOption
+      for c in arr "creates" do
+        if named c && !out.contains 0 then
+          if let .ok cid := c.getObjValAs? String "cid" then out := out.insert 0 (some cid)
     | _ => pure ()
-  return none
+  return out
+
+/-- This process's `stateCidsCold` by object and the CID of the last entry that touched it: a journal
+    is a hash chain, so that entry names every entry before it, and a later write is a new key. -/
+@[noinline] unsafe def stateCidsMemo : IO.Ref (Std.HashMap String (Std.HashMap Nat (Option String))) :=
+  unsafeBaseIO (IO.mkRef {})
+
+unsafe def stateCidsImpl (w : World) (id : String) : Std.HashMap Nat (Option String) :=
+  unsafeBaseIO do
+    let touched := (w.touched[id]?).getD #[]
+    let some last := touched.back? | return {}
+    let some head := w.entries.hashAt? last | return stateCidsCold w id
+    let key := id ++ "@" ++ head
+    if let some m := (← stateCidsMemo.get)[key]? then return m
+    let m := stateCidsCold w id
+    stateCidsMemo.modify fun c => boundedInsert c Limits.maxBuilds key m
+    return m
+
+@[implemented_by stateCidsImpl]
+def stateCids (w : World) (id : String) : Std.HashMap Nat (Option String) := stateCidsCold w id
+
+/-- The CID of `id`'s state at `version`, as the journal names it: the current state's, a created
+    or child seed's (version 0), or the `cid` of the admitted write that made the version (host7; a
+    write journaled before names none). -/
+def stateCidAt (w : World) (id : String) (version : Nat) : Option String := do
+  let o ← w.objects[id]?
+  if o.version == version then return o.stateCid
+  (stateCids w id)[version]?.join
 
 /-- The object's state at `version`, rebuilt from the journal: its created seed (or a creating turn's
     seed), then each admitted write of it in order, re-applying its edits under the object's relations

@@ -47,7 +47,16 @@ static uint64_t next_id = 1;
 static line_t *head = NULL, *tail = NULL;
 static volatile sig_atomic_t stopping = 0;
 
-static void on_stop(int sig) { (void)sig; stopping = 1; }
+/* The stop's wake: the handler writes a byte the poll watches. The signal may land on any thread of
+   the Lean runtime, so an EINTR in the serving thread's poll is not to be counted on; without the pipe
+   the stop waited out the poll's second. */
+static int wake[2] = {-1, -1};
+
+static void on_stop(int sig) {
+  (void)sig;
+  stopping = 1;
+  if (wake[1] >= 0) { int saved = errno; ssize_t w = write(wake[1], "x", 1); (void)w; errno = saved; }
+}
 
 static lean_obj_res io_error(void) { return lean_io_result_mk_error(lean_decode_io_error(errno, NULL)); }
 
@@ -82,6 +91,9 @@ static int listen_on(const char *path, mode_t mode, gid_t gid) {
 
 lean_obj_res delvetalk_serve_listen(b_lean_obj_arg host, b_lean_obj_arg owner, b_lean_obj_arg group, lean_obj_arg world) {
   (void)world;
+  if (wake[0] < 0 && pipe(wake) == 0) {
+    for (int k = 0; k < 2; k++) { nonblocking(wake[k]); fcntl(wake[k], F_SETFD, FD_CLOEXEC); }
+  }
   struct sigaction sa;
   memset(&sa, 0, sizeof(sa));
   sa.sa_handler = on_stop;
@@ -180,11 +192,12 @@ lean_obj_res delvetalk_serve_next(lean_obj_arg world) {
   for (;;) {
     if (stopping) return lean_io_result_mk_ok(lean_mk_string(""));
     if (head) return next_line();
-    struct pollfd fds[2 + MAX_CONNS];
+    struct pollfd fds[3 + MAX_CONNS];
     for (int k = 0; k < 2; k++) { fds[k].fd = listeners[k]; fds[k].events = POLLIN; fds[k].revents = 0; }
     for (int i = 0; i < nconns; i++) { fds[2 + i].fd = conns[i].fd; fds[2 + i].events = POLLIN; fds[2 + i].revents = 0; }
     int count = nconns;
-    if (poll(fds, (nfds_t)(2 + count), 1000) < 0) {
+    fds[2 + count].fd = wake[0]; fds[2 + count].events = POLLIN; fds[2 + count].revents = 0;  /* -1: ignored by poll */
+    if (poll(fds, (nfds_t)(3 + count), 1000) < 0) {
       if (errno == EINTR) continue;
       return io_error();
     }

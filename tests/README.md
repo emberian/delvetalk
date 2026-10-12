@@ -9,7 +9,11 @@ each test is named as a sentence of what the software does.
     python3 -W ignore -m tests.run --profile    # host and serve processes per class
 
 `DELVETALK_OBEND` names the host binary. `tests/run.py` runs each class in its own process (a class
-declaring `independent = True` and measured over 8 s is dealt into chunks); `tests/host.py` holds the
+declaring `independent = True` and measured over 8 s, or never measured, is dealt into chunks; `tests/timings.json`
+holds the slow classes' times so a fresh checkout schedules them first, `--baseline` rewrites it). A run shares one
+compile cache (`DELVETALK_COMPILE_CACHE`), the binary's pin and one genesis per town shape (`DELVETALK_TOWN_TEMPLATES`:
+`tests/town.py` copies its journal and head snapshot into each town; `test_town_template` holds a copy to a fresh
+genesis). `tests/host.py` holds the
 fixtures: `HostCase` (one process per class, a fresh unsynced journal per test), `ServeCase` (one `serve`
 per class, `host` its public socket and `root` the opener's; test_http's `FrontCase` takes `fresh_world` for a `serve` per test), `check` (the run's shared stateless process).
 Every `serve` a test starts goes through `served(state, cleanup=...)` or `Town(..., cleanup=...)`: the test's
@@ -133,6 +137,7 @@ The Python around one `serve`, which carries bytes and credentials and decides n
 
 - `test_bridge` (§7): The bridge turns observed posts into turns in creation order, routes a reply by its nearest recorded ancestor, and drafts each offer once, never posting.
 - `test_genesis` (§7, §11): Genesis seeds the town's world once through a real `serve`'s root socket: every door resolves, the opener's handle shows, and the door pages are published.
+- `test_town_template` (harness): A town copied from the run's genesis template (tests/town.py) is a fresh genesis: journal bytes, every object's state CID at every version, status, what waits.
 - `test_hand` (§7): The owner's console at /hand/ over a real front, with a stub host and a stub poster.
 - `test_root_console` (ROOT §1.6, §2.3): The hand's root console and moderation verbs, each from the CLI and the console, with a stub host and a live `serve`.
 - `test_serve` (§7): `delvetalk-obend serve` is the one writer of a directory of worlds: two private sockets, one lock, concurrent clients in one chain, a restart replaying to the same receipts, named worlds, scratch worlds, the sealed library, and the opener and root ops on the root socket only.
