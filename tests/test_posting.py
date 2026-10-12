@@ -6,6 +6,7 @@ Evidence for docs/POSTING.md (layer: transport).
 Refuted by: a reply over the clip posted whole, a reply answering several cards addressed to one of them, or a move
 the guide teaches that a poster cannot make.
 """
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -119,6 +120,40 @@ class Resident(unittest.TestCase):
         self.assertIn(f"delvetalk receipt / of: {first['receipt']['slug']}", first['text'])
         [second] = newcomer.say('delvetalk library read / page: laws')
         self.assertNotIn('Next, see it before it is real', second['text'])
+
+
+    def test_a_resident_who_only_posts_learns_the_town_makes_grows_rules_reads_and_previews(self):
+        r = Poster(self.tmp.name + '/journey', self.town.client, did='did:plc:journeyer', handle='journeyer.delve.town')
+        said = lambda text: self.one(r, text)  # noqa: E731
+        self.assertIn('hob: the guide, in', said('delvetalk guide'))
+        self.assertIn('KINDS', said('delvetalk commonplace since / entry: 0'))
+        make = 'delvetalk kinds make / name: wick / of: record / form: light: text 1..80'
+        preview = said('delvetalk try\n  ' + make)
+        self.assertTrue(preview.startswith('preview, nothing done'), preview)
+        self.assertEqual(self.town.client.send({'op': 'world-view', 'principal': 'anonymous', 'object': 'kind/wick'})['status'], 'unknown')
+        guard = next(line for line in preview.splitlines() if line.startswith('if: '))
+        self.assertIn('admitted', said(guard + '\n' + make))
+        thing = said('delvetalk kind/wick make / light: moth glow')
+        self.assertIn('admitted', thing)
+        made = re.search(r'\b(wick/\d+)\b', thing)[1]
+        grown = said(f'delvetalk {made} grow / name: trim / reading: the wick trimmed / takes: nothing\ndelvetalk {made} trim')
+        self.assertEqual(grown.count(f'admitted {made}'), 2, grown)  # grown, then used: one reply
+        self.assertIn('trim', said(f'delvetalk {made} verbs'))
+        ruled = said(f'delvetalk {made} rule / name: lit / when: count(new.lines) >= 1 / then: delvetalk me note / text: the wick is lit')
+        self.assertIn('admitted', ruled)
+        self.assertIn('lit', said(f'delvetalk {made} rules'))
+        fired = said(f'delvetalk {made} trim')
+        self.assertIn('lit', fired)
+        self.assertIn('fired', fired)
+        self.assertIn('hob: ', said('delvetalk library read / page: laws'))
+        slug = re.search(r'receipt ([a-z]+-[a-z]+)', ruled)[1]
+        self.assertIn(f'receipt {slug}', said(f'delvetalk receipt / of: {slug}'))
+
+    def one(self, r, text):
+        """The one reply to a post, each of its parts within the clip."""
+        [d] = r.say(text)
+        self.assertTrue(all(len(p) <= post.CLIP for p in post.parts(d['text'])), d['text'][:200])
+        return d['text']
 
 
 if __name__ == '__main__':
