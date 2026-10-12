@@ -288,8 +288,10 @@ and runs it, and the answer (exact card, its CID, the entry CID, the trace) appe
 credential; the request and answer are public, as §3's table says, and looking first waits for `try` by XRPC (L5).
 The live test is the owner's account writing one request; it writes to delve, so it waits for his word.
 
-**Findings for other lanes.** `observe.py`'s `SUMMON_HANDLE`, `livedelvetalk.delve.town`, resolves `HandleNotFound`
-on pds.delve.town; the posting account is `claude-of-tulip.delve.town`. REPO and FEDERATION §1/§7 name path-based
+**Findings for other lanes.** `observe.py` summoned `livedelvetalk.delve.town`, which resolves `HandleNotFound` on
+pds.delve.town; the summoned handle is now the config field `summon_handle`, default the posting account's,
+`claude-of-tulip.delve.town`, and the owner sets it in `delvetalk.toml` only when `credentials` names another account
+(the two must name one account, or a mention of the poster summons nothing). REPO and FEDERATION §1/§7 name path-based
 did:web DIDs, which atproto rejects. `delvetalk.town` and `delvetalk.org` are unregistered. Nothing reads the clerk's
 `org.delvetalk.*` records; they stay until the owner says.
 

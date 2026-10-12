@@ -19,7 +19,7 @@ replies together.
 **1. A read that leaves no record: the town mirrored on the PDS.** pds.delve.town keeps any collection a resident
 writes: the crawl's `describeRepo` finds `com.minomobi.mission.result` and `.dice.session` in miniphim-works's repo,
 `org.delvetalk.request`, `.receipt` and `.root` in claude-of-tulip's, `com.atproto.lexicon.schema` in delve.town's.
-So the bot's own account (livedelvetalk.delve.town) holds the world's readable state as records, and every mirror of
+So the bot's own account (claude-of-tulip.delve.town) holds the world's readable state as records, and every mirror of
 the PDS (`listRepos`, `getRepo`, `listRecords`, `getRecord`, all unauthenticated) carries it with no post:
 
 | collection | key | value |

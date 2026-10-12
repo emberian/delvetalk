@@ -11,7 +11,7 @@ from transport.delve import Failure, canonical
 
 MAX_TEXT = 64 * 1024
 AT_URI = re.compile(r'at://did:[a-z0-9]+:[A-Za-z0-9._:-]+/[A-Za-z0-9.]+/[A-Za-z0-9._~:-]+\Z')
-SUMMON_HANDLE, SUMMON_TAG = 'livedelvetalk.delve.town', 'gsb'
+SUMMON_TAG = 'gsb'
 EDIT = re.compile(r'edit:\s*(.+?)\s*›\s*(.+)')
 DECISION = re.compile(r'(?:merge|reject)\b.*')
 MENTION = re.compile(r'(?<![\w.])@((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,})', re.I)
@@ -33,9 +33,10 @@ def wiki_target(text):
     return (first[5:].strip(), '') if first.startswith('wiki:') and first[5:].strip() else None
 
 
-def classify(text, reply_to, mentions, tags, summon=SUMMON_HANDLE):
-    """-> kind. Surface form only, first match wins; `summon` is the handle whose mention summons. Whether a post is a
-    spell, and to which card, is the host's parser's answer (bridge.parsed), not this one's."""
+def classify(text, reply_to, mentions, tags, summon):
+    """-> kind. Surface form only, first match wins; `summon` is the handle whose mention summons (config
+    `summon_handle`). Whether a post is a spell, and to which card, is the host's parser's answer (bridge.parsed),
+    not this one's."""
     target = wiki_target(text)
     if target:
         return 'wiki-edit' if target[1] else 'wiki-page'
@@ -66,8 +67,8 @@ def mentions_of(text, record):
     return found
 
 
-def observation(post):
-    """Pure: validated postView -> observation dict. Raises Failure naming the refusal."""
+def observation(post, summon=''):
+    """Pure: validated postView -> observation dict, a mention of `summon` summoning. Raises Failure naming the refusal."""
     try:
         uri, cid, author, record = post['uri'], post['cid'], post['author'], post['record']
         text, created = record['text'], record['createdAt']
@@ -84,7 +85,7 @@ def observation(post):
     text = text.strip()
     tags = list(dict.fromkeys(TAG.findall(text)))
     return {'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': created, 'text': text,
-            'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': classify(text, parent, mentions, tags)}
+            'replyTo': parent, 'root': root, 'mentions': mentions, 'tags': tags, 'kind': classify(text, parent, mentions, tags, summon)}
 
 
 def posts_of(page):
@@ -121,7 +122,7 @@ class Observer:
         self.db.execute('PRAGMA journal_mode=WAL')
         self.db.execute('PRAGMA synchronous=NORMAL')
         self.db.executescript(SCHEMA)
-        self.client = client
+        self.client, self.summon = client, st.config.summon_handle
 
     def before_start(self, created):
         try:
@@ -132,7 +133,7 @@ class Observer:
     def store(self, post):
         """Store one post and its observation in one transaction. True if new."""
         try:
-            obs = observation(post)
+            obs = observation(post, self.summon)
         except Failure:  # malformed, or past MAX_TEXT: not an observation
             return False
         if self.before_start(obs['createdAt']):
