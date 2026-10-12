@@ -2940,7 +2940,7 @@ def placedIn (entry : Json) (id : String) : Option String :=
 
 /-- The read policy the entry gives `id`: a creation's, a root `set` of it, `hide` or `show`, a
     store-installing genesis's. -/
-def readIn (entry : Json) (id : String) : Option Json :=
+def readPolicyIn (entry : Json) (id : String) : Option Json :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
   let named := (outcome.getObjValAs? String "object").toOption == some id
   match tagOf entry with
@@ -2994,7 +2994,7 @@ def anchorsAfter (w : World) (height : Nat) (entry : Json) : Std.HashMap String 
     let a := if (pinIn entry id).isSome then { a with pin := height } else a
     let a := if (lawIn entry id).isSome then { a with law := height } else a
     let a := if (placedIn entry id).isSome then { a with placed := height } else a
-    let a := if (readIn entry id).isSome then { a with read := height } else a
+    let a := if (readPolicyIn entry id).isSome then { a with read := height } else a
     if a == m.getD id {} then m else m.insert id a) w.anchors
 
 /-- The indexes a root or moderation entry moves (docs/ROOT.md §1.3: rebuilt as `record` rebuilds

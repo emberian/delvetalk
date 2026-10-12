@@ -511,7 +511,7 @@ def checkAnchors (w : World) (whole : Bool := true) : Except String Unit := do
     if let some law := lawIn (at_ a.law) id then
       unless law == o.lawText do throw s!"the law of {id} is not the journal's"
     if whole then
-      unless (if a.read == 0 then none else readIn (at_ a.read) id) == some o.read.json do
+      unless (if a.read == 0 then none else readPolicyIn (at_ a.read) id) == some o.read.json do
         throw s!"the read policy of {id} is not the journal's"
       unless (if a.placed == 0 then o.unplaced else placedIn (at_ a.placed) id == some (placedCid o)) do
         throw s!"the rules, wants and verbs on {id} are not the journal's"

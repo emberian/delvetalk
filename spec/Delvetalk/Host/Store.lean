@@ -499,7 +499,7 @@ structure Anchor where
   law : Nat := 0
   /-- The entry naming the CID of its placed rules, wants and verbs (`Ops.placedIn`), 0 for none. -/
   placed : Nat := 0
-  /-- The entry setting its read policy (`Ops.readIn`). -/
+  /-- The entry setting its read policy (`Ops.readPolicyIn`). -/
   read : Nat := 0
   deriving Inhabited, BEq
 
