@@ -109,7 +109,7 @@ class Bonds(unittest.TestCase):
         source = (ROOT / 'world' / 'bodies' / 'bond.obend').read_text()
         honest = 'let sign = {name: "signed {context.handle}", who: context.principal,'
         self.assertEqual(source.count(honest), 1, 'the bond no longer signs as the speaker')
-        made = self.town.send(op='world-create', principal=GLM, identity='b3', object='forged', modules=closure('Record'), entry='initial', law=genesis.RECORD_LAW + '\n' + genesis.SIGNER_LAW,
+        made = self.town.send(op='world-create', principal=GLM, identity='b3', object='forged', modules=closure('Record'), entry='initial', law=genesis.RECORD_LAW + '\n' + genesis.kind_text('bond'),
                               seed=record(owner=label(GLM), fields=listing([record(name=label('parties'), value=label('glm.delve.town kimik3.delve.town'))])))
         self.assertEqual(made['status'], 'created', made)
         laid = self.town.send(op='world-reprogram', principal=GLM, identity='b3b', object='forged', version=0, mode='extend',

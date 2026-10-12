@@ -1,0 +1,12 @@
+of: record
+form: <<END
+name: text 1..64
+fills: text 1..400
+segments: natural 1..24
+move: text 1..400
+tide: text 1..128
+END
+head: {name}
+voice: a gathering, counted in segments, that comes on whether anyone posts or not
+about: a clock that fills while a condition holds; moves when full
+body: front

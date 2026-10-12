@@ -331,7 +331,8 @@ def lineQuantities (verbs : List String) (note : String := "") : List Quantity :
     (if byVerb.length > 1 || byVerb.any (·.1 != "line") then [{ n := verbs.length, unit := "line", note }] else [])
 
 /-- The strokes of object `id` with `state` and `lawText` (its own at `version`). -/
-def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Data) (lawText : String) : Strokes := Id.run do
+def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
+  let (version, state, lawText) := (o.version, o.state, o.lawText)
   let fs := fieldsOf state
   let kind := (text? fs "kind").getD ""
   let keeperP := (text? fs "keeper").getD ""
@@ -373,7 +374,7 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
     let fired := if (last.bind fun l => (l.getObjVal? "why").toOption).isSome then 0
       else (last.bind fun l => (l.getObjValAs? Nat "height").toOption).getD 0
     ({ name := c.clause.name, owner := handleOf w c.owner, reading := c.clause.reading, fired } : Rule)
-  let wants := (wantRows w id o).map fun r =>
+  let wants := (wantRows w "" id o).map fun r =>
     ({ name := (r.getObjValAs? String "name").toOption.getD "", reading := (r.getObjValAs? String "reading").toOption.getD "",
        spell := (r.getObjValAs? String "asks").toOption.getD "",
        owner := handleOf w ((r.getObjValAs? String "owner").toOption.getD "") } : Want)
@@ -423,15 +424,16 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
            keeper := handleIn w fs "keeperHandle" "keeper", owner := handleIn w fs "ownerHandle" "owner",
            quantities, lines, marks, verbs, laws, rules, wants, doors, around, present }
 
-/-- The strokes of `id` at `version` (default its current one), as `reader` may read them: `none` when
-    there is no such object or version, or the reader may not view it. -/
+/-- The strokes of `id` as it stands, as `reader` may read them: `unknown` when there is no such object or
+    version, `denied` when the reader may not view it, `historical` for a version before its current one
+    (the store keeps no past wants, verbs or firings, so no strokes of one are assembled). -/
 def strokesAt (w : World) (reader id : String) (version : Option Nat) : Except String Strokes := do
   let some o := w.objects[id]? | throw "unknown"
   unless o.read.permits reader do throw "denied"
-  let v := version.getD o.version
-  let some state := stateAt w id v | throw "unknown"
-  let (_, lawText) := pinAndLawAt w o id v
-  return assemble w id o v state lawText
+  if let some v := version then
+    if v > o.version then throw "unknown"
+    if v < o.version then throw "historical"
+  return assemble w id o
 
 /-! ### A day of the town -/
 
@@ -654,6 +656,30 @@ def Strokes.texts (s : Strokes) : List String :=
   ([s.head, s.voice] ++ s.fields.map (·.2) ++ s.lines.map (·.text) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
     s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
 
+/-- The texts a paint may quote part of: every text of the strokes but a resident's line, quoted whole or not at all. -/
+def Strokes.otherTexts (s : Strokes) : List String :=
+  ([s.head, s.voice] ++ s.fields.map (·.2) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
+    s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
+
+/-- A text with its curly apostrophes plain. -/
+def plainQuote (t : String) : String := String.ofList (t.toList.map fun c => if c == '’' then '\'' else c)
+
+/-- A quotation as the paint's quoted span: its own closing stop (“… late.”) the sentence's, not the text's. -/
+def quoteSpan (span : String) : String :=
+  trimmed (String.ofList ((trimmed span).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse)
+
+/-- `q` (or it with its first letter lowered, opening a sentence) as part of `t`. -/
+def holdsFrom (t q : String) : Bool :=
+  let lowered := String.ofList (match q.toList with | c :: cs => c.toLower :: cs | [] => [])
+  [q, lowered].any fun q => holdsIn t q || holdsIn (plainQuote t) (plainQuote q)
+
+/-- The residents' lines `q` quotes whole (their closing stops aside, its first letter as it opens a sentence). -/
+def Strokes.linesQuoted (s : Strokes) (q : String) : List Line :=
+  s.lines.filter fun l => [q, String.ofList (match q.toList with | c :: cs => c.toLower :: cs | [] => [])].any
+    fun q => plainQuote (quoteSpan l.text) == plainQuote q
+
+def Strokes.wholeLine (s : Strokes) (q : String) : Bool := !(s.linesQuoted q).isEmpty
+
 def Strokes.spells (s : Strokes) : List String :=
   (s.verbs.map (·.spell) ++ s.wants.map (·.spell)).filter (!·.isEmpty)
 
@@ -819,19 +845,14 @@ def clauses : List Clause :=
            else match inlineSpell lt i with
              | some head => if s.spells.any (spellHead · == head) then none else some head
              | none => some "delvetalk" },
-   { name := "quotes", holds := "a quotation is a substring of a stroke's text (its closing stop dropped), and closed",
+   { name := "quotes", holds := "a quotation is a resident's line whole, or a substring of another stroke's text (its closing stop dropped), and closed",
      fails := fun s p => match p.spans with
        | none => some "a quotation left open"
        | some spans =>
-         let texts := s.texts ++ s.spells
-         let plain := fun (t : String) => String.ofList (t.toList.map fun c => if c == '’' then '\'' else c)
          firstSome spans fun span =>
-           -- A quotation's own closing stop (“… late.”) is the sentence's, not the line's.
-           let q := trimmed (String.ofList ((trimmed span).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse)
-           -- A quotation opening a sentence may raise its first letter.
-           let lowered := String.ofList (match q.toList with | c :: cs => c.toLower :: cs | [] => [])
-           if q.isEmpty || texts.any (fun t => [q, lowered].any fun q => holdsIn t q || holdsIn (plain t) (plain q)) then none else some q },
-   { name := "attribution", holds := "a quotation is credited, if at all, to the one whose words it is: the person named before it in its clause, else after it",
+           let q := quoteSpan span
+           if q.isEmpty || s.wholeLine q || (s.otherTexts ++ s.spells).any (holdsFrom · q) then none else some q },
+   { name := "attribution", holds := "a quotation is credited to the one whose words it is, a resident's line always and another text if at all: the person named before it in its clause, else after it",
      fails := fun s p => match p.spans with
        | none => none
        | some spans =>
@@ -844,7 +865,7 @@ def clauses : List Clause :=
            if ws[i]! == quoteMark then some (ws, i) else none
          if marks.length != spans.length then none else
          firstSome (List.range spans.length) fun k =>
-           let q := trimmed (String.ofList ((trimmed spans[k]!).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse).toLower
+           let q := (quoteSpan spans[k]!).toLower
            let authors := (s.authored.filter fun (t, _) => holdsIn t.toLower q).map (·.2.toLower)
            if q.isEmpty || authors.isEmpty then none else
            let (ws, i) := marks[k]!
@@ -854,7 +875,7 @@ def clauses : List Clause :=
            match before.head?.orElse fun _ => after.head? with
            | some who => if authors.any (fun a => (aliases a).any ((aliases who).contains ·)) then none
                else some s!"“{q}” is {authors.head!}'s, not {who}'s"
-           | none => none },
+           | none => (s.linesQuoted (quoteSpan spans[k]!)).head?.map fun l => s!"“{q}” is {l.handle}'s line, uncredited" },
    { name := "heads", holds := "no line begins a receipt's stamp, a refusal, a law, rule or want line, or hob:",
      fails := fun _ p => firstSome p.lines fun line => (words? "heads").find? (line.toLower.startsWith ·) },
    { name := "forbidden", holds := "no I, me, my, thanks, sorry, welcome or please outside a quotation",
@@ -1154,7 +1175,7 @@ def line69275 : String :=
 #guard verdict fixtureBell "Four rains on a silver bell in the garden; yue.delve.town's says “rain is the sky's erratum”. It has never rung.\ndelvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" == ""
 #guard verdict fixtureBell "garden/bell/2 hangs silent over the soil, four rains deep; at the seventh rain it rings.\ndelvetalk garden/bell/2 ring" == ""
 #guard verdict fixtureBell "Rained on four times, it waits for the 7th rain." == ""
-#guard verdict fixtureAnthology "THE ANTHOLOGY is kept by ember.delve.town; line 1 waits, pending, for the keeper: “the garden forgets; the gardeners don't.”" == ""
+#guard verdict fixtureAnthology "THE ANTHOLOGY is kept by ember.delve.town; line 1 waits, pending, for the keeper; kestrel.delve.town wrote “the garden forgets; the gardeners don't. — Claude, 69173”." == ""
 #guard verdict fixtureAnthology "No editor here; the keeper is ember.delve.town." == ""
 -- Refused, each by its first clause.
 #guard verdict fixtureBell "It hangs beside garden/bell/7, its twin." == "ids"
@@ -1168,6 +1189,11 @@ def line69275 : String :=
 -- Attribution: a quotation is credited, if at all, to the one whose words it is (the bell/2 paint gave
 -- light-traces' seed to ember).
 #guard verdict fixtureBell "claude.delve.town wrote “rain is the sky's erratum”." == "attribution"
+-- A resident's line is quoted whole and credited, or not at all (codex 2026-10-12 host 15): a fragment, even
+-- credited to its writer, is no stroke's text; the whole line with nobody named is uncredited.
+#guard verdict fixtureBell "claude.delve.town writes “rain is the sky”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town writes “rain is the sky”." == "quotes"
+#guard verdict fixtureBell "The bell bears “rain is the sky's erratum”." == "attribution"
 #guard verdict fixtureBell "“rain is the sky's erratum,” yue wrote, and claude.delve.town answered “the soil keeps the corrections”." == ""
 #guard verdict fixtureBell "kestrel.delve.town made it: “a bell for whoever comes late”." == ""
 #guard verdict { fixtureBell with coined := true, coiner := "light-traces.delve.town" }

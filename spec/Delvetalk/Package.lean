@@ -44,6 +44,24 @@ def Diagnostic.render (d : Diagnostic) : String :=
 
 private def lift {α : Type} (x : Except String α) : Except Diagnostic α := x.mapError requestRefusal
 
+/-- The library imports a module's source needs and does not name (docs/AUTHORING.md §2, D-imports):
+`Form` and `List` for its form blocks (`forms()` is derived as a List), `Plan` for `write {…}` or
+`keep()` beside a State, and `World` for an `Activity<…>` when no module of the package is named World.
+Read from the source's lines, before it is parsed, so that two or more are named in one refusal; one
+alone is left to the refusal that names it where it is used. -/
+def missingLibraries (source : String) (package : List String) : List String :=
+  let lines := source.splitOn "\n"
+  let imported := fun (file : String) => lines.any fun l => l.startsWith s!"import ./{file}.obend"
+  let forms := lines.any fun l => l.startsWith "form " && (l.trimAscii.toString.endsWith ":" || (l.splitOn ":").length > 1)
+  let stated := lines.any fun l => l.startsWith "record State:" || l.startsWith "type State "
+  let writes := (source.splitOn "write {").length > 1 || (source.splitOn "keep()").length > 1
+  let derivesForms := !lines.any (·.startsWith "def forms(")
+  let needs := [("Form", "Form", forms), ("List", "Lists", forms && derivesForms),
+    ("Plan", "Plans", stated && writes && !lines.any (·.startsWith "def keep(")),
+    ("World", "World", (source.splitOn "Activity<").length > 1 && !package.contains "World")]
+  needs.filterMap fun (file, alias, needed) =>
+    if needed && (file == "World" || !imported file) then some s!"import ./{file}.obend as {alias}" else none
+
 /-- A sealed in-memory package: imports name earlier modules explicitly supplied
 by the caller. The adapter never reads an import path from the filesystem. -/
 def modulesAndAsts (j : Json) :
@@ -61,6 +79,10 @@ def modulesAndAsts (j : Json) :
     unless Delvetalk.Compiler.ObjectiveBendParse.isIdent name.toList do throw (requestRefusal "invalid module name")
     if modules.any (fun m => m.name == name) then throw (requestRefusal "duplicate module name")
     if source.utf8ByteSize > Bounds.maxModuleBytes then throw (requestRefusal s!"module {name} exceeds maxModuleBytes ({Bounds.maxModuleBytes} bytes)")
+    let missing := missingLibraries source (raw.toList.filterMap fun m => (m.getObjValAs? String "name").toOption)
+    if missing.length > 1 then
+      throw { stage := "objective-source-parse", sourceModule := some name,
+              message := s!"this module needs {missing.length} library imports it does not name; add them: " ++ "; ".intercalate missing }
     let ast ← FrontEnd.parseSource name source
     let mut imports : List LockedImport := []
     for edge in ast.imports do
@@ -529,7 +551,7 @@ def executeTyped (term : Term) (type : Ty) (limits : Json) (profile : Bool) : Ex
         ("nodesUsed", toJson (nodes - result.remaining.nodes))]
   | .error (failure,state,remaining) =>
       return Json.mkObj [("status", toJson "refused"),
-        ("failure", toJson (reprStr failure)),
+        ("failure", toJson (Delvetalk.Turn.refusalText failure state)),
         ("ticksUsed", toJson (ticks - remaining.ticks)), ("heapCells", toJson state.heap.size)]
 
 /-- One global demand/extraction budget. No game rule or host authority lives here. -/
@@ -674,7 +696,7 @@ private def executePreparedNativeFrom (prepared : PackageData.Work PackageData.N
       pure ((executeStateWith (fun _ => true) store.bounded ⟨heap, stack⟩ budget start).map (·.extraction.result))
   match run with
   | .error (failure, state, rest) =>
-      return (.refused (reprStr failure) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩, some state)
+      return (.refused (Delvetalk.Turn.refusalText failure state) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩, some state)
   | .ok result =>
       -- Recursive aliases and the complete returned value are checked, including
       -- payloads which a later source Decision may explicitly refuse.
@@ -716,7 +738,7 @@ def executeDataEntryStored (entry : Delvetalk.CheckedEntry) (arguments : Array D
   let argumentBytes := 2 + admitted.foldl (fun n value => n + dataJsonBytes value) 0 + (admitted.size - 1)
   let (execution, ended) ← executePreparedNativeFrom
     (PackageData.prepareNativeChecked entry.source entry.checked entry.fuel admitted) argumentBytes limits (some store)
-  return (execution, (ended.map store.readsOf).getD ⟨[], []⟩)
+  return (execution, (ended.map store.readsOf).getD { rows := [], spans := [] })
 
 /-- `run` with `stored: [{field, key}]`: the first argument's named relations held as stored
 cells over its own rows; the reply carries `reads`. -/

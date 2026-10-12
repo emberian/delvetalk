@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -81,7 +81,7 @@ Rules:
 
 ## 3. Journal
 
-A journal at `J` is two files (5.137): `J`, the chain, one line per entry `{at, bytes, hash, height, previous}`, and `J.blocks`, the block store, where each entry's record (its canonical DAG-CBOR without `hash`, whose CID is the `hash`) lies at `at`. An entry's common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?}]` (5.136), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
+A journal at `J` is two files (5.137): `J`, the chain, one line per entry `{at, bytes, hash, height, previous}`, and `J.blocks`, the block store, where each entry's record (its canonical DAG-CBOR without `hash`, whose CID is the `hash`) lies at `at`. An entry's common fields: `height`, `previous`, `hash`, `identity {principal, intent}`, `roots [{object, version, scalar?, fields?, rows?, spans?, gaps?}]` (5.136; `gaps` kernel18), `turn`, `request` (digest), `outcome {tag, …}`. `hash` is the CID of the canonical DAG-CBOR of the entry without `hash` (`tests/wire.py` is an independent Python encoder). Genesis `previous` is 64 zeros (`Limits.genesis`). A forked world's height-1 `previous` is the forked entry's CID (section 5.7).
 
 `world.receipts` maps `identityKey` to the entry index (first wins, except that a suspension or a transient refusal is replaced by the identity's next entry). Transient refusals (`transientClasses`) are journaled but do not bind; admitted outcomes and every other refusal bind.
 
@@ -2024,6 +2024,96 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (`world-check` on the scratch) and `/cite` (`world-cite`); `/AGENTS.md/repl` and `/check` are gone. Tests:
    `test_http.Repl`, `test_hypermedia` (the stranger's walk), `test_serve`.
 
+175. **The second codex review's host findings (host29; docs/review/codex-2026-10-12; snapshot `v5`; deployed
+   with kernel18's replay edition 10, which its carry needs no more of).** Each with its failing input as a test, red on foundation:
+   - *What a clause cites* (host 1, 10, 11). `Ops.citesOf` is the one closure of what names cite (`"O".F` the
+     object; `under "O"` what O's law text names; `"O" wants N` what O's want N names, with every want clause of a
+     want-cited object), `Limits.lawDepth` deep; `citing w law names facts` sets `reads`, `wants` and `standing`
+     (`standingOf`). judge, amendable, reactions, posing/`wantFacts`, methodAdmits, kindAdmits and a layer's
+     creation all read it; `citationsFrom`, `citedStates`, `wantsCited`, `standings` are gone. `judge` applies every
+     write first and judges each law, Bend law, amendment and placing against the candidate world (`cand`), so one
+     commit writing A and B is judged as the world it leaves. A rule fires only when its owner may view the thing
+     and all it cites (`unfired reads`); placing a line citing what the placer may not view is `lawRefused
+     lawReads`; a want's `asks` is filled for its reader (`wantAsks w reader`; the paint's as nobody). Tests:
+     `test_law.Cited`, `test_rules.Reads`.
+   - *Grants* (host 3). `TurnLoop.granted` is the gate a principal's own turn enters a lent grant by (`runTurnWith`,
+     `runHeard`): it stands for this principal, a use is left and spent, the fixed part merged. `Abort.named` is a
+     refusal given whole (a card's `refuse`, a grant's clause). Test: `test_grants.LentDirect`.
+   - *Quiet* (host 6). `Ops.quietOf` is the one reading; `judge` refuses every entry of a quieted principal (propose,
+     reprogram, amend, placing, resumption, delivery), `runOne` before the turn runs. A delivery refused `quiet`
+     spends an attempt per clock step (`redelivered`), as any transient one. Test:
+     `test_root.Moderation.test_a_quieted_principal_writes_through_no_op`.
+   - *Rows and read policy anchored* (host 5). An admitted entry journals `placed [{object, cid}]` (`placedField`,
+     `placedCid` of rules, wants and verbs) for each object whose rows it changed or made, a `created` entry `placed`;
+     replay compares both when present. `Anchor.placed` (`placedIn`, or a genesis's rows) and `Anchor.read`
+     (`readPolicyIn`: creation, root `set`, `hide`/`show`, genesis); `checkAnchors` refuses rows no entry commits to
+     and another read policy, so the world is replayed whole: **a world whose rows predate `placed` replays whole at
+     every open until it is carried.** Snapshot `v5` (five heights an anchor); `previousEdition` `v4`, whose three a
+     carry checks alone (`checkAnchors whole`). Test: `test_snapshot.…forged_rows_or_read_policy…`.
+   - *Identities across a carry* (host 8; docs 1; agent 1). The `carried` genesis holds `identities` (`identityRow`
+     of each bound identity, and those its own carry kept); `World.carriedIds` is read from the genesis (never a
+     snapshot); `Ops.boundEntry` is the one lookup (`retained`, `retainedTurn`, `runTurn`, `world-receipt`). Test:
+     `test_carry.Carry.test_a_retry_after_the_carry_answers_the_receipt_and_repeats_nothing`, two carries deep.
+   - *In-turn creations* (host 4). `createRecJson` journals `lines` when the package's lines were placed;
+     `Ops.createdLaw` builds it again so in replay and a suspended activity. Test: `test_make.Make.…through_replay`.
+   - *Paint* (host 14, 15; laid on lane/paint's table). A past version is `historical` (`strokesAt`); a resident's
+     line is quoted whole (`Strokes.wholeLine`) and credited (`attribution` … `uncredited`), another text in part.
+   - *Spells* (agent 2, 3; lane/host29-spell). `Spell.segments` reads no spell inside a `<<TAG` block or a tagged
+     fence (`blockOpener`, `closesBlock`, one reader with the binding parser); `fit` refuses an unknown field with a
+     known one after it (`unknownField`), an unknown one last still ends the fields (D7).
+   - Objects 4 was lane/objrev's (the Bend law judges placings); agent 4, 5, 12 were host27's (5.169, 5.167, 5.164).
+173. **A layer checked over what it is laid on; a making takes a stack (lane/author-build; AUTHORING §5 host 1, steps
+   2, 3, 5; no edition change).** `world.check {package, layers}`: `package` as `create` takes it (a module of the
+   checking object's closure, or source), each of `layers` laid over it as `extend` lays one (`layeredInputs`), compiled
+   for `initial` (`TurnLoop.checkStack`, `Ops.checkInputs`); a package of source with no layers is `checkSource`'s, as
+   before. `world.checkObject {object, layers}`: what the object runs with `layers` over it (`Ops.checkObject`). Both
+   count against `checksPerTurn`. `extendInputs` writes the right `layer over ./<entry>.obend` in place of an author's
+   own first `layer over` line (a body written over RECORD laid over a bell's body), so a layer's line numbers are its
+   author's. A making takes several layers (`CreateRec.layers`, bottom first; `extendCreation` builds the creation
+   again with all of them, each judged by the made thing's law; the `duplicate` refusal is gone). A typed `view` whose
+   state does not conform to the call site's `S` answers `refused typeMismatch`, no longer an evaluation error. KIND
+   (Bend) uses all three: `stackOf` climbs `of` through kinds (four deep) to the root package and the bodies above
+   it; `kinds make` checks the body over that stack and refuses `body` with the checker's lines (the instance-time
+   `refused body` is gone); a kind's things are made with one `extend` a body; `~checkBody` serves the workshop's
+   `check / over:`. Tests: `test_authoring.Authoring`.
+
+174. **A clause reads a made thing's form fields; a spell's field binds in any case (lane/author-build; AUTHORING §5
+   host 2, step 6).** `Law.fieldReading`: a name the state has no field for is read from its `fields` rows (`{name,
+   value}`, what its kind's make took; `namedValue`), digits as a number, so `count(new.lines where verb == "rain") ==
+   new.ringAt` holds at the number the maker chose; `#guard`s beside `monotone`'s. `Spell.spelled`: a binding whose
+   folded name is a form field's takes the form's spelling (`ringAt: 3` was folded to `ringat` and never bound a
+   camelCase field). Test: `test_authoring.Authoring` (§6.1's tally, its law corrected: a rule fires under the kind's
+   owner, so "only its maker rings it" refused the rule's own ring; the build's law says "at its number, not before").
+
+175. **What a check says of reach; every missing import at once (lane/author-build; AUTHORING §5 step 4, D-receive,
+   D-imports).** `check`/`checkObject` answer `checked {diagnostics, reaches}`: `reaches` is whether what compiled has
+   a `receive` (`Ops.answersSpells` on the artifact's methods; `checkDiagnostics` compiles once, lawful, and returns
+   both; `TurnLoop.checkedData` answers `{diagnostics}` alone to a call site compiled before `reaches`). The workshop
+   refuses a draft no spell reaches (`noReceive`) and says so under a clean `check`. The kernel's package loader
+   (`Package.missingLibraries`, called in `modulesAndAsts` before each module is parsed) names in one refusal every
+   library import a module needs and lacks when there are two or more (`Form` and `List` for form blocks, `Plan` for
+   `write {…}`/`keep()` beside a State, `World` for `Activity<…>` with no World module in the package); one alone is
+   still refused where it is used. The workshop writes a layer's header itself (`Forms.layer`, shared by KIND's
+   bodies and `draft / over:`); a held draft over a kind is made by the kind (`~makeDrafted`), over a thing laid on it.
+   Tests: `test_authoring`, `test_sugar`, `test_workshop`.
+
+176. **Where a thing's code came from (lane/author-build; AUTHORING §5 host 3, step 7).** `Object.madeFrom`: the
+   journaled `madeFrom {object, pin, receipt}` of the `make` that made it or of a reprogram that carried one
+   (`become`), set as the commit installs it (`Ops.judge`: `creations`, and the reprogrammed `next`, keeping an earlier
+   one when the reprogram carries none), live and replayed alike; the snapshot keeps it under `madeFrom` when present
+   (an older snapshot has none). A `make` whose `madeFrom.receipt` is "" cites the turn that made `object`
+   (`TurnLoop.madeReceipt`). `?` prints `lineageLine`, "After kind/tapper by yue.delve.town, entry 66.", the principal
+   of the cited entry; `world-inspect` answers `madeFrom` and `lineage`. KIND's `~makeFork` (by `kinds`) makes a kind
+   forked whole with that lineage; the workshop's `draft / from:` holds one. Test: `test_authoring`.
+
+177. **A verb grown with a body (lane/author-build; AUTHORING §3 (b), §5 objects 4).** `castSpell`: a direct `grow`
+   carrying `body` runs `workshop`'s `growBody {object, name, reading, takes, body}` (`workshopId`) as the speaker's
+   turn; `growLine` shows the field. The workshop (Bend) writes the one method (`verbLayer`: its `form`, and a `def`
+   whose result is a number), lays the header (`Forms.layer`), checks it over the thing and `extend`s it when the
+   thing's law lets the grower reprogram it, else holds it over the thing for whoever its law lets lay it (`adopt /
+   n`, `laidOn`). A grown verb with a body is a declared method, so no verb row is placed. Test: `test_authoring`
+   (with the verb library: a one-verb kind laid by `become`, `?` saying what it is after).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -2040,7 +2130,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   ledger; 5.136); 5 is host17 (a layered package's shape is its stack's, 5.138; the relational atoms judged and
   their citations roots, 5.139); 6 is host18 (a send refused transiently stays pending, 5.150); 7 is host19
   (`context.sender`, 5.155); 8 is kernel16 (`cardRefused`, 5.157); 9 is host22 (rules and wants placed, fired and
-  posed, `request.verb`, 5.160), with snapshot `v4`, the last bump OVERHAUL plans. Test: `tests/test_replay_edition.py`.
+  posed, `request.verb`, 5.160), with snapshot `v4`; 10 is kernel18 (a state named by its cells,
+  KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
+  anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
+  anchors alone). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.
@@ -2058,6 +2151,35 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 - Never run an unfiltered package suite on a loop.
 
 ## 7. Open
+
+**First, host29's remainder (the second codex review, docs/review/codex-2026-10-12; stopped at its token budget).**
+Each with its failing input as a test first, merging foundation before each commit:
+- The kernel18 merge is done (host30): `judge` stages each write's applied cells, builds `cand` from them and
+  judges every law, Bend law, amendment and placing against it (`viewFor` of the cells for the written object,
+  `citing cand` for what it cites); `reactions` reads `viewFor` with `citing after` and the `reads` check;
+  creations journal `cid` and `placed`; `checkAnchors w naming whole`. Full run after it (1,000 tests): the three reds
+  before it, now fixed: Paint's pin re-recorded (lane/paint's prompt), the sentry post's `forge make` in a fence is
+  no spell (agent 2), the garden seed post re-cut from the live card. `carry-check.sh` on delvetalk-20261012T090950Z: green, breaking (26 s);
+  `bench-write.py` 200 turns: 0.95 / 1.00 / 0.95 ms median at 16 / 256 / 2,048 rows under the suite's load.
+- host 7 (P1): a placed rule named as an inherited one shares `rule:<object>:<name>:<height>` and consuming one
+  delivery removes both: the firing id names its holder (`CarriedClause.holder`), and placing refuses a name the
+  thing's kind carries. Changes `fired` ids: edition 10 ships before it, so derive the old id where holder =
+  object (no bump), or edition 11 with `carry-check.sh` green.
+- host 9 (P1): carry admits a suspended write on cells a migration moved: install a touch barrier per moved object
+  (`touches` noncommuting at the genesis) so `cellsCurrent` refuses the old roots.
+- docs 7: a moved object's suspensions are dropped without `--leave`: refuse the move unless named.
+- host 12: `world.judge` merges its dependency roots into the turn (`TurnState.roots`) before answering.
+- host 13: meter `Law.denote` (rows × clauses) against `lawTicks`; reuse canonical rows across clauses.
+- docs 12: a scratch's last-use clock persisted (Serve.lean:189), not reset at a restart.
+- docs 14: the 1,400-character card bound enforced where every card response is built.
+- agent 10: hob is offered the host's permitted spells (`rule`, `want`, `adopt`…) and its proposals of them run
+  through `hostSpell`.
+- The coordinator's simplify hand-back: (1) an offer's public projection answered by the host (transport stops
+  `world-view` per object); (2) `revealed` on `world-receipt`; (3) delete the JSON model-reply branch in
+  `interpretVerdict`; (4) a refusal class for "the opener speaks on the root socket"; (5) `world-history` reversed;
+  (6) REPL retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
+  mention cap of 4 as host answers.
+
 
 The queue after host27 (5.164 to 5.172) and host28 (5.173, 5.174), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
 standing order binds every item: "maturify and take forward everything that we've started and bring it to its full
@@ -2083,9 +2205,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
 3. **5.160's remainder.** `offeredTo`'s diff for the speaker in `revealed` ("it now takes `ring`", and "it now
    takes `water`" after a grow); judging cost (`ruleTicks`: neither text laws nor rules are metered; bounded by
    `rulesPerObject` × rows, measured on a bell of 768 rains and 32 rules before the playtest); `carried` parses
-   each text per commit (keep parsed clauses on the `Object`); placed rules, wants and verbs are not anchored
-   (`checkAnchors` checks version, pin and law; a forged snapshot could add one; `verify` replays and would see
-   it); a want citing another thing flips only when its own thing is written (a write to the cited thing should
+   each text per commit (keep parsed clauses on the `Object`); a want citing another thing flips only when its own thing is written (a write to the cited thing should
    re-judge the wants citing it: an index of citers by object, judged in `reactions`); `maxLawClauses` 16 counts
    all three modalities.
 4. **Verbs' remainder.** `retire` of a verb is `ungrow` (the host spell `retire` is the card power); a
@@ -2098,7 +2218,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
      carry-check takes `--old-image delvetalk-host:9790175f9dc0`. The deploy is DEPLOY "A new binary", *It carries*.
    - What a carried world does not yet keep: `world-receipt`/`world-entry` of a pre-carry hash answer unknown (the old
      chain's block store is edition-independent: read it as the world before, by the `carriedFrom.world` path or a
-     copy beside the new journal); identity receipts (a retry of a pre-carry intent runs again); a client's offers
+     copy beside the new journal); a client's offers
      cursor (`http.py` `after`) past the carried height waits until the new chain passes it.
    - A carried genesis's size: the store's compiled types and method tables (1 MB of playtest 3's 1.4 MB) are
      derivable from the carried sources; carry them as blocks, or derive them at install, measured on the v7 town.
@@ -2121,9 +2241,9 @@ replaces in the same commit, and this file describes only what is. A merge touch
    them; the REPL, `check` and `cite` of a scratch are built (5.174), and the owner's `delvetalk world expire /
    scratch:` (section 2). Left: `world-history` across worlds; the hand's SCRATCHES page; a `Returned` that carries
    the target's receipt (World.obend's, so every pin moves: the objects lane's); `world-repl` of several modules.
-8. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
-   the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
-   per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).
+8. **The stored path's remainder (5.136): done by lane/kernel18** (KERNEL-HANDOFF §15 "The state as cells"; replay
+   edition 10): a write is checked, bounded, charged and named per changed cell, `storeOf` is gone (`Held` holds
+   the object's cells), and a lookup reads its key or its gap (roots' `gaps [{field, after?, before?}]`).
 9. **The block store's remainder (5.137)** and **the law atoms' remainder (5.139)**, as host17 left them: index
    sources, grants and slugs; CIDs as bytes; one record encoding; `serve --snapshot-every`; held worlds never closed;
    `world-inspect`'s `cites` per clause.

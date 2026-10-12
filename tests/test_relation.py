@@ -10,13 +10,14 @@ rows; `insert`, `upsert`, `retract` follow the nine-cell table. Each case names 
     python3 -W error -m unittest tests.test_relation -v
 """
 import os
+import random
 import unittest
 
 from transport.journal import entries as journal_entries
 from tests.host import as_owner
 
 from tests.test_reflection import LIBRARY, Reflection
-from tests.wire import label, nat, record
+from tests.wire import label, nat, record, state_cid
 from tests.bend import declared
 
 # The relation type and its edits as Relation.obend and Plan.obend's Entries declare them: the host reads
@@ -85,7 +86,23 @@ def thirdWrite(text: String) -> Activity<String>:
 def thirdLater(state: State, context: Abi.Context) -> Activity<String>:
   thirdThen(textAt(rowsOf(state.rains), 2n))
 def views() -> Lists.List<String>:
-  Lists.List::<String>.cons({head: "third", tail: Lists.List::<String>.nil({})})
+  Lists.List::<String>.cons({head: "third", tail: Lists.List::<String>.cons({head: "fifth", tail: Lists.List::<String>.cons({head: "fiftyFifth", tail: Lists.List::<String>.nil({})})})})
+def looked(state: State, at: Nat) -> String:
+  match relationLookup(state.rains, {author: "old", at: at}):
+    case some(s): s.value.text
+    case none(_): "missing"
+def fifth(state: State) -> String:
+  looked(state, 5n)
+def fiftyFifth(state: State) -> String:
+  looked(state, 55n)
+def lookLater(state: State, context: Abi.Context, view: String) -> Activity<String>:
+  match world.viewDerived::<String>({object: {world: "", object: "b"}, view: view}):
+    case derived(d): thirdThen(d.value)
+    case _: "denied"
+def hitLater(state: State, context: Abi.Context) -> Activity<String>:
+  lookLater(state, context, "fifth")
+def missLater(state: State, context: Abi.Context) -> Activity<String>:
+  lookLater(state, context, "fiftyFifth")
 def third(state: State) -> String:
   textAt(rowsOf(state.rains), 2n)
 def peekLater(state: State, context: Abi.Context) -> Activity<String>:
@@ -390,6 +407,53 @@ class Cells(RelationCase):
         self.assertEqual((resumed["status"], "rerunOf" in resumed), ("admitted", True), resumed)
 
 
+class Lookups(RelationCase):
+    """A lookup reads its answer, not the prefix below it (KERNEL-HANDOFF §16 item 15b): a hit reads its
+    key, a miss the gap its key falls in, journaled as a row and as `gaps [{field, after?, before?}]`. A
+    write below or above the looked-up key leaves another object's view of it current; one at the key, or
+    inside the gap, makes it stale. Refuted by a write below the key rerunning the view, or one at it not."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(self.make_bell(record(rains=relation(*[rain("old", i, "t%d" % i) for i in range(10)])))["status"],
+                         "created")
+        self.assertEqual(self.make_bell(name="c")["status"], "created")
+
+    def waiting(self, method, root):
+        r = self.edit(method, record(), who="kim", ident="w", name="c")
+        self.assertEqual(r["status"], "suspended", r)
+        self.assertIn(root, r["receipt"]["roots"])
+
+    def resumed(self, row):
+        [resumed] = self.edit("upsert", row, ident="go")["resumed"]
+        resumed = as_owner(self.host, resumed, "kim")
+        self.assertEqual(resumed["status"], "admitted", resumed)
+        return "rerunOf" in resumed
+
+    def hit(self):
+        self.waiting("hitLater", {"object": "b", "version": 0, "scalar": True, "rows": [{"field": "rains", "key": key("old", 5)}]})
+
+    def miss(self):
+        self.waiting("missLater", {"object": "b", "version": 0, "scalar": True,
+                                   "gaps": [{"field": "rains", "after": key("old", 9)}]})
+
+    def test_a_write_below_a_hit_leaves_it_current(self):
+        self.hit()
+        self.assertFalse(self.resumed(rain("old", 1, "changed")))
+
+    def test_a_write_at_a_hit_makes_it_stale(self):
+        self.hit()
+        self.assertTrue(self.resumed(rain("old", 5, "changed")))
+
+    def test_a_write_outside_a_miss_leaves_it_current(self):
+        self.miss()
+        self.assertFalse(self.resumed(rain("old", 3, "changed")))
+
+    def test_an_insert_inside_a_miss_makes_it_stale(self):
+        self.miss()
+        self.assertTrue(self.resumed(rain("old", 60, "new")))
+
+
 class CellBound(RelationCase):
     """State is bounded per cell (KERNEL-HANDOFF §15 step 4): the scalar part and each row at most
     `Bounds.maxCellBytes` canonical bytes; a relation is bounded by its declared limit, not by the
@@ -408,6 +472,41 @@ class CellBound(RelationCase):
         outcome = big["receipt"]["outcome"]
         self.assertEqual((outcome["class"], outcome["clause"]), ("capacity", "maxCellBytes"), big)
         self.assertIn('the rains row keyed {"at":9,"author":"ann"}', outcome["reason"])
+
+
+class StateCid(RelationCase):
+    """A state is named by its cells (KERNEL-HANDOFF §15): the CID of its block, the scalar part with each
+    relation's rows linked in chunks, made per changed cell. Refuted by a write's journaled `cid` other than an
+    independent encoder's over the state as viewed (`tests.wire.state_cid`) after inserts, replacements and
+    retractions anywhere in the key order and evictions at the declared limit, or by a replay naming another."""
+
+    def check(self, reply, name="b"):
+        self.assertEqual(reply["status"], "admitted", reply)
+        [write] = reply["receipt"]["outcome"]["writes"]
+        state = self.host.send(op="world-view", principal="ember", object=name)["state"]
+        self.assertEqual(write["cid"], state_cid(state, ["rains"]))
+
+    def test_every_write_names_its_state_as_an_independent_encoder_does(self):
+        made = self.make_bell(record(rains=relation(*[rain("r", 2 * i, "t%d" % i) for i in range(300)])))
+        self.assertEqual(made["receipt"]["outcome"]["cid"], state_cid(self.state("b"), ["rains"]))
+        pick = random.Random(18)
+        for n in range(40):
+            at = pick.randrange(0, 640)
+            kind = pick.choice(["insert", "upsert", "retract"])
+            arg = record(author=label("r"), at=nat(at)) if kind == "retract" else rain("r", at, "w%d" % n)
+            r = self.edit(kind, arg)
+            if r["receipt"]["outcome"].get("class") != "keyTaken":
+                self.check(r)
+        cid = self.host.send(op="world-object", principal="ember", object="b")["record"]["stateCid"]
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-object", principal="ember", object="b")["record"]["stateCid"], cid)
+
+    def test_a_write_at_the_declared_limit_names_the_state_after_its_eviction(self):
+        self.assertEqual(self.make_bell(record(rains=relation(*[rain("r", 2 * i, "t") for i in range(60)])), limit=60)["status"],
+                         "created")
+        for at in (1, 200, 0, 59):
+            self.check(self.edit("insert", rain("r", at, "new")))
+        self.assertEqual(len(self.rows()), 60)
 
 
 if __name__ == "__main__":

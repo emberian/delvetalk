@@ -59,7 +59,7 @@ Each custom is a sentence, then the card line or the clause that enforces or aff
    `me accept / thing:` takes it.
 7. **A thing on the porch is inspirited once.** THING's `keeper` law: "it is inspirited once, by whoever does it, and
    keeps that keeper"; the porch keeps the inspiriting as a line under the one who did it.
-8. **A bond is countersigned once by each party, for themselves.** kind/bond's `SIGNER_LAW`, `changed(new.marks.who)
+8. **A bond is countersigned once by each party, for themselves.** kind/bond's `signer` law (`world/kinds/bond.kind`), `changed(new.marks.who)
    by request.subject`; clauses `notParty`, `alreadySigned`, `atRest`, `withdrawn`. At rest its `amends` is amended to
    its `law`.
 9. **A kind's law, rules and wants are every instance's.** Each made thing is `under "<kind>"`; the kind's owner

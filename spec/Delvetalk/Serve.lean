@@ -325,7 +325,7 @@ def readForeign (srv : Server) (world op object reader : String) : Option (Json 
     | _ => .error "no such read").toOption
   let target := w.objects[object]?
   let cite := Json.mkObj ([("world", toJson world), ("object", toJson object), ("height", toJson w.height), ("head", toJson w.head)] ++
-    ((target.map fun t => [("version", toJson t.version), ("stateCid", toJson (Host.stateCid t.state))]).getD []))
+    ((target.map fun t => [("version", toJson t.version), ("stateCid", toJson t.stateCid)]).getD []))
   return (reply, cite)
 
 /-- What a request on world `self` may reach of the others (`Host.Foreign`): a read Plan answered in the

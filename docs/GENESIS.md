@@ -37,12 +37,11 @@ In order (`run`):
    | `kinds` | Kind | owner ember, `of: kind`, `KINDS_FORM`; then its `shape` | `KIND_LAW` |
    | `library` | Library | owner ember | the package's |
 
-3. **Made by `kinds`** (`KINDS`; each `kind/<name>`, owned by ember, its instances records whose law is the kind's
-   text, followed by `under`, with the body `world/bodies/<body>.obend` laid on each; `voice` from `VOICES`; `about`, the one plain line its card leads with and the kinds card lists, from
-   `ABOUT`):
-   `record` (no body), `bell` (colour and seed; `ALIVE_LAW` and `BELL_TEXT`), `cistern` (`law level`), `room` (name
+3. **Made by `kinds`** (`KINDS`, read from `world/kinds/<name>.kind` by `deploy/genesis.py`; each `kind/<name>`, owned by ember, its instances records whose law is the kind's
+   text, followed by `under`, with the body `world/bodies/<body>.obend` laid on each; `voice` and `about`, the one plain line its card leads with and the kinds card lists, from the kind's file):
+   `record` (no body), `bell` (colour and seed; its `alive` law and clauses, in `bell.kind`), `cistern` (`law level`), `room` (name
    and a `spween` scene), `porch` (a room by another name), `garden` (makes bells and cisterns), `weather` (a place
-   and a tide), `door`, `lantern` (the door it watches), `bond` (parties, terms, an amendment at rest; `SIGNER_LAW`),
+   and a tide), `door`, `lantern` (the door it watches), `bond` (parties, terms, an amendment at rest; its `signer` law),
    `errand` (`asks`, `on`, `done`, `pays`), `front` (`fills`, `segments`, `move`, `tide`). Twelve kinds. A kind's own
    law is read as the kind is made: a line outside the grammar is refused and nothing is made.
 4. The commonplace's body (`world-reprogram {mode: "extend"}`).

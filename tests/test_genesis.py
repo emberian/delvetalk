@@ -114,7 +114,7 @@ class Genesis(unittest.TestCase):
         self.assertIn('room', [name for name, *_ in genesis.KINDS])
         state = {f['name']: f['value'] for f in self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/room'})['state']['fields']}
         # the kind's text is its instances' laws, rules and wants: the record's law and the room's want `company`
-        self.assertEqual((state['law']['value'], state['body']['value']), (genesis.RECORD_LAW + '\n' + genesis.ROOM_TEXT, genesis.body_of('room')))
+        self.assertEqual((state['law']['value'], state['body']['value']), (genesis.RECORD_LAW + '\n' + genesis.kind_text('room'), genesis.body_of('room')))
         # a kind's voice is its things' register, on its card and owner-only by the kinds' law
         bell = self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'kind/bell'})['text']
         self.assertIn('Its things speak: %s\n' % genesis.VOICES['bell'], bell)
@@ -202,7 +202,7 @@ class NoWipe(unittest.TestCase):
         code, err = self.genesis()
         self.assertEqual(code, 1, err)
         self.assertIn('v1/state/town.journal (height 2)', err)
-        self.assertNotIn('v2', err)  # its own journal is not a town it would abandon
+        self.assertNotIn(os.path.join(self.towns, 'v2') + os.sep, err)  # its own journal is not a town it would abandon (a path, since the temp dir's random name may hold 'v2')
         self.assertEqual(genesis.existing(self.town.client, genesis.OPENER), [])
         self.assertEqual(self.genesis('--wipe-with-the-owners-word', 'two\nlines')[0], 64)
         word = 'the town begins again by the owner\'s word'

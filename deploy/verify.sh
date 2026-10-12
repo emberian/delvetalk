@@ -3,19 +3,26 @@
 # process and exit non-zero unless each one opens. The journals are copied first:
 # world-open opens its file for appending, and the copy is the one at risk.
 #
-#   deploy/verify.sh [--full] [--snapshot] --binary PATH DIR       a host binary on this machine
-#   deploy/verify.sh [--full] [--snapshot] --image IMAGE DIR       the host image, with no network
+#   deploy/verify.sh [--full] [--snapshot] [--library LIB] --binary PATH DIR       a host binary on this machine
+#   deploy/verify.sh [--full] [--snapshot] [--library LIB] --image IMAGE DIR       the host image, with no network
 #
 # DIR holds state/<world>.journal (town.journal at least), serve's layout in the compose volume. <state>/scratch/ holds scratch worlds, which are not custody: not backed up, not verified.
 # An open resumes from the newest snapshot that passes its checks; with --full every journal is replayed from its
 # genesis and every snapshot compared with the replayed world (`world-open {verify: true}`): the merge check's replay.
 # With --snapshot each replayed world's snapshot at its head is written beside its journal in DIR: what a carry to
 # another binary reads (`delvetalk-obend carry`, docs/FOUNDATION.md §2), written by the binary that replays it.
+# With --library LIB (a tree's world/lib) each open is also asked whether LIB, sealed as serve seals it at its start
+# (LIB's files and ../objects/Avatar.obend, Serve.lean `sealLibrary` and `arrival`), is the library the journal
+# sealed: serve refuses a world whose sealed library differs ("... the bytes differ"), and so does this open.
 set -euo pipefail
-usage() { echo "usage: $0 [--full] [--snapshot] (--binary PATH | --image IMAGE) DIR" >&2; exit 64; }
-snapshot=0 full=
-while [[ ${1:-} == --full || ${1:-} == --snapshot ]]; do
-  [[ $1 == --full ]] && full=',"verify":true' || snapshot=1
+usage() { echo "usage: $0 [--full] [--snapshot] [--library LIB] (--binary PATH | --image IMAGE) DIR" >&2; exit 64; }
+snapshot=0 full= library=
+while [[ ${1:-} == --full || ${1:-} == --snapshot || ${1:-} == --library ]]; do
+  case $1 in
+    --full) full=',"verify":true' ;;
+    --snapshot) snapshot=1 ;;
+    --library) library=${2:?--library LIB}; shift ;;
+  esac
   shift
 done
 [[ $# == 3 ]] || usage
@@ -35,6 +42,12 @@ for j in "${journals[@]}"; do
   chmod a+rw "$work/$i.journal" "$work/$i.journal.blocks"
   i=$((i + 1))
 done
+if [[ -n $library ]]; then
+  [[ -d $library && -f $library/../objects/Avatar.obend ]] || { echo "verify: $library is no world/lib beside objects/Avatar.obend" >&2; exit 66; }
+  cp -R "$library" "$work/library"
+  cp "$library/../objects/Avatar.obend" "$work/library/Avatar.obend"
+  chmod -R a+rX "$work/library"
+fi
 chmod a+rwx "$work"
 if [[ $mode == --image ]]; then
   inside=/verify
@@ -44,7 +57,7 @@ else
   run=("$host")
 fi
 for ((k = 0; k < i; k++)); do
-  requests+="{\"op\":\"world-open\",\"path\":\"$inside/$k.journal\"$full}"$'\n'
+  requests+="{\"op\":\"world-open\",\"path\":\"$inside/$k.journal\"$full${library:+,\"library\":\"$inside/library\"}}"$'\n'
   # A snapshot of the world the open replayed (of the last world opened: one session at a time).
   [[ $snapshot == 1 ]] && requests+='{"op":"world-snapshot"}'$'\n'
 done
