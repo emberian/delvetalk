@@ -41,7 +41,17 @@ def peek(state: State, input: {world: String, object: String}, context: Abi.Cont
     case viewed(v): v.state.count
     case denied(_): 0n
     case _: 999n
-""", "peek")
+def field(state: State, input: {world: String, object: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Nat>({object: {world: input.world, object: input.object}, field: "count"}):
+    case viewed(v): v.state
+    case denied(_): 0n
+    case _: 999n
+def look(state: State, input: {world: String, object: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.inspect({object: {world: input.world, object: input.object}, source: false}):
+    case inspected(_): 1n
+    case denied(_): 0n
+    case _: 999n
+""", "peek", "field", "look")
 
 
 CALLER = declared("""edition ObjectiveBend 1
@@ -174,9 +184,17 @@ class Scratch(unittest.TestCase):
         # Another principal's `scratch/lab` is its own, which it has not opened: not served here.
         self.assertEqual(peek(OTHER, 'scratch/lab', 'tally', 'p2')['result'], nat(999))
         self.assertEqual(peek(DID, 'ring', 'tally', 'p3')['result'], nat(999))
+        # A field alone and the object's inspection are that world's answers too, each cited.
+        for method, intent, want in (('field', 'f1', nat(3)), ('look', 'l1', nat(1))):
+            got = self.town.send({'op': 'world-turn', 'principal': DID, 'object': 'reader', 'method': method,
+                                  'argument': record(world=label('scratch/lab'), object=label('tally')), 'identity': intent})
+            self.assertEqual((got['status'], got['result'], [c['object'] for c in got['receipt']['cites']]), ('admitted', want, ['tally']), got)
+        self.assertEqual(peek(DID, 'scratch/lab', 'nothing', 'p4')['result'], nat(0))  # that world has no such object: denied
         # Read by the ops, as of the other world's height.
         viewed = self.town.send({'op': 'world-view', 'principal': DID, 'object': 'scratch/lab:tally'})
         self.assertEqual((viewed['status'], viewed['asOf']['world'], viewed['asOf']['version']), ('viewed', 'scratch/lab', 3), viewed)
+        inspected = self.town.send({'op': 'world-inspect', 'principal': DID, 'object': 'scratch/lab:tally'})
+        self.assertEqual((inspected['status'], inspected['asOf']['world'], 'bump' in inspected['offered']), ('inspected', 'scratch/lab', True), inspected)
 
 
     def crossing(self):
