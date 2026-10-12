@@ -14,7 +14,7 @@ The owner's console. Nothing reaches a town without Post; every act is a line in
 <!-- scratch: one scratch world, its owner and its hours, and expire -->
 <li class="slip suspended"><span class="stamp">{world}</span><span class="code">entry {height}</span><span class="name">{owner}</span><span class="by">{objects} · last turn {idle} minutes ago · expires at clock {expires}, in {left} minutes</span><form class="foot" method="post" action="{base}/root/expire"><input type="hidden" name="principal" value="{principal}"><input type="hidden" name="scratch" value="{name}"><input name="reason" required placeholder="reason (required)"><button class="door">expire</button></form></li>
 <!-- guest: one invitation, its state, its last use, and revoke -->
-<li class="slip {fate}"><span class="stamp">{state}</span><span class="code">{name}</span><span class="name">{principal}</span><span class="by">{note} · invited {created} · accept by {expires} · last used {used}</span>{revoke}</li>
+<li class="slip {fate}"><span class="stamp">{state}</span><span class="code">{name}</span><span class="name">{principal}</span><span class="by">{taken} · {note} · invited {created} · accept by {expires} · last used {used}</span>{revoke}</li>
 <!-- guest_revoke: end an invitation and its credential -->
 <form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="revoke"><input type="hidden" name="name" value="{name}"><button class="door">revoke</button></form>
 <!-- console: one world's outbox and inbox -->
