@@ -1,5 +1,5 @@
 """The library's five walks, cast as a resident would: each walk's spells in the order the page gives them, on a genesis
-town, with the `<...>` blanks filled from the replies before; each step's status and `»` claim are asserted, then the
+town as genesis makes it (no furnishing), with the `<...>` blanks filled from the replies before; each step's status and `»` claim are asserted, then the
 `Changed:` line's end state. The spell text is read out of the page file itself, so a walk that names a spell the
 cards no longer take fails here.
 
@@ -21,7 +21,7 @@ from tests.wire import label, record
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGES = ROOT / "capsules" / "pages"
-WALKS = ("plant", "check", "enter", "tide", "kind")
+WALKS = ("bell", "check", "enter", "tide", "kind")
 WALKER, OTHER = "did:plc:walker", "did:plc:other"
 LIMIT = 1266  # Library's shelve body bound: a reply's 1,400 less the library's receipt line
 
@@ -49,7 +49,7 @@ class Walks(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
         cls.host = cls.town.client
         cls.n = 0
         for did, handle in ((WALKER, "walker.test"), (OTHER, "other.test")):
@@ -107,14 +107,16 @@ class Walks(unittest.TestCase):
                 self.assertTrue(all(claim for _, _, claim in steps), steps)
                 self.assertTrue(set(re.findall(r"page: (\w+)", body)) <= shelved, body)
 
-    def test_plant_a_bell_rain_on_it_place_a_rule_and_hear_the_ring(self):
+    def test_make_a_bell_rain_on_it_place_a_rule_and_hear_the_ring(self):
         W, O = WALKER, OTHER
-        (_, plant, _), (_, rain, _), (_, rule, _), (_, theirs, _), (_, ring, _) = self.steps("plant")
-        _, text = self.say(W, plant)
-        bell = re.search(r"garden/bell/\d+", text).group(0)
-        self.assertIn("Planted, walker.test", text)
+        (_, make, _), (_, rain, _), (_, rule, _), (_, theirs, _), (_, ring, _) = self.steps("bell")
+        _, text = self.say(W, make)
+        bell = re.search(r"Made, at (bell/\d+);", text).group(1)
+        self.assertIn("planted by walker.test (yours)", self.card_text(W, bell))
+        self.assertIn("rain", [w["name"] for w in self.wants(bell)])
         _, text = self.say(W, self.fill(rain, bell=bell))
         self.assertIn("#1 is written: it rained here first", text)
+        self.assertEqual([w["name"] for w in self.wants(bell) if w["name"] in ("rain", "second")], ["second"])
         self.say(W, self.fill(rule, bell=bell))
         self.assertEqual([r["name"] for r in self.rules(bell) if r["name"] == "second"], ["second"])
         self.assertNotIn("a second rain", self.avatar(W))  # one hand's rain does not fire it
@@ -126,6 +128,10 @@ class Walks(unittest.TestCase):
         self.say(W, self.fill(ring, bell=bell))
         self.assertIn("— rung.", self.card_text(W, bell))
         self.assertIn("%s rang" % bell, self.avatar(W))  # the kind's rule `rang` notes the planter
+
+    def wants(self, obj, who=WALKER):
+        got = self.host.send({"op": "world-wants", "principal": who, "object": obj})
+        return got["rows"]
 
     def rules(self, obj, name=None, who=WALKER):
         got = self.host.send({"op": "world-rules", "principal": who, "object": obj})
@@ -157,23 +163,25 @@ class Walks(unittest.TestCase):
         _, text = self.say(W, "delvetalk workshop adopt / n: %s" % m)
         self.assertIn("jar is reprogrammed", text)
 
-    def test_enter_the_gate_choose_say_and_make_a_room_of_your_own(self):
+    def test_enter_the_porch_say_make_a_room_of_your_own_under_it_and_choose(self):
         W = WALKER
-        (_, enter, _), (_, choose, _), (_, say, _), (_, block, _), (_, nook, _) = self.steps("enter")
+        (_, enter, _), (_, say, _), (_, block, _), (_, nook, _), (_, listen, _) = self.steps("enter")
         _, text = self.say(W, enter)
-        self.assertIn("you are at gate", text)
-        self.assertIn("* Open", text)
-        self.assertIn("* Wait", text)
-        _, text = self.say(W, choose)
-        self.assertIn("you are at yard", text)
-        self.assertIn("gate = open", text)
+        self.assertIn("The Bellfounder's Porch (1 here), you are here.", text)
+        self.assertIn("Doors: mimo's bell · light-traces' bell", text)
+        self.assertIn("Unclaimed here: porch/ring, porch/goblet, porch/gemstone.", text)
         _, text = self.say(W, say)
-        self.assertIn("walker.test: the moss is warm", text)
+        self.assertIn("walker.test: the brass is warm", text)
         _, text = self.say(W, block)
-        room = re.search(r"ROOM The Nook is at (rooms/room/\d+)", text).group(1)
+        room = re.search(r"ROOM The Nook is at (porch/porch/\d+)", text).group(1)
         _, text = self.say(W, self.fill(nook, room=room))
         self.assertIn("The Nook (1 here), you are at nook", text)
         self.assertIn("* Sit", text)
+        self.assertIn("* Listen", text)
+        self.assertIn("Doors: porch", text)
+        _, text = self.say(W, self.fill(listen, room=room))
+        self.assertIn("you are at nook", text)
+        self.assertIn("bells = heard", text)
         self.assertIn(room, self.host.send({"op": "world-objects", "principal": W})["ids"])
 
     def test_tide_rules_place_one_refuse_a_hands_tick_and_hear_it_fire_after_the_clock(self):
@@ -182,8 +190,7 @@ class Walks(unittest.TestCase):
         reply, _ = self.cast(W, rules)  # a read: the host answers it with the rules, no turn
         self.assertEqual(reply["status"], "usage", reply)
         text = reply["text"]
-        self.assertIn("» weather (", text)
-        self.assertNotIn("turned", text)
+        self.assertIn("tide carries no rules.", text)
         self.say(W, turned)
         self.assertIn("turned", [r["name"] for r in self.rules("tide")])
         self.assertFalse(self.rules("tide", "turned").get("fired"))

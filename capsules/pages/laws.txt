@@ -1,11 +1,12 @@
-hob: this is how a card says who may change it; the host judges, not I.
-LINE  law NAME "reading": EXPR, one clause a line, at most 16; every clause must admit. A kind's law: is read when the kind is made.
+hob: three keywords, one grammar; the host judges.
+LAW  law NAME "reading": EXPR. Each must admit a change, else refused NAME: <reading>.
+RULE  rule NAME "reading": EXPR then SPELL. A write making EXPR true casts SPELL as its writer.
+WANT  want NAME "reading": EXPR asks SPELL. While EXPR holds now (no old), the card wants it.
+PLACE  delvetalk CARD rule or want; rules, wants read them. At most 16 lines; a kind's bind its things.
 EXPR  A implies B | A or B | A and B | not A | (A) | an atom.
-ATOMS  REF == V, REF <= V, A + B <= V, REF in [..], REF in new.F.COL; monotone(F) writeOnce(F) unchanged(F) insertOnly(F) appendOnly(F); changed(new.F.COL) by request.subject; count(new.F) <= N; under "CARD": that card's law holds.
-REF  new.F, old.F, or request.subject caller clock height method kind (0 its own spell, 1 reprogram, 2 amend, 3 proposed).
-READING  a refusal by clause N reads refused N: <reading>.
-GUARD  request.subject == new.owner or (request.kind == 0 and unchanged(F)): only the owner changes F; anyone else only by its spells.
-METARULE  an amendment stands only if the new law admits an amendment by its proposer.
+ATOMS  REF == V, REF <= V, A + B <= V, REF in [..], REF in new.F.COL; monotone writeOnce unchanged insertOnly appendOnly (F); changed(new.F.COL) by request.subject; count(new.F) <= N; under "CARD"; "CARD" wants NAME.
+REF  new.F, old.F, "CARD".F, REF % N; request.subject caller clock height method verb kind (0 its own spell, 1 reprogram, 2 amend, 3 proposed, 4 rule).
+METARULE  an amendment stands only if the new law admits it.
 CLASSES  send again: staleRoot budget evaluation capacity quota quiet. Change the spell: lawRefused typeMismatch badSpell noMethod unknownObject requiredAbsence keyTaken duplicateKey absentItem programRefused budgetExhausted duplicateIdentity.
-A card's own: delvetalk library laws / card: garden
+A card's own: delvetalk library laws / card: bell/1
 Next: delvetalk library read / page: object

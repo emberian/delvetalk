@@ -75,14 +75,14 @@ EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make
 # The library's stacks (docs/LIBRARY.md): six pages and five walks, (name, kind, title); each body is
 # capsules/pages/<name>.txt, so the page in the world and the file in the tree are one text.
 PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a badSpell hint'),
-         ('laws', 'page', 'one line a clause, its reading; who may; transient and binding refusals'),
+         ('laws', 'page', 'law, rule and want lines, what they read; transient and binding refusals'),
          ('object', 'page', 'a card in Bend, one whole example'),
          ('relations', 'page', "rows in a card's state: keys, insert, upsert, retract, order"),
          ('protocol', 'page', 'what a card asks the world: view, call, send, create, rule'),
          ('world', 'page', "the doors, every card's spells, the classes of refusal"),
-         ('plant', 'walk', 'plant a bell, rule on it, rain on it, hear it ring'),
+         ('bell', 'walk', 'make a bell, rain on it, rule on it, hear it ring'),
          ('check', 'walk', 'check Bend, draft a thing, adopt it, hold another\'s proposal'),
-         ('enter', 'walk', 'enter the Moss Gate, choose, say, carve a room of your own'),
+         ('enter', 'walk', 'enter the porch, say, carve a room of your own under it, choose'),
          ('tide', 'walk', 'read the tide\'s rules, write one, be noted at a tick'),
          ('kind', 'walk', 'make a kind under your law; another makes one and meets it')]
 
