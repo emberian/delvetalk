@@ -556,6 +556,19 @@ class Speak(unittest.TestCase):
         code, page, _ = self.hand.handle('GET', '/hand/town/speak?came=hand:speak:usage-1', f'dt_hand={TOKEN}')
         self.assertIn('porch/goblet inspirit', page)  # the page asks again: the log keeps the spell, not the answer
 
+    def test_a_try_is_said_as_a_preview_names_no_receipt_journals_nothing_and_drafts_nothing(self):
+        # The deploy of d943a90e: `hand speak` of a try said "admitted bell/2 v8, entry 1002, receipt nunuk-hilot", a
+        # receipt no host issued, and drafted it for Post.
+        before = self.town.send(op='world-status')['height']
+        came = self.hand.cast('delvetalk try\n  delvetalk bell/1 rain / text: tried by the hand', intent='hand:speak:try-1')
+        self.assertEqual((came['outcome'], came['drafted'], came['height'], came['slug']), ('preview', None, None, None), came)
+        self.assertTrue(came['text'].startswith('preview, nothing done'), came['text'])
+        self.assertIn('would be admitted', came['text'])
+        self.assertNotIn('receipt', came['text'])
+        self.assertEqual(self.town.send(op='world-status')['height'], before)
+        code, page, _ = self.hand.handle('GET', '/hand/town/speak?came=hand:speak:try-1', f'dt_hand={TOKEN}')
+        self.assertIn('preview, nothing done', page)
+
     def test_words_go_to_a_card_as_direct_prose_and_hobs_answer_comes_back(self):
         from transport import interpret
         model = lambda req: {'status': 'replied', 'json': None, 'raw': 'delvetalk library read / page: spells', 'model': 'mock', 'usage': {}}
