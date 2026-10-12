@@ -149,6 +149,7 @@ structure TurnState where
   /-- Calls and sends this turn sent to other worlds, across its suspensions (`Limits.crossingsPerTurn`). -/
   crossings : Nat := 0
   roots : List (String × Nat) := []
+  behaviours : List (String × Nat) := []
   writes : List (String × List Written) := []
   /-- How each root not read whole was read (`Cells`, by object): a stored frame's scalar part,
       rows and spans (`recordReading`), a field read alone (`viewField`). -/
@@ -242,6 +243,12 @@ def recordRoot (id : String) (version : Nat) : M Unit := do
   else
     if rootCount s ≥ Limits.maxRoots then evaluation "turn exceeds the root capacity"
     set { s with roots := s.roots ++ [(id, version)] }
+
+/-- Reading offers also reads their behaviour revision; state-only reads keep their ordinary roots. -/
+def recordBehaviour (id : String) (o : Object) : M Unit := do
+  recordRoot id o.version
+  modify fun (s : TurnState) => if s.behaviours.any (·.1 == id) then s
+    else { s with behaviours := s.behaviours ++ [(id, o.behaviour)] }
 
 /-- `id` is a root read by its cells (`Cells`): joined with what the turn read of it before, and
     nothing when it is already a root read whole. -/
@@ -1273,6 +1280,22 @@ def readerActions (w : World) (id : String) (o : Object) (reader : String) : Opt
   | .ok value => labels [] value
   | .error _ => none
 
+/-- The card shown to hob and every card whose forms are in the reading, once each. -/
+def offeredCards (self : String) (offers : Data) : List String :=
+  (self :: ((listOf offers).getD []).filterMap (fun f => match f with
+    | .record fs => (fs.lookup "card").bind labelOf
+    | _ => none)).eraseDups
+
+def offeredRoots (w : World) (self : String) (offers : Data) : List (String × Nat) × List (String × Nat) :=
+  let cards := (offeredCards self offers).filterMap fun id => (w.objects[id]?).map (id, ·)
+  (cards.map fun (id, o) => (id, o.version), cards.map fun (id, o) => (id, o.behaviour))
+
+/-- A numbered model slot changes only with the behaviour it reads, never with ordinary state. -/
+def interpretationSlot (slotParts : Array Json) (behaviours : List (String × Nat)) : String :=
+  let revisions := (behaviours.filter (·.2 != 0)).toArray.map fun (id, revision) =>
+    Json.mkObj [("object", toJson id), ("behaviour", toJson revision)]
+  Journal.bodyHash (Json.arr (if revisions.isEmpty then slotParts else slotParts.push (Json.arr revisions)))
+
 /-- The per-reader action filter usage and inspection share (codex agent 11): an action is offered to
     `reader` when the law admits them to run it on the state as it stands (`methodAdmits`) and the
     card's `actions` (if any) lists it. `receive`, the spell's way in, always stands. A spell for
@@ -2047,8 +2070,11 @@ partial def interpretPlan (depth : Nat) (self : String) (bounds : DataBounds) (f
     else if s.awaits ≥ Limits.awaitsPerTurn then evaluation "turn exceeds the await capacity"
     else
       if let some (reading, next) := interpretGate s.world s.principal then throw (.quota reading next)
+      for card in offeredCards self offers do
+        if let some target := s.world.objects[card]? then recordBehaviour card target
+      let s ← get
       mayWait depth self checkpoint (interpreting := true)
-      let id := Journal.bodyHash (Json.arr #[toJson s.principal, toJson s.intent, toJson s.awaits])
+      let id := interpretationSlot #[toJson s.principal, toJson s.intent, toJson s.awaits] s.behaviours
       set { s with awaits := s.awaits + 1 }
       throw (.suspend interpretationPrincipal id Limits.interpretationPatience checkpoint
         (some (Json.mkObj ([("id", toJson id), ("object", toJson self), ("policy", toJson policy),
@@ -2885,6 +2911,9 @@ structure Ctx where
   root : Option Json := none
   /-- A plan's acts (`runPlan`): `{acts, of}`, journaled on its entry. -/
   plan : Option Json := none
+  /-- Offered cards at the action's starting state; behaviours remain the revisions the reading saw. -/
+  readingRoots : List (String × Nat) := []
+  behaviours : List (String × Nat) := []
 
 
 def sendJson (s : Send) : Json :=
@@ -2922,6 +2951,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     { principal := ctx.principal
       intent := ctx.intent
       roots := st.roots
+      behaviours := st.behaviours
       rebaseOwn := if ctx.resumes.isSome then some ctx.object else none
       writes := st.writes
       turn := w.height + 1
@@ -3007,7 +3037,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (crossing.map fun c => [("crossing", c.setObjVal! "ledger"
         (Ledger.json ⟨ctx.ledger.depth - 1, ctx.ledger.work - used, ctx.ledger.storage⟩))]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
-      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots st.cells),
+      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots st.cells st.behaviours),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
         newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ journaledCheckpoint.2) []
     return (w', turnReply w' (reply entry))
@@ -3604,7 +3634,7 @@ def stageHost (n : Nat) (line id action : String) (fields : List Spell.Binding) 
 def runPlan (w : World) (ctx : Ctx) (post reach origin receiver : String) (acts : List Act) (argOf : String → Data) :
     Except String (World × Json) := do
   let init : TurnState := { world := w, principal := ctx.principal, intent := ctx.intent, subject := ctx.principal,
-                            direct := true, ticks := Limits.maxTurnTicks,
+                            roots := ctx.readingRoots, behaviours := ctx.behaviours, direct := true, ticks := Limits.maxTurnTicks,
                             limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))],
                             origin, command := ((acts.head?.map Act.text).getD ""), post, reach }
   let action : M Data := do
@@ -3690,6 +3720,8 @@ def heardTurn (w : World) (req : TurnRequest) (ids : List String) (text : String
   let offers := listData ((ids.eraseDups.flatMap (heardOffers w · req.principal)).foldl
     (fun acc f => if acc.any (fun g => (dataJson g).compress == (dataJson f).compress) then acc else acc ++ [f]) [])
   guard ((dataJson offers).compress.utf8ByteSize ≤ Limits.maxOffersBytes)
+  let (roots, behaviours) := offeredRoots w id offers
+  guard (roots.length ≤ Limits.maxRoots)
   let answers := match w.posts[req.replyTo]? with
     | some p => if p.object == id then req.replyTo else ""
     | none => ""
@@ -3712,7 +3744,7 @@ def heardTurn (w : World) (req : TurnRequest) (ids : List String) (text : String
   if let some limit := waitFull w id true then
     guard misfit.isNone
     return refused { cls := "capacity", reason := some limit, object := some id }
-  let hid := Journal.bodyHash (Json.arr #[toJson req.principal, toJson req.intent, toJson "heard"])
+  let hid := interpretationSlot #[toJson req.principal, toJson req.intent, toJson "heard"] behaviours
   let interpretation := Json.mkObj ([("id", toJson hid), ("object", toJson id), ("policy", toJson policyId),
       ("utterance", toJson text), ("offers", dataJson offers)] ++
     ((misfit.map fun m => [("misfit", toJson s!"{m.clause}, {m.reason}"), ("refusal", Json.mkObj
@@ -3726,7 +3758,7 @@ def heardTurn (w : World) (req : TurnRequest) (ids : List String) (text : String
     ("deadline", toJson (w.clock + Limits.interpretationPatience)), ("activity", activity), ("interpretation", interpretation)]
   let blocks := (interpretationBlocks ++ argumentBlocks).map fun b => (Journal.bodyHash (Json.arr b), b)
   let (w', entry) := push w (identityKey req.principal req.intent)
-    ([("identity", identityJson req.principal req.intent), ("roots", rootsJson (cardRoot w id)), ("turn", toJson (w.height + 1)),
+    ([("identity", identityJson req.principal req.intent), ("roots", rootsJson roots [] behaviours), ("turn", toJson (w.height + 1)),
       ("request", toJson req.digest)] ++ entryBase ctx 0 ++ [("outcome", outcome)] ++ blocksField w blocks) []
   return .ok (w', turnReply w' (reply entry))
 
@@ -4120,6 +4152,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let method ← act.getObjValAs? String "method"
   let argument ← decodeData Limits.dataDepth (← activityArgument w act)
   let (roots, cells) ← parseRoots (← sus.getObjVal? "roots")
+  let behaviours ← parseBehaviours (← sus.getObjVal? "roots")
   let absent := strings (act.getObjVal? "absent").toOption
   let ticks ← natField act "ticks"
   let ledger ← ledgerOf (← sus.getObjVal? "ledger")
@@ -4153,15 +4186,18 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       | some now => now != v && !(v < now && ((staged.lookup id).isNone || rootAdmits w staged id v (cells.lookup id) (id == object)))
       | none => true).map (·.1)
     <|> (absent.find? fun id => w.objects.contains id)
-  if let some id := stale? then
+  let refusal := (staleBehaviour w behaviours).orElse fun _ =>
+    stale?.map fun id => ({ cls := "staleRoot", object := some id } : Refusal)
+  if let some refusal := refusal then
     let stalled : Proposal :=
       { principal := principal
         intent := intent
         roots := roots
+        behaviours := behaviours
         writes := []
         turn := w.height + 1
         absent := absent }
-    let (w', r) := commit w stalled (entryBase ctx ctx.usedBefore) (some { cls := "staleRoot", object := some id })
+    let (w', r) := commit w stalled (entryBase ctx ctx.usedBefore) (some refusal)
     return (w', turnReply w' r)
   let writes ← parseRecordedWrites (← activityArray act "writes")
   let sends ← (← (← activityArray act "sends").getArr?).toList.mapM sendOfJson
@@ -4181,6 +4217,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let init : TurnState :=
     { world := w
       roots := roots
+      behaviours := behaviours
       cells := cells
       writes := writes
       principal := principal
@@ -4314,7 +4351,8 @@ def cardAnswer (w : World) (id reader : String) : String :=
     first for one of its actions (`confirmFor`): then the speaker is offered the spells to send. A question
     (`ask:`, or hob's spell that did not fit) naming fields of the forms offered is offered as what is still
     needed, with the spells that take them; naming none, as one fixed line pointing at the card's spells.
-    Anything else is silence: `none`, a model that could not be asked, the reading's deadline passed. A misfit spell hob read nothing better for is the host's refusal of it. -/
+    Anything else is silence: `none`, a model that could not be asked, the reading's deadline passed. A misfit spell hob read nothing better for is the host's refusal of it. A changed offered
+    card refuses the reading as `staleRoot`, naming its behaviour revision, before any spell runs. -/
 def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World × Json) := do
   let identity ← sus.getObjVal? "identity"
   let principal ← identity.getObjValAs? String "principal"
@@ -4323,16 +4361,23 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
   let act ← outcome.getObjVal? "activity"
   let card ← act.getObjValAs? String "object"
   let i := (expandInterpretation w outcome).getD Json.null
+  let (roots, _) ← parseRoots (← sus.getObjVal? "roots")
+  let behaviours ← parseBehaviours (← sus.getObjVal? "roots")
+  let stale := staleBehaviour w behaviours
+  let roots := if stale.isSome then roots else roots.map fun (id, seen) =>
+    (id, ((w.objects[id]?).map (·.version)).getD seen)
   let ctx : Ctx := { principal, intent, object := card, method := "receive",
                      argument := ← decodeData Limits.dataDepth (← activityArgument w act),
                      digest := ← sus.getObjValAs? String "turnRequest", ledger := ← ledgerOf (← sus.getObjVal? "ledger"),
                      delivery := none, resumes := some (← sus.getObjValAs? String "hash"), ticksStart := 0,
-                     answers := (sus.getObjValAs? String "replyTo").toOption.getD "" }
+                     answers := (sus.getObjValAs? String "replyTo").toOption.getD "",
+                     readingRoots := roots, behaviours }
   let close := fun (offer : String) (refusal : Option Refusal) =>
-    let p : Proposal := { principal, intent, roots := cardRoot w card, writes := [], turn := w.height + 1 }
+    let p : Proposal := { principal, intent, roots, behaviours, rebaseOwn := some card, writes := [], turn := w.height + 1 }
     let (w', r) := commit w p (entryBase ctx 0 ++
       (if offer.isEmpty then [] else [("offers", offersJson [(principal, offer)])])) refusal
     (w', turnReply w' r)
+  if let some r := stale then return close "" (some r)
   let verdict := match kind with
     | .reply e => ((e.getObjVal? "outcome").toOption.bind (·.getObjVal? "verdict" |>.toOption)).getD Json.null
     | .timedOut => Json.null
@@ -4783,7 +4828,8 @@ def interpretationsReply (w : World) : World × Json := Id.run do
     -- How many transient failures the host journaled, and the clock before which the next is not asked.
     let (tried, next) := (w.attempts[id]?).getD (0, 0)
     pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
-      ("utterance", toJson utterance), ("user", toJson (userTurn.getD utterance)), ("offers", plainJson offers), ("card", toJson card),
+      ("utterance", toJson utterance), ("user", toJson (userTurn.getD utterance)), ("offers", plainJson offers),
+      ("roots", (s.getObjVal? "roots").toOption.getD (Json.arr #[])), ("card", toJson card),
       ("misfit", toJson misfit), ("wants", plainJson (listData wants)), ("reach", toJson reach), ("attempts", toJson tried),
       ("next", if next > w.clock then toJson next else Json.null)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])
@@ -4896,6 +4942,8 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     return (w, unclearVerdict [s!"model: {reason}"])
   | _ => throw "reply must have status replied or failed"
   let some text := (reply.getObjValAs? String "raw").toOption | throw "a replied interpretation carries the model's text, raw"
+  if let some r := staleBehaviour w (← parseBehaviours (← s.getObjVal? "roots")) then
+    return (w, unclearVerdict [r.voiced.reason.getD ""])
   let some obj := w.objects[object]? | throw s!"unknown object {object}"
   -- What the answer must fit: the suspended activity's response type; the host's own reading of words a
   -- card heard runs the answer itself (`resumeHeard`), so any answer fits it.

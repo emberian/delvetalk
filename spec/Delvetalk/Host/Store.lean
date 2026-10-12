@@ -382,6 +382,8 @@ structure Object where
   /-- The law as text, the form it is amended in; `law` is its parse. -/
   lawText : String := ""
   version : Nat
+  /-- The revision of its offers: each placing, reprogram or amendment advances it. -/
+  behaviour : Nat := 0
   /-- Its state as cells (`Turn.StateCells`): the scalar part and each declared relation's rows in
       key order, with the state's CID; `state` is the whole value they make. -/
   cells : Delvetalk.Turn.StateCells
@@ -555,7 +557,7 @@ structure Anchor where
   version : Nat := 0
   pin : Nat := 0
   law : Nat := 0
-  /-- The entry naming the CID of its placed rules, wants and verbs (`Ops.placedIn`), 0 for none. -/
+  /-- The entry naming the CID of its placed rules, wants, verbs and behaviour revision (`Ops.placedIn`), 0 for none. -/
   placed : Nat := 0
   /-- The entry setting its read policy (`Ops.readPolicyIn`). -/
   read : Nat := 0

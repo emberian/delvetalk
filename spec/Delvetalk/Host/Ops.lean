@@ -323,6 +323,8 @@ structure Proposal where
   principal : String
   intent : String
   roots : List (String × Nat)
+  /-- Revisions of roots whose offers the turn read; ordinary state roots carry none. -/
+  behaviours : List (String × Nat) := []
   writes : List (String × List Written)
   /-- Assigned by the host (`commit` sets it to the entry's height); never read from a client. -/
   turn : Nat := 0
@@ -394,6 +396,11 @@ def Proposal.allWrites (p : Proposal) : List (String × List Written) :=
       acc.map fun (i, ws) => if i == id then (i, ws ++ [w]) else (i, ws)
     else acc ++ [(id, [w])]) p.writes
 
+/-- Each placing is one revision, including removals; code and clause-text edits revise offers too. -/
+def Proposal.behaviourMoves (p : Proposal) (id : String) : Nat :=
+  (p.placements.filter (·.object == id)).length +
+    (if (p.programs.lookup id).isSome then 1 else 0) + (if (p.laws.lookup id).isSome then 1 else 0)
+
 /-- A child id `<parent>/<kind>/<n>` raises its parent's `minted` counter to `n` (any creation of
     that shape, named or minted, so a later mint never collides with a named child). -/
 def noteMinted (w : World) (id : String) : World :=
@@ -428,9 +435,12 @@ def stateBytes (state : Data) : Nat := (Delvetalk.Canonical.encode state).size
 /-- Roots as an entry records them: `{object, version}` for a root read whole, and for one read by
     its cells (`Cells`) what was read: `scalar: true`, `fields [f]`, `rows [{field, key}]`, `spans
     [{field, through?}]` (no `through`: the whole key set), `gaps [{field, after?, before?}]`. The state
-    at that version is named by the entry that wrote it (`writes[].cid`, `world-state-cid`). -/
-def rootsJson (roots : List (String × Nat)) (cells : List (String × Cells) := []) : Json :=
+    at that version is named by the entry that wrote it (`writes[].cid`, `world-state-cid`). A root
+    whose offers were read also names their `behaviour` revision. -/
+def rootsJson (roots : List (String × Nat)) (cells : List (String × Cells) := [])
+    (behaviours : List (String × Nat) := []) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj ([("object", toJson o), ("version", toJson v)] ++
+    ((behaviours.lookup o).map fun r => [("behaviour", toJson r)]).getD [] ++
     match cells.lookup o with
     | none => []
     | some r =>
@@ -486,6 +496,14 @@ def parseRoots (j : Json) : Except String (List (String × Nat) × List (String 
   if out.length + (cells.map (·.2.extra)).sum > Limits.maxRoots then throw "too many roots"
   return (out, cells)
 
+/-- Behaviour dependencies are optional on the same roots as versions and cells. -/
+def parseBehaviours (j : Json) : Except String (List (String × Nat)) := do
+  let mut out := []
+  for r in ← j.getArr? do
+    if (r.getObjVal? "behaviour").toOption.isSome then
+      out := out ++ [(← r.getObjValAs? String "object", ← natField r "behaviour")]
+  return out
+
 /-- Writes as a client sends them: direct, so every step has the empty caller, and proposed (kind
     `Law.proposedKind`): no method of the object made them. A client cannot name a caller. -/
 def parseWrites (j : Json) : Except String (List (String × List Written)) := do
@@ -537,7 +555,7 @@ def parseProposal (j : Json) : Except String Proposal := do
   let writes ← parseWrites (← j.getObjVal? "writes")
   for (id, _) in writes do
     unless roots.any (·.1 == id) do throw s!"write names {id}, which is not among the roots"
-  return { principal, intent, roots, writes, cells }
+  return { principal, intent, roots, writes, cells, behaviours := ← parseBehaviours (← j.getObjVal? "roots") }
 
 def spentJson (spent : List (String × Nat)) : Json :=
   Json.arr (spent.toArray.map fun (id, n) => Json.mkObj [("id", toJson id), ("uses", toJson n)])
@@ -551,7 +569,7 @@ def Proposal.digest (p : Proposal) : String :=
   let programs := p.programs.map fun (id, (src, mig)) => Json.mkObj
     [("object", toJson id), ("source", toJson (Journal.bodyHash src)), ("migration", toJson mig)]
   let laws := p.laws.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)]
-  Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots p.cells), ("writes", writesJson p.allWrites)] ++
+  Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots p.cells p.behaviours), ("writes", writesJson p.allWrites)] ++
     (if programs.isEmpty then [] else [("programs", Json.arr programs.toArray)]) ++
     (if p.layered.isEmpty then [] else [("extends", toJson p.layered)]) ++
     (if p.madeFrom.isEmpty then [] else [("madeFrom", Json.mkObj p.madeFrom)]) ++
@@ -675,7 +693,7 @@ def Refusal.voiced (r : Refusal) : Refusal :=
   let obj := r.object.getD ""
   let given := (r.reason.map fun t => if t.startsWith kernelPrefix then (t.drop kernelPrefix.length).toString else t)
   let reason := match r.cls with
-    | "staleRoot" => some s!"{obj} moved while you wrote; send the same spell again."
+    | "staleRoot" => some (given.getD s!"{obj} moved while you wrote; send the same spell again.")
     | "budget" => some s!"the turn ran out of {given.getD "ticks"}; make it smaller, or send it again later."
     | "evaluation" => given
     | "capacity" => match given with
@@ -705,6 +723,13 @@ def Refusal.voiced (r : Refusal) : Refusal :=
     | "lawRefused" | "cardRefused" => (r.reading.map fun t => s!"refused {r.clause.getD "law"}: {t}") <|> given
     | _ => given
   { r with reason }
+
+/-- A changed offer uses the same stale-root refusal as a changed state read. -/
+def staleBehaviour (w : World) (behaviours : List (String × Nat)) : Option Refusal := do
+  let (id, seen) ← behaviours.find? fun (id, seen) => (w.objects[id]?).map (·.behaviour) != some seen
+  let now := ((w.objects[id]?).map (·.behaviour)).getD seen
+  pure { cls := "staleRoot", object := some id,
+         reason := some s!"{id}'s behaviour changed from revision {seen} to {now}; read its offers again." }
 
 /-- Why an edit does not apply: `typeMismatch` (the field or value is not of the kind the
     edit needs), `absentItem`, `keyTaken`, `duplicateKey`. -/
@@ -2875,6 +2900,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     { c with objects := c.objects.insert id { x.object with madeFrom := x.madeFrom } }) w
   for id in p.roots.map (·.1) ++ writes.map (·.1) do
     unless made.objects.contains id do throw { cls := "unknownObject", object := id }
+  if let some r := staleBehaviour w p.behaviours then throw r
   -- A root the turn only changes by `add`/`append` (FOUNDATION section 13, row 1) need only be a
   -- version the object had: its changes re-apply on the state as it is now and are judged there.
   for (id, seen) in p.roots do
@@ -2984,7 +3010,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
             | none => j]
     staged := staged ++ [(id, changes, o, next, cells, applied.evicted)]
   let cand := staged.foldl (fun (c : World) (id, changes, o, next, cells, _) =>
-      { c with objects := c.objects.insert id { next with cells, version := if changes.any (·.kind != 4) then o.version + 1 else o.version } })
+      let updated : Object := { next with cells,
+                                          version := if changes.any (·.kind != 4) then o.version + 1 else o.version,
+                                          behaviour := o.behaviour + p.behaviourMoves id }
+      { c with objects := c.objects.insert id updated })
     made
   for (id, changes, o, next, cells, evicted) in staged do
     let mut next := next
@@ -3140,10 +3169,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
             throw { cls := "capacity", object := some id, reason := some (if want then "wantsPerObject" else "rulesPerObject") }
           let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }
           next := if want then { next with wants := next.wants ++ [row] } else { next with rules := next.rules ++ [row] }
-    -- A placing (rule, want, verb, or one taken off) is not a state move: the version roots judge, and a
-    -- suspended turn rooted on the thing, stay where they were.
     let moves := changes.any (·.kind != 4)
-    out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version, cells })]
+    out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version,
+                                    behaviour := o.behaviour + p.behaviourMoves id, cells })]
     factsOf := factsOf ++ [(id, judgedBy)]
   return { updates := out, reprograms, amendments, evicted := evictions, facts := factsOf,
            -- A creation the turn also wrote or placed on is its update, made at the state the turn leaves it in.
@@ -3301,16 +3329,17 @@ def genesisRow (outcome : Json) (id : String) : Option Json :=
 
 /-- The rules and wants hands placed on an object and the verbs they grew, as one value: what a placing,
     a creation and a store-installing genesis commit to (`placedIn`), so a snapshot's rows rest on the
-    journal as its state does on a write's `cid`. -/
-def placedRows (rules wants verbs : Json) : Json :=
-  Json.mkObj [("rules", rules), ("wants", wants), ("verbs", verbs)]
+    journal as its state does on a write's `cid`; the revision keeps removals and code edits distinct. -/
+def placedRows (rules wants verbs : Json) (behaviour : Nat := 0) : Json :=
+  Json.mkObj ([("rules", rules), ("wants", wants), ("verbs", verbs)] ++
+    (if behaviour == 0 then [] else [("behaviour", toJson behaviour)]))
 
 def placedCid (o : Object) : String :=
   Journal.bodyHash (placedRows (Json.arr (o.rules.toArray.map (·.json))) (Json.arr (o.wants.toArray.map (·.json)))
-    (Json.arr (o.verbs.toArray.map (·.json))))
+    (Json.arr (o.verbs.toArray.map (·.json))) o.behaviour)
 
-/-- An object with nothing placed or grown on it. -/
-def Object.unplaced (o : Object) : Bool := o.rules.isEmpty && o.wants.isEmpty && o.verbs.isEmpty
+/-- An object with nothing placed or grown and no behaviour edits. -/
+def Object.unplaced (o : Object) : Bool := o.rules.isEmpty && o.wants.isEmpty && o.verbs.isEmpty && o.behaviour == 0
 
 /-- `placed [{object, cid}]` of an admitted entry: each written or created object whose placed rows the
     entry changed or made, with their CID (`placedCid`). Replay compares it when the entry has it. -/
@@ -3390,7 +3419,8 @@ def placedIn (entry : Json) (id : String) : Option String :=
   | "admitted" => (rowsNaming outcome "placed" id).back?.bind (·.getObjValAs? String "cid" |>.toOption)
   | "forked" | "carried" => (genesisRow outcome id).map fun o =>
     let rows := fun (k : String) => (o.getObjVal? k).toOption.getD (Json.arr #[])
-    Journal.bodyHash (placedRows (rows "rules") (rows "wants") (rows "verbs"))
+    Journal.bodyHash (placedRows (rows "rules") (rows "wants") (rows "verbs")
+      ((o.getObjValAs? Nat "behaviour").toOption.getD 0))
   | _ => none
 
 /-- The read policy the entry gives `id`: a creation's, a root `set` of it, `hide` or `show`, a
@@ -4006,7 +4036,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     -- The turn number is the host's: the height of the entry about to be written.
     let p := { p with turn := w.height + 1 }
     let key := identityKey p.principal p.intent
-    let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots p.cells),
+    let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots p.cells p.behaviours),
       ("turn", toJson p.turn), ("request", toJson p.digest)] ++
       (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++ extra
     let verdict : Except Refusal Judged :=
@@ -4840,6 +4870,7 @@ def objectRecord (o : Object) : Json :=
   Json.mkObj ([("pin", toJson o.pin), ("law", toJson o.lawText), ("version", toJson o.version),
     ("state", dataJson o.state), ("read", o.read.json), ("chain", o.chain.json), ("compile", o.inputs),
     ("supervisor", toJson o.supervisor), ("fixed", toJson o.fixed), ("readings", readingsJson o.readings)] ++
+    (if o.behaviour == 0 then [] else [("behaviour", toJson o.behaviour)]) ++
     (if o.minted == 0 then [] else [("minted", toJson o.minted)]))
 
 /-- The suspensions waiting on an activity of `id`, by entry hash. -/
@@ -5242,7 +5273,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       (fun s => (s.getObjValAs? String "sender").toOption) |>.getD ""
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
                           absent, creates, grants, revokes, spent, layered, cells, madeFrom, sender,
-                          placements }
+                          placements, behaviours := ← parseBehaviours (← entry.getObjVal? "roots") }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     let w := warmLaws w (p.writes.map (·.1))
@@ -5512,7 +5543,9 @@ def publicRefusal (entry : Json) : Json :=
   let cls := (outcome.getObjValAs? String "class").toOption.getD "unknown"
   let roots := (entry.getObjVal? "roots").toOption.getD (Json.arr #[])
   let version := (((parseRoots roots).toOption.map (·.1)).getD []).lookup id
-  let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [])
+  let behaviour := (((parseBehaviours roots).toOption).getD []).lookup id
+  let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [] ++
+    (behaviour.map fun r => [("behaviour", toJson r)]).getD [])
   -- A law's reading is the law's public text about the clause, never state.
   let law := if cls == "lawRefused" then ["reason", "reading"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·) else []
   let slug := (entry.getObjValAs? String "hash").toOption.bind Slug.ofCid
@@ -5525,8 +5558,8 @@ def publicRefusal (entry : Json) : Json :=
     -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.
     else if cls == "badSpell" then
       [("object", toJson named)] ++ ["clause", "reason", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
-    -- A quota: how many, and when the next may start; nothing about the turn.
-    else if cls == "quota" || cls == "quiet" then ["clause", "reason", "next"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
+    -- What the speaker may retry: the quota or the changed revision, without state.
+    else if cls == "quota" || cls == "quiet" || (cls == "staleRoot" && behaviour.isSome) then ["clause", "reason", "next"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
     else if id != named then [("object", toJson named)] else []))
 
 /-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else

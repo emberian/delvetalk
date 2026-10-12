@@ -117,7 +117,7 @@ moderation (quiet a principal until a clock, hide, shadow) is the opener's recei
 quieted principal's turns are refused `quiet` until the clock passes (`docs/ROOT.md`; HOST-HANDOFF 5.126).
 `delvetalk-obend root-edit` and `migrate` are the offline tools (`RootEdit.lean`).
 
-**Store.** Objects by id: `{pin, law, version, state, activities}`. `pin` is the
+**Store.** Objects by id: `{pin, law, version, behaviour, state, activities}`. `pin` is the
 CID of the sealed source closure. `state` is typed data against the package's
 state type. `activities` are suspended turns, as checkpoints bound to object,
 principal, intent and roots. Ids are 1 to 128 bytes of `[A-Za-z0-9._:/-]` at
@@ -128,7 +128,8 @@ replay accepts any id an older journal holds.
 **Turn.** Input: principal, object, method, typed argument, and the identity
 `(principal, intent)`. The host loads the pinned package, applies the argument,
 runs. At each yield it answers the message (§3), recording every root read as
-`{object, version}` (or a field root, §9). At `done` it holds a write set and
+`{object, version}` (or a field root, §9); a reading of offers also records `behaviour`, the card's
+revision of placings and code or clause-text edits (§6). Ordinary state roots carry no such field. At `done` it holds a write set and
 commits iff every root is still current, or moved only in ways the turn's edits
 commute with (§9), and every written object's law admits the write. A turn
 exhausting its budget is a named refusal.
@@ -156,7 +157,8 @@ roots, writes or refusal class, budget spent, height. Reading a whole receipt
 needs the identity's principal. The public projection of a refusal is
 `{class, root, reason?}`, with the object for `unknownObject` and
 `requiredAbsence` and the `hint` for `badSpell`: "observed, not committed", and
-nothing about hidden state.
+nothing about hidden state. An offered-card `staleRoot` also shows the read behaviour revision and the plain
+reason naming its change, so the speaker knows to read the offers again.
 
 **Refusal classes**, closed (`refusalClasses`, `Ops.lean`): `staleRoot`,
 `typeMismatch`, `capacity`, `absentItem`, `lawRefused`, `unknownObject`,
@@ -178,7 +180,7 @@ previous}`), and the block store `J.blocks`, each entry's canonical record at `a
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
 Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 14: component bodies
-replaced at their journaled positions, HOST-HANDOFF 5.219), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+replaced at their journaled positions, bounded grown-verb shares and behaviour revisions, HOST-HANDOFF 5.219–5.222), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -312,7 +314,7 @@ outside the table is `noMethod`.
 | `grant {to, object, method, until}` | `granted {id}` | `to` may call `method` on `object` as the grantor until the clock passes `until` |
 | `grantWith {…, fixed, uses}` | `granted {id}` | attenuated: binds part of the argument (`grantConflict`), serves `uses` calls (`grantSpent` after) |
 | `revoke {id}` | `revoked` | by the grantor, or the holder (`notGrantor` otherwise) |
-| `rule`, `unrule {object, name, when?, then?}`; `want`, `unwant {…, asks?}`; `grow`, `ungrow {…, reading?, takes?, does?}` | `placed`, `refused {clause, reading}` | a placing (`request.kind` `rule`, 4), judged by the target's law, moving no version (§10) |
+| `rule`, `unrule {object, name, when?, then?}`; `want`, `unwant {…, asks?}`; `grow`, `ungrow {…, reading?, takes?, does?}` | `placed`, `refused {clause, reading}` | a placing (`request.kind` `rule`, 4), judged by the target's law, advancing `behaviour` while leaving the state `version` alone (§10) |
 | `act<R> {object, verb, text}` | `returned` | uses a grown verb: one line tagged with the verb, and the thing tended |
 | `chronicle {day}` | `chronicled {day, lines}` | one clock day of the journal folded into lines, derived, never written |
 | `wanting {after, limit}` | `wanting {rows, more}` | declared; the host does not answer it yet (HOST-HANDOFF §7 1a) |
@@ -554,6 +556,21 @@ proposal runs as the speaker's turn on the card (origin `interpreted`) unless th
 (reprogram, amend, offer, countersign, adopt), where hob offers the spell back filled and holds nothing; an `ask:`
 naming offered fields offers "hob: that still needs …" with the spells; `none`, a failed model or the deadline is
 silence. The workshop's `make` asks `world.interpret` for a draft, whose one ```obend block is the form's `source`.
+The asking card and every card whose forms hob is offered have a root `{object, version, behaviour}` in
+both the pending request and its action receipt. The pending roots name the state versions when the offers
+were read; a valid host reading starts its cast on current state, recording those state versions with the same
+read behaviour revisions, and `resumes` names the original reading. `behaviour` advances for each placed or removed rule, want or
+verb and for each reprogram or amendment; any such edit on an offered card is relevant, including a rule for
+another verb, while an edit on an unoffered card is not. `resumeHeard` refuses an obsolete reading before any
+spell runs, as `staleRoot`, naming the card and its changed revision. A Bend `interpret` follows `resumeOne`'s
+one re-run on a moved root, re-offering from current state. `interpretationSlot` keeps the turn's await numbering
+and binds only nonzero behaviour revisions: a behaviour edit renews the reading's slot, while ordinary state
+moves reuse its settled answer, so a batch settles without further model calls. `placedCid` commits to the counter beside the placed rows, and
+snapshots and replay retain it even after every row is removed. Ordinary writes retain their root bytes and
+request digests; a stranger's placing cannot stale an owner's write that did not read offers.
+Making and a made thing's own reprograms or placings revise only that new thing, never the maker or another
+offered card. A plant's state writes therefore leave the other pending readings valid; the existing batch of
+64 settles with its 64 model replies.
 Three things stay separate on the receipt: the wording, the interpretation, the admitted outcome. The interpreter
 submits every model result verbatim and the host decides: a transient failure (`transport`, `rate`) is journaled
 `attempted` with a clock backoff (2^(n-1) minutes, at most 60) and the reading keeps waiting; the eighth
@@ -788,7 +805,8 @@ deleting a closed sum or a convention:
   the thing's own text, what it inherits, then what hands placed. A rule is judged after the commit, on the world it
   leaves: what it cites is no root of the write, and its condition no part of the law's budget; it reads within
   `Limits.clauseTicks` or is `unfired budget` (a want past it does not pose), so a stranger's rule never refuses,
-  stales or starves the owner's own acts. A hand other than the owner (or the opener) holds at most `placedPerHand` (4) rules and 4
+  stales or starves the owner's ordinary writes; a suspended reading of that card's offers depends on its
+  behaviour revision (§6). A hand other than the owner (or the opener) holds at most `placedPerHand` (4) rules and 4
   wants on a thing, all such hands together `placedByOthers` (24) of the 32. The rule's owner is the follow-on
   turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on your thing runs their
   spells under their name and spends nothing of yours. The follow-on turn is a delivery under
@@ -924,7 +942,7 @@ inspirit and the porch's things; tending; several spells in a post; a card's own
 verbs and the chronicle with Wake's host support deleted (5.161), reach as a host op (5.162), words a card heard as
 hob's (5.163), Wake, Env, Event, Mentions and subscriptions deleted from `world/`, errands and fronts, the minimal
 genesis with its coinages and wants, the web front (docs/WEB.md); the astra world review's medium 14: explicit
-kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221).
+kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221); finding 15's behaviour revisions in offered-card roots and action receipts (5.222).
 
 Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDOFF §16, OBJECTS-HANDOFF "Open");
 each handoff keeps the detail, this table the order across lanes:
@@ -953,7 +971,7 @@ each handoff keeps the detail, this table the order across lanes:
 | the regenerated `/examples` (`docs/AGENTS-EXAMPLES.md`, still env, wake, the garden and eight doors) | transport | `deploy/capture-examples.py` re-run on a genesis of this head |
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
-| the astra world review's 11 (archival and reclamation of objects, grants and journal), 15 (a behaviour revision in roots, offers and receipts), 16 (wants as tasks: eligible actors, blocked and cancelled; discovery that rotates past the permanently blocked), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
+| the astra world review's 11 (archival and reclamation of objects, grants and journal), 16 (wants as tasks: eligible actors, blocked and cancelled; discovery that rotates past the permanently blocked), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
 | rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder) | kernel | a level rule fires at its crossing alone unless written as a level |
 
 After the fourth playtest, in the order the town will feel them: fronts and `relay` as seeded or cut back to the

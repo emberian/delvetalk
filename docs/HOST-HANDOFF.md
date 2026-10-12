@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/cx-world: 5.219–5.221, replay edition 14; lane/authority: 5.209–5.214, replay edition 13; lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/cx-world: 5.219–5.222, replay edition 14; lane/authority: 5.209–5.214, replay edition 13; lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no state version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -110,7 +110,7 @@ Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes`):
 
 `TurnState` lives in `M`; `Abort` is `request | evaluation | budget | suspend`. `finishTurn`: `.suspend` writes a `suspended` entry; `.evaluation` refuses `evaluation`; a `violation` refuses `requiredAbsence` (the violating creator is journaled as `root`, the taken id as `object`); `.ok` calls `commit`. A request error journals nothing, except for a delivered or resumed turn, which is refused.
 
-- `roots`: set by `recordRoot`; validated at commit by `judge`, at resume by `resumeOne`.
+- `roots`: set by `recordRoot`, with `recordBehaviour` adding an offered card's optional `behaviour`; validated at commit by `judge`, at resume by `resumeSegment` and `resumeHeard` (`staleBehaviour`, 5.222).
 - `writes`: `addWrite` (the running object only; another target is answered `refused {clause: notSelf}`), `ensureWrite` (reprogram/amend).
 - `sends`: ids derive from the ordinal at commit (`sendsJson`). A send's ledger is `{depth-1, work - used, storage - bytes added}` (saturating). Work is charged after the fact: a turn may overshoot `work` by one turn.
 - `creates`: built in-turn by `buildCreated` (compile, evaluate `initial()`, overlay the partial seed with `mergeSeed`, `makeObject`), installed by `commit`.
@@ -1704,7 +1704,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      == rule` (`method`, `verb` ""); a removal is the placer's, the owner's or the opener's (`lawRefused notPlacer`),
      not the law's. Refusals: `programRefused law syntax` (the parser's message; a line of another modality),
      `lawRefused nameTaken` (the name is the text's or a placed line's), `lawRefused under`, `lawRefused unplaced`,
-     `capacity rulesPerObject`/`wantsPerObject` (32 each). A placing (rule, want or verb, placed or taken off) is not a state move: the version stays, so a turn rooted on the thing (a suspended `due`, a reader) is not `staleRoot`, and `writeEdits` counts kind 4 as moving no field (host24). The default law is now `request.kind
+     `capacity rulesPerObject`/`wantsPerObject` (32 each). A placing (rule, want or verb, placed or taken off) is not a state move: the version stays, so an ordinary turn rooted on the thing (a suspended `due`, a state reader) is not `staleRoot`; an offered-card reading also depends on its behaviour revision (5.222), and `writeEdits` counts kind 4 as moving no field (host24). The default law is now `request.kind
      == 0 or request.kind == rule or request.subject == "<creator>"`; a world's own laws (`Kind.lawOf`, the
      bodies) need `or request.kind == rule` from the objects lane, or only their owners place.
    - *Spells, on every card.* `delvetalk O rule / name: N / when: EXPR / then: SPELL` (and `reading:` before
@@ -2634,6 +2634,57 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    oversized share alone therefore does not refuse that carry, and cleanup remains available. Whether the
    live journal contains such admissions is unverified. Lean and runtime validation are the supervisor's.
 
+222. **An offered card has a behaviour revision (lane/cx-world; astra 2026-10-12 world.md 15; pending replay edition
+   14).** Placings left the state version unchanged to protect ordinary turns from strangers' rules (5.210), but
+   that version alone also approved hob's reading after a verb or its consequences disappeared. `Object.behaviour`
+   now counts each placing or removal, each reprogram and each amendment (`Proposal.behaviourMoves`, `judge`);
+   `version` keeps its state meaning. `recordBehaviour`, `offeredCards` and `offeredRoots` join the asking card and
+   each card whose forms are offered, including doors, to the same roots that carry versions. `rootsJson` includes
+   `behaviour` only on such dependencies; `parseBehaviours`, `Proposal.digest`, `commit`, `finishTurn` and
+   `replayEntry` preserve it. An ordinary entry's roots and request digest keep their bytes. Any placing on an
+   offered card is relevant, including a rule for another verb; a placing on an unoffered card is not.
+   `interpretPlan` and `heardTurn` journal those roots, and `interpretationsReply` exposes them beside the offers.
+   `staleBehaviour` uses `staleRoot`, with the card and old and current revisions in its plain reason
+   (`Refusal.voiced` retains it, `publicRefusal` exposes it with the root's revision for the speaker).
+   `interpretVerdict` declines to fit an obsolete reply under current code; `resumeHeard` checks before casting, refusing with no write; `runPlan` carries
+   valid readings' behaviour revisions into their action receipts. A host reading holds no Bend checkpoint on
+   the offered cards' earlier state: after checking behaviour, `resumeHeard` starts its cast on their current
+   versions; `resumes` names the original reading, including its earlier state versions. Carrying the garden's
+   earlier version into every plant had refused the other 63 readings after the first plant. `resumeSegment` checks before continuing Bend's
+   `interpret`; `resumeOne`'s existing one re-run re-offers on current roots. `interpretationSlot` keeps the turn's
+   await numbering and binds only nonzero behaviour revisions, so a behaviour edit renews the slot without
+   consuming the old answer; ordinary state moves reuse the settled answer. State versions and cells do not
+   number model slots. `test_policy.PolicyObject.test_interpretations_have_their_own_capacity_apart_from_awaits`,
+   the existing 64-reading test, stays unchanged;
+   `ProposalForAnotherCard.test_overlapping_readings_settle_after_an_offered_cards_state_moves` covers two
+   distinct pending slots whose replies both plant and replay without another model call.
+   `test_a_plant_keeps_offered_revisions_and_the_next_heard_reading_still_plants` drives the town garden's make
+   through hob at the commonplace: a snapshot after the first plant proves each previously offered card's
+   revision unchanged while the garden's state moved; the second saved reply plants on current state, keeps
+   its read behaviour revision, leaves no pending model call and replays. `behaviourMoves` is per target:
+   `Kind.composing` and the made callback target the new thing; their code and placings revise only it, never
+   the garden or commonplace. `placedRows`, `placedCid` and `placedIn` commit to the
+   counter beside the placed rows, using the existing placed anchor; an empty table after removals is distinct
+   from one never edited. `Snapshot.storeBody` and `storeOfBody` retain the counter (an absent field defaults to
+   zero, as the existing optional Object fields do); `checkAnchors` verifies its CID, including after code edits.
+   Tests written first in `test_interpret_object.BehaviorReadings`: pending `ungrow`, pending `unrule` of a still
+   offered verb, a stranger's rule for another verb, a changed door card, an unoffered-card placing with a
+   maximum-length rain and matching receipt roots, the owner's pre-placing ordinary write with unchanged root
+   bytes and the pre-existing request digest, and an empty placed table reopened by replay and then by an
+   accepted snapshot before another placing. A forged zero counter with recomputed snapshot CID is refused
+   against the placed anchor and replay restores the revision. Added
+   reprogram coverage and `ProposalForAnotherCard.test_a_bend_interpret_reoffers_after_a_rule_on_its_offered_card_is_removed`
+   (old answer writes nothing, named stale receipt, a distinct new model slot, current reading admits and replays;
+   placing and removal are host spells routed through the Bell fixture with its complete `receive` input,
+   `text`, `post` and `fields`, since the Garden fixture has no `receive`).
+   Before this change `ungrow` resumes as a method refusal, `unrule` and other relevant placings let the stale
+   answer cast, and neither offers nor receipts identify a behaviour revision; the ordinary-write control is
+   already green. Lean and runtime checks are the supervisor's. This changes replay's Object derivation and
+   placed commitments within pending edition 14; the supervisor must run the carry check before integration.
+   Adjacent carry work: a pre-revision interpretation carried unchanged has no behaviour root and must be
+   discarded or re-offered by the carry before settlement. Administrative `applyRoot` program and law overrides
+   bypass `judge` and its revision counter; those overrides are outside this offered-card change.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -2654,7 +2705,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
   anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
-  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219; grown verbs admitted within a stranger's share, 5.221). Test: `tests/test_replay_edition.py`.
+  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219; grown verbs admitted within a stranger's share, 5.221; behaviour revisions on offered-card roots and placed commitments, 5.222). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.

@@ -190,6 +190,7 @@ def storeJson (w : World) : Except String Json := do
     out := out.push (Json.mkObj ([("id", toJson id), ("pin", toJson o.pin), ("law", toJson o.lawText),
       ("version", toJson o.version), ("state", dataJson o.state), ("stateCid", toJson o.stateCid), ("read", o.read.json),
       ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)] ++
+      (if o.behaviour == 0 then [] else [("behaviour", toJson o.behaviour)]) ++
       (if o.minted == 0 then [] else [("minted", toJson o.minted)]) ++
       (if o.packet.isEmpty then [] else [("packet", toJson o.packet)]) ++
       (if o.readings.isEmpty then [] else [("readings", Json.arr (o.readings.toArray.map fun (n, r) =>
@@ -337,6 +338,7 @@ def install (b : Json) (base : World) (naming : Naming := .cells) : Except Strin
         law := law
         lawText := lawText
         version := version
+        behaviour := (o.getObjValAs? Nat "behaviour").toOption.getD 0
         cells := Delvetalk.Turn.StateCells.of (cellDecls relations) state
         stateType := stateType
         bounds := bounds
@@ -503,7 +505,7 @@ def installBody (b : Json) (entries : Entries) (caches : Caches) : Except String
 
 /-- Each object against the entries its anchors name (`World.anchors`): the version, the state's CID
     where that entry names one (by `naming`, the journal's edition's), the pin, the law text, the read policy,
-    and the rules, wants and verbs placed on it (their CID, `placedIn`; an object with rows no entry commits to
+    and its behaviour revision with the rules, wants and verbs placed on it (their CID, `placedIn`; an object with rows no entry commits to
     is not the journal's, and a world whose rows predate their CIDs is replayed whole). A forger who recomputes
     a snapshot's CIDs moves no entry. A carry reading `previousEdition`, whose anchors hold the first three
     alone, checks those (`whole` false). -/
