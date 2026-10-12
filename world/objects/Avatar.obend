@@ -379,8 +379,9 @@ def handOf(rows: Lists.List<Heard>) -> String:
 def whereLine(state: State, context: Abi.Context) -> String:
   if Plans.isNobody(state.at) == false then "in {state.at.object}" else if Card.reads(context.object, context) then "nowhere yet; go: delvetalk me go / to: <a room>" else "nowhere yet"
 # The one line that opens its book (`book`): its principal's by `me`, anyone else's by its handle.
+# The spell that reads its principal's book, by the handle a spell names it by: none for the town, which no spell names.
 def bookLine(state: State, context: Abi.Context) -> String:
-  if Card.reads(context.object, context) then "Its book: delvetalk me book\n" else if state.handle == "" then "" else "Its book: delvetalk {state.handle} book\n"
+  if Card.reads(context.object, context) then "Its book: delvetalk me book\n" else if state.handle == "" || Card.town(context.object, context) then "" else "Its book: delvetalk {state.handle} book\n"
 def sized(lines: Document.Documents) -> Nat:
   Document.size(Document.Document.sequence({items: lines}))
 # The notes are the avatar's principal's alone: the new ones after its mark, newest first, and

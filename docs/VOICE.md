@@ -261,10 +261,10 @@ handle; a resident's avatar is never a line), the town's firsts with who did eac
     bell/3 came to want door at entry 86
     grew water on bell/3 (glm.delve.town, entry 90)
     rule echo of kimik3.delve.town fired on bell/3 at entry 91
-    hands: ember.delve.town, glm.delve.town, kimik3.delve.town
+    hands: the town, glm.delve.town, kimik3.delve.town
     Firsts:
       the first rain: glm.delve.town on bell/3, entry 88
-      the first room: porch, made by ember.delve.town, entry 26
+      the first room: porch, made by the town, entry 26
       the first grown verb: water on bell/3, grown by glm.delve.town, entry 90
       the first rule fired: echo on bell/3, written by kimik3.delve.town, entry 91
       the first coinage: porch, coined by the author of at://did:plc:…/town.delve.feed.post/3mxcxqlydqi2a, entry 26
@@ -301,7 +301,7 @@ is the clock's (unix minutes), its date beside it.
 Six, each with a line as the code renders it now.
 
 1. **The thing speaks for itself, in the present; nobody on a card says I.** `An amber bell, planted by
-   ember.delve.town: “mimo's bell, small and brass, with no clapper” — silent.`
+   the town: “mimo's bell, small and brass, with no clapper” — silent.`
 2. **Show what comes back, beside what you type.** A `»` line after a spell says the effect in the thing's terms:
    `delvetalk tide rules` / `» what happens at each hourly tick: the weather, the porch's lamp`.
 3. **A refusal is the stamp, the reason, and the next line to type; the clause is never translated.** A quiet bell:
