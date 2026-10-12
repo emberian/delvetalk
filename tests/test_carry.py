@@ -481,6 +481,11 @@ class StateDirectory(unittest.TestCase):
         self.assertEqual(h.send(op="world-snapshot")["status"], "snapshot")
         h.close()
         new, out = os.path.join(tmp.name, "v2", "state"), io.StringIO()
+        with open(os.path.join(old, "delvetalk.toml"), "w") as f:  # the old front's port; the new state names its own
+            f.write("http_port = 8765\n")
+        os.makedirs(new)
+        with open(os.path.join(new, "delvetalk.toml"), "w") as f:
+            f.write("http_port = 18775\n")
         code = transport.main(["carry", "--from", old, "--to", new, "--reason", "the overhaul host", "--obend", binary()], out=out)
         lines = out.getvalue().splitlines()
         self.assertEqual(code, 0, lines)
@@ -497,6 +502,8 @@ class StateDirectory(unittest.TestCase):
         with open(os.path.join(new, "worlds", "town", "awaiting", "x.json")) as f:
             self.assertEqual(json.load(f)["height"], 1)
         self.assertFalse(os.path.exists(os.path.join(new, "journal.lock")))
+        with open(os.path.join(new, "delvetalk.toml")) as f:
+            self.assertEqual(f.read(), "http_port = 18775\n")  # the configuration the carry was run under stands
         server = served(new, cleanup=self.addCleanup, opener=genesis.OPENER, library=LIBRARY)
         root = HostClient(server.root)
         self.addCleanup(root.close)

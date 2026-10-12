@@ -33,7 +33,7 @@ SKIP_DIRS = {'library', 'root', 'scratch'}
 
 def skipped(name):
     return (name.endswith(('.journal', '.journal.blocks', '.cbor', '.sock', '.pid', '.tmp')) or '.journal.snapshot.' in name
-            or name == 'journal.lock')
+            or name in ('journal.lock', 'delvetalk.toml'))  # the configuration: the new state's own, or the old one copied first
 
 
 def worlds(old):
