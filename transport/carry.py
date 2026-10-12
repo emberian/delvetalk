@@ -3,8 +3,8 @@ the host binary the configuration names (docs/FOUNDATION.md §2; docs/DEPLOY.md 
 
 Every world journal of OLD (`<world>.journal`; `scratch/` is not custody) is carried by `delvetalk-obend carry`, which
 reads the world from the snapshot at its head (written by the binary of its edition: `deploy/verify.sh --snapshot`)
-and writes NEW's journal, whose genesis cites the old head. Then the transport's own files move with it, the height
-cursors that named the old chain's entries set to the new genesis (`publications.after`, each `awaiting` turn), and
+and writes NEW's journal, whose genesis cites the old head and continues its heights. Then the transport's own files
+move with it, its height cursors (`publications.after`, each `awaiting` turn) naming entries of the same sequence, and
 the carried worlds are checked in a throwaway copy, independently of the binary's own check: every object at the state
 CID the snapshot held and rendering for its owner, every old receipt resolving by its slug, and a new turn admitted.
 OLD is only read; its journal lock must be free (serve stopped). NEW must hold no journal. The channel line the hand
@@ -68,16 +68,6 @@ def copy_transport(old, new):
             shutil.copy2(src, dst)
 
 
-def reset_cursors(new, world):
-    """The transport's cursors that named heights of the old chain, set to the carried genesis (height 1)."""
-    home = Path(new) / 'worlds' / world
-    if (home / 'publications.after').exists():
-        (home / 'publications.after').write_text('1\n')
-    for p in sorted((home / 'awaiting').glob('*.json')):
-        record = json.loads(p.read_text())
-        p.write_text(json.dumps(dict(record, height=1), sort_keys=True) + '\n')
-
-
 def reader(row, opener):
     """Who may read a snapshot's object row, to read it as: its owner, else a named reader, else the opener."""
     fields = {f['name']: f['value'] for f in (row['state'].get('fields') or [])} if isinstance(row['state'], dict) else {}
@@ -95,7 +85,7 @@ def check(obend, old_journal, new_journal, moved=(), renamed=()):
     after = {m['object']: m['after'] for m in renamed}
     after.update({m['object']: m['after'] for m in moved})
     links = journal.links(old_journal)
-    body = journal.snapshot(dict(journal.snapshots(old_journal))[len(links)])
+    body = journal.snapshot(dict(journal.snapshots(old_journal))[links[-1]['height']])
     opener = (body.get('settings') or {}).get('opener') or ''
     clock = (body.get('settings') or {}).get('clock') or opener
     problems, rendered, resolved, turn = [], 0, 0, {}
@@ -190,8 +180,6 @@ def command(a, out):
         written += [str(target), str(target) + '.blocks']
         carried[w] = json.loads(p.stdout)
     copy_transport(old, new)
-    for w in names:
-        reset_cursors(new, w)
     failed = False
     for w in names:
         r = carried[w]

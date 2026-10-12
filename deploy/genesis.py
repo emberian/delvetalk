@@ -544,8 +544,9 @@ def towns(root, own):
     """Every world journal under `root` that holds a world, other than `own` (the journal this genesis writes): a data
     directory's `*/state/*.journal`, an older layout's `*/*.journal`, a playtest run's `run-*/state/*.journal`, the
     root's own; scratch worlds are not custody and are left out. -> ([(path, height)], [unreadable]): height the chain's
-    line count; unreadable every directory of those layers this process cannot list, where a town may live unseen
+    last (a carried chain continues the heights before it); unreadable every directory of those layers this process cannot list, where a town may live unseen
     (a glob skips them silently: the deploy of 5db9aa79 ran as 10425 over a root-owned 0700 `/towns` and saw none)."""
+    from transport import journal
     mine = os.stat(own) if own and os.path.exists(own) else None
     found, unreadable = [], []
 
@@ -568,9 +569,13 @@ def towns(root, own):
         st = path.stat()
         if mine and (st.st_dev, st.st_ino) == (mine.st_dev, mine.st_ino):
             continue
-        height = sum(1 for _ in open(path, 'rb'))
-        if height:
-            found.append((str(path), height))
+        try:
+            last = (journal.links(path) or [{}])[-1]
+        except ValueError as e:
+            unreadable.append(f'{path} ({e})')
+            continue
+        if last:
+            found.append((str(path), last['height']))
     return found, unreadable
 
 

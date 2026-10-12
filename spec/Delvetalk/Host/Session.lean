@@ -170,7 +170,7 @@ def durableIO (s : Open) (reader : String) (step : World → IO (Except String (
       | .error e => return (some s, .error s!"journal entry has no canonical form: {e}")
     if records.any (·.size > Limits.maxEntryBytes) then
       return (some s, .error "journal entry exceeds capacity")
-    if w'.height > Limits.maxJournalEntries then
+    if w'.height - w'.entries.base > Limits.maxJournalEntries then
       return (some s, .error "journal is full")
     let full := s!"journal is full: appending would pass maxJournalBytes ({s.bound} bytes)"
     -- What an append adds: the records, and their links as the chain will hold them.
@@ -435,7 +435,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
           ("compiled", Json.mkObj [("packages", toJson s.world.builds.size), ("closures", toJson s.world.requests.size),
             ("methods", toJson s.world.compiled.size)])] |>
           -- A fork or a carry names where it came from (its genesis's `forkedFrom` or `carriedFrom`).
-          fun r => (match (s.world.entries.get? 0).bind genesisOrigin with
+          fun r => (match s.world.entries.genesis?.bind genesisOrigin with
             | some (key, origin) => r.setObjVal! key (originShown origin)
             | none => r) |> fun r => interpretStatus s.world r (request.getObjValAs? String "principal").toOption))
       | "world-posted" => durable s reader (fun w => postedOp w request)

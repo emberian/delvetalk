@@ -88,7 +88,7 @@ class Carry(Reflection):
         self.assertEqual((carried["status"], carried["carriedFrom"]["height"], carried["carriedFrom"]["cid"], carried["suspended"]),
                          ("carried", len(old), old[-1]["hash"], 1), carried)
         [genesis] = journal_entries(out)
-        self.assertEqual((genesis["outcome"]["tag"], genesis["previous"], genesis["height"]), ("carried", old[-1]["hash"], 1))
+        self.assertEqual((genesis["outcome"]["tag"], genesis["previous"], genesis["height"]), ("carried", old[-1]["hash"], old[-1]["height"] + 1))
         new = self.opened(out)
         status = new.send(op="world-status")
         self.assertEqual(status["carriedFrom"], {"world": self.path, "height": len(old), "cid": old[-1]["hash"],
@@ -139,6 +139,51 @@ class Carry(Reflection):
                 self.assertEqual(q.returncode, 0, q.stderr)
                 new = self.opened(again_out)
         new.close()
+
+    def test_a_carried_world_counts_its_heights_on_from_the_world_before(self):
+        # The first live carry (v8 to v9) showed "untended since entry 27" in a world at 48, and a carried avatar's
+        # `seen` past the new heights hid its new notes. The carried genesis takes the old head's height + 1, so every
+        # height a state holds names an entry of one sequence, across every carry.
+        old = journal_entries(self.path)
+        head = old[-1]["height"]
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        [genesis] = journal_entries(out)
+        self.assertEqual((genesis["height"], genesis["previous"], genesis["replay"]), (head + 1, old[-1]["hash"], old[0]["replay"]))
+        new = self.opened(out)
+        self.assertEqual(new.send(op="world-status")["height"], head + 1)
+        planted = self.plant("kim", "after", new)
+        self.assertEqual((planted["status"], planted["receipt"]["height"]), ("admitted", head + 2), planted)
+        state = new.send(op="world-view", principal="ember", object="garden/bell/2")["state"]
+        self.assertEqual(field(state, "tendedAt")["value"], str(head + 1))  # the height the planting turn read
+        listed = [e["height"] for e in new.send(op="world-entries", principal="ember", reverse=True)["entries"]]
+        self.assertEqual(listed, list(range(listed[0], head, -1)))  # newest first, down to the carried genesis
+        self.assertEqual([e["height"] for e in new.send(op="world-entries", principal="ember", after=head + 1)["entries"]], listed[-2::-1])
+        self.assertEqual(new.send(op="world-snapshot")["status"], "snapshot")
+        at = new.send(op="world-status")["height"]
+        new.close()
+        self.hosts.remove(new)
+        # root-edit names a carried journal's entries by these heights.
+        cut = os.path.join(self.dir.name, "cut.journal")
+        r = subprocess.run([binary(), "root-edit", "--journal", out, "--out", cut, "--reason", "r", "drop", "--height", str(at)],
+                           capture_output=True, text=True, timeout=600)
+        self.assertEqual((r.returncode, json.loads(r.stdout)["height"]), (0, at - 1), r.stderr)
+        edited = self.opened(cut)
+        self.assertEqual(edited.send(op="world-status")["height"], at - 1)
+        edited.close()
+        self.hosts.remove(edited)
+        again_out = os.path.join(self.dir.name, "again.journal")
+        q = subprocess.run([binary(), "carry", "--from", out, "--out", again_out, "--reason", "again"],
+                           capture_output=True, text=True, timeout=600)
+        self.assertEqual(q.returncode, 0, q.stderr)
+        self.assertEqual(json.loads(q.stdout)["carriedFrom"]["height"], at)
+        [second] = journal_entries(again_out)
+        self.assertEqual(second["height"], at + 1)
+        again = self.opened(again_out)
+        for e in old + [genesis]:
+            got = again.send(op="world-resolve", principal="ember", slug=slug(e["hash"]))
+            self.assertEqual((got["status"], got["carried"]["height"]), ("resolved", e["height"]), got)
+        self.assertEqual(self.plant("kim", "later", again)["receipt"]["height"], at + 2)
 
     def test_an_object_left_is_carried_retired_at_its_state(self):
         before = self.objects(self.host)
@@ -599,10 +644,11 @@ class StateDirectory(unittest.TestCase):
         refreshed = [json.loads(line)["refresh"] for line in lines[1:-1]]
         self.assertEqual({r["status"] for r in refreshed}, {"current"}, refreshed)
         self.assertRegex(lines[-1], r"^hob: the world was carried to a newer host at entry \d+; everything is where it was, and the carry is receipt [a-z]{5}-[a-z]{5}\.$")
+        # The cursors name entries of one sequence: the carried chain's heights continue the old one's.
         with open(os.path.join(new, "worlds", "town", "publications.after")) as f:
-            self.assertEqual(f.read().strip(), "1")
+            self.assertEqual(f.read().strip(), "70")
         with open(os.path.join(new, "worlds", "town", "awaiting", "x.json")) as f:
-            self.assertEqual(json.load(f)["height"], 1)
+            self.assertEqual(json.load(f)["height"], 60)
         self.assertFalse(os.path.exists(os.path.join(new, "journal.lock")))
         with open(os.path.join(new, "delvetalk.toml")) as f:
             self.assertEqual(f.read(), "http_port = 18775\n")  # the configuration the carry was run under stands

@@ -295,7 +295,7 @@ def serveStatus (srv : Server) : IO Json := do
   let rows := srv.worlds.toList.filter (!·.1.startsWith "scratch/") |>.filterMap fun (k, h) => h.world.map fun (o : Host.Open) =>
     let w := o.world
     Json.mkObj [("name", toJson k), ("height", toJson w.height), ("objects", toJson w.objects.size), ("clock", toJson w.clock),
-      ("replay", toJson (((w.entries.get? 0).bind (·.getObjValAs? Nat "replay" |>.toOption)).getD Host.Limits.replayEdition)),
+      ("replay", toJson ((w.entries.genesis?.bind (·.getObjValAs? Nat "replay" |>.toOption)).getD Host.Limits.replayEdition)),
       ("snapshot", o.report.json)]
   let byName := fun (a b : Json) => decide ((a.getObjValAs? String "name").toOption.getD "" < (b.getObjValAs? String "name").toOption.getD "")
   return Json.mkObj ([("status", toJson "serve"), ("hostSha256", toJson srv.sha), ("pid", toJson (← IO.Process.getPID).toNat),

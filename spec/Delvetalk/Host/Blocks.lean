@@ -65,13 +65,17 @@ def recordBytes (entry : Json) : Except String ByteArray :=
 def entryOfRecord (bytes : ByteArray) (hash : String) (depth : Nat) : Except String Json := do
   return (← Delvetalk.Canonical.decodeJson bytes depth).setObjVal! "hash" (toJson hash)
 
-/-- A world's journal: every entry's CID in height order (entry `h` at index `h - 1`), where each
-    record lies in the store, and the entries a step made that are not yet written (`fresh`, the
-    last ones). `count` is how many this world holds: a replay holds a prefix of the store it reads.
-    The chain is persistent (`PersistentArray`, `PersistentHashMap`): a step extends the world the
-    session still holds, so a flat array would be copied whole on every append. -/
+/-- A world's journal: every entry's CID in height order, where each record lies in the store, and the
+    entries a step made that are not yet written (`fresh`, the last ones). Heights continue the world a
+    carry came from: the first entry here is at height `base + 1` (0 but for a carried genesis, which
+    takes the old head's height + 1), so every height a state holds names an entry of one sequence.
+    An index is a height - 1 throughout (entry `h` at index `h - 1`); those below `base` are the world
+    before's and are not held. `count` is the height of the last entry this world holds: a replay holds
+    a prefix of the store it reads. The chain is persistent (`PersistentArray`, `PersistentHashMap`):
+    a step extends the world the session still holds, so a flat array would be copied whole on every append. -/
 structure Entries where
   store : Option IO.FS.Handle := none
+  base : Nat := 0
   hashes : Lean.PersistentArray String := {}
   spans : Lean.PersistentArray (Nat × Nat) := {}
   fresh : Array Json := #[]
@@ -85,37 +89,44 @@ instance : Inhabited Entries := ⟨{}⟩
 namespace Entries
 
 /-- The entry at index `i` (height `i + 1`), read from the store (none unless its record is its CID's)
-    or from what this step made. -/
+    or from what this step made; none below `base`. -/
 def get? (e : Entries) (i : Nat) : Option Json :=
-  if i ≥ e.count then none
-  else if i < e.spans.size then do
-    let (offset, length) := e.spans.get! i
-    let bytes ← readAt (← e.store) offset length
-    let hash := e.hashes.get! i
-    if Delvetalk.Canonical.cid bytes != hash then none
-    (entryOfRecord bytes hash e.depth).toOption
-  else e.fresh[i - e.spans.size]?
+  if i < e.base || i ≥ e.count then none
+  else
+    let k := i - e.base
+    if k < e.spans.size then do
+      let (offset, length) := e.spans.get! k
+      let bytes ← readAt (← e.store) offset length
+      let hash := e.hashes.get! k
+      if Delvetalk.Canonical.cid bytes != hash then none
+      (entryOfRecord bytes hash e.depth).toOption
+    else e.fresh[k - e.spans.size]?
 
 def getD (e : Entries) (i : Nat) : Json := (e.get? i).getD Json.null
 
-def hashAt? (e : Entries) (i : Nat) : Option String := if i < e.count then some (e.hashes.get! i) else none
+def hashAt? (e : Entries) (i : Nat) : Option String :=
+  if e.base ≤ i && i < e.count then some (e.hashes.get! (i - e.base)) else none
+
+/-- The journal's first entry here: a genesis, or a fork's or a carry's. -/
+def genesis? (e : Entries) : Option Json := e.get? e.base
 
 /-- The index of the entry whose CID is `hash`. -/
 def indexOf? (e : Entries) (hash : String) : Option Nat :=
   (e.byHash.find? hash).bind fun i => if i < e.count then some i else none
 
-/-- The first `n` entries: the same store and arrays, fewer held. -/
-def upTo (e : Entries) (n : Nat) : Entries := { e with count := min n e.hashes.size }
+/-- The entries up to height `n`: the same store and arrays, fewer held. -/
+def upTo (e : Entries) (n : Nat) : Entries := { e with count := max e.base (min n (e.base + e.hashes.size)) }
 
 /-- Append an entry a step made, dropping any the store holds past `count` (a prefix extended). -/
 def push (e : Entries) (entry : Json) : Entries :=
   let hash := (entry.getObjValAs? String "hash").toOption.getD ""
-  let e := if e.count == e.hashes.size then e else Id.run do
+  let held := e.count - e.base
+  let e := if held == e.hashes.size then e else Id.run do
     let mut e := e
-    while e.hashes.size > e.count do
+    while e.hashes.size > held do
       e := { e with byHash := e.byHash.erase (e.hashes.get! (e.hashes.size - 1)), hashes := e.hashes.pop }
-    while e.spans.size > e.count do e := { e with spans := e.spans.pop }
-    return { e with fresh := e.fresh.extract 0 (e.count - e.spans.size) }
+    while e.spans.size > held do e := { e with spans := e.spans.pop }
+    return { e with fresh := e.fresh.extract 0 (held - e.spans.size) }
   { e with hashes := e.hashes.push hash, fresh := e.fresh.push entry, byHash := e.byHash.insert hash e.count,
            count := e.count + 1 }
 
@@ -124,20 +135,23 @@ def pushStored (e : Entries) (hash : String) (span : Nat × Nat) : Entries :=
   { e with hashes := e.hashes.push hash, spans := e.spans.push span, byHash := e.byHash.insert hash e.count,
            count := e.count + 1 }
 
-/-- The entries not yet in the store, from height `stored + 1`. -/
+/-- The entries not yet in the store, after the last one written. -/
 def unwritten (e : Entries) : Array Json := e.fresh
 
 /-- The unwritten entries are now in the store at `spans`. -/
 def written (e : Entries) (spans : Array (Nat × Nat)) : Entries :=
   { e with spans := spans.foldl (·.push ·) e.spans, fresh := #[] }
 
-/-- Entries held in memory only, none in a store (an offline tool's journal before it is written). -/
-def ofArray (entries : Array Json) : Entries := entries.foldl push {}
+/-- Entries held in memory only, none in a store (an offline tool's journal before it is written), from
+    the first one's height. -/
+def ofArray (entries : Array Json) : Entries :=
+  let base := ((entries[0]?).bind fun x => (x.getObjValAs? Nat "height").toOption).getD 1 - 1
+  entries.foldl push { base, count := base }
 
 /-- Every held entry, in height order, one read at a time. -/
 def foldl {α : Type} (e : Entries) (f : α → Nat → Json → α) (init : α) : α := Id.run do
   let mut acc := init
-  for i in [0:e.count] do
+  for i in [e.base:e.count] do
     if let some entry := e.get? i then acc := f acc i entry
   return acc
 

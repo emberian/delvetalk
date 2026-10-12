@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -2122,7 +2122,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      inherited lines included (`carried`), `nameTaken`. Tests: `test_rules.Placing.test_a_name_the_bell_inherits_…`,
      `test_reaction`'s ids.
    - *Barrier* (host 9). `installGenesis` gives each object of a carried or forked genesis one touch at its version
-     and height 1, an entry that writes no edits of it (as a root `set` does), so a root read below that version is
+     and the genesis's height, an entry that writes no edits of it (as a root `set` does), so a root read below that version is
      stale (`editsSince` none) and the suspension runs again; never current by an empty history. Test:
      `test_carry.Moves.test_a_suspension_reading_a_moved_object_is_stale_after_the_carry_and_runs_again`.
    - *Dropped by decision* (docs 7). `carryWorld` drops a suspension only for an object named `--leave`, or a moved
@@ -2182,6 +2182,19 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      (they read the oldest 100 and sliced the end), clamped to `HISTORY_LIMIT` (transport/host.py, `Limits.maxHistoryLimit`:
      restated, not read from `bounds`). Tests: `test_world.History`, `test_http.Pages` (one `world-history` call),
      `test_root_console`.
+182. **A carried world's heights continue the world before (host31; the first live carry's "untended since entry 27" in
+   a world at 48; replay edition 12).** A `carried` genesis is sealed at the old head's height + 1 (`Carry.carryGenesis`,
+   `Snapshot.genesisEntry (height)`, `Journal.sealEntry (first)`), so a height a state holds (a bell's `tendedAt`, an
+   avatar's `seen`, a line's `at`) names an entry of one sequence across every carry, a carried avatar's new notes
+   show at once, and the transport's height cursors (`publications.after`, `awaiting`) keep their meaning (the
+   carry's cursor reset is gone). `Entries.base` is the heights before a journal's first entry; an index is a height
+   - 1 throughout, those below `base` not held (`get?`, `hashAt?` none), `genesis?` the first; `openEntries` takes it
+   from the first link. `Snapshot.firstHeight` is the one rule a first entry's height is checked by (`checkedEntry`):
+   1, or for a `carried` genesis of edition 12 on its `carriedFrom.height` + 1 (an earlier carry's genesis is at 1).
+   Reads walk `[base:count]`; `installGenesis` starts the world at `base`; `root-edit` takes and prints heights as the
+   journal names them (`baseOf`); the journal-full bound counts this journal's entries. Fork geneses stay at 1. Test:
+   `test_carry.Carry.test_a_carried_world_counts_its_heights_on_from_the_world_before` (genesis, turns, a body's
+   stored height, `world-entries` both ways, `root-edit drop`, a second carry, every old receipt by its slug).
 
 ## 6. Gotchas
 
@@ -2203,7 +2216,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
   anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
-  barriers, law work metered, 5.179). Test: `tests/test_replay_edition.py`.
+  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.
@@ -2222,17 +2235,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-**First, host30's remainder** (host29's and the coordinator's; edition 11 is not deployed: anything that changes
-what replay derives rides it if it lands before the deploy, which carries edition 10 to 11 and ships
-`carry-check.sh` green on the newest backup). Each with its failing input as a test first, merging foundation before
-each commit:
-1. **Heights a carried world shows** (the first live carry, v8 to v9, edition 10: "untended since entry 27" in a world
-   at 48). A state holding a height (`world/bodies/bell.obend` `tendedAt`, `Avatar.obend` `seen`: an avatar's `seen`
-   from the old chain past the new heights hides its new notes until the chain passes it) names the old chain's
-   entry. Decide one: the carried world's heights continue the old chain's (a `carried` genesis at the old head + 1,
-   entries indexed by `height - base`: every stored height stays an entry of one sequence, and "entry N of the world
-   before" needs no slug), or the carry translates no state and cards show clock time (bodies' change, objects
-   lane). The first is the host's and needs no world source; test on a carried world (`test_carry.Moves`'s pattern).
+**First, host30's remainder** (host29's and the coordinator's; edition 12 is not deployed: anything that changes
+what replay derives rides it if it lands before the deploy, which carries edition 10 to 12 and ships
+`carry-check.sh` green on the newest backup, as it was for 5.182 on delvetalk-20261012T121739Z). Each with its failing
+input as a test first, merging foundation before each commit:
 2. **The hand's morning paint fell back** (`hand morning`: `painted: False` after a 117-token reply). The host answers
    why (`world-render` `exact {reason, clause?, detail?}`: `rejected` with the paint check's clause, `unattended`,
    `busy`, `unavailable`), and `transport/host.py` `painted` drops it: return the reason, have the hand say it, then

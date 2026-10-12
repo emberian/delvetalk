@@ -42,8 +42,9 @@ def cardShownChars : Nat := 1400
     with each relation's rows as links (`Turn.StateCells`), journaled on creations too; a write is
     checked, bounded and charged by the cells it changes); 11: host30 (a rule a thing inherits fires under
     an id naming its holder, `rule:<object>:<name>@<holder>:<height>`; placing refuses a name the thing
-    carries; a carried genesis's touch barriers; a judgment's law work metered against `lawTicks`). -/
-def replayEdition : Nat := 11
+    carries; a carried genesis's touch barriers; a judgment's law work metered against `lawTicks`); 12: host31
+    (a carried genesis continues the heights of the world it was carried from, `Snapshot.firstHeight`). -/
+def replayEdition : Nat := 12
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000

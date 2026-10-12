@@ -83,7 +83,7 @@ def readWorld (b : Json) (src : Entries) (height : Nat) (replay : Nat) : Except 
   let w ← Snapshot.installIndex base read
   let naming := Naming.ofEdition replay
   let w ← Snapshot.install b w naming
-  let w := { w with carriedIds := ((src.get? 0).map carriedIdentities).getD {} }
+  let w := { w with carriedIds := (src.genesis?.map carriedIdentities).getD {} }
   Snapshot.checkAnchors w naming ((b.getObjValAs? String "edition").toOption == some Snapshot.edition)
   return w
 
@@ -439,7 +439,7 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
      (if c.kept.isEmpty then [] else [("kept", Json.arr (c.kept.toArray.map fun (id, law) =>
         Json.mkObj [("object", toJson id), ("law", toJson law)]))]) ++
      (if c.rearmed.isEmpty then [] else [("rearmed", toJson c.rearmed)]) ++
-     (if c.renamed.isEmpty then [] else [("renamed", renamedJson c.renamed)]))
+     (if c.renamed.isEmpty then [] else [("renamed", renamedJson c.renamed)])) (height := height + 1)
 
 def fail (message : String) (code : UInt32 := 1) : IO UInt32 := do
   (← IO.getStderr).putStrLn s!"carry: {message}"
@@ -464,8 +464,8 @@ def main (args : List String) : IO UInt32 := do
     | .ok s => pure s
     | .error e => return ← fail s!"{journal} does not verify: {e}"
   let height := src.count
-  if height == 0 then return ← fail s!"{journal} holds no world"
-  let first ← match Snapshot.checkedEntry src 0 with
+  if height == src.base then return ← fail s!"{journal} holds no world"
+  let first ← match Snapshot.checkedEntry src src.base with
     | .ok e => pure e
     | .error e => return ← fail s!"{journal} does not verify: {e}"
   let replay := (first.getObjValAs? Nat "replay").toOption.getD 1
