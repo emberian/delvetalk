@@ -53,7 +53,8 @@ def bounded (j : Json) (key : String) (fallback cap : Nat) : Except String Nat :
 
 def failureName : Failure → String
   | .tickExhausted => "tick budget exhausted"
-  | .budget => "node or byte budget exhausted"
+  | .budget => "byte budget exhausted"
+  | .nodes => "node budget exhausted"
   | .duplicateField => "duplicate field in result"
   | .executableValue => "result is executable, not data"
   | .suspended => "heap or stack capacity exhausted"
@@ -262,7 +263,8 @@ def exhaustedResource (limits : Limits) (failure : Failure) (state : State) (rem
     (fetch : Fetch := Fetch.none) : Option String :=
   match failure with
   | .tickExhausted => some "ticks"
-  | .budget => some (if remaining.nodes == 0 then "nodes" else "bytes")
+  | .budget => some "bytes"
+  | .nodes => some "nodes"
   | .suspended =>
       -- A row fetch suspends before its step: its heap is the row's fields.
       match fetchable fetch state with
@@ -364,13 +366,8 @@ def concludeStep (dictionary : Dictionary) (pin : String) (binding : Binding) (b
   | .error (.yielded, state, remaining) =>
       match yieldedPlan fetch limits remaining state with
       | .error (failure, st, rem) =>
-          -- A materialization budget failure is nodes when it vanishes with unlimited nodes.
-          let resource? := match failure with
-            | .budget => some (match yieldedPlan fetch limits {remaining with nodes := 1 <<< 40} state with
-                | .error (.budget, _, _) => "bytes"
-                | _ => "nodes")
-            | _ => exhaustedResource limits failure st rem fetch
-          match resource? with
+          -- The failure names its resource (`Failure.nodes`, `Failure.budget`): nothing re-runs.
+          match exhaustedResource limits failure st rem fetch with
           | some resource => .ok (.exhausted resource (b.ticks - rem.ticks))
           | none => .error ("turn refused: " ++ refusalText failure st)
       | .ok extracted =>
@@ -617,26 +614,110 @@ def storedData (store : Store) : Stored → Option Data
   | .absent _ _ => some (.record [])
   | .size _ n => some (.natural n)
 
+/-- The canonical bytes of rows `position ..< size` of `field`, counted row by row: `.error` past
+`allowance` (no further row fetched or measured), `none` when the store does not answer a row. -/
+def rowsBytesWithin (store : Store) (field : String) (position size allowance : Nat) : Except Unit (Option Nat) := do
+  let mut total := 0
+  for i in [position:size] do
+    let some row := store.fetch field i | return none
+    total := total + row.canonicalBytes
+    if total > allowance then throw ()
+  return some total
+
+/-- The canonical bytes of the native data a stored part stands for (`storedData`), within
+`allowance` as `rowsBytesWithin` counts them. -/
+def storedBytesWithin (store : Store) (allowance : Nat) : Stored → Except Unit (Option Nat)
+  | .object fields stored => do
+    let scalars := fields.foldl (fun n (name, value) => if (stored.lookup name).isSome then n else n + value.canonicalBytes) 0
+    if scalars > allowance then throw ()
+    let mut total := scalars
+    for (name, size) in stored do
+      let some bytes ← rowsBytesWithin store name 0 size (allowance - total) | return none
+      total := total + bytes
+    return some total
+  | .relation f n | .items f n => rowsBytesWithin store f 0 n allowance
+  | .spine f j n => rowsBytesWithin store f j n allowance
+  | .cons f j n => rowsBytesWithin store f j n allowance
+  | .row f j | .key f j _ | .found f j => rowsBytesWithin store f j (j + 1) allowance
+  | .absent _ _ | .size _ _ => pure (some 0)
+
 /-- A yielded state, collected as its checkpoint is (`ObjectiveBendDemandCollect.checkpoint`), with
 every stored cell it still holds unforced replaced by the native data it stands for, and the stored
 fields so replaced: what a checkpoint kept past this process holds, so that resuming it fetches
-nothing (forcing a native cell is forcing the stored cell it replaced). -/
-def materializeStored (store : Store) (yielded : State) : State × List String :=
+nothing (forcing a native cell is forcing the stored cell it replaced). The data made is bounded by
+`allowance` canonical bytes (the host's checkpoint capacity, which the checkpoint's own encoding,
+larger than the data's canonical bytes, meets only if this does): each part is measured row by row
+before it is made, and past the allowance the checkpoint is refused before any of it is built. -/
+def materializeStored (store : Store) (yielded : State) (allowance : Nat) : Except String (State × List String) := do
   let state := Delvetalk.Theory.ObjectiveBendDemandCollect.checkpoint yielded
   let fieldsOf : Stored → List String
     | .object _ stored => stored.map (·.1)
     | .relation f _ | .items f _ | .spine f _ _ | .cons f _ _ | .row f _ | .key f _ _ | .found f _
     | .absent f _ | .size f _ => [f]
-  let (heap, fields) := state.heap.foldl (fun (heap, fields) cell => match cell with
-    | .stored part none => match storedData store part with
-      | some d => (heap.push (.native d), fields ++ fieldsOf part)
-      | none => (heap.push cell, fields)
-    | other => (heap.push other, fields)) (#[], [])
-  ({ state with heap }, fields.eraseDups)
+  let mut heap : Array Cell := #[]
+  let mut fields : List String := []
+  let mut left := allowance
+  for cell in state.heap do
+    match cell with
+    | .stored part none =>
+      match storedBytesWithin store left part with
+      | .error () => throw "checkpoint exceeds its byte capacity"
+      | .ok none => heap := heap.push cell
+      | .ok (some bytes) => match storedData store part with
+        | some d =>
+          heap := heap.push (.native d)
+          fields := fields ++ fieldsOf part
+          left := left - bytes
+        | none => heap := heap.push cell
+    | other => heap := heap.push other
+  return ({ state with heap }, fields.eraseDups)
+
+-- Review 2026-10-12 kernel 4: 1,024 unread rows of 4 KiB are refused against a 512 KiB checkpoint
+-- before any of them is made native; within the allowance they are made.
+#guard
+  let row := fun (i : Nat) => Data.record [("at", .natural i), ("text", .label (String.ofList (List.replicate 4096 'x')))]
+  let store : Store := ⟨[{ field := "rains", size := 1024, key := ["at"] }], fun f i => if f == "rains" && i < 1024 then some (row i) else none⟩
+  let yielded : State := ⟨#[.stored (.relation "rains" 1024) none], .yielded 0, []⟩
+  (materializeStored store yielded 524288).toOption.isNone &&
+    match materializeStored store yielded (1024 * 4200) with
+    | .ok (state, fields) => fields == ["rains"] && state.heap.all (· matches .native _)
+    | .error _ => false
+
+mutual
+/-- What is left of `left` after admitting `d` (`conformsUnder`, and `wellFormed` at `Data`): each
+node `perNode`, each record the pairwise comparison of its field names (`eraseDups`); `none` as soon
+as the work passes `left`, without walking further. -/
+def admissionLeft (perNode left : Nat) : Data → Option Nat
+  | .natural _ | .boolean _ | .label _ => if left < perNode then none else some (left - perNode)
+  | .record fields =>
+    let cost := perNode + fields.length * fields.length
+    if left < cost then none else admissionFieldsLeft perNode (left - cost) fields
+  | .variant _ payload => if left < perNode then none else admissionLeft perNode (left - perNode) payload
+def admissionFieldsLeft (perNode left : Nat) : List (String × Data) → Option Nat
+  | [] => some left
+  | (_, value) :: rest => match admissionLeft perNode left value with
+    | some left => admissionFieldsLeft perNode left rest
+    | none => none
+end
+
+/-- Whether a turn's data (its arguments, or a response) can be admitted within its ticks: the
+conformance and well-formedness checks are metered by the turn's allowance, so a turn with few
+ticks cannot make the host walk a large argument (review 2026-10-12 kernel 7). The work is
+bounded, not charged: it does not move any turn's `ticksUsed`. -/
+def admits (ticks : Nat) (values : List Data) : Bool :=
+  -- Each node is visited once by each check; a record's names are compared pairwise.
+  (values.foldl (fun left v => left.bind (admissionLeft 2 · v)) (some ticks)).isSome
+
+#guard admissionLeft 1 100 (.record ((List.range 9).map fun i => (toString i, .natural i))) == some 9 &&
+  admissionLeft 1 90 (.record ((List.range 9).map fun i => (toString i, .natural i))) == none &&
+  admissionLeft 1 1000000 (.record ((List.range 2000).map fun i => (toString i, .natural i))) == none
 
 /-- Start a stored turn on a held entry: its first step and the rows it forced. -/
 def startEntry (entry : Delvetalk.CheckedEntry) (arguments : List Data) (store : Store) (binding : Binding)
     (b : Budgets) (dictionary : Option Dictionary := none) : Except String (Step × Reads) := do
+  let stored := store.relations.map (·.field)
+  unless admits b.ticks (arguments.zipIdx.map fun (v, i) => if i == 0 then scalarPart stored v else v) do
+    return (.exhausted "ticks" b.ticks, { rows := [], spans := [] })
   let (start, plan, response, result) ← storedStart entry arguments store
   runStored entry store (dictionary.getD (Dictionary.ofProgram entry.source.term)) binding plan response result b
     ⟨b.heap, b.stack⟩ start
@@ -651,6 +732,7 @@ def resumeSuspended (entry : Delvetalk.CheckedEntry) (suspension : Suspension) (
   unless suspension.binding.principal == binding.principal do throw "checkpoint belongs to another principal"
   unless suspension.binding.intent == binding.intent do throw "checkpoint belongs to another intent"
   unless suspension.binding.rootsDigest == binding.rootsDigest do throw "checkpoint was taken under different roots"
+  unless admits b.ticks [value] do return (.exhausted "ticks" b.ticks, { rows := [], spans := [] })
   let (_, plan, response, result, resumed) ← resumeState entry suspension.state suspension.site value
   runStored entry store suspension.dictionary binding plan response result b
     (Delvetalk.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ suspension.state) resumed
@@ -661,6 +743,7 @@ def resumeEntry (entry : Delvetalk.CheckedEntry) (checkpoint : Checkpoint) (issu
     Except String (Step × Reads) := do
   let dictionary := dictionary.getD (Dictionary.ofProgram entry.source.term)
   let (state, site) ← checkpointState entry checkpoint issued binding dictionary
+  unless admits b.ticks [value] do return (.exhausted "ticks" b.ticks, { rows := [], spans := [] })
   let (_, plan, response, result, resumed) ← resumeState entry state site value
   runStored entry store dictionary binding plan response result b
     (Delvetalk.Theory.ObjectiveBendDemandCollect.limitsPast ⟨b.heap, b.stack⟩ state) resumed

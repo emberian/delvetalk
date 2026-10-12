@@ -789,7 +789,7 @@ class Play(InTown):
         self.host.send({'op': 'world-renders'})  # the worker arrives, and finds both queued
         paint = 'The night garden lies open under the moon, its beds waiting for a seed.'
         replied = lambda text: {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {}}
-        done = interpret.paint(self.host, lambda req: replied(paint if '"object":"garden"' in req['user'] else 'You are welcome here.'))
+        done = interpret.paint(self.host, lambda req: replied(paint if req['user'].startswith('Strokes:\nWhat it is: garden,') else 'You are welcome here.'))
         self.assertTrue(done['painted'], done)
         for page in (self.play('/play/garden')[2], self.request('GET', '/o/garden', headers={'Cookie': self.cookie})[2],
                      self.request('GET', '/o/garden')[2]):
