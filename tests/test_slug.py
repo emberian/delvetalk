@@ -28,8 +28,9 @@ def slug_of(cid):
     return word(n >> 16) + "-" + word(n & 0xFFFF)
 
 
-# Two states whose CIDs share their first 32 digest bits (found by search): {count: 15108}, {count: 24636}.
-COLLIDING, COLLISION_SLUG = (15108, 24636), "dudim-papat"
+# Two states whose CIDs (`tests.wire.state_cid`) share their first 32 digest bits (found by search):
+# {count: 8228}, {count: 81063}.
+COLLIDING, COLLISION_SLUG = (8228, 81063), "kimin-zifib"
 
 
 class Slugs(Reflection):

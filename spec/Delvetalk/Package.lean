@@ -529,7 +529,7 @@ def executeTyped (term : Term) (type : Ty) (limits : Json) (profile : Bool) : Ex
         ("nodesUsed", toJson (nodes - result.remaining.nodes))]
   | .error (failure,state,remaining) =>
       return Json.mkObj [("status", toJson "refused"),
-        ("failure", toJson (reprStr failure)),
+        ("failure", toJson (Delvetalk.Turn.refusalText failure state)),
         ("ticksUsed", toJson (ticks - remaining.ticks)), ("heapCells", toJson state.heap.size)]
 
 /-- One global demand/extraction budget. No game rule or host authority lives here. -/
@@ -674,7 +674,7 @@ private def executePreparedNativeFrom (prepared : PackageData.Work PackageData.N
       pure ((executeStateWith (fun _ => true) store.bounded ⟨heap, stack⟩ budget start).map (·.extraction.result))
   match run with
   | .error (failure, state, rest) =>
-      return (.refused (reprStr failure) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩, some state)
+      return (.refused (Delvetalk.Turn.refusalText failure state) ⟨budget.ticks - rest.ticks, before, state.heap.size⟩, some state)
   | .ok result =>
       -- Recursive aliases and the complete returned value are checked, including
       -- payloads which a later source Decision may explicitly refuse.
@@ -716,7 +716,7 @@ def executeDataEntryStored (entry : Delvetalk.CheckedEntry) (arguments : Array D
   let argumentBytes := 2 + admitted.foldl (fun n value => n + dataJsonBytes value) 0 + (admitted.size - 1)
   let (execution, ended) ← executePreparedNativeFrom
     (PackageData.prepareNativeChecked entry.source entry.checked entry.fuel admitted) argumentBytes limits (some store)
-  return (execution, (ended.map store.readsOf).getD ⟨[], []⟩)
+  return (execution, (ended.map store.readsOf).getD { rows := [], spans := [] })
 
 /-- `run` with `stored: [{field, key}]`: the first argument's named relations held as stored
 cells over its own rows; the reply carries `reads`. -/

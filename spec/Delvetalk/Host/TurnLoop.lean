@@ -254,32 +254,26 @@ def recordCells (id : String) (version : Nat) (r : Cells) : M Unit := do
 def recordFieldRoot (id field : String) (version : Nat) : M Unit :=
   recordCells id version { fields := [field] }
 
-/-- The store a stored frame of `o` fetches from (KERNEL-HANDOFF §15): each declared relation's rows
-    at the object's committed version, in key order (`canonicalRowsDropping` keeps them so). -/
-def storeOf (o : Object) : List (RelDecl × Array Data) × Delvetalk.Turn.Store :=
-  let rels := o.relations.map fun d => (d, Delvetalk.Turn.relationRows o.state d.field)
-  (rels, { relations := rels.map fun (d, rows) => { field := d.field, size := rows.size, key := d.key }
-           fetch := fun f j => (rels.find? (·.1.field == f)).bind fun (_, rows) => rows[j]? })
-
-/-- A stored frame's store, kept for its resumed segments in this process: the object and the
-    version it was read at, and its relations' rows there (`storeOf`). -/
+/-- A stored frame's store, kept for its resumed segments in this process: the object, the version
+    it was read at, and its cells there (KERNEL-HANDOFF §15: each declared relation's rows in key
+    order, fetched by position). -/
 structure Held where
   object : String
   version : Nat
-  rels : List (RelDecl × Array Data)
-  store : Delvetalk.Turn.Store
+  cells : Delvetalk.Turn.StateCells
 
-def Held.of (id : String) (version : Nat) (o : Object) : Held :=
-  let (rels, store) := storeOf o
-  { object := id, version, rels, store }
+def Held.of (id : String) (version : Nat) (o : Object) : Held := { object := id, version, cells := o.cells }
+
+def Held.store (h : Held) : Delvetalk.Turn.Store := h.cells.store
 
 /-- The frame of a journaled resumption: its checkpoint holds no stored cell (`Held.kept`), so it
     fetches nothing and reads its object through what the checkpoint carries. -/
-def Held.journaled (id : String) (version : Nat) : Held := { object := id, version, rels := [], store := Delvetalk.Turn.Store.empty }
+def Held.journaled (id : String) (version : Nat) : Held :=
+  { object := id, version, cells := Delvetalk.Turn.StateCells.make (.record []) [] }
 
 /-- What a stored segment of a held frame read is a root (`cellsOf`). -/
 def Held.note (h : Held) (reads : Delvetalk.Turn.Reads) : M Unit :=
-  recordCells h.object h.version (cellsOf h.rels reads)
+  recordCells h.object h.version (cellsOf h.cells reads)
 
 /-- A yield as a checkpoint kept past this process holds it: every stored cell not yet forced made
     the native rows it stands for at the version read (`Turn.materializeStored`), so a journaled
@@ -299,13 +293,13 @@ def Held.kept (h : Held) (s : Delvetalk.Turn.Suspension) : M Delvetalk.Turn.Susp
     committed one, which the frame's cells are roots at. -/
 def asWritten (o : Object) (staged : List Written) : Object :=
   if staged.isEmpty then o else
-  match applyEdits o.relations o.state (staged.map (·.edits)) with
-  | .ok state => { o with state }
+  match applyEdits o.relations o.cells (staged.map (·.edits)) with
+  | .ok applied => { o with cells := applied.cells }
   | .error _ => o
 
-/-- The state a stored frame starts from: its relations emptied (`Turn.scalarPart`), their rows held
+/-- The state a stored frame starts from: its scalar part (its relations emptied), their rows held
     by the store, so neither the machine nor a checkpoint carries a row it did not force. -/
-def storedState (o : Object) : Data := Delvetalk.Turn.scalarPart (o.relations.map (·.field)) o.state
+def storedState (o : Object) : Data := o.cells.scalar
 
 def field? (fields : List (String × Data)) (name : String) : Option Data := fields.lookup name
 
@@ -771,16 +765,15 @@ def cardContext (w : World) (id reader caller intent : String) (height : Nat) (m
     and what it read of `id` is a root (`recordReading`). -/
 def storedPure (id : String) (o : Object) (c : Compiled) (rest : List Data) : M (Except String Data) := do
   let entry ← entryOf c
-  let (rels, store) := storeOf o
   let st ← get
-  match Package.executeDataEntryStored entry (#[storedState o] ++ rest.toArray) store
+  match Package.executeDataEntryStored entry (#[storedState o] ++ rest.toArray) o.cells.store
       (st.limits.setObjVal! "ticks" (toJson (toString st.ticks))) with
   | .ok (.finished value _ _ usage, reads) =>
-    recordCells id o.version (cellsOf rels reads)
+    recordCells id o.version (cellsOf o.cells reads)
     spend (usage.ticksUsed + usage.conversionNodes)
     return .ok value
   | .ok (.refused failure usage, reads) =>
-    recordCells id o.version (cellsOf rels reads)
+    recordCells id o.version (cellsOf o.cells reads)
     spend (usage.ticksUsed + usage.conversionNodes)
     return .error failure
   | .error e => return .error e
@@ -2349,7 +2342,7 @@ def readIn (w : World) (world : String) (plan : Data) (responseType : Ty) (bound
       | _ => false
     let cite := match w.objects[id]? with
       | some o => if !read then Json.null else Json.mkObj [("world", toJson world), ("object", toJson id),
-          ("version", toJson o.version), ("stateCid", toJson (stateCid o.state)), ("height", toJson w.height), ("head", toJson w.head)]
+          ("version", toJson o.version), ("stateCid", toJson o.stateCid), ("height", toJson w.height), ("head", toJson w.head)]
       | none => Json.null
     (answer, cite, st.ticks)
   | (.error _, st) => (.variant "denied" (.record []), Json.null, st.ticks)
@@ -2397,12 +2390,12 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
       | .insert row | .upsert row => some (e.field, row)
       | _ => none
     for field in (inserted.map (·.1)).eraseDups do
-      let some now := (Law.rawField field o.state).bind Law.rowsOf | continue
+      let some now := o.cells.relation? field | continue
       let mine := fun (r : Data) => (Law.rawField "author" r).bind (fun | .label a => some a | _ => none) == some principal
       let added := (inserted.filter (·.1 == field)).map (·.2)
-      let addedCanon := added.map Law.canon
-      let first := added.any mine && !(now.any fun r => mine r && !addedCanon.contains (Law.canon r))
-      stands := stands ++ [s!"{id}'s {field}: {now.length}" ++ (if first then s!", the first by {shownName w principal}" else "")]
+      let addedKeys := added.map fun r => (Delvetalk.Turn.RowCell.of now.key r).key
+      let first := added.any mine && !(now.rows.any fun c => mine c.row && !addedKeys.contains c.key)
+      stands := stands ++ [s!"{id}'s {field}: {now.rows.size}" ++ (if first then s!", the first by {shownName w principal}" else "")]
   return [moved, opened, stands].filterMap fun ls => if ls.isEmpty then none else some ("; ".intercalate ls)
 
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
@@ -4047,7 +4040,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("supervisor", toJson o.supervisor),
       -- Its canonical bytes, and its scalar part's, which `Bounds.maxCellBytes` bounds as it bounds each row.
       ("stateBytes", toJson (stateBytes o.state)),
-      ("scalarBytes", toJson (Delvetalk.Canonical.encode (Delvetalk.Turn.scalarPart (o.relations.map (·.field)) o.state)).size),
+      ("scalarBytes", toJson (Delvetalk.Canonical.encode o.cells.scalar).size),
       ("forms", dataJson (listData ((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)))),
       -- The actions the reader is offered, by name (what a card's usage lists for them).
       ("offered", toJson (((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)).map formAction)),
