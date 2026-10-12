@@ -201,8 +201,8 @@ def admit(identity, handle, did):
     """A credential the front authenticates exactly as a claimed one: a row in the claim table, state `verified`, with no word."""
     credential, now = 'dt_agent_' + secrets.token_urlsafe(32), identity.clock()
     with identity.lock:
-        identity.db.execute("INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state,verified) VALUES(?,?,?,?,?,?,?,?,?)",
-                            (secrets.token_hex(16), handle, did, '', digest(credential), now, now + KEEP, 'verified', now))
+        identity.db.execute("INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state,verified,ends) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                            (secrets.token_hex(16), handle, did, '', digest(credential), now, now, 'verified', now, now + KEEP))
     return credential
 
 

@@ -15,6 +15,7 @@ CLOCK, ON_ROOT = 'transport', 'the opener speaks on the root socket'  # the cloc
 IDEMPOTENT = {'world-' + op for op in 'status view card objects offers history receipt resolve inspect entries entry object publications '
               'grants source sources state-cid addressee turn render strokes'.split()} | {'serve-status'}
 PAINT_STEP = 0.25  # seconds between two looks at a pending paint
+PUBLIC = 'anonymous'  # the reader an unauthenticated request is, and a public channel's: what everyone may read
 
 
 class HostClient:

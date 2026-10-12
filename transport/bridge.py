@@ -10,7 +10,7 @@ import urllib.parse
 import time
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.host import CLOCK, ON_ROOT, paged
+from transport.host import CLOCK, ON_ROOT, PUBLIC, paged
 from transport import observe
 from transport.observe import Observer
 
@@ -118,6 +118,21 @@ def revealed_lines(reply):
     return ''.join(f'{line}\n' for line in reply.get('revealed') or [])
 
 
+def public(host, receipt):
+    """Whether the public reader may view every object a turn read or wrote (`world-view` as PUBLIC). A post is read by
+    everyone, so a draft carries what a turn offered only then; else its receipt line alone."""
+    objects = [r.get('object') for r in receipt.get('roots') or []] + [w.get('object') for w in (receipt.get('outcome') or {}).get('writes') or []]
+    return all(host.send({'op': 'world-view', 'principal': PUBLIC, 'object': o}).get('status') == 'viewed' for o in dict.fromkeys(objects) if o)
+
+
+def draft_public(host, reply, origin=None, addressed=None, handles=None):
+    """`draft_text`, or for an admitted turn that read or wrote what the public may not read, its receipt line."""
+    receipt = reply.get('receipt') or {}
+    if reply.get('status') != 'admitted' or (receipt.get('outcome') or {}).get('tag') not in (None, 'admitted') or public(host, receipt):
+        return draft_text(reply, origin, addressed, handles)
+    return receipt_line(receipt, origin, addressed, handles)
+
+
 def draft_text(reply, origin=None, addressed=None, handles=None):
     """The only text a draft carries. A refusal is drafted when the host gives it a `public` projection (whether to say it
     is the host's fact; the post's wording is never read for it): the turn line, the host's hint when it gives one, and the
@@ -180,7 +195,7 @@ def offer_drafts(st, host):
                 continue
             w = mine[(principal, uri)]
             rc = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri}).get('receipt')
-            text = '\n'.join(o['text'] for o in offers).rstrip('\n') + ('\n' + receipt_line(rc, st.config.origin, w.get('object'), handles) if rc else '')
+            text = ('\n'.join(o['text'] for o in offers).rstrip('\n') + '\n' if public(host, rc) else '') + receipt_line(rc, st.config.origin, w.get('object'), handles) if rc else ''
             st.write(st.outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': uri, 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
@@ -380,7 +395,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot_arg(slot),
-            'receipt': reply['receipt'], 'posted': False, 'text': draft_text(reply, origin, obj, handles)})  # text '': journaled, hidden from outbox
+            'receipt': reply['receipt'], 'posted': False, 'text': draft_public(host, reply, origin, obj, handles)})  # text '': journaled, hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot_arg(slot), 'height': reply['receipt']['height']})
         done.append(obs['uri'])

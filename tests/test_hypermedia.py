@@ -51,8 +51,8 @@ def walk(call, handle, prove, module):
     api = call('GET', '/AGENTS.md/api', None, None)[1]
     routes = {r['name']: r for r in api['routes']}
     ch = call('POST', routes['challenge']['href'], {'handle': handle}, None)[1]
-    v = call('POST', ch['_links']['verify']['href'], {'handle': handle, 'uri': prove(ch['text'])}, None)[1]
     tok = ch['credential']
+    v = call('POST', ch['_links']['verify']['href'], {'handle': handle, 'uri': prove(ch['text'])}, tok)[1]
     listing = call('GET', v['_links']['world']['href'], None, tok)[1]
     item = [i for i in listing['_links']['item'] if 'plant' in i.get('actions', ())][0]  # the listing names each object's methods
     spell = call('GET', item['href'], None, tok)[1]['_actions']['plant']

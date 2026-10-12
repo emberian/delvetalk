@@ -84,9 +84,9 @@ class BridgeCase(unittest.TestCase):
             self._host = HostClient(serving.sock)
         return self._host
 
-    def make(self, name, body=OFFERING, law=''):
+    def make(self, name, body=OFFERING, law='', **more):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-' + name, 'object': name,
-                            'modules': modules(body, law), 'entry': 'initial', 'seed': record(seen=nat(5))})
+                            'modules': modules(body, law), 'entry': 'initial', 'seed': record(seen=nat(5)), **more})
         self.assertEqual(r['status'], 'created', r)
 
     def observe(self, posts):
@@ -231,6 +231,20 @@ class Bridging(BridgeCase):
         self.assertTrue(d['text'].endswith(f"● admitted garden-1 v1, entry {d['receipt']['height']}, receipt {d['receipt']['slug']}\n"), d['text'])
 
 
+class Private(BridgeCase):
+    """A reply is posted where everyone reads it: what a turn offered from a thing the public may not read is the
+    author's alone, so its draft carries the receipt line and not the offer."""
+
+    def test_an_offer_from_a_thing_only_its_reader_may_read_is_not_drafted_into_a_public_reply(self):
+        self.make('diary', read={'principals': [DID]})
+        self.make('garden-1')
+        self.observe([spell_post(1, 'diary', '2026-10-09T10:00:00Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:01Z')])
+        self.assertEqual(self.run_bridge()['failed'], [])
+        private, public = self.drafts()
+        self.assertEqual(private['text'], bridge.receipt_line(private['receipt']))
+        self.assertEqual(public['text'], f"hello {DID}\n{bridge.receipt_line(public['receipt'])}")
+
+
 class HostParses(BridgeCase):
     """Whether a post is a spell, and to which card, is the host's answer (`world-reach` reads it with its parser), never Python's."""
     def test_a_standalone_question_mark_spell_reaches_the_card_and_is_answered_with_its_usage(self):
@@ -256,6 +270,7 @@ class HostParses(BridgeCase):
 
 class Stub:
     """A host that answers from canned data and records everything it is sent."""
+    RESUMED = {'hash': 'h', 'height': 9, 'slug': 'lodif-rukuz', 'outcome': {'tag': 'admitted'}, 'roots': [{'object': 'garden-1', 'version': 1}]}
     def __init__(self, reaches=None):
         self.ops, self.reaches, self.suspending, self.offers, self.silent = [], reaches or {}, set(), {}, set()
 
@@ -273,6 +288,10 @@ class Stub:
         if op == 'world-turn':
             return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}},
                     **({} if req['object'] in self.silent else {'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]})}
+        if op == 'world-receipt':  # a suspended turn stays suspended until its offer is there
+            return {'status': 'receipt', 'receipt': self.RESUMED} if self.offers.get(req['principal']) else {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended'}}}
+        if op == 'world-view':
+            return {'status': 'viewed'}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':
@@ -336,7 +355,7 @@ class Suspended(BridgeCase):
         r = bridge.run(self.state, stub)
         self.assertEqual(r['offered'], [p['uri']])
         (d,) = self.drafts()
-        self.assertEqual((d['text'], d['replyTo'], d['principal'], d['posted']), ('Planted.', p['uri'], DID, False))
+        self.assertEqual((d['text'], d['replyTo'], d['principal'], d['posted']), ('Planted.\n' + bridge.receipt_line(Stub.RESUMED), p['uri'], DID, False))
         self.assertNotIn('offered', bridge.run(self.state, stub))
         self.assertEqual(len(self.drafts()), 1)
 
@@ -350,7 +369,7 @@ class Suspended(BridgeCase):
                              'from': {'principal': DID, 'intent': p['uri']}, 'text': 'Handed over.'}]
         self.assertEqual(bridge.run(self.state, stub)['offered'], [p['uri']])
         (d,) = self.drafts()
-        self.assertEqual((d['text'], d['replyTo']), ('Handed over.', p['uri']))
+        self.assertEqual((d['text'], d['replyTo']), ('Handed over.\n' + bridge.receipt_line(Stub.RESUMED), p['uri']))
 
 
 class Mentions(BridgeCase):

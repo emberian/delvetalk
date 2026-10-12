@@ -17,11 +17,11 @@ from pathlib import Path
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
-from transport.host import CLOCK, HOST_TIMEOUT, handles, paged, painted, plain, typed
+from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, handles, paged, painted, plain, typed
 from transport.pages import door_rows
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
-from transport.repo import PUBLIC, Repo
+from transport.repo import Repo
 
 ROOT = Path(__file__).resolve().parent.parent
 GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
@@ -340,19 +340,18 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                     pass
 
     def draft_turn(self, principal, intent, reply):
-        """The owner's rule (cracks R6): an admitted HTTP turn that wrote an object the public reads (the host's answer to
-        `world-view` as the anonymous reader) is drafted in the hand's outbox like a town reply, once per receipt; whether
-        the town hears of it is the operator's click."""
+        """The owner's rule (cracks R6): an admitted HTTP turn that wrote something, and read and wrote only what the public
+        reads (`bridge.public`), is drafted in the hand's outbox like a town reply, once per receipt; whether the town
+        hears of it is the operator's click."""
         receipt = reply.get('receipt') or {}
         writes = [w['object'] for w in (receipt.get('outcome') or {}).get('writes') or [] if w.get('object')]
         if reply.get('status') != 'admitted' or not writes or principal.startswith('guest:'):  # a guest's replies come back over HTTP only
             return
-        public = [o for o in dict.fromkeys(writes) if self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': o}).get('status') == 'viewed']
         path = self.st.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
-        if public and not path.exists():
+        if not path.exists() and bridge.public(self.host, receipt):
             self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
-                                       'object': public[0], 'slot': None, 'receipt': receipt, 'posted': False,
-                                       'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
+                                 'object': writes[0], 'slot': None, 'receipt': receipt, 'posted': False,
+                                 'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
 
     def handles(self, dids):
         """{did: handle} for the DIDs a page names, as the public reader sees their avatars."""

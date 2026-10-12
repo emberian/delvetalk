@@ -177,7 +177,7 @@ class Identity(unittest.TestCase):
 
     def refused(self, code, uri=None):
         with self.assertRaises(identity.IdentityError) as e:
-            self.id.verify(self.HANDLE, uri or self.uri)
+            self.id.verify(self.HANDLE, uri or self.uri, self.ch['credential'])
         self.assertEqual(e.exception.code, code)
 
 
@@ -188,16 +188,16 @@ class Identity(unittest.TestCase):
     def test_a_claim_finds_the_word_among_the_newest_posts_and_logs_the_account_in(self):
         rec = self.listing()
         self.listing(rec('good morning', 1), rec('  ' + self.ch['text'] + ' \n', 2), rec('a later post', 3))
-        got = self.id.claim(self.HANDLE)
+        got = self.id.claim(self.HANDLE, self.ch['credential'])
         self.assertEqual((got['did'], got['uri']), (DID, f'at://{DID}/town.delve.feed.post/2'))
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
         with self.assertRaises(identity.IdentityError) as e:
-            self.id.claim(self.HANDLE)
+            self.id.claim(self.HANDLE, self.ch['credential'])
         self.assertEqual(e.exception.code, 'challenge_consumed')
 
     def claim_refused(self, code):
         with self.assertRaises(identity.IdentityError) as e:
-            self.id.claim(self.HANDLE)
+            self.id.claim(self.HANDLE, self.ch['credential'])
         self.assertEqual(e.exception.code, code)
 
     def test_a_claim_without_the_word_posted_or_with_it_in_another_account_or_inside_a_longer_post_is_no_post_yet(self):
@@ -225,13 +225,13 @@ class Identity(unittest.TestCase):
 
     def test_a_challenge_verifies_once_then_is_consumed_and_refused_a_second_time(self):
         self.serve()
-        self.assertEqual(self.id.verify(self.HANDLE, self.uri)['did'], DID)
+        self.assertEqual(self.id.verify(self.HANDLE, self.uri, self.ch['credential'])['did'], DID)
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
         self.refused('challenge_consumed')
 
     def test_a_revoked_credential_cannot_authenticate_or_be_verified_again(self):
         self.serve()
-        self.id.verify(self.HANDLE, self.uri)
+        self.id.verify(self.HANDLE, self.uri, self.ch['credential'])
         self.id.revoke(self.ch['credential'])
         with self.assertRaises(identity.IdentityError):
             self.id.authenticate(self.ch['credential'])
@@ -241,7 +241,7 @@ class Identity(unittest.TestCase):
         self.now[0] += 1
         theirs = self.id.challenge(self.HANDLE)  # anyone may ask for a challenge for any handle, a second later
         self.serve()  # the resident posts the word of the challenge they asked for
-        self.assertEqual(self.id.verify(self.HANDLE, self.uri)['did'], DID)
+        self.assertEqual(self.id.verify(self.HANDLE, self.uri, self.ch['credential'])['did'], DID)
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
         with self.assertRaises(identity.IdentityError):
             self.id.authenticate(theirs['credential'])
@@ -253,6 +253,40 @@ class Identity(unittest.TestCase):
         rec = self.listing()
         self.listing(rec(self.ch['text'], 2))
         self.assertEqual(self.id.claim(self.HANDLE, self.ch['credential'])['did'], DID)
+        self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
+
+    def test_a_request_without_the_challenges_credential_spends_none_of_its_attempts(self):
+        self.serve(text='not the word')
+        for held in (None, 'dt_agent_' + 'x' * 43):
+            for _ in range(identity.MAX_ATTEMPTS + 1):
+                with self.assertRaises(identity.IdentityError) as e:
+                    self.id.verify(self.HANDLE, self.uri, held)
+                self.assertEqual(e.exception.code, 'no_challenge')
+            with self.assertRaises(identity.IdentityError) as e:
+                self.id.claim(self.HANDLE, held)
+            self.assertEqual(e.exception.code, 'no_challenge')
+        self.assertEqual(self.id.db.execute('SELECT attempts FROM challenges').fetchone()[0], 0)
+        self.serve()
+        self.assertEqual(self.id.verify(self.HANDLE, self.uri, self.ch['credential'])['did'], DID)
+
+    def test_a_malformed_proof_uri_is_refused_before_an_attempt_is_counted(self):
+        with self.assertRaises(identity.IdentityError) as e:
+            self.id.verify(self.HANDLE, 'at://nothing', self.ch['credential'])
+        self.assertEqual(e.exception.code, 'invalid_proof_uri')
+        self.assertEqual(self.id.db.execute('SELECT attempts FROM challenges').fetchone()[0], 0)
+
+    def test_a_session_ends_when_it_says_so_and_a_claim_or_guest_does_not_end_with_its_deadline(self):
+        from transport import oauth
+        session = oauth.admit(self.id, self.HANDLE, DID)
+        self.serve()
+        self.id.verify(self.HANDLE, self.uri, self.ch['credential'])
+        self.now[0] += oauth.KEEP - 1
+        self.assertEqual(self.id.authenticate(session)['did'], DID)
+        self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)  # the claim's deadline was 15 minutes
+        self.now[0] += 2
+        with self.assertRaises(identity.IdentityError) as e:
+            self.id.authenticate(session)
+        self.assertEqual(e.exception.code, 'invalid_credential')
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
 
     def test_a_strangers_challenges_do_not_exhaust_the_owners(self):

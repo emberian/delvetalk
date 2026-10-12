@@ -158,7 +158,7 @@ class FrontCase(ServeCase):
         s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': handle})
         self.assertEqual(s, 200, ch)
         self.provider.texts[did] = ch['text']
-        s, v = self.call('POST', '/AGENTS.md/verify', {'handle': handle, 'uri': f'at://{did}/town.delve.feed.post/3abc'})
+        s, v = self.call('POST', '/AGENTS.md/verify', {'handle': handle, 'uri': f'at://{did}/town.delve.feed.post/3abc'}, ch['credential'])
         self.assertEqual((s, v['status']), (200, 'verified'), v)
         return ch['credential']
 
@@ -875,7 +875,7 @@ class Concurrent(unittest.TestCase):
                     handle = f'h{i}.delve.town'
                     s, ch = call('POST', '/AGENTS.md/challenge', i, {'handle': handle})
                     texts[did(i)] = ch['text']
-                    s2, v = call('POST', '/AGENTS.md/verify', i, {'handle': handle, 'uri': f'at://{did(i)}/town.delve.feed.post/3abc'})
+                    s2, v = call('POST', '/AGENTS.md/verify', i, {'handle': handle, 'uri': f'at://{did(i)}/town.delve.feed.post/3abc'}, ch['credential'])
                     s3, w = call('GET', '/AGENTS.md/world/x', i, token=ch['credential'])
                     creds[i] = ch['credential']
                     assert (s, s2, s3, v['status'], w['status']) == (200, 200, 200, 'verified', 'viewed'), (s, s2, s3, v, w)
