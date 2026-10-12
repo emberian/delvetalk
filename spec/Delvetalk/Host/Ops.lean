@@ -950,6 +950,14 @@ def libraryDigest (modules : List (String × String)) : String :=
   Journal.bodyHash (Json.arr (modules.toArray.map fun (n, src) =>
     Json.mkObj [("name", toJson n), ("source", toJson src)]))
 
+/-- `m` with `k ↦ v`, holding at most `bound` keys: when full, one other key goes (never the whole map, which
+    would recompile everything a full cache held). -/
+def boundedInsert {α : Type} (m : Std.HashMap String α) (bound : Nat) (k : String) (v : α) : Std.HashMap String α :=
+  if m.size < bound || m.contains k then m.insert k v else
+  match m.fold (init := none) fun (acc : Option String) key _ => acc <|> (if key == k then none else some key) with
+  | some old => (m.erase old).insert k v
+  | none => m.insert k v
+
 def modulesJson (modules : List (String × String)) : Json :=
   Json.arr (modules.toArray.map fun (n, src) => Json.mkObj [("name", toJson n), ("source", toJson src)])
 
@@ -1047,7 +1055,7 @@ def entrySource (o : Object) : String :=
 /-- A dry-run compile's diagnostics, `"<module>:<line>: <stage>: <message>"` (the kernel's hint, when
     it has one, the next line at the same place), none when it is clean; `fallback` names the
     module when the kernel names none. -/
-def checkDiagnostics (modules : List (String × String)) (entry fallback : String) : List String :=
+def checkDiagnosticsCold (modules : List (String × String)) (entry fallback : String) : List String :=
   match Package.checkPackage modules entry with
   | .ok _ => []
   | .error d =>
@@ -1056,6 +1064,24 @@ def checkDiagnostics (modules : List (String × String)) (entry fallback : Strin
     else
       let at_ := s!"{d.sourceModule.getD fallback}:{(d.span.map (·.line)).getD 0}"
       [s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD []
+
+/-- This process's dry-run diagnostics by the digest of what was checked (modules, entry, fallback): a check is
+    a pure function of them, and the workshop's `check` and `propose` re-check one draft (and the library under it)
+    many times. -/
+initialize checkMemo : IO.Ref (Std.HashMap String (List String)) ← IO.mkRef {}
+
+unsafe def checkDiagnosticsImpl (modules : List (String × String)) (entry fallback : String) : List String :=
+  unsafeBaseIO do
+    let key := Journal.bodyHash (Json.arr #[modulesJson modules, toJson entry, toJson fallback])
+    if let some d := (← checkMemo.get)[key]? then return d
+    let d := checkDiagnosticsCold modules entry fallback
+    checkMemo.modify fun m => boundedInsert m Limits.maxCompiledPackets key d
+    return d
+
+/-- `checkDiagnosticsCold`, once per process for the same modules, entry and fallback. -/
+@[implemented_by checkDiagnosticsImpl]
+def checkDiagnostics (modules : List (String × String)) (entry fallback : String) : List String :=
+  checkDiagnosticsCold modules entry fallback
 
 /-- Dry-run compile of `source` as an entry module over the library: the diagnostics as
     `"<module>:<line>: <stage>: <message>"`, none when it is clean. Nothing is installed. -/
@@ -1234,14 +1260,6 @@ def declsOfArtifact (artifact : Json) : Except String (Option (List RelDecl)) :=
     | some r => unless r.isEmpty || r == "dropOldest" do throw s!"relation {field} retains by {r}; only dropOldest is known"
     | none => pure ()
     return ({ field, key, limit } : RelDecl)
-
-/-- `m` with `k ↦ v`, holding at most `bound` keys: when full, one other key goes (never the whole map, which
-    would recompile everything a full cache held). -/
-def boundedInsert {α : Type} (m : Std.HashMap String α) (bound : Nat) (k : String) (v : α) : Std.HashMap String α :=
-  if m.size < bound || m.contains k then m.insert k v else
-  match m.fold (init := none) fun (acc : Option String) key _ => acc <|> (if key == k then none else some key) with
-  | some old => (m.erase old).insert k v
-  | none => m.insert k v
 
 /-- A pure definition of a held entry run on data arguments under `ticks`: its value, or the
     machine's refusal (`budget` when the ticks ran out), and the ticks it used. -/
