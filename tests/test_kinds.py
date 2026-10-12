@@ -188,12 +188,18 @@ class Kinds(Chain):
         # the record's write stays: a visit is a line the visitor writes
         self.assertEqual(self.turn("room/1", "write", record(text=label("Visit: glm / Took: nothing / Left: a margin line")), principal=GLM)["status"], "admitted")
 
-    def test_a_spween_that_is_no_scene_is_refused_by_name(self):
-        """Playtest 2 F3: prose in `spween:` made a room with no scene, silently."""
+    def test_prose_in_spween_is_a_scene_of_one_passage_and_choices_with_no_passage_are_refused_by_name(self):
+        """Playtest 2 F3: prose in `spween:` made a room with no scene, silently. Prose alone is now a scene of one
+        passage, kept; choices with no passage to hold them are refused with the line to add, nothing made."""
         self.kind("room", "record", "name: text 1..64\nspween: text 0..16384", head="{name}", law=genesis.RECORD_LAW, body_source=body("room"))
-        made = self.turn("kind/room", "make", record(name=label("The Annex"), spween=label("a quiet annex with a window")), principal=KIM)
-        self.assertEqual(cast_refusal(made)[0], "spween", made)
+        bad = self.turn("kind/room", "make", record(name=label("The Annex"), spween=label("a quiet annex\n* [Look out]")), principal=KIM)
+        self.assertEqual(cast_refusal(bad), ("spween", "The spween is not a scene: a scene needs === start; add it above your prose"), bad)
         self.assertEqual(self.host.send(op="world-view", principal=KIM, object="room/1").get("status"), "unknown")
+        made = self.turn("kind/room", "make", record(name=label("The Annex"), spween=label("a quiet annex with a window")), principal=KIM)
+        self.assertEqual(made["result"]["label"], "made", made)
+        state = {f["name"]: f["value"] for f in self.host.send(op="world-view", principal=KIM, object="room/1")["state"]["fields"]}
+        self.assertEqual(state["start"]["value"], "start")
+        self.assertIn("a quiet annex with a window", str(state["passages"]))
 
     def test_a_room_mints_past_an_id_already_held(self):
         """The host takes the first free <prefix><n> (HOST-HANDOFF 5.127), so a squatted id stops no kind."""

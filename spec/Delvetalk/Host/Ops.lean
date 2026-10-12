@@ -54,15 +54,19 @@ def worldId : String := "world"
     (docs/METAPHYSICS.md §5). No object takes the id. -/
 def objectsCard : String := "objects"
 
+/-- The card name `delvetalk try` is read as (docs/POSTING.md §2): the spells under it are tried, never cast. No
+    object takes the id. -/
+def tryCard : String := "try"
+
 /-- An object id a creation may take: 1..128 bytes of `Limits.nameAlphabet` (ASCII letters, digits and
     `. _ : / -`), the rule the spell grammar reads a card name by, so every object can be spelled and
     has an AT record key (`~` stands for `/` there). Journals with other ids still replay; only new
     creations are held to it. -/
 def validObjectId (id : String) : Bool :=
-  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId && id != objectsCard &&
+  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId && id != objectsCard && id != tryCard &&
     id.toList.all fun (c : Char) => Limits.nameAlphabet.toList.contains c
 
-def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world or objects"
+def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world, objects or try"
 
 /-- The public reader's name: `anonymous`, or the empty string; both read as "". -/
 def publicReader : String := "anonymous"

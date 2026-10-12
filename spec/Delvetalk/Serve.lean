@@ -479,7 +479,7 @@ def ifRoots (line : String) : Option Json := do
   return Json.arr roots.toArray
 
 /-- A post's spells as `serve` reads them before any world does (docs/POSTING.md §2): a margin line `if: <id> v<n>, …`
-    ahead of the spells becomes the act's `if` (refused `moved` when a root moved since), and `delvetalk world try`
+    ahead of the spells becomes the act's `if` (refused `moved` when a root moved since), and `delvetalk try`
     with spells indented under it (an indented spell is a quotation, never cast) becomes `world-try` of those spells,
     dedented, as words to the commonplace: the host runs them where they name, then drops what they wrote. -/
 def postShaped (request : Json) : Json := Id.run do
@@ -494,8 +494,8 @@ def postShaped (request : Json) : Json := Id.run do
       request := (request.setObjVal! "if" roots).setObjVal! "argument" (withFieldText argument "text" ("\n".intercalate lines.tail))
       lines := lines.tail.dropWhile blankLine
   let some first := lines.head? | return request
-  let .spell card action _ := Host.Spell.parse first | return request
-  unless card.toLower == "world" && action == "try" do return request
+  let .spell card _ _ := Host.Spell.parse first | return request
+  unless card == Host.tryCard do return request
   let block := lines.tail.takeWhile fun l => blankLine l || indentOf l > 0
   let cut := ((block.filter (!blankLine ·)).map indentOf).foldl min 4096
   let inner := "\n".intercalate (block.map fun l => String.ofList (l.toList.drop cut))

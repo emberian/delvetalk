@@ -156,6 +156,9 @@ def heading (line rest : T) : Candidate :=
   -- An action written with capitals is one only when what follows is a spell's (nothing, or inline
   -- fields): `Delvetalk Garden Plant` is a spell, "delvetalk Is The word" a sentence.
   let spellTail := tail.isEmpty || tail.take 1 == ['/'] || looksLikeField tail
+  -- `delvetalk try`, alone on its line: the spells indented under it are tried, not cast (docs/POSTING.md §2;
+  -- `Serve.postShaped` answers it before any world reads it).
+  if foldT card == lit "try" && written.isEmpty then .stands "try" "try" [] rest else
   if !isCardName card || !isAction action || (foldT written != written && !spellTail) then .none
   else .stands (str card) (str action) tail rest
 

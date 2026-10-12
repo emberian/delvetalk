@@ -18,11 +18,12 @@ import ./Spween.obend as Spween
 # record's: its scene (start, passages, cooldown, requires) is its owner's, and everyone else
 # changes it only by these spells.
 #
-# Entering needs the scene's `requires` to hold and, with a cooldown, that the reader left at
+# Entering needs the scene's `requires` to hold (its outside clauses judged by the host, Scenes.obend) and, with a cooldown, that the reader left at
 # least `cooldown` clock minutes ago (folkway 10); an entering is the room's attention, and tends it
 # (a weather over the room rains while someone has been there that day). A choice offers itself only while its guard
-# holds over the variables; taking it applies its effects in order and moves the reader to its
-# target, or out at END. `say`, `emote` and `whisper` reach those in the room (folkway 5); a
+# holds (the inside over the variables, the outside by the host with the reader as `request.subject`);
+# taking it applies its effects to the variables in order, writes `chose` (the rules its casts are
+# fire on it, under the room's owner) and moves the reader to its target, or out at END. `say`, `emote` and `whisper` reach those in the room (folkway 5); a
 # thing lying here is taken and put down by its own call, while its taker is here. A ```spween
 # block posted here makes a room of its own under this one, by the room's kind.
 type State = Super.State
@@ -56,8 +57,8 @@ def leftAt(who: String, state: State) -> Nat:
 # writes nothing. A move carries the edits of its effects, one write each, in order.
 sum Verdict:
   enter: {at: String}
-  move: {me: Presence, choice: Choice, vars: Lists.List<Plans.Entries<Var, Var>>, after: Lists.List<Var>}
-  leave: {me: Presence, vars: Lists.List<Plans.Entries<Var, Var>>, after: Lists.List<Var>}
+  move: {me: Presence, choice: Choice, chose: String, vars: Lists.List<Plans.Entries<Var, Var>>, after: Lists.List<Var>}
+  leave: {me: Presence, chose: String, vars: Lists.List<Plans.Entries<Var, Var>>, after: Lists.List<Var>}
   no: Card.Refusal
 def no(clause: String, reading: String) -> Verdict:
   Verdict.no({clause: clause, reading: reading})
@@ -82,7 +83,7 @@ def crowded(cooled: Lists.List<Departure>, state: State) -> Verdict:
 def leaveVerdict(context: Abi.Context, state: State) -> Verdict:
   match here(context, state):
     case none(_): no("notHere", "Not here.")
-    case some(p): Verdict.leave({me: p.value, vars: Lists.List.nil(), after: state.vars})
+    case some(p): Verdict.leave({me: p.value, chose: "", vars: Lists.List.nil(), after: state.vars})
 def chooseVerdict(choice: String, context: Abi.Context, state: State) -> Verdict:
   match here(context, state):
     case none(_): no("notHere", "Enter the room first.")
@@ -90,25 +91,94 @@ def chooseVerdict(choice: String, context: Abi.Context, state: State) -> Verdict
 def standing(me: Presence, choice: String, state: State) -> Verdict:
   match passageAt(me.at, state):
     case none(_): no("noPassage", "This room has no passage to choose from.")
-    case some(ps): offered(me, Lists.find(ps.value.choices, fn(c: Choice) -> Bool: c.label == choice), choice, state)
-def offered(me: Presence, found: Lists.Maybe<Choice>, choice: String, state: State) -> Verdict:
+    case some(ps): offered(me, Lists.find(ps.value.choices, fn(c: Choice) -> Bool: c.label == choice), Scenes.chosen(me.at, placeOf(ps.value.choices, choice, 1n)), choice, state)
+# The place of the choice so labelled among a passage's, from 1.
+def placeOf(choices: Lists.List<Choice>, label: String, n: Nat) -> Nat:
+  match choices:
+    case nil(_): n
+    case cons(c): if c.head.label == label then n else placeOf(c.tail, label, n + 1n)
+def offered(me: Presence, found: Lists.Maybe<Choice>, chose: String, choice: String, state: State) -> Verdict:
   match found:
     case none(_): no("notOffered", "{me.at} does not offer {choice}")
-    case some(c): guarded(me, c.value, Scenes.failing(c.value.guard, state.vars), state)
-def guarded(me: Presence, c: Choice, failed: Lists.Maybe<Scenes.Clause>, state: State) -> Verdict:
+    case some(c): guarded(me, c.value, chose, Scenes.failing(c.value.guard, state.vars), state)
+def guarded(me: Presence, c: Choice, chose: String, failed: Lists.Maybe<Scenes.Clause>, state: State) -> Verdict:
   match failed:
     case some(f): no("guarded", "{c.label} needs {Scenes.clauseText(f.value)}.")
-    case none(_): arriving(me, c, state)
-def arriving(me: Presence, c: Choice, state: State) -> Verdict:
-  if c.to == Scenes.ending() then effected(me, c, effects(c.effects, state.vars, Lists.List.nil()), true) else reached(me, c, state)
-def reached(me: Presence, c: Choice, state: State) -> Verdict:
+    case none(_): arriving(me, c, chose, state)
+def arriving(me: Presence, c: Choice, chose: String, state: State) -> Verdict:
+  if c.to == Scenes.ending() then effected(me, c, chose, effects(c.effects, state.vars, Lists.List.nil()), true) else reached(me, c, chose, state)
+def reached(me: Presence, c: Choice, chose: String, state: State) -> Verdict:
   match passageAt(c.to, state):
     case none(_): no("noPassage", "{c.to} is not in this room")
-    case some(_): effected(me, c, effects(c.effects, state.vars, Lists.List.nil()), false)
-def effected(me: Presence, c: Choice, edits: Effects, ends: Bool) -> Verdict:
+    case some(_): effected(me, c, chose, effects(c.effects, state.vars, Lists.List.nil()), false)
+def effected(me: Presence, c: Choice, chose: String, edits: Effects, ends: Bool) -> Verdict:
   match edits:
     case full(_): no("varsFull", "Sixteen variables are already set.")
-    case edits(e): if ends then Verdict.leave({me: me, vars: e.edits, after: e.vars}) else Verdict.move({me: me, choice: c, vars: e.edits, after: e.vars})
+    case edits(e): if ends then Verdict.leave({me: me, chose: chose, vars: e.edits, after: e.vars}) else Verdict.move({me: me, choice: c, chose: chose, vars: e.edits, after: e.vars})
+# The outside of a guard, judged in the turn: each condition in the law's grammar by the host, of the
+# room as it stands with the reader as `request.subject` (`world.holds`), and what the reader keeps or
+# holds by the thing's own `keeper` and `holder`, in order; the first that fails, if any. A condition
+# the host cannot read fails, with its reason.
+sum Judged:
+  held: {}
+  failed: {clause: Scenes.Clause, why: String}
+def judging(guard: Scenes.Guard, context: Abi.Context) -> Activity<Judged>:
+  match guard:
+    case nil(_): Judged.held({})
+    case cons(c): judgedOne(c.head, c.tail, context)
+def judgedOne(clause: Scenes.Clause, rest: Scenes.Guard, context: Abi.Context) -> Activity<Judged>:
+  match clause.test:
+    case law(_): lawJudged(clause, rest, context)
+    case holding(_): thingJudged(clause, rest, true, context)
+    case lacking(_): thingJudged(clause, rest, false, context)
+    case _: judging(rest, context)
+def lawJudged(clause: Scenes.Clause, rest: Scenes.Guard, context: Abi.Context) -> Activity<Judged>:
+  match world.holds({object: Plans.self(context), when: clause.value}):
+    case held(h): if h.value then judging(rest, context) else Judged.failed({clause: clause, why: ""})
+    case refused(r): Judged.failed({clause: clause, why: r.reading})
+def thingJudged(clause: Scenes.Clause, rest: Scenes.Guard, wanted: Bool, context: Abi.Context) -> Activity<Judged>:
+  match hasThing(clause.key, clause.value, context):
+    case yes(_): if wanted then judging(rest, context) else Judged.failed({clause: clause, why: ""})
+    case no(_): if wanted then Judged.failed({clause: clause, why: ""}) else judging(rest, context)
+# Whether the reader keeps a thing (its `keeper`) or holds it (its `holder`), as the thing says.
+sum Had:
+  yes: {}
+  no: {}
+def had(b: Bool) -> Had:
+  if b then Had.yes({}) else Had.no({})
+def hasThing(category: String, thing: String, context: Abi.Context) -> Activity<Had>:
+  if category == "holds" then holdsThing(thing, context) else keepsThen(category == "has", thing, context)
+def keepsThen(orHolds: Bool, thing: String, context: Abi.Context) -> Activity<Had>:
+  match world.viewField::<String>({object: {world: context.world, object: thing}, field: "keeper"}):
+    case viewed(v): if v.state == context.principal then Had.yes({}) else if orHolds then holdsThing(thing, context) else Had.no({})
+    case _: if orHolds then holdsThing(thing, context) else Had.no({})
+def holdsThing(thing: String, context: Abi.Context) -> Activity<Had>:
+  match world.viewField::<Plans.Reference>({object: {world: context.world, object: thing}, field: "holder"}):
+    case viewed(v): had(v.state.object == context.principal)
+    case _: Had.no({})
+def failedReading(c: Scenes.Clause, why: String) -> String:
+  if why == "" then Scenes.clauseText(c) else "{Scenes.clauseText(c)} ({why})"
+# A verdict whose choice (or, entering, the scene's requirements) has an outside, judged before anything
+# is written: a clause that fails refuses it by name.
+def outward(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Verdict>:
+  match verdict:
+    case enter(_): outwardBy(verdict, Scenes.outside(state.requires), "unmet", "The room requires ", context)
+    case move(m): outwardBy(verdict, Scenes.outside(m.choice.guard), "guarded", "{m.choice.label} needs ", context)
+    case leave(l): if l.chose == "" then verdict else outwardBy(verdict, Scenes.outside(choiceAt(l.me.at, l.chose, state).guard), "guarded", "{choiceAt(l.me.at, l.chose, state).label} needs ", context)
+    case no(_): verdict
+def outwardBy(verdict: Verdict, guard: Scenes.Guard, clause: String, lead: String, context: Abi.Context) -> Activity<Verdict>:
+  match judging(guard, context):
+    case held(_): verdict
+    case failed(f): no(clause, "{lead}{failedReading(f.clause, f.why)}.")
+# The choice a `chose` names in a passage.
+def choiceAt(at: String, chose: String, state: State) -> Choice:
+  match passageAt(at, state):
+    case some(p): nthChoice(p.value.choices, chose, at, 1n)
+    case none(_): {label: "", to: "", effects: Lists.List.nil(), guard: Lists.List.nil()}
+def nthChoice(choices: Lists.List<Choice>, chose: String, at: String, n: Nat) -> Choice:
+  match choices:
+    case nil(_): {label: "", to: "", effects: Lists.List.nil(), guard: Lists.List.nil()}
+    case cons(c): if Scenes.chosen(at, n) == chose then c.head else nthChoice(c.tail, chose, at, n + 1n)
 # The edits a choice's effects make, in order, each against the variables as the ones before it
 # leave them, and the variables as they stand after them all.
 sum Effects:
@@ -117,7 +187,7 @@ sum Effects:
 def effects(list: Lists.List<Scenes.Effect>, vars: Lists.List<Var>, edits: Lists.List<Plans.Entries<Var, Var>>) -> Effects:
   match list:
     case nil(_): Effects.edits({edits: edits, vars: vars})
-    case cons(c): effectOn(c.head, c.tail, vars, edits, Lists.find(vars, fn(v: Var) -> Bool: v.name == c.head.key))
+    case cons(c): if Scenes.varies(c.head) == false then effects(c.tail, vars, edits) else effectOn(c.head, c.tail, vars, edits, Lists.find(vars, fn(v: Var) -> Bool: v.name == c.head.key))
 def effectOn(effect: Scenes.Effect, rest: Lists.List<Scenes.Effect>, vars: Lists.List<Var>, edits: Lists.List<Plans.Entries<Var, Var>>, found: Lists.Maybe<Var>) -> Effects:
   match found:
     case some(v): effects(rest, Lists.map(vars, fn(w: Var) -> Var: if w.name == effect.key then {name: w.name, value: Scenes.applied(effect, w.value)} else w), Lists.append(edits, Plans.Entries.amendItem({item: v.value, change: {name: effect.key, value: Scenes.applied(effect, v.value.value)}})))
@@ -125,18 +195,25 @@ def effectOn(effect: Scenes.Effect, rest: Lists.List<Scenes.Effect>, vars: Lists
 # Performs a verdict: a refusal writes nothing and is answered by its clause (Card.refusing);
 # otherwise the writes, in order, and the reader is shown the room as they leave it.
 def done(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Done>:
+  match outward(verdict, context, state):
+    case no(n): roomRefused(n, context)
+    case enter(e): performed(Verdict.enter(e), context, state)
+    case move(m): performed(Verdict.move(m), context, state)
+    case leave(l): performed(Verdict.leave(l), context, state)
+def performed(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Done>:
   match verdict:
     case no(n): roomRefused(n, context)
     case enter(e): entering(e.at, extend(state, {presence: Relations.insert(state.presence, {who: context.principal, handle: context.handle, at: e.at}, Rows.presenceKey)}), context)
-    case move(m): moving(m.me, m.choice, m.vars, extend(state, {presence: Relations.upsert(state.presence, {who: m.me.who, handle: m.me.handle, at: m.choice.to}, Rows.presenceKey), vars: m.after}), context)
-    case leave(l): departing(l.me, l.vars, extend(state, {presence: Relations.retract(state.presence, {who: l.me.who}, Rows.presenceKey), vars: l.after}), context, state)
+    case move(m): moving(m.me, m.choice, m.chose, m.vars, extend(state, {presence: Relations.upsert(state.presence, {who: m.me.who, handle: m.me.handle, at: m.choice.to}, Rows.presenceKey), vars: m.after, chose: m.chose}), context)
+    case leave(l): departing(l.me, l.chose, l.vars, extend(state, {presence: Relations.retract(state.presence, {who: l.me.who}, Rows.presenceKey), vars: l.after, chose: if l.chose == "" then state.chose else l.chose}), context, state)
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}, tended: set context.clock}
   match lastLeft(context.principal, after):
     case some(l): if l.value.entry == 0n then welcomed(at, after, Document.text(""), context) else away(at, after, l.value.entry, context)
     case none(_): welcomed(at, after, Document.text(""), context)
 def welcomed(at: String, after: State, lead: Document.Document, context: Abi.Context) -> Activity<Done>:
-  Card.tell(Done.entered({at: at}), Document.concat(lead, Super.render(after, context)))
+  match seen(after, context):
+    case seen(v): Card.tell(Done.entered({at: at}), Document.concat(lead, Super.render(v.state, context)))
 # One who comes back is told first what happened here while they were away, since the entry they
 # left at: the lines others wrote here, newest first, then what changed under the room (`world.changed`
 # under its id: rooms carved in it, things made here), three lines at most.
@@ -151,21 +228,52 @@ def awayLines(state: State, since: Nat, changes: Lists.List<World.Change>, conte
   if Lists.length(rows) == 0n then Document.text("") else Document.text("While you were away (since entry {natText(since)}):\n{textJoin(rows, \"\")}\n")
 def clip(text: String) -> String:
   if textLength(text) > 100n then "{textTake(text, 99n)}…" else text
-def moving(me: Presence, c: Choice, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: upsert {who: me.who, handle: me.handle, at: c.to}}
+def moving(me: Presence, c: Choice, chose: String, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {presence: upsert {who: me.who, handle: me.handle, at: c.to}, chose: set chose}
   varied(vars, Done.moved({to: c.to}), after, context)
 # The variables' edits in order, then the reader is shown the room as the turn leaves it.
 def varied(vars: Lists.List<Plans.Entries<Var, Var>>, result: Done, after: State, context: Abi.Context) -> Activity<Done>:
   match vars:
-    case nil(_): Card.tell(result, Super.render(after, context))
+    case nil(_): told(result, after, context)
     case cons(c): wroteVar(c.head, c.tail, result, after, context)
+def told(result: Done, after: State, context: Abi.Context) -> Activity<Done>:
+  match seen(after, context):
+    case seen(v): Card.tell(result, Super.render(v.state, context))
+# The room as the turn's reader sees it: at their passage, the choices whose outside holds, shown without
+# it (a pure read of the card judges the inside alone and shows the outside beside each choice).
+sum Seen:
+  seen: {state: State}
+def seen(state: State, context: Abi.Context) -> Activity<Seen>:
+  match here(context, state):
+    case none(_): Seen.seen({state: state})
+    case some(p): seenAt(passageAt(p.value.at, state), state, context)
+def seenAt(found: Lists.Maybe<Passage>, state: State, context: Abi.Context) -> Activity<Seen>:
+  match found:
+    case none(_): Seen.seen({state: state})
+    case some(ps): seenSifted(ps.value, state, context)
+def seenSifted(ps: Passage, state: State, context: Abi.Context) -> Activity<Seen>:
+  match sifted(ps.choices, context):
+    case sifted(k): Seen.seen({state: extend(state, {passages: Lists.map(state.passages, fn(p: Passage) -> Passage: if p.id == ps.id then extend(p, {choices: k.choices}) else p)})})
+sum Sifted:
+  sifted: {choices: Lists.List<Choice>}
+def sifted(choices: Lists.List<Choice>, context: Abi.Context) -> Activity<Sifted>:
+  match choices:
+    case nil(_): Sifted.sifted({choices: Lists.List.nil()})
+    case cons(c): siftedOne(c.head, c.tail, context)
+def siftedOne(c: Choice, rest: Lists.List<Choice>, context: Abi.Context) -> Activity<Sifted>:
+  match judging(Scenes.outside(c.guard), context):
+    case held(_): keptBefore(extend(c, {guard: Lists.filter(c.guard, Scenes.inside)}), rest, context)
+    case failed(_): sifted(rest, context)
+def keptBefore(c: Choice, rest: Lists.List<Choice>, context: Abi.Context) -> Activity<Sifted>:
+  match sifted(rest, context):
+    case sifted(r): Sifted.sifted({choices: Lists.List.cons({head: c, tail: r.choices})})
 def wroteVar(edit: Plans.Entries<Var, Var>, rest: Lists.List<Plans.Entries<Var, Var>>, result: Done, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = world.write(extend(keep(), {vars: edit}))
   varied(rest, result, after, context)
 # Leaving (or reaching END) records when, for the cooldown: the reader's last departure is
 # retracted and this one inserted.
-def departing(me: Presence, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context, state: State) -> Activity<Done>:
-  let written(_) = write {presence: retract {who: me.who}}
+def departing(me: Presence, chose: String, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context, state: State) -> Activity<Done>:
+  let written(_) = write {presence: retract {who: me.who}, chose: set if chose == "" then state.chose else chose}
   match lastLeft(me.who, state):
     case some(l): forgotten(l.value, vars, after, context)
     case none(_): recorded(vars, after, context)
@@ -269,11 +377,14 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   match Spween.block(input.text):
     case some(b): authored(b.value, Spween.parse(b.value), context, state)
-    case none(_): Card.answer(input, context, forms(), Super.render(state, context))
+    case none(_): answered(input, context, state)
+def answered(input: Card.Reply, context: Abi.Context, state: State) -> Activity<Card.Replied>:
+  match seen(state, context):
+    case seen(v): Card.answer(input, context, forms(), Super.render(v.state, context))
 def authored(block: String, parsed: Spween.Parsed, context: Abi.Context, state: State) -> Activity<Card.Replied>:
   match parsed:
     case refused(r): Super.refused({clause: "spween", reading: r.reason}, context)
-    case parsed(p): carving(p.seed.title, block, context, state)
+    case parsed(p): carving(if p.seed.title == "" then "a room" else p.seed.title, block, context, state)
 def fieldOf(name: String, value: String) -> Rows.Field:
   {name: name, value: value}
 def carvedFields(title: String, block: String) -> Lists.List<Rows.Field>:
@@ -296,7 +407,9 @@ def title(state: State) -> String:
   let name = if state.head == "" then "A ROOM" else state.head
   if textLength(name) > 120n then "{textTake(name, 119n)}…" else name
 def choiceLine(c: Choice) -> String:
-  "  * {c.label}\n"
+  match Scenes.outside(c.guard):
+    case nil(_): "  * {c.label}\n"
+    case cons(_): "  * {c.label} (if {textJoin(Lists.map(Scenes.outside(c.guard), Scenes.clauseText), \", \")})\n"
 def varLine(v: Var) -> String:
   "{v.name} = {v.value}\n"
 # At most eight of a list, then how many more.
@@ -332,7 +445,12 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
 def passageText(at: String, state: State, context: Abi.Context) -> String:
   match passageAt(at, state):
     case none(_): ", you are here.\n"
-    case some(ps): passageWith(ps.value, state, context, ", you are at {ps.value.id}:\n{ps.value.text}\nChoices:\n")
+    case some(ps): passageWith(ps.value, state, context, ", you are at {ps.value.id}:\n{ps.value.text}\n{choicesHead(ps.value, state, context)}")
+# A passage with no choice open keeps its reader; the owner of a scene of prose alone is shown the shape.
+def choicesHead(ps: Passage, state: State, context: Abi.Context) -> String:
+  match ps.choices:
+    case cons(_): "Choices:\n"
+    case nil(_): if context.principal == state.owner && Lists.length(state.passages) == 1n then "No choices: a reader stays here. A choice is * [Label] -> passage under the prose; the shape: delvetalk library read / page: spween\n" else "No choice is open here now; leave when you will.\n"
 def passageWith(ps: Passage, state: State, context: Abi.Context, head: String) -> String:
   let choices = fitting(Lists.map(Lists.take(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(c.guard, state.vars)), 8n), choiceLine), less(Card.limit(context), textLength(head) + 300n))
   "{head}{choices}{fitting(Lists.map(Lists.take(state.vars, 4n), varLine), less(Card.limit(context), textLength(head) + textLength(choices) + 300n))}"

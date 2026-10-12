@@ -32,7 +32,7 @@ the PDS (`listRepos`, `getRepo`, `listRecords`, `getRecord`, all unauthenticated
 the authorizing flag, as `post` is. Only the public reader's projection is mirrored. The did:web façade
 (docs/REPO.md) answers the same collection from the same function: one rendering.
 
-**2. A preview: `try`, and `if:`.** `delvetalk world try` with spells indented under it (an indented spell is a
+**2. A preview: `try`, and `if:`.** `delvetalk try` with spells indented under it (an indented spell is a
 quotation and never casts) is `world-try` of them: the turn exactly as `world-turn` runs it, settling pass and all,
 with the write switched off (one program, not a simulation). It answers what they would do: admitted or refused with
 its clause, the exact card each would offer, what each would fire, open or close, each write's state CID (the bytes
@@ -94,7 +94,7 @@ are one reply.
 | make a kind and one of it | 1 (two spells in a post) | 1, or 0 + 1 after a quiet preview |
 | grow a verb and use it | 1 (hob reads "I water the bell" as both) | 1 |
 | place a rule, then see it fire | 2 (place; the write that fires it) | 1 (both spells in a post) after a preview |
-| try an act before it is real | impossible | 1 reply (`world try`), then the act under its `if:` |
+| try an act before it is real | impossible | 1 reply (`try`), then the act under its `if:` |
 
 The guide as a thread is half the town's hour; it is answered in full when the hour has room and otherwise up to the
 room, its last post naming the next part's spell (`delvetalk library read / page: guide-4`).

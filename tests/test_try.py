@@ -2,14 +2,14 @@
 does, settling pass and all, answers what it would write (the entry, its roots with their versions, each write's
 state CID, the exact cards it would offer, what it would fire and open) and drops the world it leaves. Any act may
 carry `if: [{object, version}]`, the roots a try read, and is refused `moved`, unjournaled, when one has moved since.
-A post says the same: `delvetalk world try` with spells indented under it, and a margin line `if: bell/1 v3` ahead of
+A post says the same: `delvetalk try` with spells indented under it, and a margin line `if: bell/1 v3` ahead of
 the spells.
 
 Evidence for docs/POSTING.md §2 (layer: host).
 
 Refuted by: a try that journals anything or changes a version, a try whose writes' state CIDs differ from the real
 act's at the same head, a try whose offer is not the card the act offers, an act with a moved root that runs, or
-an indented spell under `world try` that casts.
+an indented spell under `try` that casts.
 """
 import tempfile
 import unittest
@@ -77,12 +77,15 @@ class Try(unittest.TestCase):
 
     def test_a_post_of_spells_indented_under_world_try_is_tried_and_none_of_them_casts(self):
         before, v = self.height(), self.version('bell/1')
-        text = 'delvetalk world try\n  delvetalk bell/1 rain / text: tried in a post\n  delvetalk bell/1 rain / text: and again'
+        text = 'delvetalk try\n  delvetalk bell/1 rain / text: tried in a post\n  delvetalk bell/1 rain / text: and again'
         tried = self.turn(text)
         self.assertTrue(tried.get('tried'), tried)
         self.assertEqual(tried['status'], 'spells', tried)
         self.assertEqual([t['status'] for t in tried['turns']], ['admitted', 'admitted'])
         self.assertEqual((self.height(), self.version('bell/1')), (before, v))
+        self.assertEqual(self.host.send({'op': 'spell-parse', 'text': 'Delvetalk Try'})['spell']['card'], 'try')
+        made = self.host.send({'op': 'world-create', 'principal': WHO, 'identity': 'mk-try', 'object': 'try', 'modules': [], 'entry': 'initial'})
+        self.assertNotEqual(made.get('status'), 'created', made)  # no object takes the name
 
     def test_an_if_line_ahead_of_a_posts_spells_guards_them(self):
         v = self.version('bell/1')
@@ -107,7 +110,7 @@ class ByPost(unittest.TestCase):
     def test_a_preview_reply_says_nothing_was_done_names_no_receipt_and_its_if_line_guards_the_act(self):
         version = lambda: self.town.client.send({'op': 'world-view', 'principal': 'anonymous', 'object': 'bell/1'})['version']  # noqa: E731
         v = version()
-        [preview] = self.poster.say('delvetalk world try\n  delvetalk bell/1 tend')
+        [preview] = self.poster.say('delvetalk try\n  delvetalk bell/1 tend')
         text = preview['text']
         self.assertTrue(text.startswith('preview, nothing done'), text)
         self.assertIn('would be admitted bell/1 v', text)
