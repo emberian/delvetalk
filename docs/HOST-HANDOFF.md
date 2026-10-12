@@ -2157,9 +2157,9 @@ Each with its failing input as a test first, merging foundation before each comm
 - The kernel18 merge is done (host30): `judge` stages each write's applied cells, builds `cand` from them and
   judges every law, Bend law, amendment and placing against it (`viewFor` of the cells for the written object,
   `citing cand` for what it cites); `reactions` reads `viewFor` with `citing after` and the `reads` check;
-  creations journal `cid` and `placed`; `checkAnchors w naming whole`. Full run after it (1,000 tests): red only
-  `test_artifact_pins.Pins11` (Paint's pin), `test_archive.Archive` (the sentry post read by hob),
-  `test_previews` (below), as before it. `carry-check.sh` on delvetalk-20261012T090950Z: green, breaking (26 s);
+  creations journal `cid` and `placed`; `checkAnchors w naming whole`. Full run after it (1,000 tests): the three reds
+  before it, now fixed: Paint's pin re-recorded (lane/paint's prompt), the sentry post's `forge make` in a fence is
+  no spell (agent 2), the garden seed post re-cut from the live card. `carry-check.sh` on delvetalk-20261012T090950Z: green, breaking (26 s);
   `bench-write.py` 200 turns: 0.95 / 1.00 / 0.95 ms median at 16 / 256 / 2,048 rows under the suite's load.
 - host 7 (P1): a placed rule named as an inherited one shares `rule:<object>:<name>:<height>` and consuming one
   delivery removes both: the firing id names its holder (`CarriedClause.holder`), and placing refuses a name the
@@ -2179,8 +2179,6 @@ Each with its failing input as a test first, merging foundation before each comm
   `interpretVerdict`; (4) a refusal class for "the opener speaks on the root socket"; (5) `world-history` reversed;
   (6) REPL retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
   mention cap of 4 as host answers.
-- `test_previews.Previews.test_each_preview_embeds_the_live_card_verbatim` is red on this merge (kind/garden's
-  voice versus `seed-posts/02-garden.txt`): the objects or docs lane's re-cut.
 
 
 The queue after host27 (5.164 to 5.172) and host28 (5.173, 5.174), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
