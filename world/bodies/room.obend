@@ -202,11 +202,15 @@ def choose(state: State, input: ChooseInput, context: Abi.Context) -> Activity<D
 def leave(state: State, context: Abi.Context) -> Activity<Done>:
   done(leaveVerdict(context, state), context, state)
 # Talk reaches those in the room (in key order, at most Super.presenceMax()) under the speaker's
-# handle; only someone here talks.
+# handle; only someone here talks. What is said or done aloud is the room's line too, under the verb
+# that said it, so one who comes later is told who spoke here and what was said; a whisper is not.
 def say(state: State, input: SayInput, context: Abi.Context) -> Activity<Done>:
-  if isHere(context, state) then spoken(Relations.rows(state.presence), "{speaker(context)}: {input.line}\n") else hushed("say", context)
+  if isHere(context, state) then aloud("say", input.line, "{speaker(context)}: {input.line}\n", state, context) else hushed("say", context)
 def emote(state: State, input: EmoteInput, context: Abi.Context) -> Activity<Done>:
-  if isHere(context, state) then spoken(Relations.rows(state.presence), "* {speaker(context)} {input.line}\n") else hushed("emote", context)
+  if isHere(context, state) then aloud("emote", input.line, "* {speaker(context)} {input.line}\n", state, context) else hushed("emote", context)
+def aloud(verb: String, text: String, line: String, state: State, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}, next: add 1n}
+  spoken(Relations.rows(state.presence), line)
 def whisper(state: State, input: WhisperInput, context: Abi.Context) -> Activity<Done>:
   if isHere(context, state) == false then hushed("whisper", context) else whispered(Lists.find(Relations.rows(state.presence), fn(p: Presence) -> Bool: p.who == input.to || p.handle == input.to), input.to, "{speaker(context)} whispers: {input.line}\n", context)
 def whispered(found: Lists.Maybe<Presence>, to: String, line: String, context: Abi.Context) -> Activity<Done>:
