@@ -17,6 +17,7 @@ the places the archive's posts name, tests/town.py `furnish`). Seeds name only t
 import argparse
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -131,9 +132,9 @@ LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
 # The kinds genesis makes: the root kind of records, and the town's furniture (docs/METAPHYSICS.md §7.2), each a
 # record with a body, world/bodies/<body>.obend, a layer over Record.obend laid on each instance. A kind is the file
 # world/kinds/<name>.kind: `of`, `form`, `head`, `voice` (the register its maker gives its things' paint; none is the
-# contract's plain register), `text` (its own clauses, after RECORD_LAW) and `body`, in `genesis.spell`'s field
-# grammar; a resident can fork kind/bell whole from the same text. Each made thing's law cites its kind's `law`
-# (`under "kind/<name>"`, Kind.lawOf).
+# contract's plain register), `text` (its own clauses) and `body`, in `genesis.spell`'s field grammar; a resident can
+# fork kind/bell whole from the same text. Each made thing's law is its owner's (RECORD_LAW, in its own text) and
+# then cites its kind's `law` (`under "kind/<name>"`, Kind.lawOf), which only adds to it.
 KIND_NAMES = ['record', 'bell', 'cistern', 'room', 'porch', 'garden', 'weather', 'door', 'lantern', 'bond', 'errand', 'front']
 
 
@@ -156,8 +157,8 @@ def read_kind(name):
 
 
 KIND_FILES = {name: read_kind(name) for name in KIND_NAMES}
-# (name, of, form, head, law, body): a kind's law is RECORD_LAW and then its own text.
-KINDS = [(name, f['of'], f.get('form', ''), f.get('head', ''), RECORD_LAW + ('\n' + f['text'] if f.get('text') else ''), f.get('body', ''))
+# (name, of, form, head, law, body): a kind's law is its own text, what its things are held to beside their own.
+KINDS = [(name, f['of'], f.get('form', ''), f.get('head', ''), f.get('text', ''), f.get('body', ''))
          for name, f in KIND_FILES.items()]
 # Each kind's voice (KIND `voice`, docs/OVERHAUL.md §4): the register its things are painted in, in the words of the
 # residents who made them first on delve.town (docs/review/delve-emergence-2026-10-11.md): the porch and its bells
@@ -172,7 +173,7 @@ VOICES = {name: f['voice'] for name, f in (KIND_FILES | {'kinds': read_kind('kin
 
 
 def kind_text(name):
-    """A kind's own clauses (world/kinds/<name>.kind `text`), the law after RECORD_LAW."""
+    """A kind's own clauses (world/kinds/<name>.kind `text`), what its things' own text cites."""
     return KIND_FILES[name].get('text', '')
 # What each kind is and does over time, one plain line its card leads with and the kinds card lists (KIND `about`):
 # its file's `about`; capsules/pages/kinds.txt gives a spell that makes each.
@@ -288,7 +289,7 @@ def seeds(opener):
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
             ('tide', 'Tide', rec()),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
-            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), about=lab(KINDS_ABOUT), law=lab(KIND_LAW), voice=lab(VOICES.get('kinds', '')))),  # shaped, then makes KINDS, each under KIND_LAW
+            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), about=lab(KINDS_ABOUT), law=lab(''), voice=lab(VOICES.get('kinds', '')))),  # shaped, then makes KINDS, each KIND_LAW in its own text
             ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
 
 
@@ -422,7 +423,7 @@ def run(host, opener=OPENER, gas_station=False):
 def texts(opener):
     """{(object, slot): genesis's text today}, slot `law` an object's law and `.law`/`.voice`/`.form` a kind's fields."""
     out = {(name, 'law'): law for name, package, _ in seeds(opener) for law in [LAWS.get(package, lambda _: None)(opener)] if law}
-    out |= {('kinds', '.law'): KIND_LAW, ('kinds', '.voice'): VOICES.get('kinds', ''), ('kinds', '.form'): KINDS_FORM, ('kinds', '.about'): KINDS_ABOUT}
+    out |= {('kinds', '.law'): '', ('kinds', '.voice'): VOICES.get('kinds', ''), ('kinds', '.form'): KINDS_FORM, ('kinds', '.about'): KINDS_ABOUT}
     for name, _, form, _, law, _ in KINDS:
         out |= {('kind/' + name, '.law'): law, ('kind/' + name, '.voice'): VOICES.get(name, ''), ('kind/' + name, '.form'): form,
                 ('kind/' + name, '.about'): ABOUT[name]}
@@ -503,7 +504,7 @@ def refresh(host, opener, journals):
     fields by one write; a town kind the world lacks is made (`refreshed`, reading `made`). -> [{object, slot, status,
     reading?, reply?}] in genesis's order: `refreshed`, `current` (genesis's text already), `left` (the reading says
     why), `absent`, or the host's status for a turn not admitted."""
-    gave, today, out = given(journals, opener), texts(opener), []
+    gave, today, out = given(journals, opener), texts(opener), rebased(host, opener)
     for obj in dict.fromkeys(o for o, _ in today):
         now = standing(host, opener, obj)
         if now is None and obj.startswith('kind/'):  # a kind genesis makes now and the town never had: made
@@ -553,6 +554,31 @@ def refresh(host, opener, journals):
             continue
         placed = said(host, opener, kind, 'place', carried_fields(host, opener, kind, fields), f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
+    return out
+
+
+# A thing a kind made before its owner's protections were its own (docs/review/astra-2026-10-12 world 2, 3) holds
+# a text whose only law is its kind's, `law kind "<kind>'s law holds": under "<kind>"` (and a room's scene rules
+# after it), and its kind's text held RECORD_LAW (KIND_LAW for a kind made by `kinds`). Each is given that law in
+# its own text before its kind's is refreshed to the kind's own clauses, so no thing is left with no owner.
+REBASE = re.compile(r'law kind "([^"]+)\'s law holds": under "([^"]+)"')
+
+
+def rebased(host, opener):
+    """Amends every thing whose own text holds no law but its kind's citation to its owner's law, then that text,
+    as the opener's journaled amendment (`refresh-<obj>-base-<version>`); -> [{object, slot: base, status, reply?}]."""
+    out = []
+    for obj in existing(host, opener):
+        record = host.send({'op': 'world-object', 'principal': opener, 'object': obj}).get('record') or {}
+        text = record.get('law') or ''
+        first, *rest = text.split('\n')
+        cited = REBASE.fullmatch(first)
+        if not cited or cited.group(1) != cited.group(2) or any(line.startswith('law ') for line in rest):
+            continue
+        base = KIND_LAW if cited.group(2) == 'kinds' else RECORD_LAW
+        reply = host.send({'op': 'world-amend', 'principal': opener, 'identity': f'refresh-{obj}-base-{record.get("version")}', 'object': obj,
+                           'version': int(record.get('version', 0)), 'law': base + '\n' + text})
+        out.append({'object': obj, 'slot': 'base', **done(reply)})
     return out
 
 

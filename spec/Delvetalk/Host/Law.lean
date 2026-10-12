@@ -332,9 +332,17 @@ def standingRefusal (e : LawExpr) : Option String :=
     | .and l r | .or l r | .implies l r => go l <|> go r
   go e
 
+/-- An amendment of a thing by its own owner (its state's text `owner`): what no cited law refuses, so a
+    kind's owner, amending the text every instance follows, cannot lock an instance's owner out of their
+    own thing; they can always amend it out from under the kind (docs/review/astra-2026-10-12 world 2). -/
+def ownerAmends (facts : Facts) (new : Data) : Bool :=
+  facts.kind == 2 && match rawField "owner" new with
+    | some (.label owner) => !owner.isEmpty && owner == facts.subject
+    | _ => false
+
 /-- The meaning of a clause. `under "O"` reads the `law` text of the cited object's state and judges
     this write by each of its clauses at `depth - 1`; at depth 0 it is false, so a cycle of citations
-    ends (`Limits.lawDepth`). -/
+    ends (`Limits.lawDepth`). It holds of the owner's own amendment whatever O says (`ownerAmends`). -/
 partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr) (depth : Nat := Limits.lawDepth) : Bool :=
   match e with
   | .eq left right => match left, right with
@@ -398,11 +406,11 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
     | some rows, some w => rows.all fun r => (rawField col r).map canon == some (canon w)
     | _, _ => false
   -- The cited object's law text judges this write too (§4 F).
-  | .under object => depth > 0 && match (facts.reads.lookup object).bind (rawField "law") with
+  | .under object => depth > 0 && (ownerAmends facts new || match (facts.reads.lookup object).bind (rawField "law") with
     | some (.label text) => match parseLawText text with
       | .ok law => law.all fun (_, clause) => clause.fieldsPlain && denote facts old new clause (depth - 1)
       | .error _ => false
-    | _ => false
+    | _ => false)
   -- Another thing's want holds of it as it stands: its condition judged on the cited state, with
   -- no state before and only the clock and the object to read (a want reads nothing else).
   | .wants object name => depth > 0 && match facts.reads.lookup object, wantNamed facts object name with
@@ -688,6 +696,13 @@ private def kindOf (law : String) : Facts := { facts with reads := [("kind/x", .
 #guard !denote (kindOf "law loop: under \"kind/x\"") none (rec1 2) (parsed "under \"kind/x\"")
 #guard !denote (kindOf "not a law") none (rec1 2) (parsed "under \"kind/x\"")
 #guard !denote facts none (rec1 2) (parsed "under \"kind/x\"")
+-- A cited law never refuses its owner's amendment of their own thing, and refuses everyone else's.
+private def owned (who : String) : Data := .record [("owner", .label who), ("count", .natural 3)]
+private def amending (who : String) : Facts := { kindOf "law lock: request.subject == \"bob\"" with subject := who, kind := 2 }
+#guard denote (amending "alice") (some (owned "alice")) (owned "alice") (parsed "under \"kind/x\"")
+#guard !denote (amending "carol") (some (owned "alice")) (owned "alice") (parsed "under \"kind/x\"")
+#guard !denote { amending "alice" with kind := 0 } (some (owned "alice")) (owned "alice") (parsed "under \"kind/x\"")
+#guard !denote (amending "") (some (owned "")) (owned "") (parsed "under \"kind/x\"")
 
 -- The arms OVERHAUL §3 adds to the one language: another object's field as a reference (absent, it
 -- fails closed), `>=` and FOUNDATION §10's crossing, membership before the write (nothing at

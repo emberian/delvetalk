@@ -11,7 +11,8 @@ for what it needs, the host answers each request from the store, and the turn
 commits only if every root it read is still current, or moved only by edits
 that commute with its own (two rains on one bell both land; §9), and the law
 admits every write. A write that makes a rule's condition true fires its spell
-under the rule's writer; a want poses while its condition holds. Replies name
+under whoever wrote it, or as the thing itself when the thing inherits it from its kind;
+a want poses while its condition holds. Replies name
 their silences and reveal what an act moved. Nothing is erased;
 supersession is the only deletion.
 
@@ -360,7 +361,7 @@ clause, printed on the card with its reading. One grammar, three modalities
 
 ```
 law  NAME "reading": EXPR                 refuses at commit
-rule NAME "reading": EXPR then SPELL      fires at commit, under the rule's owner
+rule NAME "reading": EXPR then SPELL      fires at commit, under its writer (as the thing, inherited)
 want NAME "reading": EXPR asks SPELL      poses while it holds, judged at read and at commit
 ```
 
@@ -376,9 +377,20 @@ REF   ::= new.F | old.F | "OBJECT".F | request.subject | request.caller | reques
 ```
 
 A SPELL's holes are terms (`{request.subject}`, `{request.object}`, `{new.F}`, `{"card".F}`), filled at the write, a
-hole naming nothing refused when placed; `me` is the rule owner's avatar. A want reads no `old`. `under "kind/bell"`
-follows all three modalities to the kind, so a kind carries rules and wants for every instance and its owner
-changes them once. A thing's text holds at most 16 lines of the three; placed rules and wants are 32 each beside it.
+hole naming nothing refused when placed; a hole fills one field's value as data, never syntax (the filled spell is
+rendered so it parses back to exactly that card, verb and fields); `me` is the rule owner's avatar. A want reads no
+`old`. `under "kind/bell"` follows all three modalities to the kind, so a kind carries rules and wants for every
+instance and its owner changes them once.
+
+**Tenure.** A thing a kind makes holds its owner's law in its own text (its root package's: RECORD's or KIND's),
+then `law kind: under "kind/<name>"`: the kind's text only adds to it, so a kind's maker cannot write a law line
+that replaces it and the kind's owner cannot amend it away. A cited law never refuses the thing's owner's amendment
+of the thing (`Law.ownerAmends`): while a thing follows its kind the kind's text binds even its owner, and its owner
+can always amend it out from under the kind. Lines in the kind's text act, in every instance, as the instance
+itself: the principal `@<id>`, which no object id, DID or handle can spell, and which a law admits only as it admits
+any hand (or names it by `request.caller`). Neither the kind's owner, who amends that text live, lends their
+authority to the code the instance runs, nor the instance's owner theirs to the kind's text. A line of a thing's own
+text acts as its owner, who alone amends it; a placed line acts as its placer. A thing's text holds at most 16 lines of the three; placed rules and wants are 32 each beside it.
 
 Top-level fields only. `request.kind`, by name or number, is `write` 0 (the object's own method's
 write), `reprogram` 1, `amend` 2, `proposed` 3, `rule` 4 (placing a rule, want or grown verb; `request.verb` is
@@ -744,7 +756,8 @@ deleting a closed sum or a convention:
   and kept nowhere; the speaker sends it whole again.
 - **Things react by rules.** A thing's text and its placed rows hold `rule` and `want` lines in the law's grammar
   (§4). At commit, after the law admits, each written object's rules whose condition the write made true stage
-  `receive {text: SPELL}` to the spell's card under the rule's writer (`fired`, identity
+  `receive {text: SPELL}` to the spell's card under the rule's writer, or as the thing for a line it inherits (§4
+  Tenure) (`fired`, identity
   `rule:<object>:<name>:<height>`; at most 8 a commit and 4 down a chain, the rest `unfired` with why), and the
   wants that came to hold or stopped holding are journaled (`wanted`, `unwanted`); replay re-derives all four.
   Nothing subscribes or notifies otherwise. The writer pays the judging, linear in rules and rows; the rule's

@@ -14,7 +14,7 @@ A town of things that answer and act. A thing's card says what it is now, the ve
 
 ```
 law  NAME "reading": EXPR                 refuses at commit
-rule NAME "reading": EXPR then SPELL      fires at commit, under the rule's owner
+rule NAME "reading": EXPR then SPELL      fires at commit, under its writer (as the thing, inherited)
 want NAME "reading": EXPR asks SPELL      poses, judged at read with the clock
 ```
 

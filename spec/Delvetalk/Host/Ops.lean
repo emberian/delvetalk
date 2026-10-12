@@ -2251,10 +2251,19 @@ instance : Inhabited Cites := ⟨{}⟩
 def lawNames (law : Law) : List Delvetalk.Compiler.ObjectiveBendLaw.LawName :=
   law.flatMap fun (_, c) => c.names
 
+/-- The principal a thing acts as when it acts of itself (a rule it inherits through `under`): `@` and its
+    id. No object id, DID or handle holds `@`, so it names that thing and nobody else, and a law grants it
+    only what it grants any hand (`request.kind == 0`) or names it for (`request.caller`, the thing). -/
+def thingPrincipal (id : String) : String := "@" ++ id
+
+/-- The thing a principal is, when it is a thing acting of itself (`thingPrincipal`). -/
+def principalThing (principal : String) : Option String :=
+  if principal.startsWith "@" then some (principal.drop 1).toString else none
+
 /-- The objects a write's facts read and whether one may read them (`Law.Facts.reads`): the first of
-    `ids` that `who` may not view, if any. -/
+    `ids` that `who` may not view, if any. A thing acting of itself views itself. -/
 def unviewable (w : World) (who : String) (ids : List String) : Option String :=
-  ids.find? fun r => !(((w.objects[r]?).map (·.read.permits who)).getD true)
+  ids.find? fun r => principalThing who != some r && !(((w.objects[r]?).map (·.read.permits who)).getD true)
 
 /-- The states of some objects as the world holds them (`Law.Facts.reads`). -/
 def statesOf (w : World) (ids : List String) : List (String × Data) :=
@@ -2266,9 +2275,11 @@ A thing carries the rules and wants hands placed on it (`Object.rules`, `Object.
 text, and those its kind's text carries through `under` (`Law.followed`). Each is judged by the law's own
 `denote`: a rule when a write makes its condition hold, a want on the thing as it stands. -/
 
-/-- One rule or want a thing carries: the clause; the hand it is the act of (a placed line's placer; a
-    line of the thing's own text, or of the kind whose text carries it, that object's owner); the object
-    whose text or rows hold it; and the height it was placed at (none for a text's line). -/
+/-- One rule or want a thing carries: the clause; who it acts as (a placed line's placer; a line of the
+    thing's own text, its owner, who alone amends that text; a line its kind's text carries, the thing
+    itself, `thingPrincipal`: the kind's owner amends that text live and does not lend their authority to
+    the instance's code, nor the instance's owner theirs to the kind's text); the object whose text or rows
+    hold it; and the height it was placed at (none for a text's line). -/
 structure CarriedClause where
   clause : Delvetalk.Compiler.ObjectiveBendLaw.Clause
   owner : String
@@ -2313,15 +2324,16 @@ partial def citesOf (w : World) (first : List Delvetalk.Compiler.ObjectiveBendLa
     frontier := next
   return out
 
-/-- The rules and wants `o` (`id`) carries, in order: its placed rules and wants, its own text's, then
-    those its law's `under` citations carry (`Law.followed`), each owned by its holder's owner. -/
+/-- The rules and wants `o` (`id`) carries, in order: its own text's, owned by its owner; those its law's
+    `under` citations carry (`Law.followed`), acting as the thing itself (`thingPrincipal`); then the lines
+    hands placed on it, each its placer's, in the order they were placed. -/
 partial def carried (w : World) (id : String) (o : Object) : List CarriedClause :=
-  let placed := (o.rules ++ o.wants).map fun r => ({ clause := r.clause, owner := r.owner, holder := id, placed := some r.since } : CarriedClause)
   let own := (((parseClauses o.lawText).toOption.getD []).filter fun c => Law.isRule c || Law.isWant c).map fun c =>
     ({ clause := c, owner := ownerOf o.state, holder := id } : CarriedClause)
   let followed := (Law.followed (statesOf w (citesOf w (lawNames o.law) false).objects) o.law).map fun (h, c) =>
-    ({ clause := c, owner := ((w.objects[h]?).map (ownerOf ·.state)).getD "", holder := h } : CarriedClause)
-  placed ++ own ++ followed
+    ({ clause := c, owner := thingPrincipal id, holder := h } : CarriedClause)
+  let placed := (o.rules ++ o.wants).map fun r => ({ clause := r.clause, owner := r.owner, holder := id, placed := some r.since } : CarriedClause)
+  own ++ followed ++ placed
 
 partial def carriedWants (w : World) (id : String) (o : Object) : List CarriedClause := (carried w id o).filter (Law.isWant ·.clause)
 end
@@ -2387,7 +2399,7 @@ def handleOf (w : World) (principal : String) : String :=
 /-- How a principal is named on a card: the handle the registry holds, else the principal. -/
 def shownName (w : World) (principal : String) : String :=
   let h := handleOf w principal
-  if h.isEmpty then principal else h
+  if h.isEmpty then (principalThing principal).getD principal else h
 
 /-- A spell as people are shown it: each principal the registry names, written out in full in the text a
     rule filled, shown by its handle (`shownName`). A principal is a whole `did:` token (a post's `at://did:…`
@@ -3024,7 +3036,7 @@ def meCard : String := "me"
 
 /-- The object a principal means by `object`: `me` is its avatar, the object named by the principal itself. -/
 def resolveCard (principal object : String) : String :=
-  if object == meCard then principal else object
+  if object == meCard then (principalThing principal).getD principal else object
 
 /-- The one object whose id folds to `id`'s fold; none when no object or several do. -/
 def foldedId (w : World) (id : String) : Option String :=

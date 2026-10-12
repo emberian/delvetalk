@@ -85,13 +85,14 @@ class Firing(Bell):
         self.assertEqual(len(self.rules()), 40)
         rained = self.rain("storm")
         receipt = rained["receipt"]
-        self.assertEqual([f["rule"] for f in receipt["fired"]], ["r%02d" % i for i in range(8)])
-        self.assertEqual([(u["rule"], u["why"]) for u in receipt["unfired"]][:2], [("r08", "rulesPerCommit"), ("r09", "rulesPerCommit")])
+        # The bell's own text first, then what hands placed, in the order they were placed.
+        self.assertEqual([f["rule"] for f in receipt["fired"]], ["t%d" % i for i in range(8)])
+        self.assertEqual([(u["rule"], u["why"]) for u in receipt["unfired"]][:2], [("r00", "rulesPerCommit"), ("r01", "rulesPerCommit")])
         self.assertEqual(len(receipt["unfired"]), 32)
         self.assertIn("did not fire: 8 rules fired on this write already", rained["revealed"][0])
-        self.assertEqual(self.rules()["r08"]["unfired"]["why"], "rulesPerCommit")
+        self.assertEqual(self.rules()["r00"]["unfired"]["why"], "rulesPerCommit")
         self.town.reopen()
-        self.assertEqual(self.rules()["r08"]["unfired"]["height"], receipt["height"])
+        self.assertEqual(self.rules()["r00"]["unfired"]["height"], receipt["height"])
 
     def test_a_chain_of_rules_ends_four_firings_deep(self):
         placed = self.place("rule / name: echo / when: request.method == \"rain\" / then: delvetalk {request.object} rain / text: echo")
@@ -253,11 +254,12 @@ class Revealed(Bell):
         reply = self.say(KIM, self.bell, "delvetalk %s ring" % self.bell)
         self.assertEqual(reply["status"], "admitted", reply)
         self.assertEqual(reply["revealed"][0],
-                         "rule rang of ember.delve.town fired: delvetalk glm.delve.town note / text: %s rang" % self.bell, reply["revealed"])
+                         "rule rang of %s fired: delvetalk glm.delve.town note / text: %s rang" % (self.bell, self.bell), reply["revealed"])
         fired = reply["receipt"]["fired"][0]
         self.assertEqual(fired["to"], GLM)
         self.assertEqual(fired["argument"]["fields"][0]["value"]["value"], "delvetalk %s note / text: %s rang" % (GLM, self.bell))
-        self.assertIn((OPENER, "%s rang" % self.bell), self.inbox(GLM))
+        # The bell notes its planter itself: the kind's rule acts as the thing, never as the kind's owner.
+        self.assertIn(("@" + self.bell, "%s rang" % self.bell), self.inbox(GLM))
 
     def test_the_receipt_of_an_admitted_turn_says_what_the_reply_revealed_to_its_own_principal_alone(self):
         for i in range(6):

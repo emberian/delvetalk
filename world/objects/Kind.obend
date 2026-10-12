@@ -152,24 +152,30 @@ def lastSegment(id: String) -> String:
 # A kind of a kind takes the form, head and voice below it where it gives none, and cites its text.
 def kindSeed(fields: Lists.List<Rows.Field>, stack: Stack, context: Abi.Context) -> Data:
   {owner: context.principal, ownerHandle: context.handle, name: valueOf(fields, "name"), of: valueOf(fields, "of"), form: orElse(valueOf(fields, "form"), stack.form), law: lawFor(valueOf(fields, "of"), Text.trim(valueOf(fields, "law"))), head: orElse(valueOf(fields, "head"), stack.head), voice: orElse(valueOf(fields, "voice"), stack.voice), about: valueOf(fields, "about"), body: bodyOf(fields)}
-# The text a made kind holds for its things: a text with no law clause (none at all, or rules and
-# wants alone) is its package's own law with them after it, so what it makes is its maker's to amend
-# and reprogram, never anyone's (an empty text cited by `under` admits every request). A kind of a
-# kind cites the text below it first (`parentLaw`), which holds that law already.
+# The text a made kind holds for its things: the clauses its maker gave, after the text of the kind
+# below it (`parentLaw`) for a kind of a kind. It only adds to what its things' own text holds: their
+# owner's protections are in each thing's own text (`lawOf`), never in the kind's, so neither a
+# maker's law line nor a later amendment of the kind removes them (docs/review/astra-2026-10-12
+# world 2, 3).
 def lawFor(of: String, text: String) -> String:
-  if isBase(of) == false then "{parentLaw(of)}{text}" else if Lists.any(clauseLines(text), fn(line: String) -> Bool: Text.starts(line, "law ")) then text else if text == "" then baseLaw(of) else "{baseLaw(of)}\n{text}"
-def baseLaw(of: String) -> String:
-  if of == "kind" then lawText() else Record.lawText()
-# What a made thing is created under: its kind's `law`, cited (LAW §4 F), so the kind's owner
-# amends the law of every instance at once and a refusal reads the kind's clause.
-def lawOf(context: Abi.Context) -> String:
-  "law kind \"{context.object}'s law holds\": under \"{context.object}\""
-# A room's text: its kind's, then a rule a cast of its scene (Scenes.ruleText), owned as the text is, by
+  if isBase(of) then text else "{parentLaw(of)}{text}"
+# The owner's protections of what a stack rooted at `package` makes: Kind's for a kind, Record's for a
+# record.
+def baseLaw(package: String) -> String:
+  if package == "Kind" then lawText() else Record.lawText()
+# What a made thing is created under: its own owner's law (`baseLaw` of its root package), then its
+# kind's text, cited (LAW §4 F), so the kind's owner amends what every instance is held to at once and a
+# refusal reads the kind's clause, while the instance's owner keeps what the base law gives them: a cited
+# law never refuses an owner's amendment of their own thing (`Law.denote`'s `under`), so the owner can
+# always leave the kind.
+def lawOf(package: String, context: Abi.Context) -> String:
+  "{baseLaw(package)}\nlaw kind \"{context.object}'s law holds\": under \"{context.object}\""
+# A room's text: its own, then a rule a cast of its scene (Scenes.ruleText), owned as the text is, by
 # the room's owner, so a choice that casts fires as any rule does.
-def sceneLaw(scene: Spween.Parsed, context: Abi.Context) -> String:
+def sceneLaw(package: String, scene: Spween.Parsed, context: Abi.Context) -> String:
   match scene:
-    case parsed(p): "{lawOf(context)}{Scenes.ruleText(p.seed.passages)}"
-    case refused(_): lawOf(context)
+    case parsed(p): "{lawOf(package, context)}{Scenes.ruleText(p.seed.passages)}"
+    case refused(_): lawOf(package, context)
 # A kind made by `kinds` is kind/<name>; an exact `id` is that id; anything else the first free
 # <under>/<name>/<n>, or <name>/<n> (the host mints past ids already held).
 def wanted(state: State, fields: Lists.List<Rows.Field>, under: String) -> String:
@@ -247,7 +253,7 @@ def bodyOf(fields: Lists.List<Rows.Field>) -> String:
   Forms.layer(valueOf(fields, "body"))
 def creating(state: State, fields: Lists.List<Rows.Field>, under: String, stack: Stack, context: Abi.Context) -> Activity<Done>:
   let scene = Spween.parse(if state.of == "kind" then "" else valueOf(fields, "spween"))
-  match world.create({package: if state.of == "kind" then packageOf("kind") else stack.package, seed: seedOf(state, fields, under, stack, scene, context), law: sceneLaw(scene, context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
+  match world.create({package: if state.of == "kind" then packageOf("kind") else stack.package, seed: seedOf(state, fields, under, stack, scene, context), law: sceneLaw(if state.of == "kind" then packageOf("kind") else stack.package, scene, context), requireAbsent: {world: context.world, object: wanted(state, fields, under)}}):
     case created(c): counted(state, c.object.object, valueOf(fields, "about"), under != "", layersOf(state, fields, stack), context)
     case refused(r): refused(context, {clause: r.clause, reading: if r.reading == "" then "{wanted(state, fields, under)} was not made" else r.reading})
 def counted(state: State, id: String, about: String, quiet: Bool, layers: Lists.List<String>, context: Abi.Context) -> Activity<Done>:
@@ -340,7 +346,7 @@ def drafted(state: State, name: String, layer: String, from: Plans.MadeFrom, con
     case stacked(s): draftMade(state, name, Lists.append(s.layers, layer), s.package, from, context)
     case refused(r): refused(context, r)
 def draftMade(state: State, name: String, layers: Lists.List<String>, package: String, from: Plans.MadeFrom, context: Abi.Context) -> Activity<Done>:
-  match world.make({package: package, seed: plainSeed(state, Lists.List.nil(), "", context), law: lawOf(context), requireAbsent: {world: context.world, object: name}, madeFrom: from}):
+  match world.make({package: package, seed: plainSeed(state, Lists.List.nil(), "", context), law: lawOf(package, context), requireAbsent: {world: context.world, object: name}, madeFrom: from}):
     case created(c): counted(state, c.object.object, "", true, layers, context)
     case refused(r): refused(context, {clause: r.clause, reading: if r.reading == "" then "{name} was not made" else r.reading})
 # A kind forked whole (the workshop's `draft / from:`), by `kinds`: kind/<name> with the `of`, form,
@@ -362,7 +368,7 @@ def forkChecked(state: State, from: String, original: State, name: String, body:
     case checked(c): if Lists.length(c.diagnostics) == 0n then forkMade(state, from, original, name, body, context) else refused(context, {clause: "body", reading: uncompiled(original.of, body, c.diagnostics)})
     case refused(r): refused(context, {clause: r.clause, reading: "the workshop could not check it ({r.clause})"})
 def forkMade(state: State, from: String, original: State, name: String, body: String, context: Abi.Context) -> Activity<Done>:
-  match world.make({package: packageOf("kind"), seed: {owner: context.principal, ownerHandle: context.handle, name: name, of: original.of, form: original.form, law: original.law, head: original.head, voice: original.voice, about: original.about, body: body}, law: lawOf(context), requireAbsent: {world: context.world, object: kindId(name)}, madeFrom: {object: {world: context.world, object: from}, receipt: ""}}):
+  match world.make({package: packageOf("kind"), seed: {owner: context.principal, ownerHandle: context.handle, name: name, of: original.of, form: original.form, law: original.law, head: original.head, voice: original.voice, about: original.about, body: body}, law: lawOf(packageOf("kind"), context), requireAbsent: {world: context.world, object: kindId(name)}, madeFrom: {object: {world: context.world, object: from}, receipt: ""}}):
     case created(c): counted(state, c.object.object, "", true, Lists.List.cons({head: layerSource(original.of, original.form), tail: Lists.List.nil()}), context)
     case refused(r): refused(context, {clause: r.clause, reading: if r.reading == "" then "{kindId(name)} was not made" else r.reading})
 def methods() -> Lists.List<String>:

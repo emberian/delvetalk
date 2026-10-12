@@ -113,8 +113,10 @@ class Genesis(unittest.TestCase):
         self.assertEqual(run_pure("Record", "lawText")["value"]["value"], genesis.RECORD_LAW)
         self.assertIn('room', [name for name, *_ in genesis.KINDS])
         state = {f['name']: f['value'] for f in self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/room'})['state']['fields']}
-        # the kind's text is its instances' laws, rules and wants: the record's law and the room's want `company`
-        self.assertEqual((state['law']['value'], state['body']['value']), (genesis.RECORD_LAW + '\n' + genesis.kind_text('room'), genesis.body_of('room')))
+        # the kind's text is what its instances are held to beside their own law: the room's want `company`
+        self.assertEqual((state['law']['value'], state['body']['value']), (genesis.kind_text('room'), genesis.body_of('room')))
+        porch = self.host.send({'op': 'world-object', 'principal': genesis.OPENER, 'object': 'porch'})['record']['law']
+        self.assertTrue(porch.startswith(genesis.RECORD_LAW + '\nlaw kind "kind/porch\'s law holds": under "kind/porch"'), porch)
         # a kind's voice is its things' register, on its card and owner-only by the kinds' law
         bell = self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'kind/bell'})['text']
         self.assertIn('Its things speak: %s\n' % genesis.VOICES['bell'], bell)
@@ -278,7 +280,8 @@ class Refresh(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
         old_record = genesis.RECORD_LAW.rsplit('\nwant pending', 1)[0]
-        old_kinds = [(n, of, form, head, law.replace(genesis.RECORD_LAW, old_record).split('\nrule seven', 1)[0], body)
+        # Its kinds held the record's law before their own clauses, as kinds did before a thing's owner's law was its own.
+        old_kinds = [(n, of, form, head, '\n'.join([old_record] + ([law.split('\nrule seven', 1)[0]] if law else [])), body)
                      for n, of, form, head, law, body in genesis.KINDS if n != 'front']  # a kind genesis makes since
         with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}, MOTION=[]):
             cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
@@ -293,6 +296,10 @@ class Refresh(unittest.TestCase):
         assert cls.send(op='world-propose', principal=genesis.OPENER, identity='hand-door', roots=[{'object': 'kind/door', 'version': int(door)}],
                         writes=[{'object': 'kind/door', 'edits': [record(law={'tag': 'variant', 'label': 'set', 'payload': record(value=label(cls.door))})]}]
                         )['status'] == 'admitted'
+        # bell/2 as a kind made a thing before its owner's law was its own: its kind's citation alone.
+        bell = int(cls.send(op='world-object', principal=genesis.OPENER, object='bell/2')['record']['version'])
+        cls.cited = 'law kind "kind/bell\'s law holds": under "kind/bell"'
+        assert cls.send(op='world-amend', principal=genesis.OPENER, identity='hand-bell', object='bell/2', version=bell, law=cls.cited)['status'] == 'admitted'
         cls.rows = genesis.refresh(cls.town.client, genesis.OPENER, genesis.ancestry(cls.town.journal))
 
     def status(self, rows, obj, slot):
@@ -319,6 +326,10 @@ class Refresh(unittest.TestCase):
         self.assertEqual(kind, {'law': dict((k[0], k[4]) for k in genesis.KINDS)['bell'], 'voice': genesis.VOICES['bell']})
         door = [f['value']['value'] for f in self.send(op='world-view', principal=genesis.OPENER, object='kind/door')['state']['fields'] if f['name'] == 'law']
         self.assertEqual(door, [self.door])
+        # The thing whose law was its kind's alone is given its owner's law, before its kind's text loses the record's.
+        self.assertEqual(self.status(self.rows, 'bell/2', 'base'), ('refreshed', None))
+        self.assertEqual(self.send(op='world-object', principal=genesis.OPENER, object='bell/2')['record']['law'], genesis.RECORD_LAW + '\n' + self.cited)
+        self.assertNotIn(('bell/1', 'base'), [(r['object'], r.get('slot')) for r in self.rows])
 
     def test_the_bell_genesis_placed_carries_the_kinds_rules_now_and_a_second_refresh_changes_nothing(self):
         got = self.send(op='world-rules', principal=genesis.OPENER, object='bell/1')
@@ -344,7 +355,7 @@ class CarriedRefresh(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         old_record = genesis.RECORD_LAW.rsplit('\nwant pending', 1)[0]
-        old_kinds = [(n, of, form, head, law.replace(genesis.RECORD_LAW, old_record).split('\nrule seven', 1)[0], body)
+        old_kinds = [(n, of, form, head, '\n'.join([old_record] + ([law.split('\nrule seven', 1)[0]] if law else [])), body)
                      for n, of, form, head, law, body in genesis.KINDS]
         with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}, MOTION=[]):
             town = Town(os.path.join(tmp.name, 'v1'), cleanup=self.addCleanup, furnished=False)
@@ -407,6 +418,10 @@ class Reshape(unittest.TestCase):
             cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
         cls.send = cls.town.send
         cls.offered = cls.place_fields()
+        # bell/2 as a kind made a thing before its owner's law was its own: its kind's citation alone.
+        bell = int(cls.send(op='world-object', principal=genesis.OPENER, object='bell/2')['record']['version'])
+        cls.cited = 'law kind "kind/bell\'s law holds": under "kind/bell"'
+        assert cls.send(op='world-amend', principal=genesis.OPENER, identity='hand-bell', object='bell/2', version=bell, law=cls.cited)['status'] == 'admitted'
         cls.rows = genesis.refresh(cls.town.client, genesis.OPENER, genesis.ancestry(cls.town.journal))
 
     @classmethod

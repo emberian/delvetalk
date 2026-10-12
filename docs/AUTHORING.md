@@ -91,7 +91,7 @@ A spell already is a typed block (`?` prints it), as Scratch's are, and hob is t
 
 **Kinds on any kind.** `kinds make / of: kind/lantern` makes a kind whose instances run the base package, then each ancestor's body bottom up, then its own: a layer stack, which the kernel has (`layer over`, late binding, `Super.f`; KERNEL-HANDOFF §8, HOST-HANDOFF 5.138). Its law is `under` its kind, whose text is `under` the parent, so every ancestor's rules and wants follow (`Law.followed`, depth 4). `Super.water(…)` is MOO's `pass()` and LPC's `::create()` after `inherit "/std/object";`.
 
-**Upstream changes.** Clauses follow `under` live: amend the kind's text and every instance is judged by it at its next write (LAW §4 F). Code is pinned: a body laid at make is the kind's body then (`extend` pins `["extend", old pin, source CID]`); a newer body reaches a thing only when its owner lays it (`become / kind:` again, judged by its own law). OVERHAUL's `relay`, the kind owner pushing a body onto followers, inverts that authority and stays unbuilt.
+**Upstream changes.** Clauses follow `under` live: amend the kind's text and every instance is judged by it at its next write (LAW §4 F). They only add to each instance's own text, which holds its owner's law, and they never refuse the instance owner's amendment, so an owner can always leave the kind (FOUNDATION §4, Tenure). A rule the kind's text carries acts as each instance itself (`@<id>`), never as the kind's owner, so it lends nobody's authority to code a resident lays below or over it. Code is pinned: a body laid at make is the kind's body then (`extend` pins `["extend", old pin, source CID]`); a newer body reaches a thing only when its owner lays it (`become / kind:` again, judged by its own law). OVERHAUL's `relay`, the kind owner pushing a body onto followers, inverts that authority and stays unbuilt.
 
 **A library of verbs.** The unit of sharing is a kind. A verb anyone may copy is a kind whose body defines one verb (`kind/watering`), laid on any thing it compiles against by `become / kind: kind/watering`, the thing's owner's act, credited by `madeFrom {object, pin, receipt}` on the reprogram (5.113, built): LSL's script-as-item, with the kind's law saying who makes from it. **Forking** is `workshop draft / from: kind/watering`: the draft starts as that body and what is made carries `madeFrom`. **Credit**: RECORD's `credit` line, which names a coiner's post today, prints the lineage ("after kind/watering by Yuè, entry 412"); Infinite Craft's first-finder credit, kept forever.
 
@@ -224,7 +224,7 @@ delvetalk kind/stall make / wares: an amber lamp / thing: lamp/3
 delvetalk stall/1 grow / name: promise / reading: what you will bring, in your words
 ```
 
-A buyer: `delvetalk stall/1 promise / text: three rains on your bell by Sunday`, then `delvetalk me accept / thing: lamp/3`. The rule fires under the keeper, the holder, so THING's `offer` stands; a second buyer is answered `alreadyOffered` until the first accepts or the clock passes. Whether the promise is kept is the town's to witness.
+The `trade` line moves what the keeper holds, so it is the keeper's: as built, it is placed on the stall by its keeper (`delvetalk stall/1 rule / name: trade / …`), since a rule the stall carries from its kind acts as the stall, which holds nothing. A buyer: `delvetalk stall/1 promise / text: three rains on your bell by Sunday`, then `delvetalk me accept / thing: lamp/3`. The rule fires under the keeper, the holder, so THING's `offer` stands; a second buyer is answered `alreadyOffered` until the first accepts or the clock passes. Whether the promise is kept is the town's to witness.
 
 **6.5 A riddle box that opens for the right answer.** A body: the answer must not be readable, so it is kept as a hash, and the check is `sha256Text`:
 
@@ -248,7 +248,7 @@ delvetalk riddlebox/1 lock / answer: the moon
 
 **Decision:** 6.3 and 6.4 are clauses and grown verbs (after step 1); 6.1, 6.2 and 6.5 carry short bodies; all five land through `kinds make` and the workshop, checked, under the law.
 
-As built (`tests/test_authoring.py`, one test each, typed as above): 6.1's `rung` first read `request.subject == new.maker`, which refuses its own rule (a kind's rule fires under the kind's owner, not the thing's maker); 6.4's `promised` first read `changed(new.lines.author) by request.subject and …`, which refuses every write that adds no line, the making included. 6.3 lays its keys in a garden (`plant`), since a room takes a thing only from someone in it.
+As built (`tests/test_authoring.py`, one test each, typed as above): 6.1's `rung` first read `request.subject == new.maker`, which refuses its own rule (a kind's rule fires as the thing itself, not as its maker); 6.4's `promised` first read `changed(new.lines.author) by request.subject and …`, which refuses every write that adds no line, the making included. 6.3 lays its keys in a garden (`plant`), since a room takes a thing only from someone in it.
 
 ## 7. Followups for BACKLOG (the root's to enter; this lane edits nothing else)
 
