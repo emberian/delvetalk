@@ -539,7 +539,8 @@ class Handler(BaseHTTPRequestHandler):
         return ''
 
     def login_cookie(self, credential):
-        return [('Set-Cookie', f'{COOKIE}={credential}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000')]
+        secure = '; Secure' if self.server.origin.startswith('https:') else ''  # never sent over plain http to a public origin
+        return [('Set-Cookie', f'{COOKIE}={credential}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000{secure}')]
 
     def principal(self, credential):
         try:
@@ -707,12 +708,12 @@ class Handler(BaseHTTPRequestHandler):
             links = {'next': link(f'{base}/offers?after={newest}&wait={WAIT_MAX}'), 'world': link(base + '/world')}
             return self.answer(compact_offers(reply) if q.get('compact') == '1' and reply.get('status') == 'offers' else reply, links=links)
         if kind == 'pending':
-            return send({'op': 'world-pending'}, {'deliver': link(base + '/deliver')})
+            return send({'op': 'world-pending', 'principal': principal}, {'deliver': link(base + '/deliver')})
         data = self.body()
         if data is None:
             return
         if kind == 'deliver':
-            return send({'op': 'world-deliver'}, {'pending': link(base + '/pending')})
+            return send({'op': 'world-deliver', 'principal': principal}, {'pending': link(base + '/pending')})
         if kind == 'create':  # a name no spell can address would publish spells nobody can cast: the host's parser says
             name = data.get('object')
             read = self.server.host.send({'op': 'spell-parse', 'text': f'delvetalk {name} ?'}) if isinstance(name, str) else {}

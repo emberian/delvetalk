@@ -137,7 +137,8 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     """The only text a draft carries. A refusal is drafted when the host gives it a `public` projection (whether to say it
     is the host's fact; the post's wording is never read for it): the turn line, the host's hint when it gives one, and the
     receipt's name; no state, hash or CID. A usage answer is the host's text. An admitted reply carries the exact card
-    only, never its paint (`world-render`): whether a post carries paint is the fourth playtest's question (OVERHAUL §4)."""
+    only, never its paint (`world-render`): whether a post carries paint is the fourth playtest's question (OVERHAUL §4);
+    one that offered nothing but changed something, its revealed lines and receipt line."""
     if reply.get('status') == 'usage':
         return str(reply.get('text', ''))
     receipt = reply['receipt']
@@ -153,7 +154,9 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
         return '\n'.join(offers).rstrip('\n') + '\n' + revealed_lines(reply) + receipt_line(receipt, origin, addressed, handles)
     if receipt.get('offers'):
         return 'reply card offered but not retained by the host; ' + receipt_line(receipt, origin, addressed, handles)
-    return ''  # no offer, no draft
+    if outcome.get('writes') and not receipt.get('sends'):  # it changed something and handed nothing on: its receipt answers
+        return revealed_lines(reply) + receipt_line(receipt, origin, addressed, handles)
+    return ''  # nothing changed and nothing offered: silence
 
 
 def register(st, host, did, handle):

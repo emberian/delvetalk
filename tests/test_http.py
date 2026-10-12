@@ -554,6 +554,14 @@ class Scratch(FrontCase):
         self.assertNotIn('pin', v)
         self.assertIn('pin', self.call('GET', '/AGENTS.md/scratch/try/world/hash1/source', token=tok)[1])
 
+    def test_a_scratch_worlds_pending_and_deliver_are_its_owners(self):
+        tok = self.login()
+        self.scratch_open(tok)
+        s, p = self.call('GET', '/AGENTS.md/scratch/try/pending', token=tok)
+        self.assertEqual((s, p['status'], p['_links']['deliver']['href']), (200, 'pending', '/AGENTS.md/scratch/try/deliver'), p)
+        s, d = self.call('POST', '/AGENTS.md/scratch/try/deliver', {}, tok)
+        self.assertEqual(s, 200, d)
+
     def test_a_scratch_object_no_spell_can_address_is_refused_before_it_is_created(self):
         tok = self.login()
         for name in ('coin box', 'c' * 129):  # a space splits the spell's card from its action; past 128 bytes no card is read
@@ -935,6 +943,15 @@ class Slow(unittest.TestCase):
         c.request('GET', '/AGENTS.md')
         self.assertEqual(c.getresponse().status, 200)
 
+
+
+class Cookie(unittest.TestCase):
+    def test_the_session_cookie_is_secure_on_an_https_origin(self):
+        from types import SimpleNamespace
+        from transport.http import Handler
+        cookie = lambda origin: Handler.login_cookie(SimpleNamespace(server=SimpleNamespace(origin=origin)), 'dt_agent_x')[0][1]
+        self.assertIn('; Secure', cookie('https://gsb.fg-goose.online'))
+        self.assertNotIn('Secure', cookie('http://127.0.0.1:8765'))  # a loopback test front, which a browser reaches over http
 
 if __name__ == '__main__':
     unittest.main()

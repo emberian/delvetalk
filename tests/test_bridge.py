@@ -480,6 +480,14 @@ class Silence(BridgeCase):
         self.assertEqual(len(hand.outbox(all=True)[0]['drafts']), 1)
 
 
+    def test_a_spell_that_changed_something_and_offered_nothing_is_answered_with_its_receipt(self):
+        self.make('still-1', body=REFUSING)  # writes `seen`, offers no card
+        self.observe([spell_post(1, 'still-1', '2026-10-09T10:00:00Z')])
+        self.assertEqual(self.run_bridge()['failed'], [])
+        (d,) = self.drafts()
+        self.assertEqual(d['text'], bridge.receipt_line(d['receipt']))
+
+
 class RealOffers(test_outbound.TellerWorld):
     def test_offer_drafts_match_the_hosts_real_identity_shape(self):
         self.turn("teller", "tell", record(to=label(""), text=label("hello")), principal="ann", identity="t-1")

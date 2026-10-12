@@ -94,7 +94,7 @@ class Controls(FrontCase):
         s, t = self.call('POST', '/AGENTS.md/world/garden/plant', {'intent': 'by-form', 'fields': fill(spell)}, self.tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         self.assertLess(len(json.dumps(t)), 1024, t)
-        self.assertEqual(set(t), {'status', 'line', 'offers', 'receipt', '_links'})
+        self.assertEqual(set(t) - {'revealed'}, {'status', 'line', 'offers', 'receipt', '_links'})  # revealed: what the act fired or opened, when anything
         self.assertTrue(t['line'].startswith('● admitted garden v'), t['line'])
         links = t['_links']
         self.assertEqual(links['receipt']['href'], '/AGENTS.md/receipt/' + t['receipt']['slug'])
