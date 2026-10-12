@@ -157,6 +157,14 @@ class Settled(unittest.TestCase):
         self.assertTrue(text.startswith('preview, nothing done (as of entry 1013):\nwould be admitted bell/2 v8\n'), text)
         self.assertNotIn('luhuk-mukiz', text)
 
+    def test_sends_answered_already_are_said_as_never_run_again(self):
+        from transport import bridge
+        reply = {'status': 'admitted', 'object': 'bell/2', 'tried': True, 'against': {'height': 1013},
+                 'receipt': {'outcome': {'tag': 'admitted'}, 'roots': [{'object': 'bell/2', 'version': 7}]},
+                 'unresolved': {'pending': 6, 'suspended': 0, 'answered': 2}}
+        self.assertIn('\nleft for later, not foreseen: 6 sends, 0 waiting on hob\n2 sends answered already by their receipts, never run again\n',
+                      bridge.preview_text(reply))
+
 
 if __name__ == '__main__':
     unittest.main()
