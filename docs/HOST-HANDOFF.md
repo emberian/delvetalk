@@ -2340,7 +2340,12 @@ failing input as a test first, merging foundation before each commit:
    `refreshed` and 24 `current`, none left. Then the motion's `weather` placing was `suspended`, so the carry exited 1
    and v9 went back up. The refresh rewrote `kind/weather`'s `.form` text to `over:`, while the carried kind's place
    form, shaped once from v8's form, still takes `garden`. `genesis.carried_fields` reads the text, so it kept
-   `over: porch` and the spell misfit. Fixed by 5.199 (lane/refresh-fix); the carry is repeated on that build.
+   `over: porch` and the spell misfit. Fixed by 5.199 (lane/refresh-fix) and deployed: v9 carried into v10 at 446,
+   every refresh row `refreshed`/`current`, kind/errand's `made` the opener's `genesis-kind-errand` (DEPLOY "It
+   carries"). Two things the live checks found, open: (a) bell/1 says "untended since entry 27", v8's height: v9's
+   heights began again at 1 (edition 10), so a height a v8-era state holds names v8's chain, not this one (v9's 27 is a
+   clock advance); re-base such stored heights or say which chain they count. (b) `hand morning` (day 20737, painted)
+   lists under "Answered so far:" the same eight wants its "What wants a hand" section lists as open.
 3. **`shownSpell` scans for `did:` tokens** (5.181): a `fired` row keeps the filled spell, not its holes, so a DID the
    speaker typed is shown by handle too. Keep the rule's template and its fills on the row (edition 12 is undeployed:
    it can ride it) and show the fills by handle; delete the scan.
