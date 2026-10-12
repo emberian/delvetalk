@@ -3148,15 +3148,31 @@ def doorsOf (o : Object) : List (String × String) :=
       pure (← (r.lookup "label").bind labelOf, to)
   | _ => []
 
+/-- The host's placing spells hob may answer with on a card (`placementsOf`; `grow` is its own answer,
+    `growVerdict`), each a form whose fields are the usage's (`ruleLine`, `wantLine`: the spell last), for a
+    speaker the thing's law admits placing it (`kindAdmits`, kind 4 with the placing's verb). -/
+def placingForms (w : World) (id principal : String) (o : Object) : List Data :=
+  let text := fun (name : String) (max : Nat) => Data.record [("name", .label name),
+    ("kind", .variant "text" (.record [("min", .natural 1), ("max", .natural max)]))]
+  let named := text "name" Limits.maxMethodBytes
+  let fields := fun (action : String) => match action with
+    | "rule" => [named, text "when" Limits.maxLawBytes, text "then" Limits.maxLawBytes]
+    | "want" => [named, text "when" Limits.maxLawBytes, text "asks" Limits.maxLawBytes]
+    | _ => [named]
+  (["rule", "want", "unrule", "unwant"].filter fun a =>
+      !o.offers a && kindAdmits w o principal 4 (verb := if a.startsWith "un" then (a.drop 2).toString else a)).map fun a =>
+    .record [("card", .label id), ("action", .label a), ("fields", listData (fields a))]
+
 /-- What hob is offered for words that reached `id`, read for `principal`: the card's table (its declared
-    forms and grown verbs that it offers the speaker, `offeredTo`), then each door's card (`doorsOf`) and
-    the first three cards under it (a garden's bells), each form under its own card. A door's cards are
-    how words at the commonplace reach the town. A card that would pass `maxOffersBytes` is left out. -/
+    forms and grown verbs that it offers the speaker, `offeredTo`, and the host's placing spells its law
+    admits, `placingForms`), then each door's card (`doorsOf`) and the first three cards under it (a
+    garden's bells), each form under its own card. A door's cards are how words at the commonplace reach
+    the town. A card that would pass `maxOffersBytes` is left out. -/
 def heardOffers (w : World) (id principal : String) : List Data := Id.run do
   let some o := w.objects[id]? | return []
   let table := fun (c : String) (x : Object) =>
     (spellFormsData w c x).filter fun f => formAction f != "receive" && offeredTo w c x principal (formAction f)
-  let mut forms := table id o
+  let mut forms := table id o ++ placingForms w id principal o
   let mut seen : List String := [id]
   for (_, door) in doorsOf o do
     for c in door :: ((listIds w principal (door ++ "/") "").1.take 3) do
@@ -4299,6 +4315,15 @@ def proposalVerdict (w : World) (target self : String) (obj : Object) (carries :
   let (method, argument) := match grownAct obj method argument with
     | some a => (actMethod, a)
     | none => if grown.contains method then (actMethod, actArgument method argument) else (method, argument)
+  -- A host placing spell the card does not declare is staged as the spell stages it (`runHeard`, `placementsOf`):
+  -- its fields are read there, and the law judges it at the commit.
+  if placingSpells.contains method && !obj.offers method then
+    unless carries (.variant "proposal" (proposalData target method argument spell)) do
+      return (w, unclearVerdict [s!"the object cannot carry a proposal of {target} {method}"])
+    if let .error (_, reason) := placementsOf obj target method (labelsOf argument) (labelsOf argument) then
+      return (w, unclearVerdict [reason])
+    return (w, Json.mkObj [("tag", toJson "proposal"), ("object", toJson target), ("method", toJson method),
+      ("argument", dataJson argument), ("spell", toJson spell)])
   -- Another object will be called with it: only a method it offers.
   if target != self && !obj.offers method then return (w, unclearVerdict [s!"{method} is not a method {target} offers"])
   let (r, st) := ((compiledMethod obj method).run.run (scratchState w))

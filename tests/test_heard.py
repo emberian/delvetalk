@@ -100,6 +100,10 @@ def initial() -> State:
 """)
 
 
+# The host's placing spells hob is offered on the card words reached, after its own forms (agent 10).
+PLACING = ["rule", "want", "unrule", "unwant"]
+
+
 class HeardCase(Reflection):
     opening = {}
 
@@ -134,7 +138,7 @@ class Heard(HeardCase):
         self.assertEqual(asked["status"], "suspended", asked)
         item, ran = self.settle("delvetalk bell rain\ntext: let it rain on the silver one")
         self.assertEqual((item["object"], item["utterance"]), ("bell", "let it rain on the silver one"))
-        self.assertEqual([o["action"] for o in item["offers"]], ["rain"])
+        self.assertEqual([o["action"] for o in item["offers"]], ["rain"] + PLACING)  # and the host's placing spells
         receipt = ran["receipt"]
         self.assertEqual((receipt["outcome"]["tag"], receipt["identity"]), ("admitted", {"principal": "glm", "intent": "post-1"}), ran)
         self.assertEqual((self.value("rains"), self.value("last")), ("1", "let it rain on the silver one"))
@@ -160,7 +164,7 @@ class Heard(HeardCase):
         # The next "water it again" is the grown verb, offered to hob and read from the table.
         self.say("water it again")
         item, again = self.settle("delvetalk bell water\ntext: water it again")
-        self.assertEqual([o["action"] for o in item["offers"]], ["rain", "water"])
+        self.assertEqual([o["action"] for o in item["offers"]], ["rain", "water"] + PLACING)
         self.assertEqual((again["receipt"]["outcome"]["tag"], self.value("acts")), ("admitted", "2"))
 
     def test_a_question_hob_reads_nothing_into_is_answered_by_the_card_with_its_wants(self):
@@ -186,6 +190,20 @@ class Heard(HeardCase):
         self.say("lovely evening for it", card="brass", identity="talk")
         _, quiet = self.settle("none")
         self.assertNotIn("offers", quiet["receipt"])
+
+    def test_hob_is_offered_the_hosts_placing_spells_the_law_admits_and_its_proposal_of_one_runs(self):
+        """agent 10: hob was offered only a card's own forms, so words asking for a want or a rule got nothing it could
+        answer with. The host's placing spells (`rule`, `want`, `unrule`, `unwant`) are offered for a speaker the thing's
+        law admits, their fields `ruleLine`'s and `wantLine`'s with the spell last, and hob's proposal of one runs."""
+        self.assertEqual(self.say("ask anyone who passes for a clapper while it has none", who="ember", identity="w")["status"], "suspended")
+        [item] = self.pending()
+        offered = {(o["card"], o["action"]): [f["name"] for f in o["fields"]] for o in item["offers"]}
+        self.assertEqual((offered[("bell", "want")], offered[("bell", "rule")], offered[("bell", "unwant")]),
+                         (["name", "when", "asks"], ["name", "when", "then"], ["name"]), offered)
+        _, ran = self.settle("delvetalk bell want\nname: clapper\nwhen: new.rains <= 0\nasks: delvetalk bell rain / text: <a clapper>", who="ember")
+        self.assertEqual(ran["receipt"]["outcome"]["tag"], "admitted", ran)
+        rows = self.host.send(op="world-wants", principal="ember", object="bell")["rows"]
+        self.assertEqual([r["name"] for r in rows], ["clapper"], rows)
 
     def long_card(self, name, size):
         """A bell whose `render` returns `size` characters."""
@@ -245,7 +263,7 @@ class Heard(HeardCase):
     def test_hob_at_a_card_with_doors_is_offered_the_doors_cards(self):
         self.say("a rain for the bells, please", card="square")
         item, ran = self.settle("delvetalk bell rain\ntext: for the bells")
-        self.assertEqual([(o["card"], o["action"]) for o in item["offers"]], [("square", "rain"), ("bell", "rain")])
+        self.assertEqual([(o["card"], o["action"]) for o in item["offers"]], [("square", "rain")] + [("square", a) for a in PLACING] + [("bell", "rain")])
         self.assertEqual((ran["receipt"]["outcome"]["tag"], self.value("rains")), ("admitted", "1"))
 
     def test_a_card_answers_what_it_reads_itself_and_hob_is_not_asked(self):

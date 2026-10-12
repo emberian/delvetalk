@@ -2226,6 +2226,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    delvetalk-20261012T115945Z at its head 435) is not at that path on hbox; the deploy's carry reads it where it is.
    Test: `test_genesis.CarriedRefresh` (a genesis town carried, its `made`; that genesis stripped of `made` as an older
    edition's and carried again, the makings read from the journal it cites; every journal before gone, the refresh).
+186. **hob is offered the host's placing spells (host31; agent 10).** Words asking a thing to want or watch for
+   something had no form hob could answer with: `heardOffers` listed a card's own forms alone. `placingForms` adds,
+   on the card the words reached (not its doors'), `rule`, `want`, `unrule` and `unwant` that the card does not declare,
+   for a speaker its law admits placing (`kindAdmits`, kind 4, the placing's verb), their fields the usage's
+   (`ruleLine`/`wantLine`: `name`, `when`, the spell `then`/`asks` last; `unrule`/`unwant` `name`). `proposalVerdict`
+   accepts such a proposal without a compiled method, its fields checked by `placementsOf`, and `runHeard` stages it
+   as the spell does; the law judges it at the commit. `grow:` stays hob's own answer (`growVerdict`). Tests:
+   `test_heard.Heard.test_hob_is_offered_the_hosts_placing_spells_…`; the offered tables of `test_heard` and
+   `test_hub.RootReadsDoorForms` name them (`PLACING`).
 
 ## 6. Gotchas
 
@@ -2275,11 +2284,6 @@ input as a test first, merging foundation before each commit:
    `model-spend.jsonl`, so the paint came back and was refused or landed after the hand's last look. The verdict is
    on the workhorse only: a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`.
    Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
-3. **agent 10:** hob is offered the host's permitted spells and its proposals of them run. `heardOffers` lists only a
-   card's own forms; add the placing spells (`placingSpells`: `rule`, `want`, `unrule`, `unwant`; their fields are
-   `ruleLine`/`wantLine`'s, the spell field last) for a speaker the thing's law may admit, and let `proposalVerdict`
-   accept a placing spell without a compiled method (`runHeard` already stages it through `placementsOf`). `grow:`
-   stays hob's own answer (`growVerdict`).
 4. The coordinator's simplify hand-back, still open: (1) an offer's public projection answered by the host (the
    transport stops `world-view` per object); (3) delete the JSON `{method, argument}` model-reply branch of
    `interpretVerdict` and `model.extract`; (4) a refusal class for "the opener speaks on the root socket"; (6) the
