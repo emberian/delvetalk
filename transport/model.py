@@ -115,7 +115,7 @@ def spent(st, start=0):
     """{UTC month: {calls, inputTokens, outputTokens, dollars}} of the replied calls at or after unix time `start`, every
     world's, with `all` their sum."""
     out = {}
-    for row in map(json.loads, st.spend.read_text().splitlines() if st.spend.exists() else []):
+    for row in st.lines(st.spend):
         for k in ('all', time.strftime('%Y-%m', time.gmtime(row['at']))) if row['at'] >= start else ():
             t = out.setdefault(k, {'calls': 0, 'inputTokens': 0, 'outputTokens': 0})
             t['calls'] += 1

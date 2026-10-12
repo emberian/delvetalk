@@ -135,7 +135,9 @@ class Bounds(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             obs, ob = run_observer([mk(i, f'wiki: T{i}\n#gsb @a.delve.town') for i in range(1000)] + [mk(1000, 'x' * (1 << 20))], d)
         self.assertEqual(len(obs), 1000)
-        self.assertEqual(ob.refused[0][0], 'post_body_too_large')
+        with self.assertRaises(delve.Failure) as c:
+            observe.observation(mk(1000, 'x' * (1 << 20)))
+        self.assertEqual(c.exception.code, 'post_body_too_large')
 
     def test_the_writer_and_the_client_refuse_what_is_too_large_a_redirect_and_any_other_endpoint_by_name(self):
         with self.assertRaises(delve.Failure) as c:

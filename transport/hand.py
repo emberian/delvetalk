@@ -18,7 +18,7 @@ from html import escape as e
 from pathlib import Path
 
 from transport import bridge, measure, model, post, pages, root
-from transport.bridge import all_observations, awaiting_path, uri_hash
+from transport.bridge import awaiting_path, uri_hash
 from transport.delve import Failure, canonical
 from transport.host import CLOCK, handles, paged, painted, typed
 from transport.http import WAIT_MAX, trace
@@ -123,7 +123,7 @@ class Hand:
         raise HandError(f'no draft {draft_id}')
 
     def observed(self):
-        return {o['uri']: o for o in all_observations(self.st)}
+        return {o['uri']: o for o in self.st.observations()}
 
     # ---- reading
 
@@ -201,10 +201,7 @@ class Hand:
         return {**self.summary(draft_id, d), 'post': d.get('replyTo'), 'original post': o and {'handle': o['author']['handle'], 'text': o['text']}}
 
     def tail(self, n=20):
-        try:
-            return [json.loads(l) for l in self.st.hand_log.read_text().splitlines()][-n:]
-        except OSError:
-            return []
+        return self.st.lines(self.st.hand_log)[-n:]
 
     # ---- speaking (docs/PLAYTEST-2.md §2 and §3): the hand's spells as the opener, and the posts that say so
 

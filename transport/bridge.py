@@ -6,14 +6,13 @@ has its drafts posted by transport/zulip.py. Principals here are the observed au
 import hashlib
 import ipaddress
 import json
-import sqlite3
 import urllib.parse
 import time
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
 from transport.host import CLOCK, ON_ROOT, paged
 from transport import observe
-from transport.observe import SCHEMA, Observer
+from transport.observe import Observer
 
 DELIVER_ROUNDS = 8
 
@@ -155,7 +154,7 @@ def offer_drafts(st, host):
     makes public; a resumption with no offer and no refusal (hob's `none`) drafts nothing. Either is marked
     `settled` and never asked again."""
     waiting = [json.loads(p.read_text()) for p in sorted(st.awaiting.glob('*.json')) if not json.loads(p.read_text()).get('settled')]
-    drafted, handles = [], {o['author']['did']: o['author']['handle'] for o in all_observations(st)} if waiting else {}
+    drafted, handles = [], {o['author']['did']: o['author']['handle'] for o in st.observations()} if waiting else {}
     for principal in dict.fromkeys(w['principal'] for w in waiting):
         mine = {(w['principal'], w['uri']): w for w in waiting if w['principal'] == principal}
         grouped = {}
@@ -194,15 +193,6 @@ def offer_drafts(st, host):
                 drafted.append(uri)
             st.write(awaiting_path(st, uri), {**w, 'settled': True})
     return drafted
-
-
-def all_observations(st):
-    st.home.mkdir(parents=True, exist_ok=True, mode=0o700)
-    db = sqlite3.connect(st.observed)
-    db.executescript(SCHEMA)  # fresh state has no table yet
-    rows = [json.loads(js) for (js,) in db.execute('SELECT json FROM observations ORDER BY seq')]
-    db.close()
-    return rows
 
 
 def pending_observations(rows):
@@ -318,7 +308,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     from transport.post import record_sent
     recorded = record_sent(st, host)  # posts whose registration failed, retried apart from sending
     done, failed, skip, origin = [], [], st.words(st.skipped), st.config.origin
-    rows = all_observations(st)
+    rows = st.observations()
     observed = pending_observations(rows)
     known = {o['uri']: o for o in observed}
     authors = {o['author']['handle'].lower(): o['author']['did'] for o in rows}  # every author seen, so an @handle resolves

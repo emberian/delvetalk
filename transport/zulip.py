@@ -152,14 +152,12 @@ class ZulipObserver(Observer):
                 self.db.execute('COMMIT')
                 return False
             fresh = False
-            if m.get('sender_id') != me['user_id'] and not self.before_start(created_at(m)):  # older messages extend the thread, unobserved
-                if len(m['content'].encode()) > MAX_TEXT:
-                    self.refused.append(('post_body_too_large', uri))
-                else:
-                    obs = self.observation(m, me['full_name'].strip().lower())
-                    self.db.execute('INSERT INTO posts VALUES(?,?,?,?)', (uri, obs['cid'], '', canonical(obs)))
-                    self.db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (uri, canonical(obs)))
-                    fresh = True
+            # older messages, ours and those past MAX_TEXT extend the thread, unobserved
+            if m.get('sender_id') != me['user_id'] and not self.before_start(created_at(m)) and len(m['content'].encode()) <= MAX_TEXT:
+                obs = self.observation(m, me['full_name'].strip().lower())
+                self.db.execute('INSERT INTO posts VALUES(?,?,?,?)', (uri, obs['cid'], '', canonical(obs)))
+                self.db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (uri, canonical(obs)))
+                fresh = True
             self.db.execute('INSERT INTO zulip_topics VALUES(?,?,?,?) ON CONFLICT(topic) DO UPDATE SET last_id=excluded.last_id, last_uri=excluded.last_uri',
                             (topic, uri, m['id'], uri))
             self.db.execute('COMMIT')
