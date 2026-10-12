@@ -119,6 +119,20 @@ class SpellTurns(Reflection):
         self.assertEqual(self.say("delvetalk garden plant / colour: amber / seed: y", identity="post-2")["status"], "admitted")
         self.assertEqual(self.say(post, identity="post-2")["class"], "duplicateIdentity")
 
+    def test_a_delvetalk_line_inside_a_literal_block_or_a_tagged_fence_is_text_not_a_spell(self):
+        literal = "delvetalk plot plant / colour: amber / seed: x"
+        for name, post in (
+                ("block", "delvetalk garden plant\ncolour: silver\nseed: <<END\n%s\nEND" % literal),
+                ("fence in the fields", "delvetalk garden plant\ncolour: silver\nseed: fern\n```text\n%s\n```" % literal),
+                ("fence in the prose", "an example:\n```text\n%s\n```\ndelvetalk garden plant\ncolour: silver\nseed: fern" % literal)):
+            with self.subTest(name):
+                r = self.say(post)
+                self.assertEqual((r["status"], r["result"]), ("admitted", nat(1)), r)
+                self.assertEqual(self.field("planted", "plot"), label(""))
+        self.assertEqual(self.field("planted"), label("silver:fern"))
+        r = self.say("delvetalk garden plant\ncolour: silver\nseed: <<END\n%s\nEND" % literal)
+        self.assertIn(literal, self.field("planted").get("label", self.field("planted").get("text", str(self.field("planted")))))
+
     def test_the_second_playtests_69062_casts_both_its_spells(self):
         """D1: 69062, verbatim, ran only its `kinds make`; its planting got no receipt. Now a turn each, two receipts."""
         r = self.say(PLAYTEST_69062, identity="zulip://delvetalk/welcome/69062")
