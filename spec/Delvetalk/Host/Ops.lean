@@ -1634,6 +1634,13 @@ partial def blockTree (items : Array Json) (depth : Nat := 0)
     principal and intent (the entry's identity). The digest is derived from them and the tokens. -/
 def boundFields : List String := ["object", "principal", "intent"]
 
+/-- An entry's `blocks` field: the blocks `used` names that the world does not hold yet, each once. -/
+def blocksField (w : World) (used : Array (String × Array Json)) : List (String × Json) :=
+  let fresh := used.foldl (fun (acc : Array (String × Array Json)) (c, b) =>
+    if w.blocks.contains c || acc.any (·.1 == c) then acc else acc.push (c, b)) #[]
+  if fresh.isEmpty then [] else
+    [("blocks", Json.arr (fresh.map fun (c, b) => Json.mkObj [("cid", toJson c), ("items", Json.arr b)]))]
+
 /-- A checkpoint as journaled: `tokens` replaced by `tokenTree`, and the blocks the world does
     not hold yet (each once), `extra` ones (an interpretation's) among them. The fields the entry
     already says (`bound`: object, principal, intent) are dropped when they agree, and so is the
@@ -1644,14 +1651,10 @@ def compactCheckpoint (w : World) (checkpoint : Json) (bound : List (String × S
   | none => (checkpoint, [])
   | some tokens =>
     let (depth, roots, used) := blockTree tokens
-    let used := used ++ extra.map fun b => (Journal.bodyHash (Json.arr b), b)
-    let fresh := used.foldl (fun (acc : Array (String × Array Json)) (c, b) =>
-      if w.blocks.contains c || acc.any (·.1 == c) then acc else acc.push (c, b)) #[]
     let said := fun (k : String) (v : Json) => k == "digest" || (bound.lookup k).any (toJson · == v)
     let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter fun (k, v) => k != "tokens" && !said k v
     (Json.mkObj (fields ++ [("tokenTree", Json.mkObj [("depth", toJson depth), ("roots", Json.arr roots)])]),
-     if fresh.isEmpty then [] else
-       [("blocks", Json.arr (fresh.map fun (c, b) => Json.mkObj [("cid", toJson c), ("items", Json.arr b)]))])
+     blocksField w (used ++ extra.map fun b => (Journal.bodyHash (Json.arr b), b)))
 
 /-- The CID a one-item block of `item` is journaled under. -/
 def blockCid (item : Json) : String := Journal.bodyHash (Json.arr #[item])
@@ -1769,6 +1772,12 @@ partial def expandCheckpoint (w : World) (checkpoint : Json) : Except String Jso
   let tokens ← expand (← tree.getObjValAs? Nat "depth") (← (← tree.getObjVal? "roots").getArr?)
   let fields := ((checkpoint.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "tokenTree")
   return Json.mkObj (fields ++ [("tokens", Json.arr tokens)])
+
+/-- A suspension the host resumes itself: hob's reading of words that reached a card (`heardTurn`), whose
+    settled answer the host runs as the turn. No Bend waits in it, so its activity holds no checkpoint. -/
+def hostResumed (entry : Json) : Bool :=
+  ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)).any
+    fun a => (a.getObjVal? "checkpoint").toOption.isNone
 
 /-- A suspended entry's checkpoint whole: its tokens from the world's blocks (`expandCheckpoint`),
     the binding fields the entry says (`boundFields`) and the digest derived again when the journal
@@ -4236,13 +4245,14 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       | none => throw "a post settles an unknown reservation"
     return record (postIndex w uri { object, slot, page, part, height := ← natField entry "height" }) entry key [object]
   | "suspended" =>
-    let checkpoint ← expandSuspended w entry
-    let tokens ← Delvetalk.Turn.tokensOfJson (← checkpoint.getObjVal? "tokens")
-    unless (← checkpoint.getObjValAs? String "digest") == Delvetalk.Turn.checkpointDigest
-        (← checkpoint.getObjValAs? String "packetSha256") (← checkpoint.getObjValAs? String "object")
-        (← checkpoint.getObjValAs? String "principal") (← checkpoint.getObjValAs? String "intent")
-        (← checkpoint.getObjValAs? String "rootsDigest") tokens do
-      throw "checkpoint digest does not match its tokens"
+    unless hostResumed entry do
+      let checkpoint ← expandSuspended w entry
+      let tokens ← Delvetalk.Turn.tokensOfJson (← checkpoint.getObjVal? "tokens")
+      unless (← checkpoint.getObjValAs? String "digest") == Delvetalk.Turn.checkpointDigest
+          (← checkpoint.getObjValAs? String "packetSha256") (← checkpoint.getObjValAs? String "object")
+          (← checkpoint.getObjValAs? String "principal") (← checkpoint.getObjValAs? String "intent")
+          (← checkpoint.getObjValAs? String "rootsDigest") tokens do
+        throw "checkpoint digest does not match its tokens"
     -- A suspension waits on a slot, or on the reply that answers a post.
     if (outcome.getObjValAs? String "post").toOption.isNone then discard <| outcome.getObjVal? "slot"
     discard <| natField outcome "deadline"
@@ -5020,7 +5030,7 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
 
 
 /-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
-    reader, `identity`), projected under the reader's authority. -/
+    reader, `identity`), projected under the reader's authority; a refusal with its `public` projection. -/
 def receipt (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
@@ -5031,7 +5041,9 @@ def receipt (w : World) (j : Json) : Except String Json := do
     let entry := w.entries.getD index
     let shown := projectEntry w reader entry
     if owner != reader && tagOf entry == "refused" then return publicRefusal entry
-    return Json.mkObj [("status", toJson "receipt"), ("receipt", shown)]
+    -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.
+    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++
+      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
 
 def history (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j

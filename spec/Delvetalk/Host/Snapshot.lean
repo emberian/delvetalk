@@ -371,7 +371,7 @@ from the installed genesis (`installGenesis`) and never reads the world before i
 def wholeSuspension (w : World) (e : Json) : Except String Json := do
   let outcome ← e.getObjVal? "outcome"
   let activity ← outcome.getObjVal? "activity"
-  let activity := activity.setObjVal! "checkpoint" (← expandSuspended w e)
+  let activity ← if hostResumed e then pure activity else pure (activity.setObjVal! "checkpoint" (← expandSuspended w e))
   let activity := Json.mkObj ((((activity.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "argumentBlock")) ++
     [("argument", ← activityArgument w activity)])
   let outcome := outcome.setObjVal! "activity" activity
