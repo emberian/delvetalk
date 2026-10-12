@@ -230,11 +230,12 @@ class Scenes(test_chain.Chain):
                      "delvetalk scene enter\nprincipal: " + KIM,
                      "delvetalk scene choose\nwho: " + KIM + "\nchoice: Open"):
             with self.subTest(text=text):
-                # A line whose name the form lacks ends the spell's fields (HOST-HANDOFF 5.152): a forged
-                # principal never reaches the method, which runs, if at all, as the turn's principal.
+                # A line whose name the form lacks ends the spell's fields when it is the last (HOST-HANDOFF 5.152),
+                # and refuses the spell `unknownField` when a field the form names follows it: a forged principal
+                # never reaches the method, which runs, if at all, as the turn's principal.
                 r = self.turn("scene", "receive", heard(text), principal=GLM)
                 if r["status"] == "refused":
-                    self.assertEqual(r["receipt"]["outcome"]["class"], "cardRefused", r)
+                    self.assertIn(r["receipt"]["outcome"]["class"], ("cardRefused", "badSpell"), r)
                 else:
                     self.assertEqual(r["status"], "admitted", r)
                 self.assertNotIn(KIM, json.dumps(r["receipt"]["outcome"].get("writes", [])))

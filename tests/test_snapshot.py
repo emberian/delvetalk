@@ -200,6 +200,39 @@ class Snapshots(Reflection):
             self.assertEqual(self.count("a"), "1")
             self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="a")["law"], law)
 
+    def test_forged_rows_or_read_policy_are_refused_by_a_plain_open_by_name(self):
+        # codex 2026-10-12 host 5: a rule placed under another's name, or a private thing made public, by a
+        # forger who recomputes the snapshot's CIDs, was resumed.
+        ruled = PACKAGE.replace("def initial()", 'rule echo: request.method == "never" then delvetalk a bump\ndef initial()')
+        made = self.make("a", ruled, source_seed())
+        self.assertIn("placed", made["receipt"]["outcome"], made)
+        self.make("p", PACKAGE, source_seed(), read={"principals": ["ember"]})
+        height = self.snapshot()
+        path = self.path + f".snapshot.{height}.cbor"
+        with open(path, "rb") as f:
+            original = f.read()
+        row = {"name": "x", "owner": "mallory", "since": 1, "line": 'rule x: request.method == "bump" then delvetalk a bump'}
+
+        def obj(name, change):
+            return lambda objects: change(next(o for o in objects if o["id"] == name))
+
+        for forge, reason in ((obj("a", lambda o: o["rules"][0].update(owner="mallory")), "the rules, wants and verbs on a are not the journal's"),
+                              (obj("p", lambda o: o.update(rules=[row])), "the rules, wants and verbs on p are not the journal's"),
+                              (obj("p", lambda o: o.update(read="public")), "the read policy of p is not the journal's")):
+            with open(path, "wb") as f:
+                f.write(original)
+            body = read_snapshot(path)
+            forge(body["objects"])
+            write_snapshot(path, body)
+            report = self.reopen_report()
+            self.assertEqual(report["resumed"], 0, report)
+            self.assertIn(reason, report["refused"][0]["reason"])
+            self.assertEqual(self.host.send(op="world-view", principal="mallory", object="p")["status"], "denied")
+            self.assertEqual([r["owner"] for r in self.host.send(op="world-rules", principal="ember", object="a")["rows"]], ["ember"])
+        with open(path, "wb") as f:
+            f.write(original)
+        self.assertEqual(self.reopen_report(), {"resumed": height, "refused": []})
+
     def test_a_snapshot_keeps_suspended_activities_and_pending_deliveries(self):
         from tests.test_reflection import PROBE, probe_seed
         self.make("probe", PROBE, probe_seed())

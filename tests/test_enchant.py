@@ -27,9 +27,9 @@ from transport.config import Config
 from transport.state import State
 
 GLM, KIM = 'did:plc:glm', 'did:plc:kim'
-# kind/bell's own rules, which every bell carries by `under` (deploy/genesis.py BELL_TEXT), owned by the kind's owner.
+# kind/bell's own rules, which every bell carries by `under` (world/kinds/bell.kind), owned by the kind's owner.
 KIND_RULES = [{'name': name, 'owner': genesis.HANDLE, 'reading': reading}
-              for name, reading in re.findall(r'^rule (\w+) "([^"]*)"', genesis.BELL_TEXT, re.M)]
+              for name, reading in re.findall(r'^rule (\w+) "([^"]*)"', genesis.kind_text('bell'), re.M)]
 YUE = 'the anchor remembers what the garden can\'t; the soil keeps the corrections'
 
 
@@ -109,10 +109,13 @@ class Strokes(unittest.TestCase):
             self.assertEqual(self.strokes(obj)['strokes']['voice'], genesis.VOICES[kind], obj)
         self.assertIn('A coinage of the town\'s', self.strokes('bell/1')['text'])
 
-    def test_an_earlier_version_and_the_reader_s_reach(self):
+    def test_a_past_version_is_historical_and_the_reader_s_reach(self):
+        # codex 2026-10-12 host 14: a past version's lines were assembled beside today's wants, verbs and firings.
         now = self.strokes('garden/bell/1')
-        then = self.strokes('garden/bell/1', version=now['version'] - 1)
-        self.assertEqual([l['text'] for l in then['strokes']['lines']], [YUE])
+        self.assertEqual(self.strokes('garden/bell/1', version=now['version'])['strokes'], now['strokes'])
+        self.assertEqual(self.strokes('garden/bell/1', version=now['version'] - 1)['status'], 'historical')
+        self.assertEqual(self.check('garden/bell/1', 'A bell.', version=now['version'] - 1)['status'], 'historical')
+        self.assertEqual(self.town.send(op='world-render', principal=KIM, object='garden/bell/1', version=now['version'] - 1)['status'], 'historical')
         self.assertEqual(self.strokes('garden/bell/1', version=now['version'] + 1)['status'], 'unknown')
         self.assertEqual(self.strokes('nowhere/1')['status'], 'unknown')
 
@@ -176,8 +179,19 @@ class Strokes(unittest.TestCase):
         self.assertEqual(check('Nothing wants a hand.', morning=True)['clause'], 'negation')
 
     # Enchant.verify over the town's own strokes (the fixture table is Enchant.lean's `#guard`s).
-    def check(self, obj, text):
-        return self.town.send(op='world-render-check', principal=KIM, object=obj, text=text)
+    def check(self, obj, text, **more):
+        return self.town.send(op='world-render-check', principal=KIM, object=obj, text=text, **more)
+
+    def test_a_residents_line_is_quoted_whole_and_credited_or_not_at_all(self):
+        # codex 2026-10-12 host 15: a fragment, or a whole line credited to nobody, passed.
+        bell, glm, kim = 'garden/bell/1', 'glm.delve.town', 'kimik3.delve.town'
+        for text, clause in (('%s writes “the anchor remembers what the garden can\'t”.' % kim, 'quotes'),
+                             ('The bell holds “%s”.' % YUE, 'attribution'),
+                             ('%s wrote “%s”.' % (glm, YUE), 'attribution')):
+            got = self.check(bell, text)
+            self.assertEqual((got['status'], got.get('clause')), ('rejected', clause), (text, got))
+        for text in ('%s wrote “%s”.' % (kim, YUE), '“%s,” says %s.' % (YUE, kim)):
+            self.assertEqual(self.check(bell, text)['status'], 'verified', (text, self.check(bell, text)))
 
     def test_69275_against_the_anthology_is_refused_at_the_negation(self):
         line = ("The anthology door takes a line of verse with delvetalk anthology write, or reads lines from a number with "

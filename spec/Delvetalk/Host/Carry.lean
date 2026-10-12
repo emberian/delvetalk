@@ -67,7 +67,7 @@ def allArgs (args : List String) (flag : String) : List String :=
     blocks by the entry carrying each; the anchors its objects are checked against). Any other key of an
     older binary's body is not read, so a snapshot edition is a contract on these alone. -/
 def readKeys : List String :=
-  Snapshot.carriedKeys ++ ["pending", "suspended", "handles", "modules", "blocks", "anchors"]
+  Snapshot.carriedKeys ++ ["pending", "suspended", "handles", "modules", "blocks", "anchors", "receipts"]
 
 /-- The world a snapshot body at `height` of `src` holds, as this binary reads it: the indexes in
     `readKeys`, laid over an empty world's, then the store, every object checked against its anchors by
@@ -82,7 +82,8 @@ def readWorld (b : Json) (src : Entries) (height : Nat) (replay : Nat) : Except 
   let w ← Snapshot.installIndex base read
   let naming := Naming.ofEdition replay
   let w ← Snapshot.install b w naming
-  Snapshot.checkAnchors w naming
+  let w := { w with carriedIds := ((src.get? 0).map carriedIdentities).getD {} }
+  Snapshot.checkAnchors w naming ((b.getObjValAs? String "edition").toOption == some Snapshot.edition)
   return w
 
 /-- A reason as a law clause's reading: one line, no quotes or backslashes, at most 200 bytes. -/
@@ -414,8 +415,13 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
   let pending := w.pending ++ (c.dropped.filterMap fun (e, _) => droppedEnd w e).toArray ++ (c.rearmed.map (rearm principal)).toArray
   let all := Snapshot.indexJson w
   let index := Json.mkObj (Snapshot.carriedKeys.filterMap fun k => (all.getObjVal? k).toOption.map (k, ·))
+  -- Every identity the world binds (a suspension's is carried with it; a transient refusal binds none), and
+  -- those its own carry kept: a retry after the carry answers the receipt it had (`Ops.boundEntry`).
+  let bound := w.receipts.toArray.filterMap (fun (_, i) => (src.get? i).bind fun e =>
+      if tagOf e == "suspended" || isTransient e then none else some (identityRow e))
+  let identities := (bound ++ w.carriedIds.toArray.map (·.2)).qsort (fun a b => a.compress < b.compress)
   Snapshot.genesisEntry w w "carried" principal "carry" cid ("carriedFrom", origin) pending suspended
-    ([("index", index)] ++
+    ([("index", index)] ++ (if identities.isEmpty then [] else [("identities", Json.arr identities)]) ++
      (if c.left.isEmpty then [] else [("left", Json.arr (c.left.toArray.map fun (id, why) =>
         Json.mkObj [("object", toJson id), ("reading", toJson why)]))]) ++
      (if c.moved.isEmpty then [] else [("moved", Json.arr (c.moved.toArray.map (·.json)))]) ++

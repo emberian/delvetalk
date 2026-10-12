@@ -98,7 +98,7 @@ def lawsText(rows: Lists.List<World.LawRow>) -> String:
 def commas(names: Lists.List<String>) -> String:
   textJoin(names, ",")
 def checkIt(state: State, input: {package: String}, context: Abi.Context) -> Activity<String>:
-  match world.check({package: input.package}):
+  match world.check({package: input.package, layers: Lists.List.nil()}):
     case checked(c): first(context, c.diagnostics)
     case _: note(context, 0n, "other")
 def first(context: Abi.Context, found: Lists.List<String>) -> Activity<String>:

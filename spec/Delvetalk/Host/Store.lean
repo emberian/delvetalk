@@ -393,6 +393,10 @@ structure Object where
   /-- The verbs hands grew on it (`grow`), in the order grown: its spells after the forms its package
       declares, each run by its `act`. -/
   verbs : List Verb := []
+  /-- Where its code came from (docs/AUTHORING.md §4 credit): the journaled `madeFrom {object, pin,
+      receipt}` of the `make` that made it or the reprogram (`become`) that last laid a kind's body on
+      it; none for code given whole. -/
+  madeFrom : Option Json := none
 
 /-- The object's whole state, made from its cells when first read. -/
 def Object.state (o : Object) : Data := o.cells.state
@@ -515,6 +519,10 @@ structure Anchor where
   version : Nat := 0
   pin : Nat := 0
   law : Nat := 0
+  /-- The entry naming the CID of its placed rules, wants and verbs (`Ops.placedIn`), 0 for none. -/
+  placed : Nat := 0
+  /-- The entry setting its read policy (`Ops.readPolicyIn`). -/
+  read : Nat := 0
   deriving Inhabited, BEq
 
 /-- The clock hour's counts (`world-status.hour`, docs/ROOT.md §2.3): turns journaled (admitted,
@@ -572,6 +580,11 @@ structure World where
   entries : Entries := {}
   /-- Identity key (principal, intent) to entry index. The first entry wins. -/
   receipts : Std.HashMap String Nat := {}
+  /-- Identity key to the binding a carry kept from the chains before (`Ops.identityRow`: the identity, its
+      request digests, the entry's hash, height and outcome tag and class), read from the `carried` genesis
+      (`Ops.carriedIdentities`) and never from a snapshot: a retry of an intent the world before admitted
+      answers that receipt. -/
+  carriedIds : Std.HashMap String Json := {}
   /-- Object id to indices of admitted or creating entries touching it. -/
   touched : Std.HashMap String (Array Nat) := {}
   /-- Per object, its admitted writes in version order (`Touch`): what changed since a version is

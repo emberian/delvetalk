@@ -732,7 +732,7 @@
     }
    ]
   },
-  "expected": "unclear colour|seed|",
+  "expected": "refused plant is not a field of garden-1 plant; its fields are colour, seed.",
   "parsed": "spell garden-1 plant plant=a fern;seed=moss;colour=silver;"
  },
  {
@@ -1340,7 +1340,7 @@
     }
    ]
   },
-  "expected": "unclear colour|seed|",
+  "expected": "refused plant is not a field of garden-1 plant; its fields are colour, seed.",
   "parsed": "spell garden-1 plant plant=a;seed=b;plant=c;colour=amber;"
  }
 ]

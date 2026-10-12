@@ -103,6 +103,22 @@ class Make(Reflection):
         self.reopen()
         self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="lamp")["pin"], made["pin"])
 
+    def test_a_package_made_in_a_turn_keeps_its_rules_and_wants_through_replay(self):
+        # codex 2026-10-12 host 4: replay built the creation with its law as given, which places no package
+        # lines, so the want it opened did not replay and its rules were lost.
+        lines = 'want dark "it is dark": new.lit == 0 asks delvetalk lamp light\nrule lit: new.lit == 1 then delvetalk me note / text: lit\n'
+        source = LAMP.replace("def initial()", lines + "def initial()")
+        r = self.turn("workshop", "make", record(source=label(source), id=label("lamp"),
+                                                origin=label("workshop"), receipt=label(self.held())), principal="kim")
+        self.assertEqual((r["status"], r["result"]), ("admitted", label("lamp")), r)
+        self.assertEqual(r["receipt"]["wanted"], [{"object": "lamp", "want": "dark"}], r)
+        rows = lambda op: [x["name"] for x in self.host.send(op=op, principal="kim", object="lamp")["rows"] if x["from"] == "lamp"]
+        self.assertEqual((rows("world-rules"), rows("world-wants")), (["lit"], ["dark"]))
+        self.reopen()
+        verified = self.host.send(op="world-open", path=self.path, verify=True)
+        self.assertEqual(verified["status"], "opened", verified)
+        self.assertEqual((rows("world-rules"), rows("world-wants")), (["lit"], ["dark"]))
+
     def test_a_compile_failure_is_refused_by_name_with_the_diagnostic(self):
         r = self.turn("workshop", "make", record(source=label("edition ObjectiveBend 1\nrecord State:\n  n: Nat\ndef initial() -> State:\n  {n: true}\n"),
                                                 id=label("bad"), origin=label("workshop"), receipt=label(self.held())), principal="kim")

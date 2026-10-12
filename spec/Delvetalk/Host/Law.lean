@@ -66,7 +66,7 @@ structure Facts where
   /-- The written object's id (`request.object`, LAW §4 H). -/
   object : String := ""
   /-- The state of every object the law cites (`"O".F`, `under "O"`, `"O" wants N`), transitively
-      through `under`, at the version the write records as its root (`Ops.citedStates`). -/
+      through `under` and `wants`, as the write leaves them (`Ops.citing`). -/
   reads : List (String × Data) := []
   /-- The verb the act named (`request.verb`): a declared method's name, or a grown verb's under
       `act` (docs/FOUNDATION.md §10); "" for an op. -/
@@ -153,11 +153,25 @@ def principalReading (principal : String) : Reading :=
     | none => .text principal
   else .text principal
 
-/-- A top-level field of a state as a law reads it: text, or a scalar as a number. -/
+/-- The value of the row named `name` in a list of `{name, value}` rows (a made thing's `fields`). -/
+partial def namedValue (name : String) : Data → Option Data
+  | .variant "cons" (.record f) => match f.lookup "head", f.lookup "tail" with
+    | some (.record row), some tail => match row.lookup "name" with
+      | some (.label n) => if n == name then row.lookup "value" else namedValue name tail
+      | _ => namedValue name tail
+    | _, _ => none
+  | _ => none
+
+/-- A top-level field of a state as a law reads it: text, or a scalar as a number. A name the state
+    has no field for is a form field of a made thing, when it has `fields` (the values its kind's make
+    took: `ringAt: natural 1..768`): its text, digits read as a number (docs/AUTHORING.md §3 (a)). -/
 def fieldReading (name : String) (state : Data) : Option Reading :=
-  (rawField name state).bind fun
-    | .label s => some (.text s)
-    | d => (scalarOf d).map .num
+  match rawField name state with
+  | some (.label s) => some (.text s)
+  | some d => (scalarOf d).map .num
+  | none => ((rawField "fields" state).bind (namedValue name)).bind fun
+    | .label s => some (if !s.isEmpty && s.all Char.isDigit then .num s.toNat! else .text s)
+    | _ => none
 
 /-- `old.F` at creation: the empty value of the field's kind as the new state has it ("" for text, 0
     for a scalar), as `writeOnce` reads an empty field. -/
@@ -454,6 +468,18 @@ private def parsed (text : String) : LawExpr :=
 private def rec1 (n : Nat) : Data := .record [("count", .natural n), ("open", .boolean true)]
 private def facts : Facts := ⟨"7", "7", 3, 0, "", 0, "", [], 0, "", [], "", [], []⟩
 
+-- A made thing's form field reads as `new.F` when the state has no field F; digits are a number.
+private def made1 (n : Nat) (ringAt : String) : Data :=
+  .record [("count", .natural n), ("fields", .variant "cons" (.record [("head", .record [("name", .label "ringAt"), ("value", .label ringAt)]),
+    ("tail", .variant "nil" (.record []))]))]
+#guard denote facts none (made1 3 "3") (parsed "new.count == new.ringAt")
+#guard !denote facts none (made1 2 "3") (parsed "new.count == new.ringAt")
+#guard denote facts none (made1 2 "3") (parsed "new.count + 1 == new.ringAt")
+#guard !denote facts none (made1 3 "three") (parsed "new.count == new.ringAt")
+#guard denote facts none (made1 3 "three") (parsed "new.ringAt == \"three\"")
+#guard !denote facts none (made1 3 "four") (parsed "new.ringAt == \"three\"")
+#guard !denote facts none (made1 1 "3") (parsed "new.count + 1 == new.ringAt")
+#guard !denote facts none (made1 3 "3") (parsed "new.count == new.absent")
 #guard denote facts (some (rec1 3)) (rec1 4) (parsed "monotone(count)")
 #guard !denote facts (some (rec1 3)) (rec1 2) (parsed "monotone(count)")
 #guard !denote facts none (rec1 2) (parsed "monotone(count)")

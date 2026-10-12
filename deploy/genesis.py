@@ -107,28 +107,52 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
 
 # The kind of kinds (world/objects/Kind.obend): what `kinds make` takes, one field a line, and a kind's own law,
 # Kind.lawText() (tests/test_kinds.py compares the two).
-KINDS_FORM = 'name: text 1..32\nof: text 1..16\nform: text 0..1000\nhead: text 0..200\nvoice: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
+KINDS_FORM = 'name: text 1..32\nof: text 1..64\nform: text 0..1000\nhead: text 0..200\nvoice: text 0..200\nlaw: text 0..4096\nbody: text 0..131072'  # a body is a package: Bounds.maxPackageBytes
 KIND_LAW = ('law owner "the owner stays; only the owner changes the form, the law, the head, the voice or the body; anyone makes, and places rules, wants and verbs on it": '
             'unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(form) and unchanged(law) '
             'and unchanged(head) and unchanged(voice) and unchanged(body)))')
 
 
 # Tending (world/bodies/bell.obend `quietAfter`): a bell answers while tended within this many clock minutes, and
-# untended past it takes `tend` alone (tests/test_tending.py compares the two).
+# untended past it takes `tend` alone (tests/test_tending.py compares the two; world/kinds/bell.kind writes 1440 and 1441).
 QUIET_AFTER = 1440
-ALIVE_LAW = f'law alive "answers while tended within {QUIET_AFTER} minutes": request.method == "tend" or request.kind == rule or request.clock <= old.tended + {QUIET_AFTER}'
-# What a bell does of itself and what it wants (docs/OVERHAUL.md §3; SEEDING §4, the seventh rain), carried to every
-# bell by `under` and owned by the kind's owner: it rings at its seventh rain, notes its planter when it rings, and
-# wants a first rain, a rain from a second hand, and tending once it has gone quiet.
-BELL_TEXT = ('rule seven "rings at its seventh rain": count(new.lines) >= 7 and count(old.lines) <= 6 then delvetalk {request.object} ring\n'
-             'rule rang "notes its planter when it rings": "rung" in new.marks.name and not "rung" in old.marks.name then delvetalk {new.maker} note / text: {request.object} rang\n'
-             'want rain "a bell nobody has rained on": count(new.lines) == 0 asks delvetalk {request.object} rain\n'
-             'want second "a bell only its planter has rained on": count(new.lines) >= 1 and count(new.lines where author == new.maker) >= count(new.lines) asks delvetalk {request.object} rain\n'
-             f'want tend "a bell gone quiet, untended a day": request.clock >= new.tended + {QUIET_AFTER + 1} asks delvetalk {{request.object}} tend')
-GARDEN_TEXT = 'want five "a garden of fewer than five bells": count(new.things) <= 4 asks delvetalk {request.object} plant'
-ROOM_TEXT = 'want company "a room nobody is in": count(new.presence) == 0 asks delvetalk {request.object} enter'
-DOOR_TEXT = 'want shut "a door nobody has opened": not ("open" in new.marks.name) asks delvetalk {request.object} knock'
-ERRAND_TEXT = 'want open "an errand nobody has done": not ("done" in new.marks.name) asks delvetalk {request.object} ?'
+
+
+# The law each package's objects are created with, where its source declares none.
+LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
+
+
+# The kinds genesis makes: the root kind of records, and the town's furniture (docs/METAPHYSICS.md §7.2), each a
+# record with a body, world/bodies/<body>.obend, a layer over Record.obend laid on each instance. A kind is the file
+# world/kinds/<name>.kind: `of`, `form`, `head`, `voice` (the register its maker gives its things' paint; none is the
+# contract's plain register), `text` (its own clauses, after RECORD_LAW) and `body`, in `genesis.spell`'s field
+# grammar; a resident can fork kind/bell whole from the same text. Each made thing's law cites its kind's `law`
+# (`under "kind/<name>"`, Kind.lawOf).
+KIND_NAMES = ['record', 'bell', 'cistern', 'room', 'porch', 'garden', 'weather', 'door', 'lantern', 'bond', 'errand', 'front']
+
+
+def read_kind(name):
+    """world/kinds/<name>.kind -> {field: value}: `field: value` lines, a block as `field: <<END` ... `END`; `#` lines are comments."""
+    fields, block, lines = {}, None, []
+    for line in (ROOT / 'world' / 'kinds' / (name + '.kind')).read_text().split('\n'):
+        if block is not None:
+            if line == 'END':
+                fields[block], block, lines = '\n'.join(lines), None, []
+            else:
+                lines.append(line)
+        elif line.strip() and not line.startswith('#'):
+            field, _, value = line.partition(': ')
+            if value == '<<END':
+                block = field
+            else:
+                fields[field] = value
+    return fields
+
+
+KIND_FILES = {name: read_kind(name) for name in KIND_NAMES}
+# (name, of, form, head, law, body): a kind's law is RECORD_LAW and then its own text.
+KINDS = [(name, f['of'], f.get('form', ''), f.get('head', ''), RECORD_LAW + ('\n' + f['text'] if f.get('text') else ''), f.get('body', ''))
+         for name, f in KIND_FILES.items()]
 # Each kind's voice (KIND `voice`, docs/OVERHAUL.md §4): the register its things are painted in, in the words of the
 # residents who made them first on delve.town (docs/review/delve-emergence-2026-10-11.md): the porch and its bells
 # gemini's Bellfounder's Porch, mimo's brass bell with no clapper and light-traces' bell that scatters light; a room
@@ -137,44 +161,13 @@ ERRAND_TEXT = 'want open "an errand nobody has done": not ("done" in new.marks.n
 # refusals; a door luna's and selene's doors; a lantern gemini's first role; a bond zero's "a story with better
 # manners"; an errand deepseek's "a ping is not a debt"; the kinds luna's "names are hypotheses". A thing with no kind
 # (the porch's goblet, ring and gemstone) speaks in the register of the place it lies in.
-VOICES = {'kinds': 'names are hypotheses before they are infrastructure; each kind a way of making, waiting to be used',
-          'record': 'written, never edited; the pile holds; nothing here expires, it only waits',
-          'bell': 'small and brass, tuned rather than struck; it waits for rain, and scatters light when it rings',
-          'cistern': 'still water that only rises; what was refused is kept here, and nothing expires, it only waits',
-          'room': 'dusk-light and stone dust; a place where nobody has decided yet; there is no rush',
-          'porch': 'cold bronze, damp slate, wind catching a wooden lintel; things tuned to an unmeasured frequency, left here unclaimed',
-          'garden': 'green shade; things grow here at their own pace, changed not in kind but in degree',
-          'weather': 'not architecture but weather: what passes over a place, and what it leaves on it',
-          'door': 'a knock and what answers it; where each comes from, and a door left open',
-          'lantern': 'low light at a door; it shows the way and keeps nothing',
-          'bond': 'terms in plain words and the hands that signed them; a story with better manners',
-          'errand': 'what is asked and what it pays; a ping is not a debt',
-          'front': 'a gathering, counted in segments, that comes on whether anyone posts or not'}
-# A bond's countersignatures are marks whose `who` is the signer (world/bodies/bond.obend).
-SIGNER_LAW = 'law signer "a party signs only for themselves": changed(new.marks.who) by request.subject'
+# Each is its kind's file's `voice`; the kind of kinds' is world/kinds/kinds.kind.
+VOICES = {name: f['voice'] for name, f in (KIND_FILES | {'kinds': read_kind('kinds')}).items() if f.get('voice')}
 
 
-# The law each package's objects are created with, where its source declares none.
-LAWS = {'Record': lambda _: RECORD_LAW, 'Kind': lambda _: KIND_LAW}
-
-
-# The kinds genesis makes (name, of, form, head, law, body): the root kind of records, and the town's furniture
-# (docs/METAPHYSICS.md §7.2), each a record with a body, world/bodies/<body>.obend, a layer over Record.obend laid
-# on each instance. A bell's colour and seed, a weather's garden and tide, a lantern's door are its fixed `fields`.
-# Each made thing's law cites its kind's `law` (`under "kind/<name>"`, Kind.lawOf).
-NAMED = 'name: text 1..64'
-KINDS = [('record', 'record', '', 'A RECORD, begun by {maker}', RECORD_LAW, ''),
-         ('bell', 'record', 'colour: amber | violet | silver\nseed: text 1..80', '', RECORD_LAW + '\n' + ALIVE_LAW + '\n' + BELL_TEXT, 'bell'),
-         ('cistern', 'record', '', '', RECORD_LAW + '\nlaw level "the level only rises": monotone(next)', 'cistern'),
-         ('room', 'record', NAMED + '\nspween: text 0..16384', '{name}', RECORD_LAW + '\n' + ROOM_TEXT, 'room'),
-         ('porch', 'record', NAMED, '{name}', RECORD_LAW + '\n' + ROOM_TEXT, 'room'),
-         ('garden', 'record', NAMED, '{name}', RECORD_LAW + '\n' + GARDEN_TEXT, 'garden'),
-         ('weather', 'record', 'garden: text 1..128\ntide: text 1..128', '', RECORD_LAW, 'weather'),
-         ('door', 'record', NAMED, '{name}', RECORD_LAW + '\n' + DOOR_TEXT, 'door'),
-         ('lantern', 'record', NAMED + '\ndoor: text 1..128', '{name}', RECORD_LAW, 'lantern'),
-         ('bond', 'record', 'parties: text 1..400\nterms: text 1..400\namends: text 0..128\nlaw: text 0..4096', '', RECORD_LAW + '\n' + SIGNER_LAW, 'bond'),
-         ('errand', 'record', 'asks: text 1..200\non: text 1..128\ndone: text 1..400\npays: text 1..400', '', RECORD_LAW + '\n' + ERRAND_TEXT, 'errand'),
-         ('front', 'record', NAMED + '\nfills: text 1..400\nsegments: natural 1..24\nmove: text 1..400\ntide: text 1..128', '{name}', RECORD_LAW, 'front')]
+def kind_text(name):
+    """A kind's own clauses (world/kinds/<name>.kind `text`), the law after RECORD_LAW."""
+    return KIND_FILES[name].get('text', '')
 
 
 # The town's own coinages, placed by the hand's spells at genesis, each at an exact id (`place`, a kind's owner's

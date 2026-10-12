@@ -1,0 +1,7 @@
+of: record
+voice: not architecture but weather: what passes over a place, and what it leaves on it
+form: <<END
+garden: text 1..128
+tide: text 1..128
+END
+body: weather

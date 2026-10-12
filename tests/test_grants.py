@@ -389,5 +389,57 @@ class Attenuation(Reflection):
         self.assertEqual(self.use("dim", g, level=nat(2))["result"], label("noGrant"))
         self.assertEqual(self.host.send(op="world-revoke", principal="owner", identity="r3", grant="nope")["status"], "error")
 
+LENDER = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  colour: String
+  level: Nat
+  note: String
+record Fix:
+  colour: String
+law owner: request.kind == 2 or request.subject == "owner"
+def initial() -> State:
+  {colour: "", level: 0n, note: ""}
+def light(state: State, input: {colour: String, level: Nat}, context: Abi.Context) -> Activity<String>:
+  match world.write({colour: Plans.Edit::<String, {}>.set({value: input.colour}), level: Plans.Edit::<Nat, Nat>.set({value: input.level}), note: Plans.Edit::<String, {}>.keep({})}):
+    case _: input.colour
+def lend(state: State, input: {to: String}, context: Abi.Context) -> Activity<String>:
+  match world.grantWith({to: input.to, object: {world: "", object: context.object}, method: "light", until: 100n, fixed: Data.of::<Fix>({colour: "red"}), uses: 1n}):
+    case granted(g): g.id
+    case refused(r): r.clause
+    case _: "other"
+""", "light", "lend")
+
+
+class LentDirect(Reflection):
+    """A thing lending its own method to a principal (`lentVia`): the borrower's own turn runs it as a call under
+    the grant does, its fixed part merged and a use spent (codex 2026-10-12 host 3); refuted if the borrower
+    names another colour, or lights it twice on one use."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+        self.make("lamp", LENDER, record(colour=label(""), level=nat(0), note=label("")))
+
+    def light(self, **arg):
+        return self.turn("lamp", "light", record(**arg), principal="kim")
+
+    def test_a_direct_turn_under_a_lent_grant_keeps_its_fixed_part_and_spends_its_use(self):
+        self.assertEqual(self.light(colour=label("red"), level=nat(1))["status"], "refused")
+        lent = self.turn("lamp", "lend", record(to=label("kim")), principal="owner")
+        self.assertEqual(lent["status"], "admitted", lent)
+        blue = self.light(colour=label("blue"), level=nat(2))
+        self.assertEqual((blue["status"], blue["receipt"]["outcome"].get("clause")), ("refused", "grantConflict"), blue)
+        red = self.light(colour=label("red"), level=nat(3))
+        self.assertEqual(red["status"], "admitted", red)
+        self.assertEqual(len(red["receipt"]["outcome"]["spent"]), 1, red)
+        again = self.light(colour=label("red"), level=nat(4))
+        self.assertEqual(again["status"], "refused", again)
+        s = self.state("lamp")
+        self.assertEqual((field(s, "colour")["value"], field(s, "level")["value"]), ("red", "3"))
+
+
 if __name__ == "__main__":
     unittest.main()
