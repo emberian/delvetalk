@@ -110,8 +110,9 @@ inductive Abort where
   /-- The turn is refused with a named class other than `evaluation` (`typeMismatch`: the
       argument does not conform to the method's input type, `expected` what it takes). -/
   | refused (cls reason : String) (expected : Option Json := none)
-  /-- A card refused the turn by its own Bend (`refuse(line)`): `cardRefused` (`Ops.cardRefusal`). -/
-  | card (refusal : Refusal)
+  /-- The turn is refused whole: a card's own Bend (`refuse(line)`, `cardRefused`: `Ops.cardRefusal`), or a
+      grant a direct turn enters under refusing it (`granted`). -/
+  | named (refusal : Refusal)
   /-- The turn's principal has started its hour's interpretations (`interpretQuota`): a transient
       refusal of class `quota`, naming the clock at which the next may start. -/
   | quota (reason : String) (next : Nat)
@@ -614,6 +615,16 @@ def spendGrant (via : String) : M Unit := do
   if g.uses.isNone then return
   let n := (s.spent.lookup via).getD 0
   set { s with spent := (s.spent.filter fun (x : String × Nat) => x.1 != via) ++ [(via, n + 1)] }
+
+/-- The argument a principal's own turn runs `method` of `id` with under grant `via` (`lentVia`), as a call
+    under it does (`grantFor`, `spendGrant`): the grant stands for this principal, has a use left, which the
+    turn spends, and fixes what it fixes of the argument. "" runs the argument as given. -/
+def granted (via id method : String) (argument : Data) : M Data := do
+  if via.isEmpty then return argument
+  match ← grantFor via "" id method argument with
+  | .ok (_, merged) => spendGrant via; return merged
+  | .error clause => throw (.named { cls := "lawRefused", clause := some clause, object := some id,
+                                     reading := some s!"no grant lets this turn run {method} on {id} ({clause})." })
 
 /-- The fields of a row type (`field` chain ending `emptyRow`) as `(name, member)`. -/
 partial def rowFields (row : Json) : Option (List (String × Json)) :=
@@ -1651,7 +1662,7 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     throw (.budget resource)
   | .refused line used =>
     spend used
-    throw (.card (cardRefusal self line))
+    throw (.named (cardRefusal self line))
   | .yielded message _ responseType suspension used =>
     spend used
     countPlan
@@ -2481,7 +2492,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls, reason := some reason, object := some ctx.object, expected }) (onEnd := endedIfLate)
     return (w', turnReply w' r)
-  | .error (.card refusal) =>
+  | .error (.named refusal) =>
     let (w', r) := commit w { proposal with writes := [], creates := [] } base (some refusal) (onEnd := endedIfLate)
     return (w', turnReply w' r)
   | .error (.quota reason next) =>
@@ -2607,7 +2618,10 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let byHost := req.method == "publishPage" && how.delivery.isNone &&
     ((w.objects[req.object]?).map (!hasMethod · "publishPage")).getD false
   let action := if byHost then defaultPublishPage req.object req.argument
-    else runMethod 0 req.object req.method req.argument how.caller req.principal how.via
+    else do
+      -- A send under a grant spent it when it was sent; a principal's own turn under one spends it here.
+      let argument ← if how.delivery.isSome then pure req.argument else granted how.via req.object req.method req.argument
+      runMethod 0 req.object req.method argument how.caller req.principal how.via
   let (result, st) := (action.run).run init
   let ctx : Ctx :=
     { principal := req.principal
@@ -3052,7 +3066,8 @@ def runHeard (w : World) (ctx : Ctx) (post reach : String) (steps : List HeardSt
         let (method, argument) := match grownAct obj step.method step.argument with
           | some a => (actMethod, a)
           | none => (step.method, step.argument)
-        result ← runMethod 0 step.object method argument "" ctx.principal (lentVia world ctx.principal step.object method)
+        let via := lentVia world ctx.principal step.object method
+        result ← runMethod 0 step.object method (← granted via step.object method argument) "" ctx.principal via
     return result
   let (result, st) := (action.run).run init
   -- It answers the post its words replied to only when it ran first on that post's card.
@@ -4062,7 +4077,7 @@ def abortText : Abort → String
   | .request m | .evaluation m => m
   | .budget r => s!"{r} budget exhausted"
   | .refused cls r _ => s!"{cls}: {r}"
-  | .card r => s!"{r.cls}: {(r.voiced.reason).getD ""}"
+  | .named r => s!"{r.cls}: {(r.voiced.reason).getD ""}"
   | .quota r _ => s!"quota: {r}"
   | .suspend .. => "unexpected suspension"
 
