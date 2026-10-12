@@ -13,7 +13,7 @@ import ./Scenes.obend as Scenes
 import ./Spween.obend as Spween
 # RECORD (docs/METAPHYSICS.md §7): the commonplace's one page. What was said, by whom, in order; a
 # line is written, never edited; a keeper, when there is one, admits lines by number, and a record
-# with no keeper lets every line stand as written. The anthology is a record kept by its owner; a
+# with no keeper lets every line stand as written. The commonplace is a record its owner keeps; a
 # bell, a cistern and a room are records with a body laid over them (world/bodies).
 #
 # A line is keyed {author, n}: `n` is `next` when it came, which only counts up, so key order

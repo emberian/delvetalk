@@ -14,7 +14,7 @@ type Example = Policies.Example
 # State is Policies.State, so a card may import the type and view it.
 type State = Policies.State
 # What waits for a yes by default: changing an object's program or law, giving custody away,
-# a countersignature and an adoption. Planting, raining, subscribing and submitting run at once.
+# a countersignature and an adoption. Making, raining, writing and ruling run at once.
 def asking() -> Lists.List<String>:
   Text.words("reprogram amend offer countersign adopt")
 # hob's instruction (docs/FLEX.md §2).

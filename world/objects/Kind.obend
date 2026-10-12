@@ -24,7 +24,7 @@ import ./Forms.obend as Forms
 # owner's `shape` for a kind created whole), whose `make` takes exactly those fields and hands them
 # to `making` as rows, the thing named by the kind; and, for a kind of things, whose `place` takes
 # them and an exact `id`, the kind owner's alone and offered to them alone (the hand's own things,
-# `garden`, `porch`). So the host reads a make spell's fields and bounds as it reads any form's,
+# `porch`, `bell/1`). So the host reads a make spell's fields and bounds as it reads any form's,
 # and `?` on a kind prints its own make.
 # `kinds` is the kind of kinds (`of: kind`): its make makes a kind, and shapes it.
 #

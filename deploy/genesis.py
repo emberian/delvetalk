@@ -11,7 +11,8 @@ directory holding every data directory, `/var/lib/delvetalk`, mounted read-only 
 and admitted by the opener before anything else, and the first line of the welcome. A world changing hosts is carried
 (`python3 -m transport carry`), never begun again, and `refresh` then gives it genesis's laws as they stand (`refresh`
 below). Refuses to run twice: if any genesis object already exists (`world-objects`), it creates nothing and exits 1.
-rehearsal/rehearse.py calls `run`, so the rehearsal and production seed the same world. Seeds name only the fields genesis decides; the host lays them over each package's own initial().
+rehearsal/rehearse.py calls `run`, so the rehearsal and production seed the same world (the rehearsal then furnishes
+the places the archive's posts name, tests/town.py `furnish`). Seeds name only the fields genesis decides; the host lays them over each package's own initial().
 """
 import argparse
 import json
