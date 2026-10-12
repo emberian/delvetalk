@@ -135,7 +135,9 @@ class HostProcess:
         self.proc.stdout.close()
 
 
-HISTORY_LIMIT = 100  # `world-history`'s page bound (`Limits.maxHistoryLimit`)
+def history_limit(host):
+    """`world-history`'s and `world-entries`' page bound, as the host answers it (`bounds`: `Limits.maxHistoryLimit`)."""
+    return host.send({'op': 'bounds'})['host']['maxHistoryLimit']
 
 
 def paged(host, request, field):

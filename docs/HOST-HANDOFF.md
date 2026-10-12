@@ -2180,8 +2180,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `before`, `reverse`, `cursor`, `limit` 1..100, reply `more` and `cursor`; an unknown or denied object answers
      before the limit is read. The front's window-widening loop (`http.py` `history`, with its `world-status` read)
      is one call `reverse: true, limit: 20`; `hand.entries` and `root.modlog` read the newest page the same way
-     (they read the oldest 100 and sliced the end), clamped to `HISTORY_LIMIT` (transport/host.py, `Limits.maxHistoryLimit`:
-     restated, not read from `bounds`). Tests: `test_world.History`, `test_http.Pages` (one `world-history` call),
+     (they read the oldest 100 and sliced the end), clamped to the host's `maxHistoryLimit` (transport/host.py `history_limit`, read from
+     `bounds`, 5.193). Tests: `test_world.History`, `test_http.Pages` (one `world-history` call),
      `test_root_console`.
 182. **A carried world's heights continue the world before (host31; the first live carry's "untended since entry 27" in
    a world at 48; replay edition 12).** A `carried` genesis is sealed at the old head's height + 1 (`Carry.carryGenesis`,
@@ -2268,6 +2268,9 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    counts a relation as the world holds it now, so `world-receipt` of an old rain said today's count as the entry's.
    `TurnLoop.revealed` says it of a thing only while the thing is at the version the entry wrote. Test:
    `test_rules.Revealed.test_where_a_receipt_stands_is_said_only_while_it_still_stands`.
+193. **A page of history asks the host's bound (host31; §7 seen in passing).** `transport/host.py`'s `HISTORY_LIMIT`
+   restated `Limits.maxHistoryLimit`, and `root.modlog` sent `limit: 100`: both read it from `bounds`
+   (`history_limit`). Test: `test_hand.HistoryBound`.
 
 ## 6. Gotchas
 
@@ -2317,7 +2320,7 @@ input as a test first, merging foundation before each commit:
    `model-spend.jsonl`, so the paint came back and was refused or landed after the hand's last look. The verdict is
    on the workhorse only: a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`.
    Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
-7. Seen in passing: `transport/host.py` `HISTORY_LIMIT` restates `Limits.maxHistoryLimit` (read it from `bounds`); `shownSpell` scans
+7. Seen in passing: `shownSpell` scans
    the filled text for `did:` tokens because `fired` rows keep no hole structure; a seed post carrying a card's wants
    lines may pass the bridge's bound once its receipt line is stamped (`docs/previews/seed-posts/01-porch.txt`); this
    file's entries 173 to 177 are numbered twice (host28/host29 and lane/author-build).

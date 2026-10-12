@@ -45,10 +45,26 @@ class StubHost:
             return {'status': 'interpretations', 'pending': [{'id': 'x'}]}
         if req['op'] == 'world-resolve':
             return {'status': 'resolved', 'slug': req['slug'], 'kind': 'receipt', 'cid': 'c'}
+        if req['op'] == 'bounds':
+            return {'status': 'bounds', 'host': {'maxHistoryLimit': 100}}
         return {'status': 'ok'}
 
     def at(self, world):
         return self
+
+
+class HistoryBound(unittest.TestCase):
+    """§7 seen in passing: the transport restated `Limits.maxHistoryLimit` as `HISTORY_LIMIT`; a page of history asks for
+    as many as the host's `bounds` allows."""
+
+    def test_a_history_page_asks_for_at_most_the_hosts_bound(self):
+        from transport import root
+        sent = []
+        host = type('H', (), {'send': lambda s, req: (sent.append(req), {'status': 'bounds', 'host': {'maxHistoryLimit': 7}}
+                                                                          if req['op'] == 'bounds' else {'status': 'ok'})[1]})()
+        root.modlog(host, 'did:plc:o', 'porch', tail=20)
+        root.modlog(host, 'did:plc:o', tail=20)
+        self.assertEqual([r['limit'] for r in sent if r['op'] in ('world-history', 'world-entries')], [7, 7], sent)
 
 
 class Poster:

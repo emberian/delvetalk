@@ -20,7 +20,7 @@ from pathlib import Path
 from transport import bridge, measure, model, post, pages, root
 from transport.bridge import awaiting_path, uri_hash
 from transport.delve import Failure, canonical
-from transport.host import CLOCK, HISTORY_LIMIT, fell_back, handles, painted, typed
+from transport.host import CLOCK, fell_back, handles, history_limit, painted, typed
 from transport.http import WAIT_MAX, trace
 from transport.identity import INVITE_DAYS, Identity, IdentityError
 from transport.measure import counted
@@ -452,7 +452,7 @@ class Hand:
         """The newest `limit` entries as the opener reads them: the world's journal, or one object's `world-history`."""
         if not object:
             return root.entries(self.st, limit=limit)
-        return self.host.send({'op': 'world-history', 'principal': self.owner, 'object': object, 'reverse': True, 'limit': min(limit, HISTORY_LIMIT)}).get('entries') or []
+        return self.host.send({'op': 'world-history', 'principal': self.owner, 'object': object, 'reverse': True, 'limit': min(limit, history_limit(self.host))}).get('entries') or []
 
     def drafted(self):
         """The outbox as the watch joins it to the journal: the spells the hand cast, by intent; the drafts, by the height of
