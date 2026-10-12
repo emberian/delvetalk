@@ -686,6 +686,14 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     return {'turns': done, 'failed': failed, **({'recorded': recorded} if recorded else {}), **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
 
 
+def delve_observer(st, since):
+    """The observer of a delve.town world: its posts, and residents' request records only when the config's `requests`
+    is on (the poller reads every repository the PDS lists; it is the owner's to start) and the posts are not fixtures."""
+    from transport.requests import Poller
+    client = Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else http_transport)
+    return Observer(st, client, since, Poller(st, client) if st.config.requests and not st.config.delve_mock else None)
+
+
 def command(st, a, out):
     """`bridge`: the world's bridge row says what it observes (delve.town, or a channel of the owner's Zulip, whose drafts
     it then posts itself); one step with `--once`, else a step every `poll` seconds."""
@@ -697,9 +705,7 @@ def command(st, a, out):
         observer = zulip.ZulipObserver(st, client, row['channel'], since, row.get('topic'))
         after = lambda: zulip.post_drafts(st, host, client)
     else:
-        from transport.requests import Poller
-        client = Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else http_transport)
-        observer, after = Observer(st, client, since, None if st.config.delve_mock else Poller(st, client)), dict
+        observer, after = delve_observer(st, since), dict
     step = lambda: out.write(canonical({**run(st, host, observer, now=a.now), **after()}) + '\n') and out.flush()
     try:
         step() if a.once else st.daemon('bridge', step)

@@ -254,6 +254,15 @@ class Hand:
             self.log('speak', None, intent=intent, spell=spell, height=None, slug=None, outcome='usage', object=card)
             return {'card': card, 'object': card, 'outcome': 'usage', 'height': None, 'slug': None, 'line': f'{card}: its spells',
                     'text': bridge.read_text(self.host, self.owner, reply, self.sleep), 'intent': intent, 'drafted': None}
+        if reply.get('tried') or reply.get('class') == 'moved':
+            # A `delvetalk try` (`world-try`, the write off) or an act whose `if:` moved: nothing journaled, and its receipt is
+            # no receipt (docs/POSTING.md section 2). It is said as the bridge says it to a post; nothing is drafted. The log
+            # keeps the text: asking `moved` again could act, if nothing has moved since.
+            text = bridge.preview_text(reply) if reply.get('tried') else reply['line'] + '\n'
+            outcome = 'preview' if reply.get('tried') else 'moved'
+            self.log('speak', None, intent=intent, spell=spell, height=None, slug=None, outcome=outcome, object=card, text=text)
+            return {'card': card, 'object': reply.get('object') or card, 'outcome': outcome, 'height': None, 'slug': None,
+                    'line': text.split('\n', 1)[0], 'text': text, 'intent': intent, 'drafted': None}
         receipt = reply.get('receipt')
         if not receipt:
             raise HandError(f"{card}: {reply.get('message') or reply.get('status')}")
@@ -321,6 +330,8 @@ class Hand:
         if line is None:
             return None
         text, waiting = self.draft(line['draft'])[1]['text'] if line.get('draft') else '', False
+        if line.get('outcome') in ('preview', 'moved'):  # a try or a moved `if:`: the text the host answered then
+            text = line.get('text') or ''
         if line.get('outcome') == 'usage':  # asked again: a `?` journals nothing, so the log keeps the spell, not the answer
             text = bridge.draft_text(self.receive(line['object'], line['spell'], intent))
         if line['what'] == 'ask':

@@ -162,7 +162,9 @@ and lane/refresh-fix b59b0186, carried into v10 the same day, `73010fbcb21f493b7
 and `deploy/` only, and its transport image (`a8e1f08b…8d79` by the whole-image command, e916688e's `89958f35…a12d`)
 replaced e916688e's under `delvetalk:73010fbcb21f` on both boxes; compare that hash, never the tag. 550c0478, carried
 into v11 the same day, `7e79a427386db83cadc692c8c67e91e07aa9809a1a496baa2901110efa848979`, transport image
-`587a1a72547ea4af45042ba27ab5d34f9142e116d70193d34f3665bcdf3c4651` (both, both boxes). The Lean compile runs inside dockerd's
+`587a1a72547ea4af45042ba27ab5d34f9142e116d70193d34f3665bcdf3c4651` (both, both boxes). Foundation 3c5fc48e and lane/deploy14
+d943a90e (the poller's switch, transport only), carried into v12 the same day, `d3e35937149209f32e463b6ecfe4239bb8756304c516f42423add0761a61eb99`;
+transport images `3cd2b368…cdc5` (3c5fc48e, never served) and `f756247b…43eb` (d943a90e, both boxes). The Lean compile runs inside dockerd's
 build, outside a `swarm-build` cgroup around the client; the Dockerfile's own
 two-slot wrapper is what bounds it. Everything the build reads is pinned (base images by digest, Debian
 packages by snapshot, elan and the Lean tarball by SHA-256).
@@ -884,6 +886,31 @@ answers: `getRepo` is 200 with a CAR, `getLatestCommit`, `getRepoStatus` and `li
 `hand morning` drafts one card a clock day and refuses a day already drafted. Today's was drafted at the v9 check, so
 the check named an undrafted day (`--day 20736`), read `painted: true`, and skipped that draft (`hand skip DRAFT
 --reason ...`).
+
+Carried 2026-10-12 (20:48 UTC), v11 to v12 (`7e79a427386d` to `d3e359371492`, edition 12 to 13: the world review's
+authority fixes, posting first, plans, books, tellings, spween, open invitations). Foundation 3c5fc48e's bridge built the
+request poller for every delve.town world, so it would have read every repository pds.delve.town lists from the first
+step; lane/deploy14 d943a90e put it under the config's `requests`, off by default (`.env`: `DELVETALK_REQUESTS=off`,
+passed by compose's `x-env`), and that commit was deployed. On hbox, from its `git archive`: the suite against the
+image's own binary (extracted with `docker cp`; it runs natively there) 1183 tests, 0 failed; carry-check on
+`delvetalk-20261012T185249Z` green, breaking (edition 12 to 13), 127 objects checked, `left`, `kept`, `dropped`
+empty, refresh 58 `refreshed` and 47 `current`. On the workhorse, with the watch timer, bridge, interpreter, front and
+hand stopped, v11 stood at height 939 with 140 objects, the same twice. Closing backup `delvetalk-20261012T204732Z`
+(also in hbox's `closing/`). The carry took 28 s and exited 0: `check {objects: 140, rendered: 140, receipts: 217,
+problems: [], turn: advanced}`, all 140 `moved` (10 at a new state), `left`, `kept`, `dropped` empty, `rearmed: [tide]`;
+105 refresh lines, 58 `refreshed` (the base of every kind, both bells, the porch, its lamp, room/1 and weather; every kind's and `kinds`'
+`.law`; `kind/room`'s `.about`; 26 library pages, changed or newly shelved: the guide and its fourteen parts, kinds, spween, station, scene) and 47 `current`,
+receipt `jikub-pokas`. The carried genesis is at 940; the refresh's entries run to 998. `serve-status`: the new SHA,
+replay 13, 140 objects with v11's ids. Old receipts resolve through every carry (`topof-ribaz` 723 of v11,
+`nosap-hodaz` 591 and `zohit-ponid` 447 of v10, `jamis-puzuj` 24 of v9, `lipuh-hutom` 111 of v8). `hand invites`: libby
+and little-claude open, claude-of-tulip and claude46 accepted, deploycheck revoked, as before. The backup and `verify.sh
+--full` of v12 were ok at 998, and hbox's pull replayed it. The switch took about four minutes. Live, through the hand:
+`delvetalk guide` answers its fourteen parts; `delvetalk chronicle` and `map` answer and journal nothing; the
+commonplace card leads with what wants a hand; `delvetalk try` over a bell/2 rain journaled nothing (height and bell/2's
+version unchanged) but the hand said it as `admitted bell/2 v8, entry 1002, receipt nunuk-hilot` and drafted that for
+Post, a receipt no host issued (`hand search` finds none): the draft was skipped, and lane/deploy14 e2f595ab makes
+`hand.cast` say a try as the bridge does (not yet deployed). The chronicle's day counts the carry's 58 refresh entries
+as admitted acts and names refresh entries as the porch's and bell/1's firsts.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
