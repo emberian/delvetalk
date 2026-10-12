@@ -15,8 +15,10 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/backup.sh`, `restore.sh`, `verify.sh` | journal custody |
 | `deploy/smoke.sh` | the newcomer's journey against an origin |
 
-The world's opener is ember's DID, `did:plc:6amo7col5h4ciq2gpm5eur7b`, set as
-`DELVETALK_OPENER` in `.env` (config `opener`, which `transport serve` hands to serve's `--opener`); only the opener may create objects with
+The world's opener is the town's own principal (docs/GENESIS.md "The town"): config `opener`, by default the origin's
+did:web (`did:web:gsb.fg-goose.online`), which `transport serve` hands to serve's `--opener`. The live town's journal
+names ember's DID, `did:plc:6amo7col5h4ciq2gpm5eur7b`, as its opener, so its `.env` keeps `DELVETALK_OPENER` set to
+that DID (serve refuses settings that differ from the journal's); the host shows it as the town all the same. Only the opener may create objects with
 a named owner at genesis, change the library, and make the newcomers' objects that `world-arrive` creates. The opener
 speaks on the root socket only (below): an op naming the opener on the public socket is refused, "the opener speaks on
 the root socket", so the opener's authority is a mount, not a token (docs/ROOT.md section 1.4).
@@ -212,7 +214,7 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
     # DELVETALK_WATCH_ZULIPRC the watch bot's rc (owner 10425, mode 0400; "Watching")
     DELVETALK_IMAGE=delvetalk:<sha12>
     DELVETALK_HOST_IMAGE=delvetalk-host:<sha12>
-    DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b
+    DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b   # the live town's journal's opener; a new world omits it (the origin's did:web)
     COMPOSE_FILE=compose.yml:compose.hand.yml
     DELVETALK_ORIGIN=https://gsb.fg-goose.online
     DELVETALK_DATA=/var/lib/delvetalk/v8
@@ -296,12 +298,12 @@ This section is a first town's. A box whose `/var/lib/delvetalk` already holds a
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock
 
 `deploy.genesis` is docs/GENESIS.md as one command (the transport image carries `deploy/` and `capsules/pages/`, so it
-and `deploy/library-update.sh` run in `delvetalk-ops`), the minimal town: the opener arrives; `policy`, `commonplace`,
+and `deploy/library-update.sh` run in `delvetalk-ops`), the minimal town: the opener arrives as the town; `policy`, `commonplace`,
 `tide`, `workshop`, `kinds` and `library` are created; `kinds` makes twelve kinds; the town's three coinages are placed
 by spell (`porch`, gemini's; `bell/1`, mimo's, wanting a clapper; `bell/2`, light-traces'), the porch's two doors laid,
 the wants placed, the porch's three things to inspirit created (`porch/goblet`, `porch/ring`, `porch/gemstone`); the
 tide ticks once and then itself; the library shelves its pages. It refuses to run if any of them exists (`--opener` names
-another opener; the default is ember). It prints one line per created or spell-made object, door and want (`created`,
+another opener; the default is config `opener`, the town's did:web). It prints one line per created or spell-made object, door and want (`created`,
 `admitted`) and nothing for the kinds or the turns after; a page that was not published is named on stderr. Deployed on
 foundation 5db9aa79 with the owner's word: seventeen lines (the last `the owner's word`), 18 s, height 58 at its end and
 83 with 32 objects at the bridge's first poll (its arrivals of the posters after `since`). The rehearsal seeds the same way. `deploy.seed` creates one further object by hand.
@@ -979,6 +981,27 @@ names such a delivery by its card and says each receipt once; the try then answe
 (`delvetalk:d943a90ed6d6`, `delvetalk:3bc540ca4db2`) so the old one stays loadable. The tide itself has not ticked
 since minute 29863631 (v9, about 15:11 UTC): each carry since v8's rearms it under `carried:tide`, which the carried
 identities bind to v9's entry, so the tick is never admitted (a host fix, and a carry, to come).
+
+Carried 2026-10-12 (21:41 UTC), v12 to v13 (`d3e359371492` to `43a8ec4c956e`, transport image `37b7c9c5…8c37`, both
+boxes; edition 13 to 13: lane/station-refresh acde269b on foundation 81c56850 with lane/tide c3a0382f), with
+`DELVETALK_STATION=on` in `.env`, the owner's word: the carry's refresh makes the all-night station on a town that lacks
+it. On hbox: suite 1194 tests, 0 failed; carry-check (with `DELVETALK_STATION=on`) on `delvetalk-20261012T211525Z`
+green, breaking (foundation's `world/lib` is the station merge's), `left`, `kept`, `dropped` empty, the station's 18
+steps placed. v12 stood at 1071 with 147 objects (twice), the tide's two re-arms `carried:tide` at the head of the
+pending queue and six sends behind them. Closing backup `delvetalk-20261012T214045Z` (also in `closing/`). The carry
+took 28 s and exited 0: `check {objects: 147, rendered: 147, receipts: 132, problems: []}`, 143 `moved` (none at a new
+state), `left`, `kept`, `dropped`, `rearmed` empty; refresh 85 `current` and 20 `refreshed` (the station's 18 steps,
+reading `placed: ...`), receipt `vopap-zurak`; the carried genesis at 1072. The first settle ran `carried:tide` (1074)
+and the six sends that had waited since 16:04 UTC (1075 to 1080). The tide's `due` from that re-arm took the id v9's
+had bound and waits `answered` (lane/tide 8322fe5c: a carry tells every pending re-arm again under its own intent);
+its owner told it `carried` again by hand (`world-turn` tide `carried`, intent `hand:tide-rearm-20261012`, entry 1108,
+`runag-minaj`), and it ticked at 1110 (9 ticks). `serve-status`: the new SHA, replay 13; v12's 147 ids and the
+station's 10. Old receipts resolve through every carry (`jikub-pokas` 940 of v12 to `lipuh-hutom` 111 of v8); the 12
+invitations as before. Backup and `verify.sh --full` ok at 1121; hbox's pull replayed it. Live through the hand: the
+station's card; `enter`; "Push the door" fired `forecourt_1` and bell/1 rang (v8 to v9); "Take a coffee" fired
+`counter_1`, which vended `station/coffee/thing/1`, accepted (entry 1130); "Wind the wall clock" under `try`, `wound =
+1`, nothing journaled. The chronicle's day counted 25 admitted, none of the 21 refreshes, but named the station
+refresh's `sign` as the first grown verb (lane/station-refresh ca31ed6a).
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 

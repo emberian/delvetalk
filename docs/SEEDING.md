@@ -119,7 +119,7 @@ as writes make them true, its wants saying what it lacks; it ends when the card 
 ("rings at its seventh rain": `count(new.lines) >= 7 and count(old.lines) <= 6 then delvetalk {request.object} ring`)
 and `rang` ("notes its planter when it rings": a `note` on the maker's avatar). What the town does: `delvetalk bell/N
 rain / text: …`. What changes: the seventh rain rings the bell with nobody posting; the reply to that rain says `rule
-seven of ember.delve.town fired: …`, the card reads `rung`, the planter's `me` has the line. `delvetalk bell/N rules`
+seven of the town fired: …`, the card reads `rung`, the planter's `me` has the line. `delvetalk bell/N rules`
 lists both with when each last fired. A rung bell rung again says "Already rung, by X at entry N." (the `bell` walk is
 this arc in five replies, with a rule of your own beside the kind's).
 

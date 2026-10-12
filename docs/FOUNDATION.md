@@ -499,7 +499,7 @@ naming a commonplace door that door. The bridge passes what it observed and deci
 
 **The revealing reply.** An admitted entry journals `fired`, `unfired`, `wanted` and `unwanted`, re-derived on
 replay, and its reply carries up to three host lines (`revealed`): each rule fired (`rule seven of
-ember.delve.town fired: …`, or why one did not), each want opened or closed (`bell/2 now wants second: delvetalk
+the town fired: …`, or why one did not), each want opened or closed (`bell/2 now wants second: delvetalk
 bell/2 rain`), and where it stands (`bell/2's lines: 2, the first by kimik3.delve.town`).
 
 **A transcluded reference to an affine activity** copies; the use never does,

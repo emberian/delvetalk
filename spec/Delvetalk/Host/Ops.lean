@@ -2407,9 +2407,21 @@ def citationRefusal (w : World) (self : String) (law : Law) : Option String := I
 def handleOf (w : World) (principal : String) : String :=
   (w.handles[principal]?).getD ""
 
-/-- How a principal is named on a card: the handle the registry holds, else the principal. -/
+/-- What every surface names the world's own principal by (docs/GENESIS.md "The town"). -/
+def townName : String := "the town"
+
+/-- `principal` is the world's own: its opener (the settings name it), which genesis, a refresh and root act as.
+    It is shown as `townName` wherever a principal is named, whatever handle the registry or a state holds for it,
+    so a world whose opener was once a person's DID needs no rewrite. -/
+def isTown (w : World) (principal : String) : Bool := !w.opener.isEmpty && principal == w.opener
+
+/-- A principal's name as readers are shown it: `townName` for the town, else the registry's handle, "" when unknown. -/
+def handleShown (w : World) (principal : String) : String :=
+  if isTown w principal then townName else handleOf w principal
+
+/-- How a principal is named on a card: the town as such, the handle the registry holds, else the principal. -/
 def shownName (w : World) (principal : String) : String :=
-  let h := handleOf w principal
+  let h := handleShown w principal
   if h.isEmpty then (principalThing principal).getD principal else h
 
 /-- A spell as people are shown it: each principal the registry names, written out in full in the text a
@@ -2440,18 +2452,19 @@ def principalNamed (w : World) (handle : String) : Option String :=
   w.handles.fold (fun acc did name => if acc.isNone && name.toLower == h then some did else acc) none
 
 /-- What the host tells a running method about itself, built here and nowhere else.
-    `handle` is the principal's display handle from the registry (`world-principal`), ""
-    when unknown; `caller` is the calling object's id (empty for the turn's own method),
+    `handle` is the principal's name as readers are shown it (`handleShown`: the registry's handle,
+    `townName` for the town), "" when unknown; `town` the world's own principal (`isTown`), which every
+    card names `townName`; `caller` is the calling object's id (empty for the turn's own method),
     `intent` the turn's identity, `height` the journal height the turn read, `clock` the world
     clock (`world-advance`) the frame runs at, which deadlines compare against,
     `inputOrigin.post` the post the turn came from (`TurnState.post`), "" for none, and `sender`
     the object whose send this turn delivers (a rule's object, a sending object, a supervised
     activity's), the same in every frame of the turn and in its law's context, "" for a turn a
     principal began. None is chosen by the client. -/
-def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String)
+def contextData (id principal handle town caller intent : String) (height clock : Nat) (kind command : String)
     (post : String := "") (sender : String := "") : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
-    ("handle", .label handle), ("caller", .label caller), ("sender", .label sender), ("intent", .label intent), ("height", .natural height),
+    ("handle", .label handle), ("town", .label town), ("caller", .label caller), ("sender", .label sender), ("intent", .label intent), ("height", .natural height),
     ("clock", .natural clock),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false), ("post", .label post)])]
@@ -2470,7 +2483,7 @@ partial def fitRecord (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBend
 
 /-- The fields `contextData` fills. -/
 def contextFields : List String :=
-  ["world", "object", "principal", "handle", "caller", "sender", "intent", "height", "clock", "inputOrigin"]
+  ["world", "object", "principal", "handle", "town", "caller", "sender", "intent", "height", "clock", "inputOrigin"]
 
 /-- A Context type: a record (through the bounds) naming the principal and the intent, every
     field of which the host fills. An older library's Context with fewer fields is one too. -/
@@ -2499,7 +2512,7 @@ def withBindingContext (world : Option World) (entry : Delvetalk.CheckedEntry) (
   let principal ← request.getObjValAs? String "principal"
   let command := ((request.getObjVal? "artifact").toOption.bind fun a => (a.getObjValAs? String "entry").toOption).getD ""
   let context := contextData (← request.getObjValAs? String "object") principal
-    ((world.map (handleOf · principal)).getD "") "" (← request.getObjValAs? String "intent")
+    ((world.map (handleShown · principal)).getD "") ((world.map (·.opener)).getD "") "" (← request.getObjValAs? String "intent")
     ((world.map (·.height)).getD 0) ((world.map (·.clock)).getD 0) "repl" command
   return request.setObjVal! "arguments" (Json.arr (arguments.push (dataJson (fitRecord bounds ct context))))
 
@@ -2524,7 +2537,7 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
                       reading := some s!"the law of {id} reads {r}, which you may not see." }
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
-  let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method (sender := p.sender)
+  let context := contextData id subject (handleShown w subject) w.opener caller p.intent w.height w.clock "law" method (sender := p.sender)
   let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
     ("kind", .natural kind), ("pin", .label pin),
     ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
@@ -3437,10 +3450,6 @@ def crossesOver (p : Json) : Bool :=
   (p.getObjValAs? String "world").toOption.any (!·.isEmpty) &&
     ((p.getObjVal? "ledger").toOption.bind fun l => (ledgerOf l).toOption.bind (·.exhausted)).isNone
 
-/-- A pending send ready to deliver here: not one crossing over, and not one a transient refusal put back
-    until the clock passes it. -/
-def deliverable (w : World) (p : Json) : Bool :=
-  !crossesOver p && ((p.getObjValAs? Nat "next").toOption.map fun n => decide (n ≤ w.clock)).getD true
 
 /-- A send whose delivery was refused transiently, put back to be delivered again once the clock moves,
     unless that was its last attempt (`Limits.deliveryAttempts`). -/
@@ -3700,14 +3709,24 @@ def identityRow (entry : Json) : Json :=
   Json.mkObj ((["identity", "request", "turnRequest", "hash", "height"].filterMap fun k => (entry.getObjVal? k).toOption.map (k, ·)) ++
     [("outcome", Json.mkObj ((["tag", "class"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·))))])
 
-/-- The bindings a `carried` genesis keeps (`identities`), by identity key. -/
+/-- A carry's re-arm intent (`Carry.rearm`): `carried:<object>:<the carried genesis's height>`, its own per carry. Until
+    2026-10-12 it was `carried:<object>` in every carry, so a world carried twice found its re-arm bound to the first
+    carry's receipt and never ran it again (the live tide, stopped from v10 on). -/
+def rearmIntent (intent : String) : Bool := intent.startsWith "carried:"
+
+/-- The intent an entry, or a kept identity row, was journaled under. -/
+def identityIntent (e : Json) : String :=
+  ((e.getObjVal? "identity").toOption.bind (·.getObjValAs? String "intent" |>.toOption)).getD ""
+
+/-- The bindings a `carried` genesis keeps (`identities`), by identity key. A re-arm's (`rearmIntent`) is never kept:
+    it is the world before's own, and binding it here would answer this world's re-arm with that receipt. -/
 def carriedIdentities (genesis : Json) : Std.HashMap String Json :=
   if tagOf genesis != "carried" then {} else
   ((((genesis.getObjVal? "outcome").toOption.bind (·.getObjVal? "identities" |>.toOption)).bind (·.getArr?.toOption)).getD #[]).foldl
     (fun (m : Std.HashMap String Json) row =>
       let who := fun (k : String) => (row.getObjVal? "identity").toOption.bind (·.getObjValAs? String k |>.toOption)
       match who "principal", who "intent" with
-      | some p, some i => m.insert (identityKey p i) row
+      | some p, some i => if rearmIntent i then m else m.insert (identityKey p i) row
       | _, _ => m) {}
 
 /-- The entry an identity is bound to: this chain's (`receipts`), else the one a carry kept (`carriedIds`). -/
@@ -3715,6 +3734,21 @@ def boundEntry (w : World) (principal intent : String) : Option Json :=
   match w.receipts[identityKey principal intent]? with
   | some index => some (w.entries.getD index)
   | none => w.carriedIds[identityKey principal intent]?
+
+/-- Whether pending delivery `p` is answered already: its turn's identity (its principal, its id) is bound to an entry
+    that is no transient refusal, so running it would only answer that receipt again, consume nothing, and be found
+    first by the next pass of the same settling loop. It is never run (`deliverable`); a try counts it (`answered`). -/
+def answered (w : World) (p : Json) : Bool :=
+  match (p.getObjValAs? String "principal").toOption, (p.getObjValAs? String "id").toOption with
+  | some principal, some id => match boundEntry w principal id with
+    | some entry => !isTransient entry
+    | none => false
+  | _, _ => false
+
+/-- A pending send ready to deliver here: not one crossing over, not one a transient refusal put back until the
+    clock passes it, and not one `answered` already. -/
+def deliverable (w : World) (p : Json) : Bool :=
+  !crossesOver p && ((p.getObjValAs? Nat "next").toOption.map fun n => decide (n ≤ w.clock)).getD true && !answered w p
 
 /-- Retry rule shared by every journaled op: the same identity and request returns
     the retained receipt without an entry; the same identity with another request
@@ -5503,7 +5537,7 @@ def ruleRow (w : World) (id : String) (c : CarriedClause) : Json :=
   let last := (w.ruleLog[id]?).bind (·.lookup c.clause.name)
   let receipt := last.bind fun l => (l.getObjValAs? String "id").toOption.bind fun d =>
     (w.receipts[identityKey c.owner d]?).bind w.entries.hashAt? |>.bind Slug.ofCid
-  Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("handle", toJson (handleOf w c.owner)),
+  Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("handle", toJson (handleShown w c.owner)),
       ("when", toJson c.clause.condition.render), ("then", toJson ((c.clause.modality.spell?.map (·.render)).getD "")),
       ("line", toJson c.clause.render), ("from", toJson c.holder)] ++
     (if c.clause.reading.isEmpty then [] else [("reading", toJson c.clause.reading)]) ++
@@ -5644,7 +5678,7 @@ def coinerOf (w : World) (o : Object) : String :=
   let post := text "post"
   if !post.startsWith "at://" || post.startsWith s!"at://{text "maker"}/" then "" else
   let author := ((post.drop 5).toString.splitOn "/").head?.getD ""
-  if (handleOf w author).isEmpty then s!"the author of {post}" else handleOf w author
+  if (handleShown w author).isEmpty then s!"the author of {post}" else handleShown w author
 
 /-- The objects an entry makes: its `created` object, or its `creates` rows. -/
 def makes (e : Json) : List String :=
@@ -5671,9 +5705,12 @@ def carryRefresh (w : World) (identity : Json) (inCarried : Bool) : Bool :=
   !w.opener.isEmpty && text "principal" == w.opener &&
     ((text "intent").startsWith "refresh-" || (inCarried && (text "intent").startsWith "genesis-"))
 
-/-- Whether entry `e` of this chain is a carry's refresh (`carryRefresh`). -/
+/-- Whether entry `e` of this chain is a carry's refresh (`carryRefresh`), or a delivery of a send one made (its
+    `delivery.from`: the station's refresh hands its sends on, each its own entry under a hash of the refresh's intent). -/
 def refreshEntry (w : World) (e : Json) : Bool :=
-  carryRefresh w ((e.getObjVal? "identity").toOption.getD Json.null) ((w.entries.genesis?.map tagOf) == some "carried")
+  let carried := (w.entries.genesis?.map tagOf) == some "carried"
+  carryRefresh w ((e.getObjVal? "identity").toOption.getD Json.null) carried ||
+    (((e.getObjVal? "delivery").toOption.bind (·.getObjVal? "from" |>.toOption)).map (carryRefresh w · carried)).getD false
 
 def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.run do
   let some i := w.days.findIdx? (·.1 == day) | return none

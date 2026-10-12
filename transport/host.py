@@ -16,6 +16,7 @@ IDEMPOTENT = {'world-' + op for op in 'status view card objects offers history r
               'grants source sources state-cid addressee turn render strokes'.split()} | {'serve-status'}
 PAINT_STEP = 0.25  # seconds between two looks at a pending paint
 PUBLIC = 'anonymous'  # the reader an unauthenticated request is, and a public channel's: what everyone may read
+TOWN = 'the town'  # what every surface names the world's own principal, its opener (the host's `townName`)
 
 
 class HostClient:
@@ -210,8 +211,14 @@ def plain(data):
 
 
 def handles(host, reader, principals, known):
-    """{principal: handle} in `known`, filled for `principals` as `reader` sees them: the `handle` of each one's avatar
-    (`world-arrive` seeds it from the registry). A handle once found is kept; one with no avatar is asked again next time."""
+    """{principal: handle} in `known`, filled for `principals` as `reader` sees them: the town's own principal (its opener,
+    `world-status`, asked once) as TOWN whatever its avatar holds, else the `handle` of each one's avatar (`world-arrive`
+    seeds it from the registry). A handle once found is kept; one with no avatar is asked again next time."""
+    if '' not in known:  # '' is no principal: it marks the town as asked
+        known[''] = ''
+        opener = host.send({'op': 'world-status'}).get('opener')
+        if opener:
+            known[opener] = TOWN
     for p in set(principals) - set(known):
         view = host.send({'op': 'world-view', 'principal': reader, 'object': p})
         handle = (plain(view.get('state') or {}) or {}).get('handle') if view.get('status') == 'viewed' else None

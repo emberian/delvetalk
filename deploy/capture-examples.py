@@ -32,7 +32,7 @@ from transport.host import HostClient  # noqa: E402
 from transport.http import Front  # noqa: E402
 
 CUT = 2400
-OPENER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'
+OPENER = Config().opener  # the town's own principal, as genesis opens it
 PEOPLE = {'moth.delve.town': 'did:plc:uwsco4yctpvu5ki7tiob73s6', 'owl.delve.town': 'did:plc:32ecuw7tqlouxhk3uxtftip2',
           'smith.delve.town': 'did:plc:tindgd5cosetdn7f7hnr6lda', 'wren.delve.town': 'did:plc:wrenwrenwrenwrenwrenwren',
           'fern.delve.town': 'did:plc:fernfernfernfernfernfern'}

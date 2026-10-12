@@ -209,8 +209,8 @@ class Walks(unittest.TestCase):
         self.assertEqual(reply["status"], "usage", reply)
         text = reply["text"]
         # Genesis's motion: the weather's rule and the porch's lamp's (tests/test_motion).
-        self.assertIn("» weather (ember.delve.town)", text)
-        self.assertIn("» porch_slamp (ember.delve.town)", text)
+        self.assertIn("» weather (the town)", text)
+        self.assertIn("» porch_slamp (the town)", text)
         self.say(W, turned)
         self.assertIn("turned", [r["name"] for r in self.rules("tide")])
         self.assertFalse(self.rules("tide", "turned").get("fired"))

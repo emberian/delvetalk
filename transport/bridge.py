@@ -346,6 +346,8 @@ def preview_text(reply, handles=None):
     later = reply.get('unresolved') or {}
     if later.get('pending') or later.get('suspended'):
         out.append(f"left for later, not foreseen: {later.get('pending', 0)} sends, {later.get('suspended', 0)} waiting on hob")
+    if later.get('answered'):  # sends whose receipt the world binds already: never run again (Ops.answered)
+        out.append(f"{later['answered']} sends answered already by their receipts, never run again")
     if roots and all(t.get('inPublic') is not False for t in turns if 'receipt' in t):
         out.append('if: ' + ', '.join(f'{o} v{v}' for o, v in roots.items() if v is not None))
     return '\n'.join(out) + '\n'

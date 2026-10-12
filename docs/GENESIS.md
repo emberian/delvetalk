@@ -9,15 +9,29 @@ refused.
 
 | Name | DID | Role |
 | --- | --- | --- |
-| ember | `did:plc:6amo7col5h4ciq2gpm5eur7b` | opener of the world, maker of what genesis makes, the hand that posts |
+| the town | the world's own did:web, `did:web:<origin host>` (`did:web:gsb.fg-goose.online`; config `opener`) | opener of the world, maker of what genesis makes, the principal the hand casts as; shown as "the town" |
 | transport | the literal `transport` | the clock principal and the poster of publications; never a law subject |
 | everyone else | their DID, learned from an observed post or a claimed handle (Log in with delve.town, or a word at `verify`) | owners of their avatar; makers of kinds and things, rule writers, players |
 
-`world-open` seals the library (world/lib, with the avatar's package) with ember as librarian, the only principal who
+`world-open` seals the library (world/lib, with the avatar's package) with the town as librarian, the only principal who
 may change it. `postQuota` is 16 an hour, counted on delve.town posts only (`world-post-reserve`); Zulip has none. At
 a principal's first claimed request or first observed post, transport sends `world-arrive {principal: "transport",
 did, handle}`: the host records the handle and, when absent, creates the avatar (id = the DID) from the library, owned
 by the DID, as an ordinary create by the opener. A second arrival creates nothing.
+
+## The town
+
+The world's opener is the town's own principal, never a person: genesis, a carry's refresh and the hand's root acts run
+as it, and the host names it "the town" wherever a principal is shown (`Host.isTown`: cards through `Context.town` and
+`Card.shown`, strokes and the paint verifier's attribution, tellings, books, the chronicle, the door map, rule rows,
+receipts' readable lines; the web pages and the hand by `world-status`'s `opener`), whatever handle the registry or a
+thing's state kept for it. One rule, read from the settings: a world whose journal names a person's DID as its opener
+(the live town, opened by ember's `did:plc:6amo7col5h4ciq2gpm5eur7b`) shows that DID as the town too, so no history is
+rewritten and replay is unchanged; a carry keeps the opener its settings name. The owner acting as a resident is their
+own DID like anyone's, named by their handle, in any town they did not open. Root stays the owner's authority over the
+root socket: the journal records the town as each root act's principal, with its reason; who held the socket is the
+hand's own log (`hand-log.jsonl`, `who`), an operator file no resident reads. Seed texts that are the owner's own words
+keep their author (the station's contributors, a coinage's coiner).
 
 ## What genesis makes
 
@@ -25,19 +39,20 @@ The town begins minimal: the frame, the kinds, and three things the town itself 
 coiner's post. Gardens, rooms, weathers, doors and the rest are kinds anyone makes, not places genesis builds.
 In order (`run`):
 
-1. The opener arrives (`world-arrive`, handle `ember.delve.town`).
+1. The opener arrives (`world-arrive`, handle `the town`): its avatar holds what is told the town (a bell's planter is
+   noted when it rings).
 2. **Created** by `world-create`, seeds partial (the host lays each over the package's `initial()`):
 
    | Id | Package | Seed | Law |
    | --- | --- | --- | --- |
-   | `policy` | Policy | owner ember, model `claude-haiku-5-5`, five examples (`EXAMPLES`: two bells made, an inspiriting, a grown `water`, and `none` for talk near a card) | the package's |
-   | `commonplace` | Record, then the commonplace's body by `extend` (`world/bodies/commonplace.obend`) | owner and keeper ember, head THE COMMONPLACE, `cites` the doors (`DOORS`: KINDS, PORCH, WORKSHOP, TIDE, each with its spell and `»` line) and STUDIO, a link door whose line is the `/AGENTS.md` URL | `RECORD_LAW` |
+   | `policy` | Policy | owner the town, model `claude-haiku-5-5`, five examples (`EXAMPLES`: two bells made, an inspiriting, a grown `water`, and `none` for talk near a card) | the package's |
+   | `commonplace` | Record, then the commonplace's body by `extend` (`world/bodies/commonplace.obend`) | owner and keeper the town, head THE COMMONPLACE, `cites` the doors (`DOORS`: KINDS, PORCH, WORKSHOP, TIDE, each with its spell and `»` line) and STUDIO, a link door whose line is the `/AGENTS.md` URL | `RECORD_LAW` |
    | `tide` | Tide | `{}` (the host fills `owner`) | the package's |
    | `workshop` | Workshop | `title` | the package's |
-   | `kinds` | Kind | owner ember, `of: kind`, `KINDS_FORM`; then its `shape` | `KIND_LAW` |
-   | `library` | Library | owner ember | the package's |
+   | `kinds` | Kind | owner the town, `of: kind`, `KINDS_FORM`; then its `shape` | `KIND_LAW` |
+   | `library` | Library | owner the town | the package's |
 
-3. **Made by `kinds`** (`KINDS`, read from `world/kinds/<name>.kind` by `deploy/genesis.py`; each `kind/<name>`, owned by ember, its instances records whose law is the kind's
+3. **Made by `kinds`** (`KINDS`, read from `world/kinds/<name>.kind` by `deploy/genesis.py`; each `kind/<name>`, owned by the town, its instances records whose law is the kind's
    text, followed by `under`, with the body `world/bodies/<body>.obend` laid on each; `voice` and `about`, the one plain line its card leads with and the kinds card lists, from the kind's file):
    `record` (no body), `bell` (colour and seed; its `alive` law and clauses, in `bell.kind`), `cistern` (`law level`), `room` (name
    and a `spween` scene), `porch` (a room by another name), `garden` (makes bells and cisterns), `weather` (a place
@@ -159,6 +174,12 @@ station's want `register` and hangs doors between the station and the porch. Its
 mirror ring bell/1, the counter, hook, cooler, mirror and tape offer things into the reader's hands, the register's
 keeper signs from the counter, the book reads up only once a line is in it, and twelve windings of the wall clock open
 what the town keyed to them. Nothing there reads or writes the clock.
+
+On a carried town that lacks it, the carry's refresh makes it the same way when the config's `station` is on
+(`DELVETALK_STATION=on` in the workhorse's `.env`, passed by compose; `deploy/genesis.py refresh --with-gas-station`
+by hand): `refresh(..., station=True)` runs `gas_station` under `refresh-*` identities, the opener's journaled refresh
+like any other (no act of the chronicle's day), one `placed` row a step, `current` once the station stands, and a
+refused step fails the carry by name (tests/test_station.py `Carried`).
 
 ## The measure
 
