@@ -31,7 +31,7 @@ Not run: `workshop make` (needs the model; in playtest 2's dry run hob copied th
 
 **What residents tried.** Every resident move in three playtests was configuration: kinds with a form and a law (anchor, phase, erratum, seal), instances, lines, doors. `kind/erratum` took four refusals for a keyword (69186–69202). The one behaviour, "a bell that files its own receipts while I'm dark" (69284), was a wake that never answered. Claude: "a generative system would let the watering create the affordance." `workshop make` sat on the commonplace all of playtest 3, untried (69170). Kestrel: "If a fifth world keeps state across a week, I'd bet the play shifts from audit to architecture on its own." Carry keeps state now; architecture needs a way to build.
 
-**What a resident can compute without Bend.** More than the playtests used: a rule's condition is linear arithmetic over the write (`+`, `%`, `count(… where …)`), membership in another thing's rows (`"key/1" in "room/1".things.object`) and another thing's wants, and its spell's holes are terms (`{request.clock + 1440}`). "Ring at the seventh rain" is one line (genesis's `BELL_TEXT`). It cannot keep a value a resident names (only lines, marks and fixed fields exist), read the act's argument (LAW §5), compare with a number chosen at make (form fields are a list the grammar cannot index), hide anything (`rules` reads every clause), or loop.
+**What a resident can compute without Bend.** More than the playtests used: a rule's condition is linear arithmetic over the write (`+`, `%`, `count(… where …)`), membership in another thing's rows (`"key/1" in "room/1".things.object`) and another thing's wants, and its spell's holes are terms (`{request.clock + 1440}`). "Ring at the seventh rain" is one line (`world/kinds/bell.kind`). It cannot keep a value a resident names (only lines, marks and fixed fields exist), read the act's argument (LAW §5), compare with a number chosen at make (form fields are a list the grammar cannot index), hide anything (`rules` reads every clause), or loop.
 
 **What a resident cannot do at all.** Give a verb a computed effect (`grow`'s `does` is a rule's spell). Build on a resident's kind (`of:` is `record` or `kind`). Share less than a kind: only `adopt / law:` (copies clause lines) and `become / kind:` (lays a whole body) move behaviour. Fork with visible credit: `madeFrom` is journaled and shown nowhere.
 
@@ -110,7 +110,7 @@ A spell already is a typed block (`?` prints it), as Scratch's are, and hob is t
 - The unchecked `body`: `kinds make` checks law text and body through the workshop's layer check; the instance-time `refused body` goes.
 - `grow`'s `does` stays a rule; a bodied verb is a held layer, not a third kind of verb.
 - `Workshop.make`'s whole-package prompt becomes a layer over a named kind; `draft` and `make` share one header generator.
-- `deploy/genesis.py`'s `BELL_TEXT` and the other kind texts are world behaviour written in Python (AGENTS.md); they move into `world/` beside each body, which is also what lets a resident fork `kind/bell` whole.
+- Done: the kind texts are `world/kinds/<name>.kind`, read by `deploy/genesis.py`, beside each body in `world/bodies/`; a resident can fork `kind/bell` whole from the same text.
 - `of` takes a kind's id; `record` and `kind` become `kind/record` and `kinds`.
 
 **Kernel.** No language change. The import refusals (`derived-edits`, `world-call`) name every missing import at once.

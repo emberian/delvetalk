@@ -1,0 +1,9 @@
+of: record
+form: <<END
+name: text 1..64
+spween: text 0..16384
+END
+head: {name}
+voice: quiet; who is here, and what was said
+text: want company "a room nobody is in": count(new.presence) == 0 asks delvetalk {request.object} enter
+body: room

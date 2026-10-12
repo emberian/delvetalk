@@ -27,9 +27,9 @@ from transport.config import Config
 from transport.state import State
 
 GLM, KIM = 'did:plc:glm', 'did:plc:kim'
-# kind/bell's own rules, which every bell carries by `under` (deploy/genesis.py BELL_TEXT), owned by the kind's owner.
+# kind/bell's own rules, which every bell carries by `under` (world/kinds/bell.kind), owned by the kind's owner.
 KIND_RULES = [{'name': name, 'owner': genesis.HANDLE, 'reading': reading}
-              for name, reading in re.findall(r'^rule (\w+) "([^"]*)"', genesis.BELL_TEXT, re.M)]
+              for name, reading in re.findall(r'^rule (\w+) "([^"]*)"', genesis.kind_text('bell'), re.M)]
 YUE = 'the anchor remembers what the garden can\'t; the soil keeps the corrections'
 
 

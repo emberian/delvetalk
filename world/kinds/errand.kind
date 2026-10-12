@@ -1,0 +1,9 @@
+of: record
+form: <<END
+asks: text 1..200
+on: text 1..128
+done: text 1..400
+pays: text 1..400
+END
+text: want open "an errand nobody has done": not ("done" in new.marks.name) asks delvetalk {request.object} ?
+body: errand

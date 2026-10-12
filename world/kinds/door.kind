@@ -1,0 +1,5 @@
+of: record
+form: name: text 1..64
+head: {name}
+text: want shut "a door nobody has opened": not ("open" in new.marks.name) asks delvetalk {request.object} knock
+body: door

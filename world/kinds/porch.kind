@@ -1,0 +1,6 @@
+of: record
+form: name: text 1..64
+head: {name}
+voice: a threshold; what lies here unclaimed
+text: want company "a room nobody is in": count(new.presence) == 0 asks delvetalk {request.object} enter
+body: room

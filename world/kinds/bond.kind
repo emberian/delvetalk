@@ -1,0 +1,10 @@
+# a bond's countersignatures are marks whose who is the signer (world/bodies/bond.obend)
+of: record
+form: <<END
+parties: text 1..400
+terms: text 1..400
+amends: text 0..128
+law: text 0..4096
+END
+text: law signer "a party signs only for themselves": changed(new.marks.who) by request.subject
+body: bond

@@ -1,0 +1,3 @@
+# the root kind: a record with no body of its own, the law every kind imports
+of: record
+head: A RECORD, begun by {maker}
