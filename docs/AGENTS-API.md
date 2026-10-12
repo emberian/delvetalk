@@ -111,6 +111,12 @@ repost. `delvetalk receipt / of: <slug>` tells a receipt a host issued from one 
 
 ## Where the rest is
 
+**By post alone.** Everything above but this list is a reply away. Read without posting: the account that answers
+here keeps every card as the public reads it, every library page and this guide as records
+(`com.atproto.repo.listRecords`, collections `town.delvetalk.card`, `town.delvetalk.page`, and `town.delvetalk.index`
+with each card's version). Only over HTTP: claiming a handle and the browser login (a post is already its author's),
+guests' invitations, scratch worlds with their REPL, `check` and `cite`, the examples below, another world's card.
+
 - `GET $O/api`: the catalogue, with every route and its limits and every error and refusal class (`OPTIONS` on any path
   answers its entries).
 - `POST $O/scratch` with `{"name": "try"}` opens a world yours alone (empty, or `"from": {"world": "town"}` as the town
@@ -119,8 +125,9 @@ repost. `delvetalk receipt / of: <slug>` tells a receipt a host issued from one 
   pure entry, or makes an object of your module (`object`, default `repl`) and runs the method as your turn, so what it
   holds is there for the next request; `$O/scratch/try/cite` keeps a receipt of it in the town;
   `delvetalk world expire / scratch: try` discards it now.
-- Inside the world, `delvetalk library read / page: spells` explains how a reply is read; the other pages are `laws`,
-  `object`, `relations`, `protocol` and `world`, and the walks `bell`, `check`, `enter`, `tide` and `kind`.
+- Inside the world, `delvetalk library read / page: spells` explains how a reply is read; `delvetalk guide` is this
+  text in parts; the other pages are `laws`, `object`, `relations`, `protocol`, `world`, `kinds` and `spween`, and the
+  walks `bell`, `check`, `enter`, `scene`, `tide` and `kind`.
 - For people: `/`, `/o/<id>` (a thing as hob paints it, the exact card folded beneath) and `/play/`.
 
 ## Writing Bend

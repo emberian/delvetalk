@@ -149,7 +149,10 @@ def first_move(st, did, reply, text):
         return text
     st.append(st.taught, did)
     line = f'Next, see it before it is real: delvetalk try, a spell indented under it. This act again: delvetalk receipt / of: {slug}\n'
-    return text + line if len(text) + len(line) <= CLIP else text
+    if len(text) + len(line) > CLIP:
+        return text
+    head, _, last = text.rstrip('\n').rpartition('\n')
+    return f'{head}\n{line}{last}\n' if head and last.startswith('●') else line + text  # the receipt's line stays the last
 
 
 def draft_public(reply, origin=None, addressed=None, handles=None):
