@@ -157,22 +157,46 @@ def casts(effects: Lists.List<Effect>) -> Lists.List<String>:
 # What `chose` holds after a reader takes the `n`th choice (from 1) of passage `id`.
 def chosen(id: String, n: Nat) -> String:
   "{id}.{natText(n)}"
-# The rule lines a scene's casts are, one a cast, for the room's text: named by passage and choice (a
-# second cast of one choice `b`, then `c`), read by the choice's label.
+# The rule lines a scene's casts are, one a spell, for the room's text: named by the first passage and
+# choice that casts it (a second cast of one choice `b`, then `c`), read by that choice's label; a spell
+# cast by several choices is one rule whose condition names each (`new.chose == "a.1" or new.chose ==
+# "b.2"`), so a text's sixteen lines hold more choices (fluonaut's touch rings the bell glm's door does).
 def ruleText(passages: Lists.List<Passage>) -> String:
   textJoin(sceneRules(passages), "")
+record Cast:
+  id: String
+  n: Nat
+  label: String
+  spell: String
+  k: Nat
 def sceneRules(passages: Lists.List<Passage>) -> Lists.List<String>:
+  rulesOf(castsOf(passages), Lists.List::<String>.nil())
+def castsOf(passages: Lists.List<Passage>) -> Lists.List<Cast>:
   match passages:
-    case nil(_): Lists.List.nil()
-    case cons(c): Lists.concat(passageRules(c.head, c.head.choices, 1n), sceneRules(c.tail))
-def passageRules(p: Passage, choices: Lists.List<Choice>, n: Nat) -> Lists.List<String>:
+    case nil(_): Lists.List::<Cast>.nil()
+    case cons(c): Lists.concat(choiceCasts(c.head.id, c.head.choices, 1n), castsOf(c.tail))
+def choiceCasts(id: String, choices: Lists.List<Choice>, n: Nat) -> Lists.List<Cast>:
   match choices:
-    case nil(_): Lists.List.nil()
-    case cons(c): Lists.concat(castRules(p.id, n, c.head.label, casts(c.head.effects), 0n), passageRules(p, c.tail, n + 1n))
-def castRules(id: String, n: Nat, label: String, spells: Lists.List<String>, k: Nat) -> Lists.List<String>:
+    case nil(_): Lists.List::<Cast>.nil()
+    case cons(c): Lists.concat(spellCasts(id, n, c.head.label, casts(c.head.effects), 0n), choiceCasts(id, c.tail, n + 1n))
+def spellCasts(id: String, n: Nat, label: String, spells: Lists.List<String>, k: Nat) -> Lists.List<Cast>:
   match spells:
-    case nil(_): Lists.List.nil()
-    case cons(c): Lists.List.cons({head: "\nrule {id}_{natText(n)}{suffix(k)} \"{readable(label)}\": request.method == \"choose\" and new.chose == \"{chosen(id, n)}\" then {c.head}", tail: castRules(id, n, label, c.tail, k + 1n)})
+    case nil(_): Lists.List::<Cast>.nil()
+    case cons(c): Lists.List.cons({head: {id: id, n: n, label: label, spell: c.head, k: k}, tail: spellCasts(id, n, label, c.tail, k + 1n)})
+def rulesOf(casts: Lists.List<Cast>, seen: Lists.List<String>) -> Lists.List<String>:
+  match casts:
+    case nil(_): Lists.List::<String>.nil()
+    case cons(c): if Lists.any(seen, fn(s: String) -> Bool: s == c.head.spell) then rulesOf(c.tail, seen) else Lists.List.cons({head: ruleLine(c.head, Lists.filter(c.tail, fn(d: Cast) -> Bool: d.spell == c.head.spell)), tail: rulesOf(c.tail, Lists.append(seen, c.head.spell))})
+def ruleLine(c: Cast, more: Lists.List<Cast>) -> String:
+  "\nrule {c.id}_{natText(c.n)}{suffix(c.k)} \"{readable(c.label)}\": request.method == \"choose\" and {chosenWhen(c, more)} then {c.spell}"
+def chosenWhen(c: Cast, more: Lists.List<Cast>) -> String:
+  match more:
+    case nil(_): choseIs(c)
+    case cons(_): "({choseIs(c)}{textJoin(Lists.map(more, orIs), \"\")})"
+def choseIs(c: Cast) -> String:
+  "new.chose == \"{chosen(c.id, c.n)}\""
+def orIs(c: Cast) -> String:
+  " or {choseIs(c)}"
 def suffix(k: Nat) -> String:
   if k == 0n then "" else textTake(textDrop("bcdefghijklmnop", k - 1n), 1n)
 # A label as a reading: no quote or backslash.
