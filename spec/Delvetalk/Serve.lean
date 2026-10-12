@@ -553,27 +553,38 @@ def main (args : List String) : IO UInt32 := do
   unless ← lock.tryLock (exclusive := true) do
     errors.putStrLn s!"serve: {lockPath} is held: another process owns the journal; refusing to start a second writer"
     return 75
+  let timing := (← IO.getEnv "DELVETALK_TIMING") == some "1"
+  -- With timing, one stderr line per start stage: `start\t<stage>\t<ms>`.
+  let mut mark ← IO.monoMsNow
+  let stage := fun (name : String) (since : Nat) => do
+    let now ← IO.monoMsNow
+    if timing then errors.putStrLn s!"start\t{name}\t{now - since}"; errors.flush
+    return now
   let mut srv : Server := { config, lock := some lock }
   if let some lib := config.library then
     let target := config.state / "library"
     sealLibrary lib target
     srv := { srv with sealed := some target.toString, libraryPin := (← Host.loadLibrary target.toString).toOption.map (·.pin) }
+  mark ← stage "seal" mark
   srv := { srv with sha := ← binaryPin (config.state / "binary-pin") (← IO.appPath) }
+  mark ← stage "pin" mark
   -- Every world of the directory is held from the start, so a turn in one may read another.
   for f in ← config.state.readDir do
     if f.fileName.endsWith ".journal" then
       let name := (f.fileName.dropEnd 8).toString
-      if Host.validWorldName name then srv := (← world srv name).1
+      if Host.validWorldName name then
+        srv := (← world srv name).1
+        mark ← stage s!"open {name}" mark
   let (opened, clock) ← homeClock srv
   srv ← findScratches opened clock
   -- A crossing a stop left halfway is carried on (each step of it is idempotent).
   srv ← cross srv
+  mark ← stage "cross" mark
   let pidfile := config.state / "serve.pid"
   IO.FS.writeFile pidfile (toString (← IO.Process.getPID))
   for p in [config.socket, config.rootSocket] do
     if let some dir := p.parent then IO.FS.createDirAll dir
   listen config.socket.toString config.rootSocket.toString config.rootGroup
-  let timing := (← IO.getEnv "DELVETALK_TIMING") == some "1"
   repeat
     let got ← next
     if got.isEmpty then break
