@@ -656,8 +656,10 @@ class Play(FrontCase):
     def setUpClass(cls):
         super().setUpClass()
         from deploy import genesis
+        from tests.town import furnish
         made, refusal = genesis.run(cls.root, cls.OPENER)
         assert refusal is None, refusal
+        furnish(cls.root, cls.OPENER)
 
     def setUp(self):
         super().setUp()

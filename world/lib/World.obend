@@ -124,6 +124,17 @@ sum Placed:
 sum Chronicled:
   chronicled: {day: Nat, lines: Document.Names}
   refused: {clause: String}
+# What wants a hand across the world (`wanting {after, limit}`): each want that holds now, the thing's
+# own and the ones it follows, oldest first, with the height since which it has held; derived, no root.
+record Want:
+  object: String
+  name: String
+  reading: String
+  asks: String
+  since: Nat
+sum Wanting:
+  wanting: {rows: Lists.List<Want>, more: Bool}
+  refused: {clause: String}
 sum Carded:
   carded: {document: Document.Document}
   denied: {}
@@ -168,4 +179,5 @@ protocol world:
   ungrow({object: Plans.Reference, name: String}) -> Placed
   act<R>({object: Plans.Reference, verb: String, text: String}) -> Returned<R>
   chronicle({day: Nat}) -> Chronicled
+  wanting({after: Nat, limit: Nat}) -> Wanting
   principal({handle: String}) -> Named

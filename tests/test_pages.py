@@ -91,8 +91,10 @@ class Pages(FrontCase):
     def setUpClass(cls):
         super().setUpClass()
         from deploy import genesis
+        from tests.town import furnish
         made, refusal = genesis.run(cls.root, cls.OPENER)
         assert refusal is None, refusal
+        furnish(cls.root, cls.OPENER)
         r = cls.root.send({'op': 'world-create', 'principal': cls.OPENER, 'identity': 'mk-picker', 'object': 'picker',
                                          'modules': closure('World') + [{'name': 'Picker', 'source': PICKER}], 'entry': 'initial', 'seed': {'tag': 'record', 'fields': []}})
         assert r['status'] == 'created', r

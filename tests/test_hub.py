@@ -190,8 +190,8 @@ class Hub(test_chain.Chain):
         [card] = [o["text"] for o in missed["receipt"]["offers"]]
         self.assertTrue(card.startswith(ASKED), card)
         self.assertNotIn("how often", card)
-        self.assertEqual([l for l in card.split("\n") if l and not l.startswith((" ", "hob"))][:3], ["KINDS", "WORKSHOP", "GARDEN"])
-        self.assertIn("\nTIDE\n  delvetalk tide rules\n  » the weather's rule: rain once a clock day\n", card)
+        self.assertEqual([l for l in card.split("\n") if l and not l.startswith((" ", "hob"))][:3], ["KINDS", "PORCH", "WORKSHOP"])
+        self.assertIn("\nTIDE\n  delvetalk tide rules\n  » what happens at each hourly tick\n", card)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_several_spells_in_one_reply_each_run_in_order_with_its_result(self):

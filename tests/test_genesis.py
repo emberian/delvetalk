@@ -26,7 +26,7 @@ class Genesis(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
         cls.host = cls.town.client  # genesis is the opener's: the root socket
         cls.made, cls.refusal = cls.town.made, cls.town.refusal
 
@@ -37,45 +37,56 @@ class Genesis(unittest.TestCase):
 
     def test_the_whole_sequence_is_created_once_and_refused_a_second_time(self):
         host, made, refusal = self.host, self.made, self.refusal
-        hands = [dict(fields)['id'] for _, fields in genesis.HANDS]
-        # world-create seeds the first objects; the hand's things are then admitted by spell on their kinds, and the garden's weather door after
+        hands = [dict(fields)['id'] for _, fields, _ in genesis.HANDS]
+        # world-create seeds the frame; the town's coinages are then admitted by spell on their kinds, the porch's
+        # doors to the two bells and the seeded wants after; then the porch's things are created and laid there
         self.assertEqual((refusal, [(m['object'], m['status']) for m in made]),
-                         (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [(id, 'admitted') for id in hands] + [('garden', 'admitted'), ('porch', 'admitted')]
+                         (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [(id, 'admitted') for id in hands]
+                          + [('porch', 'admitted')] * len(genesis.PORCH_DOORS) + [(w[0], 'admitted') for w in genesis.WANTS]
                           + [(t, 'created') for t, _ in genesis.THINGS]), made)
         o = genesis.OPENER
         self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [t for t, _ in genesis.THINGS] + [o]))
-        # the porch's unclaimed things lie on it, each laid by the opener
         self.assertEqual([m.get('laid') for m in made if m['module'] == 'Thing'], ['admitted'] * len(genesis.THINGS))
-        # each hand's thing is a record of its kind whose maker is the opener, who alone named its id
-        for id, (kind, _) in zip(hands, genesis.HANDS):
+        # each coinage is a record of its kind whose maker is the opener, made from its coiner's post, which its card credits
+        for id, (kind, _, post) in zip(hands, genesis.HANDS):
             thing = self.view(id)
-            self.assertEqual((thing['kind']['value'], thing['maker']['value'], thing['owner']['value']), (kind, o, o), id)
-        # the opener arrived first: another reader sees their handle, not a DID fragment
+            self.assertEqual((thing['kind']['value'], thing['maker']['value'], thing['owner']['value'], thing['post']['value']), (kind, o, o, post), id)
+            self.assertIn('After %s\n' % post, host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': id})['text'])
         avatar = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': o})
         self.assertIn("ember.delve.town's avatar, nowhere yet", json.dumps(avatar))
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)
-        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (7, 7))
+        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (4, 6))
         ids = set(genesis.existing(host, o))
         self.assertEqual([l for l, to, _ in genesis.DOORS if to not in ids], [])  # every door with an object resolves
-        self.assertEqual([d[0] for d in genesis.DOORS] + [genesis.STUDIO[0]], ['KINDS', 'WORKSHOP', 'GARDEN', 'ROOMS', 'TIDE', 'PORCH', 'ANTHOLOGY', 'STUDIO'])
+        self.assertEqual([d[0] for d in genesis.DOORS] + [genesis.STUDIO[0]], ['KINDS', 'PORCH', 'WORKSHOP', 'TIDE', 'STUDIO'])
         self.assertEqual([(m['object'], m['body']) for m in made if 'body' in m], [('commonplace', 'admitted')])
-        # the garden cites its weather, which is what lets the weather write the garden's weather line
-        self.assertIn('weather', [{f['name']: f['value'] for f in d['fields']}['label']['value'] for d in self.view('garden')['cites']['items']])
         said = {}
-        for word in ('ROOMS', 'PORCH', 'STUDIO'):
+        for word in ('PORCH', 'STUDIO'):
             got = host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'commonplace', 'method': 'receive',
                              'argument': record(text=label(word), post=label('at://x/p/' + word)),
                              'identity': 'door-' + word})
             self.assertEqual(got['status'], 'admitted', got)
             said[word] = got['offers'][0]['text']
-        self.assertTrue(said['ROOMS'].startswith('The Moss Gate (0 here). Enter: delvetalk rooms enter.'), said)
         self.assertTrue(said['PORCH'].startswith("The Bellfounder's Porch"), said)
         # The link door has no object: naming it answers its description.
         self.assertEqual(said['STUDIO'], 'STUDIO\nscratch worlds and REPL: ' + ORIGIN + '/AGENTS.md\n')
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'commonplace'})['text']
         self.assertIn(ORIGIN + '/AGENTS.md', menu)
+
+    def test_the_seeded_things_want_in_their_own_voice_and_a_want_fades_when_answered(self):
+        """The onboarding is wants, never posts: mimo's bell has no clapper, kinds has made only the town's own,
+        each porch thing has nothing around it, each bell no door; each reading says what the thing lacks and asks no one."""
+        wants = lambda obj: {r['name']: r for r in self.host.send({'op': 'world-wants', 'principal': 'did:plc:stranger', 'object': obj})['rows']}
+        clapper = wants('bell/1')['clapper']
+        self.assertEqual((clapper['reading'], clapper['asks']), ('the bell has no clapper yet', 'delvetalk bell/1 hang'))
+        self.assertEqual(wants('kinds')['made']['reading'], "no kind made here yet but the town's own")
+        self.assertNotIn('made', wants('kind/bell'))  # the guard keeps kinds' want off the kinds that follow it
+        self.assertEqual(wants('porch/goblet')['claimed']['reading'], 'nothing surrounds it yet')
+        for obj in ('bell/1', 'bell/2', 'porch', 'kinds', 'porch/goblet'):
+            for row in wants(obj).values():
+                self.assertFalse(re.match(r'(please |you |hang |make |inspirit |tend |rain )', row['reading']), row)
 
     def test_the_tide_ticks_itself_every_hour_with_nobody_posting(self):
         """OFFERING §4: the opener's first tick starts the tide, which then ticks itself every 60 clock minutes;
@@ -107,15 +118,10 @@ class Genesis(unittest.TestCase):
         bell = self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'kind/bell'})['text']
         self.assertIn('Its things speak: %s\n' % genesis.VOICES['bell'], bell)
         self.assertIn('unchanged(voice)', genesis.KIND_LAW)
-        # the hand's Moss Gate was made by that kind with the body laid in the making, its scene read from the spween field
-        rooms = self.view('rooms')
-        self.assertEqual((rooms['kind']['value'], rooms['head']['value'], rooms['start']['value']), ('kind/room', 'The Moss Gate', 'gate'))
 
-    def test_every_door_with_an_object_publishes_its_page_and_the_anthology_card_shows_the_owner_handle(self):
+    def test_every_door_with_an_object_publishes_its_page(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
-        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['anthology', 'garden', 'kinds', 'porch', 'rooms', 'tide', 'workshop'], pages)
-        card = json.dumps(self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'anthology'}))
-        self.assertIn('ember.delve.town', card)
+        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['kinds', 'porch', 'tide', 'workshop'], pages)
 
     def library(self, text, n):
         got = self.host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'library', 'method': 'receive', 'identity': 'lib-%d' % n,
@@ -241,12 +247,12 @@ class Refresh(unittest.TestCase):
         old_kinds = [(n, of, form, head, law.replace(genesis.RECORD_LAW, old_record).split('\nrule seven', 1)[0], body)
                      for n, of, form, head, law, body in genesis.KINDS if n != 'front']  # a kind genesis makes since
         with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}):
-            cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
+            cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
         cls.send = cls.town.send
-        # Another hand since genesis: the anthology's law gains a clause, kind/door's law field loses its want.
-        version = int(cls.send(op='world-object', principal=genesis.OPENER, object='anthology')['record']['version'])
-        cls.amended = old_record + '\nlaw quiet "nothing after midnight": request.clock >= 0'
-        assert cls.send(op='world-amend', principal=genesis.OPENER, identity='hand-anthology', object='anthology', version=version,
+        # Another hand since genesis: kinds' own law gains a clause, kind/door's law field loses its want.
+        version = int(cls.send(op='world-object', principal=genesis.OPENER, object='kinds')['record']['version'])
+        cls.amended = genesis.KIND_LAW + '\nlaw quiet "nothing after midnight": request.clock >= 0'
+        assert cls.send(op='world-amend', principal=genesis.OPENER, identity='hand-kinds', object='kinds', version=version,
                         law=cls.amended)['status'] == 'admitted'
         door = cls.send(op='world-object', principal=genesis.OPENER, object='kind/door')['record']['version']
         cls.door = old_record
@@ -264,13 +270,12 @@ class Refresh(unittest.TestCase):
                           ('kind/garden', '.law'), ('kind/porch', '.voice')):
             with self.subTest(obj=obj, slot=slot):
                 self.assertEqual(self.status(self.rows, obj, slot), ('refreshed', None))
-        self.assertEqual(self.status(self.rows, 'kinds', 'law'), ('current', None))  # KIND_LAW did not change
         self.assertEqual(self.status(self.rows, 'kind/front', '.law'), ('refreshed', 'made'))
         self.assertIn('kind/front', self.send(op='world-objects', principal=genesis.OPENER)['ids'])
-        self.assertEqual(self.status(self.rows, 'anthology', 'law'), ('left', 'changed since genesis gave it'))
+        self.assertEqual(self.status(self.rows, 'kinds', 'law'), ('left', 'changed since genesis gave it'))
         self.assertEqual(self.status(self.rows, 'kind/door', '.law'), ('left', 'changed since genesis gave it'))
         self.assertEqual(self.send(op='world-object', principal=genesis.OPENER, object='commonplace')['record']['law'], genesis.RECORD_LAW)
-        self.assertEqual(self.send(op='world-object', principal=genesis.OPENER, object='anthology')['record']['law'], self.amended)
+        self.assertEqual(self.send(op='world-object', principal=genesis.OPENER, object='kinds')['record']['law'], self.amended)
         kind = {f['name']: f['value']['value'] for f in self.send(op='world-view', principal=genesis.OPENER, object='kind/bell')['state']['fields']
                 if f['name'] in ('law', 'voice')}
         self.assertEqual(kind, {'law': dict((k[0], k[4]) for k in genesis.KINDS)['bell'], 'voice': genesis.VOICES['bell']})
@@ -283,7 +288,7 @@ class Refresh(unittest.TestCase):
         height = self.send(op='world-status')['height']
         again = genesis.refresh(self.town.client, genesis.OPENER, genesis.ancestry(self.town.journal))
         self.assertEqual({r['status'] for r in again} - {'current'}, {'left'}, again)
-        self.assertEqual(sorted((r['object'], r['slot']) for r in again if r['status'] == 'left'), [('anthology', 'law'), ('kind/door', '.law')])
+        self.assertEqual(sorted((r['object'], r['slot']) for r in again if r['status'] == 'left'), [('kind/door', '.law'), ('kinds', 'law')])
         self.assertEqual(self.send(op='world-status')['height'], height)
 
 
@@ -374,7 +379,8 @@ class Commonplace(unittest.TestCase):
         card = self.host.send({'op': 'world-card', 'principal': stranger, 'object': 'commonplace'})['text']
         self.assertTrue(card.startswith('✾ DELVETALK · THE COMMONPLACE\n\nEight doors.'), card)
         self.assertIn('  delvetalk commonplace since / entry: 0\n', card)
-        self.assertIn('ROOMS\n  delvetalk rooms enter\n', card)
+        self.assertIn('PORCH\n  delvetalk porch enter\n', card)
+        self.assertIn('ROOMS\n', card)  # the furnished town's doors, hung by spell with no example
         for n, colour in enumerate(('silver', 'amber'), 1):
             self.say(glm, 'garden', 'delvetalk garden plant / seed: a bell for the %d / colour: %s' % (n, colour), 'plant-%d' % n)
         rain = self.say(kimi, 'garden/bell/1', 'delvetalk garden/bell/1 rain / text: it rained here first', 'rain-1')
@@ -391,8 +397,7 @@ class Commonplace(unittest.TestCase):
         self.assertNotIn('commonplace v', blank)  # its own doors are not news
         self.assertIn('  delvetalk kinds make / name: lamp / of: record\n  » kind/lamp, a kind anyone makes\n  delvetalk garden/bell/1 ?\n', blank)
         # KINDS and WORKSHOP lead (playtest 2, F1): what is clipped is the places, from the end.
-        self.assertIn('\nKINDS\n  delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80\n  » kind/lamp, a kind anyone makes\nWORKSHOP\n', blank)
-        self.assertRegex(blank, r'… and \d+ more\n')  # the card is one budget (Card.limit): the doors it has no room for are counted
+        self.assertIn('\nKINDS\n  delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80\n  » kind/lamp, a kind anyone makes\nPORCH\n', blank)
         self.assertIn('STUDIO · scratch worlds and REPL: ' + ORIGIN + '/AGENTS.md\n', blank)  # a link door is never clipped
         self.assertTrue(blank.endswith('Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n'), blank)
         # since an entry: only what changed after it

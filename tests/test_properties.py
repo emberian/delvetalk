@@ -44,7 +44,7 @@ EXPLORE = os.environ.get("DELVETALK_SEED")  # an extra RandomHour run of this se
 OPENER = genesis.OPENER
 STRANGERS = {"did:plc:" + c * 24: h for c, h in (("k", "kimik3.delve.town"), ("g", "glm.delve.town"))}
 HASH = re.compile(r"bafy|baf[a-z2-7]{20,}|\b[0-9a-f]{40,}\b")
-DID = re.compile(r"did:plc:[a-z2-7]{6}")
+DID = re.compile(r"(?<!at://)did:plc:[a-z2-7]{6}")  # a person is shown by handle; a post is cited by its at:// URI (Record `credit`)
 
 POSTS = json.loads((ROOT / "rehearsal" / "fixtures" / "posts.json").read_text())
 ANSWERS = [a["answer"] for a in json.loads((ROOT / "rehearsal" / "fixtures" / "model-answers.json").read_text()).values()]
