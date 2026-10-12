@@ -193,9 +193,11 @@ class Requests(unittest.TestCase):
         self.pds.put(DID, '3aaaaaaaaaaa3', request(PLANT, service='did:web:elsewhere.example'))
         self.pds.put(DID, '3aaaaaaaaaaa4', request(PLANT, created='2026-10-11T23:59:59Z'))
         self.pds.put(DID, '3aaaaaaaaaaa5', request(PLANT, world='ring'))
+        self.pds.put(DID, '3aaaaaaaaaaa6', request('delvetalk try\n    ' + PLANT.replace('\n', '\n    ')))  # try by its spell
         acts = len(self.acts())
         self.step()
         self.assertEqual(len(self.acts()), acts)
+        self.assertIn(f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa6', self.st.words(self.st.skipped))
         self.assertFalse(any(self.st.answers.glob('*.json')) if self.st.answers.exists() else False)
         whys = {k.rsplit('/', 1)[-1]: v['why'] for k, v in json.loads(self.st.requests.read_text())['refused'].items()}
         self.assertEqual(whys, {'3aaaaaaaaaaa2': 'mode try is never run by record', '3aaaaaaaaaaa3': 'addressed to another service',
@@ -254,8 +256,6 @@ class Requests(unittest.TestCase):
         self.assertIn('repository_elsewhere', canonical(ran['failed']))
 
     def test_a_stale_if_is_answered_moved_with_what_moved_and_journals_nothing(self):
-        if 'moved' not in self.host.send({'op': 'bounds'})['refusalClasses']:
-            self.skipTest("this host binary has no `if` on a turn (lane/posting's world-turn `if`)")
         self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT, **{'if': [{'object': 'garden-1', 'version': 0}]}))
         self.step()
         acts = len(self.acts())
