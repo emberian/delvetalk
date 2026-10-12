@@ -91,7 +91,8 @@ class Run:
         for d in (self.state, self.mock, self.models):
             d.mkdir(parents=True, exist_ok=True)
         self.env = dict(os.environ, DELVETALK_OBEND=str(Path(a.binary).resolve()), PYTHONPATH=str(ROOT), DELVETALK_STATE=str(self.state),
-                        DELVETALK_DELVE_MOCK=str(self.mock), DELVETALK_MODEL_MOCK=str(self.models))
+                        DELVETALK_DELVE_MOCK=str(self.mock), DELVETALK_MODEL_MOCK=str(self.models),
+                        DELVETALK_SUMMON_HANDLE='livedelvetalk.delve.town')  # the name the archive's posts summoned by
         self.place = State(self.state)
         self.log = open(self.out / 'programs.log', 'a')
         self.errors = []      # every host error, Python exception or failed item, verbatim, with its cause
