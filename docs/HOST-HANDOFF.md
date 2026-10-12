@@ -2247,7 +2247,15 @@ each commit:
    `interpretVerdict` and `model.extract`; (4) a refusal class for "the opener speaks on the root socket"; (6) the
    REPL's retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
    mention cap of 4 as host answers.
-5. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);
+5. **`render` reads what wants a hand** (the coordinator, after lane/objrev with attend's work): `render` is pure, so
+   the commonplace's card cannot lead with "What wants a hand". Hand `render` the wanting rows as context the host
+   supplies (as it supplies the reader: `cardContext`, from `world.wanting`/`wantRows` for the reader), so the card
+   itself, on the web and in `?`, leads with them; then `shownCard`'s appended wants lines (5.180) are the card's own.
+6. **`genesis refresh` on a carried town** leaves every carried kind's law and form ("its making is in no journal
+   read"), so the live town keeps the old kind texts. Read the making through the carried chain (the old journals
+   the `carried` genesis cites by `carriedFrom`, or the genesis's `moved` records), so a kind the opener made at the
+   original genesis counts as genesis-made; test on a carried genesis town.
+7. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);
    `transport/host.py` `HISTORY_LIMIT` restates `Limits.maxHistoryLimit` (read it from `bounds`); `shownSpell` scans
    the filled text for `did:` tokens because `fired` rows keep no hole structure; a seed post carrying a card's wants
    lines may pass the bridge's bound once its receipt line is stamped (`docs/previews/seed-posts/01-porch.txt`); this
