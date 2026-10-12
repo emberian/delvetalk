@@ -1315,7 +1315,7 @@ def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : 
 /-- `rule`'s and `want`'s fields as the usage prints them: the spell last, since its own fields follow it. -/
 def ruleLine : String := "name: <a name>\nwhen: <a condition>\nthen: <a spell, holes {new.F} and {request.subject}>"
 def wantLine : String := "name: <a name>\nwhen: <a condition on the thing as it stands>\nasks: <the spell that answers it>"
-def growLine : String := "name: <one word>\nreading: <what it does>\ntakes: <text, or nothing>\ndoes: <a spell its use casts, or leave it out>"
+def growLine : String := "name: <one word>\nreading: <what it does>\ntakes: <text, or nothing>\ndoes: <a spell its use casts, or leave it out>\nbody: <a few lines of Bend in a <<BEND block, or leave it out>"
 
 /-- `adopt`'s field as the usage prints it: a law written inline, or the id of what holds one. -/
 def adoptLine : String := "law: law <name> \"<reading>\": <expression>, or a kind's or a page's id"
@@ -1375,6 +1375,9 @@ def lineageLine (w : World) (o : Object) : String := Id.run do
     (·.getObjValAs? String "principal" |>.toOption))).map (handleOf w ·)
   return s!"After {object}{(by_.map (s!" by {·}")).getD ""}, entry {i + 1}.\n"
 
+/-- The workshop a verb grown with a body is written by (`growBody`). -/
+def workshopId : String := "workshop"
+
 /-- A grown verb's use as its card's `act` takes it: `{verb, text}`, the text "" when the verb takes
     none; none when `action` is no verb grown on `o` (a declared form shadows a verb of its name). -/
 def grownAct (o : Object) (action : String) (argument : Data) : Option Data := do
@@ -1426,6 +1429,13 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
       | "rules" => rulesText w id target shown
       | "wants" => wantsText w id target shown
       | _ => verbsText w id target shown (shownForms.filter fun f => !target.verbs.any (·.name == f.action)))
+  -- A verb grown with a body (docs/AUTHORING.md §3 (b)) is a one-method layer the workshop writes, checks
+  -- and lays (or holds for the card's owner): its `growBody`, the speaker's turn.
+  if action == "grow" && speaker && !forms.any (·.action == action) && w.objects.contains workshopId &&
+      fields.any (fun b => b.name == "body" && !b.value.isEmpty) then
+    let given := fun (n : String) => Data.label (((fields.find? (·.name == n)).map (·.value)).getD "")
+    return .run workshopId "growBody" (.record [("object", .label id), ("name", given "name"), ("reading", given "reading"),
+      ("takes", given "takes"), ("body", given "body")]) (spellLine card action)
   -- The host's own spells, on any card that does not define the action itself (`hostSpell`).
   if hostSpells.contains action && !forms.any (·.action == action) then
     if !speaker then

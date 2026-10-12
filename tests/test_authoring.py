@@ -325,5 +325,36 @@ class Authoring(unittest.TestCase):
         self.assertEqual(opened["result"], {"tag": "boolean", "value": True}, opened)
 
 
+    # §3 (b): a verb grown with a body is a one-method layer the workshop writes, checks and lays; on another's
+    # thing it is held for the owner. §4: the verb library is single-verb kinds laid by `become`, credited.
+    def test_a_verb_grown_with_a_body_and_a_verb_kind_laid_by_become(self):
+        water = 'Super.inscribe(state, "water", "{input.text} (watered by {context.handle})", context)'
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: pot / of: record / head: a pot")
+        self.admitted(YUE, "kind/pot", "delvetalk kind/pot make")
+        grown = self.admitted(YUE, "pot/1", "delvetalk pot/1 grow / name: water / takes: text\nbody: <<BEND\n%s\nBEND" % water)
+        self.assertIn("water grows on pot/1, with its body.", told(grown))
+        self.assertIn("delvetalk pot/1 water\ntext:", told(self.say(KES, "pot/1", "delvetalk pot/1 ?")))
+        self.assertIn("#1 is written: a cup (watered by kestrel.delve.town)", told(self.admitted(KES, "pot/1", "delvetalk pot/1 water / text: a cup")))
+        # A body that does not compile names its line past what the workshop wrote.
+        bad = told(self.admitted(YUE, "pot/1", "delvetalk pot/1 grow / name: spill / takes: nothing\nbody: <<BEND\nSuper.inscribe(state, \"spill\", nowhere, context)\nBEND"))
+        self.assertIn("Checked: 1 problem.", bad)
+        self.assertIn("Lines 1 to 17 are what the workshop wrote around your body; its first line is line 18.", bad)
+        # On another's thing: held for its owner, who lays it.
+        held = told(self.admitted(KES, "pot/1", "delvetalk pot/1 grow / name: pour / takes: nothing\nbody: <<BEND\nSuper.inscribe(state, \"pour\", \"poured\", context)\nBEND"))
+        n = held.split("is held as #")[1].split(" ")[0]
+        self.assertIn("for the owner of pot/1 to lay", held)
+        r = self.say(KES, "workshop", "delvetalk workshop adopt / n: %s" % n)
+        self.assertEqual(r["status"], "refused", r)
+        self.assertIn("Laid #%s on pot/1." % n, told(self.admitted(YUE, "workshop", "delvetalk workshop adopt / n: %s" % n)))
+        self.assertIn("#2 is written: poured", told(self.admitted(KES, "pot/1", "delvetalk pot/1 pour")))
+        # A verb anyone may lay on a thing of theirs: a kind whose body is the one verb, laid by `become`.
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: watering / of: record\nbody: <<BEND\nform water:\n  text: text 1..200\n"
+                      "def water(state: State, input: WaterInput, context: Abi.Context) -> Activity<Nat>:\n  %s\nBEND" % water)
+        self.admitted(KES, "kind/pot", "delvetalk kind/pot make")
+        self.admitted(KES, "pot/2", "delvetalk pot/2 become / kind: kind/watering")
+        self.assertRegex(told(self.say(YUE, "pot/2", "delvetalk pot/2 ?")), r"After kind/watering by yue\.delve\.town, entry \d+\.")
+        self.assertIn("#1 is written: rain (watered by yue.delve.town)", told(self.admitted(YUE, "pot/2", "delvetalk pot/2 water / text: rain")))
+
+
 if __name__ == "__main__":
     unittest.main()

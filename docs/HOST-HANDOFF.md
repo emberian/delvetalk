@@ -2018,6 +2018,14 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    of the cited entry; `world-inspect` answers `madeFrom` and `lineage`. KIND's `~makeFork` (by `kinds`) makes a kind
    forked whole with that lineage; the workshop's `draft / from:` holds one. Test: `test_authoring`.
 
+177. **A verb grown with a body (lane/author-build; AUTHORING §3 (b), §5 objects 4).** `castSpell`: a direct `grow`
+   carrying `body` runs `workshop`'s `growBody {object, name, reading, takes, body}` (`workshopId`) as the speaker's
+   turn; `growLine` shows the field. The workshop (Bend) writes the one method (`verbLayer`: its `form`, and a `def`
+   whose result is a number), lays the header (`Forms.layer`), checks it over the thing and `extend`s it when the
+   thing's law lets the grower reprogram it, else holds it over the thing for whoever its law lets lay it (`adopt /
+   n`, `laidOn`). A grown verb with a body is a declared method, so no verb row is placed. Test: `test_authoring`
+   (with the verb library: a one-verb kind laid by `become`, `?` saying what it is after).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

@@ -222,7 +222,7 @@ def heldDraft(held: Held, state: State, context: Abi.Context) -> Activity<Verdic
 # the workshop and the receipt of the turn that held it, which the await of that turn's slot
 # (the proposer and the intent the held row keeps) answers with its hash.
 def making(held: Held, context: Abi.Context) -> Activity<Verdict>:
-  if held.proposer != context.principal then refusing("notDescriber", "Only its describer, {Card.shown(held.proposer, held.proposerHandle, context)}, adopts #{natText(held.n)}", context) else holdingReceipt(held, context)
+  if held.proposer != context.principal && overOf(held.package) != "" then laidOn(held, overOf(held.package), context) else if held.proposer != context.principal then refusing("notDescriber", "Only its describer, {Card.shown(held.proposer, held.proposerHandle, context)}, adopts #{natText(held.n)}", context) else holdingReceipt(held, context)
 def holdingReceipt(held: Held, context: Abi.Context) -> Activity<Verdict>:
   match world.await({slot: {principal: held.proposer, intent: held.intent}, patience: 0n}):
     case reply(r): made(held, r.receipt.hash, context)
@@ -308,8 +308,33 @@ form propose:
   target: text 1..128
   migration: text 0..1400
   source: source
+# A verb grown with a body (`delvetalk bell/2 grow / name: water / takes: text / body: <<BEND`, which the
+# host hands here): one method, `form` and `def`, its result a number, written into a layer with the
+# header (`Forms.layer`), checked over the thing, and laid on it when the thing's law lets the grower
+# reprogram it; else held for its owner to adopt (`adopt / n`), as a draft over it.
+def growBody(state: State, input: {object: String, name: String, reading: String, takes: String, body: String}, context: Abi.Context) -> Activity<Verdict>:
+  if Text.blank(input.name) || Text.blank(input.body) then refusing("missingField", "grow with a body takes name: one word, and body: a few lines of Bend", context) else bodyGrowing(input.object, input.name, Forms.layer(verbLayer(input.name, input.takes, input.body)), Forms.headerLines() + if takesText(input.takes) then 3n else 2n, context, state)
+def takesText(takes: String) -> Bool:
+  Text.lower(Text.trim(takes)) == "text" || Text.lower(Text.trim(takes)) == "a line"
+def verbLayer(name: String, takes: String, body: String) -> String:
+  let text = takesText(takes)
+  let field = if text then "  text: text 1..280\n" else ""
+  let input = if text then "input: {Forms.capital(name)}Input, " else ""
+  let lines = textJoin(Lists.map(Forms.split(Text.trimEnd(body), "\n"), fn(l: String) -> String: "  {Text.trim(l)}"), "\n")
+  "form {name}:\n{field}def {name}(state: State, {input}context: Abi.Context) -> Activity<Nat>:\n{lines}\n"
+def bodyGrowing(object: String, name: String, layer: String, written: Nat, context: Abi.Context, state: State) -> Activity<Verdict>:
+  match overChecked(object, layer, context):
+    case checked(c): if Lists.length::<String>(c.diagnostics) == 0n then bodyLaying(object, name, layer, context, state) else Card.tell(Verdict.flawed({diagnostics: c.diagnostics}), Document.concat(checkedCard(c.diagnostics), Document.text("Lines 1 to {natText(written)} are what the workshop wrote around your body; its first line is line {natText(written + 1n)}.\n")))
+    case refused(_): refusing("noObject", "No card called {object}", context)
+def bodyLaying(object: String, name: String, layer: String, context: Abi.Context, state: State) -> Activity<Verdict>:
+  match world.extend({object: {world: context.world, object: object}, package: layer, migration: ""}):
+    case reprogrammed(r): Card.tell(Verdict.reprogrammed({pin: r.pin}), Document.text("✾ WORKSHOP\n\n{name} grows on {object}, with its body. Use it:\n  delvetalk {object} {name}\n"))
+    case refused(r): if programFault(r.clause) then refusing(r.clause, faultReading(r.clause, r.reading, object), context) else bodyHeld(draftRow(name, noted(object, layer), context, state), object, state)
+def bodyHeld(held: Held, object: String, state: State) -> Activity<Verdict>:
+  let written(_) = write {held: insert held, next: add 1n}
+  Card.tell(Verdict.held({n: held.n, clause: "owner"}), Document.text("✾ WORKSHOP\n\n{held.name} with its body is held as #{natText(held.n)} for the owner of {object} to lay:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n{dropping(state)}"))
 def methods() -> Lists.List<String>:
-  Text.words("adopt withdraw create")
+  Text.words("adopt withdraw create ~growBody")
 # The Workshop's page is its card alone: the host's default page would append every form's usage
 # and pass the 1,400-character clip (genesis's `wiki: Workshop` was 1,444).
 def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
