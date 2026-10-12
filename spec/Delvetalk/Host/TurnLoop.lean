@@ -2353,10 +2353,9 @@ def turnReply (w : World) (r : Json) : Json :=
 
 /-- Retry rule for turns: the identity is bound to the whole turn request. -/
 def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
-  match w.receipts[identityKey r.principal r.intent]? with
+  match boundEntry w r.principal r.intent with
   | none => none
-  | some index =>
-    let entry := w.entries.getD index
+  | some entry =>
     let same := (entry.getObjValAs? String "turnRequest").toOption == some r.digest
     if isTransient entry then none
     else if same then some (turnReply w (reply entry))
@@ -3383,8 +3382,8 @@ def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   let several := req.method == "receive" && spells.length > 1 && (Spell.quotes (heardText req.method req.argument)).isNone
   -- One identity, one request: a post's identity is bound by its one turn, or by its spells' turns (`#1`), so the
   -- other kind of request under it is `duplicateIdentity`.
-  let other := w.receipts[identityKey req.principal (if several then req.intent else s!"{req.intent}#1")]?
-  match other.map w.entries.getD with
+  let other := boundEntry w req.principal (if several then req.intent else s!"{req.intent}#1")
+  match other with
   | some entry => if isTransient entry then (if several then runSpells w req spells else runOne w req)
     else .ok (w, duplicate req.principal req.intent entry)
   | none => if several then runSpells w req spells else runOne w req

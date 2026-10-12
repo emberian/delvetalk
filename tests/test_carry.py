@@ -112,6 +112,34 @@ class Carry(Reflection):
         again = self.opened(out)
         self.assertEqual((again.send(op="world-status")["head"], self.children(again)), (head, ["garden/bell/1", "garden/bell/2", "garden/bell/3"]))
 
+    def test_a_retry_after_the_carry_answers_the_receipt_and_repeats_nothing(self):
+        # codex 2026-10-12 host 8: the carry kept no identity, so a retried plant planted a second bell.
+        old = {e["identity"]["intent"]: e for e in journal_entries(self.path) if e.get("identity", {}).get("principal") == "glm"}
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        [genesis] = journal_entries(out)
+        self.assertIn("planted", [r["identity"]["intent"] for r in genesis["outcome"]["identities"]])
+        new = self.opened(out)
+        for generation in range(2):
+            again = self.plant("glm", "planted", new)
+            self.assertEqual((again["status"], again["receipt"]["hash"]), ("admitted", old["planted"]["hash"]), again)
+            self.assertEqual(self.children(new), ["garden/bell/1"])
+            other = new.send(op="world-turn", principal="glm", object="garden", method="receive", identity="planted",
+                             argument=record(text=label("delvetalk garden plant\ncolour: amber\nseed: moths"), post=label("at://x/p/q")))
+            self.assertEqual(other.get("class"), "duplicateIdentity", other)
+            seen = new.send(op="world-receipt", principal="glm", identity="planted")
+            self.assertEqual((seen["status"], seen["receipt"]["hash"]), ("receipt", old["planted"]["hash"]), seen)
+            if generation == 0:
+                # Carried again, the bindings the first carry kept are kept.
+                self.assertEqual(new.send(op="world-snapshot")["status"], "snapshot")
+                new.close()
+                again_out = os.path.join(self.dir.name, "again.journal")
+                q = subprocess.run([binary(), "carry", "--from", out, "--out", again_out, "--reason", "again"],
+                                   capture_output=True, text=True, timeout=600)
+                self.assertEqual(q.returncode, 0, q.stderr)
+                new = self.opened(again_out)
+        new.close()
+
     def test_an_object_left_is_carried_retired_at_its_state(self):
         before = self.objects(self.host)
         p, out = self.carry("--leave", "c")

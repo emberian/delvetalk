@@ -3253,14 +3253,38 @@ def duplicate (principal intent : String) (entry : Json) : Json :=
     ("reason", toJson s!"{intent} already names a different turn; choose a new intent."),
     ("original", entry.getObjVal? "hash" |>.toOption |>.getD Json.null)]
 
+/-- What binds an identity, as a carry keeps it (`World.carriedIds`): the identity, its request digests,
+    the entry's hash and height in its chain, and its outcome's tag and class. `reply`, `duplicate` and
+    `isTransient` read it as they read the entry. -/
+def identityRow (entry : Json) : Json :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  Json.mkObj ((["identity", "request", "turnRequest", "hash", "height"].filterMap fun k => (entry.getObjVal? k).toOption.map (k, ·)) ++
+    [("outcome", Json.mkObj ((["tag", "class"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·))))])
+
+/-- The bindings a `carried` genesis keeps (`identities`), by identity key. -/
+def carriedIdentities (genesis : Json) : Std.HashMap String Json :=
+  if tagOf genesis != "carried" then {} else
+  ((((genesis.getObjVal? "outcome").toOption.bind (·.getObjVal? "identities" |>.toOption)).bind (·.getArr?.toOption)).getD #[]).foldl
+    (fun (m : Std.HashMap String Json) row =>
+      let who := fun (k : String) => (row.getObjVal? "identity").toOption.bind (·.getObjValAs? String k |>.toOption)
+      match who "principal", who "intent" with
+      | some p, some i => m.insert (identityKey p i) row
+      | _, _ => m) {}
+
+/-- The entry an identity is bound to: this chain's (`receipts`), else the one a carry kept (`carriedIds`). -/
+def boundEntry (w : World) (principal intent : String) : Option Json :=
+  match w.receipts[identityKey principal intent]? with
+  | some index => some (w.entries.getD index)
+  | none => w.carriedIds[identityKey principal intent]?
+
 /-- Retry rule shared by every journaled op: the same identity and request returns
     the retained receipt without an entry; the same identity with another request
-    is `duplicateIdentity` and is not journaled (the identity is already bound). -/
+    is `duplicateIdentity` and is not journaled (the identity is already bound). An identity
+    the world before a carry bound is bound here as there. -/
 def retained (w : World) (principal intent digest : String) : Option Json :=
-  match w.receipts[identityKey principal intent]? with
+  match boundEntry w principal intent with
   | none => none
-  | some index =>
-    let entry := w.entries.getD index
+  | some entry =>
     let same := (entry.getObjValAs? String "request").toOption == some digest
     if tagOf entry == "suspended" then none
     -- A transient refusal does not bind the identity: the retry runs (and is judged) again.
@@ -5285,10 +5309,9 @@ def receipt (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
   let owner := (← optText j "of").getD reader
-  match w.receipts[identityKey owner intent]? with
+  match boundEntry w owner intent with
   | none => return Json.mkObj [("status", toJson "unknown")]
-  | some index =>
-    let entry := w.entries.getD index
+  | some entry =>
     let shown := projectEntry w reader entry
     if owner != reader && tagOf entry == "refused" then return publicRefusal entry
     -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.

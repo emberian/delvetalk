@@ -457,7 +457,7 @@ def installGenesis (entries : Entries) (entry : Json) : Except String World := d
   let forkedFrom := if tagOf entry == "forked" then (outcome.getObjVal? "forkedFrom").toOption else none
   let cachedPackets := w.objects.fold (fun m _ o => if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {}
   let w := { w with pending := arr "pending", suspended := arr "suspended", handles, forkedFrom, cachedPackets,
-                    entries := entries.upTo 1 }
+                    entries := entries.upTo 1, carriedIds := carriedIdentities entry }
   let identity ← entry.getObjVal? "identity"
   return record w entry (identityKey (← identity.getObjValAs? String "principal") (← identity.getObjValAs? String "intent")) []
 
@@ -578,6 +578,8 @@ def replayAll (src : Entries) (caches : Caches := {}) : Except String World := d
 def resume (b : Json) (src : Entries) (caches : Caches := {}) : Except String World := do
   let height ← natField b "height"
   let w ← installBody b src caches
+  -- The identities a carry kept are the genesis's, never the snapshot's.
+  let w := { w with carriedIds := ((src.get? 0).map carriedIdentities).getD {} }
   let (ignoring, ignoreNamed) ← ignoresFrom src height w.ignoring w.ignoreNamed height
   checkAnchors w
   let mut w := { w with ignoring, ignoreNamed }
