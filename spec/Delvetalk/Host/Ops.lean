@@ -3068,6 +3068,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- the thing's text and placed lines; a verb's name a spell's action word new to the thing's forms,
     -- the host's spells and its verbs, on a thing with an `act`; each within its bound; a removal by
     -- its placer, the thing's owner or the opener.
+    let checkShare (placers : List String) (byOthers : Nat) (limit : String) : Except Refusal Unit := do
+      unless p.principal == ownerOf o.state || openerActs w p.principal do
+        if (placers.filter (· == p.principal)).length ≥ Limits.placedPerHand then
+          throw { cls := "capacity", object := some id, reason := some "placedPerHand" }
+        if (placers.filter (· != ownerOf o.state)).length ≥ byOthers then
+          throw { cls := "capacity", object := some id, reason := some limit }
     for x in p.placements.filter (·.object == id) do
       let refuse := fun (clause reading : String) => ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
       let mayRemove := fun (placer : String) => placer == p.principal || ownerOf o.state == p.principal || openerActs w p.principal
@@ -3098,6 +3104,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
             throw (refuse "nameTaken" s!"{x.name} is grown on {id} already; use it: delvetalk {id} {x.name}")
           unless x.does.isEmpty || p.placements.any (fun r => r.object == id && r.what == .rule && r.name == x.does && !r.line.isEmpty) do
             throw (bad s!"a verb does a rule placed with it; {x.does} is placed by no rule of this turn")
+          checkShare (next.verbs.map (·.grower)) Limits.verbsByOthers "verbsByOthers"
           if next.verbs.length ≥ Limits.verbsPerObject then
             throw { cls := "capacity", object := some id, reason := some "verbsPerObject" }
           next := { next with verbs := next.verbs ++ [{ name := x.name, grower := p.principal, height, reading := x.line,
@@ -3128,13 +3135,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           -- A line reads, and its spell carries, only what its placer may view.
           if let some r := unviewable cand p.principal (citesOf cand clause.names).objects then
             throw (refuse "lawReads" s!"{x.keyword} {x.name} cites {r}, which you may not view.")
-          -- A hand other than the owner holds a bounded share, and all such hands together leave the owner room
-          -- (docs/review/astra-2026-10-12 world 6).
-          unless p.principal == ownerOf o.state || openerActs w p.principal do
-            if (rows.filter (·.owner == p.principal)).length ≥ Limits.placedPerHand then
-              throw { cls := "capacity", object := some id, reason := some "placedPerHand" }
-            if (rows.filter (·.owner != ownerOf o.state)).length ≥ Limits.placedByOthers then
-              throw { cls := "capacity", object := some id, reason := some "placedByOthers" }
+          checkShare (rows.map (·.owner)) Limits.placedByOthers "placedByOthers"
           if rows.length ≥ (if want then Limits.wantsPerObject else Limits.rulesPerObject) then
             throw { cls := "capacity", object := some id, reason := some (if want then "wantsPerObject" else "rulesPerObject") }
           let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }

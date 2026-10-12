@@ -121,10 +121,11 @@ def sendsPerTurn : Nat := 32
     its kind's `under` carries are bounded by `maxLawClauses` in each text. -/
 def rulesPerObject : Nat := 32
 def wantsPerObject : Nat := 32
-/-- Of `rulesPerObject` (and `wantsPerObject`), what one hand other than the thing's owner may hold on it, and
-    what all such hands together may (the rest the owner's alone): a stranger's lines never take the owner's room
-    (docs/review/astra-2026-10-12 world 6). -/
+/-- Rules, wants or grown verbs one hand other than the thing's owner (or the opener) may hold, each separately. -/
 def placedPerHand : Nat := 4
+/-- Of `rulesPerObject` (and `wantsPerObject`), what all other hands together may hold (the rest the owner's
+    alone): a stranger's lines never take the owner's room
+    (docs/review/astra-2026-10-12 world 6). -/
 def placedByOthers : Nat := 24
 /-- What judging one rule's or want's condition may read (`Law.work`), after the commit: past it the rule is
     `unfired budget`, the want does not pose; nothing of it is charged to the write (world 6). -/
@@ -134,6 +135,8 @@ def clauseTicks : Nat := Delvetalk.Bounds.lawTicks / 8
 def wantReviewed : Nat := 64
 /-- Verbs grown on one object (docs/FOUNDATION.md §10: sixteen a thing; `ungrow` makes room). -/
 def verbsPerObject : Nat := 16
+/-- Grown verbs all other hands together may hold: three quarters of the sixteen, leaving four for the owner. -/
+def verbsByOthers : Nat := 12
 /-- A grown verb's reading, in characters: what the verb does, as the grower says it. -/
 def verbReadingMax : Nat := 200
 def verbNameMax : Nat := 32

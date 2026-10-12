@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/cx-world: 5.219, replay edition 14; lane/authority: 5.209–5.214, replay edition 13; lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/cx-world: 5.219–5.221, replay edition 14; lane/authority: 5.209–5.214, replay edition 13; lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -2607,6 +2607,33 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    in that reaction. Reopening exercises both the amendment and removal through replay. Lean and runtime
    validation are the supervisor's; this lane has no toolchain.
 
+221. **Grown verbs hold the same bounded share as placed clauses (lane/cx-world; astra 2026-10-12 world.md 6's
+   remainder; replay edition 14).** `judge` bounded a thing's verbs only by `verbsPerObject` (16), so one stranger
+   could fill them and refuse its owner's grow. Its local `checkShare` now checks placer names for verbs, rules
+   and wants, each collection separately, reading the rows after every earlier placement or removal in the turn.
+   A hand other than the owner (or `openerActs`) holds at most `Limits.placedPerHand` (4) verbs; all non-owner
+   growers together at most `Limits.verbsByOthers` (12). The rule/want constant `placedByOthers` (24) cannot
+   reserve room in a sixteen-slot table; twelve keeps the same three-quarter share and four slots for the owner.
+   A full share is `capacity placedPerHand` or `verbsByOthers`, the full table `capacity verbsPerObject`. Owners
+   and the opener bypass shares; the law still admits or refuses grows. `mayRemove` and `placementsOf`'s ungrow
+   retain grower, owner and opener cleanup even at capacity. A gesture with `does` holds one verb slot and one
+   rule slot: four gestures use four of each share, not eight of one; existing rules still consume that hand's
+   rule allowance. `bounds` exposes the new constant through `natsIn%`; usage and `verbsText` print no limit.
+   Tests written first in `test_verbs.Verbs`: `test_a_strangers_verbs_take_a_bounded_share_and_leave_the_owner_room`
+   (fifth refused, owner grows, reopen, grower's ungrow makes room),
+   `test_several_strangers_verbs_leave_a_shared_reserve_for_an_owner_who_is_not_the_opener` (twelve across three
+   hands, another refused, all sixteen used, grower and owner cleanup, owner past four, reopen),
+   `test_a_gesture_with_a_rule_uses_one_slot_in_each_share_and_ungrow_frees_both` (existing rules limit does,
+   refusal leaves no verb, plain verbs still fit, fifth refused, cleanup frees both). Each is red before this
+   change because a fifth plain verb or a thirteenth stranger verb admits. The existing sixteen-slot test
+   fills the table as its owner and still asserts the seventeenth's refusal.
+   `replayEntry` decodes placements with `Placement.ofJson` and calls `judge` again: a historical admission
+   exceeding either new share can now refuse on direct replay, so this changes replay derivation within the
+   pending edition 14 and requires the supervisor's carry check. A carry imports snapshot rows into its
+   genesis without re-judging old placements (`Carry.readWorld`, `Snapshot.installGenesis`); an existing
+   oversized share alone therefore does not refuse that carry, and cleanup remains available. Whether the
+   live journal contains such admissions is unverified. Lean and runtime validation are the supervisor's.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -2627,7 +2654,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
   anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
-  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219). Test: `tests/test_replay_edition.py`.
+  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219; grown verbs admitted within a stranger's share, 5.221). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.

@@ -397,7 +397,9 @@ can always amend it out from under the kind. Lines in the kind's text act, in ev
 itself: the principal `@<id>`, which no object id, DID or handle can spell, and which a law admits only as it admits
 any hand (or names it by `request.caller`). Neither the kind's owner, who amends that text live, lends their
 authority to the code the instance runs, nor the instance's owner theirs to the kind's text. A line of a thing's own
-text acts as its owner, who alone amends it; a placed line acts as its placer. A thing's text holds at most 16 lines of the three; placed rules and wants are 32 each beside it.
+text acts as its owner, who alone amends it; a placed line acts as its placer. A thing's text holds at most 16
+lines of the three; placed rules and wants are 32 each beside it, grown verbs 16. Each collection bounds a
+stranger's share and leaves its owner room (§10); the thing's law decides who may place.
 
 Making and `become / kind:` install the same component: the kind's ancestor bodies bottom first, its own body,
 its followable text and its source identity. `kindCitation` uses `citedLaw`, the same check as `under`: when the
@@ -786,7 +788,7 @@ deleting a closed sum or a convention:
   the thing's own text, what it inherits, then what hands placed. A rule is judged after the commit, on the world it
   leaves: what it cites is no root of the write, and its condition no part of the law's budget; it reads within
   `Limits.clauseTicks` or is `unfired budget` (a want past it does not pose), so a stranger's rule never refuses,
-  stales or starves the owner's own acts. A hand other than the owner holds at most `placedPerHand` (4) rules and 4
+  stales or starves the owner's own acts. A hand other than the owner (or the opener) holds at most `placedPerHand` (4) rules and 4
   wants on a thing, all such hands together `placedByOthers` (24) of the 32. The rule's owner is the follow-on
   turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on your thing runs their
   spells under their name and spends nothing of yours. The follow-on turn is a delivery under
@@ -827,8 +829,13 @@ deleting a closed sum or a convention:
   `when: "rung" in new.marks.name and not "rung" in old.marks.name / then: delvetalk <first> door / label: next /
   to: <second>`. The weather's company is a rule on the tide: `delvetalk tide rule / name: company / when:
   request.method == "tick" and request.clock <= "<garden>".tended + 1440 / then: …`.
-- **Verbs are data.** A grown verb is a row `{name, by, at, reading, takes, does}` on the thing (16 at most; `ungrow`
-  makes room); using it is `act {verb, text}`, one line tagged with the verb and the thing tended, and the host's
+- **Verbs are data.** A grown verb is a row `{name, by, at, reading, takes, does}` on the thing (`verbsPerObject`,
+  16 at most). A hand other than the owner (or the opener) holds at most `placedPerHand` (4), all other hands
+  together `verbsByOthers` (12), leaving four slots for the owner. `judge`'s `checkShare` checks verbs, rules and
+  wants alike, each separately; a gesture with `does` holds one verb slot and one rule slot, never two of either.
+  A full share refuses `capacity placedPerHand` or `verbsByOthers`, the full table `capacity verbsPerObject`;
+  the law decides who may grow. `ungrow` by the grower, owner or opener frees the verb and its `does` rule.
+  Using it is `act {verb, text}`, one line tagged with the verb and the thing tended, and the host's
   grammar reads it as it reads a declared form, so its spell is exact, free and model-less the moment it exists.
   A reaction, when it has one, is a rule naming `request.verb`. A kind's declared methods are the table's
   first rows. Words that run no spell reach hob (§5, §6); `grow:` is for a verb the words mean that the card lacks. A
@@ -917,7 +924,7 @@ inspirit and the porch's things; tending; several spells in a post; a card's own
 verbs and the chronicle with Wake's host support deleted (5.161), reach as a host op (5.162), words a card heard as
 hob's (5.163), Wake, Env, Event, Mentions and subscriptions deleted from `world/`, errands and fronts, the minimal
 genesis with its coinages and wants, the web front (docs/WEB.md); the astra world review's medium 14: explicit
-kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220).
+kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221).
 
 Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDOFF §16, OBJECTS-HANDOFF "Open");
 each handoff keeps the detail, this table the order across lanes:
@@ -947,7 +954,7 @@ each handoff keeps the detail, this table the order across lanes:
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
 | the astra world review's 11 (archival and reclamation of objects, grants and journal), 15 (a behaviour revision in roots, offers and receipts), 16 (wants as tasks: eligible actors, blocked and cancelled; discovery that rotates past the permanently blocked), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
-| rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder); a placed line's verbs (`grow`) bounded per hand as rules are (world.md 6's remainder) | kernel, host | a level rule fires at its crossing alone unless written as a level; a stranger holds at most `placedPerHand` verbs |
+| rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder) | kernel | a level rule fires at its crossing alone unless written as a level |
 
 After the fourth playtest, in the order the town will feel them: fronts and `relay` as seeded or cut back to the
 season (OVERHAUL §6's week row); a `Conversation` object per thread; Workshop `try {target, package, examples}` on
