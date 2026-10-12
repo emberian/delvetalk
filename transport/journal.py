@@ -74,9 +74,12 @@ def size(path):
     return sum(p.stat().st_size for p in (Path(path), Path(str(path) + '.blocks')) if p.exists())
 
 
-def copy(src, dst):
-    """A copy of the journal at `src` (its chain and its block store) at `dst`."""
+def copy(src, dst, height=None):
+    """A copy of the journal at `src` (its chain and its block store) at `dst`; with `height`, only the chain's links up
+    to that height (a carried chain's first is past 1; the store's later records are then bytes no link names)."""
     chain = Path(src).read_text().split('\n')[:-1]
+    if height is not None:
+        chain = [line for line in chain if json.loads(line)['height'] <= height]
     Path(str(dst) + '.blocks').write_bytes(Path(str(src) + '.blocks').read_bytes() if Path(str(src) + '.blocks').exists() else b'')
     Path(dst).write_text(''.join(line + '\n' for line in chain))
 
