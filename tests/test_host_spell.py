@@ -88,6 +88,14 @@ class Clauses(unittest.TestCase):
                                                               {"name": "law", "kind": {"text": {"min": 0, "max": 4096}}}]}
         self.assertEqual(show_fit(host({"text": "delvetalk kinds make / name: lamp", "form": make})["fit"]), "proposal kinds make name=lamp;law=;")
         self.assertEqual(host({"text": "delvetalk kinds make / law: x", "form": make})["fit"], {"unclear": {"needs": ["name"]}})
+        # A misspelled field with a field the form names behind it is refused, naming it; trailing prose with a colon still ends the fields.
+        three = {"card": "kinds", "action": "make", "fields": make["fields"] + [{"name": "of", "kind": {"text": {"min": 1, "max": 80}}}]}
+        fit = host({"text": "delvetalk kinds make\nname: lamp\nof: record\nvoce: lunar\nlaw: maker only", "form": three})["fit"]
+        self.assertEqual(fit["refused"]["clause"], "unknownField", fit)
+        self.assertIn("voce", fit["refused"]["reason"])
+        self.assertIn("name, law, of", fit["refused"]["reason"])
+        fit = host({"text": "delvetalk kinds make\nname: lamp\nof: record\nhob: still owed - a note", "form": three})["fit"]
+        self.assertEqual(show_fit(fit), "proposal kinds make name=lamp;law=;of=record;")
         self.assertIs(host({"text": "just prose"})["notASpell"]["fielded"], False)
 
 

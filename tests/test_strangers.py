@@ -88,7 +88,7 @@ class Strangers(Forging):
     def test_a_stranger_cannot_amend_a_bond_or_a_tide(self):
         r = self.host.send(op="world-create", principal=ALICE, identity="mk-deal", object="deal", modules=closure("Record"), entry="initial",
                            seed=record(owner=label(ALICE), fields=listing([record(name=label("parties"), value=label("glm gemini"))])),
-                           law=genesis.RECORD_LAW + "\n" + genesis.SIGNER_LAW)
+                           law=genesis.RECORD_LAW + "\n" + genesis.kind_text('bond'))
         self.assertEqual(r["status"], "created", r)
         r = self.host.send(op="world-reprogram", principal=ALICE, identity="body-deal", object="deal", version=0, package=body("bond"), mode="extend")
         self.assertEqual(r["status"], "admitted", r)

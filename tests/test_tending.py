@@ -40,7 +40,9 @@ class Tending(Chain):
         body = genesis.body_of("bell")
         self.assertIn("def quietAfter() -> Nat:\n  %dn\n" % genesis.QUIET_AFTER, body)
         bell = next(k for k in genesis.KINDS if k[0] == "bell")
-        self.assertIn(genesis.ALIVE_LAW, bell[4])
+        alive = 'law alive "answers while tended within %d minutes": request.method == "tend" or request.kind == rule or request.clock <= old.tended + %d' % ((genesis.QUIET_AFTER,) * 2)
+        self.assertIn(alive, bell[4])
+        self.assertIn("request.clock >= new.tended + %d asks" % (genesis.QUIET_AFTER + 1), bell[4])
 
     def test_a_made_thing_cites_its_kinds_law_and_is_tended_at_its_making(self):
         laws = self.host.send(op="world-inspect", principal=GLM, object="bell/1")["laws"]

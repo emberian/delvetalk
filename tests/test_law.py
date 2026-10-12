@@ -531,3 +531,56 @@ class RefusedOffers(Reflection):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+ADD = {"tag": "variant", "label": "add", "payload": record(delta=nat(1))}
+OPENS = "law opens: request.kind == 0 or request.kind == 2"
+
+
+class Cited(Reflection):
+    """A law reading another object reads it as the commit leaves it, and a want resting on another's want
+    is judged by both: refuted if one turn's two writes each pass a joint bound against the other's state
+    before the turn, or a law reading `"B" wants N` admits while B's want holds through C's."""
+
+    def setUp(self):
+        super().setUp()
+        self.open_library()
+
+    def open(self, name, principal="ember"):
+        return self.turn(name, "open", principal=principal)
+
+    def clause(self, r):
+        return r["receipt"]["outcome"].get("clause", r["receipt"]["outcome"]["class"]) if r["status"] == "refused" else r["status"]
+
+    def propose(self, identity, names):
+        roots = [{"object": n, "version": self.host.send(op="world-view", principal="ember", object=n)["version"]} for n in names]
+        return self.host.send(op="world-propose", principal="ember", identity=identity, roots=roots,
+                              writes=[{"object": n, "edits": [record(open=ADD)]} for n in names])
+
+    def test_one_commit_writing_two_objects_is_judged_as_the_world_it_makes(self):
+        # codex 2026-10-12 host 11: each count judged against the other's zero, and both admitted.
+        self.make("a", GATE, record(open=nat(0)), law='law pair: request.kind == 2 or new.open + "b".open <= 1')
+        self.make("b", GATE, record(open=nat(0)), law='law pair: request.kind == 2 or new.open + "a".open <= 1')
+        r = self.propose("both", ["a", "b"])
+        self.assertEqual((r["status"], self.clause(r)), ("refused", "pair"), r)
+        self.assertEqual(self.propose("one", ["a"])["status"], "admitted")
+        # A bound the other write meets only once it lands admits the two together.
+        self.make("c", GATE, record(open=nat(0)), law='law after: new.open == 0 or "d".open >= 1')
+        self.make("d", GATE, record(open=nat(0)))
+        self.assertEqual(self.clause(self.propose("alone", ["c"])), "after")
+        self.assertEqual(self.propose("together", ["c", "d"])["status"], "admitted")
+        self.reopen()
+        self.assertEqual([field(self.state(n), "open")["value"] for n in "abcd"], ["1", "0", "1", "1"])
+
+    def test_a_law_reading_a_want_that_rests_on_anothers_want_judges_both(self):
+        # codex 2026-10-12 host 10: A's facts held B's want but not C's state and want, so B read unwanted.
+        self.make("c", GATE, record(open=nat(0)), law=OPENS + "\nwant blocked: new.open >= 1 asks delvetalk c open")
+        self.make("b", GATE, record(open=nat(0)), law=OPENS + '\nwant blocked: "c" wants blocked asks delvetalk b open')
+        self.make("a", GATE, record(open=nat(0)), law='law free: request.kind == 2 or not "b" wants blocked')
+        self.assertEqual(self.open("a")["status"], "admitted")
+        self.assertEqual(self.open("c")["status"], "admitted")
+        wants = self.host.send(op="world-wants", principal="ember", object="b")["rows"]
+        self.assertEqual([w["name"] for w in wants], ["blocked"], wants)
+        r = self.open("a")
+        self.assertEqual((r["status"], self.clause(r)), ("refused", "free"), r)
+        self.assertIn("c", [x["object"] for x in r["receipt"]["roots"]])

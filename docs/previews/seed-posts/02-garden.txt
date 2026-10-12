@@ -3,7 +3,7 @@ recorded against: kind/garden · opens: a garden of your own, and the first bell
 KIND garden: makes a record, with a body; 0 made. Make one:
   delvetalk kind/garden make / name: <1 to 64 characters>
 » garden/N, yours
-Its things speak: patient and green; what grows, and who tends it
+Its things speak: green shade; things grow here at their own pace, changed not in kind but in degree
 Newest first:
 
 A garden is yours once made; a planting in it grows a bell anyone may rain on.
