@@ -5107,12 +5107,13 @@ def view (w : World) (j : Json) : Except String Json := do
     return Json.mkObj [("status", toJson "viewed"), ("object", toJson id),
       ("version", toJson o.version), ("state", dataJson o.state), ("pin", toJson o.pin)]
 
-/-- The CID of `id`'s state at `version`, as the journal names it: the current state's, a created
-    or child seed's (version 0), or the `cid` of the admitted write that made the version (host7; a
-    write journaled before names none). -/
-def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.run do
-  let some o := w.objects[id]? | return none
-  if o.version == version then return some o.stateCid
+/-- Every version of `id` the journal names a state CID for, by version (see `stateCidAt`), from one
+    walk of the entries that touched it: a created or child seed's at version 0, each admitted
+    write's `cid` at its version (a write journaled before host7 names none). -/
+def stateCidsCold (w : World) (id : String) : Std.HashMap Nat (Option String) := Id.run do
+  -- The first entry (in order) that answers for a version answers: a created seed with its CID, a write
+  -- naming the version (with its CID or, from before host7, none), a creating turn's child with its CID.
+  let mut out : Std.HashMap Nat (Option String) := {}
   for i in (w.touched[id]?).getD #[] do
     let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -5120,18 +5121,45 @@ def stateCidAt (w : World) (id : String) (version : Nat) : Option String := Id.r
     let named := fun (j : Json) => (j.getObjValAs? String "object").toOption == some id
     match tagOf entry with
     | "created" =>
-      if version == 0 && named outcome then
-        if let .ok cid := outcome.getObjValAs? String "cid" then return some cid
+      if named outcome && !out.contains 0 then
+        if let .ok cid := outcome.getObjValAs? String "cid" then out := out.insert 0 (some cid)
     | "admitted" =>
       for x in arr "writes" do
-        if named x && (x.getObjValAs? Nat "version").toOption == some version then
-          return (x.getObjValAs? String "cid").toOption
-      if version == 0 then
-        for c in arr "creates" do
-          if named c then
-            if let .ok cid := c.getObjValAs? String "cid" then return some cid
+        if named x then
+          if let some v := (x.getObjValAs? Nat "version").toOption then
+            unless out.contains v do out := out.insert v (x.getObjValAs? String "cid").toOption
+      for c in arr "creates" do
+        if named c && !out.contains 0 then
+          if let .ok cid := c.getObjValAs? String "cid" then out := out.insert 0 (some cid)
     | _ => pure ()
-  return none
+  return out
+
+/-- This process's `stateCidsCold` by object and the CID of the last entry that touched it: a journal
+    is a hash chain, so that entry names every entry before it, and a later write is a new key. -/
+@[noinline] unsafe def stateCidsMemo : IO.Ref (Std.HashMap String (Std.HashMap Nat (Option String))) :=
+  unsafeBaseIO (IO.mkRef {})
+
+unsafe def stateCidsImpl (w : World) (id : String) : Std.HashMap Nat (Option String) :=
+  unsafeBaseIO do
+    let touched := (w.touched[id]?).getD #[]
+    let some last := touched.back? | return {}
+    let some head := w.entries.hashAt? last | return stateCidsCold w id
+    let key := id ++ "@" ++ head
+    if let some m := (← stateCidsMemo.get)[key]? then return m
+    let m := stateCidsCold w id
+    stateCidsMemo.modify fun c => boundedInsert c Limits.maxBuilds key m
+    return m
+
+@[implemented_by stateCidsImpl]
+def stateCids (w : World) (id : String) : Std.HashMap Nat (Option String) := stateCidsCold w id
+
+/-- The CID of `id`'s state at `version`, as the journal names it: the current state's, a created
+    or child seed's (version 0), or the `cid` of the admitted write that made the version (host7; a
+    write journaled before names none). -/
+def stateCidAt (w : World) (id : String) (version : Nat) : Option String := do
+  let o ← w.objects[id]?
+  if o.version == version then return o.stateCid
+  (stateCids w id)[version]?.join
 
 /-- The object's state at `version`, rebuilt from the journal: its created seed (or a creating turn's
     seed), then each admitted write of it in order, re-applying its edits under the object's relations
