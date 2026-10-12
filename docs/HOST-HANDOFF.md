@@ -1928,15 +1928,13 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    on a room in one answer: entered, then said as one of 1 here).
 
 168. **`interpret` takes no `held` or `misfit` (host27; OVERHAUL §3's deletions; the coordinator's docs pass).** The
-   arm reads `utterance`, `offers`, `policy` and `model` only; a Plan naming `held` or `misfit` (World.obend still
-   declares them) has them ignored, and nothing journals or lists `held`. `misfit` stays only as the host's own: the
+   arm reads `utterance`, `offers`, `policy` and `model` only, and nothing journals or lists `held`. `misfit` stays only as the host's own: the
    misfit spells a host reading reads past (`heardTurn`, 5.166), shown to `Policy.prompt` as `asked.misfit`.
    `Policy.prompt`'s `asked` drops `held` (`heldPart` gone) in the same commit, since a prompt naming a field the host
-   no longer supplies would not fit and fall back to the bare `system` text. Left for the objects lane: World.obend's
-   `interpret<R>({utterance, offers, policy, model, held, misfit})` loses `held`, `misfit` (and, per OVERHAUL §3,
-   `policy`: the world's one is `policy`, which the host's own readings already use), with its eight callers
-   (Workshop's `make`; `test_interpret_object` ×2, `test_verbs`, `test_spell_turns`, `test_reach`, `test_reflection`,
-   `test_sum_words`). Tests: `test_policy` (the misfit prompt; no `held` listed).
+   no longer supplies would not fit and fall back to the bare `system` text. World.obend's arm is
+   `interpret<R>({utterance, offers, policy, model})` (lane/objrev), its eight callers with it; `policy` stays, since
+   `interpretPlan` reads it (a Plan without it is `malformed interpret plan`; one the speaker cannot read, `denied`).
+   Tests: `test_policy` (the misfit prompt; no `held` listed).
 
 169. **A grown verb is offered by the law alone (host27; found capturing AGENTS-EXAMPLES on the minimal genesis).** A
    card whose `actions` names what a reader sees (the town's bells: `rain tend ring lines`) hid every verb a hand grew
@@ -2016,11 +2014,8 @@ called for); let's not leave behind 'old things', no scar and growth tissue." So
 replaces in the same commit, and this file describes only what is. A merge touching the host runs
 `deploy/carry-check.sh` on hbox first (5.159).
 
-0. **For the objects lane, from host27.** (a) World.obend's `interpret` drops `held`, `misfit` and `policy` with its
-   eight callers (5.168; the host already ignores them). (b) World.obend's `wanting` comment and GENESIS.md say
-   "oldest first": the host answers newest first, pages of whole heights by `after` (5.164); the commonplace's
-   "What wants a hand" reads it so. (c) A seal's want can now read `request.laws` and `request.refusedBy` (5.165); a
-   law refusal journals the wants it opens. (d) Bend arm tests from a body: `wanting` is covered
+0. **For the objects lane, from host27.** (a) A seal's want can now read `request.laws` and `request.refusedBy` (5.165); a
+   law refusal journals the wants it opens. (b) Bend arm tests from a body: `wanting` is covered
    (`test_wanting`); `rule`, `grow`, `act`, `chronicle` from a `made` are not.
 1. **Left from host27.** `test_http`'s four page-markup assertions (Claim, Play: home's words, the quota page's
    stamp markup, the paint frame) fail on foundation's web redesign: the transport lane's. The question answer
