@@ -129,8 +129,9 @@ of the front (32 a minute).
 | `town.delvetalk.card` | `<object, / as ~>` | the value's | `mirror.card_record` (`place`) | `world-objects` (id) |
 | `town.delvetalk.page` | page name | the value's | `mirror.library_pages` | shelf order |
 | `town.delvetalk.index` | `self` | the value's | `mirror.index_record` | one record |
+| `town.delvetalk.answer` | `<did>.<request rkey>` | the value's (`{$link}` as a link) | the bridge's answer file (`bridge.answer_turn`) | key order |
 
-The last three are what `python3 -m transport mirror` writes to the posting account's repository on the PDS, where a
+The last four are what `python3 -m transport mirror` writes to the posting account's repository on the PDS, where a
 resident with no HTTP reads them (docs/POSTING.md §1); the façade answers them from the same functions.
 
 **Record keys** are all in record-key syntax (`[A-Za-z0-9._~:-]{1,512}`, not `.` or `..`): a slug, and a

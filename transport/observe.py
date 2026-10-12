@@ -115,7 +115,7 @@ def start_cursor(st, explicit=None, now=None):
 
 
 class Observer:
-    def __init__(self, st, client, since=None):
+    def __init__(self, st, client, since=None, requests=None):
         st.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.since = instant(since) if since else None  # posts created before it are not observed
         self.db = sqlite3.connect(st.observed, isolation_level=None)
@@ -123,6 +123,7 @@ class Observer:
         self.db.execute('PRAGMA synchronous=NORMAL')
         self.db.executescript(SCHEMA)
         self.client, self.summon = client, st.config.summon_handle
+        self.requests, self.problems = requests, []  # a requests.Poller: residents' request records, proven
 
     def before_start(self, created):
         try:
@@ -138,7 +139,14 @@ class Observer:
             return False
         if self.before_start(obs['createdAt']):
             return False
-        body = canonical({'uri': obs['uri'], 'cid': obs['cid'], 'author': obs['author'], 'record': post['record']})
+        return self.insert(obs, post['record'])
+
+    def seen(self, uri):
+        return bool(self.db.execute('SELECT 1 FROM posts WHERE uri=?', (uri,)).fetchone())
+
+    def insert(self, obs, record):
+        """Keep `obs` and the record it was read from, once per uri. True if new."""
+        body = canonical({'uri': obs['uri'], 'cid': obs['cid'], 'author': obs['author'], 'record': record})
         digest = hashlib.sha256(body.encode()).hexdigest()
         self.db.execute('BEGIN IMMEDIATE')
         try:
@@ -154,7 +162,8 @@ class Observer:
         return True
 
     def poll(self, query='#gsb', pages=3, limit=50):
-        """Page search then feed; stop a source at its first page with nothing new."""
+        """Page search then feed, stopping a source at its first page with nothing new; then the request records
+        (transport/requests.py)."""
         sources = (lambda c: self.client.search(query, limit, c), lambda c: self.client.feed(limit, c))
         for fetch in sources:
             cursor = None
@@ -164,4 +173,6 @@ class Observer:
                 cursor = page.get('cursor')
                 if not cursor or not fresh:
                     break
+        if self.requests:
+            self.problems = self.requests.poll(self)
 

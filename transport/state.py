@@ -42,6 +42,8 @@ class State:
         self.posting, self.interpretations = h / 'posting', h / 'interpretations'  # the posting ledger; model replies by request
         self.watch_log, self.alerted = h / 'watch.jsonl', h / 'alerted.json'
         self.mirror = h / 'mirror.json'  # what the mirror last wrote to the PDS: {collection rkey: digest}
+        self.requests = h / 'requests.json'  # the request poller's ledger: each repo's rev read, each record refused
+        self.answers = h / 'answers'  # town.delvetalk.answer records, <did>.<rkey>.json: the façade and the mirror serve them
 
     def host(self, **more):
         return HostClient(self.host_socket, **{'world': self.world, **more})

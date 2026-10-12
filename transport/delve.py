@@ -2,11 +2,14 @@
 """The XRPC client for delve.town, and the transport's one HTTP request (`http_transport`, which Zulip, the model and
 the login use too) and canonical JSON. Carries bytes; decides nothing.
 
-Only the GET endpoints in READS exist. Non-GET methods are refused here unless
+Only the GET endpoints in READS exist, and a DID document (`did_document`: plc.directory, or a hostname-level did:web
+whose host resolves only to global addresses). Non-GET methods are refused here unless
 a caller constructs the client with allow_write=True (only post.py does).
 """
+import ipaddress
 import json
 import re
+import socket
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -14,6 +17,7 @@ from pathlib import Path
 
 PDS = 'https://pds.delve.town'
 APPVIEW = 'https://api.delve.town'
+PLC = 'https://plc.directory'
 TIMEOUT = 20
 MAX_RESPONSE = 16 * 1024 * 1024
 MAX_PARAM = 2048
@@ -24,7 +28,10 @@ READS = {
     'com.atproto.repo.getRecord': (PDS, {'repo', 'collection', 'rkey'}),
     'com.atproto.repo.listRecords': (PDS, {'repo', 'collection', 'limit', 'cursor', 'reverse'}),
     'com.atproto.identity.resolveHandle': (PDS, {'handle'}),
+    'com.atproto.sync.listRepos': (PDS, {'limit', 'cursor'}),
+    'com.atproto.sync.getRecord': (PDS, {'did', 'collection', 'rkey'}),  # a CAR: the signed commit, the MST path, the record
 }
+DID = re.compile(r'did:(plc:[a-z2-7]{24}|web:[a-z0-9.-]{1,253})\Z')
 WRITES = {
     'com.atproto.server.createSession': PDS,
     'com.atproto.repo.createRecord': PDS,
@@ -90,19 +97,21 @@ class Client:
     def __init__(self, transport=http_transport, allow_write=False):
         self.transport, self.allow_write = transport, allow_write
 
-    def _send(self, method, url, body=None, token=None):
-        headers = {'Accept': 'application/json', 'User-Agent': 'DelveTalk/2 transport'}
+    def _send(self, method, url, body=None, token=None, raw=False):
+        headers = {'Accept': 'application/vnd.ipld.car' if raw else 'application/json', 'User-Agent': 'DelveTalk/2 transport'}
         if body is not None:
             headers['Content-Type'] = 'application/json'
         if token:
             headers['Authorization'] = 'Bearer ' + token
-        status, raw, *_ = self.transport(method, url, headers, body)
+        status, got, *_ = self.transport(method, url, headers, body)
         if 300 <= status < 400:
             raise Failure('redirect_refused', str(status))
-        if len(raw) > MAX_RESPONSE:
+        if len(got) > MAX_RESPONSE:
             raise Failure('response_too_large')
+        if raw and status == 200:
+            return got
         try:
-            data = json.loads(raw)
+            data = json.loads(got)
         except ValueError:
             data = None
         if status != 200:
@@ -112,7 +121,7 @@ class Client:
             raise Failure('response_not_json_object')
         return data
 
-    def get(self, nsid, **params):
+    def get(self, nsid, raw=False, **params):
         if nsid not in READS:
             raise Failure('endpoint_not_allowed', nsid)
         base, allowed = READS[nsid]
@@ -122,7 +131,23 @@ class Client:
         for k, v in params.items():
             if not isinstance(v, (str, int)) or isinstance(v, bool) or len(str(v)) > MAX_PARAM:
                 raise Failure('param_invalid', k)
-        return self._send('GET', f'{base}/xrpc/{nsid}?{urllib.parse.urlencode(params)}')
+        return self._send('GET', f'{base}/xrpc/{nsid}?{urllib.parse.urlencode(params)}', raw=raw)
+
+    def did_document(self, did, resolve=socket.getaddrinfo):
+        """A DID's document: did:plc from plc.directory, a did:web of a host that `resolve`s only to global addresses
+        (never this box's loopback or the private network behind it). Any other DID is refused."""
+        if not isinstance(did, str) or not DID.fullmatch(did):
+            raise Failure('did_refused', str(did)[:100])
+        if did.startswith('did:plc:'):
+            return self._send('GET', f'{PLC}/{did}')
+        host = did[len('did:web:'):]
+        try:
+            found = {a[4][0] for a in resolve(host, 443, proto=socket.IPPROTO_TCP)}
+        except (OSError, UnicodeError):
+            raise Failure('did_unresolved', host) from None
+        if not found or not all(ipaddress.ip_address(a.split('%')[0]).is_global for a in found):
+            raise Failure('did_not_public', host)
+        return self._send('GET', f'https://{host}/.well-known/did.json')
 
     def write(self, nsid, body, token=None):
         if not self.allow_write or nsid not in WRITES:

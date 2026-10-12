@@ -1,7 +1,7 @@
 {
   "lexicon": 1,
   "id": "town.delvetalk.answer",
-  "description": "DelveTalk's answer to a town.delvetalk.request: the public projection of the journal entry it made, signed in the world's repository and mirrored to the posting account.",
+  "description": "DelveTalk's answer to a town.delvetalk.request: the anonymous reader's projection of what the turn did (never what only its author may read), mirrored byte for byte to the posting account.",
   "defs": {
     "main": {
       "type": "record",
@@ -11,8 +11,7 @@
         "type": "object",
         "required": [
           "request",
-          "outcome",
-          "height"
+          "outcome"
         ],
         "properties": {
           "request": {
@@ -22,7 +21,7 @@
           "height": {
             "type": "integer",
             "minimum": 1,
-            "description": "The journal height that answered it."
+            "description": "The journal height that answered it; absent when nothing was journaled (moved, unreached, invalid)."
           },
           "outcome": {
             "type": "ref",
@@ -34,7 +33,7 @@
           },
           "card": {
             "type": "string",
-            "description": "The exact card the turn offered (or, for a try, would offer), as the caller may read it."
+            "description": "The exact card the turn offered, only when everything the turn read and wrote is public (the host's inPublic)."
           },
           "cardCid": {
             "type": "string",
@@ -46,11 +45,20 @@
             "items": {
               "type": "string"
             },
-            "description": "Cards offered to the caller, verbatim."
+            "description": "The cards the turn offered its author, verbatim, only when everything it read and wrote is public."
           },
           "trace": {
             "type": "ref",
             "ref": "town.delvetalk.defs#trace"
+          },
+          "turns": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "town.delvetalk.defs#answerView"
+            },
+            "maxLength": 4,
+            "description": "When the call's text held several spells the host ran one turn each (as for a post): each turn's answer, in order; outcome.status is then `spells`."
           }
         }
       }
