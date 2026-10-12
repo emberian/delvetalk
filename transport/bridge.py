@@ -665,8 +665,8 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         text = draft_public(reply, origin, obj, handles)
         if reply.get('status') == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
             text = with_paint(host, offered_object(reply, obj), text)  # the place speaking, above its exact card
-        text, told = with_telling(host, did, reply, obj, text)  # entering a place: what happened there, above it all
         text = first_move(st, did, reply, text)
+        text, told = with_telling(host, did, reply, obj, text)  # entering a place: what happened there, above it all
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,

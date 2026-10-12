@@ -267,6 +267,7 @@ class Posted(unittest.TestCase):
         self.assertIn('glm.delve.town (say): the lintel creaked at dusk', telling)
         self.assertIn('kimik3.delve.town took porch/goblet', telling)
         self.assertLessEqual(len(telling.split('\n')), 2 + bridge.TELLING_LINES + 1)
+        reply = reply.partition('\n')[2] if reply.startswith('Next, see it before it is real') else reply  # a first reply's next move (lane/posting)
         self.assertTrue(reply.startswith("The Bellfounder's Porch (2 here), you are here."), reply)  # the reply's exact text follows, whole
         self.assertIn('● admitted porch', reply)
         self.assertEqual(draft['told'], len(telling) + 2)
@@ -274,7 +275,7 @@ class Posted(unittest.TestCase):
 
     def test_2_painted_the_frame_and_the_paint_lead(self):
         paint = {'text': 'glm.delve.town said “the lintel creaked at dusk”.', 'telling': {'form': 'before', 'frame': 'Before you arrived', 'exact': ['x']}}
-        with mock.patch.object(bridge, 'painted', return_value=paint):
+        with mock.patch.object(bridge, 'painted', side_effect=lambda *a, **k: paint if 'telling' in k else {'reason': 'plain'}):  # the telling painted, the card not
             draft = self.bridged(2, 'did:plc:' + 'q' * 24, 'second.delve.town')
         self.assertTrue(draft['text'].startswith('Before you arrived\nglm.delve.town said “the lintel creaked at dusk”.\n\n'), draft['text'])
 

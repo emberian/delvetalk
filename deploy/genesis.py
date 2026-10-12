@@ -625,6 +625,7 @@ def shelved(host, opener):
                            'identity': f'refresh-shelve-{name}-{hashlib.sha256(body.encode()).hexdigest()[:12]}',
                            'argument': rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title), body=lab(body))})
         out.append({'object': 'library', 'slot': f'page {name}', **done(reply), 'reading': 'shelved' if page is None else 'the file changed'})
+    return out
 
 
 # A thing a kind made before its owner's protections were its own (docs/review/astra-2026-10-12 world 2, 3) holds
