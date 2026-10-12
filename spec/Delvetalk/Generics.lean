@@ -1100,7 +1100,8 @@ Every identifier-shaped run of the module's strings as JSON prints them (so a ru
 crosses a string, and an escape's letters join the run they touch), restricted to the
 strings that could hold a `__generic_` run at all. -/
 
-def candidate (s : String) : Bool := (s.splitOn "__generic_").length > 1
+/-- Whether `s` holds `__generic_` (most strings have no `_` at all, and are passed at once). -/
+def candidate (s : String) : Bool := s.contains '_' && (s.splitOn "__generic_").length > 1
 
 def addNames (names : Std.TreeSet String) (s : String) : Std.TreeSet String :=
   if candidate s then
