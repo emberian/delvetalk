@@ -6,7 +6,8 @@ the journal.
 
 Genesis (and furnish) runs once per test run, not once per town: the first town of each shape builds it in a
 template directory under $DELVETALK_TOWN_TEMPLATES (tests/run.py makes one per run; else one per process), and every
-town after starts serve over a copy of that state, so it opens the same journal by replay. `made` is the template's.
+town after starts serve over a copy of that state (the journal, its block store and the snapshot at its head), so it
+opens the same world from that snapshot. `made` is the template's.
 tests/test_town_template.py holds the copy to a fresh genesis, object by object."""
 import fcntl
 import json
@@ -73,8 +74,9 @@ def TEMPLATES():
 
 
 def shape(furnished):
-    """The template's name: furnished or not, and a digest of what genesis and furnish read as they stand in this
-    process (deploy.genesis's and this module's constants, which a test may patch to make an older genesis)."""
+    """The template's name: furnished or not, and a digest of the binary (size, mtime) and of what genesis and furnish
+    read as they stand in this process (deploy.genesis's and this module's constants, which a test may patch to make
+    an older genesis)."""
     import hashlib
     import sys
     from deploy import genesis
@@ -84,8 +86,10 @@ def shape(furnished):
         if callable(v):
             return repr((v.__code__.co_code, [c for c in v.__code__.co_consts if not hasattr(c, 'co_code')]))
         return repr(v)
-    held = [(m.__name__, k, stable(v)) for m in (genesis, sys.modules[__name__]) for k, v in sorted(vars(m).items())
-            if k.isupper() and not callable(v)]
+    from tests.host import binary
+    st = os.stat(os.path.realpath(binary()))
+    held = [(st.st_size, st.st_mtime_ns)] + [(m.__name__, k, stable(v)) for m in (genesis, sys.modules[__name__])
+                                            for k, v in sorted(vars(m).items()) if k.isupper() and not callable(v)]
     return ("furnished-" if furnished else "genesis-") + hashlib.sha256(repr(held).encode()).hexdigest()[:16]
 
 
@@ -106,6 +110,8 @@ def template(furnished):
             stops = []
             town = Town(building, cleanup=stops.append, furnished=furnished, fresh=True)
             made = town.made
+            # A snapshot at the head, so every copy opens from it (0.3 s) rather than replaying genesis (1.2 s).
+            assert town.send(op="world-snapshot")["status"] == "snapshot"
             for stop in stops:
                 stop()
             with open(os.path.join(building, "made.json"), "w") as f:

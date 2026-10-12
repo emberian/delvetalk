@@ -1,5 +1,5 @@
 """A town copied from the run's genesis template is the town a fresh genesis makes (tests/town.py): the same journal
-bytes, and, opened by replay, every object's state CID at every version, the height, head and clock, what waits
+bytes, and, opened from the template's snapshot, every object's state CID at every version, the height, head and clock, what waits
 (pending, interpretations, renders) and the status. Refuted by any test that passes on a copy and would fail on a
 fresh genesis (layer: host).
 

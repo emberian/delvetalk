@@ -9,7 +9,11 @@ each test is named as a sentence of what the software does.
     python3 -W ignore -m tests.run --profile    # host and serve processes per class
 
 `DELVETALK_OBEND` names the host binary. `tests/run.py` runs each class in its own process (a class
-declaring `independent = True` and measured over 8 s is dealt into chunks); `tests/host.py` holds the
+declaring `independent = True` and measured over 8 s, or never measured, is dealt into chunks; `tests/timings.json`
+holds the slow classes' times so a fresh checkout schedules them first, `--baseline` rewrites it). A run shares one
+compile cache (`DELVETALK_COMPILE_CACHE`), the binary's pin and one genesis per town shape (`DELVETALK_TOWN_TEMPLATES`:
+`tests/town.py` copies its journal and head snapshot into each town; `test_town_template` holds a copy to a fresh
+genesis). `tests/host.py` holds the
 fixtures: `HostCase` (one process per class, a fresh unsynced journal per test), `ServeCase` (one `serve`
 per class, `host` its public socket and `root` the opener's; test_http's `FrontCase` takes `fresh_world` for a `serve` per test), `check` (the run's shared stateless process).
 Every `serve` a test starts goes through `served(state, cleanup=...)` or `Town(..., cleanup=...)`: the test's

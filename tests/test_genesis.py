@@ -26,7 +26,7 @@ class Genesis(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
-        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False, fresh=True)  # genesis itself, run here
         cls.host = cls.town.client  # genesis is the opener's: the root socket
         cls.made, cls.refusal = cls.town.made, cls.town.refusal
 
