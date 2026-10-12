@@ -10,6 +10,8 @@ Everything it writes is under --out. It never touches the network.
 import argparse
 import collections
 import concurrent.futures
+import contextlib
+import io
 import json
 import os
 import re
@@ -18,6 +20,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
+import types
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -97,8 +101,27 @@ class Run:
         self.seen, self.plantings = set(), []
 
     def program(self, *argv, what=''):
-        """One transport program as a subprocess; its stdout JSON lines are returned, stderr kept verbatim."""
-        p = subprocess.run([sys.executable, *argv], cwd=ROOT, env=self.env, capture_output=True, text=True)
+        """One transport program (`-m transport <command> ...`) as its entry point runs it, under the run's environment, in
+        this process (a new interpreter per window was most of the rehearsal's time); its stdout JSON lines are returned,
+        stderr kept verbatim."""
+        assert argv[:2] == ('-m', 'transport'), argv
+        from transport.__main__ import main as transport_main
+        stdout, stderr, saved = io.StringIO(), io.StringIO(), dict(os.environ)
+        os.environ.clear()
+        os.environ.update(self.env)
+        try:
+            with contextlib.redirect_stderr(stderr):
+                try:
+                    code = transport_main(list(argv[2:]), out=stdout)
+                except SystemExit as e:
+                    code = e.code if isinstance(e.code, int) else 1
+                except Exception:
+                    traceback.print_exc(file=stderr)
+                    code = 1
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+        p = types.SimpleNamespace(stdout=stdout.getvalue(), stderr=stderr.getvalue(), returncode=code or 0)
         self.log.write(f'$ {" ".join(argv)}\n{p.stdout}{p.stderr}\n')
         if p.stderr.strip() or (p.returncode and not p.stdout.strip()):
             self.errors.append({'kind': 'program', 'argv': argv[:3], 'what': what, 'code': p.returncode,
