@@ -1906,6 +1906,19 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    kernel's accept lists, `tests/test_wanting.py` `Standing` (a seal's "a law and a second hand's try" opened by the
    refusal, listed, in `wants` and the chronicle, across a replay and a snapshot; a law reading `refusedBy`).
 
+166. **A post is read by hob at most once (host27; §7 item 1's double ask; no edition change).** The archive's sentry
+   post (`3mxhfzx7rlk2f`) was asked twice, and the wake post (`3mxhg3bqrds2f`) three times, because a post's spells
+   are a turn each (5.148) and each misfit spell was its own reading. Now `runSpells` runs the spells that fit, then
+   reads the post's misfit spells (`misfitOf`: what `spellTurn` would refuse with a `misfitClauses` clause) as one
+   reading, under the first one's identity (`#k`), a retry answered from it: the utterance those spells, blank-line
+   separated; offered each one's card's table and doors (`heardTurn` takes the cards, rooted on the first that
+   exists, offers deduplicated); the misfit `clause` the first's, `reason` each spell's first line and reason, `hint`
+   each hint, which a non-proposal settles as one `badSpell`. Where hob cannot read (no policy, quota, slots), each
+   misfit is refused alone as before. The reply lists the run turns, the reading last. The archive (on foundation
+   d02fd11c + host27): 81 reached, 72 model calls over 72 posts (67 `none`, 3 proposals, 2 asks), no post asked
+   twice (was 75). Tests: `test_spell_turns.Misfits`/`MisfitsWithoutPolicy` (a post of a misfit, a fitting spell and
+   a misfit: one reading after the plant, a retry asks nothing, hob's spell runs), `test_archive`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

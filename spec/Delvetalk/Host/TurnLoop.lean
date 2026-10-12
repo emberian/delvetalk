@@ -3045,18 +3045,20 @@ def runHeard (w : World) (ctx : Ctx) (post reach : String) (steps : List HeardSt
   let (w', r) ← finishTurn w { ctx with ticksStart := Limits.maxTurnTicks, answers } result st
   return (w', if (r.getObjVal? "receipt").isOk then r.setObjVal! "object" (toJson ctx.object) else r)
 
-/-- hob's reading of `text`, words that reached card `id`, as the speaker's turn (`req`'s identity). Field
-    lines that fit a form offered (`heardOffers`: the card's own, its doors') are that form's spell, run at
-    once with no model. Else the turn waits on hob: a suspension the host resumes itself (`hostResumed`,
+/-- hob's reading of `text`, words that reached the cards `ids` (one, or each misfit spell's of a post, `runSpells`),
+    as the speaker's turn (`req`'s identity), rooted on the first that exists. Field lines that fit a form offered
+    (`heardOffers` of each card: its own, its doors') are that form's spell, run at once with no model. Else the turn waits on hob: a suspension the host resumes itself (`hostResumed`,
     `resumeHeard`), counted by the interpretation quotas and slots as any reading. None when hob cannot
     read for the speaker (no policy they may read, words or offers past their bounds) or, for a misfit, its
     readings are spent or the card's reading slots full: the caller answers as it would without hob. Prose
     past those is refused transiently, `quota` saying when to try again or `capacity` naming the limit. -/
-def heardTurn (w : World) (req : TurnRequest) (id text : String) (misfit : Option Misfit) :
+def heardTurn (w : World) (req : TurnRequest) (ids : List String) (text : String) (misfit : Option Misfit) :
     Option (Except String (World × Json)) := do
   let policy ← w.objects[policyId]?
   guard (policy.read.permits req.principal && text.utf8ByteSize ≤ Limits.maxUtteranceBytes)
-  let offers := listData (heardOffers w id req.principal)
+  let id := ((ids.find? w.objects.contains).orElse fun _ => ids.head?).getD req.object
+  let offers := listData ((ids.eraseDups.flatMap (heardOffers w · req.principal)).foldl
+    (fun acc f => if acc.any (fun g => (dataJson g).compress == (dataJson f).compress) then acc else acc ++ [f]) [])
   guard ((dataJson offers).compress.utf8ByteSize ≤ Limits.maxOffersBytes)
   let answers := match w.posts[req.replyTo]? with
     | some p => if p.object == id then req.replyTo else ""
@@ -3204,7 +3206,7 @@ def misfitClauses : List String := ["unknownField", "noAction", "badValue", "oth
 def heard (w : World) (req : TurnRequest) (ran : Except String (World × Json)) : Except String (World × Json) := do
   let (w', r) ← ran
   if !heardSilent r then return (w', r)
-  match heardTurn (w.withCachesOf w') req req.object (heardText req.method req.argument) none with
+  match heardTurn (w.withCachesOf w') req [req.object] (heardText req.method req.argument) none with
   | some turn => turn
   | none => return (w', r)
 
@@ -3231,7 +3233,7 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
     let hint := hobTail w req.principal hint hobHintLine
     let refused := refuseSpell w req object clause reason hint
     some (if misfitClauses.contains clause then
-      (heardTurn w req object (heardText req.method req.argument) (some { clause, reason, hint })).getD refused else refused)
+      (heardTurn w req [object] (heardText req.method req.argument) (some { clause, reason, hint })).getD refused else refused)
   | .host object action fields => some (hostSpell w req object action fields)
 
 /-- A quieted principal's turn, journaled as refused `quiet` (transient: the same identity runs again
@@ -3281,21 +3283,61 @@ def runOne (w : World) (req : TurnRequest) : Except String (World × Json) :=
     if till > w.clock then quietRefusal w req till reading else runTurnHeard w req
   | none => runTurnHeard w req
 
+/-- The misfit a direct turn's spell is (`spellTurn`'s `.refuse` of a `misfitClauses` clause), with its
+    card, as `runOne` would read it: none for a quieted speaker, a mention, or any other routing. -/
+def misfitOf (w : World) (req : TurnRequest) : Option (String × Misfit) := do
+  let req := { req with object := resolveCard req.principal req.object }
+  guard !((w.quiets[req.principal]?).any (·.1 > w.clock))
+  let req := { req with reach := reachOf w req }
+  guard (req.reach != "mentioned")
+  match routeSpell w req.principal req.object req.method req.argument true (req.reach == "direct" || req.reach == "reply") with
+  | .refuse object clause reason hint =>
+    if misfitClauses.contains clause then some (object, { clause, reason, hint := hobTail w req.principal hint hobHintLine }) else none
+  | _ => none
+
 /-- A post with several spells at a line's start: each its own turn, as if posted alone (identity the post's
     plus `#1` .. `#3`, the post's text that spell, judged alone with its own receipt); a fourth and later are
-    one refusal, `badSpell` clause `tooManySpells` (`#4`). The reply lists the turns in order. -/
+    one refusal, `badSpell` clause `tooManySpells` (`#4`). A post is read by hob at most once: its misfit spells
+    (`misfitOf`) are one reading after the spells that run, under the first one's identity, offered each one's
+    card's table, its utterance those spells, a retry answered from that identity; where hob cannot read, each
+    is refused alone as it would be. The reply lists the turns in order, the reading last. -/
 def runSpells (w : World) (req : TurnRequest) (spells : List String) : Except String (World × Json) := do
   let mut w := w
   let mut turns : Array Json := #[]
+  let mut misfits : Array (TurnRequest × String × String × Misfit) := #[]
   for (spell, i) in (spells.take Limits.spellsPerReply).zipIdx do
     let argument := match req.argument with
       | .record fs => Data.record (fs.map fun (k, v) => if k == "text" then (k, .label spell) else (k, v))
       | other => other
     let one := { req with intent := s!"{req.intent}#{i + 1}", argument,
                           digest := Journal.bodyHash (Json.arr #[toJson req.digest, toJson (i + 1)]) }
+    if let some (card, m) := misfitOf w one then
+      misfits := misfits.push (one, spell, card, m)
+      continue
     let (w', r) ← runOne w one
     w := w'
     turns := turns.push r
+  if let some (first, _, _, m) := misfits[0]? then
+    let text := "\n\n".intercalate (misfits.toList.map (·.2.1.trimAscii.toString))
+    let joined : Misfit := if misfits.size == 1 then m else
+      { clause := m.clause, reason := "; ".intercalate (misfits.toList.map fun (_, s, _, x) => s!"{((s.splitOn "\n").head?).getD s}: {x.reason}"),
+        hint := "\n\n".intercalate (misfits.toList.map (·.2.2.2.hint)) }
+    let argument := match first.argument with
+      | .record fs => Data.record (fs.map fun (k, v) => if k == "text" then (k, .label text) else (k, v))
+      | other => other
+    let reading := { first with object := resolveCard first.principal first.object, argument }
+    let reading := { reading with reach := reachOf w reading }
+    match (retainedTurn w reading).map (fun r => Except.ok (w, r)) <|>
+        heardTurn w reading (misfits.toList.map (·.2.2.1)) text (some joined) with
+    | some turn =>
+      let (w', r) ← turn
+      w := w'
+      turns := turns.push r
+    | none =>
+      for (one, _, card, x) in misfits do
+        let (w', r) ← refuseSpell w { one with object := resolveCard one.principal one.object } card x.clause x.reason x.hint
+        w := w'
+        turns := turns.push r
   if spells.length > Limits.spellsPerReply then
     let n := Limits.spellsPerReply + 1
     let card := req.object
