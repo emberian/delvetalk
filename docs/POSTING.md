@@ -26,7 +26,7 @@ the PDS (`listRepos`, `getRepo`, `listRecords`, `getRecord`, all unauthenticated
 | --- | --- | --- |
 | `town.delvetalk.card` | object id, `/` as `~` | the card as the public reads it (`world-card`), its paint when one is verified, its wants with their spells, its doors, version and height |
 | `town.delvetalk.page` | page name | each library page and walk, and the guide's parts (`guide`, `guide-2`, …) |
-| `town.delvetalk.index` | `self` | the ids, the pages and the height they stand at |
+| `town.delvetalk.index` | `self` | the manifest: the height, each card's version, the pages; written last, only when every record it lists landed (`coherent: false` when the world moved during the read) |
 
 `python3 -m transport mirror` writes what changed (`putRecord`: no feed post, no `postQuota`), a dry run without
 the authorizing flag, as `post` is. Only the public reader's projection is mirrored. The did:web façade
