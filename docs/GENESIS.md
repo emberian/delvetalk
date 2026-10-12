@@ -170,7 +170,9 @@ takes kind/bell's rules and wants by `under`; a town kind the carried world lack
 placed. Each is an ordinary journaled turn,
 identity `refresh-<object>-…`. A slot whose text is not the one genesis or an earlier refresh last gave it (read from
 the journal and the journals it was carried from) was changed by another turn: it is left and named, as is a slot
-whose making is in no journal on the disk.
+whose making is in no journal on the disk. Each carry keeps every object's making (the carried genesis's `made`: who
+made it, under which intent, at which height), so a kind the opener made at the original genesis is known as genesis's
+when the journals before are gone; only its owner writes its fields, so they are refreshed.
 
 ## The rehearsal and the scenarios
 

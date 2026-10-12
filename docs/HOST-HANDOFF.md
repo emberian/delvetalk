@@ -2213,6 +2213,19 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `render`, so `world-card`, the web's card and the answer to a question hob reads nothing into (5.171) lead with it;
    `shownCard`'s `wants` lines stay the thing's own. Previews re-cut (`gsb-welcome`, `zulip-welcome`,
    `commonplace-card`, GENESIS.md). Test: `test_genesis.Commonplace.test_what_wants_a_hand_leads_…`.
+185. **A carry keeps each object's making (host31; the refresh of the v9 deploy and carry-check: "its making is in no
+   journal read").** Genesis's refresh knew a kind as genesis's only by reading its making in the journals a carry
+   cites, which a deploy check's backup or a container without the old state does not hold. The carried genesis now
+   keeps `made [{object, identity, height}]`, every carried object's making (`Carry.makings`: the entry of the old
+   chain that made it, `makes`/`madeRow`; else what the old chain's genesis gave it, `givenMakings`: its `made`, or for a
+   genesis of an edition before (the live v9) every making in the journal it cites when that is on the disk, and that
+   one's in turn). `deploy/genesis.py` `given` reads `made` from each journal of the ancestry: a kind's field slot whose
+   making is the opener's `genesis-*`/`refresh-*` turn but whose text is unread is refreshed (only its owner, the opener,
+   writes it, KIND_LAW); one read in a journal compares as before. carry-check on delvetalk-20261012T121739Z still leaves
+   them: v9's genesis keeps no `made`, and the v8 journal it cites (`/towns/v8/state/town.journal`, the backup
+   delvetalk-20261012T115945Z at its head 435) is not at that path on hbox; the deploy's carry reads it where it is.
+   Test: `test_genesis.CarriedRefresh` (a genesis town carried, its `made`; that genesis stripped of `made` as an older
+   edition's and carried again, the makings read from the journal it cites; every journal before gone, the refresh).
 
 ## 6. Gotchas
 
@@ -2272,10 +2285,6 @@ input as a test first, merging foundation before each commit:
    `interpretVerdict` and `model.extract`; (4) a refusal class for "the opener speaks on the root socket"; (6) the
    REPL's retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
    mention cap of 4 as host answers.
-6. **`genesis refresh` on a carried town** leaves every carried kind's law and form ("its making is in no journal
-   read"), so the live town keeps the old kind texts. Read the making through the carried chain (the old journals
-   the `carried` genesis cites by `carriedFrom`, or the genesis's `moved` records), so a kind the opener made at the
-   original genesis counts as genesis-made; test on a carried genesis town.
 7. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);
    `transport/host.py` `HISTORY_LIMIT` restates `Limits.maxHistoryLimit` (read it from `bounds`); `shownSpell` scans
    the filled text for `did:` tokens because `fired` rows keep no hole structure; a seed post carrying a card's wants

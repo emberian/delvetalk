@@ -362,7 +362,8 @@ def run(host, opener=OPENER):
 # object's own law (`law`, by world-amend) and a town kind's `law`, `voice` and `form` fields (`.law`, `.voice`,
 # `.form`, by the owner's proposal), which every instance follows by `under`; the world's motion is placed when absent. A slot whose text is not the one genesis last gave it
 # (read from the journals: genesis's own turns and earlier refreshes) was changed since by another turn, and is left
-# and named; so is a slot whose making is in no journal read. `python3 -m transport carry` runs it at its end
+# and named; so is a slot whose making is in no journal read. A kind genesis made whose journal is not on this disk is
+# known by the making its carry kept (`made`): only its owner, the opener, writes its fields, so they are refreshed. `python3 -m transport carry` runs it at its end
 # (`carried`); `genesis.py refresh` runs it on a living town through serve's root socket.
 def texts(opener):
     """{(object, slot): genesis's text today}, slot `law` an object's law and `.law`/`.voice`/`.form` a kind's fields."""
@@ -391,7 +392,8 @@ def ancestry(path):
 def given(journals, opener):
     """{(object, slot): the text genesis or a refresh last gave it}, from the opener's `genesis-*` and `refresh-*`
     turns in `journals` (oldest first): a creation's law and a kind seed's `law` and `voice` (none: ""), a refresh's
-    amendment and its write on a kind."""
+    amendment and its write on a kind. A kind's field slot is None when its making, read from a carried genesis's
+    `made` alone, is genesis's but the text genesis gave it is in a journal not read."""
     from transport import journal
     gave = {}
 
@@ -403,10 +405,18 @@ def given(journals, opener):
             gave.update({(obj, '.law'): fields['law'], (obj, '.voice'): fields.get('voice', ''), (obj, '.form'): fields['form'],
                          (obj, '.about'): fields.get('about', '')})
 
+    def genesis_turn(who):
+        return who.get('principal') == opener and who.get('intent', '').startswith(('genesis-', 'refresh-'))
+
     for path in journals:
+        first = journal.read(path, journal.links(path)[:1])
+        for row in ((first[0]['outcome'] if first else {}).get('made') or []):
+            if genesis_turn(row.get('identity') or {}):
+                for slot in ('.law', '.voice', '.form', '.about'):
+                    gave.setdefault((row['object'], slot), None)
         for e in journal.entries(path):
             who = e.get('identity') or {}
-            if who.get('principal') != opener or not who.get('intent', '').startswith(('genesis-', 'refresh-')):
+            if not genesis_turn(who):
                 continue
             o = e.get('outcome') or {}
             if o.get('tag') == 'created':
@@ -457,6 +467,7 @@ def refresh(host, opener, journals):
             rows[slot] = ({'status': 'current'} if slots[slot] == text else
                           {'status': 'stale', 'text': text} if (obj, slot) not in gave and slots[slot] == '' else  # a slot no turn wrote
                           {'status': 'left', 'reading': 'its making is in no journal read'} if (obj, slot) not in gave else
+                          {'status': 'stale', 'text': text} if gave[(obj, slot)] is None else  # genesis's, its text unread
                           {'status': 'left', 'reading': 'changed since genesis gave it'} if gave[(obj, slot)] != slots[slot] else
                           {'status': 'stale', 'text': text})
         stale = {slot: r.pop('text') for slot, r in rows.items() if r['status'] == 'stale'}

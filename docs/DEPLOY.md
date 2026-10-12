@@ -779,10 +779,11 @@ is, unserved and read-only.
 the old `journal.lock` is held and when the new state holds a journal. For each world journal it runs the new binary's
 `delvetalk-obend carry --from OLD --out NEW --reason R --library <the image's world/lib>` (HOST-HANDOFF 5.158), which
 reads the world from the snapshot at its head, rebuilds every object from its sources, checks every suspension decodes,
-seals the image's library as serve will, and writes the carried genesis. Then the transport's files move (the bridge
-rows, `identity.sqlite`, each world's observations, outbox, posting ledger, `since`), the cursors that named old heights
-set to the genesis (`publications.after`, each `awaiting` turn), and each carried world is checked in a throwaway copy as
-carry-check checks it. It prints one JSON line per world and, last, the hand's one line for the channel (FOUNDATION §2), posted once by the owner:
+seals the image's library as serve will, and writes the carried genesis, at the old head's height + 1 (heights go on
+from the world before's, HOST-HANDOFF 5.182) and keeping every object's making (`made`, read from the journals the
+carry cites, which `/towns` holds: 5.185). Then the transport's files move (the bridge rows, `identity.sqlite`, each
+world's observations, outbox, posting ledger, `since`; the height cursors `publications.after` and each `awaiting` turn
+name entries of the same sequence), and each carried world is checked in a throwaway copy as carry-check checks it. It prints one JSON line per world and, last, the hand's one line for the channel (FOUNDATION §2), posted once by the owner:
 
     hob: the world was carried to a newer host at entry 73; everything is where it was, and the carry is receipt <slug>.
 
@@ -803,7 +804,8 @@ a new body, errand, front, lantern and weather, at a new state; the rest at the 
 `dropped` the tide's tick (`the code it waited in is gone`) beside `rearmed: [tide]`: the tide waits again under its
 new code. Every v8 object is in v9, each `world-object` state CID differs (state held as cells), and an old receipt
 resolves by its slug as "entry N of the world before" (`hand search <slug>`: `{at: 435, height: N, world:
-/towns/v8/state/town.journal}`). A thing's card still names old heights ("untended since entry 27") that are v8's.
+/towns/v8/state/town.journal}`). A thing's card named old heights ("untended since entry 27") that are v8's, in a
+world whose heights began again at 1: from edition 12 a carry's heights go on from the world before's.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 

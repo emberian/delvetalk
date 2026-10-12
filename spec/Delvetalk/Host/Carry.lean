@@ -398,14 +398,60 @@ def droppedEnd (w : World) (e : Json) : Option Json := do
   let [("ended", d)] := endedField w id principal intent "broken" ledger 0 1 outcome | none
   return Json.mkObj ([("from", identity), ("principal", toJson principal)] ++ ((d.getObj?.toOption.map (·.toList)).getD []))
 
-/-- The `carried` genesis of `c` (the world of the journal `world` at `height`, whose head is `cid`, of
-    replay edition `replay`), with `before` the old journal's own genesis. -/
 def renamedJson (renamed : List (String × String × String)) : Json :=
   Json.arr (renamed.toArray.map fun (id, before, after) =>
     Json.mkObj [("object", toJson id), ("before", toJson before), ("after", toJson after)])
 
+/-! ## Makings
+
+A carried genesis keeps each object's making (`made`): who made it, under which intent, at which height of
+the world it was made in. A reader of the world's history (genesis's refresh: is this kind genesis's?) reads it
+there when the journals before are not on its disk. -/
+
+/-- The objects an entry makes: its `created` object, or its `creates` rows. -/
+def makes (e : Json) : List String :=
+  let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
+  let object := fun (j : Json) => (j.getObjValAs? String "object").toOption
+  if tagOf e == "created" then (object outcome).toList
+  else (((outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap object
+
+/-- A `made` row: the object, and the identity and height of the entry that made it. -/
+def madeRow (id : String) (e : Json) : Json :=
+  Json.mkObj [("object", toJson id), ("identity", (e.getObjVal? "identity").toOption.getD Json.null),
+    ("height", (e.getObjVal? "height").toOption.getD Json.null)]
+
+/-- The makings a carried genesis keeps, by object. -/
+def madeOf (genesis : Json) : Std.HashMap String Json :=
+  ((((genesis.getObjVal? "outcome").toOption.bind (·.getObjVal? "made" |>.toOption)).bind (·.getArr?.toOption)).getD #[]).foldl
+    (fun m r => match r.getObjValAs? String "object" with
+      | .ok id => m.insert id r
+      | .error _ => m) {}
+
+/-- The makings of what the journal at `journal`, whose genesis is `genesis`, was given by it: a carried genesis's
+    `made`; for one of an edition before it kept them, every making in the journal it was carried from (its
+    `carriedFrom.world`, as given or beside `journal`), read when it is on this disk, and that one's in turn. -/
+partial def givenMakings (journal : String) (genesis : Json) : IO (Std.HashMap String Json) := do
+  if tagOf genesis != "carried" then return {}
+  if ((genesis.getObjVal? "outcome").toOption.bind (·.getObjVal? "made" |>.toOption)).isSome then return madeOf genesis
+  let some (_, origin) := genesisOrigin genesis | return {}
+  let some world := (origin.getObjValAs? String "world").toOption | return {}
+  let beside := ((journal : System.FilePath).parent.getD ".") / world
+  let some path ← [(world : System.FilePath), beside].findM? (·.pathExists) | return {}
+  let .ok old ← Snapshot.openEntries path.toString | return {}
+  let earlier ← match old.genesis? with
+    | some g => givenMakings path.toString g
+    | none => pure {}
+  return old.foldl (fun m _ e => (makes e).foldl (fun m id => m.insert id (madeRow id e)) m) earlier
+
+/-- Every object's making, by id: the entry of `src` that made it, or what `src`'s genesis gave it (`given`). -/
+def makings (w : World) (src : Entries) (given : Std.HashMap String Json) : Array Json :=
+  let found := src.foldl (fun m _ e => (makes e).foldl (fun m id => m.insert id (madeRow id e)) m) given
+  ((w.objects.toList.map (·.1)).toArray.qsort (· < ·)).filterMap (found[·]?)
+
+/-- The `carried` genesis of `c` (the world of the journal `world` at `height`, whose head is `cid`, of
+    replay edition `replay`), with `before` the old journal's own genesis and `made` its objects' makings. -/
 def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height : Nat) (cid : String)
-    (replay : Nat) (before : Json) (library : Option Library) : Except String Json := do
+    (replay : Nat) (before : Json) (library : Option Library) (made : Array Json) : Except String Json := do
   let previous := (c.world.library.map (·.pin)).getD ""
   let changed := library.filter (·.pin != previous)
   let w := match changed with
@@ -439,7 +485,8 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
      (if c.kept.isEmpty then [] else [("kept", Json.arr (c.kept.toArray.map fun (id, law) =>
         Json.mkObj [("object", toJson id), ("law", toJson law)]))]) ++
      (if c.rearmed.isEmpty then [] else [("rearmed", toJson c.rearmed)]) ++
-     (if c.renamed.isEmpty then [] else [("renamed", renamedJson c.renamed)])) (height := height + 1)
+     (if c.renamed.isEmpty then [] else [("renamed", renamedJson c.renamed)]) ++
+     (if made.isEmpty then [] else [("made", Json.arr made)])) (height := height + 1)
 
 def fail (message : String) (code : UInt32 := 1) : IO UInt32 := do
   (← IO.getStderr).putStrLn s!"carry: {message}"
@@ -513,7 +560,8 @@ def main (args : List String) : IO UInt32 := do
   unless carried.refused.isEmpty do
     return ← fail ("refused, each by name (list an object as --leave OBJ to carry it retired):\n" ++
       "\n".intercalate (carried.refused.map fun (what, why) => s!"  {what}: {why}"))
-  let entry ← match carryGenesis carried src journal reason height head replay first (shipped.map (·.library)) with
+  let made := makings w src (← givenMakings journal first)
+  let entry ← match carryGenesis carried src journal reason height head replay first (shipped.map (·.library)) made with
     | .ok e => pure e
     | .error e => return ← fail e
   -- The new journal replays from its genesis, and holds every object at the state the snapshot held.

@@ -330,6 +330,71 @@ class Refresh(unittest.TestCase):
         self.assertEqual(self.send(op='world-status')['height'], height)
 
 
+class CarriedRefresh(unittest.TestCase):
+    """`refresh` on a carried town whose older journals are not on this disk (a deploy check's backup, a container
+    without the old state): the carry keeps each object's making (`made`), so a kind the opener made at the original
+    genesis counts as genesis-made and its law, form and voice are refreshed, never left as "its making is in no
+    journal read"."""
+
+    def test_a_kind_made_at_the_original_genesis_is_refreshed_through_the_carry(self):
+        import shutil
+        import subprocess
+        from tests.host import binary
+        from transport.host import HostProcess
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        old_record = genesis.RECORD_LAW.rsplit('\nwant pending', 1)[0]
+        old_kinds = [(n, of, form, head, law.replace(genesis.RECORD_LAW, old_record).split('\nrule seven', 1)[0], body)
+                     for n, of, form, head, law, body in genesis.KINDS]
+        with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}, MOTION=[]):
+            town = Town(os.path.join(tmp.name, 'v1'), cleanup=self.addCleanup, furnished=False)
+        self.assertEqual(town.send(op='world-snapshot')['status'], 'snapshot')
+        town.close()
+        out = os.path.join(tmp.name, 'v2.journal')
+        p = subprocess.run([binary(), 'carry', '--from', town.journal, '--out', out, '--reason', 'a newer host'],
+                           capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        made = {r['object']: r for r in genesis_outcome(out).get('made') or []}
+        self.assertEqual((made['kind/bell']['identity']['principal'], made['kind/bell']['identity']['intent']),
+                         (genesis.OPENER, 'genesis-kind-bell'), made.get('kind/bell'))
+        # A carried genesis of an edition before `made` (the live v9): carried again, the makings are read from the
+        # journal it cites while that is on this disk, and kept.
+        from tests.wire import cid_of, write_journal
+        from transport import journal
+        [g] = journal.entries(out)
+        g['outcome'].pop('made')
+        g.pop('hash')
+        g['hash'] = cid_of(g)
+        os.remove(out)
+        os.remove(out + '.blocks')
+        write_journal(out, [g])
+        held = HostProcess(binary(), out)
+        self.assertEqual(held.send(op='world-snapshot')['status'], 'snapshot')
+        held.close()
+        again = os.path.join(tmp.name, 'v3.journal')
+        p = subprocess.run([binary(), 'carry', '--from', out, '--out', again, '--reason', 'again'], capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual({r['object']: r for r in genesis_outcome(again)['made']}['kind/bell'], made['kind/bell'])
+        shutil.rmtree(town.state)  # the worlds before are not on this disk
+        os.remove(out)
+        out = again
+        host = HostProcess(binary(), out)
+        self.addCleanup(host.close)
+        rows = genesis.refresh(host, genesis.OPENER, genesis.ancestry(out))
+        status = {(r['object'], r.get('slot')): (r['status'], r.get('reading')) for r in rows}
+        for obj, slot in (('kind/record', '.law'), ('kind/bell', '.law'), ('kind/bell', '.voice')):
+            with self.subTest(obj=obj, slot=slot):
+                self.assertEqual(status[(obj, slot)], ('refreshed', None))
+        kind = {f['name']: f['value']['value'] for f in host.send(op='world-view', principal=genesis.OPENER, object='kind/bell')['state']['fields']
+                if f['name'] in ('law', 'voice')}
+        self.assertEqual(kind, {'law': dict((k[0], k[4]) for k in genesis.KINDS)['bell'], 'voice': genesis.VOICES['bell']})
+
+
+def genesis_outcome(path):
+    from transport import journal
+    return journal.read(path, journal.links(path)[:1])[0]['outcome']
+
+
 class Weather(unittest.TestCase):
     """docs/METAPHYSICS.md §7.4: the furnished garden's weather (`garden/weather`) rains by its rule on the tide, at
     every twenty-fourth tick while the garden is tended, on every bell the garden holds, and writes the garden's
