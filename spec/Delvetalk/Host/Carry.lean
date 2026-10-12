@@ -136,12 +136,17 @@ structure Moved where
   body : Bool := false
   /-- Its law text before and after, when it held its package's law and the image's package declares another. -/
   law : Option (String × String) := none
+  /-- The package's own rule and want lines placed on it at the move (by name), and those it took off. -/
+  placed : List String := []
+  unplaced : List String := []
 
 def Moved.json (m : Moved) : Json :=
   Json.mkObj ([("object", toJson m.object), ("from", toJson m.before), ("to", toJson m.after),
     ("migration", toJson m.migration), ("before", toJson m.stateBefore), ("after", toJson m.stateAfter)] ++
     (if m.body then [("body", toJson true)] else []) ++
-    ((m.law.map fun (b, a) => [("law", Json.mkObj [("before", toJson b), ("after", toJson a)])]).getD []))
+    ((m.law.map fun (b, a) => [("law", Json.mkObj [("before", toJson b), ("after", toJson a)])]).getD []) ++
+    (if m.placed.isEmpty then [] else [("placed", toJson m.placed)]) ++
+    (if m.unplaced.isEmpty then [] else [("unplaced", toJson m.unplaced)]))
 
 /-- What a carry made of a world: the world as this binary holds it, the objects left (retired, with the
     reading), the objects moved to the image's packages, the suspensions dropped (the entry and why), and what
@@ -229,6 +234,25 @@ def lawUnder (w : World) (id : String) (o : Object) (old new : Built) :
   let readings := (artifactReadings new.artifact).filter fun (n, _) => (new.laws.lookup n).isSome
   return (new.laws, renderLaw new.laws, readings, false)
 
+/-- The rules and wants of a moved object holding its package's law (as `makeObject` places a package's lines on
+    what is made of it with no law text given): each placed row its old package placed (the same line, by name)
+    that the new package changes or drops taken off, and each line of the new package whose name its text and
+    rows leave free placed, owned by its owner (else the opener), `since` the carried genesis. Its own and hands'
+    rows stay. -/
+def placedUnder (w : World) (o : Object) (old new : Built) (state : Delvetalk.Theory.ObjectiveBendDemandData.Data) :
+    List Placed × List Placed × List String × List String := Id.run do
+  if old.laws.isEmpty || renderLaw o.law != renderLaw old.laws then return (o.rules, o.wants, [], [])
+  let packaged := fun (r : Placed) => old.lines.any fun c => c.name == r.name && c.render == r.line
+  let kept := fun (r : Placed) => !packaged r || new.lines.any fun c => c.name == r.name && c.render == r.line
+  let rules := o.rules.filter kept
+  let wants := o.wants.filter kept
+  let gone := ((o.rules ++ o.wants).filter (!kept ·)).map (·.name)
+  let taken := ((parseClauses o.lawText).toOption.getD []).map (·.name) ++ (rules ++ wants).map (·.name)
+  let owner := if (ownerOf state).isEmpty then w.opener else ownerOf state
+  let fresh := (new.lines.filter fun c => !taken.contains c.name).map fun c =>
+    ({ name := c.name, owner, since := 1, line := c.render, clause := c } : Placed)
+  return (rules ++ fresh.filter (Law.isRule ·.clause), wants ++ fresh.filter (Law.isWant ·.clause), fresh.map (·.name), gone)
+
 /-- `o` (built as `old` under its own pin) moved to the image's packages, or none when its closure there is
     its pin's; else why it cannot move. -/
 def moved (w : World) (s : Shipped) (id : String) (o : Object) (old : Built) :
@@ -269,14 +293,15 @@ def moved (w : World) (s : Shipped) (id : String) (o : Object) (old : Built) :
     throw s!"{f} is fixed, and its package no longer fixes it"
   let (methods, predicate, predicateReads) := b.shape
   let (law, lawText, readings, amended) ← lawUnder w id o old b
+  let (rules, wants, placed, unplaced) := placedUnder w o old b state
   let o' := { o with inputs, inputsKey := inputsKeyOf inputs, pin, state, version := o.version + 1, stateType := b.ty,
                      bounds := b.assumptions.bounds, methods, predicate, predicateReads, relations, fixed,
                      packet := ← b.artifact.getObjValAs? String "packetSha256", declares := declaresOf b.artifact,
-                     law, lawText, readings }
+                     law, lawText, readings, rules, wants }
   return some (o', b, { object := id, before := o.pin, after := pin, migration,
                         stateBefore := stateCid o.state, stateAfter := stateCid state,
                         body := layer.isSome || relaid,
-                        law := if lawText == o.lawText then none else some (o.lawText, lawText) }, amended)
+                        law := if lawText == o.lawText then none else some (o.lawText, lawText), placed, unplaced }, amended)
 
 /-- Every object rebuilt and, with the image's packages, moved to them; every suspension checked. An
     object named in `leave` is carried retired whether or not it fails, at its own pin, and its suspensions

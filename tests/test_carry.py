@@ -399,6 +399,21 @@ class Moves(Reflection):
         # The new law's own reading is the one a refusal by it reads.
         self.assertEqual(law("l")["readings"], [{"name": "counted", "reading": "the count only rises, and anyone places rules on it"}])
 
+    def test_a_moved_object_holding_its_packages_law_takes_the_packages_new_rule_and_want_lines(self):
+        version = self.host.send(op="world-view", principal="ember", object="m")["version"]
+        a = self.host.send(op="world-amend", principal="ember", identity="am-m", object="m", version=version,
+                           law='law counted: monotone(count)\nlaw mine "ember alone bumps": request.subject == "ember"')
+        self.assertEqual(a["status"], "admitted", a)
+        low = 'want low "a count under ten": new.count <= 9 asks delvetalk {request.object} bump'
+        self.ship(declared(COUNTED_SOURCE.replace("def initial()", low + "\ndef initial()", 1)), "Counted")
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        moved = {m["object"]: m for m in json.loads(p.stdout)["moved"]}
+        self.assertEqual((moved["l"].get("placed"), moved["m"].get("placed")), (["low"], None), moved)
+        new = self.opened(out)
+        wants = lambda i: [r["name"] for r in new.send(op="world-wants", principal="ember", object=i)["rows"]]
+        self.assertEqual((wants("l"), wants("m")), (["low"], []))
+
     def test_a_package_that_changes_its_methods_alone_moves_with_its_state(self):
         self.ship(declared(TALLY_SOURCE + "def bump2(state: State, context: Abi.Context) -> Activity<Nat>:\n  add(context, 2n)\n"))
         p, out = self.carry()

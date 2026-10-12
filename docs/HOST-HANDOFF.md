@@ -1662,7 +1662,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      the carry's principal), which the first settling runs: the tide waits again for the tick its last one scheduled.
      A moved object holding its package's law as it was (`lawUnder`: its law renders as the old package's) takes the
      new package's law and readings when they changed (`law {before, after}` on its move); one an owner amended
-     keeps its own, named (`kept [{object, law}]`). Only a package-declared law is the carry's: a law given at
+     keeps its own, named (`kept [{object, law}]`). Such an object (its law its package's) also takes its new package's
+     top-level `rule`/`want` lines as `makeObject` places them (`placedUnder`): a row its old package placed that the new
+     one changes or drops taken off, each line whose name its text and rows leave free placed under its owner, `since`
+     1 (`placed`, `unplaced` on its move); hands' rows stay. Only a package-declared law is the carry's: a law given at
      creation (genesis's `RECORD_LAW`, a kind's `under`) and a kind's `law`/`voice` state are genesis's, laid by
      `deploy.genesis refresh` at the end of the transport's carry (objects lane). Left, retired at its old pin with the reason as its reading: an
      object whose own entry package the image no longer ships (`gone`: Wake, Env), one whose move refuses (no
@@ -1670,7 +1673,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      names. Only an object that does not rebuild under its own pin refuses the carry, by name.
      `carryGenesis`: `carriedFrom {world, height, cid, replay, reason, entries, library?, carriedFrom?}` (the old
      genesis's own when it was a carry), `index`, `left`, `moved [{object, from, to, migration, before, after,
-     body?, law?}]` (pins, `migrate` or "", state CIDs, `body` when it took the image's body), `kept`, `dropped`,
+     body?, law?, placed?, unplaced?}]` (pins, `migrate` or "", state CIDs, `body` when it took the image's body), `kept`, `dropped`,
      `rearmed`. J2 is replayed from its genesis and every object's state
      CID compared with the snapshot's (a moved one's with `after`) before it is written. Prints `{status:
      carried, hash, slug, replay, carriedFrom, library, objects, pending, suspended, grants, posts, receipts,
