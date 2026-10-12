@@ -1024,7 +1024,7 @@ def worldMethods : List String :=
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "checkObject", "grant", "grantWith", "revoke",
    "objects", "changed", "card", "principal",
-   "rule", "unrule", "want", "unwant", "grow", "ungrow", "act", "chronicle", "wanting"]
+   "rule", "unrule", "want", "unwant", "grow", "ungrow", "act", "chronicle", "wanting", "holds"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
     host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
@@ -2102,6 +2102,32 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let s ← get
     let (rows, more) := wanting s.world s.subject (nat "after") (nat "limit")
     respond bounds responseType "wanting" [.record [("rows", listData (rows.map wantedData)), ("more", .boolean more)]]
+  -- `holds {object, when}`: a condition in the law's grammar (FOUNDATION §4) judged of `object` as it stands, by the
+  -- one `denote`, at the clock, `request.subject` the turn's subject (a scene's guard, world/lib/Scenes.obend): no
+  -- `old`, nothing written. The object and every object the condition cites are roots, each the subject's to view.
+  | .variant "holds" (.record f) =>
+    let some id := (f.lookup "object").bind referenceId | refusedReading bounds responseType "foreignWorld" "a condition reads an object of this world."
+    let some text := (f.lookup "when").bind labelOf | evaluation "malformed holds plan"
+    let s ← get
+    let some o := s.world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
+    match Delvetalk.Compiler.ObjectiveBendLaw.parse text with
+    | .error message => refusedReading bounds responseType "badValue" message
+    | .ok expr =>
+      match Law.standingRefusal expr with
+      | some what => refusedReading bounds responseType "badValue" s!"a condition read as it stands reads no old, no change and no under: {what}"
+      | none =>
+      let names := expr.names
+      let cited := (citesOf s.world names).objects
+      match unviewable s.world s.subject (id :: cited) with
+      | some r => refusedReading bounds responseType "reads" s!"{r} is not the reader's to view."
+      | none =>
+        recordRoot id o.version
+        for r in cited do
+          if let some c := s.world.objects[r]? then recordRoot r c.version
+        let facts := citing s.world o.law names
+          { subject := s.subject, caller := self, height := s.world.height + 1, turn := s.world.height + 1,
+            clock := s.world.clock, object := id }
+        respond bounds responseType "held" [.record [("value", .boolean (Law.denote facts none (viewFor names o.cells) expr))]]
   | .variant "amend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed amend plan"
     let some text := (f.lookup "law").bind labelOf | evaluation "malformed amend plan"

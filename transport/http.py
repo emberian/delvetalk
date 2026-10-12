@@ -17,8 +17,7 @@ from pathlib import Path
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
-from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, handles, painted, plain, typed
-from transport.pages import door_rows
+from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, door_rows, handles, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import Repo
@@ -880,19 +879,16 @@ class Handler(BaseHTTPRequestHandler):
             usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
             answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))
                                                                        for t in turns], offers, usage)
-        card, view = (host.send({'op': op, 'principal': did, 'object': name}) for op in ('world-card', 'world-view'))
-        if card.get('status') != 'card' and not answer:  # an object with no card still shows the turn a form ran on it
-            return self.html(404, pages.refusal(name, who['handle'], card, card.get('status')))
-        shown = card.get('status') == 'card'
-        paint = painted(host, did, name, self.server.sleep).get('text') if shown else None
+        here = place(host, did, name, self.server.sleep)
+        if here['card'] is None and not answer:  # an object with no card still shows the turn a form ran on it
+            return self.html(404, pages.refusal(name, who['handle'], here.get('cardReply') or here['view'], (here.get('cardReply') or here['view']).get('status')))
+        # Entering a place: what happened there, told above what came back; never in the reply's text, never posted.
+        entered = spoke and any(t.get('status') == 'admitted' and t.get('object') == name and (t.get('result') or {}).get('label') == 'entered'
+                                for t in turns)
+        told = painted(host, did, name, self.server.sleep, telling={}) if entered else None
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
-        self.html(200, pages.play(name, who['handle'], oid(name), card.get('text', '') if shown else None, answer=answer, offered=offered,
-                                  paint=paint, wants=self.wants(host, did, name) if shown else (), doors=door_rows(view), said=say))
-
-    def wants(self, host, principal, name):
-        """What the thing wants now, as the reader may see it (world-wants); nothing from a host without the op."""
-        r = host.send({'op': 'world-wants', 'principal': principal or 'anonymous', 'object': name})
-        return [w for w in r.get('rows') or [] if isinstance(w, dict)] if r.get('status') == 'wants' else []
+        self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered,
+                                  paint=here['paint'], wants=here['wants'], doors=here['doors'], said=say, told=told))
 
     def html(self, code, body, headers=()):
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
@@ -908,16 +904,15 @@ class Handler(BaseHTTPRequestHandler):
         the reader sees it; logged in, a way to speak to it; its law, source and journal on demand."""
         who = who or self.principal(self.cookie())
         handle, principal, host = who and who['handle'], who and who['did'], self.server.host
-        view = host.send({'op': 'world-view', 'principal': principal or 'anonymous', 'object': name})
-        if view.get('status') != 'viewed':
-            return self.html(404, pages.refusal(name, handle, view, view.get('status')))
-        card, seen = (host.send({'op': op, 'principal': principal or 'anonymous', 'object': name}) for op in ('world-card', 'world-inspect'))
+        here = place(host, principal, name, self.server.sleep)
+        if here['status'] != 'place':
+            return self.html(404, pages.refusal(name, handle, here['view'], here['status']))
+        seen = host.send({'op': 'world-inspect', 'principal': principal or PUBLIC, 'object': name})
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
-        shown = card.get('status') == 'card'
-        paint = painted(host, principal or 'anonymous', name, self.server.sleep).get('text') if shown else None
-        self.html(200, pages.obj(name, handle, view, card.get('text') if shown else None, self.history(host, name, principal), principal,
-                                 door_rows(view), seen, self.wants(host, principal, name) if shown else (), brief, paint))
+        told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
+        self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
+                                 here['doors'], seen, here['wants'], brief, here['paint'], told))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, under the reader's authority."""

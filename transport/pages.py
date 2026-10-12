@@ -134,11 +134,14 @@ def painting(text):
     return T['paint'].format(text=e(text)) if text else ''
 
 
-def door_rows(view):
-    """The doors a record cites (its `cites` list, in the owner's order), those with an object."""
-    state = plain(view.get('state') or {})
-    doors = (state.get('cites') if isinstance(state, dict) else None) or []
-    return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
+def telling(told):
+    """A place's telling above the reply and the card: the host's frame, the paint, and the exact lines it draws on folded
+    beneath (open when nothing is painted). Nothing when there is nothing to tell (`quiet`, `notAPlace`, no telling)."""
+    t = (told or {}).get('telling')
+    if not t or not (told.get('text') or t.get('exact')):
+        return ''
+    return T['telling'].format(frame=e(t.get('frame') or ''), paint=painting(told.get('text')), open='' if told.get('text') else ' open',
+                               lines=e('\n'.join(t.get('exact') or [])))
 
 
 def door_line(doors, href):
@@ -183,11 +186,11 @@ def reply(turns, offers=(), usage=None):
     return T['reply'].format(lines=answers, offers=body + receipts), spells
 
 
-def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), doors=(), said=''):
-    """An object to play: what came back to the reply just sent, the place, the one box, and its suggestions: the reply's
-    spells, then what the thing wants, then the card's own."""
+def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), doors=(), said='', told=None):
+    """An object to play: a place's telling when the reply just sent entered it, what came back, the place, the one box,
+    and its suggestions: the reply's spells, then what the thing wants, then the card's own."""
     wanted = [(' '.join(w['asks'].split()[1:3]), w['asks']) for w in wants if w.get('asks')]
-    return page(name, who, T['play'].format(name=e(name), path=e(path), reply=answer, said=e(said),
+    return page(name, who, T['play'].format(name=e(name), path=e(path), reply=telling(told) + answer, said=e(said),
                                             place=place(card, paint, wants, doors) if card is not None else '',
                                             suggestions=suggestions(path, [*offered, *wanted, *(speech(card)[1] if card else [])], f'delvetalk {name} ?')))
 
@@ -195,11 +198,11 @@ def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), 
 BRIEF = 5  # receipts the brief text view keeps
 
 
-def obj(name, who, view, card, entries, did=None, doors=(), seen=None, wants=(), brief=None, paint=None):
-    """An object as anyone may read it: the place (paint, exact card, wants, doors), a way to speak to it, then its law,
-    source and journal on demand. `brief` (the text view's default, the href of the whole page): the place, the doors and
-    the newest BRIEF entries; the law and the source are a link away."""
-    shown = place(card, paint, wants, doors, lambda o: '/o/' + quote(o, safe=':')) if card else T['state'].format(state=dl(view.get('state')))
+def obj(name, who, view, card, entries, did=None, doors=(), seen=None, wants=(), brief=None, paint=None, told=None):
+    """An object as anyone may read it: a place's telling for a signed-in reader, the place (paint, exact card, wants,
+    doors), a way to speak to it, then its law, source and journal on demand. `brief` (the text view's default, the href
+    of the whole page): the place, the doors and the newest BRIEF entries; the law and the source are a link away."""
+    shown = telling(told) + (place(card, paint, wants, doors, lambda o: '/o/' + quote(o, safe=':')) if card else T['state'].format(state=dl(view.get('state'))))
     play = T['playlink'].format(href=e(quote(name, safe='/:'))) if who else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
     source = T['source'].format(law=e(seen.get('law') or ''), pin=e(str(seen.get('pinSlug') or '')), source=e(seen.get('source') or ''),

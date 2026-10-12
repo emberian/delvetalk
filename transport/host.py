@@ -92,7 +92,9 @@ def painted(host, principal, obj, sleep=time.sleep, **day):
     """The paint of `obj` as `principal` reads it (docs/OVERHAUL.md section 4): `{text}`, or when the exact card stands
     alone why, as the host answers it: `{reason, clause?, detail?}` (`world-render`'s `exact`; `pending` past the
     patience it named; `plain`, `unknown`, `denied`, or an `error` with its message). The host's `pending` is looked at
-    again every PAINT_STEP seconds for the `patience` it names, no longer. With no `obj`, the town's day (`day`, `morning`)."""
+    again every PAINT_STEP seconds for the `patience` it names, no longer. With no `obj`, the town's day (`day`, `morning`).
+    With `telling={}` the place's telling for `principal` (docs/VOICE.md "A telling"), and its `telling {form, frame,
+    exact}` beside the text or the reason."""
     ask = {'op': 'world-render', 'principal': principal, **({'object': obj} if obj else {}), **{k: v for k, v in day.items() if v is not None}}
     r = host.send(ask)
     for _ in range(int((r.get('patience') or 0) / PAINT_STEP)):
@@ -100,10 +102,41 @@ def painted(host, principal, obj, sleep=time.sleep, **day):
             break
         sleep(PAINT_STEP)
         r = host.send(ask)
+    told = {'telling': r['telling']} if isinstance(r.get('telling'), dict) else {}
     if r.get('status') == 'painted':
-        return {'text': r['text']}
+        return {'text': r['text'], **told}
     why = {'reason': r.get('reason') or r.get('status') or 'error', 'clause': r.get('clause'), 'detail': r.get('detail') or r.get('message')}
-    return {k: v for k, v in why.items() if v}
+    return {**{k: v for k, v in why.items() if v}, **told}
+
+
+def door_rows(view):
+    """The doors a record cites (its `cites` list, in the owner's order), those with an object."""
+    state = plain(view.get('state') or {})
+    doors = (state.get('cites') if isinstance(state, dict) else None) or []
+    return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
+
+
+def wanted(host, reader, obj):
+    """What the thing wants now, as the reader may see it (world-wants); nothing from a host without the op."""
+    r = host.send({'op': 'world-wants', 'principal': reader or PUBLIC, 'object': obj})
+    return [w for w in r.get('rows') or [] if isinstance(w, dict)] if r.get('status') == 'wants' else []
+
+
+def place(host, reader, obj, sleep=time.sleep, paint=True):
+    """A thing as `reader` reads it, the one rendering the web's pages, a reply's draft and the mirror share:
+    {status: place, object, version, view, card, paint, wants, doors}; `card` None when the card is refused
+    (the view still stands), `paint` None when none is verified (or `paint` is False: no model is waited for).
+    A thing the reader may not view: {status, object} as `world-view` answers it."""
+    reader = reader or PUBLIC
+    view = host.send({'op': 'world-view', 'principal': reader, 'object': obj})
+    if view.get('status') != 'viewed':
+        return {'status': view.get('status') or 'error', 'object': obj, 'version': None, 'view': view, 'card': None, 'paint': None,
+                'wants': [], 'doors': []}
+    card = host.send({'op': 'world-card', 'principal': reader, 'object': obj})
+    shown = card.get('status') == 'card'
+    return {'status': 'place', 'object': obj, 'version': view.get('version'), 'view': view, 'cardReply': card,
+            'card': card.get('text') if shown else None, 'paint': painted(host, reader, obj, sleep).get('text') if shown and paint else None,
+            'wants': wanted(host, reader, obj) if shown else [], 'doors': door_rows(view)}
 
 
 def fell_back(paint):

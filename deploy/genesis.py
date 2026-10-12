@@ -71,10 +71,11 @@ EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make
              'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
             ("I water mimo's bell", 'grow: water "poured on by a hand; a line, and the bell is tended"\ndelvetalk bell/1 water / text: I water the bell'),
             ('what is a front?', 'delvetalk library read / page: kinds'),
+            ('how do I write a scene for a room, with choices?', 'delvetalk library read / page: spween'),
             ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/FOUNDATION.md §5)
 
 
-# The library's stacks (docs/LIBRARY.md): six pages and five walks, (name, kind, title); each body is
+# The library's stacks (docs/LIBRARY.md): nine pages and six walks, (name, kind, title); each body is
 # capsules/pages/<name>.txt, so the page in the world and the file in the tree are one text.
 PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a badSpell hint'),
          ('laws', 'page', 'law, rule and want lines, what they read; transient and binding refusals'),
@@ -83,9 +84,12 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
          ('protocol', 'page', 'what a card asks the world: view, call, send, create, rule'),
          ('world', 'page', "the doors, every card's spells, the classes of refusal"),
          ('kinds', 'page', 'every kind: what it is, and a spell that makes one'),
+         ('spween', 'page', "a room's scene: passages, choices, guards and casts, one whole"),
+         ('station', 'page', 'an example scene: the all-night station at the edge of the town'),
          ('bell', 'walk', 'make a bell, rain on it, rule on it, hear it ring'),
          ('check', 'walk', 'check Bend, draft a thing, adopt it, hold another\'s proposal'),
          ('enter', 'walk', 'enter the porch, say, carve a room of your own under it, choose'),
+         ('scene', 'walk', 'make a room from your own scene; a choice in it rings a bell'),
          ('tide', 'walk', 'read the tide\'s rules, write one, be noted at a tick'),
          ('kind', 'walk', 'make a kind under your law; another makes one and meets it')]
 
@@ -218,6 +222,53 @@ THINGS = [('porch/goblet', 'a goblet that is always full of something'),
           ('porch/gemstone', 'a gemstone that sometimes sparkles')]
 
 
+# The all-night station (docs/LIBRARY.md, capsules/pages/station.txt), made only with `--with-gas-station`, for the
+# owner's word: a room of kind/station (world/kinds/station.kind, a body over the room's that keeps no time and hands
+# things across its counter by `vend`) at the edge of the town, its scene the page's ```spween block; the coffee
+# its counter copies for whoever takes one (`station/coffee`, lying nowhere, the opener's); a register,
+# a THING lying there that nobody keeps until someone inspirits it, with the verb `sign` grown on it; the station's
+# want that its register, once kept, hold every visitor it has had; and doors between it and the porch.
+STATION_KIND = read_kind('station')
+STATION_WANT = ('register', 'the register is kept now, and holds fewer arrivals than the station has had',
+                'not ("station/register".keeper == "") and count("station/register".lines) + 1 <= count(new.left)',
+                'delvetalk station/register sign / text: <who came, in their own words; no time>')
+
+
+def station_scene():
+    """The ```spween block of capsules/pages/station.txt: the page and the station are one text."""
+    body = page_body('station')
+    return body.split('```spween\n', 1)[1].split('```', 1)[0]
+
+
+def gas_station(host, opener):
+    """The all-night station, by the opener's spells after genesis; -> made rows. Stops (Stopped) at a refusal."""
+    turn = lambda obj, method, argument, identity: host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': method,
+                                                              'argument': argument, 'identity': identity})
+    made = []
+    f = STATION_KIND
+    kind = turn('kinds', 'make', rec(name=lab('station'), of=lab(f['of']), form=lab(''), head=lab(''), voice=lab(f.get('voice', '')),
+                                    about=lab(f.get('about', '')), law=lab(''), body=lab(body_of(f['body']))), 'genesis-kind-station')
+    made.append({'object': 'kind/station', 'module': 'kinds make', 'status': kind.get('status'), 'creator': opener, 'reply': kind})
+    turned('kinds make station', kind)
+    made.append(said(host, opener, 'kind/station', 'place', [('id', 'station'), ('name', 'THE ALL-NIGHT STATION'), ('spween', station_scene())],
+                     'genesis-station', 'station'))
+    turned('kind/station place station', made[-1]['reply'])
+    for thing, name, identity in (('station/coffee', 'a coffee, still hot; it does not go cold', 'genesis-station-coffee'),
+                                  ('station/register', 'a register, open by the till', 'genesis-station-register')):
+        reply = create(host, opener, thing, 'Thing', identity, rec(owner=lab(opener), name=lab(name)))
+        made.append({'object': thing, 'module': 'Thing', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
+        turned('create ' + thing, reply, 'created')
+    turned('station/register drop', turn('station/register', 'drop', rec(at=ref('station')), 'genesis-station-register-drop'))
+    for card, action, fields, identity in (
+            ('station/register', 'grow', [('name', 'sign'), ('reading', "an arrival, in the arrival's own words; no time is written")], 'genesis-station-sign'),
+            ('station', 'want', [('name', STATION_WANT[0]), ('reading', STATION_WANT[1]), ('when', STATION_WANT[2]), ('asks', STATION_WANT[3])], 'genesis-station-want'),
+            ('station', 'door', [('label', 'the road back'), ('to', 'porch')], 'genesis-station-door'),
+            ('porch', 'door', [('label', 'the lit station'), ('to', 'station')], 'genesis-porch-door-station')):
+        made.append(said(host, opener, card, action, fields, identity))
+        turned(f'{card} {action}', made[-1]['reply'])
+    return made
+
+
 def spell(card, action, fields):
     """A spell as the hand types it: the delvetalk line, then a `field: value` line each, a multi-line value as a block."""
     lines = [f'delvetalk {card} {action}']
@@ -289,7 +340,7 @@ def turned(step, reply, want='admitted'):
     return reply.get('status')
 
 
-def run(host, opener=OPENER):
+def run(host, opener=OPENER, gas_station=False):
     """-> (made, refusal). made: [{object, module, status, creator, reply}]; refusal: why genesis did not run (it ran
     already, an input is missing) or where it stopped (a turn not admitted, named)."""
     try:
@@ -352,9 +403,12 @@ def run(host, opener=OPENER):
             page = turn(to, 'publishPage', rec(page=lab(label.capitalize())), 'genesis-page-' + to)
             next(m for m in made if m['object'] == to)['page'] = {'door': label, 'status': page.get('status'), 'reply': page}
             turned(f'{to} publishPage', page)
+        if gas_station:
+            made += gas_station(host, opener)
     except Stopped as e:
         return made, str(e)
     return made, None
+
 
 
 # The refresh (docs/GENESIS.md "A carried town"): a carried town keeps the laws genesis gave it when it was made, so
@@ -632,6 +686,8 @@ def main(argv=None):
     ap.add_argument('--opener', default=OPENER, help="the world's opener (default: ember)")
     ap.add_argument('--state', default=os.environ.get('DELVETALK_STATE'), help='the state directory this genesis writes (DELVETALK_STATE)')
     ap.add_argument('--towns', default=os.environ.get('DELVETALK_TOWNS'), help='the directory holding every data directory (DELVETALK_TOWNS)')
+    ap.add_argument('--with-gas-station', action='store_true',
+                    help="also make the all-night station at the edge of the town (capsules/pages/station.txt), for the owner's word")
     ap.add_argument('--wipe-with-the-owners-word', dest='word', metavar='R',
                     help="begin a world while a town lives: the owner's word, one line, the town's first line and the welcome's")
     a = ap.parse_args(argv)
@@ -652,7 +708,7 @@ def main(argv=None):
         return 1
     host = HostClient(a.root_socket, a.world)
     try:
-        made, refusal = run(host, a.opener)
+        made, refusal = run(host, a.opener, gas_station=a.with_gas_station)
         if not refusal and a.word is not None:  # the word given is the town's first line, whatever the guard saw
             try:
                 made.append({'object': 'commonplace', 'module': 'the owner\'s word', 'status': wipe(host, a.opener, a.word), 'reply': {}})

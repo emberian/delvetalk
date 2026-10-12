@@ -1,0 +1,19 @@
+hob: four replies; a room made from your scene, and a choice in it that rings mimo's bell.
+  delvetalk kind/room make
+  name: the bell rope
+  spween: <<END
+  === rope
+  A rope out of the dark. mimo's bell is somewhere above.
+  * [Pull it] { !pulled }
+    ~ pulled = true
+    ~ cast delvetalk bell/1 ring
+    -> rope
+  END
+  » Made, at <room>
+  delvetalk <room> rules
+  » rope_1, yours: the choice's cast is a rule of the room
+  delvetalk <room> enter
+  » you at rope: Pull it
+  delvetalk <room> choose / choice: Pull it
+  » pulled = true; rule rope_1 fired: delvetalk bell/1 ring, as you
+Changed: bell/1 is rung, by you, through your room; Pull it is no longer offered.

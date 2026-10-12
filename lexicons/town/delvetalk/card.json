@@ -1,0 +1,62 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.card",
+  "description": "A card as the public reads it now (transport/mirror.py, docs/POSTING.md §1): the rendering the front's pages and a reply's draft share, written to the posting account's repository on the PDS and answered by the did:web façade.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: the object id with each `/` as `~` (`bell~1`); put again in place when the card changes.",
+      "record": {
+        "type": "object",
+        "required": [
+          "object",
+          "version",
+          "card",
+          "wants",
+          "doors"
+        ],
+        "properties": {
+          "object": {
+            "type": "string",
+            "description": "The object id."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "card": {
+            "type": "string",
+            "description": "The exact card, as world-card renders it for the public reader."
+          },
+          "paint": {
+            "type": "string",
+            "description": "The verified paint (docs/OVERHAUL.md section 4). Moves to town.delvetalk.paint (docs/ATPROTO.md section 1, lane L3) so that a card record is a function of the journal and has one CID in both repositories."
+          },
+          "wants": {
+            "type": "array",
+            "items": {
+              "type": "unknown"
+            },
+            "description": "What it wants now, each with the spell that answers it (world-wants rows, verbatim)."
+          },
+          "doors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string",
+                  "description": "The object the door opens on."
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -13,6 +13,9 @@ not reshape it. Files sit at `town/delvetalk/<name>.json`, `defs.main` a `record
 | `town.delvetalk.publication` | the publication id | the retaining entry's `hash` | (list only) `world-publications` | `publishes [{id, object, page, section, text}]` (id: derived) |
 | `town.delvetalk.grant` | the grant id | the installing entry's `hash` | (list only) `world-grants` | `grants [{id, grantor, holder, to, object, method, until}]`, `revokes [id]` (ids: derived) |
 | `town.delvetalk.law` | `<object, / as ~>.<clause>` | none | (list only) `laws` of `world-object` | `created.law`, `amendments [{object, old, new}]`; readings from the package (`law NAME "reading": EXPR`) |
+| `town.delvetalk.card` | the object id, `/` as `~` | the record's own | `place`: `world-view`, `world-card`, `world-render`, `world-wants` (transport/mirror.py) / `world-objects` | none: a rendering, written to the PDS by `mirror` and answered here alike |
+| `town.delvetalk.page` | the page's name | the record's own | the library's `pages` (`world-view`) | none: the library's state |
+| `town.delvetalk.index` | `self` | the record's own | `world-objects`, the library, `world-status` | none |
 
 Every key is in record-key syntax. An object id maps to a key by writing each `/` as `~` and appending
 `.` and the version (`garden/bell/1` v2: `garden~bell~1.2`); it reads back by the last dot and `~` to `/`.
@@ -25,3 +28,18 @@ identity's own principal; there is no collection for checkpoints or pending send
 CIDs inside records are strings (`format: cid`), as the journal stores them, not DAG-CBOR links
 (tag 42): an entry's canonical bytes, and so its CID, are the journal's own. The exception is
 `town.delvetalk.entry`, the signed repository's record, which the transport builds: its `entry` is a link.
+
+## Acting and sessions (docs/ATPROTO.md)
+
+| NSID | Type | Where | Public? |
+| --- | --- | --- | --- |
+| `town.delvetalk.defs` | defs | call, pin, moved, outcome, receipt, version, trace, answerView | n/a |
+| `town.delvetalk.request` | record, key `tid` | the author's own repository | yes: public acts only; no try mode |
+| `town.delvetalk.answer` | record, key `<did>.<rkey>` | the world's signed repository, mirrored to the posting account | yes |
+| `town.delvetalk.paint` | record, key `<object, / as ~>.<version>` | façade and posting account, outside the signed tree | yes |
+| `town.delvetalk.act`, `.try`, `.plan` | procedure | `/xrpc/` under inter-service auth (`aud` `did:web:gsb.fg-goose.online#delvetalk`) | the response is the caller's; an act's public projection becomes an `answer`; a try's never does |
+| `town.delvetalk.getEntry` | query, CAR out | service auth; the entry's principal only | no |
+| `town.delvetalk.openSession`, `.getSession`, `.listSessionRecords` | procedure, queries | service auth; the holder and named readers | no: returned, never written |
+
+Authority: the NSIDs need control of `delvetalk.town`, unregistered on 2026-10-12; publication is
+`_lexicon.delvetalk.town` pointing at the posting account and `com.atproto.lexicon.schema/<nsid>` records there.

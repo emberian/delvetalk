@@ -1,0 +1,39 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.index",
+  "description": "What the mirror holds and the height it was read at.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: `self`.",
+      "record": {
+        "type": "object",
+        "required": [
+          "cards",
+          "pages"
+        ],
+        "properties": {
+          "height": {
+            "type": "integer"
+          },
+          "cards": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "read": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

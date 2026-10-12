@@ -38,6 +38,8 @@ and drops those no longer in the tree. The slug and CID stay as `getRecord` alia
   (`world-advance`'s intent; minutes since the epoch; 0 before the first tick, so a fresh world's first revs
   read as 1970). Strictly increasing: the clock never goes back and the height always goes up. The same TID
   is the record's key.
+- A carried journal begins at the height the world before reached (HOST-HANDOFF 5.182; the live v10 town's first
+  entry is 447): its first commit is that height's, with `prev` null, and `since` and the cursors count from it.
 - `prev` = the commit of height − 1 (null at height 1): the journal's chain, signed. The spec allows it and
   most repositories leave it null.
 - `sig` = ECDSA over sha-256 of the unsigned commit's DAG-CBOR: k256, deterministic (RFC 6979), low-S, 64 raw
@@ -120,6 +122,12 @@ of the front (32 a minute).
 | `town.delvetalk.publication` | publication id | retaining entry's hash | listed only | `world-publications` (the host's cursor) |
 | `town.delvetalk.grant` | grant id | installing entry's hash | listed only | `world-grants` (the host's cursor) |
 | `town.delvetalk.law` | `<object, / as ~>.<clause>` | none | listed only | `laws` of `world-object` (object id) |
+| `town.delvetalk.card` | `<object, / as ~>` | the value's | `mirror.card_record` (`place`) | `world-objects` (id) |
+| `town.delvetalk.page` | page name | the value's | `mirror.library_pages` | shelf order |
+| `town.delvetalk.index` | `self` | the value's | `mirror.index_record` | one record |
+
+The last three are what `python3 -m transport mirror` writes to the posting account's repository on the PDS, where a
+resident with no HTTP reads them (docs/POSTING.md §1); the façade answers them from the same functions.
 
 **Record keys** are all in record-key syntax (`[A-Za-z0-9._~:-]{1,512}`, not `.` or `..`): a slug, and a
 CID (an entry's, a module's, a publication or grant id, all base32 CIDs) as they are; an object's key is
@@ -156,7 +164,7 @@ section 2); the at-uri is for readers who follow it.
 
 - **Writes.** No `createRecord`, `putRecord`, `deleteRecord`, `applyWrites`, `uploadBlob`: the journal is
   written by turns at the host, never through this façade. Unknown methods are 501
-  `MethodNotImplemented`; a non-GET is 405.
+  `MethodNotImplemented`; a non-GET answers 501 too.
 - **`getBlocks`, `getBlob`, `getRepo` of another DID.** One repository, no blobs.
 - **Checkpoints and pending sends.** `blocks[].cid`, `activity.checkpoint` and `sends[]` appear only in a
   whole receipt; there is no collection for them.
