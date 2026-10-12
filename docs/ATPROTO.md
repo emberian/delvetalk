@@ -96,8 +96,8 @@ copies the same bytes and names the signed head.
 by the bridge of its `world` (default the town), so two deployments watching one repository never both run it. A request
 created before the world began observing (its `since`, set at the bridge's first start) is never run, so a new
 consumer does not execute years-old requests. `mode` is `act` (one call, one turn) or `plan` (up to eight calls judged
-as one turn, all or nothing; a host turn not yet built, answered `invalid` until then). A call is a spell's text or `{object, verb, fields}`, the front's
-`_actions` form. The request is public from the moment it is written and stays copied after deletion, so there is no
+as one turn, all or nothing: spells only, run as the host's `delvetalk plan` with each spell after it, one receipt). A
+call is a spell's text or `{object, verb, fields}`, the front's `_actions` form. The request is public from the moment it is written and stays copied after deletion, so there is no
 `try` mode: a preview by record would publish the draft it previews.
 
 *Seeing it* (built, `transport/requests.py`). pds.delve.town's firehose is gated, so the bridge's observer pages
@@ -135,7 +135,7 @@ moves at every tick.
 everything the turn read and wrote is public (the host's `inPublic`, the rule a post's draft follows), a refusal's words
 only from the host's `public` projection, a `moved` object's versions only when the public views it; otherwise the
 line is `admitted, entry N, receipt <slug>` and the receipt. A request that names no card is answered `unreached`, a
-malformed or `plan` one `invalid` with why; a `try`, another service's or world's, and one from before `since` get no
+malformed one (an act of more than one call, a plan of a verb call, a spell and an object together) `invalid` with why; a `try`, another service's or world's, and one from before `since` get no
 answer. `card` and `cardCid` wait for the paint split (L3), until which a card record's CID moves with its paint.
 Built (L1): the bridge writes it at the turn (`bridge.answer_turn`; a turn hob holds is answered when it settles) to
 `<state>/worlds/<world>/answers/`, the façade serves it and the mirror copies the same JSON, so its CID is one in both
@@ -295,7 +295,7 @@ public is a record; every act is a record or an XRPC call.
 | L5 | transport | service-auth verifier; `#delvetalk` in did.json; `act`, `try`, `plan`, `getEntry` | wrong `aud`, `lxm`, past `exp`, reused `jti`, high-S: 401; the posting account's getServiceAuth token: admitted; through pds.delve.town's proxy: admitted (live, owner's word) |
 | L6 | host, transport | sessions: `readers`, `shareSession`, `openSession`, `getSession`, `listSessionRecords`, acts with `world` | unnamed DID: 403, nothing returned; named reader: the records; the mirror ledger, getRepo CAR and access log never hold session contents; after expiry, refused, and the town's cited CID still matches |
 | L7 | ops, transport, host | wildcard DNS and certificates; hosted did:web for guests and Zulip; `link`; each world's hostname resolving | a guest's request in its hosted repo admits as that DID; a Zulip message becomes a request in the user's repo |
-| L8 | host | `plan` as one turn | three calls, the third refused: nothing written, one receipt |
+| L8 | host | `plan` as one turn (built, lane/plan; by record since L1) | three calls, the third refused: nothing written, one receipt |
 
 L1 ∥ L2 ∥ L5 (L5 is what gives a PDS-only resident `try`); L3 after L1; L4 after L3; L6 after L5; L7 after L5; L8 any
 time. Each lane commits named files and keeps `make check`'s narrow targets green.
@@ -345,5 +345,5 @@ For the next slices, each with its decision:
 | 14 | equal CIDs do not make strongRefs portable | accepted: the canonical URI of a journal-derived record is the did:web repository's; the mirror's index maps it; a strongRef names the canonical URI; versions a book or paint cites are kept under versioned keys | L3 |
 | 15 | sessions have no unambiguous address | accepted: `openSession` returns an opaque id binding holder and incarnation, used by every call; read, act, share and publish permissions separate, the host's | L6 |
 | 16 | XRPC acts cannot make request-keyed answers | accepted: an XRPC act's public answer is keyed `xrpc.<did>.<sha-256 of intent, 26 base32>`, its provenance `{iss, intent}` in place of `request` | L5 |
-| 17 | constraints only in prose | in part: the bridge answers a malformed call or a `plan` `invalid` with why (one call an act, a spell or an object with its verb); next, discriminated call unions, byte and count budgets per record, previews structurally apart from receipts | L2 |
+| 17 | constraints only in prose | in part: the bridge answers a malformed request `invalid` with why (one call an act, spells only a plan, a spell or an object with its verb); next, discriminated call unions, byte and count budgets per record, previews structurally apart from receipts | L2 |
 | 18 | labels on the canonical record do not reach the copy | accepted: moderation subjects are the canonical URIs; the mirror's index names the mapping; copies get no labels of their own | L2 |

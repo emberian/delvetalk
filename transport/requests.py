@@ -22,6 +22,7 @@ from transport.repo import json_of, world_did
 
 COLLECTION = 'town.delvetalk.request'
 MODES = ('act', 'plan')
+PLAN_CALLS = 8  # the request lexicon's calls.maxLength
 PAGES = 10  # a repository's request collection read per poll, 100 records a page
 
 
@@ -68,28 +69,31 @@ def proven(client, did, rkey, collection=COLLECTION):
 
 
 def judged(value, service, world, before_start):
-    """-> (run, why): whether a proven request is this bridge's to run, and if not why. `why` with run False is a
-    refusal kept in the ledger; run True with a `why` is answered `invalid` with it, never turned."""
+    """-> (run, why, call): whether a proven request is this bridge's to run, and if not why. `why` with run False is a
+    refusal kept in the ledger; run True with a `why` is answered `invalid` with it, never turned. `call` is what the
+    bridge turns: the act's one call, or a plan's spells as the host reads a plan (`delvetalk plan`, then each spell)."""
     if not isinstance(value, dict) or value.get('service') != service:
-        return False, 'addressed to another service'
+        return False, 'addressed to another service', None
     if value.get('world', 'town') != world:
-        return False, 'addressed to another world'
+        return False, 'addressed to another world', None
     if not isinstance(value.get('createdAt'), str) or before_start(value['createdAt']):
-        return False, 'created before this world began observing'
+        return False, 'created before this world began observing', None
     if value.get('mode') not in MODES:
-        return False, f"mode {str(value.get('mode'))[:20]} is never run by record"
-    calls = value.get('calls')
-    if value['mode'] == 'plan':
-        return True, 'plan is not built yet: send each call as its own act'
-    if not isinstance(calls, list) or len(calls) != 1 or not isinstance(calls[0], dict):
-        return True, 'an act has exactly one call'
+        return False, f"mode {str(value.get('mode'))[:20]} is never run by record", None
+    calls, plan = value.get('calls'), value['mode'] == 'plan'
+    if 'if' in value and not isinstance(value['if'], list):
+        return True, 'if is a list of {object, version}', None
+    if not isinstance(calls, list) or not calls or len(calls) > (PLAN_CALLS if plan else 1) or not all(isinstance(c, dict) for c in calls):
+        return True, f'a plan has 1 to {PLAN_CALLS} calls' if plan else 'an act has exactly one call', None
+    if plan:
+        if not all(isinstance(c.get('spell'), str) and set(c) == {'spell'} for c in calls):
+            return True, 'a plan is spells only', None
+        return True, None, {'spell': 'delvetalk plan\n' + '\n'.join(c['spell'].strip('\n') for c in calls)}
     call = calls[0]
     if isinstance(call.get('spell'), str) == isinstance(call.get('object'), str) or \
             (isinstance(call.get('object'), str) and not isinstance(call.get('verb'), str)):
-        return True, 'a call is a spell, or an object with a verb (and fields), not both'
-    if 'if' in value and not isinstance(value['if'], list):
-        return True, 'if is a list of {object, version}'
-    return True, None
+        return True, 'a call is a spell, or an object with a verb (and fields), not both', None
+    return True, None, call
 
 
 class Poller:
@@ -142,13 +146,13 @@ class Poller:
                         refused[uri] = {'cid': listed.get('cid'), 'why': str(e)}
                         continue
                     raise
-                run, why = judged(value, self.service, self.world, observer.before_start)
+                run, why, call = judged(value, self.service, self.world, observer.before_start)
                 if not run:
                     refused[uri] = {'cid': cid, 'why': why}
                     continue
-                call = (value.get('calls') or [{}])[0] if not why else {}
+                call = call or {}
                 observer.insert({'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': value['createdAt'],
-                                 'text': call.get('spell', '') if isinstance(call, dict) else '', 'replyTo': None, 'root': None,
+                                 'text': call.get('spell', ''), 'replyTo': None, 'root': None,
                                  'mentions': [], 'tags': [], 'kind': 'request',
                                  'request': {'call': call, **({'if': value['if']} if 'if' in value and not why else {}),
                                              **({'invalid': why} if why else {})}}, json_of(value))

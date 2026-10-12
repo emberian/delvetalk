@@ -106,7 +106,7 @@ class FakePDS:
 
 def request(spell=None, created='2026-10-12T10:00:00Z', service=SERVICE, **more):
     call = {'spell': spell} if spell is not None else more.pop('call')
-    return {'$type': COLLECTION, 'service': service, 'mode': more.pop('mode', 'act'), 'calls': [call], 'createdAt': created, **more}
+    return {'$type': COLLECTION, 'service': service, 'mode': more.pop('mode', 'act'), 'calls': more.pop('calls', [call]), 'createdAt': created, **more}
 
 
 PLANT = 'delvetalk garden-1 plant\nseed: a\ncolour: amber'
@@ -219,6 +219,18 @@ class Requests(unittest.TestCase):
         self.assertEqual(self.answer('3aaaaaaaaaaa3')['outcome'], {'status': 'invalid', 'line': 'a call is a spell, or an object with a verb (and fields), not both'})
         self.assertEqual(self.answer('3aaaaaaaaaaa4')['outcome']['status'], 'unreached')
         self.assertNotIn('receipt', self.answer('3aaaaaaaaaaa4'))
+
+    def test_a_plan_is_one_turn_of_its_spells_and_a_plan_of_a_verb_call_is_invalid(self):
+        self.pds.put(DID, '3aaaaaaaaaaa2', request(call={'spell': PLANT}, mode='plan', calls=[
+            {'spell': PLANT}, {'spell': 'delvetalk garden-1 plant\nseed: b\ncolour: violet'}]))
+        self.pds.put(DID, '3aaaaaaaaaaa3', request(call={'spell': PLANT}, mode='plan', calls=[{'object': 'garden-1', 'verb': 'plant'}]))
+        self.step()
+        a, uri = self.answer('3aaaaaaaaaaa2'), f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa2'
+        self.assertEqual(a['outcome']['status'], 'admitted', a)
+        self.assertEqual([e['height'] for e in self.acts() if (e.get('identity') or {}).get('intent') == uri], [a['height']])
+        self.assertEqual([w['version'] for w in a['trace']['writes'] if w['object'] == 'garden-1'], [1])  # both plantings, one write
+        self.assertEqual(len(a['offers']), 2)
+        self.assertEqual(self.answer('3aaaaaaaaaaa3')['outcome'], {'status': 'invalid', 'line': 'a plan is spells only'})
 
     def test_an_answer_to_a_turn_on_a_private_thing_says_only_its_receipt(self):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-diary', 'object': 'diary',
