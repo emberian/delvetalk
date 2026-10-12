@@ -24,6 +24,9 @@ def maxObjectIdBytes : Nat := 128
 def spellsPerReply : Nat := 3
 /-- The characters of a card any reader is shown: `world-card`, a question's answer, the model's copy (docs/FLEX.md §2, docs/AGENTS-API.md). -/
 def cardShownChars : Nat := 1400
+/-- The mentions of one post that are addressed, in its order (the bridge turns each on the mentioned avatar); the
+    rest are ignored, so a post cannot fan out to everyone it names. -/
+def mentionsAddressed : Nat := 4
 /-- The rows of what wants a hand a card's `render` is handed (`TurnLoop.renderCard`, the commonplace's lead). -/
 def cardWanting : Nat := 8
 /-- The edition of what replay derives from a journal (HOST-HANDOFF §6, "Replay edition"): a journal's

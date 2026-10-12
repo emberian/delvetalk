@@ -275,8 +275,9 @@ class HostParses(BridgeCase):
 class Stub:
     """A host that answers from canned data and records everything it is sent."""
     RESUMED = {'hash': 'h', 'height': 9, 'slug': 'lodif-rukuz', 'outcome': {'tag': 'admitted'}, 'roots': [{'object': 'garden-1', 'version': 1}]}
-    def __init__(self, reaches=None):
+    def __init__(self, reaches=None, mentions=4):
         self.ops, self.reaches, self.suspending, self.offers, self.silent = [], reaches or {}, set(), {}, set()
+        self.mentions = mentions
 
     def send(self, req):
         self.ops.append(req)
@@ -297,6 +298,8 @@ class Stub:
                 {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended'}}}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
+        if op == 'bounds':
+            return {'status': 'bounds', 'host': {'mentionsAddressed': self.mentions}}
         if op == 'world-publications':
             return {'status': 'publications', 'publications': [], 'more': False}
         return {'status': 'ok'}
@@ -478,14 +481,16 @@ class Mentions(BridgeCase):
         bridge.run(self.state, stub)
         self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
 
-    def test_only_the_first_four_mentions_are_addressed(self):
-        stub = Stub()
+    def test_only_the_first_mentions_the_host_addresses_are_turned(self):
+        # How many mentions of a post are addressed is the host's bound (`bounds.host.mentionsAddressed`), never the bridge's.
+        self.assertEqual(self.host.send({'op': 'bounds'})['host']['mentionsAddressed'], 4)
+        stub = Stub(mentions=3)
         dids = ['did:plc:' + c * 24 for c in 'defgh']
         text = ' '.join(f'@u{i}.delve.town' for i in range(5))
         post = mk(1, text, facets=[self.facet(text, f'u{i}.delve.town', d) for i, d in enumerate(dids)])
         self.observe([post] + [self.seen(10 + i, d, f'u{i}.delve.town') for i, d in enumerate(dids)])
         bridge.run(self.state, stub)
-        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], dids[:4])
+        self.assertEqual([o['object'] for o in stub.ops if o['op'] == 'world-turn'], dids[:3])
 
 
 class Unaddressed(BridgeCase):

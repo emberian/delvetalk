@@ -214,17 +214,15 @@ def offer_drafts(st, host):
 
 
 MAX_HOPS = 32  # the host's `reachHops`: the ancestors passed with a post
-MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ignored
-
-
-def mention_turns(st, host, obs, authors, handles):
+def mention_turns(st, host, obs, authors, handles, addressed):
     """A mention is addressed to the mentioned: one turn per mention (a facet's DID, or an @handle that is a known
     author) to the mentioned principal's avatar, `<did>`.receive {text, post} under the author with reach `mentioned`:
     the avatar keeps it as a note, and the host never reads it as a spell (its spell lines are the author's, routed to the
     cards they name). Once per post. Only an arrived principal has an avatar: a mentioned principal the observer has seen
-    is arrived first; one it has not is skipped, with a note in skipped.txt."""
+    is arrived first; one it has not is skipped, with a note in skipped.txt. Only the first `addressed` mentions (the
+    host's `mentionsAddressed`) are turned."""
     done = st.words(st.mentioned)
-    dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:MENTIONS]) if d))
+    dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:addressed]) if d))
     if obs['uri'] in done or not dids:
         return False
     author = obs['author']
@@ -327,7 +325,8 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     handles = {o['author']['did']: o['author']['handle'] for o in rows}
     for did, handle in handles.items():  # a principal arrives at their first observed post, whatever its kind
         register(st, host, did, handle)
-    mentioned = [obs['uri'] for obs in observed if obs['mentions'] and mention_turns(st, host, obs, authors, handles)]
+    addressed = host.send({'op': 'bounds'})['host']['mentionsAddressed'] if any(obs['mentions'] for obs in observed) else 0
+    mentioned = [obs['uri'] for obs in observed if obs['mentions'] and mention_turns(st, host, obs, authors, handles, addressed)]
     for obs in observed:
         if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists():
             continue

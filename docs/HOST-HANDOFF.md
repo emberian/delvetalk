@@ -2257,6 +2257,13 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `bridge.public`, a `world-view` per object of every drafted turn, is gone: `draft_public(reply, …)`, the settled
    offers' draft (`world-receipt`'s `inPublic`) and the front's HTTP draft rule (`Front.draft_turn`) read the field.
    Test: `test_bridge.Private` (the private and the public turn's receipts answer it); the bridge's `Stub` answers it.
+   The front's HTTP draft rule is now this field and the front's own policy (it drafts an admitted write, never a
+   guest's): the simplify hand-back (8)'s first half.
+191. **How many mentions a post addresses is the host's bound (host31; the simplify hand-back (8)).**
+   `Limits.mentionsAddressed` 4, answered by `bounds` (`host.mentionsAddressed`); the bridge reads it once a run that
+   observed a mention and turns only that many (`mention_turns(…, addressed)`); its `MENTIONS` is gone. Test:
+   `test_bridge.Mentions.test_only_the_first_mentions_the_host_addresses_are_turned` (the host answers 4; a stub
+   answering 3 gets three turns).
 
 ## 6. Gotchas
 
@@ -2306,9 +2313,6 @@ input as a test first, merging foundation before each commit:
    `model-spend.jsonl`, so the paint came back and was refused or landed after the hand's last look. The verdict is
    on the workhorse only: a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`.
    Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
-4. The coordinator's simplify hand-back, still open: (6) the
-   REPL's retry classes; (8) the HTTP draft rule and the
-   mention cap of 4 as host answers.
 7. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);
    `transport/host.py` `HISTORY_LIMIT` restates `Limits.maxHistoryLimit` (read it from `bounds`); `shownSpell` scans
    the filled text for `did:` tokens because `fired` rows keep no hole structure; a seed post carrying a card's wants
