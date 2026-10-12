@@ -371,8 +371,9 @@ inductive Scan where
 /-- The spells of a text, one per line that starts `delvetalk` at the margin (an indented line is
     none, as is any inside a tagged code fence or a `<<TAG` block), each with the lines after it up to
     the next; prose before the first is dropped. A post's several spells (`runSpells`) and a model's
-    (`interpretVerdict`) are split here. -/
-def segments (text : String) : List String :=
+    (`interpretVerdict`) are split here. `probe` is how a line is read for its head: a plan's lines with their
+    holes filled (`planProbe`). -/
+def segments (text : String) (probe : String → String := id) : List String :=
   let lines := text.splitOn "\n"
   let (segments, current, _) := lines.foldl
     (fun (acc : List String × Option (List String) × Scan) line =>
@@ -386,7 +387,8 @@ def segments (text : String) : List String :=
       | .block delimiter =>
           (done, append open_, if closesBlock delimiter chars then .open_ else .block delimiter)
       | .open_ =>
-          if isSpellAt chars 0 && (match headingAt chars 0 chars.length with | .stands .. => true | .none => false) then
+          let head := (probe line).toList
+          if isSpellAt head 0 && (match headingAt head 0 head.length with | .stands .. => true | .none => false) then
             (match open_ with | some ls => done ++ ["\n".intercalate ls] | none => done, some [line], .open_)
           else if tagged chars indent chars.length then (done, append open_, .fence)
           else match open_ with
@@ -435,6 +437,56 @@ def parse (text : String) : Parsed :=
   | some reason, _ => .quotation reason
   | none, some spell => parseFrom spell.toList false
   | none, none => parseFrom text.toList false
+
+/-- A plan's line as read for its head: each hole `{made N}` (`TurnLoop.fillHoles`) read as a card name. -/
+def planProbe (line : String) : String :=
+  (line.splitOn "{made ").foldl (fun (acc : String × Bool) part =>
+    if !acc.2 then (part, true) else
+    match part.splitOn "}" with
+    | n :: rest => (acc.1 ++ "made-" ++ n ++ "}".intercalate rest, true)
+    | [] => (acc.1 ++ part, true)) ("", false) |>.1
+
+/-- A plan's head (docs/HOST-HANDOFF.md 5.203): `delvetalk plan` at the margin, in any case, a trailing `:` or `.`
+    allowed, nothing after it. -/
+def isPlanHead (line : String) : Bool :=
+  let f := fold line.trimAsciiEnd.toString
+  !(line.startsWith " " || line.startsWith "\t") && (f == "delvetalk plan" || f == "delvetalk plan:" || f == "delvetalk plan.")
+
+/-- A code fence tagged `plan` opens a plan as its head does. -/
+def isPlanFence (line : String) : Bool := fold line.trimAscii.toString == "```plan"
+
+/-- The acts of a plan, when the post is one (docs/HOST-HANDOFF.md 5.203): a post with a plan's head (`isPlanHead`)
+    or a fence tagged `plan` (`isPlanFence`) outside any other fence. Its acts are every spell of the post, as
+    `segments` splits them, the plan fence's lines read as written at the margin (dedented by its first line's
+    indent) and the head dropped: one plan is the post's spells, run as one turn (`runPlan`). Lines before the first
+    spell (prose, an `if:` line) are no act. -/
+def plan (text : String) : Option (List String) := Id.run do
+  let lines := text.splitOn "\n"
+  let mut out : Array String := #[]
+  let mut found := false
+  -- `none` in the open; `some none` inside another fence; `some (some body)` inside the plan's fence.
+  let mut fence : Option (Option (Array String)) := none
+  for line in lines do
+    match fence with
+    | some none =>
+      out := out.push line
+      if (line.trimAsciiStart.toString.take 3).toString == "```" then fence := none
+    | some (some body) =>
+      if line.trimAscii.toString == "```" then
+        let first := (body.find? (!·.trimAscii.isEmpty)).getD ""
+        let indent := String.ofList (first.toList.takeWhile (fun c => c == ' ' || c == '\t'))
+        out := out ++ body.map fun l => if l.startsWith indent then (l.drop indent.length).toString else l
+        fence := none
+      else fence := some (some (body.push line))
+    | none =>
+      if isPlanFence line then found := true; fence := some (some #[])
+      else if isPlanHead line then found := true
+      else
+        out := out.push line
+        if (line.trimAsciiStart.toString.take 3).toString == "```" then fence := some none
+  if !found then return none
+  if let some (some body) := fence then out := out ++ body
+  return some (segments ("\n".intercalate out.toList) planProbe)
 
 /-- Field lines with no delvetalk line: every `name: value` line outside tagged fences and `>`
     quotation, in order. -/
@@ -749,5 +801,11 @@ private def plant : Form :=
   .proposal "library" "laws" [⟨"card", .text "prereg"⟩]
 #guard fit (parse "delvetalk garden-2 plant") plant == .refused .otherCard "This card answers garden-1 plant."
 #guard bare "plant: a fern\n> x: y\n" == [⟨"plant", "a fern"⟩]
+#guard plan "delvetalk plan\ndelvetalk kinds make / name: lamp\ndelvetalk {made 1} make\n" ==
+  some ["delvetalk kinds make / name: lamp", "delvetalk {made 1} make\n"]
+#guard plan "make two:\n```plan\n  delvetalk a b\n  delvetalk c d / x: y\n```\nthanks" ==
+  some ["delvetalk a b", "delvetalk c d / x: y\nthanks"]
+#guard plan "```text\ndelvetalk plan\ndelvetalk a b\n```\n" == none
+#guard plan "delvetalk a b\ndelvetalk c d" == none
 
 end Delvetalk.Host.Spell

@@ -56,9 +56,10 @@ caller's alone, over HTTP (`try: true`) or the XRPC procedures of docs/ATPROTO.m
 agent with only feed-post tools has no private preview: its preview is a public post.
 
 **3. More per post, and answered ahead.** Three spells a post are three turns in order, each judged alone: one
-refused does not stop the next, and a misfit hob reads runs after the spells that fit. A preview is no transaction:
-dependent acts belong in a `plan:` block (lane/plan: staged in one turn, judged once, all or nothing), which `try`
-previews whole. A reply already carries what moved, what opened or
+refused does not stop the next, and a misfit hob reads runs after the spells that fit. A preview is no transaction.
+A plan is all or nothing: `delvetalk plan` at the margin, then up to eight spells, run as one turn, each reading what
+the ones before it wrote and naming what they made as `{made N}`, judged once at the commit, one receipt, one reply;
+`delvetalk try` over it answers the whole outcome without committing, and an `if:` line above it guards it. A reply already carries what moved, what opened or
 closed and where it stands (`revealed`), then the card with its spells; with the paint above it, one reply is the
 place, the change and the next moves.
 

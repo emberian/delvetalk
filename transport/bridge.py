@@ -134,7 +134,9 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
         if 'public' not in reply:
             return ''
         hint = reply.get('hint') or (reply.get('public') or {}).get('hint')
-        lines = [refusal_line(outcome, reply.get('class'))] + ([str(hint)] if hint else []) + ([f"receipt {receipt['slug']}"] if receipt.get('slug') else [])
+        act = reply['public'].get('act')  # a plan's refusal: which act, of how many (the host's `planRefusedAct`)
+        lines = ([f"act {act} of {reply['public'].get('acts')} refused, so none of the plan was done:"] if act else []) + \
+            [refusal_line(outcome, reply.get('class'))] + ([str(hint)] if hint else []) + ([f"receipt {receipt['slug']}"] if receipt.get('slug') else [])
         return '\n'.join(lines) + '\n'
     offers = [o['text'] for o in reply.get('offers') or []]
     if offers:  # every reply ends with the host's lines (what it moved, opened, where it stands) and its receipt's spoken name
