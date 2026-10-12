@@ -43,9 +43,9 @@ class Genesis(unittest.TestCase):
         self.assertEqual((refusal, [(m['object'], m['status']) for m in made]),
                          (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [(id, 'admitted') for id in hands]
                           + [('porch', 'admitted')] * len(genesis.PORCH_DOORS) + [(w[0], 'admitted') for w in genesis.WANTS]
-                          + [(t, 'created') for t, _ in genesis.THINGS]), made)
+                          + [(t, 'created') for t, _ in genesis.THINGS] + [(dict(f)['id'], 'admitted') for _, f in genesis.MOTION]), made)
         o = genesis.OPENER
-        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [t for t, _ in genesis.THINGS] + [o]))
+        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [t for t, _ in genesis.THINGS] + [dict(f)['id'] for _, f in genesis.MOTION] + [o]))
         self.assertEqual([m.get('laid') for m in made if m['module'] == 'Thing'], ['admitted'] * len(genesis.THINGS))
         # each coinage is a record of its kind whose maker is the opener, made from its coiner's post, which its card credits
         for id, (kind, _, post) in zip(hands, genesis.HANDS):
@@ -80,7 +80,8 @@ class Genesis(unittest.TestCase):
         each porch thing has nothing around it, each bell no door; each reading says what the thing lacks and asks no one."""
         wants = lambda obj: {r['name']: r for r in self.host.send({'op': 'world-wants', 'principal': 'did:plc:stranger', 'object': obj})['rows']}
         clapper = wants('bell/1')['clapper']
-        self.assertEqual((clapper['reading'], clapper['asks']), ('the bell has no clapper yet', 'delvetalk bell/1 hang'))
+        self.assertEqual((clapper['reading'], clapper['asks']), (genesis.WANTS[0][2], genesis.WANTS[0][4]))
+        self.assertIn('grow / name: hang', clapper['asks'])  # a clapper is a verb the first hand grows, not a thing to bring
         self.assertEqual(wants('kinds')['made']['reading'], "no kind made here yet but the town's own")
         self.assertNotIn('made', wants('kind/bell'))  # the guard keeps kinds' want off the kinds that follow it
         self.assertEqual(wants('porch/goblet')['claimed']['reading'], 'nothing surrounds it yet')
@@ -249,8 +250,8 @@ class Checked(unittest.TestCase):
 
 class Refresh(unittest.TestCase):
     """`refresh` on a town genesis made with older texts (a record law with no `pending` want, a bell kind with no rules
-    or wants, no voices, no kind/front), as a carried town keeps them: the opener re-writes each slot to genesis's text
-    today and makes the kind it lacks, each a journaled turn; a slot another hand changed since is left and named; a
+    or wants, no voices, no kind/front, no weather or lamp), as a carried town keeps them: the opener re-writes each
+    slot to genesis's text today, makes the kind it lacks and places the motion, each a journaled turn; a slot another hand changed since is left and named; a
     second refresh finds every slot current."""
 
     @classmethod
@@ -260,7 +261,7 @@ class Refresh(unittest.TestCase):
         old_record = genesis.RECORD_LAW.rsplit('\nwant pending', 1)[0]
         old_kinds = [(n, of, form, head, law.replace(genesis.RECORD_LAW, old_record).split('\nrule seven', 1)[0], body)
                      for n, of, form, head, law, body in genesis.KINDS if n != 'front']  # a kind genesis makes since
-        with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}):
+        with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}, MOTION=[]):
             cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
         cls.send = cls.town.send
         # Another hand since genesis: kinds' own law gains a clause, kind/door's law field loses its want.
@@ -286,6 +287,10 @@ class Refresh(unittest.TestCase):
                 self.assertEqual(self.status(self.rows, obj, slot), ('refreshed', None))
         self.assertEqual(self.status(self.rows, 'kind/front', '.law'), ('refreshed', 'made'))
         self.assertIn('kind/front', self.send(op='world-objects', principal=genesis.OPENER)['ids'])
+        # The town's motion, which the older genesis did not place, is placed after its kinds.
+        for obj in ('weather', 'porch/lamp'):
+            self.assertEqual(self.status(self.rows, obj, 'placed'), ('refreshed', 'placed'))
+        self.assertEqual(sorted(r['name'] for r in self.send(op='world-rules', principal=genesis.OPENER, object='tide')['rows']), ['porch_lamp', 'weather'])
         self.assertEqual(self.status(self.rows, 'kinds', 'law'), ('left', 'changed since genesis gave it'))
         self.assertEqual(self.status(self.rows, 'kind/door', '.law'), ('left', 'changed since genesis gave it'))
         self.assertEqual(self.send(op='world-object', principal=genesis.OPENER, object='commonplace')['record']['law'], genesis.RECORD_LAW)
@@ -307,8 +312,9 @@ class Refresh(unittest.TestCase):
 
 
 class Weather(unittest.TestCase):
-    """docs/METAPHYSICS.md §7.4: the weather's rule on the tide rains, at every twenty-fourth tick while the garden is
-    tended, on every bell the garden holds and writes the garden's weather line."""
+    """docs/METAPHYSICS.md §7.4: the furnished garden's weather (`garden/weather`) rains by its rule on the tide, at
+    every twenty-fourth tick while the garden is tended, on every bell the garden holds, and writes the garden's
+    weather line, since the garden hangs a door to it."""
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -332,7 +338,7 @@ class Weather(unittest.TestCase):
                                   'argument': record(text=label('delvetalk garden plant / seed: a bell for the weather / colour: silver'), post=label('at://x/p/plant'))})
         self.assertEqual(planted['status'], 'admitted', planted)
         self.deliver()
-        self.assertEqual(self.state('weather')['lines']['payload']['fields'][0]['value']['items'], [])
+        self.assertEqual(self.state('garden/weather')['lines']['payload']['fields'][0]['value']['items'], [])
         self.assertNotIn('Weather:', self.host.send({'op': 'world-card', 'principal': glm, 'object': 'garden'})['text'])
         clock = self.host.send({'op': 'world-status'}).get('clock', 0)
         for hour in range(1, 24):  # a jump ticks once, so the tide is walked through its day: tick 24 is the 23rd hour on
@@ -342,7 +348,7 @@ class Weather(unittest.TestCase):
         rains = [next(f['value']['value'] for f in row['fields'] if f['name'] == 'text')
                  for row in next(f['value'] for f in bell['fields'] if f['name'] == 'lines')['payload']['fields'][0]['value']['items']]
         self.assertEqual(len(rains), 1, rains)
-        self.assertRegex(rains[0], r"^weather's rain, clock \d+$")
+        self.assertRegex(rains[0], r"^garden/weather's rain, clock \d+$")
         self.assertRegex(self.host.send({'op': 'world-card', 'principal': glm, 'object': 'garden'})['text'], r'Weather: rain at clock \d+, on 1\n')
 
 

@@ -1,6 +1,6 @@
 hob: three replies and a tick; at the end the tide has your rule, and it fired.
   delvetalk tide rules
-  » none yet: what happens at a tick is the rules written on it
+  » the weather's and the porch's lamp's: what happens at a tick is the rules on it
   delvetalk tide rule / name: turned / when: request.method == "tick" / then: delvetalk me note / text: the tide turned
   » your rule on the tide, fired under you
   delvetalk tide tick

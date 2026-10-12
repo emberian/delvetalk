@@ -7,6 +7,7 @@ verb}` to the thing's maker's avatar, run as that hand; the avatar keeps it (`he
   maker's own rain is not.
 - Verb: a grown verb another hand uses is heard by its name.
 - Inspirit: the opener hears that a porch thing it laid there was inspirited.
+- Pour: a freshly dug cistern takes a stranger's first pour (it is not born sealed), and its digger hears it.
 - Door: a door another hand hangs to a thing is heard as `door`.
 - Forgery: a hand's own turn of `heard` is refused by name.
 - Hush: with `hear: no` nothing more is kept; `hear: yes` hears again.
@@ -73,6 +74,12 @@ class Heard(Attention):
         self.admitted(self.say(KIM, mine, "delvetalk %s door / label: my bell / to: %s" % (mine, bell)))
         self.assertEqual(len(self.heard(KIM)), 1)
 
+    def test_a_freshly_dug_cistern_takes_a_strangers_first_pour_and_its_digger_hears_it(self):
+        cistern = self.made(KIM, "kind/cistern", "")
+        poured = self.admitted(self.say(GLM, cistern, "delvetalk %s pour / text: refused notKeeper" % cistern))
+        self.assertIn("level 1", self.card(poured))
+        self.assertEqual(self.heard(KIM), [(cistern, "pour", GLM, STRANGERS[GLM])])
+
     def test_a_hand_casting_heard_itself_is_refused_by_name(self):
         bell = self.bell(KIM)
         forged = self.turn(GLM, KIM, "heard", record(thing=label(bell), verb=label("rain")))
@@ -114,7 +121,7 @@ class Since(Attention):
         # The commonplace's YOURS door: the card asked for, writing nothing.
         asked = self.admitted(self.say(KIM, "me", "delvetalk me since"))
         self.assertTrue(self.card_of(asked).startswith(lead), asked)
-        self.assertEqual(asked["receipt"]["outcome"]["writes"], [])
+        self.assertEqual(asked["receipt"]["outcome"].get("writes", []), [])
         self.assertNotIn("Since you were here", self.card(GLM, KIM))
         at = int(card.split("delvetalk me seen / at: ")[1].split("\n")[0])
         self.admitted(self.say(KIM, "me", "delvetalk me seen / at: %d" % at))

@@ -18,7 +18,8 @@ import ./Spween.obend as Spween
 # changes it only by these spells.
 #
 # Entering needs the scene's `requires` to hold and, with a cooldown, that the reader left at
-# least `cooldown` clock minutes ago (folkway 10). A choice offers itself only while its guard
+# least `cooldown` clock minutes ago (folkway 10); an entering is the room's attention, and tends it
+# (a weather over the room rains while someone has been there that day). A choice offers itself only while its guard
 # holds over the variables; taking it applies its effects in order and moves the reader to its
 # target, or out at END. `say`, `emote` and `whisper` reach those in the room (folkway 5); a
 # thing lying here is taken and put down by its own call, while its taker is here. A ```spween
@@ -129,7 +130,7 @@ def done(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Done>
     case move(m): moving(m.me, m.choice, m.vars, extend(state, {presence: Relations.upsert(state.presence, {who: m.me.who, handle: m.me.handle, at: m.choice.to}, Rows.presenceKey), vars: m.after}), context)
     case leave(l): departing(l.me, l.vars, extend(state, {presence: Relations.retract(state.presence, {who: l.me.who}, Rows.presenceKey), vars: l.after}), context, state)
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}}
+  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}, tended: set context.clock, tendedAt: set context.height}
   Card.tell(Done.entered({at: at}), Super.render(after, context))
 def moving(me: Presence, c: Choice, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {presence: upsert {who: me.who, handle: me.handle, at: c.to}}
