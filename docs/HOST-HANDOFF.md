@@ -2271,6 +2271,17 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    thing's law lets the grower reprogram it, else holds it over the thing for whoever its law lets lay it (`adopt /
    n`, `laidOn`). A grown verb with a body is a declared method, so no verb row is placed. Test: `test_authoring`
    (with the verb library: a one-verb kind laid by `become`, `?` saying what it is after).
+199. **A kind's new form re-lays its make (lane/refresh-fix; §7 2, the refused v9 to v10 carry).** The refresh
+   wrote a kind's `.form` text by a write, so the make and place the kind offered (its make layer, laid from the
+   form it was made with) no longer matched its text: the live v9 town's `kind/weather` said `over:` and took
+   `garden`, and the motion's weather, placed with `over`, waited on hob. `Kind.reshape {form}` (the owner's,
+   unoffered) lays the make layer again from the new form (`world.reprogram` of its top module with
+   `layerSource(of, form)`), then writes the form, in one turn. It is refused by name, its form left, when the
+   kind's code over Kind is not the make its form laid (a layer laid over the make). `deploy/genesis.py` `refresh`
+   re-shapes a stale `.form` through it; `carried_fields` reads the place form the kind offers (`world-inspect`
+   `templates`, 5.189), not the text. Tests: `test_genesis.Reshape` (a town whose weather kind was made with
+   `garden:`: form refreshed, the place offered with `over`, the weather placed `refreshed` and raining on bell/1
+   the day someone entered the porch, a second refresh all `current`; a kind with a layer over its make refused).
 
 ## 6. Gotchas
 
@@ -2329,10 +2340,12 @@ failing input as a test first, merging foundation before each commit:
    `refreshed` and 24 `current`, none left. Then the motion's `weather` placing was `suspended`, so the carry exited 1
    and v9 went back up. The refresh rewrote `kind/weather`'s `.form` text to `over:`, while the carried kind's place
    form, shaped once from v8's form, still takes `garden`. `genesis.carried_fields` reads the text, so it kept
-   `over: porch` and the spell misfit. Read the place form the kind actually offers (`world-inspect` `templates`,
-   5.189), not the `.form` text. Also decide whether a refresh may write a form text that the kind's layer no longer
-   takes. Test first: a carried town whose `kind/weather` form says `garden`, its makings read, refreshed, with
-   `weather` placed `refreshed`. Then rebuild, rerun carry-check, and repeat the carry.
+   `over: porch` and the spell misfit. Fixed by 5.199 (lane/refresh-fix) and deployed: v9 carried into v10 at 446,
+   every refresh row `refreshed`/`current`, kind/errand's `made` the opener's `genesis-kind-errand` (DEPLOY "It
+   carries"). Two things the live checks found, open: (a) bell/1 says "untended since entry 27", v8's height: v9's
+   heights began again at 1 (edition 10), so a height a v8-era state holds names v8's chain, not this one (v9's 27 is a
+   clock advance); re-base such stored heights or say which chain they count. (b) `hand morning` (day 20737, painted)
+   lists under "Answered so far:" the same eight wants its "What wants a hand" section lists as open.
 3. **`shownSpell` scans for `did:` tokens** (5.181): a `fired` row keeps the filled spell, not its holes, so a DID the
    speaker typed is shown by handle too. Keep the rule's template and its fills on the row (edition 12 is undeployed:
    it can ride it) and show the fills by handle; delete the scan.

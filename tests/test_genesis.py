@@ -390,6 +390,96 @@ class CarriedRefresh(unittest.TestCase):
         self.assertEqual(kind, {'law': dict((k[0], k[4]) for k in genesis.KINDS)['bell'], 'voice': genesis.VOICES['bell']})
 
 
+class Reshape(unittest.TestCase):
+    """`refresh` on a town whose kind/weather was made with an older form (`garden:` where genesis now says `over:`, the
+    live v9 town's): the form is rewritten and the kind re-shaped in one turn (`reshape`, its make layer laid again
+    from the new form), so the motion's weather is placed with the fields the kind offers, admitted, and rains on the
+    porch's bell at the day's turn after someone entered the porch."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        old_kinds = [(n, of, form.replace('over:', 'garden:') if n == 'weather' else form, head, law, body)
+                     for n, of, form, head, law, body in genesis.KINDS]
+        assert any(n == 'weather' and 'garden:' in form for n, _, form, _, _, _ in old_kinds)
+        with unittest.mock.patch.multiple(genesis, KINDS=old_kinds, MOTION=[]):
+            cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+        cls.send = cls.town.send
+        cls.offered = cls.place_fields()
+        cls.rows = genesis.refresh(cls.town.client, genesis.OPENER, genesis.ancestry(cls.town.journal))
+
+    @classmethod
+    def place_fields(cls):
+        spell = cls.send(op='world-inspect', principal=genesis.OPENER, object='kind/weather')['templates']['place']
+        return [line.split(':', 1)[0] for line in spell.splitlines()[1:] if line]
+
+    def status(self, obj, slot):
+        [row] = [r for r in self.rows if (r['object'], r.get('slot')) == (obj, slot)]
+        return row['status'], row.get('reading')
+
+    def test_the_form_and_the_make_it_offers_are_the_new_form_and_the_weather_is_placed_over_the_porch(self):
+        self.assertEqual(self.offered[:1], ['garden'])
+        self.assertEqual(self.status('kind/weather', '.form'), ('refreshed', None))
+        self.assertEqual(self.status('weather', 'placed'), ('refreshed', 'placed'))
+        self.assertEqual(self.place_fields()[:2], ['over', 'tide'])
+        form = [f['value']['value'] for f in self.send(op='world-view', principal=genesis.OPENER, object='kind/weather')['state']['fields']
+                if f['name'] == 'form']
+        self.assertEqual(form, [dict((k[0], k[2]) for k in genesis.KINDS)['weather']])
+        self.assertIn('WEATHER over porch, made by ', self.send(op='world-card', principal=genesis.OPENER, object='weather')['text'])
+        again = genesis.refresh(self.town.client, genesis.OPENER, genesis.ancestry(self.town.journal))
+        self.assertEqual({r['status'] for r in again}, {'current'}, [r for r in again if r['status'] != 'current'])
+
+    def test_a_kind_with_a_layer_over_its_make_is_not_reshaped_and_keeps_its_form(self):
+        def form():
+            return [f['value']['value'] for f in self.send(op='world-view', principal=genesis.OPENER, object='kind/door')['state']['fields']
+                    if f['name'] == 'form']
+        before, offered = form(), self.send(op='world-inspect', principal=genesis.OPENER, object='kind/door')['templates']['make']
+        version = int(self.send(op='world-object', principal=genesis.OPENER, object='kind/door')['record']['version'])
+        layered = self.send(op='world-reprogram', principal=genesis.OPENER, identity='door-layer', object='kind/door', version=version, mode='extend',
+                            package='layer over ./Kind.obend\nedition ObjectiveBend 1\ntype State = Super.State\ndef doorNote() -> String:\n  "a door"\n')
+        self.assertEqual(layered['status'], 'admitted', layered)
+        got = self.send(op='world-turn', principal=genesis.OPENER, object='kind/door', method='reshape', identity='door-reshape',
+                        argument=record(form=label('label: text 1..32\nseed: text 1..80')))
+        self.assertNotEqual(got['status'], 'admitted', got)
+        self.assertIn('its make stands', json.dumps(got))
+        self.assertEqual(form(), before)
+        self.assertEqual(self.send(op='world-inspect', principal=genesis.OPENER, object='kind/door')['templates']['make'], offered)
+
+    def test_the_placed_weather_rains_on_the_porchs_bell_the_day_someone_entered_the_porch(self):
+        glm = 'did:plc:glm'
+        self.send(op='world-arrive', principal='transport', did=glm, handle='glm.delve.town')
+
+        def say(obj, text, intent):
+            return self.send(op='world-turn', principal=glm, object=obj, method='receive', identity=intent,
+                             argument=record(text=label(text), post=label('at://x/p/' + intent)))
+
+        def deliver():
+            for _ in range(16):
+                self.send(op='world-deliver', principal='transport', limit=16)
+                if not self.send(op='world-pending').get('count'):
+                    return
+
+        def field(obj, name):
+            return next(f['value'] for f in self.send(op='world-view', principal=genesis.OPENER, object=obj)['state']['fields'] if f['name'] == name)
+
+        def lines(obj):
+            return [next(f['value']['value'] for f in r['fields'] if f['name'] == 'text') for r in field(obj, 'lines')['payload']['fields'][0]['value']['items']]
+
+        clock = self.send(op='world-status').get('clock', 0)
+        while int(field('tide', 'ticks')['value']) < 23:
+            clock += 61
+            self.send(op='world-advance', principal='transport', height=clock)
+            deliver()
+        self.assertEqual(say('porch', 'delvetalk porch enter', 'enter')['status'], 'admitted')
+        self.assertEqual(say('bell/1', "delvetalk bell/1 rain\ntext: a hand's rain", 'tend')['status'], 'admitted')
+        while int(field('tide', 'ticks')['value']) < 24:
+            clock += 61
+            self.send(op='world-advance', principal='transport', height=clock)
+            deliver()
+        self.assertTrue(any(line.startswith("weather's rain, clock ") for line in lines('bell/1')), lines('bell/1'))
+
+
 def genesis_outcome(path):
     from transport import journal
     return journal.read(path, journal.links(path)[:1])[0]['outcome']
