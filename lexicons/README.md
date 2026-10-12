@@ -13,6 +13,9 @@ not reshape it. Files sit at `town/delvetalk/<name>.json`, `defs.main` a `record
 | `town.delvetalk.publication` | the publication id | the retaining entry's `hash` | (list only) `world-publications` | `publishes [{id, object, page, section, text}]` (id: derived) |
 | `town.delvetalk.grant` | the grant id | the installing entry's `hash` | (list only) `world-grants` | `grants [{id, grantor, holder, to, object, method, until}]`, `revokes [id]` (ids: derived) |
 | `town.delvetalk.law` | `<object, / as ~>.<clause>` | none | (list only) `laws` of `world-object` | `created.law`, `amendments [{object, old, new}]`; readings from the package (`law NAME "reading": EXPR`) |
+| `town.delvetalk.card` | the object id, `/` as `~` | the record's own | `place`: `world-view`, `world-card`, `world-render`, `world-wants` (transport/mirror.py) / `world-objects` | none: a rendering, written to the PDS by `mirror` and answered here alike |
+| `town.delvetalk.page` | the page's name | the record's own | the library's `pages` (`world-view`) | none: the library's state |
+| `town.delvetalk.index` | `self` | the record's own | `world-objects`, the library, `world-status` | none |
 
 Every key is in record-key syntax. An object id maps to a key by writing each `/` as `~` and appending
 `.` and the version (`garden/bell/1` v2: `garden~bell~1.2`); it reads back by the last dot and `~` to `/`.

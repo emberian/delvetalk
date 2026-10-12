@@ -28,7 +28,8 @@ READS = {
 WRITES = {
     'com.atproto.server.createSession': PDS,
     'com.atproto.repo.createRecord': PDS,
-    'com.atproto.repo.deleteRecord': PDS,  # only post.unsend, and only a record in the session's own repo
+    'com.atproto.repo.putRecord': PDS,  # only post.record_writer: the mirror's records in the session's own repo
+    'com.atproto.repo.deleteRecord': PDS,  # post.unsend and the mirror, and only a record in the session's own repo
 }
 POST = 'town.delve.feed.post'  # the collection a town post is a record of
 TOWN_FEED = 'at://did:plc:qzqct2rrq4u2gmy5g3mjxske/town.delve.feed.generator/town'

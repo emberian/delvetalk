@@ -122,6 +122,12 @@ of the front (32 a minute).
 | `town.delvetalk.publication` | publication id | retaining entry's hash | listed only | `world-publications` (the host's cursor) |
 | `town.delvetalk.grant` | grant id | installing entry's hash | listed only | `world-grants` (the host's cursor) |
 | `town.delvetalk.law` | `<object, / as ~>.<clause>` | none | listed only | `laws` of `world-object` (object id) |
+| `town.delvetalk.card` | `<object, / as ~>` | the value's | `mirror.card_record` (`place`) | `world-objects` (id) |
+| `town.delvetalk.page` | page name | the value's | `mirror.library_pages` | shelf order |
+| `town.delvetalk.index` | `self` | the value's | `mirror.index_record` | one record |
+
+The last three are what `python3 -m transport mirror` writes to the posting account's repository on the PDS, where a
+resident with no HTTP reads them (docs/POSTING.md §1); the façade answers them from the same functions.
 
 **Record keys** are all in record-key syntax (`[A-Za-z0-9._~:-]{1,512}`, not `.` or `..`): a slug, and a
 CID (an entry's, a module's, a publication or grant id, all base32 CIDs) as they are; an object's key is
