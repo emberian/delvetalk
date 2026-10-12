@@ -295,12 +295,29 @@ is bound like the state; a checkpoint without one names no site and does not res
 /-- The edition marker a message checkpoint's site index follows. -/
 def siteEdition : String := "delvetalk.checkpoint.site.v1"
 
+/-- A site whose hash is its plan's matches a term exactly when `termEq` relates them: the hash
+only rules sites out. -/
+theorem Site.matches_eq (site : Delvetalk.Site) (t : Term)
+    (hashed : site.hash = Delvetalk.Theory.ObjectiveBendCheckpoint.termHash site.term) :
+    site.matches t (Delvetalk.Theory.ObjectiveBendCheckpoint.termHash t) =
+      Delvetalk.Theory.ObjectiveBendCheckpoint.termEq site.term t := by
+  unfold Delvetalk.Site.matches
+  cases e : Delvetalk.Theory.ObjectiveBendCheckpoint.termEq site.term t with
+  | false => simp
+  | true =>
+    have same := Delvetalk.Theory.ObjectiveBendCheckpointRoundTrip.termEq_eq e
+    subst same
+    simp [hashed]
+
+#assert_axioms Site.matches_eq
+
 /-- The site whose plan the yielded state's plan cell was built from. -/
-def yieldedSite (sites : Array (Term × Ty)) (state : State) : Option Nat :=
+def yieldedSite (sites : Array Delvetalk.Site) (state : State) : Option Nat :=
   match state.control with
   | .yielded address => match state.heap[address]? with
     | some (.suspended c) | some (.evaluating c) | some (.cached c _) =>
-      sites.findIdx? fun (t, _) => Delvetalk.Theory.ObjectiveBendCheckpoint.termEq t c.term
+      let hash := Delvetalk.Theory.ObjectiveBendCheckpoint.termHash c.term
+      sites.findIdx? (·.matches c.term hash)
     | _ => none
   | _ => none
 
@@ -311,11 +328,11 @@ def splitSite : Tokens → Option Nat × Tokens
   | tokens => (none, tokens)
 
 /-- The response type a yield resumes at: its site's. -/
-def resumeTypeAt (sites : Option (Array (Term × Ty))) : Option Nat → Except String Ty
+def resumeTypeAt (sites : Option (Array Delvetalk.Site)) : Option Nat → Except String Ty
   | none => .error "checkpoint names no call site of this entry"
   | some i => match sites with
     | some s => match s[i]? with
-      | some (_, t) => .ok t
+      | some site => .ok site.type
       | none => .error "checkpoint names no call site of this entry"
     | none => .error "checkpoint does not decode"
 
@@ -361,7 +378,7 @@ open Delvetalk.Theory.ObjectiveBendDemandCollect in
 /-- Turn the outcome of a bounded run into a typed step; a yield holds the collected state. -/
 def concludeStep (dictionary : Dictionary) (pin : String) (binding : Binding) (bounds : DataBounds) (plan response result : Ty) (b : Budgets) (limits : Limits)
     (outcome : Except (Failure × State × Budget) (Data × Budget))
-    (sites : Option (Array (Term × Ty)) := none) (fetch : Fetch := Fetch.none) : Except String Step :=
+    (sites : Option (Array Delvetalk.Site) := none) (fetch : Fetch := Fetch.none) : Except String Step :=
   match outcome with
   | .ok (value, remaining) =>
       if !value.conformsUnder bounds result then .error "turn refused: result does not conform to its type"
@@ -382,7 +399,7 @@ def concludeStep (dictionary : Dictionary) (pin : String) (binding : Binding) (b
             match sites with
             | none => .ok (.yielded extracted.value plan response (held none) ticks)
             | some sites => match yieldedSite sites extracted.state with
-              | some i => .ok (.yielded extracted.value plan (sites[i]?.map (·.2) |>.getD response) (held (some i)) ticks)
+              | some i => .ok (.yielded extracted.value plan (sites[i]?.map (·.type) |>.getD response) (held (some i)) ticks)
               | none => .error "turn refused: the yielded message has no call site in this entry"
   | .error (failure, st, rem) =>
       match failure, st.control with
@@ -493,20 +510,24 @@ def Store.readsOf (store : Store) (state : State) : Reads :=
     match reach.lookup field with
     | some r => if here > r then (field, here) :: reach.filter (·.1 != field) else reach
     | none => (field, here) :: reach
-  let (spans, found, gaps) := state.heap.foldl (fun (spans, found, gaps) cell => match cell with
-    | .stored (.spine field position _) (some _) => (reached spans field (position + 1), found, gaps)
-    | .stored (.size field size) _ => (reached spans field (size + 1), found, gaps)
+  -- One pass over the heap: rows (`forcedRows`, in heap order), found keys and gaps are pushed
+  -- in heap order, spans folded as before.
+  let (rows, spans, found, gaps) := state.heap.foldl (fun (rows, spans, found, gaps) cell => match cell with
+    | .stored (.row field position) (some _) =>
+      let read := do
+        let relation ← store.relations.find? (·.field == field)
+        let row ← store.fetch field position
+        return (⟨field, keyProjection relation.key row, row.canonicalBytes⟩ : Read)
+      (match read with | some r => rows.push r | none => rows, spans, found, gaps)
+    | .stored (.spine field position _) (some _) => (rows, reached spans field (position + 1), found, gaps)
+    | .stored (.size field size) _ => (rows, reached spans field (size + 1), found, gaps)
     | .stored (.found field position) _ => match keyAt field position with
-      | some key => (spans, found ++ [(field, key)], gaps)
-      | none => (reached spans field (position + 1), found, gaps)
+      | some key => (rows, spans, found.push (field, key), gaps)
+      | none => (rows, reached spans field (position + 1), found, gaps)
     | .stored (.absent field position) _ =>
-      (spans, found, gaps ++ [(field, if position == 0 then none else keyAt field (position - 1), keyAt field position)])
-    | _ => (spans, found, gaps)) ([], [], [])
-  { rows := (forcedRows state).filterMap fun (field, position) => do
-      let relation ← store.relations.find? (·.field == field)
-      let row ← store.fetch field position
-      return ⟨field, keyProjection relation.key row, row.canonicalBytes⟩
-    spans, found, gaps }
+      (rows, spans, found, gaps.push (field, if position == 0 then none else keyAt field (position - 1), keyAt field position))
+    | _ => (rows, spans, found, gaps)) (#[], [], #[], #[])
+  { rows := rows.toList, spans, found := found.toList, gaps := gaps.toList }
 
 def Reads.toJson (r : Reads) : Json :=
   let key := fun (name : String) (k : Option Data) => (k.map fun k => [(name, dataJson k)]).getD []

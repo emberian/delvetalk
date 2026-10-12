@@ -349,7 +349,7 @@ def messageFields (modules : List SourceModule) (held : Delvetalk.CheckedEntry) 
   match held.sites with
   | none => artifact
   | some sites =>
-    let methods := sites.toList.filterMap (worldMethodOf ·.1)
+    let methods := sites.toList.filterMap (worldMethodOf ·.term)
     let methods := methods.foldl (fun acc m => if acc.contains m then acc else acc ++ [m]) []
     let artifact := (artifact.setObjVal! "dialect" (toJson "message")).setObjVal! "world" (toJson methods)
     match modules.find? (·.name == "World") with

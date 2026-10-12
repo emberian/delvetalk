@@ -44,23 +44,41 @@ partial def performsOf (annotations : Annotations) (position : List Nat) (term :
   | .case a arms => fields (position ++ [1]) arms (at_ 0 a acc)
   | .bound _ | .nat _ | .boolean _ | .label _ => acc
 
+/-- A call site: its plan term and result type, with the plan's structural hash (computed
+once), by which a yielded plan is matched (`Site.matches`). -/
+structure Site where
+  term : Term
+  type : Ty
+  hash : UInt64
+
+def Site.of (term : Term) (type : Ty) : Site :=
+  { term, type, hash := Delvetalk.Theory.ObjectiveBendCheckpoint.termHash term }
+
+/-- Whether the site's plan is `term` (whose hash is `hash`): exactly `termEq site.term term`, since
+terms `termEq` relates are equal (`termEq_eq`) and hash equally; the hash rules the other sites out
+without encoding them. -/
+@[inline] def Site.matches (site : Site) (term : Term) (hash : UInt64) : Bool :=
+  site.hash == hash && Delvetalk.Theory.ObjectiveBendCheckpoint.termEq site.term term
+
 /-- The call sites of a message activity's entry: each distinct plan term with its result
 type. Refused when two performs build the same plan term at different result types (the
-machine could not tell which one yielded). -/
-def messageSites (source : AnnotatedTerm) : Except String (Array (Term × Ty)) := do
-  let mut sites : Array (Term × Ty) := #[]
+machine could not tell which one yielded). Sites are pairwise distinct, so at most one
+matches a plan. -/
+def messageSites (source : AnnotatedTerm) : Except String (Array Site) := do
+  let mut sites : Array Site := #[]
   for (plan, type?) in performsOf source.annotations [] source.term #[] do
     let some type := type? | throw "a world call has no annotated result type"
-    match sites.find? (fun (t, _) => Delvetalk.Theory.ObjectiveBendCheckpoint.termEq t plan) with
-    | some (_, other) =>
-      if other != type then
+    let site := Site.of plan type
+    match sites.find? (·.matches plan site.hash) with
+    | some other =>
+      if other.type != type then
         throw ("refused (world-call-site): two world calls of this entry build the same message at different " ++
           "result types, so a response could not be told apart; give one of them a different argument")
-    | none => sites := sites.push (plan, type)
+    | none => sites := sites.push site
   return sites
 
 /-- The sites of an activity entry (its Plan is a message; `none` for a Plan of another type, which the checker refuses). -/
-def sitesFor (source : AnnotatedTerm) (plan : Ty) : Except String (Option (Array (Term × Ty))) :=
+def sitesFor (source : AnnotatedTerm) (plan : Ty) : Except String (Option (Array Site)) :=
   if isMessagePlan plan then some <$> messageSites source else pure none
 
 /-- The activity type an entry finally has once every parameter is applied. -/
@@ -79,7 +97,7 @@ structure CheckedEntry where
   fuel : Nat
   /-- The call sites of a message activity entry (`messageSites`), built once with the
   entry; `none` for any other entry. An applied entry keeps its entry's. -/
-  sites : Option (Array (Term × Ty))
+  sites : Option (Array Site)
 
 def CheckedEntry.type (e : CheckedEntry) : Ty := e.checked.type
 
