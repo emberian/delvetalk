@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/host29: the second codex review's host findings, 5.175; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -2024,6 +2024,45 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (`world-check` on the scratch) and `/cite` (`world-cite`); `/AGENTS.md/repl` and `/check` are gone. Tests:
    `test_http.Repl`, `test_hypermedia` (the stranger's walk), `test_serve`.
 
+175. **The second codex review's host findings (host29; docs/review/codex-2026-10-12; snapshot `v5`; no replay
+   edition change).** Each with its failing input as a test, red on foundation:
+   - *What a clause cites* (host 1, 10, 11). `Ops.citesOf` is the one closure of what names cite (`"O".F` the
+     object; `under "O"` what O's law text names; `"O" wants N` what O's want N names, with every want clause of a
+     want-cited object), `Limits.lawDepth` deep; `citing w law names facts` sets `reads`, `wants` and `standing`
+     (`standingOf`). judge, amendable, reactions, posing/`wantFacts`, methodAdmits, kindAdmits and a layer's
+     creation all read it; `citationsFrom`, `citedStates`, `wantsCited`, `standings` are gone. `judge` applies every
+     write first and judges each law, Bend law, amendment and placing against the candidate world (`cand`), so one
+     commit writing A and B is judged as the world it leaves. A rule fires only when its owner may view the thing
+     and all it cites (`unfired reads`); placing a line citing what the placer may not view is `lawRefused
+     lawReads`; a want's `asks` is filled for its reader (`wantAsks w reader`; the paint's as nobody). Tests:
+     `test_law.Cited`, `test_rules.Reads`.
+   - *Grants* (host 3). `TurnLoop.granted` is the gate a principal's own turn enters a lent grant by (`runTurnWith`,
+     `runHeard`): it stands for this principal, a use is left and spent, the fixed part merged. `Abort.named` is a
+     refusal given whole (a card's `refuse`, a grant's clause). Test: `test_grants.LentDirect`.
+   - *Quiet* (host 6). `Ops.quietOf` is the one reading; `judge` refuses every entry of a quieted principal (propose,
+     reprogram, amend, placing, resumption, delivery), `runOne` before the turn runs. A delivery refused `quiet`
+     spends an attempt per clock step (`redelivered`), as any transient one. Test:
+     `test_root.Moderation.test_a_quieted_principal_writes_through_no_op`.
+   - *Rows and read policy anchored* (host 5). An admitted entry journals `placed [{object, cid}]` (`placedField`,
+     `placedCid` of rules, wants and verbs) for each object whose rows it changed or made, a `created` entry `placed`;
+     replay compares both when present. `Anchor.placed` (`placedIn`, or a genesis's rows) and `Anchor.read`
+     (`readPolicyIn`: creation, root `set`, `hide`/`show`, genesis); `checkAnchors` refuses rows no entry commits to
+     and another read policy, so the world is replayed whole: **a world whose rows predate `placed` replays whole at
+     every open until it is carried.** Snapshot `v5` (five heights an anchor); `previousEdition` `v4`, whose three a
+     carry checks alone (`checkAnchors whole`). Test: `test_snapshot.…forged_rows_or_read_policy…`.
+   - *Identities across a carry* (host 8; docs 1; agent 1). The `carried` genesis holds `identities` (`identityRow`
+     of each bound identity, and those its own carry kept); `World.carriedIds` is read from the genesis (never a
+     snapshot); `Ops.boundEntry` is the one lookup (`retained`, `retainedTurn`, `runTurn`, `world-receipt`). Test:
+     `test_carry.Carry.test_a_retry_after_the_carry_answers_the_receipt_and_repeats_nothing`, two carries deep.
+   - *In-turn creations* (host 4). `createRecJson` journals `lines` when the package's lines were placed;
+     `Ops.createdLaw` builds it again so in replay and a suspended activity. Test: `test_make.Make.…through_replay`.
+   - *Paint* (host 14, 15; laid on lane/paint's table). A past version is `historical` (`strokesAt`); a resident's
+     line is quoted whole (`Strokes.wholeLine`) and credited (`attribution` … `uncredited`), another text in part.
+   - *Spells* (agent 2, 3; lane/host29-spell). `Spell.segments` reads no spell inside a `<<TAG` block or a tagged
+     fence (`blockOpener`, `closesBlock`, one reader with the binding parser); `fit` refuses an unknown field with a
+     known one after it (`unknownField`), an unknown one last still ends the fields (D7).
+   - Objects 4 was lane/objrev's (the Bend law judges placings); agent 4, 5, 12 were host27's (5.169, 5.167, 5.164).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -2059,6 +2098,30 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
+**First, host29's remainder (the second codex review, docs/review/codex-2026-10-12; stopped at its token budget).**
+Each with its failing input as a test first, merging foundation before each commit:
+- host 7 (P1): a placed rule named as an inherited one shares `rule:<object>:<name>:<height>` and consuming one
+  delivery removes both: the firing id names its holder (`CarriedClause.holder`), and placing refuses a name the
+  thing's kind carries. Changes `fired` ids: edition 10 with `carry-check.sh` green, or derive the old id where
+  holder = object.
+- host 9 (P1): carry admits a suspended write on cells a migration moved: install a touch barrier per moved object
+  (`touches` noncommuting at the genesis) so `cellsCurrent` refuses the old roots.
+- docs 7: a moved object's suspensions are dropped without `--leave`: refuse the move unless named.
+- host 12: `world.judge` merges its dependency roots into the turn (`TurnState.roots`) before answering.
+- host 13: meter `Law.denote` (rows × clauses) against `lawTicks`; reuse canonical rows across clauses.
+- docs 12: a scratch's last-use clock persisted (Serve.lean:189), not reset at a restart.
+- docs 14: the 1,400-character card bound enforced where every card response is built.
+- agent 10: hob is offered the host's permitted spells (`rule`, `want`, `adopt`…) and its proposals of them run
+  through `hostSpell`.
+- The coordinator's simplify hand-back: (1) an offer's public projection answered by the host (transport stops
+  `world-view` per object); (2) `revealed` on `world-receipt`; (3) delete the JSON model-reply branch in
+  `interpretVerdict`; (4) a refusal class for "the opener speaks on the root socket"; (5) `world-history` reversed;
+  (6) REPL retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
+  mention cap of 4 as host answers.
+- `test_previews.Previews.test_each_preview_embeds_the_live_card_verbatim` is red on this merge (kind/garden's
+  voice versus `seed-posts/02-garden.txt`): the objects or docs lane's re-cut.
+
+
 The queue after host27 (5.164 to 5.172) and host28 (5.173, 5.174), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
 standing order binds every item: "maturify and take forward everything that we've started and bring it to its full
 sophistication and make sure the code is all 'fungused together' (no seams or welds where rich semantic braiding is
@@ -2083,9 +2146,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
 3. **5.160's remainder.** `offeredTo`'s diff for the speaker in `revealed` ("it now takes `ring`", and "it now
    takes `water`" after a grow); judging cost (`ruleTicks`: neither text laws nor rules are metered; bounded by
    `rulesPerObject` × rows, measured on a bell of 768 rains and 32 rules before the playtest); `carried` parses
-   each text per commit (keep parsed clauses on the `Object`); placed rules, wants and verbs are not anchored
-   (`checkAnchors` checks version, pin and law; a forged snapshot could add one; `verify` replays and would see
-   it); a want citing another thing flips only when its own thing is written (a write to the cited thing should
+   each text per commit (keep parsed clauses on the `Object`); a want citing another thing flips only when its own thing is written (a write to the cited thing should
    re-judge the wants citing it: an index of citers by object, judged in `reactions`); `maxLawClauses` 16 counts
    all three modalities.
 4. **Verbs' remainder.** `retire` of a verb is `ungrow` (the host spell `retire` is the card power); a
@@ -2098,7 +2159,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
      carry-check takes `--old-image delvetalk-host:9790175f9dc0`. The deploy is DEPLOY "A new binary", *It carries*.
    - What a carried world does not yet keep: `world-receipt`/`world-entry` of a pre-carry hash answer unknown (the old
      chain's block store is edition-independent: read it as the world before, by the `carriedFrom.world` path or a
-     copy beside the new journal); identity receipts (a retry of a pre-carry intent runs again); a client's offers
+     copy beside the new journal); a client's offers
      cursor (`http.py` `after`) past the carried height waits until the new chain passes it.
    - A carried genesis's size: the store's compiled types and method tables (1 MB of playtest 3's 1.4 MB) are
      derivable from the carried sources; carry them as blocks, or derive them at install, measured on the v7 town.
