@@ -109,6 +109,49 @@ keeps its content and takes the same skeleton and stylesheet: plain headings, no
 - The REPLY heading, the separate `? usage` form, the stamped ticket and its settle animation on a reply.
 - The section headings LAW, SOURCE, RECEIPTS, ACTIONS as page furniture; they are disclosures.
 
+## 2026-10-12: a town you can see (the `web3-*` screenshots)
+
+The owner: "the website seems impoverished since we did the css re-theme". `web3-live-*` is https://gsb.fg-goose.online
+that morning; `web3-before-*` is the foundation branch on a scratch town on hbox (genesis, the furnishings, four residents
+who made a lamp, grew and trimmed it, planted two bells and sat on the porch, a stand-in painter); `web3-after-*` is the same
+town on this lane. Paint in both is a stand-in (no model key on that box): the strokes' name, voice, company and last line.
+
+**What was impoverished.** The quiet was right; what it left was nothing to see or do.
+- *Too bare.* The front page is a title, a sentence, a handle box and three ids (`bell/1 bell/2 commonplace and 61
+  residents`, `web3-live-home-1280.png`): no day, no place named for what it is, nothing happening. 60% of the 1280 px
+  frame is empty paper.
+- *Nothing alive.* A place shows its paint and a folded card; who is here, what lies here and what was last said live only
+  in the strokes the painter reads and the journal under a disclosure. The porch had two residents on it and said nothing
+  of them (`web3-before-o-porch-1280.png`).
+- *No sense of a place.* The page's title is the id (`porch`), not what the place is called (The Bellfounder's Porch); its
+  doors are one line of links with no picture of where they lead or where you came from.
+- *No way onward.* The day's chronicle and the door map existed (`/history`, `/map`) but no page linked them; live they
+  were 404 (`web3-live-history-1280.png`), as was the front page's own `bell/1` link (`/o/bell/1`, `web3-live-o-bell-1-390.png`).
+  A reader not signed in met "Speak to it" nowhere and no way in except a delve.town handle.
+- *A dark theme that was GitHub's*, cold blue-grey, with nothing of the day palette's warmth.
+
+**What the site does now.**
+- **Every page** has a header of the mark, `today` (/history), `the map` (/map), and the reader's name linking their book
+  with `sign out`, or `come in`; the footer links the town, today, the door map, the guide and the style page.
+- **`/`** says what the town is and how to come in (an invitation, or delve.town), then the town alive: *Today in the
+  town* (the chronicle's day, painted, its exact text folded, the history a link away), *Places* (the commonplace's doors,
+  each with what its state calls it: THE NIGHT GARDEN, The Moss Gate), *Wants a hand* (`world-wanting`, five), *Newly made*
+  (the six newest makings, by whom, at which entry: the first journal entry touching each id, asked once per id and kept by
+  the front, since it never changes). Three columns on a wide screen, one on a phone.
+- **A place** (`/o/<id>`, `/play/<id>`): above its name, small, its id, its kind and its maker; the name its state gives it
+  (`head`); the paint in a lit panel with the exact card folded inside it; what it wants; on `/play/` the box, which can
+  **Try it first** (the same words under `delvetalk try`, previewed and journaling nothing, with a `Do it` suggestion that
+  carries the preview's `if:` line); then **around it**: who is here (`presence`), what lies here (`things`), *Lately* (its
+  `lines` relation, newest first, or the newest entries that touched it), and its doors as a small local map (the ways in
+  above, dashed; the place; its doors fanned below) beside the same doors as links, with "The way here". A reader not
+  signed in is told how to come in. `/o/<id>` takes an id with slashes as a door's link spells it.
+- **The palette** keeps its tokens and AA checks; the day is warmer paper under a lamp-light gradient, the night a warm
+  dark (`#15120e`, lavender links, amber focus) instead of GitHub's. A sans face sets the chrome (header, eyebrows, meta),
+  the serif sets what places say, monospace what is exact.
+
+Python reads the state the host gives (`head`, `kind`, `presence`, `things`, `lines`, `cites`) and the host's reads
+(`world-surface` map and chronicle, `world-wanting`, `world-history`); it decides nothing and adds no host op.
+
 ## Not decided here
 
 The home sentence replaces "every thing a card, every reply a receipt" (VOICE's "Claim your handle" quotes it; VOICE

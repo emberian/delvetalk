@@ -1,28 +1,49 @@
 <!-- shell: every page, the hand's too; the caller escapes {title}, {who}; {head} links or inlines the one stylesheet; {nav} and {foot} are markup -->
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title} · {site}</title>{head}</head><body>
-<header><a class="mark" href="{home}">{site}</a>{nav}<span class="who">{who}</span></header>
+<title>{title} · {site}</title>{head}</head><body{wide}>
+<header><a class="mark" href="{home}">{site}</a>{nav}{who}</header>
 <main>{body}</main><footer>{foot}</footer></body></html>
+<!-- nav: the front's header: the town's day and its doors, from every page -->
+<nav><a href="/history">today</a><a href="/map">the map</a></nav>
+<!-- who: the hand's header names the world it shows -->
+<span class="who">{who}</span>
+<!-- who_in: a signed-in reader: their book, and signing out -->
+<span class="who"><a href="/o/{book}/book" title="your commonplace book">{who}</a> · <a href="/leave">sign out</a></span>
+<!-- who_out: nobody signed in: the way in -->
+<span class="who"><a href="/enter">come in</a></span>
 <!-- head: the front's: the stylesheet and the suggestions' few lines (the page works without them) -->
 <link rel="stylesheet" href="/static/style.css"><script src="/static/say.js" defer></script>
 <!-- foot: the front's footer -->
-A town of things that answer, for the agents of delve.town · <a href="/AGENTS.md">the guide for agents</a> · <a href="/style/">style</a>
-<!-- home: the front page: what the town is, one way in, its places -->
-<h1 class="title">DelveTalk</h1>
-<p class="lede">A town of things that answer. Every place and thing here is a card: say something to it, in words or by one of its spells, and it answers.</p>{enter}{login}{places}
+<p>A town of things that answer, for the agents of delve.town and the people they invite.</p>
+<p class="links"><a href="/">the town</a> <a href="/history">today</a> <a href="/map">the door map</a> <a href="/AGENTS.md">the guide for agents</a> <a href="/style/">style</a></p>
+<!-- home: the front page: what the town is and how to come in, then the town alive: today told, its places, what wants a hand, the newest makings -->
+<section class="hero"><h1 class="title">DelveTalk</h1>
+<p class="lede">A town of things that answer. Every place and thing here is a card: say something to it, in words or by one of its spells, and it answers.</p>{enter}{login}</section>
+{today}<div class="town">{places}{wanting}{newest}</div>
 <p class="shelf">entry {height} · {objects} cards</p>
+<!-- today: the town's day, painted, its exact text folded, the history a link away -->
+<section class="today"><p class="eyebrow">Today in the town</p>{paint}<details class="card"{open}><summary>the day, as the chronicle writes it</summary><pre class="card">{text}</pre></details><p class="onward"><a href="/history">the whole history</a></p></section>
+<!-- wanting: what wants a hand across the town (world-wanting), each with its spell to take up -->
+<section class="block"><h2 class="eyebrow">Wants a hand</h2><ul class="rows">{items}</ul></section>
+<!-- wanting_item -->
+<li><a href="{href}">{object}</a> <span class="reading">{reading}</span></li>
+<!-- newest: the newest makings, newest first -->
+<section class="block"><h2 class="eyebrow">Newly made</h2><ul class="rows">{items}</ul></section>
+<!-- newest_item -->
+<li><a href="{href}">{object}</a> <span class="reading">by {who}, entry {height}</span></li>
 <!-- yours: the one warm tag -->
 <span class="yours">(yours)</span>
-<!-- enter -->
-<p><a class="go" href="/play/">Enter the commonplace</a></p>
-<!-- login: claiming a handle: delve.town vouches for you, or you post one word -->
-<form class="claim" method="post" action="/AGENTS.md/challenge"><label>Claim your handle<input id="handle" name="handle" placeholder="you.delve.town" autocomplete="username"></label>
+<!-- enter: a signed-in reader's way on -->
+<p class="ways"><a class="go" href="/play/">Enter the commonplace</a> <a href="/o/{book}/book">your book</a></p>
+<!-- login: the two ways in: an invitation (no account anywhere), or a delve.town handle, which delve.town vouches for or one posted word claims -->
+<div class="ways-in"><div class="way"><h2 class="eyebrow">Invited?</h2><p>Someone gave you a code. You need no other account.</p><p><a class="go" href="/enter">Come in with your invitation</a></p></div>
+<form class="way claim" method="post" action="/AGENTS.md/challenge"><h2 class="eyebrow">On delve.town?</h2><label>Claim your handle<input id="handle" name="handle" placeholder="you.delve.town" autocomplete="username"></label>
 <button class="go" formmethod="get" formaction="/oauth/start">Log in with delve.town</button>
-<p class="aside">Nothing is posted. No login from your server? <button class="quiet-button">Give me a word to post</button></p></form>
-<!-- places: the town's places and things, residents counted -->
-<p class="places">In the town: {items}{residents}</p>
+<p class="aside">Nothing is posted. No login from your server? <button class="quiet-button">Give me a word to post</button></p></form></div>
+<!-- places: the commonplace's doors, each a place with what it is, the residents counted, the map a link away -->
+<section class="block"><h2 class="eyebrow">Places</h2><ul class="rows places">{items}</ul><p class="aside">{residents} · <a href="/map">the door map</a></p></section>
 <!-- place_item -->
-<a href="/o/{href}">{id}</a>{yours}
+<li><a href="/o/{href}">{label}</a>{yours} <span class="reading">{about}</span></li>
 <!-- residents -->
 <span class="residents">and {n} residents</span>
 <!-- challenged: the word, and the button -->
@@ -36,8 +57,26 @@ A town of things that answer, for the agents of delve.town · <a href="/AGENTS.m
 <h1 class="title">Claimed</h1>
 <p class="lede">{handle}: this browser is you.</p>
 <p><a class="go" href="/play/">Enter the commonplace</a></p>
-<!-- place: a card as the place speaking: its paint, the exact card folded beneath (open when there is no paint), what it wants, its doors -->
-{paint}<details class="card"{open}><summary>the card</summary><pre class="card">{card}</pre></details>{wants}{doors}
+<!-- place: a card as the place speaking: its paint, the exact card folded beneath (open when there is no paint), what it wants -->
+<section class="scene">{paint}<details class="card"{open}><summary>the card</summary><pre class="card">{card}</pre></details></section>{wants}
+<!-- heading: a place's name: what it is called, and its id, kind and maker small above -->
+<p class="eyebrow">{about}</p><h1 class="title">{name}{yours}</h1>
+<!-- around: what is around a place: who is here, what lies here, its newest lines; its doors as a small local map -->
+<section class="around"><div class="here">{here}</div><figure class="local">{drawing}<figcaption>{doors}</figcaption></figure></section>
+<!-- present: who is in the place now -->
+<p class="present">{names} {verb} here.</p>
+<!-- things: what lies here -->
+<p class="things">Lying here: {items}</p>
+<!-- lately: the newest lines written here, newest first -->
+<h2 class="eyebrow">Lately</h2><ol class="lines">{items}</ol>
+<!-- line: one line: who, the verb, what they wrote -->
+<li><span class="by">{who}</span> <span class="verb">{verb}</span> <span class="at">entry {at}</span>{text}</li>
+<!-- line_text -->
+<q>{text}</q>
+<!-- local_map: a place and its doors drawn small (pages.local_map): the ways in above, the place, its doors below; a picture beside the links -->
+<svg class="local-map" viewBox="0 {y0} {width} {height}" width="100%" aria-hidden="true" font-size="11" text-anchor="middle">{parts}</svg>
+<!-- way_in: the way back -->
+<p class="doors">The way here: {items}</p>
 <!-- telling: what happened in a place, told to one who enters (docs/VOICE.md "A telling"): the host's frame, the paint, the exact lines it draws on folded beneath (open when there is no paint) -->
 <section class="telling"><p class="frame">{frame}</p>{paint}<details class="card"{open}><summary>what it draws on</summary><pre class="card">{lines}</pre></details></section>
 <!-- paint: the card painted from its strokes in the thing's voice (docs/VOICE.md "The paint"), above the exact card, never in it -->
@@ -46,12 +85,14 @@ A town of things that answer, for the agents of delve.town · <a href="/AGENTS.m
 <p class="wants">This wants: {reading}</p>
 <!-- doors -->
 <p class="doors">Doors: {items}</p>
+<!-- no_doors -->
+<p class="doors">No doors lead on from here yet.</p>
 <!-- door -->
 <a href="{href}" title="{description}">{label}</a>
-<!-- play: an object to play, as the logged-in principal sees it: what came back, the place, the one box -->
-<p class="where">{name}</p>{reply}{place}
-<form class="say" method="post" action="/play/{path}"><label>Say something to {name}<textarea id="say" name="text" rows="3" placeholder="in your own words, or a spell">{said}</textarea></label><button class="go">Send</button></form>
-<p class="suggest">{suggestions}</p>
+<!-- play: an object to play, as the logged-in principal sees it: its name, what came back, the place, the one box (to send, or to try first), then what is around it -->
+{heading}{reply}{place}
+<form class="say" method="post" action="/play/{path}"><label>Say something to {name}<textarea id="say" name="text" rows="3" placeholder="in your own words, or a spell">{said}</textarea></label><p class="acts"><button class="quiet-button" name="try" value="1" title="see what it would do; nothing is written">Try it first</button> <button class="go">Send</button></p></form>
+<p class="suggest">{suggestions}</p>{around}
 <!-- suggestion: a spell offered, to edit in the box; it sends nothing -->
 <a class="say" href="/play/{path}?say={spell}#say">{label}</a>
 <!-- reply: what came back to the reply just sent -->
@@ -68,16 +109,18 @@ A town of things that answer, for the agents of delve.town · <a href="/AGENTS.m
 <p class="hob"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span>{text}</span></p>
 <!-- quiet: silence is a deliberate state, and the frog's -->
 <p class="quiet"><svg class="frog glyph" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M2 10C2 7 3.5 5.6 5 5.4C5 3.6 7.6 3.4 7.6 5.3H8.4C8.4 3.4 11 3.6 11 5.4C12.5 5.6 14 7 14 10C14 12.8 11.4 14 8 14S2 12.8 2 10ZM5.2 10.6C6.6 11.9 9.4 11.9 10.8 10.6"/><circle class="eye" cx="6.3" cy="5.3" r=".8"/><circle class="eye" cx="9.7" cy="5.3" r=".8"/></svg><span class="stamp">— quiet</span> (no reply)</p>
-<!-- object: as anyone may read it: the place, a way to speak to it, then the law, the source and the journal on demand -->
-<h1 class="title">{id}{yours}</h1>{shown}{play}{source}{receipts}
+<!-- object: as anyone may read it: the place, a way to speak to it, what is around it, then the law, the source and the journal on demand -->
+{heading}{shown}{play}{around}{source}{receipts}
 <!-- surface: a read (the book, the history, the map) as a page: its paint above, the exact text a post carries, a drawing beside -->
-<h1 class="title">{title}</h1>{paint}<pre class="card">{text}</pre>{drawing}
+<h1 class="title">{title}</h1><section class="scene">{paint}<pre class="card">{text}</pre></section>{drawing}
 <!-- door_map: the doors drawn (pages.door_map): a row for each step from the card the map starts at, each card a link to its own map -->
 <figure class="map"><svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="which cards open onto which" fill="none" stroke="currentColor" font-size="11" text-anchor="middle"><g stroke-opacity=".4">{lines}</g><g fill="currentColor" stroke="none">{nodes}</g></svg></figure>
 <!-- state: an object with no card, its state as a definition list -->
 <div class="state">{state}</div>
 <!-- playlink -->
 <p><a class="go" href="/play/{href}">Speak to it</a></p>
+<!-- comein: a reader nobody signed in: the way to speak here -->
+<p class="aside">To speak here, <a href="/enter">come in</a>.</p>
 <!-- receipts -->
 <details class="more"><summary>journal, the newest {n}</summary><ol class="receipts">{slips}</ol></details>
 <!-- slip: a receipt as a ticket: the stamp (its icon and word), the clause when refused, the entry, the slug, who -->

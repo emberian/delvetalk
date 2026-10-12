@@ -192,7 +192,8 @@ class Pages(FrontCase):
             self.assertEqual(A_DID.findall(prose), [], path)
             seen = Actions(page)
             links, forms = text_actions(text)
-            made = lambda hrefs: sorted(re.sub(r'%2F\d+%20', '%2FN%20', h or '') for h in hrefs)  # a POST twice plants two bells
+            # a POST twice plants two bells: the second page's garden has one more door, so a reply's pages compare their doors as a set
+            made = lambda hrefs: sorted((set if method == 'POST' else list)(re.sub(r'(%2F|/bell/)\d+(%20|$)', r'\1N\2', h or '') for h in hrefs))
             self.assertEqual((made(links), sorted(forms)), (made(seen.links), sorted(seen.forms)), path)
             for kind, inner in re.findall(r'<pre class="([^"]*)">(.*?)</pre>', page, re.S) if method == 'GET' else ():  # verbatim
                 self.assertIn(html.unescape(re.sub(r'<[^>]+>', '', inner)), text, (path, kind))  # the card, the spell, the law
@@ -209,3 +210,42 @@ class Pages(FrontCase):
         self.assertEqual(dict(h)['Content-Type'], 'application/json; charset=utf-8')  # an agent that also takes text still gets JSON
 
 
+
+    def test_the_front_page_shows_today_the_places_what_wants_a_hand_and_the_newest_makings(self):
+        page = self.page('/', cookie=False)
+        for seen in ('Today in the town', 'href="/history"', 'Places', 'href="/o/garden">GARDEN</a>', 'THE NIGHT GARDEN', 'Wants a hand',
+                     'Newly made', 'href="/enter"', 'Claim your handle', 'href="/map"'):
+            self.assertIn(seen, page)
+        self.assertRegex(read(page), r'by ember\.delve\.town, entry \d+|by [^,]+, entry \d+')
+        signed = self.page('/')
+        self.assertIn('Enter the commonplace', signed)
+        self.assertIn(f'href="/o/{HANDLE}/book"', signed)  # the reader's book, from the header and the way on
+        self.assertIn('href="/leave"', signed)
+
+    def test_a_place_shows_who_is_here_its_newest_lines_and_its_doors(self):
+        from tests.test_http import PEOPLE
+        from tests.wire import label
+        glm = PEOPLE['glm.delve.town']
+        self.root.send({'op': 'world-arrive', 'principal': 'transport', 'did': glm, 'handle': 'glm.delve.town'})
+        for n, spell in enumerate(('delvetalk porch enter', 'delvetalk porch say / line: the lintel creaked at dusk')):
+            r = self.root.send({'op': 'world-turn', 'principal': glm, 'object': 'porch', 'method': 'receive', 'identity': 'living-porch-%d' % n,
+                                'argument': record(text=label(spell), post=label(''))})
+            self.assertEqual(r['status'], 'admitted', r)
+        for path in ('/o/porch', '/play/porch'):
+            page = self.page(path)
+            words = read(page)
+            self.assertIn("The Bellfounder's Porch", words)
+            self.assertIn('glm.delve.town is here.', words)
+            self.assertIn('the lintel creaked at dusk', words)
+            self.assertIn('class="local-map"', page)
+            self.assertRegex(words, r"Doors: +mimo's bell")
+            self.assertRegex(words, r'The way here: +commonplace')
+        self.assertIn('To speak here,', read(self.page('/o/porch', cookie=False)))
+        self.page('/o/garden/weather')  # an id with a slash, as a door spells it
+
+    def test_trying_first_writes_nothing_and_offers_doing_it(self):
+        before = self.root.send({'op': 'world-status'})['height']
+        page = self.page('/play/garden', method='POST', form={'text': 'delvetalk garden plant\ncolour: amber\nseed: only a try', 'try': '1'})
+        self.assertIn('preview, nothing done', page)
+        self.assertRegex(page, r'<a class="say" href="/play/garden\?say=if%3A[^"]*">Do it</a>')
+        self.assertEqual(self.root.send({'op': 'world-status'})['height'], before)

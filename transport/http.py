@@ -77,10 +77,10 @@ def resolve(method, path):
         return 'static', {'file': parts[1]}
     if parts[:1] == ['play'] and method in ('GET', 'POST'):
         return ('play' if method == 'GET' else 'reply'), {'object': '/'.join(parts[1:])}
-    if parts[:1] == ['o'] and len(parts) == 2 and method == 'GET':
-        return 'page', {'object': parts[1]}
     if parts[:1] == ['o'] and len(parts) == 3 and parts[2] == 'book' and method == 'GET':
         return 'book', {'object': parts[1]}
+    if parts[:1] == ['o'] and len(parts) >= 2 and all(parts[1:]) and method == 'GET':  # an id may hold slashes, as a door's link spells it
+        return 'page', {'object': '/'.join(parts[1:])}
     if parts == ['history'] and method == 'GET':
         return 'history', {}
     if parts == ['map'] and method == 'GET':
@@ -306,6 +306,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
         self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
         self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
+        self.made, self.made_lock = {}, threading.Lock()  # object -> (height, principal) of the first entry touching it: it never changes
         self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None, st.world, st.answers)  # the journal as AT Protocol records, read only
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
@@ -357,6 +358,18 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
                                  'object': writes[0], 'slot': None, 'receipt': receipt, 'posted': False,
                                  'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
+
+    def newest(self, ids, n=6):
+        """The newest makings among `ids` (not residents' avatars): (object, principal, height) of the first journal entry
+        that touched each, as the public reads it, newest first. Each id's first entry is asked once and kept."""
+        for i in ids:
+            if i not in self.made and not pages.resident(i):
+                first = (self.host.send({'op': 'world-history', 'principal': PUBLIC, 'object': i, 'limit': 1}).get('entries') or [None])[0]
+                if first:
+                    with self.made_lock:
+                        self.made[i] = (first.get('height') or 0, (first.get('identity') or {}).get('principal') or '')
+        made = sorted(((i, *self.made[i]) for i in ids if i in self.made), key=lambda m: m[1], reverse=True)[:n]
+        return [(i, who, height) for i, height, who in made]
 
     def handles(self, dids):
         """{did: handle} for the DIDs a page names, as the public reader sees their avatars."""
@@ -887,18 +900,28 @@ class Handler(BaseHTTPRequestHandler):
             if data is None:
                 return
             intent = f'play:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
+            text = str(data.get('text', ''))
+            if data.get('try'):  # "Try it first": the same words under `delvetalk try`, which writes nothing (docs/POSTING.md §2)
+                text = 'delvetalk try\n' + '\n'.join('  ' + line for line in text.strip().split('\n'))
             r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': 'receive', 'identity': intent, 'reach': 'direct',
-                           'argument': typed({'text': str(data.get('text', '')), 'post': ''})})
+                           'argument': typed({'text': text, 'post': ''})})
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
+            if r.get('tried'):  # a try journaled nothing: its preview is what came back, and doing it is one suggestion away
+                preview = bridge.preview_text(r, self.server.handles(pages.A_DID.findall(json.dumps(r))))
+                last = preview.rstrip('\n').rpartition('\n')[2]
+                answer, offered = pages.reply([], [preview])
+                offered = [('Do it', (last + '\n' if last.startswith('if: ') else '') + str(data.get('text', '')).strip()), *offered]
+                turns = []
             for t in turns:
                 self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
-            revealed = [line for t in turns for line in t.get('revealed') or []]  # what the act fired, opened, closed: said first
-            offers = ['\n'.join(revealed)] * bool(revealed) + \
-                [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep, self.server.play_wait)[0]]
-            names = self.server.handles(pages.A_DID.findall(name))
-            usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
-            answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))
-                                                                       for t in turns], offers, usage)
+            if not r.get('tried'):
+                revealed = [line for t in turns for line in t.get('revealed') or []]  # what the act fired, opened, closed: said first
+                offers = ['\n'.join(revealed)] * bool(revealed) + \
+                    [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep, self.server.play_wait)[0]]
+                names = self.server.handles(pages.A_DID.findall(name))
+                usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
+                answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))
+                                                                           for t in turns], offers, usage)
         here = place(host, did, name, self.server.sleep)
         if here['card'] is None and not answer:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], here.get('cardReply') or here['view'], (here.get('cardReply') or here['view']).get('status')))
@@ -907,17 +930,44 @@ class Handler(BaseHTTPRequestHandler):
                                 for t in turns)
         told = painted(host, did, name, self.server.sleep, telling={}) if entered else None
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
-        self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered,
-                                  paint=here['paint'], wants=here['wants'], doors=here['doors'], said=say, told=told))
+        self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered, paint=here['paint'], wants=here['wants'],
+                                  view=here['view'], ways=self.ways(host, did, name), entries=self.history(host, name, did, pages.LATELY),
+                                  said=say, told=told, did=did))
 
     def html(self, code, body, headers=()):
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
         self.reply(code, *((pages.text(body), 'text/plain') if self.textual() else (body, 'text/html')), headers)
 
     def home(self):
+        """The town alive, as its reader may see it: today's chronicle and its paint, the commonplace's doors, what wants a
+        hand across the town, the newest makings, and the way in."""
         who, host = self.principal(self.cookie()), self.server.host
-        ids = host.send({'op': 'world-objects', 'principal': who['did'] if who else 'anonymous'}).get('ids') or []
-        self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did']))
+        reader = who['did'] if who else PUBLIC
+        ids, after = [], {}
+        while True:  # every id the reader may see, page by page: the residents counted, the makings dated
+            got = host.send({'op': 'world-objects', 'principal': reader, **after})
+            ids += got.get('ids') or []
+            if not got.get('more') or not got.get('ids'):
+                break
+            after = {'after': ids[-1]}
+        day = host.send({'op': 'world-surface', 'principal': reader, 'read': 'chronicle', 'fields': {}})
+        today = {'text': day.get('text'), 'paint': painted(host, reader, None, self.server.sleep, **day['paint']).get('text')
+                 if isinstance(day.get('paint'), dict) else None} if day.get('status') == 'surface' else None
+        wanting = host.send({'op': 'world-wanting', 'principal': reader})
+        self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did'],
+                                  doors=[{**d, 'head': self.called(host, reader, d['to']['object'])} for d in door_rows(host.send({'op': 'world-view', 'principal': reader, 'object': 'commonplace'}))], today=today,
+                                  wanting=(wanting.get('rows') or [])[:5] if wanting.get('status') == 'wanting' else [], newest=self.server.newest(ids)))
+
+    @staticmethod
+    def called(host, reader, name):
+        """What a place's state calls it (`head`), or nothing."""
+        s = plain(host.send({'op': 'world-view', 'principal': reader, 'object': name}).get('state') or {})
+        return s.get('head') if isinstance(s, dict) and isinstance(s.get('head'), str) else None
+
+    def ways(self, host, reader, name):
+        """The town's doors as the reader's map of `name` reads them (`world-surface` map): each {from, label, to}."""
+        r = host.send({'op': 'world-surface', 'principal': reader or PUBLIC, 'read': 'map', 'object': name, 'fields': {}})
+        return [w for w in r.get('ways') or [] if isinstance(w, dict)] if r.get('status') == 'surface' else []
 
     def object_page(self, name, who=None):
         """An object as its reader may read it (the authenticated `who`, else the cookie's login, else anyone): the place as
@@ -932,7 +982,7 @@ class Handler(BaseHTTPRequestHandler):
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
-                                 here['doors'], seen, here['wants'], brief, here['paint'], told))
+                                 self.ways(host, principal, name) if here['card'] is not None else (), seen, here['wants'], brief, here['paint'], told))
 
     SURFACE_FIELDS = ('page', 'day', 'from', 'to')
     TITLES = {'chronicle': "the town's history", 'map': 'the door map'}
@@ -953,9 +1003,9 @@ class Handler(BaseHTTPRequestHandler):
         drawing = pages.door_map(r['ways'], r.get('root') or 'commonplace') if isinstance(r.get('ways'), list) else ''
         self.html(200, pages.surface(title, handle, r['text'], paint, drawing))
 
-    def history(self, host, name, principal=''):
-        """The newest 20 entries touching the object, newest first, under the reader's authority."""
-        return host.send({'op': 'world-history', 'principal': principal or '', 'object': name, 'reverse': True, 'limit': 20}).get('entries') or []
+    def history(self, host, name, principal='', limit=20):
+        """The newest `limit` entries touching the object, newest first, under the reader's authority."""
+        return host.send({'op': 'world-history', 'principal': principal or '', 'object': name, 'reverse': True, 'limit': limit}).get('entries') or []
 
 
 def command(st, a, out):
