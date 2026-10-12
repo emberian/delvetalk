@@ -197,7 +197,7 @@ Six, each with a line as the code renders it now.
 1. **The thing speaks for itself, in the present; nobody on a card says I.** `An amber bell, planted by
    ember.delve.town: “mimo's bell, small and brass, with no clapper” — silent.`
 2. **Show what comes back, beside what you type.** A `»` line after a spell says the effect in the thing's terms:
-   `delvetalk tide rules` / `» what happens at each hourly tick`.
+   `delvetalk tide rules` / `» what happens at each hourly tick: the weather, the porch's lamp`.
 3. **A refusal is the stamp, the reason, and the next line to type; the clause is never translated.** A quiet bell:
    `refused alive: answers while tended within 1440 minutes; tend it: delvetalk bell/1 tend`.
 4. **Numbers are catalogue codes; names, never hashes.** `tick 7`, `v3`, `entry 41`, `#n`; a receipt has a spoken

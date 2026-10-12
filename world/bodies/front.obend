@@ -19,10 +19,13 @@ import ./Text.obend as Text
 # under its maker (`made`): on the tide, `request.method == "tick" and (<fills>)` casts `delvetalk
 # <front> fill`; on itself, a fill that brings its count of segments to a whole clock casts `move`.
 # So the move is the maker's turn, judged by the law of whatever it touches, and the clock empties as
-# it moves (its segments are the `fill` lines, counted modulo the clock). Only its maker's rule on the tide fills:
-# a hand's `fill` is refused by name. The card shows the clock: "2 of 4".
+# it moves. Its count of fills only rises: the record's variable `fills` (its lines are kept only so
+# many), with `full` set by a fill that fills the clock and cleared by the next, which is what the
+# move rule reads. Only its maker's rule on the tide fills: a hand's `fill` is refused by name. The
+# card shows the clock: "2 of 4".
 type State = Super.State
 form fill:
+form arm:
 form write:
   text: text 1..280
 form lines:
@@ -41,7 +44,7 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("fill write lines door undoor") else Text.words("fill write lines")
+  Lists.concat(if context.principal == state.owner then Text.words("fill write lines door undoor") else Text.words("fill write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
 def methods() -> Lists.List<String>:
   Text.words("~made ~act")
 def tide(state: State) -> String:
@@ -50,21 +53,38 @@ def segments(state: State) -> Nat:
   match Text.number(Super.field(state, "segments")):
     case yes(n): if n.value == 0n then 1n else n.value
     case no(_): 1n
-# The fills so far: its `fill` lines; a whole clock of them has moved and emptied it.
+# The fills so far, ever: its variable `fills` (a front carried from before it kept one counts its
+# `fill` lines); a whole clock of them has moved and emptied it.
 def fills(state: State) -> Nat:
-  Lists.length(Lists.filter(Relations.rows(state.lines), fn(l: Rows.Line) -> Bool: l.verb == "fill"))
+  match Lists.find(state.vars, fn(v: Scenes.Var) -> Bool: v.name == "fills"):
+    case some(v): Text.digits(v.value.value, 0n)
+    case none(_): Lists.length(Lists.filter(Relations.rows(state.lines), fn(l: Rows.Line) -> Bool: l.verb == "fill"))
+def full(state: State) -> Bool:
+  Lists.any(state.vars, fn(v: Scenes.Var) -> Bool: v.name == "full")
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
   if context.caller != state.kind then false else placing(state, context)
 def placing(state: State, context: Abi.Context) -> Activity<Bool>:
   let fills = Super.field(state, "fills")
   match world.rule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object), when: "request.method == \"tick\" and ({fills})", then: "delvetalk {context.object} fill"}):
     case placed(_): moving(state, context)
-    case refused(_): false
+    case refused(r): Super.unarmed(state, tide(state), r.clause, r.reading, context)
 def moving(state: State, context: Abi.Context) -> Activity<Bool>:
   let n = natText(segments(state))
-  match world.rule({object: Plans.self(context), name: "move", when: "count(new.lines where verb == \"fill\") % {n} == 0 and count(new.lines where verb == \"fill\") >= count(old.lines where verb == \"fill\") + 1", then: Super.field(state, "move")}):
-    case placed(_): true
-    case refused(_): false
+  match world.rule({object: Plans.self(context), name: "move", when: moveWhen(segments(state)), then: Super.field(state, "move")}):
+    case placed(_): Super.armedNow(state, context)
+    case refused(r): Super.unarmed(state, context.object, r.clause, r.reading, context)
+# Its maker places its rules again (taken off first, where they stood).
+def arm(state: State, context: Abi.Context) -> Activity<Bool>:
+  if context.principal != state.maker then Super.armRefused(state, context) else rearming(state, context)
+def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: {world: context.world, object: tide(state)}, name: Text.identifier(context.object)}):
+    case _: unmoving(state, context)
+def unmoving(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: Plans.self(context), name: "move"}):
+    case _: placing(state, context)
+# A fill that fills the clock: each fill of a one-segment clock, else the fill that sets `full`.
+def moveWhen(n: Nat) -> String:
+  if n == 1n then "request.method == \"fill\"" else "request.method == \"fill\" and \"full\" in new.vars.name and not (\"full\" in old.vars.name)"
 # Its maker's rule on the tide fills a segment; anyone else, or another's rule there, is told what does.
 def fill(state: State, context: Abi.Context) -> Activity<Nat>:
   let fills = Super.field(state, "fills")
@@ -72,7 +92,21 @@ def fill(state: State, context: Abi.Context) -> Activity<Nat>:
 def filled(state: State, context: Abi.Context) -> Activity<Nat>:
   let at = fills(state) % segments(state) + 1n
   let written(_) = write {lines: insert {author: context.sender, handle: "", verb: "fill", text: "segment {natText(at)} of {natText(segments(state))}, at clock {natText(context.clock)}", at: context.height, n: state.next}, next: add 1n}
+  counting(state, at)
+# The count rises by one; `full` is set by the fill that fills a clock of more than one segment and
+# cleared by the next (one edit of `vars` a write).
+def counting(state: State, at: Nat) -> Activity<Nat>:
+  let written(_) = world.write(extend(keep(), {vars: counter(state)}))
+  marking(state, at)
+def marking(state: State, at: Nat) -> Activity<Nat>:
+  let written(_) = world.write(extend(keep(), {vars: fullness(state, at == segments(state) && segments(state) > 1n)}))
   at
+def counter(state: State) -> Plans.Entries<Scenes.Var, Scenes.Var>:
+  match Lists.find(state.vars, fn(v: Scenes.Var) -> Bool: v.name == "fills"):
+    case some(v): Plans.Entries.amendItem({item: v.value, change: {name: "fills", value: natText(fills(state) + 1n)}})
+    case none(_): Plans.Entries.append({item: {name: "fills", value: natText(fills(state) + 1n)}})
+def fullness(state: State, filling: Bool) -> Plans.Entries<Scenes.Var, Scenes.Var>:
+  if filling == full(state) then Plans.Entries.keep({}) else if filling then Plans.Entries.append({item: {name: "full", value: ""}}) else Plans.Entries.removeItem({item: {name: "full", value: ""}})
 def clock(state: State) -> String:
   let moved = fills(state) / segments(state)
   let times = if moved == 0n then "it has not moved yet" else if moved == 1n then "it has moved once" else "it has moved {Text.countWord(moved)} times"
@@ -83,4 +117,4 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   let name = if state.head == "" then "A FRONT" else state.head
   let fills = Super.field(state, "fills")
   let move = Super.field(state, "move")
-  Document.text("{name}, a front set by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}. Its clock: {clock(state)}.\nA segment fills at a tick of {tide(state)} when: {fills}\nWhen full: {move}\n")
+  Document.text("{name}, a front set by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: a slow pressure with a clock that fills while its condition holds, and moves when full. Its clock: {clock(state)}.\nA segment fills at a tick of {tide(state)} when: {fills}\nWhen full: {move}\n{Super.inactiveLine(state, id)}")

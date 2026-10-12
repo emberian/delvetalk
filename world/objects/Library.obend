@@ -126,14 +126,22 @@ def plural(n: Nat, word: String) -> String:
 def entryLine(page: Page) -> String:
   let padded = textTake(textConcat(page.name, "           "), 11n)
   "  {padded}{page.title}\n"
-# The index: hob's line, the pages, the walks, the law spell.
+# The index: hob's line, the pages, the walks, the law spell. The head, the walks' header and the law
+# line are counted first; the pages take what Card.limit(context) leaves of them (and of the walks'
+# count, kept for it), the walks what the pages leave.
 def render(state: State, context: Abi.Context) -> Document.Document:
   let pages = Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false)
   let walks = Lists.filter(ordered(state), isWalk)
   let id = Card.called(context, "library")
   let counted = plural(Lists.length(pages), "page")
-  let pageLines = textJoin(Lists.map(pages, entryLine), "")
-  let walkLines = textJoin(Lists.map(walks, entryLine), "")
   let walked = plural(Lists.length(walks), "walk")
-  let walkHead = if Lists.length(walks) == 0n then "" else "Walks, spells in order; each ends with something changed:\n{walkLines}"
-  Document.text("hob: {counted}, {walked}; say which and I fetch it.\n\nPages: delvetalk {id} read / page: <name>\n{pageLines}{walkHead}A card's law as the host has it: delvetalk {id} laws / card: bell/1\n")
+  let head = Document.text("hob: {counted}, {walked}; say which and I fetch it.\n\nPages: delvetalk {id} read / page: <name>\n")
+  let walkHead = Document.text(if Lists.length(walks) == 0n then "" else "Walks, spells in order; each ends with something changed:\n")
+  let law = Document.text("A card's law as the host has it: delvetalk {id} laws / card: bell/1\n")
+  let fixed = Document.size(head) + Document.size(walkHead) + Document.size(law)
+  let reserve = if Lists.length(walks) == 0n then 0n else textLength(Card.more(Lists.length(walks)))
+  let shownPages = Card.clippedWithin(Lists.map(pages, entryDoc), 32n, Card.left(context, fixed + reserve))
+  let shownWalks = Card.clippedWithin(Lists.map(walks, entryDoc), 32n, Card.left(context, fixed + Document.size(Document.Document.sequence({items: shownPages}))))
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Document.Documents.cons({head: Document.Document.sequence({items: shownPages}), tail: Document.Documents.cons({head: walkHead, tail: Document.Documents.cons({head: Document.Document.sequence({items: shownWalks}), tail: Document.Documents.cons({head: law, tail: Document.Documents.nil()})})})})})})
+def entryDoc(page: Page) -> Document.Document:
+  Document.text(entryLine(page))

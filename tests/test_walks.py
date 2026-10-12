@@ -190,7 +190,9 @@ class Walks(unittest.TestCase):
         reply, _ = self.cast(W, rules)  # a read: the host answers it with the rules, no turn
         self.assertEqual(reply["status"], "usage", reply)
         text = reply["text"]
-        self.assertIn("tide carries no rules.", text)
+        # Genesis's motion: the weather's rule and the porch's lamp's (tests/test_motion).
+        self.assertIn("» weather (ember.delve.town)", text)
+        self.assertIn("» porch_slamp (ember.delve.town)", text)
         self.say(W, turned)
         self.assertIn("turned", [r["name"] for r in self.rules("tide")])
         self.assertFalse(self.rules("tide", "turned").get("fired"))

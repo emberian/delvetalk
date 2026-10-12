@@ -80,6 +80,23 @@ class Bonds(unittest.TestCase):
         late = self.say(KIM, bond, f'delvetalk {bond} withdraw', 'b1w')
         self.assertTrue(self.told(late).startswith('refused atRest: The bond is at rest\n'), late)
 
+    def test_a_bond_naming_sixteen_parties_is_void_and_never_rests_or_amends(self):
+        """The record keeps fifteen signatures and `withdrawn`; the body cannot refuse at creation, so the sixteen are named and the bond is void."""
+        mine = self.say(GLM, 'kind/record', 'delvetalk kind/record make', 'rec16')
+        record_id = re.search(r'\b(record/\d+)', self.told(mine)).group(1)
+        parties = ', '.join([HANDLES[GLM], HANDLES[KIM]] + ['p%02d.delve.town' % i for i in range(14)])
+        law = 'law steward "glm stewards it": request.subject == "%s"' % GLM
+        bond = self.bond('b16', parties, 'sixteen', record_id, law)
+        void = 'Void: it names 16 parties, and a bond binds fifteen at most.\n'
+        self.assertIn(void, self.card(bond, KIM))
+        self.assertNotIn('Countersign:', self.card(bond, KIM))
+        signed = self.say(KIM, bond, f'delvetalk {bond} countersign', 'b16k')
+        self.assertEqual(self.told(signed), 'refused tooMany: This bond names 16 parties; a bond binds fifteen at most: make another\n')
+        withdrawn = self.say(GLM, bond, f'delvetalk {bond} withdraw', 'b16w')
+        self.assertTrue(self.told(withdrawn).startswith('refused tooMany:'), withdrawn)
+        self.assertNotIn('is amended', self.card(bond, GLM))
+        self.assertNotIn('request.subject == "%s"' % GLM, self.town.send(op='world-inspect', principal=GLM, object=record_id, source=False)['law'])
+
     def test_a_party_withdraws_before_rest_and_nobody_signs_after(self):
         bond = self.bond('b2', 'glm.delve.town kimik3.delve.town', 'we hang the sixth bell together')
         self.say(GLM, bond, f'delvetalk {bond} countersign', 'b2g')

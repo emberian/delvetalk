@@ -10,3 +10,4 @@ hob: five replies, two another's; at the end your kind has two things, each unde
   delvetalk lamp/1 write / text: lit
   » #1 on lamp/1
 Changed: kind/lamp, with lamp/1 yours and lamp/2 theirs; each writes only its maker's.
+Every kind, and a spell that makes one: delvetalk library read / page: kinds

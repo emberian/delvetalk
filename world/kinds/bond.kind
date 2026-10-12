@@ -1,6 +1,7 @@
 # a bond's countersignatures are marks whose who is the signer (world/bodies/bond.obend)
 of: record
 voice: terms in plain words and the hands that signed them; a story with better manners
+about: signed by several hands; the last signing makes its change
 form: <<END
 parties: text 1..400
 terms: text 1..400
