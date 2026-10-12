@@ -19,12 +19,11 @@ PUBLIC = 'anonymous'  # the reader an unauthenticated request is, and a public c
 
 
 class HostClient:
-    """send(request) -> the host's reply. `world` addresses a world served here (`town`, or `scratch/<name>` for the request's principal's scratch world);
-    stateless=True the journal-less session.
+    """send(request) -> the host's reply. `world` addresses a world served here (`town`, or `scratch/<name>` for the request's principal's scratch world).
     One persistent connection per thread, re-made on EOF or when the socket file is a new one (serve restarted)."""
 
-    def __init__(self, path, world='town', stateless=False, timeout=HOST_TIMEOUT):
-        self.path, self.world, self.stateless, self.timeout = str(path), world, stateless, timeout
+    def __init__(self, path, world='town', timeout=HOST_TIMEOUT):
+        self.path, self.world, self.timeout = str(path), world, timeout
         self.local = threading.local()
 
     def _connection(self):
@@ -56,8 +55,7 @@ class HostClient:
         return self.local.conn[0], self.local.conn[1], True
 
     def send(self, request):
-        envelope = {**({'world': self.world} if self.world else {}), **request,
-                    **({'stateless': True} if self.stateless else {})}  # a request naming its own world keeps it
+        envelope = {**({'world': self.world} if self.world else {}), **request}  # a request naming its own world keeps it
         data, began = (json.dumps(envelope) + '\n').encode(), time.monotonic()
         for _ in (0, 1):
             fresh = True

@@ -48,10 +48,10 @@ class Tables(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
         server = served(cls.tmp.name + '/state', cleanup=cls.addClassCleanup)
-        stateless, world = HostClient(server.sock, world=None, stateless=True), HostClient(server.sock)
-        cls.addClassCleanup(stateless.close)
+        pure, world = HostClient(server.sock, world=None), HostClient(server.sock)
+        cls.addClassCleanup(pure.close)
         cls.addClassCleanup(world.close)
-        cls.rules = Rules(stateless)
+        cls.rules = Rules(pure)
         cls.dealer = Dealer(world, cls.rules, cls.tmp.name + '/custody', dealer='ember.delve.town')
 
     def test_orders_read_as_written(self):

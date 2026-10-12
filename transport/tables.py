@@ -2,7 +2,7 @@
 
 It starts `delvetalk-obend serve` over DIR (its PID in `DIR/served.pid`, stopped by it when this exits) and serves a page on
 127.0.0.1. The game is the Table and Seat objects in that world: every seal, opening and resolution is a turn of theirs, and
-the digest, the move check and the board's glyphs are their own Bend functions run in the host's stateless session. This
+the digest, the move check and the board's glyphs are their own Bend functions compiled and run by the host (`compile`, `run`). This
 module keeps what is custody (the order text a player sent, the nonce, the receipts, in `DIR/tables/<name>.json`, mode 0700)
 and draws what the host answered. It posts nothing anywhere; the dealer copies the posts by hand.
 """
@@ -65,7 +65,7 @@ def closure(name):
 
 
 def pure(modules):
-    """The stateless session is the pure profile: it takes no package laws, which the world's objects keep."""
+    """`compile` is the pure profile: it takes no package laws, which the world's objects keep."""
     return [dict(m, source=''.join(l for l in m['source'].splitlines(True) if not l.startswith('law '))) for m in modules]
 
 
@@ -112,12 +112,12 @@ class Refused(Exception):
 
 
 class Rules:
-    """The game's own functions, compiled once in the host's stateless session and run there."""
+    """The game's own functions, compiled once by the host and run there (journaling nothing)."""
     ENTRIES = {'commitment': ('Seat', 'commitment'), 'valid': ('Automatafl', 'valid'), 'row': ('Table', 'row'),
                'outcome': ('Table', 'outcome')}
 
-    def __init__(self, stateless):
-        self.host, self.artifacts, self.rows = stateless, {}, {}
+    def __init__(self, host):
+        self.host, self.artifacts, self.rows = host, {}, {}
         for key, (module, entry) in self.ENTRIES.items():
             got = self.host.send({'op': 'compile', 'modules': pure(closure(module)), 'entry': entry})
             if got.get('status') != 'compiled':
@@ -779,7 +779,7 @@ def command(st, a, out):
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     try:
         served = Served(root, binary(a.obend), sync='fsync', cleanup=stops.append)
-        rules = Rules(HostClient(served.sock, world=None, stateless=True))
+        rules = Rules(HostClient(served.sock, world=None))
         Handler.dealer = Dealer(HostClient(served.sock, world='town'), rules, root / 'tables', a.dealer)
         Handler.port = a.port
         server = ThreadingHTTPServer(('127.0.0.1', a.port), Handler)

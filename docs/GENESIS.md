@@ -94,8 +94,8 @@ YOURS · me
 Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.
 ```
 
-A blank reply or `since` adds, after the doors, "What wants a hand, newest first" (`world.wanting`), within what the
-doors leave of the clip.
+A blank reply or `since` leads with "What wants a hand, newest first" (`world.wanting`), then what changed: the doors
+are clipped first against the head and the tail, the wants take what they leave, and what changed yields the rest.
 
 ## Wants
 
