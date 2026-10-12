@@ -2246,6 +2246,28 @@ def shownName (w : World) (principal : String) : String :=
   let h := handleOf w principal
   if h.isEmpty then principal else h
 
+/-- A spell as people are shown it: each principal the registry names, written out in full in the text a
+    rule filled, shown by its handle (`shownName`). A principal is a whole `did:` token (a post's `at://did:…`
+    URI cites it and stays); any other text is left as filled. -/
+def shownSpell (w : World) (text : String) : String := Id.run do
+  let cs := text.toList.toArray
+  let isId := fun (c : Char) => c.isAlphanum || c == '.' || c == '_' || c == ':' || c == '-' || c == '%'
+  let mut out := ""
+  let mut i := 0
+  while i < cs.size do
+    let mut j := i
+    while j < cs.size && isId cs[j]! do j := j + 1
+    if j == i then
+      out := out.push cs[i]!
+      i := i + 1
+      continue
+    let token := String.mk (cs.extract i j).toList
+    let principal := token.dropRightWhile (· == '.')
+    out := if token.startsWith "did:" && !out.endsWith "at://"
+      then out ++ shownName w principal ++ token.drop principal.length else out ++ token
+    i := j
+  return out
+
 /-- The principal the registry names by `handle` (case folded, as a DNS name is), if one. -/
 def principalNamed (w : World) (handle : String) : Option String :=
   let h := handle.toLower

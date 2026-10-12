@@ -227,3 +227,19 @@ class Wants(Bell):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Revealed(Bell):
+    def test_the_revealed_spell_names_a_principal_by_handle_while_the_delivery_carries_the_did(self):
+        """kind/bell's `rang` fills `{new.maker}`, GLM's principal. What the reply shows people names GLM by handle;
+        the `fired` row, its delivery and GLM's inbox keep what the rule filled."""
+        for i in range(6):
+            self.rain("drop %d" % i)
+        reply = self.say(KIM, self.bell, "delvetalk %s ring" % self.bell)
+        self.assertEqual(reply["status"], "admitted", reply)
+        self.assertEqual(reply["revealed"][0],
+                         "rule rang of ember.delve.town fired: delvetalk glm.delve.town note / text: %s rang" % self.bell, reply["revealed"])
+        fired = reply["receipt"]["fired"][0]
+        self.assertEqual(fired["to"], GLM)
+        self.assertEqual(fired["argument"]["fields"][0]["value"]["value"], "delvetalk %s note / text: %s rang" % (GLM, self.bell))
+        self.assertIn((OPENER, "%s rang" % self.bell), self.inbox(GLM))
