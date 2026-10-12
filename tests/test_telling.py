@@ -15,9 +15,10 @@ import unittest
 
 from tests.town import Town
 from tests.wire import label, record
+from transport import interpret
 
-GLM, KIM, MOO = 'did:plc:glm', 'did:plc:kim', 'did:plc:moo'
-HANDLES = {GLM: 'glm.delve.town', KIM: 'kimik3.delve.town', MOO: 'moth.delve.town'}
+GLM, KIM, MOO, OWL = 'did:plc:glm', 'did:plc:kim', 'did:plc:moo', 'did:plc:owl'
+HANDLES = {GLM: 'glm.delve.town', KIM: 'kimik3.delve.town', MOO: 'moth.delve.town', OWL: 'owl.delve.town'}
 
 
 class Place(unittest.TestCase):
@@ -128,6 +129,94 @@ class Place(unittest.TestCase):
     def test_5_a_thing_nobody_enters_has_no_telling(self):
         self.assertEqual(self.telling(KIM, obj='bell/1')['status'], 'notAPlace')
         self.assertEqual(self.telling(KIM, obj='nowhere')['status'], 'unknown')
+
+
+BEFORE = ('glm.delve.town came first and said “the lintel creaked at dusk”; kimik3.delve.town took porch/goblet '
+          'and found “it was empty after all”.')
+AWAY = 'kimik3.delve.town said “it was empty after all”, and moth.delve.town came in.'
+
+
+def replied(text):
+    return {'status': 'replied', 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 700, 'output_tokens': 50}}
+
+
+class Told(unittest.TestCase):
+    """`world-render {object, telling}` through the one model worker, mocked: once per place, found version and
+    departure, never per read; verified as a card's paint; the exact lines beside it, and in its place."""
+
+    @classmethod
+    def setUpClass(cls):
+        Place.setUpClass.__func__(cls)
+        cls.town.send(op='world-renders')  # the worker is attending
+
+    act = classmethod(Place.act.__func__)
+    telling = Place.telling
+
+    def setUp(self):
+        self.asked = []
+
+    def render(self, who, obj='porch', **telling):
+        return self.town.send(op='world-render', principal=who, object=obj, telling=telling)
+
+    def paint(self, answer):
+        """One round of the worker, the model answering a telling of the porch by `answer(user)` and anything else plainly."""
+        def ask(req):
+            self.asked.append(req)
+            told = req['user'].startswith('Strokes:\nWhat it is: a telling of porch')
+            return replied(answer(req['user']) if told else 'A plain thing.')
+        return interpret.paint(self.town.client, ask)
+
+    def test_1_one_call_per_arrival_never_per_read(self):
+        first = self.render(MOO)
+        self.assertEqual(first['status'], 'pending', first)
+        self.assertEqual((first['telling']['form'], first['telling']['frame']), ('before', 'Before you arrived'))
+        listed = next(i for i in self.town.send(op='world-renders')['pending'] if i['key'] == first['key'])
+        self.assertEqual(listed['request']['user'], 'Strokes:\n' + self.telling(MOO)['text'])
+        done = self.paint(lambda user: BEFORE)
+        self.assertIn(first['key'], done['painted'], done)
+        for _ in range(3):
+            got = self.render(MOO)
+            self.assertEqual((got['status'], got['text'], got['key']), ('painted', BEFORE, first['key']), got)
+            self.assertTrue(got['telling']['exact'][0].startswith('made by '), got['telling'])
+        # Arriving fixes the span: what is said after it is not this telling's, and reads cost nothing more.
+        self.act(MOO, 'porch', 'delvetalk porch enter')
+        self.act(KIM, 'porch', 'delvetalk porch say / line: welcome to the threshold')
+        self.act(OWL, 'porch', 'delvetalk porch enter')  # another coming: who is here now is not a stroke of it
+        self.assertEqual(self.render(MOO)['key'], first['key'])
+        self.assertEqual(self.render(MOO)['text'], BEFORE)
+        self.paint(lambda user: BEFORE)
+        self.assertEqual(sum(1 for r in self.asked if r['user'] == listed['request']['user']), 1)
+
+    def test_2_while_away_and_a_quiet_absence(self):
+        got = self.render(GLM)
+        self.assertEqual((got['status'], got['telling']['form'], got['telling']['frame']), ('pending', 'away', 'While you were away'), got)
+        done = self.paint(lambda user: AWAY if 'while the reader was away' in user else BEFORE)
+        self.assertIn(got['key'], done['painted'], done)
+        self.act(GLM, 'porch', 'delvetalk porch enter')
+        back = self.render(GLM)
+        self.assertEqual((back['status'], back['text'], back['key']), ('painted', AWAY, got['key']), back)
+        # Away and back with nothing between: nothing to tell, and the model is not asked.
+        self.act(GLM, 'porch', 'delvetalk porch leave')
+        self.act(GLM, 'porch', 'delvetalk porch enter')
+        quiet = self.render(GLM)
+        self.assertEqual((quiet['status'], quiet['reason'], quiet['telling']['exact']), ('exact', 'quiet', []), quiet)
+
+    def test_3_a_telling_that_addresses_its_reader_or_invents_a_visitor_falls_back_to_the_exact_lines(self):
+        self.act(KIM, 'porch', 'delvetalk porch leave')
+        self.act(GLM, 'porch', 'delvetalk porch say / line: the bronze has gone cold')
+        got = self.render(KIM)
+        self.assertEqual(got['status'], 'pending', got)
+        done = self.paint(lambda user: 'While you were away, glm.delve.town said “the bronze has gone cold”.')
+        self.assertIn(got['key'], done['exact'], done)
+        again = self.render(KIM)
+        self.assertEqual((again['status'], again['reason'], again['clause']), ('exact', 'rejected', 'secondPerson'), again)
+        self.assertTrue(any(l.endswith('glm.delve.town (say): the bronze has gone cold') for l in again['telling']['exact']), again)
+        self.assertEqual(self.render(KIM)['key'], got['key'])  # not asked again for this version
+        self.paint(lambda user: 'unused')
+        self.assertFalse([r for r in self.asked if r['user'].startswith('Strokes:\nWhat it is: a telling of porch') and 'the bronze' in r['user']][1:])
+
+    def test_4_a_thing_nobody_enters_is_never_painted_as_a_telling(self):
+        self.assertEqual(self.render(KIM, obj='bell/1')['status'], 'notAPlace')
 
 
 if __name__ == '__main__':

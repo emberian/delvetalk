@@ -219,7 +219,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
     line (!who.isEmpty) ("Who: " ++ ", ".intercalate who) ++
     line (!s.around.isEmpty) s!"It lies in: {s.around}" ++
     line (!s.doors.isEmpty) ("Its doors: " ++ ", ".intercalate (s.doors.map fun d => if d.label == d.target then d.target else s!"{d.label} (to {d.target})")) ++
-    line (!s.present.isEmpty) ((if s.telling.isSome then "Still here: " else "Here now: ") ++ ", ".intercalate s.present) ++
+    line (!s.present.isEmpty) ("Here now: " ++ ", ".intercalate s.present) ++
     line (!s.tendedAgo.isEmpty) s!"Last tended: {s.tendedAgo}" ++
     part (if s.telling.isSome then "What happened there, oldest first:" else "What happened that day, in order:") s.today ++
     line (!s.hands.isEmpty) ((if s.telling.isSome then "Who came here: " else "Hands that acted: ") ++ ", ".intercalate s.hands) ++
@@ -632,7 +632,8 @@ def departedAt (fs : List (String × Data)) (who : String) : Nat :=
     (or, not in it, up to its newest change), the acts, lines and marks each by whose hand, counted with their units;
     for one arriving first (`since` 0) its whole past compressed: the making and its credit, the first lines and the
     newest, who came, what was hung, left and taken, what it still wants. The version is the one the reader found.
-    Never the reader's own comings and goings, no spell, no rule or law: a telling is of what happened. -/
+    Never the reader's own comings and goings, no spell, no rule or law, and nothing that moves after the arrival
+    with every act (who is here now, when it was tended): a telling is of what happened. -/
 def tellingOf (w : World) (asker id : String) (o : Object) (j : Json) : Except String Strokes := do
   let fs := fieldsOf o.state
   let reader := (j.getObjValAs? String "reader").toOption.getD asker
@@ -667,12 +668,12 @@ def tellingOf (w : World) (asker id : String) (o : Object) (j : Json) : Except S
   let earlier := rows'.length - min rows'.length tellingExact
   let exact := made ++ (if earlier == 0 then [] else [s!"… and {earlier} earlier"]) ++
     (rows'.drop earlier).map (fun (h, t) => s!"entry {h}: {t}") ++ base.wants.map (fun x => s!"wants {x.name}: {x.reading}")
-  let present := ((rows fs "presence").filter (text? · "who" != some reader)).map fun r => handleIn w r "handle" "who"
   let wants := base.wants.map fun x => { x with spell := "" }
   let telling : Telling := { form := if away then "away" else "before", since := since, upto := upto, exact := exact }
   return { base with
            version := version, lines := shownLines, marks := marks.toList, quantities := quantities,
-           today := sentences, hands := visitors, present := present, verbs := [], rules := [], laws := [], wants := wants,
+           today := sentences, hands := visitors, present := [], tended := 0, tendedAgo := "", verbs := [], rules := [], laws := [],
+           wants := wants,
            telling := some telling, limit := if away then maxAway else maxBefore }
 
 /-- The strokes of a telling of `id` (`world-render {object, telling}`): `unknown` / `denied` as a thing's,
@@ -1244,25 +1245,16 @@ def toDisk (key : String) (r : Render) : IO Unit :=
       ("object", toJson r.object), ("version", toJson r.version), ("clause", toJson c), ("detail", toJson d)])
   | .pending _ _ => pure ()
 
-/-- `world-render {principal, object | day, version?, morning?}`: `painted {text, key, version}`; `pending
-    {key, patience}` while the worker paints (the first read of a version queues it); `exact {reason}` when there
-    is no paint to show (`rejected` with its clause, `override` for a root card, `unavailable` without a model or
-    contract, `busy`, `quiet` for a day with nothing in it, `unattended` while no worker has asked for renders
-    within `workerGraceMs`, the render queued for when one does); `plain` when the owner opted out; `unknown` /
-    `denied` as `world-card`. With no `object` the town's day is painted (`dayStrokes`): the chronicle's day,
-    and with `morning` what wants a hand, the morning card; its `object` is "" and its `version` the day.
-    Nothing is journaled. -/
-def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String (Cache × World × Json)) := do
-  let .ok reader := readerOf j | return .error "principal must be at most 128 bytes"
-  let .ok found := strokesFor w reader j | return .error "version and day must be natural numbers"
-  match found with
-  | .error why => return .ok (c, w, answer why (resolveCard reader ((j.getObjValAs? String "object").toOption.getD "")) [])
-  | .ok s =>
+/-- `renderOp` past the request: the strokes `s` painted, queued or shown exact. -/
+def paintOf (c : Cache) (w : World) (s : Strokes) (now : Nat) : IO (Except String (Cache × World × Json)) := do
     let id := s.object
     let at_ := [("version", toJson s.version)]
     if s.day.isNone && plainOf w id then return .ok (c, w, answer "plain" id at_)
     if s.day.isNone && w.cards.contains id then return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "override")]))
     if s.day.isSome && s.today.isEmpty && s.lines.isEmpty && s.wants.isEmpty then
+      return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "quiet")]))
+    -- Nothing happened while the reader was away: nothing to tell, and no model asked.
+    if (s.telling.map (·.form == "away")).getD false && s.today.isEmpty && s.lines.isEmpty && s.marks.isEmpty then
       return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "quiet")]))
     let some model := modelOf w | return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "unavailable"),
       ("detail", toJson "the world has no policy, so no model")]))
@@ -1280,6 +1272,29 @@ def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String 
       if c.count (fun | .pending _ _ => true | _ => false) ≥ maxPending then
         return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "busy")]))
       return .ok (c.insert key fresh, w, fateAnswer id key fresh attended)
+
+/-- `world-render {principal, object | day, version?, morning?, telling?}`: `painted {text, key, version}`; `pending
+    {key, patience}` while the worker paints (the first read of a version queues it); `exact {reason}` when there
+    is no paint to show (`rejected` with its clause, `override` for a root card, `unavailable` without a model or
+    contract, `busy`, `quiet` for a day with nothing in it, `unattended` while no worker has asked for renders
+    within `workerGraceMs`, the render queued for when one does); `plain` when the owner opted out; `unknown` /
+    `denied` as `world-card`. With no `object` the town's day is painted (`dayStrokes`): the chronicle's day,
+    and with `morning` what wants a hand, the morning card; its `object` is "" and its `version` the day. With
+    `telling {reader?, since?}` a place's telling (`tellingOf`), keyed as every paint by its strokes, so by the
+    place, the version the reader found and their departure: `quiet` when nothing happened while they were away,
+    `notAPlace` for a thing nobody enters, and every answer carries `telling {form, frame, since, exact}`.
+    Nothing is journaled. -/
+def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String (Cache × World × Json)) := do
+  let .ok reader := readerOf j | return .error "principal must be at most 128 bytes"
+  let .ok found := strokesFor w reader j | return .error "version and day must be natural numbers"
+  match found with
+  | .error why => return .ok (c, w, answer why (resolveCard reader ((j.getObjValAs? String "object").toOption.getD "")) [])
+  | .ok s =>
+    -- A telling's answer carries its frame and the exact lines it draws on, painted or not.
+    let told := fun (r : Except String (Cache × World × Json)) => match s.telling with
+      | some t => r.map fun (c, w, a) => (c, w, a.setObjVal! "telling" t.answer)
+      | none => r
+    return told (← paintOf c w s now)
 
 /-- `world-renders`: the renders the worker may ask the model for now, each with the exact request to send. -/
 def rendersOp (c : Cache) (now : Nat) : Json :=
