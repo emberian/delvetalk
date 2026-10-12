@@ -73,6 +73,7 @@ What each form means (the host's `denote` is the definition):
   over old and new, no `changed`, no `under`, in its condition and its holes alike (refused by
   name at parse). -/
 import Theory.AssertCompiled
+import Std.Data.HashMap
 namespace Delvetalk.Compiler.ObjectiveBendLaw
 set_option autoImplicit false
 
@@ -917,7 +918,9 @@ def parseClause (line : String) : Except String Clause := (·.1) <$> parseClause
 
 /-- Clause names are unique across a text: a receipt, a firing and a want name one. -/
 def checkNames (names : List String) : Except String Unit :=
-  match names.find? fun n => names.count n > 1 with
+  -- The first name (in order) that occurs twice, from one count of each.
+  let counts := names.foldl (fun (m : Std.HashMap String Nat) n => m.insert n (m.getD n 0 + 1)) {}
+  match names.find? fun n => counts.getD n 0 > 1 with
   | some n => refuse ("`" ++ n ++ "` twice") "a clause's name is unique across its text"
   | none => .ok ()
 
