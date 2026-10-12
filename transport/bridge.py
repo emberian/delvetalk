@@ -314,7 +314,8 @@ def would_line(t, handles=None):
     if outcome.get('tag') == 'suspended' or t.get('status') == 'suspended':
         return 'would wait for hob to read it; try the spell hob gives'
     root = turn_root(t['receipt'], t.get('object'))
-    return f"would be admitted {card_name(root['object'], handles)}" + (f" v{root['version']}" if root.get('version') is not None else '')
+    name = root.get('object') or t.get('object')  # a delivery answered by a receipt already bound reads and writes nothing here
+    return 'would be admitted' + (f' {card_name(name, handles)}' if name else '') + (f" v{root['version']}" if root.get('version') is not None else '')
 
 
 def preview_text(reply, handles=None):
@@ -334,7 +335,14 @@ def preview_text(reply, handles=None):
         out.append(would_line(t, handles))
         if t.get('inPublic') is not False and (t['receipt'].get('outcome') or {}).get('tag') not in ('refused', 'suspended'):
             out += [line for line in t.get('revealed') or []] + [o['text'].rstrip('\n') for o in t.get('offers') or []]
-    out += ['then ' + would_line(t, handles) for t in (reply.get('delivered') or []) + (reply.get('resumed') or []) if 'receipt' in t]
+    # What the host would settle in the same write, each receipt once: a delivery answered again with a receipt already
+    # bound (its identity's) did one thing, however often the settling pass met it.
+    settled = set()
+    for t in (reply.get('delivered') or []) + (reply.get('resumed') or []):
+        key = (t.get('receipt') or {}).get('hash')
+        if 'receipt' in t and (key is None or key not in settled):
+            settled.add(key)
+            out.append('then ' + would_line(t, handles))
     later = reply.get('unresolved') or {}
     if later.get('pending') or later.get('suspended'):
         out.append(f"left for later, not foreseen: {later.get('pending', 0)} sends, {later.get('suspended', 0)} waiting on hob")
@@ -541,6 +549,8 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     """One step: observe (when given an observer), tick the clock, turn every addressed observation, settle what the
     host has to deliver, and draft what was offered and published."""
     st.outbox.mkdir(parents=True, exist_ok=True, mode=0o700)
+    from transport import feed
+    heard = feed.observe_feed(st) if feed.exists(st) else []  # the town's own feed: observed as any post, whatever the world's row
     if observer:
         observer.poll()
     tick(host, now)
@@ -681,7 +691,8 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     if problem:
         failed.append({'publications': problem})
     failed += [{'requests': p} for p in getattr(observer, 'problems', None) or []]
-    return {'turns': done, 'failed': failed, **({'recorded': recorded} if recorded else {}), **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
+    answered = feed.post_drafts(st, host) if feed.exists(st) else []  # the town's replies in its own feed: posted now, no hand
+    return {**({'feed': heard} if heard else {}), **({'answered': answered} if answered else {}), 'turns': done, 'failed': failed, **({'recorded': recorded} if recorded else {}), **({'mentioned': mentioned} if mentioned else {}), **({'published': published} if published else {}), **({'offered': offered} if offered else {})}
 
 
 def delve_observer(st, since):
@@ -704,8 +715,16 @@ def command(st, a, out):
         after = lambda: zulip.post_drafts(st, host, client)
     else:
         observer, after = delve_observer(st, since), dict
-    step = lambda: out.write(canonical({**run(st, host, observer, now=a.now), **after()}) + '\n') and out.flush()
+    from transport import feed
+    full = lambda: out.write(canonical({**run(st, host, observer, now=a.now), **after()}) + '\n') and out.flush()
+    last = [0.0]
+
+    def step():
+        """A whole step every `poll` seconds, and at once (within FEED_POLL) when someone has posted in the town's feed."""
+        if time.monotonic() - last[0] >= st.config.poll or feed.waiting(st):
+            last[0] = time.monotonic()
+            full()
     try:
-        step() if a.once else st.daemon('bridge', step)
+        full() if a.once else st.daemon('bridge', step, every=min(st.config.poll, feed.FEED_POLL))
     finally:
         host.close()

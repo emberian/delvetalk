@@ -212,8 +212,17 @@ class Parse(unittest.TestCase):
         self.assertEqual(summary(two, "rules")[0],
                          '\nrule a_1 "Ring \'twice\'": request.method == "choose" and new.chose == "a.1" then delvetalk bell/1 ring'
                          '\nrule a_1b "Ring \'twice\'": request.method == "choose" and new.chose == "a.1" then delvetalk {request.object} fanfare')
-        many = "---\nid: s\n---\n" + "".join("=== p%d\n" % p + "".join("* [C%d]\n  ~ cast delvetalk bell/1 ring\n" % i for i in range(8)) for p in range(2))
-        self.assertTrue(summary(many)[0].startswith("refused: a scene casts at most fifteen spells"), summary(many)[0])
+        many = "---\nid: s\n---\n" + "".join("=== p%d\n" % p + "".join("* [C%d]\n  ~ cast delvetalk bell/%d ring\n" % (i, p * 8 + i) for i in range(8)) for p in range(2))
+        self.assertTrue(summary(many)[0].startswith("refused: a scene casts at most fifteen spells"), summary(many)[0][:120])
+        # One spell cast by several choices is one rule naming each (fluonaut's touch and glm's step both ring bell/1).
+        same = "=== a\n* [Ring]\n  ~ cast delvetalk bell/1 ring\n  -> b\n=== b\n' [Touch]\n  ~ cast delvetalk bell/1 ring\n' [Ring again]\n  ~ cast delvetalk bell/1 ring\n"
+        self.assertEqual(summary(same, "rules")[0],
+                         '\nrule a_1 "Ring": request.method == "choose" and (new.chose == "a.1" or new.chose == "b.1" or new.chose == "b.2") then delvetalk bell/1 ring')
+
+    def test_a_quote_and_a_space_before_the_bracket_is_a_choice_as_a_star_is(self):
+        # fluonaut's `' [戻る] -> forecourt`; a line of prose that opens on a quote stays prose
+        text, _ = summary("=== a\n'Twas cold.\n' [触れる氷] { cups >= 1 }\n  ~ cups -= 1\n  -> a\n' [戻る] -> a\n")
+        self.assertEqual(text, " / 'Twas cold. / start a / cooldown 0 / requires \n=== a: 'Twas cold.\n  * 触れる氷 [cups >= 1] (cups sub 1) -> a\n  * 戻る [] () -> a")
 
 
     def test_a_passage_s_guard_rides_every_choice_into_it_and_prose_under_a_choice_is_refused(self):
@@ -229,10 +238,10 @@ class Parse(unittest.TestCase):
         self.assertEqual(summary("=== a\nA.\n* [Wash]\n  The tap runs warm.\n  -> a\n")[0],
                          "refused: prose under a choice: The tap runs warm.; a choice shows no text of its own here; put the words in the passage it leads to")
 
-    def test_thirty_two_passages_and_a_wing_s_targets_may_wait_for_another_wing(self):
+    def test_forty_passages_and_a_wing_s_targets_may_wait_for_another_wing(self):
         many = lambda n: "".join("=== p%d\nText.\n-> p%d\n" % (i, (i + 1) % n) for i in range(n))
-        self.assertTrue(summary(many(32))[0].startswith(" / Text. / start p0"), summary(many(32))[0][:80])
-        self.assertEqual(summary(many(33))[0], "refused: a scene holds thirty-two passages")
+        self.assertTrue(summary(many(40))[0].startswith(" / Text. / start p0"), summary(many(40))[0][:80])
+        self.assertEqual(summary(many(41))[0], "refused: a scene holds forty passages")
         text, _ = summary("=== a\nA.\n* [On] -> b\n", "wing")
         self.assertEqual(text, "=== a: A.\n  * On [] () -> b\nwaiting: b")
         self.assertEqual(summary("=== a\nA.\n* [On] -> b\n")[0], "refused: -> b: no passage of that name; add === b, or point it at one that is")

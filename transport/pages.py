@@ -8,7 +8,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
 
-from transport.host import plain
+from transport.host import door_rows, plain
 
 STATIC = Path(__file__).resolve().parent / 'static'
 
@@ -22,10 +22,14 @@ T = sections('pages.html')
 SUGGESTIONS = 6  # spells offered under the box, at most
 
 
-def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav='', foot=None):
-    """The one skeleton. The hand passes its own `head` (the stylesheet inlined), `nav` and `foot`."""
-    return T['shell'].format(title=e(title), site=e(site), home=e(home), head=T['head'] if head is None else head, nav=nav,
-                             who=e(who or ''), body=body, foot=T['foot'] if foot is None else foot)
+def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav=None, foot=None, wide=False):
+    """The one skeleton. The front's header links the town's day and its map from every page, and the reader's book and
+    signing out (or the way in); the hand passes its own `head` (the stylesheet inlined), `nav` and `foot`, and its
+    header names the world it shows. `wide`: a page laid out in columns on a wide screen (the front page)."""
+    front = nav is None
+    you = (T['who_in'].format(who=e(who), book=e(quote(who, safe=''))) if who else T['who_out']) if front else T['who'].format(who=e(who or ''))
+    return T['shell'].format(title=e(title), site=e(site), home=e(home), head=T['head'] if head is None else head, nav=T['nav'] if front else nav,
+                             who=you, wide=' class="wide"' if wide else '', body=body, foot=T['foot'] if foot is None else foot)
 
 
 STAMPS = {'admitted': '●', 'refused': '§', 'suspended': '…', 'quiet': '—'}  # a receipt's stamp: an icon beside its word, never colour alone
@@ -44,14 +48,29 @@ def resident(i):
     return i.startswith(('did:', 'guest:'))
 
 
-def home(status, who, ids=(), did=None):
-    """What the town is, one way in, and its places; residents are counted, not listed."""
-    places = [i for i in ids if not resident(i)]
-    items = ' '.join(T['place_item'].format(id=e(i), href=e(quote(i, safe=':')), yours=yours(i, did)) for i in places)
-    n = len(ids) - len(places)
-    shown = T['places'].format(items=items, residents=T['residents'].format(n=n) if n else '') if ids else ''
-    return page('a town of things that answer', who, T['home'].format(height=e(str(status.get('height'))), objects=e(str(status.get('objects'))),
-                                                  enter=T['enter'] if who else '', login='' if who else T['login'], places=shown))
+def guest_name(principal):
+    """An invited guest's principal (`guest:<host>:<name>`) as a person reads it: the name it registered."""
+    return principal.rsplit(':', 1)[-1] if principal.startswith('guest:') else principal
+
+
+def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), newest=()):
+    """What the town is and how to come in, then the town alive: today's chronicle painted (its text folded beneath), the
+    commonplace's doors as its places, what wants a hand, the newest makings; residents are counted, not listed.
+    `today` {text, paint}; `wanting` world-wanting's rows; `newest` [(object, principal, height)], newest first."""
+    n = sum(1 for i in ids if resident(i))
+    items = ''.join(T['place_item'].format(href=e(quote(d['to']['object'], safe=':')), label=e(d.get('label') or d['to']['object']),
+                                           yours=yours(d['to']['object'], did), about=e(d.get('description') or d.get('head') or d['to']['object'])) for d in doors)
+    places = T['places'].format(items=items, residents=T['residents'].format(n=n)) if doors or n else ''
+    go = (lambda o: '/play/' + quote(o, safe='/:')) if who else (lambda o: '/o/' + quote(o, safe=':'))
+    wants = T['wanting'].format(items=''.join(T['wanting_item'].format(href=e(go(w['object'])), object=e(w['object']), reading=e(w.get('reading') or w.get('name', '')))
+                                              for w in wanting)) if wanting else ''
+    made = T['newest'].format(items=''.join(T['newest_item'].format(href=e('/o/' + quote(o, safe=':')), object=e(o), who=e(guest_name(p)), height=e(str(h)))
+                                            for o, p, h in newest)) if newest else ''
+    told = T['today'].format(paint=painting((today or {}).get('paint')), open='' if (today or {}).get('paint') else ' open',
+                             text=e(today['text'])) if (today or {}).get('text') else ''
+    return page('a town of things that answer', who, T['home'].format(
+        height=e(str(status.get('height'))), objects=e(str(status.get('objects'))), enter=T['enter'].format(book=e(quote(who or '', safe=''))) if who else '',
+        login='' if who else T['login'], today=told, places=places, wanting=wants, newest=made), wide=True)
 
 
 def items(ids, words, did):
@@ -144,18 +163,92 @@ def telling(told):
                                lines=e('\n'.join(t.get('exact') or [])))
 
 
-def door_line(doors, href):
-    items = ' · '.join(T['door'].format(href=e(href(d['to']['object'])), label=e(d.get('label') or d['to']['object']), description=e(d.get('description', '')))
-                       for d in doors)
-    return T['doors'].format(items=items) if items else ''
-
-
-def place(card, paint=None, wants=(), doors=(), href=None):
+def place(card, paint=None, wants=()):
     """A card as the place speaking: the paint first; the exact card folded beneath it, open when nothing is painted."""
-    href = href or (lambda o: '/play/' + quote(o, safe='/:'))
     return T['place'].format(paint=painting(paint), open='' if paint else ' open', card=e(card),
-                             wants=''.join(T['wants'].format(reading=e(w.get('reading') or w.get('name', ''))) for w in wants),
-                             doors=door_line(doors, href))
+                             wants=''.join(T['wants'].format(reading=e(w.get('reading') or w.get('name', ''))) for w in wants))
+
+
+def state_of(view):
+    """A view's state as plain JSON, a dict or nothing."""
+    s = plain((view or {}).get('state') or {})
+    return s if isinstance(s, dict) else {}
+
+
+def rows(value):
+    """A relation's rows (`{tag: rows, items}`) or a list, as dicts."""
+    items = value.get('items') if isinstance(value, dict) else value
+    return [r for r in items or [] if isinstance(r, dict)]
+
+
+def heading(name, view, did=None):
+    """A place's name as its state calls it (`head`), else its id; above it, small, its id, its kind and its maker."""
+    s = state_of(view)
+    head = s.get('head') if isinstance(s.get('head'), str) and s.get('head').strip() else None
+    kind = s.get('kind') if isinstance(s.get('kind'), str) and s.get('kind') else None
+    maker = s.get('makerHandle') or s.get('keeperHandle')
+    about = ' · '.join(x for x in (name if head else None, f"a {kind.rpartition('/')[2]}" if kind else None,
+                                   f'made by {maker}' if isinstance(maker, str) and maker else None) if x)
+    return T['heading'].format(about=e(about), name=e(head or name), yours=yours(name, did))
+
+
+LATELY, LOCAL_DOORS = 6, 8  # lines shown under a place; doors drawn on its local map
+
+
+def lately(view, entries=()):
+    """The place's newest lines (its `lines` relation: who, the verb, what they wrote), newest first; with none, the newest
+    admitted entries that touched it (who, the verbs their writes name)."""
+    shown = sorted(rows(state_of(view).get('lines')), key=lambda r: r.get('at') or 0, reverse=True)[:LATELY]
+    items = [T['line'].format(who=e(r.get('handle') or guest_name(str(r.get('author', '')))), verb=e(str(r.get('verb') or 'wrote')),
+                              text=T['line_text'].format(text=e(r['text'])) if r.get('text') else '', at=e(str(r.get('at', ''))))
+             for r in shown]
+    if not items:
+        for x in entries:
+            out = x.get('outcome') or {}
+            if out.get('tag') not in ('admitted', 'created') or len(items) >= LATELY:
+                continue
+            verbs = sorted({v for w in out.get('writes') or [] for v in w.get('verbs') or []})
+            items.append(T['line'].format(who=e(guest_name(str((x.get('identity') or {}).get('principal', '')))),
+                                          verb=e(', '.join(verbs) or ('made it' if out.get('tag') == 'created' else 'acted')), text='', at=e(str(x.get('height')))))
+    return T['lately'].format(items=''.join(items)) if items else ''
+
+
+def around(name, view, ways=(), entries=(), href=None):
+    """What is around a place: who is here now, what lies here, its newest lines; beside them its doors as a small local
+    map (the ways in above, the doors out below) and the same doors as links."""
+    href = href or (lambda o: '/play/' + quote(o, safe='/:'))
+    s = state_of(view)
+    present = [r.get('handle') or guest_name(str(r.get('who', ''))) for r in rows(s.get('presence'))]
+    things = [r['object'] for r in rows(s.get('things')) if isinstance(r.get('object'), str) and r.get('object')]
+    here = (T['present'].format(names=e(', '.join(present)), verb='is' if len(present) == 1 else 'are') if present else '') + \
+        (T['things'].format(items=', '.join(T['link'].format(href=e(href(t)), rel=e(t)) for t in things)) if things else '') + lately(view, entries)
+    out = [w for w in ways if w.get('from') == name and w.get('to') != name]
+    into = [w for w in ways if w.get('to') == name and w.get('from') != name]
+    if not out:  # a place whose doors the map does not reach: the doors its own state cites
+        out = [{'from': name, 'label': d.get('label') or d['to']['object'], 'to': d['to']['object']} for d in door_rows(view)]
+    link = lambda w, end: T['door'].format(href=e(href(w[end])), label=e(w.get('label') if end == 'to' else w[end]) or e(w[end]), description=e(w[end]))
+    doors = (T['doors'].format(items=' · '.join(link(w, 'to') for w in out)) if out else T['no_doors']) + \
+        (T['way_in'].format(items=' · '.join(link(w, 'from') for w in into)) if into else '')
+    if not (here or out or into):
+        return ''
+    return T['around'].format(here=here, drawing=local_map(name, into, out[:LOCAL_DOORS]) if out or into else '', doors=doors)
+
+
+def local_map(name, into, out):
+    """A place and its doors drawn small: the ways in above it, the place, its doors fanned below; plain SVG in the text
+    colour, a picture beside the links (the links are the doors' list), so it is decoration to a screen reader."""
+    w, top, mid, low = 320, 22, 78, 150
+    span = lambda n, i: w / 2 if n == 1 else 34 + i * (w - 68) / (n - 1)
+    label = lambda t: e(t if len(t) <= 16 else t[:15] + '…')
+    parts = [f'<line x1="{span(len(into), i):.0f}" y1="{top}" x2="{w / 2:.0f}" y2="{mid}" class="in"/>' for i in range(len(into))]
+    parts += [f'<line x1="{w / 2:.0f}" y1="{mid}" x2="{span(len(out), i):.0f}" y2="{low}"/>' for i in range(len(out))]
+    parts += [f'<circle cx="{span(len(into), i):.0f}" cy="{top}" r="3.5" class="away"/><text x="{span(len(into), i):.0f}" y="{top - 9}">{label(x["from"])}</text>'
+              for i, x in enumerate(into)]
+    parts += [f'<circle cx="{w / 2:.0f}" cy="{mid}" r="7" class="here"/><text x="{w / 2 + 14:.0f}" y="{mid + 4}" text-anchor="start" class="name">{label(name)}</text>']
+    parts += [f'<circle cx="{span(len(out), i):.0f}" cy="{low}" r="4.5" class="away"/><text x="{span(len(out), i):.0f}" y="{low + 18 + (i % 2) * 13 * (len(out) > 4)}">{label(x.get("label") or x["to"])}</text>'
+              for i, x in enumerate(out)]
+    height = low + 26 + 13 * (len(out) > 4) if out else mid + 16
+    return T['local_map'].format(width=w, height=height, y0=0 if into else top + 2, parts=''.join(parts))
 
 
 def suggestions(path, offered, usage):
@@ -186,30 +279,33 @@ def reply(turns, offers=(), usage=None):
     return T['reply'].format(lines=answers, offers=body + receipts), spells
 
 
-def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), doors=(), said='', told=None):
-    """An object to play: a place's telling when the reply just sent entered it, what came back, the place, the one box,
-    and its suggestions: the reply's spells, then what the thing wants, then the card's own."""
+def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), view=None, ways=(), entries=(), said='', told=None, did=None):
+    """An object to play: its name, a place's telling when the reply just sent entered it, what came back, the place, the
+    one box and its suggestions (the reply's spells, then what the thing wants, then the card's own), then what is around it."""
     wanted = [(' '.join(w['asks'].split()[1:3]), w['asks']) for w in wants if w.get('asks')]
-    return page(name, who, T['play'].format(name=e(name), path=e(path), reply=telling(told) + answer, said=e(said),
-                                            place=place(card, paint, wants, doors) if card is not None else '',
-                                            suggestions=suggestions(path, [*offered, *wanted, *(speech(card)[1] if card else [])], f'delvetalk {name} ?')))
+    return page(name, who, T['play'].format(heading=heading(name, view, did), name=e(name), path=e(path), reply=telling(told) + answer, said=e(said),
+                                            place=place(card, paint, wants) if card is not None else '',
+                                            suggestions=suggestions(path, [*offered, *wanted, *(speech(card)[1] if card else [])], f'delvetalk {name} ?'),
+                                            around=around(name, view, ways, entries) if card is not None else ''))
 
 
 BRIEF = 5  # receipts the brief text view keeps
 
 
-def obj(name, who, view, card, entries, did=None, doors=(), seen=None, wants=(), brief=None, paint=None, told=None):
-    """An object as anyone may read it: a place's telling for a signed-in reader, the place (paint, exact card, wants,
-    doors), a way to speak to it, then its law, source and journal on demand. `brief` (the text view's default, the href
-    of the whole page): the place, the doors and the newest BRIEF entries; the law and the source are a link away."""
-    shown = telling(told) + (place(card, paint, wants, doors, lambda o: '/o/' + quote(o, safe=':')) if card else T['state'].format(state=dl(view.get('state'))))
-    play = T['playlink'].format(href=e(quote(name, safe='/:'))) if who else ''
+def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), brief=None, paint=None, told=None):
+    """An object as anyone may read it: its name, a place's telling for a signed-in reader, the place (paint, exact card,
+    wants), a way to speak to it (or in), what is around it, then its law, source and journal on demand. `brief` (the text
+    view's default, the href of the whole page): the place, the doors and the newest BRIEF entries; the law and the source
+    are a link away."""
+    shown = telling(told) + (place(card, paint, wants) if card else T['state'].format(state=dl(view.get('state'))))
+    play = T['playlink'].format(href=e(quote(name, safe='/:'))) if who else T['comein'] if card else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
     source = T['source'].format(law=e(seen.get('law') or ''), pin=e(str(seen.get('pinSlug') or '')), source=e(seen.get('source') or ''),
                                 lines=len((seen.get('source') or '').splitlines())) if seen else ''
     if brief:
         source, entries = T['whole'].format(href=e(brief)), entries[:BRIEF]
-    return page(name, who, T['object'].format(id=e(name), yours=yours(name, did), shown=shown, play=play, source=source,
+    return page(name, who, T['object'].format(heading=heading(name, view, did), shown=shown, play=play, source=source,
+                                              around=around(name, view, ways, entries, lambda o: '/o/' + quote(o, safe=':')) if card else '',
                                               receipts=T['receipts'].format(n=len(entries), slips=''.join(slip(x, did) for x in entries)) if entries else ''))
 
 
@@ -289,6 +385,52 @@ def rendered(kind, body, links, who, did=None):
 def challenged(handle, text, note=''):
     """The word to post, and the one button that says it was posted."""
     return page('post this one word', None, T['challenged'].format(handle=e(handle), text=e(text), note=T['claim_note'].format(note=e(note)) if note else ''))
+
+
+def enter(note='', code='', name=''):
+    """The guest door (`/enter`): an invitation's code and a name of the guest's choosing, or the key from before; what
+    went wrong, in plain words, above the forms, which keep what was typed (never a key)."""
+    return page('come in', None, T['enter_page'].format(note=T['enter_note'].format(note=e(note)) if note else '', code=e(code), name=e(name)))
+
+
+def welcome(handle, credential):
+    """A guest just in: their key shown this once, and the way on."""
+    return page('welcome', handle, T['welcome'].format(handle=e(handle), credential=e(credential), book=e(quote(handle, safe=''))))
+
+
+def leave(handle):
+    """Signing out, or (nobody signed in) that this browser speaks for nobody."""
+    return page('sign out', handle, T['leave_page'].format(handle=e(handle)) if handle else T['left'])
+
+
+def anchor(uri):
+    """A post's anchor on /feed: its record key."""
+    return 'p-' + str(uri).rpartition('/')[2]
+
+
+def feed_post(row):
+    """A feed post as an agent reads it."""
+    return {'uri': row['uri'], 'author': {'did': row['did'], 'handle': row['handle']}, 'createdAt': row['created'], 'text': row['text'],
+            'replyTo': row['parent'], 'root': row['root'], 'town': bool(row['town']),
+            **({'receipt': {'slug': row['receipt'], 'href': f"/AGENTS.md/receipt/{row['receipt']}"}} if row['receipt'] else {})}
+
+
+def feed(threads, who, *, more=None, reply=None, posted=None, refresh=None, note='', said=''):
+    """The town's own feed (transport/feed.py): the box (a post, or a reply under `reply`), then the threads, each post
+    with who and when, the town's answers with their receipt; `posted` the post just sent, `refresh` where to look again
+    while the town has not answered it."""
+    one = lambda r, cls='': T['feed_post'].format(cls=cls + (' town' if r['town'] else '') + (' just' if posted is not None and r['uri'] == posted['uri'] else ''),
+                                                  anchor=anchor(r['uri']), who=e('the town' if r['town'] else r['handle']), when=e(r['created'][:16].replace('T', ' ')),
+                                                  receipt=T['feed_receipt'].format(slug=e(r['receipt'])) if r['receipt'] else '', text=e(r['text']),
+                                                  uri=e(quote(r['uri'], safe='')))
+    shown = ''.join(T['feed_thread'].format(head=one(h), replies=''.join(one(r, ' reply') for r in rs)) for h, rs in threads) or T['feed_empty']
+    box = T['feed_box'].format(replying=T['feed_replying'].format(uri=e(reply['uri']), who=e(reply['handle']), text=e(reply['text'][:140])) if reply else '',
+                               prompt='Reply to ' + e(reply['handle']) if reply else 'Say something to the town', said=e(said)) if who else T['feed_comein']
+    if posted is not None and not note:
+        note = 'Posted. The town is answering; this page looks again in a moment.' if refresh else 'Posted.'
+    head = T['head'] + (f'<meta http-equiv="refresh" content="3;url={e(refresh)}">' if refresh else '')
+    return page('the feed', who, T['feed'].format(note=T['feed_note'].format(note=e(note)) if note else '', box=box, threads=shown,
+                                                  more=T['more'].format(href=e('/feed?before=' + quote(more, safe=''))) if more else ''), head=head)
 
 
 def catalogue(api, who):

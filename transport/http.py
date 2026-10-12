@@ -37,8 +37,9 @@ REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to s
 WORKERS = 48  # requests served at once (the container allows 64 tasks); one more is told `busy`
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'receipt', False): 'intent', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
-          ('POST', 'check', False): 'check', ('POST', 'cite', False): 'cite', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
-TOP_ONLY, SCRATCH_ONLY = ('me', 'revoke'), ('create', 'repl', 'check', 'cite')
+          ('POST', 'check', False): 'check', ('POST', 'cite', False): 'cite', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke',
+          ('GET', 'feed', False): 'feedRead', ('POST', 'feed', False): 'feedPost'}
+TOP_ONLY, SCRATCH_ONLY = ('me', 'revoke', 'feedRead', 'feedPost'), ('create', 'repl', 'check', 'cite')
 ROUTE_HINT = 'GET /AGENTS.md/api lists every route; OPTIONS on a path answers its entries'
 FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)): 'examples',
          ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify', ('POST', ('accept',)): 'accept'}
@@ -78,10 +79,14 @@ def resolve(method, path):
         return 'static', {'file': parts[1]}
     if parts[:1] == ['play'] and method in ('GET', 'POST'):
         return ('play' if method == 'GET' else 'reply'), {'object': '/'.join(parts[1:])}
-    if parts[:1] == ['o'] and len(parts) == 2 and method == 'GET':
-        return 'page', {'object': parts[1]}
     if parts[:1] == ['o'] and len(parts) == 3 and parts[2] == 'book' and method == 'GET':
         return 'book', {'object': parts[1]}
+    if parts[:1] == ['o'] and len(parts) >= 2 and all(parts[1:]) and method == 'GET':  # an id may hold slashes, as a door's link spells it
+        return 'page', {'object': '/'.join(parts[1:])}
+    if parts in (['enter'], ['leave']) and method in ('GET', 'POST'):  # the guest door: come in with an invitation or a key; sign out
+        return {('GET', 'enter'): 'door', ('POST', 'enter'): 'comeIn', ('GET', 'leave'): 'leave', ('POST', 'leave'): 'signOut'}[method, parts[0]], {}
+    if parts == ['feed'] and method in ('GET', 'POST'):  # the town's own feed, for people (transport/feed.py)
+        return ('feed' if method == 'GET' else 'feedSay'), {}
     if parts == ['history'] and method == 'GET':
         return 'history', {}
     if parts == ['map'] and method == 'GET':
@@ -183,6 +188,16 @@ CLAIM_LINES = {'no_post_yet': 'No post with that word from {handle} yet. Post it
                'challenge_expired': 'That word is older than 15 minutes. Ask for a new one.',
                'handle_unresolved': '{handle} is not a handle this town knows. Check the spelling.',
                'invalid_handle': '{handle} is not a handle this town knows. Check the spelling.'}
+DOOR_LINES = {'invitation_unknown': 'That code does not match any invitation. Check it was copied whole, or ask the person who invited you.',
+              'invitation_spent': 'That invitation has been used already. If it was you, sign in below with the key you were given; if not, ask for a new one.',
+              'invitation_expired': 'That invitation has expired. Ask the person who invited you for a new one.',
+              'invitation_revoked': 'That invitation was withdrawn. Ask the person who invited you.',
+              'name_required': 'This invitation lets you choose your name. Type one, then press Come in.',
+              'invalid_guest_name': 'A name starts with a lowercase letter, then up to 31 lowercase letters, digits or hyphens: robin, or sam-2.',
+              'name_fixed': 'This invitation already has a name on it. Leave the name empty and press Come in.',
+              'taken': 'Someone here already goes by that name. Choose another; your code still works.',
+              'invalid_credential': 'That key does not open anything here. Check it was copied whole; it begins dt_agent_.',
+              'empty': 'Type the code from your invitation, or your key if you have been here before.'}  # the guest door's words (`/enter`)
 ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever invited you',
                 'invitation_spent': 'that invitation was accepted already; the credential it gave speaks for you, and the operator can invite you again',
                 'invitation_expired': 'that invitation lapsed before it was accepted; ask for a new one',
@@ -308,8 +323,10 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
         self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
         self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
+        self.made, self.made_lock = {}, threading.Lock()
+        self._feed = None  # object -> (height, principal) of the first entry touching it: it never changes
         self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None,
-                         st.world, st.answers, st.repo_ledger, c.firehose_port if not hand else 0)
+                         st.world, st.answers, st.repo_ledger, c.firehose_port if not hand else 0)  # the journal as AT Protocol records, read only
         self.firehose = None
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
@@ -374,6 +391,26 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
                                  'object': writes[0], 'slot': None, 'receipt': receipt, 'posted': False,
                                  'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
+
+    @property
+    def feed(self):
+        """The town's own feed (transport/feed.py), opened at its first use."""
+        if self._feed is None:
+            from transport.feed import Feed
+            self._feed = Feed(self.st)
+        return self._feed
+
+    def newest(self, ids, n=6):
+        """The newest makings among `ids` (not residents' avatars): (object, principal, height) of the first journal entry
+        that touched each, as the public reads it, newest first. Each id's first entry is asked once and kept."""
+        for i in ids:
+            if i not in self.made and not pages.resident(i):
+                first = (self.host.send({'op': 'world-history', 'principal': PUBLIC, 'object': i, 'limit': 1}).get('entries') or [None])[0]
+                if first:
+                    with self.made_lock:
+                        self.made[i] = (first.get('height') or 0, (first.get('identity') or {}).get('principal') or '')
+        made = sorted(((i, *self.made[i]) for i in ids if i in self.made), key=lambda m: m[1], reverse=True)[:n]
+        return [(i, who, height) for i, height, who in made]
 
     def handles(self, dids):
         """{did: handle} for the DIDs a page names, as the public reader sees their avatars."""
@@ -615,6 +652,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
         if name in ('xrpc', 'did'):
             return self.xrpc(method, p.get('nsid', 'did.json'))
+        if name in ('feed', 'feedSay'):
+            return self.feed_page(name == 'feedSay')
         if name in ('home', 'page', 'book', 'history', 'map'):  # pages ask the host: limited per account, or per address, before they do
             key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
             wait = self.server.limited(key)
@@ -622,6 +661,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds', headers=[('Retry-After', str(wait))])
         if name == 'home':
             return self.home()
+        if name in ('door', 'comeIn', 'leave', 'signOut'):
+            return self.door(name)
         if name == 'specimen':
             return self.html(200, pages.page('style', None, (STATIC / 'specimen.html').read_text()))
         if name in ('play', 'reply'):
@@ -662,6 +703,8 @@ class Handler(BaseHTTPRequestHandler):
                              headers=[('Retry-After', str(wait))])
         if kind == 'me':
             return self.me(credential, who)
+        if kind in ('feedRead', 'feedPost'):
+            return self.feed_json(who, kind == 'feedPost')
         if kind == 'revoke':
             self.server.identity.revoke(credential)
             return self.reply(200, canonical({'status': 'revoked', '_links': {'self': link(self.path), 'challenge': link(PREFIX + '/challenge')}}),
@@ -844,6 +887,103 @@ class Handler(BaseHTTPRequestHandler):
         links = {'self': link(self.path), 'world': link(PREFIX + '/world'), 'me': link(PREFIX + '/me'), 'api': link(PREFIX + '/api')}
         self.reply(200, canonical({**out, '_links': links}), headers=self.login_cookie(out['credential']))
 
+    def door(self, name):
+        """The guest door, no delve.town asked for: `GET /enter` the forms; `POST /enter` {code, name?} accepts an invitation
+        as `accept` does (the same credential, held as the HttpOnly session cookie, shown once to keep), or {credential}
+        signs in with a key from before; `GET /leave` asks, `POST /leave` forgets the cookie (the key still opens the door).
+        Without HTML the answer is JSON, as `accept`'s."""
+        if name == 'door':
+            return self.html(200, pages.enter())
+        if name == 'leave':
+            who = self.principal(self.cookie())
+            return self.html(200, pages.leave(who and who['handle']))
+        if name == 'signOut':
+            return self.reply(303, '', 'text/plain', [('Location', '/leave'), ('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict')])
+        wait = self.server.limited('ip:' + self.client_ip(), OPEN_RATE)
+        if wait:
+            return self.fail('rateLimited', f'more than {OPEN_RATE} requests per {WINDOW} seconds from one address', headers=[('Retry-After', str(wait))])
+        data = self.body(OPEN_BODY)
+        if data is None:
+            return
+        text = lambda k: data.get(k).strip() if isinstance(data.get(k), str) else ''
+        code, chosen, key = text('code'), text('name'), text('credential')
+        if not self.browser() and not key:
+            return self.accept(code, chosen or None)
+        if key:
+            who = self.principal(key)
+            if who is None:
+                return self.html(401, pages.enter(DOOR_LINES['invalid_credential'])) if self.browser() else \
+                    self.fail('unauthenticated', DOOR_LINES['invalid_credential'])
+            if not self.browser():
+                return self.reply(200, canonical({'status': 'signedIn', 'handle': who['handle'], 'principal': who['did'],
+                                                  '_links': {'self': link(self.path), 'me': link(PREFIX + '/me')}}), headers=self.login_cookie(key))
+            return self.reply(303, '', 'text/plain', [('Location', '/play/'), *self.login_cookie(key)])
+        if not code:
+            return self.html(400, pages.enter(DOOR_LINES['empty'], code, chosen))
+        try:
+            out = self.server.identity.accept(code, chosen or None)
+        except IdentityError as err:
+            return self.html(400, pages.enter(DOOR_LINES.get(err.code, err.code), code, chosen))
+        self.server.record_handle(out['principal'], out['handle'])
+        self.html(200, pages.welcome(out['handle'], out['credential']), [*self.login_cookie(out['credential']), ('Cache-Control', 'no-store')])
+
+    # ---- the town's own feed (transport/feed.py): residents post, the bridge answers in it
+
+    def feed_say(self, who, text, reply_to):
+        """Keep a resident's post in the feed -> (row, None), or (None, (error class, words)). At most feed.HOUR_POSTS an
+        hour from one resident."""
+        from transport import feed
+        from transport.delve import Failure
+        since = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(self.server.clock() - 3600))
+        if self.server.feed.recent(who['did'], since) >= feed.HOUR_POSTS:
+            return None, ('rateLimited', f'{feed.HOUR_POSTS} posts an hour to the feed from one resident; the town answers each, and they wait for nothing')
+        try:
+            return self.server.feed.post({'did': who['did'], 'handle': who['handle']}, text, reply_to or None, now=self.server.clock()), None
+        except Failure as f:
+            return None, ('badRequest', f.detail or f.code)
+
+    def feed_json(self, who, posting):
+        """`GET /AGENTS.md/feed?before=` the newest threads, as JSON; `POST /AGENTS.md/feed {text, reply_to?}` a post."""
+        if posting:
+            data = self.body()
+            if data is None:
+                return
+            row, err = self.feed_say(who, data.get('text'), data.get('reply_to') if isinstance(data.get('reply_to'), str) else None)
+            if err:
+                return self.fail(err[0], err[1], links={'feed': link(PREFIX + '/feed')})
+            return self.reply(200, canonical({'status': 'posted', 'post': pages.feed_post(row), '_links': {
+                'self': link(self.path), 'feed': link(PREFIX + '/feed'), 'thread': link(PREFIX + '/feed?thread=' + urllib.parse.quote(row['root'] or row['uri'], safe=''))}}))
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        threads, more = self.server.feed.threads(q.get('before'), thread=q.get('thread'))
+        return self.reply(200, canonical({'status': 'feed', 'threads': [{'post': pages.feed_post(h), 'replies': [pages.feed_post(r) for r in rs]} for h, rs in threads],
+                                          '_links': {'self': link(self.path), 'post': link(PREFIX + '/feed'),
+                                                     **({'next': link(PREFIX + '/feed?before=' + urllib.parse.quote(more, safe=''))} if more else {})}}))
+
+    def feed_page(self, posting):
+        """`/feed`: the newest threads, newest activity first, and (signed in) the box: a post to the town, or with
+        `?reply=` a reply under one post. A post sent goes back to the feed, which looks again until the town answers."""
+        who = self.principal(self.cookie())
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        if posting:
+            if who is None:
+                return self.reply(303, '', 'text/plain', [('Location', '/enter')])
+            data = self.body()
+            if data is None:
+                return
+            row, err = self.feed_say(who, data.get('text'), data.get('reply_to'))
+            if err:
+                return self.html(429 if err[0] == 'rateLimited' else 400, pages.feed(self.server.feed.threads()[0], who['handle'], note=err[1],
+                                                                                         said=str(data.get('text') or ''), reply=self.server.feed.get(data.get('reply_to') or '')))
+            return self.reply(303, '', 'text/plain', [('Location', '/feed?posted=' + urllib.parse.quote(row['uri'], safe='') + '#' + pages.anchor(row['uri']))])
+        if self.server.limited(self.cookie() if who else 'page:' + self.client_ip()):
+            return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds')
+        threads, more = self.server.feed.threads(q.get('before'))
+        posted = self.server.feed.get(q.get('posted') or '')
+        waiting = posted is not None and not any(r['town'] and r['parent'] == posted['uri'] for _, rs in threads for r in rs)
+        tries = int(q['wait']) if digits(q.get('wait', '')) else 0
+        refresh = f'/feed?posted={urllib.parse.quote(posted["uri"], safe="")}&wait={tries + 1}#{pages.anchor(posted["uri"])}' if waiting and tries < 8 else None
+        self.html(200, pages.feed(threads, who and who['handle'], more=more, reply=self.server.feed.get(q.get('reply') or ''), posted=posted, refresh=refresh))
+
     def me(self, credential, who):
         rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []
         mine = [r for r in rows if r.get('principal') == who['did']]
@@ -897,7 +1037,7 @@ class Handler(BaseHTTPRequestHandler):
         credential = self.cookie()
         who, answer, offered = self.principal(credential), '', ()
         if who is None:
-            return self.reply(303, '', 'text/plain', [('Location', '/')])
+            return self.reply(303, '', 'text/plain', [('Location', '/enter')])
         if self.server.limited(credential):
             return self.html(429, pages.page('slow down', who['handle'], '<h1>Too many requests</h1>'))
         host, did = self.server.host, who['did']
@@ -906,18 +1046,28 @@ class Handler(BaseHTTPRequestHandler):
             if data is None:
                 return
             intent = f'play:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
+            text = str(data.get('text', ''))
+            if data.get('try'):  # "Try it first": the same words under `delvetalk try`, which writes nothing (docs/POSTING.md §2)
+                text = 'delvetalk try\n' + '\n'.join('  ' + line for line in text.strip().split('\n'))
             r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': 'receive', 'identity': intent, 'reach': 'direct',
-                           'argument': typed({'text': str(data.get('text', '')), 'post': ''})})
+                           'argument': typed({'text': text, 'post': ''})})
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
+            if r.get('tried'):  # a try journaled nothing: its preview is what came back, and doing it is one suggestion away
+                preview = bridge.preview_text(r, self.server.handles(pages.A_DID.findall(json.dumps(r))))
+                last = preview.rstrip('\n').rpartition('\n')[2]
+                answer, offered = pages.reply([], [preview])
+                offered = [('Do it', (last + '\n' if last.startswith('if: ') else '') + str(data.get('text', '')).strip()), *offered]
+                turns = []
             for t in turns:
                 self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
-            revealed = [line for t in turns for line in t.get('revealed') or []]  # what the act fired, opened, closed: said first
-            offers = ['\n'.join(revealed)] * bool(revealed) + \
-                [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep, self.server.play_wait)[0]]
-            names = self.server.handles(pages.A_DID.findall(name))
-            usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
-            answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))
-                                                                       for t in turns], offers, usage)
+            if not r.get('tried'):
+                revealed = [line for t in turns for line in t.get('revealed') or []]  # what the act fired, opened, closed: said first
+                offers = ['\n'.join(revealed)] * bool(revealed) + \
+                    [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep, self.server.play_wait)[0]]
+                names = self.server.handles(pages.A_DID.findall(name))
+                usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
+                answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))
+                                                                           for t in turns], offers, usage)
         here = place(host, did, name, self.server.sleep)
         if here['card'] is None and not answer:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], here.get('cardReply') or here['view'], (here.get('cardReply') or here['view']).get('status')))
@@ -926,17 +1076,44 @@ class Handler(BaseHTTPRequestHandler):
                                 for t in turns)
         told = painted(host, did, name, self.server.sleep, telling={}) if entered else None
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
-        self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered,
-                                  paint=here['paint'], wants=here['wants'], doors=here['doors'], said=say, told=told))
+        self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered, paint=here['paint'], wants=here['wants'],
+                                  view=here['view'], ways=self.ways(host, did, name), entries=self.history(host, name, did, pages.LATELY),
+                                  said=say, told=told, did=did))
 
     def html(self, code, body, headers=()):
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
         self.reply(code, *((pages.text(body), 'text/plain') if self.textual() else (body, 'text/html')), headers)
 
     def home(self):
+        """The town alive, as its reader may see it: today's chronicle and its paint, the commonplace's doors, what wants a
+        hand across the town, the newest makings, and the way in."""
         who, host = self.principal(self.cookie()), self.server.host
-        ids = host.send({'op': 'world-objects', 'principal': who['did'] if who else 'anonymous'}).get('ids') or []
-        self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did']))
+        reader = who['did'] if who else PUBLIC
+        ids, after = [], {}
+        while True:  # every id the reader may see, page by page: the residents counted, the makings dated
+            got = host.send({'op': 'world-objects', 'principal': reader, **after})
+            ids += got.get('ids') or []
+            if not got.get('more') or not got.get('ids'):
+                break
+            after = {'after': ids[-1]}
+        day = host.send({'op': 'world-surface', 'principal': reader, 'read': 'chronicle', 'fields': {}})
+        today = {'text': day.get('text'), 'paint': painted(host, reader, None, self.server.sleep, **day['paint']).get('text')
+                 if isinstance(day.get('paint'), dict) else None} if day.get('status') == 'surface' else None
+        wanting = host.send({'op': 'world-wanting', 'principal': reader})
+        self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did'],
+                                  doors=[{**d, 'head': self.called(host, reader, d['to']['object'])} for d in door_rows(host.send({'op': 'world-view', 'principal': reader, 'object': 'commonplace'}))], today=today,
+                                  wanting=(wanting.get('rows') or [])[:5] if wanting.get('status') == 'wanting' else [], newest=self.server.newest(ids)))
+
+    @staticmethod
+    def called(host, reader, name):
+        """What a place's state calls it (`head`), or nothing."""
+        s = plain(host.send({'op': 'world-view', 'principal': reader, 'object': name}).get('state') or {})
+        return s.get('head') if isinstance(s, dict) and isinstance(s.get('head'), str) else None
+
+    def ways(self, host, reader, name):
+        """The town's doors as the reader's map of `name` reads them (`world-surface` map): each {from, label, to}."""
+        r = host.send({'op': 'world-surface', 'principal': reader or PUBLIC, 'read': 'map', 'object': name, 'fields': {}})
+        return [w for w in r.get('ways') or [] if isinstance(w, dict)] if r.get('status') == 'surface' else []
 
     def object_page(self, name, who=None):
         """An object as its reader may read it (the authenticated `who`, else the cookie's login, else anyone): the place as
@@ -951,7 +1128,7 @@ class Handler(BaseHTTPRequestHandler):
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
-                                 here['doors'], seen, here['wants'], brief, here['paint'], told))
+                                 self.ways(host, principal, name) if here['card'] is not None else (), seen, here['wants'], brief, here['paint'], told))
 
     SURFACE_FIELDS = ('page', 'day', 'from', 'to')
     TITLES = {'chronicle': "the town's history", 'map': 'the door map'}
@@ -972,9 +1149,9 @@ class Handler(BaseHTTPRequestHandler):
         drawing = pages.door_map(r['ways'], r.get('root') or 'commonplace') if isinstance(r.get('ways'), list) else ''
         self.html(200, pages.surface(title, handle, r['text'], paint, drawing))
 
-    def history(self, host, name, principal=''):
-        """The newest 20 entries touching the object, newest first, under the reader's authority."""
-        return host.send({'op': 'world-history', 'principal': principal or '', 'object': name, 'reverse': True, 'limit': 20}).get('entries') or []
+    def history(self, host, name, principal='', limit=20):
+        """The newest `limit` entries touching the object, newest first, under the reader's authority."""
+        return host.send({'op': 'world-history', 'principal': principal or '', 'object': name, 'reverse': True, 'limit': limit}).get('entries') or []
 
 
 def command(st, a, out):
