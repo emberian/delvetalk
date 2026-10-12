@@ -58,6 +58,9 @@ pre { font: 13.5px/1.5 var(--mono); }
 /* ---- a place: its paint, its exact card folded beneath, what it wants, its doors */
 .where { margin: 0 0 .25rem; color: var(--muted); font-size: .9rem; letter-spacing: .04em; }
 .paint { margin: .25rem 0 1rem; font-size: 1.3rem; line-height: 1.55; color: var(--ink); white-space: pre-line; }
+.telling { margin: 0 0 1.25rem; padding-left: .9rem; border-left: 2px solid var(--rule); }
+.telling .frame { margin: 0; color: var(--muted); font-size: .9rem; font-style: italic; }
+.telling .paint { font-size: 1.1rem; margin-bottom: .25rem; }
 details { margin: .5rem 0; }
 details > summary { cursor: pointer; width: fit-content; color: var(--muted); font-size: .9rem; }
 details > summary:hover { color: var(--violet); }

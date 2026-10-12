@@ -92,7 +92,9 @@ def painted(host, principal, obj, sleep=time.sleep, **day):
     """The paint of `obj` as `principal` reads it (docs/OVERHAUL.md section 4): `{text}`, or when the exact card stands
     alone why, as the host answers it: `{reason, clause?, detail?}` (`world-render`'s `exact`; `pending` past the
     patience it named; `plain`, `unknown`, `denied`, or an `error` with its message). The host's `pending` is looked at
-    again every PAINT_STEP seconds for the `patience` it names, no longer. With no `obj`, the town's day (`day`, `morning`)."""
+    again every PAINT_STEP seconds for the `patience` it names, no longer. With no `obj`, the town's day (`day`, `morning`).
+    With `telling={}` the place's telling for `principal` (docs/VOICE.md "A telling"), and its `telling {form, frame,
+    exact}` beside the text or the reason."""
     ask = {'op': 'world-render', 'principal': principal, **({'object': obj} if obj else {}), **{k: v for k, v in day.items() if v is not None}}
     r = host.send(ask)
     for _ in range(int((r.get('patience') or 0) / PAINT_STEP)):
@@ -100,10 +102,11 @@ def painted(host, principal, obj, sleep=time.sleep, **day):
             break
         sleep(PAINT_STEP)
         r = host.send(ask)
+    told = {'telling': r['telling']} if isinstance(r.get('telling'), dict) else {}
     if r.get('status') == 'painted':
-        return {'text': r['text']}
+        return {'text': r['text'], **told}
     why = {'reason': r.get('reason') or r.get('status') or 'error', 'clause': r.get('clause'), 'detail': r.get('detail') or r.get('message')}
-    return {k: v for k, v in why.items() if v}
+    return {**{k: v for k, v in why.items() if v}, **told}
 
 
 def door_rows(view):
