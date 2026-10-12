@@ -729,10 +729,10 @@ class Play(InTown):
                             'reply': {'status': 'replied', 'model': 'claude-haiku-5-5', 'json': None, 'raw': spell}})
         self.assertEqual(r['status'], 'interpreted', r)
 
-    def test_without_the_session_cookie_play_redirects_to_the_login_page(self):
+    def test_without_the_session_cookie_play_redirects_to_the_door(self):
         for method_text in (None, 'delvetalk garden plant'):
             s, headers, _ = self.play('/play/', method_text, cookie=False)
-            self.assertEqual((s, dict(headers)['Location']), (303, '/'))
+            self.assertEqual((s, dict(headers)['Location']), (303, '/enter'))
         s, _, page = self.request('GET', '/')
         self.assertIn(b'Claim your handle', page)
         self.assertIn(b'action="/AGENTS.md/challenge"', page)
@@ -914,6 +914,96 @@ class Play(InTown):
         s, whole = self.call('GET', '/AGENTS.md/receipt/' + t['receipt']['slug'], token=tok)
         self.assertNotIn('"blocks": [', json.dumps(whole))  # the receipt's blocks are counted, not shown
         self.answer('delvetalk garden plant\nseed: a bell\ncolour: violet')  # settle the pending interpretation for the next test
+
+
+
+class GuestDoor(InTown):
+    """/enter (docs/WEB.md "The guest door"): a person with an invitation and no delve.town account comes in from a
+    browser with an open code and a name, plays as their avatar, signs out, and signs in again with the key shown once."""
+    OPENER = 'did:plc:' + 'g' * 24
+    PAGE = {'Accept': 'text/html', 'Content-Type': FORM}
+
+    def door(self, form, cookie=None):
+        self.now[0] += 3
+        return self.request('POST', '/enter', raw=urllib.parse.urlencode(form), headers={**self.PAGE, **({'Cookie': cookie} if cookie else {})})
+
+    def test_an_open_code_and_a_name_let_a_person_in_to_play_and_out_and_in_again_with_the_key(self):
+        s, _, page = self.request('GET', '/enter', headers={'Accept': 'text/html'})
+        self.assertEqual(s, 200)
+        for form in ('<form class="door-in" method="post" action="/enter">', 'name="code"', 'name="name"', 'name="credential"'):
+            self.assertIn(form.encode(), page)
+        self.assertNotIn(b'{"', page)
+        self.assertIn(b'href="/enter"', self.request('GET', '/', headers={'Accept': 'text/html'})[2])  # linked from the front page
+        code = self.front.identity.invite(None, 'little-claude asked')['code']
+        robin = f'robin-{self.c}'
+        s, headers, page = self.door({'code': code, 'name': robin})
+        self.assertEqual(s, 200, page[:500])
+        cookie = next(v for k, v in headers if k == 'Set-Cookie')
+        self.assertIn('HttpOnly', cookie)
+        key = cookie.split(';')[0].split('=', 1)[1]
+        self.assertTrue(key.startswith('dt_agent_'))
+        self.assertIn(f'<pre class="key">{key}</pre>'.encode(), page)  # shown once, to keep
+        self.assertEqual(dict(headers)['Cache-Control'], 'no-store')
+        self.assertIn(f'Welcome, {robin}'.encode(), page)
+        jar = 'dt_credential=' + key
+        # Playing every place as a resident does: the avatar, `me`, the book, trying first, acting.
+        s, me = self.call('GET', '/AGENTS.md/me', token=key)
+        self.assertEqual((me['handle'], me['did']), (robin, f'guest:gsb.fg-goose.online:{robin}'))
+        s, _, page = self.request('GET', '/play/garden', headers={'Cookie': jar})
+        self.assertEqual(s, 200)
+        self.assertIn(f'href="/o/{robin}/book"'.encode(), page)
+        s, _, page = self.request('POST', '/play/garden', raw=urllib.parse.urlencode({'text': 'delvetalk garden plant\ncolour: amber\nseed: a guest bell', 'try': '1'}),
+                                  headers={'Cookie': jar, 'Content-Type': FORM})
+        self.assertIn(b'preview, nothing done', page)
+        s, _, page = self.request('POST', '/play/garden', raw=urllib.parse.urlencode({'text': 'delvetalk garden plant\ncolour: amber\nseed: a guest bell'}),
+                                  headers={'Cookie': jar, 'Content-Type': FORM})
+        self.assertRegex(page.decode(), r'admitted garden v\d+, entry \d+')
+        self.assertIn(robin.encode(), page)
+        s, _, page = self.request('GET', f'/o/{robin}/book', headers={'Cookie': jar, 'Accept': 'text/html'})
+        self.assertEqual(s, 200, page[:300])
+        # Signing out forgets the cookie; the key is not revoked.
+        s, _, page = self.request('GET', '/leave', headers={'Cookie': jar, 'Accept': 'text/html'})
+        self.assertIn(b'<form method="post" action="/leave">', page)
+        s, headers, _ = self.request('POST', '/leave', headers={'Cookie': jar, 'Content-Type': FORM})
+        self.assertEqual((s, dict(headers)['Location']), (303, '/leave'))
+        self.assertIn('Max-Age=0', dict(headers)['Set-Cookie'])
+        self.assertEqual(self.request('GET', '/play/')[1] and dict(self.request('GET', '/play/')[1])['Location'], '/enter')
+        # A returning guest signs in with the key.
+        s, headers, _ = self.door({'credential': key})
+        self.assertEqual((s, dict(headers)['Location']), (303, '/play/'))
+        self.assertEqual(dict(headers)['Set-Cookie'].split(';')[0], jar)
+        self.assertEqual(self.call('GET', '/AGENTS.md/me', token=key)[1]['handle'], robin)
+        [row] = [r for r in self.front.identity.invitations() if r['name'] == robin]
+        self.assertEqual(row['state'], 'accepted')  # the hand's invitations page: taken, and by what name
+
+    def test_what_goes_wrong_at_the_door_is_said_in_plain_words_and_keeps_what_was_typed(self):
+        code = self.front.identity.invite(None, 'open')['code']
+        for form, words in (({'code': code}, 'lets you choose your name'), ({'code': code, 'name': 'Robin!'}, 'starts with a lowercase letter'),
+                            ({'code': 'dt_invite_' + 'x' * 32, 'name': 'wren'}, 'does not match any invitation'),
+                            ({'credential': 'dt_agent_' + 'x' * 43}, 'does not open anything'), ({}, 'Type the code')):
+            s, _, page = self.door(form)
+            text = html.unescape(page.decode())
+            self.assertIn(s, (400, 401))
+            self.assertIn(words, text, form)
+            self.assertTrue(text.startswith('<!doctype html>'))
+            self.assertNotIn('{"', text)
+            if form.get('code'):
+                self.assertIn(f'value="{form["code"]}"', text)
+        s, _, page = self.door({'code': code, 'name': f'wren-{self.c}'})
+        self.assertEqual(s, 200)  # the code was unused through every mistake
+        s, _, page = self.door({'code': code, 'name': f'wren-{self.c}'})
+        self.assertIn('has been used already', html.unescape(page.decode()))
+        named = self.front.identity.invite(f'kit-{self.c}', 'named')['code']
+        s, _, page = self.door({'code': named})  # a code that names its guest skips the name
+        self.assertIn(f'Welcome, kit-{self.c}'.encode(), page)
+
+    def test_an_agent_comes_in_by_the_same_door_as_json(self):
+        code = self.front.identity.invite(None, 'agent')['code']
+        s, headers, body = self.request('POST', '/enter', raw=json.dumps({'code': code, 'name': f'bot-{self.c}'}), headers={'Accept': 'application/json'})
+        got = json.loads(body)
+        self.assertEqual((s, got['status'], got['handle']), (200, 'accepted', f'bot-{self.c}'))
+        s, headers, body = self.request('POST', '/enter', raw=json.dumps({'credential': got['credential']}), headers={'Accept': 'application/json'})
+        self.assertEqual((s, json.loads(body)['status']), (200, 'signedIn'))
 
 
 class Quota(InTown):

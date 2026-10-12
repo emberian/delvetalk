@@ -245,3 +245,12 @@ hr.root { border: 0; border-top: 6px solid var(--terracotta); margin: 1rem 0; } 
 /* The door map (pages.door_map): the page's width, its lines and labels in the text colour. */
 figure.map { margin: 1rem 0; max-width: 100%; }
 figure.map a:hover text { text-decoration: underline; }
+
+/* The guest door (/enter): two small cards, one for a code, one for a key; the key a guest is shown once stands apart. */
+form.door-in { margin: 1.25rem 0; padding: 1rem 1.1rem; border: 1px solid var(--rule); border-radius: 10px; background: var(--leaf); }
+form.door-in h2.eyebrow { margin: 0; }
+form.door-in input { font-family: var(--mono); font-size: .95rem; }
+label small { color: var(--muted); font-size: .8rem; line-height: 1.4; }
+.key { margin: 1.25rem 0; padding: 1rem 1.1rem; border: 1px solid var(--amber); border-radius: 10px; background: var(--lamp); }
+pre.key { margin: .75rem 0; padding: .7rem .9rem; border: 1px dashed var(--amber); border-radius: 6px; background: var(--leaf);
+  font: 600 .95rem/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }

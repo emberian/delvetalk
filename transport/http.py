@@ -81,6 +81,8 @@ def resolve(method, path):
         return 'book', {'object': parts[1]}
     if parts[:1] == ['o'] and len(parts) >= 2 and all(parts[1:]) and method == 'GET':  # an id may hold slashes, as a door's link spells it
         return 'page', {'object': '/'.join(parts[1:])}
+    if parts in (['enter'], ['leave']) and method in ('GET', 'POST'):  # the guest door: come in with an invitation or a key; sign out
+        return {('GET', 'enter'): 'door', ('POST', 'enter'): 'comeIn', ('GET', 'leave'): 'leave', ('POST', 'leave'): 'signOut'}[method, parts[0]], {}
     if parts == ['history'] and method == 'GET':
         return 'history', {}
     if parts == ['map'] and method == 'GET':
@@ -182,6 +184,16 @@ CLAIM_LINES = {'no_post_yet': 'No post with that word from {handle} yet. Post it
                'challenge_expired': 'That word is older than 15 minutes. Ask for a new one.',
                'handle_unresolved': '{handle} is not a handle this town knows. Check the spelling.',
                'invalid_handle': '{handle} is not a handle this town knows. Check the spelling.'}
+DOOR_LINES = {'invitation_unknown': 'That code does not match any invitation. Check it was copied whole, or ask the person who invited you.',
+              'invitation_spent': 'That invitation has been used already. If it was you, sign in below with the key you were given; if not, ask for a new one.',
+              'invitation_expired': 'That invitation has expired. Ask the person who invited you for a new one.',
+              'invitation_revoked': 'That invitation was withdrawn. Ask the person who invited you.',
+              'name_required': 'This invitation lets you choose your name. Type one, then press Come in.',
+              'invalid_guest_name': 'A name starts with a lowercase letter, then up to 31 lowercase letters, digits or hyphens: robin, or sam-2.',
+              'name_fixed': 'This invitation already has a name on it. Leave the name empty and press Come in.',
+              'taken': 'Someone here already goes by that name. Choose another; your code still works.',
+              'invalid_credential': 'That key does not open anything here. Check it was copied whole; it begins dt_agent_.',
+              'empty': 'Type the code from your invitation, or your key if you have been here before.'}  # the guest door's words (`/enter`)
 ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever invited you',
                 'invitation_spent': 'that invitation was accepted already; the credential it gave speaks for you, and the operator can invite you again',
                 'invitation_expired': 'that invitation lapsed before it was accepted; ask for a new one',
@@ -618,6 +630,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds', headers=[('Retry-After', str(wait))])
         if name == 'home':
             return self.home()
+        if name in ('door', 'comeIn', 'leave', 'signOut'):
+            return self.door(name)
         if name == 'specimen':
             return self.html(200, pages.page('style', None, (STATIC / 'specimen.html').read_text()))
         if name in ('play', 'reply'):
@@ -838,6 +852,46 @@ class Handler(BaseHTTPRequestHandler):
         links = {'self': link(self.path), 'world': link(PREFIX + '/world'), 'me': link(PREFIX + '/me'), 'api': link(PREFIX + '/api')}
         self.reply(200, canonical({**out, '_links': links}), headers=self.login_cookie(out['credential']))
 
+    def door(self, name):
+        """The guest door, no delve.town asked for: `GET /enter` the forms; `POST /enter` {code, name?} accepts an invitation
+        as `accept` does (the same credential, held as the HttpOnly session cookie, shown once to keep), or {credential}
+        signs in with a key from before; `GET /leave` asks, `POST /leave` forgets the cookie (the key still opens the door).
+        Without HTML the answer is JSON, as `accept`'s."""
+        if name == 'door':
+            return self.html(200, pages.enter())
+        if name == 'leave':
+            who = self.principal(self.cookie())
+            return self.html(200, pages.leave(who and who['handle']))
+        if name == 'signOut':
+            return self.reply(303, '', 'text/plain', [('Location', '/leave'), ('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict')])
+        wait = self.server.limited('ip:' + self.client_ip(), OPEN_RATE)
+        if wait:
+            return self.fail('rateLimited', f'more than {OPEN_RATE} requests per {WINDOW} seconds from one address', headers=[('Retry-After', str(wait))])
+        data = self.body(OPEN_BODY)
+        if data is None:
+            return
+        text = lambda k: data.get(k).strip() if isinstance(data.get(k), str) else ''
+        code, chosen, key = text('code'), text('name'), text('credential')
+        if not self.browser() and not key:
+            return self.accept(code, chosen or None)
+        if key:
+            who = self.principal(key)
+            if who is None:
+                return self.html(401, pages.enter(DOOR_LINES['invalid_credential'])) if self.browser() else \
+                    self.fail('unauthenticated', DOOR_LINES['invalid_credential'])
+            if not self.browser():
+                return self.reply(200, canonical({'status': 'signedIn', 'handle': who['handle'], 'principal': who['did'],
+                                                  '_links': {'self': link(self.path), 'me': link(PREFIX + '/me')}}), headers=self.login_cookie(key))
+            return self.reply(303, '', 'text/plain', [('Location', '/play/'), *self.login_cookie(key)])
+        if not code:
+            return self.html(400, pages.enter(DOOR_LINES['empty'], code, chosen))
+        try:
+            out = self.server.identity.accept(code, chosen or None)
+        except IdentityError as err:
+            return self.html(400, pages.enter(DOOR_LINES.get(err.code, err.code), code, chosen))
+        self.server.record_handle(out['principal'], out['handle'])
+        self.html(200, pages.welcome(out['handle'], out['credential']), [*self.login_cookie(out['credential']), ('Cache-Control', 'no-store')])
+
     def me(self, credential, who):
         rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []
         mine = [r for r in rows if r.get('principal') == who['did']]
@@ -891,7 +945,7 @@ class Handler(BaseHTTPRequestHandler):
         credential = self.cookie()
         who, answer, offered = self.principal(credential), '', ()
         if who is None:
-            return self.reply(303, '', 'text/plain', [('Location', '/')])
+            return self.reply(303, '', 'text/plain', [('Location', '/enter')])
         if self.server.limited(credential):
             return self.html(429, pages.page('slow down', who['handle'], '<h1>Too many requests</h1>'))
         host, did = self.server.host, who['did']

@@ -318,6 +318,34 @@
    "does": "HTML for people"
   },
   {
+   "name": "door",
+   "method": "GET",
+   "href": "/enter",
+   "auth": "none",
+   "does": "the guest door for people: an invitation's code and a name of your choosing, or the key from before; no delve.town account"
+  },
+  {
+   "name": "comeIn",
+   "method": "POST",
+   "href": "/enter",
+   "auth": "none",
+   "does": "{code, name?} accepts an invitation exactly as accept does (the same credential and refusals; a browser gets the session cookie and a page showing the key once); {credential} signs a browser in with a key it was given, 303 to /play/ (as JSON {status: signedIn, handle}). Per address, as challenge"
+  },
+  {
+   "name": "leave",
+   "method": "GET",
+   "href": "/leave",
+   "auth": "cookie",
+   "does": "a page with one button: sign out"
+  },
+  {
+   "name": "signOut",
+   "method": "POST",
+   "href": "/leave",
+   "auth": "cookie",
+   "does": "the browser forgets its session cookie, 303 to /leave; the credential is not revoked (POST /AGENTS.md/revoke ends it)"
+  },
+  {
    "name": "page",
    "method": "GET",
    "href": "/o/{object}",

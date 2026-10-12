@@ -387,6 +387,22 @@ def challenged(handle, text, note=''):
     return page('post this one word', None, T['challenged'].format(handle=e(handle), text=e(text), note=T['claim_note'].format(note=e(note)) if note else ''))
 
 
+def enter(note='', code='', name=''):
+    """The guest door (`/enter`): an invitation's code and a name of the guest's choosing, or the key from before; what
+    went wrong, in plain words, above the forms, which keep what was typed (never a key)."""
+    return page('come in', None, T['enter_page'].format(note=T['enter_note'].format(note=e(note)) if note else '', code=e(code), name=e(name)))
+
+
+def welcome(handle, credential):
+    """A guest just in: their key shown this once, and the way on."""
+    return page('welcome', handle, T['welcome'].format(handle=e(handle), credential=e(credential), book=e(quote(handle, safe=''))))
+
+
+def leave(handle):
+    """Signing out, or (nobody signed in) that this browser speaks for nobody."""
+    return page('sign out', handle, T['leave_page'].format(handle=e(handle)) if handle else T['left'])
+
+
 def catalogue(api, who):
     row = lambda a, b, c, d: T['row'].format(a=e(str(a)), b=e(str(b)), c=e(str(c)), d=e(str(d)))
     return page('the catalogue', who, T['catalogue'].format(
