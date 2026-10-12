@@ -243,3 +243,15 @@ class Revealed(Bell):
         self.assertEqual(fired["to"], GLM)
         self.assertEqual(fired["argument"]["fields"][0]["value"]["value"], "delvetalk %s note / text: %s rang" % (GLM, self.bell))
         self.assertIn((OPENER, "%s rang" % self.bell), self.inbox(GLM))
+
+    def test_the_receipt_of_an_admitted_turn_says_what_the_reply_revealed_to_its_own_principal_alone(self):
+        for i in range(6):
+            self.rain("drop %d" % i)
+        reply = self.say(KIM, self.bell, "delvetalk %s ring" % self.bell)
+        self.assertTrue(reply["revealed"], reply)
+        intent = reply["receipt"]["identity"]["intent"]
+        again = self.town.send(op="world-receipt", principal=KIM, identity=intent)
+        self.assertEqual((again["status"], again["revealed"]), ("receipt", reply["revealed"]), again)
+        # Another reader of the same entry is shown its projection and no more.
+        other = self.town.send(op="world-receipt", principal=GLM, identity=intent, of=KIM)
+        self.assertNotIn("revealed", other)

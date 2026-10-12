@@ -5642,21 +5642,6 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
       ("message", toJson s!"ambiguous: {many.length} matches; cite the object and version")]
 
 
-/-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
-    reader, `identity`), projected under the reader's authority; a refusal with its `public` projection. -/
-def receipt (w : World) (j : Json) : Except String Json := do
-  let reader ← readerOf j
-  let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
-  let owner := (← optText j "of").getD reader
-  match boundEntry w owner intent with
-  | none => return Json.mkObj [("status", toJson "unknown")]
-  | some entry =>
-    let shown := projectEntry w reader entry
-    if owner != reader && tagOf entry == "refused" then return publicRefusal entry
-    -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.
-    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++
-      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
-
 def history (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let id ← j.getObjValAs? String "object"
