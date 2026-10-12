@@ -2063,57 +2063,6 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      fence (`blockOpener`, `closesBlock`, one reader with the binding parser); `fit` refuses an unknown field with a
      known one after it (`unknownField`), an unknown one last still ends the fields (D7).
    - Objects 4 was lane/objrev's (the Bend law judges placings); agent 4, 5, 12 were host27's (5.169, 5.167, 5.164).
-173. **A layer checked over what it is laid on; a making takes a stack (lane/author-build; AUTHORING §5 host 1, steps
-   2, 3, 5; no edition change).** `world.check {package, layers}`: `package` as `create` takes it (a module of the
-   checking object's closure, or source), each of `layers` laid over it as `extend` lays one (`layeredInputs`), compiled
-   for `initial` (`TurnLoop.checkStack`, `Ops.checkInputs`); a package of source with no layers is `checkSource`'s, as
-   before. `world.checkObject {object, layers}`: what the object runs with `layers` over it (`Ops.checkObject`). Both
-   count against `checksPerTurn`. `extendInputs` writes the right `layer over ./<entry>.obend` in place of an author's
-   own first `layer over` line (a body written over RECORD laid over a bell's body), so a layer's line numbers are its
-   author's. A making takes several layers (`CreateRec.layers`, bottom first; `extendCreation` builds the creation
-   again with all of them, each judged by the made thing's law; the `duplicate` refusal is gone). A typed `view` whose
-   state does not conform to the call site's `S` answers `refused typeMismatch`, no longer an evaluation error. KIND
-   (Bend) uses all three: `stackOf` climbs `of` through kinds (four deep) to the root package and the bodies above
-   it; `kinds make` checks the body over that stack and refuses `body` with the checker's lines (the instance-time
-   `refused body` is gone); a kind's things are made with one `extend` a body; `~checkBody` serves the workshop's
-   `check / over:`. Tests: `test_authoring.Authoring`.
-
-174. **A clause reads a made thing's form fields; a spell's field binds in any case (lane/author-build; AUTHORING §5
-   host 2, step 6).** `Law.fieldReading`: a name the state has no field for is read from its `fields` rows (`{name,
-   value}`, what its kind's make took; `namedValue`), digits as a number, so `count(new.lines where verb == "rain") ==
-   new.ringAt` holds at the number the maker chose; `#guard`s beside `monotone`'s. `Spell.spelled`: a binding whose
-   folded name is a form field's takes the form's spelling (`ringAt: 3` was folded to `ringat` and never bound a
-   camelCase field). Test: `test_authoring.Authoring` (§6.1's tally, its law corrected: a rule fires under the kind's
-   owner, so "only its maker rings it" refused the rule's own ring; the build's law says "at its number, not before").
-
-175. **What a check says of reach; every missing import at once (lane/author-build; AUTHORING §5 step 4, D-receive,
-   D-imports).** `check`/`checkObject` answer `checked {diagnostics, reaches}`: `reaches` is whether what compiled has
-   a `receive` (`Ops.answersSpells` on the artifact's methods; `checkDiagnostics` compiles once, lawful, and returns
-   both; `TurnLoop.checkedData` answers `{diagnostics}` alone to a call site compiled before `reaches`). The workshop
-   refuses a draft no spell reaches (`noReceive`) and says so under a clean `check`. The kernel's package loader
-   (`Package.missingLibraries`, called in `modulesAndAsts` before each module is parsed) names in one refusal every
-   library import a module needs and lacks when there are two or more (`Form` and `List` for form blocks, `Plan` for
-   `write {…}`/`keep()` beside a State, `World` for `Activity<…>` with no World module in the package); one alone is
-   still refused where it is used. The workshop writes a layer's header itself (`Forms.layer`, shared by KIND's
-   bodies and `draft / over:`); a held draft over a kind is made by the kind (`~makeDrafted`), over a thing laid on it.
-   Tests: `test_authoring`, `test_sugar`, `test_workshop`.
-
-176. **Where a thing's code came from (lane/author-build; AUTHORING §5 host 3, step 7).** `Object.madeFrom`: the
-   journaled `madeFrom {object, pin, receipt}` of the `make` that made it or of a reprogram that carried one
-   (`become`), set as the commit installs it (`Ops.judge`: `creations`, and the reprogrammed `next`, keeping an earlier
-   one when the reprogram carries none), live and replayed alike; the snapshot keeps it under `madeFrom` when present
-   (an older snapshot has none). A `make` whose `madeFrom.receipt` is "" cites the turn that made `object`
-   (`TurnLoop.madeReceipt`). `?` prints `lineageLine`, "After kind/tapper by yue.delve.town, entry 66.", the principal
-   of the cited entry; `world-inspect` answers `madeFrom` and `lineage`. KIND's `~makeFork` (by `kinds`) makes a kind
-   forked whole with that lineage; the workshop's `draft / from:` holds one. Test: `test_authoring`.
-
-177. **A verb grown with a body (lane/author-build; AUTHORING §3 (b), §5 objects 4).** `castSpell`: a direct `grow`
-   carrying `body` runs `workshop`'s `growBody {object, name, reading, takes, body}` (`workshopId`) as the speaker's
-   turn; `growLine` shows the field. The workshop (Bend) writes the one method (`verbLayer`: its `form`, and a `def`
-   whose result is a number), lays the header (`Forms.layer`), checks it over the thing and `extend`s it when the
-   thing's law lets the grower reprogram it, else holds it over the thing for whoever its law lets lay it (`adopt /
-   n`, `laidOn`). A grown verb with a body is a declared method, so no verb row is placed. Test: `test_authoring`
-   (with the verb library: a one-verb kind laid by `become`, `?` saying what it is after).
 179. **Firings named by their holder, carried roots behind a barrier, no suspension dropped unnamed, a judgment's
    roots, law work metered (host30; codex host 7, host 9, docs 7, host 12, host 13; replay edition 11).**
    - *Holder* (host 7). `ruleDeliveryId object holder name height`: a rule the thing holds keeps
@@ -2271,6 +2220,57 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 193. **A page of history asks the host's bound (host31; §7 seen in passing).** `transport/host.py`'s `HISTORY_LIMIT`
    restated `Limits.maxHistoryLimit`, and `root.modlog` sent `limit: 100`: both read it from `bounds`
    (`history_limit`). Test: `test_hand.HistoryBound`.
+194. **A layer checked over what it is laid on; a making takes a stack (lane/author-build; AUTHORING §5 host 1, steps
+   2, 3, 5; no edition change).** `world.check {package, layers}`: `package` as `create` takes it (a module of the
+   checking object's closure, or source), each of `layers` laid over it as `extend` lays one (`layeredInputs`), compiled
+   for `initial` (`TurnLoop.checkStack`, `Ops.checkInputs`); a package of source with no layers is `checkSource`'s, as
+   before. `world.checkObject {object, layers}`: what the object runs with `layers` over it (`Ops.checkObject`). Both
+   count against `checksPerTurn`. `extendInputs` writes the right `layer over ./<entry>.obend` in place of an author's
+   own first `layer over` line (a body written over RECORD laid over a bell's body), so a layer's line numbers are its
+   author's. A making takes several layers (`CreateRec.layers`, bottom first; `extendCreation` builds the creation
+   again with all of them, each judged by the made thing's law; the `duplicate` refusal is gone). A typed `view` whose
+   state does not conform to the call site's `S` answers `refused typeMismatch`, no longer an evaluation error. KIND
+   (Bend) uses all three: `stackOf` climbs `of` through kinds (four deep) to the root package and the bodies above
+   it; `kinds make` checks the body over that stack and refuses `body` with the checker's lines (the instance-time
+   `refused body` is gone); a kind's things are made with one `extend` a body; `~checkBody` serves the workshop's
+   `check / over:`. Tests: `test_authoring.Authoring`.
+
+195. **A clause reads a made thing's form fields; a spell's field binds in any case (lane/author-build; AUTHORING §5
+   host 2, step 6).** `Law.fieldReading`: a name the state has no field for is read from its `fields` rows (`{name,
+   value}`, what its kind's make took; `namedValue`), digits as a number, so `count(new.lines where verb == "rain") ==
+   new.ringAt` holds at the number the maker chose; `#guard`s beside `monotone`'s. `Spell.spelled`: a binding whose
+   folded name is a form field's takes the form's spelling (`ringAt: 3` was folded to `ringat` and never bound a
+   camelCase field). Test: `test_authoring.Authoring` (§6.1's tally, its law corrected: a rule fires under the kind's
+   owner, so "only its maker rings it" refused the rule's own ring; the build's law says "at its number, not before").
+
+196. **What a check says of reach; every missing import at once (lane/author-build; AUTHORING §5 step 4, D-receive,
+   D-imports).** `check`/`checkObject` answer `checked {diagnostics, reaches}`: `reaches` is whether what compiled has
+   a `receive` (`Ops.answersSpells` on the artifact's methods; `checkDiagnostics` compiles once, lawful, and returns
+   both; `TurnLoop.checkedData` answers `{diagnostics}` alone to a call site compiled before `reaches`). The workshop
+   refuses a draft no spell reaches (`noReceive`) and says so under a clean `check`. The kernel's package loader
+   (`Package.missingLibraries`, called in `modulesAndAsts` before each module is parsed) names in one refusal every
+   library import a module needs and lacks when there are two or more (`Form` and `List` for form blocks, `Plan` for
+   `write {…}`/`keep()` beside a State, `World` for `Activity<…>` with no World module in the package); one alone is
+   still refused where it is used. The workshop writes a layer's header itself (`Forms.layer`, shared by KIND's
+   bodies and `draft / over:`); a held draft over a kind is made by the kind (`~makeDrafted`), over a thing laid on it.
+   Tests: `test_authoring`, `test_sugar`, `test_workshop`.
+
+197. **Where a thing's code came from (lane/author-build; AUTHORING §5 host 3, step 7).** `Object.madeFrom`: the
+   journaled `madeFrom {object, pin, receipt}` of the `make` that made it or of a reprogram that carried one
+   (`become`), set as the commit installs it (`Ops.judge`: `creations`, and the reprogrammed `next`, keeping an earlier
+   one when the reprogram carries none), live and replayed alike; the snapshot keeps it under `madeFrom` when present
+   (an older snapshot has none). A `make` whose `madeFrom.receipt` is "" cites the turn that made `object`
+   (`TurnLoop.madeReceipt`). `?` prints `lineageLine`, "After kind/tapper by yue.delve.town, entry 66.", the principal
+   of the cited entry; `world-inspect` answers `madeFrom` and `lineage`. KIND's `~makeFork` (by `kinds`) makes a kind
+   forked whole with that lineage; the workshop's `draft / from:` holds one. Test: `test_authoring`.
+
+198. **A verb grown with a body (lane/author-build; AUTHORING §3 (b), §5 objects 4).** `castSpell`: a direct `grow`
+   carrying `body` runs `workshop`'s `growBody {object, name, reading, takes, body}` (`workshopId`) as the speaker's
+   turn; `growLine` shows the field. The workshop (Bend) writes the one method (`verbLayer`: its `form`, and a `def`
+   whose result is a number), lays the header (`Forms.layer`), checks it over the thing and `extend`s it when the
+   thing's law lets the grower reprogram it, else holds it over the thing for whoever its law lets lay it (`adopt /
+   n`, `laidOn`). A grown verb with a body is a declared method, so no verb row is placed. Test: `test_authoring`
+   (with the verb library: a one-verb kind laid by `become`, `?` saying what it is after).
 
 ## 6. Gotchas
 
@@ -2311,19 +2311,27 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-**First, host30's remainder** (host29's and the coordinator's; edition 12 is not deployed: anything that changes
-what replay derives rides it if it lands before the deploy, which carries edition 10 to 12 and ships
-`carry-check.sh` green on the newest backup, as it was for 5.182 on delvetalk-20261012T121739Z). Each with its failing
-input as a test first, merging foundation before each commit:
-2. **The live morning's cause** (5.183 says why; the cause itself is not yet read): the v9 deploy check's morning
-   (day 20738, 12:05:49Z, `painted: false`) and a 117-token paint call share its second in the backup's
-   `model-spend.jsonl`, so the paint came back and was refused or landed after the hand's last look. The verdict is
-   on the workhorse only: a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`.
-   Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
-7. Seen in passing: `shownSpell` scans
-   the filled text for `did:` tokens because `fired` rows keep no hole structure; a seed post carrying a card's wants
-   lines may pass the bridge's bound once its receipt line is stamped (`docs/previews/seed-posts/01-porch.txt`); this
-   file's entries 173 to 177 are numbered twice (host28/host29 and lane/author-build).
+**First, host31's remainder.** Replay edition 12 is merged and not deployed: anything that changes what replay derives
+rides it if it lands before the deploy, which carries the live town's edition 10 to 12 (one carry) and ships
+`carry-check.sh` green on the newest backup (green, breaking, on delvetalk-20261012T121739Z at 5.182). Each with its
+failing input as a test first, merging foundation before each commit:
+1. **The live morning's cause** (5.183 makes the hand say why; the cause is not yet read). The v9 deploy check's
+   morning (day 20738, 12:05:49Z, `painted: false`) and a 117-token paint call share their second in the backup's
+   `model-spend.jsonl`: the paint came back and was refused, or landed after the hand's last look. The verdict is on the
+   workhorse alone, a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`; read it,
+   or the next `hand morning`'s `fellBack`, and fix that clause's cause.
+2. **The deploy's carry reads v8's makings** (5.185). The live v9 genesis keeps no `made`, so the 10 to 12 carry reads
+   every making from the journal v9 cites, `/towns/v8/state/town.journal` (all data directories are mounted at
+   `/towns` in the ops container). Check the carry's `made` rows after it (kind/errand's is the opener's
+   `genesis-kind-errand`) and that the refresh lines are `refreshed`/`current`, not "its making is in no journal read";
+   carry-check on hbox cannot show it (v8 is the backup delvetalk-20261012T115945Z, not at that path).
+3. **`shownSpell` scans for `did:` tokens** (5.181): a `fired` row keeps the filled spell, not its holes, so a DID the
+   speaker typed is shown by handle too. Keep the rule's template and its fills on the row (edition 12 is undeployed:
+   it can ride it) and show the fills by handle; delete the scan.
+4. Closed without code: the simplify hand-back's (6) (the front's REPL is `world-repl` and matches no prose; the
+   kernel's `not issued by this process` and `unknown library pin` are read by tests alone); a seed post with its wants
+   lines (476 characters, `01-porch.txt`) is far inside a post's bound once stamped. The duplicate entry numbers are
+   gone (lane/author-build's 173 to 177 are 194 to 198).
 
 The queue after host27 (5.164 to 5.172) and host28 (5.173, 5.174), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
 standing order binds every item: "maturify and take forward everything that we've started and bring it to its full
@@ -2362,8 +2370,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
      carry-check takes `--old-image delvetalk-host:9790175f9dc0`. The deploy is DEPLOY "A new binary", *It carries*.
    - What a carried world does not yet keep: `world-receipt`/`world-entry` of a pre-carry hash answer unknown (the old
      chain's block store is edition-independent: read it as the world before, by the `carriedFrom.world` path or a
-     copy beside the new journal); a client's offers
-     cursor (`http.py` `after`) past the carried height waits until the new chain passes it.
+     copy beside the new journal; heights now continue, 5.182, so an old receipt's height is already this world's).
    - A carried genesis's size: the store's compiled types and method tables (1 MB of playtest 3's 1.4 MB) are
      derivable from the carried sources; carry them as blocks, or derive them at install, measured on the v7 town.
    - `slugTargets` scans every entry (and now every carried hash) per `world-resolve`: index slugs (item 8 below).
