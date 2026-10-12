@@ -2435,7 +2435,7 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
   let moved := (rows "fired").map (fun f =>
       let said := (((f.getObjVal? "argument").toOption.bind fun a => (decodeData Limits.dataDepth a).toOption).bind
         fun d => textField d "text").getD ""
-      s!"rule {text f "rule"} of {shownName w (text f "principal")} fired: {said}") ++
+      s!"rule {text f "rule"} of {shownName w (text f "principal")} fired: {shownSpell w said}") ++
     (rows "unfired").map fun f =>
       s!"rule {text f "rule"} of {shownName w (text f "owner")} did not fire: {unfiredWords (text f "why")}"
   let asked := fun (id name : String) => ((w.objects[id]?).map fun o => wantRows w principal id o).getD [] |>.find? fun r =>
@@ -2463,6 +2463,11 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
       stands := stands ++ [s!"{id}'s {field}: {now.rows.size}" ++ (if first then s!", the first by {shownName w principal}" else "")]
   return [moved, opened, stands].filterMap fun ls => if ls.isEmpty then none else some ("; ".intercalate ls)
 
+/-- The `revealed` field of a reply to an admitted entry, left out when it has no line. -/
+def revealedField (w : World) (entry : Json) : List (String × Json) :=
+  let lines := revealed w entry
+  if lines.isEmpty then [] else [("revealed", toJson lines)]
+
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
     offers the entry retains for the turn's own principal (others are read with `world-offers`), and an
     admitted entry's three lines (`revealed`). -/
@@ -2478,12 +2483,27 @@ def turnReply (w : World) (r : Json) : Json :=
       match o.getObjValAs? String "to", o.getObjValAs? String "text" with
       | .ok to, .ok text => if to == principal then some (Json.mkObj [("principal", toJson to), ("text", toJson text)]) else none
       | _, _ => none
-    let lines := revealed w entry
     Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra ++
-      (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++
-      (if lines.isEmpty then [] else [("revealed", toJson lines)]) ++
+      (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++ revealedField w entry ++
       -- What a refusal may say in public, for transport to draft from.
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
+
+/-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
+    reader, `identity`), projected under the reader's authority; a refusal with its `public` projection.
+    The identity's own principal is told what the entry revealed, as the admitted reply told it. -/
+def receipt (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
+  let owner := (← optText j "of").getD reader
+  match boundEntry w owner intent with
+  | none => return Json.mkObj [("status", toJson "unknown")]
+  | some entry =>
+    let shown := projectEntry w reader entry
+    if owner != reader && tagOf entry == "refused" then return publicRefusal entry
+    -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.
+    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++
+      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
+      (if owner == reader && !reader.isEmpty then revealedField w entry else []))
 
 /-- Retry rule for turns: the identity is bound to the whole turn request. -/
 def retainedTurn (w : World) (r : TurnRequest) : Option Json :=

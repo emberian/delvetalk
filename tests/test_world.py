@@ -215,6 +215,14 @@ class History(WorldCase):
         for bad in (10 ** 9, 0, "ten", -1):
             self.assertIn("limit", self.host.send(op="world-history", principal="ember", object="c1", limit=bad)["message"], bad)
         self.assertEqual(self.host.send(op="world-history", principal="ember", object="c1", after="x")["status"], "error")
+        # Newest first, by height as `world-entries` pages: `before` is exclusive, a `cursor` continues the page's last item.
+        newest = self.host.send(op="world-history", principal="ember", object="c1", reverse=True, limit=2)
+        self.assertEqual(([e["height"] for e in newest["entries"]], newest["more"]), ([7, 6], True))
+        older = self.host.send(op="world-history", principal="ember", object="c1", reverse=True, limit=2, cursor=newest["cursor"])
+        self.assertEqual(([e["height"] for e in older["entries"]], older["more"]), ([5, 4], True))
+        tail = self.host.send(op="world-history", principal="ember", object="c1", reverse=True, before=5)
+        self.assertEqual(([e["height"] for e in tail["entries"]], tail["more"], "cursor" in tail), ([4, 3, 1], False, False))
+        self.assertIn("reverse", self.host.send(op="world-history", principal="ember", object="c1", reverse="yes")["message"])
 
 
 class Tamper(WorldCase):

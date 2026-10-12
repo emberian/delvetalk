@@ -2246,6 +2246,28 @@ def shownName (w : World) (principal : String) : String :=
   let h := handleOf w principal
   if h.isEmpty then principal else h
 
+/-- A spell as people are shown it: each principal the registry names, written out in full in the text a
+    rule filled, shown by its handle (`shownName`). A principal is a whole `did:` token (a post's `at://did:…`
+    URI cites it and stays); any other text is left as filled. -/
+def shownSpell (w : World) (text : String) : String := Id.run do
+  let cs := text.toList.toArray
+  let isId := fun (c : Char) => c.isAlphanum || c == '.' || c == '_' || c == ':' || c == '-' || c == '%'
+  let mut out := ""
+  let mut i := 0
+  while i < cs.size do
+    let mut j := i
+    while j < cs.size && isId cs[j]! do j := j + 1
+    if j == i then
+      out := out.push cs[i]!
+      i := i + 1
+      continue
+    let token := String.mk (cs.extract i j).toList
+    let principal := token.dropRightWhile (· == '.')
+    out := if token.startsWith "did:" && !out.endsWith "at://"
+      then out ++ shownName w principal ++ token.drop principal.length else out ++ token
+    i := j
+  return out
+
 /-- The principal the registry names by `handle` (case folded, as a DNS name is), if one. -/
 def principalNamed (w : World) (handle : String) : Option String :=
   let h := handle.toLower
@@ -5628,34 +5650,16 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
       ("message", toJson s!"ambiguous: {many.length} matches; cite the object and version")]
 
 
-/-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
-    reader, `identity`), projected under the reader's authority; a refusal with its `public` projection. -/
-def receipt (w : World) (j : Json) : Except String Json := do
-  let reader ← readerOf j
-  let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
-  let owner := (← optText j "of").getD reader
-  match boundEntry w owner intent with
-  | none => return Json.mkObj [("status", toJson "unknown")]
-  | some entry =>
-    let shown := projectEntry w reader entry
-    if owner != reader && tagOf entry == "refused" then return publicRefusal entry
-    -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.
-    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++
-      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
-
+/-- `world-history {principal, object, after?, before?, reverse?, cursor?, limit?}`: the admitted entries
+    that touched an object, each as the reader may see it, paged by height (`pageByHeight`). -/
 def history (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let id ← j.getObjValAs? String "object"
-  let after := (← optNat j "after").getD 0
-  let asked := (← optNat j "limit").getD Limits.maxHistoryLimit
-  if asked == 0 || asked > Limits.maxHistoryLimit then throw s!"limit must be 1..{Limits.maxHistoryLimit}"
   if !w.objects.contains id then return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
   if !viewable w reader id then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
-  let all := (w.touched.getD id #[]).filter fun index => index + 1 > after
-  let page := all.extract 0 asked
-  return Json.mkObj [("status", toJson "history"), ("object", toJson id),
-    ("entries", Json.arr (page.map fun index => projectEntry w reader (w.entries.getD index))),
-    ("more", toJson (decide (all.size > asked)))]
+  let (shown, more, cursor) ← pageByHeight j ((w.touched.getD id #[]).map fun index => (index + 1, index))
+  return Json.mkObj ([("status", toJson "history"), ("object", toJson id),
+    ("entries", Json.arr (shown.map fun index => projectEntry w reader (w.entries.getD index)))] ++ pageFields more cursor)
 
 /-- The principal transport reads publications as: the world's clock principal, or "transport". -/
 def publisher (w : World) : String := if w.clockPrincipal.isEmpty then "transport" else w.clockPrincipal

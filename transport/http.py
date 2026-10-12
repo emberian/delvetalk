@@ -17,7 +17,7 @@ from pathlib import Path
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
-from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, handles, paged, painted, plain, typed
+from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, handles, painted, plain, typed
 from transport.pages import door_rows
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
@@ -926,16 +926,8 @@ class Handler(BaseHTTPRequestHandler):
                                  door_rows(view), seen, self.wants(host, principal, name) if shown else (), brief, paint))
 
     def history(self, host, name, principal=''):
-        """The newest 20 entries touching the object, newest first, read from the tail of the journal under the reader's authority."""
-        height = host.send({'op': 'world-status'}).get('height') or 0
-        window = 20
-        while True:
-            entries = list(paged(host, {'op': 'world-history', 'principal': principal or '', 'object': name, 'limit': 100,
-                                       'after': max(0, height - window)}, 'entries'))
-            if len(entries) >= 20 or window >= height:
-                return entries[-20:][::-1]
-            window *= 4
-
+        """The newest 20 entries touching the object, newest first, under the reader's authority."""
+        return host.send({'op': 'world-history', 'principal': principal or '', 'object': name, 'reverse': True, 'limit': 20}).get('entries') or []
 
 
 def command(st, a, out):
