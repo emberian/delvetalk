@@ -1,6 +1,6 @@
 # Foundation
 
-State on 2026-10-12 (replay edition 12, snapshot `v5`; the live town carried to edition 12 into v10): docs/OVERHAUL.md's steps 0 to 4 and 3b
+State on 2026-10-12 (replay edition 14, snapshot `v5`; the live town's recorded carry was to edition 12 into v10): docs/OVERHAUL.md's steps 0 to 4 and 3b
 are built. Every thing carries a law, rules, wants and grown verbs; hob reads words at any card; worlds are carried
 across editions, never wiped; cards are painted above the exact card.
 
@@ -177,8 +177,8 @@ replays only the tail. A journal at `J` is two files: the chain `J`, one link a 
 previous}`), and the block store `J.blocks`, each entry's canonical record at `at`; an append writes and syncs the
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
-Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 9: rules fire and wants
-pose, 5.160), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 14: component bodies
+replaced at their journaled positions, HOST-HANDOFF 5.219), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -391,6 +391,20 @@ itself: the principal `@<id>`, which no object id, DID or handle can spell, and 
 any hand (or names it by `request.caller`). Neither the kind's owner, who amends that text live, lends their
 authority to the code the instance runs, nor the instance's owner theirs to the kind's text. A line of a thing's own
 text acts as its owner, who alone amends it; a placed line acts as its placer. A thing's text holds at most 16 lines of the three; placed rules and wants are 32 each beside it.
+
+Making and `become / kind:` install the same component: the kind's ancestor bodies bottom first, its own body,
+its followable text and its source identity. `kindCitation` uses `citedLaw`, the same check as `under`: when the
+kind's state holds no parsed `law` text for its things, its bodies and lineage are installed without a citation.
+Later adopting a law on that kind object leaves the thing's text unchanged. The owner's `become` stages the
+layers and any citation in one turn, judged as a reprogram and amendment by the thing's own law. Each source kind has one installed body: an unchanged
+body and pin stay where laid, a changed body replaces it there, and unrelated layers retain their order. A
+citation is named `kind`, or the first free `kind1`, `kind2`, … beside a thing's other citations; repeating the
+component adds no second line. Its `madeFrom.components` records each source kind's object, pin, body receipt,
+body and layer position, in the making or reprogram and in snapshots. The body is state, so its amendment can
+change the receipt without changing the kind object's code pin. Clauses follow live, code is pulled by the
+thing's owner; a repeat with unchanged code changes neither the package nor its version. A kind without a body
+still lends its text and keeps its identity. `Ops.kindStack` defines the stack for KIND's checks and making and
+for `become`; `kindChange` installs it, `componentInputs` rebuilds it through the existing layer mechanism.
 
 Top-level fields only. `request.kind`, by name or number, is `write` 0 (the object's own method's
 write), `reprogram` 1, `amend` 2, `proposed` 3, `rule` 4 (placing a rule, want or grown verb; `request.verb` is
@@ -912,7 +926,7 @@ each handoff keeps the detail, this table the order across lanes:
 | 5.160's remainder: `offeredTo`'s diff in `revealed`; judging cost measured on 768 rains and 32 rules; parsed clauses kept; placed rows anchored; a want citing another thing re-judged when that thing is written (HOST §7 item 3) | host | as listed there |
 | verbs' remainder: `world.verbs` for `Grown here:`; `grow` in `confirmFor` (HOST §7 item 4) | host, objects | the card's grown verbs read from Bend |
 | the morning card and the chronicle as painted surfaces; `hand morning` (OVERHAUL §4 (c), §5 step 5) | transport, objects | the hand posts the painted chronicle and wants once a day |
-| edition 9 deployed by a carry of the live town (HOST §7 items 2, 5) | root | `carry-check.sh` green on the newest backup and the deployed `serve-status` answers `replay: 9` |
+| edition 14 deployed by a carry of the live town (HOST §7 items 2, 5; 5.219) | root | `carry-check.sh` green on the newest backup and the deployed `serve-status` answers `replay: 14` |
 | the carry's remainder: pre-carry receipts by hash, identity receipts, the genesis's size (HOST §7 item 5) | host | as listed there |
 | `workshop check / target:` of a layered card checks its closure (OBJECTS Open 7) | host | `workshop check / target: bell/1` answers "it compiles" |
 | `test_http.Play`'s shared quota (OBJECTS Open 5) | transport | the quota test isolated |
@@ -924,7 +938,7 @@ each handoff keeps the detail, this table the order across lanes:
 | the regenerated `/examples` (`docs/AGENTS-EXAMPLES.md`, still env, wake, the garden and eight doors) | transport | `deploy/capture-examples.py` re-run on a genesis of this head |
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
-| the astra world review's mediums 13, 14, as decided in AUTHORING §4 | objects, host | each "done when" there |
+| the astra world review's medium 14, as decided in AUTHORING §4 | objects, host | its "done when" there |
 | the astra world review's 11 (archival and reclamation of objects, grants and journal), 15 (a behaviour revision in roots, offers and receipts), 16 (wants as tasks: eligible actors, blocked and cancelled; discovery that rotates past the permanently blocked), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
 | rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder); a placed line's verbs (`grow`) bounded per hand as rules are (world.md 6's remainder) | kernel, host | a level rule fires at its crossing alone unless written as a level; a stranger holds at most `placedPerHand` verbs |
 

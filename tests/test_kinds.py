@@ -12,7 +12,7 @@ import unittest
 from deploy import genesis
 from tests.host import ROOT
 from tests.test_chain import Chain, town_kinds
-from tests.wire import cast_refusal, field, label, listing, record, reference, relation
+from tests.wire import cast_refusal, field, label, listing, record, reference, relation, rows
 from tests.bend import closure
 
 KIM, GLM = "did:plc:kimik3", "did:plc:glm"
@@ -45,6 +45,156 @@ class Kinds(Chain):
         r = self.turn("kinds", "make", record(name=label(name), of=label(of), form=label(form), head=label(head), voice=label(""), about=label(""), law=label(law), body=label(body_source)))
         self.assertEqual(r["status"], "admitted", r)
         return r
+
+    def become(self, thing, kind, principal="ember"):
+        return self.turn(thing, "receive", record(text=label("delvetalk %s become / kind: %s" % (thing, kind)),
+                                                 post=label("")), principal=principal)
+
+    def component_lines(self, thing):
+        return [(field(r, "verb")["value"], field(r, "text")["value"])
+                for r in rows(field(self.state(thing), "lines"))]
+
+    def component_info(self, thing):
+        info = self.host.send(op="world-inspect", principal="ember", object=thing, source=True)
+        info["version"] = self.host.send(op="world-view", principal="ember", object=thing)["version"]
+        return info
+
+    def water_body(self, text="input.text", super_water=False):
+        return ('form water:\n  text: text 1..280\n'
+                'def water(state: State, input: WaterInput, context: Abi.Context) -> Activity<Nat>:\n  ' +
+                ('Super.water(state, input, context)' if super_water else
+                 'Super.inscribe(state, "water", %s, context)' % text) + '\n')
+
+    def test_made_and_become_carry_the_same_verb_and_live_kind_law(self):
+        self.kind("watercap", "record", "", law='law few "at most three waters": count(new.lines where verb == "water") <= 3',
+                  body_source=self.water_body())
+        self.kind("plainpot", "record", "")
+        for kind in ("watercap", "plainpot"):
+            self.assertEqual(self.turn("kind/" + kind, "make", record())["status"], "admitted")
+        laid = self.become("plainpot/1", "kind/watercap")
+        self.assertEqual(laid["status"], "admitted", laid)
+        for thing in ("watercap/1", "plainpot/1"):
+            citations = [l for l in self.component_info(thing)["laws"] if l["clause"] == 'under "kind/watercap"']
+            self.assertEqual(len(citations), 1, citations)
+            for n in range(3):
+                used = self.turn(thing, "water", record(text=label("w" * 280)), principal=KIM)
+                self.assertEqual(used["status"], "admitted", used)
+            before = self.state(thing)
+            fourth = self.turn(thing, "water", record(text=label("fourth")), principal=KIM)
+            self.assertEqual((fourth["status"], fourth["receipt"]["outcome"].get("clause")), ("refused", "few"), fourth)
+            self.assertEqual(self.state(thing), before)
+        self.reopen()
+        self.assertEqual(self.turn("plainpot/1", "water", record(text=label("after reopen")))["status"], "refused")
+
+    def test_become_lays_all_bodies_of_the_deepest_stack_bottom_first(self):
+        self.kind("waterroot", "record", "", body_source=self.water_body())
+        below = "waterroot"
+        for name in ("waterone", "watertwo", "waterthree"):
+            self.kind(name, "kind/" + below, "", body_source=self.water_body(super_water=True))
+            below = name
+        self.kind("stackpot", "record", "")
+        for kind in (below, "stackpot"):
+            self.assertEqual(self.turn("kind/" + kind, "make", record())["status"], "admitted")
+        laid = self.become("stackpot/1", "kind/" + below)
+        self.assertEqual(laid["status"], "admitted", laid)
+        for thing in (below + "/1", "stackpot/1"):
+            used = self.turn(thing, "water", record(text=label("bottom reached")))
+            self.assertEqual(used["status"], "admitted", used)
+            self.assertEqual(self.component_lines(thing), [("water", "bottom reached")])
+
+    def test_become_twice_keeps_one_component_one_citation_and_its_pin(self):
+        self.kind("oncewater", "record", "", body_source=self.water_body(super_water=False))
+        self.kind("oncepot", "record", "")
+        for kind in ("oncewater", "oncepot"):
+            self.assertEqual(self.turn("kind/" + kind, "make", record())["status"], "admitted")
+        for thing in ("oncewater/1", "oncepot/1"):
+            made = self.component_info(thing)
+            first = self.become(thing, "kind/oncewater")
+            self.assertEqual(first["status"], "admitted", first)
+            if thing == "oncewater/1":
+                self.assertFalse(first["receipt"]["outcome"].get("reprograms"), first)
+                self.assertEqual((self.component_info(thing)["pin"], self.component_info(thing)["version"]),
+                                 (made["pin"], made["version"]))
+            before = self.component_info(thing)
+            second = self.become(thing, "kind/oncewater")
+            self.assertEqual(second["status"], "admitted", second)
+            after = self.component_info(thing)
+            self.assertEqual((after["pin"], after["source"], after["version"]),
+                             (before["pin"], before["source"], before["version"]))
+            self.assertFalse(second["receipt"]["outcome"].get("reprograms"), second)
+            self.assertFalse(second["receipt"]["outcome"].get("amendments"), second)
+            self.assertEqual(after["madeFrom"]["object"], "kind/oncewater")
+            self.assertEqual(after["madeFrom"]["pin"], self.component_info("kind/oncewater")["pin"])
+            self.assertEqual(sum(l["clause"] == 'under "kind/oncewater"' for l in after["laws"]), 1)
+            self.assertEqual(self.turn(thing, "water", record(text=label("once")))["status"], "admitted")
+            self.assertEqual(self.component_lines(thing), [("water", "once")])
+
+    def test_become_upgrades_in_place_and_preserves_a_layer_above_it(self):
+        stale = ('form stale:\ndef stale(state: State, context: Abi.Context) -> Activity<Nat>:\n'
+                 '  Super.inscribe(state, "stale", "old code", context)\n')
+        self.kind("freshwater", "record", "", body_source=self.water_body('"old"') + stale)
+        self.assertEqual(self.turn("kind/freshwater", "make", record())["status"], "admitted")
+        layer = '''layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Form.obend as Form
+import ./Text.obend as Text
+type State = Super.State
+form pour:
+  text: text 1..280
+def pour(state: State, input: PourInput, context: Abi.Context) -> Activity<Nat>:
+  Super.inscribe(state, "pour", input.text, context)
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  Lists.concat(Super.actions(state, context), Text.words("pour"))
+'''
+        version = self.component_info("freshwater/1")["version"]
+        added = self.host.send(op="world-reprogram", principal="ember", identity="above-water", object="freshwater/1",
+                               version=version, package=layer, mode="extend")
+        self.assertEqual(added["status"], "admitted", added)
+        self.assertEqual(self.turn("freshwater/1", "water", record(text=label("ignored")))["status"], "admitted")
+        version = self.component_info("kind/freshwater")["version"]
+        fresh = (field(self.state("kind/freshwater"), "body")["value"].replace('"old"', '"new"')
+                 .replace(stale, "").replace('Text.words("water stale")', 'Text.words("water")'))
+        changed = self.host.send(op="world-propose", principal="ember", identity="fresh-body",
+                                 roots=[{"object": "kind/freshwater", "version": version}],
+                                 writes=[{"object": "kind/freshwater", "edits": [record(body={"tag": "variant", "label": "set",
+                                                                                         "payload": record(value=label(fresh))})]}])
+        self.assertEqual(changed["status"], "admitted", changed)
+        snapshot = self.host.send(op="world-snapshot")
+        self.assertEqual(snapshot["status"], "snapshot", snapshot)
+        self.reopen()
+        upgraded = self.become("freshwater/1", "kind/freshwater")
+        self.assertEqual(upgraded["status"], "admitted", upgraded)
+        gone = self.turn("freshwater/1", "stale")
+        self.assertEqual(gone["receipt"]["outcome"]["class"], "noMethod", gone)
+        self.assertEqual(self.turn("freshwater/1", "water", record(text=label("ignored")))["status"], "admitted")
+        poured = self.turn("freshwater/1", "pour", record(text=label("the layer above still runs")))
+        self.assertEqual(poured["status"], "admitted", poured)
+        self.assertEqual([text for verb, text in self.component_lines("freshwater/1") if verb == "water"], ["old", "new"])
+        info = self.component_info("freshwater/1")
+        self.assertEqual(info["madeFrom"]["pin"], self.component_info("kind/freshwater")["pin"])
+        self.assertEqual(info["madeFrom"]["receipt"], changed["receipt"]["hash"])
+        self.reopen()
+        again = self.become("freshwater/1", "kind/freshwater")
+        self.assertEqual(again["status"], "admitted", again)
+        self.assertFalse(again["receipt"]["outcome"].get("reprograms"), again)
+        self.assertEqual(self.turn("freshwater/1", "water", record(text=label("ignored")))["status"], "admitted")
+        self.assertEqual([text for verb, text in self.component_lines("freshwater/1") if verb == "water"], ["old", "new", "new"])
+
+    def test_become_refuses_code_and_citation_together_under_the_things_law(self):
+        self.kind("guardwater", "record", "", body_source=self.water_body())
+        self.kind("guardpot", "record", "")
+        self.assertEqual(self.turn("kind/guardpot", "make", record())["status"], "admitted")
+        version = self.component_info("guardpot/1")["version"]
+        amended = self.host.send(op="world-amend", principal="ember", identity="guard-amend", object="guardpot/1", version=version,
+                                law=genesis.RECORD_LAW + '\nlaw code "no code laid": not (request.kind == reprogram)')
+        self.assertEqual(amended["status"], "admitted", amended)
+        before = self.component_info("guardpot/1")
+        refused = self.become("guardpot/1", "kind/guardwater")
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"].get("clause")), ("refused", "code"), refused)
+        self.assertEqual(self.component_info("guardpot/1"), before)
+
 
     def test_make_under_judges_text_fields_against_the_form_by_the_hosts_clauses(self):
         """A place hands a kind's makeUnder text, which no spell fitted: the kind judges it against its form as the

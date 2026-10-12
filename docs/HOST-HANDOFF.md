@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/cx-world: 5.219, replay edition 14; lane/authority: 5.209–5.214, replay edition 13; lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -165,7 +165,7 @@ A full count refuses the turn with class `capacity`, reason the limit's name. Th
 - `inspect` answers pin, law text, the entry module's source and the method forms under the reader's `ReadPolicy` (`denied` otherwise). `check` runs `Package.checkPackage` over the library closure, answers `"<module>:<line>: <stage>: <message>"` strings and a following `"<module>:<line>: hint: <text>"` line when the kernel has a hint; it installs nothing.
 - `world-check {principal, modules | source, entry, limits?}` compiles over the world's library (`overLibrary`), journals nothing, any principal may ask. Stateless `check-package`/`compile` take `library: <pin>`, resolved among the world's libraries then those sealed with `library-load` (at most 4 kept).
 - Method table and forms: `Object.methods` is the artifact's method table (reprogram replaces it; for a layer stack it lists every layer's methods, top first). `world-inspect` answers it as `methods` plus `forms`. A form is `{card, action, fields}` for each method that takes a context and whose input is a record of `String` (text 0..`formTextMax`), `Nat` (0..`formNaturalMax`) or a closed sum of empty payloads.
-- Extend: `world-reprogram {mode: "extend"}` and Plan `extend` add the source as module `Layer<n>`. The host writes `layer over ./<module below>.obend` as its first line (`layerLine`), so the kernel builds a layer stack with late binding. New pin = CID of `["extend", old pin, source CID]`; the state type must be equal under `canonicalTy` or a migration named. Tests: `test_extend`, `test_layers`.
+- Extend: `world-reprogram {mode: "extend"}` and Plan `extend` add the source as module `Layer<n>`. The host writes `layer over ./<module below>.obend` as its first line (`layerLine`), so the kernel builds a layer stack with late binding. The new pin seals the whole source closure, including the library; the state type must be equal under `canonicalTy` or a migration named. Tests: `test_extend`, `test_layers`.
 - Supervisors: `Object.supervisor` is fixed at creation (`world-create {supervisor}`, Plan `createUnder`; `refused {clause: supervisor}` if not an object). An activity of a supervised object ends `broken` when refused `evaluation`, `budget` when a machine budget ran out, `timedOut` when a segment resumed past its deadline ends in any way. `commit` puts an `ended {id, to, method: "ended", argument, sender, ledger}` field in that entry (`endedField`, `endedId`); `record` makes it a pending delivery with argument `{receipt, how}`. A ledger refusal (`budgetExhausted`) tells nobody. Replay checks the id and that `to` is the supervisor (`checkEnded`). Test: `test_supervisors`.
 - Handlers: Plan `run {object, method, argument, handler}` runs the callee as `call` does, but every Plan the callee's frame, or any frame it calls, yields is first offered to the handlers around it, innermost first, each a pure `handle(state, plan[, context]) -> Handled<R>` (`answer {response}`, or `pass` to the next one out; 5.73). The handler must be readable by the subject (`refused {clause: handler}`) and is a root. Plan `judge {edits}` answers `judged {admitted, clause}` without committing. Test: `test_handlers`.
 - Held entries: `compiledMethod`/`compileDef` use `compileEntryIn` (`Package.prepareRequest` cached in `world.requests`, `Package.compileEntryFrom`); `Compiled.entry` is a decoded, checked `CheckedEntry`. Turns run `Turn.startEntry`/`resumeSuspended`/`resumeEntry` over a `Turn.Store`; pure methods, cards and views run `Package.executeDataEntryStored`; law, `lawReads`, handlers and migrations run `Package.executeDataEntry`. Only `initial()` at creation runs from the packet.
@@ -912,15 +912,17 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 113. **The host's spells: `become` (host12; docs/CATALOGUE.md §2, higher-order cards).** A spell whose
    action is one of `hostSpells` on a card that defines no form of that name is the host's
    (`SpellRoute.host`, `hostSpell`), a direct turn's only (a call or delivery naming one is refused
-   `noAction`). `delvetalk <card> become / kind: <id>` lays the kind's `body` (any readable object whose
-   state has a non-empty text `body`: a layer source over the card's package) over the card: a reprogram
-   in extend mode by the speaker, judged by the card's own law (kind 1; the default law admits the
-   creator only), journaled under the turn's identity (a retry answers the receipt) with `madeFrom
-   {object: <kind>, pin, receipt: the entry that made the kind's current version}` on the reprogram
-   (`Proposal.madeFrom`; replay reads it back). Refusals: `missingField`, `unknownKind`, `noBody`
-   (badSpell), the law's, or `programRefused` with the compiler's diagnostic. `?` usage adds "The
-   host's spells for any card" with `become` when the law would admit the speaker's reprogram
-   (`kindAdmits`, as `methodAdmits` on the state as it stands). Test: `tests/test_extend.py` `HostSpells`.
+   `noAction`). `delvetalk <card> become / kind: <id>` installs the kind's stack, followable text and lineage
+   in one turn by the speaker, judged by the card's own law (reprogram kind 1, amendment kind 2),
+   journaled under the turn's identity (a retry answers the receipt). `kindChange`, shared with KIND's
+   making (`world.compose`), lays ancestors bottom first and replaces a component's changed bodies at
+   their recorded positions (5.219). `madeFrom {object, pin, receipt, components}` names the source;
+   replay reads the component bodies and positions back. Refusals: `missingField`, `unknownKind`,
+   `of` (an unreadable or too deep ancestor), the law's, or `programRefused` with the compiler's
+   diagnostic. A bodyless kind supplies its text and
+   identity. `?` usage adds "The host's spells for any card" with `become` when the law would admit
+   the speaker's reprogram (`kindAdmits`, as `methodAdmits` on the state as it stands). Tests:
+   `tests/test_extend.py` `HostSpells`, `tests/test_kinds.py` (5.219).
 
 114. **`adopt` (host12; docs/CATALOGUE.md §2).** `delvetalk <card> adopt / law: <id>` appends the
    named clause set to the card's law: the text `law` of a readable object (a kind, or a library page
@@ -2230,9 +2232,9 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    author's. A making takes several layers (`CreateRec.layers`, bottom first; `extendCreation` builds the creation
    again with all of them, each judged by the made thing's law; the `duplicate` refusal is gone). A typed `view` whose
    state does not conform to the call site's `S` answers `refused typeMismatch`, no longer an evaluation error. KIND
-   (Bend) uses all three: `stackOf` climbs `of` through kinds (four deep) to the root package and the bodies above
-   it; `kinds make` checks the body over that stack and refuses `body` with the checker's lines (the instance-time
-   `refused body` is gone); a kind's things are made with one `extend` a body; `~checkBody` serves the workshop's
+   (Bend) uses all three: `stackOf` asks `world.kindStack` (`Ops.kindStack`) for the root package and ancestor bodies
+   (four deep); `kinds make` checks the body over that stack and refuses `body` with the checker's lines (the instance-time
+   `refused body` is gone); a kind's things install that stack through `world.compose` (5.219); `~checkBody` serves the workshop's
    `check / over:`. Tests: `test_authoring.Authoring`.
 
 195. **A clause reads a made thing's form fields; a spell's field binds in any case (lane/author-build; AUTHORING §5
@@ -2538,6 +2540,45 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `test_a_held_body_replaces_the_gesture_only_when_its_owner_adopts_it` (gesture and reaction live before adoption,
    one consequence after).
 
+219. **A kind composes alike made and become (lane/cx-world; astra 2026-10-12 world.md 13; replay edition 14).**
+   `become` laid only a kind's immediate body, cited none of its text, and stacked another copy on every use.
+   `Ops.kindStack` is the one stack definition, reading `of` four deep, ancestor bodies bottom first; KIND's
+   `stackOf` asks it through `world.kindStack`, for checking, making and drafting. Its result carries
+   `kindCitation`'s line for `Kind.lawOf`, also used by `TurnLoop.kindChange` through `appendedLaw`, `adopt`'s
+   amendment path. `kindCitation` uses `Ops.citedLaw`, the same parser-backed check as `citationRefusal` for
+   `under`: a kind whose state holds no followable `law` text installs its bodies and lineage without a citation
+   or amendment. Later adopting a law on that kind object affects the kind alone, leaving those things' text
+   unchanged. An existing citation of that kind is retained; another kind takes the first free name among
+   `kind`, `kind1`, `kind2`, …, preserving the thing's original citation. `Kind.composing` asks `world.compose`
+   when making a thing; `hostChange`'s `become` uses the same `kindChange`. Code and text stand or refuse in one
+   turn under the thing's own law. `madeFrom.components` holds one row per source kind `{object, pin, receipt,
+   body, at}`, where `at` is its body's position among the closure's layers (an empty body occupies none).
+   `noBody` is gone: an empty immediate body still installs the ancestor stack, followable text and identity.
+   The catalogue's `badSpell` clause list drops it; `unknownKind` remains in `kindChange`, and `lawClash` in
+   `appendedLaw`. `test_hypermedia` scans those two and `hostChange` as the host spells' refusal sites and keeps
+   exact equality between the catalogue and the host's closed set.
+   `componentInputs` replaces those bodies in place through `layeredInputs`, skipping unchanged bodies and
+   pins and retaining all unrelated layers. A source already installed as an ancestor is never duplicated.
+   Body amendments change state, so can change a receipt without changing the kind object's code pin;
+   installation compares body and pin, and retains the installed body's receipt when those are unchanged.
+   An unchanged repeat stages no reprogram or amendment and keeps the thing's version. A replacing ordinary
+   reprogram detaches the component row for its entry module (`programLineage`); extending retains the rows.
+   A making journals the final closure and the component rows on its creation, preserving a draft's original
+   credit; `extendCreation` preserves those rows when laying a draft above it. Snapshots already carry
+   `Object.madeFrom`. Reprogram replay supplies the recorded rows to `programFor` and `prepareProgram`;
+   `Proposal.digest` includes the component lineage, and a prepared program's key includes it and the old
+   rows. This changes journal state derivation: edition 14, requiring the carry check. Tests written first in
+   `test_kinds`: `test_made_and_become_carry_the_same_verb_and_live_kind_law` (the same fourth water refused;
+   280-character waters), `test_become_lays_all_bodies_of_the_deepest_stack_bottom_first` (four bodies, three
+   `Super.water` hops reach the bottom), `test_become_twice_keeps_one_component_one_citation_and_its_pin` (made and plain),
+   `test_become_upgrades_in_place_and_preserves_a_layer_above_it` (a removed verb gone, new body used, the
+   unrelated layer stands, snapshot and replay), `test_become_refuses_code_and_citation_together_under_the_things_law`
+   (neither changes on refusal). `test_extend.HostSpells.test_become_lays_a_lawless_kind_without_citing_later_adoptions`
+   exercises a bare kind's layers without any citation, a later law adopted on the kind and the card still usable
+   by another hand after reopening; the existing become test stands unchanged. `test_replay_edition` expects 14;
+   current-edition references in FOUNDATION and the document headers agree, while earlier editions' history stays.
+   Lean and runtime validation are the supervisor's; this lane has no toolchain.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -2558,7 +2599,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
   anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
-  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182). Test: `tests/test_replay_edition.py`.
+  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.

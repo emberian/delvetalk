@@ -606,6 +606,67 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
 def madeIn (w : World) (id : String) (made : CreateRec) : World :=
   { w with objects := w.objects.insert id { made.object with madeFrom := made.madeFrom } }
 
+/-- What a host spell other than a placing changes (`hostChange`): the roots it reads, and the program, law or
+    grant it stages, with the world its program is cached in; `refusal` when its code or its law does not read,
+    which refuses the turn whole at its commit. A spell alone commits it (`hostSpell`); a plan's act stages it into
+    its one turn (`stageHost`). -/
+structure HostChange where
+  world : World
+  roots : List (String × Nat) := []
+  programs : List (String × (String × String)) := []
+  layered : List String := []
+  madeFrom : List (String × Json) := []
+  laws : List (String × String) := []
+  grants : List Grant := []
+  refusal : Option Refusal := none
+
+/-- Append clauses through the amendment path, preserving names and the parser's diagnostics. -/
+def appendedLaw (o : Object) (id clauses : String) : Except (String × String) String := do
+  let existing := ((textClauses o.lawText).map (·.2.1)) ++ (o.rules ++ o.wants).map (·.name)
+  if let some (_, n, _, _) := (textClauses clauses).find? (existing.contains ·.2.1) then
+    throw ("lawClash", s!"{id}'s law already has a clause {n}; adopt a set whose names are new.")
+  return if o.lawText.isEmpty then clauses else s!"{o.lawText}\n{clauses}"
+
+/-- Install a kind's component rows and cited text together. Ancestors already installed retain
+    their position; a changed body replaces its layer there. The journaled lineage supplies replay
+    with the bodies and their source pins and receipts, without reading a later kind's state. -/
+def kindChange (w : World) (principal : String) (o : Object) (id kindId : String) (prepare : Bool := true) :
+    Except (String × String) HostChange := do
+  let some k := (w.objects[kindId]?).filter (·.read.permits principal)
+    | throw ("unknownKind", s!"There is no kind {kindId}.")
+  let some body := textField k.state "body" | throw ("unknownKind", s!"{kindId} is no kind.")
+  let stack ← kindStack w principal ((textField k.state "of").getD "record") body 4
+  let old := lineageComponents o.madeFrom
+  let requested := (stack.kinds ++ [(kindId, k)]).map fun (name, src) =>
+    Json.mkObj [("object", toJson name), ("pin", toJson src.pin), ("receipt", toJson (versionReceipt w name)),
+                ("body", toJson ((textField src.state "body").getD ""))]
+  let fresh := old.map (fun c =>
+      match requested.find? (fun r => componentText r "object" == componentText c "object") with
+      | some r => if componentText r "body" == componentText c "body" && componentText r "pin" == componentText c "pin" then c else r
+      | none => c) ++
+    requested.filter (fun r => !(old.any fun c => componentText c "object" == componentText r "object"))
+  let (_, components) ← (componentInputs o.inputs old fresh).mapError (("compile", ·))
+  let installed := (components.find? fun c => componentText c "object" == kindId).getD Json.null
+  let lineage := Json.mkObj [("object", toJson kindId), ("pin", toJson k.pin), ("receipt", toJson (componentText installed "receipt")),
+                          ("components", toJson components)]
+  let cited := (textClauses o.lawText).any fun c => c.2.2.2 == s!"under \"{kindId}\""
+  let names := (textClauses o.lawText).map (·.2.1) ++ (o.rules ++ o.wants).map (·.name)
+  let name := ((List.range (names.length + 1)).map fun n => if n == 0 then "kind" else s!"kind{n}").find? (!names.contains ·)
+  let citation := kindCitation w kindId (name.getD "kind")
+  let text ← if cited || citation.isEmpty then pure o.lawText else appendedLaw o id citation
+  let change : HostChange := { world := w, roots := (id, o.version) :: (stack.kinds ++ [(kindId, k)]).map (fun (name, src) => (name, src.version)),
+                               laws := if text == o.lawText then [] else [(id, text)] }
+  let change := { change with refusal := match parseLawText text with
+    | .error message => some { cls := "programRefused", clause := some "law syntax", object := some id, reason := some message }
+    | .ok _ => none }
+  if o.madeFrom == some lineage then return change
+  let source := body
+  let change := { change with programs := [(id, (source, ""))], layered := [id], madeFrom := [(id, lineage)] }
+  if !prepare then return change
+  return match programFor w o source "" true (some lineage) with
+    | .error (clause, message) => { change with refusal := some { cls := "programRefused", clause := some clause, object := some id, reason := some message } }
+    | .ok prog => { change with world := cacheProgram w o source "" prog true (some lineage) }
+
 /-- An `extend` (or `reprogram {mode: extend}`) of `id`, which this turn created (`made`): the creation
     built again with the layer over its package and the layers laid before it (a kind's instance takes
     its ancestors' bodies, then its own), judged by the made thing's own law as a reprogram (kind 1)
@@ -1023,7 +1084,7 @@ def helperOf (w : World) (self id method : String) : Bool :=
 def worldMethods : List String :=
   ["view", "viewField", "viewAt", "viewDerived", "write", "judge", "call", "callVia", "run", "send",
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "interpret",
-   "offer", "publish", "reprogram", "extend", "amend", "inspect", "check", "checkObject", "grant", "grantWith", "revoke",
+   "offer", "publish", "reprogram", "extend", "compose", "kindStack", "amend", "inspect", "check", "checkObject", "grant", "grantWith", "revoke",
    "objects", "changed", "card", "principal",
    "rule", "unrule", "want", "unwant", "grow", "ungrow", "act", "chronicle", "wanting", "holds"]
 
@@ -2042,7 +2103,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let w := warmLaws s.world (writes.map (·.1))
     modify fun s => { s with world := s.world.withCachesOf w }
     let p : Proposal := { principal := s.principal, intent := s.intent, roots := s.roots, writes,
-                          programs := s.programs, layered := s.layered, laws := s.laws, absent := s.absent,
+                          programs := s.programs, layered := s.layered, madeFrom := s.madeFrom, laws := s.laws, absent := s.absent,
                           creates := s.creates, grants := s.grants, revokes := s.revokes, spent := s.spent,
                           cells := s.cells,
                           placements := s.placements, turn := w.height + 1 }
@@ -2054,6 +2115,77 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       | .ok _ => (true, "")
       | .error r => (false, r.clause.getD r.cls)
     respond bounds responseType "judged" [.record [("admitted", .boolean admitted), ("clause", .label clause)]]
+  | .variant "kindStack" (.record f) =>
+    let some of := (f.lookup "of").bind labelOf | evaluation "malformed kindStack plan"
+    let some body := (f.lookup "body").bind labelOf | evaluation "malformed kindStack plan"
+    let some kindId := (f.lookup "kind").bind labelOf | evaluation "malformed kindStack plan"
+    let some (.natural depth) := f.lookup "depth" | evaluation "malformed kindStack plan"
+    let s ← get
+    match kindStack s.world s.subject of body (min depth 4) with
+    | .error (clause, reading) => refusedReading bounds responseType clause reading
+    | .ok stack =>
+      for (name, k) in stack.kinds do recordRoot name k.version
+      respond bounds responseType "stacked" [.record [("package", .label stack.package),
+        ("layers", listData (stack.layers.map Data.label)), ("form", .label stack.form),
+        ("head", .label stack.head), ("voice", .label stack.voice), ("law", .label (kindCitation s.world kindId))]]
+  | .variant "compose" (.record f) =>
+    let some id := (f.lookup "object").bind referenceId | refusedWith bounds responseType "foreignWorld"
+    let some kindId := (f.lookup "kind").bind labelOf | evaluation "malformed compose plan"
+    let s ← get
+    let some o := s.world.objects[id]? | refusedWith bounds responseType "unknownObject"
+    match kindChange s.world s.principal o id kindId (!(s.creates.any (·.1 == id))) with
+    | .error (clause, reading) => refusedReading bounds responseType clause reading
+    | .ok c =>
+      for (name, version) in c.roots do
+        unless s.creates.any (·.1 == name) do recordRoot name version
+      if let some r := c.refusal then
+        return ← refusedReading bounds responseType (r.clause.getD r.cls) ((r.reason <|> r.reading).getD "")
+      if let some (_, made) := s.creates.find? (·.1 == id) then
+        let some creator := s.world.objects[made.creator]? | evaluation "the creating object vanished"
+        let lineage := (c.madeFrom.lookup id).orElse fun _ => o.madeFrom
+        let (inputs, _) ← match componentInputs o.inputs (lineageComponents o.madeFrom) (lineageComponents lineage) with
+          | .ok x => pure x
+          | .error e => evaluation e
+        let modules ← match inputModules inputs with
+          | .ok ms => pure ms
+          | .error e => evaluation e
+        let layers ← match (modules.toList.drop (modules.size - layersOf inputs)).mapM (fun m => m.getObjValAs? String "source") with
+          | .ok ls => pure ls
+          | .error e => evaluation e
+        let text := (c.laws.lookup id).getD made.lawArg
+        match buildCreated c.world creator made.package made.seedArg text s.principal (s.world.height + 1) layers with
+        | .error (clause, reading) => refusedReading bounds responseType clause reading
+        | .ok (again, built) =>
+          for kind in (if c.programs.isEmpty then [] else [1]) ++ (if c.laws.isEmpty then [] else [2]) do
+            let facts : Law.Facts := citing s.world o.law (lawNames o.law)
+              { subject := s.principal, caller := self, height := s.world.height + 1,
+                turn := s.world.height + 1, pin := again.object.pin, kind, clock := s.world.clock, object := id }
+            if let some clause := Law.refusedBy o.law facts (some o.state) again.object.state then
+              return ← refusedReading bounds responseType clause ((o.readings.lookup clause).getD s!"the law of {id} does not admit this component.")
+          let lineage := match made.madeFrom, lineage with
+            | some original, some installed => some (original.setObjVal! "components" ((installed.getObjVal? "components").toOption.getD (.arr #[])))
+            | _, installed => installed
+          let again := { again with object := { again.object with supervisor := o.supervisor }, madeFrom := lineage,
+                                       creator := made.creator, package := made.package, seedArg := made.seedArg, lawArg := text, layers }
+          modify fun t => { t with creates := t.creates.map (fun (name, r) => if name == id then (name, again) else (name, r)),
+                                     world := madeIn (cacheBuild c.world again.object.inputs built) id again }
+          respond bounds responseType "reprogrammed" [.record [("pin", .label again.object.pin)]]
+      else
+        if (!c.programs.isEmpty && s.programs.any (·.1 == id)) || (!c.laws.isEmpty && s.laws.any (·.1 == id)) then
+          return ← refusedWith bounds responseType "duplicate"
+        let proposer := if id == self then caller else self
+        let change : Proposal := { principal := s.principal, intent := s.intent, roots := [], writes := [],
+                                      programs := c.programs, layered := c.layered, madeFrom := c.madeFrom, laws := c.laws }
+        for kind in (if c.programs.isEmpty then [] else [1]) ++ (if c.laws.isEmpty then [] else [2]) do
+          if let some (clause, reading) := dryChange c.world s self id o.version proposer kind change then
+            return ← refusedReading bounds responseType clause reading
+          if !(← ensureWrite id proposer kind) then return ← refusedWith bounds responseType "capacity"
+        modify fun t => { t with world := c.world, programs := t.programs ++ c.programs, layered := t.layered ++ c.layered,
+                                   madeFrom := t.madeFrom ++ c.madeFrom, laws := t.laws ++ c.laws }
+        let pin : Option String := match c.programs.lookup id with
+          | some (source, migration) => (programFor c.world o source migration true (c.madeFrom.lookup id)).toOption.map (fun (prog : Program) => prog.pin)
+          | none => some o.pin
+        respond bounds responseType "reprogrammed" [.record [("pin", .label (pin.getD o.pin))]]
   | .variant "reprogram" (.record f) | .variant "extend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed reprogram plan"
     let some source := (f.lookup "package").bind labelOf | evaluation "malformed reprogram plan"
@@ -2501,12 +2633,6 @@ def readIn (w : World) (world : String) (plan : Data) (responseType : Ty) (bound
 def offersJson (offers : List (String × String)) : Json :=
   Json.arr (offers.toArray.map fun (to, text) => Json.mkObj [("to", toJson to), ("text", toJson text)])
 
-/-- The text field `name` of a state, if it has one. -/
-def textField (state : Data) (name : String) : Option String :=
-  match Law.rawField name state with
-  | some (.label t) => some t
-  | _ => none
-
 /-- An admitted entry's three host-rendered lines (docs/FOUNDATION.md §5; docs/OVERHAUL.md §2 "The revealing
     reply"), each left out when empty: **what it moved** (each rule it fired, with the spell it cast under
     its owner's name, or why one that held did not fire), **what it opened or closed** (each want of a
@@ -2942,10 +3068,6 @@ def hobTail (w : World) (principal text line : String) : String :=
 def hobUsageLine : String := "hob: how a spell is read: delvetalk library read / page: spells"
 def hobHintLine : String := "hob: the page on this: delvetalk library read / page: spells"
 
-/-- The hash of the entry that made `id`'s current version (its newest touching entry). -/
-def versionReceipt (w : World) (id : String) : String :=
-  (((w.touched[id]?).bind (·.back?)).bind w.entries.hashAt?).getD ""
-
 /-- The opener's powers (docs/ROOT.md §2.2), each a receipted turn under the opener's identity with a
     required reading: on `world`, `quiet`/`unquiet {who, hours}` (their turns refused `quiet` until
     the clock), `settings {postQuota, interpretQuota, modelQuota}`, `revoke {grant}`; on a card,
@@ -3043,20 +3165,6 @@ def hostSpellFrom (fields : List Spell.Binding) (key : String) : Option String :
   (fields.findIdx? (·.name == key)).map fun i =>
     " / ".intercalate (((fields.drop i).take 1).map (·.value) ++ (fields.drop (i + 1)).map fun b => s!"{b.name}: {b.value}")
 
-/-- What a host spell other than a placing changes (`hostChange`): the roots it reads, and the program, law or
-    grant it stages, with the world its program is cached in; `refusal` when its code or its law does not read,
-    which refuses the turn whole at its commit. A spell alone commits it (`hostSpell`); a plan's act stages it into
-    its one turn (`stageHost`). -/
-structure HostChange where
-  world : World
-  roots : List (String × Nat) := []
-  programs : List (String × (String × String)) := []
-  layered : List String := []
-  madeFrom : List (String × Json) := []
-  laws : List (String × String) := []
-  grants : List Grant := []
-  refusal : Option Refusal := none
-
 /-- `become`, `adopt` and `lend` on card `id` (`o`) for `principal` (`hostSpell` says what each does), from the
     spell's fields (`value`); `ordinal` numbers the grant `lend` makes among the turn's. A misfit is `(clause, reason)`. -/
 def hostChange (w : World) (principal intent : String) (o : Object) (id action : String) (value : String → Option String)
@@ -3064,15 +3172,7 @@ def hostChange (w : World) (principal intent : String) (o : Object) (id action :
   match action with
   | "become" =>
     let some kindId := value "kind" | throw ("missingField", "become takes kind: the id of a kind.")
-    let some k := (w.objects[kindId]?).filter (·.read.permits principal) | throw ("unknownKind", s!"There is no kind {kindId}.")
-    let some body := (textField k.state "body").filter (!·.isEmpty)
-      | throw ("noBody", s!"{kindId} names no body to lay over {id}.")
-    let madeFrom := Json.mkObj [("object", toJson kindId), ("pin", toJson k.pin), ("receipt", toJson (versionReceipt w kindId))]
-    let change : HostChange := { world := w, roots := [(id, o.version), (kindId, k.version)], programs := [(id, (body, ""))],
-                                 layered := [id], madeFrom := [(id, madeFrom)] }
-    return match programFor w o body "" true with
-      | .error (clause, message) => { change with refusal := some { cls := "programRefused", clause := some clause, object := some id, reason := some message } }
-      | .ok prog => { change with world := cacheProgram w o body "" prog true }
+    kindChange w principal o id kindId
   | "adopt" =>
     let some given := value "law" | throw ("missingField", "adopt takes law: a law written inline, or the id of a kind or a page.")
     -- A law written inline is adopted as it stands; an id names the kind or page holding one, read as a root.
@@ -3083,10 +3183,7 @@ def hostChange (w : World) (principal intent : String) (o : Object) (id action :
       let some clauses := (textField src.state "law").filter (!·.isEmpty)
         | throw ("noLaw", s!"{given} names no law to adopt.")
       pure (clauses, [(given, src.version)])
-    let existing := ((textClauses o.lawText).map (·.2.1)) ++ (o.rules ++ o.wants).map (·.name)
-    if let some (_, n, _, _) := (textClauses clauses).find? (existing.contains ·.2.1) then
-      throw ("lawClash", s!"{id}'s law already has a clause {n}; adopt a set whose names are new.")
-    let text := if o.lawText.isEmpty then clauses else s!"{o.lawText}\n{clauses}"
+    let text ← appendedLaw o id clauses
     return { world := w, roots := (id, o.version) :: source, laws := [(id, text)],
              refusal := match parseLawText text with
                | .error message => some { cls := "programRefused", clause := some "law syntax", object := some id, reason := some message }
@@ -3112,9 +3209,9 @@ def hostChange (w : World) (principal intent : String) (o : Object) (id action :
 /-- The host's spells on any card (docs/CATALOGUE.md §2), each a direct turn of the speaker judged by
     the card's own law, journaled under the turn's identity:
 
-    - `become / kind: <id>` lays the kind's `body` (a layer source; the kind is any object whose state
-      has a text `body`) over the card's package: a reprogram in extend mode, `madeFrom {object, pin,
-      receipt}` naming the kind, the pin it runs and the entry that made its current version.
+    - `become / kind: <id>` installs the kind's ancestor bodies and its own, bottom first, and cites
+      its text in the same turn. `madeFrom` names the kind's pin and receipt and records each body's
+      layer position; a repeated installation replaces changed bodies there and retains unchanged ones.
     - `adopt / law: <law text or id>` appends a clause set to the card's text: the text itself when it
       starts `law `, `rule ` or `want ` (`law NAME "reading": EXPR`, a block for several; a rule or a want
       adopted is the card's own, fired under its owner), else the text `law` of the kind

@@ -56,8 +56,10 @@ def cardWanting : Nat := 8
     carried clauses own, inherited, placed; a firing past `rulesPerCommit` is queued, never dropped; rules and
     wants judged after the commit within `clauseTicks`, no roots of the write; a want is journaled when it
     flips by the clock, `advanced` entries carry `wanted`/`unwanted`, or by a write of an object it cites,
-    re-judged for the first `wantReviewed` readers of each written object, `Ops.wantReview`). -/
-def replayEdition : Nat := 13
+    re-judged for the first `wantReviewed` readers of each written object, `Ops.wantReview`); 14:
+    lane/cx-world (a kind's component bodies, source pins, receipts and layer positions in `madeFrom`;
+    reprogram replay replaces those layers through `componentInputs`, retaining unrelated layers). -/
+def replayEdition : Nat := 14
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -425,8 +427,8 @@ structure Object where
       declares, each run by its `act`. -/
   verbs : List Verb := []
   /-- Where its code came from (docs/AUTHORING.md §4 credit): the journaled `madeFrom {object, pin,
-      receipt}` of the `make` that made it or the reprogram (`become`) that last laid a kind's body on
-      it; none for code given whole. -/
+      receipt, components?}` of its making or installation. Component rows record each kind's
+      source object, pin, receipt, body and layer position (`at`); none for code given whole. -/
   madeFrom : Option Json := none
 
 /-- The object's whole state, made from its cells when first read. -/

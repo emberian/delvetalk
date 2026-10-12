@@ -342,8 +342,8 @@ structure Proposal where
   spent : List (String × Nat) := []
   /-- How the turn read each root it did not read whole, by object (`Cells`). -/
   cells : List (String × Cells) := []
-  /-- A reprogram's lineage, by object (`become`: the kind whose body it laid), journaled on the
-      reprogram as `madeFrom {object, pin, receipt}`. -/
+  /-- A reprogram's lineage, by object: `madeFrom {object, pin, receipt, components?}`, with the
+      source kind and the body positions its installation replaces. -/
   madeFrom : List (String × Json) := []
   /-- A resumed turn's own object: it may be re-based on the object's current state when it
       moved while the turn waited (`movedRootAdmits`). An entry with `resumes` sets it on replay. -/
@@ -554,6 +554,7 @@ def Proposal.digest (p : Proposal) : String :=
   Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots p.cells), ("writes", writesJson p.allWrites)] ++
     (if programs.isEmpty then [] else [("programs", Json.arr programs.toArray)]) ++
     (if p.layered.isEmpty then [] else [("extends", toJson p.layered)]) ++
+    (if p.madeFrom.isEmpty then [] else [("madeFrom", Json.mkObj p.madeFrom)]) ++
     (if laws.isEmpty then [] else [("laws", Json.arr laws.toArray)]) ++
     (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++
     (if p.creates.isEmpty then [] else [("creates", Json.arr (p.creates.toArray.map fun (id, c) => Json.mkObj
@@ -1186,11 +1187,15 @@ def layersOf (inputs : Json) : Nat := (inputs.getObjValAs? Nat "layers").toOptio
 /-- The line that makes a module a layer over the module below. -/
 def layerLine (below : String) : String := s!"layer over ./{below}.obend"
 
+/-- A package's own modules, including the single-source form of a base package. -/
+def inputModules (inputs : Json) : Except String (Array Json) := do
+  match inputs.getObjVal? "modules" with
+  | .ok (.arr ms) => pure ms
+  | _ => pure #[Json.mkObj [("name", toJson "Main"), ("source", toJson (← inputs.getObjValAs? String "source"))]]
+
 /-- The inputs with `source` as one more layer over the current entry module. -/
 def extendInputs (inputs : Json) (source : String) : Except String Json := do
-  let modules ← match inputs.getObjVal? "modules" with
-    | .ok (.arr ms) => pure ms
-    | _ => pure #[Json.mkObj [("name", toJson "Main"), ("source", toJson (← inputs.getObjValAs? String "source"))]]
+  let modules ← inputModules inputs
   let some top := modules.back? | throw "package has no modules"
   let below ← top.getObjValAs? String "name"
   let n := layersOf inputs + 1
@@ -1221,6 +1226,85 @@ def layeredInputs (inputs : Json) (layers : List String) : Except String Json :=
     if layer.utf8ByteSize > Limits.maxPackageBytes then
       throw s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)"
     else extendInputs inputs layer
+
+/-- The text field `name` of a state, if it has one. -/
+def textField (state : Data) (name : String) : Option String :=
+  match Law.rawField name state with
+  | some (.label t) => some t
+  | _ => none
+
+/-- The hash of the entry that made `id`'s current version. -/
+def versionReceipt (w : World) (id : String) : String :=
+  (((w.touched[id]?).bind (·.back?)).bind w.entries.hashAt?).getD ""
+
+structure KindStack where
+  package : String
+  layers : List String := []
+  form : String := ""
+  head : String := ""
+  voice : String := ""
+  kinds : List (String × Object) := []
+
+/-- The package below `of` and its ancestor bodies, bottom first, with the nearest ancestor's
+    form, head and voice. The roots are the kinds whose states supplied those bodies. -/
+def kindStack (w : World) (principal of body : String) (depth : Nat) : Except (String × String) KindStack := do
+    let below ← if of == "record" || of == "kind" then
+        pure ({ package := if of == "kind" then "Kind" else "Record" } : KindStack)
+      else match depth with
+      | 0 => throw ("of", s!"Kinds stack four deep at most; {of} is the fifth")
+      | n + 1 => do
+        let some k := (w.objects[of]?).filter (·.read.permits principal)
+          | throw ("of", s!"{of} is no kind; of: record, or a kind's id such as kind/bell")
+        let some inheritedBody := textField k.state "body"
+          | throw ("of", s!"{of} is no kind; of: record, or a kind's id such as kind/bell")
+        let base := (textField k.state "of").getD "record"
+        if base == "kind" then throw ("of", s!"{of} makes kinds; a kind is made over record or a kind of things")
+        let s ← kindStack w principal base inheritedBody n
+        pure { s with form := (textField k.state "form").getD "", head := (textField k.state "head").getD "",
+                         voice := (textField k.state "voice").getD "", kinds := s.kinds ++ [(of, k)] }
+    return { below with layers := below.layers ++ (if body.isEmpty then [] else [body]) }
+termination_by structural depth
+
+/-- The component rows live in lineage, beside its source object, pin and receipt. `at` is the
+    body's position among the closure's layers; an empty body occupies no layer. -/
+def lineageComponents (lineage : Option Json) : List Json :=
+  (((lineage.bind fun j => (j.getObjVal? "components").toOption).bind (·.getArr?.toOption)).getD #[]).toList
+
+def componentText (c : Json) (key : String) : String :=
+  (c.getObjValAs? String key).toOption.getD ""
+
+/-- Replacing the entry module detaches the component whose body occupied it. Extending preserves
+    the installed components; an installation supplies their revised rows. -/
+def programLineage (o : Object) (lineage : Option Json) (extend : Bool) : Option Json :=
+  lineage.orElse fun _ => o.madeFrom.map fun m =>
+    if extend || (lineageComponents o.madeFrom).isEmpty then m else
+      m.setObjVal! "components" (toJson ((lineageComponents o.madeFrom).filter fun c =>
+        (componentText c "body").isEmpty || (c.getObjValAs? Nat "at").toOption != some (layersOf o.inputs - 1)))
+
+/-- Replace each installed kind's body at its position, retain every other layer, and append
+    newly installed bodies. Rebuilding through `layeredInputs` gives every `Super` its new module.
+    The returned rows name the positions in that rebuilt closure. -/
+def componentInputs (inputs : Json) (old fresh : List Json) : Except String (Json × List Json) := do
+  let modules ← inputModules inputs
+  let count := layersOf inputs
+  if modules.size < count + 1 then throw "the layer stack has no base module"
+  let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) => k != "source" && k != "modules" && k != "layers"
+  let base := Json.mkObj ([("modules", .arr (modules.extract 0 (modules.size - count)))] ++ fields)
+  let sources ← (modules.toList.drop (modules.size - count)).mapM fun m => m.getObjValAs? String "source"
+  let mut layers : List String := []
+  let mut rows : List Json := []
+  for i in List.range (count + 1) do
+    for c in old.filter (fun c => (c.getObjValAs? Nat "at").toOption == some i) do
+      let next := (fresh.find? fun n => componentText n "object" == componentText c "object").getD c
+      let body := componentText next "body"
+      rows := rows ++ [next.setObjVal! "at" (toJson layers.length)]
+      if !body.isEmpty then layers := layers ++ [body]
+    if i < count && !(old.any fun c => (c.getObjValAs? Nat "at").toOption == some i && !(componentText c "body").isEmpty) then
+      if let some source := sources[i]? then layers := layers ++ [source]
+  for c in fresh.filter (fun c => !(old.any fun n => componentText n "object" == componentText c "object")) do
+    rows := rows ++ [c.setObjVal! "at" (toJson layers.length)]
+    if !(componentText c "body").isEmpty then layers := layers ++ [componentText c "body"]
+  return (← layeredInputs base layers, rows)
 
 /-- What an object would run with `layers` laid over it, checked (`checkInputs`); `[]` is what it runs.
     A layer alone does not compile: its `layer over` names a module below it. -/
@@ -1634,11 +1718,14 @@ def runMigration (m : Compiled) (state : Data) : Except String Data :=
 
 /-- Compile a replacement for an object's entry module (its imports stay as
     sealed at creation). Failures are `(clause, message)`. -/
-def prepareProgram (w : World) (o : Object) (source migration : String) (extend : Bool := false) :
+def prepareProgram (w : World) (o : Object) (source migration : String) (extend : Bool := false)
+    (lineage : Option Json := none) :
     Except (String × String) Program := do
   if source.utf8ByteSize > Limits.maxPackageBytes then
     throw ("packageBytes", s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)")
-  let replaced ← (if extend then extendInputs o.inputs source else replaceSource o.inputs source).mapError (("compile", ·))
+  let replaced ← (if extend && !(lineageComponents lineage).isEmpty then
+      (componentInputs o.inputs (lineageComponents o.madeFrom) (lineageComponents lineage)).map (·.1)
+    else if extend then extendInputs o.inputs source else replaceSource o.inputs source).mapError (("compile", ·))
   -- A reprogram is compiled against the library the world has now.
   let inputs ← (match w.library with
     | some lib => if (replaced.getObjVal? "library").toOption.isSome then
@@ -1671,18 +1758,23 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
 
 /-- A prepared reprogram's key: the object's inputs, the source, the migration, the mode, and the
     library it compiles against now (a reprogram takes the world's current library). -/
-def programKey (w : World) (o : Object) (source migration : String) (extend : Bool := false) : String :=
+def programKey (w : World) (o : Object) (source migration : String) (extend : Bool := false)
+    (lineage : Option Json := none) : String :=
   o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "") ++
-    "/" ++ ((w.library.map (·.pin)).getD "")
+    "/" ++ ((w.library.map (·.pin)).getD "") ++
+    ((lineage.map fun j => "/" ++ Journal.bodyHash j ++ "/" ++
+      Journal.bodyHash (toJson (lineageComponents o.madeFrom))).getD "")
 
-def programFor (w : World) (o : Object) (source migration : String) (extend : Bool := false) : Except (String × String) Program :=
-  match w.programs[programKey w o source migration extend]? with
+def programFor (w : World) (o : Object) (source migration : String) (extend : Bool := false)
+    (lineage : Option Json := none) : Except (String × String) Program :=
+  match w.programs[programKey w o source migration extend lineage]? with
   | some p => pure p
-  | none => prepareProgram w o source migration extend
+  | none => prepareProgram w o source migration extend lineage
 
-def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) (extend : Bool := false) : World :=
+def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) (extend : Bool := false)
+    (lineage : Option Json := none) : World :=
   if w.programs.size < Limits.maxPreparedPrograms then
-    { w with programs := w.programs.insert (programKey w o source migration extend) p }
+    { w with programs := w.programs.insert (programKey w o source migration extend lineage) p }
   else w
 
 /-! ## Sources by CID
@@ -2245,6 +2337,12 @@ def relationsFor (b : Built) (state : Data) : Except String (List RelDecl × Dat
 def citedLaw (w : World) (id : String) : Option Law := do
   let .label text ← (w.objects[id]?).bind fun o => Law.rawField "law" o.state | none
   (parseLawText text).toOption
+
+/-- A kind's citation, shared by making and installation; absent when `under` has no parsed text
+    to follow in its state. -/
+def kindCitation (w : World) (id : String) (name : String := "kind") : String :=
+  if (citedLaw w id).isNone then "" else
+    s!"law {name} \"{id}'s law holds\": under \"{id}\""
 
 /-- What some names read beyond the written object, closed `Limits.lawDepth` deep, each once in the
     order met: every object they cite (`"O".F`, `under "O"`, `"O" wants N`); through `under "O"`, what
@@ -2848,7 +2946,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     if let some (source, migration) := p.programs.lookup id then
       let refuse := fun (clause message : String) => ({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal)
       let extend := p.layered.contains id
-      let prog ← match programFor w o source migration extend with
+      let prog ← match programFor w o source migration extend (p.madeFrom.lookup id) with
         | .ok prog => pure prog
         | .error (clause, message) => throw (refuse clause message)
       let written := applied.cells.state
@@ -2876,7 +2974,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations,
-                       fixed := prog.fixed, declares := prog.declares, madeFrom := (p.madeFrom.lookup id).orElse fun _ => o.madeFrom }
+                       fixed := prog.fixed, declares := prog.declares, madeFrom := programLineage o (p.madeFrom.lookup id) extend }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin),
         ("source", toJson source), ("migration", toJson migration),

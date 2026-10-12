@@ -72,6 +72,16 @@ sum Published:
 sum Programmed:
   reprogrammed: {pin: String}
   refused: {clause: String, reading: String}
+record Stack:
+  package: String
+  layers: Lists.List<String>
+  form: String
+  head: String
+  voice: String
+  law: String
+sum Stacked:
+  stacked: Stack
+  refused: {clause: String, reading: String}
 sum Amended:
   amended: {}
   refused: {clause: String, reading: String}
@@ -220,6 +230,8 @@ protocol world:
   publish({page: String, section: String, body: String}) -> Published
   reprogram({object: Plans.Reference, package: String, migration: String}) -> Programmed
   extend({object: Plans.Reference, package: String, migration: String}) -> Programmed
+  compose({object: Plans.Reference, kind: String}) -> Programmed
+  kindStack({of: String, body: String, depth: Nat, kind: String}) -> Stacked
   amend({object: Plans.Reference, law: String}) -> Amended
   inspect({object: Plans.Reference, source: Bool}) -> Inspected
   check({package: String, layers: Lists.List<String>}) -> Checked

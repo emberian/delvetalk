@@ -1,6 +1,6 @@
 # Documents
 
-State on 2026-10-12 (foundation 5db9aa79, replay edition 9): the world is the commonplace with the furniture as
+State on 2026-10-12 (replay edition 14; HOST-HANDOFF 5.219): the world is the commonplace with the furniture as
 kinds (METAPHYSICS §7); things carry laws, rules, wants and grown verbs (FOUNDATION §10). A document dated earlier says
 so in its head; the ones whose surfaces are gone carry an "As built" note (VOICE, MENU, CATALOGUE, FLEX) or were
 rewritten (LIBRARY, SEEDING, AGENTS-API).
