@@ -2873,13 +2873,27 @@ def Elaborated.whole (e : Elaborated) : Output :=
   { term := e.root e.fields, globalRow := e.globalRow, knotRow := e.globalRow, sumBounds := e.state.sumBounds,
     typeErrors := e.state.typeErrors, templates := e.state.templates }
 
+/-- A module's layer ancestry, top first: itself, the module it is a layer over, and so on down.
+A module that is no layer is its own; a cycle ends the walk (the context refuses one). -/
+def layerAncestry (modules : List Module) (name : String) : List String :=
+  go modules.length name []
+where
+  go : Nat → String → List String → List String
+    | 0, _, seen => seen.reverse
+    | fuel + 1, name, seen =>
+      if seen.contains name then seen.reverse else
+      match (modules.find? (·.name == name)).bind (·.layerOver) with
+      | some below => go fuel below (name :: seen)
+      | none => (name :: seen).reverse
+
 /-- Select an entry of an elaborated closure: its reached knot, applied to `args`. -/
 def Elaborated.select (e : Elaborated) (entryModule : Nat) (entryDefinition : String) : Except String Output := do
   let some entry := e.ctx.modules[entryModule]? | throw "missing selected entry"
   let entryKey := entry.name ++ "." ++ entryDefinition
-  -- A layer's entry it does not define is the topmost definition below it.
+  -- A layer's entry it does not define is the topmost definition below it, in its own ancestry
+  -- (another stack in the closure supplies nothing to this module).
   let entryKey := if (declOf e.ctx entryKey).isSome then entryKey else
-    (e.ctx.stack.toList.reverse.findSome? fun m =>
+    (((layerAncestry e.ctx.modules entry.name).drop 1).findSome? fun m =>
       let k := m ++ "." ++ entryDefinition; if (declOf e.ctx k).isSome then some k else none).getD entryKey
   if (declOf e.ctx entryKey).isNone then throw "missing selected entry"
   let knot := e.reachable entryKey

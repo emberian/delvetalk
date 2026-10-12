@@ -229,10 +229,10 @@ structure EntryCompiled where
       on an object made of it (KERNEL-HANDOFF §27 item 8). -/
   clauses : List Delvetalk.Compiler.ObjectiveBendLaw.Clause := []
 
-/-- The readings the entry module's source gives its clauses (`law NAME "reading": EXPR`, a rule's,
-a want's), by name: names are unique across the clauses. -/
-def lawReadings (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) : List (String × String) :=
-  ast.decls.filterMap fun d => match d with
+/-- The readings the sources give their clauses (`law NAME "reading": EXPR`, a rule's, a want's),
+by name: names are unique across the clauses (of a layer and those below it). -/
+def lawReadings (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) : List (String × String) :=
+  asts.flatMap fun ast => ast.decls.filterMap fun d => match d with
     | .clause _ name _ reading _ => some (name, reading)
     | _ => none
 
@@ -240,14 +240,16 @@ def lawReadings (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) : List (S
 ENFORCES (`EntryCompiled.laws`), in that order, with its source reading or "" when it has
 none. Built from the enforced laws, not from the source's readings, so a host looking a
 refusing law up by name always finds it (`lawTable_names`). -/
-def lawTable (laws : List String) (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) :
+def lawTable (laws : List String) (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) :
     List (String × String) :=
-  let readings := lawReadings ast
+  let readings := lawReadings asts
   laws.map fun name => (name, (readings.lookup name).getD "")
 
-theorem lawTable_names (laws : List String) (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) :
-    (lawTable laws ast).map (·.1) = laws := by
+theorem lawTable_names (laws : List String) (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) :
+    (lawTable laws asts).map (·.1) = laws := by
   simp [lawTable, Function.comp_def]
+
+#assert_axioms lawTable_names
 
 def fixedNames (fields : List Delvetalk.Compiler.ObjectiveBendSurface.Field) : List String :=
   (fields.filter (·.fixed)).map (·.name)
@@ -366,7 +368,10 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
   let signatures := signaturesAt modules prepared.asts modules.length (modules.length - 1)
   let globals := lowered.output.globalRow
   let law ← lawShape entryModule.name signatures globals lowered.output.sumBounds
-  let stack := prepared.elaborated.ctx.stack.toList.reverse
+  -- The entry's own layer ancestry, top first (no stack for a module that is no layer): another
+  -- stack elsewhere in the closure supplies neither its methods nor its declarations.
+  let ancestry := Delvetalk.Compiler.ObjectiveBendElaborate.layerAncestry prepared.elaborated.ctx.modules entryModule.name
+  let stack := if ancestry.length < 2 then [] else ancestry
   let forms := fun (name : String) => ((prepared.decoded.find? (·.name == name)).map (·.forms)).getD []
   let methods := if stack.isEmpty then methodTable entryModule.name signatures globals (forms entryModule.name) else
     stackMethodTable (stack.filterMap fun name => do
@@ -409,7 +414,8 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
     ({ stage := "objective-typed-check", message, definition := some entry, sourceModule := entryModuleName } : Diagnostic)
   let held ← (Delvetalk.CheckedEntry.make pin accepted.source accepted.typed accepted.packet.fuel).mapError refused
   let artifact := messageFields modules held artifact
-  let readings := lawTable (lowered.laws.map (·.1)) (prepared.asts.getLastD default)
+  let readings := lawTable (lowered.laws.map (·.1))
+    (ancestry.filterMap fun name => (modules.findIdx? (·.name == name)).bind (prepared.asts[·]?))
   let artifact := if readings.isEmpty then artifact else artifact.setObjVal! "laws"
     (Json.arr (readings.toArray.map fun (name, reading) =>
       Json.mkObj [("name", toJson name), ("reading", toJson reading)]))
