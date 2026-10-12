@@ -801,6 +801,41 @@ class Play(InTown):
         s, _, page = self.play('/play/')
         self.assertEqual((s, page.count(b'class="paint"')), (200, 0))
 
+    def test_entering_a_place_tells_what_happened_there_and_only_the_reader_sees_it(self):
+        """A telling (docs/VOICE.md "A telling"): entering the porch on /play/ shows, above what came back, the host's
+        frame and what happened there before the reader arrived: the paint when there is one, the exact lines it draws
+        on folded beneath it (open in its place when there is none). The porch's own page tells it to a signed-in reader
+        and to nobody else; the reply an agent gets carries none of it."""
+        from transport import interpret
+        glm = PEOPLE['glm.delve.town']
+        self.root.send({'op': 'world-arrive', 'principal': 'transport', 'did': glm, 'handle': 'glm.delve.town'})
+        for n, spell in enumerate(('delvetalk porch enter', 'delvetalk porch say / line: the lintel creaked at dusk', 'delvetalk porch leave')):
+            r = self.root.send({'op': 'world-turn', 'principal': glm, 'object': 'porch', 'method': 'receive', 'identity': 'glm-porch-%d' % n,
+                                'argument': record(text=label(spell), post=label(''))})
+            self.assertEqual(r['status'], 'admitted', r)
+        self.front.sleep = lambda seconds: None  # the paint is not waited for: the exact lines stand in its place
+        self.host.send({'op': 'world-renders'})
+        page = self.play('/play/porch', 'delvetalk porch enter')[2].decode()
+        told = page.find('<section class="telling"><p class="frame">Before you arrived</p>')
+        self.assertTrue(0 <= told < page.find('<section class="reply">'), page[:3000])
+        self.assertIn('<details class="card" open><summary>what it draws on</summary>', page)
+        self.assertIn('glm.delve.town (say): the lintel creaked at dusk', page)
+        paint = 'glm.delve.town came in and said “the lintel creaked at dusk”, then left.'
+        replied = lambda text: {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {}}
+        done = interpret.paint(self.host, lambda req: replied(paint if 'a telling of porch' in req['user'] else 'A porch.'))
+        self.assertTrue(done['painted'], done)
+        page = self.request('GET', '/o/porch', headers={'Cookie': self.cookie})[2].decode()
+        at = page.find('<section class="telling"><p class="frame">Before you arrived</p><p class="paint">' + html.escape(paint) + '</p>')
+        self.assertTrue(0 <= at < page.find('<details class="card"><summary>the card</summary>'), page[:3000])
+        self.assertIn('<details class="card"><summary>what it draws on</summary>', page)  # painted: the lines folded, never gone
+        self.assertNotIn('class="telling"', self.request('GET', '/o/porch')[2].decode())  # nobody signed in: nobody to tell
+        self.assertNotIn('class="telling"', self.play('/play/porch')[2].decode())  # a look is not an arrival
+        s, r = self.call('POST', '/AGENTS.md/world/porch/receive', {'intent': 'leave-porch', 'spell': 'delvetalk porch leave'},
+                         self.cookie.split('=', 1)[1])
+        self.assertEqual(s, 200, r)
+        self.assertNotIn('Before you arrived', json.dumps(r))
+        self.assertNotIn(paint, json.dumps(r))
+
     def test_plant_by_prose_shows_the_interpreters_offer(self):
         out = {}
         t = threading.Thread(target=lambda: out.update(page=self.play('/play/', 'please plant me something violet for the owls')[2]))
