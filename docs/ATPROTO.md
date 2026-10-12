@@ -180,7 +180,8 @@ credential (deepfates' to give), the same consumer reads `#commit` ops instead.
 *Authenticity.* The bridge treats observed post authors as UNVERIFIED (`bridge.py`). A request is fetched by
 `com.atproto.sync.getRecord`: the signed commit and the MST path. The transport checks the signature against the
 DID document's `#atproto` key (did:plc from plc.directory; a hostname-level did:web from its host, refused unless the
-host resolves only to global addresses) and the path to the record's CID (`mst.find`); a record that fails is no turn,
+host resolves only to global addresses, connected to the checked address by `delve.public_transport`) and the path
+to the record's CID (`mst.find`); a record that fails is no turn,
 and its uri and CID are kept as refused. The proof is read from the PDS the DID document names now, and only when that
 is the PDS polled: a repository that moved away is not read from its old host, whose copy may be stale (a reader of
 other PDSes is §8's). The first act in the town whose author is proven, not observed.
@@ -233,8 +234,29 @@ itself; untested here. The reference PDS sent bare-DID `aud` until spring 2026 [
 tokens forwarded by `did:web:pds.delve.town` until a probe shows the fragment. Since a PDS serves `com.atproto.repo.*`
 itself, every read meant to pass the proxy is in `online.fg-goose.gsb.*`.
 
-**OAuth** stays identity-only (`oauth.py`, scope `atproto`, tokens revoked at once). Writing a request from `/play/`
-would need `repo:online.fg-goose.gsb.request?action=create` [permission]; delve offers only `transition:generic`, the whole
+**OAuth** stays identity-only (`oauth.py`, scope `atproto`, tokens revoked at once). Discovery checks the PDS,
+authorization-server origin and every endpoint used (PAR, token, optional revocation, browser authorization) with
+`delve.public_destination`: HTTPS, no userinfo, a DNS name or IP, and every resolved address global. The browser's
+`authorization_endpoint` is never fetched by the server; it receives the same address check before PAR so metadata naming an internal destination
+is refused before redirecting. The browser makes its own DNS lookup and can meet a rebound answer; the front can
+pin only its own connections.
+
+`delve.public_transport` carries all discovery GETs and DPoP POSTs, including nonce retries and revocation. Each
+request resolves once, refuses the entire answer if any address is non-global, then opens a socket directly to the
+first checked address. TLS uses the URL hostname and the default verifying context; HTTP Host retains the URL
+host and explicit port. Loopback, private, link-local, unique-local, multicast, reserved, unspecified and CGNAT are
+refused, including embedded IPv4 in mapped/compatible, NAT64 and 6to4 forms. Reserved IPv6 forms are refused even
+when their embedded IPv4 is public. Redirects are returned without following; at most 16 MiB + 1 bytes are read,
+and OAuth refuses oversized responses rather than truncating them. Endpoint validation before PAR opens no socket;
+every subsequent fetch checks and pins anew, so a changed DNS answer cannot reach an internal address. Network
+failures carry `network_error` with a reason code; address/URL refusals carry `not_public` with the host.
+
+Production `OAuth` uses this transport, and `Client.did_document` uses it for did:web and the fixed plc.directory
+host. Delve XRPC, Zulip and the model keep `http_transport`: their hosts are configured, not discovered. Offline
+`OAuth(transport=..., resolve=...)` and `Client(transport)` supply fixtures; there is no HTTP scheme switch in OAuth.
+The fake OAuth provider exposes HTTPS identities through its injected transport to loopback HTTP.
+
+Writing a request from `/play/` would need `repo:online.fg-goose.gsb.request?action=create` [permission]; delve offers only `transition:generic`, the whole
 account's write, which DelveTalk will not hold.
 
 **Decision:** request records for public acts only, polled from listRepos, proven by sync.getRecord, answered by
@@ -417,11 +439,16 @@ Fixed in L4:
 | 10 | height cannot be the firehose `seq` | fixed: `State.firehose` (`worlds/<world>/events`) stores each exact frame once, fsynced, with endpoint-wide consecutive seq and epoch/head-height coverage. Carry copies it; restart reconciles downtime with one head sync. Rotation identity precedes sync, never connect. Newest 10,000 retained, atomic compaction at 20,000; live-only without cursor, ordered replay > cursor, OutdatedCursor then oldest replay, FutureCursor/InvalidRequest then close |
 | 11 | one commit event per height can overflow; deltas need inversion context | fixed: one `fits` decision enforces ≤200 ops and ≤2,000,000 CAR bytes, otherwise head-only sync; `rebase: false`, `tooBig: false`, empty blobs. Per-height CARs contain nodes read by partial-tree inversion, separate from getRepo slices. Independent inversion tests cover creates, new layers/root shrink, updates and deletes; real consumer follows 1,000 commits and resumes identical bytes |
 
+Fixed in L5:
+
+| # | Finding | Decision |
+| --- | --- | --- |
+| 3 | OAuth discovery reaches internal addresses; did:web DNS can rebind between check and connect | fixed: one global-address policy for discovered URLs, including browser authorization and optional revocation; `delve.public_transport` resolves once per request and connects to the first checked IP, with verifying TLS for the URL host and its original Host header. All DNS answers must be public; mapped/compatible/NAT64/6to4 private forms are refused. OAuth discovery and DPoP POSTs and `Client.did_document` use it by default; configured XRPC, Zulip and model hosts keep `http_transport`. Injected fixture transports preserve the loopback tests without an HTTP scheme switch; `test_netsafe` and `test_oauth` name the attacks (§2) |
+
 For the next slices, each with its decision:
 
 | # | Finding | Decision | Lane |
 | --- | --- | --- | --- |
-| 3 | OAuth discovery reaches internal addresses | accepted: `oauth.py`'s discovered URLs go through the global-address check `delve.Client.did_document` now applies to did:web hosts, and the connection is made to the address checked (today's check leaves DNS rebinding between check and connect) | L5 |
 | 9 | the bare-audience exception cannot know the forwarder | accepted: no forwarder-based exception. `aud` is our DID with `#delvetalk` or bare (both name only us; `lxm` binds the method), `typ` `JWT`, `iat` not in the future, `exp` within five minutes, `jti` once | L5 |
 | 13 | proxied sessions are visible to the resident's PDS | accepted: §3's table counts the resident's PDS inside the trust boundary of every proxied call; privacy from it needs a direct call | L6 |
 | 14 | retrieving versions cited by book or paint | required when those records land: immutable versioned keys for book/paint and every card/page version they cite; no claim of historical retrieval from overwritten singleton keys (§1) | L3 |
