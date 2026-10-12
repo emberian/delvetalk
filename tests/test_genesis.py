@@ -71,7 +71,7 @@ class Genesis(unittest.TestCase):
             said[word] = got['offers'][0]['text']
         self.assertTrue(said['PORCH'].startswith("The Bellfounder's Porch"), said)
         # The link door has no object: naming it answers its description.
-        self.assertEqual(said['STUDIO'], 'STUDIO\nscratch worlds and REPL: ' + ORIGIN + '/AGENTS.md\n')
+        self.assertEqual(said['STUDIO'], 'STUDIO\n' + genesis.STUDIO[1] + '\n')
         menu = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'commonplace'})['text']
         self.assertIn(ORIGIN + '/AGENTS.md', menu)
 
@@ -137,7 +137,7 @@ class Genesis(unittest.TestCase):
         """LIBRARY (a), (e): genesis shelved capsules/pages/ as the opener; anyone reads a page by a word of what they said."""
         self.assertEqual(self.library('delvetalk library read / page: how do i read laws?', 1), genesis.page_body('laws'))
         miss = self.library('delvetalk library read / page: dragons', 2)
-        self.assertEqual(miss, 'refused noPage: No page called dragons. Pages: spells laws object relations protocol world kinds spween station; walks: bell check enter scene tide kind.\n')
+        self.assertEqual(miss, 'refused noPage: No page called dragons. Pages: spells laws object relations protocol world kinds spween station guide; walks: bell check enter scene tide kind.\n')
         refused = self.library('delvetalk library shelve / name: mine / kind: page / title: t / body: hob: mine', 3)
         self.assertEqual(refused, 'refused notOwner: Only ember.delve.town shelves a page\n')
         self.assertNotIn('mine', self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'library'})['text'])
@@ -600,7 +600,7 @@ class Commonplace(unittest.TestCase):
         self.assertIn('  delvetalk kinds make / name: lamp / of: record\n  » kind/lamp, a kind anyone makes\n  delvetalk garden/bell/1 ?\n', blank)
         # KINDS and WORKSHOP lead (playtest 2, F1): what is clipped is the places, from the end.
         self.assertIn('\nKINDS\n  delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80\n  » kind/lamp, a kind anyone makes\nPORCH\n', blank)
-        self.assertIn('STUDIO · scratch worlds and REPL: ' + ORIGIN + '/AGENTS.md\n', blank)  # a link door is never clipped
+        self.assertIn('STUDIO · ' + genesis.STUDIO[1] + '\n', blank)  # a link door is never clipped
         self.assertTrue(blank.endswith('Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n'), blank)
         # since an entry: only what changed after it
         since = self.host.send({'op': 'world-turn', 'principal': stranger, 'object': 'commonplace', 'method': 'since', 'identity': 'since',

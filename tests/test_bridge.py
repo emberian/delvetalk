@@ -74,6 +74,7 @@ class BridgeCase(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.state = State(Path(self.tmp.name) / 'state', config=LOOPBACK)
+        self.state.append(self.state.taught, DID)  # not a newcomer: a first reply's next moves are test_posting's
 
     @property
     def host(self):

@@ -15,6 +15,7 @@ rehearsal/rehearse.py calls `run`, so the rehearsal and production seed the same
 the places the archive's posts name, tests/town.py `furnish`). Seeds name only the fields genesis decides; the host lays them over each package's own initial().
 """
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -49,8 +50,9 @@ DOORS = [
     ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('TIDE', 'tide', [('delvetalk tide rules', "what happens at each hourly tick: the weather, the porch's lamp")]),
 ]
-# A link door: no object (the empty reference); its description is its line.
-STUDIO = ('STUDIO', f'scratch worlds and REPL: {Config().origin}/AGENTS.md')
+# A link door: no object (the empty reference); its description is its line: the preview a poster has, then the
+# REPL only HTTP reaches (docs/POSTING.md).
+STUDIO = ('STUDIO', f'try first: delvetalk try, your spells indented under it; a REPL by HTTP: {Config().origin}/AGENTS.md')
 
 
 def door(label, to, examples, description=''):
@@ -71,6 +73,7 @@ EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make
              'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
             ("I water mimo's bell", 'grow: water "poured on by a hand; a line, and the bell is tended"\ndelvetalk bell/1 water / text: I water the bell'),
             ('what is a front?', 'delvetalk library read / page: kinds'),
+            ('how does this work?', 'delvetalk library read / page: guide'),
             ('how do I write a scene for a room, with choices?', 'delvetalk library read / page: spween'),
             ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/FOUNDATION.md §5)
 
@@ -96,6 +99,56 @@ PAGES = [('spells', 'page', 'how a reply is read: the line, the fields, ?, a bad
 
 def page_body(name):
     return (ROOT / 'capsules' / 'pages' / (name + '.txt')).read_text()
+
+
+# The guide the front serves at /AGENTS.md (docs/AGENTS-API.md), shelved as pages so a resident whose window is the
+# PDS reads the same text (docs/POSTING.md): `guide`, its contents, and `guide-1` … `guide-N`, the text cut at its
+# sections into pages within the library's bound (Library.obend's `shelve`: 1,266 characters).
+GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
+PAGE_LIMIT = 1266
+
+
+def guide_text(origin=None):
+    """The guide as the front serves it: docs/AGENTS-API.md with `{{origin}}` its origin."""
+    return GUIDE.read_text().replace('{{origin}}', (origin or Config().origin).rstrip('/'))
+
+
+def guide_cuts(text, room):
+    """The guide's text in pieces of at most `room` characters, in order: each cut at a section's heading where one
+    falls past half the room, else at a blank line past two thirds of it, else at a line."""
+    rest, parts = text.strip('\n'), []
+    while len(rest) > room:
+        heading, para, line = rest.rfind('\n## ', 0, room), rest.rfind('\n\n', 0, room), rest.rfind('\n', 0, room)
+        cut = heading if heading > room // 2 else para if para > room * 2 // 3 else line if line > 0 else room
+        parts.append(rest[:cut].rstrip())
+        rest = rest[cut:].lstrip('\n')
+    return parts + [rest]
+
+
+def guide_pages(origin=None):
+    """[(name, kind, title, body)]: the guide's contents page and its parts, each ending with the spell for the next."""
+    head = lambda k, n: f'hob: the guide, part {k} of {n}; the web serves the same text at /AGENTS.md.\n'  # noqa: E731
+    tail = lambda k, n: f'\nNext: delvetalk library read / page: guide-{k + 1}' if k < n else '\nBack to the contents: delvetalk guide'  # noqa: E731
+    room = PAGE_LIMIT - len(head(10, 10)) - len(tail(9, 10))
+    cuts = guide_cuts(guide_text(origin), room)
+    n = len(cuts)
+    titles, section = [], None
+    for cut in cuts:
+        heads = [line[3:] for line in cut.splitlines() if line.startswith('## ')]
+        opened = not cut.startswith('## ') and section  # a part that opens inside a section names it first
+        titles.append(', '.join(([f'{section} (continued)'] if opened else []) + heads) or cut.splitlines()[0].lstrip('# '))
+        section = heads[-1] if heads else section
+    contents = (f'hob: the guide, in {n} parts, the text the web serves at /AGENTS.md; each part is a page here and a '
+                f'town.delvetalk.page record on the mirror.\n' +
+                ''.join(f'  guide-{k}  {title[:70]}\n' for k, title in enumerate(titles, 1)) +
+                'Read one: delvetalk library read / page: guide-1')
+    return [('guide', 'page', 'the guide the web serves at /AGENTS.md, in parts', contents)] + \
+        [(f'guide-{k}', 'page', f'the guide, part {k}: {titles[k - 1]}'[:80], head(k, n) + cut + tail(k, n)) for k, cut in enumerate(cuts, 1)]
+
+
+def shelf(origin=None):
+    """Every page genesis shelves, in order: the capsules' (PAGES), then the guide's."""
+    return [(name, kind, title, page_body(name)) for name, kind, title in PAGES] + guide_pages(origin)
 
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the
@@ -325,7 +378,7 @@ class Stopped(Exception):
 def inputs():
     """Every file genesis reads, read before the first op, so a missing one spends nothing: the bodies, the pages."""
     bodies = {b: body_of(b) for b in {'commonplace'} | {k[5] for k in KINDS if k[5]}}
-    pages = {name: page_body(name) for name, _, _ in PAGES}
+    pages = {name: body for name, _, _, body in shelf()}
     for name, text in {**bodies, **pages}.items():
         if not text.strip():
             raise OSError(f'genesis input {name} is empty')
@@ -397,7 +450,7 @@ def run(host, opener=OPENER, gas_station=False):
         next(m for m in made if m['object'] == 'library')['pages'] = [
             turned('library shelve ' + name, turn('library', 'shelve', rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title),
                                                                       body=lab(pages[name])), 'genesis-shelve-' + name))
-            for name, kind, title in PAGES]
+            for name, kind, title, _ in shelf()]
         # One card per door: each door's object publishes its page, which the bridge drafts as `wiki: <Door>` for the hand to post.
         for label, to, _ in DOORS:
             page = turn(to, 'publishPage', rec(page=lab(label.capitalize())), 'genesis-page-' + to)
@@ -544,6 +597,7 @@ def refresh(host, opener, journals):
             rows |= {slot: done(reply) for slot in stale}
         out += [{'object': obj, 'slot': slot, **row} for slot, row in rows.items()]
     out += listed(host, opener)
+    out += shelved(host, opener)
     # The world's motion (MOTION), placed when the carried town lacks it, as genesis places it.
     have = set(existing(host, opener))
     for kind, fields in MOTION:
@@ -553,6 +607,23 @@ def refresh(host, opener, journals):
             continue
         placed = said(host, opener, kind, 'place', carried_fields(host, opener, kind, fields), f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
+    return out
+
+
+def shelved(host, opener):
+    """Each page genesis shelves (`shelf`: the capsules and the guide), shelved again by the opener where the carried
+    library's text differs or lacks it, so the library reads what the files say; another's page is left."""
+    from transport.mirror import library_pages
+    held, out = {p['name']: p for p in library_pages(host, opener)}, []
+    for name, kind, title, body in shelf():
+        page = held.get(name)
+        if page and (page['body'], page['title'], page['kind']) == (body, title, kind):
+            out.append({'object': 'library', 'slot': f'page {name}', 'status': 'current'})
+            continue
+        reply = host.send({'op': 'world-turn', 'principal': opener, 'object': 'library', 'method': 'shelve',
+                           'identity': f'refresh-shelve-{name}-{hashlib.sha256(body.encode()).hexdigest()[:12]}',
+                           'argument': rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title), body=lab(body))})
+        out.append({'object': 'library', 'slot': f'page {name}', **done(reply), 'reading': 'shelved' if page is None else 'the file changed'})
     return out
 
 

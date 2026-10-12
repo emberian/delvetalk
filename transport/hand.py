@@ -91,6 +91,20 @@ def quoted(spell):
     return '\n'.join('    ' + line for line in spell.split('\n'))
 
 
+# The welcome's move (docs/POSTING.md build 8): one any resident makes for themselves, so the welcome is a real act with
+# a receipt that resolves, and its answer the card the resident will get.
+WELCOME = 'delvetalk kind/bell make / seed: a bell for whoever comes next / colour: silver'
+
+
+def welcome_text(spell, answered):
+    """The welcome's text: hob's opening line, the move as cast and as answered, and the move offered back."""
+    mine = spell.replace('a bell for whoever comes next', '<your words>')
+    return ('hob: the frog on the quiet line; the cards answer for themselves. One move, done:\n\n' + quoted(spell) + '\n\n' +
+            answered.split('\n\n', 1)[-1].rstrip('\n') + '\n\n' +
+            'Yours: reply under this post with\n' + quoted(mine) + '\n'
+            'To see first what it would do: delvetalk try, the spell indented under it. The rest: delvetalk guide.')
+
+
 class Hand:
     def __init__(self, st, host, token='', poster=post.post_draft, clock=time.time, who='owner', sleep=time.sleep):
         self.st, self.host, self.token, self.poster, self.clock, self.who, self.sleep = st, host, token, poster, clock, who, sleep
@@ -247,6 +261,8 @@ class Hand:
         made = [c['object'] for c in (receipt.get('outcome') or {}).get('creates') or [] if c.get('object')]
         obj = (made or [reply.get('object') or card])[0]
         text = bridge.draft_public(reply, self.st.config.origin, reply.get('object'))
+        if tag == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
+            text = bridge.with_paint(self.host, bridge.offered_object(reply, card), text, self.sleep)
         came = {'card': card, 'object': obj, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
                 'line': bridge.receipt_line(receipt, None, reply.get('object')).strip(), 'text': text}
         name = None
@@ -258,6 +274,20 @@ class Hand:
                                      'object': obj, 'slot': None, 'receipt': receipt, 'text': quoted(spell) + '\n\n' + text, 'posted': False, 'hand': True})
         self.log('speak', name, intent=intent, spell=spell, height=receipt.get('height'), slug=receipt.get('slug'), outcome=came['outcome'], object=obj)
         return {**came, 'intent': intent, 'drafted': name}
+
+    def welcome(self, spell=None, topic=None, reply_to=None, intent=None):
+        """The welcome, one move done (docs/POSTING.md build 8): the hand casts a move any resident can make
+        (`WELCOME`, a bell of one's own), and the draft is that move as the town would answer it (the spell quoted,
+        the paint and the card it offered, its real receipt), then the same move offered back: reply under it with
+        the spell in your own words, or `delvetalk try` it first. Never posted by itself. -> what `cast` answers."""
+        spell = (spell or WELCOME).strip()
+        came = self.cast(spell, topic, reply_to, intent or 'hand:welcome:' + hashlib.sha256(spell.encode()).hexdigest()[:12])
+        if not came.get('drafted'):
+            raise HandError(f"the welcome's move was not admitted: {came.get('line')}")
+        path, d = self.draft(came['drafted'])
+        if not d.get('welcome'):
+            self.st.write(path, dict(d, welcome=True, text=welcome_text(spell, d['text'])))
+        return {**came, 'text': self.draft(came['drafted'])[1]['text']}
 
     def receive(self, card, spell, intent):
         return self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': 'receive', 'identity': intent,
@@ -296,8 +326,8 @@ class Hand:
             rc = self.host.send({'op': 'world-receipt', 'principal': self.owner, 'identity': intent}).get('receipt') or {}
             said, waiting = trace(self.host, self.owner, intent, {'status': outcome_of(rc), 'receipt': rc}, wait=0) if rc else ([], True)
             text = '\n'.join(t.rstrip('\n') for t in said)
-        # The card the act left, painted from its strokes, above the exact text (never in the draft: posting paint is the
-        # fourth playtest's question).
+        # The card the act left, painted from its strokes, above the exact text (a spell's draft carries it too, when it
+        # fits one post: bridge.with_paint).
         paint = painted(self.host, self.owner, line['object'], self.sleep) if line.get('outcome') == 'admitted' and line.get('object') else {}
         return {**line, 'text': text, 'waiting': waiting, 'paint': paint.get('text'), 'fellBack': fell_back(paint) if paint else None}
 
@@ -865,7 +895,8 @@ def parser(p, common):
             'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [],
             'invite': [('name', dict(help='the guest: [a-z][a-z0-9-]{0,31}, its handle on cards')), ('--note', dict(default='', metavar='TEXT')),
                        ('--expires', dict(type=float, default=INVITE_DAYS, metavar='DAYS', help=f'the code may be accepted for DAYS (default {INVITE_DAYS})'))],
-            'invites': [], 'revoke-invite': [('name', {})]}
+            'invites': [], 'revoke-invite': [('name', {})],
+            'welcome': [('--spell', dict(help='the move the welcome makes and offers (default WELCOME)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))]}
     flags = lambda fields, why: [(f'--{n}', {}) for n, _ in fields] + [(f'--{n}-file', {}) for n, k in fields if k == 'json' or n == 'text'] + \
         [(f'--{why}', dict(required=True))]
     spec |= {v: flags(f, 'reading') for v, (_, f) in root.POWERS.items()} | {'settings': flags(root.MOD_SETTINGS, 'reading')}
@@ -898,7 +929,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
                 'speak': lambda: cli_speak(h, a), 'morning': lambda: h.morning(a.day, a.topic, a.reply_to), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
                 'root': lambda: cli_root(h, a), 'invite': lambda: h.invite_guest(a.name, a.note, a.expires), 'invites': h.guests,
-                'revoke-invite': lambda: h.revoke_guest(a.name), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
+                'revoke-invite': lambda: h.revoke_guest(a.name), 'welcome': lambda: h.welcome(a.spell, a.topic, a.reply_to), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
     except (HandError, OSError) as err:
         print(f'hand: {err}', file=sys.stderr)
         return 1

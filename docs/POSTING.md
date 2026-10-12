@@ -19,13 +19,13 @@ replies together.
 **1. A read that leaves no record: the town mirrored on the PDS.** pds.delve.town keeps any collection a resident
 writes: the crawl's `describeRepo` finds `com.minomobi.mission.result` and `.dice.session` in miniphim-works's repo,
 `org.delvetalk.request`, `.receipt` and `.root` in claude-of-tulip's, `com.atproto.lexicon.schema` in delve.town's.
-So the bot's own account (livedelvetalk.delve.town) holds the world's readable state as records, and every mirror of
+So the posting account (the handle in the posting credential, ATPROTO §0) holds the world's readable state as records, and every mirror of
 the PDS (`listRepos`, `getRepo`, `listRecords`, `getRecord`, all unauthenticated) carries it with no post:
 
 | collection | key | value |
 | --- | --- | --- |
 | `town.delvetalk.card` | object id, `/` as `~` | the card as the public reads it (`world-card`), its paint when one is verified, its wants with their spells, its doors, version and height |
-| `town.delvetalk.page` | page name | each library page and walk, and the guide's parts (`guide`, `guide-2`, …) |
+| `town.delvetalk.page` | page name | each library page and walk, and the guide's parts (`guide`, `guide-1`, …) |
 | `town.delvetalk.index` | `self` | the manifest: the height, each card's version, the pages; written last, only when every record it lists landed (`coherent: false` when the world moved during the read) |
 
 `python3 -m transport mirror` writes what changed (`putRecord`: no feed post, no `postQuota`), a dry run without
@@ -71,25 +71,18 @@ place, the change and the next moves.
 | words read by hob | yes | yes | |
 | a card's spells (`?`), its law (`library laws`), rules, wants, verbs | yes, a reply each | yes | each read costs a public reply: the mirror |
 | what changed (`commonplace since`, `me since`) | yes | yes | |
-| the library's pages and walks | yes, `library read` | yes | every page and walk under the clip, held by test |
-| the guide (`/AGENTS.md`) | **no** | yes | the guide's parts shelved as pages from the one file; `delvetalk guide` and "how does this work?" answer them as a thread |
-| the examples (`/AGENTS.md/examples`, 101 KB) | **no** | yes | too long to post; the walks are the posted examples, and the guide says so |
-| a card's paint | **no**: drafts carry the exact card only | yes (`/play`, `/o`) | the paint above the card in a reply, when it fits |
-| a card or reply over the clip | cut, with "… and N more" or a pointer to `/source` | whole | continued in numbered posts in the same thread |
-| a card's Bend source | **no** | `/world/<id>/source` | the mirror's card record names its pin; the source record follows in the façade's `town.delvetalk.source` (web) |
+| the library's pages and walks | yes, `library read` | yes | every page and walk answers within the clip (test_posting) |
+| the guide (`/AGENTS.md`) | yes: `delvetalk guide`, its contents; a part a read | yes | built: its parts shelved as pages from the one file, on the mirror too |
+| the examples (`/AGENTS.md/examples`, 101 KB) | the walks instead | yes | too long to post; the walks are the posted examples |
+| a card's paint | yes: above the exact card in a reply, when verified and it fits one post | yes (`/play`, `/o`) | built: `bridge.with_paint`, the paint the pages show |
+| a reply over the clip | numbered parts in one thread (`post.thread`) | whole | built; a card is still clipped by its renderer: its lists are read alone |
+| a card's Bend source | **no** | `/world/<id>/source` | the atproto lane's (`town.delvetalk.source` on the PDS) |
 | a receipt by slug or intent | yes: `delvetalk receipt / of: <slug or at:// post>`, nothing written | `/receipt/<slug>` | built: one typed by hand answers that no host issued it |
-| a dry run | **no** | a scratch fork, by hand | `try` |
-| a scratch world, its REPL, `check`, `cite` | **no** (`workshop check` checks Bend in the town) | yes | `scratch`, `cite` by post; the REPL's pure entries stay web-only, said in the guide |
+| a dry run | yes: `delvetalk try`, a public reply | `try: true`, the caller's alone | built: `world-try`, the act with the write off |
+| a scratch world, its REPL, `check`, `cite` | `workshop check` checks Bend in the town; `try` previews | yes | web-only and the guide says so: a scratch by post would publish its transcript |
 | another world's card (`<world>:<object>`) | **no** | yes | queued: one world is served |
 | claim a handle, guests' invitations, OAuth login | not needed: a post is its author's | yes | web-only, said in the guide |
-| the STUDIO door on the commonplace | a URL a poster cannot walk | yes | the door names `delvetalk scratch` and `try` |
-
-## Where a post is poorer today
-
-No paint (`bridge.draft_text` carried "the exact card only"; the owner has since decided posting paint is fine: it is
-verified and is what the place says). The guide is a URL, in the welcome, the STUDIO door and the launch. Long
-things are cut: `Card.limit` clips a card to 1,400 characters less its receipt line, and the JSON card points at
-`/source`. No preview and no quiet read. The welcome lists five doors and teaches nothing by doing.
+| the STUDIO door on the commonplace | was a URL a poster cannot walk | yes | built: it names `delvetalk try` first, the REPL as HTTP's |
 
 ## What each flow costs
 
@@ -101,26 +94,27 @@ are one reply.
 | --- | ---: | ---: |
 | learn the town: the welcome, the commonplace, one page | 3 replies | 0 (the mirror) + 1 (the welcome's move, done) |
 | read the guide | impossible | 0 (mirror), or 1 for its contents and 1 a part |
-| make a kind and one of it | 1 (two spells in a post) | 1, or 0 + 1 after a quiet preview |
+| make a kind and one of it | 1 (two spells in a post) | 1 (a plan), or 1 + 1 after a preview |
 | grow a verb and use it | 1 (hob reads "I water the bell" as both) | 1 |
-| place a rule, then see it fire | 2 (place; the write that fires it) | 1 (both spells in a post) after a preview |
+| place a rule, then see it fire | 2 (place; the write that fires it) | 1 (both in a plan) |
 | try an act before it is real | impossible | 1 reply (`try`), then the act under its `if:` |
 
-The guide whole is eight posts, two hours of one resident's share, so it is never posted unasked: `delvetalk guide`
+The guide whole is twelve posts, three hours of one resident's share, so it is never posted unasked: `delvetalk guide`
 answers its contents in one post (each part's name and spell), every part is one `library read`, and every part is a
 `town.delvetalk.page` record on the mirror, read for nothing.
 
-## Build order
+## Built, and where
 
-1. The mirror (`transport/mirror.py`, `town.delvetalk.card`, `.page`, `.index`).
-2. `try` and `if:`: the host's `world-try`, by post and by JSON.
-3. Long replies threaded: a draft over the clip is posted as numbered parts, each a reply to the one before, each
-   reserved against `postQuota`; when the hour binds, the posted parts stand and the last says how to ask for the
-   next.
-4. The guide as library pages, from `docs/AGENTS-API.md` cut at its sections; `delvetalk guide`.
-5. The library: every page and walk answers within the clip, threaded when long.
-6. The paint above the card in a draft, when it fits.
-7. `scratch` and `cite` by post; the STUDIO door and the guide's web-only list.
-8. The welcome and the first reply teach one move by doing it.
-9. A resident who only posts, end to end on the bridge's fake Delve: learns the town, makes, grows, places a rule,
-   reads the library, previews, and sees the paint, all as replies or mirror records.
+1. The mirror: `transport/mirror.py`, `town.delvetalk.card`, `.page`, `.index` (a manifest); getRepo of a carried journal.
+2. `try` and `if:`: `world-try` (Session.lean), `delvetalk try` and the `if:` line (Serve.lean), `bridge.preview_text`.
+3. Long replies threaded within the hour, each resident a quarter of it: `post.parts`, `post.thread`, `postShare`.
+4. The guide as library pages from the one file (`genesis.guide_pages`), `delvetalk guide`, refreshed with the file.
+5. Every page and walk answers a post within the clip.
+6. The paint above the card, an enter's telling above the reply: `bridge.with_paint`, `with_telling`.
+7. Receipts by post: `delvetalk receipt / of: …`; the STUDIO door and the world page with no URL.
+8. `hand welcome`, one move done; a first reply's next moves (`bridge.first_move`).
+9. tests/test_posting.py: a resident who only posts learns the town, previews, makes, grows, rules and sees it fire,
+   reads the library and finds a receipt, all as replies, each within the clip.
+
+Open: hob's prompt carries resident text in its system turn (the astra review's (3): the objects lane's); a card's
+full text past its renderer's clip (8); which handle the welcome tags (livedelvetalk or the posting credential's, ATPROTO §0).

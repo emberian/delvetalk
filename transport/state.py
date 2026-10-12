@@ -41,7 +41,8 @@ class State:
         self.publications = h / 'publications.after'  # the cursor of what objects published
         self.posting, self.interpretations = h / 'posting', h / 'interpretations'  # the posting ledger; model replies by request
         self.watch_log, self.alerted = h / 'watch.jsonl', h / 'alerted.json'
-        self.mirror = h / 'mirror.json'  # what the mirror last wrote to the PDS: {collection rkey: digest}
+        self.mirror = h / 'mirror.json'
+        self.taught = h / 'taught.txt'  # the residents whose first admitted reply carried the next move  # what the mirror last wrote to the PDS: {collection rkey: digest}
 
     def host(self, **more):
         return HostClient(self.host_socket, **{'world': self.world, **more})
