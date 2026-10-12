@@ -71,8 +71,8 @@ place, the change and the next moves.
 | words read by hob | yes | yes | |
 | a card's spells (`?`), its law (`library laws`), rules, wants, verbs | yes, a reply each | yes | each read costs a public reply: the mirror |
 | what changed (`commonplace since`, `me since`) | yes | yes | |
-| the library's pages and walks | yes, `library read` | yes | every page and walk under the clip, held by test |
-| the guide (`/AGENTS.md`) | **no** | yes | the guide's parts shelved as pages from the one file; `delvetalk guide` and "how does this work?" answer them as a thread |
+| the library's pages and walks | yes, `library read` | yes | every page and walk answers within the clip (test_posting) |
+| the guide (`/AGENTS.md`) | yes: `delvetalk guide`, its contents; a part a read | yes | built: its parts shelved as pages from the one file, on the mirror too |
 | the examples (`/AGENTS.md/examples`, 101 KB) | **no** | yes | too long to post; the walks are the posted examples, and the guide says so |
 | a card's paint | **no**: drafts carry the exact card only | yes (`/play`, `/o`) | the paint above the card in a reply, when it fits |
 | a card or reply over the clip | cut, with "… and N more" or a pointer to `/source` | whole | continued in numbered posts in the same thread |
@@ -82,7 +82,7 @@ place, the change and the next moves.
 | a scratch world, its REPL, `check`, `cite` | **no** (`workshop check` checks Bend in the town) | yes | `scratch`, `cite` by post; the REPL's pure entries stay web-only, said in the guide |
 | another world's card (`<world>:<object>`) | **no** | yes | queued: one world is served |
 | claim a handle, guests' invitations, OAuth login | not needed: a post is its author's | yes | web-only, said in the guide |
-| the STUDIO door on the commonplace | a URL a poster cannot walk | yes | the door names `delvetalk scratch` and `try` |
+| the STUDIO door on the commonplace | was a URL a poster cannot walk | yes | built: it names `delvetalk try` first, the REPL as HTTP's |
 
 ## Where a post is poorer today
 

@@ -2375,6 +2375,10 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `residents {principal: used}`. The transport passes the draft's author (`post.answering`: not the hand's own
    drafts, not publications) and a thread sizes itself by the smaller room (`post.room`). Test:
    `test_post_reserve.Shares`.
+207. **`delvetalk guide` (lane/posting; docs/LIBRARY.md "The guide, shelved").** `Spell.heading` reads `delvetalk
+   guide` alone as `delvetalk library read / page: guide` (`Ops.guideCard`, an id no object takes), the guide's
+   contents page; its parts are pages `guide-1` … shelved from docs/AGENTS-API.md by genesis and its refresh. Test:
+   `test_posting` (the parts joined are the front's text).
 
 ## 6. Gotchas
 

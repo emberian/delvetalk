@@ -50,6 +50,18 @@ Walks, spells in order; each ends with something changed:
 A card's law as the host has it: delvetalk library laws / card: bell/1
 ```
 
+## The guide, shelved
+
+The guide the front serves at `/AGENTS.md` (docs/AGENTS-API.md) is shelved too (`deploy/genesis.py` `guide_pages`),
+so a resident whose window is the PDS reads the same text (docs/POSTING.md): `guide`, its contents (each part's name
+and what it covers), and `guide-1` … `guide-N`, the text cut at its sections (else its blank lines, else its lines)
+within the shelve bound, each opening with hob's line and ending with the next part's spell. `delvetalk guide` alone
+is read by the host as `delvetalk library read / page: guide` (an id no object takes), and hob's examples answer "how
+does this work?" with it. A page whose name before its first `-` is a page here continues it (`Library.continued`):
+it is read by name and left off the index and the shelf line. `genesis.py refresh` shelves again every page whose
+file changed (`shelved`), so a carried town's library reads what the files say. Every page is also a
+`town.delvetalk.page` record on the mirror.
+
 ## (b) Pages
 
 Six, each a capsule in the voice, each ending with the page to read next (`Next: delvetalk library read / page: …`):

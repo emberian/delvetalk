@@ -61,15 +61,18 @@ def tryCard : String := "try"
 /-- The card name `delvetalk receipt / of: <slug or post>` is read as: a receipt looked up by post. No object takes it. -/
 def receiptCard : String := "receipt"
 
+/-- `delvetalk guide` is read as `delvetalk library read / page: guide`. No object takes the id. -/
+def guideCard : String := "guide"
+
 /-- An object id a creation may take: 1..128 bytes of `Limits.nameAlphabet` (ASCII letters, digits and
     `. _ : / -`), the rule the spell grammar reads a card name by, so every object can be spelled and
     has an AT record key (`~` stands for `/` there). Journals with other ids still replay; only new
     creations are held to it. -/
 def validObjectId (id : String) : Bool :=
-  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId && id != objectsCard && id != tryCard && id != receiptCard &&
+  !id.isEmpty && id.utf8ByteSize ≤ Limits.maxObjectIdBytes && id != worldId && id != objectsCard && id != tryCard && id != receiptCard && id != guideCard &&
     id.toList.all fun (c : Char) => Limits.nameAlphabet.toList.contains c
 
-def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world, objects, try or receipt"
+def objectIdRule : String := "an object id is 1..128 bytes of letters, digits and . _ : / -, and not world, objects, try, receipt or guide"
 
 /-- The public reader's name: `anonymous`, or the empty string; both read as "". -/
 def publicReader : String := "anonymous"

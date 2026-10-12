@@ -23,7 +23,7 @@ WORKSHOP
 TIDE
   delvetalk tide rules
   » what happens at each hourly tick: the weather, the porch's lamp
-STUDIO · scratch worlds and REPL: https://gsb.fg-goose.online/AGENTS.md
+STUDIO · try first: delvetalk try, your spells indented under it; a REPL by HTTP: https://gsb.fg-goose.online/AGENTS.md
 YOURS · me
   delvetalk me since
   » what others did to what you made since you were here; what you hold; your notes

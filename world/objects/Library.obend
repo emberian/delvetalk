@@ -43,6 +43,17 @@ form shelve:
   body: text 1..1266
 def ordered(state: State) -> Lists.List<Page>:
   Relations.order(state.pages, fn(p: Page) -> Nat: p.place)
+# A page that continues another (`guide-3` continues `guide`: its name before the first `-` is a page here) is read by
+# name and left off the index and the shelf line, where its first page stands for it.
+def continued(state: State, page: Page) -> Bool:
+  let at = textBreak(page.name, "-")
+  if at >= textLength(page.name) then false else shelvedName(state, textTake(page.name, at))
+def shelvedName(state: State, name: String) -> Bool:
+  match Relations.lookup(state.pages, {name: name}):
+    case some(_): true
+    case none(_): false
+def heads(state: State) -> Lists.List<Page>:
+  Lists.filter(ordered(state), fn(p: Page) -> Bool: continued(state, p) == false)
 def isWalk(page: Page) -> Bool:
   match page.kind:
     case walk(_): true
@@ -61,9 +72,9 @@ def read(state: State, input: {page: String}, context: Abi.Context) -> Activity<
 def names(pages: Lists.List<Page>) -> String:
   textJoin(Lists.map(pages, fn(p: Page) -> String: p.name), " ")
 def shelfLine(state: State) -> String:
-  let walks = Lists.filter(ordered(state), isWalk)
+  let walks = Lists.filter(heads(state), isWalk)
   let walked = if Lists.length(walks) == 0n then "" else "; walks: {names(walks)}"
-  "Pages: {names(Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false))}{walked}."
+  "Pages: {names(Lists.filter(heads(state), fn(p: Page) -> Bool: isWalk(p) == false))}{walked}."
 def refused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Card.Replied>:
   Card.refusing(Card.Replied.refused(refusal), refusal, context)
 # A card's law as the host has it (`inspect` without the source): each clause with its reading,
@@ -130,8 +141,8 @@ def entryLine(page: Page) -> String:
 # line are counted first; the pages take what Card.limit(context) leaves of them (and of the walks'
 # count, kept for it), the walks what the pages leave.
 def render(state: State, context: Abi.Context) -> Document.Document:
-  let pages = Lists.filter(ordered(state), fn(p: Page) -> Bool: isWalk(p) == false)
-  let walks = Lists.filter(ordered(state), isWalk)
+  let pages = Lists.filter(heads(state), fn(p: Page) -> Bool: isWalk(p) == false)
+  let walks = Lists.filter(heads(state), isWalk)
   let id = Card.called(context, "library")
   let counted = plural(Lists.length(pages), "page")
   let walked = plural(Lists.length(walks), "walk")

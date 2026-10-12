@@ -9,7 +9,9 @@ the guide teaches that a poster cannot make.
 import tempfile
 import unittest
 
+from deploy import genesis
 from tests.poster import Poster
+from transport import post
 from tests.town import Town
 
 
@@ -46,6 +48,31 @@ class Resident(unittest.TestCase):
         self.assertEqual(typed['text'], 'no receipt here is named lusab-babad: no host issued it, so it records nothing\n')
         made = self.town.client.send({'op': 'world-create', 'principal': self.poster.did, 'identity': 'mk-receipt', 'object': 'receipt', 'modules': [], 'entry': 'initial'})
         self.assertNotEqual(made.get('status'), 'created', made)
+
+
+    def test_the_guide_is_its_contents_by_post_and_every_part_is_the_webs_text(self):
+        pages = genesis.guide_pages()
+        [contents] = self.poster.say('delvetalk guide')
+        self.assertEqual(contents['object'], 'library')
+        self.assertTrue(contents['text'].startswith(pages[0][3]), contents['text'][:200])
+        bodies = []
+        for name, _, _, body in pages[1:]:
+            [part] = self.poster.say(f'delvetalk library read / page: {name}')
+            self.assertTrue(part['text'].startswith(body), (name, part['text'][:120]))
+            self.assertLessEqual(len(part['text']), post.CLIP, name)
+            bodies.append('\n'.join(body.splitlines()[1:-1]))
+        joined = ' '.join(' '.join(bodies).split())
+        self.assertEqual(joined, ' '.join(genesis.guide_text().split()))  # the same text the front serves, cut at its sections
+        [index] = self.poster.say('delvetalk library read / page: library')
+        self.assertNotIn('guide-2', index['text'])
+
+    def test_every_page_and_walk_answers_a_post_within_the_clip(self):
+        for name, _, _, body in genesis.shelf():
+            if '-' in name:
+                continue
+            [read] = self.poster.say(f'delvetalk library read / page: {name}')
+            self.assertTrue(read['text'].startswith(body.rstrip('\n')), name)
+            self.assertTrue(all(len(p) <= post.CLIP for p in post.parts(read['text'])), name)
 
 
 if __name__ == '__main__':
