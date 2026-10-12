@@ -5646,6 +5646,35 @@ def coinerOf (w : World) (o : Object) : String :=
   let author := ((post.drop 5).toString.splitOn "/").head?.getD ""
   if (handleOf w author).isEmpty then s!"the author of {post}" else handleOf w author
 
+/-- The objects an entry makes: its `created` object, or its `creates` rows. -/
+def makes (e : Json) : List String :=
+  let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
+  let object := fun (j : Json) => (j.getObjValAs? String "object").toOption
+  if tagOf e == "created" then (object outcome).toList
+  else (((outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption)).getD #[]).toList.filterMap object
+
+/-- The makings a carried genesis keeps (`made`: who made each object, under which intent, at which height of the
+    world it was made in), by object. -/
+def madeOf (genesis : Json) : Std.HashMap String Json :=
+  ((((genesis.getObjVal? "outcome").toOption.bind (·.getObjVal? "made" |>.toOption)).bind (·.getArr?.toOption)).getD #[]).foldl
+    (fun m r => match r.getObjValAs? String "object" with
+      | .ok id => m.insert id r
+      | .error _ => m) {}
+
+/-- A carry's refresh (deploy/genesis.py `refresh`, docs/DEPLOY.md "It carries"): the opener's `refresh-*` turn, which
+    brings a carried thing to the image's code, law, form or library, and, in a chain that began at a carried genesis
+    (`inCarried`), its `genesis-*` turn. Upkeep of what the world before made, never an act of the town's: the
+    chronicle counts none, and none is a making (`Surfaces.madeEntry`), so none is a first. A `genesis-*` making kept
+    by a carry (`made`) is the original genesis's, read with `inCarried` false. -/
+def carryRefresh (w : World) (identity : Json) (inCarried : Bool) : Bool :=
+  let text := fun (k : String) => (identity.getObjValAs? String k).toOption.getD ""
+  !w.opener.isEmpty && text "principal" == w.opener &&
+    ((text "intent").startsWith "refresh-" || (inCarried && (text "intent").startsWith "genesis-"))
+
+/-- Whether entry `e` of this chain is a carry's refresh (`carryRefresh`). -/
+def refreshEntry (w : World) (e : Json) : Bool :=
+  carryRefresh w ((e.getObjVal? "identity").toOption.getD Json.null) ((w.entries.genesis?.map tagOf) == some "carried")
+
 def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.run do
   let some i := w.days.findIdx? (·.1 == day) | return none
   let start := w.days[i]!.2
@@ -5656,6 +5685,9 @@ def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.ru
   let mut admitted := 0
   for h in [start:stop] do
     let some e := w.entries.get? (h - 1) | continue
+    -- A carry's refresh is no act of the day: no count, no hand, no making or growing; what it made a thing want, or
+    -- a rule it fired, is still the day's news of that thing.
+    let upkeep := refreshEntry w e
     let who := ((e.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
     let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
     let rows := fun (j : Json) (k : String) => (((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList
@@ -5668,20 +5700,22 @@ def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.ru
       refusals := if refusals.any (·.1 == cls) then refusals.map fun (c, n) => (c, if c == cls then n + 1 else n)
         else refusals ++ [(cls, 1)]
     | "created" =>
-      if !hands.contains (shownName w who) then hands := hands.push (shownName w who)
-      let made := text outcome "object"
-      let coiner := ((w.objects[made]?).map (coinerOf w)).getD ""
-      if seen made then events := events.push { what := "made", object := made, who := shownName w who, entry := h, name := coiner }
-    | "admitted" =>
-      admitted := admitted + 1
-      if !who.isEmpty && !hands.contains (shownName w who) then hands := hands.push (shownName w who)
-      for c in rows outcome "creates" do
-        let made := text c "object"
+      if !upkeep then
+        if !hands.contains (shownName w who) then hands := hands.push (shownName w who)
+        let made := text outcome "object"
         let coiner := ((w.objects[made]?).map (coinerOf w)).getD ""
         if seen made then events := events.push { what := "made", object := made, who := shownName w who, entry := h, name := coiner }
-      for x in rows outcome "placements" do
-        if seen (text x "object") && !(text x "verb").isEmpty && !(text x "reading").isEmpty then
-          events := events.push { what := "grew", object := text x "object", who := shownName w who, name := text x "verb", entry := h }
+    | "admitted" =>
+      if !upkeep then
+        admitted := admitted + 1
+        if !who.isEmpty && !hands.contains (shownName w who) then hands := hands.push (shownName w who)
+        for c in rows outcome "creates" do
+          let made := text c "object"
+          let coiner := ((w.objects[made]?).map (coinerOf w)).getD ""
+          if seen made then events := events.push { what := "made", object := made, who := shownName w who, entry := h, name := coiner }
+        for x in rows outcome "placements" do
+          if seen (text x "object") && !(text x "verb").isEmpty && !(text x "reading").isEmpty then
+            events := events.push { what := "grew", object := text x "object", who := shownName w who, name := text x "verb", entry := h }
       for f in rows e "fired" do
         if seen (text f "sender") then
           events := events.push { what := "fired", object := text f "sender", who := shownName w (text f "principal"), name := text f "rule", entry := h }
