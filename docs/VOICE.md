@@ -172,6 +172,7 @@ a reply, a receipt or a draft.
 | `forbidden` | none of I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please (a quotation may hold any) |
 | `secondPerson` | no you, your, yours, you're, you've, you'll, you'd, yourself, yourselves, y'all |
 | `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, `came`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one |
+| `wants` | a want claimed ("wants", "still wants", "needs", "lacks", "asks for", unnegated) only when the strokes hold one (a want now, or one a day's events name), and only of what one is for: a word after it beside a held want's name, reading or thing (filler like "a hand", "someone" aside). The live porch telling "the porch still wants a hand to keep what lies unclaimed", over a porch wanting nothing, is refused; so is the nook's "still wants someone to listen from it" over its `door` want |
 | `length` | 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival |
 
 A paint refused for its length alone is asked for once more, told its length; any other refused paint, or a second

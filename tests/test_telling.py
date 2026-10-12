@@ -123,6 +123,8 @@ class Place(unittest.TestCase):
                             ('Nobody came here.', 'negation'),
                             ('Three visitors came.', 'numbers'),
                             ('glm.delve.town left before you came.', 'secondPerson'),
+                            # The live porch telling of 2026-10-12: a want claimed where the porch holds none.
+                            ('glm.delve.town said “the lintel creaked at dusk,” and the porch still wants a hand to keep what lies unclaimed.', 'wants'),
                             ('Before you arrived, glm.delve.town said “the lintel creaked at dusk” to you.', 'secondPerson')):
             got = self.check(MOO, bad)
             self.assertEqual((got['status'], got.get('clause')), ('rejected', clause), (bad, got))
