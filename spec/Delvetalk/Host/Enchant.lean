@@ -79,6 +79,8 @@ structure Strokes where
   kind : String := ""
   /-- Its kind's register, else (a thing with no kind) the register of the place it lies in. -/
   voice : String := ""
+  /-- Its kind's one plain line of what it is (`about`), read as the voice is. -/
+  about : String := ""
   head : String := ""
   /-- The values its kind's form took when it was made (`seed`, `colour`), by name: its maker's words. -/
   fields : List (String × String) := []
@@ -180,6 +182,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
       | some _ => ["What it is: a day of the town"]) ++
     line (!s.head.isEmpty) s!"Called: {s.head}" ++
     [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
+    line (!s.about.isEmpty) s!"What its kind is: {s.about}" ++
     line (!s.fields.isEmpty) (s!"The words it was made with, {s.wordsBy}'s: " ++ "; ".intercalate (s.fields.map fun (k, v) => s!"{k}: {v}")) ++
     line s.coined s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it, and its words are {s.coiner}'s" ++
     line (!who.isEmpty) ("Who: " ++ ", ".intercalate who) ++
@@ -209,7 +212,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
 /-- The strokes as exact data (`world-strokes`), every field present, and the text the painter reads. -/
 def Strokes.json (s : Strokes) : Json :=
   Json.mkObj [("object", toJson s.object), ("version", toJson s.version), ("kind", toJson s.kind),
-    ("voice", toJson s.voice), ("head", toJson s.head),
+    ("voice", toJson s.voice), ("about", toJson s.about), ("head", toJson s.head),
     ("fields", Json.mkObj (s.fields.map fun (k, v) => (k, toJson v))), ("maker", toJson s.maker),
     ("coined", toJson s.coined), ("coiner", toJson s.coiner), ("made", toJson s.made),
     ("tended", toJson s.tended), ("tendedAgo", toJson s.tendedAgo), ("keeper", toJson s.keeper), ("owner", toJson s.owner),
@@ -280,10 +283,10 @@ def madeUnder (w : World) (id : String) : String := Id.run do
     if w.objects.contains pfx then return pfx
   return ""
 
-/-- A kind's register (`voice` on the kind object), "" for none. -/
-def voiceOf (w : World) (kind : String) : String :=
+/-- A kind object's text field `field` (its `voice`, its `about`), "" for none. -/
+def kindText (w : World) (kind field : String) : String :=
   match w.objects[kind]? with
-  | some k => (text? (fieldsOf k.state) "voice").getD ""
+  | some k => (text? (fieldsOf k.state) field).getD ""
   | none => ""
 
 /-- The kind of `id` as it stands ("" for none). -/
@@ -416,8 +419,8 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
   -- The coiner is the post's author: their handle when the host knows it, else the at:// authority itself.
   let author := (((post.drop 5).toString).splitOn "/").head?.getD ""
   let coiner := if !coined then "" else if (handleOf w author).isEmpty then author else handleOf w author
-  let voice := if kind.isEmpty then voiceOf w (kindOf w around) else voiceOf w kind
-  return { object := id, version, kind, voice,
+  let kindHere := if kind.isEmpty then kindOf w around else kind
+  return { object := id, version, kind, voice := kindText w kindHere "voice", about := kindText w kindHere "about",
            head := (text? fs "head").getD ((text? fs "name").getD ""), fields,
            maker, coined, coiner, made, tended := tendedAt, tendedAgo,
            keeper := handleIn w fs "keeperHandle" "keeper", owner := handleIn w fs "ownerHandle" "owner",
@@ -652,12 +655,12 @@ def aliases (handle : String) : List String :=
 
 /-- Every text of the strokes a paint may quote from. -/
 def Strokes.texts (s : Strokes) : List String :=
-  ([s.head, s.voice] ++ s.fields.map (·.2) ++ s.lines.map (·.text) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
+  ([s.head, s.voice, s.about] ++ s.fields.map (·.2) ++ s.lines.map (·.text) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
     s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
 
 /-- The texts a paint may quote part of: every text of the strokes but a resident's line, quoted whole or not at all. -/
 def Strokes.otherTexts (s : Strokes) : List String :=
-  ([s.head, s.voice] ++ s.fields.map (·.2) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
+  ([s.head, s.voice, s.about] ++ s.fields.map (·.2) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
     s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
 
 /-- A text with its curly apostrophes plain. -/

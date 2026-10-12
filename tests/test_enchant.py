@@ -109,6 +109,25 @@ class Strokes(unittest.TestCase):
             self.assertEqual(self.strokes(obj)['strokes']['voice'], genesis.VOICES[kind], obj)
         self.assertIn('A coinage of the town\'s', self.strokes('bell/1')['text'])
 
+    def test_a_kind_s_about_line_is_a_stroke_beside_its_voice_and_empty_when_the_kind_has_none(self):
+        """The paint reads the kind's `about` as it reads its `voice`: exact data, a line of the text the painter reads,
+        and a text a paint may quote."""
+        kind = 'edition ObjectiveBend 1\nrecord State:\n  voice: String\n  about: String\ndef initial() -> State:\n  {voice: "slow and warm", about: "a lamp that lights when its door opens"}\n'
+        thing = 'edition ObjectiveBend 1\nrecord State:\n  kind: String\ndef initial() -> State:\n  {kind: "%s"}\n'
+        for obj, source in (('kind/lamp', kind), ('kind/bare', kind.replace('about: "a lamp that lights when its door opens"', 'about: ""')),
+                            ('lamp/1', thing % 'kind/lamp'), ('lamp/2', thing % 'kind/bare'), ('lamp/3', thing % 'kind/missing')):
+            made = self.town.send(op='world-create', principal=genesis.OPENER, identity='mk-' + obj, object=obj, source=source, entry='initial', seed=record())
+            self.assertEqual(made['status'], 'created', made)
+        got = self.strokes('lamp/1')
+        self.assertEqual((got['strokes']['voice'], got['strokes']['about']), ('slow and warm', 'a lamp that lights when its door opens'))
+        self.assertIn('What its kind is: a lamp that lights when its door opens', got['text'])
+        for obj in ('lamp/2', 'lamp/3'):
+            got = self.strokes(obj)
+            self.assertEqual(got['strokes'].get('about', ''), '', obj)
+            self.assertNotIn('What its kind is', got['text'])
+        paint = 'It lights when its door opens: “a lamp that lights when its door opens”.'
+        self.assertEqual(self.town.send(op='world-render-check', principal=KIM, object='lamp/1', text=paint).get('status'), 'verified')
+
     def test_a_past_version_is_historical_and_the_reader_s_reach(self):
         # codex 2026-10-12 host 14: a past version's lines were assembled beside today's wants, verbs and firings.
         now = self.strokes('garden/bell/1')
