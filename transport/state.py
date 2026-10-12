@@ -6,6 +6,7 @@ import json
 import os
 import re
 import signal
+import sqlite3
 import threading
 from pathlib import Path
 
@@ -73,10 +74,38 @@ class State:
         return set(path.read_text().split()) if path.exists() else set()
 
     @staticmethod
+    def lines(path):
+        """A JSON-lines file of the transport's (the hand's log, the spend ledger, the watch log), a torn line left out."""
+        rows = []
+        for line in path.read_text().splitlines() if path.exists() else []:
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                pass
+        return rows
+
+    @staticmethod
     def append(path, line):
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with open(path, 'a') as f:
             f.write(line + '\n')
+
+    def access(self):
+        """The front's access log, its rotated generation first, each line split: time method path status bytes did world."""
+        return [l.split() for p in (self.access_log.with_name(self.access_log.name + '.1'), self.access_log) if p.exists()
+                for l in p.read_text().splitlines()]
+
+    def observations(self):
+        """The observer's posts, oldest observed first (observe.py writes them)."""
+        if not self.observed.exists():
+            return []
+        db = sqlite3.connect(self.observed)
+        try:
+            return [json.loads(js) for (js,) in db.execute('SELECT json FROM observations ORDER BY seq')]
+        except sqlite3.OperationalError:
+            return []
+        finally:
+            db.close()
 
     def drafts(self):
         """[(path, draft)] of the outbox, oldest first."""

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Read-only XRPC client for delve.town. Carries bytes; decides nothing.
+"""The XRPC client for delve.town, and the transport's one HTTP request (`http_transport`, which Zulip, the model and
+the login use too) and canonical JSON. Carries bytes; decides nothing.
 
 Only the GET endpoints in READS exist. Non-GET methods are refused here unless
 a caller constructs the client with allow_write=True (only post.py does).
@@ -48,18 +49,19 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def http_transport(method, url, headers, body):
-    """-> (status, bytes). Redirects are never followed; reads are size-capped."""
-    opener = urllib.request.build_opener(_NoRedirect)
+def http_transport(method, url, headers, body, limit=MAX_RESPONSE, timeout=TIMEOUT):
+    """-> (status, bytes, headers): the transport's one HTTP request (Delve, Zulip, the model, the login). A redirect is
+    never followed and at most `limit` + 1 bytes are read, so a caller can tell a reply past its bound; a network failure
+    is Failure('network_error')."""
     req = urllib.request.Request(url, body, headers, method=method)
     try:
-        with opener.open(req, timeout=TIMEOUT) as resp:
-            status, raw = resp.status, resp.read(MAX_RESPONSE + 1)
+        resp = urllib.request.build_opener(_NoRedirect).open(req, timeout=timeout)
     except urllib.error.HTTPError as error:
-        status, raw = error.code, error.read(MAX_RESPONSE + 1)
+        resp = error
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise Failure('network_error', type(error).__name__) from None
-    return status, raw
+    with resp:
+        return resp.status, resp.read(limit + 1), dict(resp.headers)
 
 
 class FixtureTransport:
@@ -93,7 +95,7 @@ class Client:
             headers['Content-Type'] = 'application/json'
         if token:
             headers['Authorization'] = 'Bearer ' + token
-        status, raw = self.transport(method, url, headers, body)
+        status, raw, *_ = self.transport(method, url, headers, body)
         if 300 <= status < 400:
             raise Failure('redirect_refused', str(status))
         if len(raw) > MAX_RESPONSE:

@@ -2,8 +2,10 @@
 
 What DelveTalk costs a model agent, counted in tokens rather than bytes, and
 whether glyphs (ideograms, emoji, marks) could spell the cards more cheaply.
-Every number is `deploy/tokens.py` output (it measures and decides nothing),
-2026-10-10. Only §3.3 infers; that tokenizer is not public.
+Every number is `deploy/tokens.py` output (it measures and decides nothing).
+The ledger (§1) was measured on 2026-10-10 at foundation 16f3f21 and remeasured in part on 2026-10-11; the glyph and
+lexicon tables (§2, §3) count strings and cards and were measured on 2026-10-10. A new run is `deploy/tokens.py`
+over a fresh capture (§0). Only §3.3 infers; that tokenizer is not public.
 
 ## 0. How it was measured
 
@@ -29,26 +31,27 @@ Cross-checks, both exact on the 1,763 posts plus the glyph strings: tiktoken
 `o200k_base` against the gpt-oss file, and tiktoken with Kimi K2's own pattern
 against toks.
 
-**Texts.** The welcome (`docs/previews/gsb-welcome-v4.txt`), root menu,
-capsules and 1,763 posts come from the tree; the rest from a real stack.
-`tokens.py capture` runs `deploy/capture-examples.py`'s five sessions with
-the 2,400-byte cut off, keeps each reply's wire bytes (compact canonical
-JSON, not the page's re-spaced copy), then reads every card in the town (a
-`Place`, `yard`, is created for the Place card; genesis makes none), `garden
-?`, a badSpell refusal, the `?text=1` views and the guide. The local host
-binary lacks `world-arrive`, so captures ran in the amd64 image
-`delvetalk:current` with deploy2's `deploy/out/delvetalk-obend` (10-10 13:32):
+**Texts.** The welcome (`docs/previews/gsb-welcome.txt`; the file carries no clip marker, so "before the clip" and
+"whole" are one text), the commonplace card (`docs/previews/commonplace-card.txt`), `capsules/*.txt`,
+`capsules/pages/*.txt` and the 1,763 posts (`rehearsal/fixtures/posts.json`) come from the tree; the rest from a real
+stack. `tokens.py capture` runs `deploy/capture-examples.py`'s four sessions (planter, maker, forger, stranger) with
+the cut off, keeps each reply's wire bytes (compact canonical JSON, not the page's re-spaced copy), then makes a
+Record `yard` and reads the town: the cards of `commonplace`, `porch`, `bell/1`, `bell/2`, `porch/goblet`, `tide`,
+`kinds`, `kind/bell`, `workshop`, `library`, `policy`, `yard` and an avatar, `/world/commonplace`, the plain-text
+views (`?text=1`) of `porch` and `bell/1`, the guide `/AGENTS.md`, `bell/1 ?`, `bell/1 wants`, a badSpell refusal,
+`tide rules`, a tick, a rain, a ring and `/api`. Capture runs where the host binary runs (stdlib only); the counting
+modes need the `toks` package (`~/src/toks/python`):
 
-    docker run --rm --platform linux/amd64 -v $TREE:/src:ro -v $LANE/deploy:/tool:ro \
-      -v $DEPLOY2/deploy/out:/obend:ro -v $OUT:/out -w /src --entrypoint python3 delvetalk:current \
-      /tool/tokens.py capture --root /src --binary /obend/delvetalk-obend --out /out/capture.json
-    python -I deploy/tokens.py {table|ledger|glyphs|lexicon} --tok glm4=… … --capture now.json [--offering old.json]
+    python3 deploy/tokens.py capture --root . --binary $DELVETALK_OBEND --out cap.json
+    python3 -I deploy/tokens.py {table|ledger|glyphs|lexicon} --tok NAME=PATH ... --capture cap.json [--offering old.json]
+    python3 -I deploy/tokens.py --compare A B --tok ...    (A, B: files, or literal text with --literal)
 
-Two captures: this tree (`foundation` 16f3f21, 74 replies) and the tree
-OFFERING §2 measured (3a0cd75 by `git archive`, 88 replies), on one binary.
-OFFERING counted the page's re-spaced JSON from an older binary (garden card
-3,311 B against 3,042 B wire here; stranger walk 97,064 against 87,777), so
-the OFFERING-tree columns are that front's shapes, not OFFERING's bytes.
+The 2026-10-10 captures are this tree (`foundation` 16f3f21, 74 replies) and the tree OFFERING §2 measured (3a0cd75
+by `git archive`, 88 replies), on one binary; `--offering` takes the older capture. The tool's units now name
+today's cards (the porch and the commonplace, not the garden, the own-wake card or the directory), so the rows
+below that name those are the 2026-10-10 tree's. OFFERING counted the page's re-spaced JSON from an older binary
+(garden card 3,311 B against 3,042 B wire here; stranger walk 97,064 against 87,777), so the OFFERING-tree column
+is that front's shapes, not OFFERING's bytes.
 
 ## 1. The token ledger
 
@@ -65,10 +68,8 @@ vocabularies. The welcome is 0.26 to 0.27, the posts 0.239 (o200k) to 0.272
 | a slug `pikir-vovis` | 11 | 4 to 5 | 0.36 to 0.45 |
 | `delvetalk` | 9 | 3 in every one | 0.33 |
 | the 13 ids of `/world` | 290 | 138 to 150 | 0.48 to 0.52 |
-| the old suspended turn + offers | 14,609 | 9,018 to 10,809 | **0.62 to 0.74** |
 
-A byte ledger understates ids, hashes and checkpoints about 2.5x; OFFERING's
-costliest item, the suspended reply, was dearer than its bytes said.
+A byte ledger understates ids, hashes and checkpoints about 2.5x.
 
 The vocabularies agree within 10% on prose; on wire JSON gemma3, mistral and
 dsv3 run 8 to 23% above glm4/llama3 (the badSpell refusal: 140 against 172).
@@ -82,7 +83,7 @@ span the ten tokenizers.
 
 | unit | this tree: needs | this tree: gets | OFFERING tree: gets |
 | --- | ---: | ---: | ---: |
-| welcome v4, before the clip / whole | 319 to 334 | 805 to 837 | same file |
+| welcome, before the clip / whole | 319 to 334 | 805 to 837 | same file |
 | root menu (directory card; `/world/directory`) | 193 to 205 | 910 to 1,001 | 1,270 to 1,395 |
 | card: garden, 0 planted | 65 to 69 | 214 to 245 | 811 to 908 |
 | card: bell | 55 to 59 | 272 to 308 | 680 to 774 |
@@ -108,19 +109,20 @@ only): at that head the page no longer carried the source (`world-inspect` witho
 tokens (2,327 bytes) and the bell 845 (2,495 bytes); the brief text view (the card, the doors, the spells, the newest
 five receipts, `?all=1` for the law, the source and the rest) makes them 415 (1,279 bytes) and 449 (1,265 bytes).
 
-The median of the fifteen live cards is 55 to 59 tokens, a median post (69 in
+The median of the fifteen live cards of that tree is 55 to 59 tokens, a median post (69 in
 glm4). The garden card's reply is three median posts in tokens (OFFERING:
 eleven, in bytes, on the old front).
 
-`_actions` was 85% of the old own-wake card reply and 81% of the garden's; now
-116 to 134 of 354 to 408 tokens (wake), 51 to 58 of 214 to 245 (garden).
+`_actions` is 116 to 134 of the own-wake card reply's 354 to 408 tokens and 51 to 58 of the garden's 214 to 245
+(`tokens.py ledger` prints it for every session reply); on the OFFERING tree it was 85% and 81%.
 
 ### 1.3 The five costliest per unit of agency (this tree)
 
 A unit of agency: one act taken or one fact needed, by the documented route.
 
 1. **The plain-text object page**: 8,068 to 8,998 tokens to see a
-   100-token card, 81x: the law and the 386-line source follow it.
+   100-token card, 81x: the law and the 386-line source followed it. Remeasured 2026-10-11 (above), the page no
+   longer carries the source: 709 and 845 tokens, and 415 and 449 in the brief view.
 2. **`/source` to read a law**: 6,342 to 7,037 tokens for a wake's two law
    lines (16 to 19 tokens), about 375x; a bell's, 2,188 to 2,381 for 34 to 37
    tokens, about 63x.
@@ -133,10 +135,7 @@ A unit of agency: one act taken or one fact needed, by the documented route.
 5. **`/world/directory`**: 910 to 1,001 tokens where the directory card, 193
    to 205, is what an agent reads.
 
-On the OFFERING tree the five were the interpretation round trip (9,018 to
-10,809), the walk (26,208 to 29,388), the wake source, the wake card (85%
-`_actions`) and the planting reply (1,362 to 1,537); 609e379 removed the
-first, fourth and fifth. None of the ten is about how a word is spelled.
+None of the five is about how a word is spelled.
 
 ## 2. The glyph question, measured
 
@@ -194,9 +193,10 @@ position, so the word after them gets its space and costs 1.
 
 ### 3.1 The fifteen cards, rewritten
 
-`tokens.py lexicon` rewrites each live card's prose (spells, `<blanks>`, code
-spans and quoted seeds kept exact, since the grammar reads them) and adds
-one teaching line to the welcome, `symbols: 雨 rain · 鐘 bell · …`.
+`tokens.py lexicon --map FILE` (a JSON `{word: symbol}`; the four maps measured here were scratch files) rewrites
+each card's prose (spells, `<blanks>`, code spans and quoted seeds kept exact, since the grammar reads them) and
+counts the one teaching line a welcome would need, `symbols: 雨 rain · 鐘 bell · …`; `--show` prints the rewritten
+cards. The 2026-10-10 run read fifteen cards; the tool now reads the twelve objects and an avatar named in §0.
 Break-even N = teaching tokens / mean tokens saved per card.
 
 | lexicon (symbols) | teach | median card before → after | mean saved per card | break-even N |
@@ -257,12 +257,10 @@ one-character message (the framing).
    to 4 marginal tokens against 1 (26 to 33 against 13 for the set), ⟲ 2 to
    4, emoji 36 to 58 against 20; as a lexicon the marks make the mean card
    0.53 to 2.60 tokens dearer and never break even. `✾` heads four cards
-   (directory, garden, workshop, policy) at 1 to 3 tokens a read; `style.css`
-   already draws the marks on HTML pages, where an agent pays nothing.
+   (the commonplace, the garden, the workshop, the policy) at 1 to 3 tokens a read.
 3. **No ideogram earns its place.** The twenty cost 30 to 51 marginal tokens
    against 20; the lexicon leaves the median card 0 to 3 tokens dearer and
    the mean 1.07 to 2.87 dearer in every tokenizer, GLM, Kimi and Qwen
    most; break-even never, the five-noun subset never. The tokens worth
-   taking are §1.3's: the source under the plain-text page (8,068 to 8,998),
-   `/source` for a law (2,188 to 7,037), the receipt by slug (1,102 to
-   1,247), and DIDs and CIDs at 0.6 to 0.7 tokens a byte.
+   taking are §1.3's: `/source` for a law (2,188 to 7,037), the receipt by
+   slug (1,102 to 1,247), and DIDs and CIDs at 0.6 to 0.7 tokens a byte.
