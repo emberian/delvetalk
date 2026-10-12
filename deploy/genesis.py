@@ -480,9 +480,16 @@ def refresh(host, opener, journals):
         if obj in have:
             out.append({'object': obj, 'slot': 'placed', 'status': 'current'})
             continue
-        placed = said(host, opener, kind, 'place', fields, f'refresh-{obj}-placed', obj)['reply']
+        placed = said(host, opener, kind, 'place', carried_fields(host, opener, kind, fields), f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
     return out
+
+
+def carried_fields(host, opener, kind, fields):
+    """`fields` as the carried kind's form names them: a kind/weather carried from before `over` takes the place as
+    `garden` (its make layer was laid from that form, and a kind is shaped once)."""
+    form = (standing(host, opener, kind) or (0, {}))[1].get('.form', '')
+    return [('garden' if name == 'over' and 'over:' not in form and 'garden:' in form else name, value) for name, value in fields]
 
 
 def listed(host, opener):

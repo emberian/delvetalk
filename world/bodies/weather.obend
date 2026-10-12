@@ -50,8 +50,9 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(if context.principal == state.owner then Text.words("rain write lines door undoor") else Text.words("rain write lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
 def methods() -> Lists.List<String>:
   Text.words("~made ~act ~drizzle")
+# The place it is over: `over`, or `garden` for a weather made before a weather could be over any place.
 def over(state: State) -> String:
-  Super.field(state, "over")
+  if Super.field(state, "over") == "" then Super.field(state, "garden") else Super.field(state, "over")
 def tide(state: State) -> String:
   Super.field(state, "tide")
 # How often it rains, in ticks of its tide (an hour each): once a clock day.
