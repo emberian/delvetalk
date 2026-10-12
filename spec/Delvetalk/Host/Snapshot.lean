@@ -26,12 +26,12 @@ open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 def edition : String := "delvetalk.snapshot.v4"
 
-/-- The edition before (`v3`: no placed rules or wants, no `ruleLog` or `wanting`), which a carry
+/-- The edition before (`v3`: no placed rules or wants, no `ruleLog`, `wanting` or `refusedBy`), which a carry
     still reads (HOST-HANDOFF §6, "The snapshot body is the carry's contract"); deleted with the next. -/
 def previousEdition : String := "delvetalk.snapshot.v3"
 
 /-- The index keys `previousEdition` does not write: a carry from it starts them empty. -/
-def addedKeys : List String := ["ruleLog", "wanting"]
+def addedKeys : List String := ["ruleLog", "wanting", "refusedBy"]
 
 /-! ## Writing -/
 
@@ -94,6 +94,7 @@ def indexJson (w : World) : Json :=
     ("changes", Json.arr (w.changes.map fun c => Json.arr #[toJson c.height, toJson c.object, toJson c.version, toJson c.principal])),
     ("ruleLog", mapJson w.ruleLog fun xs => Json.mkObj xs),
     ("wanting", mapJson w.wanting fun xs => Json.mkObj (xs.map fun (n, h) => (n, toJson h))),
+    ("refusedBy", mapJson w.refusedBy toJson),
     ("days", Json.arr (w.days.map fun (d, h) => pairJson d h)),
     ("pending", Json.arr w.pending),
     ("suspended", Json.arr w.suspended),
@@ -136,6 +137,7 @@ def installIndex (w : World) (j : Json) : Except String World := do
     changes := ← arrOf (← field "changes") change
     ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
     wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
+    refusedBy := ← mapOf (← field "refusedBy") (·.getNat?)
     days := ← arrOf (← field "days") pairOf
     pending := ← (← field "pending").getArr?
     suspended := ← (← field "suspended").getArr?
@@ -387,10 +389,10 @@ def suspendedObject (e : Json) : String :=
 
 /-- The indexes a carry keeps beyond the store, the pending deliveries, the suspensions and the handles,
     each as `indexJson` writes it: what the world stands on that no object's state holds (the rules'
-    last firings, the wants that hold, posting reservations, model attempts, the quotas' counts, the root acts'
+    last firings, the wants that hold, the refusals each law made, posting reservations, model attempts, the quotas' counts, the root acts'
     count, the moderation: cards, quiets, hidden). Every other index names entries of the old chain. -/
 def carriedKeys : List String :=
-  ["ruleLog", "wanting", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
+  ["ruleLog", "wanting", "refusedBy", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
    "hidden", "modelDay", "hour"]
 
 /-- A genesis entry chained to `cid`: `tag` and its origin, the store of `shown` with every source its

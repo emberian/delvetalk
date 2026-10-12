@@ -5,6 +5,6 @@ FIELDS  on the line, / name: value / name: value, or one name: value line each b
 BARE  no delvetalk line, and the first name: value line names an action or field of this card: that spell.
 ?  delvetalk CARD ? lists the card's spells, blanks shown; nothing is journaled.
 FIT  text within its bound, and an optional one may be left out; a natural in plain digits; a choice one of its words; source is Bend in a <<BEND block or a ```obend fence.
-MISSING  a field left out is asked for, not refused; that line alone completes it.
+MISSING  a field left out is asked for, not refused; nothing is kept, so send the whole spell again with it.
 badSpell  a spell that does not fit is refused with clause, reason and hint: otherCard noAction badValue duplicateField unclosedBlock tooManySpells. The hint is your spell with blanks; copy it.
 Next: delvetalk library read / page: laws

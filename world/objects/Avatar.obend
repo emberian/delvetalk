@@ -154,15 +154,16 @@ def marked(state: State, at: Nat, context: Abi.Context) -> Activity<Done>:
   Card.tell(Done.done({}), Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Read through entry {natText(at)}; nothing before it is new again.\n"), tail: Document.Documents.cons({head: render(extend(state, {seen: at}), context), tail: Document.Documents.nil()})})}))
 # --- Holding -------------------------------------------------------------------------
 # Things call hold and release on their holder's avatar. Both are idempotent and never
-# refuse a thing, so a thing that has already staged its own writes cannot be left half
-# done. The thing is the calling object; the giver is the turn's principal, and receiving
-# something from somebody else also leaves a note.
+# abort a thing's turn, so a thing that has already staged its own writes cannot be left half
+# done. The thing is the calling object. Only the avatar's own principal's turn holds (a
+# pick-up is the taker's, an accepted offer the accepter's): another's thing is answered
+# notMine and recorded nowhere.
 def thing(context: Abi.Context) -> Plans.Reference:
   {world: context.world, object: context.caller}
 def hold(state: State, context: Abi.Context) -> Activity<Done>:
-  if context.caller == "" then refused(Why.notAThing({doing: "held"})) else if Lists.any(state.holding, fn(h: Plans.Reference) -> Bool: Plans.same(h, thing(context))) then Done.done({}) else held(context, state)
-def held(context: Abi.Context, state: State) -> Activity<Done>:
-  let written(_) = world.write(extend(keep(), {holding: Plans.Entries.append({item: thing(context)}), inbox: if mine(context) then Plans.Entries.keep({}) else Plans.Entries.insert({row: {from: context.principal, handle: context.handle, text: "gave you {context.caller}", at: context.height, n: Relations.count(state.inbox), uri: ""}})}))
+  if context.caller == "" then refused(Why.notAThing({doing: "held"})) else if mine(context) == false then refused(Why.notMine({who: owner(state, context), doing: "takes what it holds"})) else if Lists.any(state.holding, fn(h: Plans.Reference) -> Bool: Plans.same(h, thing(context))) then Done.done({}) else held(context)
+def held(context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {holding: append thing(context)}
   Done.done({})
 def release(state: State, context: Abi.Context) -> Activity<Done>:
   if context.caller == "" then refused(Why.notAThing({doing: "released"})) else if Lists.any(state.holding, fn(h: Plans.Reference) -> Bool: Plans.same(h, thing(context))) then released(context) else Done.done({})

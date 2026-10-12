@@ -8,6 +8,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import quote
 
+from transport.host import plain
+
 STATIC = Path(__file__).resolve().parent / 'static'
 
 
@@ -130,6 +132,13 @@ def speech(card):
 def painting(text):
     """A card's paint, above its exact card (never inside it), or nothing."""
     return T['paint'].format(text=e(text)) if text else ''
+
+
+def door_rows(view):
+    """The doors a record cites (its `cites` list, in the owner's order), those with an object."""
+    state = plain(view.get('state') or {})
+    doors = (state.get('cites') if isinstance(state, dict) else None) or []
+    return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
 
 
 def door_line(doors, href):

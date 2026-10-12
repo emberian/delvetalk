@@ -239,6 +239,22 @@ class Placement(unittest.TestCase):
             self.assertNotEqual(p.returncode, 0)
 
 
+class LibraryUpdate(unittest.TestCase):
+    def test_deploy_library_update_reseals_the_live_library_and_journals_it(self):
+        from transport.config import LIBRARY
+        opener = 'did:plc:' + 'a' * 24
+        with tempfile.TemporaryDirectory() as d:
+            state = Path(d) / 'state'
+            Served(str(state), cleanup=self.addCleanup, opener=opener, library=LIBRARY)
+            (state / 'delvetalk.toml').write_text(f'opener = "{opener}"\n')
+            before = sorted(p.name for p in (state / 'library').iterdir())
+            p = subprocess.run(['deploy/library-update.sh', '--state', str(state)], capture_output=True, text=True, timeout=120,
+                               cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            self.assertEqual(p.returncode, 0, p.stderr)
+            self.assertRegex(p.stdout, r'^library: ')
+            self.assertEqual(sorted(p.name for p in (state / 'library').iterdir()), before)
+
+
 class Restart(unittest.TestCase):
     def test_a_restart_replays_to_the_same_receipts_and_a_held_connection_moves_to_the_new_server(self):
         with tempfile.TemporaryDirectory() as d:

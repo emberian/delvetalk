@@ -4,7 +4,7 @@
   python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock --towns /towns [--opener did:plc:...]
   python3 -m deploy.genesis refresh --root-socket /run/delvetalk-root/root.sock --state /data/state
 
-The world is never wiped (docs/TENURE.md section 1): a genesis while a town journal lives anywhere under `--towns` (the
+The world is never wiped (docs/FOUNDATION.md §2): a genesis while a town journal lives anywhere under `--towns` (the
 directory holding every data directory, `/var/lib/delvetalk`, mounted read-only into the ops container at `/towns`;
 `DELVETALK_TOWNS`) begins a world that abandons that one, so it is refused, naming each journal and its height, unless
 `--wipe-with-the-owners-word R` carries the owner's word. Then R is the town's first line: written on the commonplace
@@ -70,7 +70,7 @@ EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make
             ('inspirit the goblet: it holds whatever the last guest left unsaid',
              'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
             ("I water mimo's bell", 'grow: water "poured on by a hand; a line, and the bell is tended"\ndelvetalk bell/1 water / text: I water the bell'),
-            ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/COLLABORATOR.md §4)
+            ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/FOUNDATION.md §5)
 
 
 # The library's stacks (docs/LIBRARY.md): six pages and five walks, (name, kind, title); each body is
@@ -457,35 +457,49 @@ def opener_of(path):
 def carried(obend, path):
     """The refresh of the journal a carry just wrote at `path`, opened by the host binary `obend` as `python3 -m
     transport carry` leaves it (serve not yet started on it), as the world's opener. -> refresh's rows."""
-    from types import SimpleNamespace
-    from transport.carry import Driver
-    driver = Driver(obend)
+    from transport.host import HostProcess
+    host = HostProcess(obend)
     try:
-        opened = driver.send(op='world-open', path=path)
+        opened = host.send(op='world-open', path=path)
         if opened.get('status') != 'opened':
             raise RuntimeError(f'the carried journal does not open: {opened}')
-        return refresh(SimpleNamespace(send=lambda request: driver.send(**request)), opener_of(path), ancestry(path))
+        return refresh(host, opener_of(path), ancestry(path))
     finally:
-        driver.close()
+        host.close()
 
 
 def towns(root, own):
     """Every world journal under `root` that holds a world, other than `own` (the journal this genesis writes): a data
     directory's `*/state/*.journal`, an older layout's `*/*.journal`, a playtest run's `run-*/state/*.journal`, the
-    root's own; scratch worlds are not custody and are left out. [(path, height)], height the chain's line count."""
-    root = Path(root)
+    root's own; scratch worlds are not custody and are left out. -> ([(path, height)], [unreadable]): height the chain's
+    line count; unreadable every directory of those layers this process cannot list, where a town may live unseen
+    (a glob skips them silently: the deploy of 5db9aa79 ran as 10425 over a root-owned 0700 `/towns` and saw none)."""
     mine = os.stat(own) if own and os.path.exists(own) else None
-    found = []
-    for path in sorted({*root.glob('*.journal'), *root.glob('*/*.journal'), *root.glob('*/state/*.journal')}):
-        if 'scratch' in path.relative_to(root).parts or not path.is_file():
-            continue
+    found, unreadable = [], []
+
+    def listed(d):
+        try:
+            return list(os.scandir(d))
+        except OSError as e:
+            unreadable.append(f'{d} ({e.strerror})')
+            return []
+
+    def journals(d):
+        return [Path(e.path) for e in listed(d) if e.name.endswith('.journal') and e.is_file()]
+
+    paths = journals(root)
+    for d in (e for e in listed(root) if e.is_dir()):
+        paths += journals(d.path)
+        if os.path.isdir(os.path.join(d.path, 'state')):
+            paths += journals(os.path.join(d.path, 'state'))
+    for path in sorted(set(paths)):
         st = path.stat()
         if mine and (st.st_dev, st.st_ino) == (mine.st_dev, mine.st_ino):
             continue
         height = sum(1 for _ in open(path, 'rb'))
         if height:
             found.append((str(path), height))
-    return found
+    return found, unreadable
 
 
 def wipe(host, opener, word):
@@ -533,17 +547,18 @@ def main(argv=None):
     if a.word is not None and (not a.word.strip() or '\n' in a.word or len(a.word) > 280):
         print("genesis: the owner's word is one line of 1 to 280 characters", file=sys.stderr)
         return 64
-    living = towns(a.towns, os.path.join(a.state, f'{a.world}.journal') if a.state else None)
-    if living and a.word is None:
+    living, unreadable = towns(a.towns, os.path.join(a.state, f'{a.world}.journal') if a.state else None)
+    if (living or unreadable) and a.word is None:
         print('genesis refused: a world lives here, and a genesis would abandon it:\n' +
               ''.join(f'  {path} (height {height})\n' for path, height in living) +
+              ''.join(f'  {d}: unreadable, so a town may live there unseen\n' for d in unreadable) +
               'carry it instead (python3 -m transport carry --from OLD --to NEW; docs/DEPLOY.md "A new binary"), or begin '
               "again only with the owner's word: --wipe-with-the-owners-word R", file=sys.stderr)
         return 1
     host = HostClient(a.root_socket, a.world)
     try:
         made, refusal = run(host, a.opener)
-        if not refusal and living:
+        if not refusal and a.word is not None:  # the word given is the town's first line, whatever the guard saw
             try:
                 made.append({'object': 'commonplace', 'module': 'the owner\'s word', 'status': wipe(host, a.opener, a.word), 'reply': {}})
             except Stopped as e:

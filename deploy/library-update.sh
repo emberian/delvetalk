@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Change the sealed library after launch: rebuild <state>/library from the config's `library` and
-# world/objects/{Avatar,Env,Wake}.obend (what serve seals at its start), then ask the host for `world-library` as
+# world/objects/Avatar.obend (what serve seals at its start), then ask the host for `world-library` as
 # the opener, on the root socket. The world law judges it (default: only the opener); a pin change is journaled and printed.
 #
 #   deploy/library-update.sh [--state DIR] [--world W]      # default DELVETALK_STATE, town
@@ -28,11 +28,14 @@ from transport.state import State
 st, identity = State(sys.argv[1], sys.argv[2]), sys.argv[3]
 if not st.root_socket.is_socket():
     sys.exit(f'library-update: no root socket at {st.root_socket}')
-source = Path(st.config.library)
-shutil.rmtree(st.library, ignore_errors=True)
-shutil.copytree(source, st.library)
-for name in ('Avatar', 'Env', 'Wake'):  # the packages world-arrive creates from, as serve seals them
-    shutil.copyfile(source.parent / 'objects' / f'{name}.obend', st.library / f'{name}.obend')
+source, fresh, old = Path(st.config.library), st.library.with_name('library.new'), st.library.with_name('library.old')
+shutil.rmtree(fresh, ignore_errors=True)  # built whole beside the live one, then put in its place
+shutil.copytree(source, fresh)
+shutil.copyfile(source.parent / 'objects' / 'Avatar.obend', fresh / 'Avatar.obend')  # what world-arrive creates from (Serve.lean `arrival`)
+shutil.rmtree(old, ignore_errors=True)
+st.library.rename(old)
+fresh.rename(st.library)
+shutil.rmtree(old)
 reply = st.root_host().send({'op': 'world-library', 'principal': st.config.opener, 'identity': identity})
 if reply.get('status') == 'library' and not reply.get('changed', True):
     print(f"library: unchanged {reply['pin']}")

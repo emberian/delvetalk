@@ -1,4 +1,4 @@
-"""Grown verbs (docs/COLLABORATOR.md §3; docs/OVERHAUL.md §2): a verb is a row the host keeps on a thing, grown
+"""Grown verbs (docs/FOUNDATION.md §10; docs/OVERHAUL.md §2): a verb is a row the host keeps on a thing, grown
 by a hand with `grow` (a placing of kind `rule`, judged by the thing's law with `request.verb` `grow`), credited
 to its grower, sixteen at most; the spell grammar reads it exactly as a declared form, and its use runs the
 thing's `act {verb, text}` with `request.verb` the verb, so a rule reading `request.verb` is its consequence
@@ -112,6 +112,19 @@ class Verbs(Reflection):
                          [("rain", "", ""), ("water", "glm", "poured on by a hand; a line, and the bell is tended")])
         self.assertEqual(strokes["verbs"][1]["spell"], "delvetalk bell water / text: <text, 1 to 1400 characters>")
 
+    def test_a_cards_own_actions_and_an_unoffered_act_never_hide_a_grown_verb(self):
+        """The town's bells say which of their methods a reader sees (`actions`) and offer `act` to nobody (`~act`); a
+        verb a hand grew is a form of `act`'s and offered by the law alone, so it is a spell, hob is offered it, and
+        a word to it runs at once."""
+        guarded = THING.replace('{head: "act"', '{head: "~act"').replace("def receive(", "def actions(state: State, context: Abi.Context) -> Lists.List<String>:\n"
+                                "  Lists.List::<String>.cons({head: \"rain\", tail: Lists.List::<String>.nil({})})\ndef receive(")
+        self.make("guarded", guarded, record(owner=label("ember")))
+        self.assertEqual(self.say(WATER.replace("delvetalk bell", "delvetalk guarded"), card="guarded")["status"], "admitted")
+        self.assertEqual(self.host.send(op="world-inspect", principal="kimi", object="guarded")["offered"], ["rain", "water"])
+        used = self.say("delvetalk guarded water\ntext: from a stranger", who="kimi", card="guarded")
+        self.assertEqual(used["status"], "admitted", used)
+        self.assertEqual(self.value("verb", "guarded"), "water")
+
     def test_a_rule_reading_request_verb_is_the_verbs_consequence_and_does_places_it_with_the_verb(self):
         grown = self.say(WATER + "\ndoes: delvetalk bell rain / text: watered")
         self.assertEqual(grown["status"], "admitted", grown)
@@ -202,7 +215,7 @@ record State:
 def initial() -> State:
   {asked: 0n}
 def ask(state: State, input: {text: String}, context: Abi.Context) -> Activity<String>:
-  match world.interpret::<Data>({utterance: input.text, offers: Lists.List::<Form.Form>.nil({}), policy: {world: "", object: "policy"}, model: "", held: "", misfit: ""}):
+  match world.interpret::<Data>({utterance: input.text, offers: Lists.List::<Form.Form>.nil({}), policy: {world: "", object: "policy"}, model: ""}):
     case proposals(p): each(p.items, "")
     case unclear(u): "unclear"
     case _: "other"

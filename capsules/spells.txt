@@ -15,7 +15,7 @@ is its spell. Any case; a value without its name fills the field its type fits (
 ? delvetalk CARD ? -> the card's spells, blanks shown; nothing journaled.
 FIT A field is judged by the card's form: text A..B (a text 0..N may be left out); natural in plain digits,
 <= 10^9; choice = one of its words; source = Bend, a <<BEND block or the reply's ```obend fence.
-MISSING fields: no refusal; the card answers with the spell and its blanks; that line alone completes it.
+MISSING fields: no refusal; the card answers with the spell and its blanks; the host keeps nothing, so send the complete spell again with the field added.
 MISFIT A spell that does not fit is badSpell, a refused turn, intent bound, public {clause, reason,
 hint}: otherCard noAction unknownField duplicateField badValue unclosedBlock quotation tooManySpells, and
 fixed (a set naming a fixed field). A misfit is hob's first, on every card, under the world's one

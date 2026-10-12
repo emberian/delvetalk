@@ -41,7 +41,7 @@ def first(names: Lists.List<String>) -> String:
     case cons(c): c.head
     case nil(_): ""
 def hear(text: String, card: String) -> Activity<String>:
-  match world.interpret::<Data>({utterance: text, offers: offered(card), policy: {world: "", object: "policy"}, model: "", held: "", misfit: ""}):
+  match world.interpret::<Data>({utterance: text, offers: offered(card), policy: {world: "", object: "policy"}, model: ""}):
     case proposal(p): "proposal {p.method}"
     case unclear(u): first(u.needs)
     case _: "other"

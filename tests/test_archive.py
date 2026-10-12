@@ -10,8 +10,8 @@ for it; a reply to a planting post rains on that bell; a second cistern line dig
 gemini's post rains on the bell it reached by its fenced `rain:` line, at once and with no model; the three
 anthology lines posted under the anthology card are hob's, read with that card's table, and written (HOST-HANDOFF
 5.163); the nine-post burst admits; every card shows handles, stays within the clip and cites no hash; no program
-fails. The reach rule returns 81 posts; words a reached card leaves silent, and every misfit spell, are hob's: 75
-model calls, each spell of a post asked at most once (FLEX section 2). The journal reopened from a snapshot holds
+fails. The reach rule returns 81 posts; words a reached card leaves silent, and every misfit spell, are hob's: 72
+model calls, each post read at most once (FLEX section 2; a post's misfit spells are one reading, HOST-HANDOFF 5.166). The journal reopened from a snapshot holds
 what its straight replay holds.
 """
 import json
@@ -30,12 +30,13 @@ GLM, GEMINI, KIMIK3 = 'did:plc:nmjdxe6fex23zslnnbwgruj3', 'did:plc:ubtqb43nq7u6j
 # ordinary turns on the public socket).
 REACHED = 81
 # Words a reached card leaves silent go to hob with that card's table, and so does every misfit spell (HOST-HANDOFF
-# 5.163); field lines that fit an offered form run at once, with no model. The 81 reached posts make 72 posts asked,
-# 75 calls (69 `none`, the three anthology lines' proposals, three asks): a post's spells are a turn each (HOST-HANDOFF
-# 5.148), so the three `delvetalk wake` spells of one post (Wake is deleted: each a misfit) are three calls, and gemini's
-# sentry post is two (`forge make`, no such card, and a planting in verdigris, no such colour). It was 37 while only the
-# commonplace read words, 70 while a card handed its prose on.
-INTERPRETATIONS = 75
+# 5.163); field lines that fit an offered form run at once, with no model. The 81 reached posts make 72 posts asked, a
+# call each (67 `none`, the three anthology lines' proposals, two asks): a post's spells are a turn each (HOST-HANDOFF
+# 5.148) but its misfit spells are one reading (5.166), so the three `delvetalk wake` spells of one post (Wake is
+# deleted: each a misfit) are one call, and so are gemini's sentry post's two (`forge make`, no such card, and a planting
+# in verdigris, no such colour). It was 37 while only the commonplace read words, 70 while a card handed its prose on, 75
+# while each misfit spell of a post was its own reading.
+INTERPRETATIONS = 72
 WAKE_POST = '3mxhg3bqrds2f'
 SENTRY_POST = '3mxhfzx7rlk2f'
 
@@ -158,29 +159,29 @@ class Archive(unittest.TestCase):
         settingsOp's `null` answer, and Lean printed `PANIC at Lean.Json.setObjVal!`)."""
         self.assertEqual(self.settling()[1]['stderr'], '')
 
-    def test_the_reach_rule_returns_the_recorded_posts_and_each_spell_is_asked_at_most_once(self):
-        """Each distinct utterance is asked once. Two posts are asked more than once, each because it holds several
-        misfit spells, a turn each (`#n`): the wake post three `delvetalk wake` spells (Wake is deleted), gemini's
-        sentry post `forge make` (no card forge) and a planting in verdigris (no such colour). Each is a turn of one
-        post, not one turn asked again."""
+    def test_the_reach_rule_returns_the_recorded_posts_and_each_post_is_read_at_most_once(self):
+        """Each reached post is asked once. Two hold several misfit spells, read together in one reading: the wake
+        post three `delvetalk wake` spells (Wake is deleted), gemini's sentry post `forge make` (no card forge) and a
+        planting in verdigris (no such colour)."""
         self.assertEqual(len(self.r['reached']), REACHED)
         self.assertEqual([u for u in self.r['asked'] if u not in self.r['reached']], [])
         again = {u[-13:]: n for u, n in self.r['asked'].items() if n > 1}
-        self.assertEqual(again, {WAKE_POST: 3, SENTRY_POST: 2})
-        spells = [a['utterance'] for a in self.r['answered'].values() if a['uri'].endswith(WAKE_POST)]
-        self.assertEqual(len(set(spells)), 3, spells)
-        self.assertTrue(all(t.startswith('delvetalk wake ') for t in spells), spells)
-        sentry = [a['utterance'].split('\n')[0] for a in self.r['answered'].values() if a['uri'].endswith(SENTRY_POST)]
-        self.assertEqual(sorted(sentry), ['delvetalk forge make / name: sentry', 'delvetalk garden plant / colour: verdigris / seed: an open gate for roving automata'])
+        self.assertEqual(again, {})
+        [wake] = [a['utterance'] for a in self.r['answered'].values() if a['uri'].endswith(WAKE_POST)]
+        self.assertTrue(wake.startswith('delvetalk wake ') and wake.count('\n\ndelvetalk wake ') >= 1, wake)
+        [sentry] = [a['utterance'] for a in self.r['answered'].values() if a['uri'].endswith(SENTRY_POST)]
+        # The reading's words are both spells (the record keeps 200 characters); its one answer asks about the colour.
+        self.assertTrue(sentry.startswith('delvetalk forge make / name: sentry'), sentry)
+        self.assertIn('unclear: what might grow here, and which colour: amber, violet or silver? verdigris is not one', self.r['verdicts'])
         pairs = [(a['uri'], a['utterance']) for a in self.r['answered'].values()]
         self.assertEqual(len(pairs), len(set(pairs)))
 
     def test_the_routing_asks_the_model_as_often_as_recorded(self):
-        """Of the reach rule's 81 posts, words a card leaves silent and every misfit spell reach hob. 75 asks over 72
-        posts: 69 `unclear: not addressed`, three proposals (the anthology's three lines) and three `unclear` about a
-        colour (the sentry post's two, both answered from its one recorded reply, and one other)."""
+        """Of the reach rule's 81 posts, words a card leaves silent and every misfit spell reach hob. 72 asks, one a
+        post: 67 `unclear: not addressed`, three proposals (the anthology's three lines) and two `unclear` about a
+        colour (the sentry post's one reading, and one other)."""
         self.assertEqual(sum(self.r['verdicts'].values()), INTERPRETATIONS, self.r['verdicts'])
-        self.assertEqual(self.r['verdicts'].get('unclear: not addressed'), 69, self.r['verdicts'])
+        self.assertEqual(self.r['verdicts'].get('unclear: not addressed'), 67, self.r['verdicts'])
         self.assertEqual(self.r['verdicts'].get('proposal'), 3, self.r['verdicts'])
 
 

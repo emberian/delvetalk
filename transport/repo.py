@@ -21,12 +21,12 @@ from transport.atproto.cbor import CID, block, decode
 from transport.atproto.cbor import car as car_of
 from transport.atproto.mst import Tree
 from transport.atproto.sign import Key, multikey, tid
+from transport.host import PUBLIC
 from transport.identity import SLUG
 
 NS = 'town.delvetalk.'
 COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law'))
 ENTRY = NS + 'entry'  # the signed repository's one collection: an entry's CID and height under its rev
-PUBLIC = 'anonymous'  # the reader an unauthenticated request is; the front's object page reads as it too
 LIMIT, MAX_LIMIT = 50, 100
 CAR = 'application/vnd.ipld.car'
 OBJECT_KEY = re.compile(r'([A-Za-z0-9._~:-]+)\.([0-9]+)')  # <object with / as ~>.<version>
@@ -259,17 +259,41 @@ class Repo:
                     **({'cursor': reply['cursor']} if reply.get('more') and reply.get('cursor') else {})}
         if reverse:  # objects and laws page by id in byte order, as world-objects lists them
             raise Refusal(400, 'InvalidRequest', f'{NS}{collection} pages by object id and has no reverse order')
-        listed = host.send({'op': 'world-objects', 'principal': who, **({'after': cursor} if cursor else {})})
-        if listed.get('status') != 'listed':
-            raise refused(listed)
-        records = []
-        for oid in listed['ids']:
-            item = self.object(host, oid, None, who)
-            if collection == 'object':
-                records.append(self.record('object', object_key(oid, item['version']), item.get('stateCid'), item))
-            else:
-                records += [self.record('law', object_key(oid, law['name']), None, law) for law in item.get('laws') or []]
-        return {'records': records, **({'cursor': listed['ids'][-1]} if listed.get('more') and listed['ids'] else {})}
+        after, mid, k = (cursor or '').partition('#')  # an object id, or `<object id>#<laws of it already listed>` inside a law page
+        if mid and not (collection == 'law' and k.isdigit()):
+            raise Refusal(400, 'InvalidRequest', 'cursor: not one this listing gave')
+        taken, last = [], None
+        for oid, listed, record, ended in self.walk(host, who, collection, after, int(k or 0), bool(mid)):
+            if len(taken) == int(limit):
+                return {'records': taken, 'cursor': last}
+            taken.append(record)
+            last = oid if ended else f'{oid}#{listed}'
+        return {'records': taken}
+
+    def walk(self, host, who, collection, after, skip, inside):
+        """(object id, its laws listed so far, record, whether that ends the object) in id order from `after` (exclusive; inside
+        an object, that object past its first `skip` laws), following the host's pages as they are read."""
+        def page(**q):
+            listed = host.send({'op': 'world-objects', 'principal': who, **q})
+            if listed.get('status') != 'listed':
+                raise refused(listed)
+            return listed['ids'], bool(listed.get('more'))
+        ids, more = ([after] if after in page(prefix=after)[0] else [], True) if inside else page(**({'after': after} if after else {}))
+        while True:
+            for oid in ids:
+                item = self.object(host, oid, None, who)
+                if collection == 'object':
+                    yield oid, 0, self.record('object', object_key(oid, item['version']), item.get('stateCid'), item), True
+                laws = item.get('laws') or [] if collection == 'law' else []
+                for n in range(skip, len(laws)):
+                    yield oid, n + 1, self.record('law', object_key(oid, laws[n]['name']), None, laws[n]), n + 1 == len(laws)
+                skip = 0
+            if not more:
+                return
+            after = ids[-1] if ids else after
+            ids, more = page(after=after)
+            if not ids:
+                return
 
     def signed_record(self, h):
         x = self.signed.heights[h - 1]
