@@ -2325,6 +2325,14 @@ failing input as a test first, merging foundation before each commit:
    `/towns` in the ops container). Check the carry's `made` rows after it (kind/errand's is the opener's
    `genesis-kind-errand`) and that the refresh lines are `refreshed`/`current`, not "its making is in no journal read";
    carry-check on hbox cannot show it (v8 is the backup delvetalk-20261012T115945Z, not at that path).
+   **Read, and it blocks the deploy** (lane/deploy12, 2026-10-12, DEPLOY "It carries"). The makings were read: 32
+   `refreshed` and 24 `current`, none left. Then the motion's `weather` placing was `suspended`, so the carry exited 1
+   and v9 went back up. The refresh rewrote `kind/weather`'s `.form` text to `over:`, while the carried kind's place
+   form, shaped once from v8's form, still takes `garden`. `genesis.carried_fields` reads the text, so it kept
+   `over: porch` and the spell misfit. Read the place form the kind actually offers (`world-inspect` `templates`,
+   5.189), not the `.form` text. Also decide whether a refresh may write a form text that the kind's layer no longer
+   takes. Test first: a carried town whose `kind/weather` form says `garden`, its makings read, refreshed, with
+   `weather` placed `refreshed`. Then rebuild, rerun carry-check, and repeat the carry.
 3. **`shownSpell` scans for `did:` tokens** (5.181): a `fired` row keeps the filled spell, not its holes, so a DID the
    speaker typed is shown by handle too. Keep the rule's template and its fills on the row (edition 12 is undeployed:
    it can ride it) and show the fills by handle; delete the scan.

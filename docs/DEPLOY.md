@@ -793,7 +793,15 @@ lists such an object with `--leave OBJ` (`WORLD=OBJ` for a world other than the 
 `retired` clause, the reason its reading), its state kept, its suspensions dropped with their supervisors told
 `ended {how: broken}`. After the carry, change hbox's `pull.env` to the new image (the tarballs' paths are unchanged:
 backup.sh moves the mirror of the old directory aside itself), and keep the old directory: it is the world before.
-Keep its closing backup too: copy the pulled tarball and its `.sha256` into hbox's `/tank/delvetalk-backups/closing/`.
+Keep its closing backup too: pull it at once (on hbox, `systemctl --user start delvetalk-pull-backups.service`, which
+replays it under `pull.env`'s image, still the old one), then copy the tarball and its `.sha256` into hbox's
+`/tank/delvetalk-backups/closing/`.
+
+`transport carry` exits 1 when a world's check names a problem or a refresh row is not `refreshed`, `current` or
+`left`, and it still prints the hand's line last: that line is not posted. The world is not served: put the old `.env`
+back (kept in `/opt/delvetalk/before-<new sha12>/`), move the new directory aside (`mv .../v10
+.../v10.failed-<stamp>`, so a later carry finds an empty target), `--profile town up -d --wait` on the old directory,
+and take the next carry from it.
 
 Carried 2026-10-12, v8 to v9 (126fb4106739 to 3677cf2c302e, edition 9 to 10): stop the bridge, interpreter, front and
 hand first and count with the host still up (`world-objects` pages: follow `more` with `after`; 70 objects at height
@@ -806,6 +814,19 @@ new code. Every v8 object is in v9, each `world-object` state CID differs (state
 resolves by its slug as "entry N of the world before" (`hand search <slug>`: `{at: 435, height: N, world:
 /towns/v8/state/town.journal}`). A thing's card named old heights ("untended since entry 27") that are v8's, in a
 world whose heights began again at 1: from edition 12 a carry's heights go on from the world before's.
+
+Refused 2026-10-12 (15:47 UTC), v9 to v10 (3677cf2c302e to e916688e's `73010fbcb21f…247f`, edition 10 to 12): v9 at
+height 423 with 99 objects (host alone, two counts), closing backup `delvetalk-20261012T154621Z`. The carry took 31 s.
+Its world line was clean: `check {objects: 99, rendered: 99, receipts: 423, problems: [], turn: advanced}`, all 99
+`moved`, `left` and `kept` empty, the tide's tick `dropped` (`told carried`) and `rearmed: [tide]`, receipt
+`fikan-lifuz`. Of its 57 refresh lines, 32 were `refreshed` and 24 `current`, none "its making is in no journal read" (the
+makings were read from `/towns/v8/state/town.journal`). The last was `{object: weather, slot: placed, status:
+suspended}`, so it exited 1. The refresh first rewrote `kind/weather`'s `.form` to the image's text (`over: text
+1..128`). Then `genesis.carried_fields`, which reads that text, placed the motion's weather with `over: porch`. The
+carried kind's place form, shaped once from v8's form, takes `garden`, so the spell misfit and waited on hob. v9 came
+back up on its old images (height 424, the same 99 objects, smoke passing). The new directory is
+`v10.failed-20261012T154705Z`. carry-check could not show this: there the kinds' slots were `left`, so the form text
+still said `garden`.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
