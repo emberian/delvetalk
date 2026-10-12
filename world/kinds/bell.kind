@@ -3,16 +3,18 @@
 # rain, notes its planter when it rings, and wants a first rain, a rain from a second hand, and
 # tending once it has gone quiet. Tending (world/bodies/bell.obend quietAfter): a bell answers while
 # tended within 1440 clock minutes, and untended past it takes tend alone (tests/test_tending.py
-# compares the two)
+# compares the two). A rain is a line whose verb is rain (a hand's, the weather's); a grown verb's
+# gesture is no rain
 of: record
 form: <<END
 colour: amber | violet | silver
 seed: text 1..80
 END
 voice: small and brass, tuned rather than struck; it waits for rain, and scatters light when it rings
+about: rings at its seventh rain; goes quiet untended a day
 text: <<END
 law alive "answers while tended within 1440 minutes": request.method == "tend" or request.kind == rule or request.clock <= old.tended + 1440
-rule seven "rings at its seventh rain": count(new.lines) >= 7 and count(old.lines) <= 6 then delvetalk {request.object} ring
+rule seven "rings at its seventh rain": count(new.lines where verb == "rain") >= 7 and count(old.lines where verb == "rain") <= 6 then delvetalk {request.object} ring
 rule rang "notes its planter when it rings": "rung" in new.marks.name and not "rung" in old.marks.name then delvetalk {new.maker} note / text: {request.object} rang
 want rain "a bell nobody has rained on": count(new.lines) == 0 asks delvetalk {request.object} rain
 want second "a bell only its planter has rained on": count(new.lines) >= 1 and count(new.lines where author == new.maker) >= count(new.lines) asks delvetalk {request.object} rain

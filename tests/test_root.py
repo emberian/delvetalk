@@ -13,6 +13,7 @@ retired card written, or a non-opener casting a power.
 import os
 import unittest
 
+from tests.host import bounds
 from tests.test_chain import Chain
 from tests.wire import label, nat, record
 from tests.bend import closure
@@ -113,6 +114,13 @@ class Root(RootCase):
         self.assertEqual(again["status"], "created", again)                             # the id is free again
         self.reopen()
         self.assertEqual(self.count(), (0, 0))
+
+    def test_a_card_override_is_clipped_to_the_card_bound(self):
+        bound = bounds()["host"]["cardShownChars"]
+        self.assertEqual(self.root({"kind": "card", "object": "counter", "text": "y" * 2000})["status"], "root")
+        shown = self.host.send(op="world-card", principal="ember", object="counter")
+        self.assertEqual((len(shown["text"]), shown["override"]), (bound, True), shown)
+        self.assertTrue(shown["text"].endswith("world-inspect counter reads its source]\n"), shown["text"][-80:])
 
     def test_every_act_replays_with_its_before(self):
         """Each act once, then a reopen: replay checks every `before` against the store it rebuilt."""

@@ -19,6 +19,9 @@ record Line:
 record Admission:
   n: Nat
   at: Nat
+# A kept record's line its keeper has not admitted, by number.
+record Pending:
+  n: Nat
 # A record's named moment (a bell's `rung`), once each, keyed {name}.
 record Mark:
   name: String
@@ -54,6 +57,7 @@ record Held:
 record Departure:
   who: String
   at: Nat
+  entry: Nat
 # Who is in a room and at which passage ("" for a room without passages), keyed {who}.
 record Presence:
   who: String

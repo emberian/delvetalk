@@ -2007,6 +2007,9 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
                           cells := s.cells,
                           placements := s.placements, turn := w.height + 1 }
     let p := withLawReads w p
+    -- What the verdict read is the turn's root too: a later move of it makes the answer stale (codex host 12).
+    for (id, version) in p.roots do
+      unless s.roots.any (·.1 == id) do recordRoot id version
     let (admitted, clause) := match judge w (w.height + 1) p with
       | .ok _ => (true, "")
       | .error r => (false, r.clause.getD r.cls)
@@ -2452,7 +2455,7 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
   let moved := (rows "fired").map (fun f =>
       let said := (((f.getObjVal? "argument").toOption.bind fun a => (decodeData Limits.dataDepth a).toOption).bind
         fun d => textField d "text").getD ""
-      s!"rule {text f "rule"} of {shownName w (text f "principal")} fired: {said}") ++
+      s!"rule {text f "rule"} of {shownName w (text f "principal")} fired: {shownSpell w said}") ++
     (rows "unfired").map fun f =>
       s!"rule {text f "rule"} of {shownName w (text f "owner")} did not fire: {unfiredWords (text f "why")}"
   let asked := fun (id name : String) => ((w.objects[id]?).map fun o => wantRows w principal id o).getD [] |>.find? fun r =>
@@ -2480,6 +2483,11 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
       stands := stands ++ [s!"{id}'s {field}: {now.rows.size}" ++ (if first then s!", the first by {shownName w principal}" else "")]
   return [moved, opened, stands].filterMap fun ls => if ls.isEmpty then none else some ("; ".intercalate ls)
 
+/-- The `revealed` field of a reply to an admitted entry, left out when it has no line. -/
+def revealedField (w : World) (entry : Json) : List (String × Json) :=
+  let lines := revealed w entry
+  if lines.isEmpty then [] else [("revealed", toJson lines)]
+
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
     offers the entry retains for the turn's own principal (others are read with `world-offers`), and an
     admitted entry's three lines (`revealed`). -/
@@ -2495,12 +2503,27 @@ def turnReply (w : World) (r : Json) : Json :=
       match o.getObjValAs? String "to", o.getObjValAs? String "text" with
       | .ok to, .ok text => if to == principal then some (Json.mkObj [("principal", toJson to), ("text", toJson text)]) else none
       | _, _ => none
-    let lines := revealed w entry
     Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra ++
-      (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++
-      (if lines.isEmpty then [] else [("revealed", toJson lines)]) ++
+      (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++ revealedField w entry ++
       -- What a refusal may say in public, for transport to draft from.
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
+
+/-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
+    reader, `identity`), projected under the reader's authority; a refusal with its `public` projection.
+    The identity's own principal is told what the entry revealed, as the admitted reply told it. -/
+def receipt (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let intent ← boundedText "identity" Limits.maxIntentBytes (← j.getObjValAs? String "identity")
+  let owner := (← optText j "of").getD reader
+  match boundEntry w owner intent with
+  | none => return Json.mkObj [("status", toJson "unknown")]
+  | some entry =>
+    let shown := projectEntry w reader entry
+    if owner != reader && tagOf entry == "refused" then return publicRefusal entry
+    -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.
+    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++
+      (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
+      (if owner == reader && !reader.isEmpty then revealedField w entry else []))
 
 /-- Retry rule for turns: the identity is bound to the whole turn request. -/
 def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
@@ -3790,20 +3813,39 @@ def cardRendered (w : World) (id reader : String) : Option String :=
     | (.ok (.ok document), _) => (Delvetalk.Document.render document).toOption
     | _ => none
 
+/-- `text` followed by `block` within `Limits.cardShownChars` characters, the one place the bound is applied to a
+    card: over it, `text` is cut to leave room for a closing line that says so and where the rest is read, and
+    `block` (whole lines) stands after it. -/
+def clipCard (id text block : String) : String :=
+  let bound := Limits.cardShownChars
+  let whole := if block.isEmpty then text else (if text.isEmpty || text.endsWith "\n" then text else text ++ "\n") ++ block
+  if whole.length ≤ bound then whole else
+  let note := s!"\n[clipped at {bound} characters; world-inspect {id} reads its source]\n"
+  (text.take (bound - note.length - block.length)).toString ++ note ++ block
+
+/-- The card `id` shows its readers as `text`, clipped by `clipCard`, with one line for each want it holds
+    (`wants <name>: <reading>: <spell>`, `wantRows` for `reader`) while the lines stay within a quarter of the bound. -/
+def shownCard (w : World) (id reader text : String) : String :=
+  let lines : List String := match w.objects[id]? with
+    | some o => (wantRows w reader id o).map fun (row : Json) =>
+      let field := fun (k : String) => (row.getObjValAs? String k).toOption.getD ""
+      let reading := if field "reading" == "" then "" else s!" {field "reading"}:"
+      s!"wants {field "name"}:{reading} {(field "asks").trimAscii.toString.replace "\n" " / "}\n"
+    | none => []
+  let (block, _) := lines.foldl (init := ("", true)) fun (held : String × Bool) (l : String) =>
+    if held.2 && held.1.length + l.length ≤ Limits.cardShownChars / 4 then (held.1 ++ l, true) else (held.1, false)
+  clipCard id text block
+
 /-- `cardRendered` within `Limits.cardShownChars` characters, "" for none: what an interpretation shows the model
-    of the card answered. -/
+    of the card answered (its wants go with it as `wants`, whole). -/
 def cardText (w : World) (id reader : String) : String :=
-  ((cardRendered w id reader).map fun t => (t.take Limits.cardShownChars).toString).getD ""
+  clipCard id ((cardRendered w id reader).getD "") ""
 
 /-- A question hob read no spell into, answered by the card itself (the decision after the v8 deploy: data, not
-    narration): its exact text as the speaker reads it, then what it wants now (`wantsText`) when it wants anything.
-    The paint is the front's to place above it (renders are per process, outside the world). -/
+    narration): its exact text as the speaker reads it (`shownCard`, what `world-card` answers). The paint is
+    the front's to place above it (renders are per process, outside the world). -/
 def cardAnswer (w : World) (id reader : String) : String :=
-  let text := (cardRendered w id reader).getD ""
-  let wants := match w.objects[id]? with
-    | some o => if (wantRows w reader id o).isEmpty then "" else "\n" ++ wantsText w reader id o id
-    | none => ""
-  text ++ wants
+  shownCard w id reader ((cardRendered w id reader).getD "")
 
 /-- Settle hob's reading of words a card heard (`heardTurn`), as the speaker's turn under the suspension's
     identity. A spell, or `grow:` and the spell that uses the verb, runs (`runHeard`), unless the policy asks
@@ -4162,7 +4204,8 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
     if !o.read.permits principal then return (w, Json.mkObj [("status", toJson "denied"), ("object", toJson id)])
     -- A root `card` override answers in place of `render` until cleared (docs/ROOT.md §1.1).
     if let some text := w.cards[id]? then
-      return (w, Json.mkObj [("status", toJson "card"), ("object", toJson id), ("text", toJson text), ("override", toJson true)])
+      return (w, Json.mkObj [("status", toJson "card"), ("object", toJson id),
+        ("text", toJson (shownCard w id principal text)), ("override", toJson true)])
     let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
     let (r, st) := (renderCard id o (cardContext w id principal "" "" w.height)).run.run init
@@ -4171,7 +4214,8 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
     match r with
     | .ok (.ok document) =>
       return (w, Json.mkObj [("status", toJson "card"), ("object", toJson id),
-        ("text", toJson (← Delvetalk.Document.render document)), ("document", dataJson document)])
+        ("text", toJson (shownCard w id principal (← Delvetalk.Document.render document))),
+        ("document", dataJson document)])
     | .ok (.error clause) => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)])
     | .error _ => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")])
 

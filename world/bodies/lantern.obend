@@ -18,6 +18,7 @@ import ./Text.obend as Text
 # `light`, or another's rule on the door, is refused by name.
 type State = Super.State
 form light:
+form arm:
 form write:
   text: text 1..280
 form lines:
@@ -36,17 +37,23 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("light lines door undoor") else Text.words("light lines")
+  Lists.concat(if context.principal == state.owner then Text.words("light lines door undoor") else Text.words("light lines"), if context.principal == state.maker then Text.words("arm") else Text.words(""))
 def methods() -> Lists.List<String>:
   Text.words("~made ~act")
 def watched(state: State) -> String:
   Super.field(state, "door")
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
-  if context.caller != state.kind then false else placing(watched(state), context)
-def placing(door: String, context: Abi.Context) -> Activity<Bool>:
-  match world.rule({object: {world: context.world, object: door}, name: Text.identifier(context.object), when: "\"open\" in new.marks.name and not \"open\" in old.marks.name", then: "delvetalk {context.object} light"}):
-    case placed(_): true
-    case refused(_): false
+  if context.caller != state.kind then false else placing(state, context)
+def placing(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.rule({object: {world: context.world, object: watched(state)}, name: Text.identifier(context.object), when: "\"open\" in new.marks.name and not \"open\" in old.marks.name", then: "delvetalk {context.object} light"}):
+    case placed(_): Super.armedNow(state, context)
+    case refused(r): Super.unarmed(state, watched(state), r.clause, r.reading, context)
+# Its maker places its rule again (taken off first, if it stood).
+def arm(state: State, context: Abi.Context) -> Activity<Bool>:
+  if context.principal != state.maker then Super.armRefused(state, context) else rearming(state, context)
+def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: {world: context.world, object: watched(state)}, name: Text.identifier(context.object)}):
+    case _: placing(state, context)
 # Only its maker's rule on its door lights it, and only once the door is open.
 def light(state: State, context: Abi.Context) -> Activity<Bool>:
   if Super.ruledFrom(state, watched(state), context) == false then unlit(state, context) else opened(state, context)
@@ -59,4 +66,4 @@ def unlit(state: State, context: Abi.Context) -> Activity<Bool>:
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let name = if state.head == "" then "A LANTERN" else state.head
   let lit = if Super.marked(state, "lit") then "lit" else "dark"
-  Document.text("{name}, by {watched(state)}: {lit}; it lights when {watched(state)} opens.\n")
+  Document.text("{name}, by {watched(state)}: {lit}; it lights when {watched(state)} opens.\n{Super.inactiveLine(state, id)}")

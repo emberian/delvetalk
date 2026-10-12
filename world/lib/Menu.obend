@@ -49,15 +49,24 @@ def title() -> String:
 def trieHead(count: Nat) -> String:
   "{title()}\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back; words reach hob.\n"
 def trieTail() -> String:
-  "YOURS · me\n  delvetalk me ?\n  » what you hold; notes left by rules and mentions\nEvery reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"
+  "YOURS · me\n  delvetalk me since\n  » what others did to what you made since you were here; what you hold; your notes\nEvery reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"
 def framed(head: String, changed: Changed, branches: Document.Documents, wants: Lists.List<String>, tail: String, context: Abi.Context) -> Document.Document:
   let fixed = textLength(head) + textLength(changed.foot) + textLength(tail)
   let doors = Card.clippedWithin(branches, 64n, Card.left(context, fixed))
   let wanted = section("What wants a hand, newest first:\n", wants, Card.left(context, fixed + sized(doors)))
-  let news = section("What changed, newest first:\n", changed.lines, Card.left(context, fixed + sized(doors) + sized(wanted)))
+  let news = headed("What changed, newest first:\n", changed.lines, Card.left(context, fixed + sized(doors) + sized(wanted)))
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(head), tail: Lists.concat(Lists.concat(wanted, news), Document.Documents.cons({head: Document.text(changed.foot), tail: Lists.append(doors, Document.text(tail))}))})})
 def sized(items: Document.Documents) -> Nat:
   Document.size(Document.Document.sequence({items: items}))
+# What changed keeps its head over the spells under it: when not even its first row fits, the head
+# and how many changed.
+def headed(title: String, rows: Lists.List<String>, room: Nat) -> Document.Documents:
+  match section(title, rows, room):
+    case nil(_): counted(title, Lists.length(rows), room)
+    case cons(c): Document.Documents.cons(c)
+def counted(title: String, n: Nat, room: Nat) -> Document.Documents:
+  let line = if n == 1n then "one thing changed\n" else "{Text.countWord(n)} things changed\n"
+  if n == 0n || textLength(title) + textLength(line) > room then Document.Documents.nil() else Document.Documents.cons({head: Document.text(title), tail: Document.Documents.cons({head: Document.text(line), tail: Document.Documents.nil()})})
 # A titled list within `room`, "… and N more" counted: nothing when it is empty, or when its title,
 # its first row and the count of the rest do not fit.
 def section(title: String, rows: Lists.List<String>, room: Nat) -> Document.Documents:

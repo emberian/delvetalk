@@ -92,7 +92,7 @@ class Shapes(unittest.TestCase):
         self.assertEqual([(o['op'], o['principal'], o['object']) for o in self.host.ops],
                          [('world-view', OPENER, 'garden'), ('world-object', OPENER, 'garden'), ('world-inspect', OPENER, 'garden'), ('world-dump', OPENER, 'garden')])
         self.run_hand('modlog', '--object', 'garden')
-        self.assertEqual(self.host.ops[-1], {'op': 'world-history', 'principal': OPENER, 'object': 'garden'})
+        self.assertEqual(self.host.ops[-1], {'op': 'world-history', 'principal': OPENER, 'object': 'garden', 'reverse': True, 'limit': 20})
         self.run_hand('find', 'gard')
         self.assertEqual(self.host.ops[-1], {'op': 'world-objects', 'principal': OPENER, 'prefix': 'gard'})
 

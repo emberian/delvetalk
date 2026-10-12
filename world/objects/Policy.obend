@@ -122,17 +122,42 @@ def examplesPart(state: State) -> Lists.List<String>:
   if Lists.length(state.examples) == 0n then Lists.List.nil() else Lists.concat(part("\nSaid, and the answer:\n"), Lists.map(state.examples, exampleLine))
 def answers() -> String:
   "\nAnswer with exactly one of these, and nothing else:\n- the spell they meant, up to three one after another; every value from their words, never invented, a choice never widened;\n- grow: NAME \"reading\", then on the next line the spell that uses the new verb, when their words name an act the card's verbs do not have; a grown verb is a gesture: one line on the thing, tagged with the verb, and the thing tended;\n- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n- none when the words are not addressed to the card, or are conversation.\n"
+# The library's pages as the host sends them (world/objects/Library.obend declares the same shapes,
+# which a lawful module cannot be imported for): the prompt shows a page's name and title, never its body.
+sum Kind:
+  page: {}
+  walk: {}
+record Page:
+  name: String
+  kind: Kind
+  title: String
+  body: String
+  place: Nat
+# What a card wants and the spell that answers it, as the host reads them off the card.
+record Want:
+  name: String
+  reading: String
+  asks: String
+type Asked = {utterance: String, offers: Lists.List<Form.Form>, card: String, misfit: String, wants: Lists.List<Want>, pages: Lists.List<Page>}
+def wantLine(want: Want) -> String:
+  "- {want.name}: {want.reading}\n  {want.asks}\n"
+def pageLine(page: Page) -> String:
+  "  {page.name}: {page.title}\n"
+def wantsPart(wants: Lists.List<Want>) -> Lists.List<String>:
+  if Lists.length(wants) == 0n then Lists.List.nil() else Lists.List.cons({head: "\nWhat the card wants (each with the spell that answers it):\n", tail: Lists.map(wants, wantLine)})
+def pagesPart(pages: Lists.List<Page>) -> Lists.List<String>:
+  if Lists.length(pages) == 0n then Lists.List.nil() else Lists.List.cons({head: "\nThe library's pages (delvetalk library read / page: <name>):\n", tail: Lists.map(pages, pageLine)})
 # The system prompt the host sends with the utterance as the user turn (docs/FLEX.md §2): hob's
 # instruction, the card as the speaker reads it, its forms in the spell grammar, what the card
-# misfit spell hob reads past, the examples, and the four answers; or, for
+# wants and the library's pages by title, the misfit spell hob reads past, the examples, and the four answers; or, for
 # words asked for Bend, the drafting prompt. Pieces are joined in balanced rounds, so its cost is
 # near linear.
-def prompt(state: State, asked: {utterance: String, offers: Lists.List<Form.Form>, card: String, misfit: String}) -> String:
+def prompt(state: State, asked: Asked) -> String:
   if drafting(asked.offers) then draftPrompt() else cardPrompt(state, asked)
-def cardPrompt(state: State, asked: {utterance: String, offers: Lists.List<Form.Form>, card: String, misfit: String}) -> String:
+def cardPrompt(state: State, asked: Asked) -> String:
   let head = part("{hob()}\n\nThe card they answered:\n{asked.card}\n\nWhat it takes (a spell is the delvetalk line, then one `field: value` line per field, in any order):\n")
   let tail = if asked.misfit == "" then Lists.List::<String>.nil() else part("\n{misfitPart(asked.misfit)}")
-  Document.joinAll(Lists.concat(Lists.concat(Lists.concat(head, many(asked.offers)), Lists.concat(tail, examplesPart(state))), part(answers())))
+  Document.joinAll(Lists.concat(Lists.concat(Lists.concat(Lists.concat(head, many(asked.offers)), Lists.concat(wantsPart(asked.wants), pagesPart(asked.pages))), Lists.concat(tail, examplesPart(state))), part(answers())))
 # Words asked for Bend (the workshop's `make`): one form offered, and it takes source. The
 # answer is the package alone, so the prompt holds no card and no spell, only what a package is.
 def drafting(offers: Lists.List<Form.Form>) -> Bool:
@@ -147,7 +172,7 @@ def draftPrompt() -> String:
   "hob drafts Bend for a town of cards. The words below describe one card; write its package: a State, initial(), a form and a method for each thing it does, and render. Keep it as small as the words allow; the workshop checks it and its describer adopts it.\n\nA whole package, a jar anyone drops a coin in:\n\n```obend\n{jar()}```\n\nAnswer with one ```obend block holding the package, and nothing else.\n"
 # The library's `object` page's package (capsules/pages/object.txt; tests/test_policy.py holds them equal).
 def jar() -> String:
-  "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Coin:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  coins: Relations.Relation<Coin>\ndef initial() -> State:\n  {{owner: \"\", coins: Relations.empty()}}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {{field: \"coins\", key: Text.words(\"n who\"), limit: 64n}})\nlaw owner \"anyone drops; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform drop:\n  line: text 1..140\ndef drop(state: State, input: {{line: String}}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {{coins: insert {{n: Relations.count(state.coins), who: context.principal, line: input.line}}}}\n  Relations.count(state.coins) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{{natText(Relations.count(state.coins))}} coins\\n\")\n"
+  "edition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Document.obend as Document\nimport ./Form.obend as Form\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Relation.obend as Relations\nimport ./Text.obend as Text\nrecord Coin:\n  n: Nat\n  who: String\n  line: String\nrecord State:\n  owner: String\n  coins: Relations.Relation<Coin>\ndef initial() -> State:\n  {{owner: \"\", coins: Relations.empty()}}\ndef relations() -> Relations.Decls:\n  Lists.append(Relations.Decls.nil(), {{field: \"coins\", key: Text.words(\"n who\"), limit: 64n}})\nlaw owner \"anyone drops; the owner reprograms\": request.kind == 0 or request.subject == new.owner\nform drop:\n  line: text 1..140\ndef drop(state: State, input: {{line: String}}, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {{coins: insert {{n: Relations.count(state.coins), who: context.principal, line: input.line}}}}\n  Relations.count(state.coins) + 1n\ndef render(state: State, context: Abi.Context) -> Document.Document:\n  Document.text(\"{{natText(Relations.count(state.coins))}} coins\\n\")\n"
 def exampleCard(example: Example) -> Document.Document:
   Document.text(exampleCardLine(example))
 def stance(state: State) -> String:

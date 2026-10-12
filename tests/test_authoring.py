@@ -191,8 +191,8 @@ class Authoring(unittest.TestCase):
         self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "rung"), r)
         third = self.admitted(YUE, "tally/1", "delvetalk tally/1 rain / text: the third")
         self.assertIn("rule chosen of yue.delve.town fired: delvetalk tally/1 ring", third["revealed"][0], third)
-        [rang] = third["delivered"]
-        self.assertEqual((rang["receipt"]["identity"]["intent"], rang["revealed"]), ("rule:tally/1:chosen:%d" % third["receipt"]["height"], ["tally/1's marks: 1"]), rang)
+        [rang] = [d for d in third["delivered"] if d["receipt"]["identity"]["intent"].startswith("rule:")]  # beside it, the maker hears the rain
+        self.assertEqual((rang["receipt"]["identity"]["intent"], rang["revealed"]), ("rule:tally/1:chosen@kind/tally:%d" % third["receipt"]["height"], ["tally/1's marks: 1"]), rang)
 
     # §5 step 4: the workshop writes the header; §1's counter is four lines, and a package no spell reaches is refused.
     def test_a_four_line_counter_drafted_over_a_kind_is_adopted_and_used_by_another(self):

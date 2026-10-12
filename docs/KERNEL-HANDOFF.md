@@ -1,6 +1,6 @@
 # Kernel handoff
 
-State on 2026-10-12 (lane/kernel19 after foundation b45ccef6: the second codex review's nine kernel findings, §28; before it lane/kernel17 after foundation 57d1c580: one clause language, `law`, `rule` and `want` on a thing's text, OVERHAUL §5 step 2, §27; before it lane/kernel16 after foundation 1de640d7: a computed refusal, `refuse(line)`, §26; before it lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
+State on 2026-10-12 (lane/kernel20 after foundation 63e98e75: the slowness review's kernel rows, §29; before it lane/kernel19 after foundation b45ccef6: the second codex review's nine kernel findings, §28; before it lane/kernel17 after foundation 57d1c580: one clause language, `law`, `rule` and `want` on a thing's text, OVERHAUL §5 step 2, §27; before it lane/kernel16 after foundation 1de640d7: a computed refusal, `refuse(line)`, §26; before it lane/kernel15 after foundation 8f69bd7e: the relation primitives `relationCount` and `relationLookup`, §15 "Two primitives", §16 item 15; before it lane/kernel14 after foundation 3c96c27d: the law grammar as one term language with LAW §4 B, C, D, F/G, §25 item M; the fungus deletions K1, K2 (item N), K3, K6; before it lane/kernel13: honest bounds, located generics refusals, LAW §4 A/E/H; the queue is §16).
 
 ## Summary
 
@@ -72,7 +72,7 @@ Wire: one JSON object per line on stdin, one per line out. Errors: `{"status":"e
 | op | takes | returns |
 |---|---|---|
 | `compile` | `modules:[{name,source}]` or `source`, `entry`, `limits?`, `library?` | `{status:"compiled", artifact}`; artifact = `{schema, modules, sourcesSha256 (CID), entry, genericInstances, limits, packet, packetSha256 (CID), type, methods, law, laws?}`. Compiler refusals: error message is the diagnostic JSON text. |
-| `check-package` | as compile | `{status:"checked", artifact}` or `{status:"refused", diagnostic}`. `Package.checkPackage` is the pure entry. Spanless refusals are localized by `localize` (recompiles each function alone; first with the same stage+message wins). |
+| `check-package` | as compile | `{status:"checked", artifact}` or `{status:"refused", diagnostic}`. `Package.checkPackage` is the pure entry. A refusal is placed where it arises (a declaration's own at its body, `elaboratePackageM`); nothing is recompiled to place one (§29). |
 | `run` | `artifact`, `arguments`, `limits` | `{status:"finished", value, type, ticksUsed, heapCells, nodesUsed}` or `{status:"refused", failure, …}`. Entry type must be first-order data ("package result must have first-order data type"). |
 | `turn-start` | `artifact`, `arguments`, `limits?`, `object`, `principal`, `intent`, `roots` (all required) | `finished`, `yielded {plan, planType, responseType, checkpoint, ticksUsed}`, `exhausted {resource, ticksUsed}` (resource: ticks heap stack nodes bytes), or `error`. The entry must type as `Activity<A>` (plan `World.Message`, a record of data; response `Data`; each yield resumes at its site's type, §17). |
 | `turn-resume` | `artifact`, `checkpoint`, `response`, `limits?`, same binding | same replies. Resumes only a checkpoint this process issued (its session keeps the digests it handed out, `Bounds.issuedCheckpoints` 65,536, oldest leaving; else "checkpoint was not issued by this process": a fresh process, or a digest recomputed over edited tokens). Then in order: entry is an activity; `packetSha256`; the tokens hash to the issued digest; object; principal; intent; roots ("checkpoint belongs to another package / digest mismatch / another object / another principal / another intent / was taken under different roots"); decode ("checkpoint does not decode"); response conforms; control is yielded. The response type is re-derived from the artifact. |
@@ -172,7 +172,7 @@ Adding a Term form: extend `generate.py` (and its tag assertion), `EvaluateTerm.
 - Dialect hints (`Delvetalk/Hints.lean`, `Diagnostic.hint`): only on refusals, at the named line for a parse refusal, at the Surface declaration holding the named line otherwise. `Hints.hintFor` never fires on a typed-packet checker refusal; `blameHint` does. Test: `test_hints`.
 - Compile performance structure: package knot holds only what the entry reaches (`Elaborated.select`, `Output.knotRow`; `globalRow` stays whole for the method table and law shape); the whole closure is checked once per package (`checkClosure`: every template and the knot of every declaration as one term) without rendering a packet (`directSource`/`checkDirect`); an entry goes JSON -> `decodePacket` -> `check`. Row width is charged by `typeRowCapacity`, so an entry may reach any number of definitions. Interning: `PTy.internSlot` keyed by constructor, strings and child slots (`InternKey`); the derived `Hashable PTy` rehashes subtrees and is quadratic. `agree` decides through `sameTypeShared` before canonicalizing. `compile-profile` (`spec/CompileProfile.lean`, `lake build compile-profile`) gives stage timings, a loop mode for `perf`, `self-check`, `sha`.
 - `tests/test_artifact_pins.py` compiles every non-generic entry of every world closure and compares against `tests/fixtures/pins/artifacts.json` (`{module: {pin, entries: {def: {status, packet?}}}}`, 43 modules and 1,036 defs at 189b534). It fails only when a module's source pin changes or a def that compiled stops compiling; packets that recompile differently are counted and printed. Re-record only when `world/` changes: `DELVETALK_OBEND=… python3 -m tests.test_artifact_pins --record`.
-- `Package.localize` still localizes spanless refusals in `check-package`; located refusals make it rare.
+- `Package.localize` is the identity (§29): the elaborator places a declaration's own refusal at its body.
 
 Compile timings measured on hbox (foundation 7d90f1b and 5b07855, under load): Garden (11 modules, 78 KB) first entry 48 ms, further entries about 9 ms, `check-package` 45 ms. Re-measure before relying on them.
 
@@ -574,15 +574,27 @@ Remaining, in order:
 16. Host requests from kernel14 (§25 item M): the law's denotation of every atom that still fails
    closed in `Host/Law.lean`: `Facts.reads`, filtered counts, `changed`, cited membership, `under`,
    the roots and the acceptance check.
-17. `Package.localize` (check-package) still recompiles each function alone for a spanless refusal:
-   2.5 s on a 32 KB package. With the generics pass located (§25 items 2, 4) its remaining callers
-   are elaborator refusals without a span; find them by making `localize` count its calls in
-   `test_sugar` and `test_located`-style fixtures, then delete it when none is left.
+17. (Host.) `Host.Ops.checkModules` still calls `Package.localize`, the identity since kernel20 (§29):
+   drop the call, then delete `localize`. Closes when `grep -rn localize spec` is empty.
 20. (Kernel, then host; replay edition.) Charge argument admission to the turn (§28 item 7): `admits`
    bounds the conformance and well-formedness walks by the turn's ticks but does not deduct them, so
    `ticksUsed` excludes them, as a card's preparation does not (`executePreparedNativeFrom` deducts).
    Charging moves every turn's ticks: re-record `test_tariff`, and a replay edition. Closes when
    `startEntry` deducts the work `admissionLeft` counts and `ticksUsed` includes it.
+26. (Kernel, §29.) `Generics.run` builds `initialState` twice (derivation, then rewriting after the derived
+   declarations): reuse the sealed identities and extend the first state's indexes by the derived
+   declarations; the fresh-name set must stay exactly the final sources' strings (instance names are in
+   every packet). Closes with generics on Kind below 190M instructions and 0 packets moved.
+27. (Kernel, §29.) The elaborator synthesizes a let's remaining body at every let of a chain (O(k^2)) and
+   effect guards synthesize what elaboration synthesizes again (CK#7): return the type with the
+   elaborated term. Closes with elaborate on Kind measured and every refusal text unchanged
+   (`test_sugar`, `test_layers`, `test_protocols`).
+28. (Host or fast-suite.) `encode-compact`/`decode-compact` go to `Package.job`, which recompiles the
+   artifact's closure (`verifyArtifact`) and re-checks its packet (CK#17): route them through
+   `PackageSession.entryOf` and the held entry's assumptions and type. Closes when `test_data_type`'s
+   three codec calls compile once.
+29. (Kernel, §29.) `sourceType`'s memo is bypassed under `seen` and type bindings. Closes with a memo
+   keyed by what the answer depends on, argued against the sum variables it allocates, and 0 packets moved.
 22. (Host.) The grant and relation consumers compare Data by canonical bytes (`Ops.attenuate`,
    `relationEdit`, `keyAtMost`); with `encode_injective` that is equality up to `normalize`. A host
    test of a grant fixing a Data-typed variant and a holder supplying the one-field record (now
@@ -1232,3 +1244,61 @@ test or a `#guard` that fails on the previous binary.
 Pins: none re-recorded (no packet moved). Replay: see the lane report (carry-check on the newest
 backup).
 
+
+## 29. The slowness review's kernel rows (lane/kernel20, after foundation 63e98e75)
+
+`docs/review/slowness-2026-10-12/` (ROUTING.md rows 3, 7, 12, 14, 19, 48, 51, 68, 75). Every fix below
+gives the same output, computed with less work: no packet moved (`test_artifact_pins`: 0 of the world's
+entries recompiled differently), no pin re-recorded. Measures are P-core user instructions (`perf
+stat`, hbox under load, so not wall time) of `compile-profile REQUEST loop STAGE 20`, per iteration.
+
+**Where a cold compile goes** (before this lane, `compile-profile` round 1, ms, one process): a world
+package's preparation is 50-170 ms (Kind's closure, 16 modules, 135 KB: parse 53, generics 60,
+elaborate 30, the whole-closure check 26) and every entry 2-7 ms on top (select ~25%, packet
+rendering ~20%, decode and re-check ~20-25%, packet CID ~40%). No closure blows up: everything is
+linear-ish at world sizes, so the suite's minutes are compiles multiplied (rows 1, 2: the host's).
+
+- **Row 3, inference (CK#1, CK#11).** `Generics.demand`: a binding's `M IType` (local, parameter,
+  case binder, expected type, record base) runs at most once and its answer is kept in the pass
+  state (a refusal is not kept; `tryCatch` rollback drops ids and answers together). `itypeOf` keeps
+  each unbound type text's reading by (origin, text); `skeleton` keeps each callee's (type
+  parameters, parameter and result types) by (origin, name, label). Synthesis reads only what a state
+  never changes (sources, declaration keys, instances), so answers are a rerun's; only the inference
+  budget is spent less. `candidate` passes a string without `_` at once (the fresh-name scan of
+  every declaration's strings). Generics on Kind: 331M before, 207M after (Record 251M to 168M,
+  Avatar 180M to 124M). What remains of the pass: first-time `typeOf` of each distinct type text,
+  instance bodies (real work), and `initialState` twice (derivation, then rewriting: §16 item 26).
+- **Row 3, elaborator (CK#7).** Not done: a let chain still synthesizes its remaining body at each
+  let (O(k^2) visits). A synth memo would also skip repeated `typeError` pushes and so could change a
+  refusal's text; it needs results returned with elaborated terms instead (§16 item 27).
+- **Row 7, entries re-checked (CK#3).** Measured, not removed: decode and re-check are ~0.3-1.6 ms an
+  entry (Avatar), a fifth of it. Removing them soundly needs either a pruning theorem (the whole knot
+  checked implies every selected knot checks, annotation paths renumbered) or a packet round-trip
+  theorem for the type table and annotations (`decodePacket (packetJson …) = .ok (directSource …)`;
+  only the term half, `decode_json`, exists). CK#17 (`encode-compact`/`decode-compact` recompile
+  through `Package.job`) belongs to the session's held-entry cache (§16 item 28).
+- **Row 12, spanless refusals (CK#4).** `elaboratePackageM` places a refusal `emitDecl` raises
+  without a place at the declaration's body (`Decl.bodySpan?`), the span `localize` used to find by
+  compiling every function alone against its module prefix. `localize` is the identity (§16 item 17
+  has its removal from `Host.Ops.checkModules`); `checkPackage` throws the diagnostic as placed. A
+  missing entry names itself: `missing selected entry: Kind defines no nope` (the prefix the host and
+  tests match is kept). check-package of Kind for a missing entry: 31.29 s before, 1.11 s after.
+- **Row 14, Turn (SJ#2, SJ#3).** `Entry.Site {term, type, hash}`: a yield is matched by
+  `Site.matches` (the site's `termHash`, then `termEq`), exactly `termEq` (`Turn.Site.matches_eq`,
+  `#assert_axioms`; sites are pairwise distinct, so at most one matches), encoding only the matching
+  site; `messageSites` dedups the same way. `Store.readsOf` is one heap pass pushing onto arrays (it
+  was `forcedRows`, then a fold appending one element at a time), in the same heap order. Not visible
+  at test-class granularity.
+- **Rows 19, 51, 68, 48, 75 (CK#5, 16, 21, 15, 22).** `context` collects declarations, records and
+  sums into arrays with a key index (was `++ [x]` and a `find?` each); `emitDecl`'s fields and the
+  row are arrays; `annotateOnto` carries the path reversed and pushes onto one array (preorder kept);
+  `reachable` splits only keys holding `#`; `splitTopAt` keeps its piece reversed (`#guard`s);
+  `checkNames` counts once. Elaborate on Kind 150M to 143M, the whole lowering 197M to 189M, an
+  Avatar entry 51.2M to 50.5M: these matter at the bounds (1,024 instances), not at world sizes.
+
+Left for others, from what this lane measured: parse is a third of preparation at ~370 ns a
+character (the parser works on `List Char`; `sourceLines` alone is a quarter of it), and every
+package re-parses its library modules: a parse cache by module (name, sha256) in the session would
+remove most of it (host, beside rows 1-2). `sourceType`'s memo skips every call under `seen` (all
+nested record and sum expansion) and with type bindings; extending it exactly needs an argument
+about the sum variables it allocates (§16 item 29).

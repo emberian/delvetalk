@@ -2,5 +2,6 @@ of: record
 form: name: text 1..64
 head: {name}
 voice: cold bronze, damp slate, wind catching a wooden lintel; things tuned to an unmeasured frequency, left here unclaimed
+about: a room at a threshold where things lie unclaimed
 text: want company "a room nobody is in": count(new.presence) == 0 asks delvetalk {request.object} enter
 body: room

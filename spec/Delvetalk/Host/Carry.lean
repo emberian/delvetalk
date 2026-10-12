@@ -24,10 +24,11 @@
    new type; else the package's `migrate(old: State8) -> State` (a reprogram's migration, `Ops.runMigration`)
    converts it, the old state read through `migrate`'s argument type. The genesis lists each move (`moved
    [{object, from, to, migration, before, after}]`, pins and state CIDs) and the moved object's version moves
-   once; its suspensions (taken in the code before) are dropped, their supervisors told, and when its package
-   offers `carried` the genesis holds a delivery of `carried {}` to it (`rearmed`), as a kind sends what it makes
-   `made`: the first settling of the carried world runs it, and a self-ticking tide schedules its next `due`
-   there. A moved object holding its package's law as it was (unamended) takes the package's new law when it
+   once. Its suspensions (taken in the code before) cannot resume: when its package offers `carried` they are
+   dropped, their supervisors told, and the genesis holds a delivery of `carried {}` to it (`rearmed`), as a kind
+   sends what it makes `made`: the first settling of the carried world runs it, and a self-ticking tide schedules
+   its next `due` there. A moved or left object's suspension is otherwise never dropped silently: it refuses the
+   carry by name until the owner names the object with `--leave` (or the activity ends first). A moved object holding its package's law as it was (unamended) takes the package's new law when it
    changed (`law {before, after}` on its move); one whose law an owner amended keeps it, named (`kept`). An
    object whose
    move refuses (its package does not compile against the image, or its state does not conform and it has
@@ -322,7 +323,8 @@ def moved (w : World) (s : Shipped) (id : String) (o : Object) (old : Built) :
 
 /-- Every object rebuilt and, with the image's packages, moved to them; every suspension checked. An
     object named in `leave` is carried retired whether or not it fails, at its own pin, and its suspensions
-    are dropped; a moved object's are dropped too. -/
+    are dropped; a moved object's are dropped when its package offers `carried`. Any other suspension the carry
+    cannot keep refuses it by name. -/
 def carryWorld (w : World) (leave : List String) (reason : String) (shipped : Option Shipped := none) :
     Except String Carried := do
   for id in leave do
@@ -361,14 +363,20 @@ def carryWorld (w : World) (leave : List String) (reason : String) (shipped : Op
         -- The whole refusal is the carry's output; the retired clause reads its first line, within a reading's bound.
         c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id (retire o' (reading why)) } o'.inputs b,
                       left := c.left ++ [(id, why)] }
+  -- A suspension the carry cannot keep is dropped only by a decision: the owner's `--leave`, or a moved package's
+  -- `carried`, which takes up again what it waited for. Any other refuses the carry by name (codex docs 7).
   let mut kept : Array Json := #[]
   for e in w.suspended do
     let id := Snapshot.suspendedObject e
-    if c.left.any (·.1 == id) then
-      c := { c with dropped := c.dropped ++ [(e, "its object was left")] }
+    let what := s!"{id}'s suspension {(e.getObjValAs? String "hash").toOption.getD ""}"
+    if let some (_, why) := c.left.find? (·.1 == id) then
+      if leave.contains id then c := { c with dropped := c.dropped ++ [(e, "its object was left")] }
+      else c := { c with refused := c.refused ++ [(what, s!"its object is carried retired ({(why.splitOn "\n").headD ""}), which ends the activity: name it with --leave {id}, or let the activity end before the carry")] }
       continue
     if let some m := c.moved.find? (·.object == id) then
-      c := { c with dropped := c.dropped ++ [(e, s!"its object moved to pin {m.after}: the code it waited in is gone")] }
+      if (c.world.objects[id]?).any (·.offers rearmMethod) then
+        c := { c with dropped := c.dropped ++ [(e, s!"its object moved to pin {m.after}, and is told `{rearmMethod}`")] }
+      else c := { c with refused := c.refused ++ [(what, s!"its object moves to pin {m.after}, whose code cannot resume it, and its package offers no `{rearmMethod}`: name it with --leave {id}, or let the activity end before the carry")] }
       continue
     match resumable c.world e with
     | .ok w' => c := { c with world := w' }; kept := kept.push e

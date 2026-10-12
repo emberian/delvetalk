@@ -72,7 +72,11 @@ def lineKey(line: Rows.Line) -> {author: String, n: Nat}:
 # line tagged with the verb, and the thing tended; its card shows the newest three.
 def act(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:
   let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: input.verb, text: input.text, at: context.height, n: state.next}, next: add 1n, tended: set context.clock, tendedAt: set context.height}
-  Card.tell(state.next, Document.concat(Document.text("#{natText(state.next)} {input.verb}: {input.text}\n\n"), render(extend(state, {lines: Relations.insert(state.lines, {author: context.principal, handle: context.handle, verb: input.verb, text: input.text, at: context.height, n: state.next}, lineKey), next: state.next + 1n}), context)))
+  match heard(state, input.verb, context):
+    case _: actTold(state, input, context)
+def actTold(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:
+  let said = Document.text("#{natText(state.next)} {input.verb}: {input.text}\n\n")
+  Card.tell(state.next, Document.concat(said, renderAfter(extend(state, {lines: Relations.insert(state.lines, {author: context.principal, handle: context.handle, verb: input.verb, text: input.text, at: context.height, n: state.next}, lineKey), next: state.next + 1n}), context, Document.size(said))))
 # Anyone moves a thing (its own code checks who holds it); its name, description and copying are
 # its keeper's once it is inspirited (and its circle's, when it has one), its owner's before; the
 # owner alone names the circle, amends or reprograms it.
@@ -270,14 +274,26 @@ def refusedDone(done: Done) -> Bool:
     case _: false
 def inspirited(surrounding: String, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {keeper: set context.principal, keeperHandle: set context.handle, description: set surrounding}
+  match heard(state, "inspirit", context):
+    case _: inspiritTold(surrounding, context, state)
+# What another hand did to it (a grown verb used, an inspiriting), told to its maker, the owner: a send
+# of `heard {thing, verb}` to their avatar, run as the hand. The owner's own acts tell nothing.
+def heard(state: State, verb: String, context: Abi.Context) -> Activity<World.Sent>:
+  if state.owner == "" || state.owner == context.principal then World.Sent.refused({clause: "self"}) else world.send({object: {world: context.world, object: state.owner}, method: "heard", argument: {thing: context.object, verb: verb}})
+def inspiritTold(surrounding: String, context: Abi.Context, state: State) -> Activity<Done>:
   Card.tell(Done.done({}), Document.concat(Document.text("Inspirited, {Card.name(context.principal, context)}: you keep it.\n\n"), render(extend(state, {keeper: context.principal, keeperHandle: context.handle, description: surrounding}), context)))
-# The card: what it is, who keeps it and where it is; unclaimed, the spell that inspirits it.
+# The card: what it is, who keeps it and where it is; unclaimed, the spell that inspirits it; then
+# the lines grown verbs left, within what the rest leaves of Card.limit(context).
 def render(state: State, context: Abi.Context) -> Document.Document:
+  renderAfter(state, context, 0n)
+# The card after what the answer has already said (`used`), within one budget.
+def renderAfter(state: State, context: Abi.Context, used: Nat) -> Document.Document:
   let id = Card.called(context, "thing")
-  Document.text("{state.name}{kept(state, context)}{whereabouts(state, context)}.\n{surrounding(state, id)}{circleLine(state)}{offerLine(state.offer, id, context)}{lendLine(state, id, context)}{doneLines(state, context)}")
-# The newest three lines a grown verb left, newest first.
-def doneLines(state: State, context: Abi.Context) -> String:
-  textJoin(Lists.map(Lists.take(Lists.reverse(Relations.rows(state.lines)), 3n), fn(l: Rows.Line) -> String: "{Card.shown(l.author, l.handle, context)}{Card.mine(l.author, context)} ({l.verb}): {l.text}\n"), "")
+  let head = Document.text("{state.name}{kept(state, context)}{whereabouts(state, context)}.\n{surrounding(state, id)}{circleLine(state)}{offerLine(state.offer, id, context)}{lendLine(state, id, context)}")
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Card.clippedWithin(doneLines(state, context), 3n, Card.left(context, used + Document.size(head)))})})
+# The lines a grown verb left, newest first.
+def doneLines(state: State, context: Abi.Context) -> Document.Documents:
+  Lists.map(Lists.reverse(Relations.rows(state.lines)), fn(l: Rows.Line) -> Document.Document: Document.text("{Card.shown(l.author, l.handle, context)}{Card.mine(l.author, context)} ({l.verb}): {l.text}\n"))
 # Its circle, when it has one; the owner is told how to name one.
 def circleLine(state: State) -> String:
   if state.circle == "" then "" else "Its circle: whoever signed {state.circle} sets it too.\n"

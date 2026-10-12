@@ -118,11 +118,11 @@ class Walks(unittest.TestCase):
         self.assertIn("#1 is written: it rained here first", text)
         self.assertEqual([w["name"] for w in self.wants(bell) if w["name"] in ("rain", "second")], ["second"])
         self.say(W, self.fill(rule, bell=bell))
-        self.assertEqual([r["name"] for r in self.rules(bell) if r["name"] == "second"], ["second"])
+        self.assertEqual([r["name"] for r in self.rules(bell) if r["name"] == "two"], ["two"])
         self.assertNotIn("a second rain", self.avatar(W))  # one hand's rain does not fire it
         _, text = self.say(O, self.fill(theirs, bell=bell))
         self.assertIn("#2 is written: and here", text)
-        self.assertTrue(self.rules(bell, "second")["fired"], self.rules(bell))
+        self.assertTrue(self.rules(bell, "two")["fired"], self.rules(bell))
         self.assertIn("a second rain", self.avatar(W))
         self.assertNotIn("rung", self.card_text(W, bell))
         self.say(W, self.fill(ring, bell=bell))
@@ -190,7 +190,9 @@ class Walks(unittest.TestCase):
         reply, _ = self.cast(W, rules)  # a read: the host answers it with the rules, no turn
         self.assertEqual(reply["status"], "usage", reply)
         text = reply["text"]
-        self.assertIn("tide carries no rules.", text)
+        # Genesis's motion: the weather's rule and the porch's lamp's (tests/test_motion).
+        self.assertIn("» weather (ember.delve.town)", text)
+        self.assertIn("» porch_slamp (ember.delve.town)", text)
         self.say(W, turned)
         self.assertIn("turned", [r["name"] for r in self.rules("tide")])
         self.assertFalse(self.rules("tide", "turned").get("fired"))

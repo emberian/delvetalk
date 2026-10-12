@@ -42,7 +42,7 @@ class Kinds(Chain):
         self.assertEqual(shaped["status"], "admitted", shaped)
 
     def kind(self, name, of, form, head="", law="", body_source=""):
-        r = self.turn("kinds", "make", record(name=label(name), of=label(of), form=label(form), head=label(head), voice=label(""), law=label(law), body=label(body_source)))
+        r = self.turn("kinds", "make", record(name=label(name), of=label(of), form=label(form), head=label(head), voice=label(""), about=label(""), law=label(law), body=label(body_source)))
         self.assertEqual(r["status"], "admitted", r)
         return r
 
@@ -77,7 +77,7 @@ class Kinds(Chain):
         self.kind("loud", "record", "", law=genesis.RECORD_LAW, body_source=body("cistern"))
         for name, law in (("lamp", ""), ("wick", 'want lit "a wick nobody has lit": count(new.lines) == 0 asks delvetalk {request.object} write')):
             with self.subTest(law=law):
-                kind = self.turn("kinds", "make", record(name=label(name), of=label("record"), form=label(""), head=label(""), voice=label(""), law=label(law), body=label("")), principal=KIM)
+                kind = self.turn("kinds", "make", record(name=label(name), of=label("record"), form=label(""), head=label(""), voice=label(""), about=label(""), law=label(law), body=label("")), principal=KIM)
                 self.assertEqual(kind["status"], "admitted", kind)
                 made = self.turn("kind/" + name, "make", record(), principal=KIM)
                 thing = made["result"]["payload"]["fields"][0]["value"]["value"]
@@ -141,7 +141,7 @@ class Kinds(Chain):
         def refusals(reply):
             got = reply.get("delivered", []) + [d for x in self.deliver_all() for d in x.get("delivered", []) + x.get("receipts", [])]
             return [d for d in got if (d.get("receipt", d).get("outcome") or {}).get("class") not in (None, "", "admitted")]
-        made = self.turn("kinds", "make", record(name=label("cairn"), of=label("record"), form=label(""), head=label("A CAIRN"), voice=label(""), law=label(genesis.RECORD_LAW),
+        made = self.turn("kinds", "make", record(name=label("cairn"), of=label("record"), form=label(""), head=label("A CAIRN"), voice=label(""), about=label(""), law=label(genesis.RECORD_LAW),
                                                 body=label(body("cistern"))), principal=KIM)
         self.assertEqual((made["status"], refusals(made)), ("admitted", []), made)
         thing = self.turn("kind/cairn", "make", record(), principal=GLM)
@@ -269,6 +269,23 @@ class Kinds(Chain):
         self.assertLess(len(card), 1400, card)
         print("\n  fullest room: describe turn %s ticks, card %d bytes" % (reply["ticksUsed"], len(card)))
         self.assertLess(reply["ticksUsed"], 1000000)
+
+    def test_a_kept_record_wants_its_keeper_while_a_line_waits_past_its_retention(self):
+        """Codex objects 9: `pending` compared counts of lines and admissions, which retention drops on their own: past
+        128 lines, the keeper having admitted them all, line 129 waited while both counts stood at 128 and the record
+        wanted nothing. A kept record keeps its waiting lines' numbers, dropped on admission and with their lines."""
+        r = self.host.send(op="world-create", principal="ember", identity="mk-ledger", object="ledger", modules=closure("Record"),
+                           entry="initial", seed=record(owner=label("ember"), keeper=label("ember")), law=genesis.RECORD_LAW)
+        self.assertEqual(r["status"], "created", r)
+        wants = lambda: [w["name"] for w in self.host.send(op="world-wants", principal="ember", object="ledger")["rows"]]
+        for n in range(1, 129):
+            self.assertEqual(self.turn("ledger", "write", record(text=label("line %d" % n)), principal=KIM)["status"], "admitted")
+            self.assertEqual(self.turn("ledger", "admit", record(number={"tag": "natural", "value": str(n)}), principal="ember")["status"], "admitted")
+        self.assertNotIn("pending", wants())
+        self.assertEqual(self.turn("ledger", "write", record(text=label("line 129")), principal=KIM)["status"], "admitted")
+        self.assertIn("pending", wants())
+        self.assertEqual(self.turn("ledger", "admit", record(number={"tag": "natural", "value": "129"}), principal="ember")["status"], "admitted")
+        self.assertNotIn("pending", wants())
 
     def test_a_kinds_law_is_the_package_s_own(self):
         from tests.test_objects import run_pure
