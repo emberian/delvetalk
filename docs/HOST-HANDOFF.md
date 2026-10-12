@@ -1782,7 +1782,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      `plain` (a `plain` field true or `yes`) answers `plain`; a root `card` override `exact {override}`; no
      policy or no `Paint` module `exact {unavailable}`.
    - Transport: `interpret` is the one model worker (interpretations, then paints, every `model_poll` second;
-     spend lines carry `use: paint`); `transport/host.py` `painted()` waits as the host's `pending` says; `/play/`,
+     spend lines carry `use: paint`); `transport/host.py` `painted()` waits as the host's `pending` says and answers
+     `{text}` or the host's reason (5.183); `/play/`,
      `/o/` and the hand's Speak show `pages.painting` above the exact card; the bridge's drafts are exact only.
    - Tests: `tests/test_enchant.py` (strokes, a placed rule and want read back, fired and unposed after a rain; 69275 refused at `negation` on the genesis anthology; one call per
      version, read back after a restart from the disk cache; a refused paint not asked again; a rate failure retried
@@ -2195,6 +2196,13 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    journal names them (`baseOf`); the journal-full bound counts this journal's entries. Fork geneses stay at 1. Test:
    `test_carry.Carry.test_a_carried_world_counts_its_heights_on_from_the_world_before` (genesis, turns, a body's
    stored height, `world-entries` both ways, `root-edit drop`, a second carry, every old receipt by its slug).
+183. **A paint that fell back says why (host31; the v9 deploy check's `hand morning`, `painted: False`).**
+   `transport/host.py` `painted` answers `{text}` or the host's reason as `world-render` gave it, `{reason, clause?,
+   detail?}` (`exact`'s, `pending` past its patience, `plain`/`unknown`/`denied`, an error's message); `fell_back` says
+   it in a line ("the paint fell back: rejected at its `length` clause: ..."). `hand morning` answers and logs
+   `fellBack`, the hand's web action notes it, and Speak's "what came back" shows it above the exact card; the
+   fronts read `text` alone. Tests: `test_hand.Speak.test_a_paint_that_falls_back_keeps_the_hosts_reason_and_clause`,
+   the morning test's quiet day (`pending`: a morning with wants is painted, and no worker runs there).
 
 ## 6. Gotchas
 
@@ -2239,10 +2247,11 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 what replay derives rides it if it lands before the deploy, which carries edition 10 to 12 and ships
 `carry-check.sh` green on the newest backup, as it was for 5.182 on delvetalk-20261012T121739Z). Each with its failing
 input as a test first, merging foundation before each commit:
-2. **The hand's morning paint fell back** (`hand morning`: `painted: False` after a 117-token reply). The host answers
-   why (`world-render` `exact {reason, clause?, detail?}`: `rejected` with the paint check's clause, `unattended`,
-   `busy`, `unavailable`), and `transport/host.py` `painted` drops it: return the reason, have the hand say it, then
-   read the live answer (the host's `world-status.renders` counts, `rejected`) for the cause and fix that.
+2. **The live morning's cause** (5.183 says why; the cause itself is not yet read): the v9 deploy check's morning
+   (day 20738, 12:05:49Z, `painted: false`) and a 117-token paint call share its second in the backup's
+   `model-spend.jsonl`, so the paint came back and was refused or landed after the hand's last look. The verdict is
+   on the workhorse only: a refused render's `render-*.json` (`clause`, `detail`) under `DELVETALK_COMPILE_CACHE`.
+   Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
 3. **agent 10:** hob is offered the host's permitted spells and its proposals of them run. `heardOffers` lists only a
    card's own forms; add the placing spells (`placingSpells`: `rule`, `want`, `unrule`, `unwant`; their fields are
    `ruleLine`/`wantLine`'s, the spell field last) for a speaker the thing's law may admit, and let `proposalVerdict`

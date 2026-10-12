@@ -890,7 +890,7 @@ class Handler(BaseHTTPRequestHandler):
         if card.get('status') != 'card' and not answer:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], card, card.get('status')))
         shown = card.get('status') == 'card'
-        paint = painted(host, did, name, self.server.sleep) if shown else None
+        paint = painted(host, did, name, self.server.sleep).get('text') if shown else None
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
         self.html(200, pages.play(name, who['handle'], oid(name), card.get('text', '') if shown else None, answer=answer, offered=offered,
                                   paint=paint, wants=self.wants(host, did, name) if shown else (), doors=door_rows(view), said=say))
@@ -921,7 +921,7 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
         shown = card.get('status') == 'card'
-        paint = painted(host, principal or 'anonymous', name, self.server.sleep) if shown else None
+        paint = painted(host, principal or 'anonymous', name, self.server.sleep).get('text') if shown else None
         self.html(200, pages.obj(name, handle, view, card.get('text') if shown else None, self.history(host, name, principal), principal,
                                  door_rows(view), seen, self.wants(host, principal, name) if shown else (), brief, paint))
 

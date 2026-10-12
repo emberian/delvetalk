@@ -20,7 +20,7 @@ from pathlib import Path
 from transport import bridge, measure, model, post, pages, root
 from transport.bridge import awaiting_path, uri_hash
 from transport.delve import Failure, canonical
-from transport.host import CLOCK, HISTORY_LIMIT, handles, painted, typed
+from transport.host import CLOCK, HISTORY_LIMIT, fell_back, handles, painted, typed
 from transport.http import WAIT_MAX, trace
 from transport.identity import INVITE_DAYS, Identity, IdentityError
 from transport.measure import counted
@@ -298,8 +298,8 @@ class Hand:
             text = '\n'.join(t.rstrip('\n') for t in said)
         # The card the act left, painted from its strokes, above the exact text (never in the draft: posting paint is the
         # fourth playtest's question).
-        paint = painted(self.host, self.owner, line['object'], self.sleep) if line.get('outcome') == 'admitted' and line.get('object') else None
-        return {**line, 'text': text, 'waiting': waiting, 'paint': paint}
+        paint = painted(self.host, self.owner, line['object'], self.sleep) if line.get('outcome') == 'admitted' and line.get('object') else {}
+        return {**line, 'text': text, 'waiting': waiting, 'paint': paint.get('text'), 'fellBack': fell_back(paint) if paint else None}
 
     def invite(self, minute, topic=None, reply_to=None):
         """Draft the plan's invitation at T+`minute` for the bot to post, once."""
@@ -328,14 +328,15 @@ class Hand:
             if (d.get('speak') or {}).get('morning') == day:
                 raise HandError(f'the morning card of day {day} is drafted already: {i}')
         paint = painted(self.host, self.owner, None, self.sleep, day=day, morning=True)
+        why = fell_back(paint)
         rows = self.host.send({'op': 'world-wanting', 'principal': self.owner, 'limit': 8}).get('rows') or []
         wants = ''.join(f"{r['object']}: {r.get('reading') or r['name']}\n  {r['asks']}\n" for r in rows)
-        text = (paint or '\n'.join(chronicled['lines'])) + ('\n\nWhat wants a hand, oldest first:\n' + wants if wants else '')
+        text = (paint.get('text') or '\n'.join(chronicled['lines'])) + ('\n\nWhat wants a hand, oldest first:\n' + wants if wants else '')
         where, name = self.where(topic, reply_to), f'{int(self.clock())}-morning-{day}'
         self.st.write(self.st.outbox / f'{name}.json', {'speak': {'morning': day}, **where, 'principal': self.owner, 'principalVerified': True,
                                                         'object': None, 'slot': None, 'text': text.rstrip('\n'), 'posted': False, 'hand': True})
-        self.log('morning', name, day=day, painted=paint is not None)
-        return {'drafted': name, 'day': day, 'painted': paint is not None, 'text': text.rstrip('\n')}
+        self.log('morning', name, day=day, painted=why is None, fellBack=why)
+        return {'drafted': name, 'day': day, 'painted': why is None, 'fellBack': why, 'text': text.rstrip('\n')}
 
     def spoken(self):
         """The plan as it stands in this world: each seed with its cast (from the hand's log), each invitation with its draft."""
@@ -658,7 +659,7 @@ class Hand:
             act = {'retry': lambda: self.retry(form.get('uri', '')), 'reply': lambda: self.reply(form.get('uri', ''), form.get('text', ''), form.get('object', '')),
                    'speak': lambda: self.spoke(self.cast(form.get('spell', ''), form.get('topic'), form.get('replyTo'), form.get('intent'), form.get('to'), wait=0)),
                    'invite': lambda: self.invite(form.get('minute', ''), form.get('topic'), form.get('replyTo')),
-                   'morning': lambda: {'drafted': self.morning(None, form.get('topic'), form.get('replyTo'))['drafted']}}.get(rest)
+                   'morning': lambda: {k: v for k, v in self.morning(None, form.get('topic'), form.get('replyTo')).items() if k in ('drafted', 'fellBack') and v}}.get(rest)
         return act and act()
 
     @staticmethod
@@ -707,7 +708,8 @@ class Hand:
             quiet = '— hob is reading; this page looks again every few seconds —' if came['waiting'] else '— quiet: nothing came back —'
             spoken = H['spoken'].format(fate=q(came.get('outcome')), stamp=q(pages.stamp(came.get('outcome') or '')), height=q(came.get('height')),
                                         slug=q(came.get('slug') or ''), object=q(came.get('object')),
-                                        card=pages.painting(came.get('paint')) + (H['card'].format(text=q(came['text'])) if came['text'] else '') +
+                                        card=pages.painting(came.get('paint')) + (H['note'].format(text=q(came['fellBack'])) if came.get('fellBack') else '') +
+                                        (H['card'].format(text=q(came['text'])) if came['text'] else '') +
                                         (H['note'].format(text=quiet) if came['waiting'] or not came['text'] else ''))
         return shell('speak', self.st.world, H['speak'].format(base=base, world=q(self.st.world), note=self.note(query), spoken=spoken,
                                                                morning=H['morning'].format(base=base, where=where),
