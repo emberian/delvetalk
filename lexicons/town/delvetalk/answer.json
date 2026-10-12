@@ -1,0 +1,59 @@
+{
+  "lexicon": 1,
+  "id": "town.delvetalk.answer",
+  "description": "DelveTalk's answer to a town.delvetalk.request: the public projection of the journal entry it made, signed in the world's repository and mirrored to the posting account.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: `<requesting DID>.<request rkey>`.",
+      "record": {
+        "type": "object",
+        "required": [
+          "request",
+          "outcome",
+          "height"
+        ],
+        "properties": {
+          "request": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "height": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The journal height that answered it."
+          },
+          "outcome": {
+            "type": "ref",
+            "ref": "town.delvetalk.defs#outcome"
+          },
+          "receipt": {
+            "type": "ref",
+            "ref": "town.delvetalk.defs#receipt"
+          },
+          "card": {
+            "type": "string",
+            "description": "The exact card the turn offered (or, for a try, would offer), as the caller may read it."
+          },
+          "cardCid": {
+            "type": "string",
+            "description": "The CID of the town.delvetalk.card record those card bytes make.",
+            "format": "cid"
+          },
+          "offers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Cards offered to the caller, verbatim."
+          },
+          "trace": {
+            "type": "ref",
+            "ref": "town.delvetalk.defs#trace"
+          }
+        }
+      }
+    }
+  }
+}
