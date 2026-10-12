@@ -21,14 +21,27 @@ record Note:
   at: Nat
   n: Nat
   uri: String
+# What another hand did to a thing this avatar's principal made (`heard`): the thing, the verb (a
+# rain, a write, a grown verb, an inspiriting, a door hung to it), who did it and their handle then,
+# the height, and `n`, the count then. Keyed {at, n}; the newest 64 are kept.
+record Heard:
+  thing: String
+  verb: String
+  by: String
+  handle: String
+  at: Nat
+  n: Nat
 # The object a verified principal gets; its id is the principal's DID string. What it is told
-# lands in `inbox`: rule notes, tide notes, and the posts that mention it. `seen` is the entry
-# its principal has read through: the notes after it are the new ones.
+# lands in `inbox`: rule notes, tide notes, and the posts that mention it; what others did to the
+# things it made lands in `heard`, while `hear` is on. `seen` is the entry its principal has read
+# through: the notes and the heard after it are the new ones.
 record State:
   handle: String
   at: Plans.Reference
   holding: Lists.List<Plans.Reference>
   inbox: Relations.Relation<Note>
+  heard: Relations.Relation<Heard>
+  hear: Bool
   seen: Nat
 # Only its own methods write it: a write no method made is refused (`methods`), and a rule is
 # placed on it by its principal alone (the object's id is the principal's DID). The predicate, not
@@ -59,11 +72,11 @@ record State8:
   outbox: Relations.Relation<Letter8>
   following: Lists.List<Followed8>
 def migrate(old: State8) -> State:
-  {handle: old.handle, at: old.at, holding: old.holding, inbox: Relations.Relation.rows({items: Lists.map(Relations.rows(old.inbox), fn(n: Note8) -> Note: {from: n.from, handle: n.handle, text: n.text, at: n.at, n: n.n, uri: ""})}), seen: 0n}
+  {handle: old.handle, at: old.at, holding: old.holding, inbox: Relations.Relation.rows({items: Lists.map(Relations.rows(old.inbox), fn(n: Note8) -> Note: {from: n.from, handle: n.handle, text: n.text, at: n.at, n: n.n, uri: ""})}), heard: Relations.empty(), hear: true, seen: 0n}
 def initial() -> State:
-  {handle: "", at: Plans.nobody(), holding: Lists.List.nil(), inbox: Relations.empty(), seen: 0n}
+  {handle: "", at: Plans.nobody(), holding: Lists.List.nil(), inbox: Relations.empty(), heard: Relations.empty(), hear: true, seen: 0n}
 def relations() -> Relations.Decls:
-  Lists.append(Relations.Decls.nil(), {field: "inbox", key: Text.words("at from n"), limit: 64n})
+  Lists.append(Lists.append(Relations.Decls.nil(), {field: "inbox", key: Text.words("at from n"), limit: 64n}), {field: "heard", key: Text.words("at n"), limit: 64n})
 # An avatar answers only to its own principal: its id is the principal's DID.
 def mine(context: Abi.Context) -> Bool:
   context.principal == context.object
@@ -78,6 +91,7 @@ sum Why:
   noExit: {label: String}
   roomSilent: {}
   nowhere: {}
+  notTold: {}
 def refusal(w: Why) -> Card.Refusal:
   match w:
     case notMine(n): {clause: "notMine", reading: "Only {n.who} {n.doing}."}
@@ -87,6 +101,7 @@ def refusal(w: Why) -> Card.Refusal:
     case noExit(n): {clause: "noExit", reading: "There is no exit named {n.label}"}
     case roomSilent(_): {clause: "roomSilent", reading: "The room did not answer."}
     case nowhere(_): {clause: "nowhere", reading: "Nowhere yet; go to a room first: delvetalk me go / to: <room>."}
+    case notTold(_): {clause: "heard", reading: "Only a thing tells its maker what another hand did to it."}
 def refused(w: Why) -> Done:
   Done.refused(refusal(w))
 # A refusal, answered by name (Card.refusing), and nothing written.
@@ -110,13 +125,33 @@ def noted(note: Note) -> Activity<Done>:
 def mentioned(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = write {inbox: insert {from: context.principal, handle: context.handle, text: textTake(input.text, 280n), at: context.height, n: Relations.count(state.inbox), uri: input.post}}
   Card.Replied.silent({})
+# A thing tells its maker what another hand did to it, by a send run as that hand: a line written on a
+# record (a write, a rain, a pour, a grown verb), a grown verb used or an inspiriting on a THING, a door
+# a record hangs to it. Only a thing tells (the turn's sender), and only of a thing this avatar's
+# principal made (a record's `maker`, else its `owner`); a hand's `heard` is refused by name. With
+# `hear` off it is taken as nothing.
+def heard(state: State, input: {thing: String, verb: String}, context: Abi.Context) -> Activity<Done>:
+  if context.sender == "" then told(Why.notTold({}), context) else if state.hear == false || context.principal == context.object then Done.done({}) else making(state, input, context)
+def making(state: State, input: {thing: String, verb: String}, context: Abi.Context) -> Activity<Done>:
+  match world.viewField::<String>({object: {world: context.world, object: input.thing}, field: "maker"}):
+    case viewed(v): if v.state == "" then owning(state, input, context) else madeBy(v.state, state, input, context)
+    case _: owning(state, input, context)
+def owning(state: State, input: {thing: String, verb: String}, context: Abi.Context) -> Activity<Done>:
+  match world.viewField::<String>({object: {world: context.world, object: input.thing}, field: "owner"}):
+    case viewed(v): madeBy(v.state, state, input, context)
+    case _: Done.done({})
+def madeBy(maker: String, state: State, input: {thing: String, verb: String}, context: Abi.Context) -> Activity<Done>:
+  if maker != context.object then Done.done({}) else hearing(state, input, context)
+def hearing(state: State, input: {thing: String, verb: String}, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {heard: insert {thing: input.thing, verb: input.verb, by: context.principal, handle: context.handle, at: context.height, n: Relations.count(state.heard)}}
+  Done.done({})
 # --- Reading -----------------------------------------------------------------------
 # Its principal marks the entry it has read through; the notes after it are the new ones.
 def seen(state: State, input: {at: Nat}, context: Abi.Context) -> Activity<Done>:
   if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "marks it read"}), context) else if input.at < state.seen then told(Why.alreadySeen({mark: state.seen}), context) else marked(state, input.at, context)
 def marked(state: State, at: Nat, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {seen: set at}
-  Card.tell(Done.done({}), Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Read through entry {natText(at)}; nothing before it is new again.\n"), tail: Document.Documents.cons({head: render({handle: state.handle, at: state.at, holding: state.holding, inbox: state.inbox, seen: at}, context), tail: Document.Documents.nil()})})}))
+  Card.tell(Done.done({}), Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Read through entry {natText(at)}; nothing before it is new again.\n"), tail: Document.Documents.cons({head: render(extend(state, {seen: at}), context), tail: Document.Documents.nil()})})}))
 # --- Holding -------------------------------------------------------------------------
 # Things call hold and release on their holder's avatar. Both are idempotent and never
 # refuse a thing, so a thing that has already staged its own writes cannot be left half
@@ -208,15 +243,19 @@ form seen:
   at: natural 0..1000000000
 # Things call hold and release.
 def methods() -> Lists.List<String>:
-  Text.words("hold release")
-# The handle the card shows is a lens, its principal's: `delvetalk <did> set` and `handle: ...`.
+  Text.words("hold release ~heard")
+# Its principal's lenses: the handle the card shows (`delvetalk me set / handle: ...`), and whether
+# it hears what others do to the things they made (`delvetalk me set / hear: no`).
 def lenses() -> Lists.List<Form.Field>:
-  Lists.List.cons({head: {name: "handle", kind: Form.Kind.text({min: 1n, max: 64n})}, tail: Lists.List.nil()})
+  Lists.append(Lists.append(Lists.List.nil(), {name: "handle", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "hear", kind: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")})})
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Done>:
-  if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "changes it"}), context) else setHandle(Card.valueText(input.value))
+  if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "changes it"}), context) else if input.field == "hear" then setHear(Card.valueText(input.value) == "yes") else setHandle(Card.valueText(input.value))
 def setHandle(handle: String) -> Activity<Done>:
   let written(_) = write {handle: set handle}
   Card.tell(Done.done({}), Document.text("Set handle to {handle}.\n"))
+def setHear(hear: Bool) -> Activity<Done>:
+  let written(_) = write {hear: set hear}
+  Card.tell(Done.done({}), Document.text(if hear then "Hearing again what others do to what you made.\n" else "No longer hearing what others do to what you made: delvetalk me set / hear: yes\n"))
 # Scoped resolution: the avatar's own principal's prose with no spell that starts with an
 # action word (`acquire the stone`, `bump counter`, `look`) names its object by the first word
 # that is a thing lying in the room the avatar last entered (by its name, then by its id's last

@@ -153,11 +153,18 @@ def write(state: State, input: {text: String}, context: Abi.Context) -> Activity
 # one line tagged with the verb, and the record tended.
 def act(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:
   inscribe(state, input.verb, input.text, context)
+# A hand's line is heard by the record's maker when the hand is another's (`heard`).
 def inscribe(state: State, verb: String, text: String, context: Abi.Context) -> Activity<Nat>:
   let line = {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}
   let written(_) = write {lines: insert line, next: add 1n, tended: set context.clock, tendedAt: set context.height}
   let said = Document.text("#{natText(line.n)} is written: {line.text}\n\n")
-  Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n, tended: context.clock, tendedAt: context.height}), context, 0n, Document.size(said))))
+  match heard(state.maker, context.object, verb, context):
+    case _: Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n, tended: context.clock, tendedAt: context.height}), context, 0n, Document.size(said))))
+# What another hand did to a thing, told to the thing's maker: a send of `heard {thing, verb}` to their
+# avatar, run as the hand (its principal is who did it) and sent by this record. The maker's own acts,
+# and a thing nobody made, tell nothing. A rule cannot say it: its spell would name the hand by DID.
+def heard(maker: String, thing: String, verb: String, context: Abi.Context) -> Activity<World.Sent>:
+  if maker == "" || maker == context.principal then World.Sent.refused({clause: "self"}) else world.send({object: {world: context.world, object: maker}, method: "heard", argument: {thing: thing, verb: verb}})
 # Tending: the clock minute and the entry of this attention, answered with the card.
 def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = write {tended: set context.clock, tendedAt: set context.height}
@@ -197,9 +204,30 @@ def field(state: State, name: String) -> String:
     case some(f): f.value.value
     case none(_): ""
 # Doors on the card are the owner's: what the record cites.
-# Each answers what the card now cites.
+# Each answers what the card now cites. A door hung to a thing another hand made tells its maker
+# (`heard`), as a line written on it does.
 def door(state: State, input: {label: String, to: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  doored(Card.doorAdd(state.cites, state.owner, {label: input.label, to: {world: context.world, object: input.to}, description: "", examples: Lists.List.nil()}, context), "door", "Door {input.label} hung: it opens {input.to}. delvetalk {input.to} ?\n", context)
+  match Card.doorAdd(state.cites, state.owner, {label: input.label, to: {world: context.world, object: input.to}, description: "", examples: Lists.List.nil()}, context):
+    case refused(r): refused(r, context)
+    case edit(e): hung(e.entries, input.to, "Door {input.label} hung: it opens {input.to}. delvetalk {input.to} ?\n", context)
+def hung(entries: Plans.Entries<Card.Doorway, Card.Doorway>, to: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
+  let written(_) = world.write(extend(keep(), {cites: entries}))
+  makerOf(to, said, context)
+# Who made `thing`: a record's `maker`, else its `owner` (a THING's maker owns it); told of the door
+# unless they hung it.
+def makerOf(thing: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.viewField::<String>({object: {world: context.world, object: thing}, field: "maker"}):
+    case viewed(v): if v.state == "" then ownerOf(thing, said, context) else tellMaker(v.state, thing, said, context)
+    case _: ownerOf(thing, said, context)
+def ownerOf(thing: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.viewField::<String>({object: {world: context.world, object: thing}, field: "owner"}):
+    case viewed(v): tellMaker(v.state, thing, said, context)
+    case _: doorTold(said)
+def tellMaker(maker: String, thing: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
+  match heard(maker, thing, "door", context):
+    case _: doorTold(said)
+def doorTold(said: String) -> Activity<Card.Replied>:
+  Card.tell(Card.Replied.done({action: "door"}), Document.text(said))
 def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activity<Card.Replied>:
   doored(Card.doorRemove(state.cites, state.owner, input.label, context), "undoor", "Door {input.label} taken down.\n", context)
 def doored(edit: Card.DoorEdit, action: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
