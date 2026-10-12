@@ -349,8 +349,8 @@ REF   ::= new.F | old.F | "OBJECT".F | request.subject | request.caller | reques
         | count(new.F) | count(old.F) | count(new.F where COL == TERM) | count(old.F where COL == TERM)
 ```
 
-A SPELL's holes (`{request.subject}`, `{object}`, `{new.F}`, `{new.maker}`) are filled at the write, a hole naming
-an unknown reference refused by name; `me` is the rule owner's avatar. A want reads no `old`. `under "kind/bell"`
+A SPELL's holes are terms (`{request.subject}`, `{request.object}`, `{new.F}`, `{"card".F}`), filled at the write, a
+hole naming nothing refused when placed; `me` is the rule owner's avatar. A want reads no `old`. `under "kind/bell"`
 follows all three modalities to the kind, so a kind carries rules and wants for every instance and its owner
 changes them once. A thing's text holds at most 16 lines of the three; placed rules and wants are 32 each beside it.
 
