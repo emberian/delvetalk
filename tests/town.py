@@ -50,7 +50,7 @@ def furnish(host, opener):
         out.append(genesis.said(host, opener, kind, 'place', fields, 'furnish-' + dict(fields)['id'], dict(fields)['id']))
     out.append(genesis.said(host, opener, 'garden', 'door', [('label', 'weather'), ('to', 'garden/weather')], 'furnish-garden-door'))
     anthology = create(host, opener, 'anthology', 'Record', 'furnish-anthology',
-                       genesis.rec(owner=genesis.lab(opener), keeper=genesis.lab(opener), keeperHandle=genesis.lab(genesis.HANDLE),
+                       genesis.rec(owner=genesis.lab(opener), keeper=genesis.lab(opener), keeperHandle=genesis.lab(genesis.TOWN),
                                    head=genesis.lab('THE ANTHOLOGY')), genesis.RECORD_LAW)
     out.append({'object': 'anthology', 'module': 'Record', 'status': anthology.get('status'), 'creator': opener, 'reply': anthology})
     for label, to in (('GARDEN', 'garden'), ('ROOMS', 'rooms'), ('ANTHOLOGY', 'anthology')):

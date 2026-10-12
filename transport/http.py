@@ -17,7 +17,7 @@ from pathlib import Path
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
-from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, door_rows, handles, painted, place, plain, typed
+from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, TOWN, door_rows, handles, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import Repo
@@ -396,8 +396,12 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         return [(i, who, height) for i, height, who in made]
 
     def handles(self, dids):
-        """{did: handle} for the DIDs a page names, as the public reader sees their avatars."""
+        """{did: handle} for the DIDs a page names, as the public reader sees their avatars; the town's own as the town."""
         return handles(self.host, PUBLIC, dids, self.known)
+
+    def town(self):
+        """The world's own principal (its opener), which pages name the town; '' for a world that names none."""
+        return next((p for p, h in self.handles(()).items() if p and h == TOWN), '')
 
     def limited(self, key, rate=RATE, count=True):
         """0 when under the limit, else the seconds until the oldest counted request leaves the window; `count` False
@@ -1059,7 +1063,7 @@ class Handler(BaseHTTPRequestHandler):
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
         self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered, paint=here['paint'], wants=here['wants'],
                                   view=here['view'], ways=self.ways(host, did, name), entries=self.history(host, name, did, pages.LATELY),
-                                  said=say, told=told, did=did))
+                                  said=say, told=told, did=did, town=self.server.town()))
 
     def html(self, code, body, headers=()):
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
@@ -1109,7 +1113,8 @@ class Handler(BaseHTTPRequestHandler):
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
-                                 self.ways(host, principal, name) if here['card'] is not None else (), seen, here['wants'], brief, here['paint'], told))
+                                 self.ways(host, principal, name) if here['card'] is not None else (), seen, here['wants'], brief, here['paint'], told,
+                                 town=self.server.town()))
 
     SURFACE_FIELDS = ('page', 'day', 'from', 'to')
     TITLES = {'chronicle': "the town's history", 'map': 'the door map'}

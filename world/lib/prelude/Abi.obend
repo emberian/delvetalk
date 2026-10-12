@@ -12,6 +12,7 @@ record Context:
   object: String
   principal: String
   handle: String
+  town: String
   caller: String
   sender: String
   intent: String

@@ -53,7 +53,7 @@ class Genesis(unittest.TestCase):
             self.assertEqual((thing['kind']['value'], thing['maker']['value'], thing['owner']['value'], thing['post']['value']), (kind, o, o, post), id)
             self.assertIn('After %s\n' % post, host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': id})['text'])
         avatar = host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': o})
-        self.assertIn("ember.delve.town's avatar, nowhere yet", json.dumps(avatar))
+        self.assertIn("the town's avatar, nowhere yet", json.dumps(avatar))
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)
@@ -141,7 +141,7 @@ class Genesis(unittest.TestCase):
         miss = self.library('delvetalk library read / page: dragons', 2)
         self.assertEqual(miss, 'refused noPage: No page called dragons. Pages: spells laws object relations protocol world kinds spween station guide; walks: bell check enter scene tide kind.\n')
         refused = self.library('delvetalk library shelve / name: mine / kind: page / title: t / body: hob: mine', 3)
-        self.assertEqual(refused, 'refused notOwner: Only ember.delve.town shelves a page\n')
+        self.assertEqual(refused, 'refused notOwner: Only the town shelves a page\n')
         self.assertNotIn('mine', self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'library'})['text'])
 
 

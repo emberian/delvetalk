@@ -61,8 +61,10 @@ def listOfData (items : List Data) : Data :=
 /-- A principal's own avatar (its id holds a DID), which no surface names as a thing. -/
 def avatarId (id : String) : Bool := ((id.splitOn "/").head?.getD "").contains ':'
 
-/-- A principal as a surface names them: the handle a row kept, else the registry's, else the principal. -/
+/-- A principal as a surface names them: the town as such, else the handle a row kept, else the registry's, else
+    the principal. -/
 def named (w : World) (fs : List (String × Data)) (handleKey principalKey : String) : String :=
+  if isTown w ((text? fs principalKey).getD "") then townName else
   match text? fs handleKey with
   | some h => if h.isEmpty then shownName w ((text? fs principalKey).getD "") else h
   | none => shownName w ((text? fs principalKey).getD "")
@@ -358,7 +360,7 @@ def run (w : World) (id : String) (o : Object) (reader name : String) (c : Compi
     Except String String := do
   let some entry := c.entry | throw "noCard"
   let (domains, _) := peeled 3 c.type
-  let context := contextData id reader (handleOf w reader) "" "" w.height w.clock (if whole then Card.wholeKind else "card") name
+  let context := contextData id reader (handleShown w reader) w.opener "" "" w.height w.clock (if whole then Card.wholeKind else "card") name
   let fit := fun (i : Nat) (d : Data) => match domains[i]? with
     | some ty => fitRecord c.bounds ty d
     | none => d

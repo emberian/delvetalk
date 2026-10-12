@@ -5,6 +5,7 @@ overrides `<field>`. A world's bridge is not configuration here but its row (`St
 import dataclasses
 import os
 import tomllib
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -20,7 +21,9 @@ def field(default, what):
 @dataclasses.dataclass(frozen=True)
 class Config:
     origin: str = field(ORIGIN, "the front's public origin: links in posts, the repository's did:web, the login's client id")
-    opener: str = field('did:plc:6amo7col5h4ciq2gpm5eur7b', "the world's opener (ember.delve.town): serve's --opener, the hand's principal")
+    opener: str = field('', "the world's opener, its own principal, shown as the town (docs/GENESIS.md \"The town\"): serve's --opener, "
+                        "genesis's and the hand's principal; default the world's did:web (`town_did(origin)`). A carried world keeps "
+                        "the opener its journal names (the live town's: its owner's DID, still shown as the town)")
     host_socket: str = field('', "serve's public socket (default <state>/host.sock)")
     root_socket: str = field('', "serve's root socket, the opener's (default <state>/root/root.sock)")
     root_group: str = field('', "the root socket's group, so the hand may run under a uid of its own (default serve's)")
@@ -57,6 +60,10 @@ class Config:
     plan: str = field(str(ROOT / 'docs' / 'PLAYTEST-2.md'), "the playtest's plan, whose seeds (§2) and invitations (§3) the hand's Speak offers")
     owner_principals: str = field('', "the owner's principals besides the opener (his Zulip user), space-separated: no measure counts them as residents")
 
+    def __post_init__(self):
+        if not self.opener:
+            object.__setattr__(self, 'opener', town_did(self.origin))
+
     @classmethod
     def load(cls, state=None, environ=os.environ, **given):
         """The file under `state`, then the environment, then `given` (a test's or a script's own)."""
@@ -67,6 +74,11 @@ class Config:
             if PREFIX + f.name.upper() in environ:
                 values[f.name] = parse(f.name, environ[PREFIX + f.name.upper()])
         return cls(**{**values, **given})
+
+
+def town_did(origin):
+    """The town's own principal: the did:web of its origin's host (docs/REPO.md), as `repo.world_did` names the town's."""
+    return 'did:web:' + urllib.parse.urlsplit(origin).netloc.replace(':', '%3A')
 
 
 TYPES = {f.name: type(f.default) for f in dataclasses.fields(Config)}
