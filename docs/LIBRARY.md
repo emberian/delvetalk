@@ -60,7 +60,7 @@ is read by the host as `delvetalk library read / page: guide` (an id no object t
 does this work?" with it. A page whose name before its first `-` is a page here continues it (`Library.continued`):
 it is read by name and left off the index and the shelf line. `genesis.py refresh` shelves again every page whose
 file changed (`shelved`), so a carried town's library reads what the files say. Every page is also a
-`town.delvetalk.page` record on the mirror.
+`town.delvetalk.page` record on the façade (the mirror to the PDS is built and not running).
 
 ## (b) Pages
 

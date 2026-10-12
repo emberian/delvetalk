@@ -9,10 +9,12 @@ section ends with its decision.
 **Ground.** DelveTalk's repository, `did:web:gsb.fg-goose.online` (docs/REPO.md): one signed commit per journal
 height over an MST of `town.delvetalk.entry/<rev>`, plus façade collections (`receipt`, `object`, `source`, `law`,
 `grant`, `publication`; since lane/posting `card`, `page`, `index`); getRepo, `since` and listRecords work for a
-carried journal (74cc83a8); subscribeRepos is 501. The posting account on pds.delve.town is
-`claude-of-tulip.delve.town` (`did:plc:oq2mrkwsuts7dqbkqqm2ntiz`, the handle in the posting credential);
-`python3 -m transport mirror` puts `town.delvetalk.card`, `.page` and `.index/self` there by putRecord/deleteRecord,
-no feed post (POSTING §1). In progress on lane/posting: `world-try` (the commit with the write switched off: exact
+carried journal (74cc83a8); subscribeRepos is 501. The posting account on pds.delve.town is the
+owner's, `ember.delve.town` (`did:plc:6amo7col5h4ciq2gpm5eur7b`, the handle in the posting credential, which the
+owner configures and the repository never holds): the town's replies go out through it, and its address, the one
+residents mention, is the fictional `@livedelvetalk.delve.town`, matched as text (`summon_handle`). `python3 -m
+transport mirror` would put `town.delvetalk.card`, `.page` and `.index/self` there by putRecord/deleteRecord, no feed
+post (POSTING §1); it is built and not running: the owner has not approved it, and it runs dry unless authorized. In progress on lane/posting: `world-try` (the commit with the write switched off: exact
 card bytes, roots read with versions, each written object's new stateCid) and `if: [{object, version}]` on any turn,
 refused `moved` with `[{object, was, now}]`.
 
@@ -75,7 +77,7 @@ rotation; `#sync` when a rotation or carry re-signs the chain. `cursor` replays 
 are recomputed from the journal. Revs stay `TID(clock minute × 6·10⁷ + height)`; the world's clock trails wall time,
 so no rev is in the future, which [sync] tells consumers to reject.
 
-**Mirrored on delve.town.** `mirror.py` writes the same records into the posting account, adding `answer`, `paint`,
+**Mirrored on delve.town (built, not running).** `mirror.py`, once the owner authorizes it, writes the same records into the posting account, adding `answer`, `paint`,
 `verb`, `chronicle`, `book`, `door`. A resident's mirror (listRepos, then listRecords or getRepo) then holds the town
 as it holds everyone's posts. The mirror cannot prove the bytes are the host's; the cross-check is the CID, equal in
 both repositories for every journal-derived record, and the `index` naming the signed head `{did, rev, commit}`.
@@ -309,9 +311,9 @@ credential; the request and answer are public, as §3's table says, and looking 
 The live test is the owner's account writing one request; it writes to delve, so it waits for his word.
 
 **Findings for other lanes.** `observe.py` summoned `livedelvetalk.delve.town`, which resolves `HandleNotFound` on
-pds.delve.town; the summoned handle is now the config field `summon_handle`, default the posting account's,
-`claude-of-tulip.delve.town`, and the owner sets it in `delvetalk.toml` only when `credentials` names another account
-(the two must name one account, or a mention of the poster summons nothing). REPO and FEDERATION §7 named path-based
+pds.delve.town; the summoned handle is the config field `summon_handle`. The owner's decision (2026-10-12): it stays
+`livedelvetalk.delve.town`, a fictional address matched as the post's text, never resolved to a DID, while the
+replies go out through the owner's account (`credentials`); the two need not be one account. REPO and FEDERATION §7 named path-based
 did:web DIDs, which atproto rejects; each world is now `did:web:<world>.<host>` (`repo.world_origin`). `delvetalk.town` and `delvetalk.org` are unregistered. Nothing reads the clerk's
 `org.delvetalk.*` records; they stay until the owner says.
 

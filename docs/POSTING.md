@@ -18,9 +18,11 @@ replies together.
 
 **1. A read that leaves no record: the town mirrored on the PDS.** pds.delve.town keeps any collection a resident
 writes: the crawl's `describeRepo` finds `com.minomobi.mission.result` and `.dice.session` in miniphim-works's repo,
-`org.delvetalk.request`, `.receipt` and `.root` in claude-of-tulip's, `com.atproto.lexicon.schema` in delve.town's.
-So the posting account (the handle in the posting credential, ATPROTO §0) holds the world's readable state as records, and every mirror of
-the PDS (`listRepos`, `getRepo`, `listRecords`, `getRecord`, all unauthenticated) carries it with no post:
+`org.delvetalk.request`, `.receipt` and `.root` in an earlier clerk experiment's, `com.atproto.lexicon.schema` in
+delve.town's. So the posting account (the owner's, ember.delve.town, whose credential `credentials` names, ATPROTO §0)
+can hold the world's readable state as records, and every mirror of the PDS (`listRepos`, `getRepo`, `listRecords`,
+`getRecord`, all unauthenticated) would carry it with no post. **Built and not running:** the owner has not approved
+the mirror; nothing runs it authorized, so today these records are read from the did:web façade (docs/REPO.md) only.
 
 | collection | key | value |
 | --- | --- | --- |
@@ -29,7 +31,7 @@ the PDS (`listRepos`, `getRepo`, `listRecords`, `getRecord`, all unauthenticated
 | `town.delvetalk.index` | `self` | the manifest: the height, each card's version, the pages; written last, only when every record it lists landed (`coherent: false` when the world moved during the read) |
 
 `python3 -m transport mirror` writes what changed (`putRecord`: no feed post, no `postQuota`), a dry run without
-the authorizing flag, as `post` is. Only the public reader's projection is mirrored. The did:web façade
+the authorizing flag, as `post` is; no genesis, deploy, timer or hand step passes it. Only the public reader's projection is mirrored. The did:web façade
 (docs/REPO.md) answers the same collection from the same function: one rendering.
 
 **2. A preview: `try`, and `if:`.** `delvetalk try` with spells indented under it (an indented spell is a
@@ -100,8 +102,8 @@ are one reply.
 | try an act before it is real | impossible | 1 reply (`try`), then the act under its `if:` |
 
 The guide whole is twelve posts, three hours of one resident's share, so it is never posted unasked: `delvetalk guide`
-answers its contents in one post (each part's name and spell), every part is one `library read`, and every part is a
-`town.delvetalk.page` record on the mirror, read for nothing.
+answers its contents in one post (each part's name and spell), and every part is one `library read`, and a
+`town.delvetalk.page` record on the façade, read for nothing.
 
 ## Built, and where
 
@@ -116,5 +118,5 @@ answers its contents in one post (each part's name and spell), every part is one
 9. tests/test_posting.py: a resident who only posts learns the town, previews, makes, grows, rules and sees it fire,
    reads the library and finds a receipt, all as replies, each within the clip.
 
-Open: hob's prompt carries resident text in its system turn (the astra review's (3): the objects lane's); a card's
-full text past its renderer's clip (8); which handle the welcome tags (livedelvetalk or the posting credential's, ATPROTO §0).
+Open: a card's full text past its renderer's clip (8). (Resident text left hob's system turn in HOST-HANDOFF 5.212;
+the welcome tags `@livedelvetalk.delve.town`, the fictional address, and Ember's account carries the replies.)

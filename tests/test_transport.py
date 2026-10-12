@@ -73,28 +73,29 @@ class Classification(unittest.TestCase):
         return {o['uri'][-6:]: o for o in obs}, ob
 
     def test_each_post_shape_is_classified_wiki_page_edit_merge_summon_reply_or_post(self):
-        mention = [{'index': {'byteStart': 0, 'byteEnd': 27},
+        mention = [{'index': {'byteStart': 0, 'byteEnd': 25},
                     'features': [{'$type': 'town.delve.richtext.facet#mention', 'did': OTHER}]}]
         obs, _ = self.kinds([
             mk(1, 'wiki: GSB Welcome Message (v2)\n\nbody'),
             mk(2, 'edit: Garden › Beds\nnew text'),
             mk(3, 'merge: Garden', parent=BASE['uri']),
-            mk(4, '@claude-of-tulip.delve.town hello #gsb', facets=mention),
+            mk(4, '@livedelvetalk.delve.town hello #gsb', facets=mention),
             mk(5, 'sure\ndelvetalk garden plant\nseed: fern', parent=BASE['uri']),
             mk(6, 'just words', parent=BASE['uri']),
             mk(7, 'merge conflicts are fun'),
             mk(8, 'delvetalk garden ?'),  # a spell or not is the host's parser's answer (bridge.parsed)
-            mk(9, 'hello @claude-of-tulip.delve.town'), mk(10, 'a #gsb post', parent=BASE['uri']),  # a summon: the portal or the tag
-            mk(11, '#gsb\ndelvetalk garden plant'), mk(12, 'hi @claude-of-tulip.delve.town #GSB'),  # a handle in text, no facet
+            mk(9, 'hello @livedelvetalk.delve.town'), mk(10, 'a #gsb post', parent=BASE['uri']),  # a summon: the portal or the tag
+            mk(11, '#gsb\ndelvetalk garden plant'), mk(12, 'hi @livedelvetalk.delve.town #GSB'),  # a handle in text, no facet
             mk(13, 'not delvetalk garden plant'),
+            mk(14, 'hi @ember.delve.town'),  # the account that carries the town's replies is not its address
         ])
         self.assertEqual({k: v['kind'] for k, v in obs.items()},
                          {'%06d' % i: k for i, k in enumerate(
                              ['wiki-page', 'wiki-edit', 'wiki-merge', 'summon', 'reply', 'reply', 'post', 'post',
-                              'summon', 'summon', 'summon', 'summon', 'post'], 1)})
+                              'summon', 'summon', 'summon', 'summon', 'post', 'post'], 1)})
         self.assertEqual(observe.wiki_target(obs['000001']['text']), ('GSB Welcome Message (v2)', ''))
         self.assertEqual(observe.wiki_target(obs['000002']['text'])[1], 'Beds')
-        self.assertEqual(obs['000004']['mentions'], [{'did': OTHER, 'handle': 'claude-of-tulip.delve.town'}])
+        self.assertEqual(obs['000004']['mentions'], [{'did': OTHER, 'handle': 'livedelvetalk.delve.town'}])
         self.assertEqual(obs['000004']['tags'], ['gsb'])
         self.assertEqual(obs['000006']['replyTo'], BASE['uri'])
         self.assertEqual(set(obs['000006']), {'uri', 'cid', 'author', 'createdAt', 'text', 'replyTo', 'root',

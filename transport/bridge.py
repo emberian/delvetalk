@@ -1,6 +1,6 @@
 """Observed posts -> host turns -> reply drafts for a human to post (`python3 -m transport bridge`); observed request
-records (transport/requests.py) -> the same turns -> `town.delvetalk.answer` records, which the façade serves and the
-mirror copies.
+records (transport/requests.py) -> the same turns -> `town.delvetalk.answer` records, which the façade serves (the
+mirror would copy them; it is built and not running).
 
 Never posts to delve.town: `post` is the only writer there. A world whose bridge row is a Zulip channel, the owner's own,
 has its drafts posted by transport/zulip.py. Principals here are the observed authors' DIDs, which are UNVERIFIED.

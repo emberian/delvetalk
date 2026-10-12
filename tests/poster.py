@@ -12,7 +12,7 @@ from transport.config import Config
 from transport.state import State
 
 BASE = {'uri': '', 'cid': '', 'author': {}, 'record': {}, 'indexedAt': '2026-10-09T10:00:00.000Z'}
-BOT = 'did:plc:livedelvetalk'
+BOT = 'did:plc:6amo7col5h4ciq2gpm5eur7b'  # ember.delve.town: the owner's account carries the town's replies
 
 
 class Poster:
@@ -64,7 +64,7 @@ class Poster:
         post it answers and each next under the one before, recorded with the host. -> the parts' uris."""
         under, uris = draft.get('replyTo'), []
         for text in post.parts(draft['text']):
-            bot = self._post(text, under, BOT, 'livedelvetalk.delve.town')
+            bot = self._post(text, under, BOT, 'ember.delve.town')
             under = bot['uri']
             uris.append(under)
             obj = post.draft_object(draft)

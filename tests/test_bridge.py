@@ -61,7 +61,7 @@ def spell_post(n, card, ts):
 
 
 def summon_post(n, ts):
-    p = mk(n, '@claude-of-tulip.delve.town hi #gsb')
+    p = mk(n, '@livedelvetalk.delve.town hi #gsb')
     p['record']['createdAt'] = ts
     return p
 

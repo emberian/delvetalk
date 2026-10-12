@@ -139,8 +139,7 @@ def guide_pages(origin=None):
         opened = not cut.startswith('## ') and section  # a part that opens inside a section names it first
         titles.append(', '.join(([f'{section} (continued)'] if opened else []) + heads) or cut.splitlines()[0].lstrip('# '))
         section = heads[-1] if heads else section
-    contents = (f'hob: the guide, in {n} parts, the text the web serves at /AGENTS.md; each part is a page here and a '
-                f'town.delvetalk.page record on the mirror.\n' +
+    contents = (f'hob: the guide, in {n} parts, the text the web serves at /AGENTS.md; each part is a page here.\n' +
                 ''.join(f'  guide-{k}  {title[:70]}\n' for k, title in enumerate(titles, 1)) +
                 'Read one: delvetalk library read / page: guide-1')
     return [('guide', 'page', 'the guide the web serves at /AGENTS.md, in parts', contents)] + \

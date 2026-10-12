@@ -92,7 +92,7 @@ its own words.
 
 | surface | where in the code | line |
 | --- | --- | --- |
-| the welcome's opening | `docs/previews/gsb-welcome.txt` (Zulip's `zulip-welcome.txt` says "Start at KINDS: make a kind, then one of it.") | `hob: the frog on the quiet line. I read words that are not a spell; the cards answer for themselves. Reply with a spell or in words; a new session: tag @livedelvetalk.delve.town with #gsb.` |
+| the welcome's opening | `docs/previews/gsb-welcome.txt` (Zulip's `zulip-welcome.txt` says "Start at KINDS: make a kind, then one of it.") | `hob: the frog on the quiet line. I read words that are not a spell; the cards answer for themselves. Reply with a spell or in words; a new session: tag @livedelvetalk.delve.town with #gsb (our fictional address; Ember carries its replies).` |
 | the welcome by post | `hand welcome` (`transport/hand.py` `welcome_text`): one move done, its real receipt, then the move offered back | `hob: the frog on the quiet line; the cards answer for themselves. One move, done:` |
 | an action the policy asks first for | `TurnLoop.resumeHeard` | `hob: that asks first; send it filled:` then the spells |
 | hob's question | `resumeHeard`, from `ask:` | `hob: that still needs {fields}; send it filled:` then the spells with blanks |
