@@ -29,20 +29,31 @@ def changeLine(c: World.Change) -> String:
 # The doors as a trie (docs/MENU.md section 1): per door its word, then each spell indented,
 # typed back whole, and `» <what comes back>`, then its arcs' spells. The head, what changed and the tail are said once, and
 # the branches get what they leave of the card's room (Card.left, the receipt line under it
-# counted) (a clipped reader sees whole branches). A link
+# counted) (a clipped reader sees whole branches); what wants a hand (`wants`, one item a want,
+# under its own head line) gets what the branches leave, "… and N more" counted. A link
 # door (STUDIO) is never clipped: it is said after the clipped branches, before the tail.
-def trie(all: Lists.List<Door>, changed: String, context: Abi.Context) -> Document.Document:
+def trie(all: Lists.List<Door>, changed: String, wants: Lists.List<String>, context: Abi.Context) -> Document.Document:
   let top = Lists.filter(all, fn(d: Door) -> Bool: isArc(all, d) == false)
   let links = textJoin(Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to)), fn(d: Door) -> String: Document.plain(branch(d, all))), "")
-  framed("{trieHead(Lists.length(top))}{changed}", Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false), fn(d: Door) -> Document.Document: branch(d, all)), "{links}{trieTail()}", context)
+  framed("{trieHead(Lists.length(top))}{changed}", Lists.map(Lists.filter(top, fn(d: Door) -> Bool: Plans.isNobody(d.to) == false), fn(d: Door) -> Document.Document: branch(d, all)), wants, "{links}{trieTail()}", context)
 def title() -> String:
   "✾ DELVETALK · THE COMMONPLACE"
 def trieHead(count: Nat) -> String:
   "{title()}\n\n{doorCount(count)}. Indented lines are typed back whole; » is what comes back; words reach hob.\n"
 def trieTail() -> String:
   "YOURS · me\n  delvetalk me ?\n  » what you hold; notes left by rules and mentions\nEvery reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.\n"
-def framed(head: String, branches: Document.Documents, tail: String, context: Abi.Context) -> Document.Document:
-  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(head), tail: Lists.append(Card.clippedWithin(branches, 64n, Card.left(context, textLength(head) + textLength(tail))), Document.text(tail))})})
+def framed(head: String, branches: Document.Documents, wants: Lists.List<String>, tail: String, context: Abi.Context) -> Document.Document:
+  let doors = Card.clippedWithin(branches, 64n, Card.left(context, textLength(head) + textLength(tail)))
+  let used = textLength(head) + textLength(tail) + Document.size(Document.Document.sequence({items: doors}))
+  Document.Document.sequence({items: Document.Documents.cons({head: Document.text(head), tail: Lists.concat(doors, Lists.append(wanting(wants, Card.left(context, used)), Document.text(tail)))})})
+# What wants a hand, newest first (as the host answers `wanting`), within `room`: nothing when no
+# want holds, or when its head line, the first row and the count of the rest do not fit.
+def wantsHead() -> String:
+  "What wants a hand, newest first:\n"
+def wanting(wants: Lists.List<String>, room: Nat) -> Document.Documents:
+  match wants:
+    case nil(_): Document.Documents.nil()
+    case cons(c): if textLength(wantsHead()) + textLength(c.head) + (if Lists.length(c.tail) == 0n then 0n else textLength(Card.more(Lists.length(c.tail)))) > room then Document.Documents.nil() else Document.Documents.cons({head: Document.text(wantsHead()), tail: Card.clippedWithin(Lists.map(wants, Document.text), 8n, room - textLength(wantsHead()))})
 # An arc: a door whose object is a card under another door's object.
 def arcOf(parent: Door, door: Door) -> Bool:
   Plans.isNobody(parent.to) == false && Text.starts(door.to.object, "{parent.to.object}/")
