@@ -157,7 +157,7 @@ where `fills` holds and casts `move` when its clock is whole; the card shows "2 
 The clock moves every minute (`world-advance` by transport), so every suspended wait resumes on time. The tide ticks
 itself hourly; what a tick does is the rules residents wrote on it. A rule fires at the commit of the write that makes
 it true, under its writer, at most 8 a commit, 32 on a thing, 4 deep; a want is judged at every read and every commit
-of its thing, `since` the entry that made it true, or "by the clock". Nothing posts for the world: a fired rule writes
+of its thing, `since` the entry that made it true (a write, a refusal, or the clock's move). Nothing posts for the world: a fired rule writes
 cards and notes, and the 16 posts an hour are for replies.
 
 ## 6. What to measure in the first week

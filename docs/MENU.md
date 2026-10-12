@@ -69,10 +69,12 @@ A spell naming another card never reaches the commonplace: the host runs it ther
 ### 3.1 What it is asked
 
 The model is the policy's (`claude-haiku-5-5` at genesis), with thinking off unless the transport's `model_thinking` is
-set. The system text is `Policy.prompt`: hob's instruction, the card the speaker answered as they see it, the offered
-forms in the spell grammar, what the card holds for the speaker and the misfit when there is one, the policy's examples
+set. The system text is `Policy.prompt`: hob's instruction, a line saying the user turn is quoted data, the policy's examples
 (five at genesis: two bells made, an inspiriting, a grown `water`, and `none` for talk near a card), and the four
-answers. The utterance, at most 8,192 bytes, is the user turn, once. The four answers, as `resumeHeard` settles them:
+answers; only what the policy's owner and the host wrote. The user turn is `Policy.userTurn`: the card the speaker
+answered as they see it, the offered forms in the spell grammar, what the card holds for the speaker, the library's
+pages by title and the misfit when there is one, every line marked `| ` because residents wrote it (HOST-HANDOFF
+5.211), then the utterance, at most 8,192 bytes, once. The four answers, as `resumeHeard` settles them:
 
 - **the spell meant**, up to three: each runs as the speaker's turn on the card it names; an action in the policy's
   `confirmFor` (reprogram, amend, offer, countersign, adopt) is offered back indented as `hob: that asks first; send it

@@ -11,7 +11,8 @@ for what it needs, the host answers each request from the store, and the turn
 commits only if every root it read is still current, or moved only by edits
 that commute with its own (two rains on one bell both land; §9), and the law
 admits every write. A write that makes a rule's condition true fires its spell
-under the rule's writer; a want poses while its condition holds. Replies name
+under whoever wrote it, or as the thing itself when the thing inherits it from its kind;
+a want poses while its condition holds. Replies name
 their silences and reveal what an act moved. Nothing is erased;
 supersession is the only deletion.
 
@@ -360,7 +361,7 @@ clause, printed on the card with its reading. One grammar, three modalities
 
 ```
 law  NAME "reading": EXPR                 refuses at commit
-rule NAME "reading": EXPR then SPELL      fires at commit, under the rule's owner
+rule NAME "reading": EXPR then SPELL      fires at commit, under its writer (as the thing, inherited)
 want NAME "reading": EXPR asks SPELL      poses while it holds, judged at read and at commit
 ```
 
@@ -376,9 +377,20 @@ REF   ::= new.F | old.F | "OBJECT".F | request.subject | request.caller | reques
 ```
 
 A SPELL's holes are terms (`{request.subject}`, `{request.object}`, `{new.F}`, `{"card".F}`), filled at the write, a
-hole naming nothing refused when placed; `me` is the rule owner's avatar. A want reads no `old`. `under "kind/bell"`
-follows all three modalities to the kind, so a kind carries rules and wants for every instance and its owner
-changes them once. A thing's text holds at most 16 lines of the three; placed rules and wants are 32 each beside it.
+hole naming nothing refused when placed; a hole fills one field's value as data, never syntax (the filled spell is
+rendered so it parses back to exactly that card, verb and fields); `me` is the rule owner's avatar. A want reads no
+`old`. `under "kind/bell"` follows all three modalities to the kind, so a kind carries rules and wants for every
+instance and its owner changes them once.
+
+**Tenure.** A thing a kind makes holds its owner's law in its own text (its root package's: RECORD's or KIND's),
+then `law kind: under "kind/<name>"`: the kind's text only adds to it, so a kind's maker cannot write a law line
+that replaces it and the kind's owner cannot amend it away. A cited law never refuses the thing's owner's amendment
+of the thing (`Law.ownerAmends`): while a thing follows its kind the kind's text binds even its owner, and its owner
+can always amend it out from under the kind. Lines in the kind's text act, in every instance, as the instance
+itself: the principal `@<id>`, which no object id, DID or handle can spell, and which a law admits only as it admits
+any hand (or names it by `request.caller`). Neither the kind's owner, who amends that text live, lends their
+authority to the code the instance runs, nor the instance's owner theirs to the kind's text. A line of a thing's own
+text acts as its owner, who alone amends it; a placed line acts as its placer. A thing's text holds at most 16 lines of the three; placed rules and wants are 32 each beside it.
 
 Top-level fields only. `request.kind`, by name or number, is `write` 0 (the object's own method's
 write), `reprogram` 1, `amend` 2, `proposed` 3, `rule` 4 (placing a rule, want or grown verb; `request.verb` is
@@ -744,18 +756,27 @@ deleting a closed sum or a convention:
   and kept nowhere; the speaker sends it whole again.
 - **Things react by rules.** A thing's text and its placed rows hold `rule` and `want` lines in the law's grammar
   (§4). At commit, after the law admits, each written object's rules whose condition the write made true stage
-  `receive {text: SPELL}` to the spell's card under the rule's writer (`fired`, identity
-  `rule:<object>:<name>:<height>`; at most 8 a commit and 4 down a chain, the rest `unfired` with why), and the
-  wants that came to hold or stopped holding are journaled (`wanted`, `unwanted`); replay re-derives all four.
-  Nothing subscribes or notifies otherwise. The writer pays the judging, linear in rules and rows; the rule's
-  owner is the follow-on turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on
-  your thing runs their spells under their name and spends nothing of yours. The follow-on turn is a delivery under
+  `receive {text: SPELL}` to the spell's card under the rule's writer, or as the thing for a line it inherits (§4
+  Tenure) (`fired`, identity
+  `rule:<object>:<name>:<height>`; 4 down a chain; past 8 a commit a firing is queued, never dropped, each next
+  eight deliverable a clock minute later (`next`, the reply says "queued until clock N"); a rule that held and was
+  not cast is `unfired` with why), and the wants that came to hold or stopped holding are journaled (`wanted`,
+  `unwanted`); replay re-derives all four. Nothing subscribes or notifies otherwise. The carried lines go in order:
+  the thing's own text, what it inherits, then what hands placed. A rule is judged after the commit, on the world it
+  leaves: what it cites is no root of the write, and its condition no part of the law's budget; it reads within
+  `Limits.clauseTicks` or is `unfired budget` (a want past it does not pose), so a stranger's rule never refuses,
+  stales or starves the owner's own acts. A hand other than the owner holds at most `placedPerHand` (4) rules and 4
+  wants on a thing, all such hands together `placedByOthers` (24) of the 32. The rule's owner is the follow-on
+  turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on your thing runs their
+  spells under their name and spends nothing of yours. The follow-on turn is a delivery under
   the triggering turn's ledger. `delvetalk CARD rules` reads each rule back: name, owner, reading, condition, spell,
   and its last firing (entry and receipt) or why it did not fire. Conditions are state, never counters: "two
   rains" is `count(new.lines) >= 2 and count(old.lines) <= 1`, true once, at the crossing.
 - **The clock is a condition, never the cause.** Nothing is evaluated in a silence. A condition on `request.clock`
   fires at the first write after the clock passes it, and whoever writes next pays. The tide is the one thing
-  that writes on the clock, ticking itself every `gap` minutes; "every day" is a rule on the tide
+  that writes on the clock, ticking itself every `gap` minutes, for ever: a thing's wait on the clock in its own
+  name (one at a time) wakes under its own chain, a whole budget each period, missed periods one wake; "every day"
+  is a rule on the tide
   (`request.method == "tick" and new.ticks % 24 == 0`). A reply to a card is already a turn of that card, so a
   rule on `request.method` is the reaction to a reply.
 - **The world poses.** A rule's `then` is any spell its owner may cast, so what a body or the hand places is the
@@ -767,8 +788,12 @@ deleting a closed sum or a convention:
   it printed and the spell that answers it; RECORD's default wants are a line waiting for its keeper (`admit`) and
   a record with no door (`door`). An errand (`world/bodies/errand.obend`) is a rule with a pay: its maker's
   `asks`, the condition `done` judged at each write on the thing it is `on`, and the spell that `pays`, cast
-  under the maker; `settle` takes the call from that rule alone, marks the errand done by the writer, once, and
-  takes both rules off. A front (`world/bodies/front.obend`) is a visible clock the tide fills: its `fills`
+  under the maker. Payment and completion are one settlement: the errand's one rule on `on` casts `settle`, which
+  takes the call from that rule alone and claims the errand for the writer, once, in one turn: marked `done` by them
+  (a mark, a fact never dropped: marks have no retention), its rule off `on`, and its own `pay` placed with the doer
+  written in, firing at that write (`rule:<errand>:pay:<height>`). A later write pays nobody; a pay its target refused
+  is cast again for the same hand by its maker's `repay`. A count of lines counts the retained history (128 lines);
+  `next` counts every line written. A front (`world/bodies/front.obend`) is a visible clock the tide fills: its `fills`
   condition is judged at each tick, and when `segments` are full the maker's `move` is cast and the clock empties;
   only the tide's rule fills. Nothing in the world addresses a resident by name.
 - **Outcomes are one-line conditions** (`tests/test_reaction.py` places each by spell on the town's own objects).
@@ -893,6 +918,9 @@ each handoff keeps the detail, this table the order across lanes:
 | the regenerated `/examples` (`docs/AGENTS-EXAMPLES.md`, still env, wake, the garden and eight doors) | transport | `deploy/capture-examples.py` re-run on a genesis of this head |
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
+| the astra world review's mediums 12, 13, 14, as decided in AUTHORING §4 | objects, host | each "done when" there |
+| the astra world review's 11 (archival and reclamation of objects, grants and journal), 15 (a behaviour revision in roots, offers and receipts), 16 (wants as tasks: eligible actors, blocked and cancelled; discovery that rotates past the permanently blocked), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
+| rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder); a placed line's verbs (`grow`) bounded per hand as rules are (world.md 6's remainder) | kernel, host | a level rule fires at its crossing alone unless written as a level; a stranger holds at most `placedPerHand` verbs |
 
 After the fourth playtest, in the order the town will feel them: fronts and `relay` as seeded or cut back to the
 season (OVERHAUL §6's week row); a `Conversation` object per thread; Workshop `try {target, package, examples}` on

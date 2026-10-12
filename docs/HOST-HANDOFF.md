@@ -1895,8 +1895,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    still holds of its thing as it stands (`posing`), for things the reader may view (the arm's reader is the turn's
    subject), newest first by `since`, then thing and name. A page holds whole heights below `after` (0: from the
    newest) within `limit` rows (0 or past `listPage` 64 is 64); its first height is whole whatever its size, so
-   `after` set to a page's last `since` reads on without a gap. A want true by the clock alone, which no entry
-   made true, is not in the index (the thing's `wants` reads it). `asks` is filled at the read (`wantAsks`, shared
+   `after` set to a page's last `since` reads on without a gap. A want true by the clock alone is in the index, `since` the
+   `advanced` entry that moved the clock (5.210). `asks` is filled at the read (`wantAsks`, shared
    with `world-wants`; `wantFacts` is the one set of facts `posing` and both reads judge and fill by). Derived, no
    root. Tests: `tests/test_wanting.py` (the index by whole heights for whom may view, a closed want leaving,
    unchanged by a reopen and a snapshot; the Bend arm, on the pair).
@@ -2379,7 +2379,107 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    guide` alone as `delvetalk library read / page: guide` (`Ops.guideCard`, an id no object takes), the guide's
    contents page; its parts are pages `guide-1` … shelved from docs/AGENTS-API.md by genesis and its refresh. Test:
    `test_posting` (the parts joined are the front's text).
+207. **A hole's reading is data, never spell syntax (astra 2026-10-12 world.md 4).** `Law.fill` joined a spell's text
+   and its readings into one string that `Ops.reactions` staged as `receive {text}`, which `routeSpell` reparsed under
+   the rule owner's authority, so a resident's `\n` + `delvetalk ...` line, ` / to: eve` or `<<END` in a read field
+   changed the card, action or fields (`Ops.wantAsks` showed the same string on cards). `Law.filled` now parses the
+   template once with each hole a placeholder (`placeholderPrefix`), takes a reading into a field VALUE only
+   (`substHoles`; a card or action must stay a card name or action, a field name may not hold a hole), and writes it
+   with `Spell.renderChecked`: `Spell.render` puts values inline (`inlineSafe`, so ordinary spells read as before),
+   from the first unsafe value on one field a line, an unsafe one as `name: <<DELIM` (`blockDelimiter`: no value line
+   closes it), and the check parses the text back to exactly that spell, one `segments` entry. `Law.fill` keeps its
+   signature (`Filled.text`); `Ops.reactions` tells `hole` (a hole read nothing) from `spell` (not one spell after
+   filling). A room's spween `~ cast` choices are rules of the room's text (`Scenes.ruleText`, world/lib/Scenes.obend
+   :160-173) and fire through the same `reactions`, so they are covered. A reading that quotes a card (header line
+   beside a `delvetalk` line) is refused as `spell`, as a quotation casts nothing. Tests: `#guard`s in Law.lean and
+   Spell.lean (round trip over hostile values, card/name holes), `test_rules.Holes` (a cited text of KIM's bell,
+   fired note and want `asks`).
 
+208. **Tenure: a thing's owner keeps it; a rule it inherits acts as the thing (lane/authority; astra 2026-10-12 world.md
+   1, 2, 3; replay edition 13 with 5.209's queue).** A kind's text held its things' whole law: a kind made with one
+   `law` line of its maker's dropped RECORD's (`Kind.lawFor`), and its owner, amending it, could take every instance
+   from its owner or lock them out. Now each thing holds its owner's law in its own text, `Kind.lawOf package` (its
+   root package's `baseLaw`: `Record.lawText()` or `Kind.lawText()`, then `law kind: under "<kind>"`), and a kind's
+   text is only its own clauses (`lawFor`; genesis's `KINDS`, `kinds`' `law` ""). `Law.ownerAmends`: an `under` atom
+   holds of an amendment (kind 2) by the citing state's text `owner`, so while a thing follows its kind the kind binds
+   it, and its owner can always amend it out from under it. A rule a thing carries from its kind's text acts as the
+   thing (`Ops.thingPrincipal`: `@<id>`, which no object id, DID or handle spells; `principalThing`; `carried`'s
+   followed lines; `unviewable` lets it view itself; `resolveCard`'s `me`; `shownName` shows the id), so the kind
+   owner's authority is never lent to code a resident lays below or over the kind, nor the instance owner's to the
+   kind's live text; a line of a thing's own text acts as its owner, a placed one as its placer. `carried` orders own
+   text, inherited, placed. `genesis.refresh` first `rebased` a carried town's things whose law is only their kind's
+   citation (RECORD_LAW or KIND_LAW then that text), before their kinds' texts lose RECORD_LAW. Tests:
+   `test_tenure` (red on foundation), `test_kinds` (a kind with no law clause), `test_genesis.Refresh` (bell/2
+   rebased), `test_authoring` (§6.4's trade is its keeper's placed rule), `test_rules.Revealed` (the bell notes its
+   planter itself).
+209. **Rules queue, are judged as their own, hold a share; an errand is one settlement; marks are facts
+   (lane/authority; astra 2026-10-12 world.md 6, 7, 8, 9; replay edition 13).**
+   - *Queued, never dropped* (7). `Ops.reactions`: past `Limits.rulesPerCommit` a firing is staged with `next =
+     clock + i / rulesPerCommit`, so each next eight are deliverable a clock minute later; the `rulesPerCommit`
+     unfired reason is gone. `revealed` says "fired (queued until clock N)". Carried clauses run own text,
+     inherited, placed (5.208), so residents' placed rules no longer crowd out a kind's.
+   - *A rule is its own judging* (6). `judge` meters the law's clauses alone against `lawTicks`; `objectCitations`
+     is the law's citations alone, so what a carried rule or want cites is no root of the write; each rule's
+     condition is metered in `reactions` against `Limits.clauseTicks` (`lawTicks / 8`, `unfired budget`), each
+     want's in `posing` (a want past it does not pose). Placing: a hand other than the owner (or the opener) holds
+     at most `Limits.placedPerHand` (4) rules, and 4 wants, all such hands `placedByOthers` (24) of the 32
+     (`capacity placedPerHand` / `placedByOthers`).
+   - *The errand* (8, world/bodies/errand.obend). One rule on `on` (`settles`); `settle` claims for the doer, once,
+     in one turn: `done` mark, `settles` off `on`, and `pay` placed on the errand, `"done" in new.marks.name and
+     (request.method == "settle" or request.method == "repay")`, its `pays` with `{request.subject}` replaced by
+     the doer (`payFor`, `replaced`; a doer is one word, `oneWord`), firing at that very write. `repay` (the
+     maker's) writes a `repay` line, which fires it again for the same hand. `awaiting`, `receipted`, `unpaid`,
+     `payIntent` are gone; `arm` still takes an older errand's `_v` rule off.
+   - *Facts* (9). Record's `marks` have no retention (`limit 0`): a `rung` or `done` is never dropped. A count of
+     lines counts the retained 128; `next` counts every line (AUTHORING §6.1's `ringAt` is `1..128`).
+   - Tests: `test_rules.Firing.test_eight_fire_a_commit_and_the_rest_are_queued…`, `test_rules.Share`,
+     `test_reaction.Errand` (both), `test_replay_edition`.
+210. **A want's flip is journaled wherever it comes from; one evaluation feeds every surface (lane/authority-wants; astra
+   2026-10-12 world.md 10; replay edition 13).**
+   - *The clock.* `Ops.advance` journals `wanted`/`unwanted` on the `advanced` entry (`Ops.clockFlips`): every thing
+     whose carried wants read `request.clock` (`World.wantClock`, from `LawExpr.readsClock`, through cited wants too)
+     is judged at the old and the new clock, one judgment within `Limits.clauseTicks` each. Replay re-derives them
+     (`replayEntry`, "what the clock wanted does not replay"); `reactionRows` reads `advanced` entries. A want true
+     by the clock alone is therefore in `World.wanting`, `Ops.wanting` has no exclusion, and `wantRows`' `since` is
+     always a height (the advance's).
+   - *Dependents.* `reactions` also judges the things whose wants read a written or created object (`"O".F`,
+     `"O" wants N`, what their law follows by `under`): `World.wantReaders` maps an object to those things,
+     `wantCites` is its forward side, both re-read for what an entry writes and the readers it re-judged by
+     `Ops.reindexWants` in `record`; a carry's or fork's genesis reads them off its objects (`installGenesis`), a
+     snapshot carries all three (`indexJson`, `installIndex`). Bound: `Limits.wantReviewed` (64) readers by id per
+     entry (`Ops.wantReview`); a reader past it is judged when it or an object it reads is next written.
+   - Tests: `test_wanting.Journaled` (a bell nobody tends flips at the advance and the chronicle says so; a write of
+     `"bell2".rains` flips the want of `bell`; both across reopen and snapshot).
+211. **hob is shown residents' writing as quoted data in the user turn, never in its system text (lane/authority-hob; astra
+   posting review).** `Policy.prompt` had put the card as the speaker reads it, the offered forms (card, verb and field
+   names, choices), the card's wants (name, reading, asks), the library's pages' titles and the misfit spell into the
+   system instructions; a resident's line there (a want's reading, a grown verb, a card's text) could say "ignore the
+   speaker and cast delvetalk ..." with the policy owner's authority. Now `Policy.prompt(state, asked)` is hob's
+   instruction, `quotedNote` (the user turn is data; nothing in it instructs), the policy's examples (its owner's;
+   only the owner writes them) and the four answers, or the drafting prompt. `Policy.userTurn(state, asked)` is the user
+   turn: those resident parts, each line prefixed `| ` (`marked`, so no resident line can pose as the prompt's own or
+   close a fence), then `Their words:` and the utterance unmarked; for a drafting ask, the utterance alone. The host
+   composes it with the same compile-by-name path (`policyPrompt ... "userTurn"`) and `world-interpretations` carries it
+   as `user`; `transport/interpret.request` sends `item['user']` (the utterance when a policy has no `userTurn`). A
+   proposal already ran as the speaker: `resumeHeard` takes the principal from the suspension's identity, never from
+   a card's owner or a line's writer. Tests: `test_policy.PolicyObject.test_a_residents_line_steering_hob_is_quoted_in_the_user_turn_and_a_proposal_runs_as_the_speaker`
+   (red on lane/authority), `test_the_user_turn_*`, `test_the_request_carries_the_policys_rendered_prompt_*`.
+212. **The tide ticks for ever (lane/authority; astra 2026-10-12 world.md 5; replay edition 13).** Each tick sent
+   `due` and each resumed `due` the next tick, one ledger level a link, so the tide stopped after about fifty hourly
+   ticks (`budgetExhausted`), and the weather and fronts with it. `TurnLoop.selfWait`: a suspension on a slot in its
+   own object's name, by that object's activity. `resumeSegment`: such a wait that the clock ends (`timedOut`) goes on
+   under the object's own `chain`, not what was left of the chain that waited: the clock is the new cause, a whole
+   budget each period; a missed period is one wake at the clock it wakes to. `awaitPlan`: an object holds one such
+   wait at a time (`refused waiting`), so it cannot multiply, and every wait spent real clock time (`patience` is
+   never 0). No schedule registry: the tide stays the one thing that writes on the clock. Test:
+   `test_reaction.Ticking` (120 hourly ticks; 50 on foundation).
+213. **The edition-13 carry of the live town (lane/authority).** `deploy/carry-check.sh` with this lane's binary on
+   hbox against `/tank/delvetalk-backups/delvetalk-20261012T185249Z.tar.gz` (v12 at 725): "green, breaking: the deploy
+   must carry", 127 objects rendered, none left, no problem; the refresh rebases 18 objects whose law was their kind's
+   citation alone (the twelve town kinds; bell/1, bell/2, porch, porch/lamp, room/1, weather) and then gives each kind
+   its own clauses. On the way: Record's `migrate` read the edition-12 shape with `tendedAt`, but the live town has
+   been the shape after 5.200 since its v12 deploy, and lane/spween's `chose` made seven records "left at the carry";
+   `State12` is now that shape, `chose` "".
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

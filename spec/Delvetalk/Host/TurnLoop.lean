@@ -1662,6 +1662,14 @@ def interpretGate (w : World) (principal : String) : Option (String × Nat) :=
     some (s!"the world's {w.modelQuota} model readings for the day are spent; reply with the spell itself, or wait.", (day + 1) * Limits.clockDay)
   else none
 
+/-- A suspension that is `object`'s wait on the clock for itself: an await on a slot whose principal is the
+    object (which no hand acts as), by an activity of the object (`resumeSegment`, `awaitPlan`). -/
+def selfWait (object : String) (sus : Json) : Bool :=
+  let outcome := (sus.getObjVal? "outcome").toOption.getD Json.null
+  let slot := (outcome.getObjVal? "slot").toOption.getD Json.null
+  let act := (outcome.getObjVal? "activity").toOption.getD Json.null
+  (slot.getObjValAs? String "principal").toOption == some object && (act.getObjValAs? String "object").toOption == some object
+
 mutual
 /-- Run `method` of object `id` against its committed state; its result is returned. -/
 partial def runMethod (depth : Nat) (id method : String) (argument : Data) (caller : String)
@@ -1818,6 +1826,9 @@ partial def awaitPlan (depth : Nat) (self : String) (bounds : DataBounds) (f : L
   let key := identityKey sp si
   if (sp == s.principal && si == s.intent) || s.awaited.contains key then
     respond bounds responseType "broken" [emptyRecord]
+  -- A thing waits on the clock for itself once at a time (`selfWait`): the one wait whose end is a new cause.
+  else if sp == self && s.world.suspended.any (selfWait self) then
+    respond bounds responseType "refused" [.record [("clause", .label "waiting")]]
   else if s.awaits ≥ Limits.awaitsPerTurn then evaluation "turn exceeds the await capacity"
   else
     set { s with awaited := s.awaited ++ [key], awaits := s.awaits + 1 }
@@ -2501,7 +2512,8 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
   let moved := (rows "fired").map (fun f =>
       let said := (((f.getObjVal? "argument").toOption.bind fun a => (decodeData Limits.dataDepth a).toOption).bind
         fun d => textField d "text").getD ""
-      s!"rule {text f "rule"} of {shownName w (text f "principal")} fired: {shownSpell w said}") ++
+      let queued := ((f.getObjValAs? Nat "next").toOption.map fun n => s!" (queued until clock {n})").getD ""
+      s!"rule {text f "rule"} of {shownName w (text f "principal")} fired{queued}: {shownSpell w said}") ++
     (rows "unfired").map fun f =>
       s!"rule {text f "rule"} of {shownName w (text f "owner")} did not fire: {unfiredWords (text f "why")}"
   let asked := fun (id name : String) => ((w.objects[id]?).map fun o => wantRows w principal id o).getD [] |>.find? fun r =>
@@ -3907,7 +3919,12 @@ def activityNat (act : Json) (key : String) : Except String Nat :=
 
 /-- Continue the activity a suspension entry journaled. The turn's roots are
     re-validated first: if anything it read or required absent has moved, the whole
-    turn is refused `staleRoot` and journaled under its original identity. -/
+    turn is refused `staleRoot` and journaled under its original identity. A thing's wait on the clock
+    for itself (`selfWait`) that the clock ends is a new cause: it goes on under the thing's own `chain`, not
+    what was left of the chain that waited, so a thing that ticks itself (the tide) ticks for ever, each period
+    with a whole budget, and missed periods are one wake at the clock it wakes to (docs/review/astra-2026-10-12
+    world 5). It waited real clock time (a wait's `patience` is never 0), and a thing holds one such wait at a
+    time (`awaitPlan`), so it cannot multiply. -/
 def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (World × Json) := do
   let hash ← sus.getObjValAs? String "hash"
   let identity ← sus.getObjVal? "identity"
@@ -3922,6 +3939,9 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
   let absent := strings (act.getObjVal? "absent").toOption
   let ticks ← natField act "ticks"
   let ledger ← ledgerOf (← sus.getObjVal? "ledger")
+  let ledger := match kind with
+    | .timedOut => if selfWait object sus then ((w.objects[object]?).map (·.chain)).getD ledger else ledger
+    | _ => ledger
   let delivery ← match sus.getObjVal? "delivery" with
     | .ok d => pure (some (← d.getObjValAs? String "id", ← d.getObjVal? "from"))
     | .error _ => pure none
@@ -4493,12 +4513,15 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
 /-- The system text an interpretation sends: the Policy's own pure `prompt(state, offers,
     utterance)` when its package defines one and it renders text under the turn tick budget,
     else none (the caller then sends the `system` field). The method table does not list
-    `prompt` (its offers are not a form), so the definition is compiled by name and cached. -/
-def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) (asked : Data := .record []) : Option String × World :=
-  match compileDef w o "prompt" with
+    `prompt` (its offers are not a form), so the definition is compiled by name and cached. `name` is `prompt`
+    (the system text: the policy's own and the host's contract) or `userTurn` (what residents wrote, quoted:
+    the card, its forms, wants, pages and the misfit spell, then the speaker's words). -/
+def policyPrompt (w : World) (o : Object) (offers : Data) (utterance : String) (asked : Data := .record [])
+    (name : String := "prompt") : Option String × World :=
+  match compileDef w o name with
   | .error _ => (none, w)
   | .ok (c, w') =>
-    let w' := { w' with compiled := boundedInsert w'.compiled Limits.maxCompiledPackets (defKey o "prompt") c }
+    let w' := { w' with compiled := boundedInsert w'.compiled Limits.maxCompiledPackets (defKey o name) c }
     match c.entry with
     | none => (none, w')
     | some entry =>
@@ -4564,13 +4587,17 @@ def interpretationsReply (w : World) : World × Json := Id.run do
     let asked := Data.record [("utterance", .label utterance), ("offers", offers), ("card", .label card),
       ("misfit", .label misfit), ("wants", listData wants), ("pages", listData pages)]
     let (shown, w') := policyJson w policy offers utterance asked
+    -- The user turn the policy quotes residents' writing in (`Policy.userTurn`); a policy with none sends the words alone.
+    let (userTurn, w') := match w.objects[policy]? with
+      | some p => policyPrompt w' p offers utterance asked "userTurn"
+      | none => (none, w')
     -- A model the Plan named takes precedence over the policy's own.
     let shown := if model.isEmpty then shown else shown.setObjVal! "model" (toJson model)
     w := w'
     -- How many transient failures the host journaled, and the clock before which the next is not asked.
     let (tried, next) := (w.attempts[id]?).getD (0, 0)
     pending := pending.push (Json.mkObj [("id", toJson id), ("object", toJson object), ("policy", shown),
-      ("utterance", toJson utterance), ("offers", plainJson offers), ("card", toJson card),
+      ("utterance", toJson utterance), ("user", toJson (userTurn.getD utterance)), ("offers", plainJson offers), ("card", toJson card),
       ("misfit", toJson misfit), ("wants", plainJson (listData wants)), ("reach", toJson reach), ("attempts", toJson tried),
       ("next", if next > w.clock then toJson next else Json.null)])
   return (w, Json.mkObj [("status", toJson "interpretations"), ("pending", Json.arr pending)])

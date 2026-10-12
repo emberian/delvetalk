@@ -89,7 +89,9 @@ class Kinds(Chain):
                     self.assertIn("lit", [w["name"] for w in self.host.send(op="world-wants", principal=KIM, object=thing)["rows"]])
                 wrote = self.turn(thing, "write", record(text=label("a stranger's line")), principal=GLM)
                 self.assertEqual(wrote["status"], "admitted", wrote)
-                self.assertTrue(field(self.state("kind/" + name), "law")["value"].startswith(genesis.RECORD_LAW), self.state("kind/" + name))
+                # The owner's law is the thing's own, never the kind's (docs/review/astra-2026-10-12 world 3).
+                self.assertEqual(field(self.state("kind/" + name), "law")["value"], law)
+                self.assertTrue(self.host.send(op="world-object", principal=KIM, object=thing)["record"]["law"].startswith(genesis.RECORD_LAW))
 
     def test_a_kinds_law_that_does_not_read_is_refused_by_name_and_makes_no_kind(self):
         """Playtest 2's D4 (69068, 69097): `law: writeOnce(claim)` made kind/prereg, whose every make was then refused
@@ -179,7 +181,8 @@ class Kinds(Chain):
         room = self.state("room/1")
         self.assertEqual((field(room, "head")["value"], field(room, "owner")["value"]), ("The Reading Room", KIM))
         laws = self.host.send(op="world-inspect", principal=KIM, object="room/1")["laws"]
-        self.assertEqual([l["name"] for l in laws], ["kind"])  # kind/room's law, cited (`under "kind/room"`)
+        # The room's owner's law, its own, then kind/room's, cited (`under "kind/room"`).
+        self.assertEqual([l["name"] for l in laws], ["owner", "kept", "methods", "pending", "door", "kind"])
         self.assertEqual(self.turn("room/1", "enter", principal=GLM)["result"]["label"], "entered")
         self.assertIn("The Reading Room (1 here), you are here.\n", self.card("room/1", GLM))
         self.assertIn("The Reading Room (1 here). Enter: delvetalk room/1 enter.\n", self.card("room/1"))

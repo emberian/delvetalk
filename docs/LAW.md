@@ -240,7 +240,11 @@ judges the composed law. Cost: one root per citation; the parse is already
 cached on the cited object. Deletes: Kind's `lawOf` templating and the
 `{maker}` hole (an instance says `under "kind/bell"` and
 `request.subject == new.maker`, a fixed field already); CATALOGUE §2's
-`adopt law / from:` becomes one line.
+`adopt law / from:` becomes one line. As built (2026-10-12, the astra world
+review 2 and 3): the citation is conjoined with the citing thing's own text,
+which holds its owner's law, and an `under` atom holds of an amendment by the
+citing thing's owner (`Law.ownerAmends`), so a cited law adds to a thing and
+binds it while it follows, but never takes it from its owner.
 
 **H. `request.object`** (free rider: the written object's id). Lets the text
 say `request.subject == request.object`, which is Avatar's `mine()`; with

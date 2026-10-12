@@ -27,9 +27,9 @@ def cache_path(st, request_id):
 
 
 def request(item):
-    """The model request: the host's policy text as the system, the utterance as the user turn."""
+    """The model request: the host's policy text as the system; the user turn as the host composed it (residents' writing quoted, then the utterance)."""
     policy = item['policy']
-    return {'model': policy.get('model'), 'system': policy.get('system', ''), 'user': item['utterance']}
+    return {'model': policy.get('model'), 'system': policy.get('system', ''), 'user': item.get('user', item['utterance'])}
 
 
 def run(st, host, ask=model.ask):

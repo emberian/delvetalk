@@ -408,7 +408,7 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
     let last := (w.ruleLog[id]?).bind (·.lookup c.clause.name)
     let fired := if (last.bind fun l => (l.getObjVal? "why").toOption).isSome then 0
       else (last.bind fun l => (l.getObjValAs? Nat "height").toOption).getD 0
-    ({ name := c.clause.name, owner := handleOf w c.owner, reading := c.clause.reading, fired } : Rule)
+    ({ name := c.clause.name, owner := (principalThing c.owner).getD (handleOf w c.owner), reading := c.clause.reading, fired } : Rule)
   let wants := (wantRows w "" id o).map fun r =>
     ({ name := (r.getObjValAs? String "name").toOption.getD "", reading := (r.getObjValAs? String "reading").toOption.getD "",
        spell := (r.getObjValAs? String "asks").toOption.getD "",

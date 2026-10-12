@@ -84,7 +84,7 @@ by words again: an asked-first spell is not run until sent; one that ran stays, 
 
 ## 5. Cost and bounds
 
-One reading is one call: the system text with the card's table, a few hundred tokens of output at most, thinking off
+One reading is one call: the system text and the user turn with the card's table, a few hundred tokens of output at most, thinking off
 (`model_thinking` false by default; with it on, adaptive thinking spent 0 to 337 output tokens on one-line answers).
 At Haiku 5.5's $0.10 and $0.50 a million, a reading is about a ten-thousandth of a dollar. Each principal has 48 an hour
 (`interpretQuota`, counted when the reading starts; opener and clock exempt); a `none` counts, since the bound is on

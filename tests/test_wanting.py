@@ -145,5 +145,38 @@ class Standing(Things):
         self.assertEqual(closed["receipt"]["outcome"]["clause"], "patience", closed)
 
 
+class Journaled(Things):
+    """A want's flips are journaled wherever they come from: the clock's move, a write of what it cites."""
+
+    def test_a_want_the_clock_alone_opens_is_in_the_index_and_the_chronicle(self):
+        self.want("bell", "late", "request.clock >= 1441")
+        self.assertEqual(self.wanting(), ([], False))
+        advanced = self.host.send(op="world-advance", height=1500)
+        self.assertEqual(advanced["status"], "advanced", advanced)
+        at = advanced["receipt"]["height"]
+        self.assertEqual(advanced["receipt"]["wanted"], [{"object": "bell", "want": "late"}])
+        self.assertEqual(self.wanting(), ([("bell", "late", at)], False))
+        self.assertEqual([x["since"] for x in self.host.send(op="world-wants", principal="glm", object="bell")["rows"]], [at])
+        day = self.host.send(op="world-chronicle", principal="glm", day=0)["lines"]
+        self.assertIn("bell came to want late at entry %d" % at, day)
+        # Replay derives the flip again; so does a snapshot.
+        self.reopen()
+        self.assertEqual(self.wanting(), ([("bell", "late", at)], False))
+        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+        self.reopen()
+        self.assertEqual(self.wanting(), ([("bell", "late", at)], False))
+
+    def test_a_write_of_what_a_want_cites_journals_the_flip_of_the_thing_that_wants(self):
+        self.want("bell", "cited", '"bell2".rains >= 1')
+        self.assertEqual(self.wanting(), ([], False))
+        written = self.say("bell2", "delvetalk bell2 rain\ntext: one", who="kimi")
+        self.assertEqual(written["wanted"], [{"object": "bell", "want": "cited"}])
+        self.assertEqual(self.wanting(), ([("bell", "cited", written["height"])], False))
+        day = self.host.send(op="world-chronicle", principal="glm", day=0)["lines"]
+        self.assertIn("bell came to want cited at entry %d" % written["height"], day)
+        self.reopen()
+        self.assertEqual(self.wanting(), ([("bell", "cited", written["height"])], False))
+
+
 if __name__ == "__main__":
     unittest.main()

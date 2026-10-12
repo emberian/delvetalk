@@ -36,7 +36,7 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
 TALLY = """delvetalk kinds make / name: tally / of: record / head: {maker}'s tally, ringing at {ringAt}
 form: <<END
 seed: text 1..80
-ringAt: natural 1..768
+ringAt: natural 1..128
 END
 law: <<END
 rule chosen "rings at the number its maker chose": count(new.lines where verb == "rain") == new.ringAt and count(old.lines where verb == "rain") + 1 == new.ringAt then delvetalk {request.object} ring
@@ -161,9 +161,9 @@ class Authoring(unittest.TestCase):
         for i in range(6):
             self.assertEqual(outcome(self.admitted(YUE if i % 2 else KES, "rainbell/1", "delvetalk rainbell/1 rain / text: drop %d" % i)).get("fired"), None)
         seventh = self.admitted(YUE, "rainbell/1", "delvetalk rainbell/1 rain / text: the seventh")
-        self.assertIn("rule seven of ember.delve.town fired: delvetalk rainbell/1 ring", seventh["revealed"][0])
+        self.assertIn("rule seven of rainbell/1 fired: delvetalk rainbell/1 ring", seventh["revealed"][0])
         rules = told(self.say(KES, "rainbell/1", "delvetalk rainbell/1 rules"))
-        self.assertIn("» seven (ember.delve.town, carried from kind/bell)", rules)
+        self.assertIn("» seven (rainbell/1, carried from kind/bell)", rules)
         # Three deep, with a body of its own over the bell's: both answer.
         chime = ("layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\n"
                  "type State = Super.State\nform chime:\ndef chime(state: State, context: Abi.Context) -> Activity<Nat>:\n"
@@ -190,9 +190,10 @@ class Authoring(unittest.TestCase):
         r = self.say(KES, "tally/1", "delvetalk tally/1 ring")
         self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "rung"), r)
         third = self.admitted(YUE, "tally/1", "delvetalk tally/1 rain / text: the third")
-        self.assertIn("rule chosen of yue.delve.town fired: delvetalk tally/1 ring", third["revealed"][0], third)
+        self.assertIn("rule chosen of tally/1 fired: delvetalk tally/1 ring", third["revealed"][0], third)
         [rang] = [d for d in third["delivered"] if d["receipt"]["identity"]["intent"].startswith("rule:")]  # beside it, the maker hears the rain
-        self.assertEqual((rang["receipt"]["identity"]["intent"], rang["revealed"]), ("rule:tally/1:chosen@kind/tally:%d" % third["receipt"]["height"], ["tally/1's marks: 1"]), rang)
+        # The ring is the tally's own act (`@tally/1`), shown to YUE as a public receipt.
+        self.assertEqual((rang["receipt"]["identity"], rang["status"]), ({"principal": "@tally/1", "intent": "rule:tally/1:chosen@kind/tally:%d" % third["receipt"]["height"]}, "admitted"), rang)
 
     # §5 step 4: the workshop writes the header; §1's counter is four lines, and a package no spell reaches is refused.
     def test_a_four_line_counter_drafted_over_a_kind_is_adopted_and_used_by_another(self):
@@ -224,7 +225,7 @@ class Authoring(unittest.TestCase):
         self.assertIn("delvetalk rainy/1 rain\ntext:", usage)
         self.admitted(KES, "rainy/1", "delvetalk rainy/1 rain / text: one")
         second = self.admitted(YUE, "rainy/1", "delvetalk rainy/1 rain / text: two")
-        self.assertIn("rule chosen of yue.delve.town fired: delvetalk rainy/1 ring", second["revealed"][0], second)
+        self.assertIn("rule chosen of rainy/1 fired: delvetalk rainy/1 ring", second["revealed"][0], second)
 
 
     # D-imports: every library import a module lacks, named in one refusal (§1 took a round each for Plan and World).
@@ -295,10 +296,13 @@ class Authoring(unittest.TestCase):
         self.admitted(YUE, "porch/gemstone", "delvetalk porch/gemstone acquire")
         self.admitted(YUE, "kinds", "delvetalk kinds make / name: stall / of: record / head: {maker}'s stall: {wares} for a promise\n"
                       "form: <<END\nwares: text 1..80\nthing: text 1..128\nEND\nlaw: <<END\n"
-                      'law promised "a promise is the buyer\'s own line, once": count(new.lines where author == request.subject) <= 1\n'
-                      'rule trade "a promise buys the thing": request.verb == "promise" then delvetalk {new.thing} offer / to: {request.subject} / until: {request.clock + 1440}\nEND')
+                      'law promised "a promise is the buyer\'s own line, once": count(new.lines where author == request.subject) <= 1\nEND')
         self.admitted(YUE, "kind/stall", "delvetalk kind/stall make / wares: a gemstone that sometimes sparkles / thing: porch/gemstone")
         self.admitted(YUE, "stall/1", "delvetalk stall/1 grow / name: promise / reading: what you will bring, in your words / takes: text")
+        # The trade moves what its keeper holds, so it is the keeper's rule, placed on the stall: a rule the stall
+        # carries from its kind acts as the stall, which holds nothing (docs/review/astra-2026-10-12 world 1).
+        self.admitted(YUE, "stall/1", 'delvetalk stall/1 rule / name: trade / reading: a promise buys the thing / when: request.verb == "promise" / '
+                      'then: delvetalk {new.thing} offer / to: {request.subject} / until: {request.clock + 1440}')
         promised = self.admitted(KES, "stall/1", "delvetalk stall/1 promise / text: three rains on your bell by Sunday")
         self.assertIn("rule trade of yue.delve.town fired: delvetalk porch/gemstone offer", promised["revealed"][0], promised)
         r = self.say(KES, "stall/1", "delvetalk stall/1 promise / text: and a fourth")

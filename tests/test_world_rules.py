@@ -37,19 +37,20 @@ class Placing(Arc):
         self.assertIn("two rains", [text for _, text in self.inbox(KIM)])
 
     def test_a_kind_carries_its_rules_and_wants_to_every_instance(self):
+        # The kind's rule acts as each chime (`@<chime>`), so it names whom it tells: `me` would be the chime.
         law = ('law kept "a line is only added": insertOnly(lines)\n'
-               'rule chimed "tells its kind\'s maker at the second line": count(new.lines) >= 2 and count(old.lines) <= 1 then delvetalk me note / text: chimed {request.object}\n'
-               'want heard "a chime nobody has written in": count(new.lines) == 0 asks delvetalk {request.object} write')
+               'rule chimed "tells its kind\'s maker at the second line": count(new.lines) >= 2 and count(old.lines) <= 1 then delvetalk %s note / text: chimed {request.object}\n'
+               'want heard "a chime nobody has written in": count(new.lines) == 0 asks delvetalk {request.object} write') % KIM
         made = self.admitted(self.say(KIM, "kinds", "delvetalk kinds make\nname: chime\nof: record\nlaw: <<END\n%s\nEND" % law))
         self.assertIn("kind/chime", self.objects(), made)
         chime = self.admitted(self.say(GLM, "kind/chime", "delvetalk kind/chime make"))["receipt"]["outcome"]["creates"][0]["object"]
         wanted = self.rows(chime, "world-wants")["heard"]
-        self.assertEqual((wanted["owner"], wanted["asks"]), (KIM, "delvetalk %s write" % chime))
+        self.assertEqual((wanted["owner"], wanted["asks"]), ("@" + chime, "delvetalk %s write" % chime))
         for i in (1, 2):
             self.admitted(self.say(GLM, chime, "delvetalk %s write\ntext: line %d" % (chime, i)))
         self.assertNotIn("heard", self.rows(chime, "world-wants"))
-        self.assertEqual(self.rows(chime)["chimed"]["owner"], KIM)
-        self.assertIn("chimed %s" % chime, [text for _, text in self.inbox(KIM)])
+        self.assertEqual(self.rows(chime)["chimed"]["owner"], "@" + chime)
+        self.assertIn(("@" + chime, "chimed %s" % chime), self.inbox(KIM))
 
     def test_a_kind_text_line_in_no_modality_is_refused_before_anything_is_made(self):
         refused = self.say(KIM, "kinds", "delvetalk kinds make\nname: chime\nof: record\nlaw: when it rings, tell me")

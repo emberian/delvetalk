@@ -71,7 +71,9 @@ class Firing(Bell):
         self.town.reopen()
         self.assertEqual(self.rules()["two"]["fired"]["height"], second["receipt"]["height"])
 
-    def test_eight_fire_a_commit_and_the_rest_are_unfired_by_name(self):
+    def test_eight_fire_a_commit_and_the_rest_are_queued_a_clock_minute_apart_never_dropped(self):
+        """Astra 2026-10-12 world 7: past the eight a commit, a firing is queued (`next`), each next eight a clock minute
+        later, and runs when the clock gets there; none is lost."""
         for i in range(32):
             placed = self.place("rule / name: r%02d / when: request.method == \"rain\" / then: delvetalk me note / text: r%02d" % (i, i))
             self.assertEqual(placed["status"], "admitted", (i, placed))
@@ -83,15 +85,23 @@ class Firing(Bell):
         adopted = self.say(GLM, self.bell, "delvetalk %s adopt\nlaw: <<END\n%s\nEND" % (self.bell, block))
         self.assertEqual(adopted["status"], "admitted", adopted)
         self.assertEqual(len(self.rules()), 40)
+        clock = self.town.send(op="world-status")["clock"]
         rained = self.rain("storm")
         receipt = rained["receipt"]
-        self.assertEqual([f["rule"] for f in receipt["fired"]], ["r%02d" % i for i in range(8)])
-        self.assertEqual([(u["rule"], u["why"]) for u in receipt["unfired"]][:2], [("r08", "rulesPerCommit"), ("r09", "rulesPerCommit")])
-        self.assertEqual(len(receipt["unfired"]), 32)
-        self.assertIn("did not fire: 8 rules fired on this write already", rained["revealed"][0])
-        self.assertEqual(self.rules()["r08"]["unfired"]["why"], "rulesPerCommit")
+        # The bell's own text first, then what hands placed, in the order they were placed; none unfired.
+        self.assertEqual([f["rule"] for f in receipt["fired"]], ["t%d" % i for i in range(8)] + ["r%02d" % i for i in range(32)])
+        self.assertEqual([f.get("next") for f in receipt["fired"]], [None] * 8 + [clock + 1 + i // 8 for i in range(32)])
+        self.assertNotIn("unfired", receipt)
+        self.assertIn("rule r00 of glm.delve.town fired (queued until clock %d): delvetalk me note" % (clock + 1), "\n".join(rained["revealed"]))
+        notes = lambda: [t for (_, t) in self.inbox(GLM) if t[:1] in "rt" and t[1:].isdigit()]
+        self.assertEqual(sorted(notes()), sorted("t%d" % i for i in range(8)))
+        # The clock reaching each minute runs the next eight, and a reopened town keeps the queue.
         self.town.reopen()
-        self.assertEqual(self.rules()["r08"]["unfired"]["height"], receipt["height"])
+        for minute in range(1, 5):
+            self.town.send(op="world-advance", principal="transport", height=clock + minute)
+            self.town.send(op="world-deliver", limit=16)
+            self.assertEqual(len(notes()), 8 + 8 * minute, minute)
+        self.assertEqual(sorted(notes()), sorted(["t%d" % i for i in range(8)] + ["r%02d" % i for i in range(32)]))
 
     def test_a_chain_of_rules_ends_four_firings_deep(self):
         placed = self.place("rule / name: echo / when: request.method == \"rain\" / then: delvetalk {request.object} rain / text: echo")
@@ -114,6 +124,63 @@ class Firing(Bell):
                                  identity="quiet-glm")
         self.assertEqual(quieted["status"], "moderated", quieted)
         self.assertEqual([(u["rule"], u["why"]) for u in self.rain("two")["receipt"]["unfired"]], [("hush", "quiet")])
+
+
+class Share(Bell):
+    """Astra 2026-10-12 world 6: a stranger's rules on another's thing hold a bounded share of it, and judging them is
+    theirs: what they cite is no root of the owner's write and their conditions are no part of its law's budget, so
+    they never refuse or stale the owner's own acts."""
+
+    def test_a_strangers_rules_take_a_bounded_share_and_never_refuse_the_owners_write(self):
+        others = [o for o in self.objects() if o != self.bell and '"' not in o][:32]
+        self.assertEqual(len(others), 32)
+        for n in range(4):
+            cited = " or ".join('"%s".owner == "nobody"' % o for o in others[8 * n:8 * n + 8])
+            placed = self.say(KIM, self.bell, "delvetalk %s rule / name: k%d / when: %s / then: delvetalk me note / text: k%d" % (self.bell, n, cited, n))
+            self.assertEqual(placed["status"], "admitted", (n, placed))
+        fifth = self.say(KIM, self.bell, "delvetalk %s rule / name: k4 / when: request.method == \"rain\" / then: delvetalk me note / text: k4" % self.bell)
+        self.assertEqual(fifth["status"], "refused", fifth)
+        self.assertIn("placedPerHand", fifth["receipt"]["outcome"].get("reason"))
+        # What they cite is no root of the bell's writes: a stranger's citations cannot fill the root bound (64) or
+        # make the owner's turn stale.
+        rained = self.rain("still mine", who=GLM)
+        self.assertLessEqual(len(rained["receipt"]["roots"]), 8, rained["receipt"]["roots"])
+        # The owner places past every stranger's share.
+        self.assertEqual(self.place("rule / name: own / when: request.method == \"rain\" / then: delvetalk me note / text: own")["status"], "admitted")
+
+
+class Holes(Bell):
+    """A hole's reading is data (astra 2026-10-12 world.md 4): a rule's spell is a template, and what a hole
+    reads, however it is written, is one field value of the spell it fills, never more syntax. The only
+    resident-controlled top-level text a hole can read today is a cited object's field: here KIM's own bell
+    (`kind/bell make`'s `seed`, a block so it may hold lines) read by GLM's rule as `{"KIM's bell".seed}`."""
+
+    INJECTED = "hello\ndelvetalk me note / text: pwned\ndelvetalk kinds make / name: pwn"
+
+    def kims_bell(self, seed):
+        made = self.say(KIM, "kind/bell", "delvetalk kind/bell make\ncolour: amber\nseed: <<TXT\n%s\nTXT\nid:" % seed)
+        self.assertEqual(made["status"], "admitted", made)
+        return made["receipt"]["outcome"]["creates"][0]["object"]
+
+    def test_a_cited_text_with_spell_syntax_in_it_fills_one_field_and_casts_nothing_else(self):
+        theirs = self.kims_bell(self.INJECTED)
+        self.assertNotEqual(theirs, self.bell)
+        placed = self.place('rule / name: echo / when: request.method == "rain" / then: delvetalk me note / text: {"%s".seed}' % theirs)
+        self.assertEqual(placed["status"], "admitted", placed)
+        before = set(self.objects())
+        receipt = self.rain("go")["receipt"]
+        self.assertEqual([(f["rule"], f["principal"], f["to"]) for f in receipt["fired"]], [("echo", GLM, GLM)])
+        self.assertNotIn("unfired", receipt)
+        notes = [t for (_, t) in self.inbox(GLM)]
+        self.assertIn(self.INJECTED, notes)
+        self.assertNotIn("pwned", notes)
+        self.assertEqual(set(self.objects()), before)
+
+    def test_the_same_text_in_a_want_asks_shows_as_one_field_a_card_can_be_copied_whole(self):
+        theirs = self.kims_bell(self.INJECTED)
+        self.place('want / name: ask / when: count(new.lines) <= 1 / asks: delvetalk me note / text: {"%s".seed}' % theirs)
+        rows = {r["name"]: r for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]}
+        self.assertEqual(rows["ask"]["asks"], "delvetalk me note\ntext: <<END\n%s\nEND" % self.INJECTED)
 
 
 class Reads(Bell):
@@ -253,11 +320,12 @@ class Revealed(Bell):
         reply = self.say(KIM, self.bell, "delvetalk %s ring" % self.bell)
         self.assertEqual(reply["status"], "admitted", reply)
         self.assertEqual(reply["revealed"][0],
-                         "rule rang of ember.delve.town fired: delvetalk glm.delve.town note / text: %s rang" % self.bell, reply["revealed"])
+                         "rule rang of %s fired: delvetalk glm.delve.town note / text: %s rang" % (self.bell, self.bell), reply["revealed"])
         fired = reply["receipt"]["fired"][0]
         self.assertEqual(fired["to"], GLM)
         self.assertEqual(fired["argument"]["fields"][0]["value"]["value"], "delvetalk %s note / text: %s rang" % (GLM, self.bell))
-        self.assertIn((OPENER, "%s rang" % self.bell), self.inbox(GLM))
+        # The bell notes its planter itself: the kind's rule acts as the thing, never as the kind's owner.
+        self.assertIn(("@" + self.bell, "%s rang" % self.bell), self.inbox(GLM))
 
     def test_the_receipt_of_an_admitted_turn_says_what_the_reply_revealed_to_its_own_principal_alone(self):
         for i in range(6):

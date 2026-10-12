@@ -709,11 +709,12 @@ class Measure(unittest.TestCase):
 
     def test_wants_answered_by_residents_prompted_or_not_and_wants_still_held(self):
         """docs/GENESIS.md "The measure": kestrel's kind closes the kinds' want "no kind made here yet but the town's own"
-        within ten minutes after the T0 invitation, which names kinds, so it is prompted; the opener's own doors close
-        wants that are no resident's answer; the anthology's pending line still waits for its keeper."""
+        within ten minutes after the T0 invitation, which names kinds, so it is prompted; yue's door on sealed/1 closes
+        the record's own `door` want, which a kind's law line no longer takes from its things, unprompted; the opener's
+        own doors close wants that are no resident's answer; the anthology's pending line still waits for its keeper."""
         w, name = self.m['wants'], lambda p: self.m['names'].get(p, p)
         self.assertEqual([(r['object'], r['want'], name(r['by'])) for r in w['prompted']], [('kinds', 'made', 'kestrel')])
-        self.assertEqual(w['unprompted'], [])
+        self.assertEqual([(r['object'], r['want'], name(r['by'])) for r in w['unprompted']], [('sealed/1', 'door', 'yue')])
         self.assertIn(('anthology', 'pending'), {(r['object'], r['want']) for r in w['ignored']})
 
     def test_a_want_closed_within_ten_minutes_after_a_hand_post_naming_its_thing_is_prompted(self):
