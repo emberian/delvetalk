@@ -644,8 +644,9 @@ def formKind (member : Json) : Option Data :=
     declares public (and `receive`): helpers and the other conventional names (`render`, `set`) have none. -/
 def methodForms (id : String) (methods : Json) (declared : List (String × List (String × Data)) := []) : List Data :=
   ((methods.getArr?.toOption).getD #[]).toList.filterMap fun m => do
-    guard ((m.getObjValAs? Bool "context").toOption == some true && isActionRow m)
     let name ← (m.getObjValAs? String "name").toOption
+    -- `act` offered to nobody (`~act`) still has its form: the grown verbs' (`withVerbs`), never a spell itself.
+    guard ((m.getObjValAs? Bool "context").toOption == some true && (isActionRow m || (name == actMethod && !isHelperRow m)))
     let fields ← rowFields ((m.getObjVal? "input").toOption.getD Json.null)
     -- A field the package's form for this action declares takes that kind; any other, its type's.
     let given := (declared.lookup name).getD []
@@ -715,8 +716,8 @@ def grownForm (id : String) (act : Option Data) (v : Verb) : Data :=
     | _ => []
   .record [("card", .label id), ("action", .label v.name), ("fields", listData text)]
 
-/-- A card's declared forms with its grown verbs after them; `act` itself is no spell: its spells are
-    the verbs. -/
+/-- A card's declared forms with its grown verbs after them; `act` itself is no spell, offered or not (`~act`): its
+    spells are the verbs. -/
 def withVerbs (id : String) (o : Object) (declared : List Data) : List Data :=
   let act := declared.find? (formAction · == actMethod)
   declared.filter (formAction · != actMethod) ++ (if act.isSome then o.verbs.map (grownForm id act) else [])
@@ -1134,10 +1135,12 @@ def readerActions (w : World) (id : String) (o : Object) (reader : String) : Opt
 def offeredTo (w : World) (id : String) (o : Object) (reader : String) : String → Bool :=
   let listed := readerActions w id o reader
   fun action =>
-    -- A grown verb is offered as its `act` is, judged with the verb as `request.verb`.
-    let method := if o.verbs.any (·.name == action) then actMethod else action
+    -- A grown verb is offered as its `act` is, judged with the verb as `request.verb`, by the law alone: a card's
+    -- own `actions` names its declared methods, never the verbs hands grew on it.
+    let grown := o.verbs.any (·.name == action)
+    let method := if grown then actMethod else action
     action == "receive" ||
-      (methodAdmits w o reader method id action == Json.bool true && (listed.map (·.contains method)).getD true)
+      (methodAdmits w o reader method id action == Json.bool true && (grown || (listed.map (·.contains method)).getD true))
 
 /-- The forms a card's usage shows `principal` (`offeredTo`). -/
 def usageForms (w : World) (id : String) (o : Object) (principal : String) (forms : List Spell.Form) : List Spell.Form :=

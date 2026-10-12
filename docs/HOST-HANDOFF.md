@@ -1938,6 +1938,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (Workshop's `make`; `test_interpret_object` ×2, `test_verbs`, `test_spell_turns`, `test_reach`, `test_reflection`,
    `test_sum_words`). Tests: `test_policy` (the misfit prompt; no `held` listed).
 
+169. **A grown verb is offered by the law alone (host27; found capturing AGENTS-EXAMPLES on the minimal genesis).** A
+   card whose `actions` names what a reader sees (the town's bells: `rain tend ring lines`) hid every verb a hand grew
+   on it, since `offeredTo` asked `actions` for `act`: the bell's `verbs` listed `hum`, but `delvetalk bell/1 hum` was a
+   misfit and hob was not offered it; and the bodies offer `act` to nobody (`~act`), so `methodForms` gave it no form
+   and `withVerbs` made no grown verb a form at all. `offeredTo` now judges a grown verb by the law (`methodAdmits` of
+   `act` with the verb) alone, a card's `actions` speaking for its declared methods; `methodForms` keeps an unoffered
+   `act`'s form, whose `text` field the verbs take (`act` is still no spell). Test: `test_verbs.Verbs` (a card with
+   `~act` listing only `rain`: the grown `water` offered, a stranger's spell admitted).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
