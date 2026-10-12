@@ -95,6 +95,9 @@ def indexJson (w : World) : Json :=
     ("changes", Json.arr (w.changes.map fun c => Json.arr #[toJson c.height, toJson c.object, toJson c.version, toJson c.principal])),
     ("ruleLog", mapJson w.ruleLog fun xs => Json.mkObj xs),
     ("wanting", mapJson w.wanting fun xs => Json.mkObj (xs.map fun (n, h) => (n, toJson h))),
+    ("wantCites", mapJson w.wantCites fun xs => toJson xs),
+    ("wantReaders", mapJson w.wantReaders fun xs => toJson xs),
+    ("wantClock", mapJson w.wantClock toJson),
     ("refusedBy", mapJson w.refusedBy toJson),
     ("days", Json.arr (w.days.map fun (d, h) => pairJson d h)),
     ("pending", Json.arr w.pending),
@@ -141,6 +144,9 @@ def installIndex (w : World) (j : Json) : Except String World := do
     changes := ← arrOf (← field "changes") change
     ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
     wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
+    wantCites := ← mapOf (← field "wantCites") fun x => (Lean.fromJson? x : Except String (List String))
+    wantReaders := ← mapOf (← field "wantReaders") fun x => (Lean.fromJson? x : Except String (List String))
+    wantClock := ← mapOf (← field "wantClock") (·.getBool?)
     refusedBy := ← mapOf (← field "refusedBy") (·.getNat?)
     days := ← arrOf (← field "days") pairOf
     pending := ← (← field "pending").getArr?
@@ -466,6 +472,8 @@ def installGenesis (entries : Entries) (entry : Json) : Except String World := d
   let touches := w.objects.fold (fun t id o => t.insert id #[({ version := o.version, height := first + 1 } : Touch)]) {}
   let w := { w with pending := arr "pending", suspended := arr "suspended", handles, forkedFrom, cachedPackets,
                     entries := entries.upTo (first + 1), height := first, carriedIds := carriedIdentities entry, touches }
+  -- The want index is read off the installed objects (`Ops.reindexWants`), a carry's or a fork's alike.
+  let w := reindexWants w (w.objects.toList.map (·.1))
   let identity ← entry.getObjVal? "identity"
   return record w entry (identityKey (← identity.getObjValAs? String "principal") (← identity.getObjValAs? String "intent")) []
 

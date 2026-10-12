@@ -54,7 +54,9 @@ def cardWanting : Nat := 8
     (a carried genesis continues the heights of the world it was carried from, `Snapshot.firstHeight`); 13:
     lane/authority (a thing's owner's amendment no cited law refuses; a rule a thing inherits acts as `@<id>`;
     carried clauses own, inherited, placed; a firing past `rulesPerCommit` is queued, never dropped; rules and
-    wants judged after the commit within `clauseTicks`, no roots of the write). -/
+    wants judged after the commit within `clauseTicks`, no roots of the write; a want is journaled when it
+    flips by the clock, `advanced` entries carry `wanted`/`unwanted`, or by a write of an object it cites,
+    re-judged for the first `wantReviewed` readers of each written object, `Ops.wantReview`). -/
 def replayEdition : Nat := 13
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
@@ -125,6 +127,9 @@ def placedByOthers : Nat := 24
 /-- What judging one rule's or want's condition may read (`Law.work`), after the commit: past it the rule is
     `unfired budget`, the want does not pose; nothing of it is charged to the write (world 6). -/
 def clauseTicks : Nat := Delvetalk.Bounds.lawTicks / 8
+/-- The things whose wants cite the objects an entry writes that one entry re-judges and re-indexes
+    (`Ops.wantReview`), by id: the rest are judged when next they or an object they cite is written. -/
+def wantReviewed : Nat := 64
 /-- Verbs grown on one object (docs/FOUNDATION.md §10: sixteen a thing; `ungrow` makes room). -/
 def verbsPerObject : Nat := 16
 /-- A grown verb's reading, in characters: what the verb does, as the grower says it. -/
@@ -638,6 +643,15 @@ structure World where
   /-- Per object, the wants that held of it after the newest entry that wrote it, each with the height
       of the entry that made it true (a want's `since`). Derived by `record` from `wanted`/`unwanted`. -/
   wanting : Std.HashMap String (List (String × Nat)) := {}
+  /-- Per thing, the objects its carried wants read (`"O".F`, `"O" wants N`, and what its law follows by
+      `under`), closed (`Ops.wantReads`). Derived by `record` for the things an entry writes. -/
+  wantCites : Std.HashMap String (List String) := {}
+  /-- The reverse of `wantCites`: per object, the things whose wants read it, by id. An entry that writes
+      the object re-judges the first `Limits.wantReviewed` of them (`Ops.wantReview`). -/
+  wantReaders : Std.HashMap String (List String) := {}
+  /-- The things with a carried want that reads `request.clock`: re-judged by every entry that moves the
+      clock (`Ops.clockFlips`). -/
+  wantClock : Std.HashMap String Bool := {}
   /-- Per thing, the writes its law has refused (`request.refusedBy`): the entries whose outcome is
       `lawRefused` naming it (`Ops.lawRefusedOf`). Derived by `record`. -/
   refusedBy : Std.HashMap String Nat := {}

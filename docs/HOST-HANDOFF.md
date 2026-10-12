@@ -1895,8 +1895,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    still holds of its thing as it stands (`posing`), for things the reader may view (the arm's reader is the turn's
    subject), newest first by `since`, then thing and name. A page holds whole heights below `after` (0: from the
    newest) within `limit` rows (0 or past `listPage` 64 is 64); its first height is whole whatever its size, so
-   `after` set to a page's last `since` reads on without a gap. A want true by the clock alone, which no entry
-   made true, is not in the index (the thing's `wants` reads it). `asks` is filled at the read (`wantAsks`, shared
+   `after` set to a page's last `since` reads on without a gap. A want true by the clock alone is in the index, `since` the
+   `advanced` entry that moved the clock (5.210). `asks` is filled at the read (`wantAsks`, shared
    with `world-wants`; `wantFacts` is the one set of facts `posing` and both reads judge and fill by). Derived, no
    root. Tests: `tests/test_wanting.py` (the index by whole heights for whom may view, a closed want leaving,
    unchanged by a reopen and a snapshot; the Bend arm, on the pair).
@@ -2446,6 +2446,22 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    its own clauses. On the way: Record's `migrate` read the edition-12 shape with `tendedAt`, but the live town has
    been the shape after 5.200 since its v12 deploy, and lane/spween's `chose` made seven records "left at the carry";
    `State12` is now that shape, `chose` "".
+210. **A want's flip is journaled wherever it comes from; one evaluation feeds every surface (lane/authority-wants; astra
+   2026-10-12 world.md 10; replay edition 13).**
+   - *The clock.* `Ops.advance` journals `wanted`/`unwanted` on the `advanced` entry (`Ops.clockFlips`): every thing
+     whose carried wants read `request.clock` (`World.wantClock`, from `LawExpr.readsClock`, through cited wants too)
+     is judged at the old and the new clock, one judgment within `Limits.clauseTicks` each. Replay re-derives them
+     (`replayEntry`, "what the clock wanted does not replay"); `reactionRows` reads `advanced` entries. A want true
+     by the clock alone is therefore in `World.wanting`, `Ops.wanting` has no exclusion, and `wantRows`' `since` is
+     always a height (the advance's).
+   - *Dependents.* `reactions` also judges the things whose wants read a written or created object (`"O".F`,
+     `"O" wants N`, what their law follows by `under`): `World.wantReaders` maps an object to those things,
+     `wantCites` is its forward side, both re-read for what an entry writes and the readers it re-judged by
+     `Ops.reindexWants` in `record`; a carry's or fork's genesis reads them off its objects (`installGenesis`), a
+     snapshot carries all three (`indexJson`, `installIndex`). Bound: `Limits.wantReviewed` (64) readers by id per
+     entry (`Ops.wantReview`); a reader past it is judged when it or an object it reads is next written.
+   - Tests: `test_wanting.Journaled` (a bell nobody tends flips at the advance and the chronicle says so; a write of
+     `"bell2".rains` flips the want of `bell`; both across reopen and snapshot).
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

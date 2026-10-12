@@ -45,7 +45,7 @@ want NAME "reading": EXPR asks SPELL      poses, judged at read with the clock
 
 ## 3. The object model after the overhaul
 
-**What every thing carries.** Identity, pin, versioned state, and one text with `law`, `rule` and `want` lines, `under` its kind; a verb table (the kind's declared methods, then grown rows, sixteen at most); its lines keyed `{author, n}` with a `verb` column; marks; doors (`cites`); `maker`, `made` (the height), `tended`; and, derived at read, its wants with `since` (the height of the entry that made the want true; a want true by the clock alone says "by the clock") and its chronicle lines (what fired, grew and flipped on it, by day).
+**What every thing carries.** Identity, pin, versioned state, and one text with `law`, `rule` and `want` lines, `under` its kind; a verb table (the kind's declared methods, then grown rows, sixteen at most); its lines keyed `{author, n}` with a `verb` column; marks; doors (`cites`); `maker`, `made` (the height), `tended`; and, derived at read, its wants with `since` (the height of the entry that made the want true: a write, a law's refusal, or the `advanced` entry that moved the clock) and its chronicle lines (what fired, grew and flipped on it, by day).
 
 | Kind | Package | Carries beyond the common | Verbs at genesis |
 | --- | --- | --- | --- |

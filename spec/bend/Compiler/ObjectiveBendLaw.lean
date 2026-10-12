@@ -223,6 +223,31 @@ def LawFilter.names : LawFilter → List LawName
   | .eq column value => .column column :: value.names
 end
 
+-- The request facts a term reads (`request.FACT`), in source order.
+mutual
+def LawTerm.facts : LawTerm → List LawFact
+  | .fact fact => [fact]
+  | .count _ _ filter => filter.facts
+  | .sum left right => left.facts ++ right.facts
+  | .mod term _ => term.facts
+  | .field .. | .int _ | .text _ => []
+def LawFilter.facts : LawFilter → List LawFact
+  | .all => []
+  | .eq _ value => value.facts
+end
+
+/-- The request facts a condition reads, in source order (with repetition). -/
+def LawExpr.facts : LawExpr → List LawFact
+  | .eq left right | .le left right | .ge left right => left.facts ++ right.facts
+  | .member term _ => term.facts
+  | .changed _ _ who => who.facts
+  | .rule .. | .under _ | .wants .. => []
+  | .not body => body.facts
+  | .and left right | .or left right | .implies left right => left.facts ++ right.facts
+
+/-- A condition that reads the world clock (`request.clock`): judged again when the clock moves. -/
+def LawExpr.readsClock (e : LawExpr) : Bool := e.facts.any fun | .clock => true | _ => false
+
 def LawPlace.names : LawPlace → List LawName
   | .ints _ => []
   | .list side field => [side.nameOf field]
