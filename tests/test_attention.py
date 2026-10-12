@@ -20,6 +20,7 @@ import unittest
 from tests.test_scenarios import Arc, GLM, KIM
 from tests.test_properties import OPENER, STRANGERS
 from tests.wire import label, record
+from tests.host import card_texts
 
 
 class Attention(Arc):
@@ -94,6 +95,9 @@ class Since(Attention):
     read through: one line a thing, newest first, each verb counted with its newest hand and how many others; `seen`
     clears it with the notes."""
 
+    def card_of(self, reply):
+        return "\n".join(dict.fromkeys(card_texts(reply)))
+
     def card(self, who, of):
         return self.town.send(op="world-card", principal=who, object=of)["text"]
 
@@ -107,6 +111,10 @@ class Since(Attention):
         card = self.card(KIM, KIM)
         lead = "Since you were here (entry 0):\n  %s: 1 door from %s; 3 rains from ember.delve.town and 1 other\n" % (bell, STRANGERS[GLM])
         self.assertTrue(card.startswith(lead), card)
+        # The commonplace's YOURS door: the card asked for, writing nothing.
+        asked = self.admitted(self.say(KIM, "me", "delvetalk me since"))
+        self.assertTrue(self.card_of(asked).startswith(lead), asked)
+        self.assertEqual(asked["receipt"]["outcome"]["writes"], [])
         self.assertNotIn("Since you were here", self.card(GLM, KIM))
         at = int(card.split("delvetalk me seen / at: ")[1].split("\n")[0])
         self.admitted(self.say(KIM, "me", "delvetalk me seen / at: %d" % at))

@@ -27,7 +27,7 @@ DOOR                                    level 1: a door word; typing it opens th
    and the tail are said once; the branches get what they leave of the card's room (`Card.left`, the receipt line
    counted), and `Card.clippedWithin` drops whole branches from the end, so a clipped reader sees every branch it is
    shown whole. A link door (STUDIO) is never clipped: it is said after the branches, before the tail.
-5. The tail is `YOURS · me` with `delvetalk me ?` (`» what you hold; notes left by rules and mentions`) and the receipt
+5. The tail is `YOURS · me` with `delvetalk me since` (`» what others did to what you made since you were here; what you hold; your notes`) and the receipt
    rule. Nothing is said twice.
 
 ### 1.2 The doors

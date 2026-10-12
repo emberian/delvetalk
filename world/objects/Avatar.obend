@@ -48,31 +48,16 @@ record State:
 # a text law, so the host's default law (its creator alone reprograms or amends it) stands beside it.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if request.kind == 3n || (request.kind == 0n && request.method == "") then Abi.Verdict.refused({clause: "methods", reading: "Only its own methods write it; a proposed write is refused."}) else if request.kind == 4n && request.context.principal != request.context.object then Abi.Verdict.refused({clause: "rules", reading: "Only its principal places a rule on it."}) else Abi.Verdict.admitted({})
-# The avatar as edition 8 kept it: its letters and what it followed go (a rule tells a principal of
-# a change now); every carried note is unread from entry 0.
-record Note8:
-  from: String
-  handle: String
-  text: String
-  at: Nat
-  n: Nat
-record Letter8:
-  handle: String
-  text: String
-  at: Nat
-  n: Nat
-record Followed8:
-  object: Plans.Reference
-  field: String
-record State8:
+# The avatar as edition 9 keeps it (a carry lays this package over it, `migrate`): no `heard` yet,
+# hearing on.
+record State9:
   handle: String
   at: Plans.Reference
   holding: Lists.List<Plans.Reference>
-  inbox: Relations.Relation<Note8>
-  outbox: Relations.Relation<Letter8>
-  following: Lists.List<Followed8>
-def migrate(old: State8) -> State:
-  {handle: old.handle, at: old.at, holding: old.holding, inbox: Relations.Relation.rows({items: Lists.map(Relations.rows(old.inbox), fn(n: Note8) -> Note: {from: n.from, handle: n.handle, text: n.text, at: n.at, n: n.n, uri: ""})}), heard: Relations.empty(), hear: true, seen: 0n}
+  inbox: Relations.Relation<Note>
+  seen: Nat
+def migrate(old: State9) -> State:
+  {handle: old.handle, at: old.at, holding: old.holding, inbox: old.inbox, heard: Relations.empty(), hear: true, seen: old.seen}
 def initial() -> State:
   {handle: "", at: Plans.nobody(), holding: Lists.List.nil(), inbox: Relations.empty(), heard: Relations.empty(), hear: true, seen: 0n}
 def relations() -> Relations.Decls:
@@ -152,6 +137,9 @@ def seen(state: State, input: {at: Nat}, context: Abi.Context) -> Activity<Done>
 def marked(state: State, at: Nat, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {seen: set at}
   Card.tell(Done.done({}), Document.Document.sequence({items: Document.Documents.cons({head: Document.text("Read through entry {natText(at)}; nothing before it is new again.\n"), tail: Document.Documents.cons({head: render(extend(state, {seen: at}), context), tail: Document.Documents.nil()})})}))
+# The card, asked for: since you were here, then what it holds and the new notes. Writes nothing.
+def since(state: State, context: Abi.Context) -> Activity<Done>:
+  Card.tell(Done.done({}), render(state, context))
 # --- Holding -------------------------------------------------------------------------
 # Things call hold and release on their holder's avatar. Both are idempotent and never
 # abort a thing's turn, so a thing that has already staged its own writes cannot be left half
@@ -242,6 +230,7 @@ form accept:
   thing: text 1..160
 form seen:
   at: natural 0..1000000000
+form since:
 # Things call hold and release.
 def methods() -> Lists.List<String>:
   Text.words("hold release ~heard")

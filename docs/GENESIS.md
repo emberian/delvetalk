@@ -89,8 +89,8 @@ TIDE
   » what happens at each hourly tick
 STUDIO · scratch worlds and REPL: https://gsb.fg-goose.online/AGENTS.md
 YOURS · me
-  delvetalk me ?
-  » what you hold; notes left by rules and mentions
+  delvetalk me since
+  » what others did to what you made since you were here; what you hold; your notes
 Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.
 ```
 
