@@ -1360,6 +1360,21 @@ def actArgument (verb : String) (argument : Data) : Data :=
     | _ => ""
   .record [("verb", .label verb), ("text", .label text)]
 
+/-- The receipt of the turn that made `id`: the first entry that touched it ("" when none is held). -/
+def madeReceipt (w : World) (id : String) : String :=
+  (((w.touched[id]?).bind (·[0]?)).bind w.entries.hashAt?).getD ""
+
+/-- Where a card's code came from (`Object.madeFrom`), one line: the object it was made from, whoever
+    turned the entry it cites, and that entry's height; "" for code given whole. -/
+def lineageLine (w : World) (o : Object) : String := Id.run do
+  let some m := o.madeFrom | return ""
+  let some object := (m.getObjValAs? String "object").toOption | return ""
+  let receipt := (m.getObjValAs? String "receipt").toOption.getD ""
+  let some i := w.entries.indexOf? receipt | return s!"After {object}.\n"
+  let by_ := ((w.entries.get? i).bind fun e => ((e.getObjVal? "identity").toOption.bind
+    (·.getObjValAs? String "principal" |>.toOption))).map (handleOf w ·)
+  return s!"After {object}{(by_.map (s!" by {·}")).getD ""}, entry {i + 1}.\n"
+
 /-- A grown verb's use as its card's `act` takes it: `{verb, text}`, the text "" when the verb takes
     none; none when `action` is no verb grown on `o` (a declared form shadows a verb of its name). -/
 def grownAct (o : Object) (action : String) (argument : Data) : Option Data := do
@@ -1402,7 +1417,10 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let lenses := declaredLenses w target
   -- Lenses are `set`'s: shown only when `set` is offered to the speaker.
   let shownLenses := if offeredTo w id target principal "set" then lenses else []
-  if action == "?" then return .usage id (spellUsage shown shownForms shownLenses ++ hostUsage w target principal shown ++ objectsLine)
+  if action == "?" then
+    let lineage := lineageLine w target
+    return .usage id (spellUsage shown shownForms shownLenses ++ (if lineage.isEmpty then "" else "\n" ++ lineage) ++
+      hostUsage w target principal shown ++ objectsLine)
   if hostReads.contains action && !forms.any (·.action == action) then
     return .usage id (match action with
       | "rules" => rulesText w id target shown
@@ -2140,6 +2158,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         let some fromId := (m.lookup "object").bind referenceId | evaluation "malformed make plan"
         let some receipt := (m.lookup "receipt").bind labelOf | evaluation "malformed make plan"
         let s ← get
+        -- An empty receipt cites the turn that made `object` (a kind forked whole: its maker's).
+        let receipt := if receipt.isEmpty then madeReceipt s.world fromId else receipt
         match s.world.objects[fromId]? with
         | none => pure (none, some s!"there is no object {fromId} to have been made from")
         | some fromObj =>
@@ -3963,7 +3983,9 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("offered", toJson (((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)).map formAction)),
       -- The numbers `request.kind` reads, by name (`proposed`: a write no method of the object made).
       ("requestKinds", Json.mkObj (Law.kindNames.map fun (n, k) => (n, toJson k)))] ++
-      (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)])) |> fun r =>
+      (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)]) ++
+      -- Where its code came from, and the line `?` prints for it (`lineageLine`).
+      (match o.madeFrom with | some m => [("madeFrom", m), ("lineage", toJson (lineageLine w o))] | none => [])) |> fun r =>
       -- The views its package declares (`views()`), which `viewDerived` answers.
       let init : TurnState := { world := w, principal, intent := "", subject := principal,
                                 ticks := Delvetalk.Bounds.lawTicks, limits := Json.mkObj [] }

@@ -2530,7 +2530,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations,
-                       fixed := prog.fixed, declares := prog.declares }
+                       fixed := prog.fixed, declares := prog.declares, madeFrom := (p.madeFrom.lookup id).orElse fun _ => o.madeFrom }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin),
         ("source", toJson source), ("migration", toJson migration),
@@ -2676,7 +2676,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version, state })]
     factsOf := factsOf ++ [(id, judgedBy)]
   return { updates := out, reprograms, amendments, evicted := evictions, facts := factsOf,
-           creations := p.creates.map fun (id, c) => (id, c.object),
+           creations := p.creates.map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom }),
            creates := p.creates.map fun (id, c) => createRecJson id c }
 
 /-! ## Entries -/

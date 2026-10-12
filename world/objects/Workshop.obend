@@ -75,7 +75,7 @@ def checkedCard(diagnostics: Form.Names) -> Document.Document:
 def reprogrammedCard(target: String, version: Nat) -> Document.Document:
   Document.text("✾ WORKSHOP\n\nReprogrammed {target}.\nWas: {target} v{natText(version)}\nNow: {target} v{natText(version + 1n)}\n")
 def usage() -> Document.Document:
-  Document.text("✾ WORKSHOP: Bend checked, proposed to a card, or made from words. A block is a ```obend block under the spell, or source: <<BEND … BEND.\n  delvetalk workshop check\n» it compiles, or each problem with its line\n  delvetalk workshop check / target: bell/1\n» the source that card runs, checked\n  delvetalk workshop check / over: kind/record\n» your layer, checked over what that kind's things run (or over a thing)\n  delvetalk workshop propose / target: bell/1 / migration:\n» reprogrammed, or held as #n for its owner to adopt\n  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n» hob drafts the Bend; checked, held as #n for you to adopt\n  delvetalk workshop draft / name: lamp / over: kind/record\n» your forms and defs as a layer over that kind, checked and held the same way\n  delvetalk workshop create / like: porch/goblet\n» a copy, yours, unless its owner said no\n")
+  Document.text("✾ WORKSHOP: Bend checked, proposed to a card, or made from words. A block is a ```obend block under the spell, or source: <<BEND … BEND.\n  delvetalk workshop check\n» it compiles, or each problem with its line\n  delvetalk workshop check / target: bell/1\n» the source that card runs, checked\n  delvetalk workshop check / over: kind/record\n» your layer, checked over what that kind's things run (or over a thing)\n  delvetalk workshop propose / target: bell/1 / migration:\n» reprogrammed, or held as #n for its owner to adopt\n  delvetalk workshop make / name: lamp / description: a lamp anyone lights\n» hob drafts the Bend; checked, held as #n for you to adopt\n  delvetalk workshop draft / name: lamp / over: kind/record\n» your forms and defs as a layer over that kind, checked and held the same way\n  delvetalk workshop draft / name: lamp2 / from: kind/lamp\n» a fork of that kind, with your block for its body if you send one; kind/lamp2 once adopted\n  delvetalk workshop create / like: porch/goblet\n» a copy, yours, unless its owner said no\n")
 # A whole package no spell reaches (it has no `receive`), said under a clean check; a draft of it is
 # refused (`noReceive`).
 def unreached(diagnostics: Form.Names, reaches: Bool) -> String:
@@ -172,6 +172,7 @@ form make:
 form draft:
   name: text 1..32
   over: text 0..128
+  from: text 0..128
   source: source
 def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Verdict>:
   asked(input.name, input.description, context, state)
@@ -180,7 +181,15 @@ def asked(name: String, description: String, context: Abi.Context, state: State)
     case proposal(p): drafting(name, p.argument.over, p.argument.source, context, state)
     case _: refusing("noDraft", "hob drew no Bend from that. Say what it holds and what it does, or send the source: delvetalk workshop draft / name: {name} / source: <<BEND … BEND", context)
 def draft(state: State, input: DraftInput, context: Abi.Context) -> Activity<Verdict>:
-  drafting(input.name, input.over, input.source, context, state)
+  if input.from != "" then forkHeld(input.name, input.from, input.source, context, state) else drafting(input.name, input.over, input.source, context, state)
+# A fork (`from:` a kind): its own body, or with none the kind's as it is, held for its describer to
+# adopt as kind/<name>, which `kinds` makes and checks (KIND `makeFork`), credited to the kind it is after.
+def forkHeld(name: String, from: String, source: String, context: Abi.Context, state: State) -> Activity<Verdict>:
+  heldDraft(draftRow(name, "{fromMark()}{from}\n{source}", context, state), state, context)
+def fromMark() -> String:
+  "# from: "
+def fromOf(package: String) -> String:
+  if Text.starts(package, fromMark()) then textTake(textDrop(package, textLength(fromMark())), textBreak(package, "\n") - textLength(fromMark())) else ""
 # A clean draft is held for its describer as #n; a flawed one is answered with its problems. A draft
 # `over` a kind or a thing is a layer: forms and defs, the workshop writing the rest (`Forms.layer`),
 # checked over what it will be laid on; a whole package no spell reaches (no `receive`) is refused
@@ -219,7 +228,7 @@ def holdingReceipt(held: Held, context: Abi.Context) -> Activity<Verdict>:
     case reply(r): made(held, r.receipt.hash, context)
     case _: refusing("noReceipt", "The turn that held #{natText(held.n)} has no receipt to cite.", context)
 def made(held: Held, receipt: String, context: Abi.Context) -> Activity<Verdict>:
-  if overOf(held.package) != "" then madeOver(held, overOf(held.package), receipt, context) else madeWhole(held, receipt, context)
+  if fromOf(held.package) != "" then forked(held, fromOf(held.package), context) else if overOf(held.package) != "" then madeOver(held, overOf(held.package), receipt, context) else madeWhole(held, receipt, context)
 # A layer drafted over a kind is made by the kind: one thing at its name running the kind's stack and
 # the layer, under the kind's law; over a thing, it is laid on that thing, as its owner's reprogram.
 sum Drafted:
@@ -230,6 +239,11 @@ def madeOver(held: Held, over: String, receipt: String, context: Abi.Context) ->
     case returned(r): draftedOver(held, r.result, context)
     case refused(r): if r.clause == "noMethod" then laidOn(held, over, context) else refusing(r.clause, if r.reading == "" then "{held.name} was not made ({r.clause})" else r.reading, context)
     case denied(_): refusing("denied", "{over} does not answer.", context)
+def forked(held: Held, from: String, context: Abi.Context) -> Activity<Verdict>:
+  match world.call::<Drafted>({object: {world: context.world, object: "kinds"}, method: "makeFork", argument: {from: from, name: held.name, body: textDrop(held.package, textBreak(held.package, "\n") + 1n)}}):
+    case returned(r): draftedOver(held, r.result, context)
+    case refused(r): refusing(r.clause, if r.reading == "" then "kind/{held.name} was not made ({r.clause})" else r.reading, context)
+    case denied(_): refusing("denied", "kinds does not answer.", context)
 def draftedOver(held: Held, drafted: Drafted, context: Abi.Context) -> Activity<Verdict>:
   match drafted:
     case made(m): madeWritten(held, m.object, context)
@@ -273,12 +287,12 @@ def create(state: State, input: {like: String}, context: Abi.Context) -> Activit
     case delivery(_): Verdict.clean({})
     case refused(r): refusing(r.clause, "No copy of {input.like}: {r.clause}", context)
 # A reply that ran no method: a check or proposal missing fields (a target alone, or a source
-# without a target) is completed from the reply's fields; anything else is the card's default
+# without a target), or a fork with no block, is completed from the reply's fields; anything else is the card's default
 # (a blank reply gets the usage card, prose goes on to the commonplace).
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Verdict>:
   completing(input.spell.action, input, context, state)
 def completing(action: String, input: Card.Reply, context: Abi.Context, state: State) -> Activity<Verdict>:
-  if action == "check" then checking(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "over"), Spell.valueOf(input.fields, "source"), context) else if action == "propose" then proposing(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "migration"), Spell.valueOf(input.fields, "source"), context, state) else Card.answerAs(input, context, forms(), render(state, context), answered)
+  if action == "draft" && Spell.valueOf(input.fields, "from") != "" then forkHeld(Spell.valueOf(input.fields, "name"), Spell.valueOf(input.fields, "from"), Spell.valueOf(input.fields, "source"), context, state) else if action == "check" then checking(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "over"), Spell.valueOf(input.fields, "source"), context) else if action == "propose" then proposing(Spell.valueOf(input.fields, "target"), Spell.valueOf(input.fields, "migration"), Spell.valueOf(input.fields, "source"), context, state) else Card.answerAs(input, context, forms(), render(state, context), answered)
 def answered(replied: Card.Replied) -> Verdict:
   match replied:
     case silent(_): Verdict.silent({})

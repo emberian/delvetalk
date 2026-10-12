@@ -190,7 +190,8 @@ def storeJson (w : World) : Except String Json := do
       (if o.declares.isEmpty then [] else [("declares", toJson o.declares)]) ++
       (if o.rules.isEmpty then [] else [("rules", Json.arr (o.rules.toArray.map (·.json)))]) ++
       (if o.wants.isEmpty then [] else [("wants", Json.arr (o.wants.toArray.map (·.json)))]) ++
-      (if o.verbs.isEmpty then [] else [("verbs", Json.arr (o.verbs.toArray.map (·.json)))])))
+      (if o.verbs.isEmpty then [] else [("verbs", Json.arr (o.verbs.toArray.map (·.json)))]) ++
+      (match o.madeFrom with | some m => [("madeFrom", m)] | none => [])))
   let libraries := sortedBy w.libraries.toList (·.1)
   let grants := sortedBy w.grants.toList (·.1)
   let posts := sortedBy w.posts.toList (·.1)
@@ -345,7 +346,8 @@ def install (b : Json) (base : World) : Except String World := do
         declares := (o.getObjValAs? (List String) "declares").toOption.getD []
         rules := ← placedOf "rules"
         wants := ← placedOf "wants"
-        verbs := ← (((o.getObjVal? "verbs").toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Verb.ofJson }
+        verbs := ← (((o.getObjVal? "verbs").toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Verb.ofJson
+        madeFrom := (o.getObjVal? "madeFrom").toOption }
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do

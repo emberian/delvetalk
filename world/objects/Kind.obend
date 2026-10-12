@@ -297,8 +297,30 @@ def draftMade(state: State, name: String, layers: Lists.List<String>, package: S
   match world.make({package: package, seed: plainSeed(state, Lists.List.nil(), "", context), law: lawOf(context), requireAbsent: {world: context.world, object: name}, madeFrom: from}):
     case created(c): counted(state, c.object.object, true, layers, context)
     case refused(r): refused(context, {clause: r.clause, reading: if r.reading == "" then "{name} was not made" else r.reading})
+# A kind forked whole (the workshop's `draft / from:`), by `kinds`: kind/<name> with the `of`, form,
+# head, voice and text of `from`, and `body` (forms and defs get the header; none is `from`'s own),
+# checked over its stack, made from `from` (`madeFrom`: the turn that made it, so `?` says whose it was
+# after). It is its forker's, as any kind is its maker's.
+def makeFork(state: State, input: {from: String, name: String, body: String}, context: Abi.Context) -> Activity<Done>:
+  if state.of != "kind" then refused(context, {clause: "notKinds", reading: "A kind is forked by kinds"}) else forkViewed(state, input.from, input.name, input.body, context)
+def forkViewed(state: State, from: String, name: String, body: String, context: Abi.Context) -> Activity<Done>:
+  match world.view::<State>({object: {world: context.world, object: from}}):
+    case viewed(v): if v.state.of == "kind" then refused(context, {clause: "from", reading: "{from} makes kinds; fork a kind of things"}) else forking(state, from, v.state, name, if body == "" then v.state.body else Forms.layer(body), context)
+    case _: refused(context, {clause: "from", reading: "{from} is no kind; from: a kind's id such as kind/bell"})
+def forking(state: State, from: String, original: State, name: String, body: String, context: Abi.Context) -> Activity<Done>:
+  match stackOf(original.of, body, 4n, context):
+    case stacked(s): forkChecked(state, from, original, name, body, s, context)
+    case refused(r): refused(context, r)
+def forkChecked(state: State, from: String, original: State, name: String, body: String, stack: Stack, context: Abi.Context) -> Activity<Done>:
+  match world.check({package: stack.package, layers: stack.layers}):
+    case checked(c): if Lists.length(c.diagnostics) == 0n then forkMade(state, from, original, name, body, context) else refused(context, {clause: "body", reading: uncompiled(original.of, body, c.diagnostics)})
+    case refused(r): refused(context, {clause: r.clause, reading: "the workshop could not check it ({r.clause})"})
+def forkMade(state: State, from: String, original: State, name: String, body: String, context: Abi.Context) -> Activity<Done>:
+  match world.make({package: packageOf("kind"), seed: {owner: context.principal, ownerHandle: context.handle, name: name, of: original.of, form: original.form, law: original.law, head: original.head, voice: original.voice, body: body}, law: lawOf(context), requireAbsent: {world: context.world, object: kindId(name)}, madeFrom: {object: {world: context.world, object: from}, receipt: ""}}):
+    case created(c): counted(state, c.object.object, true, Lists.List.cons({head: layerSource(original.of, original.form), tail: Lists.List.nil()}), context)
+    case refused(r): refused(context, {clause: r.clause, reading: if r.reading == "" then "{kindId(name)} was not made" else r.reading})
 def methods() -> Lists.List<String>:
-  Text.words("~shape makeUnder ~checkBody ~makeDrafted")
+  Text.words("~shape makeUnder ~checkBody ~makeDrafted ~makeFork")
 # What the host offers a reader: the make to anyone, the exact id's `place` to the kind's owner.
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner then Text.words("make place") else Text.words("make")

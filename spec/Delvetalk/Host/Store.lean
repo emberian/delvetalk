@@ -382,6 +382,10 @@ structure Object where
   /-- The verbs hands grew on it (`grow`), in the order grown: its spells after the forms its package
       declares, each run by its `act`. -/
   verbs : List Verb := []
+  /-- Where its code came from (docs/AUTHORING.md §4 credit): the journaled `madeFrom {object, pin,
+      receipt}` of the `make` that made it or the reprogram (`become`) that last laid a kind's body on
+      it; none for code given whole. -/
+  madeFrom : Option Json := none
 
 /-- The standard library every package may import by name: modules in dependency
     order, sealed by `pin` (a hash of the names and sources in that order). -/

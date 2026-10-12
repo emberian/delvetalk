@@ -2009,6 +2009,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    bodies and `draft / over:`); a held draft over a kind is made by the kind (`~makeDrafted`), over a thing laid on it.
    Tests: `test_authoring`, `test_sugar`, `test_workshop`.
 
+176. **Where a thing's code came from (lane/author-build; AUTHORING §5 host 3, step 7).** `Object.madeFrom`: the
+   journaled `madeFrom {object, pin, receipt}` of the `make` that made it or of a reprogram that carried one
+   (`become`), set as the commit installs it (`Ops.judge`: `creations`, and the reprogrammed `next`, keeping an earlier
+   one when the reprogram carries none), live and replayed alike; the snapshot keeps it under `madeFrom` when present
+   (an older snapshot has none). A `make` whose `madeFrom.receipt` is "" cites the turn that made `object`
+   (`TurnLoop.madeReceipt`). `?` prints `lineageLine`, "After kind/tapper by yue.delve.town, entry 66.", the principal
+   of the cited entry; `world-inspect` answers `madeFrom` and `lineage`. KIND's `~makeFork` (by `kinds`) makes a kind
+   forked whole with that lineage; the workshop's `draft / from:` holds one. Test: `test_authoring`.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

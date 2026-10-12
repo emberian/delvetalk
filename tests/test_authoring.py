@@ -235,5 +235,27 @@ class Authoring(unittest.TestCase):
         self.assertIn("Checked: it compiles.", told(self.admitted(YUE, "workshop", "delvetalk workshop check\n```obend\n%s```\n" % BARE)))
 
 
+    # §5 step 7: a kind forked through the workshop, credited on its card to the kind and hand it is after.
+    def test_a_kind_forked_whole_or_with_a_new_body_says_what_it_is_after(self):
+        tap = "form tap:\ndef tap(state: State, context: Abi.Context) -> Activity<Nat>:\n  Super.inscribe(state, \"tap\", \"tapped\", context)\n"
+        self.admitted(YUE, "kinds", "delvetalk kinds make\nname: tapper\nof: record\nbody: <<BEND\n%sBEND\n" % tap)
+        held = told(self.admitted(KES, "workshop", "delvetalk workshop draft / name: mytapper / from: kind/tapper"))
+        n = held.split("Held as #")[1].split(";")[0]
+        self.assertIn("Made kind/mytapper from #%s; it is yours." % n, told(self.admitted(KES, "workshop", "delvetalk workshop adopt / n: %s" % n)))
+        made = self.town.send(op="world-inspect", principal=KES, object="kind/mytapper")
+        self.assertEqual(made["madeFrom"]["object"], "kind/tapper", made)
+        self.assertRegex(told(self.say(KES, "kind/mytapper", "delvetalk kind/mytapper ?")), r"After kind/tapper by yue\.delve\.town, entry \d+\.\n")
+        self.admitted(KES, "kind/mytapper", "delvetalk kind/mytapper make")
+        self.assertIn("#1 is written: tapped", told(self.admitted(YUE, "mytapper/1", "delvetalk mytapper/1 tap")))
+        # A fork with a body of its own: checked as kinds checks a body, and its things run it.
+        knock = tap.replace("tapped", "knocked").replace("tap", "knock")
+        held = told(self.admitted(KES, "workshop", "delvetalk workshop draft / name: knocker / from: kind/tapper\n```obend\n%s```\n" % knock))
+        n = held.split("Held as #")[1].split(";")[0]
+        self.admitted(KES, "workshop", "delvetalk workshop adopt / n: %s" % n)
+        self.admitted(YUE, "kind/knocker", "delvetalk kind/knocker make")
+        self.assertIn("#1 is written: knocked", told(self.admitted(KES, "knocker/1", "delvetalk knocker/1 knock")))
+
+
+
 if __name__ == "__main__":
     unittest.main()
