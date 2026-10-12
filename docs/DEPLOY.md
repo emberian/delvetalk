@@ -924,6 +924,27 @@ names such a delivery by its card and says each receipt once; the try then answe
 since minute 29863631 (v9, about 15:11 UTC): each carry since v8's rearms it under `carried:tide`, which the carried
 identities bind to v9's entry, so the tick is never admitted (a host fix, and a carry, to come).
 
+Carried 2026-10-12 (21:41 UTC), v12 to v13 (`d3e359371492` to `43a8ec4c956e`, transport image `37b7c9c5…8c37`, both
+boxes; edition 13 to 13: lane/station-refresh acde269b on foundation 81c56850 with lane/tide c3a0382f), with
+`DELVETALK_STATION=on` in `.env`, the owner's word: the carry's refresh makes the all-night station on a town that lacks
+it. On hbox: suite 1194 tests, 0 failed; carry-check (with `DELVETALK_STATION=on`) on `delvetalk-20261012T211525Z`
+green, breaking (foundation's `world/lib` is the station merge's), `left`, `kept`, `dropped` empty, the station's 18
+steps placed. v12 stood at 1071 with 147 objects (twice), the tide's two re-arms `carried:tide` at the head of the
+pending queue and six sends behind them. Closing backup `delvetalk-20261012T214045Z` (also in `closing/`). The carry
+took 28 s and exited 0: `check {objects: 147, rendered: 147, receipts: 132, problems: []}`, 143 `moved` (none at a new
+state), `left`, `kept`, `dropped`, `rearmed` empty; refresh 85 `current` and 20 `refreshed` (the station's 18 steps,
+reading `placed: ...`), receipt `vopap-zurak`; the carried genesis at 1072. The first settle ran `carried:tide` (1074)
+and the six sends that had waited since 16:04 UTC (1075 to 1080). The tide's `due` from that re-arm took the id v9's
+had bound and waits `answered` (lane/tide 8322fe5c: a carry tells every pending re-arm again under its own intent);
+its owner told it `carried` again by hand (`world-turn` tide `carried`, intent `hand:tide-rearm-20261012`, entry 1108,
+`runag-minaj`), and it ticked at 1110 (9 ticks). `serve-status`: the new SHA, replay 13; v12's 147 ids and the
+station's 10. Old receipts resolve through every carry (`jikub-pokas` 940 of v12 to `lipuh-hutom` 111 of v8); the 12
+invitations as before. Backup and `verify.sh --full` ok at 1121; hbox's pull replayed it. Live through the hand: the
+station's card; `enter`; "Push the door" fired `forecourt_1` and bell/1 rang (v8 to v9); "Take a coffee" fired
+`counter_1`, which vended `station/coffee/thing/1`, accepted (entry 1130); "Wind the wall clock" under `try`, `wound =
+1`, nothing journaled. The chronicle's day counted 25 admitted, none of the 21 refreshes, but named the station
+refresh's `sign` as the first grown verb (lane/station-refresh ca31ed6a).
+
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
     cd /var/lib/delvetalk/v7/state && mkdir -p worlds/town && mv observe.sqlite* since outbox awaiting principals.txt \
