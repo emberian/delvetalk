@@ -245,6 +245,20 @@ class Moderation(RootCase):
         self.host.send(op="world-advance", principal=CLOCK, height=60)
         self.assertEqual(self.turn("counter", "bump", principal="mallory", identity="m1")["status"], "admitted")  # transient
 
+    def test_a_quieted_principal_writes_through_no_op(self):
+        # codex 2026-10-12 host 6: world-propose and world-reprogram reached the commit past the quiet.
+        self.power("world", "quiet", who="mallory", hours=1, reading="flooding the counter")
+        add = {"tag": "variant", "label": "add", "payload": record(delta=nat(1))}
+        version = self.view()["version"]
+        ops = [dict(op="world-propose", roots=[{"object": "counter", "version": version}],
+                    writes=[{"object": "counter", "edits": [record(count=add)]}]),
+               dict(op="world-amend", object="counter", version=version, law="law any: request.kind == 0 or request.kind == 2"),
+               dict(op="world-reprogram", object="counter", version=version, package=closure("Counter")[-1]["source"])]
+        for i, request in enumerate(ops):
+            r = self.host.send(principal="mallory", identity="q%d" % i, **request)
+            self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "quiet"), (request["op"], r))
+        self.assertEqual(self.count(), (0, 0))
+
     def test_retire_admits_only_the_opener_and_unretire_restores(self):
         r = self.power("counter", "retire", reading="it loops")
         self.assertEqual(r["status"], "admitted", r)

@@ -515,6 +515,10 @@ structure Anchor where
   version : Nat := 0
   pin : Nat := 0
   law : Nat := 0
+  /-- The entry naming the CID of its placed rules, wants and verbs (`Ops.placedIn`), 0 for none. -/
+  placed : Nat := 0
+  /-- The entry setting its read policy (`Ops.readPolicyIn`). -/
+  read : Nat := 0
   deriving Inhabited, BEq
 
 /-- The clock hour's counts (`world-status.hour`, docs/ROOT.md §2.3): turns journaled (admitted,
@@ -572,6 +576,11 @@ structure World where
   entries : Entries := {}
   /-- Identity key (principal, intent) to entry index. The first entry wins. -/
   receipts : Std.HashMap String Nat := {}
+  /-- Identity key to the binding a carry kept from the chains before (`Ops.identityRow`: the identity, its
+      request digests, the entry's hash, height and outcome tag and class), read from the `carried` genesis
+      (`Ops.carriedIdentities`) and never from a snapshot: a retry of an intent the world before admitted
+      answers that receipt. -/
+  carriedIds : Std.HashMap String Json := {}
   /-- Object id to indices of admitted or creating entries touching it. -/
   touched : Std.HashMap String (Array Nat) := {}
   /-- Per object, its admitted writes in version order (`Touch`): what changed since a version is

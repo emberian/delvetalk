@@ -110,8 +110,9 @@ inductive Abort where
   /-- The turn is refused with a named class other than `evaluation` (`typeMismatch`: the
       argument does not conform to the method's input type, `expected` what it takes). -/
   | refused (cls reason : String) (expected : Option Json := none)
-  /-- A card refused the turn by its own Bend (`refuse(line)`): `cardRefused` (`Ops.cardRefusal`). -/
-  | card (refusal : Refusal)
+  /-- The turn is refused whole: a card's own Bend (`refuse(line)`, `cardRefused`: `Ops.cardRefusal`), or a
+      grant a direct turn enters under refusing it (`granted`). -/
+  | named (refusal : Refusal)
   /-- The turn's principal has started its hour's interpretations (`interpretQuota`): a transient
       refusal of class `quota`, naming the clock at which the next may start. -/
   | quota (reason : String) (next : Nat)
@@ -598,9 +599,9 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
       ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
   | .ok (again, built) =>
     let o := again.object
-    let facts : Law.Facts := { subject := s.principal, caller := self, height := s.world.height + 1, turn := s.world.height + 1,
-                                 pin := o.pin, kind := 1, clock := s.world.clock, object := id, reads := citedStates s.world o.law,
-                                 standing := standings s.world id o.law (citedStates s.world o.law) }
+    let facts : Law.Facts := citing s.world o.law (lawNames o.law)
+      { subject := s.principal, caller := self, height := s.world.height + 1,
+        turn := s.world.height + 1, pin := o.pin, kind := 1, clock := s.world.clock, object := id }
     if let some clause := Law.refusedBy o.law facts (some o.state) o.state then
       return ← refusedReading bounds responseType clause ((o.readings.lookup clause).getD s!"the law of {id} does not admit this layer.")
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
@@ -636,6 +637,16 @@ def spendGrant (via : String) : M Unit := do
   if g.uses.isNone then return
   let n := (s.spent.lookup via).getD 0
   set { s with spent := (s.spent.filter fun (x : String × Nat) => x.1 != via) ++ [(via, n + 1)] }
+
+/-- The argument a principal's own turn runs `method` of `id` with under grant `via` (`lentVia`), as a call
+    under it does (`grantFor`, `spendGrant`): the grant stands for this principal, has a use left, which the
+    turn spends, and fixes what it fixes of the argument. "" runs the argument as given. -/
+def granted (via id method : String) (argument : Data) : M Data := do
+  if via.isEmpty then return argument
+  match ← grantFor via "" id method argument with
+  | .ok (_, merged) => spendGrant via; return merged
+  | .error clause => throw (.named { cls := "lawRefused", clause := some clause, object := some id,
+                                     reading := some s!"no grant lets this turn run {method} on {id} ({clause})." })
 
 /-- The fields of a row type (`field` chain ending `emptyRow`) as `(name, member)`. -/
 partial def rowFields (row : Json) : Option (List (String × Json)) :=
@@ -1126,9 +1137,9 @@ def spellForms (w : World) (id : String) (o : Object) : List Spell.Form :=
     that reads the state is judged on it too (codex agent 11: `request.subject == new.owner or …`
     refuses a stranger whatever the method writes, unless the method moves the owner). -/
 def methodAdmits (w : World) (o : Object) (principal method : String) (id : String := "") (verb : String := method) : Json :=
-  let facts : Law.Facts := { subject := principal, caller := "", height := w.height + 1, turn := w.height + 1, pin := o.pin,
-                              method, verb, clock := w.clock, object := id, reads := citedStates w o.law,
-                              standing := standings w id o.law (citedStates w o.law) }
+  let facts : Law.Facts := citing w o.law (lawNames o.law)
+    { subject := principal, caller := "", height := w.height + 1,
+      turn := w.height + 1, pin := o.pin, method, verb, clock := w.clock, object := id }
   match o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause with
   | none => Json.bool true
   | some (name, _) => Json.mkObj ([("clause", toJson name)] ++ ((o.readings.lookup name).map fun r => [("reading", toJson r)]).getD [])
@@ -1280,8 +1291,8 @@ def rulesText (w : World) (id : String) (o : Object) (shown : String) : String :
 
 /-- `delvetalk <card> wants`: the wants that hold of the card now, each with the spell that answers it
     and since when it has held. -/
-def wantsText (w : World) (id : String) (o : Object) (shown : String) : String :=
-  let rows := wantRows w id o
+def wantsText (w : World) (reader id : String) (o : Object) (shown : String) : String :=
+  let rows := wantRows w reader id o
   if rows.isEmpty then s!"{shown} wants nothing now.\n" else
   let line := fun (row : Json) =>
     let text := fun (k : String) => (row.getObjValAs? String k).toOption.getD ""
@@ -1314,9 +1325,9 @@ def cardPowers : List String := ["retire", "unretire", "hide", "show"]
 /-- Would `o`'s law admit `principal`'s change of kind `kind` (1 reprogram, 2 amend) on the state as
     it stands? As `methodAdmits` judges a method. -/
 def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : String := "") (verb : String := "") : Bool :=
-  let facts : Law.Facts := { subject := principal, caller := "", height := w.height + 1, turn := w.height + 1, pin := o.pin,
-                              kind, verb, clock := w.clock, object := id, reads := citedStates w o.law,
-                              standing := standings w id o.law (citedStates w o.law) }
+  let facts : Law.Facts := citing w o.law (lawNames o.law)
+    { subject := principal, caller := "", height := w.height + 1,
+      turn := w.height + 1, pin := o.pin, kind, verb, clock := w.clock, object := id }
   (o.law.find? fun (_, clause) => !Law.admits facts (some o.state) o.state clause).isNone
 
 /-- `rule`'s and `want`'s fields as the usage prints them: the spell last, since its own fields follow it. -/
@@ -1413,7 +1424,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   if hostReads.contains action && !forms.any (·.action == action) then
     return .usage id (match action with
       | "rules" => rulesText w id target shown
-      | "wants" => wantsText w id target shown
+      | "wants" => wantsText w principal id target shown
       | _ => verbsText w id target shown (shownForms.filter fun f => !target.verbs.any (·.name == f.action)))
   -- The host's own spells, on any card that does not define the action itself (`hostSpell`).
   if hostSpells.contains action && !forms.any (·.action == action) then
@@ -1672,7 +1683,7 @@ partial def drive (depth : Nat) (self caller : String) (compiled : Compiled) (bi
     throw (.budget resource)
   | .refused line used =>
     spend used
-    throw (.card (cardRefusal self line))
+    throw (.named (cardRefusal self line))
   | .yielded message _ responseType suspension used =>
     spend used
     countPlan
@@ -2373,7 +2384,7 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
       s!"rule {text f "rule"} of {shownName w (text f "principal")} fired: {said}") ++
     (rows "unfired").map fun f =>
       s!"rule {text f "rule"} of {shownName w (text f "owner")} did not fire: {unfiredWords (text f "why")}"
-  let asked := fun (id name : String) => ((w.objects[id]?).map fun o => wantRows w id o).getD [] |>.find? fun r =>
+  let asked := fun (id name : String) => ((w.objects[id]?).map fun o => wantRows w principal id o).getD [] |>.find? fun r =>
     (r.getObjValAs? String "name").toOption == some name
   let opened := (rows "wanted").map (fun x =>
       let id := text x "object"
@@ -2422,10 +2433,9 @@ def turnReply (w : World) (r : Json) : Json :=
 
 /-- Retry rule for turns: the identity is bound to the whole turn request. -/
 def retainedTurn (w : World) (r : TurnRequest) : Option Json :=
-  match w.receipts[identityKey r.principal r.intent]? with
+  match boundEntry w r.principal r.intent with
   | none => none
-  | some index =>
-    let entry := w.entries.getD index
+  | some entry =>
     let same := (entry.getObjValAs? String "turnRequest").toOption == some r.digest
     if isTransient entry then none
     else if same then some (turnReply w (reply entry))
@@ -2564,7 +2574,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
     let (w', r) := commit w { proposal with writes := [], creates := [] } base
       (some { cls, reason := some reason, object := some ctx.object, expected }) (onEnd := endedIfLate)
     return (w', turnReply w' r)
-  | .error (.card refusal) =>
+  | .error (.named refusal) =>
     let (w', r) := commit w { proposal with writes := [], creates := [] } base (some refusal) (onEnd := endedIfLate)
     return (w', turnReply w' r)
   | .error (.quota reason next) =>
@@ -2693,7 +2703,10 @@ def runTurnWith (w : World) (req : TurnRequest) (how : TurnMeta) : Except String
   let byHost := req.method == "publishPage" && how.delivery.isNone &&
     ((w.objects[req.object]?).map (!hasMethod · "publishPage")).getD false
   let action := if byHost then defaultPublishPage req.object req.argument
-    else runMethod 0 req.object req.method req.argument how.caller req.principal how.via
+    else do
+      -- A send under a grant spent it when it was sent; a principal's own turn under one spends it here.
+      let argument ← if how.delivery.isSome then pure req.argument else granted how.via req.object req.method req.argument
+      runMethod 0 req.object req.method argument how.caller req.principal how.via
   let (result, st) := (action.run).run init
   let ctx : Ctx :=
     { principal := req.principal
@@ -3138,7 +3151,8 @@ def runHeard (w : World) (ctx : Ctx) (post reach : String) (steps : List HeardSt
         let (method, argument) := match grownAct obj step.method step.argument with
           | some a => (actMethod, a)
           | none => (step.method, step.argument)
-        result ← runMethod 0 step.object method argument "" ctx.principal (lentVia world ctx.principal step.object method)
+        let via := lentVia world ctx.principal step.object method
+        result ← runMethod 0 step.object method (← granted via step.object method argument) "" ctx.principal via
     return result
   let (result, st) := (action.run).run init
   -- It answers the post its words replied to only when it ran first on that post's card.
@@ -3339,14 +3353,12 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
 
 /-- A quieted principal's turn, journaled as refused `quiet` (transient: the same identity runs again
     once the clock passes `until`). -/
-def quietRefusal (w : World) (req : TurnRequest) (till : Nat) (reading : String) : Except String (World × Json) := do
+def quietRefusal (w : World) (req : TurnRequest) (quiet : Refusal) : Except String (World × Json) := do
   let ctx : Ctx := { principal := req.principal, intent := req.intent, object := req.object, method := req.method,
                      argument := req.argument, digest := req.digest, ledger := Ledger.start, delivery := none,
                      ticksStart := 0 }
   let p : Proposal := { principal := req.principal, intent := req.intent, roots := [], writes := [], turn := w.height + 1 }
-  let (w', r) := commit w p (entryBase ctx 0)
-    (some { cls := "quiet", clause := some s!"until clock {till}", object := some req.object,
-            reason := some s!"the hand quieted you until clock {till}: {reading}", next := some till })
+  let (w', r) := commit w p (entryBase ctx 0) (some quiet)
   return (w', turnReply w' r)
 
 /-- A direct turn past the quiet check: the spell read, else the method as asked. -/
@@ -3378,17 +3390,16 @@ def runOne (w : World) (req : TurnRequest) : Except String (World × Json) :=
   -- A retry is answered from the identity before its spell is read again: new code may route the
   -- same words elsewhere (codex host 13).
   if let some r := retainedTurn w req then .ok (w, r) else
-  -- A quieted principal's turns are refused until the clock passes (docs/ROOT.md §2.2).
-  match w.quiets[req.principal]? with
-  | some (till, reading) =>
-    if till > w.clock then quietRefusal w req till reading else runTurnHeard w req
+  -- A quieted principal's turn is refused before it runs (`quietOf`; judge refuses every other entry of theirs).
+  match quietOf w req.principal req.object with
+  | some quiet => quietRefusal w req quiet
   | none => runTurnHeard w req
 
 /-- The misfit a direct turn's spell is (`spellTurn`'s `.refuse` of a `misfitClauses` clause), with its
     card, as `runOne` would read it: none for a quieted speaker, a mention, or any other routing. -/
 def misfitOf (w : World) (req : TurnRequest) : Option (String × Misfit) := do
   let req := { req with object := resolveCard req.principal req.object }
-  guard !((w.quiets[req.principal]?).any (·.1 > w.clock))
+  guard (quietOf w req.principal "").isNone
   let req := { req with reach := reachOf w req }
   guard (req.reach != "mentioned")
   match routeSpell w req.principal req.object req.method req.argument true (req.reach == "direct" || req.reach == "reply") with
@@ -3457,8 +3468,8 @@ def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
   let several := req.method == "receive" && spells.length > 1 && (Spell.quotes (heardText req.method req.argument)).isNone
   -- One identity, one request: a post's identity is bound by its one turn, or by its spells' turns (`#1`), so the
   -- other kind of request under it is `duplicateIdentity`.
-  let other := w.receipts[identityKey req.principal (if several then req.intent else s!"{req.intent}#1")]?
-  match other.map w.entries.getD with
+  let other := boundEntry w req.principal (if several then req.intent else s!"{req.intent}#1")
+  match other with
   | some entry => if isTransient entry then (if several then runSpells w req spells else runOne w req)
     else .ok (w, duplicate req.principal req.intent entry)
   | none => if several then runSpells w req spells else runOne w req
@@ -3590,7 +3601,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
     let id ← r.getObjValAs? String "object"
     let seed ← r.getObjVal? "seed"
     let (o, sources) ← buildObject w (← expandInputs w (← r.getObjVal? "compile")) seed (r.getObjVal? "read").toOption
-      (r.getObjVal? "chain").toOption principal (w.height + 1) (some (← r.getObjValAs? String "law"))
+      (r.getObjVal? "chain").toOption principal (w.height + 1) (← createdLaw r)
     let o := { o with supervisor := (r.getObjValAs? String "supervisor").toOption.getD "" }
     return (id, ({ object := o, sources, seed } : CreateRec)))
   let programs ← ((← (← activityArray act "programs").getArr?).toList.mapM fun r => do
@@ -3706,7 +3717,7 @@ def cardText (w : World) (id reader : String) : String :=
 def cardAnswer (w : World) (id reader : String) : String :=
   let text := (cardRendered w id reader).getD ""
   let wants := match w.objects[id]? with
-    | some o => if (wantRows w id o).isEmpty then "" else "\n" ++ wantsText w id o id
+    | some o => if (wantRows w reader id o).isEmpty then "" else "\n" ++ wantsText w reader id o id
     | none => ""
   text ++ wants
 
@@ -4143,7 +4154,7 @@ def interpretationsReply (w : World) : World × Json := Id.run do
       |>.bind (·.getObjValAs? String "reach" |>.toOption)).getD ""
     -- The card's wants as they stand, each with the spell that answers it filled, and the library's
     -- pages: what hob may read the words into besides the forms offered.
-    let wants := ((w.objects[object]?).map (wantRows w object ·)).getD [] |>.map fun r =>
+    let wants := ((w.objects[object]?).map (wantRows w speaker object ·)).getD [] |>.map fun r =>
       let field := fun (k : String) => Data.label ((r.getObjValAs? String k).toOption.getD "")
       Data.record [("name", field "name"), ("reading", field "reading"), ("asks", field "asks")]
     let pages := (((w.objects["library"]?).filter (·.read.permits speaker)).bind fun o =>
@@ -4166,7 +4177,7 @@ def abortText : Abort → String
   | .request m | .evaluation m => m
   | .budget r => s!"{r} budget exhausted"
   | .refused cls r _ => s!"{cls}: {r}"
-  | .card r => s!"{r.cls}: {(r.voiced.reason).getD ""}"
+  | .named r => s!"{r.cls}: {(r.voiced.reason).getD ""}"
   | .quota r _ => s!"quota: {r}"
   | .suspend .. => "unexpected suspension"
 
