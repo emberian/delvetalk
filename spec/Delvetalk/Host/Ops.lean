@@ -2842,6 +2842,28 @@ def genesisRow (outcome : Json) (id : String) : Option Json :=
   ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).bind
     fun os => os.find? fun o => (o.getObjValAs? String "id").toOption == some id
 
+/-- The rules and wants hands placed on an object and the verbs they grew, as one value: what a placing,
+    a creation and a store-installing genesis commit to (`placedIn`), so a snapshot's rows rest on the
+    journal as its state does on a write's `cid`. -/
+def placedRows (rules wants verbs : Json) : Json :=
+  Json.mkObj [("rules", rules), ("wants", wants), ("verbs", verbs)]
+
+def placedCid (o : Object) : String :=
+  Journal.bodyHash (placedRows (Json.arr (o.rules.toArray.map (·.json))) (Json.arr (o.wants.toArray.map (·.json)))
+    (Json.arr (o.verbs.toArray.map (·.json))))
+
+/-- An object with nothing placed or grown on it. -/
+def Object.unplaced (o : Object) : Bool := o.rules.isEmpty && o.wants.isEmpty && o.verbs.isEmpty
+
+/-- `placed [{object, cid}]` of an admitted entry: each written or created object whose placed rows the
+    entry changed or made, with their CID (`placedCid`). Replay compares it when the entry has it. -/
+def placedField (before : World) (objects : List (String × Object)) : List (String × Json) :=
+  let rows := objects.filterMap fun (id, o) =>
+    let was := (before.objects[id]?).map placedCid
+    if was == some (placedCid o) || (was.isNone && o.unplaced) then none
+    else some (Json.mkObj [("object", toJson id), ("cid", toJson (placedCid o))])
+  if rows.isEmpty then [] else [("placed", Json.arr rows.toArray)]
+
 /-- The version the entry gives `id`, when it sets one: a creation's 0, a write's, a root `set`'s, a
     fork genesis's. -/
 def versionIn (entry : Json) (id : String) : Option Nat :=
@@ -2902,6 +2924,35 @@ def lawIn (entry : Json) (id : String) : Option String :=
   | "forked" | "carried" => (genesisRow outcome id).bind (·.getObjValAs? String "law" |>.toOption)
   | _ => none
 
+/-- The CID of `id`'s placed rows the entry commits to: a placing's or creation's `placed`, a store-installing
+    genesis's rows. -/
+def placedIn (entry : Json) (id : String) : Option String :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  match tagOf entry with
+  | "created" => if (outcome.getObjValAs? String "object").toOption == some id then (outcome.getObjValAs? String "placed").toOption else none
+  | "admitted" => (rowsNaming outcome "placed" id).back?.bind (·.getObjValAs? String "cid" |>.toOption)
+  | "forked" | "carried" => (genesisRow outcome id).map fun o =>
+    let rows := fun (k : String) => (o.getObjVal? k).toOption.getD (Json.arr #[])
+    Journal.bodyHash (placedRows (rows "rules") (rows "wants") (rows "verbs"))
+  | _ => none
+
+/-- The read policy the entry gives `id`: a creation's, a root `set` of it, `hide` or `show`, a
+    store-installing genesis's. -/
+def readIn (entry : Json) (id : String) : Option Json :=
+  let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+  let named := (outcome.getObjValAs? String "object").toOption == some id
+  match tagOf entry with
+  | "created" => if named then (outcome.getObjVal? "read").toOption else none
+  | "admitted" => (rowsNaming outcome "creates" id).back?.bind (·.getObjVal? "read" |>.toOption)
+  | "root" | "moderated" =>
+    if !named then none else
+    match actOf outcome with
+    | "set" => if (outcome.getObjValAs? String "field").toOption == some "read" then (outcome.getObjVal? "after").toOption else none
+    | "hide" | "show" => (outcome.getObjVal? "after").toOption
+    | _ => none
+  | "forked" | "carried" => (genesisRow outcome id).bind (·.getObjVal? "read" |>.toOption)
+  | _ => none
+
 /-- The state CID the entry names for `id` at `version`: a created seed's, a write's `cid`, a root
     `set`'s, a store-installing genesis's `stateCid`; none when it names none. -/
 def stateCidIn (entry : Json) (id : String) (version : Nat) : Option String :=
@@ -2927,7 +2978,7 @@ def objectsNamed (entry : Json) : List String :=
   let installed := (((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "objects" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]).toList.filterMap
     fun o => (o.getObjValAs? String "id").toOption
   (((outcome.getObjValAs? String "object").toOption.toList ++ ids "writes" ++ ids "creates" ++ ids "reprograms" ++
-    ids "amendments" ++ installed)).eraseDups
+    ids "amendments" ++ ids "placed" ++ installed)).eraseDups
 
 /-- `World.anchors` after the entry at `height`: each object it gives a version, a pin or a law is
     anchored there for that; a root `delete` forgets the object. -/
@@ -2940,6 +2991,8 @@ def anchorsAfter (w : World) (height : Nat) (entry : Json) : Std.HashMap String 
     let a := if (versionIn entry id).isSome then { a with version := height } else a
     let a := if (pinIn entry id).isSome then { a with pin := height } else a
     let a := if (lawIn entry id).isSome then { a with law := height } else a
+    let a := if (placedIn entry id).isSome then { a with placed := height } else a
+    let a := if (readIn entry id).isSome then { a with read := height } else a
     if a == m.getD id {} then m else m.insert id a) w.anchors
 
 /-- The indexes a root or moderation entry moves (docs/ROOT.md §1.3: rebuilt as `record` rebuilds
@@ -3408,7 +3461,8 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
         (if p.grants.isEmpty then [] else [("grants", Json.arr (p.grants.toArray.map Grant.json))]) ++
         (if p.revokes.isEmpty then [] else [("revokes", toJson p.revokes)]) ++
         (if p.spent.isEmpty then [] else [("spent", spentJson p.spent)]) ++
-        (if p.placements.isEmpty then [] else [("placements", Json.arr (p.placements.toArray.map (·.json)))]))
+        (if p.placements.isEmpty then [] else [("placements", Json.arr (p.placements.toArray.map (·.json)))]) ++
+        placedField before (updates ++ judged.creations))
       -- The rules the write fires and the wants it opens and closes, under the ledger its sends inherit.
       let (ledger, used, delivery) := entryBudget base
       let child := childLedger before ledger used (updates ++ judged.creations) p.allWrites
@@ -3522,8 +3576,8 @@ def buildObject (w : World) (inputs seed : Json) (read : Option Json := none) (c
   return (o, sources)
 
 def createOutcome (id : String) (o : Object) (artifact seed : Json) : Json :=
-  Json.mkObj [("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
-    ("compile", artifact), ("seed", seed)]
+  Json.mkObj ([("tag", toJson "created"), ("read", o.read.json), ("chain", o.chain.json), ("object", toJson id), ("pin", toJson o.pin),
+    ("compile", artifact), ("seed", seed)] ++ (if o.unplaced then [] else [("placed", toJson (placedCid o))]))
 
 /-- A seed (a `Data` payload) is a whole state, or a record naming some fields of it (the rest
     come from `initial()`), for `world-create` and the `create` Plan alike. -/
@@ -4423,6 +4477,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       throw s!"object {id} is not the source closure its pin names"
     if let .ok text := outcome.getObjValAs? String "lawText" then
       unless text == o.lawText do throw s!"object {id} is not made with the law its creation journaled"
+    if let .ok cid := outcome.getObjValAs? String "placed" then
+      unless cid == placedCid o do throw s!"object {id} is not made with the rows its creation journaled"
     let w := noteRecompiled w o
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
     return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]
@@ -4506,6 +4562,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       for k in ["fired", "unfired", "wanted", "unwanted"] do
         unless reacted.lookup k == (entry.getObjVal? k).toOption do
           throw s!"what the write {k} does not replay"
+      if let .ok recorded := outcome.getObjVal? "placed" then
+        unless (placedField before (updates ++ judged.creations)).lookup "placed" == some recorded do
+          throw "the rows the write placed do not replay"
       let holders := (grants.map (·.holder)).filter fun h => !updates.any (·.1 == h)
       return record w entry key (updates.map (·.1) ++ judged.creations.map (·.1) ++ holders.eraseDups)
   | other => throw s!"unknown outcome {other}"

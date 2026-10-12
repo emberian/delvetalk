@@ -24,14 +24,15 @@ open Lean (Json toJson)
 open Delvetalk.Theory.ObjectiveBendTypes (Ty DataBounds)
 open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
-def edition : String := "delvetalk.snapshot.v4"
+def edition : String := "delvetalk.snapshot.v5"
 
-/-- The edition before (`v3`: no placed rules or wants, no `ruleLog`, `wanting` or `refusedBy`), which a carry
-    still reads (HOST-HANDOFF §6, "The snapshot body is the carry's contract"); deleted with the next. -/
-def previousEdition : String := "delvetalk.snapshot.v3"
+/-- The edition before (`v4`: anchors of a version, a pin and a law only; no `refusedBy` from the binary that
+    wrote the first), which a carry still reads (HOST-HANDOFF §6, "The snapshot body is the carry's contract");
+    deleted with the next. -/
+def previousEdition : String := "delvetalk.snapshot.v4"
 
-/-- The index keys `previousEdition` does not write: a carry from it starts them empty. -/
-def addedKeys : List String := ["ruleLog", "wanting", "refusedBy"]
+/-- The index keys `previousEdition` may not write: a carry from it starts them empty. -/
+def addedKeys : List String := ["refusedBy"]
 
 /-! ## Writing -/
 
@@ -90,7 +91,7 @@ def indexJson (w : World) : Json :=
     ("receipts", mapJson w.receipts toJson),
     ("touched", mapJson w.touched toJson),
     ("touches", mapJson w.touches fun ts => Json.arr (ts.map fun t => pairJson t.version t.height)),
-    ("anchors", mapJson w.anchors fun a => Json.arr #[toJson a.version, toJson a.pin, toJson a.law]),
+    ("anchors", mapJson w.anchors fun a => Json.arr #[toJson a.version, toJson a.pin, toJson a.law, toJson a.placed, toJson a.read]),
     ("changes", Json.arr (w.changes.map fun c => Json.arr #[toJson c.height, toJson c.object, toJson c.version, toJson c.principal])),
     ("ruleLog", mapJson w.ruleLog fun xs => Json.mkObj xs),
     ("wanting", mapJson w.wanting fun xs => Json.mkObj (xs.map fun (n, h) => (n, toJson h))),
@@ -132,8 +133,11 @@ def installIndex (w : World) (j : Json) : Except String World := do
       let (version, height) ← pairOf t
       return ({ version, height } : Touch)
     anchors := ← mapOf (← field "anchors") fun x => do
-      let #[v, p, l] := ← x.getArr? | throw "an anchor is not three heights"
-      return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat? } : Anchor)
+      match ← x.getArr? with
+      | #[v, p, l, d, r] => return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat?, placed := ← d.getNat?, read := ← r.getNat? } : Anchor)
+      -- `previousEdition`'s, read by a carry alone (`checkAnchors` without `whole`).
+      | #[v, p, l] => return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat? } : Anchor)
+      | _ => throw "an anchor is not five heights"
     changes := ← arrOf (← field "changes") change
     ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
     wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
@@ -482,14 +486,17 @@ def installBody (b : Json) (entries : Entries) (caches : Caches) : Except String
     cachedPackets := w.objects.fold (fun m _ o => if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {} }
 
 /-- Each object against the entries its anchors name (`World.anchors`): the version, the state's CID
-    where that entry names one, the pin and the law text are the journal's. A forger who recomputes a
-    snapshot's CIDs moves no entry. -/
-def checkAnchors (w : World) : Except String Unit := do
+    where that entry names one, the pin, the law text, the read policy, and the rules, wants and verbs
+    placed on it (their CID, `placedIn`; an object with rows no entry commits to is not the journal's, and
+    a world whose rows predate their CIDs is replayed whole). A forger who recomputes a snapshot's CIDs
+    moves no entry. A carry reading `previousEdition`, whose anchors hold the first three alone, checks
+    those (`whole` false). -/
+def checkAnchors (w : World) (whole : Bool := true) : Except String Unit := do
   let mut read : Std.HashMap Nat Json := {}
   for (id, o) in w.objects.toList do
     let some a := w.anchors[id]? | throw s!"object {id} is not the journal's"
     let mut entries : List (Nat × Json) := []
-    for h in [a.version, a.pin, a.law].eraseDups do
+    for h in ([a.version, a.pin, a.law] ++ (if whole then [a.placed, a.read].filter (· != 0) else [])).eraseDups do
       match read[h]? with
       | some e => entries := (h, e) :: entries
       | none =>
@@ -503,6 +510,11 @@ def checkAnchors (w : World) : Except String Unit := do
     unless pinIn (at_ a.pin) id == some o.pin do throw s!"object {id} is not at the journal's version and pin"
     if let some law := lawIn (at_ a.law) id then
       unless law == o.lawText do throw s!"the law of {id} is not the journal's"
+    if whole then
+      unless (if a.read == 0 then none else readIn (at_ a.read) id) == some o.read.json do
+        throw s!"the read policy of {id} is not the journal's"
+      unless (if a.placed == 0 then o.unplaced else placedIn (at_ a.placed) id == some (placedCid o)) do
+        throw s!"the rules, wants and verbs on {id} are not the journal's"
 
 /-- The entry at index `i` of `src`, checked against the chain: its record is its CID's (`Entries.get?`
     reads only such), its height is `i + 1`, and it names the entry before it (the genesis, or for a

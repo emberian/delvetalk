@@ -491,6 +491,10 @@ structure Anchor where
   version : Nat := 0
   pin : Nat := 0
   law : Nat := 0
+  /-- The entry naming the CID of its placed rules, wants and verbs (`Ops.placedIn`), 0 for none. -/
+  placed : Nat := 0
+  /-- The entry setting its read policy (`Ops.readIn`). -/
+  read : Nat := 0
   deriving Inhabited, BEq
 
 /-- The clock hour's counts (`world-status.hour`, docs/ROOT.md §2.3): turns journaled (admitted,

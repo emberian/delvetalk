@@ -75,7 +75,7 @@ def readWorld (b : Json) (src : Entries) (height : Nat) : Except String World :=
     | .error _ => if Snapshot.addedKeys.contains k then return j else throw s!"its index has no {k}"
   let w ← Snapshot.installIndex base read
   let w ← Snapshot.install b w
-  Snapshot.checkAnchors w
+  Snapshot.checkAnchors w ((b.getObjValAs? String "edition").toOption == some Snapshot.edition)
   return w
 
 /-- A reason as a law clause's reading: one line, no quotes or backslashes, at most 200 bytes. -/
