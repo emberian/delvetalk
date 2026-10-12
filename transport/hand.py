@@ -415,7 +415,7 @@ class Hand:
             if verb == 'invite':
                 days = form.get('expires', '').strip()
                 got = self.invite_guest(form.get('name', ''), form.get('note', ''), float(days) if days else INVITE_DAYS)
-                return (f"invited {got['name']} as {got['principal']}; its code, shown this once: {got['code']} "
+                return (f"invited {got['name'] or 'whoever arrives (open)'}{' as ' + got['principal'] if got['principal'] else ''}; its code, shown this once: {got['code']} "
                         f"(accept by {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(got['expires']))})")
             got = self.revoke_guest(form.get('name', ''))
             return f"revoked {got['name']}: {counted(got['credentials'], 'credential')} ended"
@@ -426,9 +426,9 @@ class Hand:
         q, w = lambda t: e(str(t)), self.worlds()
         when = lambda t: time.strftime('%Y-%m-%d %H:%M', time.gmtime(t)) if t else 'never'
         guests = ''.join(H['guest'].format(fate='admitted' if g['state'] == 'accepted' else 'suspended' if g['state'] == 'open' else 'refused',
-                                           state=q(g['state']), name=q(g['name']), principal=q(g['principal']), note=q(g['note'] or 'no note'),
+                                           state=q(g['state']), name=q(g['name']), principal=q(g['principal'] or 'name to be registered'), note=q(g['note'] or 'no note'),
                                            created=q(when(g['created'])), expires=q(when(g['expires'])), used=q(when(g['used'])),
-                                           revoke=H['guest_revoke'].format(name=q(g['name'])) if g['state'] != 'revoked' else '')
+                                           revoke=H['guest_revoke'].format(name=q(g['id'] if g['name'] == '(open)' else g['name'])) if g['state'] != 'revoked' else '')
                          for g in self.guests()) or '<li class="quiet">— nobody is invited —</li>'
         rows = ''.join(H['world'].format(name=q(r['name']), height=q(r['height']), objects=q(counted(r['objects'] or 0, 'card')), clock=q(r['clock']), bridge=q(r['bridge']),
                                          waiting=q(r['waiting']), replay=q(r['replay']), resumed=q(f", reopened at entry {r['resumed']}" if r['resumed'] else ''))
@@ -451,14 +451,21 @@ class Hand:
             self._identity = Identity(self.st, None, self.clock)
         return self._identity
 
-    def invite_guest(self, name, note='', days=INVITE_DAYS):
-        """A guest `guest:<origin host>:<name>`, handle `name`, and its one-time code, shown this once."""
+    def invite_guest(self, name=None, note='', days=INVITE_DAYS):
+        """A one-time code, shown this once: for the guest `guest:<origin host>:<name>` (handle `name`) when named, else open,
+        the guest registering its own name when it accepts."""
         try:
-            got = self.identity.invite((name or '').strip(), (note or '').strip(), days)
+            got = self.identity.invite((name or '').strip() or None, (note or '').strip(), days)
         except IdentityError as err:
-            raise HandError(f'invite {name}: {err.code}') from None
-        self.log('invite-guest', None, name=got['name'], principal=got['principal'], note=got['note'], expires=int(got['expires']))
+            raise HandError(f'invite {name or "(open)"}: {err.code}') from None
+        self.log('invite-guest', None, name=got['name'] or '(open)', id=got['id'], principal=got['principal'], note=got['note'], expires=int(got['expires']))
         return got
+
+    def invite_open(self, count, note='', days=INVITE_DAYS):
+        """`count` open codes at once."""
+        if not 1 <= count <= 100:
+            raise HandError('invite --count: between 1 and 100')
+        return [self.invite_guest(None, note, days) for _ in range(count)]
 
     def guests(self):
         return self.identity.invitations()
@@ -845,6 +852,16 @@ def cli_root(h, a):
     return h.act('root', a.rverb, given(a))
 
 
+def cli_invite(h, a):
+    """`invite [NAME]`, or `invite --count N`: the codes, one per line unless `--json`."""
+    if a.count is None:
+        return h.invite_guest(a.name, a.note, a.expires)
+    if a.name:
+        raise HandError('invite: --count mints open codes; give no name')
+    got = h.invite_open(a.count, a.note, a.expires)
+    return got if a.json else [g['code'] for g in got]
+
+
 def cli_speak(h, a):
     """`speak`: the spell given (or the plan's seed N, cast under its own intent), or the plan's invitation at a minute."""
     if a.invitation is not None:
@@ -894,9 +911,10 @@ def parser(p, common):
                       ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
             'morning': [('--day', dict(type=int, help='the clock day (default today)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))],
             'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [],
-            'invite': [('name', dict(help='the guest: [a-z][a-z0-9-]{0,31}, its handle on cards')), ('--note', dict(default='', metavar='TEXT')),
+            'invite': [('name', dict(nargs='?', help='the guest: [a-z][a-z0-9-]{0,31}, its handle on cards; without it the code is open and the guest registers its own name')),
+                       ('--count', dict(type=int, metavar='N', help='mint N open codes at once, one per line')), ('--note', dict(default='', metavar='TEXT')),
                        ('--expires', dict(type=float, default=INVITE_DAYS, metavar='DAYS', help=f'the code may be accepted for DAYS (default {INVITE_DAYS})'))],
-            'invites': [], 'revoke-invite': [('name', {})],
+            'invites': [], 'revoke-invite': [('name', dict(help='the guest, or for an open code its id from `invites`'))],
             'welcome': [('--spell', dict(help='the move the welcome makes and offers (default WELCOME)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))]}
     flags = lambda fields, why: [(f'--{n}', {}) for n, _ in fields] + [(f'--{n}-file', {}) for n, k in fields if k == 'json' or n == 'text'] + \
         [(f'--{why}', dict(required=True))]
@@ -929,7 +947,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'retry': lambda: h.retry(a.uri), 'reply': lambda: h.reply(a.uri, read(a.text_file), a.object), 'log': lambda: h.tail(a.tail),
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
                 'speak': lambda: cli_speak(h, a), 'morning': lambda: h.morning(a.day, a.topic, a.reply_to), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
-                'root': lambda: cli_root(h, a), 'invite': lambda: h.invite_guest(a.name, a.note, a.expires), 'invites': h.guests,
+                'root': lambda: cli_root(h, a), 'invite': lambda: cli_invite(h, a), 'invites': h.guests,
                 'revoke-invite': lambda: h.revoke_guest(a.name), 'welcome': lambda: h.welcome(a.spell, a.topic, a.reply_to), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
     except (HandError, OSError) as err:
         print(f'hand: {err}', file=sys.stderr)
