@@ -22,6 +22,7 @@ from pathlib import Path
 
 from transport import journal
 from transport.config import Config
+from transport.host import HostProcess
 from transport.identity import slug
 
 # What is serve's and is made again, never copied: journals (carried instead), snapshots, the lock, the sealed library
@@ -77,23 +78,6 @@ def reset_cursors(new, world):
         p.write_text(json.dumps(dict(record, height=1), sort_keys=True) + '\n')
 
 
-class Driver:
-    """The host binary as a JSON-lines process over one journal (the throwaway copy the check opens)."""
-
-    def __init__(self, obend):
-        self.p = subprocess.Popen([obend], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-
-    def send(self, **request):
-        self.p.stdin.write(json.dumps(request) + '\n')
-        self.p.stdin.flush()
-        return json.loads(self.p.stdout.readline())
-
-    def close(self):
-        self.p.stdin.close()
-        self.p.wait(timeout=60)
-        self.p.stdout.close()
-
-
 def reader(row, opener):
     """Who may read a snapshot's object row, to read it as: its owner, else a named reader, else the opener."""
     fields = {f['name']: f['value'] for f in (row['state'].get('fields') or [])} if isinstance(row['state'], dict) else {}
@@ -117,7 +101,7 @@ def check(obend, old_journal, new_journal, moved=()):
     with tempfile.TemporaryDirectory(prefix='.carry-check-', dir=os.path.dirname(os.path.abspath(new_journal))) as tmp:
         copy = os.path.join(tmp, 'w.journal')
         journal.copy(new_journal, copy)
-        host = Driver(obend)
+        host = HostProcess(obend)
         try:
             opened = host.send(op='world-open', path=copy, sync='none', verify=True)
             if opened.get('status') != 'opened':

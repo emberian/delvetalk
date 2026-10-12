@@ -20,8 +20,8 @@ from pathlib import Path
 from transport import bridge, measure, model, post, pages, root
 from transport.bridge import all_observations, awaiting_path, uri_hash
 from transport.delve import Failure, canonical
-from transport.host import CLOCK, painted
-from transport.http import WAIT_MAX, trace, typed
+from transport.host import CLOCK, handles, paged, painted, typed
+from transport.http import WAIT_MAX, trace
 from transport.identity import INVITE_DAYS, Identity, IdentityError
 from transport.measure import counted
 from transport.state import State
@@ -417,25 +417,13 @@ class Hand:
         """A principal as the town names it: its avatar's handle, read as the opener and kept once found."""
         if not principal or principal == CLOCK:
             return 'the clock' if principal else '—'
-        if principal not in self.names:
-            view = self.host.send({'op': 'world-view', 'principal': self.owner, 'object': principal})
-            handle = (bridge.plain(view.get('state') or {}) or {}).get('handle') if view.get('status') == 'viewed' else None
-            if not isinstance(handle, str) or not handle:
-                return principal
-            self.names[principal] = handle
-        return self.names[principal]
+        return handles(self.host, self.owner, [principal], self.names).get(principal, principal)
 
     def entries(self, object=None, limit=30):
         """The newest `limit` entries as the opener reads them: the world's journal, or one object's `world-history`."""
         if not object:
             return root.entries(self.st, limit=limit)
-        got, after = [], 0
-        while True:
-            page = self.host.send({'op': 'world-history', 'principal': self.owner, 'object': object, 'after': after})
-            got += page.get('entries') or []
-            if not page.get('more') or not page.get('entries'):
-                return got[::-1][:limit]
-            after = got[-1]['height']
+        return list(paged(self.host, {'op': 'world-history', 'principal': self.owner, 'object': object}, 'entries'))[::-1][:limit]
 
     def drafted(self):
         """The outbox as the watch joins it to the journal: the spells the hand cast, by intent; the drafts, by the height of

@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 
 from transport import journal
-from transport.bridge import plain
+from transport.host import plain
 
 SPELL = re.compile(r'^\s*delvetalk\s+\S', re.M)  # a spell at a line's start, as the host casts one
 GENESIS = re.compile(r'^(?:did:|zulip:)')  # a principal's own object, its avatar, made at its arrival

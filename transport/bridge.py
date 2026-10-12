@@ -11,7 +11,7 @@ import urllib.parse
 import time
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.host import CLOCK, ON_ROOT
+from transport.host import CLOCK, ON_ROOT, paged
 from transport import observe
 from transport.observe import SCHEMA, Observer
 
@@ -158,18 +158,11 @@ def offer_drafts(st, host):
     drafted, handles = [], {o['author']['did']: o['author']['handle'] for o in all_observations(st)} if waiting else {}
     for principal in dict.fromkeys(w['principal'] for w in waiting):
         mine = {(w['principal'], w['uri']): w for w in waiting if w['principal'] == principal}
-        after, grouped = min(w['height'] for w in mine.values()) - 1, {}
-        while True:
-            got = host.send({'op': 'world-offers', 'principal': principal, 'after': max(0, after)})
-            if got.get('status') != 'offers':
-                break
-            for o in got['offers']:
-                who = o.get('from') or o['identity']  # {principal, intent}: `from` is the originating post of a handed-on turn
-                if isinstance(who, dict) and (who.get('principal'), who.get('intent')) in mine:
-                    grouped.setdefault((who['principal'], who['intent']), []).append(o)
-            if not got.get('more') or not got['offers']:
-                break
-            after = got['offers'][-1]['height']
+        grouped = {}
+        for o in paged(host, {'op': 'world-offers', 'principal': principal, 'after': max(0, min(w['height'] for w in mine.values()) - 1)}, 'offers'):
+            who = o.get('from') or o['identity']  # {principal, intent}: `from` is the originating post of a handed-on turn
+            if isinstance(who, dict) and (who.get('principal'), who.get('intent')) in mine:
+                grouped.setdefault((who['principal'], who['intent']), []).append(o)
         for (_, uri), offers in grouped.items():
             key = hashlib.sha256(f'{principal}\0{uri}'.encode()).hexdigest()[:16]
             if any(st.outbox.glob(f'*-off-{key}.json')):
@@ -246,26 +239,6 @@ def mention_turns(st, host, obs, authors, handles):
     if all('receipt' in r for r in replies):  # else retry next run: the host answers a repeated identity with its first receipt
         st.append(st.mentioned, obs['uri'])
     return bool(replies)
-
-
-def plain(data):
-    """Typed data as plain JSON, for reading only (a form's fields); never sent back to the host."""
-    tag = data.get('tag') if isinstance(data, dict) else None
-    if tag == 'record':
-        return {f['name']: plain(f['value']) for f in data['fields']}
-    if tag == 'list':
-        return [plain(i) for i in data['items']]
-    if tag == 'variant':
-        inner = plain(data['payload'])
-        return {'tag': data['label'], **inner} if isinstance(inner, dict) else {'tag': data['label'], 'value': inner}
-    return int(data['value']) if tag == 'natural' else data.get('value') if tag else data
-
-
-def door_rows(view):
-    """The doors a record cites (its `cites` list, in the owner's order), those with an object."""
-    state = plain(view.get('state') or {})
-    doors = (state.get('cites') if isinstance(state, dict) else None) or []
-    return [d for d in doors if isinstance(d, dict) and (d.get('to') or {}).get('object')]
 
 
 def reach(host, obs, known):

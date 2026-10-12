@@ -16,7 +16,7 @@ from transport import interpret, model
 from transport.config import Config
 from transport.state import State
 
-from deploy.serve import Pipe
+from transport.host import HostProcess
 
 REQ = {'system': 'You interpret utterances.', 'user': 'plant a fern'}
 
@@ -103,7 +103,7 @@ class Interpret(unittest.TestCase):
         stub = d / 'stub'
         stub.write_text(STUB % (sys.executable, str(d / 'pending.json'), str(self.log)))
         stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
-        self.host = Pipe(str(stub))
+        self.host = HostProcess(stub)
         self.addCleanup(self.host.close)
         self.state = State(d / 'state')
         self.calls = []
@@ -145,7 +145,7 @@ class Interpret(unittest.TestCase):
         interpret.run(self.state, self.host, self.ask)
         d = Path(self.tmp.name)  # the journal restored from before i1 settled, its receipt file from after
         (d / 'pending.json').write_text(json.dumps({'pending': [item(1)]}))
-        restored = Pipe(str(d / 'stub'))
+        restored = HostProcess(d / 'stub')
         self.addCleanup(restored.close)
         again = interpret.run(self.state, restored, self.ask)
         self.assertEqual((again['settled'], len(self.calls)), (['i1'], 2))

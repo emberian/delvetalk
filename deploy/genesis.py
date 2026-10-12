@@ -457,16 +457,15 @@ def opener_of(path):
 def carried(obend, path):
     """The refresh of the journal a carry just wrote at `path`, opened by the host binary `obend` as `python3 -m
     transport carry` leaves it (serve not yet started on it), as the world's opener. -> refresh's rows."""
-    from types import SimpleNamespace
-    from transport.carry import Driver
-    driver = Driver(obend)
+    from transport.host import HostProcess
+    host = HostProcess(obend)
     try:
-        opened = driver.send(op='world-open', path=path)
+        opened = host.send(op='world-open', path=path)
         if opened.get('status') != 'opened':
             raise RuntimeError(f'the carried journal does not open: {opened}')
-        return refresh(SimpleNamespace(send=lambda request: driver.send(**request)), opener_of(path), ancestry(path))
+        return refresh(host, opener_of(path), ancestry(path))
     finally:
-        driver.close()
+        host.close()
 
 
 def towns(root, own):

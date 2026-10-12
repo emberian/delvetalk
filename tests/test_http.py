@@ -318,7 +318,7 @@ class Guests(FrontCase):
         self.assertIn(f'dt_credential={tok}', dict(headers)['Set-Cookie'])  # a browser holding it plays as the guest
         s, me = self.call('GET', '/AGENTS.md/me', token=tok)
         self.assertEqual((s, me['principal'], me['handle']), (200, principal, name))
-        from transport.bridge import plain
+        from transport.host import plain
         avatar = self.host.send({'op': 'world-view', 'principal': principal, 'object': principal})
         self.assertEqual((avatar['status'], plain(avatar['state'])['handle']), ('viewed', name), avatar)  # arrived, by its handle
         s, t = self.turn(tok, 'g-1')
@@ -880,7 +880,7 @@ class Concurrent(unittest.TestCase):
             front.server_close()
             self.assertEqual(errors, [])
             self.assertEqual(len(creds), self.N)
-            self.assertEqual([len(front.used(c)) for c in creds.values()], [1] * self.N)
+            self.assertEqual([front.limited(c, count=False) for c in creds.values()], [1] * self.N)
             self.assertEqual(host.ops.count('world-arrive'), self.N)
             self.assertEqual(host.ops.count('world-view'), self.N)
             self.assertEqual(sorted(ident.authenticate(c)['did'] for c in creds.values()), sorted(did(i) for i in range(self.N)))

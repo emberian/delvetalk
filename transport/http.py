@@ -16,8 +16,8 @@ from pathlib import Path
 
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
-from transport.bridge import door_rows, plain
-from transport.host import CLOCK, HOST_TIMEOUT, painted
+from transport.host import CLOCK, HOST_TIMEOUT, handles, paged, painted, plain, typed
+from transport.pages import door_rows
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import PUBLIC, Repo
@@ -83,17 +83,11 @@ def resolve(method, path):
 
 
 
-def follow(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
+def trace(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
     """The texts offered to `principal` by a turn and every turn it handed on (its `sends`, delivered under the same
     principal with the send's id as intent: a card handing prose to the commonplace, hob's planting sent to the garden),
-    waiting up to `wait` seconds while any of them is suspended on hob or not yet delivered: the play page's turn and
-    the hand's Speak."""
-    return trace(host, principal, intent, reply, sleep, wait)[0]
-
-
-def trace(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
-    """`follow`'s texts, and whether any turn of the chain is still waiting (on hob, or for its delivery) when `wait`
-    seconds are spent; with `wait` 0, one look at the chain as it stands (a page that refreshes itself)."""
+    and whether any of them is still waiting (on hob, or for its delivery) when `wait` seconds are spent: the play page's
+    turn and the hand's Speak. With `wait` 0, one look at the chain as it stands (a page that refreshes itself)."""
     watch = {intent}
     done = {} if reply.get('status') == 'suspended' else {intent: reply['receipt']}  # the turn as it answered
     watch |= {s['id'] for r in done.values() for s in r.get('sends') or [] if s.get('id')}
@@ -109,17 +103,6 @@ def trace(host, principal, intent, reply, sleep=time.sleep, wait=WAIT_MAX):
         sleep(WAIT_STEP)
     seen = host.send({'op': 'world-offers', 'principal': principal, 'after': after}).get('offers') or []
     return [o['text'] for o in seen if (o.get('identity') or {}).get('intent') in watch], not watch <= set(done)
-
-
-def typed(value):
-    """Plain JSON as the host's typed data: text is a label, an integer a natural, an object a record."""
-    if isinstance(value, dict):
-        return value if 'tag' in value else {'tag': 'record', 'fields': [{'name': k, 'value': typed(v)} for k, v in value.items()]}
-    if isinstance(value, list):
-        return {'tag': 'list', 'items': [typed(v) for v in value]}
-    if isinstance(value, bool):
-        return {'tag': 'boolean', 'value': value}
-    return {'tag': 'natural', 'value': str(value)} if isinstance(value, int) else {'tag': 'label', 'value': str(value)}
 
 
 def argument(data):
@@ -383,14 +366,8 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                                        'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
 
     def handles(self, dids):
-        """{did: handle} for the DIDs a page names: the `handle` of each one's avatar (`world-arrive` seeds it from the
-        registry) as the public reader sees it; a handle once found is kept, a DID with no avatar asked again next time."""
-        for did in set(dids) - set(self.known):
-            view = self.host.send({'op': 'world-view', 'principal': PUBLIC, 'object': did})
-            handle = (plain(view.get('state') or {}) or {}).get('handle') if view.get('status') == 'viewed' else None
-            if isinstance(handle, str) and handle:
-                self.known[did] = handle
-        return self.known
+        """{did: handle} for the DIDs a page names, as the public reader sees their avatars."""
+        return handles(self.host, PUBLIC, dids, self.known)
 
     def sync_library(self, force=False):
         """Re-read serve-status when serve's pid changed (it restarted, maybe with a new library), or when forced."""
@@ -398,16 +375,14 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         if force or info.get('pid') != self.serve_pid:
             self.library, self.serve_pid = info.get('library'), info.get('pid')
 
-    def used(self, credential):
-        now = self.clock()
-        with self.hits_lock:
-            return [t for t in self.hits.get(credential, []) if now - t < WINDOW]
-
-    def limited(self, key, rate=RATE):
-        """0 when under the limit, else the seconds until the oldest counted request leaves the window."""
+    def limited(self, key, rate=RATE, count=True):
+        """0 when under the limit, else the seconds until the oldest counted request leaves the window; `count` False
+        asks without counting (-> the requests in the window)."""
         with self.hits_lock:  # read, test and append as one step
             now = self.clock()
             hits = [t for t in self.hits.get(key, []) if now - t < WINDOW]
+            if not count:
+                return len(hits)
             self.hits[key] = hits + [now]
         return max(1, int(hits[-rate] + WINDOW - now + 0.999)) if len(hits) >= rate else 0
 
@@ -856,7 +831,7 @@ class Handler(BaseHTTPRequestHandler):
         rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []
         mine = [r for r in rows if r.get('principal') == who['did']]
         self.answer({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'], 'scratches': mine,
-                     'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - len(self.server.used(credential)))}},
+                     'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - self.server.limited(credential, count=False))}},
                     links={'world': link(PREFIX + '/world'), 'scratch': link(PREFIX + '/scratch'), 'offers': link(PREFIX + '/offers'), 'revoke': link(PREFIX + '/revoke')})
 
     def open_scratch(self, principal):
@@ -936,7 +911,7 @@ class Handler(BaseHTTPRequestHandler):
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
             for t in turns:
                 self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
-            offers = [o for t in turns if 'receipt' in t for o in follow(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)]
+            offers = [o for t in turns if 'receipt' in t for o in trace(host, did, t['receipt']['identity']['intent'], t, self.server.sleep)[0]]
             names = self.server.handles(pages.A_DID.findall(name))
             usage = str(r.get('text', '')) if r.get('status') == 'usage' else None  # the host's `?` answer: the card's usage, its text sacred
             answer, offered = pages.reply([] if usage is not None else [(t.get('status'), turn_line(t, None if r.get('status') == 'spells' else name, names))
@@ -985,16 +960,8 @@ class Handler(BaseHTTPRequestHandler):
         height = host.send({'op': 'world-status'}).get('height') or 0
         window = 20
         while True:
-            after, entries = max(0, height - window), []
-            for _ in range(50):
-                req = {'op': 'world-history', 'principal': principal or '', 'object': name, 'limit': 100}
-                if after:
-                    req['after'] = after
-                page = host.send(req)
-                entries += page.get('entries') or []
-                if not page.get('more') or not page.get('entries'):
-                    break
-                after = page['entries'][-1]['height']
+            entries = list(paged(host, {'op': 'world-history', 'principal': principal or '', 'object': name, 'limit': 100,
+                                       'after': max(0, height - window)}, 'entries'))
             if len(entries) >= 20 or window >= height:
                 return entries[-20:][::-1]
             window *= 4

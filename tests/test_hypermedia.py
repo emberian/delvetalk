@@ -305,7 +305,7 @@ class Robust(FrontCase):
         self.assertEqual(sorted(got[i][1] for i in range(0, 50, 5)), ['admitted'] * 10)
         self.assertEqual(self.host.send({'op': 'world-status'})['height'], height + 10)  # ten turns, each journaled once
         counted = [i for i in range(50) if i % 5 != 2]  # the catalogue needs no credential and spends none
-        self.assertEqual([len(self.front.used(t)) for t in toks], [sum(1 for i in counted if i % 4 == k) for k in range(4)])
+        self.assertEqual([self.front.limited(t, count=False) for t in toks], [sum(1 for i in counted if i % 4 == k) for k in range(4)])
         self.assertEqual(self.call('GET', f'/AGENTS.md/world/{self.c}', token=toks[0])[1]['version'], 10)
 
     def test_malformed_input_on_every_route_answers_a_named_envelope_never_a_crash(self):
