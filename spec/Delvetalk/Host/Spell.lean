@@ -542,10 +542,17 @@ def boundByType (fields : List Field) (bs : List Binding) : List Binding :=
       | [f] => acc ++ [⟨f.name, b.value⟩]
       | _ => acc) (bs.filter (·.name != ""))
 
-/-- A spell's bindings as `form` reads them: the action-named line to its text field (`rebound`), the
-    values without a name by type. -/
+/-- A field name is read in any case (folded as the spell is parsed); the form's own spelling binds it
+    (`ringAt: 3` to a form field `ringAt`, docs/AUTHORING.md §6.1). -/
+def spelled (form : Form) (b : Binding) : Binding :=
+  match form.fields.find? (fold ·.name == fold b.name) with
+  | some f => { b with name := f.name }
+  | none => b
+
+/-- A spell's bindings as `form` reads them: names in the form's spelling (`spelled`), the action-named
+    line to its text field (`rebound`), the values without a name by type. -/
 def bind (form : Form) (bs : List Binding) : List Binding :=
-  boundByType form.fields (rebound bs form)
+  boundByType form.fields (rebound (bs.map (spelled form)) form)
 
 def clauseOfReason (reason : String) : Clause :=
   if reason.startsWith "The block <<" then .unclosedBlock else .noAction

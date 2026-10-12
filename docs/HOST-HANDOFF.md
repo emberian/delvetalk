@@ -1989,6 +1989,14 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `refused body` is gone); a kind's things are made with one `extend` a body; `~checkBody` serves the workshop's
    `check / over:`. Tests: `test_authoring.Authoring`.
 
+174. **A clause reads a made thing's form fields; a spell's field binds in any case (lane/author-build; AUTHORING §5
+   host 2, step 6).** `Law.fieldReading`: a name the state has no field for is read from its `fields` rows (`{name,
+   value}`, what its kind's make took; `namedValue`), digits as a number, so `count(new.lines where verb == "rain") ==
+   new.ringAt` holds at the number the maker chose; `#guard`s beside `monotone`'s. `Spell.spelled`: a binding whose
+   folded name is a form field's takes the form's spelling (`ringAt: 3` was folded to `ringat` and never bound a
+   camelCase field). Test: `test_authoring.Authoring` (§6.1's tally, its law corrected: a rule fires under the kind's
+   owner, so "only its maker rings it" refused the rule's own ring; the build's law says "at its number, not before").
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

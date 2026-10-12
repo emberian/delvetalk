@@ -31,6 +31,35 @@ def click(state: State, context: Abi.Context) -> Activity<Nat>:
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Text.words("click write lines")
 """
+# AUTHORING §6.1: a tally over RECORD whose rule reads the maker's `ringAt` (the body with its header written out;
+# `TALLY_SHORT` is it as §6.1 types it, the workshop writing the header).
+TALLY = """delvetalk kinds make / name: tally / of: record / head: {maker}'s tally, ringing at {ringAt}
+form: <<END
+seed: text 1..80
+ringAt: natural 1..768
+END
+law: <<END
+rule chosen "rings at the number its maker chose": count(new.lines where verb == "rain") == new.ringAt and count(old.lines where verb == "rain") + 1 == new.ringAt then delvetalk {request.object} ring
+law rung "it rings at its number, not before": not (request.method == "ring") or count(new.lines where verb == "rain") >= new.ringAt
+END
+body: <<BEND
+layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Form.obend as Form
+import ./Text.obend as Text
+type State = Super.State
+form rain:
+  text: text 1..200
+form ring:
+def rain(state: State, input: RainInput, context: Abi.Context) -> Activity<Nat>:
+  Super.inscribe(state, "rain", input.text, context)
+def ring(state: State, context: Abi.Context) -> Activity<Bool>:
+  Super.mark(state, "rung", context)
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  Lists.concat(Super.actions(state, context), Text.words("rain ring"))
+BEND"""
 # The same with §1's one bad reference, on line 11.
 BROKEN = CLICKER.replace("Relations.count(state.lines)", "Super.Relations.count(state.lines)")
 
@@ -115,6 +144,21 @@ class Authoring(unittest.TestCase):
             self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "of"), r)
             self.assertIn(reading, outcome(r)["reason"])
 
+
+    # §5 step 6 and §6.1: a tally that rings at the number its maker chose, read from its form as `new.ringAt`.
+    def test_a_clause_reads_a_form_field_its_maker_chose(self):
+        tally = TALLY
+        self.admitted(YUE, "kinds", tally)
+        self.admitted(KES, "kind/tally", "delvetalk kind/tally make / seed: rains on the roost / ringAt: 3")
+        for i in range(2):
+            self.assertFalse(self.admitted(YUE, "tally/1", "delvetalk tally/1 rain / text: rain %d" % i).get("revealed", [""])[0].startswith("rule"))
+        # Before its number, a hand that rings it is refused by the kind's law.
+        r = self.say(KES, "tally/1", "delvetalk tally/1 ring")
+        self.assertEqual((r["status"], outcome(r).get("clause")), ("refused", "rung"), r)
+        third = self.admitted(YUE, "tally/1", "delvetalk tally/1 rain / text: the third")
+        self.assertIn("rule chosen of yue.delve.town fired: delvetalk tally/1 ring", third["revealed"][0], third)
+        [rang] = third["delivered"]
+        self.assertEqual((rang["receipt"]["identity"]["intent"], rang["revealed"]), ("rule:tally/1:chosen:%d" % third["receipt"]["height"], ["tally/1's marks: 1"]), rang)
 
 if __name__ == "__main__":
     unittest.main()
