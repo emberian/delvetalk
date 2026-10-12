@@ -61,6 +61,13 @@ def ticked(state: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {ticks: add 1n, last: set context.clock}
   match world.send({object: Plans.self(context), method: "due", argument: {at: context.clock + state.gap}}):
     case _: Card.tell(Done.ticked({tick: state.ticks + 1n}), Document.concat(Document.text("Tick {natText(state.ticks + 1n)}.\n\n"), render(extend(state, {ticks: state.ticks + 1n, last: context.clock}), context)))
+# Carried to a newer host (the carry's `carried`, as a kind's `made`): the wait the move dropped is waited
+# again, for the tick the last one scheduled; a tide not yet begun waits for its owner's first.
+def carried(state: State, input: {}, context: Abi.Context) -> Activity<Done>:
+  if state.ticks == 0n then Done.waited({}) else rearmed(state, context)
+def rearmed(state: State, context: Abi.Context) -> Activity<Done>:
+  match world.send({object: Plans.self(context), method: "due", argument: {at: state.last + state.gap}}):
+    case _: Done.waited({})
 # The wait between ticks: the tide's own send alone; the clock reaching `at` sends the next tick.
 def due(state: State, input: {at: Nat}, context: Abi.Context) -> Activity<Done>:
   if context.caller != context.object then Done.waited({}) else waiting(input.at, context)
@@ -73,7 +80,7 @@ def next(context: Abi.Context) -> Activity<Done>:
     case _: Done.waited({})
 form tick:
 def methods() -> Lists.List<String>:
-  Text.words("~due")
+  Text.words("~due ~carried")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   if context.principal == state.owner && state.ticks == 0n then Text.words("tick") else Text.words("")
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
