@@ -1955,6 +1955,17 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    sends it (a mention, a rule's firing, a send). Test: `test_bridge.Mentions` (a mention through the bridge on a
    genesis town, admitted on the avatar).
 
+171. **A question hob reads nothing into is answered by the card (host27; the v8 deploy's silent question; the
+   coordinator's decision).** "does the bell have a clapper?" to bell/1, which wants one, came back `none` and so
+   silence. Now `resumeHeard`, when hob replied with no spell and no ask (`none`, `unclear: not addressed`) to words
+   ending in `?`, offers the speaker `cardAnswer`: the card's exact text as they read it (`cardRendered`, whole; the
+   model's copy is `cardText`, within `cardShownChars`) and then `wantsText` when it wants anything. Data, not
+   narration. Other words stay silence, and so do a failed model and the deadline. The paint is not in the offer:
+   renders live per process in the session (`Open.renders`), outside the world a turn commits; the front places a
+   painting above the exact card where one exists (5.161), and the bridge drafts exact. "Or hob says ask is not
+   needed" is not built: hob has no such answer; a question it asks back stays `ask:`. Test: `test_heard.Heard` (a
+   rendered card with a placed want: the question answered by its text and its wants; prose stays silent).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

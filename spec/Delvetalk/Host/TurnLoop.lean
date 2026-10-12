@@ -3580,6 +3580,32 @@ def neededFields (needs : List String) (forms : List Spell.Form) : List String :
   let said := needs.flatMap fun n => ((n.split fun c => !(c.isAlphanum || c == '_' || c == '-')).toList.map (·.toString))
   (forms.flatMap fun f => f.fields.map (·.name)).eraseDups.filter said.contains
 
+/-- The card `id` as `reader` reads it now, as text (`world-card`'s); none when it renders none. -/
+def cardRendered (w : World) (id reader : String) : Option String :=
+  match w.objects[id]? with
+  | none => none
+  | some o =>
+    let init : TurnState := { world := w, principal := reader, intent := "", subject := reader, ticks := Limits.maxTurnTicks,
+                              limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
+    match (renderCard id o (cardContext w id reader "" "" w.height)).run.run init with
+    | (.ok (.ok document), _) => (Delvetalk.Document.render document).toOption
+    | _ => none
+
+/-- `cardRendered` within `Limits.cardShownChars` characters, "" for none: what an interpretation shows the model
+    of the card answered. -/
+def cardText (w : World) (id reader : String) : String :=
+  ((cardRendered w id reader).map fun t => (t.take Limits.cardShownChars).toString).getD ""
+
+/-- A question hob read no spell into, answered by the card itself (the decision after the v8 deploy: data, not
+    narration): its exact text as the speaker reads it, then what it wants now (`wantsText`) when it wants anything.
+    The paint is the front's to place above it (renders are per process, outside the world). -/
+def cardAnswer (w : World) (id reader : String) : String :=
+  let text := (cardRendered w id reader).getD ""
+  let wants := match w.objects[id]? with
+    | some o => if (wantRows w id o).isEmpty then "" else "\n" ++ wantsText w id o id
+    | none => ""
+  text ++ wants
+
 /-- Settle hob's reading of words a card heard (`heardTurn`), as the speaker's turn under the suspension's
     identity. A spell, or `grow:` and the spell that uses the verb, runs (`runHeard`), unless the policy asks
     first for one of its actions (`confirmFor`): then the speaker is offered the spells to send. A question
@@ -3628,6 +3654,10 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
   let needs := strings (verdict.getObjVal? "needs").toOption ++ items.flatMap fun v => strings (v.getObjVal? "reasons").toOption
   let forms := (((i.getObjVal? "offers").toOption.bind (decodeData Limits.dataDepth · |>.toOption)).bind listOf |>.getD []).filterMap Spell.Form.ofData
   let asked := needs.any fun n => !n.isEmpty && n != "not addressed" && !n.startsWith "model:"
+  -- A question hob reads no spell or ask into is answered by the card itself (`cardAnswer`); other words, by silence.
+  let question := ((i.getObjValAs? String "utterance").toOption.getD "").trimAscii.toString.endsWith "?"
+  let answered := match kind with | .reply _ => !needs.any (·.startsWith "model:") | .timedOut => false
+  if !asked && question && answered then return close (cardAnswer w card principal) none
   if !asked then return close "" none
   let fields := neededFields needs forms
   -- An ask naming no field the card's spells take: none of them fits the words; the card's `?` lists them.
@@ -3941,20 +3971,6 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
         ("text", toJson (← Delvetalk.Document.render document)), ("document", dataJson document)])
     | .ok (.error clause) => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson clause)])
     | .error _ => return (w, Json.mkObj [("status", toJson "refused"), ("object", toJson id), ("clause", toJson "render")])
-
-/-- The card `id` as `reader` reads it now, as text (`world-card`'s), at most `Limits.cardShownChars`
-    characters; "" when it renders none. What an interpretation shows the model of the card answered. -/
-def cardText (w : World) (id reader : String) : String :=
-  match w.objects[id]? with
-  | none => ""
-  | some o =>
-    let init : TurnState := { world := w, principal := reader, intent := "", subject := reader, ticks := Limits.maxTurnTicks,
-                              limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    match (renderCard id o (cardContext w id reader "" "" w.height)).run.run init with
-    | (.ok (.ok document), _) => match Delvetalk.Document.render document with
-      | .ok text => (text.take Limits.cardShownChars).toString
-      | .error _ => ""
-    | _ => ""
 
 /-- The system text an interpretation sends: the Policy's own pure `prompt(state, offers,
     utterance)` when its package defines one and it renders text under the turn tick budget,

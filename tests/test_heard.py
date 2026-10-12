@@ -163,6 +163,31 @@ class Heard(HeardCase):
         self.assertEqual([o["action"] for o in item["offers"]], ["rain", "water"])
         self.assertEqual((again["receipt"]["outcome"]["tag"], self.value("acts")), ("admitted", "2"))
 
+    def test_a_question_hob_reads_nothing_into_is_answered_by_the_card_with_its_wants(self):
+        """The v8 deploy's silent question: hob's `none` to a question is the card itself, exact, with what it wants;
+        to other words it stays silence."""
+        shown = BELL.replace("import ./World.obend as World", "import ./World.obend as World\nimport ./Document.obend as Document").replace(
+            "def receive(", "def render(state: State, context: Abi.Context) -> Document.Document:\n"
+                            "  Document.text(\"A brass bell, rained on {natText(state.rains)} times.\\n\")\ndef receive(")
+        self.make("brass", shown, record(owner=label("ember")))
+        placed = self.say("delvetalk brass want\nname: clapper\nreading: a bell with no clapper\nwhen: new.rains <= 0\n"
+                          "asks: delvetalk {request.object} rain / text: <a clapper>", card="brass", who="ember")
+        self.assertEqual(placed["status"], "admitted", placed)
+        self.assertEqual(self.say("does the bell have a clapper?", card="brass")["status"], "suspended")
+        _, answered = self.settle("none")
+        carded = self.host.send(op="world-card", principal="glm", object="brass")
+        self.assertEqual(carded["status"], "card", carded)
+        card = carded["text"]
+        self.assertIn("A brass bell, rained on 0 times.", card)
+        [offer] = [o["text"] for o in answered["receipt"]["offers"]]
+        self.assertTrue(offer.startswith(card), (offer, card))
+        self.assertIn('What brass wants now:\n\n» clapper "a bell with no clapper"', offer)
+        self.assertIn("delvetalk brass rain / text: <a clapper>", offer)
+        self.assertEqual(answered["receipt"]["outcome"]["tag"], "admitted")
+        self.say("lovely evening for it", card="brass", identity="talk")
+        _, quiet = self.settle("none")
+        self.assertNotIn("offers", quiet["receipt"])
+
     def test_each_of_hobs_spells_reads_the_card_as_the_ones_before_it_wrote_it(self):
         self.make("room", ROOM, record(owner=label("ember")))
         self.assertEqual(self.say("I come in and say hello", card="room")["status"], "suspended")
