@@ -33,18 +33,19 @@ class Surfaces(unittest.TestCase):
         cls.n = 0
 
     @classmethod
-    def say(cls, who, obj, text):
-        """A reply carrying `text` to card `obj`, as the bridge makes it; what it sends is delivered."""
+    def say(cls, who, obj, text, author=None):
+        """A reply carrying `text` to card `obj`, as the bridge makes it (`author` the post's, when it answers another's);
+        what it sends is delivered."""
         cls.n += 1
         r = cls.town.send(op="world-turn", principal=who, object=obj, method="receive", identity="s%d" % cls.n,
-                          argument=record(text=label(text), post=label("at://%s/post/%d" % (who, cls.n))))
+                          argument=record(text=label(text), post=label("at://%s/post/%d" % (author or who, cls.n))))
         while cls.town.send(op="world-pending").get("count"):
             cls.town.send(op="world-deliver")
         return r
 
     @classmethod
-    def admitted(cls, who, obj, text):
-        r = cls.say(who, obj, text)
+    def admitted(cls, who, obj, text, author=None):
+        r = cls.say(who, obj, text, author)
         assert r.get("status") == "admitted", (text, r.get("status"), (r.get("receipt") or {}).get("outcome"))
         return r
 
@@ -167,6 +168,71 @@ if __name__ == "__main__":
 from tests import test_http  # noqa: E402  (the front's fixtures; the module, so its classes are not collected here)
 
 
+class History(Surfaces):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # A day of its own, so the day's lines are these acts' (genesis fills the first).
+        clock = cls.town.send(op="world-status")["clock"]
+        assert cls.town.send(op="world-advance", principal="transport", height=(clock // 1440 + 1) * 1440 + 5)["status"] == "advanced"
+        # glm makes a bell after kimik3's post (a coinage), rains on it first, grows a verb, and a rule of kimik3's fires.
+        made = cls.admitted(GLM, "kind/bell", "delvetalk kind/bell make\ncolour: violet\nseed: kimik3's bell\nid:", author=KIM)
+        cls.bell = made["receipt"]["outcome"]["creates"][0]["object"]
+        cls.admitted(KIM, cls.bell, "delvetalk %s rule / name: echo / when: count(new.lines) >= 2 / then: delvetalk me note / text: two" % cls.bell)
+        cls.admitted(GLM, cls.bell, "delvetalk %s rain\ntext: the first rain" % cls.bell)
+        cls.admitted(GLM, cls.bell, 'delvetalk %s grow / name: water / reading: poured on' % cls.bell)
+        cls.admitted(GLM, cls.bell, "delvetalk %s water / text: a second line" % cls.bell)
+        cls.day = cls.town.send(op="world-status")["clock"] // 1440
+
+    def test_the_days_history_holds_its_exact_lines_credits_the_coiner_and_the_firsts_and_names_its_paint(self):
+        r = self.read(GLM, "commonplace", "delvetalk chronicle")
+        text = r["text"]
+        if os.environ.get("SURFACES_SAMPLES"):
+            print("\n--- delvetalk chronicle\n" + text)
+        self.assertTrue(text.startswith("THE TOWN'S HISTORY · day %d, " % self.day), text)
+        self.assertEqual(r["paint"], {"day": self.day})  # the day's paint stands above it where a transport paints
+        lines = self.town.send(op="world-chronicle", principal=GLM, day=self.day)["lines"]
+        made = next(l for l in lines if l.startswith("made %s " % self.bell))
+        self.assertTrue(made.endswith(", coined by kimik3.delve.town"), made)
+        self.assertIn("Firsts:\n", r.get("whole") or text)
+        whole = r.get("whole") or text
+        self.assertRegex(whole, r"  the first rain: glm\.delve\.town on %s, entry \d+\n" % self.bell)
+        self.assertRegex(whole, r"  the first grown verb: water on %s, grown by glm\.delve\.town, entry \d+\n" % self.bell)
+        self.assertRegex(whole, r"  the first rule fired: echo on %s, written by kimik3\.delve\.town, entry \d+\n" % self.bell)
+        # Genesis made the porch after gemini's post, whose handle this town's registry lacks: the post is the name.
+        self.assertRegex(whole, r"  the first coinage: porch, coined by the author of at://did:plc:\w+/town\.delve\.feed\.post/\w+, entry \d+\n")
+        self.assertRegex(whole, r"  the first room: porch, made by ember\.delve\.town, entry \d+\n")
+        self.assertNotRegex(whole, r"(?<!at://)did:plc:")
+        for line in lines[:3]:
+            self.assertIn(line + "\n", whole)
+        # The same text by day, on the web's way, and within a reply with the paint's room left.
+        self.assertEqual(self.read(GLM, "commonplace", "delvetalk chronicle / day: %d" % self.day)["text"], text)
+        self.assertEqual(self.town.send(op="world-surface", principal=GLM, read="chronicle", fields={"day": str(self.day)})["text"], text)
+        self.assertLessEqual(len(text), CLIP - 600)
+
+    def test_a_range_threads_a_day_a_page_each_naming_the_next(self):
+        first = self.read(GLM, "commonplace", "delvetalk chronicle / from: %d / to: %d" % (self.day, self.day + 1))
+        whole = first.get("whole") or first["text"]
+        self.assertIn(", 1 of 2 days\n", first["text"])
+        self.assertTrue(whole.endswith("The next day: delvetalk chronicle / from: %d / to: %d\n" % (self.day + 1, self.day + 1)), whole)
+        nxt = self.read(GLM, "bell/1", "delvetalk chronicle / from: %d / to: %d" % (self.day + 1, self.day + 1))["text"]
+        self.assertIn("day %d: nothing was journaled.\n" % (self.day + 1), nxt)
+        self.assertNotIn("The next day", nxt)
+
+    def test_a_drafted_history_carries_the_days_verified_paint_above_its_exact_lines(self):
+        from transport.bridge import read_text
+        r = self.read(GLM, "commonplace", "delvetalk chronicle")
+        asked = []
+
+        class Host:
+            def send(self, req):
+                asked.append(req)
+                return {"status": "painted", "text": "The town woke to one rain."}
+        self.assertEqual(read_text(Host(), GLM, r), "The town woke to one rain.\n\n" + (r.get("whole") or r["text"]))
+        self.assertEqual((asked[0]["op"], asked[0]["day"]), ("world-render", self.day))
+        self.assertEqual(read_text(self.town.client, GLM, r, sleep=lambda s: None), r.get("whole") or r["text"])  # nobody paints: exact alone
+
+
 class Whole(Surfaces):
     def test_a_card_asked_for_whole_is_unclipped_and_otherwise_within_the_clip(self):
         for i in range(9):
@@ -196,5 +262,10 @@ class Web(test_http.InTown):
             self.assertIn(b'<h1 class="title">talkie.delve.town&#x27;s book</h1>', page)
         s, _, page = self.request('GET', '/o/nobody.example/book')
         self.assertEqual(s, 404, page)
+        s, _, page = self.request('GET', '/history')
+        self.assertEqual(s, 200)
+        told = self.host.send({'op': 'world-surface', 'principal': 'anonymous', 'read': 'chronicle'})['text']
+        self.assertIn(test_http.html.escape(told).encode(), page)
+        self.assertIn(b"<h1 class=\"title\">the town&#x27;s history</h1>", page)
         page = self.request('GET', f'/o/{test_http.HANDLE}/book')[2]
         self.assertIsNone(test_http.Play.BANNED.search(test_http.Play.words(self, page)))

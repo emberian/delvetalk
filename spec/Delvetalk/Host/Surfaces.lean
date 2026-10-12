@@ -16,10 +16,10 @@ open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 open Delvetalk.Theory.ObjectiveBendTypes (Ty)
 
 /-- The reads, each the name of the card's definition that renders it. -/
-def reads : List String := ["book"]
+def reads : List String := ["book", "chronicle"]
 
 /-- The reads the commonplace renders for any card that has no definition of its own. -/
-def townReads : List String := []
+def townReads : List String := ["chronicle"]
 
 /-- Where the town's reads are rendered when the card has none: the world's square (genesis's commonplace). -/
 def square : String := Spell.townCard
@@ -151,6 +151,115 @@ def deeds (w : World) (reader who : String) : List Deed := Id.run do
       if let some h := left.max? then out := out.push { what := "visited", object := id, height := h }
   return (out.qsort fun a b => a.height < b.height || (a.height == b.height && a.object < b.object)).toList
 
+/-! ## The history: a day of the chronicle, and the town's firsts -/
+
+/-- The first of a kind of act the world still holds (`World.First`): `rain` (the first line a rain wrote),
+    `room` (the first room made), `verb` (the first verb grown), `rule` (the first rule that fired), `coinage`
+    (the first thing made after another's post); its thing, who did it (a handle: the rainer, the maker, the
+    grower, the rule's owner, the coiner), what (the verb, the rule), the entry. -/
+structure First where
+  what : String
+  object : String
+  who : String
+  name : String := ""
+  height : Nat
+
+def First.data (f : First) : Data :=
+  .record [("what", .label f.what), ("object", .label f.object), ("who", .label f.who), ("name", .label f.name),
+    ("at", .natural f.height)]
+
+/-- Whether `o` is a room: a place one enters (its card offers `enter`: a room, the porch). -/
+def isRoom (o : Object) : Bool := o.offers "enter"
+
+/-- The earliest of `firsts` by entry. -/
+def earliest (firsts : List First) : Option First :=
+  firsts.foldl (fun acc f => match acc with
+    | some a => if f.height < a.height then some f else acc
+    | none => some f) none
+
+/-- The town's firsts as `reader` may view them: the first rain, room, grown verb, rule fired and coinage. A rule's
+    first firing is the journal's first `fired` row, or the firing a carry kept (`World.ruleLog`) when earlier. -/
+def firsts (w : World) (reader : String) : List First := Id.run do
+  let seen := w.objects.toList.filter fun (id, o) => o.read.permits reader && !avatarId id
+  let rains := seen.flatMap fun (id, o) => (rows (fieldsOf o.state) "lines").filterMap fun r =>
+    if text? r "verb" == some "rain" then some ({ what := "rain", object := id, who := named w r "handle" "author", height := (nat? r "at").getD 0 } : First)
+    else none
+  let rooms := seen.filterMap fun (id, o) =>
+    if !isRoom o then none else
+    some ({ what := "room", object := id, who := shownName w (makerOf w id o), height := ((madeEntry w id).map (·.1)).getD 0 } : First)
+  let verbs := seen.flatMap fun (id, o) => o.verbs.map fun v =>
+    ({ what := "verb", object := id, who := shownName w v.grower, name := v.name, height := v.height } : First)
+  let coinages := seen.filterMap fun (id, o) =>
+    let coiner := coinerOf w o
+    if coiner.isEmpty then none else some ({ what := "coinage", object := id, who := coiner, height := ((madeEntry w id).map (·.1)).getD 0 } : First)
+  -- The journal's first firing, read from its start until one is found.
+  let mut fired : Option First := none
+  for i in [0:w.height] do
+    let some e := w.entries.get? i | continue
+    let rows := (((e.getObjVal? "fired").toOption.bind (·.getArr?.toOption)).getD #[]).toList
+    let row := rows.find? fun f => viewable w reader ((f.getObjValAs? String "sender").toOption.getD "")
+    if let some f := row then
+      let text := fun (k : String) => (f.getObjValAs? String k).toOption.getD ""
+      fired := some { what := "rule", object := text "sender", who := shownName w (text "principal"), name := text "rule", height := i + 1 }
+      break
+  -- A carried world's journal begins at the carry: what fired before it is the newest firing of each rule.
+  let kept := w.ruleLog.toList.flatMap fun (id, log) => if !viewable w reader id then [] else
+    log.filterMap fun (name, j) => do
+      guard (j.getObjVal? "why").toOption.isNone
+      let h ← (j.getObjValAs? Nat "height").toOption
+      let owner := ((w.objects[id]?).bind fun o => (o.rules.find? (·.name == name)).map (·.owner)).getD ""
+      return ({ what := "rule", object := id, who := if owner.isEmpty then "" else shownName w owner, name, height := h } : First)
+  let rule := earliest (fired.toList ++ kept.filter fun f => !f.who.isEmpty)
+  return [earliest rains, earliest rooms, earliest verbs, rule, earliest coinages].filterMap id
+
+/-- The day a chronicle read shows and the range it walks: `day` alone, or `from` through `to` (a page a day,
+    each the next one's spell), the current day by default; `page` of the day's lines. -/
+structure Asked where
+  day : Nat
+  from_ : Nat
+  to : Nat
+  page : Nat
+
+def asked (w : World) (fields : List Spell.Binding) : Except (String × String) Asked := do
+  let today := w.clock / Limits.clockDay
+  let day ← number fields "day"
+  let from_ ← number fields "from"
+  let to ← number fields "to"
+  let page := ((← number fields "page").getD 1).max 1
+  match from_ with
+  | some f =>
+    let t := (to.getD today).max f
+    return { day := f, from_ := f, to := t, page }
+  | none =>
+    let d := day.getD (to.getD today)
+    return { day := d, from_ := d, to := d, page }
+
+/-- The calendar date of unix day `days` (the clock counts unix minutes): `2026-10-12`. -/
+def civil (days : Nat) : String :=
+  let z := days + 719468
+  let era := z / 146097
+  let doe := z - era * 146097
+  let yoe := (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365
+  let doy := doe - (365 * yoe + yoe / 4 - yoe / 100)
+  let mp := (5 * doy + 2) / 153
+  let d := doy - (153 * mp + 2) / 5 + 1
+  let m := if mp < 10 then mp + 3 else mp - 9
+  let y := yoe + era * 400 + (if m ≤ 2 then 1 else 0)
+  let two := fun (n : Nat) => if n < 10 then s!"0{n}" else toString n
+  s!"{y}-{two m}-{two d}"
+
+#guard civil 20738 == "2026-10-12"
+#guard civil 0 == "1970-01-01"
+
+/-- `World.Annal`: the day shown and its date, today, the first day the journal holds, the range, the page, the day's exact
+    lines (`Ops.chronicle`) and the town's firsts. -/
+def annal (w : World) (reader : String) (a : Asked) : Data :=
+  .record [("day", .natural a.day), ("date", .label (civil a.day)), ("today", .natural (w.clock / Limits.clockDay)),
+    ("first", .natural ((w.days[0]?.map (·.1)).getD (w.clock / Limits.clockDay))),
+    ("from", .natural a.from_), ("to", .natural a.to), ("page", .natural a.page),
+    ("lines", listOfData ((chronicle w reader a.day).map Data.label)),
+    ("firsts", listOfData ((firsts w reader).map First.data))]
+
 /-! ## Rendering by the card's own definition -/
 
 /-- The parameter types of a function type and what it returns past `n` arrows. -/
@@ -217,6 +326,9 @@ def answer (w : World) (reader id : String) (target : Object) (read : String) (f
       .ok { object := id, text, extra := whole ++ extra }
     | .error e => .error ("render", s!"{renderer} could not render its {read}: {e}")
   some <| match read with
+    | "chronicle" => do
+      let a ← asked w fields
+      rendered (fun page => annal w reader { a with page }) a.page [("paint", Json.mkObj [("day", toJson a.day)]), ("day", toJson a.day)]
     | _ => do
       let p ← page ()
       let rows := listOfData ((deeds w reader id).map Deed.data)
@@ -226,6 +338,7 @@ def answer (w : World) (reader id : String) (target : Object) (read : String) (f
 def spellsOf (card read : String) : List String :=
   match read with
   | "book" => [s!"delvetalk {card} book", s!"delvetalk {card} book / page: <a page after the first>"]
+  | "chronicle" => ["delvetalk chronicle", "delvetalk chronicle / day: <a day>", "delvetalk chronicle / from: <a day> / to: <a later day>"]
   | _ => [s!"delvetalk {card} {read}"]
 
 /-- The reads `?` lists on card `id` (shown as `shown`) for `reader`: those the card renders, and the town's the square

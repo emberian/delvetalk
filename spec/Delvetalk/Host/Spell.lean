@@ -147,11 +147,17 @@ partial def pastFence (text : T) : T :=
 /-- The world's square (genesis's commonplace): where a summons lands, and whose doors prose may name. -/
 def townCard : String := "commonplace"
 
+/-- The town's reads (`Surfaces.townReads`), written with no card or with inline fields after them (`delvetalk
+    chronicle`, `delvetalk chronicle / day: 3`): the square's spells of those names. -/
+def townWords : List String := ["chronicle"]
+
 def heading (line rest : T) : Candidate :=
   let afterBlanks := trimStart line
   let cardEnd := brk afterBlanks [' ', '\t']
   let card := afterBlanks.take cardEnd
   let afterCard := trimStart (afterBlanks.drop cardEnd)
+  if townWords.contains (str (foldT card)) && (afterCard.isEmpty || afterCard.take 1 == ['/']) then
+    .stands townCard (str (foldT card)) afterCard rest else
   let actionEnd := brk afterCard [' ', '\t']
   let written := afterCard.take actionEnd
   let action := unmarked (foldT written)

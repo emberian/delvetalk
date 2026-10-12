@@ -5508,7 +5508,7 @@ def unfiredWords : String → String
 
 /-- One thing a day of the journal did to a thing (`chronicleDay`): `made`, `grew` (a verb), `fired` or
     `unfired` (a rule), `wanted` or `unwanted`; `who` is the hand or the rule's owner as shown, `name` the
-    verb, rule or want, `why` an unfired rule's reason, `entry` the height. -/
+    verb, rule or want (a made thing's coiner, `coinerOf`), `why` an unfired rule's reason, `entry` the height. -/
 structure DayEvent where
   what : String
   object : String
@@ -5528,6 +5528,21 @@ structure Day where
   refusals : List (String × Nat)
   hands : List String
 
+/-- The coiner of a thing (`o`): the author of the post it was made after when that is not its maker (`Record.post`),
+    by handle when the registry knows them, else `the author of <the post's at:// URI>` (a DID is never a name; a
+    post is cited by its URI); "" for a thing nobody coined. -/
+def coinerOf (w : World) (o : Object) : String :=
+  let fs := match o.state with
+    | .record f => f
+    | _ => []
+  let text := fun (k : String) => match fs.lookup k with
+    | some (.label s) => s
+    | _ => ""
+  let post := text "post"
+  if !post.startsWith "at://" || post.startsWith s!"at://{text "maker"}/" then "" else
+  let author := ((post.drop 5).toString.splitOn "/").head?.getD ""
+  if (handleOf w author).isEmpty then s!"the author of {post}" else handleOf w author
+
 def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.run do
   let some i := w.days.findIdx? (·.1 == day) | return none
   let start := w.days[i]!.2
@@ -5542,7 +5557,8 @@ def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.ru
     let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
     let rows := fun (j : Json) (k : String) => (((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList
     let text := fun (j : Json) (k : String) => (j.getObjValAs? String k).toOption.getD ""
-    let seen := fun (id : String) => viewable w reader id
+    -- A principal's own avatar (its id holds a DID) is never a thing of the day: a DID never reaches a line.
+    let seen := fun (id : String) => viewable w reader id && !((id.splitOn "/").head?.getD "").contains ':'
     match tagOf e with
     | "refused" =>
       let cls := text outcome "class"
@@ -5550,12 +5566,16 @@ def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.ru
         else refusals ++ [(cls, 1)]
     | "created" =>
       if !hands.contains (shownName w who) then hands := hands.push (shownName w who)
-      if seen (text outcome "object") then events := events.push { what := "made", object := text outcome "object", who := shownName w who, entry := h }
+      let made := text outcome "object"
+      let coiner := ((w.objects[made]?).map (coinerOf w)).getD ""
+      if seen made then events := events.push { what := "made", object := made, who := shownName w who, entry := h, name := coiner }
     | "admitted" =>
       admitted := admitted + 1
       if !who.isEmpty && !hands.contains (shownName w who) then hands := hands.push (shownName w who)
       for c in rows outcome "creates" do
-        if seen (text c "object") then events := events.push { what := "made", object := text c "object", who := shownName w who, entry := h }
+        let made := text c "object"
+        let coiner := ((w.objects[made]?).map (coinerOf w)).getD ""
+        if seen made then events := events.push { what := "made", object := made, who := shownName w who, entry := h, name := coiner }
       for x in rows outcome "placements" do
         if seen (text x "object") && !(text x "verb").isEmpty && !(text x "reading").isEmpty then
           events := events.push { what := "grew", object := text x "object", who := shownName w who, name := text x "verb", entry := h }
@@ -5577,7 +5597,7 @@ def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.ru
 /-- A day event as the chronicle's line. -/
 def DayEvent.line (e : DayEvent) : String :=
   match e.what with
-  | "made" => s!"made {e.object} ({e.who}, entry {e.entry})"
+  | "made" => s!"made {e.object} ({e.who}, entry {e.entry})" ++ (if e.name.isEmpty then "" else s!", coined by {e.name}")
   | "grew" => s!"grew {e.name} on {e.object} ({e.who}, entry {e.entry})"
   | "fired" => s!"rule {e.name} of {e.who} fired on {e.object} at entry {e.entry}"
   | "unfired" => s!"rule {e.name} of {e.who} did not fire on {e.object} at entry {e.entry}: {e.why}"

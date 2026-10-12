@@ -100,3 +100,30 @@ def doorCard(to: Plans.Reference, context: Abi.Context) -> Activity<Card.Replied
   match world.card({object: to}):
     case carded(c): Card.tell(Card.Replied.usage({}), c.document)
     case _: refusing("noCard", "The door to {to.object} opens on nothing yet", context)
+# --- The town's history ------------------------------------------------------------------
+# A clock day of the town (docs/VOICE.md "The book, the history, the map"): its date, the chronicle's exact lines
+# (`chronicle {day}`), and the town's firsts credited to who did each; read by `delvetalk chronicle` (today), `/ day: N`,
+# `/ from: N / to: M` (a day a page, each naming the next) and the page /history. The host hands it the day
+# (`World.Annal`) and paints the day above it where a transport shows paint; it writes nothing. Its pages leave the
+# day's paint room in a reply.
+def chronicle(state: State, context: Abi.Context, annal: World.Annal) -> Document.Document:
+  let spell = if annal.from == annal.to then "delvetalk chronicle / day: {natText(annal.day)}" else "delvetalk chronicle / from: {natText(annal.day)} / to: {natText(annal.to)}"
+  let pages = Card.paged(Lists.concat(Lists.List.cons({head: historyHead(annal), tail: Lists.map(annal.lines, fn(l: String) -> String: "{l}\n")}), firstsLines(annal.firsts)), historyRoom())
+  let shown = Card.pageOf(pages, annal.page, spell)
+  let last = annal.page == 0n || annal.page >= Lists.length(pages)
+  Document.Document.sequence({items: Document.Documents.cons({head: shown, tail: Document.Documents.cons({head: Document.text(if last then onward(annal) else ""), tail: Document.Documents.nil()})})})
+# A reply's characters less the day's paint above it (at most 600) and the lines under it.
+def historyRoom() -> Nat:
+  Card.post() - 600n - 180n
+def historyHead(annal: World.Annal) -> String:
+  let of = if annal.from == annal.to then "" else ", {natText(annal.day - annal.from + 1n)} of {natText(annal.to - annal.from + 1n)} days"
+  "THE TOWN'S HISTORY · day {natText(annal.day)}, {annal.date}{of}\n"
+# The next day of a range, else the day before (while the journal holds one).
+def onward(annal: World.Annal) -> String:
+  if annal.day < annal.to then "The next day: delvetalk chronicle / from: {natText(annal.day + 1n)} / to: {natText(annal.to)}\n" else if annal.from == annal.to && annal.day > annal.first then "The day before: delvetalk chronicle / day: {natText(annal.day - 1n)}\n" else ""
+# Who did each of the town's first acts.
+def firstsLines(firsts: Lists.List<World.First>) -> Lists.List<String>:
+  if Lists.length(firsts) == 0n then Lists.List.nil() else Lists.List.cons({head: "Firsts:\n", tail: Lists.map(firsts, firstLine)})
+def firstLine(f: World.First) -> String:
+  let entry = if f.at == 0n then "" else ", entry {natText(f.at)}"
+  if f.what == "rain" then "  the first rain: {f.who} on {f.object}{entry}\n" else if f.what == "room" then "  the first room: {f.object}, made by {f.who}{entry}\n" else if f.what == "verb" then "  the first grown verb: {f.name} on {f.object}, grown by {f.who}{entry}\n" else if f.what == "rule" then "  the first rule fired: {f.name} on {f.object}, written by {f.who}{entry}\n" else "  the first coinage: {f.object}, coined by {f.who}{entry}\n"

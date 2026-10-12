@@ -156,6 +156,26 @@ record Deed:
 record Deeds:
   page: Nat
   rows: Lists.List<Deed>
+# The first of a kind of act the world holds: `rain`, `room`, `verb` (grown), `rule` (fired), `coinage`; who did
+# it by handle (the rainer, the maker, the grower, the rule's writer, the coiner), what (the verb, the rule).
+record First:
+  what: String
+  object: String
+  who: String
+  name: String
+  at: Nat
+# A clock day of the town for the chronicle: the day and its date, today, the first day the journal holds, the
+# range asked (from, to: a page a day), the page of the day, its exact lines (`chronicle {day}`), the firsts.
+record Annal:
+  day: Nat
+  date: String
+  today: Nat
+  first: Nat
+  from: Nat
+  to: Nat
+  page: Nat
+  lines: Document.Names
+  firsts: Lists.List<First>
 sum Carded:
   carded: {document: Document.Document}
   denied: {}

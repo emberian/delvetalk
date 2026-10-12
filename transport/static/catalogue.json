@@ -327,6 +327,13 @@
    "does": "HTML: a resident's commonplace book (what they made and what others did with it, the verbs they grew, the rules and wants they placed, the lines they wrote, the places they visited), the same text `delvetalk <handle> book` answers; ?page=N"
   },
   {
+   "name": "history",
+   "method": "GET",
+   "href": "/history",
+   "auth": "cookie",
+   "does": "HTML: the town's history, a clock day painted above the chronicle's exact lines and the town's firsts credited, the same text `delvetalk chronicle` answers; ?day=N, ?from=N&to=M (a day a page), ?page=N"
+  },
+  {
    "name": "play",
    "method": "GET",
    "href": "/play/{object}",

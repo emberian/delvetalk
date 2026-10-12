@@ -10,7 +10,7 @@ import urllib.parse
 import time
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.host import CLOCK, paged
+from transport.host import CLOCK, paged, painted
 from transport import observe
 from transport.observe import Observer
 
@@ -109,6 +109,17 @@ def revealed_lines(reply):
     """The host's lines an admitted reply carries (`revealed`: what it moved, what it opened or closed, where it
     stands), each on its own line; the host renders them, the transport only places them."""
     return ''.join(f'{line}\n' for line in reply.get('revealed') or [])
+
+
+def read_text(host, principal, reply, sleep=time.sleep):
+    """A usage reply's draft: its text (`draft_text`), and for a read the host says a day paints (the chronicle's
+    `paint {day}`), that day's verified paint above it when there is one within the host's patience (docs/VOICE.md "The
+    book, the history, the map"); the exact lines alone otherwise."""
+    text = draft_text(reply)
+    if not isinstance(reply.get('paint'), dict):
+        return text
+    paint = painted(host, principal, None, sleep, **reply['paint']).get('text')
+    return f"{paint}\n\n{text}" if paint else text
 
 
 def draft_public(reply, origin=None, addressed=None, handles=None):
@@ -449,7 +460,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
             st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
-                'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
+                'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False, 'text': read_text(host, did, reply)})
             done.append(obs['uri'])
             continue
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run

@@ -2394,6 +2394,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `test_surfaces.Book` (made, heard, grown, placed, wrote, visited; by handle with what the reader may view; the web
    equal to the post; pages covering every line once; `whole`), `test_surfaces.Whole` (the commonplace whole and
    clipped), `test_surfaces.Web`.
+208. **The town's reads: the history (lane/books).** `chronicle` (the commonplace's `chronicle(state, context,
+   World.Annal)`) is a town read: `Spell.townWords` reads `delvetalk chronicle` (alone or with inline fields) as the
+   square's spell, and any card without a spell of that name is read by the square's. `Surfaces.annal`: the day
+   (`day`, else `from`, else `to`, else today), its date (`civil`, the clock in unix minutes), today, the journal's
+   first day, the range, the page, `Ops.chronicle`'s lines and `firsts` (the earliest rain line, room (`offers
+   enter`), grown verb, coinage, and rule firing: the journal's first `fired` row, else a carry's `ruleLog`). The reply
+   carries `paint {day}`; `bridge.read_text` and `/history` set the day's paint above it. `Ops.chronicleDay` credits a
+   made thing's coiner (`coinerOf`, reading `Record.post` as Enchant does; an unknown handle is `the author
+   of <post>`) and leaves avatars out. Tests: `test_surfaces.History`, `test_surfaces.Web`.
 
 ## 6. Gotchas
 

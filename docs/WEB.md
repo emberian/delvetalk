@@ -87,6 +87,9 @@ the card, the doors and the newest five, and links the whole.
 **`/o/<handle>/book`.** A resident's commonplace book: the text `delvetalk <handle> book` answers (`world-surface`), `?page=N`
 for its further pages (docs/VOICE.md "The book, the history, the map").
 
+**`/history`.** The town's history: a clock day, its paint above the text `delvetalk chronicle` answers; `?day=N`,
+`?from=N&to=M`, `?page=N`.
+
 **Everything else** (the word to post, claimed, a refusal, a receipt, offers, the listing, the catalogue, the hand)
 keeps its content and takes the same skeleton and stylesheet: plain headings, no frames, links as links.
 
