@@ -70,6 +70,22 @@ partial def GType.brief : GType → String
   | .row fields => "{" ++ ", ".intercalate (fields.map fun (n, t) => n ++ ": " ++ t.brief) ++ "}"
   | .overlay a b => a.brief ++ " with " ++ b.brief
 
+/-- A type during inference. `param` is a type parameter of the callee being inferred;
+`lit` is the row of a record literal (weaker evidence than a declared type: a literal
+binds a parameter only when nothing declared does); `unknown` is what synthesis could
+not tell. -/
+inductive IType where
+  | ground (type : GType)
+  | param (name : String)
+  /-- A generic sum applied: its origin, name and declaration key. -/
+  | app (origin : Nat) (name key : String) (args : List IType)
+  | arrow (domain codomain : IType)
+  | row (fields : List (String × IType))
+  | lit (fields : List (String × IType))
+  | applied (name : String) (args : List IType)
+  | unknown
+  deriving Inhabited
+
 structure Instance where
   key : String
   declaration : String
@@ -106,6 +122,15 @@ structure State where
   /-- Instances by their fresh name. -/
   instanceByName : Std.HashMap String Nat := {}
   inferRemaining : Nat := maxInferenceSteps
+  /-- The answers of inference demands met so far, by demand (`demand`). -/
+  demanded : Std.HashMap Nat IType := {}
+  nextDemand : Nat := 0
+  /-- Inference types of type texts read without type-parameter bindings, by (origin, text):
+  such a reading is a function of the declarations, which a state never changes. -/
+  itypes : Std.HashMap (Nat × String) IType := {}
+  /-- Callee skeletons (type parameters, parameter and result types over `param`), by the
+  declaration's origin and name and the constructor label ("" for a definition). -/
+  callees : Std.HashMap (Nat × String × String) (List String × List IType × IType) := {}
   /-- The declaration being rewritten (module, name), which an instance is specialized for. -/
   current : String × String := ("", "")
 
@@ -227,21 +252,6 @@ packet are those of the explicit spelling.
 Inference never instantiates: a generic sum met while resolving or synthesizing a type
 stays an application (`IType.app`) until the call's own arguments are fixed. -/
 
-/-- A type during inference. `param` is a type parameter of the callee being inferred;
-`lit` is the row of a record literal (weaker evidence than a declared type: a literal
-binds a parameter only when nothing declared does); `unknown` is what synthesis could
-not tell. -/
-inductive IType where
-  | ground (type : GType)
-  | param (name : String)
-  /-- A generic sum applied: its origin, name and declaration key. -/
-  | app (origin : Nat) (name key : String) (args : List IType)
-  | arrow (domain codomain : IType)
-  | row (fields : List (String × IType))
-  | lit (fields : List (String × IType))
-  | applied (name : String) (args : List IType)
-  | unknown
-  deriving Inhabited
 
 /-- Fully known (no `unknown`, no `param`), and whether a literal row occurs. -/
 partial def IType.complete : IType → Bool
@@ -300,6 +310,22 @@ def spendInfer : M Unit := do
   if s.inferRemaining == 0 then throw "type-argument inference exceeds its step budget"
   set { s with inferRemaining := s.inferRemaining - 1 }
 
+/-- A type computed on demand and at most once: the first demand runs `action`, every later
+one reads its answer, so a local used u times synthesizes its initializer once (and a binding
+nobody demands costs nothing). Synthesis reads only what the pass never changes once made
+(sources, declaration keys, instances), so the answer is the one a rerun would give. A refusal
+is not kept: a later demand runs `action` again and refuses again. A refusal that `tryCatch`
+recovers from rolls the state back, demands made inside it with their answers. -/
+def demand (action : M IType) : M (M IType) := do
+  let s ← get
+  let id := s.nextDemand
+  set { s with nextDemand := id + 1 }
+  return do
+    if let some t := (← get).demanded[id]? then return t
+    let t ← action
+    modify fun s => { s with demanded := s.demanded.insert id t }
+    return t
+
 /-- `resolve`, with an unresolvable name as `none` rather than a refusal. -/
 def resolveQuiet (origin : Nat) (name : String) : M (Option Declaration) :=
   tryCatch (resolve origin name) fun _ => pure none
@@ -329,6 +355,13 @@ partial def ofG (g : GType) : M IType := do
 /-- A type text as an inference type, without instantiating anything (mirrors `typeOf`;
 whatever `typeOf` would refuse is `unknown` here and refused later by `typeOf`). -/
 partial def itypeOf (origin : Nat) (bindings : List (String × IType)) (raw : String) : M IType := do
+  if bindings.isEmpty then
+    if let some t := (← get).itypes[(origin, raw)]? then return t
+    let t ← reading origin [] raw
+    modify fun s => { s with itypes := s.itypes.insert (origin, raw) t }
+    return t
+  reading origin bindings raw
+where reading (origin : Nat) (bindings : List (String × IType)) (raw : String) : M IType := do
   spendInfer
   let text := trim raw
   if let some t := bindings.lookup text then return t
@@ -414,27 +447,44 @@ structure Callee where
   /-- The expression naming the declaration (the call's callee, or a constructor's sum). -/
   named : Expr
 
+/-- A callee's skeleton, read once per declaration (and label) and kept (`State.callees`). -/
+def skeleton (d : Declaration) (label : String)
+    (read : M (Option (List String × List IType × IType))) : M (Option (List String × List IType × IType)) := do
+  if let some c := (← get).callees[(d.origin, d.name, label)]? then return some c
+  let some c ← read | return none
+  modify fun s => { s with callees := s.callees.insert (d.origin, d.name, label) c }
+  return some c
+
 def functionCallee (d : Declaration) (named : Expr) (given : Option (List IType)) : M (Option Callee) := do
   let .function sig tps _ _ := d.ast | return none
-  let tps := tps.getD []
-  let bindings := tps.map fun p => (p, IType.param p)
-  let params ← sig.params.mapM fun p => itypeOf d.origin bindings p.type
-  return some ⟨d, tps, params, ← itypeOf d.origin bindings sig.resultType, given, none, named⟩
+  let some (tps, params, result) ← skeleton d "" do
+      let tps := tps.getD []
+      let bindings := tps.map fun p => (p, IType.param p)
+      let params ← sig.params.mapM fun p => itypeOf d.origin bindings p.type
+      return some (tps, params, ← itypeOf d.origin bindings sig.resultType)
+    | return none
+  return some ⟨d, tps, params, result, given, none, named⟩
 
 def ctorCallee (d : Declaration) (label : String) (named : Expr) (given : Option (List IType)) : M (Option Callee) := do
   match d.ast with
   | .sum _ cases ps _ =>
-    let some c := cases.find? (·.name == label) | return none
-    let bindings := ps.map fun p => (p, IType.param p)
-    let result ← if ps.isEmpty then
-        pure (IType.ground (.named (← originModule d.origin).name d.name (← declarationKey d)))
-      else pure (.app d.origin d.name (← declarationKey d) (ps.map .param))
-    return some ⟨d, ps, [← itypeOf d.origin bindings c.type], result, given, some label, named⟩
+    let some (tps, params, result) ← skeleton d label do
+        let some c := cases.find? (·.name == label) | return none
+        let bindings := ps.map fun p => (p, IType.param p)
+        let result ← if ps.isEmpty then
+            pure (IType.ground (.named (← originModule d.origin).name d.name (← declarationKey d)))
+          else pure (.app d.origin d.name (← declarationKey d) (ps.map .param))
+        return some (ps, [← itypeOf d.origin bindings c.type], result)
+      | return none
+    return some ⟨d, tps, params, result, given, some label, named⟩
   | .typeAlias _ type _ =>
-    let t ← itypeOf d.origin [] type
-    match t with
-    | .app .. | .ground (.named ..) => return some ⟨d, [], [← payloadOf t label], t, none, some label, named⟩
-    | _ => return none
+    let some (_, params, t) ← skeleton d label do
+        let t ← itypeOf d.origin [] type
+        match t with
+        | .app .. | .ground (.named ..) => return some ([], [← payloadOf t label], t)
+        | _ => return none
+      | return none
+    return some ⟨d, [], params, t, none, some label, named⟩
   | _ => return none
 
 /-- The callee of a call, when it names a definition or a constructor. -/
@@ -561,7 +611,7 @@ def worldArgumentsOf (synth : Expr → M IType) (method : String)
 
 
 /-- The type an expression synthesizes, without rewriting or instantiating anything.
-`locals` holds each local's type, computed on demand. -/
+`locals` holds each local's type, computed on demand and at most once (`demand`). -/
 partial def synthI (site : Site) (locals : List (String × M IType)) (e : Expr) : M IType := do
   spendInfer
   let names := locals.map (·.1)
@@ -580,7 +630,7 @@ partial def synthI (site : Site) (locals : List (String × M IType)) (e : Expr) 
     if t.complete then return t
     synthI site locals b
   | .letE n type v b _ =>
-    let t : M IType := if trim type == "_" then synthI site locals v else itypeAt site type
+    let t ← demand (if trim type == "_" then synthI site locals v else itypeAt site type)
     synthI site ((n, t) :: locals) b
   | .lambda ps r _ _ =>
     let mut t ← itypeAt site r
@@ -630,6 +680,10 @@ partial def synthI (site : Site) (locals : List (String × M IType)) (e : Expr) 
       return t
   | _ => return .unknown
 
+
+/-- Parameters as locals: each its declared type, on demand and at most once. -/
+def paramLocals (site : Site) (ps : List Param) : M (List (String × M IType)) :=
+  ps.mapM fun p => do return (p.name, ← demand (itypeAt site p.type))
 
 /- Rewriting visits children in the order the AST JSON's sorted keys put them (`args`
 before `callee`, `inherited` before `specification`, a method's `body` before its
@@ -782,8 +836,9 @@ def toG : Nat → IType → M GType
     | .param p => throw ("internal: type parameter " ++ p ++ " was not inferred")
     | .unknown => throw "internal: an inferred type is unknown"
 
-/-- `locals` are the names in scope with their types (computed on demand); `expected` is
-the type the expression's position expects (`unknown` when nothing does), on demand. -/
+/-- `locals` are the names in scope with their types (computed on demand, each at most once:
+`demand`); `expected` is the type the expression's position expects (`unknown` when nothing
+does), on demand. -/
 def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr → M Expr
   | 0, _, _, _, _ => throw "generic AST nesting capacity"
   | fuel + 1, site, locals, expected, e => do
@@ -876,9 +931,12 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
     | .bool v s => return .bool v s
     | .str v s => do spendString v; return .str v s
     | .unit s => return .unit s
-    | .record fs s => return .record (← recurFields fs fun n => do fieldOf (← expected) n) s
+    | .record fs s =>
+      let expected ← demand expected
+      return .record (← recurFields fs fun n => do fieldOf (← expected) n) s
     | .extend i fs s =>
-      let fs ← recurFields fs fun n => do fieldOf (← synthI site locals i) n
+      let base ← demand (synthI site locals i)
+      let fs ← recurFields fs fun n => do fieldOf (← base) n
       return .extend (← recur i) fs s
     | .member t n s => do spendString n; return .member (← recur t) n s
     | .call c args s =>
@@ -889,20 +947,21 @@ def rewriteExpr : Nat → Site → List (String × M IType) → M IType → Expr
       let inherited ← recur inherited
       return .fix (← recur spec) inherited s
     | .lambda ps r b s =>
-      let inner := ps.map (fun p => (p.name, itypeAt site p.type)) ++ locals
+      let inner := (← paramLocals site ps) ++ locals
       return .lambda (← ps.mapM (rewriteParam fuel site)) (← rewriteType fuel site r)
         (← rewriteExpr fuel site inner (itypeAt site r) b) s
     | .extensionValue ps t b s =>
-      let inner := ps.map (fun p => (p.name, itypeAt site p.type)) ++ locals
+      let inner := (← paramLocals site ps) ++ locals
       return .extensionValue (← ps.mapM (rewriteParam fuel site)) (← rewriteType fuel site t)
         (← rewriteExpr fuel site inner (pure .unknown) b) s
     | .binary op l r s => do spendString op; return .binary op (← recur l) (← recur r) s
     | .ite c t f s =>
       let c ← recur c
+      let expected ← demand expected
       let f ← rewriteExpr fuel site locals expected f
       return .ite c (← rewriteExpr fuel site locals expected t) f s
     | .letE n t v b s =>
-      let declared : M IType := if trim t == "_" then synthI site locals v else itypeAt site t
+      let declared ← demand (if trim t == "_" then synthI site locals v else itypeAt site t)
       let value ← rewriteExpr fuel site locals (if trim t == "_" then pure .unknown else declared) v
       let body ← rewriteExpr fuel site ((n, declared) :: locals) expected b
       return .letE n (← rewriteType fuel site t) value body s
@@ -916,15 +975,17 @@ def rewriteBody : Nat → Site → List (String × M IType) → M IType → Body
     | .expr e s => return .expr (← rewriteExpr fuel site locals expected e) s
     | .cases scrutinee branches s =>
       let scrutinee' ← rewriteExpr fuel site locals (pure .unknown) scrutinee
+      let scrutineeType ← demand (synthI site locals scrutinee)
+      let expected ← demand expected
       let branches ← branches.mapM fun (pattern, body, span) => do
-        let binder : M IType := match pattern with
-          | .ctor l _ => do payloadOf (← synthI site locals scrutinee) l
+        let binder ← demand (match pattern with
+          | .ctor l _ => do payloadOf (← scrutineeType) l
           | .succ _ => pure (.ground (.atom "Nat"))
-          | _ => pure .unknown
+          | _ => pure .unknown)
         return (pattern, ← rewriteBody fuel site ((pattern.binder, binder) :: locals) expected body, span)
       return .cases scrutinee' branches s
     | .letB n t v rest s =>
-      let declared : M IType := if trim t == "_" then synthI site locals v else itypeAt site t
+      let declared ← demand (if trim t == "_" then synthI site locals v else itypeAt site t)
       let value ← rewriteExpr fuel site locals (if trim t == "_" then pure .unknown else declared) v
       let rest ← rewriteBody fuel site ((n, declared) :: locals) expected rest
       return .letB n (← rewriteType fuel site t) value rest s
@@ -934,7 +995,7 @@ def rewriteDecl : Nat → Site → List (String × M IType) → Decl → M Decl
   | fuel + 1, site, locals, d => do
     spend
     spendString d.name
-    let typed := fun (ps : List Param) => ps.map (fun p => (p.name, itypeAt site p.type)) ++ locals
+    let typed := fun (ps : List Param) => do return (← paramLocals site ps) ++ locals
     let untyped := fun (ns : List String) => ns.map (fun n => (n, (pure .unknown : M IType))) ++ locals
     match d with
     | .reexport name target span =>
@@ -945,21 +1006,20 @@ def rewriteDecl : Nat → Site → List (String × M IType) → Decl → M Decl
       spendString target
       return .reexport name target span
     | .function sig typeParameters body span =>
-      let result := itypeAt site sig.resultType
+      let result ← demand (itypeAt site sig.resultType)
       let sig' ← rewriteSignature fuel site sig
-      return .function sig' typeParameters (← rewriteBody fuel site (typed sig.params) result body) span
+      return .function sig' typeParameters (← rewriteBody fuel site (← typed sig.params) result body) span
     | .extension name ps t body binders span =>
       let ps' ← ps.mapM (rewriteParam fuel site)
       let t ← rewriteType fuel site t
-      return .extension name ps' t (← rewriteBody fuel site (typed ps) (pure .unknown) body) binders span
+      return .extension name ps' t (← rewriteBody fuel site (← typed ps) (pure .unknown) body) binders span
     | .spec sp =>
       let locals := untyped ["self", "super"]
       let claims ← sp.claims.mapM fun c => do
-        let body ← rewriteExpr fuel site (c.params.map (fun p => (p.name, itypeAt site p.type)) ++ locals) (pure .unknown) c.body
+        let body ← rewriteExpr fuel site ((← paramLocals site c.params) ++ locals) (pure .unknown) c.body
         return { c with body, params := ← c.params.mapM (rewriteParam fuel site) }
       let methods ← sp.methods.mapM fun m => do
-        let body ← rewriteBody fuel site (m.signature.params.map (fun p => (p.name, itypeAt site p.type)) ++ locals)
-          (pure .unknown) m.body
+        let body ← rewriteBody fuel site ((← paramLocals site m.signature.params) ++ locals) (pure .unknown) m.body
         return { m with body, signature := ← rewriteSignature fuel site m.signature }
       let requirements ← sp.requirements.mapM (rewriteSignature fuel site)
       let targetType ← rewriteType fuel site sp.targetType
