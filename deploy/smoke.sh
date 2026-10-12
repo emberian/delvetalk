@@ -11,14 +11,14 @@
 #   --handle   a delve.town handle to ask a challenge for (default: skip the challenge)
 #   --verify   an at:// URI of a post whose whole text is that challenge's text;
 #              verifies, then views the object as the verified principal, then revokes
-#   --object   the object to view (default: garden)
+#   --object   the object to view (default: commonplace, which every genesis makes)
 #
 # Each challenge counts against the handle's 8 per hour and the IP's 16 per minute.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 [[ $# -ge 1 ]] || { sed -n '2,17p' "$0" >&2; exit 64; }
 origin=${1%/}; shift
-base=$origin pin="" handle="" proof="" object=garden
+base=$origin pin="" handle="" proof="" object=commonplace
 [[ -f $here/out/host.sha256 ]] && pin=$(cat "$here/out/host.sha256")
 while [[ $# -gt 0 ]]; do
   case $1 in

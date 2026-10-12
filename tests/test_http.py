@@ -295,6 +295,14 @@ class Access(FrontCase):
         self.assertNotIn('Bearer', text)
         self.assertEqual(len(lines), 2 + 2 + 1, lines)  # api, challenge, verify, me, nowhere
 
+    def test_the_compose_healthcheck_reads_the_home_pages_entry_and_refuses_entry_none(self):
+        from transport import watch
+        st = State(self.tmp.name, config=Config(host_socket=self.socket, http_port=self.port))
+        self.assertTrue(watch.healthy(st, 'http'))  # the deploy of 5db9aa79: a redesigned home page left it red while serving
+        real = self.host.send
+        self.host.send = lambda req: {'status': 'refused'} if req.get('op') == 'world-status' else real(req)
+        self.assertFalse(watch.healthy(st, 'http'))  # a refused world-open: the page shows `entry None`
+
 
 class Guests(FrontCase):
     """An invitation accepted (POST /AGENTS.md/accept): the operator's code is the guest's credential once, and from then the
