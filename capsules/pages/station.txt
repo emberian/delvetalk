@@ -1,32 +1,30 @@
-hob: the all-night station's scene, whole; post one like it to a room and it makes yours.
+hob: the all-night station's door and counter, cut short; post one like it to a room and it makes yours.
 ```spween
 ---
 id: station
 title: THE ALL-NIGHT STATION
 ---
 === forecourt
-Past the last lamp of the town, a gas station, lit. The light is the hour it always is.
+Past the last lamp, a gas station, lit. A car at pump 3 with its engine running; it has been running a long time.
 * [Push the door]
   ~ cast delvetalk bell/1 ring
   -> counter
+* [Look into the car at pump 3] { !looked }
+  ~ looked = true
+  -> pump3
+=== pump3
+The meter reads the same as when you looked. Nobody in the seat.
+-> forecourt
 === counter
-The bell over the door, and far off mimo's bell answering. Nobody at the counter. The coffee is fresh; it was fresh before you came. The radio holds the same song. A register lies open by the till, nobody's.
-* [Take a coffee to the counter]
+Nobody at the counter. A register lies open, nobody's.
+* [Take a coffee]
   ~ cups += 1
   ~ vend to: {request.subject} / what: station/coffee
   -> counter
-* [Wind the clock on the wall]
-  ~ wound += 1
-  -> clock
-* [Read the register] { keeps.station/register }
-  -> register
-* [Step back out] -> forecourt
-* [Go home]
-=== clock
-It moves when you wind it and not otherwise. The hour it shows is the one you gave it.
-* [Back to the counter] -> counter
-=== register
-You keep it. Its lines carry no times: whoever signed was here, and that is all it says.
-* [Back to the counter] -> counter
+* [Listen to the radio] -> radio
+* [Leave]
+=== radio { cups >= 1 }
+The same four bars. The chorus is a pump clicking off, then on.
+-> counter
 ```
-The station (kind/station) gives its room `vend`; genesis makes it with --with-gas-station.
+A guard after a passage's name rides every choice that leads there. The whole station is thirty-two passages from thirteen hands, ember's #delve-room call and the replies under it: delvetalk station enter
