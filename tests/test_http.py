@@ -256,7 +256,7 @@ class Claim(FrontCase):
         self.assertIn(b'Claimed', page)
         self.assertIn(f'{HANDLE}: this browser is you'.encode(), page)
         self.assertNotIn(b'did:plc', page)
-        self.assertIn(b'ENTER THE WORLD', self.request('GET', '/', headers={'Cookie': cookie, 'Accept': 'text/html'})[2])  # logged in
+        self.assertIn(b'Enter the commonplace', self.request('GET', '/', headers={'Cookie': cookie, 'Accept': 'text/html'})[2])  # logged in
         self.assertEqual(self.call('GET', '/AGENTS.md/me', token=cookie.split('=', 1)[1])[1]['handle'], HANDLE)
 
     def test_someone_elses_newer_challenge_neither_shows_its_word_nor_displaces_mine(self):
@@ -295,6 +295,14 @@ class Access(FrontCase):
         self.assertNotIn('Bearer', text)
         self.assertEqual(len(lines), 2 + 2 + 1, lines)  # api, challenge, verify, me, nowhere
 
+    def test_the_compose_healthcheck_reads_the_home_pages_entry_and_refuses_entry_none(self):
+        from transport import watch
+        st = State(self.tmp.name, config=Config(host_socket=self.socket, http_port=self.port))
+        self.assertTrue(watch.healthy(st, 'http'))  # the deploy of 5db9aa79: a redesigned home page left it red while serving
+        real = self.host.send
+        self.host.send = lambda req: {'status': 'refused'} if req.get('op') == 'world-status' else real(req)
+        self.assertFalse(watch.healthy(st, 'http'))  # a refused world-open: the page shows `entry None`
+
 
 class Guests(FrontCase):
     """An invitation accepted (POST /AGENTS.md/accept): the operator's code is the guest's credential once, and from then the
@@ -325,9 +333,8 @@ class Guests(FrontCase):
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         r = self.host.send({'op': 'world-receipt', 'principal': principal, 'identity': 'g-1'})
         self.assertEqual(r['receipt']['identity']['principal'], principal)
-        s, _, page = self.request('POST', f'/play/{self.c}', raw=b'method=bump', headers={'Cookie': f'dt_credential={tok}', 'Content-Type': FORM})
-        self.assertEqual(s, 200)
-        self.assertIn(name, page.decode())
+        s, _, page = self.request('GET', f'/play/{self.c}', headers={'Cookie': f'dt_credential={tok}'})
+        self.assertIn(name, page.decode())  # the play page knows the guest by its name
         self.assertEqual(list(self.outbox.glob('*.json')) if self.outbox.exists() else [], [])  # admitted public writes, drafted for nobody
         r = self.host.send({'op': 'world-create', 'principal': DID, 'identity': 'mk-g-' + self.c, 'object': 'g-' + self.c, 'modules': counter_modules(),
                             'entry': 'initial', 'seed': record(count=nat(0)), 'law': f'law maker "only its maker counts": request.subject == "{DID}"'})
@@ -388,12 +395,6 @@ class HttpDrafts(FrontCase):
         self.assertEqual(self.turn(tok, 'pub-1')[1]['receipt']['slug'], t['receipt']['slug'])  # the same intent again: the same receipt,
         self.assertEqual(len(self.drafts()), 1)  # and no second draft
 
-    def test_a_turn_from_the_play_page_is_drafted_too(self):
-        tok = self.login()
-        s, _, _ = self.request('POST', f'/play/{self.c}', raw=b'method=bump', headers={'Cookie': f'dt_credential={tok}', 'Content-Type': FORM})
-        self.assertEqual(s, 200)
-        self.assertEqual([d['object'] for d in self.drafts()], [self.c])
-
     def test_a_private_object_a_refusal_and_a_scratch_turn_draft_nothing(self):
         tok = self.login()
         r = self.host.send({'op': 'world-create', 'principal': DID, 'identity': 'mk-p-' + self.c, 'object': 'p-' + self.c, 'modules': counter_modules(),
@@ -407,17 +408,6 @@ class HttpDrafts(FrontCase):
         s, t = self.call('POST', '/AGENTS.md/scratch/try/world/h1/bump', {'argument': record(), 'intent': 'scratch-1'}, tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         self.assertEqual(self.drafts(), [])
-
-
-class Forms(FrontCase):
-    def test_a_browser_form_keeps_a_deliberately_blank_field_for_the_host(self):
-        tok = self.login()
-        real, sent = self.host.send, []
-        self.host.send = lambda req: (sent.append(req) if req['op'] == 'world-turn' else None) or real(req)
-        self.request('POST', f'/play/{self.c}', raw=b'method=bump&migration=&note=x',
-                     headers={'Cookie': f'dt_credential={tok}', 'Content-Type': 'application/x-www-form-urlencoded'})
-        (turn,) = sent
-        self.assertEqual({f['name']: f['value']['value'] for f in turn['argument']['fields']}, {'migration': '', 'note': 'x'})
 
 
 class Turns(FrontCase):
@@ -659,10 +649,8 @@ def browser_login(case, handle=HANDLE):
     return cookie
 
 
-class Play(FrontCase):
-    """/play/ against the genesis town: the commonplace, the garden and its interpreter, as a verified browser sees them."""
-    OPENER = 'did:plc:' + 'e' * 24
-
+class InTown(FrontCase):
+    """A genesis town with its furnishings and a verified browser: a serve per class."""
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -682,6 +670,11 @@ class Play(FrontCase):
         if text is None:
             return self.request('GET', path, headers=headers)
         return self.request('POST', path, raw='text=' + urllib.parse.quote(text), headers={**headers, 'Content-Type': FORM})
+
+
+class Play(InTown):
+    """/play/ against the genesis town: the commonplace, the garden and its interpreter, as a verified browser sees them."""
+    OPENER = 'did:plc:' + 'e' * 24
 
     def answer(self, spell):
         """The town's interpreter, by hand: the one pending request on the commonplace (hob's, for prose the garden hands on or
@@ -719,10 +712,10 @@ class Play(FrontCase):
                  'a refusal': self.request('GET', '/o/nowhere', headers={'Accept': 'text/html'})[2]}
         for name, page in pages.items():
             self.assertIsNone(self.BANNED.search(self.words(page)), (name, self.BANNED.search(self.words(page))))
-        self.assertIn('every thing a card, every reply a receipt', self.words(pages['home']))
+        self.assertIn('A town of things that answer.', self.words(pages['home']))
         self.assertRegex(self.words(pages['home, logged in']), r'entry \d+')  # the shelf mark
         self.assertRegex(self.words(pages['home, logged in']), r'\d+ cards')
-        self.assertIn('Receipts', self.words(pages['object']))
+        self.assertIn('journal, the newest', self.words(pages['object']))
 
 
     def test_a_refused_receipt_with_no_roots_answers_on_the_receipt_turn_and_play_routes(self):
@@ -741,7 +734,13 @@ class Play(FrontCase):
         self.assertEqual(t['_links']['receipt']['href'], '/AGENTS.md/receipt/tulun-huzif')
         s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: gold\nseed: a')
         self.assertEqual(s, 200)
-        self.assertIn(b'refused badValue: colour is one of: amber, violet, silver', page)
+        self.assertIn('<p class="turn refused"><span class="stamp">§</span> refused badValue: colour is one of: amber, violet, silver'.encode(), page)  # never folded
+
+    def test_a_turn_from_the_play_page_is_drafted_too(self):
+        s, _, _ = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a drafted bell')
+        self.assertEqual(s, 200)
+        drafts = [json.loads(p.read_text()) for p in sorted(self.outbox.glob('*.json'))] if self.outbox.exists() else []
+        self.assertTrue([d for d in drafts if d['http']['intent'].startswith('play:')], drafts)  # cracks R6: a public write from the play page waits for Post
 
     def test_plant_by_spell_and_read_the_receipt(self):
         s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths')
@@ -753,15 +752,31 @@ class Play(FrontCase):
         s, r = self.call('GET', '/AGENTS.md/receipt/' + line[3].decode(), token=tok)
         self.assertEqual((s, r['receipt']['height']), (200, int(line[2])), r)
 
+    def test_a_reply_is_speech_its_spells_are_suggestions_and_its_receipt_waits_to_be_asked_for(self):
+        """docs/WEB.md: what came back leads as prose; the line that introduces a spell labels it as a suggestion that only
+        fills the box (?say=, with no script); the admitted line is folded under `receipt`; a refusal is never folded."""
+        s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: violet\nseed: a bell that hums')
+        page = page.decode()
+        self.assertRegex(page, r'<p class="spoken">Planted, [^<]*a bell that hums')
+        self.assertRegex(page, r'<details class="receipt"><summary>receipt</summary><p class="turn admitted"><span class="stamp">●</span> admitted garden')
+        rain = re.search(r'<a class="say" href="(/play/garden\?say=([^"#]+)#say)">Rain on it</a>', page)
+        self.assertIsNotNone(rain, page)
+        spell = urllib.parse.unquote(rain[2])
+        self.assertTrue(spell.startswith('delvetalk garden/bell/') and '\ntext: ' in spell, spell)
+        self.assertEqual(page.count('<form'), 1)  # one box
+        s, _, filled = self.play(html.unescape(rain[1]).split('#')[0])
+        self.assertIn('>' + html.escape(spell) + '</textarea>', filled.decode())
+        self.assertIn('>how to say it</a>', filled.decode())
+
     def test_the_paint_stands_above_the_exact_card_and_never_without_it(self):
         """OVERHAUL §4 (c): /play/ and /o/ show a card's verified paint above its exact card; with no worker attending, the
         exact card alone, at once; a refused paint never."""
         from transport import interpret
-        frame = b'<figure class="frame"><pre class="card">'
+        frame = b'<pre class="card">'
         for path in ('/play/garden', '/play/'):
             s, _, page = self.play(path)
-            self.assertEqual((s, page.count(b'class="paint"')), (200, 0))  # nobody paints: the exact card, unkept
-            self.assertIn(frame, page)
+            self.assertEqual((s, page.count(b'class="paint"')), (200, 0))  # nobody paints: the exact card, unkept, and open
+            self.assertIn(b'<details class="card" open><summary>the card</summary>' + frame, page)
         self.host.send({'op': 'world-renders'})  # the worker arrives, and finds both queued
         paint = 'The night garden lies open under the moon, its beds waiting for a seed.'
         replied = lambda text: {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {}}
@@ -771,6 +786,7 @@ class Play(FrontCase):
                      self.request('GET', '/o/garden')[2]):
             at = page.find(b'<p class="paint">' + html.escape(paint).encode() + b'</p>')
             self.assertTrue(0 <= at < page.find(frame), page[:2000])
+            self.assertIn(b'</p><details class="card"><summary>the card</summary>' + frame, page)  # painted: the card folded, never gone
         # A card whose paint the host refused (second person, a welcome) shows exact alone.
         s, _, page = self.play('/play/')
         self.assertEqual((s, page.count(b'class="paint"')), (200, 0))
@@ -812,12 +828,16 @@ class Play(FrontCase):
         self.answer('delvetalk garden plant\nseed: a bell\ncolour: violet')  # settle the pending interpretation for the next test
 
 
+class Quota(InTown):
+    """The interpreter's hour on a serve of its own: Play's prose replies spend the same host's quota."""
+    OPENER = 'did:plc:' + 'q' * 24
+
     def test_the_49th_prose_reply_in_an_hour_is_refused_by_quota_with_its_next_at(self):
         self.front.sleep = lambda seconds: None
         for i in range(48):
             self.play('/play/', f'something green, number {i}')
         s, _, page = self.play('/play/', 'one more')
-        self.assertIn('<span class="stamp">§</span><span class="line">refused quota'.encode(), page)
+        self.assertIn('<p class="turn refused"><span class="stamp">§</span> refused quota'.encode(), page)
         self.assertIn(b'next at', page)
 
 

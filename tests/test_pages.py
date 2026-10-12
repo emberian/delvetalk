@@ -122,9 +122,11 @@ class Pages(FrontCase):
                                'modules': counter_modules(), 'entry': 'initial', 'seed': record(count=nat(0))})
         self.assertEqual(made['status'], 'created', made)
         home = read(self.page('/'))
-        self.assertIn('talkie.delve.town', home)
         self.assertIn('note/a stranger …wxyz', home)
-        self.assertIn(f'href="/o/{DID}"', self.page('/'))  # the link still names the object by its id
+        self.assertRegex(home, r'and \d+ residents')  # the front page counts residents and lists places
+        town = self.page('/AGENTS.md/world')
+        self.assertIn('talkie.delve.town', read(town))
+        self.assertIn(f'href="/o/{DID}"', town)  # the link still names the object by its id
         slips = read(self.page(f'/o/{self.c}'))
         self.assertIn('talkie.delve.town', slips)
         tok = self.cookie.split('=', 1)[1]
@@ -133,7 +135,7 @@ class Pages(FrontCase):
 
     def test_an_objects_text_view_is_brief_unless_all_is_asked(self):
         for i in range(7):  # more receipts than the brief view keeps
-            self.page('/play/garden', method='POST', form={'method': 'plant', 'colour': 'amber', 'seed': 'brief %d' % i})
+            self.page('/play/garden', method='POST', form={'text': 'delvetalk garden plant\ncolour: amber\nseed: brief %d' % i})
         full = self.page('/o/garden')
         s, h, body = self.request('GET', '/o/garden?text=1', headers={'Cookie': self.cookie})
         brief = body.decode()
@@ -169,7 +171,7 @@ class Pages(FrontCase):
                 ('/', 'GET', None, False, 200), ('/', 'GET', None, True, 200), ('/AGENTS.md/world', 'GET', None, True, 200),
                 ('/o/garden', 'GET', None, True, 200), ('/o/garden', 'GET', None, False, 200), ('/o/commonplace', 'GET', None, True, 200),
                 ('/o/picker', 'GET', None, True, 200), ('/o/tide', 'GET', None, True, 200), ('/play/', 'GET', None, True, 200),
-                ('/play/garden', 'GET', None, True, 200), ('/play/garden', 'POST', {'method': 'plant', 'colour': 'amber', 'seed': 'a text fern'}, True, 200),
+                ('/play/garden', 'GET', None, True, 200), ('/play/garden', 'POST', {'text': 'delvetalk garden plant\ncolour: amber\nseed: a text fern'}, True, 200),
                 ('/AGENTS.md/world/garden/source', 'GET', None, True, 200), ('/AGENTS.md/me', 'GET', None, True, 200),
                 ('/AGENTS.md/pending', 'GET', None, True, 200), ('/AGENTS.md/offers', 'GET', None, True, 200), ('/AGENTS.md/api', 'GET', None, False, 200),
                 ('/style/', 'GET', None, False, 200), ('/nowhere', 'GET', None, False, 404), ('/AGENTS.md/world/nope', 'GET', None, True, 404),
@@ -181,7 +183,7 @@ class Pages(FrontCase):
             self.now[0] += 3
             sep = '&' if '?' in path else '?'
             headers = {**HTML, **({'Cookie': self.cookie} if cookie else {}), **({'Content-Type': FORM} if form else {})}
-            raw = urllib.parse.urlencode({**form, 'seed': 'a text fern, again'} if form and 'seed' in form else form) if form else None
+            raw = urllib.parse.urlencode({'text': form['text'] + ', again'} if form and 'garden plant' in form.get('text', '') else form) if form else None
             s, h, body = self.request(method, path + sep + 'text=1&all=1', raw=raw, headers=headers)  # ?all=1: the whole page, as the HTML has it
             text = body.decode()
             self.assertEqual((s, dict(h)['Content-Type']), (code, 'text/plain; charset=utf-8'), (path, text[:300]))
@@ -196,7 +198,7 @@ class Pages(FrontCase):
                 self.assertIn(html.unescape(re.sub(r'<[^>]+>', '', inner)), text, (path, kind))  # the card, the spell, the law
             for stamp in re.findall(r'<span class="stamp">([^<]*)</span>', page) if method == 'GET' else ():
                 self.assertIn(html.unescape(stamp), text, path)
-            if form and 'seed' in form:
+            if form and 'garden plant' in form.get('text', ''):
                 slug = re.search(r'receipt ([a-z]+(?:-[a-z]+)+)', page)[1]
                 self.assertRegex(text, r'● +admitted garden v\d+, entry \d+, receipt ')
         tok = self.cookie.split('=', 1)[1]

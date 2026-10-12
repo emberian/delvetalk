@@ -4,14 +4,14 @@ TYPE sum Relation<T>: rows {items: List<T>}. T is a closed first-order record, s
 rows Greeting {principal}. Relations.empty(); wire: variant rows {items}.
 DECL def relations() -> Relations.Decls: [{field, key: Text.words("a b"), limit}]. limit 0 = 4,096; past
 it the host drops the first rows in key order. A key column T lacks, or one key twice, is refused at
-create. Unbounded = child objects (anthology/page/n).
+create. Unbounded = child objects (bell/n, made by its kind).
 EDITS, one per field per write: write {f: insert row | upsert row | retract key}, key = the key
 projection as a record. insert: absent key adds; same row no change; other row under the key
 keyTaken. upsert: adds or replaces. retract: removes, absent is no change.
 COMMUTE against a moved root: insert always (re-applied to the rows now). upsert and retract only if
 no admitted write since your read touched their key, else staleRoot. keep, add, append commute too.
 ORDER by canonical DAG-CBOR bytes of the key projection; map keys go SHORTER NAME FIRST, so {author,
-at, n} sorts by n, at, author. Text sorts by length then bytes (garden/bell/9 before /10). Key order
+at, n} sorts by n, at, author. Text sorts by length then bytes (bell/9 before bell/10). Key order
 is not arrival order: keep a position column (the Library's place) when order shows.
 ORDINAL A row one author may add twice at one height keys an n = Relations.count at the read:
 {author, at, n}. n sorts first, so key order is arrival order. One author's two turns at one read
