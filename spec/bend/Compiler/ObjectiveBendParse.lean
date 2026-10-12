@@ -965,28 +965,34 @@ def sourceLines (source : String) : Except Diagnostic (Array Line) := do
 
 def trimText (s : String) : String := String.ofList (jsTrim s.toList)
 
-/-- Split at top-level occurrences of `sep` (outside brackets). -/
+/-- Split at top-level occurrences of `sep` (outside brackets). The piece being read is kept
+reversed, so a character is one cons and the one before a `>` is its head. -/
 def splitTopAt (s : String) (sep : String) : List String := Id.run do
   let chars := s.toList
   let sepChars := sep.toList
   let mut depth : Int := 0
   let mut current : List Char := []
-  let mut parts : List String := []
+  let mut parts : Array String := #[]
   let mut rest := chars
   for _ in [0:chars.length + 1] do
     match rest with
     | [] => break
     | c :: tail =>
-      if depth == 0 && rest.take sepChars.length == sepChars then
-        parts := parts ++ [String.ofList current]
+      if depth == 0 && sepChars.isPrefixOf rest then
+        parts := parts.push (String.ofList current.reverse)
         current := []
         rest := rest.drop sepChars.length
         continue
       if c == '(' || c == '<' || c == '{' || c == '[' then depth := depth + 1
-      if c == ')' || (c == '>' && !(current.getLast? == some '-')) || c == '}' || c == ']' then depth := depth - 1
-      current := current ++ [c]
+      if c == ')' || (c == '>' && !(current.head? == some '-')) || c == '}' || c == ']' then depth := depth - 1
+      current := c :: current
       rest := tail
-  return parts ++ [String.ofList current]
+  return (parts.push (String.ofList current.reverse)).toList
+
+#guard splitTopAt "a -> b, c<d -> e>, f" "," == ["a -> b", " c<d -> e>", " f"]
+#guard splitTopAt "(A, B) -> {x: C -> D} -> R" "->" == ["(A, B) ", " {x: C -> D} ", " R"]
+#guard splitTopAt "x,,y" "," == ["x", "", "y"]
+#guard splitTopAt "" "," == [""]
 
 def splitTopComma (s : String) : List String := splitTopAt s ","
 

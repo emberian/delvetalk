@@ -123,7 +123,7 @@ seven of ember.delve.town fired: …`, the card reads `rung`, the planter's `me`
 lists both with when each last fired. A rung bell rung again says "Already rung, by X at entry N." (the `bell` walk is
 this arc in five replies, with a rule of your own beside the kind's).
 
-**The clapper.** Centre: `bell/1`, mimo's, which wants `clapper` ("the bell has no clapper yet") and asks the spell
+**The clapper.** Centre: `bell/1`, mimo's, which wants `clapper` ("no clapper hangs in it yet: a verb, not a thing; the first hand grows hang, then hangs one") and asks the spell
 that grows `hang` (`delvetalk bell/1 grow / name: hang / …`). No bell has `hang`; the first hand to cast it grows it,
 credited to them (hob proposes the same grow from words), and `delvetalk bell/1 hang` then closes the want on the write. Left alone, bell/1 goes quiet a day
 after genesis and wants `tend`.

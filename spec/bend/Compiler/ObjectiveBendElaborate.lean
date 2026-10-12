@@ -129,6 +129,11 @@ inductive Decl where
 def Decl.name : Decl → String
   | .spec s => s.name | .extension n .. => n | .function n .. => n | .record n .. => n | .sum n .. => n | .reexport n .. => n
 
+/-- Where a refusal about the declaration itself is placed: a function's or extension's body. -/
+def Decl.bodySpan? : Decl → Option ObjectiveBendSurface.Span
+  | .function _ _ _ body | .extension _ _ _ body _ => some body.span
+  | _ => none
+
 structure Module where
   name : String
   /-- (alias, imported module name) in source order. -/
@@ -2600,7 +2605,7 @@ structure Output where
   templates : List (String × List Nat × ATerm) := []
 
 /-- One declaration of the package knot: its field and the hidden layer fields it created. -/
-def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (String × ATerm)) : M (List (String × ATerm)) := do
+def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : Array (String × ATerm)) : M (Array (String × ATerm)) := do
   match d with
   | .record .. | .sum .. => return fields
   | _ => pure ()
@@ -2654,10 +2659,10 @@ def emitDecl (c : Ctx) (fuel : Nat) (m : Module) (d : Decl) (fields : List (Stri
     let below := key ++ belowSuffix
     let mine ← globalType c fuel key
     modify fun st => { st with globalTypes := st.globalTypes.insertIfNew below mine }
-    fields := fields ++ [(key, ← globalRef outerEnv over), (below, value)]
-  | none => fields := fields ++ [(key, value)]
+    fields := (fields.push (key, ← globalRef outerEnv over)).push (below, value)
+  | none => fields := fields.push (key, value)
   for (name, value, type) in (← get).hidden do
-    fields := fields ++ [(name, value)]
+    fields := fields.push (name, value)
     modify fun st => { st with globalTypes := st.globalTypes.insertIfNew name type }
   modify fun st => { st with hidden := #[] }
   return fields
@@ -2705,7 +2710,8 @@ def Elaborated.reachable (e : Elaborated) (entryKey : String) : List (String × 
     seen := seen.insert key
     for name in e.references.getD key #[] do
       if !seen.contains name then work := work.push name
-  let claimed := fun (key : String) => match key.splitOn "#claim#" with
+  -- Only a claim's key holds `#`; any other field is decided without splitting its key.
+  let claimed := fun (key : String) => key.contains '#' && match key.splitOn "#claim#" with
     | [owner, _] => seen.contains owner
     | _ => false
   return e.fields.filter fun (key, _) => seen.contains key || claimed key
@@ -2841,19 +2847,23 @@ def Ctx.claims (c : Ctx) (m : Module) : List (String × List String) :=
 def elaboratePackageM (c : Ctx) : M (List (String × ATerm) × List (String × PTy) × List String) := do
   let fuel := 100000
   checkOverrides c fuel
-  let mut fields : List (String × ATerm) := []
+  let mut fields : Array (String × ATerm) := #[]
   for m in c.modules do
     for d in m.decls do
-      fields ← emitDecl c fuel m d fields
+      -- A refusal no node claims (the declaration's result type, an old dialect, ...) is the
+      -- declaration's: placed at its body, as the checker's refusals are placed at a node.
+      fields ← tryCatch (emitDecl c fuel m d fields) fun r =>
+        throw (if r.loc.isSome then r else
+          { r with loc := d.bodySpan?.map fun span => ⟨m.name, m.name ++ "." ++ d.name, span⟩ })
   checkProtocols c fuel
   checkFormInputs c fuel
-  let mut rowFields : List (String × PTy) := []
-  let mut unresolved : List String := []
+  let mut rowFields : Array (String × PTy) := #[]
+  let mut unresolved : Array String := #[]
   for (name, _) in fields do
     match ← globalType c fuel name with
-    | some t => rowFields := rowFields ++ [(name, t)]
-    | none => unresolved := unresolved ++ [name]
-  return (fields, rowFields, unresolved)
+    | some t => rowFields := rowFields.push (name, t)
+    | none => unresolved := unresolved.push name
+  return (fields.toList, rowFields.toList, unresolved.toList)
 
 /-- The knot over `knot`'s fields: `fix` of the package specification. -/
 def Elaborated.root (e : Elaborated) (knot : List (String × ATerm)) : ATerm :=
@@ -2895,7 +2905,9 @@ def Elaborated.select (e : Elaborated) (entryModule : Nat) (entryDefinition : St
   let entryKey := if (declOf e.ctx entryKey).isSome then entryKey else
     (((layerAncestry e.ctx.modules entry.name).drop 1).findSome? fun m =>
       let k := m ++ "." ++ entryDefinition; if (declOf e.ctx k).isSome then some k else none).getD entryKey
-  if (declOf e.ctx entryKey).isNone then throw "missing selected entry"
+  if (declOf e.ctx entryKey).isNone then
+    throw ("missing selected entry: " ++ entry.name ++ " defines no " ++ entryDefinition ++
+      (if (layerAncestry e.ctx.modules entry.name).length > 1 then ", nor does a module it is a layer over" else ""))
   let knot := e.reachable entryKey
   let kept : Std.HashSet String := knot.foldl (fun set (k, _) => set.insert k) {}
   let globalRow := e.globalRow
@@ -2914,42 +2926,50 @@ def builtinModule : Except String Module := do
 /-- Build the context; duplicate declarations / types refuse as in the TS. The built-in
 module contributes types only (no declaration of it is emitted). -/
 def context (modules : List Module) : Except String Ctx := do
-  let mut decls : List (String × Decl × Module) := []
-  let mut records : List (String × Decl) := []
-  let mut sums : List (String × Decl) := []
+  -- Collected in order into arrays, each key indexed as it is added (keys are unique: a
+  -- duplicate refuses), so a lookup is the first match a scan of the list would find.
+  let mut decls : Array (String × Decl × Module) := #[]
+  let mut declIndex : Std.HashMap String (Decl × Module) := {}
+  let mut records : Array (String × Decl) := #[]
+  let mut sums : Array (String × Decl) := #[]
+  let mut typeKeys : Std.HashSet String := {}
   for m in modules do
     for d in m.decls do
       let key := m.name ++ "." ++ d.name
       match d with
       | .record .. | .sum .. => pure ()
       | _ =>
-        if (decls.find? (·.1 == key)).isSome then throw ("duplicate declaration " ++ key)
+        if declIndex.contains key then throw ("duplicate declaration " ++ key)
         match d with
         | .reexport _ target =>
           if m.imports.any (·.1 == d.name) then throw ("export collides with import alias " ++ key)
           let some (alias, name) := qualifiedName target | throw ("export requires Alias.name: " ++ target)
           let some origin := importOf m alias | throw ("unknown export import alias " ++ target)
           let targetKey := origin ++ "." ++ name
-          let some (_, original, definingModule) := decls.find? (·.1 == targetKey)
+          let some (original, definingModule) := declIndex[targetKey]?
             | throw ("export target is not an earlier imported value declaration: " ++ target)
           match original with
           | .function .. => pure ()
           | _ => throw ("export currently requires a function or constant declaration: " ++ target)
           if m.decls.any (fun other => other.name == d.name && match other with | .record .. | .sum .. => true | _ => false) then
             throw ("export collides with source type " ++ key)
-          decls := decls ++ [(key, original, definingModule)]
-        | _ => decls := decls ++ [(key, d, m)]
+          decls := decls.push (key, original, definingModule)
+          declIndex := declIndex.insert key (original, definingModule)
+        | _ =>
+          decls := decls.push (key, d, m)
+          declIndex := declIndex.insert key (d, m)
   for m in modules ++ [← builtinModule] do
     for d in m.decls do
       let key := m.name ++ "." ++ d.name
       match d with
       | .record .. | .sum .. =>
-        if (records.find? (·.1 == key)).isSome || (sums.find? (·.1 == key)).isSome then throw ("duplicate type " ++ key)
+        if typeKeys.contains key then throw ("duplicate type " ++ key)
+        typeKeys := typeKeys.insert key
         if m.name != builtinModuleName && builtinTypeNames.contains d.name then
           throw ("refused (builtin-type): " ++ d.name ++ " is the built-in specification metadata type; choose another name")
         match d with
-        | .record .. => records := records ++ [(key, d)]
-        | _ => sums := sums ++ [(key, d)]
+        | .record .. => records := records.push (key, d)
+        | _ => sums := sums.push (key, d)
       | _ => pure ()
   let index := fun {α : Type} (entries : List (String × α)) =>
     entries.foldl (fun (map : Std.HashMap String α) (key, value) =>
@@ -2965,7 +2985,6 @@ def context (modules : List Module) : Except String Ctx := do
     stack := m.name :: stack
     current := m.layerOver.bind fun below => modules.find? (·.name == below)
   if stack.length < 2 then stack := []
-  let declIndex := index decls
   let functionsOf := fun (name : String) => match modules.find? (·.name == name) with
     | some m => m.decls.filterMap fun (d : Decl) => match d with | .function f .. => some f | _ => none
     | none => []
@@ -2976,8 +2995,8 @@ def context (modules : List Module) : Except String Ctx := do
       let below := (List.range i).reverse.findSome? fun j =>
         stack[j]?.bind fun m => if (functionsOf m).contains f then some (m ++ "." ++ f) else none
       if let some b := below then overrides := overrides.insert b (layer ++ "." ++ f)
-  return { modules, decls, records, sums, declIndex, recordIndex := index records, sumIndex := index sums,
-           stack := stack.toArray, overrides }
+  return { modules, decls := decls.toList, records := records.toList, sums := sums.toList, declIndex,
+           recordIndex := index records.toList, sumIndex := index sums.toList, stack := stack.toArray, overrides }
 
 /-- Elaborate every declaration of a closure once; a refusal says where it was raised. -/
 def elaboratePackageLocated (modules : List Module) : Except Refusal Elaborated := do
@@ -3003,14 +3022,17 @@ structure Annotation where
   parameter : String
   reuse : String
 
+/- Annotations in preorder (a node's own, then its children left to right), each at its path
+from the root. The walk carries the path reversed (a child's is one cons) and pushes onto one
+array, so a deep or left-heavy term costs neither a path copy per node nor a list copy per join. -/
 mutual
-def annotate (bounds : List (Nat × PTy)) : ATerm → List Nat → Except String (List Annotation)
-  | .located _ t, path => annotate bounds t path
-  | .lam p b, path => do
+def annotateOnto (bounds : List (Nat × PTy)) : ATerm → List Nat → Array Annotation → Except String (Array Annotation)
+  | .located _ t, rev, acc => annotateOnto bounds t rev acc
+  | .lam p b, rev, acc => do
     let some d := p.domain | throw (p.reason.getD "unresolved lambda type")
     let some cod := p.codomain | throw (p.reason.getD "unresolved lambda type")
-    return ⟨path, d, cod, p.parameter, p.reuse⟩ :: (← annotate bounds b (path ++ [0]))
-  | .inject l type reason payload, path => do
+    annotateOnto bounds b (0 :: rev) (acc.push ⟨rev.reverse, d, cod, p.parameter, p.reuse⟩)
+  | .inject l type reason payload, rev, acc => do
     let some t := type | throw (reason.getD "injection has no declared sum type")
     let variant := match t with
       | .variable i => bounds.lookup i
@@ -3018,33 +3040,40 @@ def annotate (bounds : List (Nat × PTy)) : ATerm → List Nat → Except String
     let some (.variant row) := variant | throw "injection has no declared sum type"
     let some d := lookupRow (some row) l | throw ("injection label " ++ l ++ " absent from its declared sum")
     -- The codomain is the DECLARED sum type: a recursive sum stays its bounded variable.
-    return ⟨path, d, t, "unrestricted", "reusable"⟩ :: (← annotate bounds payload (path ++ [0]))
-  | .perform p r v, path | .done p r v, path => do
-    return ⟨path, p, r, "unrestricted", "reusable"⟩ :: (← annotate bounds v (path ++ [0]))
-  | .toData _ v, path => annotate bounds v (path ++ [0])
-  | .refuse t r, path => return ⟨path, t, t, "unrestricted", "reusable"⟩ :: (← annotate bounds r (path ++ [0]))
-  | .textJoin l s, path | .relationLookup l _ s, path =>
-    return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds s (path ++ [1]))
-  | .relationCount r, path => annotate bounds r (path ++ [0])
-  | .app f a, path => return (← annotate bounds f (path ++ [0])) ++ (← annotate bounds a (path ++ [1]))
-  | .fix s i, path => return (← annotate bounds s (path ++ [0])) ++ (← annotate bounds i (path ++ [1]))
-  | .mix l u, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds u (path ++ [1]))
-  | .unary _ a, path => annotate bounds a (path ++ [0])
-  | .binary _ l r, path => return (← annotate bounds l (path ++ [0])) ++ (← annotate bounds r (path ++ [1]))
-  | .prototype s t, path => return (← annotate bounds s (path ++ [0])) ++ (← annotate bounds t (path ++ [1]))
-  | .specification md e, path => return (← annotate bounds md (path ++ [0])) ++ (← annotate bounds e (path ++ [1]))
-  | .reflect v, path | .metadata v, path | .project v, path => annotate bounds v (path ++ [0])
-  | .get t _, path => annotate bounds t (path ++ [0])
-  | .ifZero v z s, path => return (← annotate bounds v (path ++ [0])) ++ (← annotate bounds z (path ++ [1])) ++ (← annotate bounds s (path ++ [2]))
-  | .ifBool v z s, path => return (← annotate bounds v (path ++ [0])) ++ (← annotate bounds z (path ++ [1])) ++ (← annotate bounds s (path ++ [2]))
-  | .case s arms, path => return (← annotate bounds s (path ++ [0])) ++ (← annotateFields bounds arms (path ++ [1]) 0)
-  | .record fs, path => annotateFields bounds fs path 0
-  | .extend i fs, path => return (← annotate bounds i (path ++ [0])) ++ (← annotateFields bounds fs (path ++ [1]) 0)
-  | _, _ => return []
-def annotateFields (bounds : List (Nat × PTy)) : List (String × ATerm) → List Nat → Nat → Except String (List Annotation)
-  | [], _, _ => return []
-  | (_, v) :: rest, path, i => return (← annotate bounds v (path ++ [i])) ++ (← annotateFields bounds rest path (i + 1))
+    annotateOnto bounds payload (0 :: rev) (acc.push ⟨rev.reverse, d, t, "unrestricted", "reusable"⟩)
+  | .perform p r v, rev, acc | .done p r v, rev, acc =>
+    annotateOnto bounds v (0 :: rev) (acc.push ⟨rev.reverse, p, r, "unrestricted", "reusable"⟩)
+  | .toData _ v, rev, acc => annotateOnto bounds v (0 :: rev) acc
+  | .refuse t r, rev, acc => annotateOnto bounds r (0 :: rev) (acc.push ⟨rev.reverse, t, t, "unrestricted", "reusable"⟩)
+  | .textJoin l s, rev, acc | .relationLookup l _ s, rev, acc => do
+    annotateOnto bounds s (1 :: rev) (← annotateOnto bounds l (0 :: rev) acc)
+  | .relationCount r, rev, acc => annotateOnto bounds r (0 :: rev) acc
+  | .app f a, rev, acc => do annotateOnto bounds a (1 :: rev) (← annotateOnto bounds f (0 :: rev) acc)
+  | .fix s i, rev, acc => do annotateOnto bounds i (1 :: rev) (← annotateOnto bounds s (0 :: rev) acc)
+  | .mix l u, rev, acc => do annotateOnto bounds u (1 :: rev) (← annotateOnto bounds l (0 :: rev) acc)
+  | .unary _ a, rev, acc => annotateOnto bounds a (0 :: rev) acc
+  | .binary _ l r, rev, acc => do annotateOnto bounds r (1 :: rev) (← annotateOnto bounds l (0 :: rev) acc)
+  | .prototype s t, rev, acc => do annotateOnto bounds t (1 :: rev) (← annotateOnto bounds s (0 :: rev) acc)
+  | .specification md e, rev, acc => do annotateOnto bounds e (1 :: rev) (← annotateOnto bounds md (0 :: rev) acc)
+  | .reflect v, rev, acc | .metadata v, rev, acc | .project v, rev, acc => annotateOnto bounds v (0 :: rev) acc
+  | .get t _, rev, acc => annotateOnto bounds t (0 :: rev) acc
+  | .ifZero v z s, rev, acc => do
+    annotateOnto bounds s (2 :: rev) (← annotateOnto bounds z (1 :: rev) (← annotateOnto bounds v (0 :: rev) acc))
+  | .ifBool v z s, rev, acc => do
+    annotateOnto bounds s (2 :: rev) (← annotateOnto bounds z (1 :: rev) (← annotateOnto bounds v (0 :: rev) acc))
+  | .case s arms, rev, acc => do annotateFieldsOnto bounds arms (1 :: rev) 0 (← annotateOnto bounds s (0 :: rev) acc)
+  | .record fs, rev, acc => annotateFieldsOnto bounds fs rev 0 acc
+  | .extend i fs, rev, acc => do annotateFieldsOnto bounds fs (1 :: rev) 0 (← annotateOnto bounds i (0 :: rev) acc)
+  | _, _, acc => return acc
+def annotateFieldsOnto (bounds : List (Nat × PTy)) : List (String × ATerm) → List Nat → Nat → Array Annotation →
+    Except String (Array Annotation)
+  | [], _, _, acc => return acc
+  | (_, v) :: rest, rev, i, acc => do annotateFieldsOnto bounds rest rev (i + 1) (← annotateOnto bounds v (i :: rev) acc)
 end
+
+/-- The annotations of `t` at `path` (preorder, `annotateOnto`). -/
+def annotate (bounds : List (Nat × PTy)) (t : ATerm) (path : List Nat) : Except String (List Annotation) :=
+  (annotateOnto bounds t path.reverse #[]).map (·.toList)
 
 /-! ### The shared type table
 
