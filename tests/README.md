@@ -152,6 +152,7 @@ The Python around one `serve`, which carries bytes and credentials and decides n
 - `test_pages` (§7): Every route a browser reaches is a page in the theme; JSON stays JSON for agents.
 - `test_publish` (§5, §7): A published page reaches the outbox as a draft, is recorded when posted, and a merge reply to it routes back to its object.
 - `test_repo` (§2 Journal, §7): The journal as a read-only AT Protocol repository over a real `serve`: records by slug and CID agree with the host, blocks hash to their CIDs, private records stay private.
+- `test_repo_epochs` (ATPROTO L3 finding 4, fake host, cryptography >= 43): A no-tick carry and A→B→A key rotation raise revisions through the state ledger; rotation preserves record keys and the MST, old-rev deltas and proofs read under the new head, and restart changes neither commits nor ledger bytes. Unchanged catch-ups perform no ledger I/O; an append writes once. Every changed head across carries and rotations has a strictly higher rev.
 - `test_lexicons` (ATPROTO §5, pure Python): Every lexicon ID matches its path under `online.fg-goose.gsb.*`; the old prefix in a lexicon file or a transport string literal fails. References resolve, nested objects use refs, and missing fields and wrong types are refused.
 - `test_ring_harvest` (§11): `deploy/ring/harvest.py` reads the front's access log.
 - `test_open` (FEDERATION §7): `python3 -m transport open` writes one bridge row per world, starting nothing; the world's bridge reads it.

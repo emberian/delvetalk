@@ -209,6 +209,21 @@ before the signed repository makes it the same way before its next `up`):
 
 It writes `<repo_keys>/town.key` (`--world W` another world's `W.key`; `--curve secp256r1` the other curve).
 
+To rotate the town's key, in `/opt/delvetalk` on the workhorse, generate into a fresh staging directory,
+then move that file into place and restart the front (`repokey` refuses an existing `<world>.key`):
+
+    install -d -m 0700 -o 10425 -g 10425 /etc/delvetalk/repo/next
+    docker compose run --rm -e DELVETALK_REPO_KEYS=/etc/delvetalk/repo/next delvetalk-ops python3 -m transport repokey --world town
+    mv /etc/delvetalk/repo/next/town.key /etc/delvetalk/repo/town.key
+    docker compose restart delvetalk-http
+
+For another world replace `town` with its name; for a configured key directory replace `/etc/delvetalk/repo`
+in all three paths. The new file retains owner 10425 and mode 0400. The front loads the key at start, publishes
+it in did.json, and its first signed read records the rotation epoch and serves a higher-rev sync commit over
+the same MST. The key directory is read-only in the front; the epoch ledger belongs to its read-write state at
+`/data/state/worlds/<world>/repo.json`, and must be included in backups of the state directory. Keep this ledger
+when replacing a lost key. If the ledger is lost, the next signed read writes a new one; followers must re-sync.
+
 The root socket's directory, owner 10425, mode 0700, outside the data directory so that no container mounting
 `/data` reaches it:
 
@@ -796,7 +811,7 @@ reads the world from the snapshot at its head, rebuilds every object from its so
 seals the image's library as serve will, and writes the carried genesis, at the old head's height + 1 (heights go on
 from the world before's, HOST-HANDOFF 5.182) and keeping every object's making (`made`, read from the journals the
 carry cites, which `/towns` holds: 5.185). Then the transport's files move (the bridge rows, `identity.sqlite`, each
-world's observations, outbox, posting ledger, `since`; the height cursors `publications.after` and each `awaiting` turn
+world's observations, outbox, posting ledger, repository epoch ledger `repo.json`, `since`; the height cursors `publications.after` and each `awaiting` turn
 name entries of the same sequence), and each carried world is checked in a throwaway copy as carry-check checks it. It prints one JSON line per world and, last, the hand's one line for the channel (FOUNDATION §2), posted once by the owner:
 
     hob: the world was carried to a newer host at entry 73; everything is where it was, and the carry is receipt <slug>.

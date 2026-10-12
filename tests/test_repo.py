@@ -32,7 +32,7 @@ from tests.test_chain import town_garden
 from tests.test_http import DID, Provider
 from transport.state import State
 from transport import delve, identity
-from transport.config import LIBRARY
+from transport.config import Config, LIBRARY
 from transport.atproto import sign
 from transport.atproto.cbor import CID, block, decode, encode, read_car
 from transport.atproto.mst import Tree, common_prefix, layer
@@ -268,7 +268,9 @@ class Repository(unittest.TestCase):
 
     @signs
     def test_signed_over_the_real_journal_every_leaf_names_its_entry(self):
-        repo = Repo(ORIGIN, sign.Key.generate())
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Repo(ORIGIN, sign.Key.generate(), ledger=State(tmp.name).repo_ledger)
         code, car, _ = repo.serve(self.host, 'GET', 'com.atproto.sync.getRepo', {'did': REPO}, None)
         self.assertEqual(code, 200, car)
         [root], blocks = read_car(car)
@@ -443,7 +445,7 @@ class Vectors(unittest.TestCase):
             self.assertEqual(out.getvalue(), f'{path}: {sign.Key.load(path).did_key}\n')
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(main(['repokey', '--state', d], io.StringIO()), 1)
-            self.assertEqual(Repo(ORIGIN, sign.Key.load(path)).did_document()['verificationMethod'][0]['publicKeyMultibase'],
+            self.assertEqual(Repo(ORIGIN, sign.Key.load(path), ledger=State(d).repo_ledger).did_document()['verificationMethod'][0]['publicKeyMultibase'],
                              sign.Key.load(path).did_key.removeprefix('did:key:'))
 
     def test_a_world_besides_the_town_is_a_did_web_of_its_own_host_never_a_path(self):
@@ -500,7 +502,9 @@ class CarriedRepository(unittest.TestCase):
         world, key = World(start=446), sign.Key.generate()
         for i in range(6):
             world.append(OWNER, f'turn-{i}')
-        repo = Repo(ORIGIN, key)
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        repo = Repo(ORIGIN, key, ledger=State(tmp.name).repo_ledger)
         code, car, _ = repo.serve(world, 'GET', 'com.atproto.sync.getRepo', {'did': REPO}, 'anonymous')
         self.assertEqual(code, 200, car)
         [root], blocks = read_car(car)
@@ -529,10 +533,10 @@ class SignedRepository(unittest.TestCase):
         for i in range(10):
             cls.world.append(*(('clock', 'advance:29000000') if i == 4 else (OWNER, f'turn-{i}')))
         cls.now = [1000.0]
-        st = State(cls.tmp.name)
+        st = State(cls.tmp.name, config=Config(repo_keys=cls.tmp.name))
+        st.repo_key.write_bytes(cls.key.pem())
         ident = identity.Identity(st, delve.Client(Provider()), clock=lambda: cls.now[0])
         cls.front = Front(st, cls.world, ident, ('127.0.0.1', 0), clock=lambda: cls.now[0])
-        cls.front.repo = Repo(ORIGIN, cls.key)
         cls.port = cls.front.server_address[1]
         serve(cls.front)
 
@@ -592,7 +596,7 @@ class SignedRepository(unittest.TestCase):
         s, e = self.xrpc('com.atproto.sync.subscribeRepos')
         self.assertEqual((s, e['error']), (501, 'MethodNotImplemented'))
         self.assertIn('getRepo?since', e['hint'])
-        twin = Repo(ORIGIN, self.key)  # another process with the same key signs the same chain
+        twin = Repo(ORIGIN, self.key, ledger=self.front.st.repo_ledger)  # another process with the same inputs signs the same chain
         self.assertEqual(twin.serve(self.world, 'GET', 'com.atproto.sync.getRepo', {'did': REPO}, None)[1], car)
 
     def test_get_record_proves_the_record_from_the_signed_root(self):

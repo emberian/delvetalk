@@ -5,7 +5,7 @@ under federation (FEDERATION §1) each further world is `did:web:<world>.<origin
 its document at `https://<world>.<origin host>/.well-known/did.json` and its key `/etc/delvetalk/repo/<world>.key`
 (`repo.world_origin`; a front serves one world, `--world`). An atproto did:web is a hostname, never a path
 ("only hostname-level did:web DIDs are supported", atproto.com/specs/did), so `did:web:<host>:<world>` is not one;
-nor are worlds collections of one repository, since a commit is a function of one journal and its key, and two
+nor are worlds collections of one repository, since a commit is a function of one journal, its key and its epoch ledger, and two
 journals' heights do not interleave. A world's hostname needs the wildcard DNS record and certificate of
 docs/ATPROTO.md §4 (L7) before its document resolves. `transport/repo.py` is mounted by the front (`transport/http.py`) at `/xrpc/<nsid>` and
 `/.well-known/did.json`; the primitives are `transport/atproto/` (DAG-CBOR, CIDs and CAR in `cbor.py`, the
@@ -40,33 +40,53 @@ random path. A TID increases with height, so an append touches only the tree's r
 key positions `[i, j)` at layer L is one block for every later tree: `mst.Tree` caches nodes under `(L, i, j)`
 and drops those no longer in the tree. The slug and CID stay as `getRecord` aliases of the same receipt.
 
-**One commit per height.** `{did, version: 3, data: <MST root>, rev, prev, sig}`:
+**Commits.** One per height, plus a sync commit at each key rotation: `{did, version: 3, data: <MST root>, rev, prev, sig}`:
 
 - `rev` = TID(clock × 60,000,000 + height, clock id 0), the clock the latest `advance:<minute>` entry set
   (`world-advance`'s intent; minutes since the epoch; 0 before the first tick, so a fresh world's first revs
-  read as 1970). Strictly increasing: the clock never goes back and the height always goes up. The same TID
-  is the record's key.
+  read as 1970). The epoch ledger supplies a clock floor across carries and rotations. The clock never goes
+  back and the height always goes up; 60,000,000 exceeds any journal height, so raising the floor one minute
+  puts the new epoch above every earlier rev. The same TID is the entry record's key.
 - A carried journal begins at the height the world before reached (HOST-HANDOFF 5.182; the live v10 town's first
-  entry is 447): its first commit is that height's, with `prev` null, and `since` and the cursors count from it.
-- `prev` = the commit of height − 1 (null at height 1): the journal's chain, signed. The spec allows it and
+  entry is 447). A changed journal base starts a `carry` epoch at its first height, with a clock floor of the
+  ledger's last head clock + 1 and `prev` null. Its tree begins empty and holds only this journal's records:
+  pre-carry entry records leave the tree, a deliberate reconciliation requiring a full `getRepo`. `since` and
+  the cursors count from the carried journal's start; pre-carry revs are not cursors in this tree.
+- `prev` = the last signed commit (null at the journal's start and at a rotation's sync commit). The spec allows it and
   most repositories leave it null.
 - `sig` = ECDSA over sha-256 of the unsigned commit's DAG-CBOR: k256, deterministic (RFC 6979), low-S, 64 raw
-  bytes. Deterministic signing makes the chain a function of (journal, key): nothing is stored, a restart
-  recomputes byte-identical commits, and two processes with the key agree (tested).
+  bytes. Deterministic signing makes the chain a function of (journal, key, ledger): a restart recomputes
+  byte-identical commits, and two processes with these inputs agree (tested).
 
-**Cache.** Per height: rev, entry hash, record block, commit block; the current tree's nodes, each with the
-height that made it (what `since` filters on). Invalidated only by an append. Every signed read first pages
+**Chain epochs.** `State.repo_ledger`, `<state>/worlds/<world>/repo.json`, holds `key` (the last epoch's did:key),
+`base` (first journal height − 1), `epochs` (`{height, clock, cause}`, cause `carry` or `rotation`), and `head`
+(`{height, rev, clock}`, null until the first commit). The first signed read compares key and base once. A carry
+starts a new tree under the current key, including when the key changed too. A rotation on the same journal
+starts after the last served height H: that height's records retain their revs, then a sync commit signs the
+same MST root with `rev = TID((head.clock + 1) × 60,000,000)`, `prev` null. Height H+1 uses the raised clock floor
+and chains from the sync commit. Earlier commit blocks are not rebuilt with the replacement key; their record
+revs and rotation sync revs remain cursors for `getRepo?since`. Proofs and exports serve only the current head commit.
+Epochs stay in the ledger across carries; only those belonging to the current journal affect its reconstruction.
+Writes use atomic `State.write` inside `Signed.lock`, after the commits exist; an unchanged key, journal and
+head leave the ledger bytes untouched. The carry copies the ledger with the transport files, and state backups
+must keep it. Deleting the ledger is the one way to regress revs: the next start writes a new ledger from the
+journal and key, and followers must re-sync.
+
+**Cache.** Per height: rev, entry hash, record block, commit block (absent before the current signing epoch);
+the served head, which can be a rotation's sync commit; the current tree's nodes, each with the height that
+made it (what `since` filters on). Every signed read first pages
 `world-entries` (as `anonymous`, `after` the last height, 100 a page) and appends what is new. Cost on the
 Mac: 0.2 ms of MST and 0.23 ms of signing a height, so a cold 10,000-entry journal is about 4.5 s on its first
 read; about 3,300 nodes live per 10,000 entries.
 
 **The key.** One per world: k256, PKCS#8 PEM, `/etc/delvetalk/repo/<world>.key`, mode 0400, owner 10425, in
 a 0700 directory owned by 10425. `python3 -m transport repokey` makes it at first start (DEPLOY "First start"), refuses an
-existing file, prints only the `did:key`. Compose mounts it as the secret `repo_key` into `delvetalk-http`
-only (`DELVETALK_REPO_KEY_FILE=/run/secrets/repo_key`; `DELVETALK_REPO_KEY_PATH` in `.env` names the file);
-no other service and no backup tarball holds it. The DID document names it as `#atproto`, a `Multikey`.
-Rotation or loss: a new key re-signs every height, so every commit CID changes and followers re-sync from
-`getRepo`; the entries, records and tree are unchanged. Without a key the signed routes answer
+existing file, prints its path and public `did:key`. `DELVETALK_REPO_KEYS` names the directory; compose mounts it
+read-only into the front and read-write into the ops container that runs `repokey`. The host holds no key, and
+state backup tarballs exclude this directory. The DID document names the key as `#atproto`, a `Multikey`.
+Rotation or key loss: replace the key out of band and restart the front (DEPLOY); the first signed read records
+a rotation epoch and signs one higher-rev sync commit over the same tree. Entry records keep their keys and CIDs,
+and old-rev deltas still work within this journal. Loss of the ledger requires a full re-sync. Without a key the signed routes answer
 `RepoNotServed` and the façade is as before.
 
 **Who signs, and what that is worth.** The front signs; the host holds no key. A commit therefore says "the
@@ -78,7 +98,7 @@ entries would see them disagree. A host-held key would move the signature to the
 would build the MST and sign in the same step that seals and fsyncs an entry, so the front could not forge,
 and the key would leave the internet-facing container. The op it needs (host lane, not stubbed: the
 transport-signed design needs no host change): `world-commit {height?}` → `{status: "commit", height, rev,
-data, prev, sig, bytes}`, the host's own commit for that height under the key the front reads at start (`DELVETALK_REPO_KEY_FILE`), and
+data, prev, sig, bytes}`, the host's own commit for that height under the key the front reads at start (`State.repo_key`), and
 `Signed` would serve those bytes instead of signing. Signing a commit the transport built would add nothing.
 
 | Method | Answers |

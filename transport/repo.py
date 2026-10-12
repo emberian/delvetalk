@@ -1,6 +1,6 @@
 """DelveTalk's own repository: the journal as AT Protocol records under did:web:<the world's host>, read only, and,
-with a signing key on the box, as a signed repository: one commit per journal height over a Merkle search tree
-of the entries' CIDs.
+with a signing key on the box, as a signed repository: commits per journal height and rotation sync commits
+over a Merkle search tree of the entries' CIDs, ordered by durable chain epochs.
 
 Mounted by the front (transport/http.py) at /xrpc/<nsid> and /.well-known/did.json. Every record is a host
 reply carried verbatim with `$type` added; the host decides what a reader sees: an unauthenticated request
@@ -15,6 +15,7 @@ import re
 import threading
 import urllib.parse
 from collections import namedtuple
+from copy import deepcopy
 from pathlib import Path
 
 from transport.atproto.cbor import CID, block, decode, from_json
@@ -24,6 +25,7 @@ from transport.atproto.sign import Key, multikey, tid
 from transport.host import PUBLIC
 from transport.identity import SLUG
 from transport.mirror import NS
+from transport.state import State
 
 COLLECTIONS = tuple(NS + c for c in ('receipt', 'object', 'source', 'publication', 'grant', 'law', 'card', 'page', 'index', 'answer'))
 MIRRORED = ('card', 'page', 'index', 'answer')  # transport/mirror.py renders them, for the PDS and for this façade alike
@@ -41,7 +43,7 @@ NOT_SERVED = 'no signing key on this box, so no signed MST: page com.atproto.rep
 NOT_LIVE = 'no live subscription: poll com.atproto.sync.getLatestCommit, then com.atproto.sync.getRepo?since=<your rev>'
 TID = re.compile(r'[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}')
 MINUTE = 60_000_000  # microseconds: the world's clock counts minutes since the epoch
-Height = namedtuple('Height', 'rev hash record commit')  # record and commit are (CID, bytes)
+Height = namedtuple('Height', 'rev hash record commit')  # (CID, bytes); commit None before the current signing epoch
 
 
 class Refusal(Exception):
@@ -76,17 +78,45 @@ def json_of(v):
 
 class Signed:
     """The journal as a signed repository. Height h adds the record {$type: entry, entry: <hash link>, height: h}
-    under `online.fg-goose.gsb.entry/<rev>` and the commit {did, version: 3, data: <MST root>, rev, prev: <commit h-1>},
+    under `online.fg-goose.gsb.entry/<rev>` and the commit {did, version: 3, data: <MST root>, rev, prev: <last commit>},
     rev = TID(clock minute * 60e6 + h), the clock the latest `advance:<minute>` entry set. Every input is in every
-    reader's projection of the entry; the key signs deterministically, so the chain is a function of the journal.
+    reader's projection of the entry; signing is deterministic over (journal, key, ledger). Epochs raise the
+    clock floor before a carry's first entry or after a rotation's height, without changing existing record keys.
 
     A carried journal continues the heights of the world before (HOST-HANDOFF 5.182): its first entry is height
     `base` + 1, not 1. `heights` and `revs` count positions in this journal (1 the first entry), and a height read
     from the host becomes a position by `position`."""
 
-    def __init__(self, did, key):
+    def __init__(self, did, key, ledger):
         self.did, self.key, self.tree, self.heights, self.revs, self.clock, self.base = did, key, Tree(), [], {}, 0, 0
+        self.ledger_path, self.ledger, self.head = Path(ledger), None, None
+        self.written_ledger = None
+        self.epochs, self.ready = [], False
         self.lock = threading.Lock()
+
+    def prepare(self, base):
+        """Detect chain changes once, using only the first journal height, signing key and durable ledger."""
+        self.base = base
+        ledger, head = self.ledger, self.ledger['head']
+        if ledger['base'] != base:
+            if head:
+                ledger['epochs'].append({'height': base + 1, 'clock': head['clock'] + 1, 'cause': 'carry'})
+            ledger['base'] = base
+            # A carry starts an empty tree under the current key, including when both inputs changed.
+            ledger['key'] = self.key.did_key
+        elif ledger['key'] != self.key.did_key:
+            if head:
+                ledger['epochs'].append({'height': head['height'], 'clock': head['clock'] + 1, 'cause': 'rotation'})
+            ledger['key'] = self.key.did_key
+        self.epochs = [e for e in ledger['epochs'] if e['height'] > base]
+
+    def persist(self):
+        """Write only a changed ledger, after the signed head exists, while holding the chain lock."""
+        if self.head:
+            self.ledger['head'] = {'height': self.base + len(self.heights), 'rev': self.head.rev, 'clock': self.clock}
+        if self.ledger != self.written_ledger:
+            State.write(self.ledger_path, self.ledger)
+            self.written_ledger = deepcopy(self.ledger)
 
     def position(self, height):
         return height - self.base if isinstance(height, int) else None
@@ -98,17 +128,35 @@ class Signed:
                 reply = host.send({'op': 'world-entries', 'principal': PUBLIC, 'after': self.base + len(self.heights), 'limit': MAX_LIMIT})
                 if 'entries' not in reply:
                     raise refused(reply)
+                if not self.ready:
+                    entries = reply['entries']
+                    base = entries[0].get('height') if entries else 1
+                    if type(base) is not int or base < 1:
+                        raise Refusal(503, 'HostUnavailable', 'the journal must begin at a positive height')
+                    if self.ledger is None:
+                        if self.ledger_path.exists():
+                            self.ledger = json.loads(self.ledger_path.read_text())
+                            self.written_ledger = deepcopy(self.ledger)
+                        else:
+                            self.ledger = {'key': self.key.did_key, 'base': base - 1, 'epochs': [], 'head': None}
+                    if not entries:
+                        self.persist()
+                        return None  # no first height yet: an existing ledger cannot be reconciled with an empty page
+                    self.prepare(base - 1)
+                    self.ready = True
                 for entry in reply['entries']:
                     self.add(entry)
                 if not reply.get('more') or not reply['entries']:
-                    return self.heights[-1] if self.heights else None
+                    self.persist()
+                    return self.head
 
     def add(self, entry):
-        if not self.heights and isinstance(entry.get('height'), int) and entry['height'] >= 1:
-            self.base = entry['height'] - 1  # the journal's first entry, whatever height a carry began it at
         h = self.base + len(self.heights) + 1
         if entry.get('height') != h or not isinstance(entry.get('hash'), str):
             raise Refusal(503, 'HostUnavailable', f"the journal's entry {entry.get('height')} is not height {h} with a hash")
+        for epoch in self.epochs:
+            if epoch['height'] == h and epoch['cause'] == 'carry':
+                self.clock = max(self.clock, epoch['clock'])
         who = entry.get('identity') or {}
         intent = str(who.get('intent', ''))
         if who.get('principal') == 'clock' and intent.startswith('advance:') and intent[8:].isdigit():
@@ -116,24 +164,36 @@ class Signed:
         rev = tid(self.clock * MINUTE + h)
         record = block({'$type': ENTRY, 'entry': CID.parse(entry['hash']), 'height': h})
         self.tree.append(f'{ENTRY}/{rev}'.encode(), record[0])
-        commit = self.key.commit(self.did, self.tree.root(), rev, self.heights[-1].commit[0] if self.heights else None)
+        root = self.tree.root()  # node creation heights must be identical even when old commits cannot be signed
+        latest = self.epochs[-1] if self.epochs else None
+        sign_height = not latest or h > latest['height'] or (h == latest['height'] and latest['cause'] == 'carry')
+        commit = self.key.commit(self.did, root, rev, self.head.commit[0] if self.head else None) if sign_height else None
         self.heights.append(Height(rev, entry['hash'], record, commit))
         self.revs[rev] = len(self.heights)
+        if commit:
+            self.head = self.heights[-1]
+        for epoch in self.epochs:
+            if epoch['height'] == h and epoch['cause'] == 'rotation':
+                self.clock = max(self.clock, epoch['clock'])
+                sync_rev = tid(self.clock * MINUTE)
+                self.revs[sync_rev] = len(self.heights)
+                if epoch is latest:
+                    self.head = Height(sync_rev, entry['hash'], record, self.key.commit(self.did, root, sync_rev, None))
 
     def repo(self, since=None):
         """The CAR of the head commit, the MST and the records; with `since` (a rev), what was added after it."""
-        start = self.revs.get(since, -1) if since else 0
-        if start < 0:
-            raise Refusal(400, 'InvalidRequest', f'since: no commit here has rev {since}')
         with self.lock:  # the head and the tree together: a catch-up between them would mix two commits
-            head, nodes = self.heights[-1], self.tree.blocks(start)
-        return car_of(head.commit[0], [head.commit, *nodes, *(x.record for x in self.heights[start:])])
+            start = self.revs.get(since, -1) if since else 0
+            if start < 0:
+                raise Refusal(400, 'InvalidRequest', f'since: no commit here has rev {since}')
+            head, nodes = self.head, self.tree.blocks(start)
+            return car_of(head.commit[0], [head.commit, *nodes, *(x.record for x in self.heights[start:])])
 
     def proof(self, h, extra=()):
         """The CAR proving height h's record: the head commit, the MST path to its key, the record (and `extra`)."""
         with self.lock:
-            head, path = self.heights[-1], self.tree.proof(h - 1)
-        return car_of(head.commit[0], [head.commit, *path, self.heights[h - 1].record, *extra])
+            head, path = self.head, self.tree.proof(h - 1)
+            return car_of(head.commit[0], [head.commit, *path, self.heights[h - 1].record, *extra])
 
 
 def world_origin(origin, world):
@@ -164,13 +224,16 @@ class Repo:
                'com.atproto.sync.listRepos': 'list_repos', 'com.atproto.sync.listBlobs': 'list_blobs',
                'com.atproto.sync.subscribeRepos': 'subscribe'}
 
-    def __init__(self, origin, key=None, world='town', answers=None):
+    def __init__(self, origin, key=None, world='town', answers=None, ledger=None):
         """`key`: a transport.atproto.sign.Key, or None for an unsigned repository; `world` names its host (`world_origin`);
-        `answers` the directory of the world's answer records (`State.answers`), the bridge's."""
+        `answers` the bridge's answer directory (`State.answers`); `ledger` the durable chain epochs
+        (`State.repo_ledger`), required when signing."""
         self.answers = answers
         self.origin = world_origin(origin, world)
         self.did, self.handle = world_did(origin, world)
-        self.signed = Signed(self.did, key) if key else None
+        if key and ledger is None:
+            raise ValueError('a signed repository requires State.repo_ledger')
+        self.signed = Signed(self.did, key, ledger) if key else None
 
     def did_document(self):
         key = self.signed and self.signed.key.private.public_key()
@@ -254,8 +317,10 @@ class Repo:
     def signed_height(self, host, rkey, who):
         """The height a receipt key names: a rev (the signed record key), a slug or an entry CID."""
         head = self.head(host, {}, None)
-        h = self.signed.revs.get(rkey) if TID.fullmatch(rkey) else self.signed.position(self.entry(host, rkey, who)['receipt'].get('height'))
-        if not isinstance(h, int) or not 1 <= h <= len(self.signed.heights):
+        is_rev = TID.fullmatch(rkey)
+        h = self.signed.revs.get(rkey) if is_rev else self.signed.position(self.entry(host, rkey, who)['receipt'].get('height'))
+        if (not isinstance(h, int) or not 1 <= h <= len(self.signed.heights)
+                or (is_rev and self.signed.heights[h - 1].rev != rkey)):
             raise Refusal(400, 'RecordNotFound', f'no receipt here is {rkey}')
         return h, head
 
@@ -445,7 +510,7 @@ class Repo:
 
 def make_key(st, curve='secp256k1'):
     """The world's signing key (docs/REPO.md "The key"), made once: a PKCS#8 PEM at `State.repo_key`, created mode 0400
-    by the running user and never overwritten, since a new key re-signs every commit. -> the did:key it names."""
+    by the running user and never overwritten; replacing a key starts a new signing epoch. -> its did:key."""
     key, path = Key.generate(curve), st.repo_key
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)  # FileExistsError: replacing a key is a deliberate act
     with os.fdopen(fd, 'wb') as f:
