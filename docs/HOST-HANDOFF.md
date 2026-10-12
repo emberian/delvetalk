@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/host28: calls and sends across worlds, 5.164; lane/host23 continued by host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/host28: calls and sends across worlds, 5.164, the scratch REPL, 5.165; lane/host23 continued by host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -1898,6 +1898,18 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `inspect`: `foreignReads`) are one path: `Foreign.read` runs the same Plan in that world (`readIn`, the object
    named locally, under the reader, the turn's ticks) and the turn journals the citation. Tests: `test_scratch` (a
    call resumed with the lab's receipt cited, a send once per turn, `foreignWorld`, both journals replayed alone).
+165. **The REPL is a scratch world's (host28; docs/FEDERATION.md §3).** `world-repl {principal, identity, entry,
+   source?, object?, argument?, arguments?}` (`PackageSession.repl`; serve refuses it outside a scratch world) compiles
+   `source` over the world's library: an entry that is not an Activity runs on `arguments` and answers its value,
+   journaling nothing; an Activity is a method of the object `object` (default `repl`) the module defines, made from it
+   when absent and reprogrammed to it when its source differs (identity `<identity>/defined`, answered as `defined`),
+   then run as the principal's turn `identity` on `argument`. With no source the method runs on the object as it stands.
+   So a REPL's state, what it made and what it waits for are the scratch's, and outlive a restart for the scratch's
+   life: the client-held checkpoint, `replRestarted`, `badModules`, serve's journal-less session and its `stateless`
+   envelope, `HostClient(stateless=)` and the front's library-pin tracking are gone (`compile` and `check-package` by
+   pin go to the town, whose library resolves it). The front's routes are `/AGENTS.md/scratch/<name>/repl`, `/check`
+   (`world-check` on the scratch) and `/cite` (`world-cite`); `/AGENTS.md/repl` and `/check` are gone. Tests:
+   `test_http.Repl`, `test_hypermedia` (the stranger's walk), `test_serve`.
 
 ## 6. Gotchas
 
@@ -2029,9 +2041,11 @@ replaces in the same commit, and this file describes only what is. A merge touch
    `plainDepth` = `plainJsonDepth`, the 1400s); H13 `compressedSize`; H14 the duplicates; H15 one list codec
    (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls.
 7. **FEDERATION's remainder (5.140):** cross-world `call` and `send` are built (5.164), and the foreign reads with
-   them; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
-   `delvetalk world expire / scratch:` spell; a front route for `world-cite`; `world-history` across worlds; the
-   hand's SCRATCHES page.
+   them; the REPL, `check` and `cite` of a scratch are built (5.165). Left: the
+   `delvetalk world expire / scratch:` spell; `world-history` across worlds; the hand's SCRATCHES page;
+   `docs/AGENTS-EXAMPLES.md` still shows `/AGENTS.md/repl` and `/check`: `deploy/capture-examples.py` (its steps moved
+   to the scratch routes) stops at the planter's `interpret` step on foundation (no pending interpretation since
+   5.163), so it is regenerated once that step is moved.
 8. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
    the scalar part and the rows it changed), `stateCid` of the whole state (compose from cell CIDs), `storeOf`'s walk
    per frame; measure before and after (`measure/stored_turn.py` shape: 2,048 rows, 200 turns).

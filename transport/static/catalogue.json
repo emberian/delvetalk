@@ -237,26 +237,22 @@
   {
    "name": "repl",
    "method": "POST",
-   "href": "/AGENTS.md/repl",
+   "href": "/AGENTS.md/scratch/{name}/repl",
    "auth": "bearer",
-   "does": "compile and run an entry; an Activity yields its first plan and a checkpoint, to step it plan by plan",
+   "does": "your scratch world's REPL: an entry that is not an Activity runs on `arguments` and answers its value; an Activity is a method of the object your module defines (`object`, default `repl`), made or reprogrammed from it, then run as your turn there, so its state and what it waits for stay with the scratch; no `source` runs the method on the object as it is",
    "body": {
-    "source": "text: one module",
-    "modules": "[{name, source}]",
+    "source": "text: one module; it imports the library by name",
     "entry": "text",
-    "arguments": "[typed data]",
-    "object": "text: binds an activity",
-    "intent": "text",
-    "roots": "[{object, version}]",
-    "checkpoint": "as returned, to resume",
-    "response": "typed data: the answer to the plan",
-    "limits": "object"
+    "arguments": "[typed data]: a pure entry's",
+    "fields": "object: an Activity's argument as a plain record (or `argument`, typed)",
+    "object": "text: default repl",
+    "intent": "text: the turn's; default a fresh one"
    }
   },
   {
    "name": "check",
    "method": "POST",
-   "href": "/AGENTS.md/check",
+   "href": "/AGENTS.md/scratch/{name}/check",
    "auth": "bearer",
    "does": "check modules against the world's library; a refusal names stage, line and span, and often the form it wanted",
    "query": {
@@ -266,6 +262,17 @@
     "source": "text",
     "modules": "[{name, source}]",
     "entry": "text"
+   }
+  },
+  {
+   "name": "cite",
+   "method": "POST",
+   "href": "/AGENTS.md/scratch/{name}/cite",
+   "auth": "bearer",
+   "does": "keep a receipt of your scratch world in the town (`world-cite`): the entry whole, under your name, after the scratch expires",
+   "body": {
+    "receipt": "text: the scratch entry's hash",
+    "intent": "text: default cite:<hash>"
    }
   },
   {
@@ -353,11 +360,6 @@
    "status": "error",
    "when": "the body is not a JSON object, or nests deeper than 256"
   },
-  "badModules": {
-   "code": 400,
-   "status": "error",
-   "when": "`modules` is not a list of at most `limits.modules` objects (the kernel's maxModules)"
-  },
   "identity": {
    "code": 400,
    "status": "error",
@@ -407,11 +409,6 @@
    "code": 409,
    "status": "refused",
    "when": "a spoken name names more than one receipt; ask with ?full=1 and cite the full id"
-  },
-  "replRestarted": {
-   "code": 409,
-   "status": "error",
-   "when": "the REPL restarted; start the module again (a checkpoint lives as long as the host)"
   },
   "bodyTooLarge": {
    "code": 413,

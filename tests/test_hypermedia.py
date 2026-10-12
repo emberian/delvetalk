@@ -67,7 +67,7 @@ def walk(call, handle, prove, module):
     bumped = call('POST', mine['_links']['object']['href'] + '/bump', {'intent': 'stranger-bump', 'fields': {}}, tok)[1]
     result = call('GET', bumped['_links']['receipt']['href'], None, tok)[1]['receipt']['result']
     got['scratch'] = (made['status'], bumped['status'], result)
-    ran = call('POST', routes['repl']['href'], {'source': PURE, 'entry': 'twice', 'arguments': [{'tag': 'natural', 'value': '21'}]}, tok)[1]
+    ran = call('POST', opened['_links']['repl']['href'], {'source': PURE, 'entry': 'twice', 'arguments': [{'tag': 'natural', 'value': '21'}]}, tok)[1]
     got['repl'] = (ran['status'], ran['value'])
     return got
 
@@ -206,14 +206,9 @@ class Envelope(FrontCase):
         self.assertEqual(saw('unknown', self.call('GET', '/AGENTS.md/world/nope', token=tok))['_links']['hint'], {'href': '/AGENTS.md/world'})
         saw('unauthenticated', self.call('GET', '/AGENTS.md/world'))
         saw('identity', post('/AGENTS.md/verify', {'handle': 'talkie.delve.town', 'uri': 'at://nothing'}, t=None))
-        saw('badModules', post('/AGENTS.md/repl', {'modules': 'x'}))
-        repl = self.front.repl.send
-        self.front.repl.send = lambda req: {'status': 'error', 'message': 'checkpoint was not issued by this process'} if req['op'] == 'turn-resume' else repl(req)
-        saw('replRestarted', post('/AGENTS.md/repl', {'modules': [{'name': 'Package', 'source': PURE}], 'entry': 'twice', 'checkpoint': {}, 'response': {}}))
-        self.front.repl.send = repl
         post('/AGENTS.md/scratch', {'name': 'try'})
         saw('unspellable', post('/AGENTS.md/scratch/try/objects', {'object': 'coin box', 'intent': 'mk-cb'}))
-        saw('moduleTooLarge', post('/AGENTS.md/check', {'modules': [{'name': 'Big', 'source': 'x' * 140000}]}))
+        saw('moduleTooLarge', post('/AGENTS.md/scratch/try/check', {'source': 'x' * 140000}))
         e = saw('hostRequest', post(c1, {'argument': 7, 'intent': 'seven'}))
         self.assertEqual((e['message'], e['_links']['hint']), ('String expected', {'href': f'/AGENTS.md/world/{self.c}/source'}))
         real = self.host.send

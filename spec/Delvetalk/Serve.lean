@@ -58,8 +58,6 @@ structure Server where
   expired : Std.HashMap String Nat := {}
   sealed : Option String := none
   libraryPin : Option String := none
-  /-- The journal-less session: compile, check and run against the sealed library. -/
-  stateless : PackageSession.Session := {}
   sha : String := ""
   /-- The directory's lock, held for the life of the process (dropping the handle would release it). -/
   lock : Option IO.FS.Handle := none
@@ -447,13 +445,13 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
       return (srv, Json.mkObj [("status", toJson "expired"), ("scratch", scratchRow key clock)])
   if op == "world-cite" then return ← citeOp srv request
   -- Every public request is a resident's, whoever it names: the opener's privileges are the root socket's.
-  let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "stateless" && k != "resident")
-  if (request.getObjVal? "stateless").toOption == some (Json.bool true) then
-    let (stateless, r) ← PackageSession.stepIO srv.stateless bare
-    return ({ srv with stateless }, r.toOption.getD (errorJson (match r with | .error e => e | .ok _ => "")))
+  let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "resident")
   match keyOf srv request with
   | .error e => return (srv, errorJson e)
   | .ok key =>
+    -- The REPL runs in a scratch world, where what it defines is the principal's own and expires with it.
+    if op == "world-repl" && !key.startsWith "scratch/" then
+      return (srv, errorJson "the REPL runs in a scratch world: open one with world-scratch and name it with world")
     -- `world-view`, `world-card` and `world-inspect` of `<world>:<object>` are that world's, as of its height.
     if op == "world-view" || op == "world-card" || op == "world-inspect" then
       let reader := (request.getObjValAs? String "principal").toOption.getD ""
@@ -521,9 +519,7 @@ def main (args : List String) : IO UInt32 := do
   if let some lib := config.library then
     let target := config.state / "library"
     sealLibrary lib target
-    srv := { srv with sealed := some target.toString }
-    let (stateless, r) ← PackageSession.stepIO {} (Json.mkObj [("op", toJson "library-load"), ("path", toJson target.toString)])
-    srv := { srv with stateless, libraryPin := r.toOption.bind (·.getObjValAs? String "pin" |>.toOption) }
+    srv := { srv with sealed := some target.toString, libraryPin := (← Host.loadLibrary target.toString).toOption.map (·.pin) }
   srv := { srv with sha := ← binaryPin (config.state / "binary-pin") (← IO.appPath) }
   -- Every world of the directory is held from the start, so a turn in one may read another.
   for f in ← config.state.readDir do

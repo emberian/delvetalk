@@ -449,72 +449,50 @@ class Turns(FrontCase):
 
 
 class Repl(FrontCase):
-    def repl(self, tok, **body):
-        return self.call('POST', '/AGENTS.md/repl', body, tok)
+    fresh_world = True  # each test opens a scratch world of its own
 
-    def test_repl_runs_a_pure_entry_and_passes_errors_through(self):
+    def repl(self, tok, scratch='lab', full=False, **body):
+        return self.call('POST', f'/AGENTS.md/scratch/{scratch}/repl' + ('?full=1' if full else ''), body, tok)
+
+    def test_repl_runs_a_pure_entry_in_a_scratch_and_passes_errors_through(self):
         tok = self.login()
-        mods = closure('World') + [{'name': 'Package', 'source': PLANS}]
-        s, r = self.repl(tok, modules=mods, entry='pure', arguments=[nat(1)])
+        self.assertEqual(self.scratch_open(tok, 'lab')[1]['status'], 'scratch')
+        s, r = self.repl(tok, source=PLANS, entry='pure', arguments=[nat(1)])
         self.assertEqual((s, r['status'], r['value']), (200, 'finished', nat(2)), r)
-        s, e = self.repl(tok, modules=mods, entry='nope')
+        s, e = self.repl(tok, source=PLANS, entry='nope')
         self.assertEqual((s, e['status']), (400, 'error'))
         self.assertIn('missing selected entry', e['message'])
-        s, e = self.repl(tok, modules=[{'name': 'Big', 'source': 'x' * 140000}], entry='pure')
-        self.assertEqual(s, 413)
+        self.assertEqual(self.repl(tok, source='x' * 140000, entry='pure')[0], 413)
+        self.assertEqual(self.call('POST', '/AGENTS.md/repl', {'source': PLANS, 'entry': 'pure'}, tok)[0], 404)  # one REPL, a scratch's
+        self.assertIn('no scratch/gone', self.repl(tok, scratch='gone', source=PLANS, entry='pure')[1]['message'])
 
-
-    def test_a_checkpoint_from_before_the_host_restarted_is_repl_restarted_never_a_500(self):
+    def test_an_activity_defines_an_object_in_the_scratch_that_keeps_its_state_across_requests_and_restarts(self):
         tok = self.login()
-        mods = closure('World') + [{'name': 'Package', 'source': PLANS}]
-        s, y = self.repl(tok, modules=mods, entry='bump', turn=True, arguments=[nat(3)], **self.BIND)
-        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+        self.scratch_open(tok, 'lab')
+        s, first = self.repl(tok, full=True, source=REPL_COUNTER, entry='bump', intent='r1')
+        self.assertEqual((s, first['status'], first['result'], first['defined']['outcome']['tag']), (200, 'admitted', nat(1), 'created'), first)
+        self.assertEqual(self.repl(tok, full=True, entry='bump', intent='r2')[1]['result'], nat(2))  # no source: the object as it stands
         from transport.config import LIBRARY
-        self.server.stop()  # a restart of serve: a new stateless session, which issued nothing
-        type(self).server = served(self.state_dir.name, cleanup=type(self).addClassCleanup, opener=self.OPENER, library=LIBRARY)
-        s, e = self.repl(tok, modules=mods, entry='bump', checkpoint=y['checkpoint'], response=variant('written'), **self.BIND)
-        self.assertEqual((s, e['class'], e['message'], e['_links']['repl']), (409, 'replRestarted', 'the REPL restarted; start the module again',
-                                                                              {'href': '/AGENTS.md/repl'}), e)
-
-    def test_repl_imports_the_library_by_name_and_starts_an_activity_from_its_type(self):
-        tok = self.login()
-        context = record(world=label(''), object=label(self.c), principal=label(DID), handle=label(''), caller=label(''), sender=label(''),
-                         intent=label('repl-2'), height=nat(0), clock=nat(0),
-                         inputOrigin=record(kind=label('request'), object=label(''), command=label(''), program=label(''),
-                                            immediatelyPrevious={'tag': 'boolean', 'value': False}, post={'tag': 'label', 'value': ''}))
-        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2)), context],
-                         object=self.c, intent='repl-2', roots=[{'object': self.c, 'version': 0}])
-        self.assertEqual((s, y['status']), (200, 'yielded'), y)
-        self.assertIsInstance(y['checkpoint']['tokens'], list)  # the REPL's checkpoint goes back whole, to resume
-        s, done = self.repl(tok, source=REPL_COUNTER, entry='bump', checkpoint=y['checkpoint'], response=variant('written'),
-                            object=self.c, intent='repl-2', roots=[{'object': self.c, 'version': 0}])
-        self.assertEqual((s, done['status'], done['value']), (200, 'finished', nat(3)), done)
-
-
-    def test_a_stale_library_pin_is_re_read_once_and_the_compile_goes_through(self):
-        tok = self.login()
-        self.front.library = 'bafyreistale'
-        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object=self.c, intent='repl-4',
-                         roots=[{'object': self.c, 'version': 0}])
-        self.assertEqual((s, y['status']), (200, 'yielded'), y)
-        self.assertNotEqual(self.front.library, 'bafyreistale')
-        self.front.serve_pid = -1  # a changed pid is re-read before the request
-        self.front.library = 'bafyreistale'
-        s, y = self.repl(tok, source=REPL_COUNTER, entry='bump', arguments=[record(count=nat(2))], object=self.c, intent='repl-5',
-                         roots=[{'object': self.c, 'version': 0}])
-        self.assertEqual((s, y['status']), (200, 'yielded'), y)
+        self.server.stop()  # the scratch is a world: what the REPL defined outlives the process
+        self.server = served(self.state_dir.name, cleanup=self.addCleanup, opener=self.OPENER, library=LIBRARY)
+        again = self.repl(tok, full=True, source=REPL_COUNTER, entry='bump', intent='r3')[1]
+        self.assertEqual((again['result'], 'defined' in again), (nat(3), False), again)  # the same source is not made again
+        s, seen = self.call('GET', '/AGENTS.md/scratch/lab/world/repl', token=tok)
+        self.assertEqual(seen['state'], record(count=nat(3)), seen)
+        self.assertEqual(self.host.send({'op': 'world-view', 'principal': DID, 'object': 'repl'})['status'], 'unknown')  # not the town's
 
     def test_check_and_compile_refusals_carry_the_hosts_hint(self):
         tok = self.login()
+        self.scratch_open(tok, 'lab')
         habit = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
-        s, c = self.call('POST', '/AGENTS.md/check', {'source': habit, 'entry': 'flip'}, tok)
+        s, c = self.call('POST', '/AGENTS.md/scratch/lab/check', {'source': habit, 'entry': 'flip'}, tok)
         self.assertEqual((s, c['status']), (200, 'refused'), c)
         self.assertIn('case label(x): body', c['hint'])
         s, e = self.repl(tok, source=habit, entry='flip')
         self.assertEqual((s, e['status']), (400, 'error'), e)
         self.assertIn('case label(x): body', e['hint'])
         self.assertIn('stage', e)
-        s, ok = self.call('POST', '/AGENTS.md/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
+        s, ok = self.call('POST', '/AGENTS.md/scratch/lab/check', {'source': REPL_COUNTER, 'entry': 'bump'}, tok)
         self.assertEqual((s, ok['status']), (200, 'checked'), ok)
 
 
@@ -583,7 +561,8 @@ class Scratch(FrontCase):
         self.assertEqual(resolve('GET', '/AGENTS.md/scratch/try/world/x/card')[1]['scratch'], 'try')
         self.assertEqual(resolve('POST', '/AGENTS.md/scratch/try/objects')[0], 'create')
         self.assertEqual(resolve('POST', '/AGENTS.md/objects')[0], None)
-        self.assertEqual(resolve('POST', '/AGENTS.md/scratch/try/repl')[0], None)
+        self.assertEqual(resolve('POST', '/AGENTS.md/scratch/try/repl')[0], 'repl')
+        self.assertEqual((resolve('POST', '/AGENTS.md/repl')[0], resolve('POST', '/AGENTS.md/check')[0]), (None, None))
         s, _, raw = self.request('OPTIONS', '/AGENTS.md/scratch/try/objects')
         self.assertEqual((s, [e['name'] for e in json.loads(raw)['routes']]), (200, ['create']))
 

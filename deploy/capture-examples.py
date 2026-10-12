@@ -66,7 +66,7 @@ Literal requests and replies, captured on {date} by `deploy/capture-examples.py`
 docs/DEPLOY.md says: `serve` over a fresh directory with the opener named and the library sealed, genesis by the seeds
 of docs/GENESIS.md, `python3 -m transport http`. Two things were not real: the account host (each challenge text
 was "posted" by writing it where a mocked PDS serves it) and the town's interpreter (its one answer is written in
-the script). Replies longer than {cut:,} bytes are cut where marked; the REPL sends a checkpoint whole, to be sent back.
+the script). Replies longer than {cut:,} bytes are cut where marked.
 The guide is `GET /AGENTS.md`, the catalogue `GET /AGENTS.md/api`; `$T` is the credential from the challenge. Each reply
 is shown with its `_links` first and an object's `_actions` last.
 '''
@@ -196,16 +196,15 @@ def maker(cap):
 def forger(cap):
     cap.say('## A forger')
     did = cap.login('smith.delve.town')
-    cap.step('POST', '/check', {'entry': 'flip', 'source': FLIP})
-    cap.step('POST', '/check', {'entry': 'bump', 'source': TALLY})
     cap.step('POST', '/scratch', {'name': 'try'})
+    cap.step('POST', '/scratch/try/check', {'entry': 'flip', 'source': FLIP})
+    cap.step('POST', '/scratch/try/check', {'entry': 'bump', 'source': TALLY})
     cap.step('POST', '/scratch/try/objects', {'intent': 'mk-tally', 'object': 'tally', 'modules': [{'name': 'Tally', 'source': TALLY}], 'entry': 'initial', 'seed': {'count': 40}})
     cap.step('POST', '/scratch/try/world/tally/bump', {'intent': 'bump-1'})
     cap.step('GET', '/scratch/try/world/tally')
     cap.step('POST', '/scratch/try/world/tally/lend', {'intent': 'lend-1', 'fields': {'to': 'did:plc:bbbbbbbbbbbbbbbbbbbbbbbb'}})
-    bind = {'object': 'tally', 'intent': 'repl-1', 'roots': [{'object': 'tally', 'version': 0}]}
-    yielded = cap.step('POST', '/repl', {'source': TALLY, 'entry': 'bump', 'arguments': [record(count={'tag': 'natural', 'value': '41'})], **bind})
-    cap.step('POST', '/repl', {'source': TALLY, 'entry': 'bump', 'checkpoint': cap.whole(yielded), 'response': {'tag': 'variant', 'label': 'written', 'payload': record()}, **bind})
+    cap.step('POST', '/scratch/try/repl', {'source': TALLY, 'entry': 'bump', 'object': 'counter', 'intent': 'repl-1'})
+    cap.step('POST', '/scratch/try/repl', {'entry': 'bump', 'object': 'counter', 'intent': 'repl-2'})
     cap.step('POST', '/world/garden/plant', {'intent': 'plant-mine', 'fields': {'colour': 'violet', 'seed': 'an anvil that hums'}})
     cap.step('GET', '/world/garden/bell/4/source')
     bell = (ROOT / 'world' / 'objects' / 'Record.obend').read_text() + '# rung bells keep their rain\n'
@@ -252,7 +251,6 @@ def main(argv=None):
         threading.Thread(target=front.serve_forever, daemon=True).start()
         cap = Capture(front.server_address[1], sock, provider, tmp)
         cap.root = served.root
-        cap.whole = lambda reply: reply['checkpoint']
         cap.out = HEAD.format(date=datetime.date.today().isoformat(), cut=CUT).split('\n')
         try:
             for session in (planter, maker, forger, stranger):

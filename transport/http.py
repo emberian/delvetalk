@@ -36,8 +36,8 @@ REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to s
 WORKERS = 48  # requests served at once (the container allows 64 tasks); one more is told `busy`
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'receipt', False): 'intent', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
-          ('POST', 'check', False): 'check', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
-TOP_ONLY = ('repl', 'check', 'me', 'revoke')
+          ('POST', 'check', False): 'check', ('POST', 'cite', False): 'cite', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
+TOP_ONLY, SCRATCH_ONLY = ('me', 'revoke'), ('create', 'repl', 'check', 'cite')
 ROUTE_HINT = 'GET /AGENTS.md/api lists every route; OPTIONS on a path answers its entries'
 FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)): 'examples',
          ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify', ('POST', ('accept',)): 'accept'}
@@ -63,7 +63,7 @@ def resolve(method, path):
             name = name if (obj or name == 'world') and method in ('GET', 'POST') else None
         else:
             name = ROUTES.get((method, head, bool(obj)))
-            name = None if name in (('create',) if scratch is None else TOP_ONLY) else name
+            name = None if name in (SCRATCH_ONLY if scratch is None else TOP_ONLY) else name
         return (name, {'scratch': scratch, 'object': obj, 'method': tail}) if name else (None, None)
     if parts[:1] == ['oauth'] and len(parts) == 2 and method == 'GET':  # answered by oauth.route; named here so OPTIONS describes them
         name = {'start': 'oauthStart', 'callback': 'oauthCallback', 'client-metadata.json': 'oauthClient'}.get(parts[1])
@@ -319,7 +319,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     daemon_threads = True
     request_queue_size = 128  # the default backlog of 5 resets connections when a burst arrives faster than accept() runs
 
-    def __init__(self, st, host, identity, address=None, clock=time.time, sleep=time.sleep, hand=None, workers=WORKERS, repl=None):
+    def __init__(self, st, host, identity, address=None, clock=time.time, sleep=time.sleep, hand=None, workers=WORKERS):
         """The public front over `st`'s world, or with `hand` the hand's console, which logs no access and drafts nothing."""
         c = st.config
         super().__init__(address or ((c.hand_bind, c.hand_port) if hand else (c.http_bind, c.http_port)), Handler)
@@ -327,7 +327,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         threading.Thread(target=self.reap, daemon=True).start()
         self.st, self.access, self.known = st, None if hand else AccessLog(st.access_log, st.world), {}
         self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
-        self.repl, self.trust_proxy, self.sleep, self.hand = repl or st.host(stateless=True), c.trust_proxy, sleep, hand
+        self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
         self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None)  # the journal as AT Protocol records, read only
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
@@ -335,7 +335,6 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         info = host.send({'op': 'serve-status'})
         self.host_sha256, self.host_timeout = info.get('hostSha256', 'unknown'), getattr(host, 'timeout', HOST_TIMEOUT)
-        self.library, self.serve_pid = info.get('library'), info.get('pid')  # the pin of the library serve sealed; the REPL compiles against it by name
         self.bounds = host.send({'op': 'bounds'})  # the kernel's and the host's bounds: the front restates none
 
     def process_request(self, request, client_address):
@@ -391,12 +390,6 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             if isinstance(handle, str) and handle:
                 self.known[did] = handle
         return self.known
-
-    def sync_library(self, force=False):
-        """Re-read serve-status when serve's pid changed (it restarted, maybe with a new library), or when forced."""
-        info = self.host.send({'op': 'serve-status'})
-        if force or info.get('pid') != self.serve_pid:
-            self.library, self.serve_pid = info.get('library'), info.get('pid')
 
     def used(self, credential):
         now = self.clock()
@@ -680,13 +673,13 @@ class Handler(BaseHTTPRequestHandler):
             self.server.identity.revoke(credential)
             return self.reply(200, canonical({'status': 'revoked', '_links': {'self': link(self.path), 'challenge': link(PREFIX + '/challenge')}}),
                               headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
-        if kind in ('repl', 'check'):
-            return self.run_repl(who['did'], kind)
         principal = who['did']  # the principal the host sees; the handle is display only
         if kind == 'scratch':
             return self.open_scratch(principal)
         host = self.server.host.at(f'scratch/{scratch}') if scratch else self.server.host  # the principal in the request decides whose scratch
         base = PREFIX + (f'/scratch/{scratch}' if scratch else '')
+        if kind in ('repl', 'check', 'cite'):
+            return self.in_scratch(host, base, principal, scratch, kind)
         if self.browser() and kind in ('object', 'card', 'source') and not scratch:
             return self.object_page(obj, who)
         at = lambda o: {'object': link(f'{base}/world/{oid(o)}'), 'card': link(f'{base}/world/{oid(o)}/card'),
@@ -867,52 +860,35 @@ class Handler(BaseHTTPRequestHandler):
         name = data.get('name')
         reply = self.server.host.send({'op': 'world-scratch', 'principal': principal, 'name': name, **({'from': data['from']} if 'from' in data else {})})
         base = f'{PREFIX}/scratch/{name}'
-        self.answer(reply, links={'world': link(base + '/world'), 'objects': link(base + '/objects'), 'offers': link(base + '/offers'), 'me': link(PREFIX + '/me')}
+        self.answer(reply, links={'world': link(base + '/world'), 'objects': link(base + '/objects'), 'offers': link(base + '/offers'),
+                                  'repl': link(base + '/repl'), 'check': link(base + '/check'), 'me': link(PREFIX + '/me')}
                     if reply.get('status') == 'scratch' else {'me': link(PREFIX + '/me')})
 
-    def run_repl(self, principal, kind='repl'):
+    def in_scratch(self, host, base, principal, scratch, kind):
+        """POST /scratch/<name>/repl, /check, /cite: the scratch world's REPL (`world-repl`: a pure entry runs, an Activity runs
+        as your turn on the object its module defines, which keeps its state), `world-check` against its library, and a
+        receipt of it kept in the town (`world-cite`)."""
         data = self.body()
         if data is None:
             return
-        modules = data['modules'] if 'modules' in data else [{'name': 'Package', 'source': data.get('source', '')}]
-        kernel = self.server.bounds['kernel']
-        if not isinstance(modules, list) or len(modules) > kernel['maxModules']:
-            return self.fail('badModules')
-        for m in modules:
-            if not isinstance(m, dict) or len(str(m.get('source', '')).encode()) > kernel['maxPackageBytes']:
-                return self.fail('moduleTooLarge' if isinstance(m, dict) else 'badModules', hint='import the library by name (./Plan.obend); it is not sent')
-        if kind == 'check':  # the verdict, against the world's sealed library; ?full=1 adds the compiled artifact
-            checked = self.server.host.send({'op': 'world-check', 'principal': principal, 'modules': modules, 'entry': data.get('entry')})
+        if len(str(data.get('source', '')).encode()) > self.server.bounds['kernel']['maxPackageBytes']:
+            return self.fail('moduleTooLarge', hint='import the library by name (./Plan.obend); it is not sent')
+        if kind == 'cite':
+            reply = self.server.host.send({'op': 'world-cite', 'principal': principal, 'scratch': scratch, 'receipt': data.get('receipt'),
+                                           **({'identity': data['intent']} if 'intent' in data else {})})
+            return self.answer(reply, links={'receipt': link(f"{PREFIX}/receipt/{(reply.get('receipt') or {}).get('slug', '')}")}
+                               if reply.get('status') == 'cited' else {'scratch': link(base + '/world')})
+        if kind == 'check':  # the verdict, against the scratch's sealed library; ?full=1 adds the compiled artifact
+            checked = host.send({'op': 'world-check', 'principal': principal, **{k: data[k] for k in ('modules', 'source', 'entry') if k in data}})
             return self.answer(checked if 'full=1' in self.path else {k: v for k, v in checked.items() if k != 'artifact'},
-                               links={'repl': link(PREFIX + '/repl')})
-        repl = self.server.repl
-        for retry in (False, True):  # once per request: an unknown pin means serve restarted with another library
-            self.server.sync_library(force=retry)
-            pin = {'library': self.server.library} if self.server.library else {}
-            compiled = repl.send({'op': 'compile', 'modules': modules, 'entry': data.get('entry'), **pin})
-            if retry or 'unknown library pin' not in str(compiled.get('message')):
-                break
-        if compiled.get('status') != 'compiled':
-            return self.answer(compiled, links={'check': link(PREFIX + '/check')})
-        ty = compiled['artifact'].get('type') or {}
-        while ty.get('tag') == 'arrow':
-            ty = ty.get('codomain') or {}
-        activity = ty.get('tag') == 'computation'  # an Activity entry starts a turn; anything else runs
-        extra = {k: data[k] for k in ('limits', 'object', 'intent', 'roots') if k in data}
-        if activity or 'checkpoint' in data:
-            extra['principal'] = principal  # a checkpoint is bound to the credential's principal, never the body's
-        if 'checkpoint' in data:
-            req = {'op': 'turn-resume', 'checkpoint': data['checkpoint'], 'response': data.get('response'), **extra}
-        else:
-            req = {'op': 'turn-start' if activity else 'run', 'arguments': data.get('arguments', []), **extra}
-        reply = repl.send({**req, 'artifact': compiled['artifact']})
-        if 'checkpoint' in data and 'not issued by this process' in str(reply.get('message')):  # a REPL session ends with its host
-            return self.fail('replRestarted', 'the REPL restarted; start the module again', links={'repl': link(PREFIX + '/repl')})
-        if reply.get('status') == 'error':
-            return self.answer(reply, links={'check': link(PREFIX + '/check')})
-        # The default rendering omits hashes like every other reply; only the checkpoint, which the client sends back, stays whole.
-        body = reply if 'full=1' in self.path else {**terse({k: v for k, v in reply.items() if k != 'checkpoint'}), **({'checkpoint': reply['checkpoint']} if 'checkpoint' in reply else {})}
-        self.reply(200, canonical({**body, '_links': {'self': link(self.path)}}))
+                               links={'repl': link(base + '/repl')})
+        given = {k: data[k] for k in ('source', 'entry', 'object', 'arguments') if k in data}
+        if any(k in data for k in ('spell', 'fields', 'argument')):
+            given['argument'] = argument(data)
+        reply = host.send({'op': 'world-repl', 'principal': principal, 'identity': data.get('intent') or f'repl-{secrets.token_hex(6)}', **given})
+        links = {'check': link(base + '/check'), 'object': link(f"{base}/world/{oid(data.get('object') or 'repl')}")} \
+            if 'receipt' in reply else {'check': link(base + '/check')}
+        self.answer(reply, links=links)
 
     # ---- humans
 

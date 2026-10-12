@@ -316,7 +316,9 @@ routes; private heaps are gone. 5 landed (host17, host28): every read Plan of a 
 when idle, so every world is readable. 6 landed (host28, HOST-HANDOFF 5.164): a call across suspends on
 `(principal, id)` with `crossing` on the entry, the target journals `relayed` and delivers it as any send, and the
 home world's `crossed` entry, citing the target's receipt, resumes it; a send is the same without the wait; one
-crossing per turn, the ledger crossing with it. 7 and 8 are not built.
+crossing per turn, the ledger crossing with it. The REPL and `check` run in a scratch (`world-repl`, HOST-HANDOFF
+5.165): a definition is an object of the scratch, so the stateless process and its checkpoints are gone. 7 and 8 are
+not built.
 
 Ops added: `world-scratch`, `world-cite`, `serve-status`; `world-fork` stays
 as the operator's copy. Ops changed: every op takes `world`; `world-advance`

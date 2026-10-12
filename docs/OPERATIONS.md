@@ -127,7 +127,7 @@ directory per world for everything that is the world's, the town's included
                                       bridge.pid, interpret.pid; watch.jsonl, alerted.json
     <repo_keys>/<world>.key           the repository's signing key
 
-`State` also hands out the host clients (`host()`, `root()`, stateless),
+`State` also hands out the host clients (`host()`, `root()`),
 `write` (atomic, the one `write_atomic`), the outbox reads, the daemon loop
 with its pid heartbeat, and the bridge row.
 
