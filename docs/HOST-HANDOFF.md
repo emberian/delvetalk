@@ -1667,7 +1667,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      one changes or drops taken off, each line whose name its text and rows leave free placed under its owner, `since`
      1 (`placed`, `unplaced` on its move); hands' rows stay. Only a package-declared law is the carry's: a law given at
      creation (genesis's `RECORD_LAW`, a kind's `under`) and a kind's `law`/`voice` state are genesis's, laid by
-     `deploy.genesis refresh` at the end of the transport's carry (objects lane). Left, retired at its old pin with the reason as its reading: an
+     `deploy.genesis refresh` at the end of the transport's carry (objects lane). Left, retired at its old pin (its `retired` clause reading the reason's first line within 200 bytes; the
+     carry prints the whole reason in `left`): an
      object whose own entry package the image no longer ships (`gone`: Wake, Env), one whose move refuses (no
      compile, no `migrate` for a state that does not conform, a `migrate` that refuses), and one `--leave`
      names. Only an object that does not rebuild under its own pin refuses the carry, by name.

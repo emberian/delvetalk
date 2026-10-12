@@ -149,7 +149,7 @@ def Moved.json (m : Moved) : Json :=
     (if m.unplaced.isEmpty then [] else [("unplaced", toJson m.unplaced)]))
 
 /-- What a carry made of a world: the world as this binary holds it, the objects left (retired, with the
-    reading), the objects moved to the image's packages, the suspensions dropped (the entry and why), and what
+    whole refusal; its retired clause reads the first line within 200 bytes), the objects moved to the image's packages, the suspensions dropped (the entry and why), and what
     refused the carry (by name). -/
 structure Carried where
   world : World
@@ -326,8 +326,8 @@ def carryWorld (w : World) (leave : List String) (reason : String) (shipped : Op
     match rebuilt c.world o with
     | .error e =>
       if let some _ := named.lookup id then
-        let why := reading s!"carried retired: {e}"
-        c := { c with world := { c.world with objects := c.world.objects.insert id (retire o why) }, left := c.left ++ [(id, why)] }
+        let why := s!"carried retired: {e}"
+        c := { c with world := { c.world with objects := c.world.objects.insert id (retire o (reading why)) }, left := c.left ++ [(id, why)] }
       else c := { c with refused := c.refused ++ [(id, e)] }
     | .ok (o', b) =>
       let step : Except String (Option (Object × Built × Moved × Bool)) := match named.lookup id, shipped with
@@ -341,8 +341,8 @@ def carryWorld (w : World) (leave : List String) (reason : String) (shipped : Op
       | .ok none =>
         c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id o' } o'.inputs b }
       | .error why =>
-        let why := reading why
-        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id (retire o' why) } o'.inputs b,
+        -- The whole refusal is the carry's output; the retired clause reads its first line, within a reading's bound.
+        c := { c with world := cacheBuild { c.world with objects := c.world.objects.insert id (retire o' (reading why)) } o'.inputs b,
                       left := c.left ++ [(id, why)] }
   let mut kept : Array Json := #[]
   for e in w.suspended do
