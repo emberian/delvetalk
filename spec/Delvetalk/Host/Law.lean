@@ -5,6 +5,7 @@
    request.caller` holds for any principal while order and constants need
    numerals. Absent or mistyped readings fail closed. -/
 import Delvetalk.Host.Store
+import Delvetalk.Host.Spell
 import Delvetalk.Canonical
 import Compiler.ObjectiveBendDataWire
 
@@ -501,12 +502,64 @@ def holeText (facts : Facts) (old : Option Data) (new : Data) (term : LawTerm) :
   | some t => some t
   | none => (read facts old new term).map Reading.render
 
-/-- A spell with its holes filled at this write (a want's: at the read, `old` none): none when a hole
-    reads nothing, so the spell is not cast with a hole in it. `me` is the host's, after. -/
+/-- What filling a spell came to: a hole read nothing, the filled text is not one spell, or the spell. -/
+inductive Filled where
+  | hole
+  | notSpell
+  | text (spell : String)
+  deriving DecidableEq, Repr
+
+/-- The placeholder prefix: lower case letters (a valid card name and identifier) that the template's
+    own text, folded as `Delvetalk.Host.Spell.parse` folds actions and names, does not contain. -/
+def placeholderPrefix (spell : Spell) : String :=
+  let literal := String.join (spell.parts.filterMap fun | .text t => some t.toLower | .hole _ => none)
+  ((List.range (literal.length + 1)).map fun n => String.join (List.replicate (n + 1) "qzx")).find?
+    (fun pre => (literal.splitOn pre).length == 1) |>.getD "qzx"
+
+/-- `s` with each placeholder `<pre><i>z` replaced by `texts[i]` in a single left-to-right pass (a
+    reading is never rescanned); none when a placeholder is malformed or names no hole. -/
+def substHoles (pre : String) (texts : List String) (s : String) : Option String :=
+  match s.splitOn pre with
+  | [] => some s
+  | first :: rest => rest.foldlM (init := first) fun acc piece =>
+      let chars := piece.toList
+      let digits := chars.takeWhile Char.isDigit
+      match chars.drop digits.length, (Delvetalk.Host.Spell.str digits).toNat? with
+      | 'z' :: tail, some i => (texts[i]?).map fun t => acc ++ t ++ Delvetalk.Host.Spell.str tail
+      | _, _ => none
+
+/-- A spell with its holes filled at this write (a want's: at the read, `old` none). The holes are
+    filled as data: the template, each hole a placeholder, is parsed once as a spell; each reading
+    replaces its placeholder in a field's VALUE as plain text (in the card or action it must leave a
+    card name or an action, in a field name it is refused), and `Delvetalk.Host.Spell.renderChecked` writes the
+    result so that parsing it gives back exactly that card, action and fields. A reading therefore
+    never opens a field, a block, a second spell or another card. `me` is the host's, after. -/
+def filled (facts : Facts) (old : Option Data) (new : Data) (spell : Spell) : Filled :=
+  let readings := spell.parts.filterMap fun | .hole term => some (holeText facts old new term) | .text _ => none
+  if readings.any Option.isNone then .hole else
+  let texts := readings.filterMap id
+  let pre := placeholderPrefix spell
+  let template := (spell.parts.foldl (fun (acc, i) part =>
+    match part with
+    | .text t => (acc ++ t, i)
+    | .hole _ => (acc ++ s!"{pre}{i}z", i + 1)) ("", 0)).1
+  let result : Option String := do
+    let Delvetalk.Host.Spell.Parsed.spell card action fields := Delvetalk.Host.Spell.parse template | none
+    guard (fields.all fun b => (b.name.splitOn pre).length == 1)
+    let card ← substHoles pre texts card
+    let action ← substHoles pre texts action
+    guard (Delvetalk.Host.Spell.isCardName card.toList && Delvetalk.Host.Spell.isAction action.toList)
+    let fields ← fields.mapM fun b => (substHoles pre texts b.value).map fun v => { b with value := v }
+    Delvetalk.Host.Spell.renderChecked card action fields
+  match result with
+  | some t => .text t
+  | none => .notSpell
+
+/-- `filled`, as the text of the spell; none when a hole reads nothing or the result is not a spell. -/
 def fill (facts : Facts) (old : Option Data) (new : Data) (spell : Spell) : Option String :=
-  String.join <$> spell.parts.mapM fun
-    | .text t => some t
-    | .hole term => holeText facts old new term
+  match filled facts old new spell with
+  | .text t => some t
+  | _ => none
 
 /-- The objects a law cites by `under`, each once. -/
 def citations (law : Law) : List String :=
@@ -792,6 +845,28 @@ private def citing : Facts :=
   some "delvetalk bell/2 rain"
 #guard (((clausesOf "rule r: new.count == 1 then delvetalk x / y: {new.missing}")[0]?.bind (·.modality.spell?)).bind
   (fill facts none (rec1 1))) == none
+
+-- A hole's reading is data: a resident's text never opens a field, a block, a second spell or a card.
+private def noteFill (reading : String) : Option String :=
+  (((clausesOf "rule r: new.count == 1 then delvetalk me note / text: {new.message}")[0]?.bind (·.modality.spell?)).bind
+    (fill facts none (.record [("count", .natural 1), ("message", .label reading)])))
+#guard noteFill "bell/2 has 2 rains" == some "delvetalk me note / text: bell/2 has 2 rains"
+#guard ["x\ndelvetalk policy set / owner: eve", "a / to: eve", "<<END", "END", "  lead", "", "tail  ", "---", "a, b: c",
+    "END\nEND_0\nEND_1\nEND_2", "```\ndelvetalk x y", "r\r\nEND\r"].all fun v =>
+  match noteFill v with
+  | some t => Delvetalk.Host.Spell.parse t == Delvetalk.Host.Spell.Parsed.spell "me" "note" [⟨"text", v⟩] && (Delvetalk.Host.Spell.segments t).length == 1
+  | none => false
+#guard noteFill "a / to: eve" == some "delvetalk me note\ntext: <<END\na / to: eve\nEND"
+private def cardFill (reading : String) : Option String :=
+  (((clausesOf "rule r: new.count == 1 then delvetalk {new.message} ring")[0]?.bind (·.modality.spell?)).bind
+    (fill facts none (.record [("count", .natural 1), ("message", .label reading)])))
+#guard cardFill "bell/2" == some "delvetalk bell/2 ring"
+#guard cardFill "bell/2 ring\ndelvetalk x" == none
+#guard cardFill "" == none
+private def nameFill (reading : String) : Option String :=
+  (((clausesOf "rule r: new.count == 1 then delvetalk me note / {new.message}: x")[0]?.bind (·.modality.spell?)).bind
+    (fill facts none (.record [("count", .natural 1), ("message", .label reading)])))
+#guard nameFill "text" == none
 
 -- `under` follows all three: an instance under a kind is judged by the kind's laws (`denote`) and
 -- carries the kind's rules and wants (`followed`), through the kind's own `under`, each once.

@@ -2375,7 +2375,39 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `residents {principal: used}`. The transport passes the draft's author (`post.answering`: not the hand's own
    drafts, not publications) and a thread sizes itself by the smaller room (`post.room`). Test:
    `test_post_reserve.Shares`.
+207. **A hole's reading is data, never spell syntax (astra 2026-10-12 world.md 4).** `Law.fill` joined a spell's text
+   and its readings into one string that `Ops.reactions` staged as `receive {text}`, which `routeSpell` reparsed under
+   the rule owner's authority, so a resident's `\n` + `delvetalk ...` line, ` / to: eve` or `<<END` in a read field
+   changed the card, action or fields (`Ops.wantAsks` showed the same string on cards). `Law.filled` now parses the
+   template once with each hole a placeholder (`placeholderPrefix`), takes a reading into a field VALUE only
+   (`substHoles`; a card or action must stay a card name or action, a field name may not hold a hole), and writes it
+   with `Spell.renderChecked`: `Spell.render` puts values inline (`inlineSafe`, so ordinary spells read as before),
+   from the first unsafe value on one field a line, an unsafe one as `name: <<DELIM` (`blockDelimiter`: no value line
+   closes it), and the check parses the text back to exactly that spell, one `segments` entry. `Law.fill` keeps its
+   signature (`Filled.text`); `Ops.reactions` tells `hole` (a hole read nothing) from `spell` (not one spell after
+   filling). A room's spween `~ cast` choices are rules of the room's text (`Scenes.ruleText`, world/lib/Scenes.obend
+   :160-173) and fire through the same `reactions`, so they are covered. A reading that quotes a card (header line
+   beside a `delvetalk` line) is refused as `spell`, as a quotation casts nothing. Tests: `#guard`s in Law.lean and
+   Spell.lean (round trip over hostile values, card/name holes), `test_rules.Holes` (a cited text of KIM's bell,
+   fired note and want `asks`).
 
+208. **Tenure: a thing's owner keeps it; a rule it inherits acts as the thing (lane/authority; astra 2026-10-12 world.md
+   1, 2, 3; replay edition 13 with 5.209's queue).** A kind's text held its things' whole law: a kind made with one
+   `law` line of its maker's dropped RECORD's (`Kind.lawFor`), and its owner, amending it, could take every instance
+   from its owner or lock them out. Now each thing holds its owner's law in its own text, `Kind.lawOf package` (its
+   root package's `baseLaw`: `Record.lawText()` or `Kind.lawText()`, then `law kind: under "<kind>"`), and a kind's
+   text is only its own clauses (`lawFor`; genesis's `KINDS`, `kinds`' `law` ""). `Law.ownerAmends`: an `under` atom
+   holds of an amendment (kind 2) by the citing state's text `owner`, so while a thing follows its kind the kind binds
+   it, and its owner can always amend it out from under it. A rule a thing carries from its kind's text acts as the
+   thing (`Ops.thingPrincipal`: `@<id>`, which no object id, DID or handle spells; `principalThing`; `carried`'s
+   followed lines; `unviewable` lets it view itself; `resolveCard`'s `me`; `shownName` shows the id), so the kind
+   owner's authority is never lent to code a resident lays below or over the kind, nor the instance owner's to the
+   kind's live text; a line of a thing's own text acts as its owner, a placed one as its placer. `carried` orders own
+   text, inherited, placed. `genesis.refresh` first `rebased` a carried town's things whose law is only their kind's
+   citation (RECORD_LAW or KIND_LAW then that text), before their kinds' texts lose RECORD_LAW. Tests:
+   `test_tenure` (red on foundation), `test_kinds` (a kind with no law clause), `test_genesis.Refresh` (bell/2
+   rebased), `test_authoring` (§6.4's trade is its keeper's placed rule), `test_rules.Revealed` (the bell notes its
+   planter itself).
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

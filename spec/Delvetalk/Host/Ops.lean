@@ -3757,12 +3757,15 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
       if (unviewable after r.owner (id :: (citesOf after r.clause.names).objects)).isSome then
         unfired := unfired.push (refuse "reads")
         continue
-      let text := (r.clause.modality.spell?).bind (Law.fill facts (some oldState) newState)
+      let filled := match r.clause.modality.spell? with
+        | some spell => Law.filled facts (some oldState) newState spell
+        | none => .hole
+      let text := match filled with | .text t => some t | _ => none
       let quiet := (quietOf before r.owner "").isSome
-      match text, text.bind (spellCard before r.owner) with
-      | none, _ => unfired := unfired.push (refuse "hole")
-      | some _, none => unfired := unfired.push (refuse "spell")
-      | some text, some to =>
+      match filled, text.bind (spellCard before r.owner) with
+      | .hole, _ => unfired := unfired.push (refuse "hole")
+      | .notSpell, _ | .text _, none => unfired := unfired.push (refuse "spell")
+      | .text text, some to =>
         if r.owner.isEmpty then unfired := unfired.push (refuse "noOwner")
         else if quiet then unfired := unfired.push (refuse "quiet")
         else if depth + 1 > Limits.ruleDepth then unfired := unfired.push (refuse "ruleDepth")
