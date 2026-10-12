@@ -81,7 +81,7 @@ Each walks the bare town genesis makes (`Town(..., furnished=False)`); `tests/te
 
 | Walk | File | What changes |
 | --- | --- | --- |
-| `bell` | `capsules/pages/bell.txt` | `kind/bell make`, a rain, your `rule second` on the bell, another's rain fires it, `ring`; kind/bell's rule `rang` notes the planter |
+| `bell` | `capsules/pages/bell.txt` | `kind/bell make`, a rain, your `rule two` on the bell (`second` is kind/bell's want), another's rain fires it, `ring`; kind/bell's rule `rang` notes the planter |
 | `check` | `capsules/pages/check.txt` | `workshop check` of the tide and of broken Bend, `draft`, `adopt` (jar is yours), another's `propose` held as `#m` for you |
 | `enter` | `capsules/pages/enter.txt` | `porch enter`, `say`, a ```spween block makes `<room>` under the porch, `enter`, `choose` |
 | `tide` | `capsules/pages/tide.txt` | `tide rules` (none yet), your rule on `request.method == "tick"`, `tide tick` refused `itself`, the next tick fires it |
