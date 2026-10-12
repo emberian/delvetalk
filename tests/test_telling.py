@@ -79,7 +79,7 @@ class Place(unittest.TestCase):
         self.assertEqual((s['verbs'], s['rules'], s['laws']), ([], [], []))
         self.assertTrue(all(not w.get('spell') for w in s['wants']), s['wants'])
         self.assertEqual(s['limit'], 500)
-        for shown in ('What it is: a telling of porch', 'its past, told to one who arrives for the first time',
+        for shown in ('What it is: a telling of porch', "its past, before the reader's first arrival",
                       'Who came here: glm.delve.town, kimik3.delve.town', 'What happened there, oldest first:'):
             self.assertIn(shown, text)
         self.assertNotRegex(text, r'\bentry\b')
@@ -121,10 +121,15 @@ class Place(unittest.TestCase):
                             ('kimik3.delve.town said “the lintel creaked at dusk”.', 'attribution'),
                             ('Nobody came here.', 'negation'),
                             ('Three visitors came.', 'numbers'),
-                            ('While you were away, glm.delve.town left.', 'secondPerson')):
+                            ('glm.delve.town left before you came.', 'secondPerson'),
+                            ('Before you arrived, glm.delve.town said “the lintel creaked at dusk” to you.', 'secondPerson')):
             got = self.check(MOO, bad)
             self.assertEqual((got['status'], got.get('clause')), ('rejected', clause), (bad, got))
         self.assertEqual(self.check(MOO, 'Two visitors came.')['status'], 'verified')
+        # The frame's own words opening a paint are the host's, lifted off: the only you a telling holds.
+        for framed in ('Before you arrived, two visitors came.', 'BEFORE YOU ARRIVED\n\nTwo visitors came.', 'Before you arrived: two visitors came.'):
+            self.assertEqual(self.check(MOO, framed)['status'], 'verified', framed)
+        self.assertEqual(self.check(MOO, 'While you were away, two visitors came.')['clause'], 'secondPerson')  # not this telling's frame
 
     def test_5_a_thing_nobody_enters_has_no_telling(self):
         self.assertEqual(self.telling(KIM, obj='bell/1')['status'], 'notAPlace')
@@ -173,7 +178,7 @@ class Told(unittest.TestCase):
         listed = next(i for i in self.town.send(op='world-renders')['pending'] if i['key'] == first['key'])
         self.assertEqual(listed['request']['user'], 'Strokes:\n' + self.telling(MOO)['text'])
         # The one contract, with what a telling asks of the painter: past and present tense, its lengths, no frame.
-        for asked in ('For a telling of a place', 'The past tense for what happened', 'never with the frame',
+        for asked in ('For a telling of a place', 'The past tense for what happened', 'which the host lifts off into the frame',
                       '300 for a telling while away and 500 before arrival'):
             self.assertIn(asked, listed['request']['system'])
         done = self.paint(lambda user: BEFORE)
@@ -194,11 +199,11 @@ class Told(unittest.TestCase):
     def test_2_while_away_and_a_quiet_absence(self):
         got = self.render(GLM)
         self.assertEqual((got['status'], got['telling']['form'], got['telling']['frame']), ('pending', 'away', 'While you were away'), got)
-        done = self.paint(lambda user: AWAY if 'while the reader was away' in user else BEFORE)
-        self.assertIn(got['key'], done['painted'], done)
+        done = self.paint(lambda user: 'While you were away, ' + AWAY if 'while the reader was away' in user else BEFORE)
+        self.assertIn(got['key'], done['painted'], (done, self.render(GLM)))
         self.act(GLM, 'porch', 'delvetalk porch enter')
         back = self.render(GLM)
-        self.assertEqual((back['status'], back['text'], back['key']), ('painted', AWAY, got['key']), back)
+        self.assertEqual((back['status'], back['text'], back['key']), ('painted', AWAY, got['key']), back)  # its frame lifted
         # Away and back with nothing between: nothing to tell, and the model is not asked.
         self.act(GLM, 'porch', 'delvetalk porch leave')
         self.act(GLM, 'porch', 'delvetalk porch enter')
@@ -210,7 +215,7 @@ class Told(unittest.TestCase):
         self.act(GLM, 'porch', 'delvetalk porch say / line: the bronze has gone cold')
         got = self.render(KIM)
         self.assertEqual(got['status'], 'pending', got)
-        done = self.paint(lambda user: 'While you were away, glm.delve.town said “the bronze has gone cold”.')
+        done = self.paint(lambda user: 'While you were away, glm.delve.town told you “the bronze has gone cold”.')
         self.assertIn(got['key'], done['exact'], done)
         again = self.render(KIM)
         self.assertEqual((again['status'], again['reason'], again['clause']), ('exact', 'rejected', 'secondPerson'), again)

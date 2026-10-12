@@ -208,8 +208,8 @@ def Strokes.text (s : Strokes) : String := Id.run do
     (match s.day, s.telling with
       | some _, _ => ["What it is: a day of the town"]
       | none, some t => [s!"What it is: a telling of {s.object}" ++ (if s.kind.isEmpty then "" else s!", a {kindName} ({s.kind})") ++
-          (if t.form == "away" then ": what happened there while the reader was away, told to them as they come back"
-           else ": its past, told to one who arrives for the first time")]
+          (if t.form == "away" then ": what happened there while the reader was away, in the third person"
+           else ": its past, before the reader's first arrival, in the third person")]
       | none, none => [s!"What it is: {s.object}" ++ (if s.kind.isEmpty then "" else s!", a {kindName} ({s.kind})")]) ++
     line (!s.head.isEmpty) s!"Called: {s.head}" ++
     [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
@@ -579,6 +579,10 @@ def spanOf (w : World) (id reader : String) (since upto : Nat) : Array Act × Ar
     let p := ((e.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
     let by_ := shownName w p
     let act := fun (who what sentence : String) => ({ entry := t.height, who, what, sentence } : Act)
+    let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
+    let arr := fun (j : Json) (k : String) => (((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList
+    -- What was made here lies here by the same write: it is told as made, not as laid down.
+    let made := (arr outcome "creates").filterMap fun c => (c.getObjValAs? String "object").toOption.filter (·.startsWith s!"{id}/")
     for (f, d) in (touchEdits w id t).getD [] do
       match f, insertedRow d with
       | "presence", some r =>
@@ -593,7 +597,8 @@ def spanOf (w : World) (id reader : String) (since upto : Nat) : Array Act × Ar
       | "marks", some r =>
         marks := marks.push { name := (text? r "name").getD "", handle := handleIn w r "handle" "who", entry := t.height }
       | "things", some r =>
-        if let some thing := referenceId (.record r) then acts := acts.push (act by_ "laid" s!"{by_} laid {thing} down here")
+        if let some thing := referenceId (.record r) then
+          unless made.contains thing do acts := acts.push (act by_ "laid" s!"{by_} laid {thing} down here")
       | "things", none =>
         if let .variant "retract" (.record k) := d then
           if let some thing := (k.lookup "key").bind fun key => text? (fieldsOf key) "object" then
@@ -610,11 +615,7 @@ def spanOf (w : World) (id reader : String) (since upto : Nat) : Array Act × Ar
           acts := acts.push (act by_ "unhung" s!"{by_} took down the door {label}")
         | _ => pure ()
       | _, _ => pure ()
-    let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
-    let arr := fun (j : Json) (k : String) => (((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList
-    for c in arr outcome "creates" do
-      let made := (c.getObjValAs? String "object").toOption.getD ""
-      if made.startsWith s!"{id}/" then acts := acts.push (act by_ "made" s!"{by_} made {made} here")
+    for thing in made do acts := acts.push (act by_ "made" s!"{by_} made {thing} here")
     for f in arr e "fired" do
       if (f.getObjValAs? String "sender").toOption == some id then
         let name := (f.getObjValAs? String "rule").toOption.getD ""
@@ -1096,6 +1097,21 @@ def clauses : List Clause :=
    { name := "length", holds := "1 to the strokes' limit characters (400 for a thing, 600 for a day)",
      fails := fun s p => let n := p.text.length; if n == 0 || n > s.limit then some (toString n) else none }]
 
+/-- A telling's paint with its frame lifted off: the model may open with the frame's own words ("Before you
+    arrived, …", "While you were away:", a heading), which the page prints above it as the host's; the paint is what
+    follows, its first letter raised. The only "you" a telling may hold, and only there; anything else is checked. -/
+def Strokes.lifted (s : Strokes) (text : String) : String :=
+  match s.telling with
+  | none => text
+  | some t =>
+    let frame := t.frame.toLower.toList
+    let cs := text.toList
+    if (cs.take frame.length).map Char.toLower != frame then text else
+    let rest := String.ofList ((cs.drop frame.length).dropWhile fun c => c.isWhitespace || ",:;.…—–-".toList.contains c)
+    -- A handle or an id opening it is written as the strokes write it.
+    let first := normal ((words rest).head?.getD "")
+    if handleShaped first || idShaped first then rest else rest.capitalize
+
 /-- `verify strokes text`: `ok`, or the first clause the paint fails and what failed it. -/
 def verify (s : Strokes) (text : String) : Except (String × String) Unit :=
   let p := Paint.of text
@@ -1110,7 +1126,7 @@ def checkOp (w : World) (j : Json) : Except String Json := do
   let text ← j.getObjValAs? String "text"
   match ← strokesFor w reader j with
   | .error why => return Json.mkObj [("status", toJson why), ("object", toJson ((j.getObjValAs? String "object").toOption.getD ""))]
-  | .ok s => return match verify s text with
+  | .ok s => return match verify s (s.lifted text) with
     | .ok () => Json.mkObj [("status", toJson "verified"), ("object", toJson s.object), ("version", toJson s.version)]
     | .error (clause, detail) => Json.mkObj [("status", toJson "rejected"), ("object", toJson s.object), ("version", toJson s.version),
         ("clause", toJson clause), ("detail", toJson detail)]
@@ -1318,7 +1334,7 @@ def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Js
   let reason := (reply.getObjValAs? String "reason").toOption.getD ""
   let fate : Fate :=
     if status == "replied" then
-      let text := trimmed ((reply.getObjValAs? String "raw").toOption.getD "")
+      let text := r.strokes.lifted (trimmed ((reply.getObjValAs? String "raw").toOption.getD ""))
       match verify r.strokes text with
       | .ok () => .painted text
       | .error (cl, d) => .rejected cl d
