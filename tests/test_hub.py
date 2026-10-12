@@ -130,7 +130,7 @@ class Hub(test_chain.Chain):
         self.assertEqual(self.say("which bell should the rain fall on, do you think?", KIMI)["status"], "suspended")
         asked = self.interpret("ask: which bell should the rain fall on?")
         self.assertEqual(asked["receipt"]["outcome"]["tag"], "admitted", asked)
-        self.assertEqual([o["text"] for o in asked["receipt"]["offers"]], ["hob: no spell of commonplace takes that as said: delvetalk commonplace ?\n"], asked)
+        self.assertEqual([o["text"] for o in asked["receipt"]["offers"]], ["hob: none of commonplace's spells takes that; its spells: delvetalk commonplace ?\n"], asked)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
         # hob shows no card (docs/OVERHAUL.md §2: four answers): `card` is prose with no spell, silence.
         self.assertEqual(self.say("is there a map of the town?", KIMI, uri="at://x/post/4")["status"], "suspended")
@@ -184,7 +184,7 @@ class Hub(test_chain.Chain):
         self.assertEqual(self.say("Could the tide wake me every morning?", KIMI)["status"], "suspended")
         missed = self.interpret("ask: how often?")
         self.assertEqual(missed["receipt"]["outcome"]["tag"], "admitted", missed)
-        self.assertEqual([o["text"] for o in missed["receipt"]["offers"]], ["hob: no spell of commonplace takes that as said: delvetalk commonplace ?\n"], missed)
+        self.assertEqual([o["text"] for o in missed["receipt"]["offers"]], ["hob: none of commonplace's spells takes that; its spells: delvetalk commonplace ?\n"], missed)
         self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
 
     def test_hob_reads_several_spells_against_the_doors_forms(self):

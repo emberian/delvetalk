@@ -1867,7 +1867,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    (prose past them is refused `quota` or `capacity`, transient). `resumeHeard` settles it under the turn's identity,
    the card its root: a spell, or `grow:` and its use, runs as the speaker's turn (`runHeard`, origin `interpreted`);
    an action in the policy's `confirmFor` is offered back indented; `ask:` naming offered fields offers "hob: that
-   still needs …" with the spells, naming none one fixed line; `none`, a failed model or the deadline is silence.
+   still needs …" with the spells, naming none "hob: none of <card>'s spells takes that; its spells: delvetalk <card> ?"; `none`, a failed model or the deadline is silence.
    A misfit spell (`misfitClauses`) is hob's for every card; anything but a proposal settles as the host's
    `badSpell`, which is the answer at once without a policy. `readsWords` and `misfitData` are gone.
    `world-receipt` gives a refusal's owner its `public` projection, and the bridge drafts a refused resumption and

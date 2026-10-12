@@ -3573,7 +3573,8 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
   let asked := needs.any fun n => !n.isEmpty && n != "not addressed" && !n.startsWith "model:"
   if !asked then return close "" none
   let fields := neededFields needs forms
-  if fields.isEmpty then return close s!"hob: no spell of {card} takes that as said: delvetalk {card} ?\n" none
+  -- An ask naming no field the card's spells take: none of them fits the words; the card's `?` lists them.
+  if fields.isEmpty then return close s!"hob: none of {card}'s spells takes that; its spells: delvetalk {card} ?\n" none
   let taking := forms.filter fun f => f.fields.any (fields.contains ·.name)
   return close (s!"hob: that still needs {", ".intercalate fields}; send it filled:\n" ++
     String.join (taking.map fun f => "\n" ++ indentSpell (spellTemplate f.card f))) none

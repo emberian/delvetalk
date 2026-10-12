@@ -141,7 +141,7 @@ class Heard(HeardCase):
         self.assertEqual(self.value("rains"), "0")
         self.say("is it raining?")
         _, bare = self.settle("ask: do you mean the weather?")
-        self.assertEqual([o["text"] for o in bare["receipt"]["offers"]], ["hob: no spell of bell takes that as said: delvetalk bell ?\n"])
+        self.assertEqual([o["text"] for o in bare["receipt"]["offers"]], ["hob: none of bell's spells takes that; its spells: delvetalk bell ?\n"])
         self.assertEqual(bare["receipt"]["outcome"]["tag"], "admitted")
 
     def test_field_lines_naming_a_doors_form_run_on_that_door_at_once(self):
