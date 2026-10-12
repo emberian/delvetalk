@@ -476,6 +476,8 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       | "world-status" => return (session, .ok (Json.mkObj [("status", toJson "world"),
           ("height", toJson s.world.height), ("head", toJson s.world.head),
           ("objects", toJson s.world.objects.size), ("clock", toJson s.world.clock),
+          -- The world's own principal (`isTown`), which surfaces outside the host name the town as it does.
+          ("opener", toJson s.world.opener),
           ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world),
           ("modelQuota", Json.mkObj [("quota", toJson s.world.modelQuota), ("used", toJson
             (if s.world.modelDay.1 == s.world.clock / Limits.clockDay then s.world.modelDay.2 else 0)), ("next", toJson ((s.world.clock / Limits.clockDay + 1) * Limits.clockDay))]),

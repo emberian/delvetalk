@@ -2407,9 +2407,21 @@ def citationRefusal (w : World) (self : String) (law : Law) : Option String := I
 def handleOf (w : World) (principal : String) : String :=
   (w.handles[principal]?).getD ""
 
-/-- How a principal is named on a card: the handle the registry holds, else the principal. -/
+/-- What every surface names the world's own principal by (docs/GENESIS.md "The town"). -/
+def townName : String := "the town"
+
+/-- `principal` is the world's own: its opener (the settings name it), which genesis, a refresh and root act as.
+    It is shown as `townName` wherever a principal is named, whatever handle the registry or a state holds for it,
+    so a world whose opener was once a person's DID needs no rewrite. -/
+def isTown (w : World) (principal : String) : Bool := !w.opener.isEmpty && principal == w.opener
+
+/-- A principal's name as readers are shown it: `townName` for the town, else the registry's handle, "" when unknown. -/
+def handleShown (w : World) (principal : String) : String :=
+  if isTown w principal then townName else handleOf w principal
+
+/-- How a principal is named on a card: the town as such, the handle the registry holds, else the principal. -/
 def shownName (w : World) (principal : String) : String :=
-  let h := handleOf w principal
+  let h := handleShown w principal
   if h.isEmpty then (principalThing principal).getD principal else h
 
 /-- A spell as people are shown it: each principal the registry names, written out in full in the text a
@@ -2440,18 +2452,19 @@ def principalNamed (w : World) (handle : String) : Option String :=
   w.handles.fold (fun acc did name => if acc.isNone && name.toLower == h then some did else acc) none
 
 /-- What the host tells a running method about itself, built here and nowhere else.
-    `handle` is the principal's display handle from the registry (`world-principal`), ""
-    when unknown; `caller` is the calling object's id (empty for the turn's own method),
+    `handle` is the principal's name as readers are shown it (`handleShown`: the registry's handle,
+    `townName` for the town), "" when unknown; `town` the world's own principal (`isTown`), which every
+    card names `townName`; `caller` is the calling object's id (empty for the turn's own method),
     `intent` the turn's identity, `height` the journal height the turn read, `clock` the world
     clock (`world-advance`) the frame runs at, which deadlines compare against,
     `inputOrigin.post` the post the turn came from (`TurnState.post`), "" for none, and `sender`
     the object whose send this turn delivers (a rule's object, a sending object, a supervised
     activity's), the same in every frame of the turn and in its law's context, "" for a turn a
     principal began. None is chosen by the client. -/
-def contextData (id principal handle caller intent : String) (height clock : Nat) (kind command : String)
+def contextData (id principal handle town caller intent : String) (height clock : Nat) (kind command : String)
     (post : String := "") (sender : String := "") : Data :=
   .record [("world", .label ""), ("object", .label id), ("principal", .label principal),
-    ("handle", .label handle), ("caller", .label caller), ("sender", .label sender), ("intent", .label intent), ("height", .natural height),
+    ("handle", .label handle), ("town", .label town), ("caller", .label caller), ("sender", .label sender), ("intent", .label intent), ("height", .natural height),
     ("clock", .natural clock),
     ("inputOrigin", .record [("kind", .label kind), ("object", .label caller), ("command", .label command),
       ("program", .label ""), ("immediatelyPrevious", .boolean false), ("post", .label post)])]
@@ -2470,7 +2483,7 @@ partial def fitRecord (bounds : DataBounds) (ty : Delvetalk.Theory.ObjectiveBend
 
 /-- The fields `contextData` fills. -/
 def contextFields : List String :=
-  ["world", "object", "principal", "handle", "caller", "sender", "intent", "height", "clock", "inputOrigin"]
+  ["world", "object", "principal", "handle", "town", "caller", "sender", "intent", "height", "clock", "inputOrigin"]
 
 /-- A Context type: a record (through the bounds) naming the principal and the intent, every
     field of which the host fills. An older library's Context with fewer fields is one too. -/
@@ -2499,7 +2512,7 @@ def withBindingContext (world : Option World) (entry : Delvetalk.CheckedEntry) (
   let principal ← request.getObjValAs? String "principal"
   let command := ((request.getObjVal? "artifact").toOption.bind fun a => (a.getObjValAs? String "entry").toOption).getD ""
   let context := contextData (← request.getObjValAs? String "object") principal
-    ((world.map (handleOf · principal)).getD "") "" (← request.getObjValAs? String "intent")
+    ((world.map (handleShown · principal)).getD "") ((world.map (·.opener)).getD "") "" (← request.getObjValAs? String "intent")
     ((world.map (·.height)).getD 0) ((world.map (·.clock)).getD 0) "repl" command
   return request.setObjVal! "arguments" (Json.arr (arguments.push (dataJson (fitRecord bounds ct context))))
 
@@ -2524,7 +2537,7 @@ def bendLaw (w : World) (p : Proposal) (id : String) (o : Object) (new : Data) (
                       reading := some s!"the law of {id} reads {r}, which you may not see." }
       reads := reads ++ [.record [("object", .label r), ("version", .natural ro.version), ("state", ro.state)]]
     | none => pure ()
-  let context := contextData id subject (handleOf w subject) caller p.intent w.height w.clock "law" method (sender := p.sender)
+  let context := contextData id subject (handleShown w subject) w.opener caller p.intent w.height w.clock "law" method (sender := p.sender)
   let request := Data.record [("context", context), ("method", .label method), ("argument", argument),
     ("kind", .natural kind), ("pin", .label pin),
     ("reads", reads.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record [])))]
@@ -5503,7 +5516,7 @@ def ruleRow (w : World) (id : String) (c : CarriedClause) : Json :=
   let last := (w.ruleLog[id]?).bind (·.lookup c.clause.name)
   let receipt := last.bind fun l => (l.getObjValAs? String "id").toOption.bind fun d =>
     (w.receipts[identityKey c.owner d]?).bind w.entries.hashAt? |>.bind Slug.ofCid
-  Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("handle", toJson (handleOf w c.owner)),
+  Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("handle", toJson (handleShown w c.owner)),
       ("when", toJson c.clause.condition.render), ("then", toJson ((c.clause.modality.spell?.map (·.render)).getD "")),
       ("line", toJson c.clause.render), ("from", toJson c.holder)] ++
     (if c.clause.reading.isEmpty then [] else [("reading", toJson c.clause.reading)]) ++
@@ -5644,7 +5657,7 @@ def coinerOf (w : World) (o : Object) : String :=
   let post := text "post"
   if !post.startsWith "at://" || post.startsWith s!"at://{text "maker"}/" then "" else
   let author := ((post.drop 5).toString.splitOn "/").head?.getD ""
-  if (handleOf w author).isEmpty then s!"the author of {post}" else handleOf w author
+  if (handleShown w author).isEmpty then s!"the author of {post}" else handleShown w author
 
 /-- The objects an entry makes: its `created` object, or its `creates` rows. -/
 def makes (e : Json) : List String :=

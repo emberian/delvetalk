@@ -206,7 +206,7 @@ class History(Surfaces):
         self.assertRegex(whole, r"  the first rule fired: echo on %s, written by kimik3\.delve\.town, entry \d+\n" % self.bell)
         # Genesis made the porch after gemini's post, whose handle this town's registry lacks: the post is the name.
         self.assertRegex(whole, r"  the first coinage: porch, coined by the author of at://did:plc:\w+/town\.delve\.feed\.post/\w+, entry \d+\n")
-        self.assertRegex(whole, r"  the first room: porch, made by ember\.delve\.town, entry \d+\n")
+        self.assertRegex(whole, r"  the first room: porch, made by the town, entry \d+\n")
         self.assertNotRegex(whole, r"(?<!at://)did:plc:")
         for line in lines[:3]:
             self.assertIn(line + "\n", whole)

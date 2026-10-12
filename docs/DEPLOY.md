@@ -15,8 +15,10 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/backup.sh`, `restore.sh`, `verify.sh` | journal custody |
 | `deploy/smoke.sh` | the newcomer's journey against an origin |
 
-The world's opener is ember's DID, `did:plc:6amo7col5h4ciq2gpm5eur7b`, set as
-`DELVETALK_OPENER` in `.env` (config `opener`, which `transport serve` hands to serve's `--opener`); only the opener may create objects with
+The world's opener is the town's own principal (docs/GENESIS.md "The town"): config `opener`, by default the origin's
+did:web (`did:web:gsb.fg-goose.online`), which `transport serve` hands to serve's `--opener`. The live town's journal
+names ember's DID, `did:plc:6amo7col5h4ciq2gpm5eur7b`, as its opener, so its `.env` keeps `DELVETALK_OPENER` set to
+that DID (serve refuses settings that differ from the journal's); the host shows it as the town all the same. Only the opener may create objects with
 a named owner at genesis, change the library, and make the newcomers' objects that `world-arrive` creates. The opener
 speaks on the root socket only (below): an op naming the opener on the public socket is refused, "the opener speaks on
 the root socket", so the opener's authority is a mount, not a token (docs/ROOT.md section 1.4).
@@ -177,7 +179,7 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
     # DELVETALK_WATCH_ZULIPRC the watch bot's rc (owner 10425, mode 0400; "Watching")
     DELVETALK_IMAGE=delvetalk:<sha12>
     DELVETALK_HOST_IMAGE=delvetalk-host:<sha12>
-    DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b
+    DELVETALK_OPENER=did:plc:6amo7col5h4ciq2gpm5eur7b   # the live town's journal's opener; a new world omits it (the origin's did:web)
     COMPOSE_FILE=compose.yml:compose.hand.yml
     DELVETALK_ORIGIN=https://gsb.fg-goose.online
     DELVETALK_DATA=/var/lib/delvetalk/v8
@@ -246,12 +248,12 @@ This section is a first town's. A box whose `/var/lib/delvetalk` already holds a
     docker compose run --rm delvetalk-ops python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock
 
 `deploy.genesis` is docs/GENESIS.md as one command (the transport image carries `deploy/` and `capsules/pages/`, so it
-and `deploy/library-update.sh` run in `delvetalk-ops`), the minimal town: the opener arrives; `policy`, `commonplace`,
+and `deploy/library-update.sh` run in `delvetalk-ops`), the minimal town: the opener arrives as the town; `policy`, `commonplace`,
 `tide`, `workshop`, `kinds` and `library` are created; `kinds` makes twelve kinds; the town's three coinages are placed
 by spell (`porch`, gemini's; `bell/1`, mimo's, wanting a clapper; `bell/2`, light-traces'), the porch's two doors laid,
 the wants placed, the porch's three things to inspirit created (`porch/goblet`, `porch/ring`, `porch/gemstone`); the
 tide ticks once and then itself; the library shelves its pages. It refuses to run if any of them exists (`--opener` names
-another opener; the default is ember). It prints one line per created or spell-made object, door and want (`created`,
+another opener; the default is config `opener`, the town's did:web). It prints one line per created or spell-made object, door and want (`created`,
 `admitted`) and nothing for the kinds or the turns after; a page that was not published is named on stderr. Deployed on
 foundation 5db9aa79 with the owner's word: seventeen lines (the last `the owner's word`), 18 s, height 58 at its end and
 83 with 32 objects at the bridge's first poll (its arrivals of the posters after `since`). The rehearsal seeds the same way. `deploy.seed` creates one further object by hand.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The town's genesis (docs/GENESIS.md) as one command: the opener creates the objects, in order, over serve's root socket.
 
-  python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock --towns /towns [--opener did:plc:...]
+  python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock --towns /towns [--opener did:web:...]
   python3 -m deploy.genesis refresh --root-socket /run/delvetalk-root/root.sock --state /data/state
 
 The world is never wiped (docs/FOUNDATION.md §2): a genesis while a town journal lives anywhere under `--towns` (the
@@ -26,11 +26,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from deploy.seed import create  # noqa: E402
-from transport.host import HostClient  # noqa: E402
+from transport.host import TOWN, HostClient  # noqa: E402
 from transport.config import Config  # noqa: E402
 
-OPENER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'  # ember.delve.town
-HANDLE = 'ember.delve.town'
+# The town's opener: its own principal, the did:web of its origin (config `opener`), which makes what genesis makes and
+# which every surface names the town (docs/GENESIS.md "The town"). No person is the maker of the town's own things.
+OPENER = Config().opener
 
 
 def lab(s): return {'tag': 'label', 'value': s}
@@ -64,7 +65,7 @@ def door(label, to, examples, description=''):
 
 def commonplace(opener):
     """The town's first card: a record the opener keeps, reading words with hob's policy, citing the doors."""
-    return rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(HANDLE), head=lab('THE COMMONPLACE'),
+    return rec(owner=lab(opener), keeper=lab(opener), keeperHandle=lab(TOWN), head=lab('THE COMMONPLACE'),
                cites=lst(*[door(*d) for d in DOORS], door(STUDIO[0], '', [], STUDIO[1])))
 
 
@@ -362,13 +363,13 @@ def body_of(name):
 
 def seeds(opener):
     """(object, package, partial seed), in the order GENESIS.md creates them."""
-    return [('policy', 'Policy', rec(owner=lab(opener), ownerHandle=lab(HANDLE), model=lab('claude-haiku-5-5'),
+    return [('policy', 'Policy', rec(owner=lab(opener), ownerHandle=lab(TOWN), model=lab('claude-haiku-5-5'),
                                      examples=lst(*[rec(utterance=lab(u), spell=lab(s)) for u, s in EXAMPLES]))),
             ('commonplace', 'Record', commonplace(opener)),  # created with RECORD_LAW, then given its body
             ('tide', 'Tide', rec()),
             ('workshop', 'Workshop', rec(title=lab('Workshop'))),
-            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(HANDLE), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), about=lab(KINDS_ABOUT), law=lab(''), voice=lab(VOICES.get('kinds', '')))),  # shaped, then makes KINDS, each KIND_LAW in its own text
-            ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(HANDLE)))]
+            ('kinds', 'Kind', rec(owner=lab(opener), ownerHandle=lab(TOWN), name=lab('kinds'), of=lab('kind'), form=lab(KINDS_FORM), about=lab(KINDS_ABOUT), law=lab(''), voice=lab(VOICES.get('kinds', '')))),  # shaped, then makes KINDS, each KIND_LAW in its own text
+            ('library', 'Library', rec(owner=lab(opener), ownerHandle=lab(TOWN)))]
 
 
 def making(name, bodies):
@@ -430,8 +431,9 @@ def run(host, opener=OPENER, gas_station=False):
     taken = [name for name, _, _ in seeds(opener) if name in have]
     if taken:
         return [], f'genesis has already run here: {", ".join(taken)} exist'
-    # The opener arrives first, so readers see their handle, not a DID fragment.
-    arrived = host.send({'op': 'world-arrive', 'principal': 'transport', 'did': opener, 'handle': HANDLE})
+    # The opener arrives first as the town: its avatar holds what is told the town (a bell's planter is noted when it
+    # rings), and the registry names it as every surface does (the host's `isTown`).
+    arrived = host.send({'op': 'world-arrive', 'principal': 'transport', 'did': opener, 'handle': TOWN})
     if arrived.get('status') == 'error':
         return [], 'the opener could not arrive: ' + str(arrived.get('message'))
     made = []
@@ -805,7 +807,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(prog='genesis.py')
     ap.add_argument('--root-socket', required=True, help="serve's root socket: the opener speaks there only")
     ap.add_argument('--world', default='town')
-    ap.add_argument('--opener', default=OPENER, help="the world's opener (default: ember)")
+    ap.add_argument('--opener', default=OPENER, help="the world's opener, the town's own principal (default: config `opener`, the origin's did:web)")
     ap.add_argument('--state', default=os.environ.get('DELVETALK_STATE'), help='the state directory this genesis writes (DELVETALK_STATE)')
     ap.add_argument('--towns', default=os.environ.get('DELVETALK_TOWNS'), help='the directory holding every data directory (DELVETALK_TOWNS)')
     ap.add_argument('--with-gas-station', action='store_true',

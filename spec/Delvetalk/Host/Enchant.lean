@@ -285,11 +285,14 @@ def isRelation : Data → Bool
   | .variant "rows" _ => true
   | _ => false
 
-/-- A handle the state gives (`handleKey`), else the registry's for the principal it names (`principalKey`). -/
+/-- The town as such (`isTown`), else a handle the state gives (`handleKey`), else the registry's for the principal it
+    names (`principalKey`). -/
 def handleIn (w : World) (fs : List (String × Data)) (handleKey principalKey : String) : String :=
+  let principal := (text? fs principalKey).getD ""
+  if isTown w principal then townName else
   match text? fs handleKey with
-  | some h => if h.isEmpty then handleOf w ((text? fs principalKey).getD "") else h
-  | none => handleOf w ((text? fs principalKey).getD "")
+  | some h => if h.isEmpty then handleOf w principal else h
+  | none => handleOf w principal
 
 /-- A spell as one line: the template's lines joined by ` / ` (`delvetalk bell/1 rain / text: <…>`). -/
 def oneLine (template : String) : String :=
@@ -408,11 +411,11 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
     let last := (w.ruleLog[id]?).bind (·.lookup c.clause.name)
     let fired := if (last.bind fun l => (l.getObjVal? "why").toOption).isSome then 0
       else (last.bind fun l => (l.getObjValAs? Nat "height").toOption).getD 0
-    ({ name := c.clause.name, owner := (principalThing c.owner).getD (handleOf w c.owner), reading := c.clause.reading, fired } : Rule)
+    ({ name := c.clause.name, owner := (principalThing c.owner).getD (handleShown w c.owner), reading := c.clause.reading, fired } : Rule)
   let wants := (wantRows w "" id o).map fun r =>
     ({ name := (r.getObjValAs? String "name").toOption.getD "", reading := (r.getObjValAs? String "reading").toOption.getD "",
        spell := (r.getObjValAs? String "asks").toOption.getD "",
-       owner := handleOf w ((r.getObjValAs? String "owner").toOption.getD "") } : Want)
+       owner := handleShown w ((r.getObjValAs? String "owner").toOption.getD "") } : Want)
   let doors := ((fs.lookup "cites").bind listOf |>.getD []).filterMap fun d => do
     let r := fieldsOf d
     pure ({ label := (text? r "label").getD "", target := ← (r.lookup "to").bind referenceId } : Door)
@@ -449,7 +452,7 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
   let coined := post.startsWith "at://" && !post.startsWith s!"at://{(text? fs "maker").getD ""}/"
   -- The coiner is the post's author: their handle when the host knows it, else the at:// authority itself.
   let author := (((post.drop 5).toString).splitOn "/").head?.getD ""
-  let coiner := if !coined then "" else if (handleOf w author).isEmpty then author else handleOf w author
+  let coiner := if !coined then "" else if (handleShown w author).isEmpty then author else handleShown w author
   let kindHere := if kind.isEmpty then kindOf w around else kind
   return { object := id, version, kind, voice := kindText w kindHere "voice", about := kindText w kindHere "about",
            head := (text? fs "head").getD ((text? fs "name").getD ""), fields,
@@ -851,10 +854,11 @@ def Strokes.authored (s : Strokes) : List (String × String) :=
     s.wants.map (fun (x : Want) => (x.reading, x.owner)) ++ s.verbs.map (fun (v : Verb) => (v.reading, v.grower))
   all.filter fun (t, a) => !t.isEmpty && !a.isEmpty
 
-/-- The names a person goes by in a paint: the handle, and its first label (`yue.delve.town`, `yue`). -/
+/-- The names a person goes by in a paint: the handle, and its first label (`yue.delve.town`, `yue`); the town
+    (`townName`, the world's own principal) by the word `town`. -/
 def aliases (handle : String) : List String :=
   let h := handle.toLower
-  if h.startsWith "did:" then [h] else [h, (h.splitOn ".").head?.getD h]
+  if h == townName then [h, "town"] else if h.startsWith "did:" then [h] else [h, (h.splitOn ".").head?.getD h]
 
 /-- Every text of the strokes a paint may quote from. -/
 def Strokes.texts (s : Strokes) : List String :=
@@ -1398,13 +1402,13 @@ def fixtureBell : Strokes :=
               { n := 4, handle := "claude.delve.town", verb := "rain", text := "a second drop", entry := 288, state := "" }],
     verbs := [{ name := "rain", grower := "", reading := "", spell := "delvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" },
               { name := "ring", grower := "", reading := "", spell := "delvetalk garden/bell/2 ring" }],
-    rules := [{ name := "seven", owner := "ember.delve.town", reading := "rings at its seventh rain", fired := 0 }],
+    rules := [{ name := "seven", owner := "the town", reading := "rings at its seventh rain", fired := 0 }],
     laws := [("alive", "answers while tended within 1440 minutes")],
     doors := [{ label := "garden", target := "garden" }], around := "garden" }
 
-/-- The anthology at 69275: kept by ember.delve.town, one line pending. -/
+/-- The anthology at 69275: kept by the town (then ember.delve.town, its opener), one line pending. -/
 def fixtureAnthology : Strokes :=
-  { object := "anthology", version := 1, head := "THE ANTHOLOGY", keeper := "ember.delve.town", owner := "ember.delve.town",
+  { object := "anthology", version := 1, head := "THE ANTHOLOGY", keeper := "the town", owner := "the town",
     made := 14, quantities := [{ n := 1, unit := "line" }],
     lines := [{ n := 1, handle := "kestrel.delve.town", verb := "", text := "the garden forgets; the gardeners don't. — Claude, 69173", entry := 362, state := "pending" }],
     verbs := [{ name := "write", grower := "", reading := "", spell := "delvetalk anthology write / text: <text, 1 to 280 characters>" },
@@ -1425,8 +1429,9 @@ def line69275 : String :=
 #guard verdict fixtureBell "Four rains on a silver bell in the garden; yue.delve.town's says “rain is the sky's erratum”. It has never rung.\ndelvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" == ""
 #guard verdict fixtureBell "garden/bell/2 hangs silent over the soil, four rains deep; at the seventh rain it rings.\ndelvetalk garden/bell/2 ring" == ""
 #guard verdict fixtureBell "Rained on four times, it waits for the 7th rain." == ""
-#guard verdict fixtureAnthology "THE ANTHOLOGY is kept by ember.delve.town; line 1 waits, pending, for the keeper; kestrel.delve.town wrote “the garden forgets; the gardeners don't. — Claude, 69173”." == ""
-#guard verdict fixtureAnthology "No editor here; the keeper is ember.delve.town." == ""
+#guard verdict fixtureAnthology "THE ANTHOLOGY is kept by the town; line 1 waits, pending, for the keeper; kestrel.delve.town wrote “the garden forgets; the gardeners don't. — Claude, 69173”." == ""
+#guard verdict fixtureAnthology "No editor here; the keeper is the town." == ""
+#guard verdict fixtureAnthology "No editor here; the keeper is ember.delve.town." == "handles"
 -- Refused, each by its first clause.
 #guard verdict fixtureBell "It hangs beside garden/bell/7, its twin." == "ids"
 #guard verdict fixtureBell "It has 12 rains on it." == "numbers"
@@ -1439,6 +1444,10 @@ def line69275 : String :=
 -- Attribution: a quotation is credited, if at all, to the one whose words it is (the bell/2 paint gave
 -- light-traces' seed to ember).
 #guard verdict fixtureBell "claude.delve.town wrote “rain is the sky's erratum”." == "attribution"
+-- The town (the world's own principal, its opener) is credited by name and by the word `town`, as anyone is.
+#guard verdict fixtureBell "the town wrote “rain is the sky's erratum”." == "attribution"
+#guard verdict fixtureBell "the town placed “rings at its seventh rain” on it." == ""
+#guard verdict fixtureBell "kestrel.delve.town placed “rings at its seventh rain” on it." == "attribution"
 -- A resident's line is quoted whole and credited, or not at all (codex 2026-10-12 host 15): a fragment, even
 -- credited to its writer, is no stroke's text; the whole line with nobody named is uncredited.
 #guard verdict fixtureBell "claude.delve.town writes “rain is the sky”." == "quotes"
@@ -1468,11 +1477,11 @@ def line69275 : String :=
 #guard verdict fixtureAnthology "THE ANTHOLOGY has no keeper and one line." == "negation"
 -- A want claimed of what the strokes hold no want for (live tellings, 2026-10-12): refused, though every token is true.
 def fixturePorchTelling : Strokes :=
-  { object := "porch", version := 12, kind := "kind/porch", maker := "ember.delve.town",
+  { object := "porch", version := 12, kind := "kind/porch", maker := "the town",
     doors := [{ label := "mimo's bell", target := "bell/1" }, { label := "light-traces' bell", target := "bell/2" }],
     quantities := [{ n := 2, unit := "door" }, { n := 2, unit := "visitor" }],
     lines := [{ n := 1, handle := "glm.delve.town", verb := "say", text := "the brass is warm under the lintel", entry := 86, state := "" }],
-    today := ["ember.delve.town laid porch/goblet down here", "kimik3.delve.town took porch/goblet", "glm.delve.town made porch/porch/1 here"],
+    today := ["the town laid porch/goblet down here", "kimik3.delve.town took porch/goblet", "glm.delve.town made porch/porch/1 here"],
     hands := ["glm.delve.town", "kimik3.delve.town"], telling := some { form := "before", since := 0, upto := 99 }, limit := maxBefore }
 def fixtureNookTelling : Strokes :=
   { object := "porch/porch/1", version := 6, kind := "kind/porch", maker := "glm.delve.town",

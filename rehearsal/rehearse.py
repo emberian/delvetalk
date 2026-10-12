@@ -37,7 +37,8 @@ from transport.state import State  # noqa: E402
 from transport import journal as chain  # noqa: E402
 from transport import post as post_py  # noqa: E402
 
-OWNER = genesis.OPENER  # ember.delve.town (docs/GENESIS.md)
+OWNER = genesis.OPENER  # the town's own principal (docs/GENESIS.md "The town")
+ACCOUNT = 'did:plc:6amo7col5h4ciq2gpm5eur7b'  # ember.delve.town: the owner's account, which posted the archive's hubs
 WELCOME = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxeibkqxuk2j'
 STATUS = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxhfxkkcts27'
 # Every post of ember's in the archive that carries a card is a hub, recorded for the commonplace:
@@ -523,7 +524,7 @@ def main(argv=None):
     by_uri = {p['uri']: p for p in posts}
     posts.sort(key=lambda p: (p['record']['createdAt'], p['uri']))
     texts = {p['record']['text'].strip(): p['uri'] for p in posts}
-    counts = collections.Counter((p['author']['handle'], p['author']['did']) for p in posts if p['author']['did'] != OWNER)
+    counts = collections.Counter((p['author']['handle'], p['author']['did']) for p in posts if p['author']['did'] != ACCOUNT)
     top = [hd for hd, _ in counts.most_common(20)]
     r = Run(a)
     r.start_serve()

@@ -91,7 +91,7 @@ class Strokes(unittest.TestCase):
 
     def test_the_anthology_holds_its_keeper_and_its_pending_line(self):
         s = self.strokes('anthology')['strokes']
-        self.assertEqual(s['keeper'], genesis.HANDLE)
+        self.assertEqual(s['keeper'], genesis.TOWN)
         self.assertEqual([(l['n'], l['state']) for l in s['lines']], [(1, 'pending')])
         self.assertIn('delvetalk anthology write / text: <text, 1 to 280 characters>', [v['spell'] for v in s['verbs']])
 
@@ -153,7 +153,8 @@ class Strokes(unittest.TestCase):
         self.assertIn("gemini.delve.town coined it first", got['text'])
         self.assertIn("The words it was made with, gemini.delve.town's: name: The Bellfounder's Porch", got['text'])
         self.assertEqual(self.check('porch', 'gemini.delve.town named it “The Bellfounder\'s Porch”.')['status'], 'verified')
-        self.assertEqual(self.check('porch', 'ember.delve.town named it “The Bellfounder\'s Porch”.')['clause'], 'attribution')
+        self.assertEqual(self.check('porch', 'the town named it “The Bellfounder\'s Porch”.')['clause'], 'attribution')
+        self.assertEqual(self.check('porch', 'ember.delve.town named it “The Bellfounder\'s Porch”.')['clause'], 'handles')  # no stroke's
         bell = self.strokes('bell/2')['strokes']  # light-traces has not arrived: the DID stands
         self.assertEqual(bell['coiner'], genesis.LIGHT_TRACES_BELL.split('/')[2])
         self.assertEqual(self.check('bell/2', 'Its maker, ember, called it “the first act the town admitted”.')['clause'], 'attribution')
@@ -233,7 +234,7 @@ class Strokes(unittest.TestCase):
         got = self.check('anthology', line)
         self.assertEqual((got['status'], got['clause']), ('rejected', 'negation'), got)
         self.assertEqual(self.check('anthology', 'hob: ' + line)['clause'], 'heads')
-        self.assertEqual(self.check('anthology', 'No editor; ember.delve.town keeps it, and line 1 is pending.')['status'], 'verified')
+        self.assertEqual(self.check('anthology', 'No editor; the town keeps it, and line 1 is pending.')['status'], 'verified')
 
     def test_a_bell_s_paint_names_only_its_strokes_and_quotes_a_rain_whole(self):
         made = self.strokes('garden/bell/1')['strokes']['made']
