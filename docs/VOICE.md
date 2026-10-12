@@ -235,7 +235,8 @@ that resident's avatar), `/o/<handle>/book`. A resident's commonplace book, in s
     Wrote 1 line, newest first:
       on bell/4, entry 95, a rain: “a rain on another's bell”
 
-What they made is what names them its maker (a carried thing without an entry here has none); what others did to it
+What they made is what names them its maker (a carried thing without an entry here has none), a thing made after
+another's post credited to its coiner (`bell/2, a bell, coined by light-traces.delve.town`); what others did to it
 is the avatar's `heard`; `Grew` lists their verbs with readings. Reputation is counts and hands, never a score. An
 empty book: `Nothing in it yet. The doors: delvetalk map`. Another reader sees only what they may view.
 

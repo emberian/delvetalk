@@ -112,7 +112,7 @@ def number (fields : List Spell.Binding) (name : String) : Except (String × Str
 
 /-! ## The book: what a hand did that the store still shows -/
 
-/-- One row of a book (`World.Deed`): `made` (`name` what it is), `grew` (`name` the verb, `text` its reading),
+/-- One row of a book (`World.Deed`): `made` (`name` what it is, `text` its coiner when another's post coined it), `grew` (`name` the verb, `text` its reading),
     `rule` and `want` (`name`, `text` the reading), `wrote` (`name` the verb that wrote the line, `text` the
     line), `visited` (`name` `here` while present); `at` the entry, 0 when the world before the carry made it. -/
 structure Deed where
@@ -133,7 +133,7 @@ def deeds (w : World) (reader who : String) : List Deed := Id.run do
     unless o.read.permits reader do continue
     let fs := fieldsOf o.state
     if !avatarId id && makerOf w id o == who then
-      out := out.push { what := "made", object := id, name := calledWord id o, height := ((madeEntry w id).map (·.1)).getD 0 }
+      out := out.push { what := "made", object := id, name := calledWord id o, text := coinerOf w o, height := ((madeEntry w id).map (·.1)).getD 0 }
     for v in o.verbs do
       if v.grower == who then out := out.push { what := "grew", object := id, name := v.name, text := v.reading, height := v.height }
     for r in o.rules do

@@ -121,6 +121,11 @@ class Book(Surfaces):
         glm = self.read(GLM, "me", "delvetalk me book")["text"]
         self.assertRegex(glm, r"Grew 1:\n  water on %s, entry \d+: “poured on by a hand”\n" % self.bell)
         self.assertIn("Made 1", glm)
+        # A thing made after another's post credits its coiner where its maker's book lists it.
+        coined = self.admitted(GLM, "kind/bell", "delvetalk kind/bell make\ncolour: violet\nseed: kimik3's word\nid:", author=KIM)
+        bell = coined["receipt"]["outcome"]["creates"][0]["object"]
+        self.assertRegex(self.town.send(op="world-surface", principal=GLM, object="me", read="book")["text"],
+                         r"\n  %s, a bell, coined by kimik3\.delve\.town, entry \d+\n" % bell)
 
     def test_the_web_reads_the_same_rendering_and_an_empty_book_says_where_the_doors_are(self):
         post = self.read(GLM, "kimik3.delve.town", "delvetalk kimik3.delve.town book")["text"]

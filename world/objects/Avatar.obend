@@ -434,7 +434,8 @@ def madeLines(made: Lists.List<World.Deed>, heard: Lists.List<Heard>) -> Lists.L
 def madeLine(d: World.Deed, rows: Lists.List<Heard>) -> String:
   let parts = textJoin(Lists.map(distinct(Lists.map(rows, fn(h: Heard) -> String: h.verb)), fn(verb: String) -> String: verbPart(verb, Lists.filter(rows, fn(h: Heard) -> Bool: h.verb == verb))), "; ")
   let done = if parts == "" then "" else ": {parts}"
-  "  {d.object}, a {d.name}{entryOf(d.at)}{done}\n"
+  let coined = if d.text == "" then "" else ", coined by {d.text}"
+  "  {d.object}, a {d.name}{coined}{entryOf(d.at)}{done}\n"
 def grownLines(grew: Lists.List<World.Deed>) -> Lists.List<String>:
   if Lists.length(grew) == 0n then Lists.List.nil() else Lists.List.cons({head: "Grew {natText(Lists.length(grew))}:\n", tail: Lists.map(grew, fn(d: World.Deed) -> String: "  {d.name} on {d.object}{entryOf(d.at)}{reading(d.text)}\n")})
 def placedLines(placed: Lists.List<World.Deed>) -> Lists.List<String>:
