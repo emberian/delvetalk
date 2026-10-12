@@ -25,6 +25,8 @@ DEPLOY = Path(__file__).resolve().parent.parent / 'deploy'
 
 
 class CarryCheck(unittest.TestCase):
+    independent = True  # each test reads the class's backup and never writes it: tests/run.py may run them apart
+
     @classmethod
     def setUpClass(cls):
         tmp = tempfile.TemporaryDirectory()

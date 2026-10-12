@@ -28,6 +28,7 @@ import os
 import random
 import re
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -390,16 +391,31 @@ class RandomHour(Property):
         # The hour reached what the invariants are about: bells, forks, admissions and refusals.
         self.assertTrue(run.bells() and run.forks and run.statuses["admitted"] > 40 and run.statuses["refused"], (seed, run.statuses, run.forks))
         first = run.states()
-        run.town.reopen()
-        self.assertEqual(run.states(), first, "seed %d: reopening moved a state" % seed)
-        run.town.send(op="world-snapshot")
-        run.town.reopen()
-        again = run.states()
-        self.assertEqual({k: again[k] for k in ("objects", "clock")}, {k: first[k] for k in ("objects", "clock")},
-                         "seed %d: reopening from a snapshot moved a state" % seed)
-        second = self.town("second", seed)
-        for request in run.log[len(second.log):]:
-            second.town.send(**(dict(request, into=request["into"].replace("/first/", "/second/")) if "into" in request else request))
+        # The second town replays the hour on its own serve while the first is reopened: two towns, side by side.
+        replayed = {}
+
+        def replay():
+            try:
+                second = replayed["town"] = self.town("second", seed)
+                for request in run.log[len(second.log):]:
+                    second.town.send(**(dict(request, into=request["into"].replace("/first/", "/second/")) if "into" in request else request))
+            except BaseException as e:  # raised again on the test's own thread
+                replayed["error"] = e
+        beside = threading.Thread(target=replay)
+        beside.start()
+        try:
+            run.town.reopen()
+            self.assertEqual(run.states(), first, "seed %d: reopening moved a state" % seed)
+            run.town.send(op="world-snapshot")
+            run.town.reopen()
+            again = run.states()
+            self.assertEqual({k: again[k] for k in ("objects", "clock")}, {k: first[k] for k in ("objects", "clock")},
+                             "seed %d: reopening from a snapshot moved a state" % seed)
+        finally:
+            beside.join()
+        if "error" in replayed:
+            raise replayed["error"]
+        second = replayed["town"]
         mine = Path(run.town.journal).read_bytes().split(b"\n")[: first["height"]]
         theirs = Path(second.town.journal).read_bytes().split(b"\n")[: first["height"]]
         self.assertEqual(theirs, mine, "seed %d: the same requests made another journal" % seed)

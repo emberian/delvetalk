@@ -1,6 +1,8 @@
 """Run the whole suite in parallel, one subprocess per test class.
 
-    python3 -W ignore -m tests.run [--profile] [module ...]     (default: every tests/test_*.py)
+    python3 -W ignore -m tests.run [--profile] [--baseline] [module ...]     (default: every tests/test_*.py)
+
+--baseline rewrites tests/timings.json, the checked-in times of the classes slower than SPLIT, from this run.
 
 --profile counts, per class, the host processes spawned (every exec of the binary but `serve`'s) and the
 `serve` processes started, and prints the twenty slowest classes with both.
@@ -33,7 +35,8 @@ from pathlib import Path
 from tests import host
 
 HERE = Path(__file__).resolve().parent
-TIMINGS = HERE / '.timings.json'
+TIMINGS = HERE / '.timings.json'  # this checkout's measurements (ignored by git)
+BASELINE = HERE / 'timings.json'  # the classes slower than SPLIT, checked in so a fresh checkout schedules them first
 
 
 LAYERS = ['properties', 'scenarios', 'kernel', 'host', 'objects', 'transport', 'rehearsal']  # each module's docstring names its own
@@ -111,14 +114,16 @@ def spawn_counts(spawns, name):
 
 
 def main(argv):
-    profile = '--profile' in argv
-    argv = [a for a in argv if a != '--profile']
+    profile, rebase = '--profile' in argv, '--baseline' in argv
+    argv = [a for a in argv if a not in ('--profile', '--baseline')]
     modules = argv or sorted(p.stem for p in HERE.glob('test_*.py'))
     found = classes(modules)
-    try:
-        known = json.loads(TIMINGS.read_text())
-    except (OSError, ValueError):
-        known = {}
+    known = {}
+    for path in (BASELINE, TIMINGS):  # the checked-in slow classes, then this checkout's own measurements over them
+        try:
+            known.update(json.loads(path.read_text()))
+        except (OSError, ValueError):
+            pass
     work = jobs(found, known)
     estimate = lambda job: known.get(job.split('#')[0], len(found[job.split('#')[0]])) / int(job.rpartition('/')[2] if '#' in job else 1)
     order = sorted(work, key=lambda job: -estimate(job))
@@ -151,6 +156,8 @@ def main(argv):
         for job, secs in took.items():
             per_class[job.split('#')[0]] = per_class.get(job.split('#')[0], 0) + secs
         TIMINGS.write_text(json.dumps({**known, **{k: round(v, 2) for k, v in per_class.items()}}, indent=1))
+        if rebase:
+            BASELINE.write_text(json.dumps({k: round(v) for k, v in sorted(per_class.items()) if v >= SPLIT}, indent=1) + '\n')
     except OSError:
         pass
     counts = {}
