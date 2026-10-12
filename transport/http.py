@@ -206,16 +206,10 @@ def oid(obj):
     return urllib.parse.quote(obj, safe=':' if obj.rpartition('/')[2] in ('card', 'source') else '/:')
 
 
-def shown(kind):
-    """A form field's kind as a spell line shows its value: a choice names its options, the rest their bounds."""
-    if kind.get('tag') == 'choice':
-        return 'one of ' + ', '.join(kind.get('options') or [])
-    return f"<{kind.get('tag')} {kind.get('min')}..{kind.get('max')}>"
-
-
 def actions(base, obj, inspected, only=None):
     """One action per method in the host's method table that takes a context (a turn can run it), from world-inspect:
-    the form's fields when the host has a form for it, else the method's input type; a spell when the object hears spells."""
+    the form's fields when the host has a form for it, else the method's input type; its spell as the host's usage prints it
+    (`templates`)."""
     forms = {f['action']: f for f in plain(inspected.get('forms') or {'tag': 'list', 'items': []})}
     out = []
     for m in inspected.get('methods') or []:
@@ -231,9 +225,8 @@ def actions(base, obj, inspected, only=None):
         if m['name'] == 'receive':
             out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'spell': "text: any action's spell, or prose"}})
             continue
-        spell = f"delvetalk {form['card']} {form['action']}\n" + ''.join(f"{f['name']}: {shown(f['kind'])}\n" for f in form['fields'])
         out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'fields': {f['name']: f['kind']['tag'] for f in form['fields']}},
-                    'spell': spell})
+                    'spell': (inspected.get('templates') or {}).get(m['name'])})
     return out
 
 

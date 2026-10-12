@@ -4199,8 +4199,10 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("stateBytes", toJson (stateBytes o.state)),
       ("scalarBytes", toJson (Delvetalk.Canonical.encode o.cells.scalar).size),
       ("forms", dataJson (listData offered)),
-      -- The actions the reader is offered, by name (what a card's usage lists for them).
+      -- The actions the reader is offered, by name (what a card's usage lists for them), and each one's
+      -- spell as `?` prints it (`spellTemplate`), which a front copies rather than composes.
       ("offered", toJson (offered.map formAction)),
+      ("templates", Json.mkObj ((offered.filterMap Spell.Form.ofData).map fun f => (f.action, toJson (spellTemplate id f)))),
       -- The numbers `request.kind` reads, by name (`proposed`: a write no method of the object made).
       ("requestKinds", Json.mkObj (Law.kindNames.map fun (n, k) => (n, toJson k)))] ++
       (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)]) ++

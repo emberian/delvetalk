@@ -2246,6 +2246,11 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    the prose. The bridge's match of that message (`transport/host.py` `ON_ROOT`) is gone: the bridge sends
    `world-turn`, which never answers it (the opener's own posts run as a resident's turns, ROOT §1.4). Test:
    `test_serve.Serve.test_the_root_ops_speak_on_the_root_socket_only`.
+189. **`world-inspect` answers each offered form's template (host31; the simplify hand-back (7), fungus T33/H17).**
+   `world-inspect`'s `templates {action: spell}` is each offered form as `?` prints it (`spellTemplate`, its blanks
+   `spellHint`'s); the front's `_actions` copy it (`http.py` `actions`), and its own composer (`shown`) is gone, so
+   an agent reads one template wherever it reads one. Test: `test_hypermedia.Controls.test_acting_from_the_reply_alone`
+   (the template is the host's; `fill` reads the host's blanks).
 
 ## 6. Gotchas
 
@@ -2297,7 +2302,7 @@ input as a test first, merging foundation before each commit:
    Read it (or the next `hand morning`'s `fellBack`) and fix that clause's cause.
 4. The coordinator's simplify hand-back, still open: (1) an offer's public projection answered by the host (the
    transport stops `world-view` per object); (6) the
-   REPL's retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
+   REPL's retry classes; (8) the HTTP draft rule and the
    mention cap of 4 as host answers.
 7. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);
    `transport/host.py` `HISTORY_LIMIT` restates `Limits.maxHistoryLimit` (read it from `bounds`); `shownSpell` scans
@@ -2351,8 +2356,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
      carry of a world holding Wake objects leaves each by name.
 6. **The fungus review's host rows** (docs/review/fungus-2026-10-11.md §1, §3), one commit each, each deleting the
    old path: T29 the REPL's two prose refusals (`unknown library pin`, `not issued by this process`)
-   as classes and `http.py` matching the class; T32 `world-status.suspendedBytes {median}`; T33/H17 `world-inspect`
-   answering each form's usage text (`spellTemplate`), which Card and the front copy; H2's remainder (`respond` with
+   as classes and `http.py` matching the class; T32 `world-status.suspendedBytes {median}`; H2's remainder (`respond` with
    one payload per method: the `refused` and `inspected` ladders); H4 `reprogram {mode: "extend"}`; H5/H6 dispatch on `(method,
    argument)` and the `plan` wire names (with the kernel); H7/H8 root acts and moderation powers as one table,
    settings through `settingsChange`; H10 `sealLibrary` reading `Ops.arrivals`; H11 `serve.c` saying root and the
