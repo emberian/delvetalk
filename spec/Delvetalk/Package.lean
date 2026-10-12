@@ -96,13 +96,6 @@ def withHint (j : Json) (d : Diagnostic) : Diagnostic :=
       (name, source, (FrontEnd.parseSource name source).toOption)
     { d with hint := Delvetalk.Hints.hintFor modules d.stage d.message d.sourceModule (d.span.map (·.line)) }
 
-/-- A parsed module's function definitions with their parameters' declared type texts. -/
-def signaturesOf (ast : Delvetalk.Compiler.ObjectiveBendSurface.Module) : List (String × List String) :=
-  ast.decls.filterMap fun
-    | .function signature _ _ _ =>
-      some (signature.name, signature.params.map fun p => Delvetalk.Compiler.ObjectiveBendElaborate.trimStr p.type)
-    | _ => none
-
 open Delvetalk.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
 /-- The first `n` parameter types of an elaborated function type and its result. -/
 def peelPTy : Nat → PTy → List PTy × PTy
@@ -259,32 +252,74 @@ theorem lawTable_names (laws : List String) (ast : Delvetalk.Compiler.ObjectiveB
 def fixedNames (fields : List Delvetalk.Compiler.ObjectiveBendSurface.Field) : List String :=
   (fields.filter (·.fixed)).map (·.name)
 
-/-- The record a State-like name resolves to from module `index`: a `record`, through `type`
-aliases (`Alias.N` names the import aliased `Alias`) however many, and for `State` in a layer
-that declares none, the State of the module below (`Super`). `fuel` bounds the chain. -/
-def stateRecordAt (modules : List SourceModule) (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) :
-    Nat → Nat → String → Option (List Delvetalk.Compiler.ObjectiveBendSurface.Field)
-  | 0, _, _ => none
+/-- The record a type name resolves to from module `index`: its module, name and fields. A `type`
+alias is followed (`Alias.N` names the import aliased `Alias`; `N<…>` is the record `N`), and `State`
+in a layer that declares none is the State of the module below (`Super`). `none`: no record (a row
+or overlay literal, a builtin, a sum, or a module with no State). Each step crosses an alias
+declaration or a layer, so `fuel` is their count: a walk past it is a cycle, and it and an alias
+naming what its module lacks are refused, never read as a State without fixed fields. -/
+def recordAt (modules : List SourceModule) (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) :
+    Nat → Nat → String → Except String (Option (Nat × String × List Delvetalk.Compiler.ObjectiveBendSurface.Field))
+  | 0, _, name => throw s!"{name} does not resolve: its aliases form a cycle"
   | fuel + 1, index, name => do
-    let ast ← asts[index]?
-    let module ← modules[index]?
-    let target := fun (alias : String) => (module.imports.find? (·.importAlias == alias)).map (·.target)
+    let some ast := asts[index]? | throw s!"{name} names a module outside the package"
+    let some module := modules[index]? | throw s!"{name} names a module outside the package"
+    let below := fun (alias : String) => (module.imports.find? (·.importAlias == alias)).map (·.target)
     match ast.decls.find? (fun d => d.name == name && (d matches .record .. || d matches .typeAlias ..)) with
-    | some (.record _ _ fields _) => some fields
+    | some (.record _ _ fields _) => return some (index, name, fields)
     | some (.typeAlias _ type _) =>
-      match (Delvetalk.Compiler.ObjectiveBendElaborate.trimStr type).splitOn "." with
-      | [alias, n] => stateRecordAt modules asts fuel (← target alias) n
-      | [n] => stateRecordAt modules asts fuel index n
-      | _ => none
-    | _ => if name == "State" && ast.layerOver.isSome then stateRecordAt modules asts fuel (← target "Super") "State" else none
+      let text := Delvetalk.Compiler.ObjectiveBendElaborate.trimStr type
+      let base := Delvetalk.Compiler.ObjectiveBendElaborate.trimStr ((text.splitOn "<").headD text)
+      if base.any (fun c => c == ' ' || c == '{' || c == '(' || c == '-') then return none
+      match base.splitOn "." with
+      | [alias, n] => match below alias with
+        | some target => recordAt modules asts fuel target n
+        | none => throw s!"{module.name}.{name} aliases {text}, and {module.name} imports no {alias}"
+      | [n] => recordAt modules asts fuel index n
+      | _ => return none
+    | _ =>
+      if name == "State" && ast.layerOver.isSome then
+        match below "Super" with
+        | some target => recordAt modules asts fuel target "State"
+        | none => throw s!"{module.name} is a layer without its Super"
+      else return none
+
+/-- Enough steps for `recordAt` over the package: every alias declaration and every layer, once. -/
+def recordFuel (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) : Nat :=
+  asts.foldl (fun n ast => n + 1 + (ast.decls.filter (· matches .typeAlias ..)).length) 1
 
 /-- The entry module's `fixed` State fields (`colour: fixed Colour`), in State order, of the
-State it runs on: its own, an alias chain's record, or a layer's inherited one. -/
+State it runs on: its own, an alias chain's record, or a layer's inherited one; refused when the
+State does not resolve (`recordAt`). -/
 def fixedFields (modules : List SourceModule) (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) (index : Nat) :
-    List String :=
-  match stateRecordAt modules asts (4 * modules.length + 4) index "State" with
-  | some fields => fixedNames fields
-  | none => []
+    Except String (List String) := do
+  match ← recordAt modules asts (recordFuel asts) index "State" with
+  | some (_, _, fields) => return fixedNames fields
+  | none => return []
+
+/-- A parsed module's function definitions with their parameters' declared type texts, an
+`export Alias.f [as g]` among them as the function it names (through imports, so an earlier
+module; `fuel` is the module count). A re-exported parameter typed `State` reads `State` only
+when the exporting module's State is the defining module's; otherwise it reads `Alias.State`,
+which no shape check takes for the entry's own. -/
+def signaturesAt (modules : List SourceModule) (asts : List Delvetalk.Compiler.ObjectiveBendSurface.Module) :
+    Nat → Nat → List (String × List String)
+  | 0, _ => []
+  | fuel + 1, index =>
+    let state := fun (i : Nat) => match recordAt modules asts (recordFuel asts) i "State" with
+      | .ok (some (home, name, _)) => some (home, name)
+      | _ => none
+    ((asts[index]?.map (·.decls)).getD []).filterMap fun
+      | .function signature _ _ _ =>
+        some (signature.name, signature.params.map fun p => Delvetalk.Compiler.ObjectiveBendElaborate.trimStr p.type)
+      | .reexport name target _ => do
+        let [alias, fname] := target.splitOn "." | none
+        let module ← modules[index]?
+        let origin ← (module.imports.find? (·.importAlias == alias)).map (·.target)
+        let (_, types) ← (signaturesAt modules asts fuel origin).find? (·.1 == fname)
+        let same := (state origin).isSome && state origin == state index
+        return (name, types.map fun t => if t == "State" && !same then alias ++ ".State" else t)
+      | _ => none
 
 /-- The conventional declarations a host looks for in an entry module. -/
 def conventionalNames : List String :=
@@ -328,7 +363,7 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
   let accepted ← (accept lowered).mapError (FrontEnd.instancesNote prepared.instances)
   let packet := lowered.packet
   let entryModule := modules.getLast!
-  let signatures := signaturesOf (prepared.asts.getLastD default)
+  let signatures := signaturesAt modules prepared.asts modules.length (modules.length - 1)
   let globals := lowered.output.globalRow
   let law ← lawShape entryModule.name signatures globals lowered.output.sumBounds
   let stack := prepared.elaborated.ctx.stack.toList.reverse
@@ -336,8 +371,7 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
   let methods := if stack.isEmpty then methodTable entryModule.name signatures globals (forms entryModule.name) else
     stackMethodTable (stack.filterMap fun name => do
       let i ← modules.findIdx? (·.name == name)
-      let ast ← prepared.asts[i]?
-      return (name, signaturesOf ast)) globals forms
+      return (name, signaturesAt modules prepared.asts modules.length i)) globals forms
   let pin := Delvetalk.Canonical.cidJson packet
   let artifact := Json.mkObj [
     ("schema", toJson "delvetalk.obend-package.v1"),
@@ -353,7 +387,9 @@ def compileEntryCore (request : PreparedRequest) (entry : String) : Except Diagn
   let declaring := if stack.isEmpty then [entryModule.name] else stack
   let artifact := artifact.setObjVal! "declares" (toJson (declaredNames prepared.decoded declaring))
   -- A State with fixed fields lists them (no edit names one); absent otherwise.
-  let fixed := fixedFields modules prepared.asts (modules.length - 1)
+  let fixed ← (fixedFields modules prepared.asts (modules.length - 1)).mapError fun message =>
+    ({ stage := "objective-core-elaboration", message := "refused (fixed): the State's fixed fields: " ++ message,
+       sourceModule := some entryModule.name } : Diagnostic)
   let artifact := if fixed.isEmpty then artifact else artifact.setObjVal! "fixed" (toJson fixed)
   -- Protocols the entry module claims (checked at elaboration): listed, and each method row
   -- names its protocol. Absent for a module that claims none (its artifact is unchanged).
@@ -688,8 +724,9 @@ def executeEntryStoredJson (entry : Delvetalk.CheckedEntry) (arguments limits st
 (a list of `{field, key: List<String>, limit?: Nat, retain?}`, listed as `{field, key, limit, retain?}`), evaluated once at compile so the host reads it from
 the artifact without compiling a def per object. `none` when the entry module declares none. -/
 def relationsOf (request : PreparedRequest) : Except Diagnostic (Option Json) := do
-  let ast := request.prepared.asts.getLastD default
-  unless (signaturesOf ast).any (fun s => s.1 == "relations" && s.2.isEmpty) do return none
+  let modules := request.prepared.modules
+  unless (signaturesAt modules request.prepared.asts modules.length (modules.length - 1)).any
+    (fun s => s.1 == "relations" && s.2.isEmpty) do return none
   let refusal := fun (message : String) =>
     ({ stage := "objective-core-elaboration", message := "relations(): " ++ message,
        sourceModule := (request.prepared.modules.getLast?).map (·.name) } : Diagnostic)

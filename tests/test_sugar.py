@@ -681,6 +681,11 @@ class Sugar(unittest.TestCase):
         lib = ({"name": "Lib", "source": FIXED_HEAD + DERIVED_REST + "type Shared = State\n"},)
         aliased = HEAD + "import ./Lib.obend as Lib\ntype Again = Lib.Shared\ntype State = Again\ndef initial() -> State:\n  Lib.initial()\n"
         self.assertEqual(self.compiled(aliased, "initial", REL_LIB, extra=lib).get("fixed"), ["note", "owner"])
+        # Review 2026-10-12 kernel 3: a chain longer than four steps a module ran out of fuel and
+        # listed no fixed field; the chain is bounded by the alias declarations it crosses.
+        chain = "".join(f"type A{i} = A{i - 1}\n" for i in range(1, 64))
+        long = HEAD + "import ./Lib.obend as Lib\ntype A0 = Lib.Shared\n" + chain + "type State = A63\ndef initial() -> State:\n  Lib.initial()\n"
+        self.assertEqual(self.compiled(long, "initial", REL_LIB, extra=lib).get("fixed"), ["note", "owner"])
         # A layer that writes no forms() or initial() declares what its stack declares (review kernel 5).
         stack = ({"name": "Base", "source": FORM_STATE + FORM_BLOCKS + "def initial() -> State:\n  {planted: 0n}\ndef methods() -> Nat:\n  0n\n"},)
         for entry in ("extra", "plant"):
