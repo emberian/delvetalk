@@ -38,7 +38,8 @@ In order (`run`):
    | `library` | Library | owner ember | the package's |
 
 3. **Made by `kinds`** (`KINDS`; each `kind/<name>`, owned by ember, its instances records whose law is the kind's
-   text, followed by `under`, with the body `world/bodies/<body>.obend` laid on each; `voice` from `VOICES`):
+   text, followed by `under`, with the body `world/bodies/<body>.obend` laid on each; `voice` from `VOICES`; `about`, the one plain line its card leads with and the kinds card lists, from
+   `ABOUT`):
    `record` (no body), `bell` (colour and seed; `ALIVE_LAW` and `BELL_TEXT`), `cistern` (`law level`), `room` (name
    and a `spween` scene), `porch` (a room by another name), `garden` (makes bells and cisterns), `weather` (a place
    and a tide), `door`, `lantern` (the door it watches), `bond` (parties, terms, an amendment at rest; `SIGNER_LAW`),
@@ -65,7 +66,7 @@ In order (`run`):
    on the tide as its kind finishes it (below, "Motion").
 9. The opener's first `tide tick`: the tide then ticks itself every 60 clock minutes (an `awaitUntil` chain). What
    happens at a tick is the rules written on it: the weather's and the lamp's.
-10. The library shelves `PAGES`: six pages (spells, laws, object, relations, protocol, world) and five walks (bell,
+10. The library shelves `PAGES`: seven pages (spells, laws, object, relations, protocol, world, kinds: each kind and a spell that makes one) and five walks (bell,
    check, enter, tide, kind), each `capsules/pages/<name>.txt`, at most 1,266 characters.
 11. Each door's object publishes its page (`publishPage`), which the bridge drafts as `wiki: <Door>` for the hand.
 
