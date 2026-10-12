@@ -69,7 +69,8 @@ the tide and on itself, the weather on its tide, the lantern on its door.
   gets that door's card; all other words are silent here and hob's.
 - **Kinds** (`kinds`; `kind/<name>`): `kinds make / name / of / form / head / voice / law / body` makes a kind and lays
   its generated layer (`make` with the form's fields; `place` with an exact `id` for its owner). A law that does not
-  read is refused before anything is made. `makeUnder` takes fields from a record making under itself (a garden's
+  read is refused before anything is made; a text with no `law` clause (none, or rules and wants alone) is held as the
+  package's own law with them after it, so an instance is never anyone's to amend or reprogram. `makeUnder` takes fields from a record making under itself (a garden's
   `plant`, a room's spween block).
 - **Records with bodies.** bell (`rain`, `ring`, `tend`; kind/bell's rules `seven` (the seventh rain rings it) and
   `rang` (notes its planter), wants `rain`, `second`, `tend`; quiet past `QUIET_AFTER` untended, then `tend` alone;

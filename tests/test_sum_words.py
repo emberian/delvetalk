@@ -56,7 +56,7 @@ def named(state: State, input: {name: String}, context: Abi.Context) -> Activity
 def offered() -> Lists.List<Form.Form>:
   Lists.List::<Form.Form>.cons({head: {card: "garden", action: "plant", fields: Lists.List::<Form.Field>.nil()}, tail: Lists.List::<Form.Form>.nil()})
 def ask(state: State, input: {utterance: String}, context: Abi.Context) -> Activity<Nat>:
-  match world.interpret::<Planting>({utterance: input.utterance, offers: offered(), policy: {world: "", object: "policy"}, model: "", held: "", misfit: ""}):
+  match world.interpret::<Planting>({utterance: input.utterance, offers: offered(), policy: {world: "", object: "policy"}, model: ""}):
     case proposal(p): put(textConcat(colourText(p.argument.colour), textConcat(":", p.argument.seed)))
     case unclear(_): put("unclear")
     case _: put("other")

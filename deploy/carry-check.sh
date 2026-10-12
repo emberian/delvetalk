@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The merge check for a commit that touches the host (docs/TENURE.md section 1, docs/OVERHAUL.md section 5 step 0):
+# The merge check for a commit that touches the host (docs/FOUNDATION.md §2, docs/OVERHAUL.md section 5 step 0):
 # the candidate binary against the newest town backup, run by the root before the merge, on hbox, where the backups
 # are pulled (/tank/delvetalk-backups). The world is never wiped, so a candidate must either replay the backup or carry
 # it: a commit whose binary does not replay it is a breaking change, and merges only if it carries it.

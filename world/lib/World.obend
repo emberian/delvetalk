@@ -9,8 +9,8 @@ import ./Plan.obend as Plans
 # result's type parameter cannot be inferred (`view`, `call` when its result is read,
 # `interpret`); `write {f: op v}` is `world.write(edits)`. Each method's result is a closed
 # sum of its own, so the response type belongs to the call site, as a function's result
-# does. `interpret` names what the card holds for the speaker (`held`, "" for nothing) and a
-# misfit spell's clause and reason (`misfit`, "" for none), which hob is shown (docs/FLEX.md §2).
+# does. `interpret` asks `policy` (the world's one) to read the utterance against the forms offered
+# (`model` "" for the policy's own).
 record Message:
   object: Plans.Reference
   method: String
@@ -125,7 +125,8 @@ sum Chronicled:
   chronicled: {day: Nat, lines: Document.Names}
   refused: {clause: String}
 # What wants a hand across the world (`wanting {after, limit}`): each want that holds now, the thing's
-# own and the ones it follows, oldest first, with the height since which it has held; derived, no root.
+# own and the ones it follows, newest first (pages of whole heights by `after`), with the height since
+# which it has held; derived, no root.
 record Want:
   object: String
   name: String
@@ -156,7 +157,7 @@ protocol world:
   make({package: String, seed: Data, law: String, requireAbsent: Plans.Reference, madeFrom: Plans.MadeFrom}) -> Created
   await({slot: Plans.Slot, patience: Nat}) -> Awaited
   awaitUntil({slot: Plans.Slot, until: Nat}) -> Awaited
-  interpret<R>({utterance: String, offers: Forms, policy: Plans.Reference, model: String, held: String, misfit: String}) -> Interpreted<R>
+  interpret<R>({utterance: String, offers: Forms, policy: Plans.Reference, model: String}) -> Interpreted<R>
   offer({to: String, document: Document.Document}) -> Offered
   publish({page: String, section: String, body: String}) -> Published
   reprogram({object: Plans.Reference, package: String, migration: String}) -> Programmed

@@ -169,7 +169,7 @@ form draft:
 def make(state: State, input: MakeInput, context: Abi.Context) -> Activity<Verdict>:
   asked(input.name, input.description, context, state)
 def asked(name: String, description: String, context: Abi.Context, state: State) -> Activity<Verdict>:
-  match world.interpret::<{target: String, over: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(checkForm(), context.object), tail: Lists.List.nil()}), policy: {world: context.world, object: "policy"}, model: "", held: "", misfit: ""}):
+  match world.interpret::<{target: String, over: String, source: String}>({utterance: "Write the Bend for a thing called {name}: {description}", offers: Lists.List.cons({head: Card.named(checkForm(), context.object), tail: Lists.List.nil()}), policy: {world: context.world, object: "policy"}, model: ""}):
     case proposal(p): drafting(name, p.argument.source, context, state)
     case _: refusing("noDraft", "hob drew no Bend from that. Say what it holds and what it does, or send the source: delvetalk workshop draft / name: {name} / source: <<BEND … BEND", context)
 def draft(state: State, input: DraftInput, context: Abi.Context) -> Activity<Verdict>:

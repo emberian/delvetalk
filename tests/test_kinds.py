@@ -69,6 +69,28 @@ class Kinds(Chain):
         self.assertEqual((lamp["status"], lamp["result"]["label"]), ("admitted", "made"), lamp)
         self.assertIn("Made, at lamp/1", text(lamp))
 
+    def test_a_kind_with_no_law_clause_makes_things_its_maker_alone_amends_or_reprograms(self):
+        """Codex objects 1: a kind made with no law, or with rules and wants alone, cited an empty text from every
+        instance, which admitted any request: a stranger amended the maker's thing to admit himself and replaced
+        its program. A kind whose text holds no law clause keeps its package's own law beside its rules and wants."""
+        said = lambda who, obj, line: self.turn(obj, "receive", record(text=label(line), post=label("at://x/" + line[-8:])), principal=who)
+        self.kind("loud", "record", "", law=genesis.RECORD_LAW, body_source=body("cistern"))
+        for name, law in (("lamp", ""), ("wick", 'want lit "a wick nobody has lit": count(new.lines) == 0 asks delvetalk {request.object} write')):
+            with self.subTest(law=law):
+                kind = self.turn("kinds", "make", record(name=label(name), of=label("record"), form=label(""), head=label(""), voice=label(""), law=label(law), body=label("")), principal=KIM)
+                self.assertEqual(kind["status"], "admitted", kind)
+                made = self.turn("kind/" + name, "make", record(), principal=KIM)
+                thing = made["result"]["payload"]["fields"][0]["value"]["value"]
+                amended = said(GLM, thing, 'delvetalk %s adopt / law: law mine "glm writes": request.subject == "%s"' % (thing, GLM))
+                self.assertEqual((amended["status"], amended["receipt"]["outcome"]["class"], amended["receipt"]["outcome"]["clause"]), ("refused", "lawRefused", "owner"), amended)
+                reprogrammed = said(GLM, thing, "delvetalk %s become / kind: kind/loud" % thing)
+                self.assertEqual((reprogrammed["status"], reprogrammed["receipt"]["outcome"].get("clause")), ("refused", "owner"), reprogrammed)
+                if law:
+                    self.assertIn("lit", [w["name"] for w in self.host.send(op="world-wants", principal=KIM, object=thing)["rows"]])
+                wrote = self.turn(thing, "write", record(text=label("a stranger's line")), principal=GLM)
+                self.assertEqual(wrote["status"], "admitted", wrote)
+                self.assertTrue(field(self.state("kind/" + name), "law")["value"].startswith(genesis.RECORD_LAW), self.state("kind/" + name))
+
     def test_a_kinds_law_that_does_not_read_is_refused_by_name_and_makes_no_kind(self):
         """Playtest 2's D4 (69068, 69097): `law: writeOnce(claim)` made kind/prereg, whose every make was then refused
         and which could not be made again. A law is read as the kind is made: a line that is no clause, or a clause

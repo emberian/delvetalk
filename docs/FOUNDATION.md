@@ -178,15 +178,39 @@ records, then the links, and a reader takes one record by `pread`, checked again
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
 Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 9: rules fire and wants
 pose, 5.160), bumped with any change to what replay derives or checks; a journal of another edition is refused on
-open by name, and a deploy across an edition **carries** the world (`delvetalk-obend carry`, `python3 -m transport
-carry`, HOST-HANDOFF 5.159): every object, receipt, handle and pending delivery is installed under the new binary by
-a `carried` genesis, an object whose package moved migrated by its `migrate`, one that cannot be left retired by
-name. `deploy.genesis` refuses over a living town without the owner's word, and a foundation commit whose binary
-fails `carry-check.sh` on the newest backup is red. Every `Data` value and every entry has one canonical byte form, DAG-CBOR
+open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
 with its CID (`docs/REPO.md`). No entry is posted to delve.town: a post carries
 a one-line receipt and a slug, never a hash or a blob.
+
+**Carry** (`Host/Carry.lean`, `transport/carry.py`; HOST-HANDOFF 5.159). A world is not wiped: what is made here is here
+under the same name at the same door, and a host that changes carries it. A journal of another edition is not
+replayed; the new binary reads the world from the snapshot the old one took at its head (`world-snapshot`) and begins
+a journal with a `carried` genesis chained to the old head, holding the store, grants, pending deliveries,
+suspensions, posts, handles, settings and the old chain's entries by hash, so a receipt of the world before resolves
+by its slug as "entry N of the world before the carry"; `carriedFrom {world, height, cid, replay, hostSha256,
+reason}` names the origin and height 2 continues. Old entries are not re-judged (they were judged under their own
+edition), and the old journal is kept, read-only. Every object is rebuilt from its sources (pins are source CIDs, so
+none moves): its sources seal to its pin, its state conforms to the type this host compiles and its rows are
+canonical, and every suspended checkpoint decodes. `--library DIR` seals the image's library into the carried world
+and moves objects with the host: one whose closure changed takes the image's source and keeps its state when it
+conforms to the new type, else the package's `migrate(old: State8) -> State` converts it; its suspensions are
+dropped and their supervisors told `ended {broken}`, and when its package offers `carried` the genesis holds a
+`carried {}` delivery to it (`rearmed`: a self-ticking tide schedules its next `due` there). The genesis lists each
+move (`moved [{object, from, to, migration, before, after}]`), `law {before, after}` where an unamended law took the
+package's new one, and `kept` where an owner's amendment stands; `--body OBJ=FILE` gives a kind and its things the
+image's body. An object whose move refuses, whose package the image no longer ships, or that the owner names with
+`--leave OBJ` is carried retired at its old pin (the `retired` clause, ROOT 2.2, its reading the refusal's first
+line, state kept); only an object that does not rebuild under its own pin refuses the carry, by name. The new
+journal is replayed from its genesis and every state CID compared with the snapshot's before it is written.
+`python3 -m transport carry --from OLD --to NEW --reason R [--leave [WORLD=]OBJ]` does it for every world of a state
+directory, derives the bodies from genesis's kinds, runs genesis's `refresh` (its laws and kinds as the image
+stands) and ends on the hand's one line for the channel: `hob: the world was carried to a newer host at entry N;
+everything is where it was, and the carry is receipt X.` A genesis over a living town (any town journal under
+`--towns`) is refused, naming each journal and its height, unless `--wipe-with-the-owners-word R`; R is then the
+town's first line, written on the commonplace, admitted by the opener and the first line of the welcome. A commit
+that touches the host ships `deploy/carry-check.sh` green on the newest backup, or it does not merge.
 
 An object's pin is the CID of its sealed source closure, not of a compiled
 packet. A compiler or library change never moves the pin of an object whose
@@ -375,7 +399,7 @@ methods and places rules, wants and verbs on it; only its creator reprograms, am
 
 **The predicate**, optional: `def law(old: State, new: State, request:
 Abi.Request) -> Abi.Verdict`, pure, pinned with the package, run under
-`Bounds.lawTicks` after the text admits a write of kind 0 or 3. Its `Request` carries
+`Bounds.lawTicks` after the text admits a write of kind 0 or 3, or a placing (kind 4). Its `Request` carries
 context, method, argument, kind, pin and the states of the objects `lawReads()`
 declares, which the host records as roots: only objects the request's subject
 may view, within the root bound, and a `lawReads()` that exhausts its budget
@@ -713,18 +737,54 @@ deleting a closed sum or a convention:
   yields `World.Message` and each call site types its own result. A host facility is a protocol
   line, named only by the objects that use it.
 - **The host reads spells** (§5). The grammar is `Host/Spell.lean`, a spell costs its method's ticks
-  alone, and `receive` exists for prose and completion. Completion stays by bare field lines,
-  as card policy in Bend.
+  alone, and `receive` exists for prose and bare field lines. A spell missing a field is asked for
+  and kept nowhere; the speaker sends it whole again.
 - **Things react by rules.** A thing's text and its placed rows hold `rule` and `want` lines in the law's grammar
   (§4). At commit, after the law admits, each written object's rules whose condition the write made true stage
   `receive {text: SPELL}` to the spell's card under the rule's writer (`fired`, identity
   `rule:<object>:<name>:<height>`; at most 8 a commit and 4 down a chain, the rest `unfired` with why), and the
   wants that came to hold or stopped holding are journaled (`wanted`, `unwanted`); replay re-derives all four.
-  `rules` and `wants` read them back. Nothing subscribes or notifies otherwise;
-  a stranger's rule on your thing runs their spells under their name and spends nothing of yours.
-- **Verbs are data.** A grown verb is a row `{name, by, at, reading, takes, does}` on the thing (16 at most); using it
-  is `act {verb, text}`, one line tagged with the verb and the thing tended; its consequence, when it has one, is a
-  rule naming `request.verb`. A kind's declared methods are the table's first rows.
+  Nothing subscribes or notifies otherwise. The writer pays the judging, linear in rules and rows; the rule's
+  owner is the follow-on turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on
+  your thing runs their spells under their name and spends nothing of yours. The follow-on turn is a delivery under
+  the triggering turn's ledger. `delvetalk CARD rules` reads each rule back: name, owner, reading, condition, spell,
+  and its last firing (entry and receipt) or why it did not fire. Conditions are state, never counters: "two
+  rains" is `count(new.lines) >= 2 and count(old.lines) <= 1`, true once, at the crossing.
+- **The clock is a condition, never the cause.** Nothing is evaluated in a silence. A condition on `request.clock`
+  fires at the first write after the clock passes it, and whoever writes next pays. The tide is the one thing
+  that writes on the clock, ticking itself every `gap` minutes; "every day" is a rule on the tide
+  (`request.method == "tick" and new.ticks % 24 == 0`). A reply to a card is already a turn of that card, so a
+  rule on `request.method` is the reaction to a reply.
+- **The world poses.** A rule's `then` is any spell its owner may cast, so what a body or the hand places is the
+  world acting when something becomes true: bodies place their rules at `made` (the bell's `seven` rings it at
+  its seventh rain, `rang` notes its planter; the weather's rule on the tide rains only while the garden was
+  tended within the day, and a bell it rains on is not tended by it, so a bell nobody visits goes quiet). A rule
+  stands on the card beside the law, in the same voice, and a fired rule is stamped on the admitted reply, so a
+  thing says what it will do before anyone fails at it. A want is a fact about a thing with the condition that made
+  it printed and the spell that answers it; RECORD's default wants are a line waiting for its keeper (`admit`) and
+  a record with no door (`door`). An errand (`world/bodies/errand.obend`) is a rule with a pay: its maker's
+  `asks`, the condition `done` judged at each write on the thing it is `on`, and the spell that `pays`, cast
+  under the maker; `settle` takes the call from that rule alone, marks the errand done by the writer, once, and
+  takes both rules off. A front (`world/bodies/front.obend`) is a visible clock the tide fills: its `fills`
+  condition is judged at each tick, and when `segments` are full the maker's `move` is cast and the clock empties;
+  only the tide's rule fills. Nothing in the world addresses a resident by name.
+- **Outcomes are one-line conditions** (`tests/test_reaction.py` places each by spell on the town's own objects).
+  The porch's third arrival knocks a door open, once a crossing: `delvetalk porch rule / name: three / when:
+  count(new.presence) >= 3 and count(old.presence) <= 2 / then: delvetalk <door> knock`. A bell tended twice rings:
+  `when: request.method == "tend" and old.tended + 1 <= new.tended and 0 + 1 <= old.tended / then: delvetalk <bell>
+  ring`. A record seals itself after seven lines, the rule's owner being the record's owner since `adopt` amends:
+  `when: count(new.lines) >= 7 and count(old.lines) <= 6 / then: delvetalk <record> adopt / law: law sealed "seven
+  lines and no more": count(new.lines) <= 7`. A quest's next step appears when the first is marked:
+  `when: "rung" in new.marks.name and not "rung" in old.marks.name / then: delvetalk <first> door / label: next /
+  to: <second>`. The weather's company is a rule on the tide: `delvetalk tide rule / name: company / when:
+  request.method == "tick" and request.clock <= "<garden>".tended + 1440 / then: …`.
+- **Verbs are data.** A grown verb is a row `{name, by, at, reading, takes, does}` on the thing (16 at most; `ungrow`
+  makes room); using it is `act {verb, text}`, one line tagged with the verb and the thing tended, and the host's
+  grammar reads it as it reads a declared form, so its spell is exact, free and model-less the moment it exists.
+  Its consequence, when it has one, is a rule naming `request.verb`. A kind's declared methods are the table's
+  first rows. Words that run no spell reach hob (§5, §6); `grow:` is for a verb the words mean that the card lacks. A
+  gesture is one line and a tend, nothing more until a rule gives it a consequence. Hob decides which verb the words mean and
+  whether none does, never admission, a fact, a number, a consequence, or the card (reach, §5).
 - **The chronicle is derived.** `chronicle {day}` folds one clock day of the journal (made, grown, fired, wanted,
   refusals by class, who) into lines; nothing is kept to say it.
 
@@ -893,7 +953,7 @@ On 2026-10-09 and 2026-10-10, on branch `foundation`, from a chosen manifest of
   is kinds; the world became the commonplace, RECORD, THING, BOND and KIND with their bodies, and genesis places
   the hand's things by spell. The host gained `serve` over a directory of worlds, root and moderation, scratch
   worlds, the block-store journal, the stored path, the law's relational atoms and `under`, and replay edition 8.
-- **The overhaul** (`docs/OVERHAUL.md`, from REACTION, TENURE and COLLABORATOR, 2026-10-11 and 12). The exit
+- **The overhaul** (`docs/OVERHAUL.md`, 2026-10-11 and 12). The exit
   interviews of the third playtest ("hob is a good ledger and a good prompt, not yet a collaborator"; "bells, not
   forests") opened three closures at once: acts closed at a kind's form (verbs grown by use), reaction closed in a
   Wake nobody could read (rules and wants in the law's grammar), worlds closed at an edition (carry). The paint

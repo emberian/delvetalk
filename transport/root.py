@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from transport import journal
-from transport.http import typed
+from transport.host import typed
 from transport.identity import SLUG, slug
 
 # verb -> (fields, the request it sends). A field is (name, kind): text, int, json (a value), or ? after it when optional.

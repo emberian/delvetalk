@@ -16,8 +16,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from deploy.seed import closure, modules_on_disk  # noqa: E402
-from deploy.serve import Pipe, Served  # noqa: E402
-from transport.host import HostClient  # noqa: E402
+from deploy.serve import Served  # noqa: E402
+from transport.config import Config  # noqa: E402
+from transport.host import HostClient, HostProcess  # noqa: E402
 
 OWNER = 'bench'  # a resident, not the opener: the public socket takes its turns
 EMPTY = {'tag': 'record', 'fields': []}
@@ -56,11 +57,10 @@ def main():
         made = PerOp(sock).send({'op': 'world-create', 'principal': OWNER, 'identity': 'mk', 'object': 'c', 'entry': 'initial',
                                  'modules': closure('Counter', modules_with_counter()), 'seed': EMPTY})
         assert made['status'] == 'created', made
-        raw = Pipe(journal=Path(tmp) / 'raw.journal', clock='transport')
+        raw = HostProcess(Config.load().obend, Path(tmp) / 'raw.journal', clock='transport')
         assert raw.send({'op': 'world-create', 'principal': OWNER, 'identity': 'mk', 'object': 'c', 'entry': 'initial',
                          'modules': closure('Counter', modules_with_counter()), 'seed': EMPTY})['status'] == 'created'
         status = lambda i: {'op': 'world-status'}
-        count = [0]
 
         def bump(tag):
             return lambda i: {'op': 'world-turn', 'principal': OWNER, 'object': 'c', 'method': 'bump', 'argument': EMPTY, 'identity': f'{tag}-{i}'}
