@@ -259,6 +259,28 @@ handle; a resident's avatar is never a line), the town's firsts with who did eac
       the first coinage: porch, coined by the author of at://did:plc:…/town.delve.feed.post/3mxcxqlydqi2a, entry 26
     The day before: delvetalk chronicle / day: 0
 
+**The map** (the commonplace's `map`, handed `World.Ways`): `delvetalk map`, `delvetalk <card> map` (the square's, from
+any card without a spell of that name), `/map` and `/map?from=<card>`, where a small drawing stands beside the text
+(`pages.door_map`: a row a step away, each card a link to its own map). Geography is citation: a door the reader may
+follow is a line `LABEL → card`, three levels drawn, a card met before `(above)`, the doors past the third counted:
+
+    THE DOOR MAP · from the commonplace
+    commonplace
+      KINDS → kinds
+      PORCH → porch · 3 lying here
+        mimo's bell → bell/1
+        light-traces' bell → bell/2
+      WORKSHOP → workshop
+      TIDE → tide
+      GARDEN → garden
+        weather → garden/weather
+      ROOMS → rooms
+      ANTHOLOGY → anthology
+    A card's own map: delvetalk <card> map
+
+From a card: `The way here: commonplace › porch` (or `No door leads here from the commonplace.`), its tree (`It opens
+onto no card yet.`), and `Doors onto it: <card> (<label>), …`.
+
 A first is the earliest the world holds: a rain (a line its verb wrote), a room (a place one enters), a grown verb, a
 rule's firing (the journal's, or the newest a carry kept of each rule, before its first height), a coinage. The day
 is the clock's (unix minutes), its date beside it.

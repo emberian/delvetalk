@@ -148,8 +148,8 @@ partial def pastFence (text : T) : T :=
 def townCard : String := "commonplace"
 
 /-- The town's reads (`Surfaces.townReads`), written with no card or with inline fields after them (`delvetalk
-    chronicle`, `delvetalk chronicle / day: 3`): the square's spells of those names. -/
-def townWords : List String := ["chronicle"]
+    chronicle`, `delvetalk chronicle / day: 3`, `delvetalk map`): the square's spells of those names. -/
+def townWords : List String := ["chronicle", "map"]
 
 def heading (line rest : T) : Candidate :=
   let afterBlanks := trimStart line

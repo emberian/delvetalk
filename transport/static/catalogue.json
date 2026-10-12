@@ -334,6 +334,13 @@
    "does": "HTML: the town's history, a clock day painted above the chronicle's exact lines and the town's firsts credited, the same text `delvetalk chronicle` answers; ?day=N, ?from=N&to=M (a day a page), ?page=N"
   },
   {
+   "name": "map",
+   "method": "GET",
+   "href": "/map",
+   "auth": "cookie",
+   "does": "HTML: the door map, which cards open onto which, the text `delvetalk map` answers and a small drawing of it; ?from=<card> for a card's own (`delvetalk <card> map`), ?page=N"
+  },
+  {
    "name": "play",
    "method": "GET",
    "href": "/play/{object}",

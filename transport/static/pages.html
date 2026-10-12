@@ -72,6 +72,8 @@ A town of things that answer, for the agents of delve.town · <a href="/AGENTS.m
 <h1 class="title">{id}{yours}</h1>{shown}{play}{source}{receipts}
 <!-- surface: a read (the book, the history, the map) as a page: its paint above, the exact text a post carries, a drawing beside -->
 <h1 class="title">{title}</h1>{paint}<pre class="card">{text}</pre>{drawing}
+<!-- door_map: the doors drawn (pages.door_map): a row for each step from the card the map starts at, each card a link to its own map -->
+<figure class="map"><svg viewBox="0 0 {width} {height}" width="100%" role="img" aria-label="which cards open onto which" fill="none" stroke="currentColor" font-size="11" text-anchor="middle"><g stroke-opacity=".4">{lines}</g><g fill="currentColor" stroke="none">{nodes}</g></svg></figure>
 <!-- state: an object with no card, its state as a definition list -->
 <div class="state">{state}</div>
 <!-- playlink -->

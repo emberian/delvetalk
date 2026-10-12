@@ -16,10 +16,10 @@ open Delvetalk.Theory.ObjectiveBendDemandData (Data)
 open Delvetalk.Theory.ObjectiveBendTypes (Ty)
 
 /-- The reads, each the name of the card's definition that renders it. -/
-def reads : List String := ["book", "chronicle"]
+def reads : List String := ["book", "chronicle", "map"]
 
 /-- The reads the commonplace renders for any card that has no definition of its own. -/
-def townReads : List String := ["chronicle"]
+def townReads : List String := ["chronicle", "map"]
 
 /-- Where the town's reads are rendered when the card has none: the world's square (genesis's commonplace). -/
 def square : String := Spell.townCard
@@ -260,6 +260,61 @@ def annal (w : World) (reader : String) (a : Asked) : Data :=
     ("lines", listOfData ((chronicle w reader a.day).map Data.label)),
     ("firsts", listOfData ((firsts w reader).map First.data))]
 
+/-! ## The map: which cards open onto which -/
+
+/-- A door (`World.Way`): the card it is on, its label, the card it opens onto. -/
+structure Way where
+  from_ : String
+  label : String
+  to : String
+
+def Way.data (x : Way) : Data := .record [("from", .label x.from_), ("label", .label x.label), ("to", .label x.to)]
+
+def Way.json (x : Way) : Json := Json.mkObj [("from", toJson x.from_), ("label", toJson x.label), ("to", toJson x.to)]
+
+/-- Every door on a card `reader` may view onto a card they may view (`cites`, in each card's order; a link
+    door with no card is not one), cards in id order; and how many things lie in each place that holds some. -/
+def ways (w : World) (reader : String) : List Way × List (String × Nat) := Id.run do
+  let seen := (w.objects.toList.filter fun (id, o) => o.read.permits reader && !avatarId id).toArray.qsort (·.1 < ·.1)
+  let mut out : Array Way := #[]
+  let mut lying : Array (String × Nat) := #[]
+  for (id, o) in seen do
+    let fs := fieldsOf o.state
+    for d in ((fs.lookup "cites").bind listOf).getD [] do
+      let r := fieldsOf d
+      let some to := (r.lookup "to").bind referenceOf | continue
+      if to.isEmpty || !viewable w reader to then continue
+      out := out.push { from_ := id, label := (text? r "label").getD to, to }
+    let n := (rows fs "things").length
+    if n > 0 then lying := lying.push (id, n)
+  return (out.toList, lying.toList)
+
+/-- The shortest way from the square to `root` through doors (`[square, …, root]`), or none. -/
+def pathTo (ways : List Way) (root : String) : List String := Id.run do
+  if root == square then return [square]
+  let mut frontier : List (List String) := [[square]]
+  let mut visited : List String := [square]
+  for _ in [0:ways.length + 1] do
+    let mut next : List (List String) := []
+    for path in frontier do
+      let here := path.head!
+      for x in ways do
+        if x.from_ == here && !visited.contains x.to then
+          if x.to == root then return (x.to :: path).reverse
+          visited := x.to :: visited
+          next := next ++ [x.to :: path]
+    if next.isEmpty then return []
+    frontier := next
+  return []
+
+/-- `World.Ways`: the card the map starts at, the way to it from the square, every door, what lies where, the page. -/
+def waysData (w : World) (reader root : String) (page : Nat) : Data × List Way :=
+  let (all, lying) := ways w reader
+  (.record [("root", .label root), ("path", listOfData ((pathTo all root).map Data.label)),
+    ("ways", listOfData (all.map Way.data)),
+    ("lying", listOfData (lying.map fun (id, n) => .record [("object", .label id), ("count", .natural n)])),
+    ("page", .natural page)], all)
+
 /-! ## Rendering by the card's own definition -/
 
 /-- The parameter types of a function type and what it returns past `n` arrows. -/
@@ -329,6 +384,12 @@ def answer (w : World) (reader id : String) (target : Object) (read : String) (f
     | "chronicle" => do
       let a ← asked w fields
       rendered (fun page => annal w reader { a with page }) a.page [("paint", Json.mkObj [("day", toJson a.day)]), ("day", toJson a.day)]
+    | "map" => do
+      let p ← page ()
+      let (handed, all) := waysData w reader id p
+      rendered (fun page => match handed with
+        | .record fs => .record (fs.map fun (k, v) => if k == "page" then (k, .natural page) else (k, v))
+        | d => d) p [("ways", Json.arr (all.map Way.json).toArray), ("root", toJson id)]
     | _ => do
       let p ← page ()
       let rows := listOfData ((deeds w reader id).map Deed.data)
@@ -338,6 +399,7 @@ def answer (w : World) (reader id : String) (target : Object) (read : String) (f
 def spellsOf (card read : String) : List String :=
   match read with
   | "book" => [s!"delvetalk {card} book", s!"delvetalk {card} book / page: <a page after the first>"]
+  | "map" => [s!"delvetalk {card} map"]
   | "chronicle" => ["delvetalk chronicle", "delvetalk chronicle / day: <a day>", "delvetalk chronicle / from: <a day> / to: <a later day>"]
   | _ => [s!"delvetalk {card} {read}"]
 

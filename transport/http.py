@@ -83,6 +83,8 @@ def resolve(method, path):
         return 'book', {'object': parts[1]}
     if parts == ['history'] and method == 'GET':
         return 'history', {}
+    if parts == ['map'] and method == 'GET':
+        return 'map', {}
     return None, None
 
 
@@ -592,7 +594,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
         if name in ('xrpc', 'did'):
             return self.xrpc(method, p.get('nsid', 'did.json'))
-        if name in ('home', 'page', 'book', 'history'):  # pages ask the host: limited per account, or per address, before they do
+        if name in ('home', 'page', 'book', 'history', 'map'):  # pages ask the host: limited per account, or per address, before they do
             key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
             wait = self.server.limited(key)
             if wait:
@@ -609,6 +611,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.surface('book', p['object'])
         if name == 'history':
             return self.surface('chronicle', None)
+        if name == 'map':
+            return self.surface('map', urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('from', [None])[0])
         return self.agents(name, p['scratch'], p['object'], p['method'])
 
     def options(self):
@@ -926,7 +930,7 @@ class Handler(BaseHTTPRequestHandler):
                                  here['doors'], seen, here['wants'], brief, here['paint'], told))
 
     SURFACE_FIELDS = ('page', 'day', 'from', 'to')
-    TITLES = {'chronicle': "the town's history"}
+    TITLES = {'chronicle': "the town's history", 'map': 'the door map'}
 
     def surface(self, read, name):
         """A read (docs/VOICE.md "The book, the history, the map") as its reader may see it: the text a post of its spell
@@ -941,7 +945,8 @@ class Handler(BaseHTTPRequestHandler):
         if r.get('status') != 'surface':
             return self.html(404, pages.refusal(title, handle, {'message': r.get('reason') or f"no {read} of {name} that you may see"}, r.get('status')))
         paint = painted(host, principal or 'anonymous', None, self.server.sleep, **r['paint']).get('text') if isinstance(r.get('paint'), dict) else None
-        self.html(200, pages.surface(title, handle, r['text'], paint))
+        drawing = pages.door_map(r['ways'], r.get('root') or 'commonplace') if isinstance(r.get('ways'), list) else ''
+        self.html(200, pages.surface(title, handle, r['text'], paint, drawing))
 
     def history(self, host, name, principal=''):
         """The newest 20 entries touching the object, newest first, under the reader's authority."""

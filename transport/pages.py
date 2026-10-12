@@ -219,6 +219,36 @@ def surface(title, who, text, paint=None, drawing=''):
     return page(title, who, T['surface'].format(title=e(title), paint=painting(paint), text=e(text), drawing=drawing))
 
 
+MAP_WIDTH, MAP_ROW, MAP_PER_ROW, MAP_NODES = 360, 56, 3, 36
+
+
+def door_map(ways, root):
+    """The doors as a small drawing (docs/VOICE.md "The map"): the cards reached from `root` through `ways` (the host's
+    `world-surface` doors, each `{from, label, to}`), a row for each step away, three to a row, at most MAP_NODES, each a
+    link to its card's map; a line for each door between two drawn. Plain SVG, `currentColor`, fits a phone's width."""
+    depth, order = {root: 0}, [root]
+    for card in order:
+        for w in ways:
+            if w['from'] == card and w['to'] not in depth and len(order) < MAP_NODES:
+                depth[w['to']] = depth[card] + 1
+                order.append(w['to'])
+    rows, place = [], {}
+    for d in range(max(depth.values()) + 1):
+        layer = [c for c in order if depth[c] == d]
+        rows += [(k, layer[i:i + MAP_PER_ROW]) for k, i in enumerate(range(0, len(layer), MAP_PER_ROW))]
+    cell = MAP_WIDTH / (MAP_PER_ROW + 0.5)
+    for r, (k, row) in enumerate(rows):  # a layer's second row sits half a cell over, so no line runs through a card
+        for i, card in enumerate(row):
+            place[card] = ((i + 0.5 + 0.5 * (k % 2)) * cell + (MAP_WIDTH - cell * (MAP_PER_ROW + 0.5)) / 2
+                           if len(row) == MAP_PER_ROW or k else (i + 0.5) * MAP_WIDTH / len(row), r * MAP_ROW + 20)
+    lines = ''.join(f'<line x1="{place[w["from"]][0]:.0f}" y1="{place[w["from"]][1] - 4:.0f}" x2="{place[w["to"]][0]:.0f}" y2="{place[w["to"]][1] - 4:.0f}"/>'
+                    for w in ways if w['from'] in place and w['to'] in place and w['from'] != w['to'])
+    href = lambda c: '/map' + ('' if c == 'commonplace' else '?from=' + quote(c, safe=''))
+    nodes = ''.join(f'<a href="{e(href(c))}"><circle cx="{x:.0f}" cy="{y - 4:.0f}" r="4"/><text x="{x:.0f}" y="{y + 14:.0f}">{e(c if len(c) <= 18 else c[:17] + "…")}</text></a>'
+                    for c, (x, y) in place.items())
+    return T['door_map'].format(width=MAP_WIDTH, height=len(rows) * MAP_ROW + 12, lines=lines, nodes=nodes)
+
+
 def dl(v):
     """Plain JSON as semantic HTML: a record a definition list, a list an ordered list, typed data its value."""
     if isinstance(v, dict) and v.get('tag') in ('record', 'list'):  # typed data: its fields, its items

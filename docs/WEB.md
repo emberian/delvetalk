@@ -90,6 +90,9 @@ for its further pages (docs/VOICE.md "The book, the history, the map").
 **`/history`.** The town's history: a clock day, its paint above the text `delvetalk chronicle` answers; `?day=N`,
 `?from=N&to=M`, `?page=N`.
 
+**`/map`.** The door map: the text `delvetalk map` answers and a drawing of it (plain SVG in the text colour, a row a
+step from where it starts, three cards to a row, each a link to its own map); `?from=<card>`, `?page=N`.
+
 **Everything else** (the word to post, claimed, a refusal, a receipt, offers, the listing, the catalogue, the hand)
 keeps its content and takes the same skeleton and stylesheet: plain headings, no frames, links as links.
 

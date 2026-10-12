@@ -176,6 +176,22 @@ record Annal:
   page: Nat
   lines: Document.Names
   firsts: Lists.List<First>
+# A door as the map draws it: the card it is on, its label, the card it opens onto.
+record Way:
+  from: String
+  label: String
+  to: String
+record Lying:
+  object: String
+  count: Nat
+# The map from `root`: the shortest way to it from the commonplace (`path`, the commonplace first; empty when no
+# door leads there), every door the reader may follow, how many things lie in each place, the page.
+record Ways:
+  root: String
+  path: Document.Names
+  ways: Lists.List<Way>
+  lying: Lists.List<Lying>
+  page: Nat
 sum Carded:
   carded: {document: Document.Document}
   denied: {}

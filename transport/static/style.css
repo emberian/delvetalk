@@ -184,3 +184,7 @@ hr.root { border: 0; border-top: 6px solid var(--terracotta); margin: 1rem 0; } 
   pre.card { font-size: 12.5px; }
   dl { grid-template-columns: 1fr; }
 }
+
+/* The door map (pages.door_map): the page's width, its lines and labels in the text colour. */
+figure.map { margin: 1rem 0; max-width: 100%; }
+figure.map a:hover text { text-decoration: underline; }

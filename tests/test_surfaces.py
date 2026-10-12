@@ -233,6 +233,38 @@ class History(Surfaces):
         self.assertEqual(read_text(self.town.client, GLM, r, sleep=lambda s: None), r.get("whole") or r["text"])  # nobody paints: exact alone
 
 
+class Map(Surfaces):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.lone = cls.admitted(GLM, "kind/bell", "delvetalk kind/bell make\ncolour: amber\nseed: a bell no door reaches\nid:")["receipt"]["outcome"]["creates"][0]["object"]
+        cls.hanger = cls.admitted(KIM, "kind/bell", "delvetalk kind/bell make\ncolour: silver\nseed: a bell with a door\nid:")["receipt"]["outcome"]["creates"][0]["object"]
+        cls.admitted(KIM, cls.hanger, "delvetalk %s door / label: lone / to: %s" % (cls.hanger, cls.lone))
+
+    def test_the_map_draws_the_commonplaces_doors_as_a_tree_within_the_clip(self):
+        r = self.read(GLM, "commonplace", "delvetalk map")
+        text = r["text"]
+        if os.environ.get("SURFACES_SAMPLES"):
+            print("\n--- delvetalk map\n" + text)
+        self.assertTrue(text.startswith("THE DOOR MAP · from the commonplace\ncommonplace\n  KINDS → kinds\n"), text)
+        self.assertRegex(text, r"\n  PORCH → porch( · \d+ lying here)?\n")
+        self.assertIn("\n  GARDEN → garden", r.get("whole") or text)
+        self.assertTrue((r.get("whole") or text).endswith("A card's own map: delvetalk <card> map\n"))
+        # Every door the reader may follow comes with it, for a drawing; the web's way answers the same text.
+        self.assertIn({"from": "commonplace", "label": "PORCH", "to": "porch"}, r["ways"])
+        self.assertEqual(self.town.send(op="world-surface", principal=GLM, read="map")["text"], text)
+
+    def test_a_cards_map_says_the_way_to_it_and_which_doors_open_onto_it(self):
+        porch = self.read(GLM, "porch", "delvetalk porch map")["text"]
+        self.assertTrue(porch.startswith("THE DOOR MAP · from porch\nThe way here: commonplace › porch\nporch"), porch)
+        self.assertIn("Doors onto it: commonplace (PORCH)\n", porch)
+        lone = self.read(GLM, self.lone, "delvetalk %s map" % self.lone)["text"]
+        self.assertIn("No door leads here from the commonplace.\n%s\n  It opens onto no card yet.\n" % self.lone, lone)
+        self.assertIn("Doors onto it: %s (lone)\n" % self.hanger, lone)
+        mine = self.read(KIM, self.hanger, "delvetalk %s map" % self.hanger)["text"]
+        self.assertIn("\n  lone → %s\n" % self.lone, mine)
+
+
 class Whole(Surfaces):
     def test_a_card_asked_for_whole_is_unclipped_and_otherwise_within_the_clip(self):
         for i in range(9):
@@ -267,5 +299,14 @@ class Web(test_http.InTown):
         told = self.host.send({'op': 'world-surface', 'principal': 'anonymous', 'read': 'chronicle'})['text']
         self.assertIn(test_http.html.escape(told).encode(), page)
         self.assertIn(b"<h1 class=\"title\">the town&#x27;s history</h1>", page)
+        s, _, page = self.request('GET', '/map')
+        self.assertEqual(s, 200)
+        drawn = self.host.send({'op': 'world-surface', 'principal': 'anonymous', 'read': 'map'})
+        self.assertIn(test_http.html.escape(drawn['text']).encode(), page)
+        self.assertIn(b'<figure class="map"><svg viewBox="0 0 360 ', page)
+        self.assertIn(b'<a href="/map?from=porch">', page)
+        s, _, porch = self.request('GET', '/map?from=porch')
+        self.assertEqual(s, 200)
+        self.assertIn(b'The way here: commonplace \xe2\x80\xba porch', porch)
         page = self.request('GET', f'/o/{test_http.HANDLE}/book')[2]
         self.assertIsNone(test_http.Play.BANNED.search(test_http.Play.words(self, page)))

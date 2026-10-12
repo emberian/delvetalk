@@ -2403,6 +2403,11 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    carries `paint {day}`; `bridge.read_text` and `/history` set the day's paint above it. `Ops.chronicleDay` credits a
    made thing's coiner (`coinerOf`, reading `Record.post` as Enchant does; an unknown handle is `the author
    of <post>`) and leaves avatars out. Tests: `test_surfaces.History`, `test_surfaces.Web`.
+209. **The town's reads: the map (lane/books).** `map` (the commonplace's `map(state, context, World.Ways)`) is a town
+   read (`Spell.townWords`: `delvetalk map`; any card's `map` without its own spell of that name). `Surfaces.ways`:
+   every door (`cites`, a link door left out) on a card the reader may view onto one they may view, cards in id order,
+   and how many things lie in each place; `pathTo`, the shortest way from the square. The reply carries `ways` and
+   `root` for a drawing; `/map` draws them (`pages.door_map`). Tests: `test_surfaces.Map`, `test_surfaces.Web`.
 
 ## 6. Gotchas
 
