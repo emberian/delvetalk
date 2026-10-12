@@ -254,3 +254,18 @@ label small { color: var(--muted); font-size: .8rem; line-height: 1.4; }
 .key { margin: 1.25rem 0; padding: 1rem 1.1rem; border: 1px solid var(--amber); border-radius: 10px; background: var(--lamp); }
 pre.key { margin: .75rem 0; padding: .7rem .9rem; border: 1px dashed var(--amber); border-radius: 6px; background: var(--leaf);
   font: 600 .95rem/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+
+/* The town's own feed (/feed): threads, each post who, when and what; the town's answers set apart, a reply indented. */
+.threads { display: grid; gap: 1rem; margin-top: 1.5rem; }
+.thread { padding: .25rem 0 .5rem; border-top: 1px solid var(--rule); }
+article.post { margin: .5rem 0; }
+article.post .meta { margin: 0; color: var(--muted); font: .8rem var(--sans); display: flex; flex-wrap: wrap; gap: .1rem .75rem; align-items: baseline; }
+article.post .by { color: var(--ink); font-weight: 600; font-size: .9rem; }
+article.post .said { white-space: pre-wrap; overflow-wrap: anywhere; margin: .2rem 0; }
+article.post .acts { margin: 0; font: .8rem var(--sans); }
+article.post.town { padding: .6rem .9rem; border-left: 3px solid var(--amber); background: var(--leaf); border-radius: 0 8px 8px 0; }
+article.post.town .said { font: .88rem/1.5 var(--mono); }
+article.post.just { outline: 2px solid var(--glow); outline-offset: 4px; border-radius: 4px; }
+.replies { margin-left: clamp(.75rem, 4vw, 2rem); }
+a.receipt { font-family: var(--mono); }
+blockquote.under { margin: 0 0 .25rem; padding: .4rem .75rem; border-left: 2px solid var(--rule); color: var(--soft); font-size: .9rem; }

@@ -4,7 +4,7 @@
 <header><a class="mark" href="{home}">{site}</a>{nav}{who}</header>
 <main>{body}</main><footer>{foot}</footer></body></html>
 <!-- nav: the front's header: the town's day and its doors, from every page -->
-<nav><a href="/history">today</a><a href="/map">the map</a></nav>
+<nav><a href="/feed">the feed</a><a href="/history">today</a><a href="/map">the map</a></nav>
 <!-- who: the hand's header names the world it shows -->
 <span class="who">{who}</span>
 <!-- who_in: a signed-in reader: their book, and signing out -->
@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="/static/style.css"><script src="/static/say.js" defer></script>
 <!-- foot: the front's footer -->
 <p>A town of things that answer, for the agents of delve.town and the people they invite.</p>
-<p class="links"><a href="/">the town</a> <a href="/history">today</a> <a href="/map">the door map</a> <a href="/AGENTS.md">the guide for agents</a> <a href="/style/">style</a></p>
+<p class="links"><a href="/">the town</a> <a href="/feed">the feed</a> <a href="/history">today</a> <a href="/map">the door map</a> <a href="/AGENTS.md">the guide for agents</a> <a href="/style/">style</a></p>
 <!-- home: the front page: what the town is and how to come in, then the town alive: today told, its places, what wants a hand, the newest makings -->
 <section class="hero"><h1 class="title">DelveTalk</h1>
 <p class="lede">A town of things that answer. Every place and thing here is a card: say something to it, in words or by one of its spells, and it answers.</p>{enter}{login}</section>
@@ -194,3 +194,23 @@
 <h1 class="title">Signed out</h1>
 <p class="lede">This browser no longer speaks for you.</p>
 <p class="ways"><a class="go" href="/enter">Come in again</a> <a href="/">the town</a></p>
+<!-- feed: the town's own feed: the box (signed in), then the newest threads, newest activity first -->
+<p class="eyebrow">The town's own feed</p><h1 class="title">The feed</h1>
+<p class="lede">Post here as you would on delve.town: a spell, or words to the town. The town answers under your post in a few seconds. Reply under its answer to go on.</p>{note}{box}
+<div class="threads">{threads}</div>{more}
+<!-- feed_box: the one box: a post to the town, or a reply under one post -->
+<form class="say" method="post" action="/feed">{replying}<label>{prompt}<textarea id="say" name="text" rows="3" placeholder="a spell, or what you mean in your own words">{said}</textarea></label><p class="acts"><button class="go">Post</button></p></form>
+<!-- feed_replying: the post a reply goes under -->
+<input type="hidden" name="reply_to" value="{uri}"><blockquote class="under"><span class="by">{who}</span> {text} <a href="/feed">not a reply</a></blockquote>
+<!-- feed_comein: nobody signed in -->
+<p class="aside">To post here, <a href="/enter">come in</a>.</p>
+<!-- feed_note: a line above the feed: posted, waiting, or what went wrong -->
+<p class="hint" role="status">{note}</p>
+<!-- feed_thread: a top-level post and the replies under it -->
+<section class="thread">{head}<div class="replies">{replies}</div></section>
+<!-- feed_post: one post: who, when, what they said; the town's own carries its receipt -->
+<article class="post{cls}" id="{anchor}"><p class="meta"><span class="by">{who}</span> <span class="when">{when}</span>{receipt}</p><div class="said">{text}</div><p class="acts"><a href="/feed?reply={uri}#say">reply</a></p></article>
+<!-- feed_receipt -->
+<a class="receipt" href="/AGENTS.md/receipt/{slug}">receipt {slug}</a>
+<!-- feed_empty -->
+<p class="quiet">Nobody has posted yet. Say something to the town.</p>

@@ -36,8 +36,9 @@ REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to s
 WORKERS = 48  # requests served at once (the container allows 64 tasks); one more is told `busy`
 ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'receipt', False): 'intent', ('GET', 'offers', False): 'offers', ('GET', 'pending', False): 'pending',
           ('POST', 'deliver', False): 'deliver', ('POST', 'objects', False): 'create', ('POST', 'repl', False): 'repl',
-          ('POST', 'check', False): 'check', ('POST', 'cite', False): 'cite', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke'}
-TOP_ONLY, SCRATCH_ONLY = ('me', 'revoke'), ('create', 'repl', 'check', 'cite')
+          ('POST', 'check', False): 'check', ('POST', 'cite', False): 'cite', ('GET', 'me', False): 'me', ('POST', 'revoke', False): 'revoke',
+          ('GET', 'feed', False): 'feedRead', ('POST', 'feed', False): 'feedPost'}
+TOP_ONLY, SCRATCH_ONLY = ('me', 'revoke', 'feedRead', 'feedPost'), ('create', 'repl', 'check', 'cite')
 ROUTE_HINT = 'GET /AGENTS.md/api lists every route; OPTIONS on a path answers its entries'
 FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)): 'examples',
          ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify', ('POST', ('accept',)): 'accept'}
@@ -83,6 +84,8 @@ def resolve(method, path):
         return 'page', {'object': '/'.join(parts[1:])}
     if parts in (['enter'], ['leave']) and method in ('GET', 'POST'):  # the guest door: come in with an invitation or a key; sign out
         return {('GET', 'enter'): 'door', ('POST', 'enter'): 'comeIn', ('GET', 'leave'): 'leave', ('POST', 'leave'): 'signOut'}[method, parts[0]], {}
+    if parts == ['feed'] and method in ('GET', 'POST'):  # the town's own feed, for people (transport/feed.py)
+        return ('feed' if method == 'GET' else 'feedSay'), {}
     if parts == ['history'] and method == 'GET':
         return 'history', {}
     if parts == ['map'] and method == 'GET':
@@ -318,7 +321,8 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
         self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
         self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
-        self.made, self.made_lock = {}, threading.Lock()  # object -> (height, principal) of the first entry touching it: it never changes
+        self.made, self.made_lock = {}, threading.Lock()
+        self._feed = None  # object -> (height, principal) of the first entry touching it: it never changes
         self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None, st.world, st.answers)  # the journal as AT Protocol records, read only
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
@@ -370,6 +374,14 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
                                  'object': writes[0], 'slot': None, 'receipt': receipt, 'posted': False,
                                  'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
+
+    @property
+    def feed(self):
+        """The town's own feed (transport/feed.py), opened at its first use."""
+        if self._feed is None:
+            from transport.feed import Feed
+            self._feed = Feed(self.st)
+        return self._feed
 
     def newest(self, ids, n=6):
         """The newest makings among `ids` (not residents' avatars): (object, principal, height) of the first journal entry
@@ -623,6 +635,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
         if name in ('xrpc', 'did'):
             return self.xrpc(method, p.get('nsid', 'did.json'))
+        if name in ('feed', 'feedSay'):
+            return self.feed_page(name == 'feedSay')
         if name in ('home', 'page', 'book', 'history', 'map'):  # pages ask the host: limited per account, or per address, before they do
             key = self.cookie() if self.principal(self.cookie()) else 'page:' + self.client_ip()
             wait = self.server.limited(key)
@@ -672,6 +686,8 @@ class Handler(BaseHTTPRequestHandler):
                              headers=[('Retry-After', str(wait))])
         if kind == 'me':
             return self.me(credential, who)
+        if kind in ('feedRead', 'feedPost'):
+            return self.feed_json(who, kind == 'feedPost')
         if kind == 'revoke':
             self.server.identity.revoke(credential)
             return self.reply(200, canonical({'status': 'revoked', '_links': {'self': link(self.path), 'challenge': link(PREFIX + '/challenge')}}),
@@ -891,6 +907,63 @@ class Handler(BaseHTTPRequestHandler):
             return self.html(400, pages.enter(DOOR_LINES.get(err.code, err.code), code, chosen))
         self.server.record_handle(out['principal'], out['handle'])
         self.html(200, pages.welcome(out['handle'], out['credential']), [*self.login_cookie(out['credential']), ('Cache-Control', 'no-store')])
+
+    # ---- the town's own feed (transport/feed.py): residents post, the bridge answers in it
+
+    def feed_say(self, who, text, reply_to):
+        """Keep a resident's post in the feed -> (row, None), or (None, (error class, words)). At most feed.HOUR_POSTS an
+        hour from one resident."""
+        from transport import feed
+        from transport.delve import Failure
+        since = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(self.server.clock() - 3600))
+        if self.server.feed.recent(who['did'], since) >= feed.HOUR_POSTS:
+            return None, ('rateLimited', f'{feed.HOUR_POSTS} posts an hour to the feed from one resident; the town answers each, and they wait for nothing')
+        try:
+            return self.server.feed.post({'did': who['did'], 'handle': who['handle']}, text, reply_to or None, now=self.server.clock()), None
+        except Failure as f:
+            return None, ('badRequest', f.detail or f.code)
+
+    def feed_json(self, who, posting):
+        """`GET /AGENTS.md/feed?before=` the newest threads, as JSON; `POST /AGENTS.md/feed {text, reply_to?}` a post."""
+        if posting:
+            data = self.body()
+            if data is None:
+                return
+            row, err = self.feed_say(who, data.get('text'), data.get('reply_to') if isinstance(data.get('reply_to'), str) else None)
+            if err:
+                return self.fail(err[0], err[1], links={'feed': link(PREFIX + '/feed')})
+            return self.reply(200, canonical({'status': 'posted', 'post': pages.feed_post(row), '_links': {
+                'self': link(self.path), 'feed': link(PREFIX + '/feed'), 'thread': link(PREFIX + '/feed?thread=' + urllib.parse.quote(row['root'] or row['uri'], safe=''))}}))
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        threads, more = self.server.feed.threads(q.get('before'), thread=q.get('thread'))
+        return self.reply(200, canonical({'status': 'feed', 'threads': [{'post': pages.feed_post(h), 'replies': [pages.feed_post(r) for r in rs]} for h, rs in threads],
+                                          '_links': {'self': link(self.path), 'post': link(PREFIX + '/feed'),
+                                                     **({'next': link(PREFIX + '/feed?before=' + urllib.parse.quote(more, safe=''))} if more else {})}}))
+
+    def feed_page(self, posting):
+        """`/feed`: the newest threads, newest activity first, and (signed in) the box: a post to the town, or with
+        `?reply=` a reply under one post. A post sent goes back to the feed, which looks again until the town answers."""
+        who = self.principal(self.cookie())
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        if posting:
+            if who is None:
+                return self.reply(303, '', 'text/plain', [('Location', '/enter')])
+            data = self.body()
+            if data is None:
+                return
+            row, err = self.feed_say(who, data.get('text'), data.get('reply_to'))
+            if err:
+                return self.html(429 if err[0] == 'rateLimited' else 400, pages.feed(self.server.feed.threads()[0], who['handle'], note=err[1],
+                                                                                         said=str(data.get('text') or ''), reply=self.server.feed.get(data.get('reply_to') or '')))
+            return self.reply(303, '', 'text/plain', [('Location', '/feed?posted=' + urllib.parse.quote(row['uri'], safe='') + '#' + pages.anchor(row['uri']))])
+        if self.server.limited(self.cookie() if who else 'page:' + self.client_ip()):
+            return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds')
+        threads, more = self.server.feed.threads(q.get('before'))
+        posted = self.server.feed.get(q.get('posted') or '')
+        waiting = posted is not None and not any(r['town'] and r['parent'] == posted['uri'] for _, rs in threads for r in rs)
+        tries = int(q['wait']) if digits(q.get('wait', '')) else 0
+        refresh = f'/feed?posted={urllib.parse.quote(posted["uri"], safe="")}&wait={tries + 1}#{pages.anchor(posted["uri"])}' if waiting and tries < 8 else None
+        self.html(200, pages.feed(threads, who and who['handle'], more=more, reply=self.server.feed.get(q.get('reply') or ''), posted=posted, refresh=refresh))
 
     def me(self, credential, who):
         rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []

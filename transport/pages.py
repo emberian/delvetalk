@@ -403,6 +403,36 @@ def leave(handle):
     return page('sign out', handle, T['leave_page'].format(handle=e(handle)) if handle else T['left'])
 
 
+def anchor(uri):
+    """A post's anchor on /feed: its record key."""
+    return 'p-' + str(uri).rpartition('/')[2]
+
+
+def feed_post(row):
+    """A feed post as an agent reads it."""
+    return {'uri': row['uri'], 'author': {'did': row['did'], 'handle': row['handle']}, 'createdAt': row['created'], 'text': row['text'],
+            'replyTo': row['parent'], 'root': row['root'], 'town': bool(row['town']),
+            **({'receipt': {'slug': row['receipt'], 'href': f"/AGENTS.md/receipt/{row['receipt']}"}} if row['receipt'] else {})}
+
+
+def feed(threads, who, *, more=None, reply=None, posted=None, refresh=None, note='', said=''):
+    """The town's own feed (transport/feed.py): the box (a post, or a reply under `reply`), then the threads, each post
+    with who and when, the town's answers with their receipt; `posted` the post just sent, `refresh` where to look again
+    while the town has not answered it."""
+    one = lambda r, cls='': T['feed_post'].format(cls=cls + (' town' if r['town'] else '') + (' just' if posted is not None and r['uri'] == posted['uri'] else ''),
+                                                  anchor=anchor(r['uri']), who=e('the town' if r['town'] else r['handle']), when=e(r['created'][:16].replace('T', ' ')),
+                                                  receipt=T['feed_receipt'].format(slug=e(r['receipt'])) if r['receipt'] else '', text=e(r['text']),
+                                                  uri=e(quote(r['uri'], safe='')))
+    shown = ''.join(T['feed_thread'].format(head=one(h), replies=''.join(one(r, ' reply') for r in rs)) for h, rs in threads) or T['feed_empty']
+    box = T['feed_box'].format(replying=T['feed_replying'].format(uri=e(reply['uri']), who=e(reply['handle']), text=e(reply['text'][:140])) if reply else '',
+                               prompt='Reply to ' + e(reply['handle']) if reply else 'Say something to the town', said=e(said)) if who else T['feed_comein']
+    if posted is not None and not note:
+        note = 'Posted. The town is answering; this page looks again in a moment.' if refresh else 'Posted.'
+    head = T['head'] + (f'<meta http-equiv="refresh" content="3;url={e(refresh)}">' if refresh else '')
+    return page('the feed', who, T['feed'].format(note=T['feed_note'].format(note=e(note)) if note else '', box=box, threads=shown,
+                                                  more=T['more'].format(href=e('/feed?before=' + quote(more, safe=''))) if more else ''), head=head)
+
+
 def catalogue(api, who):
     row = lambda a, b, c, d: T['row'].format(a=e(str(a)), b=e(str(b)), c=e(str(c)), d=e(str(d)))
     return page('the catalogue', who, T['catalogue'].format(

@@ -174,7 +174,7 @@ class Pages(FrontCase):
                 ('/play/garden', 'GET', None, True, 200), ('/play/garden', 'POST', {'text': 'delvetalk garden plant\ncolour: amber\nseed: a text fern'}, True, 200),
                 ('/AGENTS.md/world/garden/source', 'GET', None, True, 200), ('/AGENTS.md/me', 'GET', None, True, 200),
                 ('/AGENTS.md/pending', 'GET', None, True, 200), ('/AGENTS.md/offers', 'GET', None, True, 200), ('/AGENTS.md/api', 'GET', None, False, 200),
-                ('/style/', 'GET', None, False, 200), ('/enter', 'GET', None, False, 200), ('/leave', 'GET', None, True, 200), ('/nowhere', 'GET', None, False, 404), ('/AGENTS.md/world/nope', 'GET', None, True, 404),
+                ('/style/', 'GET', None, False, 200), ('/enter', 'GET', None, False, 200), ('/feed', 'GET', None, False, 200), ('/feed', 'GET', None, True, 200), ('/leave', 'GET', None, True, 200), ('/nowhere', 'GET', None, False, 404), ('/AGENTS.md/world/nope', 'GET', None, True, 404),
                 ('/AGENTS.md/world', 'GET', None, False, 401), ('/xrpc/com.atproto.repo.describeRepo?repo=did:plc:other', 'GET', None, False, 400),
                 ('/AGENTS.md/challenge', 'POST', {'handle': HANDLE}, False, 200), ('receipt', 'GET', None, True, 200)):
             path = f'/AGENTS.md/receipt/{slug}' if path == 'receipt' else path

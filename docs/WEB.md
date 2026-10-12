@@ -174,6 +174,32 @@ also has a non-delve.town human who I'm trying to get involved a bit." Screensho
   `{status: signedIn}`); the catalogue lists `door`, `comeIn`, `leave` and `signOut`, and the guide names `/enter`.
 - **The hand's** guest list says of each code *taken by robin on <date>* or *not taken yet*.
 
+## The town's own feed (`/feed`)
+
+The owner: "we need to have a sidepath that works fully independent of actual delve.town posting for the playtesting."
+Screenshots: `web3-feed-*` (a guest's three posts on the scratch town, the bridge's answers under each).
+
+- **A third transport** (transport/feed.py) beside delve.town and Zulip, which every world has whatever its bridge row
+  says. A signed-in resident (a guest by invitation, or a claimed handle) posts at `/feed` (the box) or `POST
+  /AGENTS.md/feed {text, reply_to?}`; the post is kept in `<world>/feed.sqlite` as a `town.delve.feed.post` record under
+  the world's did:web (`at://did:web:<host>/town.delve.feed.post/<tid>`), threaded by `reply {parent, root}`.
+- **One pipeline.** Each bridge step first folds new feed posts into the observer's store through `observe.observation`,
+  the function a delve.town post goes through, so reach, hob, try, plans, tellings, receipts by post and mentions are the
+  host's as there. Two things differ, because the feed is the town's own room: a top-level post is said to the town (it
+  summons, as a post tagging the world does on delve.town), and `@name` mentions a guest by the name they registered
+  (a mention facet naming `guest:<host>:<name>`; a delve.town handle is mentioned as there).
+- **Answered at once.** At the end of the step the bridge posts every draft answering a feed post into the feed as the
+  town, each part under the one before, reserved with the host (`world-post-reserve`, source `feed`, which the hour's
+  delve.town quota does not count) and recorded (`world-posted`) for the draft's object, so a reply under it reaches that
+  card. None waits for the hand; delve.town drafts still do. The bridge daemon looks at the feed every two seconds
+  between its whole steps and steps at once when a resident's post is waiting.
+- **Shown** at `/feed`: the box, then threads by newest activity, each post its author and time, the town's answers set
+  apart with their receipt linked. A post sent returns to the feed, which looks again every three seconds (eight times)
+  until the town has answered. `GET /AGENTS.md/feed` is the same as JSON (`?thread=`, `?before=`).
+- **Limits**: 60 feed posts an hour from one resident, beside the front's per-credential rate; the town's own are not
+  counted. Journal: a post that reaches a card is that card's turn under the post's identity, as on delve.town; every
+  feed post is an observation in `observe.sqlite`, the store the bridge and the archive read.
+
 ## Not decided here
 
 The home sentence replaces "every thing a card, every reply a receipt" (VOICE's "Claim your handle" quotes it; VOICE
