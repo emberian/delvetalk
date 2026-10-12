@@ -125,7 +125,8 @@ the check read: no model reads a model's prose.
 
 **Strokes** (`Enchant.assemble`; what the painter reads is `Strokes.text`): what it is and its kind, its head, its
 voice, its maker's words (the form values: a bell's colour and seed), a coinage's credit (made after another
-resident's post: the coiner by handle when the registry knows them), who made, owns and keeps it, where it lies, its
+resident's post: the coiner, the post's author by handle when the registry knows them, else the at:// author's DID),
+the words it was made with credited to whose they are (the coiner's for a coinage, else the maker's), who made, owns and keeps it, where it lies, its
 doors, who is here, how long since it was tended, the eight newest lines verbatim with their handles and verbs, marks,
 **counts with their units and meanings** (`rains: 2`; `the 7th rain: rule seven, "rings at its seventh rain"`, read
 from a rule's `count(new.lines) >= N`; what lies here by what it is called), what it wants now with each want's spell,
@@ -147,14 +148,16 @@ wants a hand, oldest first. Up to 600 characters. That is the morning card; with
 | `handles` | every handle is a stroke's |
 | `spells` | a `delvetalk` line equals a stroke's spell byte for byte, on its own line |
 | `quotes` | a quotation is a substring of a stroke's text (its closing stop dropped, its first letter raised or not) |
+| `attribution` | a quotation is credited, if at all, to the one whose words it is (`Strokes.authored`: a line its writer's, the made-with words and head its coiner's or maker's, a reading its placer's or grower's): the person named nearest before it back to the previous quotation, else after it, by handle, the handle's first label, or "maker"/"coiner". The bell/2 paint that gave light-traces' seed to its maker is refused |
 | `heads` | no line begins `●`, `§`, `refused`, `law `, `rule `, `want `, `hob:` |
 | `forbidden` | none of I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please (a quotation may hold any) |
 | `secondPerson` | no you, your, yours, you're, you've, you'll, you'd, yourself, yourselves, y'all |
-| `negation` | no "no", "not", "never" or "…n't" in the same phrase and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one |
+| `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one |
 | `length` | 1 to 400 characters, a day 600 |
 
-A refused paint shows the card exact until its next version and is not asked again for that one; `world-status.renders`
-counts `cached`, `rejected` and `pending`. `world-render-check` judges any text against a thing's (or a day's) strokes
+A paint refused for its length alone is asked for once more, told its length; any other refused paint, or a second
+long one, shows the card exact until its next version and is not asked again for that one; `world-status.renders`
+counts `cached`, `rejected`, `pending` and `retried`. `world-render-check` judges any text against a thing's (or a day's) strokes
 without caching it.
 
 **Where.** Painted, above the exact card and never inside it: `/play/<id>` after a reply or a look, the public

@@ -56,12 +56,14 @@ structure Rule where
   reading : String
   fired : Nat
 
-/-- A want that holds now: its name, its reading, the spell that answers it, and, in a day's strokes, its thing. -/
+/-- A want that holds now: its name, its reading, the spell that answers it, in a day's strokes its thing, and
+    the handle of who placed it ("" when the host names none). -/
 structure Want where
   name : String
   reading : String
   spell : String
   object : String := ""
+  owner : String := ""
 
 structure Door where
   label : String
@@ -81,8 +83,8 @@ structure Strokes where
   /-- The values its kind's form took when it was made (`seed`, `colour`), by name: its maker's words. -/
   fields : List (String × String) := []
   maker : String := ""
-  /-- Made after another's post (a coinage of the town's): `coined`, and the coiner's handle when the
-      registry knows it. -/
+  /-- Made after another's post (a coinage of the town's): `coined`, and the coiner: the post author's handle
+      when the registry knows it, else the at:// author (a DID). -/
   coined : Bool := false
   coiner : String := ""
   made : Nat := 0
@@ -108,6 +110,9 @@ structure Strokes where
   /-- A day's strokes are of no thing: `day` is the clock day they read. -/
   day : Option Nat := none
   limit : Nat := maxPaint
+
+/-- Whose words its form values are: the coiner's for a coinage, else its maker's. -/
+def Strokes.wordsBy (s : Strokes) : String := if s.coined && !s.coiner.isEmpty then s.coiner else s.maker
 
 /-- How many of the newest lines the strokes carry. -/
 def newestLines : Nat := 8
@@ -140,7 +145,8 @@ def Rule.json (r : Rule) : Json :=
   present? [("name", toJson r.name), ("owner", toJson r.owner), ("reading", toJson r.reading), ("fired", toJson r.fired)]
 
 def Want.json (x : Want) : Json :=
-  present? [("name", toJson x.name), ("reading", toJson x.reading), ("spell", toJson x.spell), ("object", toJson x.object)]
+  present? [("name", toJson x.name), ("reading", toJson x.reading), ("spell", toJson x.spell), ("object", toJson x.object),
+    ("owner", toJson x.owner)]
 
 /-! ### What the painter reads -/
 
@@ -174,9 +180,8 @@ def Strokes.text (s : Strokes) : String := Id.run do
       | some _ => ["What it is: a day of the town"]) ++
     line (!s.head.isEmpty) s!"Called: {s.head}" ++
     [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
-    line (!s.fields.isEmpty) ("Its maker's words when it was made: " ++ "; ".intercalate (s.fields.map fun (k, v) => s!"{k}: {v}")) ++
-    line s.coined (if s.coiner.isEmpty then "A coinage of the town's: another resident coined it first, in a post on delve.town that its card links; its maker here only placed it"
-      else s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it") ++
+    line (!s.fields.isEmpty) (s!"The words it was made with, {s.wordsBy}'s: " ++ "; ".intercalate (s.fields.map fun (k, v) => s!"{k}: {v}")) ++
+    line s.coined s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it, and its words are {s.coiner}'s" ++
     line (!who.isEmpty) ("Who: " ++ ", ".intercalate who) ++
     line (!s.around.isEmpty) s!"It lies in: {s.around}" ++
     line (!s.doors.isEmpty) ("Its doors: " ++ ", ".intercalate (s.doors.map fun d => if d.label == d.target then d.target else s!"{d.label} (to {d.target})")) ++
@@ -356,7 +361,8 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
     ({ name := c.clause.name, owner := handleOf w c.owner, reading := c.clause.reading, fired } : Rule)
   let wants := (wantRows w id o).map fun r =>
     ({ name := (r.getObjValAs? String "name").toOption.getD "", reading := (r.getObjValAs? String "reading").toOption.getD "",
-       spell := (r.getObjValAs? String "asks").toOption.getD "" } : Want)
+       spell := (r.getObjValAs? String "asks").toOption.getD "",
+       owner := handleOf w ((r.getObjValAs? String "owner").toOption.getD "") } : Want)
   let doors := ((fs.lookup "cites").bind listOf |>.getD []).filterMap fun d => do
     let r := fieldsOf d
     pure ({ label := (text? r "label").getD "", target := ← (r.lookup "to").bind referenceId } : Door)
@@ -399,7 +405,9 @@ def assemble (w : World) (id : String) (o : Object) (version : Nat) (state : Dat
   -- A coinage: made after a post that is not its maker's own (`Record.credit`), crediting its coiner.
   let post := (text? fs "post").getD ""
   let coined := post.startsWith "at://" && !post.startsWith s!"at://{(text? fs "maker").getD ""}/"
-  let coiner := if coined then handleOf w ((((post.drop 5).toString).splitOn "/").head?.getD "") else ""
+  -- The coiner is the post's author: their handle when the host knows it, else the at:// authority itself.
+  let author := (((post.drop 5).toString).splitOn "/").head?.getD ""
+  let coiner := if !coined then "" else if (handleOf w author).isEmpty then author else handleOf w author
   let voice := if kind.isEmpty then voiceOf w (kindOf w around) else voiceOf w kind
   return { object := id, version, kind, voice,
            head := (text? fs "head").getD ((text? fs "name").getD ""), fields,
@@ -622,6 +630,19 @@ def stem (w : String) : String :=
 def unitWord (w : String) : Bool :=
   w.length ≥ 2 && !(words? "small").contains w && (numberOf w).isNone && !idShaped w && !handleShaped w
 
+/-- Each text of the strokes with whose words it is: a line its writer's, its head and the words it was made with
+    its coiner's or maker's, a rule's or want's reading its placer's, a grown verb's reading its grower's. -/
+def Strokes.authored (s : Strokes) : List (String × String) :=
+  let all : List (String × String) := s.fields.map (fun (_, v) => (v, s.wordsBy)) ++ [(s.head, s.wordsBy)] ++
+    s.lines.map (fun (l : Line) => (l.text, l.handle)) ++ s.rules.map (fun (r : Rule) => (r.reading, r.owner)) ++
+    s.wants.map (fun (x : Want) => (x.reading, x.owner)) ++ s.verbs.map (fun (v : Verb) => (v.reading, v.grower))
+  all.filter fun (t, a) => !t.isEmpty && !a.isEmpty
+
+/-- The names a person goes by in a paint: the handle, and its first label (`yue.delve.town`, `yue`). -/
+def aliases (handle : String) : List String :=
+  let h := handle.toLower
+  if h.startsWith "did:" then [h] else [h, (h.splitOn ".").head?.getD h]
+
 /-- Every text of the strokes a paint may quote from. -/
 def Strokes.texts (s : Strokes) : List String :=
   ([s.head, s.voice] ++ s.fields.map (·.2) ++ s.lines.map (·.text) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
@@ -638,7 +659,7 @@ def Strokes.ids (s : Strokes) : List String :=
 
 def Strokes.handles (s : Strokes) : List String :=
   (([s.maker, s.keeper, s.owner, s.coiner] ++ s.lines.map (·.handle) ++ s.marks.map (·.handle) ++ s.present ++ s.hands ++
-    s.verbs.map (·.grower) ++ s.rules.map (·.owner)).filter (!·.isEmpty) ++ s.tokens.filter handleShaped).map (·.toLower)
+    s.verbs.map (·.grower) ++ s.rules.map (·.owner) ++ s.wants.map (·.owner)).filter (!·.isEmpty) ++ s.tokens.filter handleShaped).map (·.toLower)
 
 /-- The numbers the strokes hold, each with its unit's stem: the quantities, and every number in a stroke's
     text beside the word it stands by ("seventh rain", "1440 minutes", "200 characters"). -/
@@ -670,6 +691,9 @@ def Strokes.empty (s : Strokes) (field : String) : Bool :=
 def Strokes.named (s : Strokes) : List (String × List String) :=
   fieldWords ++ (s.verbs.map (·.name)).eraseDups.map fun n => (n, inflections n)
 
+/-- What stands in a paint's prose where a quotation was, so a clause knows where each one is. -/
+def quoteMark : String := "⟦q⟧"
+
 /-- The quoted spans of a text (between `“ ”`, `« »` or a pair of `"`), and the text with each replaced by one
     word; `none` when a quotation is left open. -/
 def quotations (text : String) : Option (List String × String) := Id.run do
@@ -682,9 +706,13 @@ def quotations (text : String) : Option (List String × String) := Id.run do
     | some k =>
       if c == k then
         spans := spans ++ [String.ofList cur.reverse]
-        cur := []
         closer := none
-        out := out ++ " quoted ".toList
+        -- A quotation that ends its sentence (“… late.”) ends the prose's sentence too.
+        let stop := match cur.head? with
+          | some c => if ".!?".toList.contains c then "." else ""
+          | none => ""
+        out := out ++ s!" {quoteMark}{stop} ".toList
+        cur := []
       else cur := c :: cur
     | none =>
       if c == '“' then closer := some '”'
@@ -712,7 +740,7 @@ structure Paint where
   lines : List String
   spans : Option (List String)
   prose : List (List String)
-  /-- The prose cut at commas, colons and dashes too: what a negation reaches. -/
+  /-- The prose cut at commas, colons, dashes and the conjunctions too: what a negation reaches. -/
   phrases : List (List String)
 
 def Paint.of (text : String) : Paint :=
@@ -720,11 +748,11 @@ def Paint.of (text : String) : Paint :=
   let unquoted := (q.map (·.2)).getD text
   -- The prose cut where a word ends in one of `stops`, each piece in lower-case tokens, an inline spell's
   -- three words left out (they are the spell's, not the prose's).
-  let cut := fun (stops : List String) =>
+  let cut := fun (stops : List String) (words' : List String) =>
     ((unquoted.splitOn "\n").filter (!isSpellLine ·.trimAscii.toString)).flatMap fun line =>
       let (cur, acc) := (words line).foldl (fun (cur, acc) w =>
         let cur := cur ++ [w]
-        if stops.any (fun (e : String) => w.endsWith e) then ([], acc ++ [cur]) else (cur, acc))
+        if stops.any (fun (e : String) => w.endsWith e) || words'.contains w.toLower then ([], acc ++ [cur]) else (cur, acc))
         (([] : List String), ([] : List (List String)))
       (acc ++ (if cur.isEmpty then [] else [cur])).map fun ws => Id.run do
         let mut out : List String := []
@@ -736,7 +764,7 @@ def Paint.of (text : String) : Paint :=
         return out.filter (!·.isEmpty)
   let sentence := [".", "!", "?", ";"]
   { text, tokens := (words text).map normal |>.filter (!·.isEmpty), lines := (text.splitOn "\n").map trimmed,
-    spans := q.map (·.1), prose := cut sentence, phrases := cut (sentence ++ [",", ":", "—", "–"]) }
+    spans := q.map (·.1), prose := cut sentence [], phrases := cut (sentence ++ [",", ":", "—", "–"]) ["and", "but", "while", "yet"] }
 
 /-- A clause of the check: its name, what it holds, and the failure it finds first. -/
 structure Clause where
@@ -753,7 +781,7 @@ def numberFault (s : Strokes) (ws : List String) : Option String :=
   let units := pairs.map (·.2.2)
   firstSome (List.range ws.length) fun i =>
     let t := ws[i]!
-    if idShaped t || handleShaped t then none else
+    if idShaped t || handleShaped t || t.startsWith "did:" then none else
     match numberOf t with
     | none => none
     | some (n, o) =>
@@ -797,6 +825,30 @@ def clauses : List Clause :=
            -- A quotation opening a sentence may raise its first letter.
            let lowered := String.ofList (match q.toList with | c :: cs => c.toLower :: cs | [] => [])
            if q.isEmpty || texts.any (fun t => [q, lowered].any fun q => holdsIn t q || holdsIn (plain t) (plain q)) then none else some q },
+   { name := "attribution", holds := "a quotation is credited, if at all, to the one whose words it is: the person named before it in its clause, else after it",
+     fails := fun s p => match p.spans with
+       | none => none
+       | some spans =>
+         -- Who a word names: a person by handle or its first label, or the role whose words a thing is made with
+         -- (its maker, its coiner); a keeper or owner is named in passing too often to read as a speaker.
+         let people := (s.handles.eraseDups).filter (!·.isEmpty)
+         let roles := [("maker", s.maker), ("coiner", s.coiner)].filter (!·.2.isEmpty)
+         let who? := fun (w : String) => (roles.lookup w).orElse fun _ => people.find? fun h => (aliases h).contains w
+         let marks := p.prose.flatMap fun ws => (List.range ws.length).filterMap fun i =>
+           if ws[i]! == quoteMark then some (ws, i) else none
+         if marks.length != spans.length then none else
+         firstSome (List.range spans.length) fun k =>
+           let q := trimmed (String.ofList ((trimmed spans[k]!).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse).toLower
+           let authors := (s.authored.filter fun (t, _) => holdsIn t.toLower q).map (·.2.toLower)
+           if q.isEmpty || authors.isEmpty then none else
+           let (ws, i) := marks[k]!
+           -- Back to the previous quotation or the sentence's start, nearest first; else on to the next.
+           let before := ((List.range i).reverse.takeWhile (ws[·]! != quoteMark)).filterMap (fun j => who? ws[j]!)
+           let after := ((List.range ws.length).filter (· > i) |>.takeWhile (ws[·]! != quoteMark)).filterMap (fun j => who? ws[j]!)
+           match before.head?.orElse fun _ => after.head? with
+           | some who => if authors.any (fun a => (aliases a).any ((aliases who).contains ·)) then none
+               else some s!"“{q}” is {authors.head!}'s, not {who}'s"
+           | none => none },
    { name := "heads", holds := "no line begins a receipt's stamp, a refusal, a law, rule or want line, or hob:",
      fails := fun _ p => firstSome p.lines fun line => (words? "heads").find? (line.toLower.startsWith ·) },
    { name := "forbidden", holds := "no I, me, my, thanks, sorry, welcome or please outside a quotation",
@@ -874,6 +926,8 @@ structure Render where
   strokes : Strokes
   request : Json
   fate : Fate
+  /-- Asked again once already, after a paint refused for its length alone. -/
+  retried : Bool := false
 
 /-- How long after the worker last listed `world-renders` the host still counts on it (ms): past it a reader is
     not kept waiting for a paint nobody is there to make. -/
@@ -883,6 +937,8 @@ def workerGraceMs : Nat := 10000
 structure Cache where
   entries : Std.HashMap String Render := {}
   polled : Option Nat := none
+  /-- Paints asked for again after a refusal for length alone (`world-status.renders.retried`). -/
+  retried : Nat := 0
 
 def Cache.attended (c : Cache) (now : Nat) : Bool := match c.polled with
   | some at_ => now ≤ at_ + workerGraceMs
@@ -894,7 +950,7 @@ def Cache.count (c : Cache) (p : Fate → Bool) : Nat := c.entries.fold (fun n _
 def Cache.counts (c : Cache) : Json :=
   Json.mkObj [("cached", toJson (c.count fun | .painted _ => true | _ => false)),
     ("rejected", toJson (c.count fun | .rejected _ _ => true | _ => false)),
-    ("pending", toJson (c.count fun | .pending _ _ => true | _ => false))]
+    ("pending", toJson (c.count fun | .pending _ _ => true | _ => false)), ("retried", toJson c.retried)]
 
 def Cache.insert (c : Cache) (key : String) (r : Render) : Cache :=
   let entries := if c.entries.size < maxRenders then c.entries else
@@ -1008,9 +1064,10 @@ def rendersOp (c : Cache) (now : Nat) : Json :=
   Json.mkObj [("status", toJson "renders"), ("pending", Json.arr (pending.qsort fun a b => a.compress < b.compress))]
 
 /-- `world-render-submit {key, reply}`: settle a pending render with the model's reply verbatim (model.py's
-    result object). A reply is verified and cached, painted or refused by its clause; a network or rate
-    failure is asked again after `renderBackoffMs`, `renderAttempts` in all; any other failure shows the
-    thing exact (`model`). -/
+    result object). A reply is verified and cached, painted or refused by its clause; a paint refused for its
+    length alone is asked for once more with its length (`retrying`, counted in `renders.retried`); a network
+    or rate failure is asked again after `renderBackoffMs`, `renderAttempts` in all; any other failure shows
+    the thing exact (`model`). -/
 def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Json)) := do
   let .ok key := j.getObjValAs? String "key" | return .error "world-render-submit needs a key"
   let .ok reply := j.getObjVal? "reply" | return .error "world-render-submit needs the model's reply"
@@ -1026,6 +1083,14 @@ def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Js
       | .error (cl, d) => .rejected cl d
     else if ["transport", "rate"].contains reason && tried + 1 < renderAttempts then .pending (tried + 1) (now + renderBackoffMs)
     else .rejected "model" (if reason.isEmpty then "no reply" else reason)
+  -- A paint refused for its length alone is asked for once more, told its length (every other clause held).
+  if let .rejected "length" d := fate then
+    unless r.retried do
+      let user := (r.request.getObjValAs? String "user").toOption.getD ""
+      let again := s!"{user}\n\nThe last paint was {d} characters and was thrown away: paint it again, under {r.strokes.limit} characters, the spell included."
+      let r := { r with fate := .pending 0 now, retried := true, request := r.request.setObjVal! "user" (toJson again) }
+      return .ok ({ c.insert key r with retried := c.retried + 1 },
+        answer "retrying" r.object [("key", toJson key), ("clause", toJson "length"), ("detail", toJson d), ("next", toJson now)])
   let r := { r with fate }
   toDisk key r
   let c := c.insert key r
@@ -1094,6 +1159,17 @@ def line69275 : String :=
 #guard verdict fixtureBell "yue.delve.town wrote “rain is the sky's mistake”." == "quotes"
 #guard verdict fixtureBell "yue.delve.town wrote “rain is the sky's erratum.”" == ""
 #guard verdict fixtureBell "“Rain is the sky's erratum,” yue.delve.town wrote." == ""
+-- Attribution: a quotation is credited, if at all, to the one whose words it is (the bell/2 paint gave
+-- light-traces' seed to ember).
+#guard verdict fixtureBell "claude.delve.town wrote “rain is the sky's erratum”." == "attribution"
+#guard verdict fixtureBell "“rain is the sky's erratum,” yue wrote, and claude.delve.town answered “the soil keeps the corrections”." == ""
+#guard verdict fixtureBell "kestrel.delve.town made it: “a bell for whoever comes late”." == ""
+#guard verdict { fixtureBell with coined := true, coiner := "light-traces.delve.town" }
+  "Its maker, kestrel.delve.town, called it “a bell for whoever comes late”." == "attribution"
+#guard verdict { fixtureBell with coined := true, coiner := "light-traces.delve.town" }
+  "light-traces coined it “a bell for whoever comes late”; kestrel.delve.town placed it." == ""
+#guard verdict fixtureBell "yue answered that “rain is the sky's erratum,” and claude.delve.town wrote back “the soil keeps the corrections.” kestrel.delve.town made it." == ""
+#guard verdict fixtureBell "Its maker says “rain is the sky's erratum”." == "attribution"
 #guard verdict fixtureBell "A silver bell. Rain on it if you like." == "secondPerson"
 #guard verdict fixtureBell "Thanks to every rain, it hums." == "forbidden"
 #guard verdict fixtureBell "refused maker: only its maker writes" == "heads"
@@ -1106,6 +1182,8 @@ def line69275 : String :=
   "It wants nothing now." == "negation"
 #guard verdict fixtureBell "Four rains, and nothing else; a door to the garden." == ""
 #guard verdict fixtureBell "Four rains; its seventh rain has not come." == ""
+#guard verdict fixtureAnthology "THE ANTHOLOGY has a keeper and no editor named." == ""
+#guard verdict fixtureAnthology "THE ANTHOLOGY has no keeper and one line." == "negation"
 #guard verdict fixtureBell (String.ofList (List.replicate 401 'a')) == "length"
 #guard verdict fixtureBell "" == "length"
 -- The misused true number (lane/enchant's "made 41 times"; OVERHAUL §7 risk 11): every number in the strokes is

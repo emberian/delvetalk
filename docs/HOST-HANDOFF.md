@@ -1808,8 +1808,11 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      and `world-render-check` with no `object` and `{day?, morning?}` (the morning card with what wants a hand; `quiet`
      for an empty day). Voices for every town kind (genesis `VOICES`); a thing of no kind speaks in its place's. Live,
      hbox, five runs of the minimal genesis's five things, the day and the morning: 7 calls a run, $0.0014 to $0.0018.
-     Open: `hand morning` posting the painted morning card (transport); a coinage's own voice and the coiner's handle
-     need a field on the thing (objects) and the coiner's arrival; Haiku runs long, length is the commonest refusal.
+     Then: the coiner is the coining post's author (handle when the registry knows the DID, else the DID); the
+     strokes credit each text (`Strokes.authored`) and the `attribution` clause refuses a quotation credited to anyone
+     else; a paint refused for length alone is asked once more with its length (`renders.retried`); the morning reads
+     `Ops.wanting`. Open: `hand morning` posting the painted morning card (transport); a coinage's own voice needs a
+     field on the thing (objects); the porch names gemini only once gemini's DID has a handle here (arrival).
 
 161. **Grown verbs, the chronicle, the world arms; Wake's host support deleted (lane/host23; OVERHAUL §5 steps
    3 and 4's host half).** No edition bump: edition 9 is not deployed, and these change what it derives.

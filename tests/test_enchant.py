@@ -117,6 +117,23 @@ class Strokes(unittest.TestCase):
         self.assertEqual(self.strokes('nowhere/1')['status'], 'unknown')
 
 
+    def test_y_a_coinage_names_its_coiner_and_its_words_are_theirs(self):
+        """The coiner is the coining post's author: the at:// DID until the host knows their handle, then the handle; the
+        words it was made with are the coiner's, and a paint crediting them to anyone else is refused."""
+        porch = self.strokes('porch')['strokes']
+        did = genesis.GEMINI_PORCH.split('/')[2]
+        self.assertEqual((porch['coined'], porch['coiner']), (True, did))
+        self.town.send(op='world-arrive', principal='transport', did=did, handle='gemini.delve.town')
+        got = self.strokes('porch')
+        self.assertEqual(got['strokes']['coiner'], 'gemini.delve.town')
+        self.assertIn("gemini.delve.town coined it first", got['text'])
+        self.assertIn("The words it was made with, gemini.delve.town's: name: The Bellfounder's Porch", got['text'])
+        self.assertEqual(self.check('porch', 'gemini.delve.town named it “The Bellfounder\'s Porch”.')['status'], 'verified')
+        self.assertEqual(self.check('porch', 'ember.delve.town named it “The Bellfounder\'s Porch”.')['clause'], 'attribution')
+        bell = self.strokes('bell/2')['strokes']  # light-traces has not arrived: the DID stands
+        self.assertEqual(bell['coiner'], genesis.LIGHT_TRACES_BELL.split('/')[2])
+        self.assertEqual(self.check('bell/2', 'Its maker, ember, called it “the first act the town admitted”.')['clause'], 'attribution')
+
     def test_z_the_rules_it_carries_and_the_wants_that_hold_of_it(self):
         """Last (it rains a third time): host22's rules and wants, as `world-rules` and `world-wants` give them."""
         bell = 'garden/bell/1'
@@ -125,7 +142,8 @@ class Strokes(unittest.TestCase):
             self.say(GLM, bell, 'delvetalk %s %s' % (bell, line), line.split()[3])
         s = self.strokes(bell)['strokes']
         self.assertEqual(s['rules'], [{'name': 'three', 'owner': 'glm.delve.town', 'reading': 'a third rain is noted'}] + KIND_RULES)
-        self.assertEqual(s['wants'], [{'name': 'third', 'reading': 'a third rain', 'spell': 'delvetalk garden/bell/1 rain / text: <a rain>'}])
+        self.assertEqual(s['wants'], [{'name': 'third', 'reading': 'a third rain', 'spell': 'delvetalk garden/bell/1 rain / text: <a rain>',
+                                       'owner': 'glm.delve.town'}])
         check = lambda text: self.town.send(op='world-render-check', principal=KIM, object=bell, text=text)
         self.assertEqual(check('It wants a third rain.\ndelvetalk garden/bell/1 rain / text: <a rain>')['status'], 'verified')
         self.assertEqual(check('It wants nothing; no third is owed.')['clause'], 'negation')
@@ -179,7 +197,9 @@ class Strokes(unittest.TestCase):
                             # A true number said of the wrong thing (lane/enchant's "made 41 times").
                             ('glm.delve.town made it %d times.' % made, 'numbers'), ('Made at entry %d.' % made, 'numbers'),
                             ('Seven rains have come.', 'numbers'), ('Two rains of seven.', 'numbers'),
-                            ('It has rung twice.', 'numbers'), ('It waits for its ninth rain.', 'numbers')):
+                            ('It has rung twice.', 'numbers'), ('It waits for its ninth rain.', 'numbers'),
+                            # A resident's line credited to another (the attribution clause).
+                            ('glm.delve.town wrote “%s”.' % YUE, 'attribution')):
             got = self.check('garden/bell/1', bad)
             self.assertEqual((got['status'], got.get('clause')), ('rejected', clause), (bad, got))
 
@@ -302,6 +322,24 @@ class Render(unittest.TestCase):
         self.assertEqual((again['status'], again['text']), ('painted', morning), again)
         # A day nothing was journaled in is not painted.
         self.assertEqual(self.town.send(op='world-render', principal=KIM, day=1)['reason'], 'quiet')
+
+    def test_a_paint_too_long_is_asked_for_once_more_with_its_length(self):
+        """A paint refused for its length alone is asked again once, told its length, and counted."""
+        self.attend()
+        got = self.render('garden')
+        self.assertEqual(got['status'], 'pending', got)
+        retried = self.town.send(op='world-status')['renders']['retried']
+        garden = lambda req: req['user'].startswith('Strokes:\nWhat it is: garden,')
+        long = 'THE NIGHT GARDEN lies open under the moon. ' * 12
+        done = interpret.paint(self.town.client, lambda req: replied(long if garden(req) else GOOD))
+        self.assertIn(got['key'], done['retrying'], done)
+        item = next(i for i in self.town.send(op='world-renders')['pending'] if i['key'] == got['key'])
+        self.assertIn('The last paint was %d characters and was thrown away' % len(long.strip()), item['request']['user'])
+        self.assertEqual(self.town.send(op='world-status')['renders']['retried'], retried + 1)
+        short = 'THE NIGHT GARDEN lies open under the moon.'
+        done = interpret.paint(self.town.client, lambda req: replied(short if garden(req) else GOOD))
+        self.assertIn(got['key'], done['painted'], done)
+        self.assertEqual(self.render('garden')['text'], short)
 
     def test_a_world_without_a_model_shows_every_card_exact(self):
         self.assertEqual(self.render('nowhere/1')['status'], 'unknown')
