@@ -2558,7 +2558,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- proposed one, its `kind` saying which), with its argument. A migration's state is the text
     -- law's alone: the old code's law does not read the new type.
     if o.predicate then
-      let seen := (changes.filter (Law.editKind ·.kind)).foldl (fun (acc : List (String × Written)) c =>
+      -- A placing (a rule, want or verb placed, kind 4 with its verb) is judged too: its state is unchanged,
+      -- and a predicate refusing `request.kind == 4` keeps its card from strangers' rules (codex objects 4).
+      let judged := changes.filter fun c => Law.editKind c.kind || (c.kind == 4 && !c.verb.isEmpty)
+      let seen := judged.foldl (fun (acc : List (String × Written)) c =>
         let key := (Json.arr #[toJson c.caller, toJson c.kind, toJson c.method, toJson c.via, dataJson c.argument]).compress
         if acc.any (·.1 == key) then acc else acc ++ [(key, c)]) []
       for (_, c) in seen do

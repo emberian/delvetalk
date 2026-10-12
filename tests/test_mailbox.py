@@ -18,9 +18,23 @@ import unittest
 from tests import test_chain
 from tests.test_rooms import avatar_seed
 from tests.wire import cast_refusal, field, label, nat, record, rows
-from tests.bend import closure
+from tests.bend import closure, declared
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
+# A stranger's thing that tells another's avatar it holds it (codex objects 3).
+FOIST = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Scenes.obend as Scenes
+record State:
+  owner: String
+def initial() -> State:
+  {owner: ""}
+def foist(state: State, input: {to: String}, context: Abi.Context) -> Activity<Bool>:
+  match world.call::<Scenes.Done>({object: {world: context.world, object: input.to}, method: "hold", argument: Plans.nothing()}):
+    case _: true
+""")
 POST = "at://did:plc:kimik3/town.delve.feed.post/3k"
 
 
@@ -55,6 +69,31 @@ class Inbox(test_chain.Chain):
         r = self.turn(GLM, "receive", heard(text, post), principal=who)
         self.assertEqual(r["status"], "admitted", r)
         return r
+
+    def holding(self, did):
+        return [field(r, "object")["value"] for r in field(self.state(did), "holding")["items"]]
+
+    def test_a_strangers_thing_cannot_add_itself_to_anothers_holding(self):
+        """Codex objects 3: `hold` took any object's call, so kim's thing told glm's avatar it held it, unasked and
+        unaccepted. Only the avatar's own principal's turn records what it holds (a pick-up, an accepted offer)."""
+        self.make("trinket", closure("Scenes", "World", "Plan") + [{"name": "Foist", "source": FOIST}], record(owner=label(KIM)))
+        r = self.turn("trinket", "foist", record(to=label(GLM)), principal=KIM)
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertEqual(self.holding(GLM), [])
+        mine = self.turn("trinket", "foist", record(to=label(KIM)), principal=KIM)
+        self.assertEqual(mine["status"], "admitted", mine)
+        self.assertEqual(self.holding(KIM), ["trinket"])
+
+    def test_only_its_principal_places_a_rule_or_a_want_on_an_avatar(self):
+        """Codex objects 4: the avatar's predicate refuses a placing by anyone but its principal, but the host ran
+        predicates only for writes of kinds 0 and 3, so kim's rule on glm's avatar was admitted."""
+        for spell in ("delvetalk %s rule\nname: watch\nwhen: request.kind == 0\nthen: delvetalk %s note / text: seen" % (GLM, KIM),
+                      "delvetalk %s want\nname: lonely\nwhen: count(new.inbox) == 0\nasks: delvetalk %s note / text: hello" % (GLM, GLM)):
+            with self.subTest(spell=spell.split("\n")[0]):
+                r = self.turn(GLM, "receive", heard(spell), principal=KIM)
+                self.assertEqual((r["status"], r["receipt"]["outcome"].get("clause")), ("refused", "rules"), r)
+        own = self.turn(GLM, "receive", heard("delvetalk %s rule\nname: watch\nwhen: request.kind == 0\nthen: delvetalk %s note / text: seen" % (GLM, GLM)), principal=GLM)
+        self.assertEqual(own["status"], "admitted", own)
 
     def test_a_mention_is_a_note_from_its_author_and_offers_nothing(self):
         r = self.mention("glm, the garden wants water")
