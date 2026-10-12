@@ -2979,7 +2979,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           let some row := next.verbs.find? (·.name == x.name)
             | throw (refuse "unplaced" s!"{id} has no verb {x.name} that a hand grew.")
           unless mayRemove row.grower do
-            throw (refuse "notPlacer" s!"only who grew verb {x.name}, or the owner of {id}, takes it off.")
+            let rule := if row.does.isEmpty then "" else s!" and the rule {row.does} it does"
+            throw (refuse "notPlacer" s!"only who grew verb {x.name}, or the owner of {id}, takes it{rule} off.")
           next := { next with verbs := next.verbs.filter (·.name != x.name) }
         else
           let bad := fun (reason : String) => ({ cls := "programRefused", clause := some "verb", object := some id, reason := some reason } : Refusal)

@@ -53,7 +53,7 @@ Written by spell, or by prose to hob (a `rule` spell is a spell hob may answer);
 
 ### (b) Verbs with bodies
 
-*A grown verb's `does` may be a Bend method body.* The resident types the verb and a few lines:
+*A verb's body is a Bend method.* The resident types the verb and a few lines:
 
 ```
 delvetalk bell/2 grow / name: water / takes: text / body: <<BEND
@@ -65,7 +65,7 @@ The workshop generates the layer around it in Bend, as `Kind.layerSource` alread
 
 Computes anything Bend does within the tariff, over `state`, `input`, `context` and world calls (each judged by its target's law); shared as a layer (§4). LambdaMOO verbs were this (code on an object, run with its owner's permissions, under a per-task tick quota), and its `$`-utilities on `#0` (`$string_utils`, `$list_utils`) made short verbs possible, as RECORD's `inscribe`, `mark` and `field` do here. LSL put event-handler scripts in each prim and sold them with next-owner permissions (copy, modify, transfer); Roblox runs Luau sandboxed under an execution timeout. Each made authorship a short text on a thing plus a library.
 
-**Decision:** yes, as no new mechanism: a bodied verb is a one-method layer the workshop generates, checks and holds; `grow` without `body` stays a gesture with a rule for consequence.
+**Decision:** a bodied verb is a one-method layer the workshop generates, checks and holds; `grow` without `body` is a gesture writing a line and tending. Both run synchronously under the user's name and commit or refuse with that turn. A gesture's `does` names a separate rule reaction, after the commit under its owner. Laying a body replaces the gesture of that name and its `does` rule in the same turn, by `ungrow`'s judgment; a held body replaces nothing until adopted.
 
 ### (c) Workshop drafts that work
 
@@ -99,7 +99,7 @@ A spell already is a typed block (`?` prints it), as Scratch's are, and hob is t
 
 **The astra world review's three mediums (2026-10-12, world.md 12, 13, 14), decided.**
 
-- *A grown verb and a bodied verb* (12). One contract: a verb is a method a hand runs under their own name, synchronous, its writes committed or refused with the turn; "admitted" means its own write stood (a gesture's line, a body's write). What follows from it elsewhere is a reaction, never the verb: rules, after the commit, under their own owners (FOUNDATION §4 Tenure), each reported on the reply as fired, queued or not fired, never as the verb's success. Upgrading a gesture to a body replaces it: `grow / body:` on a name grown as a gesture takes the gesture's row and the rule it `does` off in the same turn that lays the body, or is refused `nameTaken` naming them; it never leaves both. Owner: objects (the workshop's `growBody`), done when a gesture `water` with a `does` rule, re-grown with a body, has one consequence.
+- *A grown verb and a bodied verb* (12; HOST-HANDOFF 5.218). One contract: a verb is a method a hand runs under their own name, synchronous, its writes committed or refused with the turn; "admitted" means its own write stood (a gesture's line, a body's write). What follows from it elsewhere is a reaction, never the verb: rules, after the commit, under their own owners (FOUNDATION §4 Tenure), each reported on the reply as fired, queued or not fired, never as the verb's success. The workshop's `layingLayer`, shared by `growBody` and held-layer adoption (`laidOn`), checks `ungrow` for each form it lays; a hand who cannot take the gesture off is refused `nameTaken`, naming the gesture and its `does` rule. An admitted `extend` then stages those removals with the body. A held body keeps the gesture and rule standing until the owner's adoption lays it and removes them in one turn. `test_authoring` exercises immediate replacement, a stranger's refusal and replacement at adoption; each use after replacement has one consequence.
 - *A kind as the unit of composition* (13). A kind is the component: its stack (every ancestor's body, bottom first), its text (cited by `under`) and its identity (`madeFrom`). Making and `become / kind:` compose alike: `become` lays the kind's whole stack above what the thing runs, skipping layers already laid from the same kind and pin, and adds `law kind: under "<kind>"` to the thing's own text, both in one turn judged by the thing's law; a second `become` of the same kind is an upgrade of that component (its layers relaid), never a second stack. Owner: objects (KIND, the host's `become`), done when a one-verb kind with a law line behaves the same made and become, and becoming it twice runs one copy.
 - *"Rules on a kind"* (14). Two targets, said: a kind's `law` text is the clause collection for its things (each acting as the thing, §4 above), and a line placed on `kind/x` is on the kind object itself, as on any thing. `rules` on a kind lists both under their target ("for its things", "on the kind"), and `rule … / for: things` on a kind is its owner's amendment of that text, the same spell. Owner: host (`rulesText`, `placementsOf`), done when a resident who places `for: things` on kind/bell sees every bell carry it and `rules` names the target.
 
@@ -133,7 +133,7 @@ A spell already is a typed block (`?` prints it), as Scratch's are, and hob is t
 1. Grown verbs offered: RECORD's `act` public (not `~act`) or `offeredTo` judging a grown verb apart from the helper flag (objects and host lanes choose). A defect fix, first.
 2. `Workshop`: `draft / over:` and the header generator, `actions()` included (Bend, sharing `Kind.layerSource`); `check / over:`; `try`; `draft / from:`; the no-`receive` warning; `make` asking for a layer.
 3. `Kind`: `of:` resolves a kind id; `packageOf` becomes the ancestor's package; the instance's layer is the ancestors' bodies then its own (one `extend` per layer, or one generated layer concatenating them); `body` checked at `kinds make`.
-4. `grow / body:`: the placing plus a workshop held layer, adopted in the same turn on the grower's own thing.
+4. `grow / body:`: a workshop layer, laid in the same turn on the grower's own thing or held for its owner; laying it replaces each gesture its forms name and its `does` rule, through `ungrow`.
 5. RECORD's `credit` prints lineage.
 
 **The smallest buildable version this week**, in order, each a commit with its control (the probe in §1 is the harness: fresh genesis on hbox, residents' spells by `receive`):

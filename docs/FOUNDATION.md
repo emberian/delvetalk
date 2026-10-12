@@ -809,9 +809,15 @@ deleting a closed sum or a convention:
 - **Verbs are data.** A grown verb is a row `{name, by, at, reading, takes, does}` on the thing (16 at most; `ungrow`
   makes room); using it is `act {verb, text}`, one line tagged with the verb and the thing tended, and the host's
   grammar reads it as it reads a declared form, so its spell is exact, free and model-less the moment it exists.
-  Its consequence, when it has one, is a rule naming `request.verb`. A kind's declared methods are the table's
+  A reaction, when it has one, is a rule naming `request.verb`. A kind's declared methods are the table's
   first rows. Words that run no spell reach hob (§5, §6); `grow:` is for a verb the words mean that the card lacks. A
-  gesture is one line and a tend, nothing more until a rule gives it a consequence. Hob decides which verb the words mean and
+  verb runs synchronously under the user's name, its writes committed or refused with its turn: a gesture's line
+  and tend, or a body's writes. Rules react after that commit under their own owners, reported as fired, queued or
+  not fired independently of the verb's admission. `grow / body:` lays a workshop layer (`Workshop.growBody`,
+  `layingLayer`); laying removes each gesture its forms replace and the rule it `does` through `ungrow` in that
+  same turn. `ungrow {check: true}` judges the removal without staging it: a grower who cannot remove the gesture
+  is refused `nameTaken`, naming it and its rule. A body held for the owner leaves both standing until `workshop
+  adopt` lays it (`laidOn`), which removes them under the adopter. Hob decides which verb the words mean and
   whether none does, never admission, a fact, a number, a consequence, or the card (reach, §5).
 - **A scene is the same grammar.** A room's spween scene (world/lib/Spween.obend, Scenes.obend) has an inside, the
   room's own variables, and an outside braided into the world: a choice's guard may be any condition the law reads
@@ -918,7 +924,7 @@ each handoff keeps the detail, this table the order across lanes:
 | the regenerated `/examples` (`docs/AGENTS-EXAMPLES.md`, still env, wake, the garden and eight doors) | transport | `deploy/capture-examples.py` re-run on a genesis of this head |
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
-| the astra world review's mediums 12, 13, 14, as decided in AUTHORING §4 | objects, host | each "done when" there |
+| the astra world review's mediums 13, 14, as decided in AUTHORING §4 | objects, host | each "done when" there |
 | the astra world review's 11 (archival and reclamation of objects, grants and journal), 15 (a behaviour revision in roots, offers and receipts), 16 (wants as tasks: eligible actors, blocked and cancelled; discovery that rotates past the permanently blocked), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
 | rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder); a placed line's verbs (`grow`) bounded per hand as rules are (world.md 6's remainder) | kernel, host | a level rule fires at its crossing alone unless written as a level; a stranger holds at most `placedPerHand` verbs |
 

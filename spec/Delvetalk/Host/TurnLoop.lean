@@ -1354,8 +1354,8 @@ def verbsText (w : World) (id : String) (o : Object) (shown : String) (declared 
     s!"Declared by its kind: {", ".intercalate (declared.map (·.action))}.\n"
   let grown := o.verbs.map fun v =>
     let takes := if v.takes.isEmpty then "" else " / text: <a line>"
-    let does := if v.does.isEmpty then "a line and a tend" else s!"rule {v.does}"
-    s!"» {v.name} (grown by {shownName w v.grower}, entry {v.height}) {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading v.reading}; does {does}\n  delvetalk {shown} {v.name}{takes}\n"
+    let reaction := if v.does.isEmpty then "" else s!"; reaction: rule {v.does}"
+    s!"» {v.name} (grown by {shownName w v.grower}, entry {v.height}) {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading v.reading}; does a line and a tend{reaction}\n  delvetalk {shown} {v.name}{takes}\n"
   let room := if o.offers actMethod then
       s!"\nTo grow one: delvetalk {shown} grow / name: <one word> / reading: <what it does>\n" else
       s!"\n{shown} has no act, so no verb grows on it.\n"
@@ -1629,8 +1629,8 @@ def placingSpells : List String := ["rule", "want", "unrule", "unwant", "grow", 
 /-- Stage placements on `id` (a `call` of a placing spell on a card that does not declare it; the world's
     `rule`, `want`, `grow` and their removals): judged now by `id`'s law as the commit will judge them, with
     those the turn staged before, so the caller hears a refusal by its clause and reading (`some`); they
-    take effect with the commit, under the turn's principal. -/
-def stagePlacements (id : String) (xs : List Placement) : M (Option (String × String)) := do
+    take effect with the commit, under the turn's principal. `check` judges without staging. -/
+def stagePlacements (id : String) (xs : List Placement) (check : Bool := false) : M (Option (String × String)) := do
   let s ← get
   let some o := s.world.objects[id]? | return some ("unknownObject", s!"There is no card {id}.")
   recordRoot id o.version
@@ -1639,7 +1639,8 @@ def stagePlacements (id : String) (xs : List Placement) : M (Option (String × S
   match judge s.world (s.world.height + 1) p with
   | .error r => return some (r.clause.getD r.cls, (r.reading <|> r.voiced.reason).getD "")
   | .ok _ =>
-    modify fun s => { s with placements := s.placements ++ xs }
+    unless check do
+      modify fun s => { s with placements := s.placements ++ xs }
     return none
 
 /-- A record's text fields by name, as a placing call's argument gives them. -/
@@ -2104,9 +2105,12 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let action := match plan with | .variant a _ => a | _ => ""
     let some id := (f.lookup "object").bind referenceId | refusedReading bounds responseType "foreignWorld" "a placing names an object of this world."
     let some o := (← get).world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
+    let check := match f.lookup "check" with
+      | some (.boolean b) => b
+      | _ => false
     match placementsOf o id action (labelsOf (.record f)) (labelsOf (.record f)) with
     | .error (clause, reason) => refusedReading bounds responseType clause reason
-    | .ok xs => match ← stagePlacements id xs with
+    | .ok xs => match ← stagePlacements id xs (action == "ungrow" && check) with
       | some (clause, reading) => refusedReading bounds responseType clause reading
       | none => respond bounds responseType "placed" [emptyRecord]
   -- `act {object, verb, text}`: a use of a grown verb, as its spell is (the target's `act`, `request.verb` the verb).

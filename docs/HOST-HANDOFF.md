@@ -2512,6 +2512,32 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    and how many things lie in each place; `pathTo`, the shortest way from the square. The reply carries `ways` and
    `root` for a drawing; `/map` draws them (`pages.door_map`). Tests: `test_surfaces.Map`, `test_surfaces.Web`.
 
+218. **A body replaces its gesture and its rule in one turn (lane/cx-world; astra 2026-10-12 world.md 12).**
+   `Workshop.growBody` laid a method over a gesture without removing its `Object.verbs` row or the rule it `does`,
+   so the method and the old rule both had a consequence. `Workshop.layingLayer`, shared by `bodyLaying` and held
+   layer adoption (`laidOn`), reads the layer's `Forms.formNames`, checks each through `world.ungrow {check: true}`
+   and, after `world.extend` admits, stages the same `ungrow` removals (`replacing`). `TurnLoop.stagePlacements`
+   with `check` uses the same `Ops.judge` without staging: the gesture's grower, the thing's owner or the opener
+   may remove it and its rule. `viewField` can read the state's owner, but the verb's grower and the attached
+   rule's owner are host rows (`Object.verbs`, `Object.rules`), not State fields; checking through `judge` also
+   preserves the opener's authority and the judgment of placements already staged in the turn. The world arm
+   reads `check` by matching `.boolean`, as `inspect` reads `source`; the workshop's `replacing` is the only
+   `world.ungrow` call site, passing that flag for both phases. `replacing` returns `World.Placed`, with a removal
+   refused as `nameTaken`, naming the gesture and its rule (`judge`'s `notPlacer` reading); `layingLayer` matches
+   its `placed` and `refused` arms and ends a refused turn through `refuse(Card.refusalLine(...))`, so the
+   failure's clause and reading are formatted by the same function as `Card.refusing`. An `extend` refused by
+   the thing's law holds the body with neither removal staged; the owner's adoption checks again and commits
+   both removals with the layer and the held row's
+   retraction. A verb's own writes stand or refuse synchronously under its user's name; any rule reaction follows
+   the commit under its own owner. `TurnLoop.verbsText` names the gesture's effect (a line and tend) and its rule
+   reaction separately. Journal state derivation is unchanged: the existing `reprograms` and
+   `placements` record both effects, and replay applies their existing judgment. Tests written before the change:
+   `test_authoring.test_a_gesture_and_its_does_rule_are_replaced_by_one_bodied_verb` (one water line at the 280-character
+   input limit, no rule), `test_a_strangers_body_cannot_replace_a_gesture_they_cannot_take_off` (`nameTaken`, no
+   target or workshop change, the gesture's reaction still works), and
+   `test_a_held_body_replaces_the_gesture_only_when_its_owner_adopts_it` (gesture and reaction live before adoption,
+   one consequence after).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

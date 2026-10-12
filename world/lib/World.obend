@@ -117,6 +117,7 @@ sum Since:
   denied: {}
 # A rule, a want or a grown verb placed on a thing or taken off it (OVERHAUL §2): judged by the
 # thing's law as a request of kind `rule`, the verb naming which (`rule`, `want`, `grow`).
+# `ungrow` with `check: true` judges the same removal without staging it for the commit.
 sum Placed:
   placed: {}
   refused: {clause: String, reading: String}
@@ -234,7 +235,7 @@ protocol world:
   want({object: Plans.Reference, name: String, when: String, asks: String}) -> Placed
   unwant({object: Plans.Reference, name: String}) -> Placed
   grow({object: Plans.Reference, name: String, reading: String, takes: String, does: String}) -> Placed
-  ungrow({object: Plans.Reference, name: String}) -> Placed
+  ungrow({object: Plans.Reference, name: String, check: Bool}) -> Placed
   act<R>({object: Plans.Reference, verb: String, text: String}) -> Returned<R>
   chronicle({day: Nat}) -> Chronicled
   wanting({after: Nat, limit: Nat}) -> Wanting

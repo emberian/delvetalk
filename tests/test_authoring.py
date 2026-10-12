@@ -329,6 +329,101 @@ class Authoring(unittest.TestCase):
         self.assertEqual(opened["result"], {"tag": "boolean", "value": True}, opened)
 
 
+    def gesture_pot(self, name, grower):
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: %s / of: record / head: a pot" % name)
+        card = name + "/1"
+        self.admitted(YUE, "kind/" + name, "delvetalk kind/%s make" % name)
+        self.admitted(grower, card, "delvetalk %s grow / name: water / reading: water the pot / takes: text\n"
+                      "does: delvetalk %s write / text: watered by the rule" % (card, card))
+        return card
+
+    def body_water(self, who, card):
+        return self.say(who, card, "delvetalk %s grow / name: water / takes: text\nbody: <<BEND\n"
+                        "Super.inscribe(state, \"water\", input.text, context)\nBEND" % card)
+
+    def pot_view(self, card):
+        return self.town.send(op="world-view", principal=YUE, object=card)
+
+    def pot_lines(self, card):
+        from tests.wire import field, rows
+        return [(field(r, "verb")["value"], field(r, "text")["value"], field(r, "author")["value"])
+                for r in rows(field(self.pot_view(card)["state"], "lines"))]
+
+    def water_is_bodied(self, card):
+        verbs = told(self.say(KES, card, "delvetalk %s verbs" % card))
+        declared = verbs.split("Declared by its kind: ")[1].split(".\n")[0].split(", ")
+        self.assertEqual(declared.count("water"), 1, verbs)
+        self.assertNotIn("» water (grown by", verbs)
+        self.assertIn("Grown here: none yet.", verbs)
+        self.assertEqual(self.town.send(op="world-rules", principal=YUE, object=card)["rows"], [])
+        self.assertNotIn("» water", told(self.say(KES, card, "delvetalk %s rules" % card)))
+
+    def water_taken_with_body(self, reply, card):
+        entry = self.town.send(op="world-entry", principal=reply["receipt"]["identity"]["principal"],
+                               hash=reply["receipt"]["hash"])["receipt"]
+        self.assertEqual(entry["outcome"]["placements"],
+                         [{"object": card, "verb": "water"}, {"object": card, "rule": "water"}])
+        self.assertTrue(entry["outcome"].get("reprograms"), entry)
+
+    def test_a_gesture_and_its_does_rule_are_replaced_by_one_bodied_verb(self):
+        card = self.gesture_pot("bodypot", YUE)
+        self.assertIn("does a line and a tend; reaction: rule water", told(self.say(KES, card, "delvetalk %s verbs" % card)))
+        grown = self.body_water(YUE, card)
+        self.assertEqual(grown["status"], "admitted", grown)
+        self.water_taken_with_body(grown, card)
+        self.water_is_bodied(card)
+        text = "w" * 280
+        used = self.admitted(KES, card, "delvetalk %s water / text: %s" % (card, text))
+        self.assertFalse(used["receipt"].get("fired"), used)
+        self.assertEqual(self.pot_lines(card), [("water", text, KES)])
+
+    def test_a_strangers_body_cannot_replace_a_gesture_they_cannot_take_off(self):
+        card = self.gesture_pot("takenpot", YUE)
+        before = self.pot_view(card)
+        rules = self.town.send(op="world-rules", principal=YUE, object=card)["rows"]
+        verbs = told(self.say(KES, card, "delvetalk %s verbs" % card))
+        workshop = self.pot_view("workshop")
+        refused = self.body_water(KES, card)
+        self.assertEqual((refused["status"], outcome(refused).get("clause")), ("refused", "nameTaken"), refused)
+        self.assertIn("verb water", outcome(refused)["reading"])
+        self.assertIn("rule water", outcome(refused)["reading"])
+        self.assertEqual(self.pot_view(card), before)
+        self.assertEqual(self.pot_view("workshop"), workshop)
+        self.assertEqual(self.town.send(op="world-rules", principal=YUE, object=card)["rows"], rules)
+        self.assertEqual(told(self.say(KES, card, "delvetalk %s verbs" % card)), verbs)
+        self.admitted(KES, card, "delvetalk %s water / text: still a gesture" % card)
+        self.assertEqual(self.pot_lines(card), [("water", "still a gesture", KES), ("write", "watered by the rule", YUE)])
+
+    def test_a_held_body_replaces_the_gesture_only_when_its_owner_adopts_it(self):
+        card = self.gesture_pot("heldpot", KES)
+        before = self.pot_view(card)
+        rules = self.town.send(op="world-rules", principal=YUE, object=card)["rows"]
+        held = self.body_water(KES, card)
+        self.assertEqual(held["status"], "admitted", held)
+        n = told(held).split("is held as #")[1].split(" ")[0]
+        self.assertEqual(self.pot_view(card), before)
+        self.assertEqual(self.town.send(op="world-rules", principal=YUE, object=card)["rows"], rules)
+        self.assertIn("» water (grown by kestrel.delve.town", told(self.say(YUE, card, "delvetalk %s verbs" % card)))
+        self.admitted(YUE, card, "delvetalk %s water / text: before adoption" % card)
+        self.assertEqual(self.pot_lines(card), [("water", "before adoption", YUE), ("write", "watered by the rule", KES)])
+        before_adopt = self.pot_view(card)
+        workshop = self.pot_view("workshop")
+        refused = self.say(KES, "workshop", "delvetalk workshop adopt / n: %s" % n)
+        self.assertEqual(refused["status"], "refused", refused)
+        self.assertEqual(self.pot_view(card), before_adopt)
+        self.assertEqual(self.pot_view("workshop"), workshop)
+        placement_fields = ("name", "owner", "line", "placed", "from")
+        standing = self.town.send(op="world-rules", principal=YUE, object=card)["rows"]
+        self.assertEqual([{key: row[key] for key in placement_fields} for row in standing],
+                         [{key: row[key] for key in placement_fields} for row in rules])
+        adopted = self.admitted(YUE, "workshop", "delvetalk workshop adopt / n: %s" % n)
+        self.water_taken_with_body(adopted, card)
+        self.water_is_bodied(card)
+        used = self.admitted(KES, card, "delvetalk %s water / text: after adoption" % card)
+        self.assertFalse(used["receipt"].get("fired"), used)
+        self.assertEqual(self.pot_lines(card), [("water", "before adoption", YUE), ("write", "watered by the rule", KES),
+                                                ("water", "after adoption", KES)])
+
     # §3 (b): a verb grown with a body is a one-method layer the workshop writes, checks and lays; on another's
     # thing it is held for the owner. §4: the verb library is single-verb kinds laid by `become`, credited.
     def test_a_verb_grown_with_a_body_and_a_verb_kind_laid_by_become(self):
