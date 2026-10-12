@@ -125,7 +125,8 @@ sum Chronicled:
   chronicled: {day: Nat, lines: Document.Names}
   refused: {clause: String}
 # What wants a hand across the world (`wanting {after, limit}`): each want that holds now, the thing's
-# own and the ones it follows, oldest first, with the height since which it has held; derived, no root.
+# own and the ones it follows, newest first (pages of whole heights by `after`), with the height since
+# which it has held; derived, no root.
 record Want:
   object: String
   name: String
