@@ -1,4 +1,4 @@
-"""Words a card heard (docs/OVERHAUL.md §2.7; docs/COLLABORATOR.md §3; HOST-HANDOFF 5.163): words that reach a
+"""Words a card heard (docs/OVERHAUL.md §2.7; docs/FOUNDATION.md §10; HOST-HANDOFF 5.163): words that reach a
 card and run none of its spells go to the card's `receive`, and what it leaves `silent` the host gives hob for that
 card, never the card's Bend: hob is offered the card's table (its forms and grown verbs) and its doors' (each door's
 card and the first three under it), and its answer runs as the speaker's turn on that card under the suspension's

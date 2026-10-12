@@ -135,7 +135,9 @@ class Bounds(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             obs, ob = run_observer([mk(i, f'wiki: T{i}\n#gsb @a.delve.town') for i in range(1000)] + [mk(1000, 'x' * (1 << 20))], d)
         self.assertEqual(len(obs), 1000)
-        self.assertEqual(ob.refused[0][0], 'post_body_too_large')
+        with self.assertRaises(delve.Failure) as c:
+            observe.observation(mk(1000, 'x' * (1 << 20)))
+        self.assertEqual(c.exception.code, 'post_body_too_large')
 
     def test_the_writer_and_the_client_refuse_what_is_too_large_a_redirect_and_any_other_endpoint_by_name(self):
         with self.assertRaises(delve.Failure) as c:
@@ -175,7 +177,7 @@ class Identity(unittest.TestCase):
 
     def refused(self, code, uri=None):
         with self.assertRaises(identity.IdentityError) as e:
-            self.id.verify(self.HANDLE, uri or self.uri)
+            self.id.verify(self.HANDLE, uri or self.uri, self.ch['credential'])
         self.assertEqual(e.exception.code, code)
 
 
@@ -186,16 +188,16 @@ class Identity(unittest.TestCase):
     def test_a_claim_finds_the_word_among_the_newest_posts_and_logs_the_account_in(self):
         rec = self.listing()
         self.listing(rec('good morning', 1), rec('  ' + self.ch['text'] + ' \n', 2), rec('a later post', 3))
-        got = self.id.claim(self.HANDLE)
+        got = self.id.claim(self.HANDLE, self.ch['credential'])
         self.assertEqual((got['did'], got['uri']), (DID, f'at://{DID}/town.delve.feed.post/2'))
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
         with self.assertRaises(identity.IdentityError) as e:
-            self.id.claim(self.HANDLE)
+            self.id.claim(self.HANDLE, self.ch['credential'])
         self.assertEqual(e.exception.code, 'challenge_consumed')
 
     def claim_refused(self, code):
         with self.assertRaises(identity.IdentityError) as e:
-            self.id.claim(self.HANDLE)
+            self.id.claim(self.HANDLE, self.ch['credential'])
         self.assertEqual(e.exception.code, code)
 
     def test_a_claim_without_the_word_posted_or_with_it_in_another_account_or_inside_a_longer_post_is_no_post_yet(self):
@@ -223,13 +225,13 @@ class Identity(unittest.TestCase):
 
     def test_a_challenge_verifies_once_then_is_consumed_and_refused_a_second_time(self):
         self.serve()
-        self.assertEqual(self.id.verify(self.HANDLE, self.uri)['did'], DID)
+        self.assertEqual(self.id.verify(self.HANDLE, self.uri, self.ch['credential'])['did'], DID)
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
         self.refused('challenge_consumed')
 
     def test_a_revoked_credential_cannot_authenticate_or_be_verified_again(self):
         self.serve()
-        self.id.verify(self.HANDLE, self.uri)
+        self.id.verify(self.HANDLE, self.uri, self.ch['credential'])
         self.id.revoke(self.ch['credential'])
         with self.assertRaises(identity.IdentityError):
             self.id.authenticate(self.ch['credential'])
@@ -239,7 +241,7 @@ class Identity(unittest.TestCase):
         self.now[0] += 1
         theirs = self.id.challenge(self.HANDLE)  # anyone may ask for a challenge for any handle, a second later
         self.serve()  # the resident posts the word of the challenge they asked for
-        self.assertEqual(self.id.verify(self.HANDLE, self.uri)['did'], DID)
+        self.assertEqual(self.id.verify(self.HANDLE, self.uri, self.ch['credential'])['did'], DID)
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
         with self.assertRaises(identity.IdentityError):
             self.id.authenticate(theirs['credential'])
@@ -251,6 +253,40 @@ class Identity(unittest.TestCase):
         rec = self.listing()
         self.listing(rec(self.ch['text'], 2))
         self.assertEqual(self.id.claim(self.HANDLE, self.ch['credential'])['did'], DID)
+        self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
+
+    def test_a_request_without_the_challenges_credential_spends_none_of_its_attempts(self):
+        self.serve(text='not the word')
+        for held in (None, 'dt_agent_' + 'x' * 43):
+            for _ in range(identity.MAX_ATTEMPTS + 1):
+                with self.assertRaises(identity.IdentityError) as e:
+                    self.id.verify(self.HANDLE, self.uri, held)
+                self.assertEqual(e.exception.code, 'no_challenge')
+            with self.assertRaises(identity.IdentityError) as e:
+                self.id.claim(self.HANDLE, held)
+            self.assertEqual(e.exception.code, 'no_challenge')
+        self.assertEqual(self.id.db.execute('SELECT attempts FROM challenges').fetchone()[0], 0)
+        self.serve()
+        self.assertEqual(self.id.verify(self.HANDLE, self.uri, self.ch['credential'])['did'], DID)
+
+    def test_a_malformed_proof_uri_is_refused_before_an_attempt_is_counted(self):
+        with self.assertRaises(identity.IdentityError) as e:
+            self.id.verify(self.HANDLE, 'at://nothing', self.ch['credential'])
+        self.assertEqual(e.exception.code, 'invalid_proof_uri')
+        self.assertEqual(self.id.db.execute('SELECT attempts FROM challenges').fetchone()[0], 0)
+
+    def test_a_session_ends_when_it_says_so_and_a_claim_or_guest_does_not_end_with_its_deadline(self):
+        from transport import oauth
+        session = oauth.admit(self.id, self.HANDLE, DID)
+        self.serve()
+        self.id.verify(self.HANDLE, self.uri, self.ch['credential'])
+        self.now[0] += oauth.KEEP - 1
+        self.assertEqual(self.id.authenticate(session)['did'], DID)
+        self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)  # the claim's deadline was 15 minutes
+        self.now[0] += 2
+        with self.assertRaises(identity.IdentityError) as e:
+            self.id.authenticate(session)
+        self.assertEqual(e.exception.code, 'invalid_credential')
         self.assertEqual(self.id.authenticate(self.ch['credential'])['did'], DID)
 
     def test_a_strangers_challenges_do_not_exhaust_the_owners(self):
@@ -393,10 +429,11 @@ class Posting(unittest.TestCase):
     def test_a_draft_posts_and_records_in_one_command_and_a_posted_draft_is_refused(self):
         with tempfile.TemporaryDirectory() as d:
             draft = Path(d) / 'd.json'
-            draft.write_text(json.dumps({'text': 'Planted.', 'replyTo': None, 'object': 'garden-1', 'slot': f'{DID}:ask-1', 'posted': False}))
+            slot = {'principal': DID, 'intent': 'task:1'}  # the host's slot, kept whole: an intent may hold a colon
+            draft.write_text(json.dumps({'text': 'Planted.', 'replyTo': None, 'object': 'garden-1', 'slot': slot, 'posted': False}))
             code, req = self.dry(d, ['--draft', str(draft)], delve.Client(Script()))
             self.assertEqual(code, 2)
-            self.assertEqual(req['record'], {'op': 'world-posted', 'object': 'garden-1', 'slot': {'principal': DID, 'intent': 'ask-1'}})
+            self.assertEqual(req['record'], {'op': 'world-posted', 'object': 'garden-1', 'slot': slot})
             self.assertEqual(req['request']['body']['record']['text'], 'Planted.')
             draft.write_text(json.dumps({'text': 'x', 'posted': True}))
             with mock.patch('sys.stderr', io.StringIO()):
@@ -504,6 +541,23 @@ class Idempotent(unittest.TestCase):
         with self.assertRaises(delve.Failure) as e:
             post.send(request, 'c', self.state, host, client=pds)
         self.assertEqual((e.exception.code, pds.creates), ('rate_limited', 2))
+
+    def test_two_posts_of_one_intent_at_once_are_one_post(self):
+        import threading
+        import time
+
+        class Slow(Recorder):  # the reservation takes a while: both posts are past the ledger's first read
+            def send(self, req):
+                time.sleep(0.3 if req['op'] == 'world-post-reserve' else 0)
+                return super().send(req)
+        pds, host, got = Pds(), Slow(), []
+        request = post.build_request('Planted.', None, None)
+        ts = [threading.Thread(target=lambda: got.append(post.send(request, 'twice', self.state, host, client=pds))) for _ in range(2)]
+        for th in ts:
+            th.start()
+        for th in ts:
+            th.join()
+        self.assertEqual((pds.creates, len(got), got[0] == got[1]), (1, 2, True))
 
     def test_a_publication_draft_is_recorded_for_its_publications_object_by_the_hand_and_the_cli(self):
         page = {'publication': {'id': 'p1', 'height': 3, 'object': 'genesis'}, 'page': 'Genesis', 'section': '',

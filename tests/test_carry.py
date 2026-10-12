@@ -1,9 +1,9 @@
-"""A world is carried to another binary, never wiped (docs/TENURE.md section 1; docs/OVERHAUL.md section 5 step 1):
+"""A world is carried to another binary, never wiped (docs/FOUNDATION.md §2; docs/OVERHAUL.md section 5 step 1):
 `delvetalk-obend carry` reads the world from the snapshot at its journal's head and writes a new journal whose `carried`
 genesis cites the old head, holding the whole store, the suspensions, the standing indexes and the old chain's
 entries by hash; `python3 -m transport carry` carries a state directory and checks the result.
 
-Evidence for TENURE section 1(b) (layer: host). Refuted by an object whose state CID moves, an old receipt
+Evidence for FOUNDATION §2 (layer: host). Refuted by an object whose state CID moves, an old receipt
 that no longer resolves by its slug, a carried world that takes no new turn or loses a suspension, a carry that runs
 without a snapshot at the head, over an open journal or into an existing one, an object left that is not retired, or
 a journal of another edition that neither opens nor carries, or a package the image changed whose objects keep the
@@ -481,6 +481,11 @@ class StateDirectory(unittest.TestCase):
         self.assertEqual(h.send(op="world-snapshot")["status"], "snapshot")
         h.close()
         new, out = os.path.join(tmp.name, "v2", "state"), io.StringIO()
+        with open(os.path.join(old, "delvetalk.toml"), "w") as f:  # the old front's port; the new state names its own
+            f.write("http_port = 8765\n")
+        os.makedirs(new)
+        with open(os.path.join(new, "delvetalk.toml"), "w") as f:
+            f.write("http_port = 18775\n")
         code = transport.main(["carry", "--from", old, "--to", new, "--reason", "the overhaul host", "--obend", binary()], out=out)
         lines = out.getvalue().splitlines()
         self.assertEqual(code, 0, lines)
@@ -497,6 +502,8 @@ class StateDirectory(unittest.TestCase):
         with open(os.path.join(new, "worlds", "town", "awaiting", "x.json")) as f:
             self.assertEqual(json.load(f)["height"], 1)
         self.assertFalse(os.path.exists(os.path.join(new, "journal.lock")))
+        with open(os.path.join(new, "delvetalk.toml")) as f:
+            self.assertEqual(f.read(), "http_port = 18775\n")  # the configuration the carry was run under stands
         server = served(new, cleanup=self.addCleanup, opener=genesis.OPENER, library=LIBRARY)
         root = HostClient(server.root)
         self.addCleanup(root.close)

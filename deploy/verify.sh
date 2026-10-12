@@ -10,7 +10,7 @@
 # An open resumes from the newest snapshot that passes its checks; with --full every journal is replayed from its
 # genesis and every snapshot compared with the replayed world (`world-open {verify: true}`): the merge check's replay.
 # With --snapshot each replayed world's snapshot at its head is written beside its journal in DIR: what a carry to
-# another binary reads (`delvetalk-obend carry`, docs/TENURE.md section 1), written by the binary that replays it.
+# another binary reads (`delvetalk-obend carry`, docs/FOUNDATION.md §2), written by the binary that replays it.
 set -euo pipefail
 usage() { echo "usage: $0 [--full] [--snapshot] (--binary PATH | --image IMAGE) DIR" >&2; exit 64; }
 snapshot=0 full=

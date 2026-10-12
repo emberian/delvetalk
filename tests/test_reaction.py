@@ -1,4 +1,4 @@
-"""REACTION §5's five outcomes, each a rule placed by spell on a real object of the town genesis builds: a
+"""FOUNDATION §10's five outcomes, each a rule placed by spell on a real object of the town genesis builds: a
 rule fires at the commit of the write that makes its condition true, under its placer, journals `fired` on
 that entry, is read back by `rules`, is named in the admitted reply's `revealed`, and is derived again by replay.
 
@@ -17,7 +17,7 @@ Placement is judged by each card's law with `request.kind == rule`; the world's 
 so each rule is placed by the card's owner (the opener for genesis objects, the planter or maker for made
 ones), who is also the principal the fired spell runs under.
 
-Evidence for REACTION §5 (layer: scenarios).
+Evidence for FOUNDATION §10 (layer: scenarios).
 """
 import re
 import unittest
@@ -112,7 +112,7 @@ class Bell(Reaction):
         self.assertEqual(reply["status"], "advanced", reply)
 
     def test_a_bell_tended_twice_rings_and_stays_rung(self):
-        """REACTION's rule as written: `old.tended + 1 <= new.tended and 0 + 1 <= old.tended`. The planting
+        """The rule as written: `old.tended + 1 <= new.tended and 0 + 1 <= old.tended`. The planting
         tends the bell at clock 0 (`tended` 0), so a tend at clock 10 finds `old.tended` 0 and does not fire;
         a tend at clock 20 finds 10 and rings it; a tend at clock 30 meets the same condition, fires again
         (the rule has no memory), and `ring` marks once more: the mark stays one."""

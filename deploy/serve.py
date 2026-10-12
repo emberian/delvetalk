@@ -141,23 +141,3 @@ class Served:
             self.pidfile.unlink(missing_ok=True)
         if self.log is not None:
             self.log.close()
-
-
-class Pipe:
-    """A host process of a script's own on stdin and stdout, one JSON line each way, over `journal` when given (a
-    probe on a copy, the bench's raw path); never a world's writer."""
-
-    def __init__(self, binary=None, journal=None, **opening):
-        self.proc = subprocess.Popen([str(binary or Config.load().obend)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, bufsize=1)
-        if journal:
-            opened = self.send({'op': 'world-open', 'path': str(journal), 'sync': 'none', **opening})
-            assert opened.get('status') == 'opened', opened
-
-    def send(self, request):
-        self.proc.stdin.write(json.dumps(request) + '\n')
-        return json.loads(self.proc.stdout.readline())
-
-    def close(self):
-        self.proc.stdin.close()
-        self.proc.wait()
-        self.proc.stdout.close()
