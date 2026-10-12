@@ -1,4 +1,4 @@
-"""Rules and wants on things (docs/OVERHAUL.md §2, §3; docs/REACTION.md §4; docs/TENURE.md §4): a rule placed
+"""Rules and wants on things (docs/OVERHAUL.md §2, §3; docs/FOUNDATION.md §10; docs/FOUNDATION.md §5): a rule placed
 on a card fires its spell at the commit of a write that makes its condition hold, under the name of whoever
 placed it, journaled `fired` with the delivery it staged and re-derived by replay; at most eight a commit and
 four firings down a chain, the rest journaled `unfired` with why; `rules` reads them back with the entry and
@@ -6,7 +6,7 @@ receipt of their last firing; a want poses while it holds, and the write that op
 `wanted` or `unwanted`; the admitted reply says what the write moved, opened and where it stands.
 
 Evidence for OVERHAUL §5 step 3's controls, on the town genesis builds (layer: scenarios). The five outcomes
-of REACTION §5 on the town's own objects are `test_reaction`.
+of FOUNDATION §10 on the town's own objects are `test_reaction`.
 """
 import unittest
 

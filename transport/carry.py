@@ -1,5 +1,5 @@
 """`python3 -m transport carry --from OLD --to NEW --reason R [--leave [WORLD=]OBJ]...`: a state directory carried to
-the host binary the configuration names (docs/TENURE.md section 1; docs/DEPLOY.md "A new binary").
+the host binary the configuration names (docs/FOUNDATION.md §2; docs/DEPLOY.md "A new binary").
 
 Every world journal of OLD (`<world>.journal`; `scratch/` is not custody) is carried by `delvetalk-obend carry`, which
 reads the world from the snapshot at its head (written by the binary of its edition: `deploy/verify.sh --snapshot`)
@@ -8,7 +8,7 @@ cursors that named the old chain's entries set to the new genesis (`publications
 the carried worlds are checked in a throwaway copy, independently of the binary's own check: every object at the state
 CID the snapshot held and rendering for its owner, every old receipt resolving by its slug, and a new turn admitted.
 OLD is only read; its journal lock must be free (serve stopped). NEW must hold no journal. The channel line the hand
-posts once is printed last (TENURE section 1, rule 5).
+posts once is printed last (FOUNDATION §2).
 """
 import fcntl
 import json

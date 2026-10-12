@@ -61,7 +61,7 @@ structure Facts where
       through `under`, at the version the write records as its root (`Ops.citedStates`). -/
   reads : List (String × Data) := []
   /-- The verb the act named (`request.verb`): a declared method's name, or a grown verb's under
-      `act` (docs/COLLABORATOR.md); "" for an op. -/
+      `act` (docs/FOUNDATION.md §10); "" for an op. -/
   verb : String := ""
   /-- The want clauses of every object cited by `"O" wants N`: its placed wants, then those its
       `under` citations carry (`followed`), by object. -/
@@ -571,7 +571,7 @@ private def kindOf (law : String) : Facts := { facts with reads := [("kind/x", .
 #guard !denote facts none (rec1 2) (parsed "under \"kind/x\"")
 
 -- The arms OVERHAUL §3 adds to the one language: another object's field as a reference (absent, it
--- fails closed), `>=` and REACTION §5's crossing, membership before the write (nothing at
+-- fails closed), `>=` and FOUNDATION §10's crossing, membership before the write (nothing at
 -- creation), `%`, the verb, the kind `rule`, and a comparison whose constant comes first.
 private def garden (tended : Nat) : Data := .record [("tended", .natural tended)]
 private def atClock (clock : Nat) : Facts := { facts with clock, reads := [("garden", garden 100)] }

@@ -4,7 +4,7 @@
   python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock --towns /towns [--opener did:plc:...]
   python3 -m deploy.genesis refresh --root-socket /run/delvetalk-root/root.sock --state /data/state
 
-The world is never wiped (docs/TENURE.md section 1): a genesis while a town journal lives anywhere under `--towns` (the
+The world is never wiped (docs/FOUNDATION.md §2): a genesis while a town journal lives anywhere under `--towns` (the
 directory holding every data directory, `/var/lib/delvetalk`, mounted read-only into the ops container at `/towns`;
 `DELVETALK_TOWNS`) begins a world that abandons that one, so it is refused, naming each journal and its height, unless
 `--wipe-with-the-owners-word R` carries the owner's word. Then R is the town's first line: written on the commonplace
@@ -70,7 +70,7 @@ EXAMPLES = [('a silver bell that remembers yesterday', 'delvetalk kind/bell make
             ('inspirit the goblet: it holds whatever the last guest left unsaid',
              'delvetalk porch/goblet inspirit\nsurrounding: it holds whatever the last guest left unsaid'),
             ("I water mimo's bell", 'grow: water "poured on by a hand; a line, and the bell is tended"\ndelvetalk bell/1 water / text: I water the bell'),
-            ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/COLLABORATOR.md §4)
+            ('that line is going in the erratum report verbatim', 'none')]  # conversation near a card is not addressed to it (docs/FOUNDATION.md §5)
 
 
 # The library's stacks (docs/LIBRARY.md): six pages and five walks, (name, kind, title); each body is

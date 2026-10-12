@@ -1,4 +1,4 @@
-"""Grown verbs (docs/COLLABORATOR.md §3; docs/OVERHAUL.md §2): a verb is a row the host keeps on a thing, grown
+"""Grown verbs (docs/FOUNDATION.md §10; docs/OVERHAUL.md §2): a verb is a row the host keeps on a thing, grown
 by a hand with `grow` (a placing of kind `rule`, judged by the thing's law with `request.verb` `grow`), credited
 to its grower, sixteen at most; the spell grammar reads it exactly as a declared form, and its use runs the
 thing's `act {verb, text}` with `request.verb` the verb, so a rule reading `request.verb` is its consequence

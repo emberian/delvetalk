@@ -237,7 +237,7 @@ fails and the old tag goes back. Restart in place, ten minutes, no post.
 
 *A new edition, or a new library.* The journal does not reopen ("carry
 it", HOST-HANDOFF 6), or serve refuses the library's bytes. The world is
-carried, never begun again (TENURE section 1): stack down, back up with the
+carried, never begun again (FOUNDATION §2): stack down, back up with the
 old image, the head snapshots written by the old image (`verify.sh
 --snapshot`), `python3 -m transport carry` into a new data directory under the
 new image, up, smoke, and the hand's one line in the channel (DEPLOY "A new
@@ -250,7 +250,7 @@ under `--leave`, which is carried retired. An hour, one post.
 *No wipe.* A genesis while a town journal lives under `/var/lib/delvetalk`
 is a wipe, and `deploy.genesis` refuses it, naming each journal, unless
 `--wipe-with-the-owners-word R`: the owner's word, the town's first line and
-the welcome's (DEPLOY "First start", TENURE section 1). A commit whose binary
+the welcome's (DEPLOY "First start", FOUNDATION §2). A commit whose binary
 neither replays nor carries the newest town backup does not merge:
 `deploy/carry-check.sh` on hbox before each merge touching the host (DEPLOY
 "Before a merge that touches the host").

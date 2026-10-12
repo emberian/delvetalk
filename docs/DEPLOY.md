@@ -238,7 +238,7 @@ prints one line per created or spell-made object (`created`, `admitted`) and not
 was not published is named on stderr. Deployed on foundation 89abbd8d: seventeen lines, 19 s, height 73 and 28 objects
 at the bridge's first poll; on 103837ce the same seventeen lines in 22 s, height 73 and 28 objects. The rehearsal seeds the same way. `deploy.seed` creates one further object by hand.
 
-**No wipe.** The world is never begun again while one lives (docs/TENURE.md section 1). `deploy.genesis` lists every
+**No wipe.** The world is never begun again while one lives (docs/FOUNDATION.md §2). `deploy.genesis` lists every
 world journal under `/var/lib/delvetalk` (`DELVETALK_TOWNS`, mounted read-only into `delvetalk-ops` at `/towns`): a data
 directory's `state/*.journal`, an older layout's, a playtest run's, but not scratch worlds and not the journal it is about
 to write. If any holds an entry, genesis creates nothing and exits 1, naming each journal and its height: a world
@@ -692,7 +692,7 @@ The healthcheck goes red and every host reply is "host unavailable".
 
 ## Before a merge that touches the host
 
-A commit whose binary does not replay the newest town backup is a *breaking change* (docs/TENURE.md section 1, rule 2).
+A commit whose binary does not replay the newest town backup is a *breaking change* (docs/FOUNDATION.md §2).
 The root runs, on hbox, before each merge touching `spec/Delvetalk/Host/`, `spec/bend/` or the binary's build:
 
     deploy/carry-check.sh <candidate>/.lake/build/bin/delvetalk-obend /tank/delvetalk-backups
@@ -751,8 +751,7 @@ reads the world from the snapshot at its head, rebuilds every object from its so
 seals the image's library as serve will, and writes the carried genesis. Then the transport's files move (the bridge
 rows, `identity.sqlite`, each world's observations, outbox, posting ledger, `since`), the cursors that named old heights
 set to the genesis (`publications.after`, each `awaiting` turn), and each carried world is checked in a throwaway copy as
-carry-check checks it. It prints one JSON line per world and, last, the hand's one line for the channel (TENURE section
-1, rule 5), posted once by the owner:
+carry-check checks it. It prints one JSON line per world and, last, the hand's one line for the channel (FOUNDATION §2), posted once by the owner:
 
     hob: the world was carried to a newer host at entry 73; everything is where it was, and the carry is receipt <slug>.
 

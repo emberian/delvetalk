@@ -157,7 +157,7 @@ class Genesis(unittest.TestCase):
 
 
 class NoWipe(unittest.TestCase):
-    """TENURE section 1 rule 1: a genesis while a town lives under `--towns` is refused, naming it, and creates nothing;
+    """FOUNDATION §2: a genesis while a town lives under `--towns` is refused, naming it, and creates nothing;
     with the owner's word it runs, and the word is the town's first line, admitted. Refuted by a genesis that runs
     over a living town without the word, one that creates anything before refusing, or a word not on the commonplace."""
 
