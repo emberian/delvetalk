@@ -153,6 +153,12 @@ def scratchPerPrincipal : Nat := 2
 def scratchJournalBytes : Nat := 16777216
 def scratchObjects : Nat := 1000
 def scratchMinutes : Nat := 360
+/-- A turn's messages to another world one host serves (docs/FEDERATION.md §2): one `call` or `send`
+    across per turn (a delivered turn may cross again: the ledger's `depth`, which crosses with the
+    message, bounds the chain), and the clock units a call across waits for the target's receipt before
+    it is refused `timedOut`. -/
+def crossingsPerTurn : Nat := 1
+def crossingPatience : Nat := 60
 /-- Compiled packages kept in memory (`World.builds`). -/
 def maxBuilds : Nat := 1024
 /-- Prepared reprograms kept in memory. -/
@@ -522,12 +528,15 @@ def HourCounts.ofJson (j : Json) : Except String HourCounts := do
            refused := ← (← (← j.getObjVal? "refused").getObj?).toList.mapM fun (c, n) => do return (c, ← n.getNat?),
            interpretations := ← j.getObjValAs? Nat "interpretations", attempts := ← j.getObjValAs? Nat "attempts" }
 
-/-- What a turn may read of the other worlds one host serves (docs/FEDERATION.md §2), built by `serve`
-    for each request: `read world op object reader` is that world's own answer to `world-<op>` (`view`,
-    `card`) of `object` as `reader` sees it there, and the citation the reading turn journals
-    (`{world, object, version, stateCid, height, head}`); none for a world not served here. -/
+/-- What a turn may reach of the other worlds one host serves (docs/FEDERATION.md §2), built by `serve`
+    for each request. `read world plan responseType bounds reader ticks` is that world's own answer to
+    the read Plan (`view`, `viewField`, `viewAt`, `viewDerived`, `card`, `inspect`, its object
+    named in that world), judged there under `reader`, with the citation the reading turn journals
+    (`{world, object, version, stateCid, height, head}`) and the ticks left; none for a world not
+    served here. `serves world reader` says whether a `call` or `send` to `world` can be carried. -/
 structure Foreign where
-  read : String → String → String → String → Option (Json × Json) := fun _ _ _ _ => none
+  read : String → Data → Ty → DataBounds → String → Nat → Option (Data × Json × Nat) := fun _ _ _ _ _ _ => none
+  serves : String → String → Bool := fun _ _ => false
 
 instance : Inhabited Foreign := ⟨{}⟩
 

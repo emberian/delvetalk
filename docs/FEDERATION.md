@@ -310,8 +310,13 @@ hostproc.py are gone); 3 landed in part (`python3 -m transport open` writes the 
 prints its commands; genesis and the welcome stay the operator's step); of 4, the Zulip principal with its realm
 (`transport/zulip.py` `principal`) and the hand's `--world` landed. 2 landed (host17, HOST-HANDOFF 5.140):
 scratch worlds, their expiry, `world-cite`, the root act `expire`, and the front's `/AGENTS.md/scratch/<name>/`
-routes; private heaps are gone. 5 landed for `view` and `card` (citations journaled as `cites`, the ops'
-`asOf`); a held world is no longer closed when idle, so every world is readable. 6 to 8 are not built.
+routes; private heaps are gone. 5 landed (host17, host28): every read Plan of a foreign object (`view`, `viewField`,
+`viewAt`, `viewDerived`, `card`, `inspect`) is that world's answer to the same Plan, cited as `cites`, and the ops
+`world-view`/`world-card`/`world-inspect` of `<world>:<object>` answer with `asOf`; a held world is no longer closed
+when idle, so every world is readable. 6 landed (host28, HOST-HANDOFF 5.164): a call across suspends on
+`(principal, id)` with `crossing` on the entry, the target journals `relayed` and delivers it as any send, and the
+home world's `crossed` entry, citing the target's receipt, resumes it; a send is the same without the wait; one
+crossing per turn, the ledger crossing with it. 7 and 8 are not built.
 
 Ops added: `world-scratch`, `world-cite`, `serve-status`; `world-fork` stays
 as the operator's copy. Ops changed: every op takes `world`; `world-advance`

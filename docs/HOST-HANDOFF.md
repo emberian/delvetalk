@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/host23 continued by host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/host28: calls and sends across worlds, 5.164; lane/host23 continued by host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -65,7 +65,7 @@ All ops are cases of `Session.stepWorld`. A request error (`Except.error`) journ
 - Reads: `world-view`, `world-receipt`, `world-history`, `world-offers`, `world-objects`, `world-card`, `world-inspect`, `world-check`, `world-state-cid`, `world-strokes`, `world-render-check`, `world-resolve`, `world-entry`, `world-entries`, `world-object`, `world-source`, `world-sources`, `world-grants`, `world-publications`, `world-reach` (5.162).
 - Paint (5.161, never journaled): `world-render {principal, object, version?}`, `world-renders`, `world-render-submit {key, reply}`; `world-status.renders {cached, rejected, pending}`.
 - Registry and arrival: `world-principal`, `world-arrive`, `world-posted` (`unposted: true`), `world-library`, `world-fork`.
-- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card` of `<world>:<object>`; the root act `expire`.
+- `serve`'s (5.140): `world-scratch {principal, name, from?}`, `world-cite {principal, scratch, receipt}`, `serve-status` (the process, its worlds and scratches, 5.125); `world-view`/`world-card`/`world-inspect` of `<world>:<object>`; the root act `expire`. `world-relay` and `world-cross` (5.164) are serve's own, refused on both sockets.
 - Root and moderation (5.126): `world-root {principal, reason, act}`, `world-settings`. `library-load {path}` is a stateless op.
 - `bounds` (stateless): `{kernel, host, refusalClasses, transientClasses}`, every `Nat` definition of `Delvetalk.Bounds` (and `Generics.maxInstances`) and of `Limits` by its name (`natsIn%`, Ops), so the front's `limits`, its module checks and the tests read the bounds rather than restate them (`tests/host.py` `bounds()`).
 
@@ -89,7 +89,7 @@ A state is named once, by the entry that wrote it: `writes[].cid`, or a created 
 
 Sources are carried once per journal: compile inputs name each module `{name, cid}`; the first entry needing a source carries it in top-level `sources [{cid, source}]` (checked against its CID on replay). Compiled packages are cached by input digest (`world.builds`, `buildKey`, `maxBuilds`), so creation and replay compile each distinct package once. Reprogram `source` fields are verbatim.
 
-Optional top-level fields (all inside the hash): `absent [id]`, `turnRequest`, `ticksUsed`, `ledger {depth, work, storage}`, `result`, `sends [{id, to, method, argument, ledger}]`, `delivery {id, from}`, `resumes` (hash of the suspension it continues), `offers [{to, text}]`, `replyTo`, `rerun`, `ended`, `publishes`, `blocks`.
+Optional top-level fields (all inside the hash): `absent [id]`, `turnRequest`, `ticksUsed`, `ledger {depth, work, storage}`, `result`, `sends [{id, to, method, argument, ledger, world?}]` (`world`: a send across, 5.164), `delivery {id, from}`, `resumes` (hash of the suspension it continues), `offers [{to, text}]`, `replyTo`, `rerun`, `ended`, `publishes`, `blocks`.
 
 Outcomes:
 
@@ -97,6 +97,7 @@ Outcomes:
 - `admitted`: `{writes [{object, version, edits, callers, kinds, cid?}], reprograms?, amendments?, creates?, grants?, revokes?, spent?}`. `kinds`: 0 write, 1 reprogram, 2 amend. Also per change, only when non-empty: `methods`, `vias`, `arguments`. Replay rebuilds the `Proposal`, checks `request == p.digest`, re-runs `judge`, and requires the recorded reprograms, amendments, creates and write versions to equal the replayed ones.
 - `refused`: `{class, clause?, object?, reason?, reading?, expected?, root?, hint?, next?}`. Classes (`refusalClasses`): staleRoot, typeMismatch, capacity, absentItem, lawRefused, unknownObject, duplicateIdentity (never journaled), evaluation, budget (resource ticks, heap, stack, nodes, bytes or `law ticks`), budgetExhausted, programRefused (clause packageBytes, compile, stateType, migration, `law syntax`), requiredAbsence, keyTaken, duplicateKey, badSpell (5.49), quota (5.60), noMethod (5.62), quiet (5.126; transient), cardRefused (5.157). Every `reason` is written once, at commit, by `Refusal.voiced` (5.75); a law refusal with a reading journals it as `reading` and `voiced` writes `reason: "refused <clause>: <reading>"` from it (5.154), as for a card's own refusal (5.157). Replay checks only that the class is known; `publicRefusal` shows a law refusal's reason and reading.
 - `suspended`: `{slot {principal, intent}, deadline, activity {object, method, argument, checkpoint {packetSha256, tokens, digest}, roots, absent, writes, sends, creates, programs, laws, ticks, awaited, awaits, offers, violation?}}` plus `request`, `ledger`, `ticksUsed`. Replay requires `digest == tokensDigest tokens` and registers it in `world.suspended`.
+- `relayed` `{world, receipt, height}` with one `sends` row, and `crossed` `{world, answer {tag, class?, clause?, reason?}, receipt? {hash, height}}` with `result?` and, for a send, `delivery`: the two halves of a call or send across (5.164). A `suspended` entry's `crossing {world, to, method, argument, sender, ledger}` is a call across waiting.
 - `principal`: `{did, handle}`, identity `{clock, "principal:<did>:<height>"}`. `advanced`: `{from, to}`, replay requires `from == w.clock && to > from`. `settings`, `library {pin, previous, modules, law?}`, `posted`, `interpreted`, `forked`.
 
 Cross-entry invariants (`checkDelivery`, `checkSends`, `checkResumes`):
@@ -126,7 +127,8 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | data | `dataDepth` 8192, `plainDepth` 64, `Bounds.maxCellBytes` 262144 (the scalar part and each relation row, 5.136), `maxObjects` 10000 |
 | journal | `maxEntryBytes` 1 MiB (a record), `maxJournalEntries` 1,000,000, `maxJournalBytes` 4 GiB (chain and store), `maxHistoryLimit` 100, `maxCheckpointBytes` 512 KiB, `snapshotEvery` 1000 (`world-open {snapshotEvery}` per process), `maxSnapshotBytes` 256 MiB |
 | ledger | `maxDepth` 100, `chainWork` 10,000,000, `chainStorage` 1 MiB (creation may lower, never raise) |
-| time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64 |
+| time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64, `crossingPatience` 60 |
+| worlds | `scratchPerPrincipal` 2, `scratchJournalBytes` 16 MiB, `scratchObjects` 1,000, `scratchMinutes` 360, `crossingsPerTurn` 1 |
 | delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `deliveryAttempts` 4, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
 | programs, laws | `maxPackageBytes` 131072 (`Bounds.maxPackageBytes`), `maxLawBytes` 4096, `maxLawClauses` 16, `maxPreparedPrograms` 16, `maxCompiledPackets` 256, `maxBuilds` 1024, `maxReaders` 256, `maxLibraryModules` 256, `maxLibraryBytes` 786432 |
 | interpret | `maxUtteranceBytes` 8192, `maxOffersBytes` 65536, `maxReplyBytes` 262144 |
@@ -1873,6 +1875,30 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `world-receipt` gives a refusal's owner its `public` projection, and the bridge drafts a refused resumption and
    marks a settled one (`awaiting.settled`). Tests: `test_heard`, `test_spell_turns.Misfits`/`MisfitsWithoutPolicy`.
 
+164. **Calls and sends across worlds (host28; docs/FEDERATION.md §2; no edition change).** A `call`, `callVia`, `send`
+   or `sendVia` whose `Reference` names a world (`foreignRef`) crosses to it. Each is refused by name when it cannot:
+   `noGrant` under a grant (a grant serves the world it was made in), `foreignWorld` for a world not served here
+   (`Foreign.serves`, which `serve` builds per request), and `crossing` for a turn's second (`crossingsPerTurn` 1,
+   `TurnState.crossings`, journaled with a suspension) or a call from inside a call (only the turn's own frame may
+   wait). A send stages a `Send` with `world` (the send row's `world`), pending at commit but never delivered here
+   (`Ops.crossesOver`, `deliverable`), unless its ledger is spent, when it is refused here `budgetExhausted`. A call
+   suspends (`TurnLoop.crossCall`) on the slot `(principal, id)` with `crossing {world, to, method, argument, sender,
+   ledger}` on the entry, `crossingPatience` (60) its deadline. `serve` carries both after every reply (`Serve.cross`
+   over each held world's `Ops.outbound`, `carry`): the target journals `relayed` under `(principal, "<home>:<id>")`
+   with one send (`relayOp`; sender `<home>:<object>`, the ledger as it crossed), delivered by its own settling pass
+   as any send, under the caller's principal and judged by its law alone (`request.caller` `<home>:<object>`); once
+   that delivery has a receipt, the home world journals `crossed` (`crossOp`) under `(principal, id)` with the
+   target's answer, receipt `{hash, height}` and result: a send's consumes its pending delivery (`checkDelivery`),
+   a call's settles the slot, and the settling pass resumes it (`crossedResponse`: `returned {result}` or `refused
+   {clause, reading}` as the target voiced it; `timedOut` past the patience). A world not served or not opening
+   when carried, or a spent call, is answered `refused` at once. Each step is idempotent (a relay retained by
+   identity, a crossing found by `outbound`), so a stop between the two journals is carried on at the next start.
+   Replay of either journal alone reads the other's receipt as data (`relayed`: one send; `crossed`: something here
+   waited for it). The read Plans of another world's object (`view`, `viewField`, `viewAt`, `viewDerived`, `card`,
+   `inspect`: `foreignReads`) are one path: `Foreign.read` runs the same Plan in that world (`readIn`, the object
+   named locally, under the reader, the turn's ticks) and the turn journals the citation. Tests: `test_scratch` (a
+   call resumed with the lab's receipt cited, a send once per turn, `foreignWorld`, both journals replayed alone).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -2002,8 +2028,8 @@ replaces in the same commit, and this file describes only what is. A merge touch
    frame bound checked once; H12 `Store.lean`'s `Limits` referencing `Bounds` (`maxTurnTicks` = `ticksMax`,
    `plainDepth` = `plainJsonDepth`, the 1400s); H13 `compressedSize`; H14 the duplicates; H15 one list codec
    (`DataWire`); H16 reads of older journals; H18 a host `fit {form, fields}` that `Kind.makeUnder` calls.
-7. **FEDERATION's remainder (5.140):** cross-world `call` and `send` (a suspension resumed by the target's receipt);
-   `inspect` and `viewField` of a foreign object; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
+7. **FEDERATION's remainder (5.140):** cross-world `call` and `send` are built (5.164), and the foreign reads with
+   them; the REPL and `check` in a scratch (`/scratch/<name>/repl`); the
    `delvetalk world expire / scratch:` spell; a front route for `world-cite`; `world-history` across worlds; the
    hand's SCRATCHES page.
 8. **The stored path's remainder (5.136):** a write costs O(state): `conformsUnder` of the whole written state (check
