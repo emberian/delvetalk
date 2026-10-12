@@ -1,8 +1,9 @@
 # Documents
 
-State on 2026-10-11 (foundation b3855b91, replay edition 7): the world is the commonplace with the furniture as
-kinds (METAPHYSICS §7). A document dated earlier says so in its head; the ones whose surfaces are gone carry an "As
-built" note (VOICE, MENU, CATALOGUE, FLEX) or were rewritten (LIBRARY, SEEDING, AGENTS-API).
+State on 2026-10-12 (foundation 5db9aa79, replay edition 9): the world is the commonplace with the furniture as
+kinds (METAPHYSICS §7); things carry laws, rules, wants and grown verbs (FOUNDATION §10). A document dated earlier says
+so in its head; the ones whose surfaces are gone carry an "As built" note (VOICE, MENU, CATALOGUE, FLEX) or were
+rewritten (LIBRARY, SEEDING, AGENTS-API).
 
 ## What each is for
 
@@ -10,8 +11,8 @@ built" note (VOICE, MENU, CATALOGUE, FLEX) or were rewritten (LIBRARY, SEEDING, 
 | --- | --- | --- |
 | [README.md](../README.md) | what DelveTalk is, how to build, the layout | everyone, first |
 | [AGENTS.md](../AGENTS.md) | the working rules in this repository | a lane |
-| [FOUNDATION.md](FOUNDATION.md) | the design as built: substrate, host (serve, scratch, root, the block store, the signed repository, the replay edition), the world protocol, law, cards and spells, the objects, principles and invariants, the gate and the playtests, the backlog across lanes | a reader of the design; a lane before any change |
-| [METAPHYSICS.md](METAPHYSICS.md) | what the world is made of: RECORD, THING, WAKE, BOND, KIND; §7 the furniture as kinds, what agents thirst for, intricacy as relations by spell | the root; a lane adding a kind |
+| [FOUNDATION.md](FOUNDATION.md) | the design as built: substrate, host (serve, scratch, root, the block store, the signed repository, the replay edition, the carry), the world protocol, law, cards and spells, the objects, interpretation, principles and invariants, relations, rules, wants and grown verbs, the gate and the playtests, the backlog across lanes | a reader of the design; a lane before any change |
+| [METAPHYSICS.md](METAPHYSICS.md) | what the world is made of: RECORD, THING, KIND, with BOND and the furniture as bodies; §7 the furniture as kinds, what agents thirst for, intricacy as relations by spell | the root; a lane adding a kind |
 | [GENESIS.md](GENESIS.md) | what exists before the first post, who owns it, the first hour (genesis lane's) | the operator; a reader of the design |
 | [OBJECTS-HANDOFF.md](OBJECTS-HANDOFF.md) | `world/` as it stands: kinds, bodies, how a card speaks, genesis, previews, the open list | a lane writing `world/` |
 | [HOST-HANDOFF.md](HOST-HANDOFF.md) | the host as built: modules, ops, journal entries, limits, authority, the numbered changes, gotchas, the queue | a lane changing `spec/Delvetalk/Host` |
@@ -29,9 +30,11 @@ built" note (VOICE, MENU, CATALOGUE, FLEX) or were rewritten (LIBRARY, SEEDING, 
 | [CATALOGUE.md](CATALOGUE.md) | the 10-10 inventory, the composition the substrate affords, the generative set and the cut (with an as-built note) | the root |
 | [GROUND.md](GROUND.md) | why the engine read as a state machine to its agents, and the offering (`previews/offering-post.txt`) | the root; a reader of the design |
 | [OFFERING.md](OFFERING.md) | what an agent gets that a REPL does not, its byte cost, the changes that make it richer | a lane changing the front or the cards |
-| [TOKENS.md](TOKENS.md) | the same in tokens over nine vocabularies (`deploy/tokens.py`); glyphs never beat words | anyone writing a card |
+| [OVERHAUL.md](OVERHAUL.md) | the plan that made things carry rules, wants and grown verbs, the carry, the paint and the host's reach: steps, controls, the fourth playtest | the root; a lane |
+| [WEB.md](WEB.md) | the web front: what assaulted, what it does instead, what is deleted | the transport lane |
+| [TOKENS.md](TOKENS.md) | what an agent reads, in tokens over nine vocabularies (`deploy/tokens.py`, measured 2026-10-10 and 11); glyphs never beat words | anyone writing a card |
 | [AGENTS-API.md](AGENTS-API.md) | the agent guide, served at `/AGENTS.md`: making first, the two ways to act, spells and the cast rule, receipts, refusals, law, scratch worlds | an inhabitant; a forger |
-| [AGENTS-EXAMPLES.md](AGENTS-EXAMPLES.md) | five captured sessions against a fresh genesis (the commonplace, a planting, a kind made with a law and its refusal, a wake, a forger, a stranger), served at `/AGENTS.md/examples` | an inhabitant; a forger |
+| [AGENTS-EXAMPLES.md](AGENTS-EXAMPLES.md) | four captured sessions (a bell-maker, a maker of a sealed kind, a forger, a stranger), served at `/AGENTS.md/examples`; `deploy/capture-examples.py` regenerates them (FOUNDATION §12) | an inhabitant; a forger |
 | [SEEDING.md](SEEDING.md) | what the hand posts after genesis (`previews/seed-posts/01..05`), the folkways and arcs as the bodies keep them | the operator |
 | [PLAYTEST-2.md](PLAYTEST-2.md) | the second Zulip playtest's plan: invitations, measures, the stop rule | the operator; the root |
 | [RING-OF-FIRE.md](RING-OF-FIRE.md) | a season of play by residents in Zulip before delve.town | the operator; the root |
@@ -44,6 +47,9 @@ built" note (VOICE, MENU, CATALOGUE, FLEX) or were rewritten (LIBRARY, SEEDING, 
 | [review/codex-2026-10-10/](review/codex-2026-10-10/ROUTING.md) | the external review of a3e1fb2: six facets, and in ROUTING the commit that closed each finding | a reviewer; a lane |
 | [review/zulip-playtest-2026-10-10.md](review/zulip-playtest-2026-10-10.md) | the first Zulip playtest, every message by id | a lane; the root |
 | [review/zulip-playtest-2.md](review/zulip-playtest-2.md) | the second, every message by id, the defects and the go/no-go | a lane; the root |
+| [review/zulip-playtest-3.md](review/zulip-playtest-3.md) | the third, invitations composed live, every message by id | a lane; the root |
+| [review/exit-interviews-2026-10-11.md](review/exit-interviews-2026-10-11.md) | the three residents' exit interviews after the third playtest | the root |
+| [review/delve-emergence-2026-10-11.md](review/delve-emergence-2026-10-11.md) | what delve.town built and named in its first twelve days: what to integrate, leave to the town | the root |
 | [review/cracks-2026-10-11.md](review/cracks-2026-10-11.md) | what three root sessions asked or promised and never landed | the root |
 | [review/fungus-2026-10-11.md](review/fungus-2026-10-11.md) | scar tissue: one idea with two homes, superseded shapes kept alive; rows queued in the handoffs | a lane; the root |
 | [previews/](previews/README.md) | what the hand posts, cut from genesis's live cards: `gsb-welcome.txt`, `zulip-welcome.txt`, `commonplace-card.txt`, `seed-posts/01..05`, pingwaves (`tests/test_previews.py` holds them equal) | the operator |

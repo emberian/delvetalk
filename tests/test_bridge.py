@@ -84,9 +84,9 @@ class BridgeCase(unittest.TestCase):
             self._host = HostClient(serving.sock)
         return self._host
 
-    def make(self, name, body=OFFERING, law=''):
+    def make(self, name, body=OFFERING, law='', **more):
         r = self.host.send({'op': 'world-create', 'principal': 'ember', 'identity': 'mk-' + name, 'object': name,
-                            'modules': modules(body, law), 'entry': 'initial', 'seed': record(seen=nat(5))})
+                            'modules': modules(body, law), 'entry': 'initial', 'seed': record(seen=nat(5)), **more})
         self.assertEqual(r['status'], 'created', r)
 
     def observe(self, posts):
@@ -231,6 +231,20 @@ class Bridging(BridgeCase):
         self.assertTrue(d['text'].endswith(f"● admitted garden-1 v1, entry {d['receipt']['height']}, receipt {d['receipt']['slug']}\n"), d['text'])
 
 
+class Private(BridgeCase):
+    """A reply is posted where everyone reads it: what a turn offered from a thing the public may not read is the
+    author's alone, so its draft carries the receipt line and not the offer."""
+
+    def test_an_offer_from_a_thing_only_its_reader_may_read_is_not_drafted_into_a_public_reply(self):
+        self.make('diary', read={'principals': [DID]})
+        self.make('garden-1')
+        self.observe([spell_post(1, 'diary', '2026-10-09T10:00:00Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:01Z')])
+        self.assertEqual(self.run_bridge()['failed'], [])
+        private, public = self.drafts()
+        self.assertEqual(private['text'], bridge.receipt_line(private['receipt']))
+        self.assertEqual(public['text'], f"hello {DID}\n{bridge.receipt_line(public['receipt'])}")
+
+
 class HostParses(BridgeCase):
     """Whether a post is a spell, and to which card, is the host's answer (`world-reach` reads it with its parser), never Python's."""
     def test_a_standalone_question_mark_spell_reaches_the_card_and_is_answered_with_its_usage(self):
@@ -256,6 +270,7 @@ class HostParses(BridgeCase):
 
 class Stub:
     """A host that answers from canned data and records everything it is sent."""
+    RESUMED = {'hash': 'h', 'height': 9, 'slug': 'lodif-rukuz', 'outcome': {'tag': 'admitted'}, 'roots': [{'object': 'garden-1', 'version': 1}]}
     def __init__(self, reaches=None):
         self.ops, self.reaches, self.suspending, self.offers, self.silent = [], reaches or {}, set(), {}, set()
 
@@ -273,6 +288,10 @@ class Stub:
         if op == 'world-turn':
             return {'status': 'admitted', 'receipt': {'hash': 'h', 'height': len(self.ops), 'outcome': {'tag': 'admitted'}},
                     **({} if req['object'] in self.silent else {'offers': [{'principal': req['principal'], 'text': 'to ' + req['object']}]})}
+        if op == 'world-receipt':  # a suspended turn stays suspended until its offer is there
+            return {'status': 'receipt', 'receipt': self.RESUMED} if self.offers.get(req['principal']) else {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended'}}}
+        if op == 'world-view':
+            return {'status': 'viewed'}
         if op == 'world-pending':
             return {'status': 'pending', 'count': 0}
         if op == 'world-publications':
@@ -336,7 +355,7 @@ class Suspended(BridgeCase):
         r = bridge.run(self.state, stub)
         self.assertEqual(r['offered'], [p['uri']])
         (d,) = self.drafts()
-        self.assertEqual((d['text'], d['replyTo'], d['principal'], d['posted']), ('Planted.', p['uri'], DID, False))
+        self.assertEqual((d['text'], d['replyTo'], d['principal'], d['posted']), ('Planted.\n' + bridge.receipt_line(Stub.RESUMED), p['uri'], DID, False))
         self.assertNotIn('offered', bridge.run(self.state, stub))
         self.assertEqual(len(self.drafts()), 1)
 
@@ -350,7 +369,48 @@ class Suspended(BridgeCase):
                              'from': {'principal': DID, 'intent': p['uri']}, 'text': 'Handed over.'}]
         self.assertEqual(bridge.run(self.state, stub)['offered'], [p['uri']])
         (d,) = self.drafts()
-        self.assertEqual((d['text'], d['replyTo']), ('Handed over.', p['uri']))
+        self.assertEqual((d['text'], d['replyTo']), ('Handed over.\n' + bridge.receipt_line(Stub.RESUMED), p['uri']))
+
+
+class Spells(Stub):
+    """Each post of several spells answered as the host answers one: a turn per spell line, `segments` naming each
+    one's status (`usage` for a `?`, `suspended`, else admitted)."""
+    def __init__(self, segments):
+        super().__init__()
+        self.segments = segments
+
+    def send(self, req):
+        if req['op'] != 'world-turn':
+            return super().send(req)
+        self.ops.append(req)
+        turns = []
+        for n, status in enumerate(self.segments, 1):
+            identity = {'principal': req['principal'], 'intent': f"{req['identity']}#{n}"}
+            rc = {'hash': f'h{n}', 'height': 10 + n, 'slug': f'lodif-ruku{"zb"[n % 2]}', 'identity': identity,
+                  'outcome': {'tag': 'suspended' if status == 'suspended' else 'admitted'}, 'roots': [{'object': 'bell-1', 'version': n}]}
+            turns.append({'status': 'usage', 'text': 'delvetalk bell-1 rain / text: <1 to 200>\n'} if status == 'usage' else
+                         {'status': status, 'object': 'bell-1', 'receipt': rc})
+        return {'status': 'spells', 'turns': turns}
+
+
+class SeveralSpells(BridgeCase):
+    def test_a_usage_line_among_the_spells_is_answered_with_the_others(self):
+        stub = Spells(['admitted', 'usage'])
+        self.observe([mk(1, 'delvetalk bell-1 rain\ntext: hello\ndelvetalk bell-1 ?')])
+        self.assertEqual(bridge.run(self.state, stub)['failed'], [])
+        (d,) = self.drafts()
+        self.assertIn('admitted bell-1 v1', d['text'])
+        self.assertIn('delvetalk bell-1 rain / text: <1 to 200>', d['text'])
+
+    def test_a_suspended_spell_among_them_is_answered_when_its_offer_comes(self):
+        stub = Spells(['admitted', 'suspended'])
+        p = mk(1, 'delvetalk bell-1 rain\ntext: hello\ndelvetalk bell-1 tend')
+        self.observe([p])
+        self.assertEqual(bridge.run(self.state, stub)['failed'], [])
+        stub.offers[DID] = [{'height': 20, 'ordinal': 0, 'identity': {'principal': DID, 'intent': p['uri'] + '#2'}, 'text': 'Tended.'}]
+        self.assertEqual(bridge.run(self.state, stub)['offered'], [p['uri'] + '#2'])
+        later = [d for d in self.drafts() if 'Tended.' in d['text']]
+        self.assertEqual([d['replyTo'] for d in later], [p['uri']])
 
 
 class Mentions(BridgeCase):
@@ -382,6 +442,21 @@ class Mentions(BridgeCase):
         before = len(stub.ops)
         self.assertNotIn('mentioned', bridge.run(self.state, stub))  # once per post
         self.assertEqual([o['op'] for o in stub.ops[before:]].count('world-turn'), 0)
+
+    def test_a_mention_through_the_bridge_is_admitted_on_the_mentioned_avatar_of_a_real_host(self):
+        """The v8 deploy's lost mentions: the bridge sends `{text, post}`, and the avatar's `receive` takes `fields` and
+        `spell` too, which the host fills (empty, and no cast: a mention is heard, never cast)."""
+        from tests.town import Town
+        town = Town(str(Path(self.tmp.name) / 'town'), cleanup=self.addCleanup)
+        host = type('TownHost', (), {'send': lambda _, req: town.send(**req)})()
+        glm = mk(1, 'glm here')
+        glm['author'] = {'did': self.GLM, 'handle': 'glm.delve.town'}
+        post = mk(2, 'a bell for @glm.delve.town')
+        self.observe([glm, post])
+        r = bridge.run(self.state, host)
+        self.assertEqual((r['mentioned'], r['failed']), ([post['uri']], []), r)
+        got = host.send({'op': 'world-receipt', 'principal': DID, 'identity': f"{post['uri']}#mention:{self.GLM}"})
+        self.assertEqual((got['status'], got['receipt']['outcome']['tag']), ('receipt', 'admitted'), got)
 
     def test_a_never_seen_handle_gets_no_turn_and_an_observed_author_is_arrived_and_reached(self):
         stub = Stub()
@@ -444,6 +519,14 @@ class Silence(BridgeCase):
         hand = Hand(self.state, stub)
         self.assertEqual(hand.outbox(), [])
         self.assertEqual(len(hand.outbox(all=True)[0]['drafts']), 1)
+
+
+    def test_a_spell_that_changed_something_and_offered_nothing_is_answered_with_its_receipt(self):
+        self.make('still-1', body=REFUSING)  # writes `seen`, offers no card
+        self.observe([spell_post(1, 'still-1', '2026-10-09T10:00:00Z')])
+        self.assertEqual(self.run_bridge()['failed'], [])
+        (d,) = self.drafts()
+        self.assertEqual(d['text'], bridge.receipt_line(d['receipt']))
 
 
 class RealOffers(test_outbound.TellerWorld):

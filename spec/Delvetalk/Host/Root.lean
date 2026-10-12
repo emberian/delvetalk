@@ -37,9 +37,18 @@ def rootFieldsOf (w : World) (kind : String) (act : Json) (reason : String) : Ex
   | "set" =>
     let (id, o) ← object ()
     let field ← text "field"
-    unless rootFields.contains field do throw s!"set names no field {field}; one of {", ".intercalate rootFields}"
+    unless rootFields.contains field || (stateFieldOf field).isSome do
+      throw s!"set names no field {field}; one of {", ".intercalate rootFields}, or state.F for one field of the state"
     let value ← act.getObjVal? "value"
     let base := [("object", toJson id), ("field", toJson field)]
+    -- One field of the state (`state.F`): journaled as `state` is, its `before` and `after` that field's value, the
+    -- whole state's CID at the new version; the state as set still conforms to the object's type.
+    if let some name := stateFieldOf field then
+      let some current := Law.rawField name o.state | throw s!"the state of {id} has no field {name}"
+      let v ← fieldValue current value
+      let state ← canonicalState o.relations (← withField o.state name v)
+      unless state.conformsUnder o.bounds o.stateType do throw s!"{(dataJson v).compress} is not of the type of {id}'s field {name}"
+      return base ++ [("after", dataJson v), ("version", toJson (o.version + 1)), ("cid", toJson (o.withState state).stateCid)]
     match field with
     | "state" =>
       let state ← canonicalState o.relations (← decodeData Limits.dataDepth value)

@@ -103,12 +103,12 @@ def sendsPerTurn : Nat := 32
     its kind's `under` carries are bounded by `maxLawClauses` in each text. -/
 def rulesPerObject : Nat := 32
 def wantsPerObject : Nat := 32
-/-- Verbs grown on one object (docs/COLLABORATOR.md §3: sixteen a thing; `ungrow` makes room). -/
+/-- Verbs grown on one object (docs/FOUNDATION.md §10: sixteen a thing; `ungrow` makes room). -/
 def verbsPerObject : Nat := 16
 /-- A grown verb's reading, in characters: what the verb does, as the grower says it. -/
 def verbReadingMax : Nat := 200
 def verbNameMax : Nat := 32
-/-- Clock units in a day: the chronicle's day (docs/TENURE.md §2), and the model's day (`modelQuota`). -/
+/-- Clock units in a day: the chronicle's day (docs/FOUNDATION.md §10), and the model's day (`modelQuota`). -/
 def clockDay : Nat := 1440
 /-- Lines one day's chronicle says before `and N more`. -/
 def chronicleLines : Nat := 48
@@ -275,7 +275,7 @@ def Placed.ofJson (j : Json) : Except String Placed := do
   return { name := ← j.getObjValAs? String "name", owner := ← j.getObjValAs? String "owner",
            since := ← j.getObjValAs? Nat "since", line, clause }
 
-/-- A verb grown on a thing (docs/COLLABORATOR.md §3; OVERHAUL §2): its name, which a spell names as
+/-- A verb grown on a thing (docs/FOUNDATION.md §10; OVERHAUL §2): its name, which a spell names as
     it names a declared form (`delvetalk <thing> <name>`) and which the act carries as `request.verb`;
     who grew it and the height of the entry that grew it; what it does, in the grower's words; what it
     takes (`text`, a line, or "" for none); and `does`, the rule placed with it in the same entry that
@@ -590,9 +590,12 @@ structure World where
   /-- Per object, the wants that held of it after the newest entry that wrote it, each with the height
       of the entry that made it true (a want's `since`). Derived by `record` from `wanted`/`unwanted`. -/
   wanting : Std.HashMap String (List (String × Nat)) := {}
+  /-- Per thing, the writes its law has refused (`request.refusedBy`): the entries whose outcome is
+      `lawRefused` naming it (`Ops.lawRefusedOf`). Derived by `record`. -/
+  refusedBy : Std.HashMap String Nat := {}
   /-- Where each clock day's entries begin: `(day, height)` for every day an entry was journaled in,
       the day of an entry the clock before it over `Limits.clockDay`. Derived by `record`; the
-      chronicle reads a day's span of the journal by it (docs/TENURE.md §2). -/
+      chronicle reads a day's span of the journal by it (docs/FOUNDATION.md §10). -/
   days : Array (Nat × Nat) := #[]
   /-- Memory only, never journaled: compiled methods by `inputsKey/method`. -/
   compiled : Std.HashMap String Compiled := {}

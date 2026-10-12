@@ -1085,14 +1085,14 @@ does next.
   one condition language (`LawExpr`), so a rule's `when` and a want's condition are laws' conditions.
 - **One reference arm per side.** `LawSide` is `new`, `old` or `cited "O"`: `LawTerm.field side F`
   (`new.F`, `old.F`, `"O".F`), `count side F filter` (`count("O".F where …)` too), and
-  `LawPlace.list side F` / `.column side F C`, so `TERM in old.F.COL` (REACTION §4), `TERM in old.F` and
+  `LawPlace.list side F` / `.column side F C`, so `TERM in old.F.COL` (FOUNDATION §10), `TERM in old.F` and
   `TERM in "O".F` are the same arm on another side. The former `LawTerm.old`, `LawTerm.count (of :
   LawTerm)` and `LawPlace.cited` are gone into it.
 - **Added.** `TERM % INT` (`LawTerm.mod`, the integer at least 1, never negative; binds tighter than
   `+`); `>=` (`LawExpr.ge`); `"O" wants NAME` (`LawExpr.wants`, a root); `request.verb`
   (`LawFact.verb`); the kind `rule` 4 (`ObjectiveBendLaw.kinds` is the one table: `kindNumber` and the
   host's `Law.kindNames` read it, so `world-inspect`'s `requestKinds` lists `rule`). A comparison now
-  needs one side reading the write rather than a reference first, so REACTION §5's `0 + 1 <= old.tended`
+  needs one side reading the write rather than a reference first, so FOUNDATION §10's `0 + 1 <= old.tended`
   and `"tide" == request.object` parse; `1 + 2 <= 3` and `"a" == "b"` refuse (`compareRule`).
 - **Holes** are `{TERM}`, a term of the grammar that reads the write (`refers`); anything else refuses
   by name with the hole quoted: `` `{object}` `` and `` `{request.target}` `` (`holeRule`). OVERHAUL's
@@ -1118,7 +1118,7 @@ does next.
   `fieldsPlain` project it for `LawExpr` and `Clause` alike. `LawName.cited object field` (its column
   is a `.column`), `LawName.want object name`.
 - **Theorems** (`native_decide`, `#assert_compiled`): `parse_accepts`, `parse_refuses`,
-  `render_reads_back` (conditions, the new arms among them); `parse_clauses` (REACTION §5's six rules as
+  `render_reads_back` (conditions, the new arms among them); `parse_clauses` (FOUNDATION §10's six rules as
   typed from a card, the bell's `rings`/`rang`, OVERHAUL's `water`, `daily`, `rests`, four wants),
   `parse_clauses_refuse` (35 malformed lines), `clause_render_reads_back`; `text_holds_three_modalities`
   (one text: laws, rules and wants keep their modalities, `under` an atom of each, `lawsOf` the laws,
@@ -1132,7 +1132,7 @@ does next.
   the write; none when a hole reads nothing), `followed` (the rules and wants a law's `under` citations
   carry, with the carrying object, through the cited texts' own `under`, each once), `citations`.
   `parseClauses` is the text with its bounds; `parseLawText`/`parseLawTextReadings` its law clauses, so
-  every existing caller judges laws only. `#guard`s for each arm, REACTION §5's `two`, `next` and
+  every existing caller judges laws only. `#guard`s for each arm, FOUNDATION §10's `two`, `next` and
   `company`, a want's clock, a filled spell, and a kind carrying its rules through `under`.
 - **Host files touched**, mechanically: the five `Law.Facts` built by anonymous constructor (Ops
   `amendable`, `libraryRefusal`; TurnLoop layer, `methodAdmits`, `kindAdmits`) are named-field

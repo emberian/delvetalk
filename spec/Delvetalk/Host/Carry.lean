@@ -1,4 +1,4 @@
-/- `delvetalk-obend carry` (docs/TENURE.md §1(b); docs/OVERHAUL.md §5 step 1): a world carried to this
+/- `delvetalk-obend carry` (docs/FOUNDATION.md §2; docs/OVERHAUL.md §5 step 1): a world carried to this
    binary. The journal of another replay edition does not reopen here, so its world is read from the
    snapshot the binary that wrote it took at its head, never from its entries, and becomes the genesis of a
    new journal: `carried`, chained to the old head, holding the whole store, every grant, pending delivery,

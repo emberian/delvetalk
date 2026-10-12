@@ -1,4 +1,4 @@
-"""Words a card heard (docs/OVERHAUL.md §2.7; docs/COLLABORATOR.md §3; HOST-HANDOFF 5.163): words that reach a
+"""Words a card heard (docs/OVERHAUL.md §2.7; docs/FOUNDATION.md §10; HOST-HANDOFF 5.163): words that reach a
 card and run none of its spells go to the card's `receive`, and what it leaves `silent` the host gives hob for that
 card, never the card's Bend: hob is offered the card's table (its forms and grown verbs) and its doors' (each door's
 card and the first three under it), and its answer runs as the speaker's turn on that card under the suspension's
@@ -57,6 +57,35 @@ def noting(text: String) -> Activity<Heard>:
   let written(_) = write {noted: set text}
   Heard.noted({})
 """, "rain", "act", "receive")
+
+# A room that says only for one who entered: its `say` reads the state its `enter` wrote.
+ROOM = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Plan.obend as Plans
+import ./World.obend as World
+record Binding:
+  name: String
+  value: String
+record State:
+  owner: String
+  here: Nat
+  said: String
+sum Heard:
+  silent: {}
+def initial() -> State:
+  {owner: "", here: 0n, said: ""}
+def enter(state: State, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {here: add 1n}
+  state.here + 1n
+def say(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  if state.here == 0n then refuse("refused absent: nobody has entered") else saying(state, input.text)
+def saying(state: State, text: String) -> Activity<Nat>:
+  let written(_) = write {said: set "{natText(state.here)} here: {text}"}
+  state.here
+def receive(state: State, input: {text: String, post: String, fields: Lists.List<Binding>}, context: Abi.Context) -> Activity<Heard>:
+  Heard.silent({})
+""", "enter", "say", "receive")
 
 # The world's policy, with what asks the speaker first.
 POLICY = declared("""edition ObjectiveBend 1
@@ -134,6 +163,38 @@ class Heard(HeardCase):
         self.assertEqual([o["action"] for o in item["offers"]], ["rain", "water"])
         self.assertEqual((again["receipt"]["outcome"]["tag"], self.value("acts")), ("admitted", "2"))
 
+    def test_a_question_hob_reads_nothing_into_is_answered_by_the_card_with_its_wants(self):
+        """The v8 deploy's silent question: hob's `none` to a question is the card itself, exact, with what it wants;
+        to other words it stays silence."""
+        shown = BELL.replace("import ./World.obend as World", "import ./World.obend as World\nimport ./Document.obend as Document").replace(
+            "def receive(", "def render(state: State, context: Abi.Context) -> Document.Document:\n"
+                            "  Document.text(\"A brass bell, rained on {natText(state.rains)} times.\\n\")\ndef receive(")
+        self.make("brass", shown, record(owner=label("ember")))
+        placed = self.say("delvetalk brass want\nname: clapper\nreading: a bell with no clapper\nwhen: new.rains <= 0\n"
+                          "asks: delvetalk {request.object} rain / text: <a clapper>", card="brass", who="ember")
+        self.assertEqual(placed["status"], "admitted", placed)
+        self.assertEqual(self.say("does the bell have a clapper?", card="brass")["status"], "suspended")
+        _, answered = self.settle("none")
+        carded = self.host.send(op="world-card", principal="glm", object="brass")
+        self.assertEqual(carded["status"], "card", carded)
+        card = carded["text"]
+        self.assertIn("A brass bell, rained on 0 times.", card)
+        [offer] = [o["text"] for o in answered["receipt"]["offers"]]
+        self.assertTrue(offer.startswith(card), (offer, card))
+        self.assertIn('What brass wants now:\n\n» clapper "a bell with no clapper"', offer)
+        self.assertIn("delvetalk brass rain / text: <a clapper>", offer)
+        self.assertEqual(answered["receipt"]["outcome"]["tag"], "admitted")
+        self.say("lovely evening for it", card="brass", identity="talk")
+        _, quiet = self.settle("none")
+        self.assertNotIn("offers", quiet["receipt"])
+
+    def test_each_of_hobs_spells_reads_the_card_as_the_ones_before_it_wrote_it(self):
+        self.make("room", ROOM, record(owner=label("ember")))
+        self.assertEqual(self.say("I come in and say hello", card="room")["status"], "suspended")
+        _, ran = self.settle("delvetalk room enter\n\ndelvetalk room say\ntext: hello")
+        self.assertEqual(ran["receipt"]["outcome"]["tag"], "admitted", ran)
+        self.assertEqual((self.value("here", "room"), self.value("said", "room")), ("1", "1 here: hello"))
+
     def test_ask_naming_a_field_offers_what_is_still_needed_and_any_other_question_points_at_the_spells(self):
         self.say("rain on it")
         _, ran = self.settle("ask: what text should the rain carry?")
@@ -141,7 +202,7 @@ class Heard(HeardCase):
         self.assertEqual(self.value("rains"), "0")
         self.say("is it raining?")
         _, bare = self.settle("ask: do you mean the weather?")
-        self.assertEqual([o["text"] for o in bare["receipt"]["offers"]], ["hob: no spell of bell takes that as said: delvetalk bell ?\n"])
+        self.assertEqual([o["text"] for o in bare["receipt"]["offers"]], ["hob: none of bell's spells takes that; its spells: delvetalk bell ?\n"])
         self.assertEqual(bare["receipt"]["outcome"]["tag"], "admitted")
 
     def test_field_lines_naming_a_doors_form_run_on_that_door_at_once(self):

@@ -1,7 +1,7 @@
 /- The clause language of Objective Bend: law, rule and want, one grammar, one renderer.
 
 A thing's text is one clause a line, each clause a condition in one modality (docs/OVERHAUL.md §2,
-docs/REACTION.md, docs/LAW.md):
+docs/FOUNDATION.md §10, docs/LAW.md):
 
     law  NAME "reading": EXPR                 refuses at commit: [write]φ
     rule NAME "reading": EXPR then SPELL      fires at commit, under the rule's owner: [write]φ then σ
@@ -27,7 +27,7 @@ naming what it found and the rule it breaks.
     TERM     ::= TERM + TERM | TERM % INT | REF | INT | "TEXT"
     REF      ::= SIDE.FIELD | request.FACT | count(SIDE.FIELD) | count(SIDE.FIELD where COLUMN == TERM)
     SIDE     ::= new | old | "OBJECT"
-    FACT     ::= subject | caller | height | turn | pin | kind | method | verb | clock | object
+    FACT     ::= subject | caller | height | turn | pin | kind | method | verb | clock | object | laws | refusedBy
     INT      ::= -?[0-9]+
     OBJECT   ::= 1..128 bytes of letters, digits and . _ : / -
 
@@ -45,7 +45,10 @@ What each form means (the host's `denote` is the definition):
   value of `new.F`'s type, as `writeOnce` reads an empty field), `"O"` of another object at the
   version the write's turn read, recorded as a root (`LawExpr.reads`). `request.clock` is the world
   clock in minutes, `request.object` the written object's id, `request.verb` the verb the act named
-  (a declared method's name, or a grown verb's: docs/COLLABORATOR.md).
+  (a declared method's name, or a grown verb's: docs/FOUNDATION.md §10). `request.laws` and
+  `request.refusedBy` are what the object stands at: the count of its law clauses, its own and those
+  each `under` citation's text holds (followed, each cited object once), and the count of writes its
+  law has refused (the journal's `lawRefused` entries naming it).
 - `count(SIDE.F)` is the number of rows of the relation (or items of the list) F; `where COLUMN ==
   TERM` counts only the rows whose COLUMN equals the term by canonical bytes. So
   `count(new.F where C == V) <= count(old.F where C == V) + 1` is a growth bound and `count(new.G)
@@ -65,7 +68,8 @@ What each form means (the host's `denote` is the definition):
   is what answers it. A hole `{TERM}` is filled with the term's reading at that write (a want's at
   the read): `{request.object}`, `{request.subject}`, `{new.maker}`, `{"garden".tended}`. `me` in a
   spell is the owner's avatar, the host's to resolve.
-- A want reads the thing as it stands: no `old`, no request fact but `clock` and `object`, no rule
+- A want reads the thing as it stands: no `old`, no request fact but `clock`, `object`, `laws` and
+  `refusedBy`, no rule
   over old and new, no `changed`, no `under`, in its condition and its holes alike (refused by
   name at parse). -/
 import Theory.AssertCompiled
@@ -89,6 +93,10 @@ inductive LawFact where
   | clock
   /-- The written object's own id. -/
   | object
+  /-- The count of the object's law clauses: its own, and those its `under` citations' texts hold. -/
+  | laws
+  /-- The count of writes the object's law has refused (`lawRefused` entries naming it). -/
+  | refusedBy
   deriving DecidableEq, Repr, Inhabited
 
 /-- Whose state a reference reads: after the write, before it, or another object's. -/
@@ -289,9 +297,14 @@ def Clause.fieldsPlain (c : Clause) : Bool := c.names.all LawName.plain
 def LawFact.name : LawFact → String
   | .subject => "subject" | .caller => "caller" | .height => "height" | .turn => "turn"
   | .pin => "pin" | .kind => "kind" | .method => "method" | .verb => "verb" | .clock => "clock"
-  | .object => "object"
+  | .object => "object" | .laws => "laws" | .refusedBy => "refusedBy"
 
-def LawFact.all : List LawFact := [.subject, .caller, .height, .turn, .pin, .kind, .method, .verb, .clock, .object]
+def LawFact.all : List LawFact :=
+  [.subject, .caller, .height, .turn, .pin, .kind, .method, .verb, .clock, .object, .laws, .refusedBy]
+
+/-- The facts a want reads of the thing as it stands: no principal, kind, method or verb. -/
+def LawFact.atRead (fact : LawFact) : Bool :=
+  fact == .clock || fact == .object || fact == .laws || fact == .refusedBy
 
 def LawRule.name : LawRule → String
   | .monotone => "monotone" | .writeOnce => "writeOnce" | .appendOnly => "appendOnly"
@@ -361,11 +374,11 @@ def Clause.render (c : Clause) : String :=
 
 mutual
 /-- The first construct of a term that reads past the thing as it stands (`old`, a request fact
-but the clock and the object), rendered. -/
+not `LawFact.atRead`), rendered. -/
 def LawTerm.atRead : LawTerm → Option String
   | .field .old name => some ("old." ++ name)
   | .field _ _ => none
-  | .fact fact => if fact == .clock || fact == .object then none else some ("request." ++ fact.name)
+  | .fact fact => if fact.atRead then none else some ("request." ++ fact.name)
   | .count .old name _ => some ("count(old." ++ name ++ ")")
   | .count _ _ filter => filter.atRead
   | .int _ | .text _ => none
@@ -443,7 +456,7 @@ def wantLineRule : String := "a want is want NAME \"reading\": EXPR asks SPELL"
 def spellRule : String := "a spell is one line, delvetalk CARD VERB and its fields, with holes {TERM}"
 def holeRule : String := "a hole is {TERM}, a term reading new.FIELD, old.FIELD, \"OBJECT\".FIELD, request.FACT or count(…)"
 def wantRule : String := "a want reads the thing as it stands: new.FIELD, \"OBJECT\".FIELD, request.clock, \
-  request.object, counts and remainders of them, and other things' wants"
+  request.object, request.laws, request.refusedBy, counts and remainders of them, and other things' wants"
 
 /-! ## Tokens -/
 
@@ -1018,7 +1031,7 @@ def accepted : List (String × LawExpr) := [
     .and (.under "kind/bell") (.eq (.fact .subject) (.field .new "maker"))),
   ("count(new.a where b == count(old.a)) == 0",
     .eq (.count .new "a" (.eq "b" (.count .old "a" .all))) (.int 0)),
-  -- OVERHAUL §2 and REACTION §4: `>=`, a comparison reading the write on either side, another
+  -- OVERHAUL §2 and FOUNDATION §10: `>=`, a comparison reading the write on either side, another
   -- object's field as a reference, membership before the write, `%`, the verb, the kind `rule`,
   -- another thing's want.
   ("count(new.presence) >= 3 and count(old.presence) <= 2",
@@ -1042,7 +1055,9 @@ def accepted : List (String × LawExpr) := [
   ("count(\"circle/porch\".members where role == \"keeper\") >= 2",
     .ge (.count (.cited "circle/porch") "members" (.eq "role" (.text "keeper"))) (.int 2)),
   ("\"tide\" == request.object and 1 == new.a",
-    .and (.eq (.text "tide") (.fact .object)) (.eq (.int 1) (.field .new "a")))]
+    .and (.eq (.text "tide") (.fact .object)) (.eq (.int 1) (.field .new "a"))),
+  ("request.laws >= 2 and request.refusedBy >= 1",
+    .and (.ge (.fact .laws) (.int 2)) (.ge (.fact .refusedBy) (.int 1)))]
 
 /-- Conditions that refuse. -/
 def refused : List String := [
@@ -1093,7 +1108,7 @@ private def rule' (name : String) (condition : LawExpr) (spell : List SpellPart)
 private def want' (name : String) (condition : LawExpr) (spell : List SpellPart) (reading : String := "") : Clause :=
   { modality := .want ⟨spell⟩, name, reading, condition }
 
-/-- Clauses of each modality and what they parse to: REACTION §5's six rules as typed from a card,
+/-- Clauses of each modality and what they parse to: FOUNDATION §10's six rules as typed from a card,
 the kind's rules and wants OVERHAUL §3 names, and the holes. -/
 def clauses : List (String × Clause) := [
   ("law owner \"the owner amends\": request.kind == write or request.subject == new.owner",
@@ -1144,7 +1159,10 @@ def clauses : List (String × Clause) := [
       [.text "delvetalk ", .hole (.fact .object), .text " plant / colour: amber"]),
   ("want company: request.clock <= \"garden\".tended + 1440 asks delvetalk garden write / text: {\"garden\".tended}",
     want' "company" (.le (.fact .clock) (.sum (.field (.cited "garden") "tended") (.int 1440)))
-      [.text "delvetalk garden write / text: ", .hole (.field (.cited "garden") "tended")])]
+      [.text "delvetalk garden write / text: ", .hole (.field (.cited "garden") "tended")]),
+  ("want tried \"a law and a second hand's try\": request.laws >= 2 and request.refusedBy <= 0 asks delvetalk {request.object} seal / laws: {request.laws}",
+    want' "tried" (.and (.ge (.fact .laws) (.int 2)) (.le (.fact .refusedBy) (.int 0)))
+      [.text "delvetalk ", .hole (.fact .object), .text " seal / laws: ", .hole (.fact .laws)] "a law and a second hand's try")]
 
 /-- Clauses that refuse. -/
 def clausesRefused : List String := [

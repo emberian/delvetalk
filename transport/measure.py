@@ -8,12 +8,11 @@ subscriptions. What needs a person's judgement (a misread, whether a refusal was
 """
 import json
 import re
-import sqlite3
 import time
-from datetime import datetime
 
 from transport import journal
-from transport.bridge import plain
+from transport.host import plain
+from transport.observe import instant
 
 SPELL = re.compile(r'^\s*delvetalk\s+\S', re.M)  # a spell at a line's start, as the host casts one
 GENESIS = re.compile(r'^(?:did:|zulip:)')  # a principal's own object, its avatar, made at its arrival
@@ -22,10 +21,6 @@ GENESIS = re.compile(r'^(?:did:|zulip:)')  # a principal's own object, its avata
 def counted(n, word, plural=None):
     """The count before the thing (docs/VOICE.md): `1 door`, `3 doors`."""
     return f"{n} {word if n == 1 else plural or word + 's'}"
-
-
-def when(stamp):
-    return datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
 
 
 def labels(value):
@@ -55,24 +50,10 @@ def kind_of(obj, seed):
     return named.split('/', 1)[1] if isinstance(named, str) and named.startswith('kind/') else re.sub(r'/\d+$', '', obj).rsplit('/', 1)[-1]
 
 
-def observations(st):
-    if not st.observed.exists():
-        return []
-    db = sqlite3.connect(st.observed)
-    try:
-        return [json.loads(js) for (js,) in db.execute('SELECT json FROM observations ORDER BY seq')]
-    except sqlite3.OperationalError:
-        return []
-    finally:
-        db.close()
-
-
 def t0(st):
     """The playtest's T0: the Post of the T+0 invitation the hand drafted (docs/PLAYTEST-2.md §6 step 4); None before."""
-    drafts = {p.stem: json.loads(p.read_text()) for p in st.outbox.glob('*.json')} if st.outbox.exists() else {}
-    zero = {i for i, d in drafts.items() if (d.get('speak') or {}).get('invitation') == 0}
-    lines = [json.loads(l) for l in st.hand_log.read_text().splitlines()] if st.hand_log.exists() else []
-    return next((l['at'] for l in lines if l.get('what') == 'post' and l.get('draft') in zero and l.get('world') == st.world), None)
+    zero = {p.stem for p, d in st.drafts() if (d.get('speak') or {}).get('invitation') == 0}
+    return next((l['at'] for l in st.lines(st.hand_log) if l.get('what') == 'post' and l.get('draft') in zero and l.get('world') == st.world), None)
 
 
 def no_reply(st, observed, entries):
@@ -81,16 +62,16 @@ def no_reply(st, observed, entries):
     hob. Prose in a thread that hob reads as `none` is quiet by design, and residents talking to each other reach only
     each other's avatars (`<uri>#mention:`)."""
     last = {(x.get('identity') or {}).get('intent'): (x.get('outcome') or {}).get('tag') for x in entries}
-    said = {d.get('replyTo') for _, d in st.drafts() if d.get('text')} if st.outbox.exists() else set()
+    said = {d.get('replyTo') for _, d in st.drafts() if d.get('text')}
     asked = [o for o in observed if o['kind'] == 'summon' or SPELL.search(o.get('text') or '')]
     return [o['uri'] for o in asked if o['uri'] in last and o['uri'] not in said and last[o['uri']] != 'suspended']
 
 
 def hand_posts(st):
     """[(wall seconds, text)] of every draft the hand posted (its log's `post` lines), oldest first."""
-    drafts = {p.stem: d for p, d in st.drafts()} if st.outbox.exists() else {}
-    lines = [json.loads(l) for l in st.hand_log.read_text().splitlines()] if st.hand_log.exists() else []
-    return [(l['at'], (drafts.get(l.get('draft')) or {}).get('text') or '') for l in lines if l.get('what') == 'post' and l.get('world') == st.world]
+    drafts = {p.stem: d for p, d in st.drafts()}
+    return [(l['at'], (drafts.get(l.get('draft')) or {}).get('text') or '') for l in st.lines(st.hand_log)
+            if l.get('what') == 'post' and l.get('world') == st.world]
 
 
 PROMPTED = 600  # seconds after a hand post naming a thing within which an act on it counts as prompted (docs/GENESIS.md)
@@ -130,7 +111,7 @@ def measures(st, entries=None):
             names[out.get('did')] = out.get('handle')
         if out.get('tag') == 'settings':
             settings.update(out)
-    obs = observations(st)
+    obs = st.observations()
     for o in obs:
         names.setdefault(o['author']['did'], o['author']['handle'])
     staff = {c.opener, settings.get('clock') or 'transport', 'world', *c.owner_principals.split()}
@@ -138,11 +119,11 @@ def measures(st, entries=None):
     who = lambda p: names.get(p) or p
     # Wall time: a turn's is the post it answers (the transport's timestamp); the clock's minutes only stand in for a turn
     # no post made. T0 and every first are wall time, so a make 21 s after T0 is 21 s, never a minute's rounding.
-    posted_at = {o['uri']: when(o['createdAt']) for o in obs}
+    posted_at = {o['uri']: instant(o['createdAt']) for o in obs}
     first = {}
     for o in sorted(obs, key=lambda o: o['createdAt']):
         if resident(o['author']['did']):
-            first.setdefault(o['author']['did'], when(o['createdAt']))
+            first.setdefault(o['author']['did'], instant(o['createdAt']))
     start = t0(st)
     start = start if start is not None else min(first.values(), default=None)
 

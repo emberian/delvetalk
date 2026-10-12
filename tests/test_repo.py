@@ -158,14 +158,14 @@ class Repository(unittest.TestCase):
             return Repository.token
         s, ch = self.call_post('/AGENTS.md/challenge', {'handle': 'talkie.delve.town'})
         self.provider.texts[DID] = ch['text']
-        s, v = self.call_post('/AGENTS.md/verify', {'handle': 'talkie.delve.town', 'uri': f'at://{DID}/town.delve.feed.post/3abc'})
+        s, v = self.call_post('/AGENTS.md/verify', {'handle': 'talkie.delve.town', 'uri': f'at://{DID}/town.delve.feed.post/3abc'}, ch['credential'])
         self.assertEqual((s, v['status']), (200, 'verified'), v)
         Repository.token = ch['credential']
         return Repository.token
 
-    def call_post(self, path, body):
+    def call_post(self, path, body, token=None):
         c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=60)
-        c.request('POST', path, json.dumps(body), {'Content-Type': 'application/json'})
+        c.request('POST', path, json.dumps(body), {'Content-Type': 'application/json', **({'Authorization': 'Bearer ' + token} if token else {})})
         r = c.getresponse()
         out = (r.status, json.loads(r.read()))
         c.close()
@@ -302,6 +302,23 @@ class Repository(unittest.TestCase):
         self.assertIn(f'at://{REPO}/{NS}law/garden~bell~1.kind', [x['uri'] for x in laws])  # under "kind/bell"
         self.assertNotIn('diary', [x['value']['object'] for x in laws])
 
+
+    def test_objects_and_laws_page_by_limit_and_the_cursor_resumes_exactly(self):
+        tok = self.login()
+        for c in ('object', 'law'):
+            lister = lambda **q: self.xrpc('com.atproto.repo.listRecords', tok, repo=REPO, collection=NS + c, **q)
+            s, whole = lister(limit=100)
+            keys, cursor, seen = [r['uri'] for r in whole['records']], None, []
+            self.assertGreater(len(keys), 2, c)
+            for _ in range(len(keys) + 1):
+                s, page = lister(limit=2, **({'cursor': cursor} if cursor else {}))
+                self.assertEqual(s, 200, page)
+                self.assertLessEqual(len(page['records']), 2)
+                seen += [r['uri'] for r in page['records']]
+                cursor = page.get('cursor')
+                if not cursor:
+                    break
+            self.assertEqual(seen, keys, c)
 
     def test_every_listed_record_key_is_in_record_key_syntax(self):
         tok = self.login()

@@ -157,7 +157,7 @@ class Genesis(unittest.TestCase):
 
 
 class NoWipe(unittest.TestCase):
-    """TENURE section 1 rule 1: a genesis while a town lives under `--towns` is refused, naming it, and creates nothing;
+    """FOUNDATION §2: a genesis while a town lives under `--towns` is refused, naming it, and creates nothing;
     with the owner's word it runs, and the word is the town's first line, admitted. Refuted by a genesis that runs
     over a living town without the word, one that creates anything before refusing, or a word not on the commonplace."""
 
@@ -193,6 +193,20 @@ class NoWipe(unittest.TestCase):
         self.assertEqual((field(first, 'n')['value'], field(first, 'text')['value'], field(first, 'author')['value']),
                          ('1', word, genesis.OPENER))
         self.assertEqual([field(a, 'n')['value'] for a in rows(field(state, 'admitted'))], ['1'])
+
+    @unittest.skipIf(os.geteuid() == 0, 'root reads a mode-0 directory')
+    def test_a_directory_the_guard_cannot_read_refuses_and_the_word_is_written_whatever_it_saw(self):
+        hidden = os.path.join(self.towns, 'v1')
+        os.chmod(hidden, 0)
+        self.addCleanup(os.chmod, hidden, 0o755)
+        code, err = self.genesis()
+        self.assertEqual(code, 1, err)
+        self.assertIn('v1 (Permission denied): unreadable', err)
+        self.assertEqual(genesis.existing(self.town.client, genesis.OPENER), [])
+        word = 'the owner begins again'
+        self.assertEqual(self.genesis('--wipe-with-the-owners-word', word)[0], 0)  # the deploy of 5db9aa79 ran so, and dropped the word
+        state = self.town.send(op='world-view', principal=genesis.OPENER, object='commonplace')['state']
+        self.assertEqual([field(r, 'text')['value'] for r in rows(field(state, 'lines'))], [word])
 
     def test_without_towns_genesis_refuses_to_guess(self):
         err = io.StringIO()

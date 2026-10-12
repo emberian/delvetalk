@@ -18,10 +18,10 @@ from html import escape as e
 from pathlib import Path
 
 from transport import bridge, measure, model, post, pages, root
-from transport.bridge import all_observations, awaiting_path, uri_hash
+from transport.bridge import awaiting_path, uri_hash
 from transport.delve import Failure, canonical
-from transport.host import CLOCK, painted
-from transport.http import WAIT_MAX, trace, typed
+from transport.host import CLOCK, handles, paged, painted, typed
+from transport.http import WAIT_MAX, trace
 from transport.identity import INVITE_DAYS, Identity, IdentityError
 from transport.measure import counted
 from transport.state import State
@@ -123,7 +123,7 @@ class Hand:
         raise HandError(f'no draft {draft_id}')
 
     def observed(self):
-        return {o['uri']: o for o in all_observations(self.st)}
+        return {o['uri']: o for o in self.st.observations()}
 
     # ---- reading
 
@@ -201,10 +201,7 @@ class Hand:
         return {**self.summary(draft_id, d), 'post': d.get('replyTo'), 'original post': o and {'handle': o['author']['handle'], 'text': o['text']}}
 
     def tail(self, n=20):
-        try:
-            return [json.loads(l) for l in self.st.hand_log.read_text().splitlines()][-n:]
-        except OSError:
-            return []
+        return self.st.lines(self.st.hand_log)[-n:]
 
     # ---- speaking (docs/PLAYTEST-2.md §2 and §3): the hand's spells as the opener, and the posts that say so
 
@@ -237,15 +234,18 @@ class Hand:
         if not card:
             return self.ask(spell, to, intent, wait)
         where, intent = self.where(topic, reply_to), (intent or '').strip() or f'hand:speak:{int(self.clock() * 1000)}'
-        reply = self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': 'receive', 'identity': intent,
-                                'argument': typed({'text': spell, 'post': intent})})
+        reply = self.receive(card, spell, intent)
+        if reply.get('status') == 'usage':  # a `?`: the card's spells, which the host journals nowhere; nothing is drafted
+            self.log('speak', None, intent=intent, spell=spell, height=None, slug=None, outcome='usage', object=card)
+            return {'card': card, 'object': card, 'outcome': 'usage', 'height': None, 'slug': None, 'line': f'{card}: its spells',
+                    'text': bridge.draft_text(reply), 'intent': intent, 'drafted': None}
         receipt = reply.get('receipt')
         if not receipt:
             raise HandError(f"{card}: {reply.get('message') or reply.get('status')}")
         tag = (receipt.get('outcome') or {}).get('tag')
         made = [c['object'] for c in (receipt.get('outcome') or {}).get('creates') or [] if c.get('object')]
         obj = (made or [reply.get('object') or card])[0]
-        text = bridge.draft_text(reply, self.st.config.origin, reply.get('object'))
+        text = bridge.draft_public(self.host, reply, self.st.config.origin, reply.get('object'))
         came = {'card': card, 'object': obj, 'outcome': outcome_of(receipt), 'height': receipt.get('height'), 'slug': receipt.get('slug'),
                 'line': bridge.receipt_line(receipt, None, reply.get('object')).strip(), 'text': text}
         name = None
@@ -257,6 +257,10 @@ class Hand:
                                      'object': obj, 'slot': None, 'receipt': receipt, 'text': quoted(spell) + '\n\n' + text, 'posted': False, 'hand': True})
         self.log('speak', name, intent=intent, spell=spell, height=receipt.get('height'), slug=receipt.get('slug'), outcome=came['outcome'], object=obj)
         return {**came, 'intent': intent, 'drafted': name}
+
+    def receive(self, card, spell, intent):
+        return self.host.send({'op': 'world-turn', 'principal': self.owner, 'object': card, 'method': 'receive', 'identity': intent,
+                               'argument': typed({'text': spell, 'post': intent})})
 
     def ask(self, words, card=None, intent=None, wait=WAIT_MAX):
         """Words that are no spell, to `card` (default the commonplace) as a resident's direct prose, the turn the play page
@@ -285,6 +289,8 @@ class Hand:
         if line is None:
             return None
         text, waiting = self.draft(line['draft'])[1]['text'] if line.get('draft') else '', False
+        if line.get('outcome') == 'usage':  # asked again: a `?` journals nothing, so the log keeps the spell, not the answer
+            text = bridge.draft_text(self.receive(line['object'], line['spell'], intent))
         if line['what'] == 'ask':
             rc = self.host.send({'op': 'world-receipt', 'principal': self.owner, 'identity': intent}).get('receipt') or {}
             said, waiting = trace(self.host, self.owner, intent, {'status': outcome_of(rc), 'receipt': rc}, wait=0) if rc else ([], True)
@@ -417,25 +423,13 @@ class Hand:
         """A principal as the town names it: its avatar's handle, read as the opener and kept once found."""
         if not principal or principal == CLOCK:
             return 'the clock' if principal else '—'
-        if principal not in self.names:
-            view = self.host.send({'op': 'world-view', 'principal': self.owner, 'object': principal})
-            handle = (bridge.plain(view.get('state') or {}) or {}).get('handle') if view.get('status') == 'viewed' else None
-            if not isinstance(handle, str) or not handle:
-                return principal
-            self.names[principal] = handle
-        return self.names[principal]
+        return handles(self.host, self.owner, [principal], self.names).get(principal, principal)
 
     def entries(self, object=None, limit=30):
         """The newest `limit` entries as the opener reads them: the world's journal, or one object's `world-history`."""
         if not object:
             return root.entries(self.st, limit=limit)
-        got, after = [], 0
-        while True:
-            page = self.host.send({'op': 'world-history', 'principal': self.owner, 'object': object, 'after': after})
-            got += page.get('entries') or []
-            if not page.get('more') or not page.get('entries'):
-                return got[::-1][:limit]
-            after = got[-1]['height']
+        return list(paged(self.host, {'op': 'world-history', 'principal': self.owner, 'object': object}, 'entries'))[::-1][:limit]
 
     def drafted(self):
         """The outbox as the watch joins it to the journal: the spells the hand cast, by intent; the drafts, by the height of

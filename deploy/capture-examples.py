@@ -2,7 +2,7 @@
 """Regenerate docs/AGENTS-EXAMPLES.md from a real stack.
 
 Starts a throwaway `delvetalk-obend serve` (opener named, library sealed), seeds the town's objects as docs/GENESIS.md does, starts
-the HTTP front with a mocked account host, then runs four sessions (a planter, a maker of a sealed kind, a forger, a stranger by the controls) as
+the HTTP front with a mocked account host, then runs four sessions (a bell-maker, a maker of a sealed kind, a forger, a stranger by the controls) as
 literal requests and writes down the replies. Nothing is edited by hand: the page is whatever this prints.
 
   DELVETALK_OBEND=/path/to/delvetalk-obend python3 deploy/capture-examples.py [--out docs/AGENTS-EXAMPLES.md]
@@ -11,6 +11,7 @@ Not real: the account host (a challenge text is "posted" by writing it where the
 interpreter (its one answer is written here). Credentials, hashes and heights come from the run.
 """
 import argparse
+import atexit
 import datetime
 import http.client
 import json
@@ -29,7 +30,6 @@ from deploy.serve import Served  # noqa: E402
 from transport.config import LIBRARY, Config  # noqa: E402
 from transport.host import HostClient  # noqa: E402
 from transport.http import Front  # noqa: E402
-from tests.test_hypermedia import walk  # noqa: E402
 
 CUT = 2400
 OPENER = 'did:plc:6amo7col5h4ciq2gpm5eur7b'
@@ -60,11 +60,11 @@ def methods() -> Lists.List<String>:
 SEALED = ('delvetalk kinds make / name: sealed / of: record / form: text: text 1..80 / head: what {maker} sealed, stays sealed'
           ' / law: law maker "only its maker writes": request.subject == new.maker')
 FLIP = 'edition ObjectiveBend 1\nsum Light:\n  on: {}\n  off: {}\ndef flip(l: Light) -> Nat:\n  match l:\n    on(_) -> 1n\n    off(_) -> 0n\n'
-HEAD = '''# DelveTalk: five worked sessions
+HEAD = '''# DelveTalk: four worked sessions
 
 Literal requests and replies, captured on {date} by `deploy/capture-examples.py` from a real stack started as
 docs/DEPLOY.md says: `serve` over a fresh directory with the opener named and the library sealed, genesis by the seeds
-of docs/GENESIS.md, `python3 -m transport http`. Two things were not real: the account host (each challenge text
+of docs/GENESIS.md (the minimal town: the commonplace, `kinds`, the porch with its two bells), `python3 -m transport http`. Two things were not real: the account host (each challenge text
 was "posted" by writing it where a mocked PDS serves it) and the town's interpreter (its one answer is written in
 the script). Replies longer than {cut:,} bytes are cut where marked; the REPL sends a checkpoint whole, to be sent back.
 The guide is `GET /AGENTS.md`, the catalogue `GET /AGENTS.md/api`; `$T` is the credential from the challenge. Each reply
@@ -140,8 +140,8 @@ class Capture:
         self.provider.texts[did] = ch['text']
         uri = f'at://{did}/town.delve.feed.post/3abc'
         self.say(f'(Posted `{ch["text"]}` as the whole text of a public post from {handle}; its URI is `{uri}`.)')
-        self.step('POST', '/verify', {'handle': handle, 'uri': uri}, auth=False)
         self.token = ch['credential']
+        self.step('POST', '/verify', {'handle': handle, 'uri': uri})
         self.out += ['    $ T=dt_agent_…   # the credential from the challenge', '']
         return did
 
@@ -160,22 +160,45 @@ def seed_town(sock):
     assert refusal is None and all(m['status'] in ('created', 'admitted') for m in made), (refusal, [m for m in made if m['status'] not in ('created', 'admitted')])
 
 
-def planter(cap):
-    cap.say('## A planter')
-    cap.login('moth.delve.town')
+def made(reply):
+    """The id of the first thing a turn reply says it created (its `created` link), or ''."""
+    return ([c['name'] for c in reply.get('_links', {}).get('created', [])] or [''])[0]
+
+
+def bell_maker(cap):
+    cap.say('## A bell-maker')
+    did = cap.login('moth.delve.town')
     cap.say("The first card is the commonplace: what changed, then the doors, each with its spells.")
     cap.step('GET', '/world/commonplace/card')
     cap.step('GET', '/world')
-    cap.step('GET', '/world/garden/card')
-    cap.step('POST', '/world/garden/receive', {'intent': 'plant-1', 'spell': 'delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths'})
-    cap.step('POST', '/world/garden/plant', {'intent': 'plant-2', 'fields': {'colour': 'silver', 'seed': 'a fern that remembers yesterday'}})
-    cap.say('Prose instead of a spell: the garden asks the interpreter, and the turn waits for it.')
-    waiting = cap.step('POST', '/world/garden/receive', {'intent': 'plant-3', 'spell': 'please plant me something violet for the owls'})
-    cap.interpret('delvetalk garden plant\nseed: a bell for the owls\ncolour: violet')
-    cap.say("(The town's interpreter answered with a spell; the turn resumed and the garden planted it at once. The card is in your offers.)")
+    cap.step('GET', '/world/kind/bell/card')
+    cap.say('A spell that leaves out a field is asked for, not refused; nothing of it is kept, so the whole spell is sent again.')
+    cap.step('POST', '/world/kind/bell/receive', {'intent': 'bell-0', 'spell': 'delvetalk kind/bell make\ncolour: amber'})
+    first = cap.step('POST', '/world/kind/bell/receive', {'intent': 'bell-1', 'spell': 'delvetalk kind/bell make\ncolour: amber\nseed: a bell for lost moths'})
+    bell = made(first)
+    cap.step('POST', '/world/kind/bell/make', {'intent': 'bell-2', 'fields': {'colour': 'silver', 'seed': 'a fern that remembers yesterday'}})
+    cap.say('Prose instead of a spell: the kind asks the interpreter, and the turn waits for it.')
+    waiting = cap.step('POST', '/world/kind/bell/receive', {'intent': 'bell-3', 'spell': 'please make me something violet for the owls'})
+    cap.interpret('delvetalk kind/bell make\nseed: a bell for the owls\ncolour: violet')
+    cap.say("(The town's interpreter answered with a spell; the turn resumed and the kind made the bell at once. The card is in your offers.)")
     cap.step('GET', f'/offers?after={waiting["receipt"]["height"] - 1}')
-    cap.step('GET', '/receipt?intent=plant-1')
-    cap.step('GET', '/world/garden/bell/1/card')
+    cap.step('GET', '/receipt?intent=bell-1')
+    cap.step('GET', f'/world/{bell}/card')
+    cap.say('Acting grows the bell. A verb nobody gave it, a rule that fires when a write makes its condition true, and a want it poses until it is met:')
+    grow = lambda intent, spell: cap.step('POST', f'/world/{bell}/receive', {'intent': intent, 'spell': spell})
+    grow('grow-1', f'delvetalk {bell} grow\nname: trim\nreading: the wick trimmed\ntakes: nothing')
+    cap.say('The verb is a name and a reading; using it is a turn that waits for hob to answer.')
+    grow('grow-2', f'delvetalk {bell} trim')
+    grow('verbs-1', f'delvetalk {bell} verbs')
+    grow('rule-1', f'delvetalk {bell} rule\nname: heard\nwhen: count(new.lines) >= 3\nthen: delvetalk me note\ntext: {bell} heard thrice')
+    grow('want-1', f'delvetalk {bell} want\nname: unheard\nreading: a bell nobody has rained on\nwhen: count(new.lines) == 0\nasks: delvetalk {bell} rain')
+    grow('wants-1', f'delvetalk {bell} wants')
+    for n in (1, 2, 3):
+        cap.step('POST', f'/world/{bell}/rain', {'intent': f'rain-{n}', 'fields': {'text': f'rain number {n}'}})
+    cap.say('The third rain made the rule true: it fired at commit, under its writer, and left a note on the avatar, which is the object named by your DID.')
+    cap.step('GET', f'/world/{did}/card')
+    grow('rules-1', f'delvetalk {bell} rules')
+    grow('wants-2', f'delvetalk {bell} wants')
 
 
 def maker(cap):
@@ -195,7 +218,7 @@ def maker(cap):
 
 def forger(cap):
     cap.say('## A forger')
-    did = cap.login('smith.delve.town')
+    cap.login('smith.delve.town')
     cap.step('POST', '/check', {'entry': 'flip', 'source': FLIP})
     cap.step('POST', '/check', {'entry': 'bump', 'source': TALLY})
     cap.step('POST', '/scratch', {'name': 'try'})
@@ -206,26 +229,65 @@ def forger(cap):
     bind = {'object': 'tally', 'intent': 'repl-1', 'roots': [{'object': 'tally', 'version': 0}]}
     yielded = cap.step('POST', '/repl', {'source': TALLY, 'entry': 'bump', 'arguments': [record(count={'tag': 'natural', 'value': '41'})], **bind})
     cap.step('POST', '/repl', {'source': TALLY, 'entry': 'bump', 'checkpoint': cap.whole(yielded), 'response': {'tag': 'variant', 'label': 'written', 'payload': record()}, **bind})
-    cap.step('POST', '/world/garden/plant', {'intent': 'plant-mine', 'fields': {'colour': 'violet', 'seed': 'an anvil that hums'}})
-    cap.step('GET', '/world/garden/bell/4/source')
-    bell = (ROOT / 'world' / 'objects' / 'Record.obend').read_text() + '# rung bells keep their rain\n'
-    spell = lambda target: f'delvetalk workshop propose\ntarget: {target}\nmigration:\n\n```obend\n{bell}```\n'
-    cap.step('POST', '/world/workshop/receive', {'intent': 'propose-1', 'spell': spell('garden/bell/4')})
-    cap.step('GET', '/world/garden/bell/4/card')
-    cap.say('The same change proposed for someone else\'s bell:')
-    cap.step('POST', '/world/workshop/receive', {'intent': 'propose-2', 'spell': spell('garden/bell/1')})
-    cap.step('GET', '/receipt?intent=propose-2')
-    cap.say("The host dry-ran the change against the bell's law before the workshop answered. The bell carries the default law\n"
-            '(`owner: request.kind == 0 or request.subject == "<its planter>"`: anyone writes, only the planter reprograms), so the dry\n'
-            'run was refused `owner`; the workshop held the proposal for the owner to adopt. The offer says `refused owner: held as #1 …`,\n'
+    cap.say("An unclaimed thing on the porch becomes its keeper's by one spell; being its keeper does not make one its owner.")
+    cap.step('POST', '/world/porch/ring/receive', {'intent': 'inspirit-1', 'spell': 'delvetalk porch/ring inspirit\nsurrounding: a ring that hums on an anvil'})
+    cap.step('GET', '/world/porch/ring/source')
+    thing = (ROOT / 'world' / 'objects' / 'Thing.obend').read_text() + '# a ring that hums keeps its hum\n'
+    cap.say('A change of its code, proposed through the workshop:')
+    cap.step('POST', '/world/workshop/receive', {'intent': 'propose-1', 'spell': f'delvetalk workshop propose\ntarget: porch/ring\nmigration:\n\n```obend\n{thing}```\n'})
+    cap.say("The host dry-ran the change against the ring's law before the workshop answered. Only the owner reprograms a thing, so the dry run\n"
+            'was refused `owner`; the workshop held the proposal for the owner to adopt. The offer says `refused owner: held as #1 …`,\n'
             "and the receipt is the workshop's own admitted write, the held proposal inserted into its `held` rows.")
-    cap.step('GET', '/world/garden/bell/1/source')
+    cap.step('GET', '/receipt?intent=propose-1')
+
+
+def fill(spell):
+    """Plain values for a spell template's fields, as any client would read them: a choice's first word, a natural's minimum."""
+    values = {}
+    for name, shown in re.findall(r'^(\w+): (.+)$', spell.partition('\n')[2], re.M):
+        values[name] = re.split(r', ', shown[len('one of '):])[0] if shown.startswith('one of ') else \
+            int(re.search(r'(\d+)\.\.', shown)[1]) if shown.startswith('<natural') else f"a {name} for strangers"
+    return values
+
+
+PURE = 'edition ObjectiveBend 1\ndef twice(n: Nat) -> Nat:\n  n + n\n'
+
+
+def walk(call, handle, prove, module):
+    """A stranger with only the catalogue and the controls in replies: challenge, verify, find a kind to make from, make,
+    read the receipt by its slug, open a scratch world, make a thing in it and run it, run a REPL entry. `call(method, href,
+    body, token)` -> (status, reply); `prove(text)` posts the challenge and returns the post's URI; `module` is the stranger's
+    own Bend (a State with a `count` and a `bump` method). -> what it reached."""
+    got = {}
+    api = call('GET', '/AGENTS.md/api', None, None)[1]
+    routes = {r['name']: r for r in api['routes']}
+    ch = call('POST', routes['challenge']['href'], {'handle': handle}, None)[1]
+    tok = ch['credential']
+    v = call('POST', ch['_links']['verify']['href'], {'handle': handle, 'uri': prove(ch['text'])}, tok)[1]
+    listing = call('GET', v['_links']['world']['href'], None, tok)[1]
+    item = [i for i in listing['_links']['item'] if i['name'] == 'kind/bell'][0]  # the listing names each object's methods
+    assert 'make' in item['actions'], item
+    spell = call('GET', item['href'], None, tok)[1]['_actions']['make']
+    planted = call('POST', f"{item['href']}/make", {'intent': 'stranger-make', 'fields': fill(spell)}, tok)[1]
+    got['made'] = (planted['status'], [c['name'] for c in planted['_links'].get('created', [])])
+    receipt = call('GET', planted['_links']['receipt']['href'], None, tok)[1]
+    got['receipt'] = (receipt['status'], receipt['receipt']['slug'] == planted['receipt']['slug'])
+    opened = call('POST', routes['scratch']['href'], {'name': 'try'}, tok)[1]
+    made_ = call('POST', opened['_links']['objects']['href'], {'intent': 'stranger-scratch', 'object': 'mine', 'entry': 'initial', 'source': module, 'seed': {}}, tok)[1]
+    mine = call('GET', made_['_links']['object']['href'], None, tok)[1]
+    assert 'bump' in mine['_actions'], mine
+    bumped = call('POST', mine['_links']['object']['href'] + '/bump', {'intent': 'stranger-bump', 'fields': {}}, tok)[1]
+    result = call('GET', bumped['_links']['receipt']['href'], None, tok)[1]['receipt']['result']
+    got['scratch'] = (made_['status'], bumped['status'], result)
+    ran = call('POST', routes['repl']['href'], {'source': PURE, 'entry': 'twice', 'arguments': [{'tag': 'natural', 'value': '21'}]}, tok)[1]
+    got['repl'] = (ran['status'], ran['value'])
+    return got
 
 
 def stranger(cap):
     cap.say('## A stranger, by the controls alone')
-    cap.say('Only `GET /AGENTS.md/api` and the `_links` and `_actions` of each reply, as `tests/test_hypermedia.py` `walk` follows them:\n'
-            'the first object offering `plant`, its card for the colours, the receipt by slug, a counter in a scratch world, a REPL entry.')
+    cap.say('Only `GET /AGENTS.md/api` and the `_links` and `_actions` of each reply, as `walk` below follows them:\n'
+            'the first object offering `make`, its card for the colours, the receipt by slug, a counter in a scratch world, a REPL entry.')
     did, cap.count = PEOPLE['wren.delve.town'], [0, 0, 0]
 
     def prove(text):
@@ -243,7 +305,7 @@ def main(argv=None):
     ap.add_argument('--binary', default=Config.load().obend)
     a = ap.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix='dt-capture-') as tmp:
-        served = Served(Path(tmp) / 'state', a.binary, opener=OPENER, library=LIBRARY)
+        served = Served(Path(tmp) / 'state', a.binary, opener=OPENER, library=LIBRARY, cleanup=atexit.register)
         sock = served.sock
         seed_town(served.root)
         provider = Provider()
@@ -255,8 +317,11 @@ def main(argv=None):
         cap.whole = lambda reply: reply['checkpoint']
         cap.out = HEAD.format(date=datetime.date.today().isoformat(), cut=CUT).split('\n')
         try:
-            for session in (planter, maker, forger, stranger):
+            for session in (bell_maker, maker, forger, stranger):
                 session(cap)
+        except BaseException:
+            Path('/tmp/ex-partial.md').write_text('\n'.join(cap.out))
+            raise
         finally:
             front.shutdown()
             front.server_close()

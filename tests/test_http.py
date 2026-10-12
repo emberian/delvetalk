@@ -13,6 +13,7 @@ import threading
 import unittest
 import urllib.parse
 from pathlib import Path
+from unittest import mock
 
 from tests.wire import label, nat, record, variant
 from tests.bend import closure, counter_modules, declared
@@ -47,7 +48,7 @@ from transport import delve, identity
 from tests.host import ServeCase, bounds, serve, served
 from transport.host import HostClient
 from transport.config import Config
-from transport.http import CATALOGUE, AccessLog, Front
+from transport.http import CATALOGUE, AccessLog, Front, turn_view
 from transport.state import State
 
 HANDLE = 'talkie.delve.town'
@@ -158,7 +159,7 @@ class FrontCase(ServeCase):
         s, ch = self.call('POST', '/AGENTS.md/challenge', {'handle': handle})
         self.assertEqual(s, 200, ch)
         self.provider.texts[did] = ch['text']
-        s, v = self.call('POST', '/AGENTS.md/verify', {'handle': handle, 'uri': f'at://{did}/town.delve.feed.post/3abc'})
+        s, v = self.call('POST', '/AGENTS.md/verify', {'handle': handle, 'uri': f'at://{did}/town.delve.feed.post/3abc'}, ch['credential'])
         self.assertEqual((s, v['status']), (200, 'verified'), v)
         return ch['credential']
 
@@ -295,6 +296,14 @@ class Access(FrontCase):
         self.assertNotIn('Bearer', text)
         self.assertEqual(len(lines), 2 + 2 + 1, lines)  # api, challenge, verify, me, nowhere
 
+    def test_the_compose_healthcheck_reads_the_home_pages_entry_and_refuses_entry_none(self):
+        from transport import watch
+        st = State(self.tmp.name, config=Config(host_socket=self.socket, http_port=self.port))
+        self.assertTrue(watch.healthy(st, 'http'))  # the deploy of 5db9aa79: a redesigned home page left it red while serving
+        real = self.host.send
+        self.host.send = lambda req: {'status': 'refused'} if req.get('op') == 'world-status' else real(req)
+        self.assertFalse(watch.healthy(st, 'http'))  # a refused world-open: the page shows `entry None`
+
 
 class Guests(FrontCase):
     """An invitation accepted (POST /AGENTS.md/accept): the operator's code is the guest's credential once, and from then the
@@ -318,7 +327,7 @@ class Guests(FrontCase):
         self.assertIn(f'dt_credential={tok}', dict(headers)['Set-Cookie'])  # a browser holding it plays as the guest
         s, me = self.call('GET', '/AGENTS.md/me', token=tok)
         self.assertEqual((s, me['principal'], me['handle']), (200, principal, name))
-        from transport.bridge import plain
+        from transport.host import plain
         avatar = self.host.send({'op': 'world-view', 'principal': principal, 'object': principal})
         self.assertEqual((avatar['status'], plain(avatar['state'])['handle']), ('viewed', name), avatar)  # arrived, by its handle
         s, t = self.turn(tok, 'g-1')
@@ -448,6 +457,17 @@ class Turns(FrontCase):
         self.assertEqual((s, e['class'], e['_links']['hint']['href']), (404, 'unknown', '/AGENTS.md/receipt?intent=sl1'))
 
 
+class TurnView(unittest.TestCase):
+    def test_the_default_view_says_what_the_act_fired_and_opened(self):
+        """The host's `revealed` lines are the default view's, not only `?full=1`'s; a reply without them has none."""
+        reply = {'status': 'admitted', 'revealed': ['garden/bell/1 now wants second: delvetalk garden/bell/1 rain'],
+                 'receipt': {'slug': 'a-b-c', 'height': 9, 'outcome': {'tag': 'admitted', 'writes': [{'object': 'garden/bell/1', 'version': 2}]}}}
+        view = turn_view(reply)
+        self.assertEqual(view['revealed'], reply['revealed'])
+        self.assertEqual(list(view), ['status', 'line', 'revealed', 'offers', 'receipt'])
+        self.assertNotIn('revealed', turn_view({**reply, 'revealed': []}))
+
+
 class Repl(FrontCase):
     def repl(self, tok, **body):
         return self.call('POST', '/AGENTS.md/repl', body, tok)
@@ -534,6 +554,14 @@ class Scratch(FrontCase):
         s, v = self.call('GET', '/AGENTS.md/scratch/try/world/hash1', token=tok)
         self.assertNotIn('pin', v)
         self.assertIn('pin', self.call('GET', '/AGENTS.md/scratch/try/world/hash1/source', token=tok)[1])
+
+    def test_a_scratch_worlds_pending_and_deliver_are_its_owners(self):
+        tok = self.login()
+        self.scratch_open(tok)
+        s, p = self.call('GET', '/AGENTS.md/scratch/try/pending', token=tok)
+        self.assertEqual((s, p['status'], p['_links']['deliver']['href']), (200, 'pending', '/AGENTS.md/scratch/try/deliver'), p)
+        s, d = self.call('POST', '/AGENTS.md/scratch/try/deliver', {}, tok)
+        self.assertEqual(s, 200, d)
 
     def test_a_scratch_object_no_spell_can_address_is_refused_before_it_is_created(self):
         tok = self.login()
@@ -723,6 +751,18 @@ class Play(InTown):
         drafts = [json.loads(p.read_text()) for p in sorted(self.outbox.glob('*.json'))] if self.outbox.exists() else []
         self.assertTrue([d for d in drafts if d['http']['intent'].startswith('play:')], drafts)  # cracks R6: a public write from the play page waits for Post
 
+    def test_what_an_act_revealed_is_said_on_the_play_page(self):
+        real = self.front.host.send
+        said = 'rule seven fired: the bell rang at its seventh rain'
+
+        def revealing(req):  # the host's revealed lines, as it writes them on an admitted reply
+            got = real(req)
+            return {**got, 'revealed': [said]} if req.get('op') == 'world-turn' and got.get('status') == 'admitted' else got
+        with mock.patch.object(self.front.host, 'send', side_effect=revealing):
+            s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a bell that says so')
+        self.assertEqual(s, 200)
+        self.assertIn(said, self.words(page))
+
     def test_plant_by_spell_and_read_the_receipt(self):
         s, _, page = self.play('/play/garden', 'delvetalk garden plant\ncolour: amber\nseed: a bell for lost moths')
         self.assertEqual(s, 200, page)
@@ -867,7 +907,7 @@ class Concurrent(unittest.TestCase):
                     handle = f'h{i}.delve.town'
                     s, ch = call('POST', '/AGENTS.md/challenge', i, {'handle': handle})
                     texts[did(i)] = ch['text']
-                    s2, v = call('POST', '/AGENTS.md/verify', i, {'handle': handle, 'uri': f'at://{did(i)}/town.delve.feed.post/3abc'})
+                    s2, v = call('POST', '/AGENTS.md/verify', i, {'handle': handle, 'uri': f'at://{did(i)}/town.delve.feed.post/3abc'}, ch['credential'])
                     s3, w = call('GET', '/AGENTS.md/world/x', i, token=ch['credential'])
                     creds[i] = ch['credential']
                     assert (s, s2, s3, v['status'], w['status']) == (200, 200, 200, 'verified', 'viewed'), (s, s2, s3, v, w)
@@ -880,7 +920,7 @@ class Concurrent(unittest.TestCase):
             front.server_close()
             self.assertEqual(errors, [])
             self.assertEqual(len(creds), self.N)
-            self.assertEqual([len(front.used(c)) for c in creds.values()], [1] * self.N)
+            self.assertEqual([front.limited(c, count=False) for c in creds.values()], [1] * self.N)
             self.assertEqual(host.ops.count('world-arrive'), self.N)
             self.assertEqual(host.ops.count('world-view'), self.N)
             self.assertEqual(sorted(ident.authenticate(c)['did'] for c in creds.values()), sorted(did(i) for i in range(self.N)))
@@ -916,6 +956,15 @@ class Slow(unittest.TestCase):
         c.request('GET', '/AGENTS.md')
         self.assertEqual(c.getresponse().status, 200)
 
+
+
+class Cookie(unittest.TestCase):
+    def test_the_session_cookie_is_secure_on_an_https_origin(self):
+        from types import SimpleNamespace
+        from transport.http import Handler
+        cookie = lambda origin: Handler.login_cookie(SimpleNamespace(server=SimpleNamespace(origin=origin)), 'dt_agent_x')[0][1]
+        self.assertIn('; Secure', cookie('https://gsb.fg-goose.online'))
+        self.assertNotIn('Secure', cookie('http://127.0.0.1:8765'))  # a loopback test front, which a browser reaches over http
 
 if __name__ == '__main__':
     unittest.main()

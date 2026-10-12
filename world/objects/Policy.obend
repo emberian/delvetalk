@@ -116,8 +116,6 @@ def many(forms: Lists.List<Form.Form>) -> Lists.List<String>:
     case cons(c): Lists.concat(formParts(c.head), many(c.tail))
 def part(text: String) -> Lists.List<String>:
   Lists.List.cons({head: text, tail: Lists.List.nil()})
-def heldPart(held: String) -> String:
-  if held == "" then "" else "Held for this participant: {held}\n"
 def misfitPart(misfit: String) -> String:
   if misfit == "" then "" else "Misfit: {misfit}\n"
 def examplesPart(state: State) -> Lists.List<String>:
@@ -126,14 +124,14 @@ def answers() -> String:
   "\nAnswer with exactly one of these, and nothing else:\n- the spell they meant, up to three one after another; every value from their words, never invented, a choice never widened;\n- grow: NAME \"reading\", then on the next line the spell that uses the new verb, when their words name an act the card's verbs do not have; a grown verb is a gesture: one line on the thing, tagged with the verb, and the thing tended;\n- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n- none when the words are not addressed to the card, or are conversation.\n"
 # The system prompt the host sends with the utterance as the user turn (docs/FLEX.md §2): hob's
 # instruction, the card as the speaker reads it, its forms in the spell grammar, what the card
-# holds for the speaker and the misfit, the examples, and the four answers; or, for
+# misfit spell hob reads past, the examples, and the four answers; or, for
 # words asked for Bend, the drafting prompt. Pieces are joined in balanced rounds, so its cost is
 # near linear.
-def prompt(state: State, asked: {utterance: String, offers: Lists.List<Form.Form>, card: String, held: String, misfit: String}) -> String:
+def prompt(state: State, asked: {utterance: String, offers: Lists.List<Form.Form>, card: String, misfit: String}) -> String:
   if drafting(asked.offers) then draftPrompt() else cardPrompt(state, asked)
-def cardPrompt(state: State, asked: {utterance: String, offers: Lists.List<Form.Form>, card: String, held: String, misfit: String}) -> String:
+def cardPrompt(state: State, asked: {utterance: String, offers: Lists.List<Form.Form>, card: String, misfit: String}) -> String:
   let head = part("{hob()}\n\nThe card they answered:\n{asked.card}\n\nWhat it takes (a spell is the delvetalk line, then one `field: value` line per field, in any order):\n")
-  let tail = if asked.held == "" && asked.misfit == "" then Lists.List::<String>.nil() else part("\n{heldPart(asked.held)}{misfitPart(asked.misfit)}")
+  let tail = if asked.misfit == "" then Lists.List::<String>.nil() else part("\n{misfitPart(asked.misfit)}")
   Document.joinAll(Lists.concat(Lists.concat(Lists.concat(head, many(asked.offers)), Lists.concat(tail, examplesPart(state))), part(answers())))
 # Words asked for Bend (the workshop's `make`): one form offered, and it takes source. The
 # answer is the package alone, so the prompt holds no card and no spell, only what a package is.
