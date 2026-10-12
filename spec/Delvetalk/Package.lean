@@ -13,6 +13,7 @@ import Delvetalk.Limits
 import Delvetalk.Canonical
 import Delvetalk.Hints
 import Delvetalk.Entry
+import Delvetalk.Memo
 
 open Lean (Json toJson)
 open Delvetalk.Compiler.ObjectiveBendFrontEnd
@@ -62,6 +63,34 @@ def missingLibraries (source : String) (package : List String) : List String :=
   needs.filterMap fun (file, alias, needed) =>
     if needed && (file == "World" || !imported file) then some s!"import ./{file}.obend as {alias}" else none
 
+/-- A module's parse (`FrontEnd.parseSource`) and its source's SHA-256: a function of its name and source. -/
+def parsedModuleCold (name source : String) :
+    Except Diagnostic (Delvetalk.Compiler.ObjectiveBendSurface.Module × String) := do
+  return (← FrontEnd.parseSource name source, Delvetalk.Compiler.Sha256.hexString source)
+
+/-- This process's parsed modules, by name and source: every package over a library parses the
+    library's modules again otherwise (a closure is prepared whole for each new package). A constant,
+    not an `initialize`: this module's `#guard`s run in the interpreter. -/
+@[noinline] unsafe def parsedMemo :
+    IO.Ref (Std.HashMap String (Except Diagnostic (Delvetalk.Compiler.ObjectiveBendSurface.Module × String))) :=
+  unsafeBaseIO (IO.mkRef {})
+
+unsafe def parsedModuleImpl (name source : String) :
+    Except Diagnostic (Delvetalk.Compiler.ObjectiveBendSurface.Module × String) :=
+  unsafeBaseIO do
+    -- A module name is an identifier: no newline, so the key is the pair.
+    let key := name ++ "\n" ++ source
+    if let some r := (← parsedMemo.get)[key]? then return r
+    let r := parsedModuleCold name source
+    parsedMemo.modify fun m => boundedInsert m 256 key r
+    return r
+
+/-- `parsedModuleCold`, once per process for a name and source. -/
+@[implemented_by parsedModuleImpl]
+def parsedModule (name source : String) :
+    Except Diagnostic (Delvetalk.Compiler.ObjectiveBendSurface.Module × String) :=
+  parsedModuleCold name source
+
 /-- A sealed in-memory package: imports name earlier modules explicitly supplied
 by the caller. The adapter never reads an import path from the filesystem. -/
 def modulesAndAsts (j : Json) :
@@ -83,14 +112,14 @@ def modulesAndAsts (j : Json) :
     if missing.length > 1 then
       throw { stage := "objective-source-parse", sourceModule := some name,
               message := s!"this module needs {missing.length} library imports it does not name; add them: " ++ "; ".intercalate missing }
-    let ast ← FrontEnd.parseSource name source
+    let (ast, sha) ← parsedModule name source
     let mut imports : List LockedImport := []
     for edge in ast.imports do
       let some target := modules.zipIdx.find? (fun (m,_) => edge.path == "./" ++ m.name ++ ".obend")
         | throw { stage := "package-request", message := s!"import must name an earlier supplied module: {edge.path}",
                   sourceModule := some name }
       imports := imports ++ [⟨edge.path, edge.importAlias, edge.span, target.2, target.1.name, target.1.sha256⟩]
-    let module : SourceModule := ⟨name,source,Delvetalk.Compiler.Sha256.hexString source,imports⟩
+    let module : SourceModule := ⟨name,source,sha,imports⟩
     checkImports module ast
     modules := modules ++ [module]
     asts := asts ++ [ast]
@@ -115,7 +144,7 @@ def withHint (j : Json) (d : Diagnostic) : Diagnostic :=
   if d.stage == "package-request" || d.hint.isSome then d
   else
     let modules := (requestSources j).map fun (name, source) =>
-      (name, source, (FrontEnd.parseSource name source).toOption)
+      (name, source, (parsedModule name source).toOption.map (·.1))
     { d with hint := Delvetalk.Hints.hintFor modules d.stage d.message d.sourceModule (d.span.map (·.line)) }
 
 open Delvetalk.Compiler.ObjectiveBendElaborate (PTy lookupRow) in
@@ -481,7 +510,7 @@ def localize (modules : List (String × String)) (limits : Json) (d : Diagnostic
   let mut seen := 0
   for (name, source) in modules do
     seen := seen + 1
-    let .ok ast := FrontEnd.parseSource name source | continue
+    let .ok (ast, _) := parsedModule name source | continue
     for (function, span) in functionBodies ast do
       let request := Json.mkObj [("entry", toJson function), ("limits", limits),
         ("modules", Json.arr ((modules.take seen).map fun (n, src) =>
@@ -879,7 +908,7 @@ def job (j : Json) : Except String Json := do
       if source.utf8ByteSize > Bounds.maxModuleBytes then throw s!"module {name} exceeds maxModuleBytes ({Bounds.maxModuleBytes} bytes)"
       total := total + source.utf8ByteSize
       if total > Bounds.maxPackageSourceBytes then throw s!"source import request exceeds maxPackageSourceBytes ({Bounds.maxPackageSourceBytes} bytes)"
-      let ast ← (FrontEnd.parseSource name source).mapError (fun d => d.json.compress)
+      let (ast, _) ← (parsedModule name source).mapError (fun d => d.json.compress)
       parsed := parsed.push (Json.mkObj [("name", toJson name),
         ("imports", Json.arr (ast.imports.map (·.json)).toArray)])
     return Json.mkObj [("status", toJson "parsed-imports"), ("modules", Json.arr parsed)]

@@ -1499,6 +1499,27 @@ def lowerInputs (inputs : Json) : Option Json := do
   let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) => k != "modules" && k != "layers"
   return Json.mkObj ([("modules", Json.arr ms.pop)] ++ (if n > 1 then [("layers", toJson (n - 1))] else []) ++ fields)
 
+/-- This process's prepared closures by `inputsKeyOf` (a content address: the inputs name their library
+    by pin), whichever world prepared them: preparing parses and expands the whole closure, library
+    included, and a caller that cannot keep the world it was handed (a pure read) would prepare it again. -/
+initialize requestMemo : IO.Ref (Std.HashMap String Package.PreparedRequest) ← IO.mkRef {}
+
+unsafe def requestReadImpl (key : String) : Option Package.PreparedRequest :=
+  unsafeBaseIO do return (← requestMemo.get)[key]?
+
+/-- The process's prepared closure of `key`; `none` in the model (prepare as if cold). -/
+@[implemented_by requestReadImpl]
+def requestRead (_key : String) : Option Package.PreparedRequest := none
+
+unsafe def requestKeepImpl (key : String) (r : Package.PreparedRequest) : Package.PreparedRequest :=
+  unsafeBaseIO do
+    requestMemo.modify fun m => boundedInsert m Limits.maxBuilds key r
+    return r
+
+/-- `r`, kept as the process's prepared closure of `key`. -/
+@[implemented_by requestKeepImpl]
+def requestKeep (_key : String) (r : Package.PreparedRequest) : Package.PreparedRequest := r
+
 /-- This process's compiled packages by `buildKey` (a content address), whichever world built them. -/
 initialize buildMemo : IO.Ref (Std.HashMap String Built) ← IO.mkRef {}
 
@@ -1531,11 +1552,17 @@ partial def compileObject (w : World) (inputs : Json) : Except String Built := d
 
 /-- `compileObject` with no cache to answer it. -/
 partial def compileObjectCold (w : World) (inputs : Json) : Except String Built := do
+  -- One prepared closure for the entry and, when the entry module declares them, `relations()`; the
+  -- process's, so the object's first definition (`compileEntryIn`: its `render`, `receive`, `forms`) is
+  -- lowered from it, not prepared again.
+  -- Only when this world holds the library the inputs name: an unknown pin is refused as before.
   let resolved ← resolveInputs w inputs
-  -- One prepared closure for the entry and, when the entry module declares them, `relations()`.
-  let request ← (Package.prepareRequest resolved).mapError Package.Diagnostic.render
-  let c ← (Package.compileEntryFrom request (← resolved.getObjValAs? String "entry")).mapError
-    fun d => (Package.withHint resolved d).render
+  let own := inputsKeyOf inputs
+  let request ← match requestRead own with
+    | some r => pure r
+    | none => pure (requestKeep own (← (Package.prepareRequest resolved).mapError Package.Diagnostic.render))
+  let c ← (Package.compileEntryFrom request (← inputs.getObjValAs? String "entry")).mapError fun d =>
+    (Package.withHint resolved d).render
   let (artifact, ty, laws) := (c.artifact, c.entry.type, c.laws)
   let packet ← artifact.getObjVal? "packet"
   let decoded ← Delvetalk.Theory.ObjectiveBendTyping.decodePacket packet
@@ -2024,27 +2051,6 @@ before and after, with `request = {context, method, argument, kind, pin, reads}`
 a root of the turn. Reprograms and amendments are judged by the law text alone: the amendment
 metarule is decided on the fragment, and no predicate, budget or bug can seal out the hand that
 may amend or reprogram. -/
-
-/-- This process's prepared closures by `inputsKeyOf` (a content address: the inputs name their library
-    by pin), whichever world prepared them: preparing parses and expands the whole closure, library
-    included, and a caller that cannot keep the world it was handed (a pure read) would prepare it again. -/
-initialize requestMemo : IO.Ref (Std.HashMap String Package.PreparedRequest) ← IO.mkRef {}
-
-unsafe def requestReadImpl (key : String) : Option Package.PreparedRequest :=
-  unsafeBaseIO do return (← requestMemo.get)[key]?
-
-/-- The process's prepared closure of `key`; `none` in the model (prepare as if cold). -/
-@[implemented_by requestReadImpl]
-def requestRead (_key : String) : Option Package.PreparedRequest := none
-
-unsafe def requestKeepImpl (key : String) (r : Package.PreparedRequest) : Package.PreparedRequest :=
-  unsafeBaseIO do
-    requestMemo.modify fun m => boundedInsert m Limits.maxBuilds key r
-    return r
-
-/-- `r`, kept as the process's prepared closure of `key`. -/
-@[implemented_by requestKeepImpl]
-def requestKeep (_key : String) (r : Package.PreparedRequest) : Package.PreparedRequest := r
 
 /-- Compile definition `name` of a package (compile inputs without `entry`) from its prepared
     closure, preparing the closure once per package and process; the world returned caches it. -/
