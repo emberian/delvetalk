@@ -90,6 +90,18 @@ def refusal_line(outcome, fallback_class=None):
     return f'{head}: {tail}' if tail else head
 
 
+def turn_line(r, addressed=None, handles=None):
+    """A turn reply in one line: `admitted garden v3, entry 9, receipt <slug>`, `refused owner: <reading>`, `suspended, entry 9`
+    (the front's JSON `line` and the play page)."""
+    rc = r.get('receipt') or {}
+    out = rc.get('outcome') or {}
+    if r.get('status') == 'admitted':
+        return turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, r.get('object') or addressed, handles)
+    if r.get('status') == 'refused':
+        return refusal_line(out, r.get('class')) + (f"\nnext at {out['next']}" if 'next' in out else '')
+    return f"suspended, entry {rc.get('height')}" if r.get('status') == 'suspended' else f"{r.get('status')}: {r.get('message', '')}"
+
+
 def spell_line(reply, origin=None, handles=None):
     """One spell's line in a reply to a post of several (a turn each): its receipt line, or its refusal and receipt;
     no card and no usage, so three fit one reply."""
@@ -193,12 +205,6 @@ def offer_drafts(st, host):
                 drafted.append(uri)
             st.write(awaiting_path(st, uri), {**w, 'settled': True})
     return drafted
-
-
-def pending_observations(rows):
-    """What may be spoken to the system: a summon, a reply, a mention, or a post the host may read as a spell."""
-    return sorted((o for o in rows if o['kind'] == 'summon' or o['replyTo'] or o['mentions'] or (o['kind'] == 'post' and 'delvetalk' in o['text'])),
-                  key=lambda o: (o['createdAt'], o['uri']))
 
 
 MAX_HOPS = 32  # the host's `reachHops`: the ancestors passed with a post
@@ -309,13 +315,13 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     recorded = record_sent(st, host)  # posts whose registration failed, retried apart from sending
     done, failed, skip, origin = [], [], st.words(st.skipped), st.config.origin
     rows = st.observations()
-    observed = pending_observations(rows)
+    observed = sorted(rows, key=lambda o: (o['createdAt'], o['uri']))  # every post goes to `world-reach` once; the host says where
     known = {o['uri']: o for o in observed}
     authors = {o['author']['handle'].lower(): o['author']['did'] for o in rows}  # every author seen, so an @handle resolves
     handles = {o['author']['did']: o['author']['handle'] for o in rows}
     for did, handle in handles.items():  # a principal arrives at their first observed post, whatever its kind
         register(st, host, did, handle)
-    mentioned = [obs['uri'] for obs in observed if mention_turns(st, host, obs, authors, handles)]
+    mentioned = [obs['uri'] for obs in observed if obs['mentions'] and mention_turns(st, host, obs, authors, handles)]
     for obs in observed:
         if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists():
             continue
@@ -381,7 +387,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     for _ in range(rounds):
         if not host.send({'op': 'world-pending'}).get('count'):
             break
-        host.send({'op': 'world-deliver', 'limit': 16})
+        host.send({'op': 'world-deliver'})  # the host's own bound a call
     offered = offer_drafts(st, host)
     published, problem = publication_drafts(st, host)
     if problem:

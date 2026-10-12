@@ -16,6 +16,7 @@ from pathlib import Path
 
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
+from transport.bridge import turn_line
 from transport.host import CLOCK, HOST_TIMEOUT, handles, paged, painted, plain, typed
 from transport.pages import door_rows
 from transport.delve import Client, canonical, http_transport
@@ -177,18 +178,6 @@ ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever 
                 'invitation_spent': 'that invitation was accepted already; the credential it gave speaks for you, and the operator can invite you again',
                 'invitation_expired': 'that invitation lapsed before it was accepted; ask for a new one',
                 'invitation_revoked': 'that invitation was revoked'}
-
-
-def turn_line(r, addressed=None, handles=None):
-    """A turn's receipt in one line: `admitted garden v3, entry 9, receipt <slug>`, `refused owner: <reading>`, `suspended, entry 9`."""
-    rc = r.get('receipt') or {}
-    out = rc.get('outcome') or {}
-    if r.get('status') == 'admitted':
-        return bridge.turn_words({**rc, 'outcome': {**out, 'tag': 'admitted'}}, r.get('object') or addressed, handles)
-    if r.get('status') == 'refused':
-        line = bridge.refusal_line(out, r.get('class'))
-        return line + (f"\nnext at {out['next']}" if 'next' in out else '')
-    return f"suspended, entry {rc.get('height')}" if r.get('status') == 'suspended' else f"{r.get('status')}: {r.get('message', '')}"
 
 
 def digits(text):
@@ -698,7 +687,7 @@ class Handler(BaseHTTPRequestHandler):
             if found.get('identity'):
                 r = host.send({'op': 'world-receipt', 'principal': principal, 'identity': found['identity']})
                 return self.answer(r, links=receipt_links(base, r))
-            if found.get('status') != 'unknown' and 'unknown' not in str(found.get('message')):
+            if found.get('status') != 'unknown':
                 return self.answer(found)  # ambiguous, denied: the host's words
             return self.answer({'status': 'unknown', 'message': f'no receipt is named {obj}'},
                                links={'hint': link(f'{base}/receipt?{urllib.parse.urlencode({"intent": obj})}')})
@@ -722,7 +711,7 @@ class Handler(BaseHTTPRequestHandler):
         if data is None:
             return
         if kind == 'deliver':
-            return send({'op': 'world-deliver', 'limit': self.server.bounds['host']['deliveriesPerCall']}, {'pending': link(base + '/pending')})
+            return send({'op': 'world-deliver'}, {'pending': link(base + '/pending')})
         if kind == 'create':  # a name no spell can address would publish spells nobody can cast: the host's parser says
             name = data.get('object')
             read = self.server.host.send({'op': 'spell-parse', 'text': f'delvetalk {name} ?'}) if isinstance(name, str) else {}

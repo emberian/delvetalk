@@ -1,4 +1,4 @@
-"""One request to the Anthropic Messages API; strict JSON back, returned verbatim to the host.
+"""One request to the Anthropic Messages API; the model's text back as `raw`, returned verbatim to the host.
 
 The key comes from the file the config's `anthropic_key_file` names, never from the repo; without a key nothing is
 sent. With `model_mock` the answer is the fixture <sha256 of the canonical request>.json (a raw Messages API response
@@ -54,18 +54,6 @@ def http(method, url, headers, body):
         return 0, b'', {}
 
 
-def extract(text):
-    """The first JSON value in text: whole, inside a fence, or after leading prose."""
-    decoder = json.JSONDecoder()
-    for i, ch in enumerate(text):
-        if ch in '{[':
-            try:
-                return decoder.raw_decode(text[i:])[0]
-            except ValueError:
-                continue
-    raise ValueError('no JSON')
-
-
 def interpret_body(status, raw, model):
     if status == 0:
         return failed('transport')
@@ -82,15 +70,7 @@ def interpret_body(status, raw, model):
         text = ''.join(b.get('text', '') for b in body['content'] if b.get('type') == 'text')
     except (ValueError, KeyError, TypeError, AttributeError):
         return failed('malformed')
-    # A reply is the model's text; `json` is the first JSON value in it when there is one.
-    # The Policy prompt asks for a plain spell, so a text-only reply is not malformed: the object
-    # fits `raw` against the offered forms, and `json` is for callers that asked for JSON.
-    try:
-        value = extract(text)
-    except ValueError:
-        value = None
-    return {'status': 'replied', 'json': value, 'raw': text, 'model': body.get('model', model),
-            'usage': body.get('usage', {})}
+    return {'status': 'replied', 'raw': text, 'model': body.get('model', model), 'usage': body.get('usage', {})}  # the host reads `raw`
 
 
 def call(transport, headers, wire, model_id):

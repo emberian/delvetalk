@@ -41,13 +41,10 @@ class Model(unittest.TestCase):
     def ask(self, status, raw, request=REQ):
         return model.ask(request, place(), transport=lambda *a: (status, raw))
 
-    def test_a_reply_parses_from_plain_fenced_or_prose_text_and_every_other_answer_is_a_named_failure(self):
-        for text in ('{"a": 1}', '```json\n{"a": 1}\n```', 'Sure! Here you go:\n{"a": 1}\nHope that helps'):
+    def test_a_reply_is_the_models_text_whole_and_every_other_answer_is_a_named_failure(self):
+        for text in ('delvetalk garden plant\nseed: a fern', 'none', '{"a": 1}'):
             r = self.ask(200, body(text))
-            self.assertEqual((r['status'], r['json'], r['raw'], r['model']), ('replied', {'a': 1}, text, 'claude-haiku-5-5'), text)
-            self.assertEqual(r['usage'], {'input_tokens': 3, 'output_tokens': 4})
-        text_only = self.ask(200, body('no json here'))  # a plain-text reply is a reply; the host fits raw
-        self.assertEqual((text_only['status'], text_only['json'], text_only['raw']), ('replied', None, 'no json here'))
+            self.assertEqual(r, {'status': 'replied', 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 3, 'output_tokens': 4}}, text)
         for status, raw, reason in ((200, b'not json', 'malformed'), (429, b'{}', 'rate'), (0, b'', 'transport'), (500, b'{}', 'transport'),
                                     (200, body('{}', stop_reason='refusal'), 'refused'), (401, b'{}', 'refused')):
             self.assertEqual(self.ask(status, raw)['reason'], reason, (status, raw))
@@ -110,7 +107,7 @@ class Interpret(unittest.TestCase):
 
     def ask(self, req):
         self.calls.append(req)
-        return {'status': 'replied', 'json': {'form': 'plant', 'n': len(self.calls)}, 'raw': '{}', 'model': req['model'], 'usage': {}}
+        return {'status': 'replied', 'raw': f'delvetalk garden plant\nseed: {len(self.calls)}', 'model': req['model'], 'usage': {}}
 
     def settled(self):
         return [json.loads(x) for x in self.log.read_text().splitlines()] if self.log.exists() else []
@@ -120,8 +117,7 @@ class Interpret(unittest.TestCase):
         self.assertEqual((r['settled'], r['failed']), (['i1', 'i2'], []))
         self.assertEqual(self.calls[0], {'model': 'claude-haiku-5-5', 'system': 'sys',
                                          'user': 'plant 1'})
-        self.assertEqual([s['reply']['json']['n'] for s in self.settled()], [1, 2])
-        self.assertEqual(self.settled()[0]['reply']['json'], {'form': 'plant', 'n': 1})
+        self.assertEqual([s['reply']['raw'] for s in self.settled()], ['delvetalk garden plant\nseed: 1', 'delvetalk garden plant\nseed: 2'])
         again = interpret.run(self.state, self.host, self.ask)  # a second run does nothing
         self.assertEqual((again['settled'], len(self.calls), len(self.settled())), ([], 2, 2))
 
@@ -139,7 +135,7 @@ class Interpret(unittest.TestCase):
         interpret.run(self.state, self.host, self.ask)
         self.assertEqual(len(self.calls), 2)  # i1 was not asked again
         self.assertEqual([s['id'] for s in self.settled()], ['i1', 'i2'])
-        self.assertEqual(self.settled()[0]['reply']['json']['n'], 1)
+        self.assertEqual(self.settled()[0]['reply']['raw'], 'delvetalk garden plant\nseed: 1')
 
     def test_after_a_restore_a_request_the_host_lists_as_pending_is_settled_again_with_its_saved_reply(self):
         interpret.run(self.state, self.host, self.ask)
@@ -149,7 +145,7 @@ class Interpret(unittest.TestCase):
         self.addCleanup(restored.close)
         again = interpret.run(self.state, restored, self.ask)
         self.assertEqual((again['settled'], len(self.calls)), (['i1'], 2))
-        self.assertEqual([(s['id'], s['reply']['json']['n']) for s in self.settled()], [('i1', 1), ('i2', 2), ('i1', 1)])
+        self.assertEqual([(s['id'], s['reply']['raw'][-1]) for s in self.settled()], [('i1', '1'), ('i2', '2'), ('i1', '1')])
 
     def test_a_refused_or_malformed_model_call_is_settled_as_the_failure_reply_without_retry(self):
         r = interpret.run(self.state, self.host, lambda req: model.failed('refused') if req['user'] == 'plant 1' else model.failed('malformed'))
