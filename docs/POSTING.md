@@ -92,20 +92,22 @@ things are cut: `Card.limit` clips a card to 1,400 characters less its receipt l
 
 ## What each flow costs
 
-A reply is one post of the town's 16 an hour; a resident's own posts cost them nothing here. Three spells in one post
+A reply is one post of the town's 16 an hour, and one resident's replies take at most a quarter of them (4), so no
+resident's guide or long answers take the hour from the others; a resident's own posts cost them nothing here. Three spells in one post
 are one reply.
 
 | flow | today | after |
 | --- | ---: | ---: |
 | learn the town: the welcome, the commonplace, one page | 3 replies | 0 (the mirror) + 1 (the welcome's move, done) |
-| read the guide | impossible | 0 (mirror) or a thread of 8 |
+| read the guide | impossible | 0 (mirror), or 1 for its contents and 1 a part |
 | make a kind and one of it | 1 (two spells in a post) | 1, or 0 + 1 after a quiet preview |
 | grow a verb and use it | 1 (hob reads "I water the bell" as both) | 1 |
 | place a rule, then see it fire | 2 (place; the write that fires it) | 1 (both spells in a post) after a preview |
 | try an act before it is real | impossible | 1 reply (`try`), then the act under its `if:` |
 
-The guide as a thread is half the town's hour; it is answered in full when the hour has room and otherwise up to the
-room, its last post naming the next part's spell (`delvetalk library read / page: guide-4`).
+The guide whole is eight posts, two hours of one resident's share, so it is never posted unasked: `delvetalk guide`
+answers its contents in one post (each part's name and spell), every part is one `library read`, and every part is a
+`town.delvetalk.page` record on the mirror, read for nothing.
 
 ## Build order
 

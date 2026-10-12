@@ -3079,7 +3079,8 @@ def reservationsAfter (w : World) (entry : Json) : Std.HashMap String Reservatio
   | "reserved", some i =>
     let round := ((w.reservations[i]?).map (·.round + 1)).getD 0
     w.reservations.insert i { source := (outcome.getObjValAs? String "source").toOption.getD "",
-                              hour := (outcome.getObjValAs? Nat "hour").toOption.getD 0, round }
+                              hour := (outcome.getObjValAs? Nat "hour").toOption.getD 0, round,
+                              resident := (outcome.getObjValAs? String "for").toOption.getD "" }
   | "released", some i => match w.reservations[i]? with
     | some r => w.reservations.insert i { r with released := true }
     | none => w.reservations
@@ -4265,11 +4266,23 @@ def quotaSource : String := "delve"
 def postsUsed (w : World) (source : String) : Nat :=
   w.reservations.fold (fun n _ r => if r.source == source && r.hour == postHour w && !r.released then n + 1 else n) 0
 
-/-- Would a reservation of `source` now be refused? The clock at which the next may be made. -/
-def postRefusal (w : World) (source : String) : Option Nat :=
-  if source == quotaSource && postsUsed w source ≥ w.postQuota then some ((postHour w + 1) * 60) else none
+/-- One resident's share of the hour's `delve` posts (the astra posting review (6)): a quarter of `postQuota`, at least
+    one, so one resident's long answers or many questions never take every reply the town has. -/
+def postShare (w : World) : Nat := max 1 (w.postQuota / 4)
 
-/-- `world-post-reserve {principal: clock, intent, source}` (HOST-HANDOFF 5.107): admit one post of
+/-- The hour's unreleased `delve` reservations answering `resident`. -/
+def residentUsed (w : World) (resident : String) : Nat :=
+  w.reservations.fold (fun n _ r => if r.source == quotaSource && r.resident == resident && r.hour == postHour w && !r.released then n + 1 else n) 0
+
+/-- Would a reservation of `source` (answering `resident`, "" for none) now be refused? The clock at which the next
+    may be made, and whether it is the resident's share that binds. -/
+def postRefusal (w : World) (source : String) (resident : String := "") : Option (Nat × Bool) :=
+  if source != quotaSource then none
+  else if postsUsed w source ≥ w.postQuota then some ((postHour w + 1) * 60, false)
+  else if !resident.isEmpty && residentUsed w resident ≥ postShare w then some ((postHour w + 1) * 60, true)
+  else none
+
+/-- `world-post-reserve {principal: clock, intent, source, for?}` (HOST-HANDOFF 5.107, 5.205): admit one post of
     `intent` before the network is touched. `delve` posts count against the journaled `postQuota` per
     clock hour and are refused `quota {next}` past it; another source reserves without a count. The
     reservation is journaled `reserved {intent, source, hour}` under `(clock, "post:" intent)`, so a
@@ -4279,21 +4292,25 @@ def postReserveOp (w : World) (j : Json) : Except String (World × Json) := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let intent ← boundedText "intent" Limits.maxIntentBytes (← j.getObjValAs? String "intent")
   let source ← boundedText "source" Limits.maxSourceBytes (← j.getObjValAs? String "source")
+  let resident := (← optText j "for").getD ""
+  if resident.utf8ByteSize > Limits.maxPrincipalBytes then throw s!"for must be at most {Limits.maxPrincipalBytes} bytes"
   if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then
     throw s!"posts are reserved only by {w.clockPrincipal}"
   let round := match w.reservations[intent]? with
     | some r => if r.released then r.round + 1 else r.round
     | none => 0
   let key := s!"post:{intent}" ++ (if round == 0 then "" else s!"/{round}")
-  let digest := Journal.bodyHash (Json.mkObj [("intent", toJson intent), ("source", toJson source)])
+  let digest := Journal.bodyHash (Json.mkObj ([("intent", toJson intent), ("source", toJson source)] ++
+    (if resident.isEmpty then [] else [("for", toJson resident)])))
   if let some r := retained w principal key digest then return (w, r)
-  if let some next := postRefusal w source then
+  if let some (next, share) := postRefusal w source resident then
     return (w, Json.mkObj [("status", toJson "refused"), ("class", toJson "quota"), ("source", toJson source),
-      ("reason", toJson s!"{w.postQuota} {source} posts an hour; the next at clock {next}"), ("next", toJson next)])
+      ("reason", toJson (if share then s!"{postShare w} of the hour's {w.postQuota} {source} posts answer one resident; the next at clock {next}"
+        else s!"{w.postQuota} {source} posts an hour; the next at clock {next}")), ("next", toJson next)] |>.setObjVal! "share" (Json.bool share))
   let (w', entry) := push w (identityKey principal key)
     [("identity", identityJson principal key), ("roots", rootsJson []), ("turn", toJson 0),
-     ("request", toJson digest), ("outcome", Json.mkObj [("tag", toJson "reserved"), ("intent", toJson intent),
-       ("source", toJson source), ("hour", toJson (postHour w))])] []
+     ("request", toJson digest), ("outcome", Json.mkObj ([("tag", toJson "reserved"), ("intent", toJson intent),
+       ("source", toJson source), ("hour", toJson (postHour w))] ++ (if resident.isEmpty then [] else [("for", toJson resident)])))] []
   return (w', reply entry)
 
 /-- `world-post-release {principal: clock, intent, reason}`: give back a reservation whose post
@@ -4318,14 +4335,17 @@ def postReleaseOp (w : World) (j : Json) : Except String (World × Json) := do
   return (w', reply entry)
 
 /-- `world-status.posts`: per source standing this clock hour, how many are reserved and, for the
-    counted source, the quota and the clock at which the next may be made. -/
+    counted source, the quota, one resident's share, how many each resident's posts took, and the clock at which the
+    next may be made. -/
 def postsStatus (w : World) : Json :=
   let sources := (w.reservations.fold (fun acc _ r => if r.hour == postHour w && !acc.contains r.source then acc ++ [r.source] else acc)
     [quotaSource])
   Json.mkObj [("hour", toJson (postHour w)), ("sources", Json.arr (sources.toArray.map fun src =>
     Json.mkObj ([("source", toJson src), ("used", toJson (postsUsed w src))] ++
-      (if src == quotaSource then [("quota", toJson w.postQuota),
-        ("next", match postRefusal w src with | some n => toJson n | none => Json.null)] else []))))]
+      (if src == quotaSource then [("quota", toJson w.postQuota), ("share", toJson (postShare w)),
+        ("residents", Json.mkObj ((w.reservations.fold (fun acc _ r => if r.source == src && r.hour == postHour w && !r.released &&
+            !r.resident.isEmpty && !acc.contains r.resident then acc ++ [r.resident] else acc) []).map fun p => (p, toJson (residentUsed w p)))),
+        ("next", match postRefusal w src with | some (n, _) => toJson n | none => Json.null)] else []))))]
 
 /-- `world-principal {principal, did, handle}`: the clock principal records the display handle
     of `did` (the bridge, at the first observed post of each author). Journaled as a
@@ -4874,7 +4894,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "post reserved by another principal"
     let source ← outcome.getObjValAs? String "source"
     unless (← natField outcome "hour") == postHour w do throw "a reservation not in its clock hour"
-    if (postRefusal w source).isSome then throw "a reservation past its source's quota"
+    if (postRefusal w source ((outcome.getObjValAs? String "for").toOption.getD "")).isSome then
+      throw "a reservation past its source's quota or its resident's share"
     return record w entry key []
   | "released" =>
     if !w.clockPrincipal.isEmpty && principal != w.clockPrincipal then throw "post released by another principal"

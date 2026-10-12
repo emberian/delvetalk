@@ -50,10 +50,11 @@ def posts(status, source='delve'):
     return next((s for s in (status.get('posts') or {}).get('sources') or [] if s.get('source') == source), {'source': source})
 
 
-def reserve(host, intent, source):
+def reserve(host, intent, source, resident=None):
     """The host admits one post of `intent` (world-post-reserve; a retry of the intent is the same reservation, no second
-    slot). A delve.town post past the hour's quota is refused `rate_limited`."""
-    got = host.send({'op': 'world-post-reserve', 'principal': CLOCK, 'intent': intent, 'source': source})
+    slot), counted against `resident`'s share of the hour when it answers one. A delve.town post past the hour's quota
+    or the resident's share is refused `rate_limited`."""
+    got = host.send({'op': 'world-post-reserve', 'principal': CLOCK, 'intent': intent, 'source': source, **({'for': resident} if resident else {})})
     if got.get('status') == 'refused':
         raise Failure('rate_limited', f"the host's quota; next at clock {got.get('next')}")
     if got.get('status') != 'reserved':
@@ -111,7 +112,13 @@ def ledger(st, intent):
     return path, (json.loads(path.read_text()) if path.exists() else None)
 
 
-def send(request, intent, st, host, client=None, now=time.time):
+def answering(d):
+    """The resident a draft answers, whose share of the hour its posts count against: its author, unless the hand
+    wrote it (a spell the hand spoke, the morning card, an invitation) or it is a publication."""
+    return None if d.get('hand') or 'publication' in d else d.get('principal')
+
+
+def send(request, intent, st, host, client=None, now=time.time, resident=None):
     """Network write, at most once per intent: the host reserves it first (`delve`, counted against its quota); the record
     key is fixed in the ledger before the first attempt, and a retry that finds a record under it adopts that record. The
     reservation is released only when the post certainly did not leave (the credentials unreadable). Credentials go only to
@@ -122,7 +129,7 @@ def send(request, intent, st, host, client=None, now=time.time):
             return got['result']
         client, found, fresh = client or Client(http_transport, allow_write=True), None, got is None
         if fresh:
-            reserve(host, intent, 'delve')
+            reserve(host, intent, 'delve', resident)
         try:
             cred = json.loads(Path(st.config.credentials).expanduser().read_text())
         except (OSError, ValueError):
@@ -208,10 +215,13 @@ def parts(text, limit=CLIP):
     return [f'{c}\n({k}/{len(chunks)})' for k, c in enumerate(chunks, 1)]
 
 
-def room(host, source='delve'):
-    """Posts the host's quota leaves this hour, None when it counts none."""
+def room(host, source='delve', resident=None):
+    """Posts the host's quota leaves this hour (and `resident`'s share of it), None when it counts none."""
     s = posts(host.send({'op': 'world-status'}), source)
-    return None if s.get('quota') is None else max(0, s['quota'] - (s.get('used') or 0))
+    if s.get('quota') is None:
+        return None
+    left = max(0, s['quota'] - (s.get('used') or 0))
+    return min(left, max(0, s['share'] - (s.get('residents') or {}).get(resident, 0))) if resident and s.get('share') else left
 
 
 def thread(path, d, st, host, body, texts, reader, client, intent, object):
@@ -223,15 +233,17 @@ def thread(path, d, st, host, body, texts, reader, client, intent, object):
     if d.get('sentParts') and body != d['text']:
         raise Failure('partly_posted', 'its first parts are posted: the rest is the same text, never another')
     sent = list(d.get('sentParts') or [])
-    if room(host) == 0 and len(sent) < len(texts):
-        raise Failure('rate_limited', "the host's quota: no post left this hour")
-    left, under, n = room(host), (d.get('sentParts') or [{}])[-1].get('uri') if sent else d.get('replyTo'), len(texts)
+    resident = answering(d)
+    if room(host, 'delve', resident) == 0 and len(sent) < len(texts):
+        raise Failure('rate_limited', "the host's quota: no post left this hour for this reply")
+    left, under, n = room(host, 'delve', resident), (d.get('sentParts') or [{}])[-1].get('uri') if sent else d.get('replyTo'), len(texts)
     for k in range(len(sent), n):
         if left is not None and left <= 0:
             break
         said = texts[k] if left != 1 or k == n - 1 else texts[k][:texts[k].rindex('(')] + f'({k + 1}/{n}; the next part follows when the hour turns)'
         try:
-            one = send(build_request(said, reply_ref(reader, under) if under else None, mention_facets(reader, said)), f'{intent}#{k + 1}', st, host, client=client)
+            one = send(build_request(said, reply_ref(reader, under) if under else None, mention_facets(reader, said)), f'{intent}#{k + 1}', st, host,
+                       client=client, resident=resident)
         except Failure as f:
             if f.code != 'rate_limited' or not sent:
                 raise
@@ -271,7 +283,7 @@ def post_draft(path, st, host, text=None, reader=None, client=None, intent=None,
         if len(texts) > 1:
             return thread(path, d, st, host, body, texts, reader, client, intent, object)
         result = send(build_request(body, reply_ref(reader, d['replyTo']) if d.get('replyTo') else None, mention_facets(reader, body)),
-                      intent, st, host, client=client)
+                      intent, st, host, client=client, resident=answering(d))
     d = dict(d, text=body, posted=True, sent=result, intent=intent, **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
     st.write(path, d)  # sent, whatever the host says next: record_sent retries the registration alone
     if object:

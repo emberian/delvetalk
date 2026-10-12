@@ -2338,6 +2338,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `world-receipt` (the asker's own post), journaled nowhere: `{status: "looked", of, found}`. The value is read to the
    line's end, so an at:// address keeps its `/`. The bridge drafts the receipt's line, or "no receipt here is named
    X: no host issued it, so it records nothing" (`bridge.lookup_text`). Test: `test_posting`.
+205. **One resident's share of the hour's posts (lane/posting; the astra posting review (6); no edition change).**
+   `world-post-reserve` takes `for`, the resident a post answers; it is journaled on the `reserved` outcome and kept
+   on the `Reservation` (`resident`, in the snapshot only when set). `postShare` is a quarter of `postQuota`, at least
+   one; past it the reservation is refused `quota` with `share: true` and the reason naming the share, while other
+   residents' and the hand's own posts (no `for`) go on. Replay holds a reservation to the share as to the quota. An
+   entry without `for` (every one before) counts against no share. `world-status.posts` adds `share` and
+   `residents {principal: used}`. The transport passes the draft's author (`post.answering`: not the hand's own
+   drafts, not publications) and a thread sizes itself by the smaller room (`post.room`). Test:
+   `test_post_reserve.Shares`.
 
 ## 6. Gotchas
 
