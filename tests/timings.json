@@ -1,0 +1,16 @@
+{
+ "tests.test_archive.Archive": 30,
+ "tests.test_attention.Heard": 10,
+ "tests.test_authoring.Authoring": 14,
+ "tests.test_carry.StateDirectory": 11,
+ "tests.test_carry_check.CarryCheck": 28,
+ "tests.test_conformance.Conformance": 14,
+ "tests.test_genesis.NoWipe": 8,
+ "tests.test_hand.Speak": 12,
+ "tests.test_http.Play": 11,
+ "tests.test_http.Quota": 9,
+ "tests.test_kinds.Kinds": 14,
+ "tests.test_properties.EveryMethod": 24,
+ "tests.test_properties.RandomHour": 49,
+ "tests.test_town_template.Template": 9
+}

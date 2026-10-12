@@ -2,6 +2,7 @@
    The journal (Journal.lean) is the only source of a World; Ops.lean is the only
    writer. Nothing here depends on an evaluator. -/
 import Delvetalk.Package
+import Delvetalk.Memo
 import Delvetalk.Entry
 import Delvetalk.Host.Blocks
 import Theory.ObjectiveBendCheckpointV3

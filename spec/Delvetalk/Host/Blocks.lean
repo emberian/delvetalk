@@ -6,6 +6,7 @@
 import Delvetalk.Canonical
 import Lean.Data.PersistentArray
 import Lean.Data.PersistentHashMap
+import Std.Data.HashMap
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -82,6 +83,44 @@ structure Entries where
 
 instance : Inhabited Entries := ⟨{}⟩
 
+/-- The record bytes the process keeps decoded (`recordMemo`), at most. -/
+def recordMemoBytes : Nat := 64 * 1024 * 1024
+
+/-- Stored entries this process has read, verified and decoded, by CID and decoding depth, with the
+    bytes of their records: a record is immutable and named by its CID, so it is checked once
+    (`stateCidAt`, `stateAt`, a source or block lookup each walk an object's entries again).
+    A constant, not an `initialize`, as the other memos of modules with `#guard`s. -/
+@[noinline] unsafe def recordMemo : IO.Ref (Std.HashMap String (Json × Nat) × Nat) :=
+  unsafeBaseIO (IO.mkRef ({}, 0))
+
+/-- The entry a stored record holds, when its bytes are its CID's; none otherwise. -/
+def storedEntryCold (handle : IO.FS.Handle) (offset length : Nat) (hash : String) (depth : Nat) : Option Json := do
+  let bytes ← readAt handle offset length
+  if Delvetalk.Canonical.cid bytes != hash then none
+  (entryOfRecord bytes hash depth).toOption
+
+unsafe def storedEntryImpl (handle : IO.FS.Handle) (offset length : Nat) (hash : String) (depth : Nat) : Option Json :=
+  unsafeBaseIO do
+    let key := s!"{depth}/{hash}"
+    if let some (j, _) := (← recordMemo.get).1[key]? then return some j
+    let some j := storedEntryCold handle offset length hash depth | return none
+    recordMemo.modify fun (m, bytes) => Id.run do
+      if m.contains key || length > recordMemoBytes then return (m, bytes)
+      let mut m := m
+      let mut bytes := bytes
+      -- Room for this record: drop others until it fits.
+      while bytes + length > recordMemoBytes do
+        match m.fold (init := none) fun (acc : Option (String × Nat)) k (_, n) => acc <|> some (k, n) with
+        | some (k, n) => m := m.erase k; bytes := bytes - n
+        | none => break
+      return (m.insert key (j, length), bytes + length)
+    return some j
+
+/-- `storedEntryCold`, verified and decoded once per process for a CID. -/
+@[implemented_by storedEntryImpl]
+def storedEntry (handle : IO.FS.Handle) (offset length : Nat) (hash : String) (depth : Nat) : Option Json :=
+  storedEntryCold handle offset length hash depth
+
 namespace Entries
 
 /-- The entry at index `i` (height `i + 1`), read from the store (none unless its record is its CID's)
@@ -90,10 +129,7 @@ def get? (e : Entries) (i : Nat) : Option Json :=
   if i ≥ e.count then none
   else if i < e.spans.size then do
     let (offset, length) := e.spans.get! i
-    let bytes ← readAt (← e.store) offset length
-    let hash := e.hashes.get! i
-    if Delvetalk.Canonical.cid bytes != hash then none
-    (entryOfRecord bytes hash e.depth).toOption
+    storedEntry (← e.store) offset length (e.hashes.get! i) e.depth
   else e.fresh[i - e.spans.size]?
 
 def getD (e : Entries) (i : Nat) : Json := (e.get? i).getD Json.null

@@ -9,6 +9,9 @@ Everything it writes is under --out. It never touches the network.
 """
 import argparse
 import collections
+import concurrent.futures
+import contextlib
+import io
 import json
 import os
 import re
@@ -17,6 +20,8 @@ import subprocess
 import sys
 import tempfile
 import time
+import traceback
+import types
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -96,8 +101,27 @@ class Run:
         self.seen, self.plantings = set(), []
 
     def program(self, *argv, what=''):
-        """One transport program as a subprocess; its stdout JSON lines are returned, stderr kept verbatim."""
-        p = subprocess.run([sys.executable, *argv], cwd=ROOT, env=self.env, capture_output=True, text=True)
+        """One transport program (`-m transport <command> ...`) as its entry point runs it, under the run's environment, in
+        this process (a new interpreter per window was most of the rehearsal's time); its stdout JSON lines are returned,
+        stderr kept verbatim."""
+        assert argv[:2] == ('-m', 'transport'), argv
+        from transport.__main__ import main as transport_main
+        stdout, stderr, saved = io.StringIO(), io.StringIO(), dict(os.environ)
+        os.environ.clear()
+        os.environ.update(self.env)
+        try:
+            with contextlib.redirect_stderr(stderr):
+                try:
+                    code = transport_main(list(argv[2:]), out=stdout)
+                except SystemExit as e:
+                    code = e.code if isinstance(e.code, int) else 1
+                except Exception:
+                    traceback.print_exc(file=stderr)
+                    code = 1
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+        p = types.SimpleNamespace(stdout=stdout.getvalue(), stderr=stderr.getvalue(), returncode=code or 0)
         self.log.write(f'$ {" ".join(argv)}\n{p.stdout}{p.stderr}\n')
         if p.stderr.strip() or (p.returncode and not p.stdout.strip()):
             self.errors.append({'kind': 'program', 'argv': argv[:3], 'what': what, 'code': p.returncode,
@@ -420,12 +444,15 @@ def snapshot_replay(out, binary, cuts=4):
             stderr += h.close()
         return dict(got, stderr=stderr.strip()[:300])
 
-    straight = reopen('straight')
     own = sorted((out / 'state').glob('town.journal.snapshot.*.cbor'))
-    cases = {'run': reopen('run', snapshots=own)} if own else {}
+    # Each reopen is its own host over its own copy: they run side by side (`verify`, which reads the cuts'
+    # snapshots, after them).
+    jobs = {'straight': lambda: reopen('straight')}
+    if own:
+        jobs['run'] = lambda: reopen('run', snapshots=own)
     for k in range(1, cuts + 1):
         at = len(lines) * k // (cuts + 1)
-        cases[f'cut{at}'] = reopen(f'cut{at}', prefix=at)
+        jobs[f'cut{at}'] = lambda at=at: reopen(f'cut{at}', prefix=at)
     # And one cut inside a settling: between two deliveries in a row that one cause produced (a rule's firing, the
     # tide's next send), as a crash between two appends of one durable write leaves it. A delivery belongs to the
     # settling of the one before it when it comes from the same origin, or from that very delivery (a chain: the tide's
@@ -437,7 +464,11 @@ def snapshot_replay(out, binary, cuts=4):
     inside = next((i for i in range(2, len(entries)) if origin(entries[i]) and (origin(entries[i]) == origin(entries[i - 1])
                   or origin(entries[i]) == ident(entries[i - 1]))), None)
     if inside:
-        cases[f'settling{inside}'] = reopen(f'settling{inside}', prefix=inside)
+        jobs[f'settling{inside}'] = lambda: reopen(f'settling{inside}', prefix=inside)
+    with concurrent.futures.ThreadPoolExecutor(len(jobs)) as pool:
+        done = {name: pool.submit(job) for name, job in jobs.items()}
+        cases = {name: f.result() for name, f in done.items()}
+    straight = cases.pop('straight')
     cases['verify'] = reopen('verify', snapshots=own + sorted(base.glob('cut*/world.journal.snapshot.*.cbor'))[-2:], verify=True)
     report = {'height': len(lines), 'straight': {k: straight[k] for k in ('opened', 'snapshot', 'seconds', 'stderr')}, 'cases': {}}
     for name, c in cases.items():
@@ -560,8 +591,12 @@ def main(argv=None):
             results['liveSnapshot'] = r.host.send({'op': 'world-snapshot'})
     finally:
         r.stop_serve()
-    results['grammar'], results['burst'], results['handle'] = grammar_probes(r.out, str(Path(a.binary).resolve()))
-    results['snapshotReplay'] = snapshot_replay(r.out, str(Path(a.binary).resolve()))
+    # The probes and the replay matrix each work on copies of the stopped journal: side by side.
+    with concurrent.futures.ThreadPoolExecutor(2) as pool:
+        probes = pool.submit(grammar_probes, r.out, str(Path(a.binary).resolve()))
+        replay = pool.submit(snapshot_replay, r.out, str(Path(a.binary).resolve()))
+        results['grammar'], results['burst'], results['handle'] = probes.result()
+        results['snapshotReplay'] = replay.result()
     entries, tags, classes, reasons = journal_stats(r.state / 'town.journal')
     results['journal'] = {'height': len(entries), 'bytes': chain.size(r.state / 'town.journal'),
                           'sha256': __import__('hashlib').sha256((r.state / 'town.journal').read_bytes() + (r.state / 'town.journal.blocks').read_bytes()).hexdigest(),

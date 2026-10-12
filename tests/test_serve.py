@@ -18,6 +18,7 @@ import tempfile
 import time
 import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from transport.journal import copy as journal_copy
@@ -370,7 +371,8 @@ class Orphan(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         state = os.path.join(tmp.name, 'state')
         env = {k: v for k, v in os.environ.items() if k != 'DELVETALK_OBEND_COPY'}
-        env.update(DELVETALK_OBEND=binary(), PYTHONPATH=str(Path(__file__).resolve().parent.parent))
+        # The child's copy goes under this test's own temporary directory, where no other run's copy maker sweeps it.
+        env.update(DELVETALK_OBEND=binary(), PYTHONPATH=str(Path(__file__).resolve().parent.parent), TMPDIR=tmp.name)
         child = subprocess.Popen([sys.executable, '-c', ORPHAN, state, how], env=env, stdout=subprocess.PIPE, text=True)
         pid, own_session, copy = child.stdout.readline().split()
         child.stdout.close()
@@ -402,7 +404,8 @@ class Orphan(unittest.TestCase):
         with open(os.path.join(state, 'served.pid')) as f:  # nothing ran to remove it: the record of what was started
             self.assertEqual(int(f.read()), pid)
         self.assertTrue(os.path.exists(os.path.join(copy, 'owner.pid')))
-        sweep_copies()
+        with mock.patch.object(tempfile, 'tempdir', os.path.dirname(copy)):  # the next copy maker there
+            sweep_copies()
         self.assertFalse(os.path.exists(copy))
 
 

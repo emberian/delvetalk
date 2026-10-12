@@ -844,6 +844,7 @@ class Quota(InTown):
 
     def test_the_49th_prose_reply_in_an_hour_is_refused_by_quota_with_its_next_at(self):
         self.front.sleep = lambda seconds: None
+        self.front.play_wait = 0  # one look at each turn: the 48 wait on hob, whom nobody runs, and the quota is the point
         for i in range(48):
             self.play('/play/', f'something green, number {i}')
         s, _, page = self.play('/play/', 'one more')

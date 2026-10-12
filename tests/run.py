@@ -1,24 +1,33 @@
 """Run the whole suite in parallel, one subprocess per test class.
 
-    python3 -W ignore -m tests.run [--profile] [module ...]     (default: every tests/test_*.py)
+    python3 -W ignore -m tests.run [--profile] [--baseline] [module ...]     (default: every tests/test_*.py)
 
---profile counts, per class, the host processes spawned (every exec of the binary, including the
-ones `serve` starts) and the `serve` processes started, and prints the twenty slowest classes with both.
+--baseline rewrites tests/timings.json, the checked-in times of the classes slower than SPLIT, from this run.
 
-The host binary is copied once and the copy shared with the workers. Each class gets its own
+--profile counts, per class, the host processes spawned (every exec of the binary but `serve`'s) and the
+`serve` processes started, and prints the twenty slowest classes with both.
+
+The host binary is copied once and the copy shared with the workers, with one compile cache for the run
+(`DELVETALK_COMPILE_CACHE`, content-addressed, so a package compiles once whichever class asks; paints keep
+their own, `DELVETALK_RENDER_CACHE`, never shared) and one genesis per town shape (`DELVETALK_TOWN_TEMPLATES`,
+tests/town.py). Each class gets its own
 process (and so its own host process), preserving class-level sharing and journal isolation; a
 class declaring `independent = True` measured over SPLIT seconds is dealt into chunks instead.
 Slowest classes start first (measured times persist in tests/.timings.json). A class runs in
 the module that defines it, never again where it is imported. The run ends with the tests per
 layer (each module's docstring names its layer) and the five slowest classes.
 """
+import atexit
 import concurrent.futures
+import hashlib
 import importlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -26,11 +35,13 @@ from pathlib import Path
 from tests import host
 
 HERE = Path(__file__).resolve().parent
-TIMINGS = HERE / '.timings.json'
+TIMINGS = HERE / '.timings.json'  # this checkout's measurements (ignored by git)
+BASELINE = HERE / 'timings.json'  # the classes slower than SPLIT, checked in so a fresh checkout schedules them first
 
 
 LAYERS = ['properties', 'scenarios', 'kernel', 'host', 'objects', 'transport', 'rehearsal']  # each module's docstring names its own
 SPLIT = 8.0  # seconds: a fresh-world class measured slower than this runs in that many parallel chunks
+CHUNK = 3  # tests per job of an independent class with no measured time
 
 
 def classes(modules):
@@ -55,12 +66,18 @@ def classes(modules):
 def jobs(found, known):
     """One job per class, except that a class declaring `independent = True` (its tests share
     nothing but a process: HostCase's fresh world per test, TurnCase's stateless checker) known to
-    take longer than SPLIT is dealt into chunks run side by side."""
+    take longer than SPLIT is dealt into chunks run side by side; one never measured (no tests/.timings.json, which
+    is each checkout's own) is dealt CHUNK tests a job."""
     out = {}
     for key, names in found.items():
         module, cls = key.rsplit('.', 1)
         independent = getattr(getattr(importlib.import_module(module), cls), 'independent', False)
-        n = min(len(names), max(1, round(known.get(key, 0) / SPLIT))) if independent else 1
+        if not independent:
+            n = 1
+        elif key in known:
+            n = min(len(names), max(1, round(known[key] / SPLIT)))
+        else:  # never measured here (a fresh checkout has no timings file): CHUNK tests a job
+            n = -(-len(names) // CHUNK)
         if n == 1:
             out[key] = [key]
         else:
@@ -97,23 +114,36 @@ def spawn_counts(spawns, name):
 
 
 def main(argv):
-    profile = '--profile' in argv
-    argv = [a for a in argv if a != '--profile']
+    profile, rebase = '--profile' in argv, '--baseline' in argv
+    argv = [a for a in argv if a not in ('--profile', '--baseline')]
     modules = argv or sorted(p.stem for p in HERE.glob('test_*.py'))
     found = classes(modules)
-    try:
-        known = json.loads(TIMINGS.read_text())
-    except (OSError, ValueError):
-        known = {}
+    known = {}
+    for path in (BASELINE, TIMINGS):  # the checked-in slow classes, then this checkout's own measurements over them
+        try:
+            known.update(json.loads(path.read_text()))
+        except (OSError, ValueError):
+            pass
     work = jobs(found, known)
     estimate = lambda job: known.get(job.split('#')[0], len(found[job.split('#')[0]])) / int(job.rpartition('/')[2] if '#' in job else 1)
     order = sorted(work, key=lambda job: -estimate(job))
     env = dict(os.environ, DELVETALK_OBEND_COPY=host.binary(), PYTHONPATH=str(HERE.parent))
+    # One compile cache for the run (each package compiles once, not per class) and one genesis per town shape
+    # (tests/town.py copies it into each town).
+    for name, prefix in (('DELVETALK_COMPILE_CACHE', 'dt-compile-'), ('DELVETALK_TOWN_TEMPLATES', 'dt-towns-')):
+        if not env.get(name):
+            env[name] = tempfile.mkdtemp(prefix=prefix)
+            atexit.register(shutil.rmtree, env[name], True)
+    real = os.path.realpath(host.binary())
+    st = os.stat(real)
+    with open(real, 'rb') as f:  # the binary's pin, hashed once here rather than once per class (deploy/serve.py)
+        env['DELVETALK_OBEND_PIN'] = json.dumps({'path': real, 'size': st.st_size, 'mtimeNs': st.st_mtime_ns,
+                                                 'sha256': hashlib.sha256(f.read()).hexdigest()})
     spawns = None
     if profile:
-        import tempfile
         spawns = tempfile.mkdtemp(prefix='dt-spawns-')
         env['DELVETALK_OBEND_COPY'] = counting_wrapper(host.binary(), spawns)
+        env['DELVETALK_OBEND_REAL'] = host.binary()  # serve runs the binary itself (tests/host.py `served`), so its pin holds
     t0, failed, took = time.time(), [], {}
     with concurrent.futures.ThreadPoolExecutor(os.cpu_count() or 4) as pool:
         for name, code, secs, out in pool.map(lambda job: run_one(job, work[job], env, spawns), order):
@@ -126,6 +156,8 @@ def main(argv):
         for job, secs in took.items():
             per_class[job.split('#')[0]] = per_class.get(job.split('#')[0], 0) + secs
         TIMINGS.write_text(json.dumps({**known, **{k: round(v, 2) for k, v in per_class.items()}}, indent=1))
+        if rebase:
+            BASELINE.write_text(json.dumps({k: round(v) for k, v in sorted(per_class.items()) if v >= SPLIT}, indent=1) + '\n')
     except OSError:
         pass
     counts = {}

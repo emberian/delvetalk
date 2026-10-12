@@ -1778,7 +1778,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      at once, the render still queued. `world-render-submit {key, reply}` takes model.py's result verbatim: `replied`
      is verified and cached; `transport`/`rate` waits `renderBackoffMs` and is listed again, `renderAttempts` 3 in
      all; anything else is `exact` (`model`). Painted and refused renders are written to the disk cache (kind
-     `render`) when `DELVETALK_COMPILE_CACHE` is set and re-verified on every read back; a model failure is not.
+     `render`) when `DELVETALK_RENDER_CACHE` is set (its own directory: renders never share the compile cache) and re-verified on every read back; a model failure is not.
      `plain` (a `plain` field true or `yes`) answers `plain`; a root `card` override `exact {override}`; no
      policy or no `Paint` module `exact {unavailable}`.
    - Transport: `interpret` is the one model worker (interpretations, then paints, every `model_poll` second;
@@ -1798,7 +1798,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      (2) KIND's `voice` and the `plain` lens are the objects lane's (read here by field name, untested until a
      package declares them; add a test then); (3) whether a reply post carries paint is the fourth playtest's (the
      bridge drafts exact; `zulip.py` untouched); (4) renders are per process: a restarted serve without
-     `DELVETALK_COMPILE_CACHE` paints each card once more (deploy does not set it; set it, or accept the call);
+     `DELVETALK_RENDER_CACHE` paints each card once more (deploy does not set it; set it, or accept the call);
      (5) the paint is dry, a field-guide catalogue; once kinds carry `voice` read a dozen live paints and tune
      `Paint.contract()` (it is library text: a library change, not a host one).
    - *lane/paint* (2026-10-12; no edition change): the strokes carry meaning, not ledger (`Strokes.text` is what the

@@ -29,6 +29,8 @@ KIM, GLM = list(STRANGERS)
 
 
 class Arc(unittest.TestCase):
+    independent = True  # a fresh town per test: tests/run.py may split the class
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
