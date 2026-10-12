@@ -5403,6 +5403,10 @@ def wanting (w : World) (reader : String) (after limit : Nat) : List Wanted × B
     rest := rest.drop group.length
   return (page.toList, !rest.isEmpty)
 
+/-- A row of `wanting` as Bend reads it (`World.Want`): `world.wanting`'s rows, and a card's third parameter. -/
+def wantedData (r : Wanted) : Data := .record [("object", .label r.object), ("name", .label r.name),
+  ("reading", .label r.reading), ("asks", .label r.asks), ("since", .natural r.since)]
+
 /-- `world-wanting {principal?, after?, limit?}` → `{status: wanting, rows: [{object, name, reading?, asks,
     since}], more}` (`wanting`). -/
 def wantingOp (w : World) (j : Json) : Except String Json := do
@@ -5651,7 +5655,7 @@ def pageFields (more : Bool) (cursor : Option String) : List (String × Json) :=
     at the first entry that carried it. -/
 def sourceRecords (w : World) : Array (Nat × String × Json) := Id.run do
   let mut names : Std.HashMap String String := {}
-  for i in [0:w.entries.count] do
+  for i in [w.entries.base:w.entries.count] do
     let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
     let compiles := ((outcome.getObjVal? "compile").toOption.toList ++
@@ -5662,7 +5666,7 @@ def sourceRecords (w : World) : Array (Nat × String × Json) := Id.run do
           unless names.contains cid do names := names.insert cid n
   let mut out : Array (Nat × String × Json) := #[]
   let mut seen : Std.HashSet String := {}
-  for i in [0:w.entries.count] do
+  for i in [w.entries.base:w.entries.count] do
     let some entry := w.entries.get? i | continue
     let height := i + 1
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -5715,7 +5719,7 @@ def sourcesOp (w : World) (j : Json) : Except String Json := do
 def grantsOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let mut items : Array (Nat × Json) := #[]
-  for i in [0:w.entries.count] do
+  for i in [w.entries.base:w.entries.count] do
     let some entry := w.entries.get? i | continue
     if tagOf entry != "admitted" then continue
     let made := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "grants" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]
@@ -5748,7 +5752,7 @@ def entryOp (w : World) (j : Json) : Except String Json := do
     see it, paged by height (`pageByHeight`). -/
 def entriesOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
-  let (shown, more, cursor) ← pageByHeight j ((Array.range w.entries.count).map fun i => (i + 1, i))
+  let (shown, more, cursor) ← pageByHeight j ((Array.range (w.entries.count - w.entries.base)).map fun k => (w.entries.base + k + 1, w.entries.base + k))
   return Json.mkObj ([("status", toJson "entries"), ("entries", Json.arr (shown.map (projectEntry w reader ∘ w.entries.getD)))] ++
     pageFields more cursor)
 
@@ -5758,7 +5762,7 @@ def entriesOp (w : World) (j : Json) : Except String Json := do
 def slugTargets (w : World) (reader : String) : Array (String × String) := Id.run do
   let mut out : Array (String × String) := #[]
   let seen := fun (id : String) => viewable w reader id
-  for i in [0:w.entries.count] do
+  for i in [w.entries.base:w.entries.count] do
     let some entry := w.entries.get? i | continue
     if let .ok h := entry.getObjValAs? String "hash" then out := out.push (h, "receipt")
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -5807,7 +5811,7 @@ def resolveOp (w : World) (j : Json) : Except String Json := do
       ("message", toJson s!"unknown: no receipt, pin or state here is named {slug}")]
   | [(cid, "carried")] =>
     -- A receipt of a world this one was carried from: its height there, and that world.
-    let (height, origin) := (((w.entries.get? 0).map carriedEntries).getD #[] |>.find? (·.1 == cid) |>.map (·.2)).getD (0, Json.null)
+    let (height, origin) := ((w.entries.genesis?.map carriedEntries).getD #[] |>.find? (·.1 == cid) |>.map (·.2)).getD (0, Json.null)
     let world := (origin.getObjValAs? String "world").toOption.getD ""
     return Json.mkObj [("status", toJson "resolved"), ("slug", toJson slug), ("kind", toJson "receipt"), ("cid", toJson cid),
       ("carried", Json.mkObj [("world", toJson world), ("height", toJson height), ("at", (origin.getObjVal? "height").toOption.getD Json.null)]),

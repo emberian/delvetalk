@@ -99,7 +99,7 @@ front mounts none) for the front, bridge, interpreter and the public verbs, and
 `<dir>/root/root.sock` (mode 0660, group `--root-group`, so the hand runs under
 its own uid in that group) for the root ops: `world-root`, `world-dump`,
 `world-library`, `world-settings`, `world-fork`, `world-snapshot`. A root op on
-the public socket is a request error, "the opener speaks on the root socket".
+the public socket is a request error of class `opener`, "the opener speaks on the root socket".
 The opener's ordinary turns are the public socket's too (the bridge submits her
 own posts as a resident's); there her privileges are not: amending another's
 thing, revoking any grant, the powers, naming an owner (`World.resident`,

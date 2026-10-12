@@ -803,16 +803,21 @@ def storedPure (id : String) (o : Object) (c : Compiled) (rest : List Data) : M 
     return .error failure
   | .error e => return .error e
 
-/-- An object's card as `context`'s reader sees it, run on its committed state under this turn's
-    ticks: `renderFor(state, context)` when the package has it, else `render`, which may take
-    `(state, context)` or the state alone. `noCard` when it has neither, `render` when it fails
-    or runs out. It runs on the stored state (`storedPure`): what it read of `id` is a root. -/
-def renderCard (id : String) (o : Object) (context : String → Data) : M (Except String Data) := do
-  let name := if hasMethod o "renderFor" then "renderFor" else "render"
+/-- An object's card as `reader` sees it (asked by `caller` under `intent`, `cardContext`), run on its
+    committed state under this turn's ticks: `renderWanting(state, context, wanting)` when the package
+    declares it, handed what wants a hand across the world as the reader may view it (`wanting`, the
+    newest `Limits.cardWanting`, each `wantedData`; derived, no root) as it is handed the reader; else
+    `render`, which may take the state alone or `(state, context)`. `noCard` when it has neither, `render`
+    when it fails or runs out. It runs on the stored state (`storedPure`): what it read of `id` is a root. -/
+def renderCard (id : String) (o : Object) (reader caller intent : String) : M (Except String Data) := do
+  let name := if o.declaresDef "renderWanting" then "renderWanting" else "render"
   let compiled ← tryCatch (some <$> compiledMethod o name) fun _ => pure none
   let some c := compiled | return .error "noCard"
-  let arguments := match c.type with
-    | .arrow _ _ _ (.arrow _ _ ct _) => [fitRecord c.bounds ct (context name)]
+  let w := (← get).world
+  let context := fun ct => fitRecord c.bounds ct (cardContext w id reader caller intent w.height name)
+  let arguments := match arrowDomains 3 c.type with
+    | [_, ct] => [context ct]
+    | [_, ct, _] => [context ct, listData ((wanting w reader 0 Limits.cardWanting).1.map wantedData)]
     | _ => []
   match ← storedPure id o c arguments with
   | .ok value => return .ok value
@@ -2087,9 +2092,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let nat := fun (k : String) => match f.lookup k with | some (.natural n) => n | _ => 0
     let s ← get
     let (rows, more) := wanting s.world s.subject (nat "after") (nat "limit")
-    let row := fun (r : Wanted) => Data.record [("object", .label r.object), ("name", .label r.name),
-      ("reading", .label r.reading), ("asks", .label r.asks), ("since", .natural r.since)]
-    respond bounds responseType "wanting" [.record [("rows", listData (rows.map row)), ("more", .boolean more)]]
+    respond bounds responseType "wanting" [.record [("rows", listData (rows.map wantedData)), ("more", .boolean more)]]
   | .variant "amend" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed amend plan"
     let some text := (f.lookup "law").bind labelOf | evaluation "malformed amend plan"
@@ -2166,8 +2169,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       if !o.read.permits s.subject then respond bounds responseType "denied" [emptyRecord] else
       -- What the card shows is its code's on the scalar part and the rows it forced (`storedPure`).
       recordCells id o.version { scalar := true }
-      let reader := cardContext s.world id s.subject self s.intent s.world.height
-      match ← renderCard id o reader with
+      match ← renderCard id o s.subject self s.intent with
       | .ok document => respond bounds responseType "carded" [.record [("document", document)]]
       | .error clause => refusedWith bounds responseType clause
   | .variant "viewField" (.record f) =>
@@ -2446,7 +2448,8 @@ def textField (state : Data) (name : String) : Option String :=
     its owner's name, or why one that held did not fire), **what it opened or closed** (each want of a
     written thing that came to hold, with the spell that answers it, or stopped holding), and **where it
     stands** (each relation it added rows to: how many it holds now, and the first by the speaker when it
-    is). From the entry and the world after it; no model. -/
+    is), said only while the thing is at the version the entry wrote, so a later read of an old receipt
+    never gives today's count as the entry's. From the entry and the world after it; no model. -/
 def revealed (w : World) (entry : Json) : List String := Id.run do
   if tagOf entry != "admitted" then return []
   let principal := ((entry.getObjVal? "identity").toOption.bind fun i => (i.getObjValAs? String "principal").toOption).getD ""
@@ -2468,9 +2471,13 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
   -- Where it stands: each relation a write inserted into, its count now, and the speaker's first row.
   let writes := ((((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)).map
     fun j => (parseRecordedWrites j).toOption.getD []).getD [])
+  let wrote := fun (id : String) => ((((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)).bind
+    (·.getArr?.toOption)).getD #[]).findSome? fun x =>
+      if (x.getObjValAs? String "object").toOption == some id then (x.getObjValAs? Nat "version").toOption else none
   let mut stands : List String := []
   for (id, ws) in writes do
     let some o := w.objects[id]? | continue
+    unless wrote id == some o.version do continue
     let inserted := ws.flatMap fun x => x.edits.filterMap fun e => match e.kind with
       | .insert row | .upsert row => some (e.field, row)
       | _ => none
@@ -2488,9 +2495,19 @@ def revealedField (w : World) (entry : Json) : List (String × Json) :=
   let lines := revealed w entry
   if lines.isEmpty then [] else [("revealed", toJson lines)]
 
+/-- Whether everyone may read what an admitted entry read and wrote (every object of its roots and writes, as the
+    public reader may view them now): a post, which everyone reads, carries what the turn offered only then, else its
+    receipt line alone. Answered as `inPublic` on its reply and receipt, so a draft asks the host nothing more. -/
+def inPublic (w : World) (entry : Json) : List (String × Json) :=
+  if tagOf entry != "admitted" then [] else
+  let arr := fun (j : Json) (k : String) => ((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+  let objects := (arr entry "roots" ++ arr ((entry.getObjVal? "outcome").toOption.getD Json.null) "writes").toList.filterMap
+    (·.getObjValAs? String "object" |>.toOption)
+  [("inPublic", toJson (objects.all (viewable w "" ·)))]
+
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
     offers the entry retains for the turn's own principal (others are read with `world-offers`), and an
-    admitted entry's three lines (`revealed`). -/
+    admitted entry's three lines (`revealed`) and whether they may be posted (`inPublic`). -/
 def turnReply (w : World) (r : Json) : Json :=
   match r.getObjVal? "receipt" with
   | .error _ => r
@@ -2504,7 +2521,7 @@ def turnReply (w : World) (r : Json) : Json :=
       | .ok to, .ok text => if to == principal then some (Json.mkObj [("principal", toJson to), ("text", toJson text)]) else none
       | _, _ => none
     Json.mkObj ([("status", (r.getObjVal? "status").toOption.getD Json.null), ("receipt", entry)] ++ extra ++
-      (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++ revealedField w entry ++
+      (if mine.isEmpty then [] else [("offers", Json.arr mine)]) ++ revealedField w entry ++ inPublic w entry ++
       -- What a refusal may say in public, for transport to draft from.
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []))
 
@@ -2521,7 +2538,7 @@ def receipt (w : World) (j : Json) : Except String Json := do
     let shown := projectEntry w reader entry
     if owner != reader && tagOf entry == "refused" then return publicRefusal entry
     -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.
-    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++
+    return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++ inPublic w entry ++
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
       (if owner == reader && !reader.isEmpty then revealedField w entry else []))
 
@@ -2757,7 +2774,7 @@ def defaultPublishPage (id : String) (argument : Data) : M Data := do
     | .record fs => ((fs.lookup "page").bind labelOf).getD ""
     | _ => ""
   let title := if given.isEmpty then id else given
-  let card ← match ← renderCard id o (fun m => cardContext s.world id "" "" s.intent s.world.height m) with
+  let card ← match ← renderCard id o "" "" s.intent with
     | .ok doc => liftEval (Delvetalk.Document.render doc)
     | .error clause => evaluation s!"publishPage: the card does not render ({clause})"
   let usage := spellUsage id (spellForms s.world id o) (declaredLenses s.world o)
@@ -3166,15 +3183,31 @@ def doorsOf (o : Object) : List (String × String) :=
       pure (← (r.lookup "label").bind labelOf, to)
   | _ => []
 
+/-- The host's placing spells hob may answer with on a card (`placementsOf`; `grow` is its own answer,
+    `growVerdict`), each a form whose fields are the usage's (`ruleLine`, `wantLine`: the spell last), for a
+    speaker the thing's law admits placing it (`kindAdmits`, kind 4 with the placing's verb). -/
+def placingForms (w : World) (id principal : String) (o : Object) : List Data :=
+  let text := fun (name : String) (max : Nat) => Data.record [("name", .label name),
+    ("kind", .variant "text" (.record [("min", .natural 1), ("max", .natural max)]))]
+  let named := text "name" Limits.maxMethodBytes
+  let fields := fun (action : String) => match action with
+    | "rule" => [named, text "when" Limits.maxLawBytes, text "then" Limits.maxLawBytes]
+    | "want" => [named, text "when" Limits.maxLawBytes, text "asks" Limits.maxLawBytes]
+    | _ => [named]
+  (["rule", "want", "unrule", "unwant"].filter fun a =>
+      !o.offers a && kindAdmits w o principal 4 (verb := if a.startsWith "un" then (a.drop 2).toString else a)).map fun a =>
+    .record [("card", .label id), ("action", .label a), ("fields", listData (fields a))]
+
 /-- What hob is offered for words that reached `id`, read for `principal`: the card's table (its declared
-    forms and grown verbs that it offers the speaker, `offeredTo`), then each door's card (`doorsOf`) and
-    the first three cards under it (a garden's bells), each form under its own card. A door's cards are
-    how words at the commonplace reach the town. A card that would pass `maxOffersBytes` is left out. -/
+    forms and grown verbs that it offers the speaker, `offeredTo`, and the host's placing spells its law
+    admits, `placingForms`), then each door's card (`doorsOf`) and the first three cards under it (a
+    garden's bells), each form under its own card. A door's cards are how words at the commonplace reach
+    the town. A card that would pass `maxOffersBytes` is left out. -/
 def heardOffers (w : World) (id principal : String) : List Data := Id.run do
   let some o := w.objects[id]? | return []
   let table := fun (c : String) (x : Object) =>
     (spellFormsData w c x).filter fun f => formAction f != "receive" && offeredTo w c x principal (formAction f)
-  let mut forms := table id o
+  let mut forms := table id o ++ placingForms w id principal o
   let mut seen : List String := [id]
   for (_, door) in doorsOf o do
     for c in door :: ((listIds w principal (door ++ "/") "").1.take 3) do
@@ -3809,7 +3842,7 @@ def cardRendered (w : World) (id reader : String) : Option String :=
   | some o =>
     let init : TurnState := { world := w, principal := reader, intent := "", subject := reader, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    match (renderCard id o (cardContext w id reader "" "" w.height)).run.run init with
+    match (renderCard id o reader "" "").run.run init with
     | (.ok (.ok document), _) => (Delvetalk.Document.render document).toOption
     | _ => none
 
@@ -4181,8 +4214,10 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("stateBytes", toJson (stateBytes o.state)),
       ("scalarBytes", toJson (Delvetalk.Canonical.encode o.cells.scalar).size),
       ("forms", dataJson (listData offered)),
-      -- The actions the reader is offered, by name (what a card's usage lists for them).
+      -- The actions the reader is offered, by name (what a card's usage lists for them), and each one's
+      -- spell as `?` prints it (`spellTemplate`), which a front copies rather than composes.
       ("offered", toJson (offered.map formAction)),
+      ("templates", Json.mkObj ((offered.filterMap Spell.Form.ofData).map fun f => (f.action, toJson (spellTemplate id f)))),
       -- The numbers `request.kind` reads, by name (`proposed`: a write no method of the object made).
       ("requestKinds", Json.mkObj (Law.kindNames.map fun (n, k) => (n, toJson k)))] ++
       (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)]) ++
@@ -4208,7 +4243,7 @@ def cardOp (w : World) (j : Json) : Except String (World × Json) := do
         ("text", toJson (shownCard w id principal text)), ("override", toJson true)])
     let init : TurnState := { world := w, principal, intent := "", subject := principal, ticks := Limits.maxTurnTicks,
                               limits := Json.mkObj [("ticks", toJson (toString Limits.maxTurnTicks))] }
-    let (r, st) := (renderCard id o (cardContext w id principal "" "" w.height)).run.run init
+    let (r, st) := (renderCard id o principal "" "").run.run init
     -- The render definition compiled here stays compiled for the next read.
     let w := w.withCachesOf st.world
     match r with
@@ -4331,6 +4366,15 @@ def proposalVerdict (w : World) (target self : String) (obj : Object) (carries :
   let (method, argument) := match grownAct obj method argument with
     | some a => (actMethod, a)
     | none => if grown.contains method then (actMethod, actArgument method argument) else (method, argument)
+  -- A host placing spell the card does not declare is staged as the spell stages it (`runHeard`, `placementsOf`):
+  -- its fields are read there, and the law judges it at the commit.
+  if placingSpells.contains method && !obj.offers method then
+    unless carries (.variant "proposal" (proposalData target method argument spell)) do
+      return (w, unclearVerdict [s!"the object cannot carry a proposal of {target} {method}"])
+    if let .error (_, reason) := placementsOf obj target method (labelsOf argument) (labelsOf argument) then
+      return (w, unclearVerdict [reason])
+    return (w, Json.mkObj [("tag", toJson "proposal"), ("object", toJson target), ("method", toJson method),
+      ("argument", dataJson argument), ("spell", toJson spell)])
   -- Another object will be called with it: only a method it offers.
   if target != self && !obj.offers method then return (w, unclearVerdict [s!"{method} is not a method {target} offers"])
   let (r, st) := ((compiledMethod obj method).run.run (scratchState w))
@@ -4385,13 +4429,12 @@ def growVerdict (w : World) (principal self : String) (carries : Data → Bool) 
     else Json.mkObj [("tag", toJson "unclear"), ("reasons", (v.getObjVal? "needs").toOption.getD (Json.arr #[]))]
   return (w, Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr #[grown, item use])])
 
-/-- What a reply says to the suspended object. A JSON reply `{method, argument}` is a proposal
-    (`proposalVerdict`: a method of the object, one of the offered actions, with an argument that
-    conforms to the method's input type and fits the object's response type) or `unclear` with the
-    reason. Any other reply is the model's text: `none`, `ask:`, `grow:` (`growVerdict`), else it is
-    fitted as a spell against the offered forms (`spellVerdict`); prose that is none of these is `none`
-    (silence). An object whose Response cannot
-    carry an answer hears `unclear`. A failed call is `unclear {needs: ["model: <reason>"]}`. -/
+/-- What a reply says to the suspended object: the model's text (`raw`), hob's four answers. `none`;
+    `ask: <question>`; `grow:` (`growVerdict`); else it is fitted as a spell against the offered forms
+    (`spellVerdict`) and checked as a proposal (`proposalVerdict`: a method of the card, its argument
+    conforming to the method's input, the suspended object's response type carrying it); prose that is
+    none of these is `none` (silence). An object whose Response cannot carry an answer hears `unclear`.
+    A failed call is `unclear {needs: ["model: <reason>"]}`. -/
 def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (World × Json) := do
   let some i := interpretationOf w s | throw "not an interpretation"
   let act ← (← s.getObjVal? "outcome").getObjVal? "activity"
@@ -4403,9 +4446,7 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     let reason := ((reply.getObjValAs? String "reason").toOption).getD "failed"
     return (w, unclearVerdict [s!"model: {reason}"])
   | _ => throw "reply must have status replied or failed"
-  let json := (reply.getObjVal? "json").toOption.getD Json.null
-  let raw := (reply.getObjValAs? String "raw").toOption
-  if json.isNull && raw.isNone then throw "a replied interpretation carries json or raw"
+  let some text := (reply.getObjValAs? String "raw").toOption | throw "a replied interpretation carries the model's text, raw"
   let some obj := w.objects[object]? | throw s!"unknown object {object}"
   -- What the answer must fit: the suspended activity's response type; the host's own reading of words a
   -- card heard runs the answer itself (`resumeHeard`), so any answer fits it.
@@ -4416,65 +4457,49 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     pure (w.withCachesOf st2.world, fun (d : Data) => d.conformsUnder suspended.bounds responseType)
   let offers ← decodeData Limits.dataDepth (← i.getObjVal? "offers")
   let forms := (listHeads [] offers).getD []
-  let some method := (json.getObjValAs? String "method").toOption
-    | match raw with
-      | some text =>
-        let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
-        -- hob's four answers (docs/OVERHAUL.md §2; FOUNDATION §10): the spell meant, `grow: NAME
-        -- "reading"` with the spell that uses it, `ask: <question>`, or `none`. hob states no fact and
-        -- shows no card: there is no fifth.
-        let said := text.trimAscii.toString
-        if said.toLower == "none" then return (w, unclearVerdict ["not addressed"])
-        if (said.take 4).toString.toLower == "ask:" then
-          let q := ((said.drop 4).toString.trimAscii.toString)
-          if !q.isEmpty && !(q.any (· == '\n')) then return (w, unclearVerdict [q])
-        if (said.take 5).toString.toLower == "grow:" then
-          return growVerdict w principal object carries said
-        -- Several spells (MENU §2.2): each fitted and checked as one would be, answered in order as
-        -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
-        let segments := Spell.segments text
-        if segments.length > 1 then
-          let offered := forms.filterMap OfferedForm.ofData
-          let mut w := w
-          let mut items : Array Json := #[]
-          for segment in segments.take Limits.spellsPerReply do
-            let item ← match spellVerdict offered segment with
-              | some (.ok (card, action, argument)) =>
-                let target := if w.objects.contains card then card else resolveCard principal card
-                match w.objects[target]? with
-                | none => pure (unclearVerdict [s!"there is no card {card}"])
-                | some targetObj =>
-                  let (w', v) := proposalVerdict w target object targetObj carries action argument card
-                  w := w'
-                  pure v
-              | some (.error needs) => pure (unclearVerdict needs)
-              | none => pure (unclearVerdict ["not a spell"])
-            items := items.push (if (item.getObjValAs? String "tag").toOption == some "proposal" then item
-              else Json.mkObj [("tag", toJson "unclear"), ("reasons", (item.getObjVal? "needs").toOption.getD (Json.arr #[]))])
-          return (w, Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr items)])
-        match spellVerdict (forms.filterMap OfferedForm.ofData) text with
+  let principal := ((s.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+  -- hob's four answers (docs/OVERHAUL.md §2; FOUNDATION §10): the spell meant, `grow: NAME
+  -- "reading"` with the spell that uses it, `ask: <question>`, or `none`. hob states no fact and
+  -- shows no card: there is no fifth.
+  let said := text.trimAscii.toString
+  if said.toLower == "none" then return (w, unclearVerdict ["not addressed"])
+  if (said.take 4).toString.toLower == "ask:" then
+    let q := ((said.drop 4).toString.trimAscii.toString)
+    if !q.isEmpty && !(q.any (· == '\n')) then return (w, unclearVerdict [q])
+  if (said.take 5).toString.toLower == "grow:" then
+    return growVerdict w principal object carries said
+  -- Several spells (MENU §2.2): each fitted and checked as one would be, answered in order as
+  -- `proposals {items}`, at most `spellsPerReply`. One spell keeps the single verdict.
+  let segments := Spell.segments text
+  if segments.length > 1 then
+    let offered := forms.filterMap OfferedForm.ofData
+    let mut w := w
+    let mut items : Array Json := #[]
+    for segment in segments.take Limits.spellsPerReply do
+      let item ← match spellVerdict offered segment with
         | some (.ok (card, action, argument)) =>
-          -- The form names its card: the proposal is checked against that object, which may be
-          -- another than the asking one (a directory offers its doors' forms).
           let target := if w.objects.contains card then card else resolveCard principal card
-          let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
-          return proposalVerdict w target object targetObj carries action argument card
-        | some (.error needs) => return (w, unclearVerdict needs)
-        -- Prose with no answer's prefix and no spell says nothing to the card: silence.
-        | none => return (w, unclearVerdict ["not addressed"])
-      | none => return (w, unclearVerdict ["the reply names no method"])
-  let actions := forms.filterMap fun form =>
-    match form with
-    | .record f => (f.lookup "action").bind labelOf
-    | _ => none
-  if !actions.isEmpty && !actions.contains method then
-    return (w, unclearVerdict [s!"{method} is not one of the offered actions"])
-  let wanted := match (json.getObjVal? "argument").toOption.getD (Json.mkObj []) with
-    | .null => Json.mkObj []
-    | other => other
-  match Package.jsonData Limits.plainDepth wanted with
-  | .error e => return (w, unclearVerdict [s!"the argument is not plain data: {e}"])
-  | .ok (argument, _) => return proposalVerdict w object object obj carries method argument
+          match w.objects[target]? with
+          | none => pure (unclearVerdict [s!"there is no card {card}"])
+          | some targetObj =>
+            let (w', v) := proposalVerdict w target object targetObj carries action argument card
+            w := w'
+            pure v
+        | some (.error needs) => pure (unclearVerdict needs)
+        | none => pure (unclearVerdict ["not a spell"])
+      items := items.push (if (item.getObjValAs? String "tag").toOption == some "proposal" then item
+        else Json.mkObj [("tag", toJson "unclear"), ("reasons", (item.getObjVal? "needs").toOption.getD (Json.arr #[]))])
+    return (w, Json.mkObj [("tag", toJson "proposals"), ("items", Json.arr items)])
+  match spellVerdict (forms.filterMap OfferedForm.ofData) text with
+  | some (.ok (card, action, argument)) =>
+    -- The form names its card: the proposal is checked against that object, which may be
+    -- another than the asking one (a directory offers its doors' forms).
+    let target := if w.objects.contains card then card else resolveCard principal card
+    let some targetObj := w.objects[target]? | return (w, unclearVerdict [s!"there is no card {card}"])
+    return proposalVerdict w target object targetObj carries action argument card
+  | some (.error needs) => return (w, unclearVerdict needs)
+  -- Prose with no answer's prefix and no spell says nothing to the card: silence.
+  | none => return (w, unclearVerdict ["not addressed"])
 
 /-- The model failures the host retries rather than settles: the network or a rate limit. -/
 def transientReasons : List String := ["transport", "rate"]

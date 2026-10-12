@@ -112,7 +112,7 @@ def ask(state: State, input: {utterance: String, policy: String}, context: Abi.C
     case timedOut(_): note(context, 0n, "timedOut")
     case _: note(context, 0n, "other")
 def offered() -> Lists.List<Form.Form>:
-  Lists.List::<Form.Form>.cons({head: {card: "probe", action: "bump2", fields: Lists.List::<Form.Field>.nil()}, tail: Lists.List::<Form.Form>.nil()})
+  Lists.List::<Form.Form>.cons({head: {card: "probe", action: "bump2", fields: Lists.List::<Form.Field>.cons({head: {name: "n", kind: Form.Kind.natural({min: 0n, max: 1000n})}, tail: Lists.List::<Form.Field>.nil()})}, tail: Lists.List::<Form.Form>.nil()})
 def fire(state: State, input: {target: String}, context: Abi.Context) -> Activity<String>:
   match world.send({object: {world: "", object: input.target}, method: "bump", argument: {}}):
     case delivery(_): note(context, 0n, "sent")
@@ -371,12 +371,16 @@ class Interpret(Reflection):
         return self.host.send(op="world-interpretation", id=item["id"], reply=reply)
 
     def replied(self, method="bump2", **argument):
-        return {"status": "replied", "json": {"method": method, "argument": argument}, "model": "m"}
+        """hob's answer: the spell meant, as text (the host reads `raw` alone)."""
+        return {"status": "replied", "raw": "\n".join([f"delvetalk probe {method}"] + [f"{k}: {v}" for k, v in argument.items()]), "model": "m"}
 
 
     def test_a_reply_that_fits_resumes_proposal_and_the_turn_commits(self):
         self.ask()
         [item] = self.pending()
+        # The model's answer is its text: a `{method, argument}` JSON reply is no answer (the simplify hand-back (3)).
+        refused = self.settle(item, {"status": "replied", "json": {"method": "bump2", "argument": {"n": 3}}, "model": "m"})
+        self.assertEqual(refused["status"], "error", refused)
         settled = self.settle(item, self.replied(n=3))
         self.assertEqual(settled["status"], "interpreted", settled)
         verdict = settled["receipt"]["outcome"]["verdict"]
@@ -392,8 +396,7 @@ class Interpret(Reflection):
                 self.replied(n="three"),                    # the argument is not the method's input type
                 self.replied(method="ghost", n=1),          # not a method of the object
                 self.replied(method="ask", n=1),            # a method, but not an offered action
-                {"status": "replied", "json": ["nonsense"]},
-                {"status": "replied", "json": {"argument": {"n": 1}}},
+                {"status": "replied", "raw": "nonsense"},
                 # A failure the host does not retry (`rate` and `transport` it does: HOST-HANDOFF 5.107).
                 {"status": "failed", "reason": "refused", "detail": "400"})):
             self.ask(identity=f"ask-{index}")

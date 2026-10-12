@@ -45,10 +45,26 @@ class StubHost:
             return {'status': 'interpretations', 'pending': [{'id': 'x'}]}
         if req['op'] == 'world-resolve':
             return {'status': 'resolved', 'slug': req['slug'], 'kind': 'receipt', 'cid': 'c'}
+        if req['op'] == 'bounds':
+            return {'status': 'bounds', 'host': {'maxHistoryLimit': 100}}
         return {'status': 'ok'}
 
     def at(self, world):
         return self
+
+
+class HistoryBound(unittest.TestCase):
+    """§7 seen in passing: the transport restated `Limits.maxHistoryLimit` as `HISTORY_LIMIT`; a page of history asks for
+    as many as the host's `bounds` allows."""
+
+    def test_a_history_page_asks_for_at_most_the_hosts_bound(self):
+        from transport import root
+        sent = []
+        host = type('H', (), {'send': lambda s, req: (sent.append(req), {'status': 'bounds', 'host': {'maxHistoryLimit': 7}}
+                                                                          if req['op'] == 'bounds' else {'status': 'ok'})[1]})()
+        root.modlog(host, 'did:plc:o', 'porch', tail=20)
+        root.modlog(host, 'did:plc:o', tail=20)
+        self.assertEqual([r['limit'] for r in sent if r['op'] in ('world-history', 'world-entries')], [7, 7], sent)
 
 
 class Poster:
@@ -574,6 +590,23 @@ class Speak(unittest.TestCase):
         self.assertNotIn('http-equiv="refresh"', page)
         self.assertIn(html.escape(after['text'].strip().split('\n')[0]), page)
 
+    def test_a_paint_that_falls_back_keeps_the_hosts_reason_and_clause(self):
+        """The hand's morning paint fell back (`painted: False` after a 117-token reply) and nothing said why: `painted`
+        keeps the host's `exact` reason and the paint check's clause, and `fell_back` says them."""
+        from transport import interpret
+        from transport.host import fell_back, painted
+        self.town.send(op='world-renders')  # the worker attends
+        asked = self.town.send(op='world-render', principal=self.hand.owner, object='commonplace')
+        self.assertEqual(asked['status'], 'pending', asked)
+        reply = {'status': 'replied', 'json': None, 'raw': 'x' * 900, 'model': 'claude-haiku-5-5', 'usage': {}}
+        for _ in range(2):  # a paint refused for its length alone is asked for once more
+            interpret.paint(self.town.client, lambda req: reply)
+        got = painted(self.town.client, self.hand.owner, 'commonplace', sleep=lambda s: None)
+        self.assertEqual((got.get('text'), got['reason']), (None, 'rejected'), got)
+        self.assertTrue(got['clause'], got)
+        self.assertTrue(fell_back(got).startswith(f"the paint fell back: rejected at its {got['clause']} clause"), fell_back(got))
+        self.assertIsNone(fell_back({'text': 'a paint'}))
+
     def test_the_morning_card_is_painted_shown_and_drafted_once_a_day_never_posted(self):
         """`hand morning` (OVERHAUL §4 (c)): the day painted from its strokes with what wants a hand exact beneath, drafted
         once a day for Post; a day with no paint stands as the chronicle's exact lines."""
@@ -595,7 +628,8 @@ class Speak(unittest.TestCase):
         with self.assertRaises(hand.HandError):
             self.hand.morning()
         quiet = self.hand.morning(day=1)  # nothing journaled that day: no paint, the chronicle's exact line
-        self.assertFalse(quiet['painted'])
+        self.assertEqual((quiet['painted'], quiet['fellBack']), (False, 'the paint fell back: pending'), quiet)  # its wants are painted; no worker here
+        self.assertIsNone(got['fellBack'])
         self.assertTrue(quiet['text'].startswith('day 1: nothing was journaled.\n\nWhat wants a hand'), quiet['text'])
         self.assertIn('morning card, day %d' % got['day'], [r['turn'] for r in self.hand.drafted()[2]])
 

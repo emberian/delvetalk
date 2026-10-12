@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 
 from transport import journal
-from transport.host import HISTORY_LIMIT, typed
+from transport.host import history_limit, typed
 from transport.identity import SLUG, slug
 
 # verb -> (fields, the request it sends). A field is (name, kind): text, int, json (a value), or ? after it when optional.
@@ -100,8 +100,8 @@ def entries(st, after=None, limit=20, object=None, principal=None, before=None):
 def modlog(host, opener, object=None, tail=20):
     """The moderation log: an object's `world-history`, or the newest root, moderated and opener entries of the journal."""
     if object:
-        return host.send({'op': 'world-history', 'principal': opener, 'object': object, 'reverse': True, 'limit': min(tail, HISTORY_LIMIT)}).get('entries') or []
-    page = host.send({'op': 'world-entries', 'principal': opener, 'reverse': True, 'limit': 100}).get('entries') or []
+        return host.send({'op': 'world-history', 'principal': opener, 'object': object, 'reverse': True, 'limit': min(tail, history_limit(host))}).get('entries') or []
+    page = host.send({'op': 'world-entries', 'principal': opener, 'reverse': True, 'limit': history_limit(host)}).get('entries') or []
     return [e for e in page if e.get('root') or (e.get('outcome') or {}).get('tag') == 'moderated'
             or (e.get('identity') or {}).get('principal') == opener][:tail]
 

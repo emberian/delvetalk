@@ -74,8 +74,8 @@ def rootOps : List String := ["world-root", "world-library", "world-settings", "
 /-- The ops `serve` sends itself to carry a call or send across (`cross`); no socket takes them. -/
 def crossingOps : List String := ["world-relay", "world-cross"]
 
-def errorJson (message : String) : Json :=
-  Json.mkObj [("status", toJson "error"), ("message", toJson message)]
+def errorJson (message : String) (cls : String := "") : Json :=
+  Json.mkObj ([("status", toJson "error")] ++ (if cls.isEmpty then [] else [("class", toJson cls)]) ++ [("message", toJson message)])
 
 def hex (bytes : ByteArray) : String :=
   let digits := "0123456789abcdef".toList.toArray
@@ -296,7 +296,7 @@ def serveStatus (srv : Server) : IO Json := do
   let rows := srv.worlds.toList.filter (!·.1.startsWith "scratch/") |>.filterMap fun (k, h) => h.world.map fun (o : Host.Open) =>
     let w := o.world
     Json.mkObj [("name", toJson k), ("height", toJson w.height), ("objects", toJson w.objects.size), ("clock", toJson w.clock),
-      ("replay", toJson (((w.entries.get? 0).bind (·.getObjValAs? Nat "replay" |>.toOption)).getD Host.Limits.replayEdition)),
+      ("replay", toJson ((w.entries.genesis?.bind (·.getObjValAs? Nat "replay" |>.toOption)).getD Host.Limits.replayEdition)),
       ("snapshot", o.report.json)]
   let byName := fun (a b : Json) => decide ((a.getObjValAs? String "name").toOption.getD "" < (b.getObjValAs? String "name").toOption.getD "")
   return Json.mkObj ([("status", toJson "serve"), ("hostSha256", toJson srv.sha), ("pid", toJson (← IO.Process.getPID).toNat),
@@ -460,7 +460,7 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
   if op == "serve-status" then return (srv, ← serveStatus srv)
   if op == "world-open" then return (srv, errorJson "serve opens its worlds; name one with `world`")
   if !root && rootOps.contains op then
-    return (srv, errorJson "the opener speaks on the root socket")
+    return (srv, errorJson "the opener speaks on the root socket" "opener")
   if crossingOps.contains op then return (srv, errorJson s!"{op} is serve's own: a call or send across is carried, never asked")
   if op == "world-scratch" then return ← scratchOp srv request
   -- `world-root {act: {kind: expire, principal, scratch}}`: a scratch is serve's, not a journal's, so its

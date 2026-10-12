@@ -75,6 +75,14 @@ The commonplace's card (`docs/previews/commonplace-card.txt` is it verbatim):
 ✾ DELVETALK · THE COMMONPLACE
 
 Five doors. Indented lines are typed back whole; » is what comes back; words reach hob.
+What wants a hand, newest first:
+porch/lamp: it opens onto nothing yet
+  delvetalk porch/lamp door
+weather: it opens onto nothing yet
+  delvetalk weather door
+kinds: no kind made here yet but the town's own
+  delvetalk kinds ?
+… and 5 more
   delvetalk commonplace since / entry: 0
   » what changed since that entry, newest first
 KINDS
@@ -162,7 +170,9 @@ takes kind/bell's rules and wants by `under`; a town kind the carried world lack
 placed. Each is an ordinary journaled turn,
 identity `refresh-<object>-…`. A slot whose text is not the one genesis or an earlier refresh last gave it (read from
 the journal and the journals it was carried from) was changed by another turn: it is left and named, as is a slot
-whose making is in no journal on the disk.
+whose making is in no journal on the disk. Each carry keeps every object's making (the carried genesis's `made`: who
+made it, under which intent, at which height), so a kind the opener made at the original genesis is known as genesis's
+when the journals before are gone; only its owner writes its fields, so they are refreshed.
 
 ## The rehearsal and the scenarios
 

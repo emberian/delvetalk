@@ -248,7 +248,7 @@ class Snapshots(Reflection):
         pending = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual(len(pending), 1, pending)
         settled = self.host.send(op="world-interpretation", id=pending[0]["id"],
-                                 reply={"status": "replied", "json": {"method": "bump2", "argument": {"n": 3}}})
+                                 reply={"status": "replied", "raw": "delvetalk probe bump2\nn: 3"})
         [resumed] = settled["resumed"]
         self.assertEqual(resumed["status"], "admitted", resumed)
         self.assertEqual(self.count("probe"), "3")

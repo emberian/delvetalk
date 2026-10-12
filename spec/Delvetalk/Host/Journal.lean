@@ -11,10 +11,11 @@ open Lean (Json toJson)
 /-- The CID of `body`'s canonical bytes. -/
 def bodyHash (body : Json) : String := Delvetalk.Canonical.cidJson body
 
-/-- `fields` must not include `height`, `previous` or `hash`. -/
-def sealEntry (height : Nat) (previous : String) (fields : List (String × Json)) : Json :=
-  -- The first entry names the replay edition the journal was written under.
-  let fields := if height == 1 then fields ++ [("replay", toJson Limits.replayEdition)] else fields
+/-- `fields` must not include `height`, `previous` or `hash`. A journal's first entry (`first`: height 1,
+    or a carried genesis, which continues the heights of the world it was carried from) names the replay
+    edition the journal was written under. -/
+def sealEntry (height : Nat) (previous : String) (fields : List (String × Json)) (first : Bool := height == 1) : Json :=
+  let fields := if first then fields ++ [("replay", toJson Limits.replayEdition)] else fields
   let body := Json.mkObj ([("height", toJson height), ("previous", toJson previous)] ++ fields)
   body.setObjVal! "hash" (toJson (bodyHash body))
 

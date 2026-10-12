@@ -4,8 +4,8 @@
    new journal replayed in full before it is written.
 
    Re-sealing carries what replay checks (HOST-HANDOFF §7 item 1): every `previous` and `hash` from the
-   edit on (entry 1 keeps `replay`; a fork's genesis keeps the `previous` it was forked from); an entry's
-   `turn` that was its height becomes its new height; an `ended` id hashes the height, so it is
+   edit on (the first entry keeps `replay`; a fork's or a carry's genesis keeps the `previous` and height
+   it was taken at, and heights are the journal's own, `baseOf`); an entry's `turn` that was its height becomes its new height; an `ended` id hashes the height, so it is
    recomputed, and the ids that hash an identity whose intent was such an id (sends, changes,
    publishes, interpretations) with it; every later string naming an old entry hash or an old id
    (`resumes`, `delivery.id`, `identity.intent`, a slot's intent) is rewritten through the tables; a
@@ -41,7 +41,10 @@ def idOf (kind : String) (principal intent : String) (n : Nat) : String :=
   | "publish" => Journal.bodyHash (Json.arr #[toJson "publish", toJson principal, toJson intent, toJson n])
   | _ => Journal.bodyHash (Json.arr #[toJson principal, toJson intent, toJson n])
 
-/-- What a command keeps and what it re-seals: entries 1..`kept` as they are, then `rest`, each with
+/-- The heights before a journal's first entry (`Entries.base`: a carried genesis continues the world before). -/
+def baseOf (old : Array Json) : Nat := ((old[0]?).bind fun x => (x.getObjValAs? Nat "height").toOption).getD 1 - 1
+
+/-- What a command keeps and what it re-seals: the first `kept` entries as they are, then `rest`, each with
     its old height (none for an inserted entry). -/
 structure Edit where
   kept : Nat
@@ -58,15 +61,16 @@ def reseal (old : Array Json) (e : Edit) (marker : Json) : Except String Sealed 
   let firstPrevious := ((old[0]?).bind fun x => (x.getObjValAs? String "previous").toOption).getD Limits.genesis
   let mut prev := if e.kept == 0 then firstPrevious else ((old[e.kept - 1]!).getObjValAs? String "hash").toOption.getD ""
   let mut out := old.extract 0 e.kept
+  let base := baseOf old
   -- Old height to new, for every entry the new journal holds.
   let mut heights : Std.HashMap Nat Nat := {}
-  for h in List.range e.kept do heights := heights.insert (h + 1) (h + 1)
+  for h in List.range e.kept do heights := heights.insert (base + h + 1) (base + h + 1)
   for ((_, oh), i) in e.rest.toList.zipIdx do
-    if let some h := oh then heights := heights.insert h (e.kept + i + 1)
+    if let some h := oh then heights := heights.insert h (base + e.kept + i + 1)
   let mut names : Std.HashMap String String := {}
   let mut table : Array (Nat × String × Nat × String) := #[]
   for ((fields, oldHeight), i) in e.rest.toList.zipIdx do
-    let newHeight := e.kept + i + 1
+    let newHeight := base + e.kept + i + 1
     -- Every name an earlier re-sealed entry changed, first: identity, delivery, resumes, slots.
     let mut fs := fields.map fun (k, v) => (k, subst names v)
     let identity := (lookup fields "identity").getD Json.null
@@ -89,10 +93,10 @@ def reseal (old : Array Json) (e : Edit) (marker : Json) : Except String Sealed 
       if let .ok id := e'.getObjValAs? String "id" then
         if id == endedId principal oldIntent h then names := names.insert id (endedId principal intent newHeight)
     fs := fs.map fun (k, v) => (k, subst names v)
-    -- A turn that was its height is its new height; entry 1 alone names the replay edition.
+    -- A turn that was its height is its new height; the first entry alone names the replay edition.
     if let (some (.num t), some h) := (lookup fs "turn", oldHeight) then
       if t.mantissa.toNat == h && t.exponent == 0 then fs := put fs "turn" (toJson newHeight)
-    fs := if newHeight == 1 then (if (lookup fs "replay").isSome then fs else fs ++ [("replay", toJson Limits.replayEdition)])
+    fs := if e.kept + i == 0 then (if (lookup fs "replay").isSome then fs else fs ++ [("replay", toJson Limits.replayEdition)])
       else erase fs "replay"
     -- A root ignore names an entry by height: it follows the entry.
     if let some outcome := lookup fs "outcome" then
@@ -106,7 +110,7 @@ def reseal (old : Array Json) (e : Edit) (marker : Json) : Except String Sealed 
     let hash := Journal.bodyHash body
     let entry := body.setObjVal! "hash" (toJson hash)
     if let some h := oldHeight then
-      let oldHash := ((old[h - 1]!).getObjValAs? String "hash").toOption.getD ""
+      let oldHash := ((old[h - 1 - base]!).getObjValAs? String "hash").toOption.getD ""
       names := names.insert oldHash hash
       table := table.push (h, oldHash, newHeight, hash)
     out := out.push entry
@@ -145,35 +149,35 @@ def usage : String :=
 /-- The edit a command asks of `old`. -/
 def editOf (old : Array Json) (command : String) (args : List String) : IO (Except String Edit) := do
   let n := old.size
-  let rest := fun (from_ : Nat) => (old.extract from_ n).toList.zipIdx.toArray.map fun (x, i) => (fieldsOf x, some (from_ + i + 1))
-  let height := natArg args "--height"
+  let base := baseOf old
+  let rest := fun (from_ : Nat) => (old.extract from_ n).toList.zipIdx.toArray.map fun (x, i) => (fieldsOf x, some (base + from_ + i + 1))
+  -- Heights as the journal names them, positions from its first entry.
+  let height := (natArg args "--height").bind fun h =>
+    if base < h && h ≤ base + n then pure (h - base) else throw s!"--height must be {base + 1}..{base + n}"
   match command with
   | "truncate" => return do
     let h ← height
-    unless 1 ≤ h && h ≤ n do throw s!"--height must be 1..{n}"
-    pure { kept := h, rest := #[], command := Json.mkObj [("command", toJson "truncate"), ("height", toJson h)] }
+    pure { kept := h, rest := #[], command := Json.mkObj [("command", toJson "truncate"), ("height", toJson (base + h))] }
   | "drop" => return do
     let h ← height
-    unless 1 ≤ h && h ≤ n do throw s!"--height must be 1..{n}"
-    pure { kept := h - 1, rest := rest h, command := Json.mkObj [("command", toJson "drop"), ("height", toJson h)] }
+    pure { kept := h - 1, rest := rest h, command := Json.mkObj [("command", toJson "drop"), ("height", toJson (base + h))] }
   | "rewrite" =>
     let some file := textArg args "--entry" | return .error "rewrite takes --entry FILE"
     match height, ← entriesFile file with
     | .error e, _ | _, .error e => return .error e
     | .ok h, .ok files =>
-      unless 1 ≤ h && h ≤ n do return .error s!"--height must be 1..{n}"
       let some fields := files[0]? | return .error s!"{file} holds no entry"
       unless files.size == 1 do return .error s!"{file} holds {files.size} entries; rewrite takes one"
-      return .ok { kept := h - 1, rest := #[(fields, some h)] ++ rest h,
-                   command := Json.mkObj [("command", toJson "rewrite"), ("height", toJson h)] }
+      return .ok { kept := h - 1, rest := #[(fields, some (base + h))] ++ rest h,
+                   command := Json.mkObj [("command", toJson "rewrite"), ("height", toJson (base + h))] }
   | "splice" =>
     let some file := textArg args "--entries" | return .error "splice takes --entries FILE"
     match natArg args "--at", ← entriesFile file with
     | .error e, _ | _, .error e => return .error e
     | .ok at_, .ok inserted =>
-      unless at_ ≤ n do return .error s!"--at must be 0..{n}"
+      unless base ≤ at_ && at_ ≤ base + n do return .error s!"--at must be {base}..{base + n}"
       if inserted.isEmpty then return .error s!"{file} holds no entry"
-      return .ok { kept := at_, rest := inserted.map (·, none) ++ rest at_,
+      return .ok { kept := at_ - base, rest := inserted.map (·, none) ++ rest (at_ - base),
                    command := Json.mkObj [("command", toJson "splice"), ("at", toJson at_), ("entries", toJson inserted.size)] }
   | c => return .error s!"no command {c}\n{usage}"
 
@@ -247,9 +251,10 @@ def main (args : List String) : IO UInt32 := do
     | .ok s => pure s
     | .error e => return ← fail e
   -- The new journal chains and replays in full, or nothing is written.
+  let base := baseOf old
   let mut previous := ((sealed.entries[0]?).bind fun e => (e.getObjValAs? String "previous").toOption).getD Limits.genesis
   for (e, i) in sealed.entries.zipIdx do
-    if let .error err := Journal.verify (i + 1) previous e then
+    if let .error err := Journal.verify (base + i + 1) previous e then
       return ← fail s!"the edited journal does not chain: {err}"
     previous := (e.getObjValAs? String "hash").toOption.getD ""
   if let .error e := Snapshot.replayAll (Entries.ofArray sealed.entries) then
@@ -258,13 +263,13 @@ def main (args : List String) : IO UInt32 := do
   -- Snapshots before the edit still describe the new journal's prefix.
   let mut copied : Array Nat := #[]
   for (h, path) in ← Snapshot.files journal do
-    if h ≤ edit.kept then
+    if h ≤ base + edit.kept then
       IO.FS.writeBinFile (Snapshot.fileOf outPath h) (← IO.FS.readBinFile path)
       copied := copied.push h
   handle.unlock
   let newHead := ((sealed.entries.back?).bind fun e => (e.getObjValAs? String "hash").toOption).getD Limits.genesis
   printJson (Json.mkObj [("status", toJson "edited"), ("out", toJson outPath), ("command", edit.command),
-    ("oldHead", toJson oldHead), ("newHead", toJson newHead), ("height", toJson sealed.entries.size),
+    ("oldHead", toJson oldHead), ("newHead", toJson newHead), ("height", toJson (base + sealed.entries.size)),
     ("at", toJson (if edit.rest.isEmpty then Json.null else toJson (edit.kept + 1))),
     ("slugsChanged", toJson sealed.table.size),
     ("snapshots", toJson copied),

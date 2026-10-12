@@ -31,11 +31,12 @@ LAWFUL = REPL_COUNTER + 'law nobody "only ember writes it": request.kind == 0 im
 
 
 def fill(spell):
-    """Plain values for a spell template's fields, as any client would read them: a choice's first word, a natural's minimum."""
+    """Plain values for a spell template's fields as the host's usage prints them (`?`, `world-inspect`'s `templates`),
+    as any client would read them: a choice's first word, a number's least, any text."""
     values = {}
-    for name, shown in re.findall(r'^(\w+): (.+)$', spell.partition('\n')[2], re.M):
-        values[name] = re.split(r', ', shown[len('one of '):])[0] if shown.startswith('one of ') else \
-            int(re.search(r'(\d+)\.\.', shown)[1]) if shown.startswith('<natural') else f"a {name} for strangers"
+    for name, shown in re.findall(r'^(\w+): <(.+)>$', spell.partition('\n')[2], re.M):
+        values[name] = int(re.search(r'from (\d+)', shown)[1]) if shown.startswith('a number') else \
+            f"a {name} for strangers" if shown.startswith(('text', 'optional text')) else shown.split(', ')[0]
     return values
 
 
@@ -112,7 +113,9 @@ class Controls(FrontCase):
         s, bell = self.get(links['created'][0]['href'])
         self.assertEqual((s, bell['object']), (200, 'garden/bell/1'))
         self.assertTrue(all(t.startswith('delvetalk garden/bell/1 ') for t in bell['_actions'].values()), bell['_actions'])
-        filled = view['_actions']['plant'].replace('one of amber, violet, silver', 'amber').replace('<text 1..80>', 'a spelled bell')
+        # The template is the host's, as `?` prints it (the simplify hand-back (7)): the front composes none.
+        self.assertEqual(spell, 'delvetalk garden plant\ncolour: <amber, violet, silver>\nseed: <text, 1 to 80 characters>\n')
+        filled = spell.replace('<amber, violet, silver>', 'amber').replace('<text, 1 to 80 characters>', 'a spelled bell')
         s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'by-spell', 'spell': filled}, self.tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         s, offers = self.get(links['offers']['href'])

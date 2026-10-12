@@ -343,7 +343,8 @@ class RootReadsDoorForms(test_chain.Chain):
         [pending] = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual({(o["card"], o["action"]) for o in pending["offers"]}, {("commonplace", "since"), ("commonplace", "write"), ("commonplace", "lines"),
                                                                                  ("garden", "plant"), ("garden", "dig"), ("garden", "lines"),
-                                                                                 ("garden/bell/1", "rain"), ("garden/bell/1", "ring")}, pending["offers"])
+                                                                                 ("garden/bell/1", "rain"), ("garden/bell/1", "ring")} |
+                         {("commonplace", a) for a in ("rule", "want", "unrule", "unwant")}, pending["offers"])  # the host's placing spells, on the card words reached
 
     def test_the_owners_door_actions_are_offered_to_the_planter_alone(self):
         """Rehearsal run 11, finding 1: a bell's `door {label, to}` form, its planter's, was the only

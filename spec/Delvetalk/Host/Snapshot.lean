@@ -407,7 +407,7 @@ def carriedKeys : List String :=
     first to name) and named by CID, the pending deliveries and whole suspensions given, the handles of
     `w`, and `more`. -/
 def genesisEntry (w shown : World) (tag principal intent cid : String) (origin : String × Json)
-    (pending suspended : Array Json) (more : List (String × Json)) : Except String Json := do
+    (pending suspended : Array Json) (more : List (String × Json)) (height : Nat := 1) : Except String Json := do
   let sources := newSources {} (shown.objects.toList.flatMap fun (_, o) => inputSources o.inputs)
   let cids := (sources.flatMap fun (_, j) => ((j.getArr?.toOption).getD #[]).toList.filterMap
     (·.getObjValAs? String "cid" |>.toOption))
@@ -416,8 +416,8 @@ def genesisEntry (w shown : World) (tag principal intent cid : String) (origin :
     Json.mkObj [("did", toJson did), ("handle", toJson h)]
   let outcome := Json.mkObj ([("tag", toJson tag), origin, ("state", state), ("pending", Json.arr pending),
     ("suspended", Json.arr suspended), ("handles", Json.arr handles)] ++ more)
-  return Journal.sealEntry 1 cid ([("identity", identityJson principal intent), ("roots", rootsJson []),
-    ("turn", toJson 0), ("request", toJson (Journal.bodyHash origin.2)), ("outcome", outcome)] ++ sources)
+  return Journal.sealEntry height cid ([("identity", identityJson principal intent), ("roots", rootsJson []),
+    ("turn", toJson 0), ("request", toJson (Journal.bodyHash origin.2)), ("outcome", outcome)] ++ sources) (first := true)
 
 /-- The genesis entry of a fork of `w` (the world at `height`, whose entry there is `cid`) for
     `principal`, and the ids it omitted: only objects the principal may view are carried, with their
@@ -445,8 +445,9 @@ def installGenesis (entries : Entries) (entry : Json) : Except String World := d
   let outcome ← entry.getObjVal? "outcome"
   -- Compile inputs name the sources the genesis carries by CID (an older fork's are whole).
   let sources ← entrySources entry
+  let first := entries.base
   let w ← install (← outcome.getObjVal? "state")
-    { entries := entries.upTo 1, modules := sources.foldl (fun m (c, _) => m.insert c 0) {} }
+    { entries := entries.upTo (first + 1), height := first, modules := sources.foldl (fun m (c, _) => m.insert c first) {} }
   -- A carry's indexes, each as `indexJson` writes it, over the empty ones of the installed store.
   let w ← match outcome.getObjVal? "index" with
     | .ok carried => installIndex w (carriedKeys.foldl (fun j k => match carried.getObjVal? k with
@@ -462,9 +463,9 @@ def installGenesis (entries : Entries) (entry : Json) : Except String World := d
   -- Each object's version is a barrier at the genesis (a touch whose entry writes no edits of it, as a root `set`
   -- is): the writes that made it are the old chain's, which no index here reads, and a carry's move changed cells
   -- no write names. A carried suspension's root read below it is stale, never current by an empty history (codex host 9).
-  let touches := w.objects.fold (fun t id o => t.insert id #[({ version := o.version, height := 1 } : Touch)]) {}
+  let touches := w.objects.fold (fun t id o => t.insert id #[({ version := o.version, height := first + 1 } : Touch)]) {}
   let w := { w with pending := arr "pending", suspended := arr "suspended", handles, forkedFrom, cachedPackets,
-                    entries := entries.upTo 1, carriedIds := carriedIdentities entry, touches }
+                    entries := entries.upTo (first + 1), height := first, carriedIds := carriedIdentities entry, touches }
   let identity ← entry.getObjVal? "identity"
   return record w entry (identityKey (← identity.getObjValAs? String "principal") (← identity.getObjValAs? String "intent")) []
 
@@ -479,7 +480,7 @@ def verifiedBody (bytes : ByteArray) (height : Nat) (entries : Entries) (edition
   let b ← Delvetalk.Canonical.decodeJson raw Limits.dataDepth
   unless editions.contains (← b.getObjValAs? String "edition") do throw "another snapshot edition"
   unless (← natField b "height") == height do throw "its height is not its file name's"
-  if height == 0 || height > entries.count then throw "the journal is shorter than its height"
+  if height ≤ entries.base || height > entries.count then throw "the journal is shorter than its height"
   unless entries.hashAt? (height - 1) == some (← b.getObjValAs? String "head") do
     throw "its head is not the journal's hash at its height"
   return b
@@ -523,19 +524,30 @@ def checkAnchors (w : World) (naming : Naming := .cells) (whole : Bool := true) 
       unless (if a.placed == 0 then o.unplaced else placedIn (at_ a.placed) id == some (placedCid o)) do
         throw s!"the rules, wants and verbs on {id} are not the journal's"
 
+/-- The height a journal's first entry takes: 1, or for a `carried` genesis (of edition 12 on) the height
+    after the head it was carried from, whose heights it continues. -/
+def firstHeight (entry : Json) : Nat :=
+  match tagOf entry, genesisOrigin entry with
+  | "carried", some (_, origin) =>
+    if (entry.getObjValAs? Nat "replay").toOption.getD 1 < 12 then 1
+    else (origin.getObjValAs? Nat "height").toOption.getD 0 + 1
+  | _, _ => 1
+
 /-- The entry at index `i` of `src`, checked against the chain: its record is its CID's (`Entries.get?`
-    reads only such), its height is `i + 1`, and it names the entry before it (the genesis, or for a
-    fork's genesis the entry it was forked from). -/
+    reads only such), its height is `i + 1` (the first one's `firstHeight`), and it names the entry
+    before it (the genesis, or for a fork's or a carry's genesis the entry it was taken at). -/
 def checkedEntry (src : Entries) (i : Nat) : Except String Json := do
   let fail {α : Type} (what : String) : Except String α := throw s!"journal broken at height {i + 1}: {what}"
   let some entry := src.get? i | fail "its record is missing or not its CID's"
   unless (entry.getObjValAs? Nat "height").toOption == some (i + 1) do fail "height out of sequence"
+  let first := i == src.base
+  if first && firstHeight entry != i + 1 then fail s!"a journal's first entry here is at height {firstHeight entry}"
   let previous := (entry.getObjValAs? String "previous").toOption.getD ""
-  let expected := if i > 0 then (src.hashAt? (i - 1)).getD "" else match genesisOrigin entry with
+  let expected := if !first then (src.hashAt? (i - 1)).getD "" else match genesisOrigin entry with
     | some (_, origin) => (origin.getObjValAs? String "cid").toOption.getD ""
     | none => Limits.genesis
   unless previous == expected do
-    fail (if i == 0 && installsStore entry then s!"a {tagOf entry} genesis must chain to the cid it was taken at"
+    fail (if first && installsStore entry then s!"a {tagOf entry} genesis must chain to the cid it was taken at"
       else "previous hash does not chain")
   return entry
 
@@ -565,8 +577,8 @@ def ignoresFrom (src : Entries) (start : Nat) (ignoring named : List Nat) (floor
 /-- Where replay of a journal starts: a fork's or a carry's installed genesis and one entry consumed, else an
     empty world. -/
 def startOf (src : Entries) (caches : Caches := {}) : Except String World := do
-  if src.count == 0 then return ({ entries := src.upTo 0 } : World).withCaches caches
-  let first ← checkedEntry src 0
+  if src.count == src.base then return ({ entries := src.upTo 0 } : World).withCaches caches
+  let first ← checkedEntry src src.base
   if installsStore first then return (← installGenesis src first).withCaches caches
   return ({ entries := src.upTo 0 } : World).withCaches caches
 
@@ -586,7 +598,7 @@ def resume (b : Json) (src : Entries) (caches : Caches := {}) : Except String Wo
   let height ← natField b "height"
   let w ← installBody b src caches
   -- The identities a carry kept are the genesis's, never the snapshot's.
-  let w := { w with carriedIds := ((src.get? 0).map carriedIdentities).getD {} }
+  let w := { w with carriedIds := (src.genesis?.map carriedIdentities).getD {} }
   let (ignoring, ignoreNamed) ← ignoresFrom src height w.ignoring w.ignoreNamed height
   checkAnchors w
   let mut w := { w with ignoring, ignoreNamed }
@@ -607,15 +619,16 @@ def chainOf (journal content : String) : Except String (Array Link) := do
   if complete.length ≥ Limits.maxJournalEntries then throw "journal exceeds entry capacity"
   let mut out : Array Link := #[]
   for line in complete do
-    let height := out.size + 1
-    if height == 1 && (line.splitOn "\"outcome\"").length > 1 then
+    -- The first link's height is the journal's first (`firstHeight`, checked against its entry).
+    let height := match out.back? with | some prev => prev.height + 1 | none => 1
+    if out.isEmpty && (line.splitOn "\"outcome\"").length > 1 then
       throw s!"{journal} holds whole entries, one per line (the format before the block store): `delvetalk-obend migrate --journal {journal} --out NEW` writes it as a chain and a block store"
     let some link := Link.ofLine line | throw s!"journal broken at height {height}: unparsable line"
-    unless link.height == height do throw s!"journal broken at height {height}: height out of sequence"
+    unless link.height == height || (out.isEmpty && link.height > 0) do throw s!"journal broken at height {height}: height out of sequence"
     if let some prev := out.back? then
       unless link.previous == prev.hash do throw s!"journal broken at height {height}: previous hash does not chain"
     out := out.push link
-  unless tail.isEmpty do throw s!"journal broken at height {out.size + 1}: unterminated final line"
+  unless tail.isEmpty do throw s!"journal broken at height {(out.back?.map (·.height)).getD 0 + 1}: unterminated final line"
   return out
 
 /-- The journal at `journal` as `Entries`: its chain, read whole, over its block store, read only when
@@ -631,7 +644,8 @@ def openEntries (journal : String) : IO (Except String Entries) := do
     return .error s!"journal broken: its block store {store} is missing"
   let size := (← System.FilePath.metadata store).byteSize.toNat
   let handle ← IO.FS.Handle.mk store .read
-  let mut e : Entries := { store := some handle, depth := Limits.dataDepth }
+  let base := (links[0]?.map (·.height - 1)).getD 0
+  let mut e : Entries := { store := some handle, depth := Limits.dataDepth, base, count := base }
   for l in links do
     if l.offset + l.bytes > size then return .error s!"journal broken at height {l.height}: its record lies past the block store's end"
     e := e.pushStored l.hash (l.offset, l.bytes)
@@ -641,7 +655,7 @@ def openEntries (journal : String) : IO (Except String Entries) := do
 def journalEntries (journal : String) : IO (Except String (Array Json)) := do
   match ← openEntries journal with
   | .error e => return .error e
-  | .ok src => return (List.range src.count).toArray.mapM (checkedEntry src)
+  | .ok src => return ((List.range (src.count - src.base)).map (· + src.base)).toArray.mapM (checkedEntry src)
 
 /-- Entries as a fresh journal: each record appended to `<path>.blocks`, then each link to `path`.
     Neither file may exist. -/
@@ -698,8 +712,8 @@ def openJournal (journal : String) (verify : Bool := false) (caches : Caches := 
   let src ← match ← openEntries journal with
     | .ok s => pure s
     | .error e => return .error e
-  if src.count > 0 then
-    let first ← match checkedEntry src 0 with
+  if src.count > src.base then
+    let first ← match checkedEntry src src.base with
       | .ok e => pure e
       | .error e => return .error e
     let edition := (first.getObjValAs? Nat "replay").toOption.getD 1

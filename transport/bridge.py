@@ -10,7 +10,7 @@ import urllib.parse
 import time
 
 from transport.delve import Client, FixtureTransport, canonical, http_transport
-from transport.host import CLOCK, ON_ROOT, PUBLIC, paged
+from transport.host import CLOCK, paged
 from transport import observe
 from transport.observe import Observer
 
@@ -111,17 +111,11 @@ def revealed_lines(reply):
     return ''.join(f'{line}\n' for line in reply.get('revealed') or [])
 
 
-def public(host, receipt):
-    """Whether the public reader may view every object a turn read or wrote (`world-view` as PUBLIC). A post is read by
-    everyone, so a draft carries what a turn offered only then; else its receipt line alone."""
-    objects = [r.get('object') for r in receipt.get('roots') or []] + [w.get('object') for w in (receipt.get('outcome') or {}).get('writes') or []]
-    return all(host.send({'op': 'world-view', 'principal': PUBLIC, 'object': o}).get('status') == 'viewed' for o in dict.fromkeys(objects) if o)
-
-
-def draft_public(host, reply, origin=None, addressed=None, handles=None):
-    """`draft_text`, or for an admitted turn that read or wrote what the public may not read, its receipt line."""
+def draft_public(reply, origin=None, addressed=None, handles=None):
+    """`draft_text`, or for an admitted turn that read or wrote what the public may not read (the host's `inPublic`: a
+    post is read by everyone), its receipt line."""
     receipt = reply.get('receipt') or {}
-    if reply.get('status') != 'admitted' or (receipt.get('outcome') or {}).get('tag') not in (None, 'admitted') or public(host, receipt):
+    if reply.get('status') != 'admitted' or (receipt.get('outcome') or {}).get('tag') not in (None, 'admitted') or reply.get('inPublic'):
         return draft_text(reply, origin, addressed, handles)
     return receipt_line(receipt, origin, addressed, handles)
 
@@ -190,8 +184,9 @@ def offer_drafts(st, host):
             if any(st.outbox.glob(f'*-off-{key}.json')):
                 continue
             w = mine[(principal, uri)]
-            rc = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri}).get('receipt')
-            text = ('\n'.join(o['text'] for o in offers).rstrip('\n') + '\n' if public(host, rc) else '') + receipt_line(rc, st.config.origin, w.get('object'), handles) if rc else ''
+            got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': uri})
+            rc = got.get('receipt')
+            text = ('\n'.join(o['text'] for o in offers).rstrip('\n') + '\n' if got.get('inPublic') else '') + receipt_line(rc, st.config.origin, w.get('object'), handles) if rc else ''
             st.write(st.outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': w.get('post', uri), 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
@@ -219,17 +214,15 @@ def offer_drafts(st, host):
 
 
 MAX_HOPS = 32  # the host's `reachHops`: the ancestors passed with a post
-MENTIONS = 4  # the first mentions of a post that are addressed; the rest are ignored
-
-
-def mention_turns(st, host, obs, authors, handles):
+def mention_turns(st, host, obs, authors, handles, addressed):
     """A mention is addressed to the mentioned: one turn per mention (a facet's DID, or an @handle that is a known
     author) to the mentioned principal's avatar, `<did>`.receive {text, post} under the author with reach `mentioned`:
     the avatar keeps it as a note, and the host never reads it as a spell (its spell lines are the author's, routed to the
     cards they name). Once per post. Only an arrived principal has an avatar: a mentioned principal the observer has seen
-    is arrived first; one it has not is skipped, with a note in skipped.txt."""
+    is arrived first; one it has not is skipped, with a note in skipped.txt. Only the first `addressed` mentions (the
+    host's `mentionsAddressed`) are turned."""
     done = st.words(st.mentioned)
-    dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:MENTIONS]) if d))
+    dids = list(dict.fromkeys(d for d in ((m['did'] or authors.get(m['handle'])) for m in obs['mentions'][:addressed]) if d))
     if obs['uri'] in done or not dids:
         return False
     author = obs['author']
@@ -332,7 +325,8 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     handles = {o['author']['did']: o['author']['handle'] for o in rows}
     for did, handle in handles.items():  # a principal arrives at their first observed post, whatever its kind
         register(st, host, did, handle)
-    mentioned = [obs['uri'] for obs in observed if obs['mentions'] and mention_turns(st, host, obs, authors, handles)]
+    addressed = host.send({'op': 'bounds'})['host']['mentionsAddressed'] if any(obs['mentions'] for obs in observed) else 0
+    mentioned = [obs['uri'] for obs in observed if obs['mentions'] and mention_turns(st, host, obs, authors, handles, addressed)]
     for obs in observed:
         if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists():
             continue
@@ -383,9 +377,6 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
                 'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False, 'text': draft_text(reply)})
             done.append(obs['uri'])
             continue
-        if reply.get('message') == ON_ROOT:  # the opener's own post: her authority is the root socket, which the bridge never holds
-            st.append(st.skipped, obs['uri'])
-            continue
         if 'receipt' not in reply:  # the host gave no receipt; nothing to draft, retry next run
             failed.append({'uri': obs['uri'], 'message': reply.get('message', reply.get('status'))})
             continue
@@ -398,7 +389,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,
-            'receipt': reply['receipt'], 'posted': False, 'text': draft_public(host, reply, origin, obj, handles)})  # text '': journaled, hidden from outbox
+            'receipt': reply['receipt'], 'posted': False, 'text': draft_public(reply, origin, obj, handles)})  # text '': journaled, hidden from outbox
         if not reply.get('offers'):  # a card may have handed the reply on: its offer arrives later, `from` this post
             st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': did, 'replyHandle': handle, 'object': obj, 'slot': slot, 'height': reply['receipt']['height']})
         done.append(obs['uri'])

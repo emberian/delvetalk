@@ -206,16 +206,10 @@ def oid(obj):
     return urllib.parse.quote(obj, safe=':' if obj.rpartition('/')[2] in ('card', 'source') else '/:')
 
 
-def shown(kind):
-    """A form field's kind as a spell line shows its value: a choice names its options, the rest their bounds."""
-    if kind.get('tag') == 'choice':
-        return 'one of ' + ', '.join(kind.get('options') or [])
-    return f"<{kind.get('tag')} {kind.get('min')}..{kind.get('max')}>"
-
-
 def actions(base, obj, inspected, only=None):
     """One action per method in the host's method table that takes a context (a turn can run it), from world-inspect:
-    the form's fields when the host has a form for it, else the method's input type; a spell when the object hears spells."""
+    the form's fields when the host has a form for it, else the method's input type; its spell as the host's usage prints it
+    (`templates`)."""
     forms = {f['action']: f for f in plain(inspected.get('forms') or {'tag': 'list', 'items': []})}
     out = []
     for m in inspected.get('methods') or []:
@@ -231,9 +225,8 @@ def actions(base, obj, inspected, only=None):
         if m['name'] == 'receive':
             out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'spell': "text: any action's spell, or prose"}})
             continue
-        spell = f"delvetalk {form['card']} {form['action']}\n" + ''.join(f"{f['name']}: {shown(f['kind'])}\n" for f in form['fields'])
         out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'fields': {f['name']: f['kind']['tag'] for f in form['fields']}},
-                    'spell': spell})
+                    'spell': (inspected.get('templates') or {}).get(m['name'])})
     return out
 
 
@@ -344,14 +337,14 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
 
     def draft_turn(self, principal, intent, reply):
         """The owner's rule (cracks R6): an admitted HTTP turn that wrote something, and read and wrote only what the public
-        reads (`bridge.public`), is drafted in the hand's outbox like a town reply, once per receipt; whether the town
+        reads (the host's `inPublic`), is drafted in the hand's outbox like a town reply, once per receipt; whether the town
         hears of it is the operator's click."""
         receipt = reply.get('receipt') or {}
         writes = [w['object'] for w in (receipt.get('outcome') or {}).get('writes') or [] if w.get('object')]
         if reply.get('status') != 'admitted' or not writes or principal.startswith('guest:'):  # a guest's replies come back over HTTP only
             return
         path = self.st.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
-        if not path.exists() and bridge.public(self.host, receipt):
+        if not path.exists() and reply.get('inPublic'):
             self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
                                  'object': writes[0], 'slot': None, 'receipt': receipt, 'posted': False,
                                  'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
@@ -891,7 +884,7 @@ class Handler(BaseHTTPRequestHandler):
         if card.get('status') != 'card' and not answer:  # an object with no card still shows the turn a form ran on it
             return self.html(404, pages.refusal(name, who['handle'], card, card.get('status')))
         shown = card.get('status') == 'card'
-        paint = painted(host, did, name, self.server.sleep) if shown else None
+        paint = painted(host, did, name, self.server.sleep).get('text') if shown else None
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
         self.html(200, pages.play(name, who['handle'], oid(name), card.get('text', '') if shown else None, answer=answer, offered=offered,
                                   paint=paint, wants=self.wants(host, did, name) if shown else (), doors=door_rows(view), said=say))
@@ -922,7 +915,7 @@ class Handler(BaseHTTPRequestHandler):
         q = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
         brief = self.textual() and q.get('all') != ['1'] and urllib.parse.urlsplit(self.path).path + '?all=1&text=1'  # the costliest read (TOKENS)
         shown = card.get('status') == 'card'
-        paint = painted(host, principal or 'anonymous', name, self.server.sleep) if shown else None
+        paint = painted(host, principal or 'anonymous', name, self.server.sleep).get('text') if shown else None
         self.html(200, pages.obj(name, handle, view, card.get('text') if shown else None, self.history(host, name, principal), principal,
                                  door_rows(view), seen, self.wants(host, principal, name) if shown else (), brief, paint))
 
