@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (host30: 5.176, replay edition 11, and its helper's 5.178; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -132,7 +132,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are in `Limits.lean`, see KERNEL-H
 | delivery | `deliveriesPerCall` 16, `deliveriesPerSettle` 64, `deliveryAttempts` 4, `maxPending` 4096, `pendingActivitiesPerObject` 8, `pendingInterpretationsPerObject` 64, `maxSuspended` 4096, `maxResumesPerCall` 1024, `maxGrants` 4096 |
 | programs, laws | `maxPackageBytes` 131072 (`Bounds.maxPackageBytes`), `maxLawBytes` 4096, `maxLawClauses` 16, `maxPreparedPrograms` 16, `maxCompiledPackets` 256, `maxBuilds` 1024, `maxReaders` 256, `maxLibraryModules` 256, `maxLibraryBytes` 786432 |
 | interpret | `maxUtteranceBytes` 8192, `maxOffersBytes` 65536, `maxReplyBytes` 262144 |
-| forms | `formTextMax` 1400, `formNaturalMax` 1000000000 |
+| forms | `formTextMax` (= `cardShownChars`) 1400, `formNaturalMax` 1000000000 |
 
 A full count refuses the turn with class `capacity`, reason the limit's name. The `bounds` op answers every one of them by name.
 
@@ -1973,8 +1973,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 171. **A question hob reads nothing into is answered by the card (host27; the v8 deploy's silent question; the
    coordinator's decision).** "does the bell have a clapper?" to bell/1, which wants one, came back `none` and so
    silence. Now `resumeHeard`, when hob replied with no spell and no ask (`none`, `unclear: not addressed`) to words
-   ending in `?`, offers the speaker `cardAnswer`: the card's exact text as they read it (`cardRendered`, whole; the
-   model's copy is `cardText`, within `cardShownChars`) and then `wantsText` when it wants anything. Data, not
+   ending in `?`, offers the speaker `cardAnswer`: the card's exact text as they read it (`shownCard`, what `world-card`
+   answers, wants lines and bound included, 5.180; the model's copy is `cardText`). Data, not
    narration. Other words stay silence, and so do a failed model and the deadline. The paint is not in the offer:
    renders live per process in the session (`Open.renders`), outside the world a turn commits; the front places a
    painting above the exact card where one exists (5.161), and the bridge drafts exact. "Or hob says ask is not
@@ -2113,7 +2113,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    thing's law lets the grower reprogram it, else holds it over the thing for whoever its law lets lay it (`adopt /
    n`, `laidOn`). A grown verb with a body is a declared method, so no verb row is placed. Test: `test_authoring`
    (with the verb library: a one-verb kind laid by `become`, `?` saying what it is after).
-176. **Firings named by their holder, carried roots behind a barrier, no suspension dropped unnamed, a judgment's
+179. **Firings named by their holder, carried roots behind a barrier, no suspension dropped unnamed, a judgment's
    roots, law work metered (host30; codex host 7, host 9, docs 7, host 12, host 13; replay edition 11).**
    - *Holder* (host 7). `ruleDeliveryId object holder name height`: a rule the thing holds keeps
      `rule:<object>:<name>:<height>`; one it inherits through `under` (`CarriedClause.holder`) is
@@ -2137,7 +2137,26 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      pass over a set of canonical bytes (`canonSet`, `evictedIn`: `changedRows`, `insertOnly`). Test:
      `test_relation.LawWork` (16 clauses over 4,096 rows refused, over 512 admitted).
 
-178. **A fired spell shown by handle, the paint's `about`, `revealed` on `world-receipt`, `world-history` by height
+180. **A card is shown within one bound, with the wants it holds (host30; codex docs 14; the attend lane's wants; no edition change).**
+   `Limits.cardShownChars` 1,400 is the one bound of a card any reader is shown (`formTextMax` is defined as it).
+   `clipCard id text block` is the one place it is applied: `text` then `block` (whole lines) when they fit; else
+   `text` cut to leave room for `\n[clipped at 1400 characters; world-inspect <id> reads its source]\n` and then
+   `block`, so the answer is exactly the bound. `shownCard w id reader text` is `clipCard` with `block` = one line
+   per want the thing holds (`wantRows` for the reader), `wants <name>: <reading>: <spell>` (the reading omitted when
+   there is none, the spell's lines joined by ` / `), taken in order while together within a quarter of the bound.
+   `cardOp` answers `shownCard` for both a rendered card and a root's `card` override; `cardAnswer` (5.171's
+   question answered by the card) is `shownCard` of the same render, so a hob offer equals `world-card`'s text;
+   `cardText` (the model's copy, whose wants go as `asked.wants`) is `clipCard` with no block. `world-card`'s
+   `document` is the render's data, unclipped, and the transport's GET `/card` leaves it out unless `?full=1`. The
+   transport adds nothing: `GET /AGENTS.md/world/<id>/card` is the host's `text`. Bound by the card only: the
+   reply's receipt line the bridge stamps is not in it (FOUNDATION's `Card.limit` leaves room for it in a
+   world card's own Bend). Previews re-cut from the live cards: `seed-posts/01-porch.txt`, `03-rain-bell-1.txt`.
+   Tests: `test_heard.Heard.test_a_card_shows_at_most_the_bound_and_says_where_the_rest_is_read` (at the bound whole,
+   one over and 2,000 clipped to the bound with the closing line, a want kept at the bound, hob's answer equal to
+   `world-card`), `test_root.Root.test_a_card_override_is_clipped_to_the_card_bound`,
+   `test_rules.Wants.test_a_card_shows_the_wants_it_holds_one_line_each_within_the_bound`;
+   `test_heard`'s question test and `test_inspirit`'s goblet card pin the line.
+181. **A fired spell shown by handle, the paint's `about`, `revealed` on `world-receipt`, `world-history` by height
    (host30 helper lane/host30-reveal; hand-back (2) and (5), fungus T28).**
    - *Shown by handle.* `shownSpell w text` (Ops, by `shownName`): each whole `did:` token of a filled spell the
      registry names is shown by its handle (a trailing `.` is the sentence's; an `at://did:...` citation stays).
@@ -2184,7 +2203,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
   anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
-  barriers, law work metered, 5.176). Test: `tests/test_replay_edition.py`.
+  barriers, law work metered, 5.179). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.
@@ -2203,23 +2222,36 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
 
 ## 7. Open
 
-**First, host29's remainder (the second codex review, docs/review/codex-2026-10-12; stopped at its token budget).**
-Each with its failing input as a test first, merging foundation before each commit:
-- The kernel18 merge is done (host30): `judge` stages each write's applied cells, builds `cand` from them and
-  judges every law, Bend law, amendment and placing against it (`viewFor` of the cells for the written object,
-  `citing cand` for what it cites); `reactions` reads `viewFor` with `citing after` and the `reads` check;
-  creations journal `cid` and `placed`; `checkAnchors w naming whole`. Full run after it (1,000 tests): the three reds
-  before it, now fixed: Paint's pin re-recorded (lane/paint's prompt), the sentry post's `forge make` in a fence is
-  no spell (agent 2), the garden seed post re-cut from the live card. `carry-check.sh` on delvetalk-20261012T090950Z: green, breaking (26 s);
-  `bench-write.py` 200 turns: 0.95 / 1.00 / 0.95 ms median at 16 / 256 / 2,048 rows under the suite's load.
-- docs 14: the 1,400-character card bound enforced where every card response is built.
-- agent 10: hob is offered the host's permitted spells (`rule`, `want`, `adopt`…) and its proposals of them run
-  through `hostSpell`.
-- The coordinator's simplify hand-back: (1) an offer's public projection answered by the host (transport stops
-  `world-view` per object); (3) delete the JSON model-reply branch in `interpretVerdict`; (4) a refusal class for
-  "the opener speaks on the root socket"; (6) REPL retry classes; (7) `world-inspect` answering each form's usage
-  template; (8) the HTTP draft rule and the mention cap of 4 as host answers.
-
+**First, host30's remainder** (host29's and the coordinator's; edition 11 is not deployed: anything that changes
+what replay derives rides it if it lands before the deploy, which carries edition 10 to 11 and ships
+`carry-check.sh` green on the newest backup). Each with its failing input as a test first, merging foundation before
+each commit:
+1. **Heights a carried world shows** (the first live carry, v8 to v9, edition 10: "untended since entry 27" in a world
+   at 48). A state holding a height (`world/bodies/bell.obend` `tendedAt`, `Avatar.obend` `seen`: an avatar's `seen`
+   from the old chain past the new heights hides its new notes until the chain passes it) names the old chain's
+   entry. Decide one: the carried world's heights continue the old chain's (a `carried` genesis at the old head + 1,
+   entries indexed by `height - base`: every stored height stays an entry of one sequence, and "entry N of the world
+   before" needs no slug), or the carry translates no state and cards show clock time (bodies' change, objects
+   lane). The first is the host's and needs no world source; test on a carried world (`test_carry.Moves`'s pattern).
+2. **The hand's morning paint fell back** (`hand morning`: `painted: False` after a 117-token reply). The host answers
+   why (`world-render` `exact {reason, clause?, detail?}`: `rejected` with the paint check's clause, `unattended`,
+   `busy`, `unavailable`), and `transport/host.py` `painted` drops it: return the reason, have the hand say it, then
+   read the live answer (the host's `world-status.renders` counts, `rejected`) for the cause and fix that.
+3. **agent 10:** hob is offered the host's permitted spells and its proposals of them run. `heardOffers` lists only a
+   card's own forms; add the placing spells (`placingSpells`: `rule`, `want`, `unrule`, `unwant`; their fields are
+   `ruleLine`/`wantLine`'s, the spell field last) for a speaker the thing's law may admit, and let `proposalVerdict`
+   accept a placing spell without a compiled method (`runHeard` already stages it through `placementsOf`). `grow:`
+   stays hob's own answer (`growVerdict`).
+4. The coordinator's simplify hand-back, still open: (1) an offer's public projection answered by the host (the
+   transport stops `world-view` per object); (3) delete the JSON `{method, argument}` model-reply branch of
+   `interpretVerdict` and `model.extract`; (4) a refusal class for "the opener speaks on the root socket"; (6) the
+   REPL's retry classes; (7) `world-inspect` answering each form's usage template; (8) the HTTP draft rule and the
+   mention cap of 4 as host answers.
+5. Seen in passing: `revealed` on `world-receipt` reads today's counts for an old entry (the "where it stands" line);
+   `transport/host.py` `HISTORY_LIMIT` restates `Limits.maxHistoryLimit` (read it from `bounds`); `shownSpell` scans
+   the filled text for `did:` tokens because `fired` rows keep no hole structure; a seed post carrying a card's wants
+   lines may pass the bridge's bound once its receipt line is stamped (`docs/previews/seed-posts/01-porch.txt`); this
+   file's entries 173 to 177 are numbered twice (host28/host29 and lane/author-build).
 
 The queue after host27 (5.164 to 5.172) and host28 (5.173, 5.174), in order. The overhaul (docs/OVERHAUL.md section 5) is the order of work. The owner's
 standing order binds every item: "maturify and take forward everything that we've started and bring it to its full
