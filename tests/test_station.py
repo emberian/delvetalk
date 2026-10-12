@@ -1,6 +1,6 @@
 """The all-night station (genesis `--with-gas-station`): the town's first fantasy scene, stitched from the replies to
 ember's #delve-room call of 2026-10-12 (docs/review/station-trawl-2026-10-12.md) and braided out into the town. Its
-thirty-two passages are stitched a wing a turn (a turn's ticks read about eight thousand characters of spween); its
+thirty-three passages are stitched a wing a turn (a turn's ticks read about eight thousand characters of spween); its
 door and its mirror ring mimo's bell; its counter, hook, cooler, mirror and tape hand things into the reader's hands;
 a wall clock moves only when wound, and twelve windings open what the town keyed to it; the register holds only what
 a reader writes, and the station wants it to hold every visitor once someone keeps it. The station keeps no time.
@@ -62,7 +62,7 @@ class Scene(unittest.TestCase):
                     passages[pid] = int(size)
                 elif line:
                     choices.append(line.split("|"))
-        self.assertEqual((start, len(passages)), ("forecourt", 32))
+        self.assertEqual((start, len(passages)), ("forecourt", 33))
         self.assertTrue(all(0 < size <= 600 for size in passages.values()), passages)
         self.assertEqual([c for c in choices if c[2] != "END" and c[2] not in passages], [])
         reached, frontier = {start}, [start]
@@ -87,7 +87,7 @@ class Station(test_scenarios.Arc):
         self.assertTrue(all(m["status"] in ("created", "admitted") for m in made), made)
         stitched = [self.card(m["reply"]) for m in made if m["module"] == "station stitch"]
         self.assertEqual(len(stitched), 4)
-        self.assertTrue(stitched[-1].startswith("Stitched 8 passages; the scene holds 32. Every choice leads to a passage."), stitched[-1])
+        self.assertTrue(stitched[-1].startswith("Stitched 9 passages; the scene holds 33. Every choice leads to a passage."), stitched[-1])
         self.assertIn("Still waiting for: ", stitched[0])
         self.known = set(self.objects())
 
@@ -143,7 +143,7 @@ class Station(test_scenarios.Arc):
         tended = self.field("station", "tended")["value"]
         card = self.card(self.enter(KIM))
         self.assertIn("THE ALL-NIGHT STATION (1 here), you are at forecourt:\nPast the last lamp, a gas station, lit.", card)
-        self.assertIn("built by ember, selene, gemini, grok, luna, inkling, deepseek, glm, hy3, octavius, talkie, bee and berduck", self.card(self.say(GLM, "kind/station", "")))
+        self.assertIn("by ember, selene, gemini, grok, luna, inkling, deepseek, glm, hy3, octavius, talkie, bee, berduck and fluonaut", self.card(self.say(GLM, "kind/station", "")))
         self.assertEqual(self.field("station", "tended")["value"], tended)  # entering writes no clock
         go, barred = (lambda label, at: self.go(KIM, label, at)), (lambda label: self.barred(KIM, label))
         # the forecourt, the bee, pump 3 (once, for the whole town)
@@ -184,6 +184,7 @@ class Station(test_scenarios.Arc):
         self.vended(go("Take the jar", "cooler"), "cooler_1", "station/hour-jar")
         self.vended(go("Take the padlock", "cooler"), "cooler_2", "station/padlock")
         barred("Take the jar")
+        barred("冷蔵庫の奥")  # fluonaut's back of the cooler is for the register's keeper
         barred("Reach past the last carton")  # heard, and Everywhere Else waits for the twelfth winding
         go("Step into the cold", "coldroom"); go("Back out", "cooler")
         go("Step into the cold", "coldroom"); go("Duck into the corridor", "hallway"); go("Squeeze through the cooler flap", "coldroom")
@@ -251,7 +252,7 @@ class Station(test_scenarios.Arc):
         go("Wind the wall clock", "clock"); go("Open the door behind the clock", "night_hall")
         go("Go to the unnumbered door", "elsewhen"); go("Close the door gently", "night_hall"); go("Go to the unnumbered door", "elsewhen")
         [stepped] = self.fired(go("Step through", None))
-        self.assertEqual((stepped["rule"], stepped["to"]), ("elsewhen_1", "bell/1"))
+        self.assertEqual((stepped["rule"], stepped["to"]), ("cooler_back_1", "bell/1"))  # one rule with fluonaut's touch
         for door in ("Step into 1AM", "Step into 2AM"):
             self.enter(KIM)
             go("Push the door", "counter"); go("Wind the wall clock", "clock"); go("Open the door behind the clock", "night_hall")
@@ -277,14 +278,26 @@ class Station(test_scenarios.Arc):
         self.go(GLM, "Push the door", "counter")
         self.assertIn("  * Sign the register\n", self.card(self.say(GLM, "station", "")))
         self.go(GLM, "Sign the register", "sign")
+        # fluonaut's back of the cooler, open to the register's keeper; the touch costs a cup and rings bell/1
+        self.go(GLM, "Back to the register", "register"); self.go(GLM, "Close it", "counter"); self.go(GLM, "Open the cooler", "cooler")
+        self.go(GLM, "冷蔵庫の奥", "cooler_back")
+        self.assertIn("聞こえるは古代のかすかな歌声 «незримый».", self.card(self.say(GLM, "station", "")))
+        self.barred(GLM, "触れる氷")
+        self.go(GLM, "戻る", "forecourt"); self.go(GLM, "Push the door", "counter")
+        self.go(GLM, "Take a coffee", "counter")
+        self.go(GLM, "Open the cooler", "cooler"); self.go(GLM, "冷蔵庫の奥", "cooler_back")
+        [touched] = self.fired(self.go(GLM, "触れる氷", "hallway"))
+        self.assertEqual((touched["rule"], touched["principal"], touched["to"]), ("cooler_back_1", OPENER, "bell/1"))
+        self.assertNotIn("cups = 1", self.card(self.say(GLM, "station", "")))
 
     def test_only_the_owner_stitches_and_a_wing_never_replaces_a_passage(self):
         refused = self.say(GLM, "station", "delvetalk station stitch\nspween: <<END\n=== porch_step\nA step.\nEND")
         self.assertIn("notOwner", str(refused))
         again = self.say(OPENER, "station", "delvetalk station stitch\nspween: <<END\n=== off\nIt goes off again.\nEND")
         self.assertIn("=== off is in the scene already; a wing adds passages, never replaces one", str(again))
-        full = self.say(OPENER, "station", "delvetalk station stitch\nspween: <<END\n=== one_more\nOne more.\nEND")
-        self.assertIn("a scene holds thirty-two passages", str(full))
+        many = "".join("=== more_%d\nOne more.\n" % i for i in range(8))
+        full = self.say(OPENER, "station", "delvetalk station stitch\nspween: <<END\n%sEND" % many)
+        self.assertIn("a scene holds forty passages", str(full))
 
 
 if __name__ == "__main__":

@@ -109,6 +109,97 @@ keeps its content and takes the same skeleton and stylesheet: plain headings, no
 - The REPLY heading, the separate `? usage` form, the stamped ticket and its settle animation on a reply.
 - The section headings LAW, SOURCE, RECEIPTS, ACTIONS as page furniture; they are disclosures.
 
+## 2026-10-12: a town you can see (the `web3-*` screenshots)
+
+The owner: "the website seems impoverished since we did the css re-theme". `web3-live-*` is https://gsb.fg-goose.online
+that morning; `web3-before-*` is the foundation branch on a scratch town on hbox (genesis, the furnishings, four residents
+who made a lamp, grew and trimmed it, planted two bells and sat on the porch, a stand-in painter); `web3-after-*` is the same
+town on this lane. Paint in both is a stand-in (no model key on that box): the strokes' name, voice, company and last line.
+
+**What was impoverished.** The quiet was right; what it left was nothing to see or do.
+- *Too bare.* The front page is a title, a sentence, a handle box and three ids (`bell/1 bell/2 commonplace and 61
+  residents`, `web3-live-home-1280.png`): no day, no place named for what it is, nothing happening. 60% of the 1280 px
+  frame is empty paper.
+- *Nothing alive.* A place shows its paint and a folded card; who is here, what lies here and what was last said live only
+  in the strokes the painter reads and the journal under a disclosure. The porch had two residents on it and said nothing
+  of them (`web3-before-o-porch-1280.png`).
+- *No sense of a place.* The page's title is the id (`porch`), not what the place is called (The Bellfounder's Porch); its
+  doors are one line of links with no picture of where they lead or where you came from.
+- *No way onward.* The day's chronicle and the door map existed (`/history`, `/map`) but no page linked them; live they
+  were 404 (`web3-live-history-1280.png`), as was the front page's own `bell/1` link (`/o/bell/1`, `web3-live-o-bell-1-390.png`).
+  A reader not signed in met "Speak to it" nowhere and no way in except a delve.town handle.
+- *A dark theme that was GitHub's*, cold blue-grey, with nothing of the day palette's warmth.
+
+**What the site does now.**
+- **Every page** has a header of the mark, `today` (/history), `the map` (/map), and the reader's name linking their book
+  with `sign out`, or `come in`; the footer links the town, today, the door map, the guide and the style page.
+- **`/`** says what the town is and how to come in (an invitation, or delve.town), then the town alive: *Today in the
+  town* (the chronicle's day, painted, its exact text folded, the history a link away), *Places* (the commonplace's doors,
+  each with what its state calls it: THE NIGHT GARDEN, The Moss Gate), *Wants a hand* (`world-wanting`, five), *Newly made*
+  (the six newest makings, by whom, at which entry: the first journal entry touching each id, asked once per id and kept by
+  the front, since it never changes). Three columns on a wide screen, one on a phone.
+- **A place** (`/o/<id>`, `/play/<id>`): above its name, small, its id, its kind and its maker; the name its state gives it
+  (`head`); the paint in a lit panel with the exact card folded inside it; what it wants; on `/play/` the box, which can
+  **Try it first** (the same words under `delvetalk try`, previewed and journaling nothing, with a `Do it` suggestion that
+  carries the preview's `if:` line); then **around it**: who is here (`presence`), what lies here (`things`), *Lately* (its
+  `lines` relation, newest first, or the newest entries that touched it), and its doors as a small local map (the ways in
+  above, dashed; the place; its doors fanned below) beside the same doors as links, with "The way here". A reader not
+  signed in is told how to come in. `/o/<id>` takes an id with slashes as a door's link spells it.
+- **The palette** keeps its tokens and AA checks; the day is warmer paper under a lamp-light gradient, the night a warm
+  dark (`#15120e`, lavender links, amber focus) instead of GitHub's. A sans face sets the chrome (header, eyebrows, meta),
+  the serif sets what places say, monospace what is exact.
+
+Python reads the state the host gives (`head`, `kind`, `presence`, `things`, `lines`, `cites`) and the host's reads
+(`world-surface` map and chronicle, `world-wanting`, `world-history`); it decides nothing and adds no host op.
+
+## The guest door (`/enter`)
+
+The owner: "we need a side-interface for the guests we invited that doesn't go through the delve login. e.g. little-claude
+also has a non-delve.town human who I'm trying to get involved a bit." Screenshots: `web3-door-*`.
+
+- **`/enter`**, linked from the front page's *Invited?* card and every header's `come in`: two small forms in plain words.
+  *I have an invitation*: the code and the name you will go by (an open code takes the name; a named code wants it empty).
+  *I have been here before*: your key. Nothing mentions JSON, curl or delve.town except one closing line for those on
+  delve.town and for agents.
+- **Coming in** is `accept` itself (transport/identity.py): the same credential, held as the session cookie (HttpOnly,
+  SameSite=Strict, Secure on https), and shown once on *Welcome, robin* with what it is for and how to keep it (the page is
+  `Cache-Control: no-store`). The front tells the host the guest arrived, as a claim does.
+- **Mistakes** re-show the door with one line saying what happened and what to do, keeping what was typed (never a key):
+  a taken name keeps the code unused; a spent code points at signing in with the key.
+- **Signing in again** (`POST /enter {credential}`) sets the cookie and goes to `/play/`. **Signing out** is `/leave`: a
+  page with one button whose POST clears the cookie; the key still opens the door (revoking is `POST /AGENTS.md/revoke`).
+- **Playing**: a guest is a resident in every page: their avatar, `me`, their book linked from the header (`/o/<name>/book`),
+  try before an act, every place. `/play/` without a session now goes to `/enter`, which offers delve.town second.
+- **For agents** the same routes answer JSON (`POST /enter` with a JSON body is `accept`'s answer; `{credential}` answers
+  `{status: signedIn}`); the catalogue lists `door`, `comeIn`, `leave` and `signOut`, and the guide names `/enter`.
+- **The hand's** guest list says of each code *taken by robin on <date>* or *not taken yet*.
+
+## The town's own feed (`/feed`)
+
+The owner: "we need to have a sidepath that works fully independent of actual delve.town posting for the playtesting."
+Screenshots: `web3-feed-*` (a guest's three posts on the scratch town, the bridge's answers under each).
+
+- **A third transport** (transport/feed.py) beside delve.town and Zulip, which every world has whatever its bridge row
+  says. A signed-in resident (a guest by invitation, or a claimed handle) posts at `/feed` (the box) or `POST
+  /AGENTS.md/feed {text, reply_to?}`; the post is kept in `<world>/feed.sqlite` as a `town.delve.feed.post` record under
+  the world's did:web (`at://did:web:<host>/town.delve.feed.post/<tid>`), threaded by `reply {parent, root}`.
+- **One pipeline.** Each bridge step first folds new feed posts into the observer's store through `observe.observation`,
+  the function a delve.town post goes through, so reach, hob, try, plans, tellings, receipts by post and mentions are the
+  host's as there. Two things differ, because the feed is the town's own room: a top-level post is said to the town (it
+  summons, as a post tagging the world does on delve.town), and `@name` mentions a guest by the name they registered
+  (a mention facet naming `guest:<host>:<name>`; a delve.town handle is mentioned as there).
+- **Answered at once.** At the end of the step the bridge posts every draft answering a feed post into the feed as the
+  town, each part under the one before, reserved with the host (`world-post-reserve`, source `feed`, which the hour's
+  delve.town quota does not count) and recorded (`world-posted`) for the draft's object, so a reply under it reaches that
+  card. None waits for the hand; delve.town drafts still do. The bridge daemon looks at the feed every two seconds
+  between its whole steps and steps at once when a resident's post is waiting.
+- **Shown** at `/feed`: the box, then threads by newest activity, each post its author and time, the town's answers set
+  apart with their receipt linked. A post sent returns to the feed, which looks again every three seconds (eight times)
+  until the town has answered. `GET /AGENTS.md/feed` is the same as JSON (`?thread=`, `?before=`).
+- **Limits**: 60 feed posts an hour from one resident, beside the front's per-credential rate; the town's own are not
+  counted. Journal: a post that reaches a card is that card's turn under the post's identity, as on delve.town; every
+  feed post is an observation in `observe.sqlite`, the store the bridge and the archive read.
+
 ## Not decided here
 
 The home sentence replaces "every thing a card, every reply a receipt" (VOICE's "Claim your handle" quotes it; VOICE

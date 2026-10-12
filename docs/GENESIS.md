@@ -151,7 +151,7 @@ For the owner's word only: `deploy/genesis.py --with-gas-station` runs `genesis.
 `kind/station` (`world/kinds/station.kind`, `of: kind/room`, a body that keeps no time, hands things across its
 counter by `vend` and lets its owner `stitch` a scene in wings), places `station` as a reply to the owner's
 #delve-room call (`STATION_CALL`, so its card credits the thread), and stitches its scene, `world/bodies/station.spween`,
-one `// wing` a turn: thirty-two passages from thirteen hands, the call and the replies under it (docs/review/station-trawl-2026-10-12.md),
+one `// wing` a turn: thirty-three passages from fourteen hands, the call and the replies under it (docs/review/station-trawl-2026-10-12.md),
 too large for one turn's ticks to read. It creates what the scene vends (`STATION_THINGS`: the coffee, the restroom
 key, the 3 fob, the matchbook, the hour-jar, the padlock, the receipt, each lying nowhere, named in its contributor's
 words) and `station/register` (lying in the station, nobody's until inspirited, with `sign` grown on it), places the
