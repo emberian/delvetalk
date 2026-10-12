@@ -113,7 +113,7 @@ class Genesis(unittest.TestCase):
         self.assertIn('room', [name for name, *_ in genesis.KINDS])
         state = {f['name']: f['value'] for f in self.host.send({'op': 'world-view', 'principal': genesis.OPENER, 'object': 'kind/room'})['state']['fields']}
         # the kind's text is its instances' laws, rules and wants: the record's law and the room's want `company`
-        self.assertEqual((state['law']['value'], state['body']['value']), (genesis.RECORD_LAW + '\n' + genesis.ROOM_TEXT, genesis.body_of('room')))
+        self.assertEqual((state['law']['value'], state['body']['value']), (genesis.RECORD_LAW + '\n' + genesis.kind_text('room'), genesis.body_of('room')))
         # a kind's voice is its things' register, on its card and owner-only by the kinds' law
         bell = self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'kind/bell'})['text']
         self.assertIn('Its things speak: %s\n' % genesis.VOICES['bell'], bell)

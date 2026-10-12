@@ -26,7 +26,9 @@ def card(diagnostics: String) -> String:
 def lines(text: String) -> Lists.List<String>:
   if text == "" then Lists.List::<String>.nil() else Lists.List::<String>.cons({head: textTake(text, textBreak(text, "|")), tail: lines(textDrop(text, textBreak(text, "|") + 1n))})
 """
-BLOCK = "edition ObjectiveBend 1\nrecord State:\n  count: Nat\ndef initial() -> State:\n  {count: 0n}\n"
+# A whole package a spell reaches (its `receive`): a draft of one with none is refused `noReceive`.
+BLOCK = ("edition ObjectiveBend 1\nrecord State:\n  count: Nat\n"
+         "def initial() -> State:\n  {count: 0n}\ndef receive(state: State, input: {text: String}) -> Nat:\n  state.count\n")
 
 
 def run(entry, text, limits=None):

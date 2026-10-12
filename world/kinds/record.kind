@@ -1,0 +1,4 @@
+# the root kind: a record with no body of its own, the law every kind imports
+of: record
+head: A RECORD, begun by {maker}
+voice: written, never edited; the pile holds; nothing here expires, it only waits

@@ -562,14 +562,28 @@ def creationInputs (creator : Object) (package : String) : Except (String × Str
     if package.startsWith "edition" then return finish [("source", toJson package)]
     else throw ("unknownPackage", "the creator has no sealed modules to name")
 
+/-- What `creator`'s `create` of `package`, then an `extend` of each of `layers`, would compile, checked
+    (`checkInputs`): a kind checks the stack its instances will run, its ancestors' bodies and its own
+    (`world.check {package, layers}`). A package of source with no layers is checked as one entry module
+    over the library (`checkSource`). -/
+def checkStack (w : World) (creator : Object) (package : String) (layers : List String) : List String × Bool :=
+  if layers.isEmpty && package.startsWith "edition" then checkSource w package else
+  match (creationInputs creator package).mapError (·.2) >>= (layeredInputs · layers) with
+  | .ok inputs => checkInputs w inputs
+  | .error e => ([s!"Checked:0: package-request: {e}"], false)
+
+/-- `checked {diagnostics, reaches}`, or `{diagnostics}` where the call site's result has no `reaches`
+    (a package compiled before it). -/
+def checkedData (verdict : List String × Bool) : List Data :=
+  let diagnostics := ("diagnostics", listData (verdict.1.map Data.label))
+  [.record [diagnostics, ("reaches", .boolean verdict.2)], .record [diagnostics]]
+
 def buildCreated (w : World) (creator : Object) (package : String) (seed : Data) (lawArg principal : String)
-    (height : Nat) (layer : String := "") : Except (String × String) (CreateRec × Built) := do
+    (height : Nat) (layers : List String := []) : Except (String × String) (CreateRec × Built) := do
   let inputs ← creationInputs creator package
-  -- A layer an `extend` of the same turn lays into the making: one closure, one pin.
-  let inputs ← if layer.isEmpty then pure inputs else do
-    if layer.utf8ByteSize > Limits.maxPackageBytes then
-      throw ("packageBytes", s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)")
-    (extendInputs inputs layer).mapError (("compile", ·))
+  -- The layers `extend`s of the same turn lay into the making: one closure, one pin.
+  let inputs ← (layeredInputs inputs layers).mapError fun e =>
+    (if e.startsWith "package source exceeds" then "packageBytes" else "compile", e)
   let built ← (compileObject w inputs).mapError (("compile", ·))
   let initial ← (initialState built).mapError (("compile", ·))
   let state ← (mergeSeed initial seed built.assumptions.bounds built.ty).mapError (("typeMismatch", ·))
@@ -583,17 +597,17 @@ def buildCreated (w : World) (creator : Object) (package : String) (seed : Data)
   return ({ object := { object with relations }, sources, seed := dataJson state }, built)
 
 /-- An `extend` (or `reprogram {mode: extend}`) of `id`, which this turn created (`made`): the creation
-    built again with the layer over its package, judged by the made thing's own law as a reprogram
-    (kind 1) proposed by `self`. A replacing reprogram, a migration or a second layer of a thing not
-    made yet is refused; the creation journals one closure and its pin. -/
+    built again with the layer over its package and the layers laid before it (a kind's instance takes
+    its ancestors' bodies, then its own), judged by the made thing's own law as a reprogram (kind 1)
+    proposed by `self`. A replacing reprogram or a migration of a thing not made yet is refused; the
+    creation journals one closure and its pin. -/
 def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) (made : CreateRec)
     (source migration : String) (extend : Bool) : M Data := do
   let s ← get
   if !extend then return ← refusedReading bounds responseType "unknownObject" s!"{id} is not made until this turn ends; a layer may be laid into the making with extend"
   if !migration.isEmpty then return ← refusedReading bounds responseType "migration" s!"{id} is being made: its state has no older type to migrate"
-  if !made.layer.isEmpty then return ← refusedWith bounds responseType "duplicate"
   let some creator := s.world.objects[made.creator]? | evaluation "the creating object vanished"
-  match buildCreated s.world creator made.package made.seedArg made.lawArg s.principal (s.world.height + 1) source with
+  match buildCreated s.world creator made.package made.seedArg made.lawArg s.principal (s.world.height + 1) (made.layers ++ [source]) with
   | .error (clause, message) =>
     refusedReading bounds responseType clause
       ((({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal).voiced.reason).getD message)
@@ -606,7 +620,7 @@ def extendCreation (bounds : DataBounds) (responseType : Ty) (self id : String) 
       return ← refusedReading bounds responseType clause ((o.readings.lookup clause).getD s!"the law of {id} does not admit this layer.")
     let again := { again with object := { o with supervisor := made.object.supervisor }, madeFrom := made.madeFrom,
                               creator := made.creator, package := made.package, seedArg := made.seedArg,
-                              lawArg := made.lawArg, layer := source }
+                              lawArg := made.lawArg, layers := made.layers ++ [source] }
     set { s with creates := s.creates.map (fun (k, c) => if k == id then (k, again) else (k, c)),
                  world := cacheBuild s.world o.inputs built }
     respond bounds responseType "reprogrammed" [.record [("pin", .label o.pin)]]
@@ -1333,7 +1347,7 @@ def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : 
 /-- `rule`'s and `want`'s fields as the usage prints them: the spell last, since its own fields follow it. -/
 def ruleLine : String := "name: <a name>\nwhen: <a condition>\nthen: <a spell, holes {new.F} and {request.subject}>"
 def wantLine : String := "name: <a name>\nwhen: <a condition on the thing as it stands>\nasks: <the spell that answers it>"
-def growLine : String := "name: <one word>\nreading: <what it does>\ntakes: <text, or nothing>\ndoes: <a spell its use casts, or leave it out>"
+def growLine : String := "name: <one word>\nreading: <what it does>\ntakes: <text, or nothing>\ndoes: <a spell its use casts, or leave it out>\nbody: <a few lines of Bend in a <<BEND block, or leave it out>"
 
 /-- `adopt`'s field as the usage prints it: a law written inline, or the id of what holds one. -/
 def adoptLine : String := "law: law <name> \"<reading>\": <expression>, or a kind's or a page's id"
@@ -1378,6 +1392,24 @@ def actArgument (verb : String) (argument : Data) : Data :=
     | _ => ""
   .record [("verb", .label verb), ("text", .label text)]
 
+/-- The receipt of the turn that made `id`: the first entry that touched it ("" when none is held). -/
+def madeReceipt (w : World) (id : String) : String :=
+  (((w.touched[id]?).bind (·[0]?)).bind w.entries.hashAt?).getD ""
+
+/-- Where a card's code came from (`Object.madeFrom`), one line: the object it was made from, whoever
+    turned the entry it cites, and that entry's height; "" for code given whole. -/
+def lineageLine (w : World) (o : Object) : String := Id.run do
+  let some m := o.madeFrom | return ""
+  let some object := (m.getObjValAs? String "object").toOption | return ""
+  let receipt := (m.getObjValAs? String "receipt").toOption.getD ""
+  let some i := w.entries.indexOf? receipt | return s!"After {object}.\n"
+  let by_ := ((w.entries.get? i).bind fun e => ((e.getObjVal? "identity").toOption.bind
+    (·.getObjValAs? String "principal" |>.toOption))).map (handleOf w ·)
+  return s!"After {object}{(by_.map (s!" by {·}")).getD ""}, entry {i + 1}.\n"
+
+/-- The workshop a verb grown with a body is written by (`growBody`). -/
+def workshopId : String := "workshop"
+
 /-- A grown verb's use as its card's `act` takes it: `{verb, text}`, the text "" when the verb takes
     none; none when `action` is no verb grown on `o` (a declared form shadows a verb of its name). -/
 def grownAct (o : Object) (action : String) (argument : Data) : Option Data := do
@@ -1420,12 +1452,22 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
   let lenses := declaredLenses w target
   -- Lenses are `set`'s: shown only when `set` is offered to the speaker.
   let shownLenses := if offeredTo w id target principal "set" then lenses else []
-  if action == "?" then return .usage id (spellUsage shown shownForms shownLenses ++ hostUsage w target principal shown ++ objectsLine)
+  if action == "?" then
+    let lineage := lineageLine w target
+    return .usage id (spellUsage shown shownForms shownLenses ++ (if lineage.isEmpty then "" else "\n" ++ lineage) ++
+      hostUsage w target principal shown ++ objectsLine)
   if hostReads.contains action && !forms.any (·.action == action) then
     return .usage id (match action with
       | "rules" => rulesText w id target shown
       | "wants" => wantsText w principal id target shown
       | _ => verbsText w id target shown (shownForms.filter fun f => !target.verbs.any (·.name == f.action)))
+  -- A verb grown with a body (docs/AUTHORING.md §3 (b)) is a one-method layer the workshop writes, checks
+  -- and lays (or holds for the card's owner): its `growBody`, the speaker's turn.
+  if action == "grow" && speaker && !forms.any (·.action == action) && w.objects.contains workshopId &&
+      fields.any (fun b => b.name == "body" && !b.value.isEmpty) then
+    let given := fun (n : String) => Data.label (((fields.find? (·.name == n)).map (·.value)).getD "")
+    return .run workshopId "growBody" (.record [("object", .label id), ("name", given "name"), ("reading", given "reading"),
+      ("takes", given "takes"), ("body", given "body")]) (spellLine card action)
   -- The host's own spells, on any card that does not define the action itself (`hostSpell`).
   if hostSpells.contains action && !forms.any (·.action == action) then
     if !speaker then
@@ -1838,7 +1880,11 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       | some o =>
         if !o.read.permits (← get).subject then respond bounds responseType "denied" [emptyRecord] else
         recordRoot id o.version
-        respond bounds responseType "viewed" [.record [("version", .natural o.version), ("state", o.state)]]
+        -- A state of another type than the call site's `S` is refused by name (a kind asking whether
+        -- `of` names a kind), never an evaluation error.
+        let viewed := Data.variant "viewed" (.record [("version", .natural o.version), ("state", o.state)])
+        if viewed.conformsUnder bounds responseType then return viewed
+        refusedWith bounds responseType "typeMismatch"
   | .variant "write" (.record f) =>
     let some target := f.lookup "object" | evaluation "malformed write plan"
     let some step := (f.lookup "edits").bind parseStep | evaluation "malformed write plan"
@@ -2148,23 +2194,26 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
       match ← derivedView id o view context with
       | .ok value => respond bounds responseType "derived" [.record [("version", .natural o.version), ("value", value)]]
       | .error clause => refusedWith bounds responseType clause
+  -- `check {package, layers}`: `package` as `create` takes it, with `layers` laid over it (`checkStack`).
   | .variant "check" (.record f) =>
     let some (.label source) := f.lookup "package" | evaluation "malformed check plan"
+    let some layers := (f.lookup "layers").bind (labels []) | evaluation "malformed check plan"
     let s ← get
+    let some creator := s.world.objects[self]? | evaluation "the checking object vanished"
     if s.checks ≥ Limits.checksPerTurn then evaluation "turn exceeds the check capacity"
     set { s with checks := s.checks + 1 }
-    respond bounds responseType "checked"
-      [.record [("diagnostics", listData ((checkSource s.world source).map Data.label))]]
-  -- `checkObject {object}`: what a readable object runs, its whole closure (`Ops.checkObject`).
+    respond bounds responseType "checked" (checkedData (checkStack s.world creator source layers))
+  -- `checkObject {object, layers}`: what a readable object runs, its whole closure, with `layers` laid
+  -- over it (`Ops.checkObject`).
   | .variant "checkObject" (.record f) =>
+    let some layers := (f.lookup "layers").bind (labels []) | evaluation "malformed check plan"
     let s ← get
     match (f.lookup "object").bind referenceId >>= fun id => (s.world.objects[id]?) with
     | some o =>
       if !o.read.permits s.subject then refusedWith bounds responseType "unknownObject" else
       if s.checks ≥ Limits.checksPerTurn then evaluation "turn exceeds the check capacity"
       set { s with checks := s.checks + 1 }
-      respond bounds responseType "checked"
-        [.record [("diagnostics", listData ((checkObject s.world o).map Data.label))]]
+      respond bounds responseType "checked" (checkedData (checkObject s.world o layers))
     | none => refusedWith bounds responseType "unknownObject"
   | .variant "create" (.record f) | .variant "createUnder" (.record f) | .variant "make" (.record f) =>
     let some package := (f.lookup "package").bind labelOf | evaluation "malformed create plan"
@@ -2177,6 +2226,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         let some fromId := (m.lookup "object").bind referenceId | evaluation "malformed make plan"
         let some receipt := (m.lookup "receipt").bind labelOf | evaluation "malformed make plan"
         let s ← get
+        -- An empty receipt cites the turn that made `object` (a kind forked whole: its maker's).
+        let receipt := if receipt.isEmpty then madeReceipt s.world fromId else receipt
         match s.world.objects[fromId]? with
         | none => pure (none, some s!"there is no object {fromId} to have been made from")
         | some fromObj =>
@@ -4057,7 +4108,9 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       ("offered", toJson (((spellFormsData w id o).filter (offeredTo w id o principal <| formAction ·)).map formAction)),
       -- The numbers `request.kind` reads, by name (`proposed`: a write no method of the object made).
       ("requestKinds", Json.mkObj (Law.kindNames.map fun (n, k) => (n, toJson k)))] ++
-      (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)])) |> fun r =>
+      (if o.fixed.isEmpty then [] else [("fixed", toJson o.fixed)]) ++
+      -- Where its code came from, and the line `?` prints for it (`lineageLine`).
+      (match o.madeFrom with | some m => [("madeFrom", m), ("lineage", toJson (lineageLine w o))] | none => [])) |> fun r =>
       -- The views its package declares (`views()`), which `viewDerived` answers.
       let init : TurnState := { world := w, principal, intent := "", subject := principal,
                                 ticks := Delvetalk.Bounds.lawTicks, limits := Json.mkObj [] }

@@ -167,13 +167,13 @@ structure CreateRec where
   /-- Its lineage, when a `make` made it: `{object, pin, receipt}` (docs/GROUND.md §6 change 6). -/
   madeFrom : Option Json := none
   /-- What the turn asked (never journaled): the creating object, the package, the seed and law given,
-      and a layer an `extend` of the same turn laid into the making (`""` for none), so the creation
-      can be built again with it. -/
+      and the layers `extend`s of the same turn laid into the making, bottom first (a kind's instance
+      over its ancestors' bodies), so the creation can be built again with them. -/
   creator : String := ""
   package : String := ""
   seedArg : Data := .record []
   lawArg : String := ""
-  layer : String := ""
+  layers : List String := []
 
 /-- One change to an object, by the object whose method made it. `caller` is the
     object that called the running one (empty when the running object was the turn's
@@ -1044,24 +1044,29 @@ def entrySource (o : Object) : String :=
   | .ok (.arr modules) => ((modules.back?.bind fun m => (m.getObjValAs? String "source").toOption)).getD ""
   | _ => (o.inputs.getObjValAs? String "source").toOption.getD ""
 
+/-- Does a compiled artifact answer spells: is `receive` among its methods (docs/AUTHORING.md D-receive)? -/
+def answersSpells (artifact : Json) : Bool :=
+  (((artifact.getObjVal? "methods").toOption.bind (·.getArr?.toOption)).getD #[]).any fun m =>
+    (m.getObjValAs? String "name").toOption == some "receive"
+
 /-- A dry-run compile's diagnostics, `"<module>:<line>: <stage>: <message>"` (the kernel's hint, when
     it has one, the next line at the same place), none when it is clean; `fallback` names the
-    module when the kernel names none. -/
-def checkDiagnostics (modules : List (String × String)) (entry fallback : String) : List String :=
-  match Package.checkPackage modules entry with
-  | .ok _ => []
-  | .error d =>
-    -- A package that declares laws compiles; only the pure profile has no adapter for them.
-    if (d.message.splitOn "package laws require").length > 1 then []
-    else
-      let at_ := s!"{d.sourceModule.getD fallback}:{(d.span.map (·.line)).getD 0}"
-      [s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD []
+    module when the kernel names none. A package that declares laws compiles, as it would at
+    `world-create`. With them, whether what compiled answers spells (`answersSpells`). -/
+def checkDiagnostics (modules : List (String × String)) (entry fallback : String) : List String × Bool :=
+  let request := Json.mkObj [("entry", toJson entry), ("limits", Package.defaultLimits), ("modules", modulesJson modules)]
+  match Package.compileStructured request with
+  | .ok (artifact, _, _) => ([], answersSpells artifact)
+  | .error e =>
+    let d := Package.localize modules Package.defaultLimits e
+    let at_ := s!"{d.sourceModule.getD fallback}:{(d.span.map (·.line)).getD 0}"
+    ([s!"{at_}: {d.stage}: {d.message}"] ++ (d.hint.map fun h => [s!"{at_}: hint: {h}"]).getD [], false)
 
 /-- Dry-run compile of `source` as an entry module over the library: the diagnostics as
     `"<module>:<line>: <stage>: <message>"`, none when it is clean. Nothing is installed. -/
-def checkSource (w : World) (source : String) : List String :=
+def checkSource (w : World) (source : String) : List String × Bool :=
   if source.utf8ByteSize > Limits.maxPackageBytes then
-    [s!"Checked:0: package-request: package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)"]
+    ([s!"Checked:0: package-request: package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)"], false)
   else
     -- The front end elaborates every declaration of every module whatever entry is selected,
     -- so the entry only has to exist: `initial` when declared, else the first `def`, else a
@@ -1077,14 +1082,6 @@ def checkSource (w : World) (source : String) : List String :=
       | some lib => libraryClosure lib [checked]
       | none => []) ++ [("Checked", checked)]
     checkDiagnostics modules entry "Checked"
-
-/-- What an object runs, checked: its whole source closure (the library modules its pin names, the
-    base package and every layer over it, `resolveInputs`) compiled for `initial`, as `checkSource`
-    answers. A layer alone does not compile: its `layer over` names a module below it. -/
-def checkObject (w : World) (o : Object) : List String :=
-  match resolveInputs w o.inputs >>= fun j => j.getObjVal? "modules" >>= parseModules with
-  | .ok modules => checkDiagnostics modules "initial" ((modules.getLast?.map (·.1)).getD "Main")
-  | .error e => [s!"Main:0: package-request: {e}"]
 
 /-- A dry-run compile of `modules` (dependency order, library modules included) for `entry`:
     `{status: "checked", artifact}`, or `{status: "refused", diagnostic}` with the kernel's stage,
@@ -1151,7 +1148,7 @@ def replaceSource (inputs : Json) (source : String) : Except String Json := do
 
 `reprogram {mode: extend}` (Plan `extend`) appends the offered source as a new module, a layer,
 over the object's current modules. The host writes `layer over ./<entry>.obend` as the layer's
-first line (unless the author did), which imports the module below as `Super` and tells the
+first line (in place of the author's own `layer over` line, if any), which imports the module below as `Super` and tells the
 kernel the modules are a layer stack: every method of the stack is resolved with late binding (a
 method below that calls an overridden one reaches the override) and the artifact's method table
 lists the whole stack, top first. `inputs.layers` counts the layers. -/
@@ -1173,11 +1170,36 @@ def extendInputs (inputs : Json) (source : String) : Except String Json := do
   if modules.any fun m => (m.getObjValAs? String "name").toOption == some name then
     throw s!"the package already has a module named {name}"
   let line := layerLine below
-  let withSuper := if (source.splitOn "\n").head?.map (·.trimAscii.toString) == some line then source
-    else line ++ "\n" ++ source
+  -- A layer goes over what the object runs now, whatever module its own first line names: a body
+  -- written over RECORD is laid over a bell's body when it is the bell's kind's kind's.
+  let withSuper := match source.splitOn "\n" with
+    | first :: rest => if first.trimAscii.toString.startsWith "layer over " then "\n".intercalate (line :: rest) else line ++ "\n" ++ source
+    | [] => line
   let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) => k != "source" && k != "modules" && k != "layers"
   return Json.mkObj ([("modules", .arr (modules.push (Json.mkObj [("name", toJson name), ("source", toJson withSuper)]))),
     ("layers", toJson n)] ++ fields)
+
+/-- Compile inputs checked: their whole source closure (the library modules the pin names, the base
+    package and every layer over it, `resolveInputs`) compiled for `initial`, as `checkSource` answers. -/
+def checkInputs (w : World) (inputs : Json) : List String × Bool :=
+  match resolveInputs w inputs >>= fun j => j.getObjVal? "modules" >>= parseModules with
+  | .ok modules => checkDiagnostics modules "initial" ((modules.getLast?.map (·.1)).getD "Main")
+  | .error e => ([s!"Main:0: package-request: {e}"], false)
+
+/-- `inputs` with each of `layers` laid over them in order, as `extend` lays one (`extendInputs`),
+    each within `maxPackageBytes`. -/
+def layeredInputs (inputs : Json) (layers : List String) : Except String Json :=
+  layers.foldlM (init := inputs) fun inputs layer =>
+    if layer.utf8ByteSize > Limits.maxPackageBytes then
+      throw s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)"
+    else extendInputs inputs layer
+
+/-- What an object would run with `layers` laid over it, checked (`checkInputs`); `[]` is what it runs.
+    A layer alone does not compile: its `layer over` names a module below it. -/
+def checkObject (w : World) (o : Object) (layers : List String := []) : List String × Bool :=
+  match layeredInputs o.inputs layers with
+  | .ok inputs => checkInputs w inputs
+  | .error e => ([s!"Main:0: package-request: {e}"], false)
 
 /-- The readings an artifact's `laws` table gives (`[{name, reading}]`), the empty ones left out. -/
 def artifactReadings (artifact : Json) : List (String × String) :=
@@ -2662,7 +2684,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations,
-                       fixed := prog.fixed, declares := prog.declares }
+                       fixed := prog.fixed, declares := prog.declares, madeFrom := (p.madeFrom.lookup id).orElse fun _ => o.madeFrom }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin),
         ("source", toJson source), ("migration", toJson migration),
@@ -2816,7 +2838,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version, cells })]
     factsOf := factsOf ++ [(id, judgedBy)]
   return { updates := out, reprograms, amendments, evicted := evictions, facts := factsOf,
-           creations := p.creates.map fun (id, c) => (id, c.object),
+           creations := p.creates.map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom }),
            creates := p.creates.map fun (id, c) => createRecJson id c }
 
 /-! ## Entries -/

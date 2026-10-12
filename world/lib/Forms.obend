@@ -102,3 +102,26 @@ def textFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
   if textLength(value) < low(spec.kind) || textLength(value) > high(spec.kind) then bad("{spec.name} is {natText(low(spec.kind))} to {natText(high(spec.kind))} characters; this one is {natText(textLength(value))}.") else Lists.Maybe.none({})
 def naturalFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
   if textLength(value) == 0n || textSpan(value, "0123456789") != textLength(value) || Text.digits(value, 0n) < low(spec.kind) || Text.digits(value, 0n) > high(spec.kind) then bad("{spec.name} is a number from {natText(low(spec.kind))} to {natText(high(spec.kind))}.") else Lists.Maybe.none({})
+# A layer as the workshop writes it around a body of forms and defs (docs/AUTHORING.md §3 (c)): the
+# edition, the imports a body over RECORD or THING reads (every module their State's fields name, so
+# `write {…}` derives its edits), `type State = Super.State`, the body, then
+# an `actions()` offering its forms after what the thing below offers (a body over RECORD offers only
+# what `actions()` lists), unless the body names its own. A body that begins `layer over` or
+# `edition` is a whole layer already and is kept as written; the host lays any layer over what the
+# thing runs, whatever its first line names.
+def layer(body: String) -> String:
+  if whole(body) then body else "{header()}{Text.trimEnd(body)}\n{offering(body)}"
+def whole(body: String) -> Bool:
+  Text.blank(body) || Text.starts(Text.trim(body), "layer over") || Text.starts(Text.trim(body), "edition")
+def header() -> String:
+  "layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Text.obend as Text\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Card.obend as Card\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Rows.obend as Rows\nimport ./Scenes.obend as Scenes\nimport ./Spween.obend as Spween\ntype State = Super.State\n"
+# How many lines the header is: a checker's line past it is the body's line that much less.
+def headerLines() -> Nat:
+  15n
+# Where a checker's line numbers start in a body the workshop wrapped, said once under them.
+def headerNote(body: String) -> String:
+  if whole(body) then "" else "Lines 1 to {natText(headerLines())} are the header the workshop wrote; your first line is line {natText(headerLines() + 1n)}.\n"
+def formNames(body: String) -> Lists.List<String>:
+  Lists.map(Lists.filter(split(body, "\n"), fn(l: String) -> Bool: Text.starts(l, "form ")), fn(l: String) -> String: Text.trim(textTake(textDrop(l, 5n), textBreak(textDrop(l, 5n), ":"))))
+def offering(body: String) -> String:
+  if Lists.length(formNames(body)) == 0n || Lists.any(split(body, "\n"), fn(l: String) -> Bool: Text.starts(l, "def actions(")) then "" else "def actions(state: State, context: Abi.Context) -> Lists.List<String>:\n  Lists.concat(Super.actions(state, context), Text.words(\"{textJoin(formNames(body), \" \")}\"))\n"

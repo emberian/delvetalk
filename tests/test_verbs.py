@@ -274,5 +274,59 @@ class Grow(Chain):
         self.assertEqual(verdict, {"tag": "unclear", "needs": ["the spell after grow: water uses rain"]})
 
 
+class Town(unittest.TestCase):
+    """Grown verbs on the town's own things, as genesis makes them (docs/AUTHORING.md §5 step 1): RECORD and
+    THING keep `act` from usage (`~act`) and list their own `actions`, so a verb grown on them is a spell only
+    when the host offers it by the law alone. Refuted by a grown verb missing from `?`, its use going to hob, or
+    its line not carrying the verb."""
+
+    YUE, KES = "did:plc:yueyueyueyueyueyueyueyue", "did:plc:kestrelkestrelkestrelkes"
+
+    @classmethod
+    def setUpClass(cls):
+        import tempfile
+        from tests.town import Town as Genesis
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Genesis(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+        for did, handle in ((cls.YUE, "yue.delve.town"), (cls.KES, "kestrel.delve.town")):
+            cls.town.send(op="world-arrive", principal="transport", did=did, handle=handle)
+
+    def say(self, who, card, text):
+        Town.said = getattr(Town, "said", 0) + 1
+        return self.town.send(op="world-turn", principal=who, object=card, method="receive", identity="said-%d" % Town.said,
+                              argument=record(text=label(text), post=label("")))
+
+    def told(self, reply):
+        return "".join(o["text"] for o in reply.get("offers") or [])
+
+    def grown_and_used(self, card):
+        grown = self.say(self.YUE, card, "delvetalk %s grow / name: water / reading: poured on by a hand / takes: text" % card)
+        self.assertEqual(grown["status"], "admitted", grown)
+        usage = self.say(self.KES, card, "delvetalk %s ?" % card)
+        self.assertIn("delvetalk %s water\ntext:" % card, usage["text"])
+        self.assertNotIn("delvetalk %s act" % card, usage["text"])
+        used = self.say(self.KES, card, "delvetalk %s water / text: a cup" % card)
+        self.assertEqual(used["status"], "admitted", used)
+        [written] = self.town.send(op="world-entry", principal=self.KES, hash=used["receipt"]["hash"])["receipt"]["outcome"]["writes"]
+        self.assertEqual((written["object"], written["methods"], written["verbs"]), (card, ["act"], ["water"]))
+        return used
+
+    def test_a_verb_grown_on_a_genesis_bell_is_its_spell(self):
+        used = self.grown_and_used("bell/1")
+        self.assertIn("kestrel.delve.town (yours) (water): a cup", self.told(used))
+
+    def test_a_verb_grown_on_a_genesis_thing_is_its_spell(self):
+        used = self.grown_and_used("porch/goblet")
+        self.assertIn("water: a cup", self.told(used))
+
+    def test_a_verb_grown_on_a_thing_of_a_residents_kind_is_its_spell(self):
+        made = self.say(self.YUE, "kinds", "delvetalk kinds make / name: jar / of: record / form: what: text 1..80")
+        self.assertEqual(made["status"], "admitted", made)
+        jar = self.say(self.KES, "kind/jar", "delvetalk kind/jar make / what: a jar of rain")
+        self.assertEqual(jar["status"], "admitted", jar)
+        self.grown_and_used("jar/1")
+
+
 if __name__ == "__main__":
     unittest.main()
