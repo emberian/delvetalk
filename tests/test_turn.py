@@ -542,6 +542,15 @@ class ExhaustionTests(TurnCase):
         art = h.compile(PLANS, "bump", world=PLANS_WORLD)
         r = h.start(art, [label("not a number")])
         self.assertEqual(r["status"], "error", r)
+        # Review 2026-10-12 kernel 6: materialization names the resource it ran out of. A result
+        # wider than the nodes left was "bytes" (only nodes == 0 read as nodes), and a Plan's was
+        # classified by materializing it again with a trillion nodes.
+        wide5 = h.compile("edition ObjectiveBend 1\nimport ./World.obend as World\n"
+                          "def five(n: Nat) -> Activity<{a: Nat, b: Nat, c: Nat, d: Nat, e: Nat}>:\n"
+                          "  {a: n, b: n, c: n, d: n, e: n}\n", "five", world=BYTES_WORLD)
+        r = h.start(wide5, [nat(1)], nodes=3)
+        self.assertEqual((r["status"], r["resource"]), ("exhausted", "nodes"), r)
+        self.assertEqual(h.start(wide5, [nat(1)], nodes=6)["status"], "finished")
 
     def test_each_budgeted_resource_is_a_named_silence_on_resume(self):
         h = self.host()

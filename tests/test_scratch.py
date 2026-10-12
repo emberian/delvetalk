@@ -3,17 +3,21 @@
 Evidence for FOUNDATION §7 (layer: host). A principal opens a world of its own, empty or forked from the town at a
 height with what it may view; it expires 360 town clock minutes after its last op, files and all, and says so; at
 most two at once; an entry of it is kept in the town by `world-cite`; a turn in one world reads another's object
-by `<world>:<object>` and journals the reading as a citation, not a root. Refuted by a scratch the town sees, a
-fork carrying an object its principal may not view, a third scratch, a scratch that outlives its clock or leaves its
-files, a citation that is not the scratch entry's bytes, or a foreign read that is not cited.
+by `<world>:<object>` and journals the reading as a citation, not a root; a turn calls or sends to another world's
+object, which that world judges as a delivered turn under the caller's principal, and the call resumes with that
+world's receipt cited in its own journal. Refuted by a scratch the town sees, a fork carrying an object its principal
+may not view, a third scratch, a scratch that outlives its clock or leaves its files, a citation that is not the
+scratch entry's bytes, a foreign read that is not cited, a crossing to a world not served here that is not refused by
+name, a second crossing in one turn, or a journal of either world that does not replay alone.
 """
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
 from transport.host import HostClient
 from transport.journal import entries as journal_entries
-from tests.host import served as Served
+from tests.host import Host, served as Served
 from tests.test_reflection import WORLD_LIBRARY
 from tests.wire import label, nat, record
 from tests.bend import counter_modules, declared
@@ -37,7 +41,42 @@ def peek(state: State, input: {world: String, object: String}, context: Abi.Cont
     case viewed(v): v.state.count
     case denied(_): 0n
     case _: 999n
-""", "peek")
+def field(state: State, input: {world: String, object: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Nat>({object: {world: input.world, object: input.object}, field: "count"}):
+    case viewed(v): v.state
+    case denied(_): 0n
+    case _: 999n
+def look(state: State, input: {world: String, object: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.inspect({object: {world: input.world, object: input.object}, source: false}):
+    case inspected(_): 1n
+    case denied(_): 0n
+    case _: 999n
+""", "peek", "field", "look")
+
+
+CALLER = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  got: Nat
+def initial() -> State:
+  {got: 0n}
+def ask(state: State, input: {world: String, object: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.call::<Nat>({object: {world: input.world, object: input.object}, method: "bump", argument: Plans.nothing()}):
+    case returned(r):
+      let written(_) = write {got: set r.result}
+      r.result
+    case refused(r): if r.clause == "foreignWorld" then 900n else 901n
+    case _: 999n
+def tell(state: State, input: {world: String, object: String}, context: Abi.Context) -> Activity<Nat>:
+  match world.send({object: {world: input.world, object: input.object}, method: "bump", argument: Plans.nothing()}):
+    case delivery(_):
+      match world.send({object: {world: input.world, object: input.object}, method: "bump", argument: Plans.nothing()}):
+        case delivery(_): 2n
+        case refused(r): if r.clause == "crossing" then 1n else 801n
+    case refused(r): if r.clause == "foreignWorld" then 900n else 901n
+""", "ask", "tell")
 
 
 class Scratch(unittest.TestCase):
@@ -90,6 +129,28 @@ class Scratch(unittest.TestCase):
         self.assertEqual(self.town.send({'op': 'world-scratch', 'principal': DID, 'name': 'three'})['status'], 'scratch')
         self.assertEqual(self.town.send({'op': 'world-root', 'principal': OPENER, 'reason': 'x',
                                          'act': {'kind': 'expire', 'principal': DID, 'scratch': 'two'}})['status'], 'error')
+
+    def test_a_scratchs_owner_expires_it_with_the_world_spell_and_no_one_else_can(self):
+        for name in ('one', 'two'):
+            self.town.send({'op': 'world-scratch', 'principal': DID, 'name': name})
+        spell = lambda who, text, intent: self.town.send({'op': 'world-turn', 'principal': who, 'object': 'commonplace', 'method': 'receive',
+                                                          'argument': record(text=label(text), post=label('')), 'identity': intent})
+        self.assertIn('no scratch/one of yours', spell(OTHER, 'delvetalk world expire\nscratch: one', 'x1')['message'])
+        gone = spell(DID, 'delvetalk world expire\nscratch: one', 'x2')
+        self.assertEqual((gone['status'], gone['scratch']['world']), ('expired', 'scratch/one'), gone)
+        gone = self.town.send({'op': 'world-turn', 'principal': DID, 'object': 'world', 'method': 'expire',
+                               'argument': record(scratch=label('two')), 'identity': 'x3'})
+        self.assertEqual(gone['status'], 'expired', gone)
+        self.assertEqual(self.town.send({'op': 'serve-status'})['scratches'], [])
+        self.assertEqual(list((self.state / 'scratch' / DID).iterdir()), [])
+
+    def test_a_restart_does_not_renew_a_scratch(self):
+        self.town.send({'op': 'world-scratch', 'principal': DID, 'name': 'kept'})
+        self.assertEqual(self.town.send({'op': 'world-advance', 'principal': 'transport', 'height': 300})['status'], 'advanced')
+        self.server.stop()
+        self.server = Served(str(self.state), cleanup=self.addCleanup, opener=OPENER, library=WORLD_LIBRARY)
+        self.town.send({'op': 'world-advance', 'principal': 'transport', 'height': 360})
+        self.assertIn('scratch/kept expired at clock 360', self.at('kept').send({'op': 'world-status', 'principal': DID})['message'])
 
     def test_a_scratch_from_the_town_carries_only_what_its_principal_may_view(self):
         root = HostClient(self.server.root)
@@ -145,9 +206,82 @@ class Scratch(unittest.TestCase):
         # Another principal's `scratch/lab` is its own, which it has not opened: not served here.
         self.assertEqual(peek(OTHER, 'scratch/lab', 'tally', 'p2')['result'], nat(999))
         self.assertEqual(peek(DID, 'ring', 'tally', 'p3')['result'], nat(999))
+        # A field alone and the object's inspection are that world's answers too, each cited.
+        for method, intent, want in (('field', 'f1', nat(3)), ('look', 'l1', nat(1))):
+            got = self.town.send({'op': 'world-turn', 'principal': DID, 'object': 'reader', 'method': method,
+                                  'argument': record(world=label('scratch/lab'), object=label('tally')), 'identity': intent})
+            self.assertEqual((got['status'], got['result'], [c['object'] for c in got['receipt']['cites']]), ('admitted', want, ['tally']), got)
+        self.assertEqual(peek(DID, 'scratch/lab', 'nothing', 'p4')['result'], nat(0))  # that world has no such object: denied
         # Read by the ops, as of the other world's height.
         viewed = self.town.send({'op': 'world-view', 'principal': DID, 'object': 'scratch/lab:tally'})
         self.assertEqual((viewed['status'], viewed['asOf']['world'], viewed['asOf']['version']), ('viewed', 'scratch/lab', 3), viewed)
+        inspected = self.town.send({'op': 'world-inspect', 'principal': DID, 'object': 'scratch/lab:tally'})
+        self.assertEqual((inspected['status'], inspected['asOf']['world'], 'bump' in inspected['offered']), ('inspected', 'scratch/lab', True), inspected)
+
+
+    def crossing(self):
+        """A scratch `lab` holding `tally` and the town's `caller`: (lab client, a turn of the caller)."""
+        self.town.send({'op': 'world-scratch', 'principal': DID, 'name': 'lab'})
+        lab = self.at('lab')
+        self.make(lab, DID, 'tally')
+        made = self.town.send({'op': 'world-create', 'principal': DID, 'identity': 'mk-caller', 'object': 'caller',
+                               'source': CALLER, 'entry': 'initial', 'seed': record()})
+        self.assertEqual(made['status'], 'created', made)
+        turn = lambda method, world, intent, who=DID: self.town.send({
+            'op': 'world-turn', 'principal': who, 'object': 'caller', 'method': method,
+            'argument': record(world=label(world), object=label('tally')), 'identity': intent})
+        return lab, turn
+
+    def receipt(self, client, intent, who=DID):
+        r = client.send({'op': 'world-receipt', 'principal': who, 'identity': intent})
+        self.assertEqual(r['status'], 'receipt', r)
+        return r['receipt']
+
+    def replays_alone(self, *journals):
+        """Each journal opened by a process of its own and replayed from genesis, as nothing else is open."""
+        self.server.stop()
+        for path in journals:
+            copy = Path(self.tmp.name) / ('alone-' + path.name)
+            for suffix in ('', '.blocks'):
+                shutil.copy(str(path) + suffix, str(copy) + suffix)
+            h = Host()
+            self.addCleanup(h.close)
+            got = h.send(op='world-open', path=str(copy), verify=True)
+            self.assertEqual((got['status'], got['snapshot']['refused']), ('opened', []), got)
+
+    def test_a_call_across_is_judged_there_under_the_caller_and_resumes_with_that_worlds_receipt(self):
+        lab, turn = self.crossing()
+        asked = turn('ask', 'scratch/lab', 'a1')
+        self.assertEqual(asked['status'], 'suspended', asked)
+        done = self.receipt(self.town, 'a1')
+        self.assertEqual((done['outcome']['tag'], done['result']), ('admitted', nat(1)), done)
+        # The lab ran it as a delivered turn of the caller's principal, the town's object its caller.
+        lab_entries = journal_entries(self.state / 'scratch' / DID / 'lab.journal')
+        [relayed] = [e for e in lab_entries if e['outcome']['tag'] == 'relayed']
+        self.assertEqual((relayed['identity']['principal'], relayed['outcome']['world'], relayed['sends'][0]['sender']),
+                         (DID, 'town', 'town:caller'), relayed)
+        [ran] = [e for e in lab_entries if (e.get('delivery') or {}).get('id') == relayed['sends'][0]['id']]
+        self.assertEqual((ran['outcome']['tag'], ran['identity']['principal'], ran['result']), ('admitted', DID, nat(1)), ran)
+        # The town cites the lab's receipt, and the resumed turn wrote what came back.
+        [crossed] = [e for e in journal_entries(self.state / 'town.journal') if e['outcome']['tag'] == 'crossed']
+        self.assertEqual((crossed['outcome']['world'], crossed['outcome']['receipt']['hash'], crossed['outcome']['answer']['tag']),
+                         ('scratch/lab', ran['hash'], 'admitted'), crossed)
+        self.assertEqual(self.town.send({'op': 'world-view', 'principal': DID, 'object': 'caller'})['state'], record(got=nat(1)))
+        # A world not served here is refused by name, at once.
+        self.assertEqual(turn('ask', 'ring', 'a2')['result'], nat(900))
+        self.replays_alone(self.state / 'town.journal', self.state / 'scratch' / DID / 'lab.journal')
+
+    def test_a_send_across_is_a_delivery_into_that_worlds_queue_once_per_turn(self):
+        lab, turn = self.crossing()
+        told = turn('tell', 'scratch/lab', 't1')
+        self.assertEqual((told['status'], told['result']), ('admitted', nat(1)), told)  # the second send is `crossing`
+        self.assertEqual(lab.send({'op': 'world-view', 'principal': DID, 'object': 'tally'})['state'], record(count=nat(1)))
+        self.assertEqual(self.town.send({'op': 'world-pending'})['count'], 0)
+        [crossed] = [e for e in journal_entries(self.state / 'town.journal') if e['outcome']['tag'] == 'crossed']
+        self.assertEqual((crossed['delivery']['id'], crossed['outcome']['answer']['tag']), (told['receipt']['sends'][0]['id'], 'admitted'))
+        # Another principal's `scratch/lab` is its own, which it has not opened: not served here.
+        self.assertEqual(turn('tell', 'scratch/lab', 't2', who=OTHER)['result'], nat(900))
+        self.replays_alone(self.state / 'town.journal', self.state / 'scratch' / DID / 'lab.journal')
 
 
 if __name__ == '__main__':

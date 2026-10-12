@@ -14,7 +14,8 @@ import ./Text.obend as Text
 # The lantern's body, over RECORD (docs/METAPHYSICS.md §7.5; SEEDING §4): a record made by a door
 # (`door`, fixed). As its kind finishes it, it places a rule on that door under its maker (`made`):
 # when the door's `open` mark comes, the door casts `delvetalk <lantern> light`, and the lantern is
-# lit, once (its mark `lit`). Only its door's rule lights it: a hand's `light` is refused by name.
+# lit, once (its mark `lit`). Only that rule lights it, and only while the door is open: a hand's
+# `light`, or another's rule on the door, is refused by name.
 type State = Super.State
 form light:
 form write:
@@ -46,8 +47,15 @@ def placing(door: String, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: door}, name: Text.identifier(context.object), when: "\"open\" in new.marks.name and not \"open\" in old.marks.name", then: "delvetalk {context.object} light"}):
     case placed(_): true
     case refused(_): false
+# Only its maker's rule on its door lights it, and only once the door is open.
 def light(state: State, context: Abi.Context) -> Activity<Bool>:
-  if context.sender != watched(state) then Card.refusing(false, {clause: "ruled", reading: "it lights when {watched(state)} opens: delvetalk {watched(state)} knock"}, context) else Super.mark(state, "lit", context)
+  if Super.ruledFrom(state, watched(state), context) == false then unlit(state, context) else opened(state, context)
+def opened(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.viewField::<Relations.Relation<Rows.Mark>>({object: {world: context.world, object: watched(state)}, field: "marks"}):
+    case viewed(v): if Relations.has(v.state, {name: "open"}) then Super.mark(state, "lit", context) else unlit(state, context)
+    case _: unlit(state, context)
+def unlit(state: State, context: Abi.Context) -> Activity<Bool>:
+  Card.refusing(false, {clause: "ruled", reading: "it lights when {watched(state)} opens: delvetalk {watched(state)} knock"}, context)
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let name = if state.head == "" then "A LANTERN" else state.head
   let lit = if Super.marked(state, "lit") then "lit" else "dark"

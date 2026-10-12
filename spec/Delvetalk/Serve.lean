@@ -56,8 +56,6 @@ structure Server where
   scratches : Std.HashMap String Nat := {}
   /-- Scratch worlds discarded, and the home clock they expired at, for the refusal that says so. -/
   expired : Std.HashMap String Nat := {}
-  /-- The journal-less session: compile, check and run against the sealed library. -/
-  stateless : PackageSession.Session := {}
   sealed : Option String := none
   libraryPin : Option String := none
   sha : String := ""
@@ -71,6 +69,9 @@ def arrival : List String := ["Avatar"]
     socket's too; there its privileges are not (`resident`, `Host.openerActs`). -/
 def rootOps : List String := ["world-root", "world-library", "world-settings", "world-fork", "world-snapshot", "library-load",
   "world-dump"]
+
+/-- The ops `serve` sends itself to carry a call or send across (`cross`); no socket takes them. -/
+def crossingOps : List String := ["world-relay", "world-cross"]
 
 def errorJson (message : String) : Json :=
   Json.mkObj [("status", toJson "error"), ("message", toJson message)]
@@ -162,11 +163,20 @@ def homeClock (srv : Server) : IO (Server × Nat) := do
     | .ok session => (session.world.map fun (o : Host.Open) => o.world.clock).getD 0
     | .error _ => 0)
 
+/-- Where serve keeps a scratch world's last use (`DIR/scratch/<principal>/<name>.last`, the home clock as text), so a
+    restart does not renew it: the scratch's, not custody, deleted with it. -/
+def lastFile (srv : Server) (key : String) : System.FilePath := srv.config.state / s!"{key}.last"
+
+/-- Scratch world `key` was used at home clock `clock`: it expires `Limits.scratchMinutes` after. -/
+def used (srv : Server) (key : String) (clock : Nat) : IO Server := do
+  IO.FS.writeFile (lastFile srv key) (toString clock)
+  return { srv with scratches := srv.scratches.insert key clock }
+
 /-- Discard scratch world `key` at home clock `clock`: its session, its journal, block store and
     snapshots. The one deletion in the system: a scratch is not custody (docs/FEDERATION.md §3). -/
 def discard (srv : Server) (key : String) (clock : Nat) : IO Server := do
   let path := (journalOf srv key).toString
-  for f in [path, Host.Snapshot.storeOf path] ++ (← Host.Snapshot.files path).map (·.2) do
+  for f in [path, Host.Snapshot.storeOf path, (lastFile srv key).toString] ++ (← Host.Snapshot.files path).map (·.2) do
     try IO.FS.removeFile f catch _ => pure ()
   return { srv with worlds := srv.worlds.erase key, scratches := srv.scratches.erase key, expired := srv.expired.insert key clock }
 
@@ -177,7 +187,7 @@ def expire (srv : Server) (clock : Nat) : IO Server := do
     if last + Host.Limits.scratchMinutes ≤ clock then srv ← discard srv key clock
   return srv
 
-/-- The scratch worlds on disk at start, each as if its last op were now. -/
+/-- The scratch worlds on disk at start, each at the home clock of its last use (`used`), or now when none is kept. -/
 def findScratches (srv : Server) (clock : Nat) : IO Server := do
   let dir := srv.config.state / "scratch"
   unless ← dir.pathExists do return srv
@@ -186,7 +196,9 @@ def findScratches (srv : Server) (clock : Nat) : IO Server := do
     unless ← owner.path.isDir do continue
     for f in ← owner.path.readDir do
       if f.fileName.endsWith ".journal" then
-        srv := { srv with scratches := srv.scratches.insert s!"scratch/{owner.fileName}/{(f.fileName.dropEnd 8).toString}" clock }
+        let key := s!"scratch/{owner.fileName}/{(f.fileName.dropEnd 8).toString}"
+        let last ← try pure ((← IO.FS.readFile (lastFile srv key)).trimAscii.toString.toNat?.getD clock) catch _ => pure clock
+        srv := { srv with scratches := srv.scratches.insert key last }
   return srv
 
 /-- A scratch world's row: who, its name, the home clock of its last op and when it expires. -/
@@ -249,7 +261,7 @@ def scratchOp (srv : Server) (request : Json) : IO (Server × Json) := do
   let height := match opened with
     | .ok session => (session.world.map fun (o : Host.Open) => o.world.height).getD 0
     | .error _ => 0
-  srv := { next with scratches := srv.scratches.insert key clock, expired := srv.expired.erase key }
+  srv ← used { next with expired := srv.expired.erase key } key clock
   return (srv, Json.mkObj [("status", toJson "scratch"), ("world", toJson s!"scratch/{name}"), ("height", toJson height),
     ("expires", toJson (clock + Host.Limits.scratchMinutes))])
 
@@ -298,7 +310,8 @@ def referenceKey (world reader : String) : Option String :=
   | some n => (scratchKey reader n).toOption
   | none => if Host.validWorldName world then some world else none
 
-/-- Another held world's answer to `world-view` or `world-card` of `object` as `reader`, and its citation. -/
+/-- Another held world's answer to `world-view`, `world-card` or `world-inspect` of `object` as `reader`, and
+    its citation. -/
 def readForeign (srv : Server) (world op object reader : String) : Option (Json × Json) := do
   let key ← referenceKey world reader
   let session ← srv.worlds[key]?
@@ -306,18 +319,101 @@ def readForeign (srv : Server) (world op object reader : String) : Option (Json 
   let w := o.world
   let request := Json.mkObj [("principal", toJson reader), ("object", toJson object)]
   let reply ← (match op with
-    | "view" => Host.view w request
-    | "card" => (Host.cardOp w request).map fun (p : Host.World × Json) => p.2
+    | "world-view" => Host.view w request
+    | "world-card" => (Host.cardOp w request).map fun (p : Host.World × Json) => p.2
+    | "world-inspect" => Host.inspectOp w request
     | _ => .error "no such read").toOption
   let target := w.objects[object]?
   let cite := Json.mkObj ([("world", toJson world), ("object", toJson object), ("height", toJson w.height), ("head", toJson w.head)] ++
     ((target.map fun t => [("version", toJson t.version), ("stateCid", toJson t.stateCid)]).getD []))
   return (reply, cite)
 
-/-- What a request on world `self` may read of the others (`Host.Foreign`). -/
+/-- What a request on world `self` may reach of the others (`Host.Foreign`): a read Plan answered in the
+    world it names (`Host.readIn`), and whether a call or send to it can be carried (`cross`). -/
 def foreignFor (srv : Server) (self : String) : Host.Foreign :=
-  { read := fun world op object reader =>
-      if referenceKey world reader == some self then none else readForeign srv world op object reader }
+  let other := fun (world reader : String) => (referenceKey world reader).filter (· != self)
+  { read := fun world plan responseType bounds reader ticks => do
+      let key ← other world reader
+      let o ← (← srv.worlds[key]?).world
+      return Host.readIn o.world world plan responseType bounds reader ticks
+    serves := fun world reader => (other world reader).any fun k => srv.worlds.contains k || srv.scratches.contains k }
+
+/-- The name references give world `key`: a scratch world as `scratch/<name>`, whoever reads it. -/
+def referenceName (key : String) : String :=
+  if key.startsWith "scratch/" then s!"scratch/{(key.splitOn "/").getLastD ""}" else key
+
+/-- A scratch world's last op is now (the home clock), so it expires `Limits.scratchMinutes` from now. -/
+def touched (srv : Server) (key : String) : IO Server := do
+  unless key.startsWith "scratch/" do return srv
+  let (srv, clock) ← homeClock srv
+  used srv key clock
+
+/-- One op on world `key` (opened when not held), with what it may reach of the others. -/
+def stepOn (srv : Server) (key : String) (request : Json) : IO (Server × Except String Json) := do
+  let (srv, opened) ← world srv key
+  match opened with
+  | .error e => return (srv, .error e)
+  | .ok session =>
+    let (session, r) ← PackageSession.stepIO session request (foreignFor srv key)
+    return ({ srv with worlds := srv.worlds.insert key session }, r)
+
+/-- Carry one crossing waiting in world `home` (`Host.outbound`, docs/FEDERATION.md §2) as far as it goes
+    now: relayed into the world it names (`world-relay`), and answered back (`world-cross`) once that
+    world's delivery of it has a receipt; refused back at once when that world is not served here or the
+    chain's ledger is spent. True when a journal moved. -/
+def carry (srv : Server) (home : String) (item : Json) : IO (Server × Bool) := do
+  let text := fun (k : String) => (item.getObjValAs? String k).toOption.getD ""
+  let principal := text "principal"
+  let back := fun (srv : Server) (fields : List (String × Json)) => do
+    let (srv, r) ← stepOn srv home (Json.mkObj ([("op", toJson "world-cross"), ("principal", toJson principal),
+      ("id", toJson (text "id")), ("world", toJson (text "world"))] ++ fields))
+    return (srv, r.isOk)
+  let refused := fun (srv : Server) (cls clause reason : String) => back srv [("answer", Json.mkObj ([("tag", toJson "refused"),
+    ("class", toJson cls), ("reason", toJson reason)] ++ (if clause.isEmpty then [] else [("clause", toJson clause)])))]
+  -- A call whose chain is spent goes no further (a send's is refused where it was sent: `Host.deliverable`).
+  if let some field := (item.getObjVal? "ledger").toOption.bind fun l => (Host.ledgerOf l).toOption.bind (·.exhausted) then
+    return ← refused srv "budgetExhausted" "" (Host.exhaustedReason field)
+  let some key := (referenceKey (text "world") principal).filter (· != home)
+    | return ← refused srv "unknownObject" "foreignWorld" s!"{text "world"} is not a world served here"
+  let (srv, opened) ← world srv key
+  let some target := (opened.toOption.bind (·.world)).map (·.world)
+    | return ← refused srv "unknownObject" "foreignWorld" (match opened with | .error e => e | .ok _ => s!"{text "world"} is not open")
+  let intent := s!"{referenceName home}:{text "id"}"
+  let mut srv := srv
+  let mut target := target
+  let mut moved := false
+  unless target.receipts.contains (Host.identityKey principal intent) do
+    let relay := Json.mkObj ([("op", toJson "world-relay"), ("principal", toJson principal), ("world", toJson (referenceName home))] ++
+      (["id", "to", "method", "argument", "sender", "ledger", "receipt", "height"].filterMap fun k => (item.getObjVal? k).toOption.map (k, ·)))
+    let (next, r) ← stepOn srv key relay
+    if let .error e := r then return ← refused next "capacity" "" e
+    srv ← touched next key
+    moved := true
+    target := ((srv.worlds[key]?).bind (·.world)).map (·.world) |>.getD target
+  -- The relayed send waits in that world's queue, or its turn waits there; either answers later.
+  let delivery := Host.deliveryId principal intent 0
+  if target.pending.any (fun p => (p.getObjValAs? String "id").toOption == some delivery) then return (srv, moved)
+  let some e := Host.settled target principal delivery | return (srv, moved)
+  let outcome := (e.getObjVal? "outcome").toOption.getD Json.null
+  let answer := Json.mkObj ([("tag", toJson (if Host.tagOf e == "admitted" then "admitted" else "refused"))] ++
+    (["class", "clause", "reason"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)))
+  back srv ([("answer", answer), ("receipt", Json.mkObj (["hash", "height"].filterMap fun k => (e.getObjVal? k).toOption.map (k, ·)))] ++
+    (((e.getObjVal? "result").toOption.map fun r => [("result", r)]).getD []))
+
+/-- Carry every crossing waiting in a held world (`carry`), round after round while one moves, at most
+    `Limits.deliveriesPerSettle` rounds: a resumed call may send again. -/
+def cross (srv : Server) : IO Server := do
+  let mut srv := srv
+  for _ in [0:Host.Limits.deliveriesPerSettle] do
+    let waiting := srv.worlds.toList.flatMap fun (key, s) =>
+      ((s.world.map fun (o : Host.Open) => (Host.outbound o.world).toList).getD []).map (key, ·)
+    let mut moved := false
+    for (home, item) in waiting do
+      let (next, m) ← carry srv home item
+      srv := next
+      moved := moved || m
+    unless moved do break
+  return srv
 
 /-- `<world>:<object>`: an object id naming another world's object, when the text before the first `:`
     is a world served here (a world name never is `did`, `zulip` or `at`, so no local id is mistaken). -/
@@ -337,6 +433,25 @@ def keyOf (srv : Server) (request : Json) : Except String String :=
   | .ok _ => .error "world must be a name"
   | .error _ => .ok srv.config.home
 
+/-- A typed record's field `name` as text (`{tag: record, fields: [{name, value: {tag: label, value}}]}`). -/
+def fieldText (record : Json) (name : String) : Option String := do
+  let fields ← (record.getObjVal? "fields").toOption.bind (·.getArr?.toOption)
+  let f ← fields.find? fun f => (f.getObjValAs? String "name").toOption == some name
+  (f.getObjVal? "value").toOption.bind (·.getObjValAs? String "value" |>.toOption)
+
+/-- The scratch a turn asks its owner's expiry of: `delvetalk world expire / scratch: <name>` as words (a
+    `receive` whose text is that spell) or as the method (`world-turn` on `world`, `expire {scratch}`). -/
+def expiryAsked (request : Json) : Option String := do
+  guard ((request.getObjValAs? String "op").toOption == some "world-turn")
+  let argument ← (request.getObjVal? "argument").toOption
+  match (request.getObjValAs? String "object").toOption, (request.getObjValAs? String "method").toOption with
+  | some "world", some "expire" => fieldText argument "scratch"
+  | _, some "receive" =>
+    match Host.Spell.parse (← fieldText argument "text") with
+    | .spell "world" "expire" fields => (fields.find? (·.name == "scratch")).map (·.value)
+    | _ => none
+  | _, _ => none
+
 /-- One request, as the socket it came on may ask it. -/
 def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) := do
   let some fields := request.getObj?.toOption | return (srv, errorJson "request is not a JSON object")
@@ -345,6 +460,7 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
   if op == "world-open" then return (srv, errorJson "serve opens its worlds; name one with `world`")
   if !root && rootOps.contains op then
     return (srv, errorJson "the opener speaks on the root socket")
+  if crossingOps.contains op then return (srv, errorJson s!"{op} is serve's own: a call or send across is carried, never asked")
   if op == "world-scratch" then return ← scratchOp srv request
   -- `world-root {act: {kind: expire, principal, scratch}}`: a scratch is serve's, not a journal's, so its
   -- expiry is the hand's log only (docs/ROOT.md §2.2).
@@ -358,19 +474,27 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
       let srv ← discard srv key clock
       return (srv, Json.mkObj [("status", toJson "expired"), ("scratch", scratchRow key clock)])
   if op == "world-cite" then return ← citeOp srv request
+  -- A scratch's owner expires it now (docs/FEDERATION.md §3): serve's, like the hand's `expire`, and journaled nowhere.
+  if let some name := expiryAsked request then
+    match scratchKey ((request.getObjValAs? String "principal").toOption.getD "") name with
+    | .error e => return (srv, errorJson e)
+    | .ok key =>
+      unless srv.scratches.contains key do return (srv, errorJson s!"no scratch/{name} of yours is open")
+      let (srv, clock) ← homeClock srv
+      return (← discard srv key clock, Json.mkObj [("status", toJson "expired"), ("scratch", scratchRow key clock)])
   -- Every public request is a resident's, whoever it names: the opener's privileges are the root socket's.
-  let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "stateless" && k != "resident")
-  if (request.getObjVal? "stateless").toOption == some (Json.bool true) then
-    let (stateless, r) ← PackageSession.stepIO srv.stateless bare
-    return ({ srv with stateless }, r.toOption.getD (errorJson (match r with | .error e => e | .ok _ => "")))
+  let bare := Json.mkObj (fields.toList.filter fun (k, _) => k != "world" && k != "resident")
   match keyOf srv request with
   | .error e => return (srv, errorJson e)
   | .ok key =>
-    -- `world-view` and `world-card` of `<world>:<object>` are that world's, answered as of its height.
-    if op == "world-view" || op == "world-card" then
+    -- The REPL runs in a scratch world, where what it defines is the principal's own and expires with it.
+    if op == "world-repl" && !key.startsWith "scratch/" then
+      return (srv, errorJson "the REPL runs in a scratch world: open one with world-scratch and name it with world")
+    -- `world-view`, `world-card` and `world-inspect` of `<world>:<object>` are that world's, as of its height.
+    if op == "world-view" || op == "world-card" || op == "world-inspect" then
       let reader := (request.getObjValAs? String "principal").toOption.getD ""
       if let some (world, object) := splitReference srv ((request.getObjValAs? String "object").toOption.getD "") reader then
-        return (srv, match readForeign srv world (if op == "world-view" then "view" else "card") object reader with
+        return (srv, match readForeign srv world op object reader with
           | some (r, cite) => r.setObjVal! "asOf" cite
           | none => errorJson s!"{world} is not a world served here")
     let (srv, opened) ← world srv key
@@ -379,15 +503,12 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
     | .ok session =>
       let (session, r) ← PackageSession.stepIO session (if root then bare else bare.setObjVal! "resident" (Json.bool true))
         (foreignFor srv key)
-      let mut srv := { srv with worlds := srv.worlds.insert key session }
+      let mut srv ← touched { srv with worlds := srv.worlds.insert key session } key
       let clock := (session.world.map fun (o : Host.Open) => o.world.clock).getD 0
       let mut out := match r with
         | .ok j => j
         | .error e => errorJson e
-      if key.startsWith "scratch/" then
-        let (next, home) ← homeClock srv
-        srv := { next with scratches := next.scratches.insert key home }
-      else if key == srv.config.home then
+      if key == srv.config.home then
         -- The home clock moving is what expires scratch worlds.
         if op == "world-advance" then srv ← expire srv clock
         if op == "world-status" && (out.getObjValAs? String "status").toOption == some "world" then
@@ -436,9 +557,7 @@ def main (args : List String) : IO UInt32 := do
   if let some lib := config.library then
     let target := config.state / "library"
     sealLibrary lib target
-    srv := { srv with sealed := some target.toString }
-    let (stateless, r) ← PackageSession.stepIO {} (Json.mkObj [("op", toJson "library-load"), ("path", toJson target.toString)])
-    srv := { srv with stateless, libraryPin := r.toOption.bind (·.getObjValAs? String "pin" |>.toOption) }
+    srv := { srv with sealed := some target.toString, libraryPin := (← Host.loadLibrary target.toString).toOption.map (·.pin) }
   srv := { srv with sha := ← binaryPin (config.state / "binary-pin") (← IO.appPath) }
   -- Every world of the directory is held from the start, so a turn in one may read another.
   for f in ← config.state.readDir do
@@ -447,6 +566,8 @@ def main (args : List String) : IO UInt32 := do
       if Host.validWorldName name then srv := (← world srv name).1
   let (opened, clock) ← homeClock srv
   srv ← findScratches opened clock
+  -- A crossing a stop left halfway is carried on (each step of it is idempotent).
+  srv ← cross srv
   let pidfile := config.state / "serve.pid"
   IO.FS.writeFile pidfile (toString (← IO.Process.getPID))
   for p in [config.socket, config.rootSocket] do
@@ -469,8 +590,9 @@ def main (args : List String) : IO UInt32 := do
     let (next, out) ← match request with
       | .ok j => answer srv j root
       | .error _ => pure (srv, errorJson "request is not a JSON object")
-    srv := next
     reply id.toUInt64 out.compress
+    -- What the request left waiting to cross goes after its reply, before the next request is read.
+    srv ← cross next
     if timing then
       errors.putStrLn (timingLine (request.toOption.getD Json.null) out ((← IO.monoMsNow) - started))
       errors.flush

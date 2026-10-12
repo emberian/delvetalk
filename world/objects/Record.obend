@@ -242,6 +242,11 @@ def madeLine(object: String) -> Document.Document:
 def holding<T>(object: String, made: Made, context: Abi.Context, said: String -> Document.Document, as: Made -> T) -> Activity<T>:
   let written(_) = write {things: insert {world: context.world, object: object}, tended: set context.clock, tendedAt: set context.height}
   Card.tellTo(as(made), context.principal, said(object))
+# A delivery of the rule this record's maker placed on `source` (a body's `made` places it under
+# them): the turn the rule fired, sent by that thing, under the maker. A guest's rule on the same
+# thing is sent by it too, but under the guest, and a hand's spell or a thing's send is no rule's.
+def ruledFrom(state: State, source: String, context: Abi.Context) -> Bool:
+  source != "" && context.sender == source && context.principal == state.maker && Text.starts(context.intent, "rule:{source}:")
 # What its kind does once the body is laid (Kind's `graft`, the kind as caller): nothing for a
 # plain record; a body that reacts to another thing (a weather, a lantern) places its rule there.
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:

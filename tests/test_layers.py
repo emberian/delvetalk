@@ -53,6 +53,36 @@ def greet(n: Nat) -> String:
   textConcat("<", textConcat(Super.greet(n), ">"))
 """
 
+# Review 2026-10-12 kernel 5 and 8: a stack elsewhere in the closure is not an entry's own, and a
+# layer keeps the clauses of the package it extends.
+STATE_BASE = """edition ObjectiveBend 1
+record State:
+  n: Nat
+law grows "n never falls": new.n >= old.n
+def initial() -> State:
+  {n: 0n}
+def poke(state: State, input: {}) -> Nat:
+  state.n
+def render(state: State) -> String:
+  "base"
+"""
+STATE_LAYER = """layer over ./Base.obend
+edition ObjectiveBend 1
+type State = Super.State
+law small "n stays small": new.n <= 9
+def render(state: State) -> String:
+  "layer"
+"""
+COUNTER = """edition ObjectiveBend 1
+import ./Layer.obend as L
+record State:
+  count: Nat
+def initial() -> State:
+  {count: 0n}
+def bump(state: State, input: {}) -> Nat:
+  state.count + 1n
+"""
+
 
 def message(plan):
     """A world call's fields (World.Message: object, method, argument)."""
@@ -106,6 +136,43 @@ class Layers(unittest.TestCase):
         self.assertEqual(reply["status"], "refused", reply)
         self.assertIn("first line", reply["diagnostic"]["message"])
 
+    def test_an_entry_beside_a_stack_takes_its_own_methods_and_entries(self):
+        # Refuted if Counter's artifact lists Base's poke and loses its own bump, or a definition
+        # Counter lacks is taken from the stack it merely imports.
+        lawless = lambda text: "".join(l + "\n" for l in text.splitlines() if not l.startswith("law "))
+        modules = [{"name": "Base", "source": lawless(STATE_BASE)}, {"name": "Layer", "source": lawless(STATE_LAYER)},
+                   {"name": "Counter", "source": COUNTER}]
+        art = self.compile(modules, "initial")
+        self.assertEqual([m["name"] for m in art["methods"]], ["bump"])
+        self.assertEqual(art["declares"], ["initial"])
+        self.assertNotIn("laws", art)
+        reply = self.h.send({"op": "compile", "entry": "poke", "modules": modules})
+        self.assertEqual(reply["status"], "error", reply)
+        self.assertIn("missing selected entry", reply["message"])
+        # A clause of a module the entry only imports is still refused.
+        modules[0] = {"name": "Base", "source": STATE_BASE}
+        reply = self.h.send({"op": "compile", "entry": "initial", "modules": modules})
+        self.assertEqual(reply["status"], "error", reply)
+        self.assertIn("Base is imported and declares 1 clause(s)", reply["message"])
+
+    def test_a_layer_keeps_the_clauses_of_the_package_below_it(self):
+        # Refuted if layering over a package with top-level clauses is refused, or its clauses dropped.
+        ruled = STATE_BASE.replace('law grows "n never falls": new.n >= old.n',
+                                   "rule ring: new.n >= 1 then delvetalk me note / text: rung")
+        plain = "".join(l + "\n" for l in STATE_LAYER.splitlines() if not l.startswith("law "))
+        art = self.compile([{"name": "Base", "source": ruled}, {"name": "Layer", "source": plain}], "render")
+        self.assertEqual([m["name"] for m in art["methods"]], ["render", "poke"])
+        # The base's law comes along: the pure profile then refuses the package for having laws at all.
+        reply = self.h.send({"op": "compile", "entry": "render",
+                             "modules": [{"name": "Base", "source": STATE_BASE}, {"name": "Layer", "source": plain}]})
+        self.assertEqual(reply["status"], "error", reply)
+        self.assertIn("package laws require a host law adapter", reply["message"])
+        # A layer adds clauses; one of a name below it is refused, never an override.
+        clash = plain + "rule ring: new.n >= 2 then delvetalk me note / text: again\n"
+        reply = self.h.send({"op": "compile", "entry": "render",
+                             "modules": [{"name": "Base", "source": ruled}, {"name": "Layer", "source": clash}]})
+        self.assertEqual(reply["status"], "error", reply)
+        self.assertIn("`ring` twice", reply["message"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -346,6 +346,8 @@ class RelationPrimitives(StoredCase):
         # that column's order); the walk of the same rows answers.
         reply = self.run_entry("rainByText", state(6), {"tag": "label", "value": "rain 3"})
         self.assertEqual((reply["status"], reply["reads"]["rows"]), ("refused", []), reply)
+        # It says why (KERNEL-HANDOFF §16 item 19), as a turn's refusal does.
+        self.assertIn("a lookup's key is not its relation's declared key", reply["failure"])
         walked = self.run_entry("rainByText", state(6), {"tag": "label", "value": "rain 3"}, stored=False)
         self.assertEqual(walked["value"], {"tag": "label", "value": "3"})
 

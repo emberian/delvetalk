@@ -139,8 +139,8 @@ def cid_bytes(raw):
 
 def data_cbor(d):
     """The canonical DAG-CBOR of Data on the wire (Canonical.lean): a natural an integer (a byte string past
-    2^64), a label text, a list an array, a record a map (sorted keys, the first of a repeated name kept), a
-    variant a one-key map."""
+    2^64), a label text, a list an array, a record a map (sorted keys, the first of a repeated name kept), any
+    other variant the array [null, label, payload]."""
     tag = d["tag"]
     if tag == "natural":
         n = int(d["value"])
@@ -155,7 +155,7 @@ def data_cbor(d):
     if tag == "list":
         return cbor_head(4, len(d["items"])) + b"".join(data_cbor(i) for i in d["items"])
     if tag == "variant":
-        return cbor_head(5, 1) + cbor(d["label"]) + data_cbor(d["payload"])
+        return b"\x83\xf6" + cbor(d["label"]) + data_cbor(d["payload"])
     first = {}
     for f in d["fields"]:
         first.setdefault(f["name"], f["value"])
@@ -186,7 +186,7 @@ def chunk_links(items):
 
 def state_cid(state, relations=()):
     """An object's state CID (Turn.StateCells): the CID of its block, the state's canonical DAG-CBOR with each
-    relation field in `relations` written `{rows: {items: [links]}}`, linking the chunks of its rows in the
+    relation field in `relations` written as the variant `rows {items: [links]}`, linking the chunks of its rows in the
     order the host holds them (key order)."""
     first = {}
     for f in state["fields"]:
@@ -197,7 +197,7 @@ def state_cid(state, relations=()):
         out += cbor(k)
         if k in relations:
             chunks = chunk_links(rows(first[k]))
-            out += cbor_head(5, 1) + cbor("rows") + cbor_head(5, 1) + cbor("items") + cbor_head(4, len(chunks))
+            out += b"\x83\xf6" + cbor("rows") + cbor_head(5, 1) + cbor("items") + cbor_head(4, len(chunks))
             out += b"".join(chunks)
         else:
             out += data_cbor(first[k])
