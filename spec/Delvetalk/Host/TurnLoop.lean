@@ -3268,14 +3268,12 @@ def spellTurn (w : World) (req : TurnRequest) : Option (Except String (World × 
 
 /-- A quieted principal's turn, journaled as refused `quiet` (transient: the same identity runs again
     once the clock passes `until`). -/
-def quietRefusal (w : World) (req : TurnRequest) (till : Nat) (reading : String) : Except String (World × Json) := do
+def quietRefusal (w : World) (req : TurnRequest) (quiet : Refusal) : Except String (World × Json) := do
   let ctx : Ctx := { principal := req.principal, intent := req.intent, object := req.object, method := req.method,
                      argument := req.argument, digest := req.digest, ledger := Ledger.start, delivery := none,
                      ticksStart := 0 }
   let p : Proposal := { principal := req.principal, intent := req.intent, roots := [], writes := [], turn := w.height + 1 }
-  let (w', r) := commit w p (entryBase ctx 0)
-    (some { cls := "quiet", clause := some s!"until clock {till}", object := some req.object,
-            reason := some s!"the hand quieted you until clock {till}: {reading}", next := some till })
+  let (w', r) := commit w p (entryBase ctx 0) (some quiet)
   return (w', turnReply w' r)
 
 /-- A direct turn past the quiet check: the spell read, else the method as asked. -/
@@ -3307,17 +3305,16 @@ def runOne (w : World) (req : TurnRequest) : Except String (World × Json) :=
   -- A retry is answered from the identity before its spell is read again: new code may route the
   -- same words elsewhere (codex host 13).
   if let some r := retainedTurn w req then .ok (w, r) else
-  -- A quieted principal's turns are refused until the clock passes (docs/ROOT.md §2.2).
-  match w.quiets[req.principal]? with
-  | some (till, reading) =>
-    if till > w.clock then quietRefusal w req till reading else runTurnHeard w req
+  -- A quieted principal's turn is refused before it runs (`quietOf`; judge refuses every other entry of theirs).
+  match quietOf w req.principal req.object with
+  | some quiet => quietRefusal w req quiet
   | none => runTurnHeard w req
 
 /-- The misfit a direct turn's spell is (`spellTurn`'s `.refuse` of a `misfitClauses` clause), with its
     card, as `runOne` would read it: none for a quieted speaker, a mention, or any other routing. -/
 def misfitOf (w : World) (req : TurnRequest) : Option (String × Misfit) := do
   let req := { req with object := resolveCard req.principal req.object }
-  guard !((w.quiets[req.principal]?).any (·.1 > w.clock))
+  guard (quietOf w req.principal "").isNone
   let req := { req with reach := reachOf w req }
   guard (req.reach != "mentioned")
   match routeSpell w req.principal req.object req.method req.argument true (req.reach == "direct" || req.reach == "reply") with

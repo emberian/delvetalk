@@ -2441,9 +2441,19 @@ def openerActs (w : World) (principal : String) : Bool :=
     the law's first row. -/
 def openerAmends (w : World) (subject : String) : Bool := openerActs w subject
 
+/-- Why `principal`'s change waits (docs/ROOT.md §2.2): the hand quieted it until a clock past this one.
+    Every entry changing the world under that principal is refused so, transiently, whatever carries it (a
+    turn, a proposal, a reprogram, an amendment, a placing, a resumption, a delivery); the opener is never. -/
+def quietOf (w : World) (principal object : String) : Option Refusal := do
+  let (till, reading) ← w.quiets[principal]?
+  guard (till > w.clock && !openerActs w principal)
+  return { cls := "quiet", clause := some s!"until clock {till}", object := if object.isEmpty then none else some object,
+           reason := some s!"the hand quieted you until clock {till}: {reading}", next := some till }
+
 /-- Roots current, writes read, results conform, laws admit. Returns the objects
     as they would be installed. `height` is the height the entry would take. -/
 def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := do
+  if let some r := quietOf w p.principal ((p.roots.head?.map (·.1)).getD "") then throw r
   let writes := p.allWrites
   for id in p.roots.map (·.1) ++ writes.map (·.1) do
     unless w.objects.contains id do throw { cls := "unknownObject", object := id }
@@ -3310,7 +3320,7 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
         unfired := unfired.push (refuse "reads")
         continue
       let text := (r.clause.modality.spell?).bind (Law.fill facts (some old.state) o.state)
-      let quiet := ((before.quiets[r.owner]?).map fun q => decide (q.1 > before.clock)).getD false
+      let quiet := (quietOf before r.owner "").isSome
       match text, text.bind (spellCard before r.owner) with
       | none, _ => unfired := unfired.push (refuse "hole")
       | some _, none => unfired := unfired.push (refuse "spell")
