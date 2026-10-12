@@ -248,7 +248,7 @@ def served(state, *, cleanup, **settings):
     if os.environ.get("DELVETALK_SPAWN_LOG"):
         with open(os.environ["DELVETALK_SPAWN_LOG"], "a") as f:
             f.write("serve\n")
-    return Served(state, binary(), cleanup=cleanup, **settings)
+    return Served(state, os.environ.get("DELVETALK_OBEND_REAL") or binary(), cleanup=cleanup, **settings)
 
 
 class ServeCase(unittest.TestCase):
