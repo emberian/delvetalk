@@ -5,20 +5,26 @@
 --profile counts, per class, the host processes spawned (every exec of the binary, including the
 ones `serve` starts) and the `serve` processes started, and prints the twenty slowest classes with both.
 
-The host binary is copied once and the copy shared with the workers. Each class gets its own
+The host binary is copied once and the copy shared with the workers, with one compile cache for the run
+(`DELVETALK_COMPILE_CACHE`, content-addressed, so a package compiles once whichever class asks; paints keep
+their own, `DELVETALK_RENDER_CACHE`, never shared) and one genesis per town shape (`DELVETALK_TOWN_TEMPLATES`,
+tests/town.py). Each class gets its own
 process (and so its own host process), preserving class-level sharing and journal isolation; a
 class declaring `independent = True` measured over SPLIT seconds is dealt into chunks instead.
 Slowest classes start first (measured times persist in tests/.timings.json). A class runs in
 the module that defines it, never again where it is imported. The run ends with the tests per
 layer (each module's docstring names its layer) and the five slowest classes.
 """
+import atexit
 import concurrent.futures
 import importlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 from pathlib import Path
@@ -109,9 +115,14 @@ def main(argv):
     estimate = lambda job: known.get(job.split('#')[0], len(found[job.split('#')[0]])) / int(job.rpartition('/')[2] if '#' in job else 1)
     order = sorted(work, key=lambda job: -estimate(job))
     env = dict(os.environ, DELVETALK_OBEND_COPY=host.binary(), PYTHONPATH=str(HERE.parent))
+    # One compile cache for the run (each package compiles once, not per class) and one genesis per town shape
+    # (tests/town.py copies it into each town).
+    for name, prefix in (('DELVETALK_COMPILE_CACHE', 'dt-compile-'), ('DELVETALK_TOWN_TEMPLATES', 'dt-towns-')):
+        if not env.get(name):
+            env[name] = tempfile.mkdtemp(prefix=prefix)
+            atexit.register(shutil.rmtree, env[name], True)
     spawns = None
     if profile:
-        import tempfile
         spawns = tempfile.mkdtemp(prefix='dt-spawns-')
         env['DELVETALK_OBEND_COPY'] = counting_wrapper(host.binary(), spawns)
     t0, failed, took = time.time(), [], {}
