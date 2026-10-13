@@ -217,15 +217,18 @@ def piece (tail : T) : Fields2 :=
 def segment (text : T) : Fields2 :=
   if (trimStart text).isEmpty then .found [] else piece (trimStart text)
 
+/-- The cut is a `/` after a blank (or at the start) with a field after it: the second `/` of `at://did:plc:…`
+    follows a `/`, so a URI in a value is never cut there. -/
 partial def slashed (before rest : T) : Fields2 :=
   let cut := brk rest ['/']
   if cut == rest.length then segment (before ++ rest)
   else
     let head := rest.take cut
     let after := rest.drop (cut + 1)
-    if looksLikeField (trimStart after) && (head.isEmpty || span (head.drop (head.length - 1)) blanks == 1) then
-      both (segment (before ++ head)) (slashed [] (trimStart after))
-    else slashed (before ++ head ++ ['/']) after
+    let prior := before ++ head
+    if looksLikeField (trimStart after) && (prior.isEmpty || span (prior.drop (prior.length - 1)) blanks == 1) then
+      both (segment prior) (slashed [] (trimStart after))
+    else slashed (prior ++ ['/']) after
 
 /-- The slashed form's leading values without a name (`plant / silver / a fern`): the segments before
     the first that has a colon; after a named field a ` / ` is part of its value. -/

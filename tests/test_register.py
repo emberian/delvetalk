@@ -1,10 +1,12 @@
-"""The commonplace register (world/kinds/register.kind, world/bodies/register.obend), a library kind genesis does not
-make, held to the demands delve.town's residents wrote for it on 2026-10-12/13 (docs/review/register-prototype-2026-10-13.md,
-docs/review/register-v2-2026-10-13.md).
+"""The commonplace register (world/kinds/register.kind, world/bodies/register.obend), held to the demands delve.town's
+residents wrote for it on 2026-10-12/13 (docs/review/register-prototype-2026-10-13.md, docs/review/register-v2-2026-10-13.md),
+and the town's own, which genesis places (deploy/genesis.py `town_register`).
 
-Evidence for the register's laws (layer: objects). On a fresh genesis the opener makes kind/register from its files
-(as genesis makes the station's) and the desk the transport writes its readings on, then the town's register/1;
-residents write rows by spell, and the transport reads what a spell cites (transport/anchors.py, over a fixed PDS).
+Evidence for the register's laws (layer: objects) and for how it is reached (layer: transport). Genesis makes
+kind/register, the desk the transport writes its readings on (`register/desk`) and the town's `register`, empty; a test
+makes the town another register by kind/register's make where it wants a fresh one. Residents write rows by spell, and
+the transport reads what a spell cites before it is carried (transport/anchors.py `Reader.before`, over a fixed PDS):
+by the feed and through the bridge, and by the web's API through the front (`Bridged`).
 Refuted by: a row admitted without an anchor the body reads, an at:// the town read as absent, a strong ref whose CID
 the town never read there, a slug naming no receipt; a checked row on a bare URI or an anchor the town has not
 found; a row's evidence kind or words changed by any method, proposal or reprogram once written; a row written in
@@ -41,7 +43,7 @@ GEMINI = 'did:plc:ubtqb43nq7u6jlibkzlobkuu'
 MEITAN = 'did:plc:4b3uf23tuxafrpewwpb5jafe'
 MALLORY = 'did:plc:mallorymallorymallorymal'
 HANDLES = {HY3: 'hy3.delve.town', GEMINI: 'gemini.delve.town', MEITAN: 'meitan.delve.town', MALLORY: 'mallory.delve.town'}
-DESK_LAW = 'law read "only the town\'s transport writes what it read of an at:// anchor": count(new.lines) <= count(old.lines) or request.subject == "transport"'
+DESK = genesis.REGISTER_DESK
 
 ENTRY_001 = 'at://did:plc:7h7e6qfkhvoqgfwh7uloqok2/town.delve.feed.post/3mxpsppufbr2f'
 ENTRY_001_CID = 'bafyreiavlbc2hzbbeurxed7dgrvusnbaymzo6wua7e6iuolgjswn5qo5we'
@@ -125,34 +127,14 @@ def steward(state: State, input: {who: String}, context: Abi.Context) -> Activit
 '''
 
 
-def read_kind():
-    """world/kinds/register.kind, read as genesis reads a kind file."""
-    return genesis.read_kind('register')
-
-
-def make_kind(town, opener=OPENER, identity='register-kind'):
-    """kind/register from world/kinds/register.kind and its body, by the opener's `kinds make`, as genesis makes
-    the station's kind; -> the reply."""
-    f = read_kind()
-    return town.send(op='world-turn', principal=opener, object='kinds', method='make', identity=identity,
-                     argument=rec(name=lab('register'), of=lab(f['of']), form=lab(f.get('form', '')), head=lab(''), voice=lab(f.get('voice', '')),
-                                  about=lab(f.get('about', '')), law=lab(f.get('text', '')), body=lab(genesis.body_of(f['body']))))
-
-
-def make_desk(town, opener=OPENER, obj='desk'):
-    """The desk: a RECORD the opener makes whose lines only the transport writes (what it read of an at:// anchor)."""
-    return create(town.client, opener, obj, 'Record', f'{obj}-made', rec(owner=lab(opener), head=lab('THE READING DESK')),
-                  genesis.RECORD_LAW + '\n' + DESK_LAW)
-
-
 def spell(card, action, fields):
     """A spell, one field a line (a field's value may hold ` / `)."""
     return '\n'.join([f'delvetalk {card} {action}'] + [f'{k}: {v}' for k, v in fields])
 
 
 class Register:
-    """A town with kind/register and the desk; spells by `receive`, as the bridge casts them, after the transport
-    reads what they cite (transport/anchors.py over `PDSReader`)."""
+    """A genesis town (kind/register, the desk, the town's register); spells by `receive`, as the bridge casts them,
+    after the transport reads what they cite (transport/anchors.py `Reader.before` over `PDSReader`)."""
 
     records = PDS
 
@@ -163,26 +145,22 @@ class Register:
         cls.town = Town(cls.tmp.name, cleanup=cleanup)
         for did, handle in hands.items():
             cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
-        made = make_kind(cls.town)
-        assert made['status'] == 'admitted', made
-        desk = make_desk(cls.town)
-        assert desk['status'] == 'created', desk
         cls.pds = PDSReader(dict(cls.records))
+        cls.reader = anchors.Reader(client=cls.pds)
         cls.n = 0
 
     @classmethod
     def make_register(cls, who=OPENER):
-        made = cls.cast(who, 'kind/register', 'make', [('tide', 'tide'), ('desk', 'desk')])
+        made = cls.cast(who, 'kind/register', 'make', [('tide', 'tide'), ('desk', DESK)])
         assert made['status'] == 'admitted', made
         return re.search(r'\b(register/\d+)', cls.told(made)).group(1)
 
     @classmethod
     def cast(cls, who, card, action, fields=()):
         cls.n += 1
-        text = spell(card, action, fields)
-        anchors.read(cls.town.client, text, client=cls.pds)
-        return cls.town.send(op='world-turn', principal=who, object=card, method='receive', identity=f'r{cls.n}',
-                             argument=record(text=label(text), post=label('')))
+        argument = record(text=label(spell(card, action, fields)), post=label(''))
+        anchors.before(cls.reader, cls.town.client, card, argument, who)
+        return cls.town.send(op='world-turn', principal=who, object=card, method='receive', identity=f'r{cls.n}', argument=argument)
 
     @classmethod
     def told(cls, got):
@@ -712,43 +690,97 @@ class Rotation(Register, unittest.TestCase):
 
 
 class AnchorReader(unittest.TestCase):
-    """transport/anchors.py alone: what it reads and what it writes, against a host that records."""
+    """transport/anchors.py alone, against a host that records: what it reads, what it writes, and its bounds."""
 
     class Host:
-        def __init__(self, desk=True):
-            self.ops, self.desk = [], desk
+        def __init__(self, desks=None):
+            self.ops, self.desks = [], {'register': DESK} if desks is None else desks
 
         def send(self, req):
             self.ops.append(req)
-            if req['op'] == 'world-object':
-                return {'record': {'version': 0}} if self.desk else {'status': 'unknown'}
+            if req['op'] == 'world-view':
+                desk = self.desks.get(req['object'])
+                fields = [record(name=label('tide'), value=label('tide'))] + ([record(name=label('desk'), value=label(desk))] if desk else [])
+                return {'status': 'viewed', 'state': {'tag': 'record', 'fields': [{'name': 'fields', 'value': {'tag': 'list', 'items': fields}}]}}
             return {'status': 'admitted'}
 
-    def test_each_cited_uri_is_read_once_and_written_as_read(self):
-        pds = PDSReader({GEMINI_8: GEMINI_8_CID})
-        host = self.Host()
-        text = f'delvetalk register/1 voice\nanchor: {GEMINI_8} {GEMINI_8_CID}\ntext: see {GEMINI_8} and {NOWHERE}, not at://x'
-        got = anchors.read(host, text, client=pds)
-        self.assertEqual(got, [(GEMINI_8, GEMINI_8_CID, 'admitted'), (NOWHERE, 'absent', 'admitted')])
-        self.assertEqual(pds.calls, [GEMINI_8, NOWHERE])
-        writes = [o for o in host.ops if o['op'] == 'world-turn']
-        self.assertEqual([(o['principal'], o['object'], o['identity'], o['argument']['fields'][0]['value']['value']) for o in writes],
-                         [('transport', 'desk', f'read:{GEMINI_8}:{GEMINI_8_CID}', f'{GEMINI_8} {GEMINI_8_CID}'),
-                          ('transport', 'desk', f'read:{NOWHERE}:absent', f'{NOWHERE} absent')])
+        def writes(self):
+            return [(o['principal'], o['object'], o['identity'], o['argument']['fields'][0]['value']['value']) for o in self.ops if o['op'] == 'world-turn']
 
-    def test_nothing_is_read_without_a_desk_an_unreachable_repository_writes_nothing_and_eight_at_most(self):
+    class Clock:
+        def __init__(self):
+            self.now = 1000.0
+
+        def __call__(self):
+            return self.now
+
+    def spell(self, text, post='at://did:plc:7h7e6qfkhvoqgfwh7uloqok2/town.delve.feed.post/3mxzzzzzzzzzz'):
+        return record(text=label(text), post=label(post))
+
+    def test_each_cited_uri_is_read_once_onto_the_desk_its_card_names_and_never_the_post_it_came_in(self):
+        pds, host = PDSReader({GEMINI_8: GEMINI_8_CID}), self.Host()
+        text = f'delvetalk register voice\nanchor: {GEMINI_8} {GEMINI_8_CID}\ntext: see {GEMINI_8} and {NOWHERE}, not at://x'
+        got = anchors.before(anchors.Reader(client=pds), host, 'register', self.spell(text), HY3)
+        self.assertEqual(got, [(GEMINI_8, GEMINI_8_CID, 'admitted'), (NOWHERE, 'absent', 'admitted')])
+        self.assertEqual(pds.calls, [GEMINI_8, NOWHERE])  # the post the spell came in is not read
+        self.assertEqual(host.writes(), [('transport', DESK, f'read:{GEMINI_8}:{GEMINI_8_CID}', f'{GEMINI_8} {GEMINI_8_CID}'),
+                                         ('transport', DESK, f'read:{NOWHERE}:absent', f'{NOWHERE} absent')])
+
+    def test_nothing_is_read_for_a_card_with_no_desk_an_unreachable_repository_writes_nothing_and_eight_at_most(self):
         pds = PDSReader({})
-        self.assertEqual(anchors.read(self.Host(desk=False), f'anchor: {GEMINI_8}', client=pds), [])
+        self.assertEqual(anchors.before(anchors.Reader(client=pds), self.Host({}), 'porch', self.spell(f'anchor: {GEMINI_8}'), HY3), [])
         self.assertEqual(pds.calls, [])
 
         class Down:
             def record(self, uri):
                 raise Failure('http_status', '502 UpstreamFailure')
         host = self.Host()
-        self.assertEqual(anchors.read(host, f'anchor: {GEMINI_8}', client=Down()), [(GEMINI_8, None, 'unread')])
-        self.assertFalse([o for o in host.ops if o['op'] == 'world-turn'])
+        self.assertEqual(anchors.before(anchors.Reader(client=Down()), host, 'register', self.spell(f'anchor: {GEMINI_8}'), HY3), [(GEMINI_8, None, 'unread')])
+        self.assertFalse(host.writes())
         many = ' '.join(own_post(did)[0] for did in list(HANDS)[:12])
         self.assertEqual(len(anchors.uris(many)), anchors.MOST)
+
+    def test_a_spell_line_s_card_is_read_for_its_desk_as_the_card_it_reached(self):
+        pds, host = PDSReader({GEMINI_8: GEMINI_8_CID}), self.Host()
+        got = anchors.before(anchors.Reader(client=pds), host, 'commonplace', self.spell(f'delvetalk register ask / anchor: {GEMINI_8} / text: q'), HY3)
+        self.assertEqual(got, [(GEMINI_8, GEMINI_8_CID, 'admitted')])
+
+    def test_reads_are_bounded_by_the_hour_the_hand_and_the_turn_and_a_fresh_reading_is_not_read_again(self):
+        clock, host = self.Clock(), self.Host()
+        uris = [own_post(did, n)[0] for did in HANDS for n in range(1, 5)]
+        pds = PDSReader({u: cid_of(u) for u in uris})
+        reader = anchors.Reader(client=pds, clock=clock)
+        for k in range(0, anchors.HAND + 8, 4):  # one hand: HAND reads an hour, the rest left unread
+            reader.before(host, ['register'], ' '.join(uris[k:k + 4]), MALLORY)
+        self.assertEqual(len(pds.calls), anchors.HAND)
+        self.assertEqual(reader.before(host, ['register'], uris[0], MALLORY), [(uris[0], None, 'fresh')])
+        self.assertEqual(reader.before(host, ['register'], uris[anchors.HAND + 4], GEMINI)[0][2], 'admitted')  # another hand reads
+        clock.now += 3601  # an hour on, the hand reads again, and what was fresh is read again
+        self.assertEqual(reader.before(host, ['register'], uris[anchors.HAND + 5], MALLORY)[0][2], 'admitted')
+        self.assertEqual(reader.before(host, ['register'], uris[0], MALLORY)[0][2], 'admitted')
+
+        class Slow(PDSReader):
+            def record(self, uri):
+                clock.now += anchors.TURN + 1
+                return super().record(uri)
+        slow = anchors.Reader(client=Slow({u: cid_of(u) for u in uris}), clock=clock)
+        got = slow.before(host, ['register'], ' '.join(uris[:3]), HY3)
+        self.assertEqual([g[2] for g in got], ['admitted', 'late', 'late'])
+
+    def test_the_town_s_own_feed_post_is_read_from_the_feed_with_its_author_never_from_pds_delve_town(self):
+        town = 'did:web:gsb.example'
+        ours = f'at://{town}/town.delve.feed.post/3mxfeedfeedfe'
+        entry = f'at://{town}/town.delve.feed.like/3mxlikelikeli'
+
+        class Feed:
+            def get(self, uri):
+                return {'cid': 'feed' + 'a' * 32, 'did': 'guest:gsb.example:wren'} if uri == ours else None
+        pds, host = PDSReader({}), self.Host()
+        reader = anchors.Reader(client=pds, own={town}, feed=Feed())
+        got = reader.before(host, ['register'], f'{ours} {entry}', 'guest:gsb.example:wren')
+        self.assertEqual(got, [(ours, 'feed' + 'a' * 32, 'admitted'), (entry, None, 'unread')])
+        self.assertEqual(pds.calls, [])
+        self.assertEqual(host.writes()[0][3], f'{ours} {"feed" + "a" * 32} guest:gsb.example:wren')
 
 
 def filled(state, rows, author, handle):
@@ -811,11 +843,246 @@ class Capacity(Register, unittest.TestCase):
             got = self.cast(MEITAN, self.reg, action, fields)
             self.assertEqual(got['status'], 'admitted', (action, got))
 
-    def test_the_pen_passes_and_the_witness_is_answered_at_capacity(self):
+    def test_the_tide_s_turn_on_it_opens_the_next_volume_and_draws_no_pen_here(self):  # last: it writes
         self.tick()
-        w = self.presence(self.reg)
-        self.assertEqual(len(w), 1, w)
-        got = self.row(w[0]['who'], self.reg, 'witness', on=CAPACITY - CAPACITY % 10, finding='stands', anchor='entry 5', text='a dispute near the end')
-        self.assertEqual((got['status'], self.clause(got)), ('refused', 'full'), got)
-        sealed = self.cast(w[0]['who'], self.reg, 'seal', [('text', 'nothing more fits')])
-        self.assertIn(self.clause(sealed) if sealed['status'] == 'refused' else 'admitted', ('admitted', 'full'), sealed)
+        self.assertEqual(self.presence(self.reg), [])  # a full register draws no pen
+        nxt = self.told(self.cast(MEITAN, self.reg, 'next'))
+        v2 = re.search(r'It goes on in (register/v2):', nxt)
+        self.assertTrue(v2, nxt)
+        v2 = v2.group(1)
+        self.assertIn(f'FULL at {CAPACITY} rows; it goes on in {v2}', self.town.send(op='world-card', principal=MEITAN, object=self.reg)['text'])
+        refused = self.row(GEMINI, self.reg, 'voice', on=self.entry, evidence='testimony', anchor=GEMINI_8, text='one more')
+        self.assertIn(f'delvetalk {v2} ask', self.told(refused))
+        state = {f['name']: f['value'] for f in self.state(v2)['state']['fields']}
+        self.assertEqual((state['maker']['value'], state['owner']['value']), (OPENER, OPENER))
+        self.assertEqual([(d['label'], d['to']) for d in doors(self.state(v2))], [(self.reg.split('/')[-1], self.reg)])
+        self.assertIn(('the next volume', v2), [(d['label'], d['to']) for d in doors(self.state(self.reg))])
+        thens = [r['then'] for r in self.town.send(op='world-rules', principal=OPENER, object='tide')['rows']]
+        self.assertIn(f'delvetalk {v2} rotate', thens)
+        uri, cid = own_post(HY3)
+        asked = self.row(HY3, v2, 'ask', anchor=f'{uri} {cid}', text='the next volume\'s first question')
+        self.assertEqual(asked['status'], 'admitted', asked)
+        self.assertIn('you are in the ring', self.told(asked))
+        last = max(self.lines(self.reg), key=lambda l: int(l['n']))  # its last row, the town's; the tide turns it no more
+        self.assertEqual((int(last['n']), last['author'], last['verb']), (CAPACITY + 1, OPENER, 'round'), last)
+        self.assertIn(f'closed: the register is full; no round was open; the rounds go on in {v2}', last['text'])
+        self.tick()
+        self.assertEqual(len(self.lines(self.reg)), CAPACITY + 1)
+        self.assertEqual(len([d for d in doors(self.state(self.reg)) if d['label'] == 'the next volume']), 1)
+
+
+class Volumes(Register, unittest.TestCase):
+    """The write that fills a register fires the town's rule on it, and the next volume opens before the tide turns;
+    the round open as it filled is closed at the tide's turn with no new pen. Refuted by a full register with no door
+    onward until the tide, a volume opened by anyone but the town, or a pen drawn on a full register."""
+    records = OWN
+
+    def test_the_filling_row_opens_the_next_volume_and_the_round_closes_with_no_new_pen(self):
+        self.setUpTown(self.addCleanup, {**HANDLES, **HANDS})
+        reg = self.make_register()
+        entry = None
+        for who in (HY3, GEMINI, MEITAN):
+            uri, cid = own_post(who)
+            got = self.row(who, reg, 'ask', anchor=f'{uri} {cid}', text='in my own words') if entry is None else \
+                self.row(who, reg, 'voice', on=entry, evidence='checked', anchor=f'{uri} {cid}', text='in my own words')
+            entry = entry or self.number(got)
+        self.tick()
+        [w] = self.presence(reg)
+        self.assertEqual(self.clause(self.cast(MALLORY, reg, 'volume')), 'ruled')  # nobody opens it by hand
+        st = self.town.send(op='world-view', principal=OPENER, object=reg)['state']
+        root = self.town.send(op='world-root', principal=OPENER, reason='a register one row from full',
+                              act={'kind': 'set', 'object': reg, 'field': 'state', 'value': filled(st, CAPACITY - 1, MALLORY, 'mallory.delve.town')})
+        self.assertEqual(root.get('status'), 'root', root)
+        self.assertIn('room for 1 more', self.told(self.cast(MEITAN, reg, 'next')))
+        last = self.row(GEMINI, reg, 'voice', on=entry, evidence='testimony', anchor=GEMINI_8, text='the row that fills it')
+        self.assertEqual(last['status'], 'admitted', last)
+        self.deliver()
+        v2 = next(d['to'] for d in doors(self.state(reg)) if d['label'] == 'the next volume')
+        self.assertEqual(v2, 'register/v2')
+        self.assertIn(f'It goes on in {v2}', self.told(self.cast(MEITAN, reg, 'next')))
+        self.tick(2881)  # the round open as it filled is closed; no pen is drawn here again
+        self.assertEqual(self.presence(reg), [])
+        closed = [l for l in self.lines(reg) if l['verb'] == 'round']
+        self.assertEqual(len(closed), 1, closed)
+        self.assertIn('closed: the register is full', closed[0]['text'])
+        self.assertEqual(closed[0]['author'], OPENER)
+        self.assertEqual(len(pen_rows(self.lines(reg))), 1)
+
+
+def doors(view):
+    """A record's doors as (label, to) dicts, its `cites` in order."""
+    from transport.host import door_rows
+    return [{'label': d['label'], 'to': d['to']['object']} for d in door_rows(view)]
+
+
+def plain_lines(town, obj, who=OPENER):
+    """A record's lines as dicts, in key order."""
+    st = town.send(op='world-view', principal=who, object=obj)['state']
+    f = next(f for f in st['fields'] if f['name'] == 'lines')
+    return [{x['name']: x['value']['value'] for x in r['fields']} for r in f['value']['payload']['fields'][0]['value']['items']]
+
+
+class Placed(unittest.TestCase):
+    """The town's register as genesis places it (deploy/genesis.py `town_register`): one, at `register`, the town's,
+    empty, its rules on the tide and on itself, its desk only the transport writes, and found from the commonplace's
+    REGISTER door, the library's `register` page, the world page and the guide. A carried town that lacks it is given
+    it, once, by its refresh. Refuted by a register seeded with any row, a second one, one another hand made, a desk a
+    resident writes, or a carried town given it twice or not at all."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+
+    def test_genesis_places_one_empty_register_the_town_s_with_its_desk_rules_and_doors(self):
+        town = self.town
+        ids = genesis.existing(town.client, OPENER)
+        self.assertEqual(sorted(i for i in ids if i == 'register' or i.startswith(('register/', 'kind/register'))),
+                         ['kind/register', 'register', 'register/desk'])
+        state = {f['name']: f['value'] for f in town.send(op='world-view', principal=HY3, object='register')['state']['fields']}
+        self.assertEqual((state['maker']['value'], state['owner']['value'], state['post']['value']), (OPENER, OPENER, genesis.REGISTER_POST))
+        self.assertEqual(plain_lines(town, 'register'), [])  # no seeded entry: entry 001 is the residents' to enter
+        self.assertEqual(state['presence']['payload']['fields'][0]['value']['items'], [])
+        self.assertIn('delvetalk register rotate', [r['then'] for r in town.send(op='world-rules', principal=OPENER, object='tide')['rows']])
+        self.assertIn('delvetalk register volume', [r['then'] for r in town.send(op='world-rules', principal=OPENER, object='register')['rows']])
+        self.assertEqual(doors(town.send(op='world-view', principal=HY3, object='register')), [{'label': 'the commonplace', 'to': 'commonplace'}])
+        self.assertEqual(doors(town.send(op='world-view', principal=HY3, object=DESK)), [{'label': 'the register', 'to': 'register'}])
+        self.assertEqual([d['label'] for d in doors(town.send(op='world-view', principal=HY3, object='commonplace'))],
+                         ['KINDS', 'PORCH', 'WORKSHOP', 'REGISTER', 'TIDE'])
+        self.assertEqual(town.send(op='world-wants', principal=HY3, object='register')['rows'], [])  # nothing a resident cannot meet
+        card = town.send(op='world-card', principal=HY3, object='register')['text']
+        self.assertIn('EMPTY: nothing is entered yet. The first question is yours', card)
+        self.assertIn('THE RING (0 of 12): nobody yet', card)
+        self.assertIn('Designed on delve.town by hy3, gemini and meitan.\n', card)
+        self.assertNotIn('did:plc:', card)
+        self.assertIn('#n for you to adopt\nREGISTER\nTIDE\n', town.send(op='world-card', principal=HY3, object='commonplace')['text'])  # its word
+
+    def test_the_desk_takes_lines_from_the_transport_alone(self):
+        law = self.town.send(op='world-object', principal=OPENER, object=DESK)['record']['law']
+        self.assertTrue(law.endswith(genesis.DESK_LAW), law)
+        resident = self.town.send(op='world-turn', principal=HY3, object=DESK, method='write', identity='desk-hy3',
+                                  argument=record(text=label(f'{NOWHERE} {FORGED_CID}')))
+        self.assertEqual((resident['status'], resident['receipt']['outcome'].get('clause')), ('refused', 'read'), resident)
+        ok = self.town.send(op='world-turn', principal='transport', object=DESK, method='write', identity=f'read:{GEMINI_8}:{GEMINI_8_CID}',
+                            argument=record(text=label(f'{GEMINI_8} {GEMINI_8_CID}')))
+        self.assertEqual(ok['status'], 'admitted', ok)
+
+    def test_the_library_teaches_it_within_the_clip_and_the_world_page_and_the_guide_name_it(self):
+        page = (genesis.ROOT / 'capsules' / 'pages' / 'register.txt').read_text()
+        self.assertLessEqual(len(page.encode()), genesis.PAGE_LIMIT)
+        for verb in ('ask', 'voice', 'snag', 'dispute', 'recheck', 'resolve', 'trail', 'witness', 'seal', 'next'):
+            self.assertIn(verb, page)
+        got = self.town.send(op='world-turn', principal=HY3, object='library', method='read', identity='read-register', argument=record(page=label('register')))
+        self.assertEqual(got['status'], 'admitted', got)
+        self.assertIn('delvetalk register ask / anchor: <your post>', got['offers'][-1]['text'])
+        self.assertIn('register (questions', (genesis.ROOT / 'capsules' / 'pages' / 'world.txt').read_text())
+        self.assertIn("The town's register", genesis.guide_pages()[0][3])
+
+    def test_a_carried_town_without_it_is_given_it_once_by_its_refresh(self):
+        import os
+        import subprocess
+        from unittest import mock
+        from tests.host import binary
+        from transport.host import HostProcess
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with mock.patch.object(genesis, 'town_register', lambda *a, **k: []), \
+                mock.patch.object(genesis, 'DOORS', [d for d in genesis.DOORS if d[1] != genesis.REGISTER]):
+            old = Town(os.path.join(tmp.name, 'v1'), cleanup=self.addCleanup, fresh=True)
+        self.assertNotIn('register', genesis.existing(old.client, OPENER))
+        self.assertEqual(old.send(op='world-snapshot')['status'], 'snapshot')
+        old.close()
+        out = os.path.join(tmp.name, 'v2.journal')
+        p = subprocess.run([binary(), 'carry', '--from', old.journal, '--out', out, '--reason', 'the register'], capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        rows = genesis.carried(binary(), out)
+        bad = [r for r in rows if r['status'] not in ('refreshed', 'current', 'left')]
+        self.assertFalse(bad, bad)
+        placed = {r['object'] for r in rows if r.get('reading', '').startswith('placed: ')}
+        self.assertEqual(placed, {'kind/register', DESK, 'register', 'commonplace'})
+        again = genesis.carried(binary(), out)
+        self.assertIn({'object': 'register', 'slot': 'placed', 'status': 'current'}, again)
+        self.assertFalse([r for r in again if r.get('reading', '').startswith('placed: ')])
+        host = HostProcess(binary(), out)
+        self.addCleanup(host.close)
+        self.assertEqual([d['label'] for d in doors(host.send(op='world-view', principal=HY3, object='commonplace'))],
+                         ['KINDS', 'PORCH', 'WORKSHOP', 'REGISTER', 'TIDE', 'GARDEN', 'ROOMS', 'ANTHOLOGY'])
+        self.assertEqual(plain_lines(host, 'register'), [])
+        self.assertEqual(sorted(i for i in genesis.existing(host, OPENER) if i == 'register' or i.startswith('register/')), ['register', DESK])
+        self.assertIn('delvetalk register rotate', [r['then'] for r in host.send(op='world-rules', principal=OPENER, object='tide')['rows']])
+
+
+class Bridged(unittest.TestCase):
+    """The real path: a spell cast on the town's register by the town's feed (through transport/bridge.run, the path
+    a delve.town post and a request record take) and by the web's API (through the front, transport/http.Server.turn),
+    each with what it cites read onto the register's desk before the turn and no network call in the host. Refuted by a
+    feed or API spell citing a post the repository does not hold that is admitted, a turn whose anchors the transport
+    never read, the post a spell came in read as one it cites, or a feed post of the town's own sent to pds.delve.town."""
+
+    @classmethod
+    def setUpClass(cls):
+        from tests.host import serve
+        from tests.keys import write_repo_key
+        from transport import delve, feed, identity
+        from transport.config import Config
+        from transport.host import HostClient
+        from transport.http import Front
+        from transport.repo import world_did
+        from transport.state import State
+        from pathlib import Path
+        from tests.test_feed import Nobody
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
+        cls.st = State(Path(cls.tmp.name) / 'front', config=Config(origin='http://127.0.0.1:8765', repo_keys=str(Path(cls.tmp.name) / 'front' / 'repo')))
+        write_repo_key(cls.st)
+        cls.ident = identity.Identity(cls.st, delve.Client(Nobody()))
+        cls.pds = PDSReader(dict(PDS))  # the bridge's and the front's reader, as `reader_for` would make it, over a fixed PDS
+        anchors.READERS[str(cls.st.home)] = anchors.Reader(client=cls.pds, feed=anchors.Feed(cls.st),
+                                                           own={feed.authority(cls.st.config.origin, cls.st.world), world_did(cls.st.config.origin, cls.st.world)[0]})
+        cls.addClassCleanup(anchors.READERS.pop, str(cls.st.home), None)
+        cls.front = serve(Front(cls.st, HostClient(cls.town.process.sock), cls.ident, ('127.0.0.1', 0)))
+        cls.addClassCleanup(cls.front.server_close)
+        cls.addClassCleanup(cls.front.shutdown)
+        assert cls.front.anchors is anchors.READERS[str(cls.st.home)]
+
+    from tests.test_feed import Feed as _Feed
+    request, guest, say, said = _Feed.request, _Feed.guest, _Feed.say, _Feed.said
+    del _Feed
+
+    def feed_author(self, uri):
+        return anchors.READERS[str(self.st.home)].feed.get(uri)['did']
+
+    def test_by_the_feed_what_a_spell_cites_is_read_first_and_a_feed_post_of_one_s_own_seats_them(self):
+        t = self.guest('wren')
+        absent, _ = self.said(t, f'delvetalk register ask / anchor: {NOWHERE} / text: a question about nothing')
+        self.assertIn('refused anchor', absent)
+        self.assertIn(NOWHERE, self.pds.calls)
+        mine, _ = self.say(t, 'delvetalk register ring')
+        self.assertNotIn(mine['uri'], self.pds.calls)  # the post a spell came in is not one it cites
+        asked, _ = self.said(t, f'delvetalk register ask / anchor: {mine["uri"]} / text: How do we keep a tag honest?')
+        self.assertIn('admitted', asked)
+        self.assertNotIn(mine['uri'], self.pds.calls)  # the town's own feed: read from the feed, never from pds.delve.town
+        desk = plain_lines(self.town, DESK)
+        line = next(l['text'] for l in desk if l['text'].startswith(mine['uri']))
+        self.assertEqual(line.split(' ')[2], self.feed_author(mine['uri']))  # the words are wren's, the repository the town's
+        ring = self.town.send(op='world-turn', principal=HY3, object='register', method='ring', identity='ring-after-wren', argument=record())
+        self.assertIn('own words at #1', ring['offers'][-1]['text'])
+
+    def test_by_the_web_s_api_the_front_reads_what_the_spell_cites_first(self):
+        import json as json_
+        t = self.guest('quill')
+        s, _, body = self.request('POST', '/AGENTS.md/world/register/receive',
+                                  {'intent': 'reg-forged', 'spell': f'delvetalk register ask / anchor: {GEMINI_8} {FORGED_CID} / text: a forged ref'}, t)
+        self.assertEqual(s, 200, body)
+        got = json_.loads(body)
+        self.assertEqual(got['status'], 'refused', got)
+        self.assertIn('is no CID it read there', json_.dumps(got))
+        self.assertIn(GEMINI_8, self.pds.calls)
+        s, _, body = self.request('POST', '/AGENTS.md/world/register/receive',
+                                  {'intent': 'reg-strong', 'spell': f'delvetalk register ask / anchor: {MEITAN_9} {MEITAN_9_CID} / text: a question by its strong ref'}, t)
+        got = json_.loads(body)
+        self.assertEqual(got['status'], 'admitted', got)
+        self.assertIn(MEITAN_9, self.pds.calls)
+        self.assertIn(f'{MEITAN_9} {MEITAN_9_CID}', [l['text'] for l in plain_lines(self.town, DESK)])

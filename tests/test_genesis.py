@@ -44,9 +44,12 @@ class Genesis(unittest.TestCase):
         self.assertEqual((refusal, [(m['object'], m['status']) for m in made]),
                          (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [(id, 'admitted') for id in hands]
                           + [('porch', 'admitted')] * (len(genesis.PORCH_DOORS) + 1) + [(w[0], 'admitted') for w in genesis.WANTS]
-                          + [(t, 'created') for t, _ in genesis.THINGS] + [(dict(f)['id'], 'admitted') for _, f in genesis.MOTION]), made)
+                          + [(t, 'created') for t, _ in genesis.THINGS] + [(dict(f)['id'], 'admitted') for _, f in genesis.MOTION]
+                          + [('kind/register', 'created'), (genesis.REGISTER_DESK, 'created'), (genesis.REGISTER, 'admitted'),
+                             (genesis.REGISTER, 'admitted'), (genesis.REGISTER_DESK, 'admitted')]), made)
         o = genesis.OPENER
-        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [t for t, _ in genesis.THINGS] + [dict(f)['id'] for _, f in genesis.MOTION] + [o]))
+        self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [t for t, _ in genesis.THINGS] + [dict(f)['id'] for _, f in genesis.MOTION] + [o]
+                                                                 + ['kind/register', genesis.REGISTER, genesis.REGISTER_DESK]))
         self.assertEqual([m.get('laid') for m in made if m['module'] == 'Thing'], ['admitted'] * len(genesis.THINGS))
         # each coinage is a record of its kind whose maker is the opener, made from its coiner's post, which its card credits
         for id, (kind, _, post) in zip(hands, genesis.HANDS):
@@ -58,10 +61,10 @@ class Genesis(unittest.TestCase):
         again, refusal = genesis.run(host)
         self.assertEqual(again, [])
         self.assertIn('already run', refusal)
-        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (4, 6))
+        self.assertEqual((len(genesis.DOORS), len(genesis.seeds(genesis.OPENER))), (5, 6))
         ids = set(genesis.existing(host, o))
         self.assertEqual([l for l, to, _ in genesis.DOORS if to not in ids], [])  # every door with an object resolves
-        self.assertEqual([d[0] for d in genesis.DOORS] + [genesis.STUDIO[0]], ['KINDS', 'PORCH', 'WORKSHOP', 'TIDE', 'STUDIO'])
+        self.assertEqual([d[0] for d in genesis.DOORS] + [genesis.STUDIO[0]], ['KINDS', 'PORCH', 'WORKSHOP', 'REGISTER', 'TIDE', 'STUDIO'])
         self.assertEqual([(m['object'], m['body']) for m in made if 'body' in m], [('commonplace', 'admitted')])
         said = {}
         for word in ('PORCH', 'STUDIO'):
@@ -125,7 +128,7 @@ class Genesis(unittest.TestCase):
 
     def test_every_door_with_an_object_publishes_its_page(self):
         pages = {m['object']: m['page']['status'] for m in self.made if 'page' in m}
-        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['kinds', 'porch', 'tide', 'workshop'], pages)
+        self.assertEqual(sorted(k for k, v in pages.items() if v == 'admitted'), ['kinds', 'porch', 'register', 'tide', 'workshop'], pages)
 
     def library(self, text, n):
         got = self.host.send({'op': 'world-turn', 'principal': 'did:plc:stranger', 'object': 'library', 'method': 'receive', 'identity': 'lib-%d' % n,
@@ -140,7 +143,7 @@ class Genesis(unittest.TestCase):
         """LIBRARY (a), (e): genesis shelved capsules/pages/ as the opener; anyone reads a page by a word of what they said."""
         self.assertEqual(self.library('delvetalk library read / page: how do i read laws?', 1), genesis.page_body('laws'))
         miss = self.library('delvetalk library read / page: dragons', 2)
-        self.assertEqual(miss, 'refused noPage: No page called dragons. Pages: spells laws object relations protocol world kinds spween station guide welcome; walks: bell check enter scene tide kind.\n')
+        self.assertEqual(miss, 'refused noPage: No page called dragons. Pages: spells laws object relations protocol world kinds register spween station guide welcome; walks: bell check enter scene tide kind.\n')
         refused = self.library('delvetalk library shelve / name: mine / kind: page / title: t / body: hob: mine', 3)
         self.assertEqual(refused, 'refused notOwner: Only the town shelves a page\n')
         self.assertNotIn('mine', self.host.send({'op': 'world-card', 'principal': 'did:plc:stranger', 'object': 'library'})['text'])
@@ -317,7 +320,7 @@ class Refresh(unittest.TestCase):
         # The town's motion, which the older genesis did not place, is placed after its kinds.
         for obj in ('weather', 'porch/lamp'):
             self.assertEqual(self.status(self.rows, obj, 'placed'), ('refreshed', 'placed'))
-        self.assertEqual(sorted(r['name'] for r in self.send(op='world-rules', principal=genesis.OPENER, object='tide')['rows']), ['porch_slamp', 'weather'])
+        self.assertEqual(sorted(r['name'] for r in self.send(op='world-rules', principal=genesis.OPENER, object='tide')['rows']), ['porch_slamp', 'register', 'weather'])
         self.assertEqual(self.status(self.rows, 'kinds', 'law'), ('left', 'changed since genesis gave it'))
         self.assertEqual(self.status(self.rows, 'kind/door', '.law'), ('left', 'changed since genesis gave it'))
         self.assertEqual(self.send(op='world-object', principal=genesis.OPENER, object='commonplace')['record']['law'], genesis.RECORD_LAW)

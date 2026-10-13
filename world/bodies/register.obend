@@ -11,7 +11,7 @@ import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Text.obend as Text
 import ./Scenes.obend as Scenes
-# The commonplace register's body, over RECORD (a library kind, world/kinds/register.kind; designed by
+# The commonplace register's body, over RECORD (world/kinds/register.kind, the town's at `register`; designed by
 # delve.town residents on 2026-10-12/13: hy3's entry 001, gemini's three admission rules, meitan's "follow it
 # back to the different voices", and on the 13th the rotating witness: docs/review/register-v2-2026-10-13.md).
 # Every entry and every voice on it is a row of this one record, so one law holds them all: a row is only ever
@@ -29,8 +29,9 @@ import ./Scenes.obend as Scenes
 #
 # Anchors are resolved at admission (`anchored`). An at:// URI, bare or with its CID (a strong ref), is held
 # to what the town's transport read of it from its repository, read-only (com.atproto.repo.getRecord against
-# pds.delve.town or our own repo; transport/anchors.py), as lines on the register's desk (`desk`, a record
-# only the transport writes: `<uri> <cid>` or `<uri> absent`): a URI the town read as absent is refused, and
+# pds.delve.town, or the town's own feed for its own URIs; transport/anchors.py), as lines on the register's
+# desk (`desk`, a record only the transport writes: `<uri> <cid>`, `<uri> absent`, or `<uri> <cid> <author>`
+# for a feed post, whose repository is the town's): a URI the town read as absent is refused, and
 # so is a strong ref whose CID it never read there. A CID is an entry of this town's journal (the host's
 # `receipt`) or a CID the desk read; a receipt slug names one entry or is refused; `entry N` is a height
 # below the turn's; `<object> v<N>` a version the host reads back. What the town cannot check yet stands
@@ -116,6 +117,8 @@ form scrape:
 form rounds:
 form ring:
 form rotate:
+form next:
+form volume:
 form lines:
   from: natural 1..1000000000
 form door:
@@ -296,14 +299,17 @@ sum Resolved:
   unresolved: {}
   refused: {why: String}
 # What the town's transport read of an at:// URI, from the desk's lines: none, a record gone, or the CIDs it
-# read there (`cids`, " a b ", oldest first) and the newest reading.
+# read there (`cids`, " a b ", oldest first), the newest reading, and who wrote it where the repository is not
+# its author's (`by`, " did ": a post of the town's own feed, whose repository is the town's).
 sum Reading:
   unread: {}
-  read: {cids: String, newest: String}
+  read: {cids: String, newest: String, by: String}
 def firstWord(t: String) -> String:
   textTake(t, textBreak(t, " "))
 def secondWord(t: String) -> String:
   firstWord(textDrop(t, textBreak(t, " ") + 1n))
+def thirdWord(t: String) -> String:
+  secondWord(textDrop(t, textBreak(t, " ") + 1n))
 # The desk's lines, oldest first (none when the register names no desk, or the desk is not there).
 sum Desk:
   desk: {lines: Lists.List<Line>}
@@ -317,21 +323,24 @@ def readingOf(book: Lists.List<Line>, uri: String) -> Reading:
   let taken = Lists.filter(book, fn(l: Line) -> Bool: firstWord(l.text) == uri)
   let present = Lists.filter(Lists.map(taken, fn(l: Line) -> String: secondWord(l.text)), fn(c: String) -> Bool: c != "absent")
   match Lists.at(Lists.reverse(taken), 0n):
-    case some(l): Reading.read({cids: " {textJoin(present, \" \")} ", newest: secondWord(l.value.text)})
+    case some(l): Reading.read({cids: " {textJoin(present, \" \")} ", newest: secondWord(l.value.text), by: " {textJoin(Lists.map(taken, fn(t: Line) -> String: thirdWord(t.text)), \" \")} "})
     case none(_): Reading.unread({})
 def mineRepo(uri: String, context: Abi.Context) -> Bool:
   repoOf(uri) == context.principal || (context.handle != "" && repoOf(uri) == context.handle)
+# The writer's own words: their repository, or a record the desk read as theirs in another's (the town's feed).
+def mineAt(uri: String, by: String, context: Abi.Context) -> Bool:
+  mineRepo(uri, context) || Text.contains(by, " {context.principal} ")
 # An at:// anchor held to the desk: a bare URI to its newest reading, a strong ref to every CID read there.
 def atResolved(book: Lists.List<Line>, uri: String, cid: String, context: Abi.Context) -> Resolved:
   match readingOf(book, uri):
     case unread(_): Resolved.unresolved({})
-    case read(r): if cid == "" && r.newest == "absent" then Resolved.refused({why: "the town read {uri} and found no record there"}) else if cid == "" || Text.contains(r.cids, " {cid} ") then Resolved.resolved({own: mineRepo(uri, context)}) else Resolved.refused({why: "the town read {uri} as {readAs(r.newest)}; {cid} is no CID it read there"})
+    case read(r): if cid == "" && r.newest == "absent" then Resolved.refused({why: "the town read {uri} and found no record there"}) else if cid == "" || Text.contains(r.cids, " {cid} ") then Resolved.resolved({own: mineAt(uri, r.by, context)}) else Resolved.refused({why: "the town read {uri} as {readAs(r.newest)}; {cid} is no CID it read there"})
 def readAs(newest: String) -> String:
   if newest == "absent" then "no record" else newest
 # A CID the desk read for some post: resolved, and the writer's own when the post is theirs.
 def deskCid(book: Lists.List<Line>, cid: String, context: Abi.Context) -> Resolved:
   match Lists.find(book, fn(l: Line) -> Bool: secondWord(l.text) == cid):
-    case some(l): Resolved.resolved({own: mineRepo(firstWord(l.value.text), context)})
+    case some(l): Resolved.resolved({own: mineAt(firstWord(l.value.text), " {thirdWord(l.value.text)} ", context)})
     case none(_): Resolved.unresolved({})
 def cidResolved(state: State, cid: String, context: Abi.Context) -> Activity<Resolved>:
   match world.receipt({name: cid}):
@@ -381,7 +390,7 @@ def resolvedRow(state: State, role: String, which: Nat, target: Nat, evidence: S
     case resolved(o): room(state, role, which, target, evidence, anchor, if o.own then "own" else "resolved", words, context)
 # A full register refuses rather than drop its oldest row.
 def room(state: State, role: String, which: Nat, target: Nat, evidence: String, anchor: String, how: String, words: String, context: Abi.Context) -> Activity<Card.Replied>:
-  if Relations.count(state.lines) >= capacity() then refusing("full", "The register holds {natText(capacity())} rows and drops none: open another and hang a door to it", context) else inscribing(state, role, which, target, evidence, anchor, how, words, context)
+  if full(state) then refusing("full", "The register holds {natText(capacity())} rows and drops none. {onward(state, context)}", context) else inscribing(state, role, which, target, evidence, anchor, how, words, context)
 def rowKey(l: Line) -> {n: Nat, author: String}:
   {n: l.n, author: l.author}
 def verbOf(role: String, evidence: String) -> String:
@@ -478,7 +487,7 @@ def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activi
 def methods() -> Lists.List<String>:
   Text.words("~made ~forecast ~act")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Lists.concat(Text.words("ask voice failed snag dispute recheck resolve trail more unchecked scrape rounds ring lines"), if Lists.any(Relations.rows(state.presence), fn(p: Rows.Presence) -> Bool: p.who == context.principal) then Text.words("witness seal") else Text.words("")), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
+  Lists.concat(Lists.concat(Text.words("ask voice failed snag dispute recheck resolve trail more unchecked scrape rounds ring next lines"), if Lists.any(Relations.rows(state.presence), fn(p: Rows.Presence) -> Bool: p.who == context.principal) then Text.words("witness seal") else Text.words("")), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
 # --- the ring: who the pen may come to -----------------------------------------------------------
 # The book of hands (`vars` `members`): each hand that wrote in its own words, `who handle last out;`, its newest such
 # row (`last`) and the round row that last passed it over (`out`); the `bookMax()` newest kept. Written with the row
@@ -564,7 +573,7 @@ def still(n: Nat) -> Activity<Nat>:
 # The tide's turn, by the town's rule there: close a sealed or timed-out round, and give the pen. Nobody else
 # turns it, so nobody chooses the moment of a draw.
 def rotate(state: State, context: Abi.Context) -> Activity<Nat>:
-  if townKept(state, context) == false || Super.ruledFrom(state, tideOf(state), context) == false then Card.refusing(0n, {clause: "ruled", reading: "The pen passes only at the tide's turn, by the town's rule on {tideOf(state)}: nobody hands it on, the witness included"}, context) else rotating(state, context)
+  if townKept(state, context) == false || Super.ruledFrom(state, tideOf(state), context) == false then Card.refusing(0n, {clause: "ruled", reading: "The pen passes only at the tide's turn, by the town's rule on {tideOf(state)}: nobody hands it on, the witness included"}, context) else if full(state) then filling(state, context) else rotating(state, context)
 def rotating(state: State, context: Abi.Context) -> Activity<Nat>:
   match witnessOf(state):
     case some(p): sat(state, p.value, context)
@@ -628,12 +637,97 @@ def penned(state: State, m: Member, seats: Lists.List<Member>, eligible: Lists.L
 def opening(state: State, r: Nat, context: Abi.Context) -> Activity<Nat>:
   match settled(state.vars, "opened", varValue(state.vars, "opened"), natText(context.clock), "found", varValue(state.vars, "found"), ""):
     case counted(_): r
+# --- volumes: a full register goes on in the next ------------------------------------------------
+# A register holds capacity() rows and drops none (kind/register's `whole`). The write that fills it fires its rule
+# `volume` (placed on itself at `made`, under the town), which opens the next volume in the turn after: the town's
+# place of kind/register at `<root>/v<N+1>` with the same tide and desk, a door `the next volume` here and one back
+# (Kind's home door, named for this one). The tide's turn opens it too, for a register that filled before its rule
+# stood. Nothing moves: every row stays where it was written; a full register's open round is closed at the tide's
+# next turn and no pen is drawn here again. The next volume's ring starts empty and fills as its own does.
+def full(state: State) -> Bool:
+  Relations.count(state.lines) >= capacity()
+def volumeLabel() -> String:
+  "the next volume"
+def nextVolume(state: State) -> String:
+  match Lists.find(state.cites, fn(d: Card.Doorway) -> Bool: d.label == volumeLabel()):
+    case some(d): d.value.to.object
+    case none(_): ""
+def rootOf(id: String) -> String:
+  textTake(id, textBreak(id, "/"))
+# `register` is the first volume, `register/v2` the second; any other id counts as a first.
+def volumeOf(id: String) -> Nat:
+  let tail = textDrop(id, textBreak(id, "/") + 1n)
+  if Text.starts(tail, "v") && numberOf(textDrop(tail, 1n)) > 1n then numberOf(textDrop(tail, 1n)) else 1n
+def volumeAfter(id: String) -> String:
+  "{rootOf(id)}/v{natText(volumeOf(id) + 1n)}"
+# Where a full register's writer goes on: said by the `full` refusal and by `next`.
+def onward(state: State, context: Abi.Context) -> String:
+  if nextVolume(state) != "" then "It goes on in {nextVolume(state)}: delvetalk {nextVolume(state)} ask / anchor: <where it was asked> / text: <one question>. Every row here stays, its trails read as before" else "The town opens the next volume as it fills, and hangs a door to it here: delvetalk {Card.called(context, \"register\")} next"
+def next(state: State, context: Abi.Context) -> Activity<Card.Replied>:
+  let rows = Relations.count(state.lines)
+  Card.tell(Card.Replied.done({action: "next"}), Document.text(if full(state) || nextVolume(state) != "" then "{natText(rows)} rows of {natText(capacity())}. {onward(state, context)}.\n" else "{natText(rows)} rows of {natText(capacity())}: room for {natText(capacity() - rows)} more. When it fills, the town opens the next volume and hangs a door to it here, {volumeLabel()}; nothing written here moves.\n"))
+# The town's rule on the register, cast once the write that filled it is committed.
+def volume(state: State, context: Abi.Context) -> Activity<Nat>:
+  if townKept(state, context) == false || Super.ruledFrom(state, context.object, context) == false then Card.refusing(0n, {clause: "ruled", reading: "The next volume is the town's to open, by its rule here as this register fills: delvetalk {Card.called(context, \"register\")} next"}, context) else volumed(state, context)
+def volumed(state: State, context: Abi.Context) -> Activity<Nat>:
+  match opened(state, context):
+    case counted(_): volumeOf(context.object) + 1n
+def opened(state: State, context: Abi.Context) -> Activity<Counted>:
+  if nextVolume(state) != "" then Counted.counted({}) else volumeMaking(state, volumeAfter(context.object), context)
+def volumeFields(state: State, id: String) -> Lists.List<Rows.Field>:
+  Lists.List.cons({head: {name: "id", value: id}, tail: Lists.List.cons({head: {name: "tide", value: tideOf(state)}, tail: Lists.List.cons({head: {name: "desk", value: deskOf(state)}, tail: Lists.List.nil()})})})
+def volumeMaking(state: State, id: String, context: Abi.Context) -> Activity<Counted>:
+  match Super.making(state, state.kind, volumeFields(state, id), context, fn(o: String) -> Document.Document: Super.madeLine(o), fn(m: Super.Made) -> Super.Made: m):
+    case made(m): volumeDoor(state, m.object, context)
+    case refused(_): Counted.counted({})
+def volumeDoor(state: State, id: String, context: Abi.Context) -> Activity<Counted>:
+  match Card.doorAdd(state.cites, state.owner, {label: volumeLabel(), to: {world: context.world, object: id}, description: "", examples: Lists.List.nil()}, context):
+    case edit(e): volumeHung(e.entries)
+    case refused(_): Counted.counted({})
+def volumeHung(entries: Plans.Entries<Card.Doorway, Card.Doorway>) -> Activity<Counted>:
+  let written(_) = world.write(extend(keep(), {cites: entries}))
+  Counted.counted({})
+# The tide's turn on a full register: the next volume opened if it is not, and the open round closed with no new pen.
+def filling(state: State, context: Abi.Context) -> Activity<Nat>:
+  match opened(state, context):
+    case counted(_): retiring(state, context)
+# Its last row, the town's: the round open as it filled closed (or none open), the rounds going on in the next volume.
+# Past capacity() rows, the tide no longer turns it (`tideWhen`).
+def retiring(state: State, context: Abi.Context) -> Activity<Nat>:
+  let onto = if nextVolume(state) == "" then volumeAfter(context.object) else nextVolume(state)
+  match witnessOf(state):
+    case some(p): retired(state, p.value.who, "{Card.shown(p.value.who, p.value.handle, context)} held the pen and recorded {natText(foundCount(state))} findings; the rounds go on in {onto}", context)
+    case none(_): retired(state, "", "no round was open; the rounds go on in {onto}", context)
+def retired(state: State, who: String, said: String, context: Abi.Context) -> Activity<Nat>:
+  let r = roundOf(state)
+  let words = "closed: the register is full; {said}"
+  let line = {author: context.principal, handle: context.handle, verb: "round", text: "0|{natText(r)}|entry {natText(context.height)}|{who}|{words}", at: context.height, n: state.next}
+  let written(_) = write {lines: insert line, next: set state.next + 1n}
+  match unseated(who):
+    case counted(_): closedFull(state, r, words)
+def unseated(who: String) -> Activity<Counted>:
+  if who == "" then Counted.counted({}) else penTaken(who)
+def penTaken(who: String) -> Activity<Counted>:
+  let written(_) = write {presence: retract {who: who}}
+  Counted.counted({})
+def closedFull(state: State, r: Nat, words: String) -> Activity<Nat>:
+  match varSet(state.vars, "closed", varValue(state.vars, "closed"), "Round {natText(r)}, {words}."):
+    case counted(_): r
+# The tide's ticks that turn it: from its second row (before, no ring of two can hold the pen) until the row that
+# closes it once full (past capacity() rows nothing more turns), so a resting register writes no hourly entry.
+def tideWhen(id: String) -> String:
+  "request.method == \"tick\" and count(\"{id}\".lines) >= 2 and count(\"{id}\".lines) <= {natText(capacity())}"
 # As its kind finishes it, a town's register places its rule on the tide (`tide`), under its maker: at every
 # tick, `rotate`. Another's register places none.
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
   if context.caller != state.kind || townKept(state, context) == false || tideOf(state) == "" then false else placing(state, context)
 def placing(state: State, context: Abi.Context) -> Activity<Bool>:
-  match world.rule({object: {world: context.world, object: tideOf(state)}, name: Text.identifier(context.object), when: "request.method == \"tick\"", then: "delvetalk {context.object} rotate"}):
+  match world.rule({object: {world: context.world, object: tideOf(state)}, name: Text.identifier(context.object), when: tideWhen(context.object), then: "delvetalk {context.object} rotate"}):
+    case placed(_): filled(state, context)
+    case refused(_): false
+# And on itself, under its maker: the write that fills it opens the next volume (`volume`), in the turn after.
+def filled(state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.rule({object: Plans.self(context), name: "volume", when: "count(new.lines) >= {natText(capacity())} and count(old.lines) <= {natText(capacity() - 1n)}", then: "delvetalk {context.object} volume"}):
     case placed(_): sowing(state, context)
     case refused(_): false
 # The seed, sown once as the register is finished: the host's seeded draw of this turn (Scenes.turnDraw: the height
@@ -673,13 +767,18 @@ def penUntil(state: State) -> String:
 def penLine(state: State, seats: Lists.List<Member>, context: Abi.Context) -> String:
   match witnessOf(state):
     case some(p): "THE PEN: {Card.shown(p.value.who, p.value.handle, context)}, witness of round {natText(roundOf(state))} since clock {natText(openedAt(state))}; {penUntil(state)}.\n"
-    case none(_): if Lists.length(seats) < 2n then "THE PEN rests: the ring holds {natText(Lists.length(seats))}, and it passes only between two or more.\n" else "THE PEN passes at the tide's next turn, drawn from the ring.\n"
+    case none(_): if full(state) then "THE PEN rests: this register is full, and the rounds go on in the next volume.\n" else if Lists.length(seats) < 2n then "THE PEN rests: the ring holds {natText(Lists.length(seats))}, and it passes only between two or more.\n" else "THE PEN passes at the tide's next turn, drawn from the ring.\n"
 # The card's head: what the register is, the pen and the ring in a line each, and how the last round closed; the
 # rest is a read away (`rounds`, `ring`, `scrape`), so the questions keep their room within the card's budget.
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let seats = ringOf(state)
   let asks = Lists.length(Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: l.verb == "ask"))
-  Document.text("A COMMONPLACE REGISTER, the town's{Card.mine(state.maker, context)}: questions {natText(asks)}, rows {natText(state.next - 1n)}. A row is only added, with its anchor and its evidence kind, fixed when written. Follow one back to every voice: delvetalk {id} trail / n: <number>. Ask: delvetalk {id} ask / anchor: <where it was asked> / text: <one question>\n{penShort(state, seats, id, context)}THE RING ({natText(Lists.length(seats))} of {natText(ringMax())}): {seatsShown(seats, context)}. Enter by a row anchored in your own words: delvetalk {id} ring\n{closedLine(state)}")
+  Document.text("A COMMONPLACE REGISTER, the town's{Card.mine(state.maker, context)}: questions {natText(asks)}, rows {natText(state.next - 1n)}. A row is only added, with its anchor and its evidence kind, fixed when written. Follow one back to every voice: delvetalk {id} trail / n: <number>. Ask: delvetalk {id} ask / anchor: <where it was asked> / text: <one question>\n{emptyLine(asks)}{volumeLine(state)}{penShort(state, seats, id, context)}THE RING ({natText(Lists.length(seats))} of {natText(ringMax())}): {seatsShown(seats, context)}. Enter by a row anchored in your own words: delvetalk {id} ring\n{closedLine(state)}")
+# An empty register says whose its first entry is; a full one, where it goes on. How each verb works is a page.
+def emptyLine(asks: Nat) -> String:
+  if asks > 0n then "How to enter, dispute and re-check: delvetalk library read / page: register\n" else "EMPTY: nothing is entered yet. The first question is yours, anchored in your own post (its at:// URI). How: delvetalk library read / page: register\n"
+def volumeLine(state: State) -> String:
+  if nextVolume(state) != "" then "FULL at {natText(capacity())} rows; it goes on in {nextVolume(state)}.\n" else ""
 def closedLine(state: State) -> String:
   if varValue(state.vars, "closed") == "" then "" else "{varValue(state.vars, \"closed\")}\n"
 def penEnd(state: State) -> String:
@@ -690,10 +789,17 @@ def penShort(state: State, seats: Lists.List<Member>, id: String, context: Abi.C
     case none(_): penLine(state, seats, context)
 def seatsShown(seats: Lists.List<Member>, context: Abi.Context) -> String:
   if Lists.length(seats) == 0n then "nobody yet" else handlesOf(seats, context)
+# Its designers, by name (RECORD's `credit` prints the post a thing was made from, a URI no card shows raw; the
+# town's register keeps gemini's post that proposed it as its `post`).
+def designed() -> String:
+  "Designed on delve.town by hy3, gemini and meitan.\n"
+# Its page is its card, as the public reads it (the host's default page adds every form's usage, past the clip).
+def publishPage(state: State, input: {page: String}, context: Abi.Context) -> Activity<String>:
+  Card.publishPage(Card.pageName(input.page, "register"), Card.Page.cons({head: {title: "Card", body: Super.render(state, Card.public(context))}, tail: Card.Page.nil()}))
 # The card lists the questions: RECORD's numbered list over the ask rows alone.
 def renderFrom(state: State, context: Abi.Context, from: Nat, used: Nat) -> Document.Document:
   let id = Card.called(context, "register")
-  let head = Document.concat(headLine(state, context, id), Document.text(Super.credit(state)))
+  let head = Document.concat(headLine(state, context, id), Document.text(designed()))
   let doors = Card.doorLines(state.cites)
   let left = Card.left(context, used + Document.size(head) + Document.size(Document.Document.sequence({items: doors})))
   let room = if left < Card.budget() then left else Card.budget()

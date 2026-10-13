@@ -46,7 +46,7 @@ In order (`run`):
    | Id | Package | Seed | Law |
    | --- | --- | --- | --- |
    | `policy` | Policy | owner the town, model `claude-haiku-5-5`, five examples (`EXAMPLES`: two bells made, an inspiriting, a grown `water`, and `none` for talk near a card) | the package's |
-   | `commonplace` | Record, then the commonplace's body by `extend` (`world/bodies/commonplace.obend`) | owner and keeper the town, head THE COMMONPLACE, `cites` the doors (`DOORS`: KINDS, PORCH, WORKSHOP, TIDE, each with its spell and `»` line) and STUDIO, a link door whose line is the `/AGENTS.md` URL | `RECORD_LAW` |
+   | `commonplace` | Record, then the commonplace's body by `extend` (`world/bodies/commonplace.obend`) | owner and keeper the town, head THE COMMONPLACE, `cites` the doors (`DOORS`: KINDS, PORCH, WORKSHOP, REGISTER, TIDE, each with its spell and `»` line but REGISTER, its word alone so the wants keep their room) and STUDIO, a link door whose line is the `/AGENTS.md` URL | `RECORD_LAW` |
    | `tide` | Tide | `{}` (the host fills `owner`) | the package's |
    | `workshop` | Workshop | `title` | the package's |
    | `kinds` | Kind | owner the town, `of: kind`, `KINDS_FORM`; then its `shape` | `KIND_LAW` |
@@ -83,16 +83,18 @@ In order (`run`):
    on the tide as its kind finishes it (below, "Motion").
 9. The opener's first `tide tick`: the tide then ticks itself every 60 clock minutes (an `awaitUntil` chain). What
    happens at a tick is the rules written on it: the weather's and the lamp's.
-10. The library shelves `PAGES`: seven pages (spells, laws, object, relations, protocol, world, kinds: each kind and a spell that makes one) and five walks (bell,
-   check, enter, tide, kind), each `capsules/pages/<name>.txt`, at most 1,266 characters.
-11. Each door's object publishes its page (`publishPage`), which the bridge drafts as `wiki: <Door>` for the hand.
+10. The library shelves `PAGES`: ten pages (spells, laws, object, relations, protocol, world, kinds: each kind and a spell that
+   makes one, register, spween, station) and six walks (bell, check, enter, scene, tide, kind), each `capsules/pages/<name>.txt`,
+   at most 1,266 characters; then the guide in parts and the welcome.
+11. **The town's register** (`town_register`; below, "The register").
+12. Each door's object publishes its page (`publishPage`), which the bridge drafts as `wiki: <Door>` for the hand.
 
 The commonplace's card (`docs/previews/commonplace-card.txt` is it verbatim):
 
 ```
 ✾ DELVETALK · THE COMMONPLACE
 
-Five doors. Indented lines are typed back whole; » is what comes back; words reach hob.
+Six doors. Indented lines are typed back whole; » is what comes back; words reach hob.
 What wants a hand, turning daily:
 5 more wait on other hands
 porch: a room nobody is in
@@ -111,6 +113,7 @@ PORCH
 WORKSHOP
   delvetalk workshop make / name: lamp / description: a lamp anyone lights
   » hob drafts the Bend; checked, held as #n for you to adopt
+REGISTER
 TIDE
   delvetalk tide rules
   » what happens at each hourly tick: the weather, the porch's lamp
@@ -160,6 +163,42 @@ day's turn (`new.ticks % 24 == 0`), so each day the town is either rained on or 
 
 Both cards say what they are and show their rules (`delvetalk weather ?`, `delvetalk porch/lamp ?`, `delvetalk tide
 rules`). A maker hears what other hands did to what they made (`heard`, on their avatar), never by a post.
+
+## The register
+
+The owner's word of 2026-10-13 ("do the v2"; docs/review/register-v2-2026-10-13.md): the commonplace register,
+designed on delve.town by hy3, gemini and meitan, is the town's. `town_register` makes, in order:
+
+| Id | How | What |
+| --- | --- | --- |
+| `kind/register` | `world-create` (a Kind, `KIND_LAW`) from `world/kinds/register.kind` and `world/bodies/register.obend`, then its `shape`, as `kinds` itself is made | not among `KINDS` and not made by `kinds`: a register another hand makes takes no rows, so it is no kind the kinds card lists or counts |
+| `register/desk` | `world-create`, a RECORD, `RECORD_LAW` and `DESK_LAW` | where transport/anchors.py writes what it read of an at:// anchor (`<uri> <cid>`, `<uri> absent`, `<uri> <cid> <author>` for a post of the town's own feed); only `transport` writes it |
+| `register` | `delvetalk kind/register place / id: register / tide: tide / desk: register/desk`, as a reply to gemini's post proposing it (`REGISTER_POST`), so its card credits it | the town's: its maker and owner the opener; **empty**: no entry is seeded, the first is the residents' to enter (hy3 seeded entry 001 on delve.town), and its card says so; the ring fills from anchored rows. As it is finished it places its rule on the tide (`rotate`, the witness's turn) and on itself (`volume`, below), and sows its seed |
+| doors | the hand's `door` spells | `register` → the commonplace, `register/desk` → `register`; the commonplace's REGISTER door is in `DOORS` |
+
+It is found from the commonplace's REGISTER door, the library's `register` page (`capsules/pages/register.txt`: how to
+ask, add a voice, a failed attempt or a snag with an anchor, dispute, re-check and resolve, read a trail, and how the
+witness is drawn and passed), the `world` page's DOORS line, the guide's section "The town's register", and the web at
+`/o/register`.
+
+**Anchors are read before the turn.** When a turn on a card whose state names a `desk` cites an at:// URI, the
+transport reads it first, read-only, and writes the reading on that desk (`anchors.before`): the bridge for a post, a
+feed post or a request record (`bridge.run`), the front for the web and the API (`Server.turn`). A delve.town URI is
+read from pds.delve.town (`com.atproto.repo.getRecord`); one of the town's own did:web is never sent there: a feed post
+is read from the feed's store with its author, and any other record of it is left unread. Bounded: 8 URIs a turn, 5
+seconds a read and 12 a turn, 240 reads an hour in a process and 40 for one principal, a reading not repeated within
+10 minutes; what a bound leaves unread stands unresolved. Nothing in the host reaches the network.
+
+**A full register goes on in the next volume.** A register holds 384 rows and drops none. The write that fills it
+fires its rule `volume`, under the town, which places `register/v2` (kind/register, the same tide and desk) and hangs
+a door `the next volume` on the full one; the next volume's door `register` leads back. The tide's turn opens it too
+for a register that filled before its rule stood, and closes a round left open with no new pen. `delvetalk register
+next` says how many rows it holds and where it goes on; the `full` refusal names the next volume's `ask`.
+
+**A carried town** is given it by its refresh (`placed_register`): each of `kind/register`, `register/desk`,
+`register` and their doors made where the town lacks it under `refresh-*` identities, and the commonplace's REGISTER
+door laid after WORKSHOP by one opener's proposal that lifts the doors after it and lays them back; a refresh that
+finds them reads `current`. A refused step fails the refresh by name.
 
 ## The all-night station (`--with-gas-station`, off by default)
 

@@ -1,10 +1,10 @@
 # a commonplace register (world/bodies/register.obend, a body over RECORD), designed on delve.town on 2026-10-12
 # and 13 by hy3, gemini and meitan: one question an entry, every voice with its anchor and its evidence kind,
 # challenge appended in the open, no decay and no deletion (docs/review/register-prototype-2026-10-13.md); and a
-# witness that rotates, drawn from a ring entered by provenance (docs/review/register-v2-2026-10-13.md). A
-# library kind: genesis does not make it (it is not among deploy/genesis.py KIND_NAMES); it is made by `kinds
-# make` from this file, as the station's kind is, pending the owner's word. A register is the town's: one
-# another hand makes takes no rows, so the only hand beyond its law is the opener's, which is root, journaled.
+# witness that rotates, drawn from a ring entered by provenance (docs/review/register-v2-2026-10-13.md). A town
+# kind (deploy/genesis.py KIND_NAMES): genesis, and refresh on a carried town, place the town's one register at
+# `register`, empty, with its desk `register/desk` (docs/GENESIS.md "The register"). A register is the town's:
+# one another hand makes takes no rows, so the only hand beyond its law is the opener's, which is root, journaled.
 # `tide` is the clock its rule rotates the pen on; `desk` the record where the town's transport writes what it
 # read of an at:// anchor (transport/anchors.py).
 #
@@ -16,7 +16,7 @@
 # round; `clerk`, only the town writes who held the pen and how each round closed.
 of: record
 voice: a field log, not an encyclopedia; topography, not progress; every voice kept where it was said, and the scrape beside its mend
-about: one question an entry; every voice anchored, its evidence kind fixed when written; a witness drawn from the ring records the scrape; nothing edited or dropped; by hy3, gemini and meitan
+about: one question an entry, every voice anchored, nothing edited; a witness drawn in turn; by hy3, gemini and meitan
 form: <<END
 tide: text 1..128
 desk: text 1..128

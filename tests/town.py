@@ -40,7 +40,8 @@ def furnish(host, opener):
     """The town after its first day, as the scenarios meet it: genesis makes the frame and the town's coinages
     (deploy/genesis.py), and the places the scenarios walk are made after it by ordinary spells and one create, as
     any hand could: THE NIGHT GARDEN, the Moss Gate (`rooms`), the weather over the garden on the tide, the
-    anthology the opener keeps, and the commonplace's doors to the three."""
+    anthology the opener keeps, and the commonplace's doors to the three. The archive's day came before the town's
+    register, so its REGISTER door is taken down first (the register stands; the eight doors are the archive's)."""
     from deploy import genesis
     from deploy.seed import create
     out = []
@@ -53,6 +54,9 @@ def furnish(host, opener):
                        genesis.rec(owner=genesis.lab(opener), keeper=genesis.lab(opener), keeperHandle=genesis.lab(genesis.TOWN),
                                    head=genesis.lab('THE ANTHOLOGY')), genesis.RECORD_LAW)
     out.append({'object': 'anthology', 'module': 'Record', 'status': anthology.get('status'), 'creator': opener, 'reply': anthology})
+    from transport.host import door_rows
+    if any(d['label'] == 'REGISTER' for d in door_rows(host.send({'op': 'world-view', 'principal': opener, 'object': 'commonplace'}))):
+        out.append(genesis.said(host, opener, 'commonplace', 'undoor', [('label', 'REGISTER')], 'furnish-undoor-register'))
     for label, to in (('GARDEN', 'garden'), ('ROOMS', 'rooms'), ('ANTHOLOGY', 'anthology')):
         out.append(genesis.said(host, opener, 'commonplace', 'door', [('label', label), ('to', to)], 'furnish-door-' + to))
     assert all(m['status'] in ('created', 'admitted') for m in out), out
