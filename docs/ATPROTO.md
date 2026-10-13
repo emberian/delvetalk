@@ -92,11 +92,15 @@ The edge routes the XRPC path to this port; the HTTP front answers 426 with `Upg
 501 when off (DEPLOY, REPO). A message is a DAG-CBOR header `{op: 1, t: "#commit"}` followed by its body
 [event-stream]: `seq`, `rebase: false`, `tooBig: false`, `repo`, `commit`, `rev`, `since`, `blocks`,
 `ops [{action, path, cid, prev?}]`, `prevData`, `blobs: []`, UTC append `time`. Today each live height creates
-one entry record. `Signed` captures each height's CAR separately from `getRepo(since)`: commit, new paths,
+one entry record. While production is active, `Signed` captures each pending height's CAR separately from `getRepo(since)`: commit, new paths,
 create/update records, and the neighbours read when inverting operations, including merges and root shrink.
 A partial-tree inverse records its reads; an independent test consumer restores `prevData` using only these blocks.
 General updates/deletes are covered without extending the journal's append-only `Tree`. `fits` permits at most
 200 ops and 2,000,000 CAR bytes; overflow chooses `#sync`, tested with synthetic budgets.
+Pending CARs are bounded to 32 MiB, with space reserved for a maximum-size event before appending a height.
+Capacity refuses signed catch-up until production drains the queue. Durable logging releases the covered
+CARs; reconstruction and a disabled firehose retain none. Closing subscribers discard input and stop
+reading immediately; stalled closes expire after five seconds.
 
 `State.firehose` is `<state>/worlds/<world>/events`, a fsynced event log storing exact frame bytes with its own
 endpoint sequence, kind and epoch/head-height coverage. `seq` increases by one across all event kinds; cursors
@@ -276,15 +280,24 @@ hostname-level did:web, without a fragment. `aud` is exactly this front's `Repo.
 bare DID: both name only this service; required `lxm` equals the called NSID, so bare is not a wildcard. Other
 DIDs, fragments, lists and missing audiences refuse. Integer `exp` must be in the future and at most 300 seconds
 ahead (60 s advised). Optional `iat` is an integer, at most 30 seconds ahead, with `exp - iat <= 300`.
-Required nonempty `jti` is used once per `(iss, jti)` until `exp`.
+Required nonempty UTF-8 `jti` is used once per `(service audience, iss, jti)` until `exp`;
+the bare and `#delvetalk` audiences share nonce custody.
 
 The signature is 64 raw ECDSA bytes over the JWT's first two segments, low-S only (`sign.verify`), under the
 issuer DID document's `#atproto` Multikey. Documents use `Client.did_document`'s public-address-checked, pinned
-HTTPS fetch: did:plc at plc.directory, did:web at its hostname. Documents cache for 60 seconds (at most 1,024);
-signature failure refetches once before refusal, admitting key rotation. Atomic replay admission retains at most
-10,000 live nonces, pruning only expired entries; capacity answers retryable 429 `RateLimitExceeded` with
-`Retry-After`, never forgetting a live nonce. Tokens are at most 16 KiB; `jti` at most 256 UTF-8 bytes. Missing
-token is 401 `AuthRequired`; malformed, expired, replayed, mismatched or unverifiable is 401 `InvalidToken`,
+HTTPS fetch: did:plc at plc.directory, did:web at its hostname. Documents cache for 60 seconds (at most 1,024).
+Resolution runs outside the admission lock: concurrent requests for an issuer share one fetch, with at most
+32 pending fetches and an absolute 20-second deadline. Expired fetch results never enter the cache; a worker
+still waiting on DNS or an injected transport keeps its bounded slot until it exits. Pinned HTTPS shuts down
+the socket at its deadline, including trickling headers and bodies. Each source address may start at most 32
+fetches per minute through the front's rate limiter; cached documents and followers of a pending fetch do not
+spend that budget. Signature failure refetches once before refusal, admitting key rotation; refreshes use the
+same coordination, deadlines and source budget. Atomic replay admission retains at most 10,000 live nonces in
+`State.serviceauth_ledger` (`worlds/<world>/serviceauth.json`), pruning only expired entries on rewrite. Front
+instances lock the ledger's directory, reload custody, and atomically replace and fsync the file and directory
+before accepting a verified signature. A restart preserves custody; storage failure refuses authentication.
+Capacity answers retryable 429 `RateLimitExceeded` with `Retry-After`, never forgetting a live nonce.
+Tokens are at most 16 KiB; `jti` at most 256 UTF-8 bytes. Missing token is 401 `AuthRequired`; malformed, expired, replayed, mismatched or unverifiable is 401 `InvalidToken`,
 with a short reason code in `message` and the access log, never token bytes. The principal is `iss`.
 
 The service-auth query is `online.fg-goose.gsb.getEntry?entry=<entry CID>&world?`.

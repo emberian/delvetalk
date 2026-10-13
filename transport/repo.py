@@ -14,7 +14,7 @@ import os
 import re
 import threading
 import urllib.parse
-from collections import namedtuple
+from collections import OrderedDict, namedtuple
 from copy import deepcopy
 from pathlib import Path
 
@@ -23,7 +23,7 @@ from transport.atproto.cbor import car as car_of
 from transport.atproto.mst import Tree, invert
 from transport.atproto.sign import Key, multikey, tid
 from transport.config import town_did
-from transport.firehose import create_op
+from transport.firehose import MAX_BLOCKS, commit_event, create_op
 from transport.host import PUBLIC
 from transport.identity import SLUG
 from transport.mirror import NS
@@ -45,7 +45,8 @@ XRPC_ERRORS = json.loads((Path(__file__).resolve().parent / 'static' / 'catalogu
 NOT_SERVED = f'no signing key on this box: read projections with {NS}getProjection and {NS}listProjections'
 TID = re.compile(r'[234567abcdefghij][234567abcdefghijklmnopqrstuvwxyz]{12}')
 MINUTE = 60_000_000  # microseconds: the world's clock counts minutes since the epoch
-Height = namedtuple('Height', 'rev hash record commit prev_data data blocks')  # blocks: inversion-complete event CAR
+Height = namedtuple('Height', 'rev hash record commit prev_data data')
+MAX_EVENT_PENDING = 32 * 1024 * 1024
 
 
 class Refusal(Exception):
@@ -100,6 +101,19 @@ class Signed:
         self.written_ledger = None
         self.epochs, self.ready = [], False
         self.lock = threading.Lock()
+        self.events, self.pending, self.pending_bytes = False, OrderedDict(), 0
+
+    def release_events(self, height):
+        """Release pending CARs only after their height is covered by a durable event."""
+        with self.lock:
+            while self.pending and next(iter(self.pending)) <= height:
+                _, (_, body) = self.pending.popitem(last=False)
+                self.pending_bytes -= len(body['blocks'])
+
+    def stop_events(self):
+        """A stopped producer reconciles subsequent journal growth with a head sync on restart."""
+        with self.lock:
+            self.events = False
 
     def prepare(self, base):
         """Detect chain changes once, using only the first journal height, signing key and durable ledger."""
@@ -152,12 +166,20 @@ class Signed:
                     self.prepare(base - 1)
                     self.ready = True
                 for entry in reply['entries']:
-                    self.add(entry)
+                    try:
+                        self.add(entry)
+                    except Refusal:
+                        self.persist()
+                        raise
                 if not reply.get('more') or not reply['entries']:
                     self.persist()
                     return self.head
 
     def add(self, entry):
+        # Reserve a maximum-size event before changing the tree, clock or commit chain.
+        if self.events and self.pending_bytes + MAX_BLOCKS > MAX_EVENT_PENDING:
+            raise Refusal(503, 'HostUnavailable', 'firehose pending event capacity: retry after production',
+                          {'class': 'capacity'})
         h = self.base + len(self.heights) + 1
         if entry.get('height') != h or not isinstance(entry.get('hash'), str):
             raise Refusal(503, 'HostUnavailable', f"the journal's entry {entry.get('height')} is not height {h} with a hash")
@@ -177,13 +199,15 @@ class Signed:
         latest = self.epochs[-1] if self.epochs else None
         sign_height = not latest or h > latest['height'] or (h == latest['height'] and latest['cause'] == 'carry')
         commit = self.key.commit(self.did, root, rev, self.head.commit[0] if self.head else None) if sign_height else None
-        blocks = None
-        if commit:
+        if commit and self.events:
             restored, nodes = invert(self.tree, [op])
             if restored != prev_data:
                 raise ValueError('entry inversion does not restore the preceding MST root')
             blocks = car_of(commit[0], [commit, *nodes, record])
-        self.heights.append(Height(rev, entry['hash'], record, commit, prev_data, root, blocks))
+            event = commit_event(self.did, commit, rev, self.head.rev if self.head else None, prev_data, [op], blocks)
+            self.pending[h] = event
+            self.pending_bytes += len(event[1]['blocks'])
+        self.heights.append(Height(rev, entry['hash'], record, commit, prev_data, root))
         self.revs[rev] = len(self.heights)
         if commit:
             self.head = self.heights[-1]
@@ -193,7 +217,7 @@ class Signed:
                 sync_rev = tid(self.clock * MINUTE)
                 self.revs[sync_rev] = len(self.heights)
                 if epoch is latest:
-                    self.head = Height(sync_rev, entry['hash'], record, self.key.commit(self.did, root, sync_rev, None), root, root, None)
+                    self.head = Height(sync_rev, entry['hash'], record, self.key.commit(self.did, root, sync_rev, None), root, root)
 
     def repo(self, since=None):
         """The CAR of the head commit, the MST and the records; with `since` (a rev), what was added after it."""

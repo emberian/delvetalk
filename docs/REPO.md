@@ -142,11 +142,18 @@ must keep it. Deleting the ledger is the one way to regress revs: the next start
 journal and key, and followers must re-sync.
 
 **Cache.** Per height: rev, entry hash, record block, commit block (absent before the current signing epoch),
-MST root before and after, and the inversion-complete event CAR captured when the height is appended;
+MST root before and after;
 the served head, which can be a rotation's sync commit; the current tree's nodes, each with the height that
 made it (what `since` filters on). Every signed read first pages
-`world-entries` (as `anonymous`, `after` the last height, 100 a page) and appends what is new. Cold start signs and captures event CARs for the current signing epoch; warm catch-ups process only new
-heights. The firehose polls the same cache once a second.
+`world-entries` (as `anonymous`, `after` the last height, 100 a page) and appends what is new.
+The firehose polls the same cache once a second. Only an active producer captures inversion-complete
+CARs for new heights, in a pending queue capped at 32 MiB. Each append reserves the 2,000,000-byte event
+maximum before changing the signed chain; insufficient room refuses signed catch-up with HTTP 503 and
+`reply.class: capacity`. Production drains accepted heights and resumes catch-up on the next poll.
+A durable commit or head sync releases the covered pending bytes. Cold reconstruction and signed reads
+with the firehose disabled retain no event CARs; `EventLog` alone keeps replay bytes.
+Normal shutdown disables capture and drains pending events. Failed durable writes keep their bounded
+pending bytes until a subsequent producer logs them or reconciles the head with a durable sync.
 
 **The key.** One per world: k256 or p256, PKCS#8 PEM, `/etc/delvetalk/repo/<world>.key`, mode 0400, owner 10425, in
 a 0700 directory owned by 10425. `python3 -m transport repokey` makes it at first start (DEPLOY "First start"), refuses an
@@ -197,6 +204,8 @@ owns its own TCP listener and every subscriber socket, polls `Signed.catch_up(ho
 new journal heights independently of the front's 48 HTTP workers. `firehose_bind` defaults to `127.0.0.1`,
 `firehose_port` to `0` (off); a signing key is required. RFC 6455 handshake, binary messages, validated masked
 client controls, ping/pong and close use the standard library. Application frames from clients are closed.
+Closing clears inbound bytes, disables read interest, and drops the socket after five seconds if output
+has not drained. Invalid HTTP upgrades use the same close deadline.
 The edge Caddy route (before the general HTTP proxy), with the deployment's port 8767:
 
     reverse_proxy /xrpc/com.atproto.sync.subscribeRepos 10.10.1.10:8767

@@ -811,6 +811,137 @@ class CarriedRepository(unittest.TestCase):
 
 
 @signs
+class PendingEventCars(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.world, self.key = World(page=100), sign.Key.generate()
+        self.repo = Repo(ORIGIN, self.key, ledger=State(self.tmp.name).repo_ledger)
+
+    def test_disabled_firehose_retains_no_cars_after_repeated_signed_reads(self):
+        from unittest.mock import patch
+        import transport.repo as repository
+        for batch in range(4):
+            for i in range(100):
+                self.world.append(OWNER, f'entry-{batch}-{i}')
+            with patch.object(repository, 'car_of', wraps=repository.car_of) as cars:
+                self.repo.signed.catch_up(self.world)
+                self.assertEqual(cars.call_count, 0)
+            self.assertEqual(sum(len(getattr(h, 'blocks', b'') or b'') for h in self.repo.signed.heights), 0)
+            self.assertEqual(self.repo.signed.pending_bytes, 0)
+            self.assertEqual(self.repo.signed.pending, {})
+        exported = self.repo.signed.repo()
+        twin = Repo(ORIGIN, self.key, ledger=State(self.tmp.name).repo_ledger)
+        twin.signed.catch_up(self.world)
+        self.assertEqual(twin.signed.repo(), exported)
+
+    def hose(self):
+        from transport.firehose import Firehose
+        hose = Firehose(self.repo, self.world, Path(self.tmp.name) / 'events')
+        self.addCleanup(hose.selector.close)
+        self.addCleanup(hose.wake_read.close)
+        self.addCleanup(hose.wake_write.close)
+        hose.produce(initial=True)
+        return hose
+
+    def test_pending_bound_refuses_before_mutation_and_producer_drains_without_loss(self):
+        from unittest.mock import patch
+        from transport.firehose import MAX_BLOCKS
+        from transport.repo import Refusal
+        hose = self.hose()
+        signed = self.repo.signed
+        self.world.append(OWNER, 'first')
+        with patch('transport.repo.MAX_EVENT_PENDING', MAX_BLOCKS):
+            signed.catch_up(self.world)
+            first = signed.pending[1]
+            held = signed.pending_bytes
+            self.assertEqual(held, len(first[1]['blocks']))
+            self.world.append(OWNER, 'second')
+            before = (signed.head, signed.tree.root(), signed.clock, dict(signed.revs))
+            with self.assertRaises(Refusal) as refused:
+                signed.catch_up(self.world)
+            self.assertEqual(refused.exception.body['reply']['class'], 'capacity')
+            self.assertEqual((signed.head, signed.tree.root(), signed.clock, signed.revs), before)
+            self.assertEqual(len(signed.heights), 1)
+            self.assertEqual(signed.pending_bytes, held)
+            self.assertLessEqual(held, MAX_BLOCKS)
+            hose.produce()
+            self.assertEqual(signed.pending_bytes, 0)
+            self.assertEqual(hose.log.retained()[0].body['blocks'], first[1]['blocks'])
+            hose.produce()
+        self.assertEqual([e.height for e in hose.log.retained()], [1, 2])
+        self.assertEqual(signed.pending, {})
+        for event in hose.log.retained():
+            [root], blocks = read_car(event.body['blocks'])
+            commit = decode(blocks[root])
+            self.assertTrue(sign.verify(self.key.private.public_key(),
+                                       encode({k: v for k, v in commit.items() if k != 'sig'}), commit['sig']))
+
+    def test_failed_durable_append_keeps_pending_bytes_for_identical_retry(self):
+        from unittest.mock import patch
+        hose = self.hose()
+        self.world.append(OWNER, 'waiting')
+        self.repo.signed.catch_up(self.world)
+        pending = dict(self.repo.signed.pending)
+        with patch.object(hose.log, 'append', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                hose.produce()
+        self.assertEqual(self.repo.signed.pending, pending)
+        self.assertGreater(self.repo.signed.pending_bytes, 0)
+        hose.produce()
+        self.assertEqual(hose.log.retained()[0].body['blocks'], pending[1][1]['blocks'])
+        self.assertEqual(self.repo.signed.pending, {})
+        self.assertEqual(self.repo.signed.pending_bytes, 0)
+
+    def test_stopped_producer_keeps_unlogged_pending_until_restart_sync_covers_it(self):
+        hose = self.hose()
+        signed = self.repo.signed
+        self.world.append(OWNER, 'unlogged')
+        signed.catch_up(self.world)
+        pending, held = dict(signed.pending), signed.pending_bytes
+        signed.stop_events()
+        self.assertFalse(signed.events)
+        self.assertEqual(signed.pending, pending)
+        self.assertEqual(signed.pending_bytes, held)
+        self.world.append(OWNER, 'while-stopped')
+        signed.catch_up(self.world)
+        self.assertEqual(signed.pending, pending)
+        hose.produce(initial=True)
+        self.assertEqual([(e.kind, e.height) for e in hose.log.retained()], [('#sync', 2)])
+        self.assertEqual(signed.pending, {})
+        self.assertEqual(signed.pending_bytes, 0)
+
+    def test_existing_ledger_waits_for_journal_reconstruction_without_capturing_historical_cars(self):
+        from unittest.mock import patch
+        import transport.repo as repository
+        from transport.firehose import Firehose
+        for i in range(5):
+            self.world.append(OWNER, f'before-restart-{i}')
+        self.repo.signed.catch_up(self.world)
+        old_car, old_rev = self.repo.signed.repo(), self.repo.signed.head.rev
+        restarted = Repo(ORIGIN, self.key, ledger=State(self.tmp.name).repo_ledger)
+        delayed = World(page=100)
+        hose = Firehose(restarted, delayed, Path(self.tmp.name) / 'events')
+        self.addCleanup(hose.selector.close)
+        self.addCleanup(hose.wake_read.close)
+        self.addCleanup(hose.wake_write.close)
+        hose.produce(initial=True)
+        self.assertEqual(hose.log.tail, 0)
+        delayed.entries = list(self.world.entries)
+        with patch.object(repository, 'car_of', wraps=repository.car_of) as cars:
+            hose.produce()
+            self.assertEqual(cars.call_count, 0)
+        self.assertEqual(restarted.signed.repo(), old_car)
+        self.assertEqual(hose.log.retained()[0].kind, '#sync')
+        self.assertEqual(hose.log.retained()[0].body['rev'], old_rev)
+        self.assertEqual(restarted.signed.pending_bytes, 0)
+        delayed.append(OWNER, 'after-reconstruction')
+        hose.produce()
+        self.assertEqual(hose.log.retained()[-1].kind, '#commit')
+        self.assertEqual(hose.log.retained()[-1].body['since'], old_rev)
+
+
+@signs
 class SignedRepository(unittest.TestCase):
     """Ten entries on a fake world, read through the front on loopback with a key."""
 
