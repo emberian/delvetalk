@@ -7,7 +7,7 @@ readable state is written as records in the posting account's own repository: ev
 The posting account alone holds `online.fg-goose.gsb.checkpoint/self`, naming the signed head observed before reading
 the host. The index names no head. Each card and page is what `place` renders (transport/host.py), the rendering
 the web's pages and a reply's draft share;
-the did:web façade (transport/repo.py) answers the journal-derived collections from these functions. Only the public
+the did:web façade (transport/repo.py) serves live projections from these functions. Only the public
 reader's projection is written. Without the authorizing flag the run reads and prints what it would write;
 with it, `post.record_writer` writes what changed since the last run and deletes what is gone.
 """

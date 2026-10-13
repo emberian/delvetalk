@@ -44,12 +44,14 @@ class State:
         self.posting, self.interpretations = h / 'posting', h / 'interpretations'  # the posting ledger; model replies by request
         self.watch_log, self.alerted = h / 'watch.jsonl', h / 'alerted.json'
         self.mirror = h / 'mirror.json'  # what the mirror last wrote to the PDS: {collection rkey: digest}
+        self.serviceauth_ledger = h / 'serviceauth.json'  # consumed audience/issuer/nonces until JWT expiry
         self.repo_ledger = h / 'repo.json'  # signing key, journal base, chain epochs and last served head
         self.firehose = h / 'events'  # length-prefixed DAG-CBOR records: seq, kind, epoch, height, exact event frame bytes;
         # fsynced before delivery, newest 10,000 retained, atomic rewrite at 20,000; copied by carry and state backups
         self.taught = h / 'taught.txt'  # the residents whose first admitted reply carried the next move
         self.requests = h / 'requests.json'  # {revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}; consumed URIs stay in observe.sqlite
-        self.hosted = h / 'hosted'  # public request snapshots; directory fd flock, keys derived from repo_key and DID
+        self.hosted = r / 'hosted' / urllib.parse.quote(c.origin.rstrip('/'), safe='')  # origin-wide public snapshots
+        self.legacy_hosted = h / 'hosted'  # per-world migration input; only town snapshots can be adopted
         self.answers = h / 'answers'  # online.fg-goose.gsb.answer records, <did>.<rkey>.json: the façade and the mirror serve them
 
     def hosted_paths(self, name):

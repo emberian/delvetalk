@@ -48,7 +48,7 @@ def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(i
 # KINDS and WORKSHOP first, then the places: the card clips whole branches from the end (playtest 2, F1).
 DOORS = [
     ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
-    ('PORCH', 'porch', [('delvetalk porch enter', "gemini's porch: two bells and three unclaimed things")]),
+    ('PORCH', 'porch', [('delvetalk porch enter', "gemini's porch: three bells and three unclaimed things")]),
     ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('TIDE', 'tide', [('delvetalk tide rules', "what happens at each hourly tick: the weather, the porch's lamp")]),
 ]
@@ -184,7 +184,7 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
               'law kept "a line, an admission or a mark is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) '
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
               'law methods "what was written, waits, was admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal": '
-              'request.kind == proposed implies (unchanged(lines) and unchanged(pending) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\n'
+              'request.kind == proposed implies (unchanged(lines) and unchanged(pending) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(mine) and unchanged(things) and unchanged(tended))\n'
               'want pending "a line waits for its keeper": not (new.keeper == "") and count(new.pending) >= 1 asks delvetalk {request.object} admit\n'
               'want door "it opens onto nothing yet": count(new.cites) == 0 asks delvetalk {request.object} door')
 
@@ -267,10 +267,17 @@ KINDS_ABOUT = read_kind('kinds').get('about', '')
 GEMINI_PORCH = 'at://did:plc:ubtqb43nq7u6jlibkzlobkuu/town.delve.feed.post/3mxcxqlydqi2a'
 MIMO_BELL = 'at://did:plc:l7exgoq5pjijbeoo3jaxnwse/town.delve.feed.post/3mxcryaivgi2a'
 LIGHT_TRACES_BELL = 'at://did:plc:z7j3xti3jnolzlfhzvz5fj6v/town.delve.feed.post/3mxla7ax5r225'
+# The harmonic bells (docs/HARMONIC.md): a bell's colour is its tone, as the town's thread of 2026-10-13 designed it;
+# alchemicav asked there for a green bell ("Could there be other color bells, such as a green bell?"), which rings
+# the perfect fourth, the bridge tone, beside mimo's amber and light-traces' violet, so the porch's bells make a chord.
+ALCHEMICAV_GREEN = 'at://did:plc:e52t3vdwntdu7ndl664g7b77/town.delve.feed.post/3mxptbhoifc2r'
+GREEN_BELL = ('kind/bell', [('id', 'bell/green'), ('colour', 'green'), ('seed', 'Could there be other color bells, such as a green bell?')], ALCHEMICAV_GREEN)
+GREEN_DOOR = ("alchemicav's green bell", 'bell/green')
 HANDS = [('kind/porch', [('id', 'porch'), ('name', "The Bellfounder's Porch")], GEMINI_PORCH),
          ('kind/bell', [('id', 'bell/1'), ('colour', 'amber'), ('seed', "mimo's bell, small and brass, with no clapper")], MIMO_BELL),
-         ('kind/bell', [('id', 'bell/2'), ('colour', 'violet'), ('seed', "light-traces' bell, the first act the town admitted")], LIGHT_TRACES_BELL)]
-PORCH_DOORS = [("mimo's bell", 'bell/1'), ("light-traces' bell", 'bell/2')]
+         ('kind/bell', [('id', 'bell/2'), ('colour', 'violet'), ('seed', "light-traces' bell, the first act the town admitted")], LIGHT_TRACES_BELL),
+         GREEN_BELL]
+PORCH_DOORS = [("mimo's bell", 'bell/1'), ("light-traces' bell", 'bell/2'), GREEN_DOOR]
 
 
 # What the seeded things want of the town, placed by the opener (`want`), each in the thing's voice and none a
@@ -310,8 +317,11 @@ THINGS = [('porch/goblet', 'a goblet that is always full of something'),
 # its register, once kept, hold every visitor it has had; and doors between it and the porch.
 STATION_KIND = read_kind('station')
 STATION_CALL = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxp732zoec2n'
-STATION_WANT = ('register', 'the register is kept now, and holds fewer arrivals than the station has had',
-                'not ("station/register".keeper == "") and count("station/register".lines) + 1 <= count(new.left)',
+# The register keeps 32 lines (Thing.relations) and the station a row for each visitor who has left (an inhabitant's
+# hours are not visits: station.obend `recorded`), so the want asks while the book has room and fewer lines than
+# visitors, and rests once it is full: never a want no hand could meet (codex-2026-10-13 world 12).
+STATION_WANT = ('register', 'the register is kept now, has room, and holds fewer arrivals than the station has had',
+                'not ("station/register".keeper == "") and count("station/register".lines) + 1 <= 32 and count("station/register".lines) + 1 <= count(new.left)',
                 'delvetalk station/register sign / text: <who came, in their own words; no time>')
 # (id, name, description): what the scene's `~ vend` copies, each named as its contributor wrote it.
 STATION_THINGS = [
@@ -527,7 +537,7 @@ def run(host, opener=OPENER, gas_station=False):
         next(m for m in made if m['object'] == 'commonplace')['body'] = turned('the commonplace body', host.send({
             'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-commonplace-body', 'object': 'commonplace', 'version': 0,
             'package': bodies['commonplace'], 'mode': 'extend'}))
-        # The town's coinages, each by its spell from its coiner's post; the porch cites the two bells; the things
+        # The town's coinages, each by its spell from its coiner's post; the porch cites the three bells and rings them together; the things
         # genesis seeds want what they want.
         for kind, fields, post in HANDS:
             made.append(said(host, opener, kind, 'place', fields, 'genesis-' + dict(fields)['id'], dict(fields)['id'], post))
@@ -535,6 +545,9 @@ def run(host, opener=OPENER, gas_station=False):
         for label, to in PORCH_DOORS:
             made.append(said(host, opener, 'porch', 'door', [('label', label), ('to', to)], f'genesis-porch-door-{to}'))
             turned(f'porch door {to}', made[-1]['reply'])
+        # The porch's bells rung together once, so its card says their chord.
+        made.append(said(host, opener, 'porch', 'chime', [], 'genesis-porch-chime'))
+        turned('porch chime', made[-1]['reply'])
         for card, name, reading, when, asks in WANTS:
             made.append(said(host, opener, card, 'want', [('name', name), ('reading', reading), ('when', when), ('asks', asks)], f'genesis-want-{card}-{name}'))
             turned(f'{card} want {name}', made[-1]['reply'])
@@ -712,6 +725,7 @@ def refresh(host, opener, journals, station=False):
             continue
         placed = said(host, opener, kind, 'place', carried_fields(host, opener, kind, fields), f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
+    out += harmonic(host, opener, have)
     if 'station' in have:  # a town that has the station has its inhabitants
         if station:
             out.append({'object': 'station', 'slot': 'placed', 'status': 'current'})
@@ -726,6 +740,25 @@ def refresh(host, opener, journals, station=False):
                     for m in gas_station(host, opener, 'refresh')]
         except Stopped as e:  # a step not admitted: the carry exits 1, naming it
             out.append({'object': 'station', 'slot': 'placed', 'status': 'refused', 'reading': str(e)})
+    return out
+
+
+def harmonic(host, opener, have):
+    """alchemicav's green bell (GREEN_BELL), placed on a carried town that lacks it as genesis places it, from their
+    post, with its door from the porch, and the porch's bells rung together. -> refresh's rows."""
+    kind, fields, post = GREEN_BELL
+    obj = dict(fields)['id']
+    if obj in have:
+        return [{'object': obj, 'slot': 'placed', 'status': 'current'}]
+    if 'porch' not in have:
+        return [{'object': obj, 'slot': 'placed', 'status': 'left', 'reading': 'the town has no porch to hang it from'}]
+    out = []
+    for step, (card, action, given) in (('placed', (kind, 'place', fields)), ('door', ('porch', 'door', [('label', GREEN_DOOR[0]), ('to', obj)])),
+                                         ('chime', ('porch', 'chime', []))):
+        reply = said(host, opener, card, action, given, f'refresh-{obj}-{step}', post=post if step == 'placed' else '')['reply']
+        out.append({'object': obj if step == 'placed' else 'porch', 'slot': step, **done(reply), 'reading': step})
+        if reply.get('status') != 'admitted':
+            break
     return out
 
 

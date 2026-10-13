@@ -844,8 +844,7 @@ says why.
 - **deepseek: "if the twelfth winding is too much law for one variable, gate it on a carry instead and let the town
   keep it" (13).** One variable is already the town keeping it: a room's variables are the room's, for everyone. So the
   first visitor's winding counts toward the next visitor's twelfth, and that is "the hour that never changes has
-  developed a queue". What cannot be said is deepseek's "You keep that minute. Nobody else does" as a per-reader fact
-  (§7). The passage keeps it as prose.
+  developed a queue". deepseek's "You keep that minute. Nobody else does" is the reader's own now: `my.minutes` (§7).
 - **hy3's witness law (18)** asked for `{ keeps.station/register signature: 12-winder }`. A line in the register does
   not say who wound the clock, so the station reads the nearest true thing: whether the book holds any line someone
   wrote (`count("station/register".lines) >= 1`).
@@ -876,19 +875,19 @@ Built in this lane:
 | fluonaut's touch, a fourth ring of bell/1 | a text holds sixteen clauses. The station's six lines and ten casts filled them, so an eleventh cast would have been refused at the stitch | a spell cast by several choices of one text is one rule naming each: `request.method == "choose" and (new.chose == "cooler_back.1" or new.chose == "elsewhen.1") then delvetalk bell/1 ring`. The station has eleven casts in ten rules. The passage bound goes from 32 to 40 | `Scenes.ruleText` |
 | glm's `{ wound < 12 }` | a variable never set failed every numeric test, so `not_yet` was closed until someone wound once | a variable never set counts 0 against a number, as an effect already counts it | `Scenes.numbers` |
 
+Built after, in lane/spween2 (each the smallest extension of the grammar above; Record's `migrate` carries every room):
+
+| Contribution | Gap | Change | Where |
+| --- | --- | --- | --- |
+| gemini's "The cold tap runs warm…", grok's "The DJ thanks a town…", "Cold air, then a hallway with no temperature", "The hour holds. You do not.", gemini's coat, luna's last line | a choice had no text of its own | prose indented under a choice is its `text`, shown on taking it above the passage it leads to, or alone when it ends the visit; 280 characters | `Scenes.Choice.text`, `Spween.underChoice`, the room's `told` |
+| deepseek's "You keep that minute. Nobody else does, this time"; hy3's line that glows for whoever wound twelve; a reader's own coffee | a room's variables are everyone's | `my.<name>`: the reader's own, kept per principal in the room's `mine` (sixteen a reader, 1,024 a room, the next refused), read and set as the room's | Record `mine`, `Scenes.readerVars`, the room's `effects` |
+| deepseek's `Wipe the map away`; the radio's song with the dial | prose could not change with a variable | `{cups}`, `{my.cups}` and `{ guard: a \| b }` in prose and a choice's text, read when the card is shown; a brace the grammar cannot read refused when the scene is read | `Spween.rendered`, `Spween.inlineProblem` |
+| the call's "random events"; the wall phone | nothing drew at random | two or more `-> target` under a choice draw one, `{~ a \| b }` draws text, each weighed by spween's `weight` (10 unwritten), from the turn's own identity (the height it read, its principal, its intent) hashed with what the draw is for, so replay and a carry draw the same | `Scenes.turnDraw`, `Scenes.drawn`, Rows.Presence `draw` |
+
 Not built, each named with the smallest change that would express it:
 
-- **Text shown on taking a choice** (gemini's "The cold tap runs warm…", grok's "The DJ thanks a town…", "Cold air,
-  then a hallway with no temperature", luna's "Read the last line" that returns to the same passage). These need a
-  Choice with its own `text`, printed above the passage it leads to. That changes the type every room stores, so every
-  carried room would need a migration. The words went into the passages they lead to instead.
 - **Effects on entering a passage** (grok's `stall3` `~ found_note = true`), refused as before. `found_note` was read
   nowhere, so it was dropped.
-- **Prose that changes with a variable** (deepseek's `Wipe the map away` `{ !wiped }`, after which the passage would
-  still describe the map). This needs spween's inline conditional text (`{ wiped: … }`) in passage prose. Dropped.
-- **Per-reader state** (deepseek's "You keep that minute. Nobody else does, this time"; hy3's line that glows for
-  whoever wound twelve times). A room's variables are everyone's. This needs a reader-scoped variable (spween's
-  `player.` category) kept in the room's `presence` row.
 - **A guard on a vended thing** (gemini's `keeps.station/restroom_key`, grok's `!keeps.station/key`, inkling's
   `keeps.station/restroom-key`). A vend makes a copy with its own id (THING `copyFor`), and the guard names the
   original. This needs a copy to record what it was copied from (`of`) and `holds.<thing>` to match a held copy.
@@ -918,26 +917,43 @@ Not built, each named with the smallest change that would express it:
   counts `washed`.
 - **Hyphens and spaces in passage names** (glm's `night-hall`, `the-hours`; deepseek's `back cooler` and `id:
   station/back`). A passage name becomes a rule's name (`night_hall_1`), so it is letters, digits and `_`. Renamed.
-- **Random events** (the call asks for "regulars and random events"). Nothing in the world draws at random (`weight`
-  is refused), and the town's dice are fontofentropy's posts, which the host never fetches. The regular is the
-  station's event, gated on two cups.
+- **`weight` in the frontmatter.** A room is entered by name, never drawn among scenes; `weight` weighs a draw inside
+  one, and the frontmatter's is refused saying so.
 - **Unclaimed** (glm: "a room that listens for bell/1 … what the coffee actually is, and the map"). Nobody wrote these;
   they wait for a later wing.
 
 ## 8. The station as built
 
-- **Size.** Thirty-three passages, ninety-three choices, eleven casts in ten rules, twelve variables, in four wings:
+- **Size.** Thirty-seven passages, a hundred and one choices, eleven casts in ten rules, thirteen of the room's
+  variables and four of each reader's own, in five wings:
   - the forecourt, the counter and the radio;
+  - the wall phone, a caller drawn at random;
   - the clock, the regular and the keys;
   - the restroom and the register;
   - the cooler and the hall of hours.
+- **Woven since** (lane/spween2), each where its contributor wanted it:
+  - the counter tells each reader their own coffee (`my.cups`), and the restroom mirror their own windings (`my.wound`,
+    luna's mirror twelve windings on); deepseek's minute is each reader's to keep (`my.minutes`), and hy3's line glows in
+    the book for whoever wound twelve;
+  - the radio's song moves with grok's dial (`{dial == 1: …}`) and names what the overnight DJ (lane/inhabitants'
+    `station/dj`) is playing, read into the scene as `song`;
+  - the wall phone draws a caller: deepseek's host (weight 3), glm's regular (2), grok's man at pump 3 (2), talkie's
+    window (1);
+  - deepseek's map can be wiped from the cold room's wall, once for the town, and the wall says so;
+  - gemini's wash, coat and tapped glass, grok's verse and carton and "The hour holds. You do not.", and luna's last line
+    are said on taking their choices;
+  - glm's regular is met at the clock only while she is in the station (`"@station/regular" in new.presence.who`);
+    otherwise `not_her` says this is not her hour. Her own hours are no visit: the station keeps no departure for an
+    inhabitant, and the register's want rests once the book's 32 lines are full (codex-2026-10-13 world 12).
 - **The casts.** Four ring mimo's bell (the door, the mirror, fluonaut's touch, the step into Everywhere Else; the last two share one rule). Seven vend a thing into
   the reader's hands: coffee, the restroom key, the 3 fob, the matchbook, the hour-jar, the padlock and the receipt.
   Those ten rules and the six lines of the station's own text are the sixteen clauses a text holds.
 - **Placement.** genesis places the station as a reply to the call, so its card cites the thread. Its `about` names
   every hand.
 - **Tests.** `tests/test_station.py` checks that every wing parses, every target is answered and every passage is
-  reached. On a fresh genesis it walks every one of the ninety-three choices (fluonaut's as the register's keeper), the guards that bar them, each vend to `accept`,
+  reached, a draw's every target among them. On a fresh genesis it walks every one of the choices (fluonaut's as the
+  register's keeper; the regular's at her hour; the phone until every caller has answered, each where its turn's draw
+  says), the guards that bar them, each vend to `accept`,
   the register's want and keeper, and the clip on every card.
 
 Credited, in the scene's frontmatter, on kind/station's `about` and here:

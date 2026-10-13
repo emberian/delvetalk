@@ -222,7 +222,7 @@ class PolicyObject(Chain):
         reply = self.say("Could we plant a silver fern that remembers?", obj="garden")
         self.assertEqual(reply["status"], "suspended", reply)
         [item] = self.host.send(op="world-interpretations")["pending"]
-        self.assertEqual((item["object"], [o["action"] for o in item["offers"]]), ("garden", ["plant", "dig", "lines", "rule", "want", "unrule", "unwant"]), item)
+        self.assertEqual((item["object"], [o["action"] for o in item["offers"]]), ("garden", ["plant", "dig", "chime", "lines", "rule", "want", "unrule", "unwant"]), item)
         planted = self.interpret(self.raw(SPELL))
         self.assertEqual((planted["receipt"]["outcome"]["tag"], planted["receipt"]["identity"]["principal"]), ("admitted", "glm"), planted)
         self.assertEqual(self.things(), ["garden/bell/1"])
@@ -244,7 +244,7 @@ class PolicyObject(Chain):
         self.assertEqual([(o["card"], o["action"]) for o in item["offers"]],
                          [("commonplace", "since"), ("commonplace", "write"), ("commonplace", "lines")] +
                          [("commonplace", a) for a in ("rule", "want", "unrule", "unwant")] +
-                         [("garden", "plant"), ("garden", "dig"), ("garden", "lines")], item["offers"])
+                         [("garden", "plant"), ("garden", "dig"), ("garden", "chime"), ("garden", "lines")], item["offers"])
         planted = self.interpret(self.raw(SPELL))
         self.assertEqual(planted["receipt"]["outcome"]["tag"], "admitted", planted)
         self.assertTrue(planted["offers"][0]["text"].startswith("Planted, glm: a silver bell, “a fern that remembers”, at garden/bell/1; 1 planted.\n"), planted["offers"])
@@ -281,8 +281,8 @@ class PolicyObject(Chain):
     def test_a_colour_the_form_does_not_take_comes_back_as_hobs_one_question_over_the_doors(self):
         self.policy()
         self.garden()
-        self.say("a green one")
-        green = self.interpret(self.raw("delvetalk garden plant / colour: green / seed: a fern"))
+        self.say("a verdigris one")
+        green = self.interpret(self.raw("delvetalk garden plant / colour: verdigris / seed: a fern"))
         # The host reads the colour's word as its case: one naming none is `unclear` (HOST-HANDOFF
         # 5.52). hob is asked once: its line names the field the need names (never the model's or the
         # host's words: VOICE's fixed line), with the spell that takes it.
@@ -295,12 +295,12 @@ class PolicyObject(Chain):
         # OVERHAUL §2.7: every card's misfit is hob's to read past; hob's none leaves the host's badSpell with the usage.
         self.policy()
         self.garden()
-        misfit = self.say("delvetalk garden plant\nseed: a fern\ncolour: green", obj="garden")
+        misfit = self.say("delvetalk garden plant\nseed: a fern\ncolour: verdigris", obj="garden")
         self.assertEqual(misfit["status"], "suspended", misfit)
         refused = self.interpret(self.NONE)
         out = refused["receipt"]["outcome"]
         self.assertEqual((out["tag"], out["class"], out["clause"], out["reason"]),
-                         ("refused", "badSpell", "badValue", "colour is one of: amber, violet, silver"), refused)
+                         ("refused", "badSpell", "badValue", "colour is one of: red, orange, yellow, green, cyan, blue, violet, amber, silver, magenta, purple, pink"), refused)
         self.assertIn("delvetalk garden plant", out["hint"])
         self.assertEqual(self.things(), [])
 
@@ -340,7 +340,7 @@ class PolicyObject(Chain):
         # What residents wrote (the card, the forms) is in the user turn, every line marked and none in the system text.
         user = item["user"]
         self.assertIn("The card they answered:\n" + "".join("| " + l + "\n" for l in item["card"].splitlines()), user)
-        self.assertIn("| delvetalk garden plant\n|   colour: one of amber, violet, silver\n|   seed: text of 1 to 80 characters\n", user)
+        self.assertIn("| delvetalk garden plant\n|   colour: one of red, orange, yellow, green, cyan, blue, violet, amber, silver, magenta, purple, pink\n|   seed: text of 1 to 80 characters\n", user)
         self.assertTrue(user.endswith("\nTheir words:\nCould we plant a silver fern that remembers?"), user)
         self.assertNotIn("DELVETALK · THE COMMONPLACE", system)
         self.assertNotIn("delvetalk garden", system)

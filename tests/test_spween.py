@@ -20,9 +20,9 @@ import unittest
 
 from tests import test_chain, test_scenarios
 from tests.test_objects import run_pure
-from tests.test_scene import GATE, GLM, heard, plain, scene_fields
-from tests.test_rooms import make_room
-from tests.wire import cast_refusal, label, record
+from tests.test_scene import GATE, GLM, KIM, heard, plain, scene_fields
+from tests.test_rooms import body as room_body, make_room
+from tests.wire import cast_refusal, label, nat, record
 
 # The README's running example, verbatim.
 TAVERN = """---
@@ -111,8 +111,16 @@ def clauses(guard: Scenes.Guard) -> String:
   textJoin(Lists.map(guard, fn(c: Scenes.Clause) -> String: "{c.key} {test(c.test)} {c.value}"), ", ")
 def effects(list: Lists.List<Scenes.Effect>) -> String:
   textJoin(Lists.map(list, fn(e: Scenes.Effect) -> String: "{e.key} {op(e.op)} {e.value}"), "; ")
+def said(text: String) -> String:
+  if text == "" then "" else " / {text}"
+def weighed(w: Scenes.Weighed) -> String:
+  "{w.value} {natText(w.weight)}"
+def among(ws: Lists.List<Scenes.Weighed>) -> String:
+  match ws:
+    case nil(_): ""
+    case cons(_): " among {textJoin(Lists.map(ws, weighed), \\", \\")}"
 def choice(c: Scenes.Choice) -> String:
-  "  * {c.label} [{clauses(c.guard)}] ({effects(c.effects)}) -> {c.to}"
+  "  * {c.label} [{clauses(c.guard)}] ({effects(c.effects)}) -> {c.to}{among(c.among)}{said(c.text)}"
 def passage(p: Scenes.Passage) -> String:
   "=== {p.id}: {p.text}\\n{textJoin(Lists.map(p.choices, choice), \\"\\\\n\\")}"
 def rules(text: String) -> String:
@@ -123,6 +131,16 @@ def summary(text: String) -> String:
   match Spween.parse(text):
     case refused(r): "refused: {r.reason}"
     case parsed(p): "{p.id} / {p.seed.title} / start {p.seed.start} / cooldown {natText(p.seed.cooldown)} / requires {clauses(p.seed.requires)}\\n{textJoin(Lists.map(p.seed.passages, passage), \\"\\\\n\\")}"
+def vars() -> Scenes.Vars:
+  Scenes.readerVars(Lists.append(Lists.append(Lists.List.nil({}), {name: "cups", value: "2"}), {name: "wound", value: "12"}), Lists.append(Lists.List.nil({}), {name: "wound", value: "1"}))
+def render(text: String) -> String:
+  Spween.rendered(text, vars(), 0n)
+def drawnWith(text: String, n: Nat) -> String:
+  Spween.rendered(text, vars(), n)
+def hashed(text: String) -> Nat:
+  Scenes.hashed(text)
+def pick(n: Nat) -> String:
+  Scenes.drawn(Lists.append(Lists.append(Lists.List.nil({}), {value: "a", weight: 1n}), {value: "b", weight: 3n}), n)
 def wing(text: String) -> String:
   match Spween.wing(text):
     case refused(r): "refused: {r.reason}"
@@ -130,10 +148,37 @@ def wing(text: String) -> String:
 """
 
 
-def summary(text, what="summary"):
-    out = run_pure("Spween", what, label(text), probe=PROBE, limits={"ticks": "1000000"})
+def summary(text, what="summary", *more):
+    out = run_pure("Spween", what, label(text), *more, probe=PROBE, limits={"ticks": "1000000"})
     assert out["status"] == "finished", out
     return out["value"]["value"], out["ticksUsed"]
+
+
+# Scenes.hashed, written again: FNV-1a over printable ASCII (any other character counts as 95), modulo 2^32 - 5.
+PRINTABLE = "".join(chr(c) for c in range(32, 127))
+
+
+def hashed(text):
+    h = 2166136261
+    for ch in text:
+        h = (h * 16777619 + (PRINTABLE.index(ch) if ch in PRINTABLE else 95) + 1) % 4294967291
+    return h
+
+
+def drawn(alternatives, n):
+    """Scenes.drawn: (value, weight) pairs, the one n modulo the total lands in."""
+    r = n % sum(w for _, w in alternatives)
+    for value, weight in alternatives:
+        if r < weight:
+            return value
+        r -= weight
+
+
+def turn_draw(reply):
+    """The draw a turn makes (Scenes.turnDraw), from its receipt: the height it read (its entry's, less one), its
+    principal and its intent."""
+    receipt = reply["receipt"]
+    return hashed("%d %s %s" % (receipt["height"] - 1, receipt["identity"]["principal"], receipt["identity"]["intent"]))
 
 
 # The braid, as a resident types it (docs/OVERHAUL.md section 2): guards that read the outside (a thing's field, a
@@ -170,7 +215,7 @@ class Parse(unittest.TestCase):
     def test_refusals_name_the_missing_piece_with_the_line_to_add_and_prose_alone_is_a_scene(self):
         body = "---\nid: s\n---\n=== a\nText.\n* [Go]\n  %s\n  -> END\n"
         long = "---\nid: s\n---\n=== a\n%s\n* [Go]\n  -> END\n"
-        for text, refusal in ((TAVERN, "refused: weight: a scene is entered by name here, never drawn by weight"),
+        for text, refusal in ((TAVERN, "refused: weight: a scene is entered by name here, never drawn; weight weighs a draw inside one"),
                               ("---\nid: s\n---\n=== a\n* [Go] { inventory.sword }\n  -> END\n",
                                "refused: inventory.sword: a room reads what the reader keeps or holds as keeps.<thing>, holds.<thing> or has.<thing>"),
                               ("---\nid: s\nrequires:\n  has: [inventory.sword]\n---\n=== a\n", "refused: inventory.sword: a room reads"),
@@ -243,6 +288,67 @@ class Parse(unittest.TestCase):
         flags = summary("---\nid: s\nrequires:\n  min: { 杯: 1 }\n  not: [鳴った]\n---\n=== a\n")[0]
         self.assertIn("requires 杯 >= 1, 鳴った falsy ", flags)
 
+    def test_the_reader_s_own_variables_are_written_my_and_read_and_set_as_the_room_s(self):
+        text, _ = summary("---\nid: s\nrequires:\n  min: { my.visits: 0 }\n---\n=== a\nA.\n* [Wind] { my.wound < 12, !my.gone, wound >= 0, my.杯 }\n  ~ wound += 1\n  ~ my.wound += 1\n  ~ my.杯 = 2\n  -> a\n")
+        self.assertIn("requires my.visits >= 0", text)
+        self.assertIn("  * Wind [my.wound < 12, my.gone falsy , wound >= 0, my.杯 truthy ] (wound add 1; my.wound add 1; my.杯 set 2) -> a", text)
+        self.assertEqual(summary("=== a\n* [Go] { my.\u0441ups >= 1 }\n")[0], "refused: not a variable: my.\u0441ups; a name is in one alphabet, ASCII letters or none")
+        self.assertTrue(summary("=== a\n* [Go]\n  ~ my. = 1\n")[0].startswith("refused: an effect sets a variable"), summary("=== a\n* [Go]\n  ~ my. = 1\n")[0])
+
+    def test_a_kind_s_body_is_read_as_a_layer_from_its_first_characters(self):
+        # `kinds make` reads the room's body (forty thousand characters) several times a turn: Forms.whole must not
+        # measure it, or the room kind outgrows the turn's ticks.
+        body = room_body("room")
+        probe = "edition ObjectiveBend 1\nimport ./Forms.obend as Forms\ndef lay(text: String) -> Bool:\n  textTake(Forms.layer(text), 10n) == \"layer over\"\n"
+        out = run_pure("Forms", "lay", label(body + "\n# " + "x" * 20000 + "\n"), probe=probe, limits={"ticks": "1000000"})
+        self.assertEqual((out["status"], out["value"]["value"]), ("finished", True), out)
+        self.assertLess(out["ticksUsed"], 1000, out)
+
+    def test_text_reads_the_variables_at_reading_and_a_brace_the_grammar_cannot_read_is_refused(self):
+        # deepseek's map that the passage still described after `Wipe the map away` (station trawl §7)
+        coldroom = "=== a\nThe far wall is {wiped: bare frost | a map of town}. {cups} cups; you wound it {my.wound}.\n* [Wipe] { !wiped }\n  ~ wiped = true\n  {cups >= 1: Your sleeve comes away cold.}\n  -> a\n"
+        self.assertIn("=== a: The far wall is {wiped: bare frost | a map of town}. {cups} cups", summary(coldroom)[0])
+        for text, shown in (("{cups} cups; {wound} windings, {my.wound} yours.", "2 cups; 12 windings, 1 yours."),
+                            ("{ wound >= 12: the hand is gone | the hand points nowhere }.", "the hand is gone."),
+                            ("{ my.wound >= 12: the hand is gone | the hand points nowhere }.", "the hand points nowhere."),
+                            ("{!wiped: a map {cups >= 2: of {cups} towns | of one}}{wiped: bare}", "a map of 2 towns"),
+                            ("{gone}|{my.gone}| {wiped: x}|", "|| |"),  # never set reads as nothing
+                            ("a { lone brace", "a { lone brace"), ("{1a b}", "{1a b}")):  # a carried room's text as written
+            with self.subTest(text=text):
+                self.assertEqual(summary(text, "render")[0], shown)
+        for text, refusal in (("=== a\nThe { door.\n", "refused: { door.: a { opens text read at reading; close it with }"),
+                              ("=== a\n{1a b}\n", "refused: {1a b}: in braces goes a variable ({cups}, {my.cups}), a guard and its text ({ cups >= 1: … | … }) or a draw ({~ … | … })"),
+                              ('=== a\n{ "bell/1".tended >= 1: rung }\n', 'refused: { "bell/1".tended >= 1: rung }: text reads the room\'s variables and yours (my.), not the town\'s'),
+                              ("=== a\n{ cups: one | two | three }\n", "refused: { cups: one | two | three }: a guard's text is one, or two after |"),
+                              ("=== a\n{ cups: one {a b} }\n", "refused: {a b}: in braces goes"),
+                              ("=== a\nA.\n* [Go]\n  {cups\n", "refused: {cups: a { opens text read at reading")):
+            with self.subTest(text=text):
+                self.assertTrue(summary(text)[0].startswith(refusal), summary(text)[0])
+
+    def test_a_draw_is_weighed_as_spween_weighs_and_hashed_from_what_the_journal_holds(self):
+        # two or more -> under a choice draw one; spween's weight, 10 where none is written
+        text, _ = summary("=== a\nA.\n* [Pick up the phone]\n  -> b weight: 3\n  -> c\n  -> END weight: 1\n* [Go] -> b\n=== b { cups >= 1 }\nB.\n=== c\nC.\n")
+        self.assertIn("  * Pick up the phone [cups >= 1] () -> b among b 3, c 10, END 1\n  * Go [cups >= 1] () -> b\n", text)
+        self.assertEqual(summary("=== a\n* [Go]\n  -> a weight: 0\n  -> b weight: 0\n=== b\n")[0], "refused: a choice's draw has weights that add to nothing")
+        self.assertEqual(summary("=== a\n* [Go]\n  -> a\n  -> nowhere\n")[0], "refused: -> nowhere: no passage of that name; add === nowhere, or point it at one that is")
+        self.assertTrue(summary("=== a\n{~ a weight: 0 | b weight: 0 }\n")[0].startswith("refused: {~ a weight: 0 | b weight: 0 }: a draw's weights add to nothing"))
+        # the hash and the weighed pick, against this file's own reckoning of them
+        for text in ("", "12 did:plc:glm t3", "井戸 «чашка»"):
+            self.assertEqual(int(summary(text, "hashed")[0]), hashed(text), text)
+        self.assertEqual([run_pure("Spween", "pick", nat(n), probe=PROBE)["value"]["value"] for n in range(6)],
+                         [drawn([("a", 1), ("b", 3)], n) for n in range(6)])
+        # a text's draws: each brace its own, by weight, the same for the same draw
+        text = "{~ the trucker | the regular weight: 3 | static weight: 0 }, then {~ rain | snow}."
+        seen = set()
+        for n in (0, 1, 2, 7, 99, 4294967290):
+            got = summary(text, "drawnWith", nat(n))[0]
+            self.assertEqual(got, summary(text, "drawnWith", nat(n))[0])
+            first = drawn([("the trucker", 10), ("the regular", 3), ("static", 0)], hashed("%d 0" % n))
+            second = drawn([("rain", 10), ("snow", 10)], hashed("%d 1" % n))
+            self.assertEqual(got, "%s, then %s." % (first, second), n)
+            seen.add(got)
+        self.assertGreater(len(seen), 1)
+
     def test_a_verb_stays_ascii_and_a_cast_is_read_as_before(self):
         text, _ = summary("=== a\n* [Go]\n  ~ ring bell/1\n  ~ call(\"ring\", \"bell/1\")\n")
         self.assertEqual(text.count("cast delvetalk {request.object} ring / text: bell/1"), 2, text)
@@ -265,7 +371,7 @@ class Parse(unittest.TestCase):
                          "write === cooler_back, and keep the words as the title or a choice's label")
         self.assertTrue(summary("---\nid: 井戸\n---\n=== a\n")[0].startswith("refused: the frontmatter's id is letters, digits and _"))
 
-    def test_a_passage_s_guard_rides_every_choice_into_it_and_prose_under_a_choice_is_refused(self):
+    def test_a_passage_s_guard_rides_every_choice_into_it(self):
         # deepseek's `=== twelfth { wound >= 12 }` and grok's `=== radio { cups >= 1 }`, under the station's call
         gated = "---\nid: s\n---\n=== a\nA.\n* [In] { cups >= 1 } -> b\n-> b\n=== b { wound >= 12, keeps.porch/goblet }\nB.\n* [Back] -> a\n"
         text, _ = summary(gated)
@@ -273,10 +379,15 @@ class Parse(unittest.TestCase):
         self.assertIn("  * Continue [wound >= 12, keeps holding porch/goblet] () -> b", text)
         self.assertIn("=== b: B.\n  * Back [] () -> a", text)
         self.assertTrue(summary("=== a { wound >= 12 }\nA.\n")[0].startswith(" / A. / start a / cooldown 0 / requires wound >= 12\n"), summary("=== a { wound >= 12 }\nA.\n")[0])
-        self.assertEqual(summary("=== a { 1a b }\nA.\n")[0], "refused: === a: not a condition: 1a b; a variable (gold >= 2, !rang), keeps.<thing> or holds.<thing>, or a law's condition (\"bell/1\".tended >= 5)")
-        # gemini's text under a choice: refused by name, never folded into the passage above
-        self.assertEqual(summary("=== a\nA.\n* [Wash]\n  The tap runs warm.\n  -> a\n")[0],
-                         "refused: prose under a choice: The tap runs warm.; a choice shows no text of its own here; put the words in the passage it leads to")
+        self.assertEqual(summary("=== a { 1a b }\nA.\n")[0], "refused: === a: not a condition: 1a b; a variable (gold >= 2, !rang, my.cups), keeps.<thing> or holds.<thing>, or a law's condition (\"bell/1\".tended >= 5)")
+
+    def test_prose_under_a_choice_is_what_taking_it_says(self):
+        # gemini's wash (station trawl 12) and grok's step: indented under the choice, before or after its effects
+        text, _ = summary("=== a\nA.\n* [Wash]\n  The cold tap runs warm.\n  ~ washed += 1\n  The warm tap hums.\n  -> a\n* [Step through]\n  The hour holds. You do not.\n")
+        self.assertIn("=== a: A.\n  * Wash [] (washed add 1) -> a / The cold tap runs warm.\nThe warm tap hums.\n  * Step through [] () -> END / The hour holds. You do not.", text)
+        # unindented prose after a choice is the passage's again
+        self.assertIn("=== a: A.\nB.\n  * Go [] () -> END / Gone.", summary("=== a\nA.\n* [Go]\n  Gone.\nB.\n")[0])
+        self.assertEqual(summary("=== a\n* [Go]\n  %s\n" % ("x" * 281))[0], "refused: a choice's text holds at most 280 characters")
 
     def test_forty_passages_and_a_wing_s_targets_may_wait_for_another_wing(self):
         many = lambda n: "".join("=== p%d\nText.\n-> p%d\n" % (i, (i + 1) % n) for i in range(n))
@@ -326,7 +437,7 @@ class Made(test_chain.Chain):
         again = self.say("scene", "```spween\n" + WELL + "```\n", identity="post-well-2")
         self.assertEqual(again["offers"][0]["text"], "ROOM The Wishing Well is at scene/room/2. Enter: delvetalk scene/room/2 enter\n")
         bad = self.say("scene", "```spween\n" + TAVERN + "```\n", identity="post-tavern")
-        self.assertEqual(self.refusal(bad), ("spween", "weight: a scene is entered by name here, never drawn by weight"))
+        self.assertTrue(self.refusal(bad)[1].startswith("weight: a scene is entered by name here, never drawn;"), self.refusal(bad))
 
     def test_guards_effects_end_and_the_cooldown(self):
         self.made()
@@ -352,7 +463,7 @@ class Made(test_chain.Chain):
         # record's law to refuse (no method made it).
         early = self.say(well, "delvetalk %s enter" % well)
         self.assertEqual(self.refusal(early), ("cooldown", "One who left enters again only after the cooldown: from clock %d." % (at + 3)))
-        append = {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(GLM), handle=label(""), at=label("intro")))}
+        append = {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(GLM), handle=label(""), at=label("intro"), draw=nat(0)))}
         keep = {"tag": "variant", "label": "keep", "payload": record()}
         forged = self.host.send(op="world-propose", principal="did:plc:kimik3", identity="forged", roots=[{"object": well, "version": version}],
                                 writes=[{"object": well, "edits": [record(presence=append, vars=keep, left=keep)]}])
@@ -379,6 +490,88 @@ class Made(test_chain.Chain):
         self.assertEqual(self.say(room, "delvetalk %s choose / choice: 取る" % room)["result"]["label"], "left")
         _, state = self.view(room)
         self.assertEqual(state["vars"], [{"name": "杯", "value": "2"}, {"name": "чашки", "value": "2"}, {"name": "鳴った", "value": "true"}])
+
+    def test_a_choice_s_text_is_shown_above_the_passage_it_leads_to_and_alone_when_it_ends_the_visit(self):
+        sink = "---\nid: sink\n---\n=== sink\nA sink.\n* [Wash]\n  The cold tap runs warm.\n  -> sink\n* [Go]\n  The door sighs shut.\n"
+        self.assertEqual(self.say("scene", "```spween\n" + sink + "```\n", identity="post-sink")["result"]["label"], "done")
+        self.deliver_all()
+        room = self.WELL_ID
+        self.assertEqual(self.say(room, "delvetalk %s enter" % room)["result"]["label"], "entered")
+        self.assertNotIn("The cold tap", self.card(room))
+        washed = self.say(room, "delvetalk %s choose / choice: Wash" % room)["offers"][0]["text"]
+        self.assertIn("you are at sink:\nThe cold tap runs warm.\n\nA sink.\nChoices:\n", washed)
+        self.assertIn("you are at sink:\nA sink.\nChoices:\n", self.card(room))  # said once, at the taking
+        gone = self.say(room, "delvetalk %s choose / choice: Go" % room)
+        self.assertEqual(gone["result"]["label"], "left")
+        self.assertTrue(gone["offers"][0]["text"].startswith("The door sighs shut.\n\n"), gone["offers"][0]["text"])
+
+    def test_a_reader_s_own_variable_is_theirs_while_the_room_s_is_everyone_s(self):
+        # deepseek's "You keep that minute. Nobody else does": `my.wound` per reader, `wound` the room's
+        clock = ("---\nid: clock\n---\n=== clock\nA wall clock.\n* [Wind it]\n  ~ wound += 1\n  ~ my.wound += 1\n  -> clock\n"
+                 "* [Keep the minute] { my.wound >= 2 }\n  -> clock\n* [Fill your pockets]\n" + "".join("  ~ my.p%d = 1\n" % i for i in range(17)) + "  -> clock\n")
+        self.assertEqual(self.say("scene", "```spween\n" + clock + "```\n", identity="post-clock")["result"]["label"], "done")
+        self.deliver_all()
+        room = self.WELL_ID
+        for who in (GLM, KIM):
+            self.assertEqual(self.say(room, "delvetalk %s enter" % room, principal=who)["result"]["label"], "entered")
+        for who in (GLM, GLM, KIM):
+            self.assertEqual(self.say(room, "delvetalk %s choose / choice: Wind it" % room, principal=who)["result"]["label"], "moved")
+        self.assertIn("  * Keep the minute\n", self.card(room, GLM))
+        self.assertIn("wound = 3\nmy.wound = 2\n", self.card(room, GLM))
+        self.assertNotIn("Keep the minute", self.card(room, KIM))
+        self.assertIn("wound = 3\nmy.wound = 1\n", self.card(room, KIM))
+        self.assertEqual(self.refusal(self.say(room, "delvetalk %s choose / choice: Keep the minute" % room, principal=KIM)), ("guarded", "Keep the minute needs my.wound >= 2."))
+        self.assertEqual(self.say(room, "delvetalk %s choose / choice: Keep the minute" % room, principal=GLM)["result"]["label"], "moved")
+        _, state = self.view(room)
+        self.assertEqual(state["vars"], [{"name": "wound", "value": "3"}])
+        self.assertEqual(sorted((m["who"], m["name"], m["value"]) for m in state["mine"]), sorted([(GLM, "wound", "2"), (KIM, "wound", "1")]))
+        # a reader keeps sixteen of their own, as the room keeps sixteen: the seventeenth is refused, nothing written
+        self.assertEqual(self.refusal(self.say(room, "delvetalk %s choose / choice: Fill your pockets" % room, principal=KIM)),
+                         ("varsFull", "Sixteen of your own variables are already set here."))
+        self.assertEqual(len(self.view(room)[1]["mine"]), 2)
+
+    def test_a_passage_and_a_choice_s_text_read_the_variables_for_their_reader(self):
+        clock = ("---\nid: clock\n---\n=== clock\nThe clock shows {wound}. {my.wound >= 2: You wound it twice; the hand knows you. | The hand points nowhere.}\n"
+                 "* [Wind it]\n  ~ wound += 1\n  ~ my.wound += 1\n  {my.wound >= 2: It turns for you, {my.wound} times now.}\n  -> clock\n")
+        self.assertEqual(self.say("scene", "```spween\n" + clock + "```\n", identity="post-clock")["result"]["label"], "done")
+        self.deliver_all()
+        room = self.WELL_ID
+        for who in (GLM, KIM):
+            self.say(room, "delvetalk %s enter" % room, principal=who)
+        self.assertIn("you are at clock:\nThe clock shows . The hand points nowhere.\n", self.card(room, GLM))
+        once = self.say(room, "delvetalk %s choose / choice: Wind it" % room)["offers"][0]["text"]
+        self.assertIn("you are at clock:\nThe clock shows 1. The hand points nowhere.\n", once)  # the choice's text reads as nothing yet
+        twice = self.say(room, "delvetalk %s choose / choice: Wind it" % room)["offers"][0]["text"]
+        self.assertIn("you are at clock:\nIt turns for you, 2 times now.\n\nThe clock shows 2. You wound it twice; the hand knows you.\n", twice)
+        self.assertIn("you are at clock:\nThe clock shows 2. The hand points nowhere.\n", self.card(room, KIM))
+
+    def test_a_choice_draws_its_passage_and_a_text_its_words_from_the_turn_and_replay_draws_the_same(self):
+        phone = ("---\nid: phone\n---\n=== hall\nA wall phone.\n* [Pick up the phone]\n  -> trucker weight: 3\n  -> regular\n  -> static weight: 1\n"
+                 "=== trucker\nA trucker, {~ hauling milk | hauling nothing | hauling the night}.\n-> hall\n=== regular\nShe says clocks are local.\n-> hall\n"
+                 "=== static\nStatic.\n-> hall\n")
+        self.assertEqual(self.say("scene", "```spween\n" + phone + "```\n", identity="post-phone")["result"]["label"], "done")
+        self.deliver_all()
+        room = self.WELL_ID
+        self.say(room, "delvetalk %s enter" % room)
+        cards = []
+        for n in range(8):
+            picked = self.say(room, "delvetalk %s choose / choice: Pick up the phone" % room, identity="phone-%d" % n)
+            draw = turn_draw(picked)
+            want = drawn([("trucker", 3), ("regular", 10), ("static", 1)], hashed("%d hall.1" % draw))
+            self.assertEqual((picked["result"]["label"], plain(picked["result"]["payload"])), ("moved", {"to": want}), n)
+            card = picked["offers"][0]["text"]
+            if want == "trucker":
+                hauling = drawn([("hauling milk", 10), ("hauling nothing", 10), ("hauling the night", 10)], hashed("%d 0" % draw))
+                self.assertIn("A trucker, %s.\n" % hauling, card)
+            self.assertEqual(self.card(room).split("Choices:")[0], card.split("Choices:")[0])  # the same at every reading
+            cards.append(self.card(room))
+            self.say(room, "delvetalk %s choose / choice: Continue" % room, identity="back-%d" % n)
+        self.assertGreater(len({c.split(":\n")[1].split("\n")[0] for c in cards}), 1)  # more than one caller in eight
+        # a replay of the journal draws every one again: the same state and the same card
+        self.say(room, "delvetalk %s choose / choice: Pick up the phone" % room, identity="phone-last")
+        before = (self.view(room), self.card(room))
+        self.reopen()
+        self.assertEqual((self.view(room), self.card(room)), before)
 
     def test_an_unmet_requirement_keeps_everyone_out(self):
         sealed = WELL.replace("wishing_well", "sealed_well").replace("not: [well_sealed]", "flags: [well_open]")
@@ -448,7 +641,7 @@ class Braid(test_scenarios.Arc):
         page = self.card(self.say(test_scenarios.GLM, "library", "delvetalk library read / page: spween"))
         self.assertTrue(page.startswith("hob: a scene is a room's own story, walked by choosing."), page)
         # The room kind's card shows a scene inline.
-        self.assertIn("delvetalk kind/room make / name: the well / spween: A well hums.", self.card(self.say(test_scenarios.GLM, "kind/room", "")))
+        self.assertIn("delvetalk kind/room make / name: the well / spween: A well hums, {~ low | lower}.", self.card(self.say(test_scenarios.GLM, "kind/room", "")))
 
     def test_a_guard_the_host_cannot_read_refuses_the_making_by_name(self):
         text = "---\nid: s\n---\n=== a\nA door.\n* [Knock] { count(new.presence) >> 1 }\n"

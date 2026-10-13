@@ -23,10 +23,9 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
 from transport import pages
-from transport.delve import MAX_RESPONSE, Failure, public_destination, public_transport
-from transport.identity import DID, HANDLE, digest
+from transport.delve import PLC, MAX_RESPONSE, DID, Client, Failure, public_destination, public_transport
+from transport.identity import HANDLE, digest
 
-PLC = 'https://plc.directory'
 TTL, KEEP, PENDING_MAX = 600, 2592000, 1024  # a pending login's life; the session's (the cookie's Max-Age); logins in flight
 BIND = 'dt_oauth'  # the browser that started a login is the one that may finish it
 LINES = {'unvouched': 'delve.town did not vouch for that handle.',
@@ -106,6 +105,7 @@ class OAuth:
     def __init__(self, origin, plc=PLC, clock=time.time, *, transport=public_transport, resolve=socket.getaddrinfo):
         self.origin, self.plc, self.clock = origin.rstrip('/'), plc.rstrip('/'), clock
         self.fetch, self.resolve = partial(fetch, transport=transport), resolve
+        self.client = Client(transport)
         self.client_id, self.redirect = self.origin + '/oauth/client-metadata.json', self.origin + '/oauth/callback'
         self.pending, self.lock = {}, threading.Lock()
 
@@ -135,7 +135,10 @@ class OAuth:
             raise Refused('unknown') from None
         if not isinstance(did, str) or not DID.fullmatch(did):
             raise Refused('unknown')
-        doc = as_json(*self.fetch('GET', f'{self.plc}/{did}')[::2])
+        try:
+            doc = self.client.did_document(did, plc=self.plc)
+        except Failure as error:
+            raise Refused('unvouched', error.code) from None
         if doc.get('id') != did or 'at://' + handle not in (doc.get('alsoKnownAs') or []):
             raise Refused('unvouched', 'handle not in DID document')
         pds = [s.get('serviceEndpoint') for s in doc.get('service') or [] if isinstance(s, dict) and s.get('id') in ('#atproto_pds', did + '#atproto_pds')]

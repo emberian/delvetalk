@@ -29,6 +29,7 @@ MAX_PENDING = 32 * 1024 * 1024  # a slow subscriber reconnects with its cursor i
 MAX_QUEUED = 128 * 1024 * 1024  # aggregate queued bytes share the front container with HTTP
 MAX_CLIENTS = 128
 HANDSHAKE_SECONDS, PING_SECONDS = 10, 30
+CLOSE_SECONDS = 5
 GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
 
@@ -176,6 +177,7 @@ class Subscriber:
         self.pending, self.pending_bytes = deque(), 0
         self.opened = self.activity = time.monotonic()
         self.ping, self.ping_at = None, None
+        self.close_at = None
 
 
 class Firehose:
@@ -225,14 +227,19 @@ class Firehose:
 
     def produce(self, initial=False):
         signed = self.repo.signed
-        signed.catch_up(self.host)
+        try:
+            signed.catch_up(self.host)
+        except Exception as err:
+            if (getattr(err, 'body', {}).get('reply') or {}).get('class') != 'capacity':
+                raise
         with signed.lock:
             epoch, height = len(signed.ledger['epochs']), signed.base + len(signed.heights)
-            head, base = signed.head, signed.base
+            head = signed.head
             virgin = signed.ledger.get('head') is None
             epochs = list(signed.ledger['epochs'])
             last = self.log.coverage()
-            new = signed.heights[max(0, last.height - signed.base) if last else 0:]
+            signed.events = head is not None or virgin
+            new = deque(signed.pending.items())
         if head is None:
             if initial and last is None and virgin:
                 self.empty_epoch = epoch
@@ -240,6 +247,7 @@ class Firehose:
         live_empty = last is None and not initial and self.empty_epoch == epoch
         if initial or (last is None and not live_empty) or (last is not None and last.epoch != epoch):
             if last is not None and last.epoch == epoch and last.height == height and last.body['rev'] == head.rev:
+                signed.release_events(height)
                 return
             announced = last.epoch if last else 0
             rotations = [i + 1 for i, e in enumerate(epochs) if i + 1 > announced and e['cause'] == 'rotation']
@@ -248,15 +256,20 @@ class Firehose:
                 self.emit('#identity', {'did': self.repo.did, 'handle': self.repo.handle}, epoch, height)
             kind, body = sync_event(self.repo.did, head.commit, head.rev)
             self.emit(kind, body, epoch, height)
+            signed.release_events(height)
             return
-        # HTTP may have caught up Signed: logged coverage is the watermark. Release the chain lock
-        # before log fsyncs and socket queuing so production does not hold ordinary signed reads.
-        since = last.body['rev'] if last else None
-        for h, item in enumerate(new, last.height + 1 if last else base + 1):
-            ops = [create_op(item.rev, item.record)]
-            kind, body = commit_event(self.repo.did, item.commit, item.rev, since, item.prev_data, ops, item.blocks)
+        self.drain(new, epoch, last)
+
+    def drain(self, new, epoch, last):
+        """Log pending events without holding the chain lock or consulting the host."""
+        signed = self.repo.signed
+        while new:
+            h, (kind, body) = new.popleft()
+            if last is not None and h <= last.height:
+                signed.release_events(h)
+                continue
             self.emit(kind, body, epoch, h)
-            since = item.rev
+            signed.release_events(h)
 
     def poll(self):
         try:
@@ -302,11 +315,17 @@ class Firehose:
                         except (OSError, ValueError, UnicodeError):
                             self.drop(sock)
                 self.heartbeat()
+            self.repo.signed.stop_events()
+            with self.repo.signed.lock:
+                new = deque(self.repo.signed.pending.items())
+                epoch = len(self.repo.signed.ledger['epochs'])
+            self.drain(new, epoch, self.log.coverage())
         except Exception as err:
             self.error = err
             traceback.print_exc()
         finally:
             self.ready.set()
+            self.repo.signed.stop_events()
             for sock in list(self.clients):
                 self.drop(sock)
             if self.listener:
@@ -337,7 +356,10 @@ class Firehose:
 
     def interest(self, sock, sub):
         if sock in self.clients:
-            self.selector.modify(sock, selectors.EVENT_READ | (selectors.EVENT_WRITE if sub.output or sub.replay or sub.pending else 0), sub)
+            events = (0 if sub.closing else selectors.EVENT_READ) | (selectors.EVENT_WRITE if sub.output or sub.replay or sub.pending else 0)
+            if not events:
+                return self.drop(sock)
+            self.selector.modify(sock, events, sub)
 
     def room(self, sock, sub, size):
         held = sum(len(s.output) + s.pending_bytes for s in self.clients.values())
@@ -356,9 +378,13 @@ class Firehose:
             sub.output.extend(data)
         self.interest(sock, sub)
 
-    def finish(self, sock, sub, code=1000, payload=None):
+    def finish(self, sock, sub, code=1000, payload=None, wire=None):
+        if sub.closing:
+            return
         sub.live, sub.closing, sub.replay = False, True, []
-        self.queue(sock, sub, websocket(struct.pack('!H', code) if payload is None else payload, 8))
+        sub.close_at = time.monotonic()
+        sub.input.clear()
+        self.queue(sock, sub, wire if wire is not None else websocket(struct.pack('!H', code) if payload is None else payload, 8))
 
     def error_frame(self, sock, sub, error, message):
         self.queue(sock, sub, websocket(frame(None, {'error': error, 'message': message})))
@@ -384,8 +410,7 @@ class Firehose:
                 headers.get('upgrade', '').lower() != 'websocket' or
                 'upgrade' not in [v.strip().lower() for v in headers.get('connection', '').split(',')] or
                 headers.get('sec-websocket-version') != '13' or not valid_key):
-            sub.closing = True
-            self.queue(sock, sub, b'HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+            self.finish(sock, sub, wire=b'HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
             return
         accept = base64.b64encode(hashlib.sha1((key + GUID).encode()).digest())
         self.queue(sock, sub, b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
@@ -413,6 +438,8 @@ class Firehose:
             self.interest(sock, sub)
 
     def read(self, sock, sub):
+        if sub.closing:
+            return
         data = sock.recv(65536)
         if not data:
             return self.drop(sock)
@@ -484,7 +511,10 @@ class Firehose:
     def heartbeat(self):
         now = time.monotonic()
         for sock, sub in list(self.clients.items()):
-            if not sub.upgraded and now - sub.opened > HANDSHAKE_SECONDS:
+            if sub.closing:
+                if now - sub.close_at >= CLOSE_SECONDS:
+                    self.drop(sock)
+            elif not sub.upgraded and now - sub.opened > HANDSHAKE_SECONDS:
                 self.drop(sock)
             elif sub.upgraded and not sub.closing:
                 if sub.ping is not None and now - sub.ping_at > PING_SECONDS:

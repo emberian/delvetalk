@@ -10,8 +10,26 @@ from unittest.mock import patch
 
 from transport.atproto.cbor import block, decode
 from transport.atproto.mst import Tree, layer
-from transport.firehose import EventLog, commit_event, fits, frame
+from transport.firehose import EventLog, commit_event, create_op, fits, frame
 from transport.atproto.mst import invert
+from types import SimpleNamespace
+
+
+class SyntheticSigned(SimpleNamespace):
+    """A byte-only signed source for socket and restart-ordering tests."""
+    def __init__(self, **values):
+        super().__init__(events=False, pending={}, pending_bytes=0, **values)
+
+    def release_events(self, height):
+        with self.lock:
+            for h in list(self.pending):
+                if h <= height:
+                    _, body = self.pending.pop(h)
+                    self.pending_bytes -= len(body['blocks'])
+
+    def stop_events(self):
+        with self.lock:
+            self.events = False
 
 
 def inverse(blocks, root, ops):
@@ -225,7 +243,7 @@ class SelectorSockets(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         commit = block({'rev': 'head'})
-        signed = SimpleNamespace(lock=threading.Lock(), ledger={'epochs': []}, base=0, heights=[None],
+        signed = SyntheticSigned(lock=threading.Lock(), ledger={'epochs': []}, base=0, heights=[None],
                                  head=SimpleNamespace(commit=commit, rev='head'), catch_up=lambda host: None)
         repo = SimpleNamespace(signed=signed, did='did:web:test', handle='test')
         self.hose = Firehose(repo, None, Path(tmp.name) / 'events', interval=60).start()
@@ -284,6 +302,56 @@ class SelectorSockets(unittest.TestCase):
 
 class SocketQueues(unittest.TestCase):
     """A socket pair isolates replay/live ordering and masking where a sandbox cannot bind TCP."""
+    def test_stalled_close_discards_input_disables_reads_and_expires(self):
+        import socket
+        import selectors
+        import time
+        from types import SimpleNamespace
+        from transport.firehose import Firehose, Subscriber
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        hose = Firehose(SimpleNamespace(signed=True), None, Path(tmp.name) / 'events')
+        self.addCleanup(hose.selector.close)
+        self.addCleanup(hose.wake_read.close)
+        self.addCleanup(hose.wake_write.close)
+        sock, peer = socket.socketpair()
+        self.addCleanup(sock.close)
+        self.addCleanup(peer.close)
+        sock.setblocking(False)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 4096)
+        while True:
+            try:
+                sock.send(b'x' * 65536)
+            except BlockingIOError:
+                break
+        sub = Subscriber()
+        sub.upgraded = sub.live = True
+        hose.clients[sock] = sub
+        hose.selector.register(sock, selectors.EVENT_READ, sub)
+        hose.queue(sock, sub, b'queued output')
+        peer.sendall(b'\x89\x00' + b'x' * 1000)  # unmasked control after output has stalled
+        now = time.monotonic()
+        with patch('transport.firehose.time.monotonic', return_value=now):
+            hose.read(sock, sub)
+        self.assertTrue(sub.closing)
+        self.assertEqual(sub.input, b'')
+        self.assertEqual(hose.selector.get_key(sock).events, selectors.EVENT_WRITE)
+        peer.setblocking(False)
+        for _ in range(20):
+            try:
+                peer.send(b'x' * 1000)
+            except BlockingIOError:
+                pass
+            hose.read(sock, sub)  # even a stale readiness notification cannot retain input
+            hose.write(sock, sub)
+        self.assertEqual(sub.input, b'')
+        with patch('transport.firehose.time.monotonic', return_value=now + 1):
+            hose.heartbeat()
+        self.assertIn(sock, hose.clients)
+        with patch('transport.firehose.time.monotonic', return_value=now + 6):
+            hose.heartbeat()
+        self.assertNotIn(sock, hose.clients)
+
     def test_queue_budget_disconnects_after_event_is_durably_logged(self):
         import socket
         import selectors
@@ -395,7 +463,7 @@ class SocketQueues(unittest.TestCase):
         from transport.firehose import Firehose
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        signed = SimpleNamespace(lock=threading.Lock(), ledger={'epochs': [], 'head': None}, base=0,
+        signed = SyntheticSigned(lock=threading.Lock(), ledger={'epochs': [], 'head': None}, base=0,
                                  heights=[], head=None, catch_up=lambda host: None)
         hose = Firehose(SimpleNamespace(signed=signed, did='did:web:test', handle='test'), None, Path(tmp.name) / 'events')
         self.addCleanup(hose.selector.close)
@@ -405,8 +473,10 @@ class SocketQueues(unittest.TestCase):
         self.assertEqual(hose.log.tail, 0)
         record = block({'$type': 'online.fg-goose.gsb.entry', 'height': 1})
         commit = block({'rev': 'one'})
-        item = SimpleNamespace(record=record, commit=commit, rev='one', prev_data=None,
-                               blocks=car(commit[0], [commit, record]))
+        item = SimpleNamespace(record=record, commit=commit, rev='one', prev_data=None)
+        signed.pending[1] = commit_event('did:web:test', commit, 'one', None, None,
+                                       [create_op('one', record)], car(commit[0], [commit, record]))
+        signed.pending_bytes = len(signed.pending[1][1]['blocks'])
         signed.heights.append(item)
         signed.head = item
         signed.ledger['head'] = {'height': 1, 'rev': 'one'}
@@ -444,7 +514,7 @@ class SocketQueues(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         commit = block({'rev': 'after-rotation'})
-        signed = SimpleNamespace(lock=threading.Lock(), ledger={'epochs': [{'cause': 'rotation'}]},
+        signed = SyntheticSigned(lock=threading.Lock(), ledger={'epochs': [{'cause': 'rotation'}]},
                                  base=0, heights=[None], head=SimpleNamespace(commit=commit, rev='after-rotation'),
                                  catch_up=lambda host: None)
         hose = Firehose(SimpleNamespace(signed=signed, did='did:web:test', handle='test'), None, Path(tmp.name) / 'events')

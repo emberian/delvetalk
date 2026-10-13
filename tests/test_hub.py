@@ -342,7 +342,7 @@ class RootReadsDoorForms(test_chain.Chain):
         self.assertEqual(hub["status"], "suspended", hub)
         [pending] = self.host.send(op="world-interpretations")["pending"]
         self.assertEqual({(o["card"], o["action"]) for o in pending["offers"]}, {("commonplace", "since"), ("commonplace", "write"), ("commonplace", "lines"),
-                                                                                 ("garden", "plant"), ("garden", "dig"), ("garden", "lines"),
+                                                                                 ("garden", "plant"), ("garden", "dig"), ("garden", "chime"), ("garden", "lines"),
                                                                                  ("garden/bell/1", "rain"), ("garden/bell/1", "ring")} |
                          {("commonplace", a) for a in ("rule", "want", "unrule", "unwant")}, pending["offers"])  # the host's placing spells, on the card words reached
 
