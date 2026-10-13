@@ -59,8 +59,10 @@ def cardWanting : Nat := 8
     flips by the clock, `advanced` entries carry `wanted`/`unwanted`, or by a write of an object it cites,
     re-judged for the first `wantReviewed` readers of each written object, `Ops.wantReview`); 14:
     lane/cx-world (a kind's component bodies, source pins, receipts and layer positions in `madeFrom`;
-    reprogram replay replaces those layers through `componentInputs`, retaining unrelated layers). -/
-def replayEdition : Nat := 14
+    reprogram replay replaces those layers through `componentInputs`, retaining unrelated layers); 15:
+    bounded clock and dependent-want transition prefixes, a journal-derived pending flip queue, and
+    checked drain entries retaining each transition's triggering height and clock. -/
+def replayEdition : Nat := 15
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -131,8 +133,7 @@ def placedByOthers : Nat := 24
 /-- What judging one rule's or want's condition may read (`Law.work`), after the commit: past it the rule is
     `unfired budget`, the want does not pose; nothing of it is charged to the write (world 6). -/
 def clauseTicks : Nat := Delvetalk.Bounds.lawTicks / 8
-/-- The things whose wants cite the objects an entry writes that one entry re-judges and re-indexes
-    (`Ops.wantReview`), by id: the rest are judged when next they or an object they cite is written. -/
+/-- Dependent things whose transitions the triggering write carries, and transitions per drain entry. -/
 def wantReviewed : Nat := 64
 /-- Verbs grown on one object (docs/FOUNDATION.md §10: sixteen a thing; `ungrow` makes room). -/
 def verbsPerObject : Nat := 16
@@ -640,6 +641,26 @@ structure Foreign where
 
 instance : Inhabited Foreign := ⟨{}⟩
 
+/-- A want transition awaiting its journal row, with its triggering height and clock. -/
+structure WantFlip where
+  object : String
+  want : String
+  height : Nat
+  clock : Nat
+  opened : Bool
+
+def WantFlip.json (f : WantFlip) : Json :=
+  Json.mkObj [("object", toJson f.object), ("want", toJson f.want), ("height", toJson f.height),
+    ("clock", toJson f.clock), ("opened", toJson f.opened)]
+
+def WantFlip.ofJson (j : Json) : Except String WantFlip := do
+  let object ← j.getObjValAs? String "object"
+  let want ← j.getObjValAs? String "want"
+  let height ← j.getObjValAs? Nat "height"
+  let clock ← j.getObjValAs? Nat "clock"
+  let opened ← j.getObjValAs? Bool "opened"
+  return { object, want, height, clock, opened }
+
 structure World where
   /-- The current library, every library a journaled object was compiled under (by pin),
       and the text of the world law that judges a library change. -/
@@ -686,14 +707,15 @@ structure World where
       delivery it staged) or `{height, why}` (unfired), the newest replacing. Derived by `record` from
       admitted entries' `fired` and `unfired`. -/
   ruleLog : Std.HashMap String (List (String × Json)) := {}
-  /-- Per object, the wants that held of it after the newest entry that wrote it, each with the height
-      of the entry that made it true (a want's `since`). Derived by `record` from `wanted`/`unwanted`. -/
+  /-- Per object, the wants indexed as true and their triggering heights (`since`), derived by `record`
+      from inline and queued transitions. -/
   wanting : Std.HashMap String (List (String × Nat)) := {}
+  /-- Resolved transitions derived from triggering entries, drained in bounded journal entries. -/
+  wantFlips : Array WantFlip := #[]
   /-- Per thing, the objects its carried wants read (`"O".F`, `"O" wants N`, and what its law follows by
       `under`), closed (`Ops.wantReads`). Derived by `record` for the things an entry writes. -/
   wantCites : Std.HashMap String (List String) := {}
-  /-- The reverse of `wantCites`: per object, the things whose wants read it, by id. An entry that writes
-      the object re-judges the first `Limits.wantReviewed` of them (`Ops.wantReview`). -/
+  /-- The reverse of `wantCites`: per object, the things whose wants read it, by id. -/
   wantReaders : Std.HashMap String (List String) := {}
   /-- The things with a carried want that reads `request.clock`: re-judged by every entry that moves the
       clock (`Ops.clockFlips`). -/

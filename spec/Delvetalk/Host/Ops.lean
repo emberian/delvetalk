@@ -3697,7 +3697,7 @@ def lawRefusedOf (outcome : Json) : Option String :=
 
 /-- An admitted, refused or clock entry's rows of `k` (`fired`, `unfired`, `wanted`, `unwanted`). -/
 def reactionRows (entry : Json) (k : String) : Array Json :=
-  if tagOf entry != "admitted" && tagOf entry != "refused" && tagOf entry != "advanced" then #[] else ((entry.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+  if tagOf entry != "admitted" && tagOf entry != "refused" && tagOf entry != "advanced" && tagOf entry != "wantReviewed" then #[] else ((entry.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
 
 /-- Each rule's last firing or refusal to fire after an entry (`World.ruleLog`). -/
 def ruleLogAfter (w : World) (entry : Json) : Std.HashMap String (List (String × Json)) :=
@@ -3739,21 +3739,70 @@ def reindexWants (w : World) (ids : List String) : World :=
                wantCites := if cites.isEmpty then w.wantCites.erase id else w.wantCites.insert id cites,
                wantClock := if clock then w.wantClock.insert id true else w.wantClock.erase id }) w
 
-/-- The things an entry that wrote `written` re-judges for the wants they hold: those whose wants read a
-    written object (`wantReaders`, as `w` held them before the entry), not themselves written, by id, the
-    first `Limits.wantReviewed`. The bound keeps one write's cost to that many judgments, each within
-    `Limits.clauseTicks`; a reader past it is judged when it or an object it reads is next written. -/
+/-- The things whose wants read a written object, excluding the written things, once each by id. -/
 def wantReview (w : World) (written : List String) : List String :=
   let sorted := (written.flatMap fun id => w.wantReaders.getD id []).toArray.qsort (· < ·)
   let once := sorted.foldl (fun (acc : Array String) x => if acc.back? == some x then acc else acc.push x) #[]
-  (once.toList.filter (!written.contains ·)).take Limits.wantReviewed
+  once.toList.filter (!written.contains ·)
 
 /-- The things carrying a want that reads the clock, by id. -/
 def clockThings (w : World) : List String :=
   (w.wantClock.toList.map (·.1)).toArray.qsort (· < ·) |>.toList
 
+/-- The facts a want of `o` (`id`) is judged and filled by, as `w` holds it at `height`: the clock, the
+    thing, the states its lines cite and the wants they name (`Law.asItStands` keeps only these). -/
+def wantFacts (w : World) (height : Nat) (id : String) (o : Object) (reader : Option String := none) : Law.Facts :=
+  citing w o.law ((readableWants w id o reader).flatMap (·.clause.names))
+    { subject := "", caller := "", height, turn := height, clock := w.clock, object := id }
+
+/-- The wants of `o` (`id`) that hold of its state as it stands in `w`, at its clock, each with its
+    clause: the want's condition judged with what the thing's lines cite as `w` holds them. -/
+def posing (w : World) (height : Nat) (id : String) (o : Object) (reader : Option String := none) : List CarriedClause :=
+  let facts := wantFacts w height id o reader
+  -- A want whose judging reads past `clauseTicks` does not pose (docs/review/astra-2026-10-12 world 6).
+  (readableWants w id o reader).filter fun c => Law.work (Law.asItStands facts id) none o.state c.clause.condition ≤ Limits.clauseTicks &&
+    !(Law.poses facts id o.state [c.clause]).isEmpty
+
+/-- `{object, want}` rows for the wants of `id` that hold `now` and did not before (`was`), and the reverse. -/
+def wantFlips (id : String) (was now : List String) : Array Json × Array Json :=
+  let row := fun (n : String) => Json.mkObj [("object", toJson id), ("want", toJson n)]
+  ((now.filter (!was.contains ·)).toArray.map row, (was.filter (!now.contains ·)).toArray.map row)
+
+/-- An entry's `wanted` and `unwanted` fields, each only when it holds a row. -/
+def flipFields (wanted unwanted : Array Json) : List (String × Json) :=
+  (if wanted.isEmpty then [] else [("wanted", Json.arr wanted)]) ++
+    (if unwanted.isEmpty then [] else [("unwanted", Json.arr unwanted)])
+
+/-- Transitions from indexed truth to the wants that hold at the triggering world's clock and height. -/
+def reviewedFlips (w : World) (height : Nat) (ids : List String) : Array WantFlip := Id.run do
+  let mut flips : Array WantFlip := #[]
+  for id in ids do
+    let was := (w.wanting.getD id []).map (·.1)
+    let now := ((w.objects[id]?).map fun o => (posing w height id o).map (·.clause.name)).getD []
+    for name in now.filter (!was.contains ·) do
+      flips := flips.push { object := id, want := name, height, clock := w.clock, opened := true }
+    for name in was.filter (!now.contains ·) do
+      flips := flips.push { object := id, want := name, height, clock := w.clock, opened := false }
+  return flips
+
+/-- Opening and closing rows of resolved transitions. -/
+def reviewedRows (flips : Array WantFlip) : Array Json × Array Json :=
+  let row := fun (f : WantFlip) => Json.mkObj [("object", toJson f.object), ("want", toJson f.want)]
+  (((flips.filter (·.opened)).map row), ((flips.filter (!·.opened)).map row))
+
+/-- Journal fields for resolved want transitions; their origin belongs to the drain's outcome. -/
+def reviewedFields (flips : Array WantFlip) : List (String × Json) :=
+  let (wanted, unwanted) := reviewedRows flips
+  flipFields wanted unwanted
+
+/-- Indexed truth after a resolved transition, retaining its triggering height. -/
+def WantFlip.apply (f : WantFlip) (m : Std.HashMap String (List (String × Nat))) : Std.HashMap String (List (String × Nat)) :=
+  let kept := (m.getD f.object []).filter (·.1 != f.want)
+  m.insert f.object (if f.opened then kept ++ [(f.want, f.height)] else kept)
+
 /-- The wants holding after an entry, with the height that made each true (`World.wanting`). -/
 def wantingAfter (w : World) (entry : Json) : Std.HashMap String (List (String × Nat)) :=
+  if tagOf entry == "wantReviewed" then w.wanting else
   let pairs := fun (k : String) => (reactionRows entry k).toList.filterMap fun x =>
     match x.getObjValAs? String "object", x.getObjValAs? String "want" with
     | .ok o, .ok n => some (o, n)
@@ -3846,33 +3895,23 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
     anchors := anchorsAfter w (w.height + 1) entry }
 
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
-  -- The want index follows what the entry wrote and the readers it re-judged (`wantReview`).
-  let indexed := if touch.isEmpty then w else reindexWants w (touch ++ wantReview w touch)
-  compactGrants (recordActs (recordCore indexed entry key touch) entry)
-
-/-- The facts a want of `o` (`id`) is judged and filled by, as `w` holds it at `height`: the clock, the
-    thing, the states its lines cite and the wants they name (`Law.asItStands` keeps only these). -/
-def wantFacts (w : World) (height : Nat) (id : String) (o : Object) (reader : Option String := none) : Law.Facts :=
-  citing w o.law ((readableWants w id o reader).flatMap (·.clause.names))
-    { subject := "", caller := "", height, turn := height, clock := w.clock, object := id }
-
-/-- The wants of `o` (`id`) that hold of its state as it stands in `w`, at its clock, each with its
-    clause: the want's condition judged with what the thing's lines cite as `w` holds them. -/
-def posing (w : World) (height : Nat) (id : String) (o : Object) (reader : Option String := none) : List CarriedClause :=
-  let facts := wantFacts w height id o reader
-  -- A want whose judging reads past `clauseTicks` does not pose (docs/review/astra-2026-10-12 world 6).
-  (readableWants w id o reader).filter fun c => Law.work (Law.asItStands facts id) none o.state c.clause.condition ≤ Limits.clauseTicks &&
-    !(Law.poses facts id o.state [c.clause]).isEmpty
-
-/-- `{object, want}` rows for the wants of `id` that hold `now` and did not before (`was`), and the reverse. -/
-def wantFlips (id : String) (was now : List String) : Array Json × Array Json :=
-  let row := fun (n : String) => Json.mkObj [("object", toJson id), ("want", toJson n)]
-  ((now.filter (!was.contains ·)).toArray.map row, (was.filter (!now.contains ·)).toArray.map row)
-
-/-- An entry's `wanted` and `unwanted` fields, each only when it holds a row. -/
-def flipFields (wanted unwanted : Array Json) : List (String × Json) :=
-  (if wanted.isEmpty then [] else [("wanted", Json.arr wanted)]) ++
-    (if unwanted.isEmpty then [] else [("unwanted", Json.arr unwanted)])
+  let written := if tagOf entry == "admitted" then ((changesOf (w.height + 1) entry).map (·.object)).toList else touch
+  let readers := wantReview w written
+  let deferred := if tagOf entry == "advanced" then
+      let to := (entry.getObjVal? "outcome" |>.bind (·.getObjValAs? Nat "to")).toOption.getD w.clock
+      let all := reviewedFlips { w with clock := to } (w.height + 1) (clockThings w)
+      all.extract ((reactionRows entry "wanted").size + (reactionRows entry "unwanted").size) all.size
+    else if tagOf entry == "admitted" then
+      reviewedFlips w (w.height + 1) (readers.drop Limits.wantReviewed)
+    else #[]
+  let indexed := if touch.isEmpty then w else reindexWants w (touch ++ readers)
+  let after := compactGrants (recordActs (recordCore indexed entry key touch) entry)
+  if tagOf entry == "wantReviewed" then
+    let count := (entry.getObjVal? "outcome" |>.bind (·.getObjValAs? Nat "count")).toOption.getD 0
+    { after with wantFlips := w.wantFlips.extract count w.wantFlips.size }
+  else
+    { after with wantFlips := w.wantFlips ++ deferred,
+                 wanting := deferred.foldl (fun m f => f.apply m) after.wanting }
 
 /-- The wants a law's refusal opens and closes on the thing it refused (`lawRefusedOf`), whose
     `request.refusedBy` it moves by one, at the clock: journaled by `push` on every such entry, as
@@ -3886,21 +3925,53 @@ def refusalWants (w : World) (outcome : Json) : List (String × Json) :=
       ((posing after (w.height + 1) id o).map (·.clause.name))
     flipFields wanted unwanted
 
-/-- The wants the clock's move to `to` opens and closes, on the things whose wants read it (`clockThings`):
-    each judged at the clock it stands at and at `to`, journaled on the `advanced` entry and re-derived by
-    replay. Bound: one judgment, within `Limits.clauseTicks`, per such thing; an advance is the clock's
-    principal's alone. -/
-def clockFlips (w : World) (to : Nat) : List (String × Json) := Id.run do
-  let after := { w with clock := to }
-  let mut wanted : Array Json := #[]
-  let mut unwanted : Array Json := #[]
-  for id in clockThings w do
-    let some o := w.objects[id]? | continue
-    let (opened, closed) := wantFlips id ((posing w (w.height + 1) id o).map (·.clause.name))
-      ((posing after (w.height + 1) id o).map (·.clause.name))
-    wanted := wanted ++ opened
-    unwanted := unwanted ++ closed
-  return flipFields wanted unwanted
+/-- The clock entry's fields, excluding its bounded transition prefix. -/
+def advanceFields (w : World) (to : Nat) : List (String × Json) :=
+  let intent := s!"advance:{to}"
+  [("identity", identityJson "clock" intent), ("roots", rootsJson []), ("turn", toJson 0),
+   ("request", toJson (Journal.bodyHash (toJson intent))),
+   ("outcome", Json.mkObj [("tag", toJson "advanced"), ("from", toJson w.clock), ("to", toJson to)])]
+
+/-- A prefix of at most `wantReviewed` transitions whose sealed record fits the entry byte bound. -/
+def boundedWantPrefix (w : World) (fields : Array WantFlip → List (String × Json))
+    (flips : Array WantFlip) : Array WantFlip := Id.run do
+  let mut count := min flips.size Limits.wantReviewed
+  while count > 0 do
+    let candidate := flips.extract 0 count
+    let entry := Journal.sealEntry (w.height + 1) w.head (fields candidate)
+    if (recordBytes entry).toOption.any (·.size ≤ Limits.maxEntryBytes) then return candidate
+    count := count - 1
+  return #[]
+
+/-- The bounded prefix of transitions journaled with a clock move; `record` queues the remainder. -/
+def clockFlips (w : World) (to : Nat) : List (String × Json) :=
+  let flips := reviewedFlips { w with clock := to } (w.height + 1) (clockThings w)
+  reviewedFields (boundedWantPrefix w (fun fs => advanceFields w to ++ reviewedFields fs) flips)
+
+/-- The next bounded drain entry, retaining the transition's triggering height and clock. -/
+def wantDrainEntry (w : World) : Option (Json × Nat) := do
+  let first ← w.wantFlips[0]?
+  let intent := s!"wants:{w.height + 1}"
+  let fields := fun (fs : Array WantFlip) =>
+    [("identity", identityJson "clock" intent), ("roots", rootsJson []), ("turn", toJson 0),
+     ("request", toJson (Journal.bodyHash (toJson intent))),
+     ("outcome", Json.mkObj [("tag", toJson "wantReviewed"), ("height", toJson first.height),
+       ("clock", toJson first.clock), ("count", toJson fs.size)])] ++ reviewedFields fs
+  let eligible := ((w.wantFlips.extract 0 Limits.wantReviewed).toList.takeWhile fun f =>
+    f.height == first.height && f.clock == first.clock).toArray
+  let kept := boundedWantPrefix w fields eligible
+  guard (!kept.isEmpty)
+  return (Journal.sealEntry (w.height + 1) w.head (fields kept), kept.size)
+
+/-- Journal outstanding resolved want transitions in byte-bounded entries. -/
+def drainWants (w : World) : Except String World := do
+  let mut w := w
+  for _ in [:w.wantFlips.size] do
+    if w.wantFlips.isEmpty then break
+    let some (entry, _) := wantDrainEntry w | throw "want transition exceeds entry capacity"
+    let intent := s!"wants:{w.height + 1}"
+    w := record { w with entries := w.entries.push entry } entry (identityKey "clock" intent) []
+  return w
 
 /-- Seal and record the world's next entry. A law's refusal carries the wants it flips (`refusalWants`). -/
 def push (w : World) (key : String) (fields : List (String × Json)) (touch : List String) :
@@ -4129,16 +4200,15 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
             (if wait == 0 then [] else [("next", toJson (before.clock + wait))])))
   let mut wanted : Array Json := #[]
   let mut unwanted : Array Json := #[]
-  -- The wants of what it wrote, and of the things whose wants read what it wrote (`wantReview`).
-  let readers := (wantReview before ((judged.updates ++ judged.creations).map (·.1))).filterMap fun id =>
-    (after.objects[id]?).map (id, ·)
-  for (id, o) in judged.updates ++ judged.creations ++ readers do
+  for (id, o) in judged.updates ++ judged.creations do
     let was := ((before.objects[id]?).map fun x => (posing before height id x).map (·.clause.name)).getD []
     let (opened, closed) := wantFlips id was ((posing after height id o).map (·.clause.name))
     wanted := wanted ++ opened
     unwanted := unwanted ++ closed
+  let readers := (wantReview before ((judged.updates ++ judged.creations).map (·.1))).take Limits.wantReviewed
+  let (opened, closed) := reviewedRows (reviewedFlips after height readers)
   return (if fired.isEmpty then [] else [("fired", Json.arr fired)]) ++
-    (if unfired.isEmpty then [] else [("unfired", Json.arr unfired)]) ++ flipFields wanted unwanted
+    (if unfired.isEmpty then [] else [("unfired", Json.arr unfired)]) ++ flipFields (wanted ++ opened) (unwanted ++ closed)
 
 /-- The ledger and the ticks an entry's fields name (a turn's `entryBase`), and the delivery it consumes. -/
 def entryBudget (fields : List (String × Json)) : Ledger × Nat × Option String :=
@@ -5204,6 +5274,10 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
   checkResumes w entry principal intent
   checkEnded w entry principal intent
   match ← outcome.getObjValAs? String "tag" with
+  | "wantReviewed" =>
+    let some (expected, _) := wantDrainEntry w | throw "want drain without outstanding transitions"
+    unless entry == expected do throw "want drain does not replay"
+    return record w entry key []
   | "advanced" =>
     let before ← natField outcome "from"
     let to ← natField outcome "to"
@@ -5481,9 +5555,7 @@ def advance (w : World) (j : Json) : Except String (World × Json) := do
     return (w, Json.mkObj [("status", toJson "advanced"), ("clock", toJson w.clock)])
   let intent := s!"advance:{to}"
   let (w', entry) := push w (identityKey "clock" intent)
-    ([("identity", identityJson "clock" intent), ("roots", rootsJson []), ("turn", toJson 0),
-     ("request", toJson (Journal.bodyHash (toJson intent))),
-     ("outcome", Json.mkObj [("tag", toJson "advanced"), ("from", toJson w.clock), ("to", toJson to)])] ++ clockFlips w to) []
+    (advanceFields w to ++ clockFlips w to) []
   return (w', Json.mkObj [("status", toJson "advanced"), ("clock", toJson to), ("receipt", entry)])
 
 /-! ## Reads -/
@@ -5919,11 +5991,11 @@ def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.ru
           events := events.push { what := "unfired", object := text f "object", who := shownName w (text f "owner"), name := text f "rule",
                                   why := unfiredWords (text f "why"), entry := h }
     | _ => pure ()
-    -- An admitted write's wants, and a law refusal's (`refusalWants`).
+    let wantHeight := if tagOf e == "wantReviewed" then (outcome.getObjValAs? Nat "height").toOption.getD h else h
     for x in rows e "wanted" do
-      if seen (text x "object") then events := events.push { what := "wanted", object := text x "object", name := text x "want", entry := h }
+      if seen (text x "object") then events := events.push { what := "wanted", object := text x "object", name := text x "want", entry := wantHeight }
     for x in rows e "unwanted" do
-      if seen (text x "object") then events := events.push { what := "unwanted", object := text x "object", name := text x "want", entry := h }
+      if seen (text x "object") then events := events.push { what := "unwanted", object := text x "object", name := text x "want", entry := wantHeight }
   return some { day, start, stop, admitted, events := events.toList, refusals, hands := hands.toList }
 
 /-- A day event as the chronicle's line. -/

@@ -148,12 +148,17 @@ def appendJournal (s : Open) (w : World) (records : Array ByteArray) : IO (Excep
     see them (`settledFor`). What `durableIO` makes durable and `world-try` drops. -/
 def settledStep (s : Open) (reader : String) (step : World → IO (Except String (World × Json))) : IO (Except String (World × Json × Json)) := do
   let settled := fun (w : World) => w.suspended.isEmpty && w.pending.isEmpty
-  let stepped ← step s.world
+  let start := drainWants s.world
+  let stepped ← match start with
+    | .error e => pure (.error e)
+    | .ok w => step w
   return do
     let (w', r0) ← stepped
+    let w' ← drainWants w'
     -- What the settling pass runs is no request's: no turn of it is the public socket's.
     let w' := { w' with resident := false }
     let (w', resumed, delivered) ← if settled w' then pure (w', #[], #[]) else settleAll w'
+    let w' ← drainWants w'
     -- Turns the settling pass ran belong to their own principals: whoever caused the pass sees
     -- another's only as its projection, and nobody's offers (`world-offers` reads them).
     let quiet := fun (rs : Array Json) => rs.map (settledFor w' reader)

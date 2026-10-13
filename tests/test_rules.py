@@ -459,24 +459,49 @@ def initial() -> State:
         self.assertEqual(rows, [expected] * 3)
         self.assertEqual(logs, ["reads"] * 3)
 
-    def test_a_revoked_want_citation_never_poses_or_flips_on_a_public_write_or_clock_move(self):
-        self.root_secret("read", {"principals": [OPENER, KIM]})
-        placed = self.place('want / name: leak / when: "secret".code == "4471" and request.clock >= 0 / asks: delvetalk me note / text: seen', who=KIM)
-        self.assertEqual(placed["status"], "admitted", placed)
-        self.assertIn("leak", [r["name"] for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]])
-        self.root_secret("read", {"principals": [OPENER]})
-        for code in ("4471", "closed", "4471"):
-            self.root_secret("state.code", code)
-            wants = self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]
-            self.assertNotIn("leak", [r["name"] for r in wants], wants)
-            receipt = self.rain("probe " + code)["receipt"]
-            for field in ("wanted", "unwanted"):
-                self.assertNotIn("leak", [r["want"] for r in receipt.get(field, [])], receipt)
-            height = self.town.send(op="world-status")["clock"] + 1
-            advanced = self.town.send(op="world-advance", principal="transport", height=height)
-            self.assertEqual(advanced["status"], "advanced", advanced)
-            for field in ("wanted", "unwanted"):
-                self.assertNotIn("leak", [r["want"] for r in advanced["receipt"].get(field, [])], advanced)
+    def test_a_revoked_want_citation_closes_once_without_revealing_hidden_conditions(self):
+        def leak_rows(receipt):
+            return {field: [r["want"] for r in receipt.get(field, [])
+                            if r["object"] == self.bell and r["want"] == "leak"]
+                    for field in ("wanted", "unwanted")}
+
+        def assert_hidden():
+            for who in (KIM, GLM):
+                wants = self.town.send(op="world-wants", principal=who, object=self.bell)["rows"]
+                self.assertNotIn("leak", [r["name"] for r in wants], wants)
+                wanting = self.town.send(op="world-wanting", principal=who)["rows"]
+                self.assertFalse([r for r in wanting if r["object"] == self.bell and r["name"] == "leak"], wanting)
+
+        sequences = []
+        for run, codes in enumerate((("4471", "closed", "4471"), ("closed", "4471", "4471"))):
+            if run:
+                planted = self.say(GLM, "garden", "delvetalk garden plant\nseed: another bell for hidden wants\ncolour: silver")
+                self.assertEqual(planted["status"], "admitted", planted)
+                self.bell = [o for o in self.objects() if o.startswith("garden/bell/")][-1]
+            self.root_secret("state.code", "4471")
+            self.root_secret("read", {"principals": [OPENER, KIM]})
+            placed = self.place('want / name: leak / when: "secret".code == "4471" and request.clock >= 0 / asks: delvetalk me note / text: seen', who=KIM)
+            self.assertEqual(placed["status"], "admitted", placed)
+            self.assertEqual(leak_rows(placed["receipt"]), {"wanted": ["leak"], "unwanted": []})
+            self.assertIn("leak", [r["name"] for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]])
+            self.root_secret("read", {"principals": [OPENER]})
+            rows = []
+            for code in codes:
+                self.root_secret("state.code", code)
+                assert_hidden()
+                rows.append(leak_rows(self.rain("probe " + code)["receipt"]))
+                assert_hidden()
+                height = self.town.send(op="world-status")["clock"] + 1
+                advanced = self.town.send(op="world-advance", principal="transport", height=height)
+                self.assertEqual(advanced["status"], "advanced", advanced)
+                rows.append(leak_rows(advanced["receipt"]))
+                assert_hidden()
+            self.assertEqual(rows, [{"wanted": [], "unwanted": []}, {"wanted": [], "unwanted": ["leak"]}] +
+                             [{"wanted": [], "unwanted": []}] * 4)
+            sequences.append(rows)
+            self.town.reopen()
+            assert_hidden()
+        self.assertEqual(sequences[0], sequences[1])
 
     def test_strokes_fill_a_wants_holes_only_with_what_the_reader_may_view(self):
         self.root_secret("read", {"principals": [OPENER, GLM]})

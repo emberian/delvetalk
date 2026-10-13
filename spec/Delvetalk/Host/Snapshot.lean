@@ -95,6 +95,7 @@ def indexJson (w : World) : Json :=
     ("changes", Json.arr (w.changes.map fun c => Json.arr #[toJson c.height, toJson c.object, toJson c.version, toJson c.principal])),
     ("ruleLog", mapJson w.ruleLog fun xs => Json.mkObj xs),
     ("wanting", mapJson w.wanting fun xs => Json.mkObj (xs.map fun (n, h) => (n, toJson h))),
+    ("wantFlips", Json.arr (w.wantFlips.map (·.json))),
     ("wantCites", mapJson w.wantCites fun xs => toJson xs),
     ("wantReaders", mapJson w.wantReaders fun xs => toJson xs),
     ("wantClock", mapJson w.wantClock toJson),
@@ -145,6 +146,7 @@ def installIndex (w : World) (j : Json) : Except String World := do
     changes := ← arrOf (← field "changes") change
     ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
     wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
+    wantFlips := ← arrOf ((field "wantFlips").toOption.getD (Json.arr #[])) WantFlip.ofJson
     wantCites := ← mapOf (← field "wantCites") fun x => (Lean.fromJson? x : Except String (List String))
     wantReaders := ← mapOf (← field "wantReaders") fun x => (Lean.fromJson? x : Except String (List String))
     wantClock := ← mapOf (← field "wantClock") (·.getBool?)
@@ -433,7 +435,7 @@ def suspendedObject (e : Json) : String :=
     last firings, the wants that hold, the refusals each law made, posting reservations, model attempts, the quotas' counts, the root acts'
     count, the moderation: cards, quiets, hidden). Every other index names entries of the old chain. -/
 def carriedKeys : List String :=
-  ["ruleLog", "wanting", "refusedBy", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
+  ["ruleLog", "wanting", "wantFlips", "refusedBy", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
    "hidden", "modelDay", "hour"]
 
 /-- A genesis entry chained to `cid`: `tag` and its origin, the store of `shown` with every source its

@@ -13,10 +13,13 @@ rotation that starves a held answerable want or loses a row across
 answers otherwise after a reopen.
 """
 import unittest
+import os
+
+from transport.journal import copy as copy_journal, entries as journal_entries, links
 
 from tests.test_reflection import Reflection
 from tests.test_verbs import STONE, THING
-from tests.wire import label, nat, record
+from tests.wire import cbor, cid_of, label, nat, record, write_journal
 from tests.host import bounds
 from tests.test_scenarios import Arc, GLM, KIM
 from tests.test_properties import OPENER
@@ -251,6 +254,123 @@ class Standing(Things):
 
 class Journaled(Things):
     """A want's flips are journaled wherever they come from: the clock's move, a write of what it cites."""
+
+    def test_a_write_opens_and_closes_every_dependent_want_past_the_review_batch(self):
+        cards = ["reader%03d" % n for n in range(65)]
+        for card in cards:
+            self.make(card, THING, record(owner=label("ember")))
+            self.want(card, "wet", '"bell2".rains == 1', who="ember")
+        opened = self.say("bell2", "delvetalk bell2 rain / text: one", who="ember")
+        expected = {(card, "wet", opened["height"]) for card in cards}
+        self.assertEqual(set(self.wanting()[0]), expected)
+        transitions = [e for e in journal_entries(self.path) if e["height"] >= opened["height"]]
+        self.assertEqual({(r["object"], r["want"]) for e in transitions for r in e.get("wanted", [])},
+                         {(card, "wet") for card in cards})
+        self.reopen()
+        self.assertEqual(set(self.wanting()[0]), expected)
+        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+        self.reopen()
+        self.assertEqual(set(self.wanting()[0]), expected)
+        closed = self.say("bell2", "delvetalk bell2 rain / text: two", who="ember")
+        self.assertEqual(self.wanting(), ([], False))
+        transitions = [e for e in journal_entries(self.path) if e["height"] >= closed["height"]]
+        self.assertEqual({(r["object"], r["want"]) for e in transitions for r in e.get("unwanted", [])},
+                         {(card, "wet") for card in cards})
+        self.reopen()
+        self.assertEqual(self.wanting(), ([], False))
+
+    def test_outstanding_clock_flips_survive_a_snapshot_before_the_next_clock_closes_them(self):
+        long_card = "clock" + "x" * (bounds()["host"]["maxObjectIdBytes"] - 5)
+        self.make(long_card, THING, record(owner=label("ember")))
+        cards = ("bell", "bell2", long_card)
+        for card in cards:
+            for n in range(32):
+                self.want(card, "w%02d" % n, "request.clock >= 1 and request.clock <= 1", who="ember")
+        advanced = self.host.send(op="world-advance", height=1)
+        self.assertEqual(advanced["status"], "advanced", advanced)
+        at = advanced["receipt"]["height"]
+        partial = os.path.join(self.dir.name, "partial.journal")
+        copy_journal(self.path, partial, height=at)
+        self.release()
+        self.path = partial
+        self.host = self.spawn()
+        self.assertEqual(self.host.send(op="world-open", path=self.path)["status"], "opened")
+        expected = {(card, "w%02d" % n, at) for card in cards for n in range(32)}
+        self.assertEqual(set(self.wanting()[0]), expected)
+        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-open", path=self.path, verify=True)["status"], "opened")
+        self.assertEqual(set(self.wanting()[0]), expected)
+        closed = self.host.send(op="world-advance", height=2)
+        self.assertEqual((closed["status"], closed["clock"]), ("advanced", 2), closed)
+        self.assertEqual(self.wanting(), ([], False))
+        drained = [e for e in journal_entries(self.path) if e["outcome"]["tag"] == "wantReviewed"]
+        opening = [e for e in drained if e.get("wanted")]
+        self.assertTrue(opening, drained)
+        self.assertEqual({(e["outcome"]["height"], e["outcome"]["clock"]) for e in opening}, {(at, 1)})
+        self.assertEqual(sum(len(e.get("unwanted", [])) for e in journal_entries(self.path)), 96)
+        self.reopen()
+        self.assertEqual(self.wanting(), ([], False))
+
+    def test_thirty_two_thousand_simultaneous_clock_wants_leave_the_clock_free_to_move(self):
+        source = THING + "\n" + "\n".join(
+            'want w%02d: request.clock >= 1500 and request.clock <= 1500 asks %s' % (n, ASK)
+            for n in range(32))
+        cards = ["clock%04d" % n + "x" * 111 for n in range(1000)]
+        per_principal = bounds()["host"]["objectsPerPrincipal"]
+        for n, card in enumerate(cards):
+            principal = "clock-maker%d" % (n // per_principal)
+            made = self.host.send(op="world-create", principal=principal, identity="mk-" + card, object=card,
+                                  source=source, entry="initial", seed=record(owner=label(principal)))
+            self.assertEqual(made["status"], "created", made)
+        advanced = self.host.send(op="world-advance", height=1500)
+        self.assertEqual((advanced["status"], advanced["clock"]), ("advanced", 1500), advanced)
+        at = advanced["receipt"]["height"]
+        rows = self.wanting()[0]
+        self.assertEqual(set(rows), {(card, "w%02d" % n, at) for card in cards for n in range(32)})
+        self.assertTrue(all(link["bytes"] <= bounds()["host"]["maxEntryBytes"] for link in links(self.path)))
+        transitions = [e for e in journal_entries(self.path) if e["height"] >= at]
+        flips = [r for e in transitions for r in e.get("wanted", [])]
+        self.assertEqual(len(flips), 32000)
+        self.assertGreater(len(cbor({"wanted": flips})), bounds()["host"]["maxEntryBytes"])
+        drained = [e for e in transitions if e["outcome"]["tag"] == "wantReviewed"]
+        self.assertTrue(drained, "the advance did not journal its outstanding want flips")
+        self.assertEqual(sum(len(e.get("wanted", [])) for e in drained),
+                         32000 - len(advanced["receipt"].get("wanted", [])))
+        self.reopen()
+        self.assertEqual(self.wanting()[0], rows)
+        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+        self.reopen()
+        self.assertEqual(self.wanting()[0], rows)
+        later = self.host.send(op="world-advance", height=1501)
+        self.assertEqual((later["status"], later["clock"]), ("advanced", 1501), later)
+        self.assertEqual(self.wanting(), ([], False))
+        self.reopen()
+        self.assertEqual(self.wanting(), ([], False))
+
+    def test_replay_refuses_a_want_drain_with_a_different_triggering_clock(self):
+        source = THING + '\nwant late: request.clock >= 1 asks ' + ASK
+        cap = bounds()["host"]["wantReviewed"]
+        for n in range(cap + 1):
+            self.make("clock%03d" % n, source, record(owner=label("ember")))
+        advanced = self.host.send(op="world-advance", height=1)
+        self.assertEqual(advanced["status"], "advanced", advanced)
+        self.assertEqual(len(advanced["receipt"]["wanted"]), cap, advanced)
+        entries = journal_entries(self.path)
+        last = entries[-1]
+        self.assertEqual(last["outcome"]["tag"], "wantReviewed", last)
+        self.assertEqual(last["height"], advanced["receipt"]["height"] + 1, last)
+        self.assertEqual(last["outcome"], {"tag": "wantReviewed", "height": advanced["receipt"]["height"],
+                                           "clock": 1, "count": 1})
+        self.assertEqual(last["wanted"], [{"object": "clock%03d" % cap, "want": "late"}])
+        last["outcome"]["clock"] = 2
+        del last["hash"]
+        last["hash"] = cid_of(last)
+        forged = os.path.join(self.dir.name, "forged.journal")
+        write_journal(forged, entries)
+        opened = self.spawn().send(op="world-open", path=forged)
+        self.assertEqual(opened["status"], "error", opened)
+        self.assertIn("want drain does not replay", opened["message"])
 
     def test_a_want_the_clock_alone_opens_is_in_the_index_and_the_chronicle(self):
         self.want("bell", "late", "request.clock >= 1441")
