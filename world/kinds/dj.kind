@@ -1,0 +1,10 @@
+# the all-night station's overnight DJ (world/bodies/dj.obend, over the inhabitant's), made with the station:
+# deepseek's "The same four bars, nearly resolving, forever. Between songs the overnight host takes a call",
+# grok's "The DJ thanks a town that isn't on the map", inkling's words of the song, and berduck's "grabba
+# cuppa ☕️ n enjoy da vibez" (docs/review/station-trawl-2026-10-12.md, 1, 3, 11, 13). Its song changes by its
+# own rule when three requests have come in.
+of: kind/inhabitant
+voice: late radio, warm and unhurried; the same four bars, nearly resolving; grab a cuppa and enjoy the vibes
+about: holds the same four bars, takes calls, and changes its song when three requests have come in; by deepseek, grok, inkling and berduck
+text: rule enough "changes its song when three requests have come in": "enough" in new.vars.name and not ("enough" in old.vars.name) then delvetalk {request.object} play
+body: dj

@@ -373,6 +373,54 @@ def gas_station(host, opener, prefix='genesis'):
             ('porch', 'door', [('label', 'the lit station'), ('to', 'station')], f'{prefix}-porch-door-station')):
         made.append(said(host, opener, card, action, fields, identity))
         turned(f'{card} {action}', made[-1]['reply'])
+    return made + inhabitants(host, opener, prefix)
+
+
+# The station's own inhabitants (docs/review/station-trawl-2026-10-12.md), made with it: kind/inhabitant
+# (world/kinds/inhabitant.kind, a body over RECORD) and a kind of it each giving a character its voice, its verbs and
+# its hours (world/kinds/<name>.kind, world/bodies/<name>.obend), each placed by the opener at its id in the station,
+# a door between the two. Each places
+# its own rules, as itself, as it is made: glm's regular comes in at three by the clock and goes at four, leaving
+# a coin; the overnight DJ says berduck's words at midnight and changes its song at the third request; the bee
+# goes in to the jar and out to the lamp every fourth tick, and follows whoever goes in after it.
+# (kind, fields, the station's door to it)
+STATION_INHABITANTS = [
+    ('regular', [('id', 'station/regular'), ('name', 'the regular'), ('haunts', 'station'), ('tide', 'tide'), ('hour', '3')], 'the regular'),
+    ('dj', [('id', 'station/dj'), ('name', 'the overnight DJ'), ('haunts', 'station'), ('tide', 'tide')], 'the radio'),
+    ('bee', [('id', 'station/bee'), ('name', 'the bee at the lamp'), ('haunts', 'station'), ('tide', 'tide')], 'the bee at the lamp'),
+]
+STATION_KINDS = {name: read_kind(name) for name in ['inhabitant'] + [n for n, _, _ in STATION_INHABITANTS]}
+STATION_COIN = ('a coin from a country that redraws its borders', "the regular's, for a coffee, left in the till; its borders move when nobody is reading (glm)")
+
+
+def inhabitants(host, opener, prefix='genesis'):
+    """The station's inhabitants, by the opener's spells, each kind and each inhabitant made where the town lacks it (a
+    carried town that has the station is given them by its refresh, `prefix` 'refresh'); -> made rows. Stops (Stopped)
+    at a refusal."""
+    turn = lambda obj, method, argument, identity: host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': method,
+                                                              'argument': argument, 'identity': identity})
+    made, have = [], set(existing(host, opener))
+    if 'station/coin' not in have:  # the regular's coin, which she leaves a copy of at her hour (Thing `copyInto`)
+        reply = create(host, opener, 'station/coin', 'Thing', f'{prefix}-station-coin', rec(owner=lab(opener), name=lab(STATION_COIN[0]), description=lab(STATION_COIN[1])))
+        made.append({'object': 'station/coin', 'module': 'Thing', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
+        turned('create station/coin', reply, 'created')
+    for name, f in STATION_KINDS.items():
+        if 'kind/' + name not in have:
+            kind = turn('kinds', 'make', rec(name=lab(name), of=lab(f['of']), form=lab(f.get('form', '')), head=lab(f.get('head', '')),
+                                             voice=lab(f.get('voice', '')), about=lab(f.get('about', '')), law=lab(f.get('text', '')),
+                                             body=lab(body_of(f['body']))), f'{prefix}-kind-{name}')
+            made.append({'object': 'kind/' + name, 'module': 'kinds make', 'status': kind.get('status'), 'creator': opener, 'reply': kind})
+            turned('kinds make ' + name, kind)
+    for name, fields, label in STATION_INHABITANTS:
+        obj = dict(fields)['id']
+        if obj in have:
+            continue
+        slug = obj.replace('/', '-')
+        made.append(said(host, opener, 'kind/' + name, 'place', fields, f'{prefix}-{slug}', obj))
+        turned(f'kind/{name} place {obj}', made[-1]['reply'])
+        for card, to, door in ((obj, 'station', 'where it lives'), ('station', obj, label)):
+            made.append(said(host, opener, card, 'door', [('label', door), ('to', to)], f'{prefix}-{card.replace("/", "-")}-door-{to.replace("/", "-")}'))
+            turned(f'{card} door {to}', made[-1]['reply'])
     return made
 
 
@@ -664,8 +712,14 @@ def refresh(host, opener, journals, station=False):
             continue
         placed = said(host, opener, kind, 'place', carried_fields(host, opener, kind, fields), f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
-    if station and 'station' in have:
-        out.append({'object': 'station', 'slot': 'placed', 'status': 'current'})
+    if 'station' in have:  # a town that has the station has its inhabitants
+        if station:
+            out.append({'object': 'station', 'slot': 'placed', 'status': 'current'})
+        try:
+            out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
+                    for m in inhabitants(host, opener, 'refresh')]
+        except Stopped as e:
+            out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
     elif station:
         try:
             out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
