@@ -71,6 +71,25 @@ def digest(credential):
     return hashlib.sha256(credential.encode()).hexdigest()
 
 
+def verified_dids(st):
+    """Distinct DIDs with a verified claim, read without creating or migrating the identity database.
+
+    Guest principals are local identities, not participant DIDs. Credential expiry does not erase a verified claim.
+    """
+    if not st.identity.exists():
+        return set()
+    try:
+        db = sqlite3.connect(st.identity.resolve().as_uri() + '?mode=ro', uri=True)
+        try:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='challenges'").fetchone():
+                return set()
+            return {did for (did,) in db.execute("SELECT DISTINCT did FROM challenges WHERE state='verified' AND did LIKE 'did:%'")}
+        finally:
+            db.close()
+    except sqlite3.Error as error:
+        raise Failure('identity_unavailable', type(error).__name__) from None
+
+
 class Identity:
     def __init__(self, st, client, clock=time.time):
         st.root.mkdir(parents=True, exist_ok=True, mode=0o700)

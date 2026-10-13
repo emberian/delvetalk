@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The XRPC client for delve.town, HTTP requests and canonical JSON. Carries bytes; decides nothing.
 
-`public_transport` serves OAuth discovery and its DPoP PAR/token/revocation POSTs, and Client.did_document
+`public_transport` serves OAuth discovery and its DPoP PAR/token/revocation POSTs, Client.read and Client.did_document
 (did:web and did:plc): their destinations come from identities or discovered metadata. `http_transport` serves
 Delve XRPC, Zulip and the model: those hosts are configured, not discovered.
 
@@ -27,14 +27,18 @@ TIMEOUT = 20
 MAX_RESPONSE = 16 * 1024 * 1024
 MAX_PARAM = 2048
 
+PDS_READS = {
+    'com.atproto.repo.listRecords': {'repo', 'collection', 'limit', 'cursor', 'reverse'},
+    'com.atproto.sync.getRecord': {'did', 'collection', 'rkey'},
+    'com.atproto.sync.getLatestCommit': {'did'},
+}
 READS = {
+    **{nsid: (PDS, params) for nsid, params in PDS_READS.items()},
     'town.delve.feed.getFeed': (APPVIEW, {'feed', 'limit', 'cursor'}),
     'town.delve.feed.searchPosts': (APPVIEW, {'q', 'limit', 'cursor'}),
     'com.atproto.repo.getRecord': (PDS, {'repo', 'collection', 'rkey'}),
-    'com.atproto.repo.listRecords': (PDS, {'repo', 'collection', 'limit', 'cursor', 'reverse'}),
     'com.atproto.identity.resolveHandle': (PDS, {'handle'}),
     'com.atproto.sync.listRepos': (PDS, {'limit', 'cursor'}),
-    'com.atproto.sync.getRecord': (PDS, {'did', 'collection', 'rkey'}),  # a CAR: the signed commit, the MST path, the record
 }
 DID = re.compile(r'did:(plc:[a-z2-7]{24}|web:[a-z0-9.-]{1,253})\Z')
 WRITES = {
@@ -201,7 +205,7 @@ class FixtureTransport:
 class Client:
     def __init__(self, transport=None, allow_write=False):
         self.transport, self.allow_write = transport or http_transport, allow_write
-        self.document_transport = transport or public_transport
+        self.document_transport = self.read_transport = transport or public_transport
 
     def _send(self, method, url, body=None, token=None, raw=False, *, transport=None):
         headers = {'Accept': 'application/vnd.ipld.car' if raw else 'application/json', 'User-Agent': 'DelveTalk/2 transport'}
@@ -231,13 +235,26 @@ class Client:
         if nsid not in READS:
             raise Failure('endpoint_not_allowed', nsid)
         base, allowed = READS[nsid]
+        return self._read(base, nsid, allowed, raw, params)
+
+    def read(self, pds, nsid, raw=False, **params):
+        """Participant repository reads at its discovered PDS, through pinned public HTTPS.
+
+        Only listRecords, sync.getRecord and getLatestCommit exist; parameter and response bounds are get's.
+        An injected transport supplies the offline seam for both these reads and DID documents.
+        """
+        if nsid not in PDS_READS:
+            raise Failure('endpoint_not_allowed', nsid)
+        return self._read(pds, nsid, PDS_READS[nsid], raw, params, transport=self.read_transport)
+
+    def _read(self, base, nsid, allowed, raw, params, *, transport=None):
         params = {k: v for k, v in params.items() if v is not None}
         if set(params) - allowed:
             raise Failure('param_not_allowed', ','.join(sorted(set(params) - allowed)))
         for k, v in params.items():
             if not isinstance(v, (str, int)) or isinstance(v, bool) or len(str(v)) > MAX_PARAM:
                 raise Failure('param_invalid', k)
-        return self._send('GET', f'{base}/xrpc/{nsid}?{urllib.parse.urlencode(params)}', raw=raw)
+        return self._send('GET', f'{base.rstrip("/")}/xrpc/{nsid}?{urllib.parse.urlencode(params)}', raw=raw, transport=transport)
 
     def did_document(self, did):
         """A DID's document via pinned public HTTPS: did:plc from plc.directory, hostname-level did:web from its host.

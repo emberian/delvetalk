@@ -102,7 +102,7 @@ what is a fact of the container (mount paths, secret files, the bind address);
 the operator's choices live in the file. Fields: `origin`, `opener`,
 `host_socket`, `root_socket`, `root_group`, `library`, `sync`, `obend`,
 `poll`, `http_bind`, `http_port`, `firehose_bind`, `firehose_port`, `trust_proxy`, `hand_bind`, `hand_port`,
-`hand_token_file`, `summon_handle`, `credentials`, `repo_keys`, `backups`,
+`hand_token_file`, `summon_handle`, `requests`, `participants`, `credentials`, `repo_keys`, `backups`,
 `anthropic_key_file`, `model_auth`, `model_thinking`, `model_account`,
 `key_name`, `tokens_toml`, `delve_mock`, `model_mock`, `watch_zuliprc`,
 `watch_stream`, `watch_topic`, `grant`. A world's bridge (Delve or a Zulip
@@ -125,13 +125,25 @@ directory per world for everything that is the world's, the town's included
                                       principals.txt, mentioned.txt, skipped.txt,
                                       publications.after; posting/; interpretations/;
                                       bridge.pid, interpret.pid; watch.jsonl, alerted.json;
-                                      repo.json (chain epochs), events (durable firehose log)
+                                      repo.json (chain epochs), events (durable firehose log);
+                                      requests.json (participant revisions and refused CIDs), answers/
     <repo_keys>/<world>.key           the repository's signing key
 
 `events` is fsynced before emission; its independent seq survives carry and front restart. Backups keep it
 with `repo.json`. The newest 10,000 events are replayable, compacted by atomic rewrite at 20,000; loss of
 `events` loses cursor continuity. `firehose_port = 0` disables the listener; enabling it requires the world's
 signing key, a private port mapping on `delvetalk-http` and the edge WebSocket route (DEPLOY "Firehose").
+
+`requests = false` disables public request polling. `participants = ""` is the owner's explicit space-separated
+list of did:plc or hostname-level did:web DIDs; `DELVETALK_PARTICIPANTS` overrides it. The registry unions that list
+with active pds.delve.town repositories and verified DIDs in `identity.sqlite`. Every participant is read at its DID
+document's PDS through pinned public HTTPS. Documents cache for ten minutes, with one refresh on verification
+failure per participant per poll; 256 non-delve-PDS participants may be read in a poll, every overflow DID reported.
+
+`worlds/<world>/requests.json` is `{revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}`. A matching PDS and revision
+skips listing; a changed PDS scans the whole collection. Consumed URIs and their first proven CIDs remain in
+`observe.sqlite`; neither consumed nor refused state is cleared at migration. Unread participants keep their last
+pair for retry. Keep both files and `answers/` in backups. ATPROTO §2 gives the proof and revision rules.
 
 `State` also hands out the host clients (`host()`, `root()`),
 `write` (atomic, the one `write_atomic`), the outbox reads, the daemon loop

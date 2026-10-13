@@ -11,7 +11,7 @@ import json
 import urllib.parse
 import time
 
-from transport.delve import Client, FixtureTransport, canonical, http_transport
+from transport.delve import Client, FixtureTransport, canonical
 from transport.host import CLOCK, PUBLIC, paged, painted, typed
 from transport import observe
 from transport.observe import Observer
@@ -699,9 +699,9 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
 
 def delve_observer(st, since):
     """The observer of a delve.town world: its posts, and residents' request records only when the config's `requests`
-    is on (the poller reads every repository the PDS lists; it is the owner's to start) and the posts are not fixtures."""
+    is on (participant DIDs at their current PDS; it is the owner's to start) and the posts are not fixtures."""
     from transport.requests import Poller
-    client = Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else http_transport)
+    client = Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else None)
     return Observer(st, client, since, Poller(st, client) if st.config.requests and not st.config.delve_mock else None)
 
 

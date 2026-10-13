@@ -42,7 +42,9 @@ class Config:
     hand_token_file: str = field('', "the file holding the hand's secret, read once at its start")
     summon_handle: str = field('livedelvetalk.delve.town', "the town's address on delve.town, whose mention summons it: fictional, matched as the post's text, never resolved; its replies go out through `credentials`, the owner's account")
     requests: bool = field(False, "poll residents' `online.fg-goose.gsb.request` records from the PDS (transport/requests.py): "
-                           "reads every repository pds.delve.town lists; off until the owner turns it on")
+                           "reads participant DIDs at their current PDS; off until the owner turns it on")
+    participants: str = field('', "explicit participant DIDs, space-separated: did:plc or hostname-level did:web; unioned with "
+                              "pds.delve.town's repos and verified claims; at most 256 non-delve-PDS participants per poll")
     station: bool = field(False, "a carry's refresh makes the all-night station on a town that lacks it, as genesis "
                           "--with-gas-station makes it (deploy/genesis.py gas_station); the owner's word, on in the live .env")
     credentials: str = field('~/.config/delvetown/credentials.json', "the Delve posting account's credentials, read only to post")

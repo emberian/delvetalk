@@ -169,22 +169,39 @@ as one turn, all or nothing: spells only, run as the host's `delvetalk plan` wit
 call is a spell's text or `{object, verb, fields}`, the front's `_actions` form. The request is public from the moment it is written and stays copied after deletion, so there is no
 `try` mode: a preview by record would publish the draft it previews.
 
-*Seeing it* (built, `transport/requests.py`). pds.delve.town's firehose is gated, so the bridge's observer pages
-`listRepos` (public, one call) at each step and, for each repo whose `rev` moved, lists its whole request collection
-and takes every record not yet consumed (an observation by uri) or refused at that CID. Record keys are not an
-insertion order (a resident may write an older TID, or fix a request below one already read), so there is no key
-watermark; the rev is only a skip. A request must stay in its repository until its answer is written: one created and
-deleted between two polls is never seen, and that is the author's to avoid. If delve grants a subscribeRepos
-credential (deepfates' to give), the same consumer reads `#commit` ops instead.
+*Seeing it* (built, `transport/requests.py`, L5). pds.delve.town's firehose is gated, so each poll pages
+`com.atproto.sync.listRepos`. The participant registry is the union of its active DIDs, every DID with a verified
+claim in `identity.sqlite`, and config `participants` (space-separated DIDs, default empty). Only did:plc and
+hostname-level did:web participate; unsupported DIDs produce a problem. Each participant is read at the PDS its
+DID document names in `#atproto_pds`. `PARTICIPANT_CAP = 256` bounds non-delve-PDS participants per poll, in sorted
+DID order; every overflow DID is reported as a problem. Delve-PDS participants use the listing's `rev`; others use
+one `com.atproto.sync.getLatestCommit?did` at their resolved PDS per poll. The skip signal is `(pds, rev)`, so a
+changed PDS causes a full collection scan even at the same revision.
+
+A changed pair lists the whole request collection and takes every record not yet consumed (an observation by URI)
+or refused at that CID. Record keys are not an insertion order (a resident may write an older TID, or fix a request
+below one already read), so there is no key watermark. Migration changes neither consumed URIs nor refused CIDs.
+`requests.json` holds `{revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}`; consumed requests stay in
+`observe.sqlite` under their first proven CID. A request must stay in its repository until its answer is written:
+one created and deleted between two polls is never seen. If delve grants a subscribeRepos credential (deepfates'
+to give), the same consumer reads `#commit` ops instead.
 
 *Authenticity.* The bridge treats observed post authors as UNVERIFIED (`bridge.py`). A request is fetched by
-`com.atproto.sync.getRecord`: the signed commit and the MST path. The transport checks the signature against the
-DID document's `#atproto` key (did:plc from plc.directory; a hostname-level did:web from its host, refused unless the
-host resolves only to global addresses, connected to the checked address by `delve.public_transport`) and the path
-to the record's CID (`mst.find`); a record that fails is no turn,
-and its uri and CID are kept as refused. The proof is read from the PDS the DID document names now, and only when that
-is the PDS polled: a repository that moved away is not read from its old host, whose copy may be stale (a reader of
-other PDSes is §8's). The first act in the town whose author is proven, not observed.
+`com.atproto.sync.getRecord`: the signed version-3 commit, matching DID, and the MST path to the record's CID
+(`mst.find`). Its signature must verify under the DID document's `#atproto` key. Documents resolve through
+`Client.did_document`: did:plc from plc.directory, hostname-level did:web from its host. Documents cache in memory
+for ten minutes, refreshed on expiry and once per participant per poll after any proof verification failure before
+refusal. A refresh naming a changed PDS restarts the collection scan there. The old PDS's listing is never used to
+fetch a proof from the new PDS. A failure after refresh is no turn; its URI and listed CID are kept as refused, so
+unchanged invalid records cause no refresh storm.
+
+`Client.read(pds, nsid, raw=False, **params)` allows exactly `com.atproto.repo.listRecords`,
+`com.atproto.sync.getRecord`, and `com.atproto.sync.getLatestCommit`, with `get`'s parameter and response discipline.
+DID documents and all participant PDS reads use `delve.public_transport`: HTTPS, entirely global DNS answers, a
+connection pinned to the checked address, verifying TLS and the original Host header. HTTP and private destinations
+produce problems without requests to them. A proof is fetched only from the PDS the held document names; identity
+changes become visible on refresh, with at most ten minutes of cache age. The first act in the town whose author is
+proven, not observed.
 
 *Identity.* The turn's identity is `(did, at-uri)`, the same machinery as a post's spell: the observation is the
 post's, `world-reach` finds the spell's card, `world-turn` runs it with `identity` the at-uri (a verb call goes to its
@@ -284,7 +301,7 @@ The fake OAuth provider exposes HTTPS identities through its injected transport 
 Writing a request from `/play/` would need `repo:online.fg-goose.gsb.request?action=create` [permission]; delve offers only `transition:generic`, the whole
 account's write, which DelveTalk will not hold.
 
-**Decision:** request records for public acts only, polled from listRepos, proven by sync.getRecord, answered by
+**Decision:** request records for public acts only, polled by participant DID at its current PDS, proven by sync.getRecord, answered by
 signed `answer` records mirrored to delve; `try` only by XRPC, answered to the caller and never as a record;
 act/try/plan under service auth, reachable through the resident's own PDS by `atproto-proxy`; `if` per object.
 
@@ -338,9 +355,11 @@ surface, and off the feed never means private.
 
 ## 4. Identity
 
-**A resident is their DID.** Delve residents are (`did:plc:…`), and after §2 their acts carry their own keys'
-signatures. The word-claim and the `dt_agent_` bearer remain only for a caller who can neither write a record nor
-obtain a service-auth token: the guest.
+**A resident is their DID.** did:plc and hostname-level did:web residents participate from any public HTTPS PDS
+their DID document names. The participant registry (§2) combines delve repository discovery, verified claims and the
+owner's explicit `participants`; a resident who moves keeps their consumed request identities and refused CIDs.
+Their record acts carry their own keys' signatures. The word-claim and the `dt_agent_` bearer remain only for a
+caller who can neither write a record nor obtain a service-auth token: the guest.
 
 **Guests get a hosted DID.** `guest:<host>:<name>` (`identity.py`) becomes `did:web:<name>.guest.gsb.fg-goose.online`,
 whose PDS is DelveTalk: `createRecord`, `putRecord`, `deleteRecord` and the sync reads for the one collection
@@ -424,7 +443,7 @@ holds every card, page and the index, and her mirror walks it with listRecords l
 and runs it, and the answer (the receipt with its entry CID, and the offers and trace when all of it is public) appears as
 `online.fg-goose.gsb.answer/<did>.<rkey>` in the account their mirror already reads. No post, no HTTP beyond their PDS, no
 credential; the request and answer are public, as §3's table says, and looking first waits for `try` by XRPC (L5).
-The live test is the owner's account writing one request; it writes to delve, so it waits for his word. The bridge runs the poller only under the config's `requests` (`DELVETALK_REQUESTS=on` in the workhorse's `.env`), off by default: it reads every repository pds.delve.town lists, so starting it is the owner's step too.
+The live test is the owner's account writing one request; it writes to delve, so it waits for his word. The bridge runs the poller only under the config's `requests` (`DELVETALK_REQUESTS=on` in the workhorse's `.env`), off by default: it reads the participant registry at each DID's current PDS, so starting it is the owner's step too.
 
 **Findings for other lanes.** `observe.py` summoned `livedelvetalk.delve.town`, which resolves `HandleNotFound` on
 pds.delve.town; the summoned handle is the config field `summon_handle`. The owner's decision (2026-10-12): it stays
@@ -446,7 +465,6 @@ docs/review/astra-2026-10-12/atproto.md, each finding checked against the code a
 | 2 | the answer discloses what only the caller reads | fixed: the answer is the anonymous projection (§2 "The answer"); `answerView` stays the shape of an authenticated XRPC response (L5) |
 | 6 | three lexicons nest objects inline | fixed: `card#door`, `openSession#fork`, `listSessionRecords#sessionRecord`; `tests/test_lexicons.py` checks every document and every answer the bridge writes |
 | 7 | a key watermark loses requests | fixed: a moved rev re-reads the whole collection; consumed and refused are kept by uri and CID, apart from scan progress; a request stays until answered |
-| 8 | discovery tied to one PDS and DID method | in part: did:plc and hostname-level did:web resolve; a proof is read only from the PDS the document names now. Next (L4 lane): a registry of participant DIDs, each read at its own PDS, so a resident who moves keeps acting |
 
 Fixed in L3:
 
@@ -469,6 +487,7 @@ Fixed in L5:
 | # | Finding | Decision |
 | --- | --- | --- |
 | 3 | OAuth discovery reaches internal addresses; did:web DNS can rebind between check and connect | fixed: one global-address policy for discovered URLs, including browser authorization and optional revocation; `delve.public_transport` resolves once per request and connects to the first checked IP, with verifying TLS for the URL host and its original Host header. All DNS answers must be public; mapped/compatible/NAT64/6to4 private forms are refused. OAuth discovery and DPoP POSTs and `Client.did_document` use it by default; configured XRPC, Zulip and model hosts keep `http_transport`. Injected fixture transports preserve the loopback tests without an HTTP scheme switch; `test_netsafe` and `test_oauth` name the attacks (§2) |
+| 8 | discovery tied to one PDS and DID method | Fixed in L5: participant DID registry = active delve repos ∪ verified claim DIDs ∪ config `participants`; did:plc and hostname-level did:web only. Documents cache ten minutes, one verification-failure refresh per participant per poll. Every read uses the document's public HTTPS PDS; `(pds, rev)` skip, full scan after migration, consumed URIs and refused CIDs retained. One getLatestCommit per resolved external PDS per participant per poll; cap 256, overflow reported by DID. `tests/test_requests.py` covers two PDSes, migration/stale copies, did:web, rotation, skip and destination/cap refusals (§2, §4) |
 | 9 | the bare-audience exception cannot know the forwarder | Fixed in L5: our bare DID and `#delvetalk` audiences are treated identically; no forwarder inference. `typ` JWT; matching ES256K/ES256 curve, integer `exp` within 300 s and optional `iat` within 30 s skew and lifetime 300 s; required method-bound `lxm` and atomic, bounded `(iss, jti)` custody. Public DID fetch, 60 s cache, one signature-failure refresh; getEntry consumes the verifier (§2(b), `tests/test_serviceauth.py`) |
 
 For the next slices, each with its decision:

@@ -80,6 +80,25 @@ WebSocket route to port 8765: subscribers use 8767 and take no HTTP worker. Stop
 or state restoration so the event log is quiescent; restart reconciles missed heights with a head-only sync,
 and a key rotation emits identity before sync. An unchanged restart adds no event.
 
+## Public request participants
+
+`requests` defaults to `false`; the bridge polls public request records only when the operator enables it.
+`participants` defaults to the empty string and names explicit participant DIDs, space-separated, in
+`<state>/delvetalk.toml` (`DELVETALK_PARTICIPANTS` overrides it). Both did:plc and hostname-level did:web are supported.
+The registry unions this list with active repositories discovered at pds.delve.town and verified identity-table
+claims. Each DID is read at its current document's `#atproto_pds`, through public-address-checked, pinned HTTPS.
+No PDS write is made by the poller. The mirror has its own authorization and remains off.
+
+Documents cache ten minutes; a proof verification failure refreshes once per participant per poll before refusal.
+The poll reads at most 256 non-delve-PDS participants in sorted DID order and reports every overflow DID; unsupported
+DIDs and unsafe PDS destinations are problems in the bridge step's `failed` output.
+
+`<state>/worlds/<world>/requests.json` holds `{revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}`. The revision skip
+requires both PDS and revision to match. A migrated participant is scanned in full; consumed URIs and first proven
+CIDs in `observe.sqlite`, refused records in `requests.json` and `answers/` remain intact. Backups retain all three.
+Identity changes are observed at the next document refresh, at most ten minutes after the last fetch. Requests must
+remain in the resident's repository until answered. ATPROTO §2 describes verification and discovery.
+
 ## Costs
 
 The boundary between the Python programs and the host process, measured on hbox with `deploy/bench-boundary.py` (median

@@ -1,8 +1,10 @@
 """Residents act by writing `online.fg-goose.gsb.request` in their own repository (docs/ATPROTO.md §2): the poller finds those
 records, proves each, and keeps it as an observation the bridge turns as it turns a post.
 
-pds.delve.town's firehose answers 401, so the poller pages `com.atproto.sync.listRepos` and reads a repository again only
-when its `rev` moved. Then it lists the repository's whole request collection and takes every record it has not yet
+pds.delve.town's firehose answers 401, so the poller unions `com.atproto.sync.listRepos`, verified claim DIDs and the
+owner's configured participants. Each is read at the PDS its DID document names; (PDS, rev) is the skip signal.
+Documents cache for ten minutes; verification failure refreshes once before refusal. A moved pair lists the repository's
+whole request collection and takes every record it has not yet
 consumed or refused, whatever its key: record keys are not an insertion order. Each is fetched with
 `com.atproto.sync.getRecord` and proven: the commit's signature under the `#atproto` key of the author's DID document,
 the MST path from the commit to the record's CID. A record that fails is no turn. A proven one is run only when it is
@@ -13,17 +15,22 @@ under the first CID proven, and the record must stay until its answer is written
 The poller reads; it never writes to any PDS. Python carries and checks bytes: whether the act is admitted is the host's.
 """
 import json
+import time
 
 from transport.atproto.cbor import decode, encode, read_car
 from transport.atproto.mst import find
 from transport.atproto.sign import public_key, verify
-from transport.delve import PDS, Failure
+from transport.delve import DID, PDS, Failure
+from transport.identity import verified_dids
 from transport.repo import NS, json_of, world_did
 
 COLLECTION = NS + 'request'
 MODES = ('act', 'plan')
 PLAN_CALLS = 8  # the request lexicon's calls.maxLength
 PAGES = 10  # a repository's request collection read per poll, 100 records a page
+PARTICIPANT_CAP = 256  # non-delve-PDS participants read per poll; overflow is a problem, with its DID
+DOCUMENT_TTL = 600  # seconds; the current DID document is refreshed again on proof verification failure
+PROOF_FAILURES = {'bad_signature', 'not_in_commit', 'bad_proof', 'no_atproto_key', 'did_document_mismatch'}
 
 
 def atproto_key(doc, did):
@@ -42,18 +49,15 @@ def endpoint(doc, did):
     raise Failure('no_pds', did)
 
 
-def proven(client, did, rkey, collection=COLLECTION):
-    """-> (cid, record value, handle) of `at://<did>/<collection>/<rkey>`, proven from the repository's signed
-    commit. The proof is read from the PDS the DID document names now, and only when that is the PDS polled: a repository
-    that moved away is not read from its old host, whose copy may be stale. Raises Failure naming what failed."""
-    doc = client.did_document(did)
+def proven(client, did, rkey, doc, collection=COLLECTION):
+    """-> (cid, record value, handle), proven from the document's PDS, #atproto key and repository MST path.
+    Raises Failure naming what failed. The poller owns document freshness and the one verification retry."""
     if doc.get('id') != did:
         raise Failure('did_document_mismatch', did)
-    if endpoint(doc, did) != PDS:
-        raise Failure('repository_elsewhere', endpoint(doc, did))
-    key = atproto_key(doc, did)
+    pds = endpoint(doc, did)
     try:
-        roots, blocks = read_car(client.get('com.atproto.sync.getRecord', raw=True, did=did, collection=collection, rkey=rkey))
+        key = atproto_key(doc, did)
+        roots, blocks = read_car(client.read(pds, 'com.atproto.sync.getRecord', raw=True, did=did, collection=collection, rkey=rkey))
         commit = decode(blocks[roots[0]])
         unsigned = {k: v for k, v in commit.items() if k != 'sig'}
         if commit.get('did') != did or commit.get('version') != 3 or not verify(key, encode(unsigned), commit.get('sig') or b''):
@@ -97,55 +101,124 @@ def judged(value, service, world, before_start):
 
 
 class Poller:
-    """One per world's bridge. `client` reads pds.delve.town and DID documents (delve.Client)."""
+    """One per world's bridge. A DID registry, resolved to each participant's current PDS."""
 
-    def __init__(self, st, client):
-        self.st, self.client = st, client
-        self.service, _ = world_did(st.config.origin)  # requests are addressed to the service; `world` names the world
+    def __init__(self, st, client, clock=time.monotonic):
+        self.st, self.client, self.clock = st, client, clock
+        self.documents = {}
+        self.service, _ = world_did(st.config.origin)
         self.world = st.world
 
-    def poll(self, observer):
-        """Read every repository whose rev moved, keep each new proven request as an observation. -> problems."""
-        ledger = self.st.requests
-        held = json.loads(ledger.read_text()) if ledger.exists() else {}
-        revs, refused, problems, cursor = held.setdefault('revs', {}), held.setdefault('refused', {}), [], None
+    def document(self, did, refresh=False):
+        """An identity held for ten minutes; forced refresh discards the old document even if its fetch fails."""
+        now = self.clock()
+        held = self.documents.get(did)
+        if not refresh and held and held[0] > now:
+            return held[1]
+        self.documents.pop(did, None)
+        doc = self.client.did_document(did)
+        if doc.get('id') != did:
+            raise Failure('did_document_mismatch', did)
+        endpoint(doc, did)
+        self.documents[did] = (now + DOCUMENT_TTL, doc)
+        return doc
+
+    def registry(self, problems):
+        """Union of active delve repositories, verified claim DIDs and the owner's explicit participants."""
+        listed, cursor = {}, None
         while True:
             try:
                 page = self.client.get('com.atproto.sync.listRepos', limit=1000, cursor=cursor)
-            except Failure as e:
-                problems.append({'listRepos': str(e)})
+            except Failure as error:
+                problems.append({'listRepos': str(error)})
                 break
             for repo in page.get('repos') or []:
-                did, rev = repo.get('did'), repo.get('rev')
-                if not isinstance(did, str) or repo.get('active') is False or revs.get(did) == rev:
-                    continue
-                try:
-                    self.repository(observer, did, refused)
-                    revs[did] = rev
-                except Failure as e:  # unread: the rev is not recorded, so the next poll reads it again
-                    problems.append({'did': did, 'failure': str(e)})
+                did = repo.get('did')
+                if isinstance(did, str) and repo.get('active') is not False:
+                    listed[did] = repo.get('rev')
             cursor = page.get('cursor')
             if not cursor or not page.get('repos'):
                 break
+        dids = set(listed) | set(self.st.config.participants.split())
+        try:
+            dids |= verified_dids(self.st)
+        except Failure as error:
+            problems.append({'identity': str(error)})
+        allowed = set()
+        for did in sorted(dids):
+            if DID.fullmatch(did):
+                allowed.add(did)
+            else:
+                problems.append({'did': did, 'failure': 'did_refused'})
+        self.documents = {did: held for did, held in self.documents.items() if did in allowed}
+        return allowed, listed
+
+    def poll(self, observer):
+        """Read moved (PDS, rev) pairs, retain consumed URIs and refused CIDs across identity changes. -> problems."""
+        ledger = self.st.requests
+        held = json.loads(ledger.read_text()) if ledger.exists() else {}
+        revs, refused, problems = held.setdefault('revs', {}), held.setdefault('refused', {}), []
+        dids, listed = self.registry(problems)
+        latest, remote = {}, set()
+
+        def revision(did, pds):
+            if (did, pds) not in latest:
+                if pds != PDS and did not in remote:
+                    if len(remote) >= PARTICIPANT_CAP:
+                        raise Failure('participant_overflow', f'limit {PARTICIPANT_CAP}')
+                    remote.add(did)
+                rev = listed[did] if pds == PDS and did in listed else self.client.read(
+                    pds, 'com.atproto.sync.getLatestCommit', did=did).get('rev')
+                if not isinstance(rev, str) or not rev:
+                    raise Failure('bad_revision', did)
+                latest[did, pds] = {'pds': pds, 'rev': rev}
+            return latest[did, pds]
+
+        for did in sorted(dids):
+            try:
+                doc = self.document(did)
+                pair = revision(did, endpoint(doc, did))
+                if revs.get(did) == pair:
+                    continue
+                doc = self.repository(observer, did, doc, refused, revision)
+                revs[did] = revision(did, endpoint(doc, did))
+            except Failure as error:  # unread: the pair is not recorded, so the next poll reads it again
+                problems.append({'did': did, 'failure': str(error)})
         self.st.write(ledger, held)
         return problems
 
-    def repository(self, observer, did, refused):
-        """Every request record of `did` not yet consumed or refused at its current CID."""
-        cursor = None
+    def repository(self, observer, did, doc, refused, revision, refreshed=False):
+        """Reconcile requests at the document's PDS. One identity refresh per participant per poll on a bad proof.
+
+        A refresh naming another PDS restarts the collection read there; the old listing is never used with new proofs.
+        """
+        pds, cursor = endpoint(doc, did), None
         for _ in range(PAGES):
-            page = self.client.get('com.atproto.repo.listRecords', repo=did, collection=COLLECTION, limit=100, cursor=cursor)
+            page = self.client.read(pds, 'com.atproto.repo.listRecords', repo=did, collection=COLLECTION, limit=100, cursor=cursor)
             for listed in page.get('records') or []:
                 uri, rkey = listed.get('uri', ''), str(listed.get('uri', '')).rsplit('/', 1)[-1]
                 if observer.seen(uri) or (refused.get(uri) or {}).get('cid') == listed.get('cid'):
                     continue
                 try:
-                    cid, value, handle = proven(self.client, did, rkey)
-                except Failure as e:
-                    if e.code in ('bad_signature', 'not_in_commit', 'bad_proof'):  # this CID will never prove: say so once
-                        refused[uri] = {'cid': listed.get('cid'), 'why': str(e)}
+                    cid, value, handle = proven(self.client, did, rkey, doc)
+                except Failure as error:
+                    if error.code not in PROOF_FAILURES:
+                        raise
+                    if not refreshed:
+                        doc, refreshed = self.document(did, refresh=True), True
+                        if endpoint(doc, did) != pds:
+                            revision(did, endpoint(doc, did))  # the cap applies before reading the new PDS
+                            return self.repository(observer, did, doc, refused, revision, refreshed=True)
+                        try:
+                            cid, value, handle = proven(self.client, did, rkey, doc)
+                        except Failure as retry:
+                            if retry.code not in PROOF_FAILURES:
+                                raise
+                            refused[uri] = {'cid': listed.get('cid'), 'why': str(retry)}
+                            continue
+                    else:
+                        refused[uri] = {'cid': listed.get('cid'), 'why': str(error)}
                         continue
-                    raise
                 run, why, call = judged(value, self.service, self.world, observer.before_start)
                 if not run:
                     refused[uri] = {'cid': cid, 'why': why}
@@ -158,5 +231,5 @@ class Poller:
                                              **({'invalid': why} if why else {})}}, json_of(value))
             cursor = page.get('cursor')
             if not cursor:
-                return
-
+                return doc
+        raise Failure('request_pages_exhausted', did)

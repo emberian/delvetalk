@@ -46,7 +46,7 @@ class State:
         self.firehose = h / 'events'  # length-prefixed DAG-CBOR records: seq, kind, epoch, height, exact event frame bytes;
         # fsynced before delivery, newest 10,000 retained, atomic rewrite at 20,000; copied by carry and state backups
         self.taught = h / 'taught.txt'  # the residents whose first admitted reply carried the next move
-        self.requests = h / 'requests.json'  # the request poller's ledger: each repo's rev read, each record refused
+        self.requests = h / 'requests.json'  # {revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}; consumed URIs stay in observe.sqlite
         self.answers = h / 'answers'  # online.fg-goose.gsb.answer records, <did>.<rkey>.json: the façade and the mirror serve them
 
     def host(self, **more):
