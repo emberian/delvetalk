@@ -225,15 +225,16 @@ class Errand(Reaction):
         """The opener's errand on kim's bell: done at its second rain, pays a day of the anthology's `admit`. Its `made`
         places one rule on the bell under the opener; glm's rain (the second) fires it, and the errand's `settle`
         claims it for glm in one turn: marked done by glm, its rule off the bell, and its own `pay` placed and fired at
-        that write, the opener lending `admit` to glm. A hand's settle is refused `ruled`; the errand wants `open` until
-        it is done."""
+        that write, the opener lending `admit` to glm. A hand's settle is refused `ruled`; its open card describes
+        the work without a want pretending that reading it completes it."""
         bell = self.plant(KIM)
         errand = self.made(OPENER, "kind/errand", "\nasks: a second hand's rain on kim's bell\non: %s\n"
                            "done: count(new.lines) >= 2 and count(old.lines) <= 1\n"
                            "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
         placed = sorted(r["name"] for r in self.town.send(op="world-rules", principal=OPENER, object=bell)["rows"] if r["from"] == bell)
         self.assertEqual(placed, [identifier(errand)], placed)
-        self.assertIn("open", [w["name"] for w in self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"]])
+        self.assertNotIn("open", [w["name"] for w in self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"]])
+        self.assertIn("open:", self.card(self.say(KIM, errand, "")))
         forged = self.say(GLM, errand, "delvetalk %s settle / by: glm" % errand)
         self.assertEqual((forged["status"], forged["receipt"]["outcome"]["clause"]), ("refused", "ruled"), forged)
         self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: the first" % bell))

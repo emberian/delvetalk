@@ -63,7 +63,7 @@ def graft(state: State, input: {target: String, package: String}, context: Abi.C
 def shining():
     from tests.bend import MODULES
     source = open(MODULES["Thing"]).read()
-    return source.replace('  Text.words("transfer copy copyFor drop ~act")', '  Text.words("transfer copy copyFor drop ~act shine")') + "def shine(state: State, context: Abi.Context) -> Activity<Bool>:\n  true\n"
+    return source.replace('  Text.words("transfer copy copyFor copyInto drop ~act")', '  Text.words("transfer copy copyFor copyInto drop ~act shine")') + "def shine(state: State, context: Abi.Context) -> Activity<Bool>:\n  true\n"
 
 
 class Copy(Chain):
@@ -227,6 +227,27 @@ class HostSpells(Reflection):
         self.assertEqual(field(self.state("c"), "count")["value"], "20")
         missing = self.say("delvetalk c become\nkind: kind/none", identity="b2")["receipt"]["outcome"]
         self.assertEqual((missing["class"], missing["clause"]), ("badSpell", "unknownKind"), missing)
+
+    def test_become_lays_a_lawless_kind_without_citing_later_adoptions(self):
+        before = self.host.send(op="world-inspect", principal="ember", object="c")["laws"]
+        became = self.say("delvetalk c become\nkind: kind/louder")
+        self.assertEqual(became["status"], "admitted", became)
+        self.assertFalse(became["receipt"]["outcome"].get("amendments"), became)
+        laws = self.host.send(op="world-inspect", principal="ember", object="c")["laws"]
+        self.assertEqual(laws, before)
+        self.assertFalse(any(l["clause"] == 'under "kind/louder"' for l in laws), laws)
+        self.assertEqual(self.turn("c", "bump", principal="kim")["status"], "admitted")
+        self.assertEqual(field(self.state("c"), "count")["value"], "10")
+        adopted = self.say('delvetalk kind/louder adopt\nlaw: law closed "only ember": request.subject == "ember"')
+        self.assertEqual(adopted["status"], "admitted", adopted)
+        kind_laws = self.host.send(op="world-inspect", principal="ember", object="kind/louder")["laws"]
+        self.assertIn("closed", [l["name"] for l in kind_laws])
+        self.assertEqual(self.turn("c", "bump", principal="kim")["status"], "admitted")
+        self.assertEqual(field(self.state("c"), "count")["value"], "20")
+        self.reopen()
+        self.assertEqual(self.host.send(op="world-inspect", principal="ember", object="c")["laws"], before)
+        self.assertEqual(self.turn("c", "bump", principal="kim")["status"], "admitted")
+        self.assertEqual(field(self.state("c"), "count")["value"], "30")
 
     def test_adopt_appends_a_kinds_clauses_under_the_amend_metarule(self):
         circle = 'law circle "only ember and kim count": request.subject == "ember" or request.subject == "kim"'

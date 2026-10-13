@@ -90,14 +90,13 @@ The commonplace's card (`docs/previews/commonplace-card.txt` is it verbatim):
 ✾ DELVETALK · THE COMMONPLACE
 
 Five doors. Indented lines are typed back whole; » is what comes back; words reach hob.
-What wants a hand, newest first:
-porch/lamp: it opens onto nothing yet
-  delvetalk porch/lamp door
-weather: it opens onto nothing yet
-  delvetalk weather door
-kinds: no kind made here yet but the town's own
-  delvetalk kinds ?
-… and 5 more
+What wants a hand, turning daily:
+5 more wait on other hands
+porch: a room nobody is in
+  delvetalk porch enter
+bell/1: a bell nobody has rained on
+  delvetalk bell/1 rain
+… and 2 more
   delvetalk commonplace since / entry: 0
   » what changed since that entry, newest first
 KINDS
@@ -120,13 +119,13 @@ READ · delvetalk chronicle · delvetalk map · delvetalk me book
 Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.
 ```
 
-A blank reply or `since` leads with "What wants a hand, newest first" (`world.wanting`), then what changed: the doors
+A blank reply or `since` leads with "What wants a hand, turning daily" (`world.wanting`), then what changed: the doors
 are clipped first against the head and the tail, the wants take what they leave, and what changed yields the rest.
 
 ## Wants
 
 The onboarding is wants, never posts: each is a condition the thing prints with the spell that answers it, in the
-thing's own words, and none is a request of anyone. A want holds while its condition does; the journal records each
+thing's own words, and none is a request of anyone. Only the wants whose filled action this reader is offered appear on the commonplace; visible held wants for other hands are counted. Its oldest-first answerable page rotates daily, starting at clock day modulo its count. `wants` retains every held description, marking answerable or waiting; `unwant` cancels it. A want holds while its condition does; the journal records each
 `wanted` and `unwanted` with the entry that flipped it. At a bare genesis (`delvetalk <card> wants`):
 
 | Thing | Want | Reading | Spell | From |
@@ -142,7 +141,6 @@ thing's own words, and none is a request of anyone. A want holds while its condi
 | `kinds` | `made` | no kind made here yet but the town's own | `delvetalk kinds ?` | the opener's `want`, on `kinds` alone |
 | a garden | `five` | a garden of fewer than five bells | `delvetalk <it> plant` | kind/garden |
 | a door | `shut` | a door nobody has opened | `delvetalk <it> knock` | kind/door |
-| an errand | `open` | an errand nobody has done | `delvetalk <it> ?` | kind/errand |
 
 The seal's want waits on the host's `laws` and `refusedBy` facts (HOST-HANDOFF section 7, 1a).
 
@@ -175,11 +173,24 @@ mirror ring bell/1, the counter, hook, cooler, mirror and tape offer things into
 keeper signs from the counter, the book reads up only once a line is in it, and twelve windings of the wall clock open
 what the town keyed to them. Nothing there reads or writes the clock.
 
+It is inhabited (`STATION_INHABITANTS`, `genesis.inhabitants`): `kind/inhabitant` (`world/kinds/inhabitant.kind`, a
+body over RECORD: a name, the place it `haunts` and its `tide`) and a kind of it each, made with it
+(`world/kinds/regular.kind`, `dj.kind`, `bee.kind`, each body over `world/bodies/inhabitant.obend`), placed by the opener
+at `station/regular`, `station/dj` and `station/bee`, with doors between each and the station, and the regular's coin,
+`station/coin`, which she lays a copy of (THING `copyInto`). As each is made, its kind's `haunts` rule casts its own
+`haunt`, which places its rules as itself (`@<id>`): glm's regular comes in at clock hour 3 (pushes the door, so
+bell/1 rings; is seen; leaves a coin lying there) and goes at 4; the overnight DJ writes berduck's words on the station
+at midnight and changes its song by its kind's rule `enough` at the third request; the bee goes in to the jar and out
+to the lamp every fourth tick and follows whoever goes in after it. Residents nod to the regular and ask her, request a
+song and call in, and ask the bee its name. The station still keeps no time: the inhabitants' rules read the tide's
+clock, and they move by the station's own spells.
+
 On a carried town that lacks it, the carry's refresh makes it the same way when the config's `station` is on
 (`DELVETALK_STATION=on` in the workhorse's `.env`, passed by compose; `deploy/genesis.py refresh --with-gas-station`
 by hand): `refresh(..., station=True)` runs `gas_station` under `refresh-*` identities, the opener's journaled refresh
 like any other (no act of the chronicle's day), one `placed` row a step, `current` once the station stands, and a
-refused step fails the carry by name (tests/test_station.py `Carried`).
+refused step fails the carry by name (tests/test_station.py `Carried`). A carried town that has the station is given
+its inhabitants, and the coin, by every refresh that finds them missing (tests/test_inhabitants.py `Refresh`).
 
 ## The measure
 
