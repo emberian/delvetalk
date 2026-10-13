@@ -154,6 +154,7 @@ class OpenDoor(FrontCase):
         self.assertIn('No invitation? Ask for a key', text)
         self.assertIn('<script src="/static/arrive.js" defer></script>', text)
         self.assertIn('I have an invitation', text)  # invitations still come in at the same door
+        self.assertIn("This town's door is open: ask it for a key", text)
         challenge = html.unescape(re.search(r'data-challenge="([^"]+)"', text)[1])
         bits = int(re.search(r'data-bits="(\d+)"', text)[1])
         csrf = re.search(r'name="csrf" value="([^"]+)"', text)[1]

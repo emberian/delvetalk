@@ -220,6 +220,7 @@ ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever 
                 'invalid_guest_name': 'a name is a lowercase letter, then up to 31 lowercase letters, digits or hyphens, ending in a letter or digit',
                 'name_fixed': 'that invitation already names its guest; send that name, or none',
                 'taken': 'that name is taken; the code is still unused, so choose another'}
+ARRIVE_DOOR = {'taken': 'Someone here already goes by that name. Choose another and ask again.'}  # where the open door's words differ
 HELD = "the door holds arrivals from your address for the town's owner: keep this key; it opens when you are let in"
 ARRIVE_LINES = {'invalid_guest_name': ACCEPT_LINES['invalid_guest_name'],
                 'proof_invalid': 'proof is {challenge, nonce}: a challenge GET /AGENTS.md/arrive gave this process, unchanged, and a nonce of 1 to 64 printable ASCII characters',
@@ -1242,7 +1243,7 @@ class Handler(BaseHTTPRequestHandler):
         except IdentityError as err:
             retry = [('Retry-After', str(err.retry))] if err.retry else []
             if self.browser():
-                note = DOOR_LINES.get(err.code, err.code).format(minutes=max(1, (err.retry or 60) // 60))
+                note = (ARRIVE_DOOR.get(err.code) or DOOR_LINES.get(err.code, err.code)).format(minutes=max(1, (err.retry or 60) // 60))
                 return self.html(429 if err.code == 'rate_limited' else 400, self.enter_page(note, '', name), retry)
             if err.code == 'rate_limited':
                 return self.fail('rateLimited', ARRIVE_LINES[err.code], more={'reason': err.code}, headers=retry)

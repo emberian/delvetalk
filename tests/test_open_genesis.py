@@ -47,7 +47,7 @@ class OpenGenesis(unittest.TestCase):
         self.assertTrue(all(m['status'] in ('created', 'admitted') for m in self.made), [m for m in self.made if m['status'] not in ('created', 'admitted')])
         have = set(genesis.existing(self.root, OPENER))
         for obj in ('commonplace', 'policy', 'tide', 'workshop', 'kinds', 'library', 'porch', 'bell/1', 'bell/2', 'bell/green',
-                    'station', 'station/register', 'station/regular', 'station/dj', 'station/bee', 'kind/register', 'register',
+                    'station', 'station/register', 'station/regular', 'station/dj', 'station/bee', 'station/parlour', 'station/parlour/planchette', 'kind/register', 'register',
                     'register/desk', 'weather', 'porch/lamp'):
             self.assertIn(obj, have)
         porch = {d['to']['object'] for d in door_rows(self.view('porch'))}

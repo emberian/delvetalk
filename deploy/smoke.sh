@@ -2,7 +2,7 @@
 # The newcomer's journey against a running DelveTalk front, with a throwaway
 # credential. Read-only on the world: no turn is run, nothing is posted.
 #
-#   deploy/smoke.sh ORIGIN [--via URL] [--pin SHA256] [--handle H] [--verify AT_URI] [--object NAME]
+#   deploy/smoke.sh ORIGIN [--via URL] [--pin SHA256] [--handle H] [--verify AT_URI] [--object NAME] [--open]
 #
 #   --via      send the requests here instead (the workhorse's 10.10.1.10:8765 from
 #              the anchor, or a local container); the guide must still name ORIGIN
@@ -12,13 +12,15 @@
 #   --verify   an at:// URI of a post whose whole text is that challenge's text;
 #              verifies, then views the object as the verified principal, then revokes
 #   --object   the object to view (default: commonplace, which every genesis makes)
+#   --open     an open town (docs/DEPLOY.md "A second instance"): its door offers a key (a challenge at
+#              /AGENTS.md/arrive, the form at /enter) and the guide says so; no key is asked for
 #
 # Each challenge counts against the handle's 8 per hour and the IP's 16 per minute.
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
-[[ $# -ge 1 ]] || { sed -n '2,17p' "$0" >&2; exit 64; }
+[[ $# -ge 1 ]] || { sed -n '2,19p' "$0" >&2; exit 64; }
 origin=${1%/}; shift
-base=$origin pin="" handle="" proof="" object=commonplace
+base=$origin pin="" handle="" proof="" object=commonplace open=0
 [[ -f $here/out/host.sha256 ]] && pin=$(cat "$here/out/host.sha256")
 while [[ $# -gt 0 ]]; do
   case $1 in
@@ -27,6 +29,7 @@ while [[ $# -gt 0 ]]; do
     --handle) handle=$2; shift 2 ;;
     --verify) proof=$2; shift 2 ;;
     --object) object=$2; shift 2 ;;
+    --open) open=1; shift ;;
     *) echo "smoke: unknown argument $1" >&2; exit 64 ;;
   esac
 done
@@ -66,6 +69,16 @@ if [[ $code == 401 ]]; then pass "the API refuses a view without a credential"; 
 
 req GET /AGENTS.md/no-such-route "" "dt_agent_$(printf 'x%.0s' {1..43})"
 if [[ $code == 404 ]]; then pass "an unknown route is 404"; else fail "unknown route answered $code"; fi
+
+req GET /AGENTS.md/arrive
+if [[ $open == 1 ]]; then
+  if [[ $code == 200 && $(json "d['status']") == proof ]]; then pass "the door offers a key: a challenge of $(json "d['bits']") bits"; else fail "GET /AGENTS.md/arrive: $code"; fi
+  code=$(curl -sS -o "$work/body" -w '%{http_code}' -H 'Accept: text/html' "$base/enter")
+  if [[ $code == 200 ]] && has 'No invitation? Ask for a key'; then pass "/enter offers a key for the asking"; else fail "GET /enter: $code"; fi
+  req GET /AGENTS.md
+  if has "This town's door is open"; then pass "the guide says the door is open"; else fail "the guide says nothing of the open door"; fi
+elif [[ $code == 404 ]]; then pass "an invited town's door gives no key (/AGENTS.md/arrive is 404)"
+else fail "an invited town answered /AGENTS.md/arrive $code"; fi
 
 if [[ -n $handle ]]; then
   req POST /AGENTS.md/challenge "{\"handle\":\"$handle\"}"

@@ -437,7 +437,9 @@ def enter(note='', code='', name='', arrive=None):
     asked = arrive and not code  # the name goes back to the form it came from
     asking = T['enter_arrive'].format(challenge=e(arrive['challenge']), bits=e(str(arrive['bits'])), name=e(name if asked else '')) if arrive else ''
     return page('come in', None, T['enter_page'].format(note=T['enter_note'].format(note=e(note)) if note else '', code=e(code),
-                                                         name=e('' if asked else name), arrive=asking))
+                                                         name=e('' if asked else name), arrive=asking,
+                                                         lede=T['enter_lede_open'] if arrive else T['enter_lede'],
+                                                         agents=' (or, with no code, <code>/AGENTS.md/arrive</code>)' if arrive else ''))
 
 
 def welcome(handle, credential):
