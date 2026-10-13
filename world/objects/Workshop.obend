@@ -320,8 +320,17 @@ def verbLayer(name: String, takes: String, body: String) -> String:
   let text = takesText(takes)
   let field = if text then "  text: text 1..280\n" else ""
   let input = if text then "input: {Forms.capital(name)}Input, " else ""
-  let lines = textJoin(Lists.map(Forms.split(Text.trimEnd(body), "\n"), fn(l: String) -> String: "  {Text.trim(l)}"), "\n")
+  let rows = Forms.split(Text.trimEnd(body), "\n")
+  let margin = bodyMargin(Lists.filter(rows, fn(l: String) -> Bool: Text.blank(l) == false))
+  let lines = textJoin(Lists.map(rows, fn(l: String) -> String: if Text.blank(l) then "" else "  {textDrop(l, textLength(margin))}"), "\n")
   "form {name}:\n{field}def {name}(state: State, {input}context: Abi.Context) -> Activity<Nat>:\n{lines}\n"
+# The whitespace prefix shared by nonblank lines; deeper indentation belongs to the body.
+def bodyMargin(lines: Lists.List<String>) -> String:
+  match lines:
+    case nil(_): ""
+    case cons(c): Lists.fold(c.tail, textTake(c.head, textSpan(c.head, " \t")), fn(l: String) -> String -> String: fn(margin: String) -> String: textTake(margin, marginLength(margin, l, 0n)))
+def marginLength(margin: String, line: String, at: Nat) -> Nat:
+  if at >= textLength(margin) || textTake(textDrop(margin, at), 1n) != textTake(textDrop(line, at), 1n) then at else marginLength(margin, line, at + 1n)
 def bodyGrowing(object: String, name: String, layer: String, written: Nat, context: Abi.Context, state: State) -> Activity<Verdict>:
   match overChecked(object, layer, context):
     case checked(c): if Lists.length::<String>(c.diagnostics) == 0n then bodyLaying(object, name, layer, context, state) else Card.tell(Verdict.flawed({diagnostics: c.diagnostics}), Document.concat(checkedCard(c.diagnostics), Document.text("Lines 1 to {natText(written)} are what the workshop wrote around your body; its first line is line {natText(written + 1n)}.\n")))

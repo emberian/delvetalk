@@ -41,6 +41,20 @@ def here(context: Abi.Context, state: State) -> Lists.Maybe<Presence>:
   Rows.presentAs(state.presence, context.principal)
 def isHere(context: Abi.Context, state: State) -> Bool:
   Rows.isPresent(state.presence, context.principal)
+# A call reads the room with the calling turn's staged entry or departure applied.
+def present(state: State, context: Abi.Context) -> Bool:
+  isHere(context, state)
+# Principals with avatars index presence in the room's transaction; a principal without an
+# avatar still enters and leaves. A failed index refuses the presence write with it.
+def indexPresence(context: Abi.Context) -> Activity<Bool>:
+  match world.viewField::<Plans.Reference>({object: {world: context.world, object: context.principal}, field: "at"}):
+    case viewed(_): indexAvatar(context)
+    case _: true
+def indexAvatar(context: Abi.Context) -> Activity<Bool>:
+  match world.call::<Bool>({object: {world: context.world, object: context.principal}, method: "locate", argument: Plans.nothing()}):
+    case returned(r): if r.result then true else refuse("refused location: The avatar did not index presence.")
+    case refused(r): refuse("refused {r.clause}: {r.reading}")
+    case denied(_): refuse("refused location: The avatar did not admit its room.")
 def passageAt(id: String, state: State) -> Lists.Maybe<Passage>:
   Lists.find(state.passages, fn(p: Passage) -> Bool: p.id == id)
 def lastLeft(who: String, state: State) -> Lists.Maybe<Departure>:
@@ -208,6 +222,9 @@ def performed(verdict: Verdict, context: Abi.Context, state: State) -> Activity<
     case leave(l): departing(l.me, l.chose, l.vars, extend(state, {presence: Relations.retract(state.presence, {who: l.me.who}, Rows.presenceKey), vars: l.after, chose: if l.chose == "" then state.chose else l.chose}), context, state)
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}, tended: set context.clock}
+  match indexPresence(context):
+    case _: entryTold(at, after, context)
+def entryTold(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   match lastLeft(context.principal, after):
     case some(l): if l.value.entry == 0n then welcomed(at, after, Document.text(""), context) else away(at, after, l.value.entry, context)
     case none(_): welcomed(at, after, Document.text(""), context)
@@ -274,6 +291,9 @@ def wroteVar(edit: Plans.Entries<Var, Var>, rest: Lists.List<Plans.Entries<Var, 
 # retracted and this one inserted.
 def departing(me: Presence, chose: String, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {presence: retract {who: me.who}, chose: set if chose == "" then state.chose else chose}
+  match indexPresence(context):
+    case _: departureRecorded(me, vars, after, context, state)
+def departureRecorded(me: Presence, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context, state: State) -> Activity<Done>:
   match lastLeft(me.who, state):
     case some(l): forgotten(l.value, vars, after, context)
     case none(_): recorded(vars, after, context)
@@ -373,7 +393,7 @@ def laid(context: Abi.Context) -> Activity<Done>:
   let written(_) = write {things: insert {world: context.world, object: context.caller}}
   Done.done({})
 def methods() -> Lists.List<String>:
-  Text.words("take put inspirited")
+  Text.words("take put inspirited ~present")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("enter choose leave say emote whisper write lines"), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
 # A ```spween block makes a room under this one, by this room's kind (its `makeUnder`, which reads

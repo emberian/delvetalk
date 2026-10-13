@@ -170,7 +170,7 @@ def pended(state: State, line: Line, context: Abi.Context) -> Activity<Nat>:
   inscribed(extend(state, {pending: Relations.insert(state.pending, {n: line.n}, pendingKey)}), line, context)
 def inscribed(state: State, line: Line, context: Abi.Context) -> Activity<Nat>:
   let said = Document.text("#{natText(line.n)} is written: {line.text}\n\n")
-  match heard(state.maker, context.object, line.verb, context):
+  match heard(state.maker, line.verb, context):
     case _: Card.tellTo(line.n, context.principal, Document.concat(said, renderFrom(extend(state, {lines: Relations.insert(state.lines, line, lineKey), next: state.next + 1n, tended: context.clock}), context, 0n, Document.size(said))))
 # How many lines the record keeps (its `relations()`, a body's own).
 def linesKept() -> Nat:
@@ -180,8 +180,8 @@ def linesKept() -> Nat:
 # What another hand did to a thing, told to the thing's maker: a send of `heard {thing, verb}` to their
 # avatar, run as the hand (its principal is who did it) and sent by this record. The maker's own acts,
 # and a thing nobody made, tell nothing. A rule cannot say it: its spell would name the hand by DID.
-def heard(maker: String, thing: String, verb: String, context: Abi.Context) -> Activity<World.Sent>:
-  if maker == "" || maker == context.principal then World.Sent.refused({clause: "self"}) else world.send({object: {world: context.world, object: maker}, method: "heard", argument: {thing: thing, verb: verb}})
+def heard(maker: String, verb: String, context: Abi.Context) -> Activity<World.Sent>:
+  if maker == "" || maker == context.principal then World.Sent.refused({clause: "self"}) else world.send({object: {world: context.world, object: maker}, method: "heard", argument: {thing: context.object, verb: verb}})
 # Tending: the clock minute and the entry of this attention, answered with the card.
 def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = write {tended: set context.clock}
@@ -230,8 +230,7 @@ def door(state: State, input: {label: String, to: String}, context: Abi.Context)
 def hung(entries: Plans.Entries<Card.Doorway, Card.Doorway>, to: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = world.write(extend(keep(), {cites: entries}))
   makerOf(to, said, context)
-# Who made `thing`: a record's `maker`, else its `owner` (a THING's maker owns it); told of the door
-# unless they hung it.
+# The door tells another hand's maker; a thing without a maker receives no notice.
 def makerOf(thing: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
   match world.viewField::<String>({object: {world: context.world, object: thing}, field: "maker"}):
     case viewed(v): if v.state == "" then ownerOf(thing, said, context) else tellMaker(v.state, thing, said, context)
@@ -241,8 +240,18 @@ def ownerOf(thing: String, said: String, context: Abi.Context) -> Activity<Card.
     case viewed(v): tellMaker(v.state, thing, said, context)
     case _: doorTold(said)
 def tellMaker(maker: String, thing: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
-  match heard(maker, thing, "door", context):
+  if maker == "" || maker == context.principal then doorTold(said) else citationSent(thing, said, context)
+def citationSent(thing: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.send({object: {world: context.world, object: thing}, method: "cited", argument: Plans.nothing()}):
     case _: doorTold(said)
+# A committed door to this record: the citing card sends, this record verifies its door and
+# tells its own maker. The avatar's notice is sent by the thing it describes.
+def cited(state: State, context: Abi.Context) -> Activity<World.Sent>:
+  if context.sender == "" || context.caller != context.sender then World.Sent.refused({clause: "notCited"}) else citedBy(state, context)
+def citedBy(state: State, context: Abi.Context) -> Activity<World.Sent>:
+  match world.viewField::<Card.Doorways>({object: {world: context.world, object: context.sender}, field: "cites"}):
+    case viewed(v): if Lists.any(v.state, fn(d: Card.Doorway) -> Bool: d.to.world == context.world && d.to.object == context.object) then heard(if state.maker == "" then state.owner else state.maker, "door", context) else World.Sent.refused({clause: "notCited"})
+    case _: World.Sent.refused({clause: "notCited"})
 def doorTold(said: String) -> Activity<Card.Replied>:
   Card.tell(Card.Replied.done({action: "door"}), Document.text(said))
 def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activity<Card.Replied>:
@@ -329,7 +338,7 @@ def forecastWritten(line: String) -> Activity<Bool>:
   let written(_) = write {weather: set textTake(line, 120n)}
   true
 def methods() -> Lists.List<String>:
-  Text.words("~made ~forecast ~act")
+  Text.words("~made ~forecast ~act ~cited")
 form write:
   text: text 1..280
 form admit:
