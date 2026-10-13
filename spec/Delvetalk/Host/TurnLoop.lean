@@ -1085,7 +1085,7 @@ def worldMethods : List String :=
    "sendVia", "create", "createUnder", "make", "await", "awaitUntil", "interpret",
    "offer", "publish", "reprogram", "extend", "compose", "kindStack", "amend", "inspect", "check", "checkObject", "grant", "grantWith", "revoke",
    "objects", "changed", "card", "principal",
-   "rule", "unrule", "want", "unwant", "grow", "ungrow", "act", "chronicle", "wanting", "holds"]
+   "rule", "unrule", "want", "unwant", "grow", "ungrow", "act", "chronicle", "wanting", "holds", "receipt"]
 
 /-- A message activity's yield (`World.Message {object, method, argument}`, WHOLENESS §1) as the
     host answers it: a call of the world object's `method`, re-headed as the Plan variant the arms
@@ -2568,6 +2568,18 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     match if handle == meCard then some s.subject else principalNamed s.world handle with
     | some did => respond bounds responseType "named" [.record [("principal", .label did)]]
     | none => respond bounds responseType "unknown" [emptyRecord]
+  -- `receipt {name}`: an entry of this town's journal, or of a chain it was carried from, named by its CID or its
+  -- slug (`Ops.receiptNamed`): `found {cid, height, principal}`, `ambiguous {count}`, `unknown`. Read from the chain
+  -- as the turn reads it, every entry before its own, which is append-only: no root (a register's anchors,
+  -- world/bodies/register.obend).
+  | .variant "receipt" (.record f) =>
+    let some name := (f.lookup "name").bind labelOf | evaluation "malformed receipt plan"
+    let s ← get
+    match receiptNamed s.world name with
+    | .found cid height principal =>
+      respond bounds responseType "found" [.record [("cid", .label cid), ("height", .natural height), ("principal", .label principal)]]
+    | .ambiguous count => respond bounds responseType "ambiguous" [.record [("count", .natural count)]]
+    | .unknown => respond bounds responseType "unknown" [emptyRecord]
   | .variant "objects" (.record f) =>
     let some pfx := (f.lookup "prefix").bind labelOf | evaluation "malformed objects plan"
     let some after := (f.lookup "after").bind labelOf | evaluation "malformed objects plan"

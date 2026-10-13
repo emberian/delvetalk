@@ -349,6 +349,34 @@ class Station(test_scenarios.Arc):
         self.assertEqual((touched["rule"], touched["principal"], touched["to"]), ("cooler_back_1", OPENER, "bell/1"))
         self.assertNotIn("\ncups = 1\n", self.card(self.say(GLM, "station", "")))
 
+    def test_the_radio_hums_the_porch_s_chord_only_once_its_bells_are_rung_together(self):
+        """The harmonic thread's line (alchemicav, gemini, hy3): a choice at the radio guarded by the porch's own
+        chord, `"porch".oddLimit >= 1`, read live by the host as the reader stands there. The porch is set back by
+        root to a porch never rung (genesis rings it once); hidden then, shown after anyone's `porch chime`."""
+        porch = self.town.send(op="world-view", principal=OPENER, object="porch")["state"]
+        for f in porch["fields"]:
+            if f["name"] == "oddLimit":
+                f["value"] = {"tag": "natural", "value": "0"}
+            elif f["name"] == "tone":
+                f["value"] = label("")
+        unrung = self.town.send(op="world-root", principal=OPENER, reason="a porch whose bells were never rung together",
+                                act={"kind": "set", "object": "porch", "field": "state", "value": porch})
+        self.assertEqual(unrung.get("status"), "root", unrung)
+        self.enter(KIM)
+        self.go(KIM, "Push the door", "counter")
+        self.go(KIM, "Take a coffee", "counter")
+        radio = self.card(self.go(KIM, "Listen to the radio", "radio"))
+        self.assertIn("  * Turn the radio off\n", radio)
+        self.assertNotIn("Tune to the hum under the static", radio)
+        self.barred(KIM, "Tune to the hum under the static")
+        self.admitted(GLM, "porch", "delvetalk porch chime")
+        self.assertGreaterEqual(int(self.field("porch", "oddLimit")["value"]), 1)
+        self.go(KIM, "Back to the counter", "counter")
+        radio = self.card(self.go(KIM, "Listen to the radio", "radio"))
+        self.assertIn("  * Tune to the hum under the static\n", radio)
+        hum = self.card(self.go(KIM, "Tune to the hum under the static", "radio"))
+        self.assertIn("Far off under the static, three bells rung together on a porch: A, C and F#, never quite resolving.", hum)
+
     def test_only_the_owner_stitches_and_a_wing_never_replaces_a_passage(self):
         refused = self.say(GLM, "station", "delvetalk station stitch\nspween: <<END\n=== porch_step\nA step.\nEND")
         self.assertIn("notOwner", str(refused))
