@@ -18,16 +18,18 @@ import ./Text.obend as Text
 # under its maker (`made`): when `done` holds of a write there, it casts `delvetalk <errand> settle / by:
 # {request.subject}`, the maker's turn.
 #
-# Settling is one settlement (docs/review/astra-2026-10-12 world 8): `settle` takes the call from its
-# maker's rule on `on` alone, and the first that comes claims the errand for that hand, once: in one
-# turn it marks it `done` by them (a mark, kept, never dropped), takes its rule off `on`, and places on
-# itself its maker's rule `pay`, the pay with the doer written in, which fires at that very write: the
-# claim and the pay's casting commit together, the pay's identity `rule:<errand>:pay:<height>`. A
-# second write doing it finds it claimed and pays nobody. The pay is judged by what it touches; refused
-# (its maker no longer holds what it offers), the claim stands, `rules` says why, and its maker casts it
-# again for the same hand (`repay`), never for another.
+# Its maker's `pay` rule occupies that name while open. `settle` takes the call from the maker's
+# rule on `on` alone: it replaces `pay` with the claimant's spell, marks `done` by them (a mark kept,
+# never dropped), and takes its rule off `on`, in one turn. Registration must succeed before the
+# claim is written; the pay fires at that write as `rule:<errand>:pay:<height>`. A second completion
+# pays nobody. The pay is judged by what it touches; refused, the claim stands and its receipt says
+# why. `repay` replaces or reconstructs the same rule for the recorded claimant.
 # kind/errand's want `open` puts an errand nobody has done on "What wants a hand".
 type State = Super.State
+sum Payment:
+  open: {}
+  claim: {by: String}
+  retry: {by: String}
 form arm:
 form repay:
 form settle:
@@ -55,28 +57,21 @@ def methods() -> Lists.List<String>:
   Text.words("~made ~act")
 def on(state: State) -> String:
   Super.field(state, "on")
-# The rule's name on `on`: the errand's id as an identifier. `_v` before it named the pay rule an errand
-# placed there before its pay was its own (`arm` takes such a rule off).
+# The completion rule's name on `on`: the errand's id as an identifier.
 def settles(context: Abi.Context) -> String:
   Text.identifier(context.object)
-def paying(context: Abi.Context) -> String:
-  "_v{settles(context)}"
 def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
-  if context.caller != state.kind then false else placing(state, context)
+  if context.caller != state.kind then false else replacingPay(state, Payment.open({}), context)
 def placing(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: on(state)}, name: settles(context), when: Super.field(state, "done"), then: "delvetalk {context.object} settle / by: {{request.subject}}"}):
     case placed(_): Super.armedNow(state, context)
     case refused(r): Super.unarmed(state, on(state), r.clause, r.reading, context)
-# Its maker places its rule again (taken off first where it stood, an older errand's pay rule with it),
-# while it is open.
+# Its maker replaces its rules while open.
 def arm(state: State, context: Abi.Context) -> Activity<Bool>:
   if context.principal != state.maker then Super.armRefused(state, context) else if Super.marked(state, "done") then false else rearming(state, context)
 def rearming(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.unrule({object: {world: context.world, object: on(state)}, name: settles(context)}):
-    case _: unpayRule(state, context)
-def unpayRule(state: State, context: Abi.Context) -> Activity<Bool>:
-  match world.unrule({object: {world: context.world, object: on(state)}, name: paying(context)}):
-    case _: placing(state, context)
+    case _: replacingPay(state, Payment.open({}), context)
 # Its maker's rule on `on` settles it; anyone else, or another's rule there, is told what does. The
 # first to come claims it; a principal is one word (a DID, a handle, a thing's `@<id>`).
 def settle(state: State, input: SettleInput, context: Abi.Context) -> Activity<Bool>:
@@ -85,15 +80,29 @@ def ruled(state: State) -> String:
   "it settles when {Super.field(state, \"done\")} holds of a write on {on(state)}"
 def oneWord(by: String) -> Bool:
   by != "" && Text.contains(by, " ") == false && Text.contains(by, "\n") == false && Text.contains(by, "{{") == false && Text.contains(by, "}}") == false
-# The claim, the rule off `on`, and the pay placed on the errand to fire at this write: one turn.
+# The rule's registration precedes the claim; a refused registration leaves completion open.
 def claiming(state: State, by: String, context: Abi.Context) -> Activity<Bool>:
+  replacingPay(state, Payment.claim({by: by}), context)
+# The maker removes any placed pay rule before registering the spell for this phase. The same
+# rule reserves the name while open, pays the claim, and casts a retry for its recorded hand.
+def replacingPay(state: State, payment: Payment, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: Plans.self(context), name: "pay"}):
+    case _: placingPay(state, payment, context)
+def placingPay(state: State, payment: Payment, context: Abi.Context) -> Activity<Bool>:
+  match world.rule({object: Plans.self(context), name: "pay", when: payWhen(), then: payFor(state, payment)}):
+    case placed(_): paymentPlaced(state, payment, context)
+    case refused(r): paymentRefused(state, payment, r, context)
+def paymentPlaced(state: State, payment: Payment, context: Abi.Context) -> Activity<Bool>:
+  match payment:
+    case open(_): placing(state, context)
+    case claim(c): claimed(state, c.by, context)
+    case retry(_): repaying(state, context)
+def paymentRefused(state: State, payment: Payment, refusal: Card.Refusal, context: Abi.Context) -> Activity<Bool>:
+  match payment:
+    case open(_): Super.unarmed(state, context.object, refusal.clause, refusal.reading, context)
+    case _: Card.refusing(false, refusal, context)
+def claimed(state: State, by: String, context: Abi.Context) -> Activity<Bool>:
   let written(_) = write {marks: insert {name: "done", who: by, handle: "", at: context.height}}
-  match world.rule({object: Plans.self(context), name: "pay", when: payWhen(), then: payFor(state, by)}):
-    case placed(_): unsettling(state, context)
-    case refused(r): unplaced(state, "{r.clause}: {r.reading}", context)
-# Its pay could not be placed (its `pays` reads as no rule): the claim stands, and its card says why.
-def unplaced(state: State, clause: String, context: Abi.Context) -> Activity<Bool>:
-  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "unpaid", text: "its pay could not be placed: {clause}", at: context.height, n: state.next}, next: add 1n}
   unsettling(state, context)
 def unsettling(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.unrule({object: {world: context.world, object: on(state)}, name: settles(context)}):
@@ -101,17 +110,24 @@ def unsettling(state: State, context: Abi.Context) -> Activity<Bool>:
 # The pay fires at the claim and at each `repay`, never at another write.
 def payWhen() -> String:
   "\"done\" in new.marks.name and (request.method == \"settle\" or request.method == \"repay\")"
-# The maker's `pays` with the doer written in where it says `{request.subject}`.
-def payFor(state: State, by: String) -> String:
-  replaced(Super.field(state, "pays"), "{{request.subject}}", by)
+# The open rule holds the maker's spell; settlement and retry bind its recorded doer.
+def payFor(state: State, payment: Payment) -> String:
+  match payment:
+    case open(_): Super.field(state, "pays")
+    case claim(c): replaced(Super.field(state, "pays"), "{{request.subject}}", c.by)
+    case retry(r): replaced(Super.field(state, "pays"), "{{request.subject}}", r.by)
 def replaced(text: String, needle: String, by: String) -> String:
   let at = Text.indexOf(text, needle)
   if at == textLength(text) then text else "{textTake(text, at)}{by}{replaced(textDrop(text, at + textLength(needle)), needle, by)}"
 # The maker casts the pay again for the hand that claimed it (a pay refused, or one its maker owes again).
 def repay(state: State, context: Abi.Context) -> Activity<Bool>:
-  if context.principal != state.maker then Card.refusing(false, {clause: "notMaker", reading: "Only its maker pays it again"}, context) else if Super.marked(state, "done") == false then Card.refusing(false, {clause: "open", reading: "Nobody has done it yet"}, context) else repaying(state, context)
+  if context.principal != state.maker then Card.refusing(false, {clause: "notMaker", reading: "Only its maker pays it again"}, context) else retrying(state, context)
+def retrying(state: State, context: Abi.Context) -> Activity<Bool>:
+  match Relations.lookup(state.marks, {name: "done"}):
+    case some(m): replacingPay(state, Payment.retry({by: m.value.who}), context)
+    case none(_): Card.refusing(false, {clause: "open", reading: "Nobody has done it yet"}, context)
 def repaying(state: State, context: Abi.Context) -> Activity<Bool>:
-  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "repay", text: "paid again", at: context.height, n: state.next}, next: add 1n}
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: "repay", text: "pay requested again", at: context.height, n: state.next}, next: add 1n}
   true
 def doneBy(state: State, context: Abi.Context) -> String:
   match Relations.lookup(state.marks, {name: "done"}):
