@@ -135,7 +135,10 @@ stems are `<id>.<realm>.zulip`. `deploy/backup.sh` keeps hosted snapshots in
 every hosted key too. A box without it starts, but hosted routes and invitation acceptance refuse with
 503 `RepoNotServed`; the invitation stays open. Legacy account keys/locks are removed after durable migration.
 Migrate legacy state with the town key available before running the updated backup script: it no longer
-filters legacy files, and a keyless front cannot migrate them.
+filters legacy files, and a keyless front cannot migrate them. A state with no legacy store (v14, carried 2026-10-13)
+has nothing to migrate: the front's first start provisions every accepted, unrevoked guest into
+`<state>/hosted/<URL-encoded origin>/` (counter 0, no epoch) and logs nothing unless it skips one, so check the
+directory listing before the first backup, not the log.
 
 Remaining transport completion checks are in ATPROTO §4: a Zulip message written once as a public request
 and consumed once, and reciprocal link records/document claims. Neither is built. Existing Zulip messages
@@ -159,8 +162,9 @@ connection per thread, so production runs path (b).
 ## Prerequisites on the workhorse
 
 - Docker with compose v2, as for `/opt/dregg-edge`; `rsync` and `python3` for backups.
-- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v11` since the third carry, 2026-10-12 (550c0478, replay
-  edition 12), of `v10`, the second carry's (lane/refresh-fix b59b0186, edition 12, height 722 at the carry), itself of
+- The data directory `DELVETALK_DATA`, `/var/lib/delvetalk/v15` since 2026-10-13 (fed71c47 with lane/deploy15 32c80591,
+  replay edition 15), carried from `v14`, itself of `v13`, `v12` and `v11` ("A new binary"); `v11` is the third carry's,
+  2026-10-12 (550c0478, replay edition 12), of `v10`, the second carry's (lane/refresh-fix b59b0186, edition 12, height 722 at the carry), itself of
   `v9`, the first carry's (16471891, edition 10, height 446), itself of `v8`, the owner's fresh minimal town of the same
   day (5db9aa79, edition 9, height 435); the worlds before stay unserved: edition 1 in `v2`, then b14df72e's `v3`,
   6cd1f491's `v4`, 89abbd8d's `v5`, 103837ce's `v6`, 7300d494's `v7` (height 2225), `v8`, `v9` and `v10`;
@@ -262,7 +266,10 @@ replaced e916688e's under `delvetalk:73010fbcb21f` on both boxes; compare that h
 into v11 the same day, `7e79a427386db83cadc692c8c67e91e07aa9809a1a496baa2901110efa848979`, transport image
 `587a1a72547ea4af45042ba27ab5d34f9142e116d70193d34f3665bcdf3c4651` (both, both boxes). Foundation 3c5fc48e and lane/deploy14
 d943a90e (the poller's switch, transport only), carried into v12 the same day, `d3e35937149209f32e463b6ecfe4239bb8756304c516f42423add0761a61eb99`;
-transport images `3cd2b368…cdc5` (3c5fc48e, never served) and `f756247b…43eb` (d943a90e, both boxes). The Lean compile runs inside dockerd's
+transport images `3cd2b368…cdc5` (3c5fc48e, never served) and `f756247b…43eb` (d943a90e, both boxes). Foundation fed71c47
+and lane/deploy15 32c80591 (the carry's SQLite read, transport only), carried into v15 on 2026-10-13,
+`3443cf907704491b5c18ec8e4913b75b257bf6322966ba4c07a7ee82a4679049`; transport images
+`ae7b99f6…bdb1bc` (fed71c47, never served, kept as `delvetalk:fed71c475c8b`) and `423e784d…ecdb7` (32c80591, both boxes). The Lean compile runs inside dockerd's
 build, outside a `swarm-build` cgroup around the client; the Dockerfile's own
 two-slot wrapper is what bounds it. Everything the build reads is pinned (base images by digest, Debian
 packages by snapshot, elan and the Lean tarball by SHA-256).
@@ -975,6 +982,9 @@ Keep its closing backup too: pull it at once (on hbox, `systemctl --user start d
 replays it under `pull.env`'s image, still the old one), then copy the tarball and its `.sha256` into hbox's
 `/tank/delvetalk-backups/closing/`.
 
+A carry-check from a copy of the state must copy it as `down` leaves it: each SQLite database through its backup API
+and no `-wal` or `-shm` (a clean close removes both), or it tests a state the deploy will not see (2026-10-13).
+
 `transport carry` exits 1 when a world's check names a problem or a refresh row is not `refreshed`, `current` or
 `left`, and it still prints the hand's line last: that line is not posted. The world is not served: put the old `.env`
 back (kept in `/opt/delvetalk/before-<new sha12>/`), move the new directory aside (`mv .../v12
@@ -1129,6 +1139,46 @@ says posting by hand and lists the waiting drafts. The station: a coffee vended 
 fired `forecourt_1` (bell/1 answered `false`: a bell rings once, and it rang at v13's check), the clock wound under
 `try` only. The chronicle's day left out the refreshes (11 admitted) but named the station refresh's `sign` (1098, in
 v13) as the first grown verb again (lane/firsts 7c45f51a).
+
+Carried 2026-10-13 (06:39 UTC), v14 to v15 (`b62b69e97a3c` to `3443cf907704`, transport image `423e784d…ecdb7`, edition
+13 to 15: the world review's remainder (14), the AT layer under `online.fg-goose.gsb.*`, hosted guest accounts, the
+town's languages, the harmonic bells, the station's inhabitants and restitched scene, the register prototype (not
+placed), three review rounds (15) and the paint fix). Built on hbox from `git archive` of foundation fed71c47: binary
+`3443cf907704…9049`, suite 1815 tests, 0 failed. The carry-check ran on the workhorse against the real `/towns` (a
+scratch copy of v14's state mounted over `/towns/v14`, head snapshot by the old image, the new image's `transport carry`
+under `docker compose run --no-deps` with `DELVETALK_DATA` and `DELVETALK_ROOT` pointed at scratch): its first try
+stopped in `copy_transport`, `sqlite3.OperationalError: unable to open database file`, because the copy, like v14 after
+a clean `down`, held `feed.sqlite` and `observe.sqlite` (WAL databases) without their `-wal`/`-shm`, and SQLite cannot
+open those read-only on a read-only mount. v13's carry had passed only because v13's writers left both side files
+behind. The first switch (06:28, v14 at 2120 with 211 objects twice, closing backup `delvetalk-20261013T062843Z`)
+confirmed it (`ls` after `down`: no side files) and went back up on the old images before any carry; down two
+minutes. lane/deploy15 32c80591 reads each database through a private copy with its `-wal` or hot `-journal` beside the
+new one and never copies side files raw (`tests.test_carry.SqliteCustody`, red on fed71c47): suite 1816, 0 failed; the
+workhorse carry-check from a copy without side files, green: `check {objects: 211, rendered: 211, problems: []}`,
+`left`, `kept` empty, the tide's tick `dropped` and `rearmed: [tide]`, refresh 64 `current` and 56 `refreshed`.
+Then v14 at 2131 with 211 objects (twice, `world-interpretations` empty after the bridge, front and hand stopped,
+then the interpreter), closing backup `delvetalk-20261013T063713Z` (also in hbox's `closing/`, beside the first try's).
+The carry took 102 s and exited 0: `check {objects: 211, rendered: 211, receipts: 796, problems: [], turn: advanced}`,
+all 211 `moved`, `left`, `kept` empty, `dropped` the tide's tick (`told carried`), `rearmed: [tide]`, receipt
+`jimaf-dakol`, the carried genesis at 2132. Refresh: 64 `current`, 56 `refreshed`: the commonplace's law; `kind/bell`'s
+`.law`, `.form` and `.about`; `kind/room`'s `.about`; `kind/errand`'s `.law`; 32 library pages (17 changed: world,
+spween, enter, the guide and its parts; 15 shelved: guide-16, guide-17, the guide and the welcome in ja, zh, es, ru,
+ar, and the welcome); `bell/green` placed and the porch's door to it and its `chime`; the station's `scene` ("the scene
+text changed"); `station/coin`; `kind/inhabitant`, `kind/regular`, `kind/dj`, `kind/bee` and each inhabitant placed with
+its doors. `serve-status`: the new SHA, replay 15, 220 objects (v14's 211 and those 9). The front's first start
+provisioned three hosted guests (claude-of-tulip, claude46, sootu) before the first backup; nothing legacy to migrate.
+Old receipts resolve through `getProjection` (all five) and `hand search` (all but v11's): (`zodiz-jufid` 1336 of v14, `vopap-zurak` 1072 of v13,
+`jikub-pokas` 940 of v12, `topof-ribaz` 723 of v11, `lipuh-hutom` 111 of v8). Backup and `verify.sh --full` ok at 2202;
+hbox's `pull.env` names `delvetalk-host:3443cf907704` and its pull replayed it; the watch's run sent nothing. Live, as a
+guest (`deploycheck15`, revoked after): the porch card lists alchemicav's green bell beside mimo's and light-traces' and
+rings 27:32:45 (A, C, F#); `delvetalk porch chime` from `/feed` was answered in 10 s naming that chord (entry 2210,
+`gafir-kujoz`); the station's forecourt scene with its four choices and `song`; the regular (clock hour 3, so 03:00 to
+04:00 UTC), the DJ and the bee each with their verbs; `delvetalk station/dj request` reached the DJ (1 of 3, `bufil-tapos`);
+paints in English and, after `me set / tongue: ja`, in Japanese (「ALTIFETHHH」と言った。まるで月光の絹。) rendered;
+`describeRepo` lists `online.fg-goose.gsb.entry`, `getRepo` is a CAR, `subscribeRepos` 501 (off). Still wrong after it:
+a reply card's count line says "lines: 2, the first by <the asker>" where the card's `#1` is the town's (porch, station/dj,
+station/bee); of the paints in the first minutes several came back `exact` after their retry. The revoked guest keeps
+its hosted snapshot. Foundation's a8fe1938 (lane/register2) came after this build and follows in the next restart or carry.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
