@@ -2,13 +2,18 @@
 module joins one. `<state>/` is serve's directory too (its journals, lock, library, scratch/ worlds and sockets); what the
 transport keeps is either shared by every world (the claims, the access log, the hand's log, the model's spend, the
 bridge rows) or a world's own, under `worlds/<world>/`, the town's like any other's."""
+import contextlib
+import fcntl
+import hashlib
 import json
 import os
 import re
 import signal
 import sqlite3
+import tempfile
 import threading
 import urllib.parse
+from datetime import datetime, timezone
 from pathlib import Path
 
 from transport.config import Config
@@ -16,6 +21,8 @@ from transport.delve import canonical
 from transport.host import HostClient
 
 NAME = re.compile(r'[a-z][a-z0-9-]{0,31}\Z')
+_DRAFT_HELD = threading.local()
+
 RESERVED = ('did', 'zulip', 'guest', 'at', 'world', 'me', 'scratch')  # prefixes a local id can start with (docs/FEDERATION.md section 1)
 
 
@@ -38,6 +45,7 @@ class State:
         # this world's
         self.home = h = r / 'worlds' / world
         self.observed, self.since = h / 'observe.sqlite', h / 'since'  # the observer's posts; where its observing began
+        self.draft_locks = h / 'draft-locks'
         self.outbox, self.awaiting = h / 'outbox', h / 'awaiting'  # drafts; turns waiting on an interpretation
         self.principals, self.mentioned, self.skipped = h / 'principals.txt', h / 'mentioned.txt', h / 'skipped.txt'
         self.publications = h / 'publications.after'  # the cursor of what objects published
@@ -76,12 +84,37 @@ class State:
         """`value` as canonical JSON at `path`, whole or not at all."""
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        tmp = path.with_suffix('.tmp')
-        with open(tmp, 'w') as f:
-            f.write(canonical(value) + '\n')
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
+        fd, name = tempfile.mkstemp(prefix=path.name + '.', suffix='.tmp', dir=path.parent)
+        tmp = Path(name)
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.write(canonical(value) + '\n')
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, path)
+        finally:
+            tmp.unlink(missing_ok=True)
+
+    def new_draft(self, path, value):
+        """Create a draft with its creation time; later mutations use write."""
+        self.write(path, dict(value, createdAt=datetime.now(timezone.utc).isoformat()))
+
+    @contextlib.contextmanager
+    def draft_lock(self, path):
+        """Hold a draft across threads and processes; reject same-thread reentry."""
+        key = Path(path).resolve()
+        held = getattr(_DRAFT_HELD, 'paths', set())
+        if key in held:
+            raise RuntimeError(f'draft lock already held: {key}')
+        _DRAFT_HELD.paths = held
+        self.draft_locks.mkdir(parents=True, exist_ok=True, mode=0o700)
+        held.add(key)
+        try:
+            with open(self.draft_locks / (hashlib.sha256(str(key).encode()).hexdigest() + '.lock'), 'a') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                yield
+        finally:
+            held.remove(key)
 
     @staticmethod
     def words(path):
@@ -126,10 +159,11 @@ class State:
         return [(p, json.loads(p.read_text())) for p in sorted(self.outbox.glob('*.json'), key=lambda p: int(p.name.split('-')[0]))]
 
     def unposted(self):
-        return [(p, d) for p, d in self.drafts() if not d['posted'] and not d.get('skipped')]
+        return [(p, d) for p, d in self.drafts() if not d['posted'] and not d.get('skipped') and not d.get('unposted')]
 
     def mark_posted(self, path):
-        self.write(path, dict(json.loads(Path(path).read_text()), posted=True))
+        with self.draft_lock(path):
+            self.write(path, dict(json.loads(Path(path).read_text()), posted=True))
 
     def bridge(self):
         """The world's bridge row (`open`); a world without one is observed on delve.town."""

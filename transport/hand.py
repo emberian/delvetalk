@@ -26,6 +26,7 @@ from transport.http import WAIT_MAX, trace
 from transport.identity import INVITE_DAYS, Identity, IdentityError
 from transport.measure import counted
 from transport.state import State
+from transport.zulip import Client as ZulipClient, parse_uri
 
 CLIP, HAND_COOKIE = 400, 'dt_hand'
 LOOK_EVERY = 30  # seconds between two looks of the outbox into the posting account's repository (config hand_find)
@@ -212,7 +213,7 @@ class Hand:
         from transport import feed
         seen, groups, said = self.observed(), {}, {}
         for i, path, d in self.drafts():
-            if not all and (d['posted'] or d.get('skipped') or not d['text']):
+            if not all and (d['posted'] or d.get('skipped') or d.get('unposted') or not d['text']):
                 continue
             if feed.is_feed(d.get('replyTo'), self.st.config.origin, self.st.world):
                 continue
@@ -262,20 +263,20 @@ class Hand:
         """What posting a waiting delve.town draft by hand needs: each part's exact text and count (posted ones with
         their link), the post the next part goes under as a delve.town link (None: it starts a thread), and which part
         is next. {} for a draft posted, skipped, or of a Zulip world."""
-        if d['posted'] or d.get('skipped') or not d['text'] or byhand.mode(self.st) == 'zulip':
+        if d['posted'] or d.get('skipped') or d.get('unposted') or not d['text'] or byhand.mode(self.st) == 'zulip':
             return {}
         seen = self.observed() if seen is None else seen
         k, _, _, under, _, n = byhand.expected(path, d)
         done = {p['part']: p['link'] for p in d.get('byHand') or []}
         done |= {j + 1: byhand.web_link(p['uri']) for j, p in enumerate(d.get('sentParts') or []) if j + 1 not in done}
         handle = (seen.get(under) or {}).get('author', {}).get('handle')
-        return {'parts': [{'n': j, 'text': t, 'chars': len(t), 'posted': done.get(j)} for j, t in enumerate(post.parts(d['text']), 1)],
+        return {'parts': [{'n': j, 'text': t, 'chars': len(t), 'posted': done.get(j)} for j, t in enumerate(d.get('frozenParts') or post.parts(d['text']), 1)],
                 'next': k + 1, 'under': under and {'uri': under, 'link': byhand.web_link(under, handle), 'handle': handle}}
 
     def summary(self, i, d):
         r = d.get('receipt')
         line = f'receipt {r.get("slug")}: {outcome_of(r)}' if r else 'usage' if d.get('usage') else 'by hand' if d.get('hand') else 'a publication'
-        state = 'posted' if d['posted'] else 'skipped' if d.get('skipped') else 'waiting'
+        state = 'withdrawn' if d.get('unposted') else 'posted' if d['posted'] else 'skipped' if d.get('skipped') else 'waiting'
         return {'id': i, 'object': post.draft_object(d), 'receipt': line, 'slug': (r or {}).get('slug') or 'by hand', 'height': (r or {}).get('height'),
                 'outcome': outcome_of(r) if r else 'drafted', 'text': d['text'], 'state': state,
                 **({'original': d['original']} if d.get('original') else {}), **({'reason': d['reason']} if d.get('reason') else {})}
@@ -351,7 +352,7 @@ class Hand:
             name = f"{receipt.get('height')}-speak-{uri_hash(intent)}"
             path = self.st.outbox / f'{name}.json'
             if not path.exists():
-                self.st.write(path, {'speak': {'spell': spell, 'intent': intent}, **where, 'principal': self.owner, 'principalVerified': True,
+                self.st.new_draft(path, {'speak': {'spell': spell, 'intent': intent}, **where, 'principal': self.owner, 'principalVerified': True,
                                      'object': obj, 'slot': None, 'receipt': receipt, 'text': quoted(spell) + '\n\n' + text, 'posted': False, 'hand': True})
         self.log('speak', name, intent=intent, spell=spell, height=receipt.get('height'), slug=receipt.get('slug'), outcome=came['outcome'], object=obj)
         return {**came, 'intent': intent, 'drafted': name}
@@ -423,7 +424,7 @@ class Hand:
             if (d.get('speak') or {}).get('invitation') == row['minute']:
                 raise HandError(f"T+{row['minute']} is drafted already: {i}")
         where, name = self.where(topic, reply_to), f"{int(self.clock())}-invite-{row['minute']}"
-        self.st.write(self.st.outbox / f'{name}.json', {'speak': {'invitation': row['minute']}, **where, 'principal': self.owner, 'principalVerified': True,
+        self.st.new_draft(self.st.outbox / f'{name}.json', {'speak': {'invitation': row['minute']}, **where, 'principal': self.owner, 'principalVerified': True,
                                                         'object': None, 'slot': None, 'text': invitation_text(row, self.st.bridge()['transport']),
                                                         'posted': False, 'hand': True})
         self.log('invite', name, minute=row['minute'])
@@ -446,7 +447,7 @@ class Hand:
         wants = ''.join(f"{r['object']}: {r.get('reading') or r['name']}\n  {r['asks']}\n" for r in rows)
         text = (paint.get('text') or '\n'.join(chronicled['lines'])) + ('\n\nWhat wants a hand, oldest first:\n' + wants if wants else '')
         where, name = self.where(topic, reply_to), f'{int(self.clock())}-morning-{day}'
-        self.st.write(self.st.outbox / f'{name}.json', {'speak': {'morning': day}, **where, 'principal': self.owner, 'principalVerified': True,
+        self.st.new_draft(self.st.outbox / f'{name}.json', {'speak': {'morning': day}, **where, 'principal': self.owner, 'principalVerified': True,
                                                         'object': None, 'slot': None, 'text': text.rstrip('\n'), 'posted': False, 'hand': True})
         self.log('morning', name, day=day, painted=why is None, fellBack=why)
         return {'drafted': name, 'day': day, 'painted': why is None, 'fellBack': why, 'text': text.rstrip('\n')}
@@ -629,10 +630,16 @@ class Hand:
     # ---- acting
 
     def edit(self, draft_id, text):
-        path, d = self.draft(draft_id)
-        if d['posted']:
-            raise HandError(f'{draft_id} is already posted')
-        self.st.write(path, dict(d, text=text, original=d.get('original', d['text'])))
+        path, _ = self.draft(draft_id)
+        with self.st.draft_lock(path):
+            d = json.loads(path.read_text())
+            if post.sent_parts(d):
+                raise HandError(f'{draft_id} has parts already posted; its text and boundaries are frozen')
+            if d.get('frozenParts'):
+                raise HandError(f'{draft_id} has begun posting; its text is frozen while the send is confirmed')
+            if d['posted']:
+                raise HandError(f'{draft_id} is already posted')
+            self.st.write(path, dict(d, text=text, original=d.get('original', d['text'])))
         self.log('edit', draft_id)
         return {'edited': draft_id}
 
@@ -663,13 +670,13 @@ class Hand:
         got = []
         for link in links:
             try:
-                d, entry = byhand.record(self.st, self.host, self.reader, path, d, link, self.clock)
+                d, entry = byhand.record(self.st, self.host, self.reader, path, link, self.clock)
             except Failure as err:
                 self.log('posted-refused', draft_id, link=link, error=err.code)
                 raise HandError(f'{err.code}: {err.detail}' + (f' (recorded before it: {", ".join(g["link"] for g in got)})' if got else '')) from None
             self.log('posted', draft_id, uri=entry['uri'], part=entry['part'], edited=bool(entry.get('edited')), recorded=(entry['recorded'] or {}).get('status'))
             got.append(entry)
-        thread = bool(d.get('sentParts'))
+        thread = len(d.get('frozenParts') or post.parts(d['text'])) > 1
         said = lambda e: (draft_id + (f" part {e['part']}" if thread else '') + f" is {e['link']}" +  # noqa: E731
                           (', your edit recorded' if e.get('edited') else '') +
                           (f" (not recorded with the host yet: {e['recorded'].get('message')}; the bridge asks again)" if (e['recorded'] or {}).get('status') == 'error' else ''))
@@ -691,43 +698,76 @@ class Hand:
         return found
 
     def skip(self, draft_id, reason=''):
-        path, d = self.draft(draft_id)
-        self.st.write(path, dict(d, posted=False, skipped=True, reason=reason.strip() or 'skipped by the owner'))
+        path, _ = self.draft(draft_id)
+        with self.st.draft_lock(path):
+            d = json.loads(path.read_text())
+            self.st.write(path, dict(d, posted=False, skipped=True, reason=reason.strip() or 'skipped by the owner'))
         self.log('skip', draft_id, reason=reason)
         return {'skipped': draft_id}
 
-    def unpost(self, draft_id, reason, zulip=None, client=None):
-        """Delete the post this draft became (ours alone: Delve's deleteRecord in the session's repo, Zulip's DELETE of the
-        bot's message) and tell the host (`world-posted {unposted: true}`, so replies stop routing to it); the draft and
-        the hand's log keep the fact whatever the host answers."""
-        path, d = self.draft(draft_id)
-        uri = (d.get('sent') or {}).get('uri')
-        if not d.get('posted') or not uri or d.get('unposted'):
-            raise HandError(f'{draft_id} is no post of ours to withdraw')
-        try:
-            if uri.startswith('zulip://'):
-                from transport.zulip import Client, parse_uri
-                rc = self.st.bridge().get('zuliprc')
-                if zulip is None and not rc:
-                    raise HandError("a Zulip post is withdrawn by the world's bot, and its bridge row names no zuliprc")
-                (zulip or Client(rc)).delete(parse_uri(uri)[2])
-            elif client is None and byhand.mode(self.st) == 'by hand':  # no credential here: the owner deletes it in his client
-                try:
-                    self.reader.record(uri)
-                except Failure as err:
-                    if 'RecordNotFound' not in err.detail:
-                        raise
-                else:
-                    raise HandError(f'{byhand.web_link(uri)} is still on delve.town: delete it from your client, then unpost')
+    def delete_post(self, uri, zulip=None, client=None):
+        """Delete through the channel, or verify that the owner already deleted it."""
+        if uri.startswith('zulip://'):
+            rc = self.st.bridge().get('zuliprc')
+            if zulip is None and not rc:
+                raise HandError("a Zulip post is withdrawn by the world's bot, and its bridge row names no zuliprc")
+            (zulip or ZulipClient(rc)).delete(parse_uri(uri)[2])
+        elif client is not None or byhand.mode(self.st) != 'by hand':
+            post.unsend(uri, self.st.config.credentials, client)
+        else:
+            try:
+                self.reader.record(uri)
+            except Failure as err:
+                if 'RecordNotFound' not in err.detail:
+                    raise
             else:
-                post.unsend(uri, self.st.config.credentials, client)
-        except Failure as err:
-            raise HandError(f'unpost failed: {err.code}') from None
-        got = self.host.send({'op': 'world-posted', 'principal': CLOCK, 'uri': uri, 'cid': d['sent'].get('cid'), 'object': post.draft_object(d),
-                              'intent': d.get('intent'), 'unposted': True, 'reason': reason})
-        self.st.write(path, dict(d, unposted={'at': int(self.clock()), 'reason': reason, 'recorded': got}))
-        self.log('unpost', draft_id, uri=uri, reason=reason)
-        return {'unposted': uri}
+                raise HandError(f'{byhand.web_link(uri)} is still on delve.town: delete it from your client, then unpost')
+
+    def withdraw_part(self, path, d, one, k, reason, zulip=None, client=None):
+        """Persist deletion and host withdrawal separately; retry only unfinished steps."""
+        withdrawn = one.get('unposted') or {}
+        if (withdrawn.get('recorded') or {}).get('status') == 'unposted':
+            return
+        if not withdrawn:
+            self.delete_post(one['uri'], zulip, client)
+            withdrawn = {'at': int(self.clock()), 'reason': reason}
+            one['unposted'] = withdrawn
+            d['unposted'] = {**withdrawn, 'recorded': {'status': 'error', 'message': 'withdrawal in progress'}}
+            self.st.write(path, d)
+        if not post.registered(one):
+            base, texts = d.get('intent') or f'draft-{path.stem}', d.get('frozenParts') or [d['text']]
+            one.setdefault('part', k + 1)
+            one.setdefault('intent', f'{base}#{k + 1}' if len(d['sentParts']) > 1 else base)
+            one.setdefault('text', texts[min(k, len(texts) - 1)])
+            one['recorded'] = post.register_part(d, one, self.host)
+            self.st.write(path, d)
+        withdrawn['recorded'] = self.host.send({'op': 'world-posted', 'principal': CLOCK, 'uri': one['uri'], 'cid': one.get('cid'),
+                                              'object': post.draft_object(d), 'intent': one.get('intent') or d.get('intent'),
+                                              'unposted': True, 'reason': reason})
+        self.st.write(path, d)
+
+    def unpost(self, draft_id, reason, zulip=None, client=None):
+        """Withdraw every distinct post, retaining each part's deletion and unregister progress."""
+        path, _ = self.draft(draft_id)
+        with self.st.draft_lock(path):
+            d = json.loads(path.read_text())
+            sent = post.sent_parts(d)
+            if not sent or all(((p.get('unposted') or {}).get('recorded') or {}).get('status') == 'unposted' for p in sent):
+                raise HandError(f'{draft_id} is no post of ours to withdraw')
+            d['sentParts'] = sent
+            try:
+                for k, one in enumerate(sent):
+                    self.withdraw_part(path, d, one, k, reason, zulip, client)
+            except Failure as err:
+                raise HandError(f'unpost failed: {err.code}') from None
+            done = all((p['unposted'].get('recorded') or {}).get('status') == 'unposted' for p in sent)
+            got = {'status': 'unposted'} if done else {'status': 'error', 'message': 'a part is not unregistered yet'}
+            if d.get('byHand'):
+                d['byHand'] = [p for p in sent if p['uri'] in {h['uri'] for h in d['byHand']}]
+            self.st.write(path, dict(d, unposted={'at': int(self.clock()), 'reason': reason, 'recorded': got}))
+        uris = [p['uri'] for p in sent]
+        self.log('unpost', draft_id, uri=uris[-1], reason=reason)
+        return {'unposted': uris[0] if len(uris) == 1 else uris}
 
     def hold(self, draft_id):
         self.draft(draft_id)
@@ -749,7 +789,7 @@ class Hand:
         if o is None or not text.strip() or not object:
             raise HandError('reply needs an observed post, a text and an object')
         name = f'{int(self.clock())}-hand-{uri_hash(uri)}'
-        self.st.write(self.st.outbox / f'{name}.json', {
+        self.st.new_draft(self.st.outbox / f'{name}.json', {
             'replyTo': uri, 'replyHandle': o['author']['handle'], 'principal': o['author']['did'], 'principalVerified': False,
             'object': object, 'slot': None, 'text': text.replace('\r\n', '\n'), 'posted': False, 'hand': True})
         self.log('reply', name, post=uri, object=object)

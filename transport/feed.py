@@ -13,16 +13,16 @@ town (it summons, as a delve.town post tagging the world does), and `@name` ment
 (a delve.town handle is mentioned as there).
 """
 import hashlib
+import json
 import sqlite3
 import threading
 import time
 import urllib.parse
 from datetime import datetime, timezone
 
-from transport import observe
+from transport import observe, post
 from transport.atproto.sign import tid
 from transport.delve import POST as COLLECTION, Failure, canonical
-from transport.host import CLOCK
 from transport.observe import MAX_TEXT, Observer
 from transport.repo import world_origin
 
@@ -202,30 +202,19 @@ def observe_feed(st, feed=None):
 
 
 def post_drafts(st, host, feed=None, parts=None):
-    """Post every unposted draft that answers a feed post into the feed as the town, at once: each part (`post.parts`)
-    under the one before, reserved with the host (`feed`) and recorded (`world-posted`) for the draft's object, so a reply
-    under it reaches that card. A preview or a usage is posted and recorded like any reply. -> the uris posted."""
-    from transport import post
+    """Send local-feed drafts through post.progress; the feed adapter only reserves and sends bytes."""
     feed, parts = feed or Feed(st), parts or post.parts
     sent = []
-    for path, d in st.unposted():
-        if d.get('hand') or not is_feed(d.get('replyTo'), st.config.origin, st.world) or not d.get('text'):
-            continue
-        intent, obj, under, results = d.get('intent') or f'feed-{path.stem}', post.draft_object(d), d['replyTo'], []
-        slug = (d.get('receipt') or {}).get('slug')
-        for k, text in enumerate(parts(d['text']), 1):
-            key = f'{intent}#{k}'
-            got = host.send({'op': 'world-post-reserve', 'principal': CLOCK, 'intent': key, 'source': 'feed'})
-            if got.get('status') != 'reserved':
-                break
-            row = feed.post(feed.town, text, under, town=True, answers=d['replyTo'], receipt=slug, intent=key)
-            result = {'uri': row['uri'], 'cid': row['cid']}
-            if obj:  # a retry's record is the host's to answer again (`world-posted` retains it)
-                result['recorded'] = post.record_posted(host, result, obj, d.get('slot'), observe.wiki_target(text) if k == 1 else None, key)
-            results.append(result)
-            under = row['uri']
-        if results and len(results) == len(parts(d['text'])):
-            st.write(path, dict(d, posted=True, sent=results[-1], sentParts=results, intent=intent,
-                                recorded={'status': 'recorded', 'parts': len(results)} if obj else None))
-            sent += [r['uri'] for r in results]
+    for path, _ in st.unposted():
+        with st.draft_lock(path):
+            d = json.loads(path.read_text())
+            if d.get('posted') or d.get('skipped') or d.get('unposted') or d.get('hand') or not is_feed(d.get('replyTo'), st.config.origin, st.world) or not d.get('text'):
+                continue
+            intent = d.get('intent') or f'feed-{path.stem}'
+            def deliver(text, under, key):
+                post.reserve(host, key, 'feed')
+                row = feed.post(feed.town, text, under, town=True, answers=d['replyTo'], receipt=(d.get('receipt') or {}).get('slug'), intent=key)
+                sent.append(row['uri'])
+                return {'uri': row['uri'], 'cid': row['cid']}
+            post.progress(path, d, st, host, d['text'], parts(d['text']), intent, 'feed', deliver)
     return sent

@@ -404,7 +404,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             return
         path = self.st.outbox / f"{receipt.get('height')}-http-{bridge.uri_hash(principal + chr(0) + str(intent))}.json"
         if not path.exists() and reply.get('inPublic'):
-            self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
+            self.st.new_draft(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
                                  'object': writes[0], 'slot': None, 'receipt': receipt, 'posted': False,
                                  'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
 

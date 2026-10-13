@@ -13,6 +13,7 @@ world with no credential file offering Post, or one with it not saying so; a par
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from tests.host import addressed
@@ -74,6 +75,7 @@ class ByHand(unittest.TestCase):
         the posting account being every test's)."""
         p = self.resident._post(text, under, BOT, OWNER)
         p['uri'] = p['uri'].replace('/p', f'/t{self.n}p', 1)
+        p['record']['createdAt'] = datetime.now(timezone.utc).isoformat()
         return p['uri']
 
     def draft(self, name):
@@ -218,3 +220,94 @@ class Settle(unittest.TestCase):
             self.assertEqual(post.record_sent(st, host), ['1-x.json'])
             self.assertEqual(json.loads((st.outbox / '1-x.json').read_text())['byHand'][0]['recorded'], {'status': 'posted'})
             self.assertEqual(host.ops[-2:], ['world-post-reserve', 'world-posted'])
+
+class Matching(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.st = State(self.tmp.name, config=Config(poster=BOT))
+        self.path = self.st.outbox / '1-test.json'
+        self.d = {'text': 'invitation', 'posted': False, 'replyTo': None, 'object': 'library', 'createdAt': '2026-10-12T10:00:00Z'}
+        self.st.write(self.path, self.d)
+        from tests.test_transport import Recorder
+        self.host = Recorder()
+        self.records = []
+        outer = self
+        class Reader:
+            def get(self, *args, **kw): return {'records': outer.records}
+            def record(self, uri): return next(r for r in outer.records if r['uri'] == uri)
+        self.reader = Reader()
+
+    def candidate(self, key, at):
+        one = {'uri': f'at://{BOT}/{post.COLLECTION}/{key}', 'cid': key, 'value': {'text': 'invitation', 'createdAt': at}}
+        self.records.append(one)
+        return one
+
+    def test_yesterdays_identical_post_is_not_linked_but_explicit_linking_still_works(self):
+        old = self.candidate('yesterday', '2026-10-11T10:00:00Z')
+        self.assertEqual(byhand.find(self.st, self.host, self.reader, lambda: 0)['linked'], [])
+        d, _ = byhand.record(self.st, self.host, self.reader, self.path, old['uri'], lambda: 0)
+        self.assertTrue(d['posted'])
+
+    def test_todays_single_post_after_creation_is_linked(self):
+        new = self.candidate('today', '2026-10-12T10:00:01Z')
+        self.assertEqual([r['uri'] for r in byhand.find(self.st, self.host, self.reader, lambda: 0)['linked']], [new['uri']])
+
+    def test_two_after_creation_candidates_link_nothing(self):
+        self.candidate('one', '2026-10-12T10:00:01Z')
+        self.candidate('two', '2026-10-12T10:00:02Z')
+        self.assertEqual(byhand.find(self.st, self.host, self.reader, lambda: 0)['linked'], [])
+        self.assertFalse(json.loads(self.path.read_text())['posted'])
+
+    def test_matching_and_linking_the_same_draft_keep_one_confirmation_without_write_errors(self):
+        from concurrent.futures import ThreadPoolExecutor
+        new = self.candidate('one', '2026-10-12T10:00:01Z')
+        def explicit():
+            try:
+                byhand.record(self.st, self.host, self.reader, self.path, new['uri'], lambda: 0)
+            except delve.Failure as err:
+                self.assertIn(err.code, ('already_posted', 'already_linked'))
+        with ThreadPoolExecutor(2) as pool:
+            jobs = [pool.submit(explicit), pool.submit(byhand.find, self.st, self.host, self.reader, lambda: 0)]
+            for job in jobs: job.result()
+        d = json.loads(self.path.read_text())
+        self.assertEqual(len(d['sentParts']), 1)
+        self.assertEqual(len(self.host.posted), 1)
+
+    def test_a_manual_part_is_saved_before_a_crash_in_registration(self):
+        new = self.candidate('one', '2026-10-12T10:00:01Z')
+        from unittest.mock import patch
+        with patch.object(post, 'settle', side_effect=RuntimeError('crash')):
+            with self.assertRaises(RuntimeError):
+                byhand.record(self.st, self.host, self.reader, self.path, new['uri'], lambda: 0)
+        self.assertEqual(json.loads(self.path.read_text())['sentParts'][0]['uri'], new['uri'])
+        self.assertEqual(post.record_sent(self.st, self.host), [self.path.name])
+
+    def test_the_newest_fifty_with_one_new_candidate_link_only_the_new_post(self):
+        for k in range(49): self.candidate(f'old{k}', '2026-10-11T10:00:00Z')
+        new = self.candidate('new', '2026-10-12T10:00:01Z')
+        found = byhand.find(self.st, self.host, self.reader, lambda: 0)
+        self.assertEqual([r['uri'] for r in found['linked']], [new['uri']])
+
+    def test_a_candidate_at_creation_or_with_an_invalid_timestamp_is_not_linked(self):
+        self.candidate('equal', self.d['createdAt'])
+        self.candidate('invalid', 'not-a-date')
+        self.assertEqual(byhand.find(self.st, self.host, self.reader, lambda: 0)['linked'], [])
+
+    def test_find_enters_the_lock_only_through_record_and_leaves_no_outbox_debris(self):
+        import contextlib
+        from unittest.mock import patch
+        self.candidate('one', '2026-10-12T10:00:01Z')
+        original, entered = self.st.draft_lock, []
+        @contextlib.contextmanager
+        def lock(path):
+            self.assertFalse(entered, 'find -> record reentered the lock')
+            entered.append(path)
+            try:
+                with original(path): yield
+            finally:
+                entered.pop()
+        with patch.object(self.st, 'draft_lock', lock):
+            self.assertEqual(len(byhand.find(self.st, self.host, self.reader, lambda: 0)['linked']), 1)
+        self.assertEqual(list(self.st.outbox.iterdir()), [self.path])
+        self.assertEqual([p for p, _ in self.st.drafts()], [self.path])

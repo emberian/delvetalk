@@ -522,7 +522,7 @@ def offer_drafts(st, host):
             if rc and got.get('inPublic'):
                 text = with_paint(host, offered_object({'receipt': rc, 'object': w.get('object')}), text,
                                   speaker=principal, words=said.get(w.get('post', uri)))
-            st.write(st.outbox / f"{offers[-1]['height']}-off-{key}.json", {
+            st.new_draft(st.outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': w.get('post', uri), 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
                 'offer': {'height': offers[-1]['height'], 'identity': uri},
@@ -540,7 +540,7 @@ def offer_drafts(st, host):
             text = draft_text({'status': 'refused', 'receipt': rc, 'public': got['public']}, st.config.origin, w.get('object'), handles) \
                 if tag == 'refused' and got.get('public') else ''
             if text:
-                st.write(st.outbox / f"{rc['height']}-off-{key}.json", {
+                st.new_draft(st.outbox / f"{rc['height']}-off-{key}.json", {
                     'replyTo': w.get('post', uri), 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                     'object': w.get('object'), 'slot': w.get('slot'), 'receipt': rc, 'text': text, 'posted': False})
                 drafted.append(uri)
@@ -623,7 +623,7 @@ def publication_drafts(st, host):
                 if not d['posted'] and not d['replyTo'] and p.get('replyTo'):
                     st.write(path, dict(d, replyTo=p['replyTo']))
                 continue
-            st.write(path, {'publication': {k: p[k] for k in ('id', 'height', 'object')}, 'page': p['page'],
+            st.new_draft(path, {'publication': {k: p[k] for k in ('id', 'height', 'object')}, 'page': p['page'],
                                 'section': p['section'], 'replyTo': p.get('replyTo'), 'text': publication_text(p),
                                 'posted': False})
             drafted.append(p['id'])
@@ -719,13 +719,13 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
                 done.append(obs['uri'])
             continue
         if reply.get('status') == 'looked':  # a receipt looked up: nothing journaled, its line is the answer
-            st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
+            st.new_draft(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': 'commonplace', 'slot': slot, 'receipt': None, 'posted': False, 'text': lookup_text(reply, handles)})
             done.append(obs['uri'])
             continue
         if reply.get('tried') or reply.get('class') == 'moved':  # a preview, or an act whose `if` moved: nothing journaled
-            st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
+            st.new_draft(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': obj, 'slot': slot, 'receipt': None, 'preview': bool(reply.get('tried')), 'posted': False,
                 'text': preview_text(reply, handles, host, request) if reply.get('tried') else public_reply(reply, host)['line'] + '\n'})
@@ -746,7 +746,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             # A reply answering several cards is no one card's: a bare verb under it would reach whichever came first,
             # so its address is the commonplace, where words go to hob and a spell names its card.
             cards = {t.get('object') or obj for t in turns}
-            st.write(st.outbox / f"{ran[-1]['receipt']['height'] if ran else 0}-{uri_hash(obs['uri'])}.json", {
+            st.new_draft(st.outbox / f"{ran[-1]['receipt']['height'] if ran else 0}-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': cards.pop() if len(cards) == 1 else 'commonplace', 'slot': slot,
                 'receipt': ran[-1]['receipt'] if ran else None, 'posted': False, **told_field(told), 'text': text})
@@ -758,7 +758,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             done.append(obs['uri'])
             continue
         if reply.get('status') == 'usage':  # a `?`: the host answers with the card's usage and journals nothing; the post is done
-            st.write(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
+            st.new_draft(st.outbox / f"0-{uri_hash(obs['uri'])}.json", {
                 'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
                 'object': obj, 'slot': slot, 'receipt': None, 'usage': True, 'posted': False,
                 'text': draft_text(reply, origin, host=host, request=request)})
@@ -778,7 +778,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             text = with_paint(host, offered_object(reply, obj), text, speaker=did, words=obs['text'])  # the place speaking, above its exact card
         text = first_move(st, did, reply, text)
         text, told = with_telling(host, did, reply, obj, text, words=obs['text'])  # entering a place: what happened there, above it all
-        st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
+        st.new_draft(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,
             'receipt': reply['receipt'], 'posted': False, **told_field(told), 'text': text})  # text '': journaled, hidden from outbox

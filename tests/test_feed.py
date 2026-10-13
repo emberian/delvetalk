@@ -184,5 +184,51 @@ class Feed(unittest.TestCase):
         self.assertEqual(s, 400, body)
 
 
+
+class DurablePosting(unittest.TestCase):
+    def test_a_feed_crash_after_saving_a_part_is_repaired_without_reposting_it(self):
+        from tests.test_transport import Recorder
+        from unittest.mock import patch
+        from transport import post
+        from transport.state import State
+        with tempfile.TemporaryDirectory() as tmp:
+            st = State(tmp)
+            local = feed.Feed(st)
+            self.addCleanup(local.close)
+            parent = local.post({'did': 'guest:local:test', 'handle': 'test'}, 'hello')
+            path = st.outbox / '1-feed.json'
+            st.write(path, {'text': 'long ' * 700, 'replyTo': parent['uri'], 'object': 'library', 'posted': False})
+            host = Recorder()
+            with patch.object(post, 'record_posted', side_effect=RuntimeError('crash')):
+                with self.assertRaises(RuntimeError): feed.post_drafts(st, host, local)
+            d = json.loads(path.read_text())
+            first = d['sentParts'][0]['uri']
+            self.assertEqual(post.record_sent(st, host), [path.name])
+            feed.post_drafts(st, host, local)
+            d = json.loads(path.read_text())
+            self.assertEqual(d['sentParts'][0]['uri'], first)
+            self.assertEqual(local.db.execute('SELECT COUNT(*) FROM feed WHERE town=1').fetchone()[0], len(post.parts(d['text'])))
+
+    def test_a_completed_feed_thread_keeps_a_part_error_until_registration_is_repaired(self):
+        from tests.test_transport import Recorder
+        from transport import post
+        from transport.state import State
+        with tempfile.TemporaryDirectory() as tmp:
+            st = State(tmp)
+            local = feed.Feed(st)
+            self.addCleanup(local.close)
+            parent = local.post({'did': 'guest:local:test', 'handle': 'test'}, 'hello')
+            path = st.outbox / '1-feed.json'
+            st.write(path, {'text': 'long ' * 700, 'replyTo': parent['uri'], 'object': 'library', 'posted': False})
+            host = Recorder(fail=1)
+            uris = feed.post_drafts(st, host, local)
+            d = json.loads(path.read_text())
+            self.assertTrue(d['posted'])
+            self.assertEqual(d['recorded']['status'], 'error')
+            self.assertEqual(d['sentParts'][0]['recorded']['status'], 'error')
+            self.assertEqual(post.record_sent(st, host), [path.name])
+            self.assertEqual(local.db.execute('SELECT COUNT(*) FROM feed WHERE town=1').fetchone()[0], len(uris))
+
+
 if __name__ == '__main__':
     unittest.main()
