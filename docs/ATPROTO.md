@@ -246,8 +246,8 @@ Bodies share the front's 256 KiB bound and nesting limit. Invalid JSON, duplicat
 lone surrogates, malformed shapes or budgets answer 400 `InvalidRequest` with the reason. A procedure on GET
 or a query on POST answers 405 `InvalidRequest`. Host refusals, including stale `if` (`outcome.status: "refused"`,
 class `moved`, `moved: [{object, was, now}]`), are answers with HTTP 200. The absent `world` or this front's world
-is accepted; another durable world refuses. `scratch/<name>` answers 400 `InvalidRequest`, "sessions are not
-served yet"; the session surface is L6.
+is accepted; another durable world refuses. `scratch/<name>` addresses the issuer's scratch (L6, §3);
+unknown or expired scratches answer 404 `RecordNotFound`. Scratch turns write no public answer.
 
 `Front.turn` is the shared agent/procedure act/try execution and drafting path; `acts.judge_call` is shared with
 `requests.judged`. The host reads a spell's destination through `world-reach`. The same `(iss, intent)` answers
@@ -348,20 +348,40 @@ act/try/plan under service auth, reachable through the resident's own PDS by `at
 draft off the feed but does not bound who reads it once fetched. So the owner's "ephemeral hidden PDS sessions" are
 built from the part of a PDS that is not the repository: authenticated XRPC answered to one caller.
 
-**A session is a scratch world** (FEDERATION §3, HOST-HANDOFF 5.140): a fork of a world at a height or an empty world
-with the sealed library, the holder's, at most two, discarded 360 clock minutes after its last turn, its contents only
-in `DIR/scratch/<principal>/<name>.journal`. Its AT face (L6, not yet served), all under service auth:
+**A session is a scratch world** (FEDERATION §3, HOST-HANDOFF 5.140): a fork at a height or an empty world
+with the sealed library, at most two per holder, discarded at 360 idle home-world clock minutes. The host renews
+its last-use clock on each addressed op. Contents live only in `DIR/scratch/<iss>/<name>.journal` and its host
+artifacts. Its AT face is built in `transport/sessions.py` and `transport/http.py`, all under the service-auth
+verifier with `lxm` equal to the called NSID:
 
-- `online.fg-goose.gsb.openSession {name, from?, readers?}` → `{session, expires}`: `world-scratch` plus `readers`, DIDs
-  the holder names, kept by the host beside the scratch (changed by `shareSession`);
-- `act`, `try`, `plan` with `world: "scratch/<name>"`;
-- `online.fg-goose.gsb.getSession` (status, readers, expiry) and `listSessionRecords {session, collection, cursor?}`: the
-  session's cards, entries and REPL objects in record shape, in the response and nowhere else.
+- `online.fg-goose.gsb.openSession {name, from?}` → `{session, expires}`: the same `world-scratch` function as
+  `POST /AGENTS.md/scratch`, with the issuer as principal. `from` is `{world?, height?}` as the host accepts it;
+  `session` is `scratch/<name>`, `expires` an idle deadline in home-world clock minutes.
+- `online.fg-goose.gsb.getSession?session` → `{session, status: "world", expires}`: addressed `world-status`
+  judges existence under the issuer; `serve-status` supplies that scratch's expiry after the read.
+- `online.fg-goose.gsb.listSessionRecords?session&collection&cursor?&limit?` → `{records, cursor?}`: cards from
+  `world-objects`, `world-view` and `world-card`, using the shared card renderer without paint; entry links from
+  `world-entries`. Collections are `online.fg-goose.gsb.card` and `.entry`; limit is 1..100, default 50. A card
+  key is its object id with `/` as `~`; an entry key is its decimal height. Cursor is the last key of a page.
+  Each response item is `{key, cid, value}`, with `cid` hashing the record-shaped `value`. Entry values carry the
+  entry's CID as a link and its height, as the entry lexicon specifies. No URI or signed membership is claimed.
+  REPL objects with cards appear among cards. REPL checkpoints and separate REPL records are not served: the
+  host has no listing op for them.
+- `act`, `try`, `plan` with `world: "scratch/<name>"` run the shared act path on that addressed host client.
+  Scratch retries ask the host for the issuer's receipt, without consulting public answer files. No scratch
+  turn writes an `answer` or drafts a town reply; `try` keeps no receipt or object writes.
 
-The front admits a call when `iss` is the holder or a named reader; the host then judges it under that principal as
-any read. Being `online.fg-goose.gsb.*`, all of it passes `atproto-proxy`. A session has no DID, repository, commit or
-firehose: nothing exists to mirror. (`did:web:<host>:scratch:<name>` would not have been an atproto DID anyway:
-"only hostname-level did:web DIDs are supported" [did].)
+The holder is always the token's `iss`. The host resolves `scratch/<name>` under that principal and judges
+all reads and turns; Python keeps no reader list. Naming another holder's scratch addresses the caller's own
+unknown scratch. Unknown and expired scratches return the same fixed 404 `RecordNotFound` body, with no name,
+expiry or response links. Two holders may use the same name without aliasing. Expiry discards the scratch;
+opening the name again creates a new scratch under the host's rule, with fresh receipt identities. The name
+is reusable, not an incarnation capability, and callers must treat the recreated world as new.
+
+Every session method can pass `atproto-proxy`; the resident's PDS sees both proxied request and response.
+Privacy from that PDS requires a direct call. Session values are responses only: no `answer`, mirror record,
+firehose event, signed tree entry or response log. A session has no DID, repository or commit. Access logging
+records request metadata, never query, token, intent, card, trace or response bytes.
 
 **What the holder publishes** leaves by the existing exits, each a public turn in a durable world: `make` from
 checked source; `world-cite`, the entry's bytes kept in a town `cited` entry (its CID then in the town's signed tree,
@@ -381,13 +401,13 @@ publish what the holder chooses.
 | lexicon schema records | no | anyone; nothing | edits supersede; history keeps the old |
 | non-public façade reads (whole receipt, private object, grant) | no | the principal the host lets view it; bearer, then the host's read policy | nothing written; the access log keeps method, path, status, DID |
 | `getEntry` | no | the entry's principal and any PDS proxying its call; service auth, then the host | the journal keeps the entry |
-| `act`/`plan` responses | no | the caller and, on a proxied call, its PDS; TLS, service auth and the host's projection | the entry is journaled for good and its public projection is an `answer`; the front stores no caller response; caller and PDS proxy may retain it |
+| durable-world `act`/`plan` responses | no | the caller and, on a proxied call, its PDS; TLS, service auth and the host's projection | the entry is journaled for good and its public projection is an `answer`; the front stores no caller response; caller and PDS proxy may retain it |
 | `try` responses | no | the caller and, on a proxied call, its PDS; TLS, service auth and the host's projection | `world-try` journals nothing; the front stores no response; caller and PDS proxy may retain it |
-| session contents (L6) | no | the holder, named readers and any PDS proxying their calls; service auth, then the host's scratch ownership and `readers` | discarded at 360 idle clock minutes or `expire`; what a reader fetched is theirs; what an exit carried is public and kept |
+| session contents and scratch act/try/plan (built, L6) | no | the holder (`iss`) and any PDS proxying the call; method-bound service auth, then the host's issuer-relative scratch resolution | discarded at 360 idle home-clock minutes or `expire`; responses written nowhere, no answer or signed entry; fetched copies remain with caller/PDS; existing exits retain only what they carry |
 | a hosted guest's or Zulip user's repo (§4) | no | anyone; nothing | as a resident's request |
 
-**Decision:** sessions are scratch worlds served only as authenticated XRPC responses to the holder and named
-readers, with no DID, repository or firehose; publishing is the existing exits; the table is the contract for every
+**Decision:** sessions are scratch worlds served only as authenticated XRPC responses to the holder,
+with no DID, repository or firehose; publishing is the existing exits; the table is the contract for every
 surface, and off the feed never means private.
 
 ## 4. Identity
@@ -418,7 +438,7 @@ delve are two DIDs. A link is a pair of `online.fg-goose.gsb.link {did}` records
 
 Every collection and procedure is a file under `lexicons/online/fg-goose/gsb/` [lexicon]. This commit adds `defs` (call,
 pin, outcome, trace, receipt), `request`, `answer`, `paint`, `checkpoint`, `act`, `try`, `plan`, `getEntry`, `openSession`,
-`getSession`, `listSessionRecords`; `verb`, `chronicle`, `book`, `door`, `link`, `shareSession` follow their lanes.
+`getSession`, `listSessionRecords`; `verb`, `chronicle`, `book`, `door`, `link` follow their lanes.
 All are one NSID group, `online.fg-goose.gsb.<name>`, because each group needs its own DNS record and resolution does not
 recurse [lexicon "Publication and Resolution"].
 
@@ -467,7 +487,7 @@ public is a record; every act is a record or an XRPC call.
 | L3 | host, transport | `world-projection`; MST `put`/`delete`; per-height ops; paint split | `goat` or @atproto/repo verifies getRepo; CIDs equal in both repositories; a restart re-derives a byte-identical head |
 | L4 | transport | **Built**: subscribeRepos, durable event seq/log, bounded cursor replay, rotation `#identity` and epoch/downtime `#sync` | a consumer inverting over `prevData` follows 1,000 heights, resumes from a cursor; workers free under ten subscribers |
 | L5 | transport | **Built**: service-auth verifier, `#delvetalk` in did.json, `getEntry`, POST `act`, `try`, `plan`, caller projections, anonymous provenance-keyed answers and private previews | `tests/test_serviceauth.py`: wrong audience/method/time/header/curve, high-S and replay: 401 with no host call; bare and fragment audiences accepted; rotation refresh once; bounded nonce custody, issuer rate limit and one-block CAR. `tests/test_xrpc_acts.py`: retries, private/public projections, no-write exact previews, atomic plans, malformed bodies, HTTP methods and issuer rate limits; real-host composition. getServiceAuth/proxy untested live |
-| L6 | host, transport | sessions: `readers`, `shareSession`, `openSession`, `getSession`, `listSessionRecords`, acts with `world` | unnamed DID: 403, nothing returned; named reader: the records; the mirror ledger, getRepo CAR and access log never hold session contents; after expiry, refused, and the town's cited CID still matches |
+| L6 | transport; host remainder | **Built:** holder-only `openSession`, `getSession`, `listSessionRecords`, scratch act/try/plan; **remainder:** named readers and separate read/write/share/publish permissions require a host-owned `world-scratch` readers op | `tests/test_xrpc_sessions.py`: changed scratch card, identical town journal/answers/mirror plan/getRepo, unknown-holder and nonexistent response bytes equal, invalid tokens call no host, preview writes nothing, expiry refuses every scratch read/turn, response content absent from access log; existing `/scratch` controls retained. Host remainder completion: the host admits a named reader, distinguishes each permission and refuses unnamed principals; transport forwards that host judgement with no reader custody |
 | L7 | ops, transport, host | wildcard DNS and certificates; hosted did:web for guests and Zulip; `link`; each world's hostname resolving | a guest's request in its hosted repo admits as that DID; a Zulip message becomes a request in the user's repo |
 | L8 | host | `plan` as one turn (built, lane/plan; by record since L1) | three calls, the third refused: nothing written, one receipt |
 
@@ -531,9 +551,9 @@ For the next slices, each with its decision:
 
 | # | Finding | Decision | Lane |
 | --- | --- | --- | --- |
-| 13 | proxied calls are visible to the resident's PDS | stated in §3's table for getEntry, act/plan, try and future sessions: the resident's PDS is inside the trust boundary of every proxied call; privacy from it needs a direct call | L5, L6 |
+| 13 | proxied calls are visible to the resident's PDS | stated in §3's table for getEntry, act/plan, try and built sessions: the resident's PDS is inside the trust boundary of every proxied call; privacy from it needs a direct call | L5, L6 |
 | 14 | retrieving versions cited by book or paint | required when those records land: immutable versioned keys for book/paint and every card/page version they cite; no claim of historical retrieval from overwritten singleton keys (§1) | L3 |
-| 15 | sessions have no unambiguous address | accepted: `openSession` returns an opaque id binding holder and incarnation, used by every call; read, act, share and publish permissions separate, the host's | L6 |
+| 15 | sessions have no unambiguous address | built: `scratch/<name>` resolves under the service token's `iss` to `DIR/scratch/<iss>/<name>.journal`; holders cannot alias one another. Expired/recreated names are new scratches by the host's rule, not retained incarnations. Named readers and separate read/write/share/publish permissions await the host-owned `world-scratch` readers op with the L6 completion check | L6 |
 | 16 | XRPC acts cannot make request-keyed answers | built: key `xrpc.<iss>.<sha256(intent), base32 lower 26 chars>`, required tagged source selects request strongRef or provenance `{iss, intent}`; one public projection and writer, shared state directory | L5 |
 | 17 | constraints only in prose | built for procedures: shared exclusive call/plan/pin judgement, byte/count budgets, required tagged answer provenance, distinct turn/preview schemas and discriminants; malformed bodies 400 InvalidRequest. Lexicon v1 cannot declare a named union, so the untagged defs#call exclusivity and fields-object constraint are enforced in acts.judge_call. Other record budgets remain L2 | L5, L2 |
 | 18 | labels on the canonical record do not reach the copy | accepted: moderation subjects are the canonical URIs; the mirror's index names the mapping; copies get no labels of their own | L2 |

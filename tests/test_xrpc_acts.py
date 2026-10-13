@@ -226,15 +226,15 @@ class XrpcActs(ProcedureCase):
                self.act(call={'spell': 'x', 'object': 'diary', 'verb': 'plant'}),
                self.act(call={'object': 'diary', 'verb': 'plant', 'fields': []}),
                self.act(**{'if': [{'object': 'diary', 'version': True}]}),
-               self.act(world='another'), self.act(world='scratch/one')]
+               self.act(world='another'), self.act(world='scratch/../one')]
         for body in bad:
             with self.subTest(body=body):
                 self.host.calls.clear()
                 status, reply, _ = self.request(body=body)
                 self.assertEqual((status, reply['error']), (400, 'InvalidRequest'))
                 self.assertEqual(self.host.calls, [])
-                if body.get('world') == 'scratch/one':
-                    self.assertEqual(reply['message'], 'sessions are not served yet')
+                if body.get('world') == 'scratch/../one':
+                    self.assertIn('scratch/<name>', reply['message'])
         for raw in ('[1]', '{', '{"x":NaN}', '{"intent":"a","intent":"b"}', '{"call":{"object":"diary","verb":"plant","fields":{"x":"\\ud800"}},"intent":"x"}',
                     'x' * (MAX_BODY + 1)):
             status, body, _ = self.request(raw=raw)

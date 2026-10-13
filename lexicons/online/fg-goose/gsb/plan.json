@@ -39,7 +39,7 @@
             },
             "world": {
               "type": "string",
-              "description": "Absent or this front's world. scratch/<name> is refused: sessions are not served yet."
+              "description": "Absent or this front's durable world, or scratch/<name> resolved by the host under the token issuer. Scratch turns never write public answers."
             }
           }
         }
@@ -70,6 +70,9 @@
         },
         {
           "name": "HostUnavailable"
+        },
+        {
+          "name": "RecordNotFound"
         }
       ]
     }

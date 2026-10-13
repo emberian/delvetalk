@@ -1,11 +1,11 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.openSession",
-  "description": "Open a scratch world (world-scratch), private to the caller and the readers named; served only as XRPC responses, never as repository records.",
+  "description": "Open the issuer's scratch world through world-scratch. Method-bound service auth; response only, never a repository record.",
   "defs": {
     "main": {
       "type": "procedure",
-      "description": "Open a scratch world (world-scratch), private to the caller and the readers named; served only as XRPC responses, never as repository records. Inter-service auth: aud did:web:gsb.fg-goose.online#delvetalk, lxm this NSID.",
+      "description": "Open the issuer's scratch world through world-scratch. Method-bound service auth; response only, never a repository record.",
       "input": {
         "encoding": "application/json",
         "schema": {
@@ -16,19 +16,12 @@
           "properties": {
             "name": {
               "type": "string",
-              "maxLength": 32
+              "maxLength": 32,
+              "minLength": 1
             },
             "from": {
               "type": "ref",
               "ref": "#fork"
-            },
-            "readers": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "format": "did"
-              },
-              "maxLength": 8
             }
           }
         }
@@ -46,24 +39,10 @@
               "type": "string",
               "description": "`scratch/<name>`."
             },
-            "from": {
-              "type": "unknown"
-            },
-            "readers": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "format": "did"
-              }
-            },
             "expires": {
               "type": "integer",
               "minimum": 0,
               "description": "Home-world clock minute at which it is discarded if idle."
-            },
-            "expiresAt": {
-              "type": "string",
-              "format": "datetime"
             }
           }
         }
@@ -74,6 +53,15 @@
         },
         {
           "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "RecordNotFound"
         },
         {
           "name": "HostUnavailable"

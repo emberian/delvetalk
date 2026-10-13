@@ -166,6 +166,32 @@ class Lexicons(unittest.TestCase):
         self.assertEqual(record_problems({**good, 'value': {'hash': 'bafy'}}), ['$.value.height: required'])
         self.assertEqual(record_problems({**good, 'value': {'height': '1', 'hash': 'bafy'}}), ['$.value.height: not a integer'])
 
+    def test_session_response_shapes_are_holder_only_and_nested_by_ref(self):
+        ns = 'online.fg-goose.gsb.'
+        status = {'session': 'scratch/lab', 'status': 'world', 'expires': 360}
+        listing = {'records': [{'key': 'diary', 'cid': 'bafy', 'value': {
+            '$type': ns + 'card', 'object': 'diary', 'version': 1, 'card': 'private', 'wants': [], 'doors': []}}],
+                   'cursor': 'diary'}
+        doc = DOCS[ns + 'getSession']
+        schema = doc['defs']['main']['output']['schema']
+        self.assertEqual(validate(status, schema, doc), [])
+        for field in ('session', 'status', 'expires'):
+            self.assertEqual(validate({k: v for k, v in status.items() if k != field}, schema, doc), [f'$.{field}: required'])
+        self.assertEqual(validate({**status, 'expires': True}, schema, doc), ['$.expires: not a integer'])
+        self.assertEqual(validate({**status, 'status': 1}, schema, doc), ['$.status: not a string'])
+        doc = DOCS[ns + 'listSessionRecords']
+        schema = doc['defs']['main']['output']['schema']
+        self.assertEqual(schema['properties']['records']['items'], {'type': 'ref', 'ref': '#sessionRecord'})
+        self.assertEqual(validate(listing, schema, doc), [])
+        for field in ('key', 'cid', 'value'):
+            bad = {'records': [{k: v for k, v in listing['records'][0].items() if k != field}]}
+            self.assertEqual(validate(bad, schema, doc), [f'$.records[0].{field}: required'])
+        self.assertEqual(validate({'records': [{'key': 1, 'cid': 'bafy', 'value': {}}]}, schema, doc),
+                         ['$.records[0].key: not a string'])
+        for name in ('openSession', 'getSession'):
+            self.assertNotIn('readers', json.dumps(DOCS[ns + name]))
+        self.assertNotIn(ns + 'shareSession', DOCS)
+
     def test_the_validator_refuses_a_missing_field_and_a_wrong_type(self):
         good = {'$type': 'online.fg-goose.gsb.answer', 'source': {'$type': 'online.fg-goose.gsb.answer#request',
                 'request': {'uri': 'at://did:plc:x/online.fg-goose.gsb.request/3a', 'cid': 'bafy'}},

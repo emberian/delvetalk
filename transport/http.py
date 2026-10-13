@@ -14,13 +14,13 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from transport import bridge, oauth, pages
+from transport import bridge, oauth, pages, sessions
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
 from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, TOWN, door_rows, handles, paged, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
-from transport.repo import Repo
+from transport.repo import Repo, Refusal
 from transport.acts import INTENT_BYTES, judge_call, text
 from transport.serviceauth import Rejected, Verifier
 from transport.firehose import Firehose
@@ -406,13 +406,15 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         """
         reply = None
         if first_receipt:
-            source = bridge.xrpc_source(principal, data['intent'])
-            path = bridge.answer_path(self.st, source)
-            saved = json.loads(path.read_text()) if path.exists() else {}
+            saved = {}
+            if not scratch:
+                source = bridge.xrpc_source(principal, data['intent'])
+                path = bridge.answer_path(self.st, source)
+                saved = json.loads(path.read_text()) if path.exists() else {}
             entry = (saved.get('receipt') or {}).get('entry', {}).get('$link')
             got = host.send({'op': 'world-entry', 'principal': principal, 'hash': entry}) if entry else \
                 host.send({'op': 'world-receipt', 'principal': principal, 'identity': data['intent']})
-            if got.get('class') in ('hostUnavailable', 'hostTimeout'):
+            if got.get('class') in ('hostUnavailable', 'hostTimeout') or (scratch and got.get('status') == 'error'):
                 return got
             rc = got.get('receipt') or {}
             if rc:
@@ -425,7 +427,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             if obj is None:  # a spell's destination is read by the host, as for a record request
                 reached = host.send({'op': 'world-reach', 'principal': principal, 'author': principal, 'kind': 'request',
                                      'uri': '', 'text': data['spell'], 'chain': [], 'mentions': 0})
-                if reached.get('class') in ('hostUnavailable', 'hostTimeout'):
+                if reached.get('class') in ('hostUnavailable', 'hostTimeout') or (scratch and reached.get('status') == 'error'):
                     return reached
                 if reached.get('status') != 'reached':
                     return {'status': 'unreached', 'message': 'no card reached: a spell names its card'}
@@ -872,11 +874,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def xrpc(self, method, nsid):
         """Method-bound service reads and procedures; repository queries use credentials."""
-        if (nsid in PROCEDURES and method != 'POST') or (nsid in Repo.METHODS and method != 'GET'):
+        procedure = nsid in PROCEDURES or nsid == sessions.OPEN
+        query = nsid in Repo.METHODS or nsid in sessions.QUERIES
+        if (procedure and method != 'POST') or (query and method != 'GET'):
             return self.xrpc_reply(405, {'error': 'InvalidRequest', 'message': 'a procedure uses POST; a query uses GET'})
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else ''
-        service = nsid == 'online.fg-goose.gsb.getEntry' or nsid in PROCEDURES
+        service = procedure or nsid in sessions.QUERIES or nsid == 'online.fg-goose.gsb.getEntry'
         if service:
             try:
                 self.did = self.server.serviceauth.authenticate(credential, nsid)
@@ -895,6 +899,8 @@ class Handler(BaseHTTPRequestHandler):
                                    [('Retry-After', str(wait))])
         if nsid == 'did.json':
             return self.reply(200, canonical(self.server.repo.did_document()), 'application/did+json')
+        if nsid == sessions.OPEN or nsid in sessions.QUERIES:
+            return self.session(nsid, self.did)
         if nsid in PROCEDURES:
             return self.procedure(PROCEDURES[nsid], self.did)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True).items()}
@@ -909,11 +915,13 @@ class Handler(BaseHTTPRequestHandler):
         if data is None:
             return
         why = None
+        world = data.get('world', self.server.st.world)
+        scratch = sessions.scratch_world(world)
         allowed = {'intent', 'if', 'world', 'calls' if mode == 'plan' else 'call'}
         if set(data) - allowed:
             why = 'unexpected fields: ' + ', '.join(sorted(set(data) - allowed))
-        elif data.get('world', self.server.st.world) != self.server.st.world:
-            why = 'sessions are not served yet' if isinstance(data.get('world'), str) and data['world'].startswith('scratch/') else 'world must equal ' + self.server.st.world
+        elif world != self.server.st.world and not scratch:
+            why = 'world must equal ' + self.server.st.world + ' or scratch/<name>'
         elif (mode != 'try' or 'intent' in data) and not text(data.get('intent'), INTENT_BYTES):
             why = f'intent must be nonempty Unicode text of at most {INTENT_BYTES} UTF-8 bytes'
         else:
@@ -921,16 +929,55 @@ class Handler(BaseHTTPRequestHandler):
         if why:
             return self.xrpc_reply(400, {'error': 'InvalidRequest', 'message': why})
         turn = {**call, **{k: data[k] for k in ('intent', 'if') if k in data}, 'try': mode == 'try'}
-        with self.server.turn_lock:
-            reply = self.server.turn(self.server.host, principal, call.get('object'), call.get('verb', 'receive'),
-                                     turn, first_receipt=mode != 'try')
-            if reply.get('class') in ('hostUnavailable', 'hostTimeout'):
-                return self.xrpc_reply(503, {'error': 'HostUnavailable', 'message': reply.get('message', 'host unavailable')})
-            preview = mode == 'try' or bool(reply.get('tried'))
-            if not preview:
-                source = bridge.xrpc_source(principal, data['intent'])
-                bridge.write_answer(self.server.st, source, bridge.public_view(self.server.host, reply))
-        return self.reply(200, canonical(bridge.caller_view(reply, preview)))
+        host = sessions.ScratchHost(self.server.host.at(world)) if scratch else self.server.host
+        try:
+            with self.server.turn_lock:
+                if scratch:
+                    sessions.status(host, principal)
+                reply = self.server.turn(host, principal, call.get('object'), call.get('verb', 'receive'),
+                                         turn, scratch=scratch, first_receipt=mode != 'try')
+                sessions.check_reply(reply)
+                preview = mode == 'try' or bool(reply.get('tried'))
+                if not preview and not scratch:
+                    source = bridge.xrpc_source(principal, data['intent'])
+                    bridge.write_answer(self.server.st, source, bridge.public_view(host, reply))
+            return self.reply(200, canonical(bridge.caller_view(reply, preview)))
+        except Refusal as r:
+            return self.reply(r.code, canonical(r.body))
+        finally:
+            if scratch:
+                host.close()
+
+    def session(self, nsid, principal):
+        """Session bodies are returned once, without repository or envelope links."""
+        host = None
+        try:
+            if nsid == sessions.OPEN:
+                data = self.body(xrpc=True)
+                if data is None:
+                    return
+                reply = sessions.opened(self.server.host, principal, data)
+            else:
+                query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True)
+                allowed = {'session'} if nsid.endswith('.getSession') else {'session', 'collection', 'cursor', 'limit'}
+                if set(query) - allowed or any(len(v) != 1 for v in query.values()):
+                    raise Refusal(400, 'InvalidRequest', 'unexpected or repeated query parameters')
+                q = {k: v[0] for k, v in query.items()}
+                world = q.get('session')
+                if not sessions.scratch_world(world):
+                    raise Refusal(400, 'InvalidRequest', 'session is scratch/<name>')
+                host = sessions.ScratchHost(self.server.host.at(world))
+                if nsid.endswith('.getSession'):
+                    reply = sessions.get_session(self.server.host, host, principal, world)
+                else:
+                    sessions.status(host, principal)
+                    reply = sessions.list_records(host, principal, q)
+            return self.reply(200, canonical(reply))
+        except Refusal as r:
+            return self.reply(r.code, canonical(r.body))
+        finally:
+            if host is not None:
+                host.close()
 
     def xrpc_reply(self, code, body, headers=()):
         """XRPC's {error, message}, with the envelope's status, class and links beside it. A record or a page is the
@@ -1106,7 +1153,7 @@ class Handler(BaseHTTPRequestHandler):
         if data is None:
             return
         name = data.get('name')
-        reply = self.server.host.send({'op': 'world-scratch', 'principal': principal, 'name': name, **({'from': data['from']} if 'from' in data else {})})
+        reply = sessions.open_scratch(self.server.host, principal, data)
         base = f'{PREFIX}/scratch/{name}'
         self.answer(reply, links={'world': link(base + '/world'), 'objects': link(base + '/objects'), 'offers': link(base + '/offers'),
                                   'repl': link(base + '/repl'), 'check': link(base + '/check'), 'me': link(PREFIX + '/me')}

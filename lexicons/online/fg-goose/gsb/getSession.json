@@ -1,7 +1,7 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.getSession",
-  "description": "A session's status, readers and expiry, to its holder or a named reader.",
+  "description": "The issuer's scratch world status and home-clock expiry. Method-bound service auth; unknown or expired scratch: RecordNotFound.",
   "defs": {
     "main": {
       "type": "query",
@@ -22,6 +22,7 @@
           "type": "object",
           "required": [
             "session",
+            "status",
             "expires"
           ],
           "properties": {
@@ -29,28 +30,15 @@
               "type": "string",
               "description": "`scratch/<name>`."
             },
-            "from": {
-              "type": "unknown"
-            },
-            "readers": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "format": "did"
-              }
-            },
             "expires": {
               "type": "integer",
               "minimum": 0,
               "description": "Home-world clock minute at which it is discarded if idle."
             },
-            "expiresAt": {
+            "status": {
               "type": "string",
-              "format": "datetime"
-            },
-            "holder": {
-              "type": "string",
-              "format": "did"
+              "const": "world",
+              "description": "world-status verdict."
             }
           }
         }
@@ -60,12 +48,22 @@
           "name": "AuthRequired"
         },
         {
-          "name": "Denied"
+          "name": "InvalidToken"
         },
         {
-          "name": "SessionExpired"
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "RecordNotFound"
+        },
+        {
+          "name": "HostUnavailable"
         }
-      ]
+      ],
+      "description": "The issuer's scratch world status and home-clock expiry. Method-bound service auth; unknown or expired scratch: RecordNotFound."
     }
   }
 }

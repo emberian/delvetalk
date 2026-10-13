@@ -47,9 +47,9 @@ the reference. Book and paint must retain their cited versions under immutable v
 | `online.fg-goose.gsb.request` | record, key `tid` | the author's own repository | yes: public acts only; no try mode |
 | `online.fg-goose.gsb.answer` | record, request or XRPC key | public bridge/front answer files, served by the front and copied by the mirror; signed paths planned in L3 | yes |
 | `online.fg-goose.gsb.paint` | record, key `<object, / as ~>.<version>` | façade and posting account, outside the signed tree | yes |
-| `online.fg-goose.gsb.act`, `.try`, `.plan` | procedure (built, L5) | POST `/xrpc/` under service auth (bare service DID or `#delvetalk` audience) | the response is the caller's; an act's public projection becomes an `answer`; a try's never does |
+| `online.fg-goose.gsb.act`, `.try`, `.plan` | procedure (built, L5) | POST `/xrpc/` under service auth (bare service DID or `#delvetalk` audience) | the response is the caller's; a durable-world act's public projection becomes an `answer`; scratch turns and previews write no answer |
 | `online.fg-goose.gsb.getEntry` | query, CAR out (built, L5) | service auth; the entry's principal only; one entry block rooted at its CID | no |
-| `online.fg-goose.gsb.openSession`, `.getSession`, `.listSessionRecords` | procedure, queries (L6, not served) | service auth; the holder and named readers | no: returned, never written |
+| `online.fg-goose.gsb.openSession`, `.getSession`, `.listSessionRecords` | procedure, queries (built, L6) | method-bound service auth; the holder is `iss`, judged by the host | no: returned, never written |
 
 Authority: the NSIDs belong to whoever controls `gsb.fg-goose.online`, which the owner does; publication is
 `_lexicon.gsb.fg-goose.online` TXT pointing at the posting account `ember.delve.town`
@@ -64,3 +64,14 @@ offered text as a DAG-CBOR string, including any trailing newline, independently
 `answer.source` is a required closed union of `answer#request {request: strongRef}` and
 `answer#provenance {iss, intent}`. The bridge and front use one anonymous projection and writer;
 previews are response-only. Tests validate both source variants and the separate response shapes.
+
+Sessions use `scratch/<name>`, relative to `iss`, with expiry in home-world clock minutes.
+`openSession {name, from?}` shares the HTTP `world-scratch` path; `getSession` returns
+`{session, status, expires}`. `listSessionRecords` serves `.card` and `.entry` values as
+`{records: [{key, cid, value}], cursor?}` (nested `sessionRecord` by ref), limit 1..100/default 50.
+Cards include card-rendering REPL objects; entry records contain height and entry CID link. No at-uri
+or signed membership exists. No checkpoint collection is served. Unknown/expired scratch errors are
+fixed `RecordNotFound` responses. Reopening an expired name creates a new scratch. Named readers and
+separate read/write/share/publish permissions need the host-owned op and L6 completion check in ATPROTO.
+`tests/test_lexicons.py` validates session samples, required status/expiry and record fields; runtime
+session tests validate actual responses and record values. Responses never enter public answer files.

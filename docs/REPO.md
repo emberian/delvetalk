@@ -22,6 +22,22 @@ The next carry re-derives every MST key and commit CID from the journal under `o
 and the front serves records and projection queries under this namespace. Residents' mirror readers must list these collections;
 the posting account's orphaned old records are deleted by the owner's authorized mirror run (DEPLOY "A new binary").
 
+## Authenticated scratch responses
+
+Scratch worlds have no repository, DID, signing key, mirror records or firehose. The front serves
+`online.fg-goose.gsb.openSession`, `.getSession` and `.listSessionRecords` under method-bound service auth
+(ATPROTO §3). The issuer is the holder: `scratch/<name>` resolves in the host to that issuer's scratch.
+`listSessionRecords` returns `{records: [{key, cid, value}], cursor?}` for card and entry values; each CID
+hashes its response value and proves no signed membership. Card keys use `/` → `~`; entry keys are decimal
+heights and entry values are `{ $type: online.fg-goose.gsb.entry, entry: {$link: hash}, height }`. Cards use the
+shared renderer without paint, including REPL objects that have cards; REPL checkpoints have no collection.
+The responses are not persisted. Scratch act/try/plan run the ordinary host turn path, without town drafting
+or public answer lookup/write. Unknown and expired scratches return the same `RecordNotFound` bytes.
+Expiry is the host's idle home-clock deadline; opening a discarded name creates a new scratch. Existing
+`make`, citation and shelving exits are durable-world acts, retaining only what they carry. Proxied calls
+are visible to the caller's PDS; direct service-auth calls avoid that proxy. Named readers and separate
+permissions require the host op and completion check recorded under L6 in ATPROTO.
+
 ## The signed repository
 
 **What the tree holds.** One record per journal entry, at MST key `online.fg-goose.gsb.entry/<rev>`
