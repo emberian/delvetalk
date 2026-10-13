@@ -138,7 +138,8 @@ name. Never an entry number, a version or a line number: the reader never needs 
 sentences with no entry numbers, rules and wants by their readings, avatars left out; the day's lines with the thing
 each is on; counts (acts admitted, refusals, hands, things made by what they are called, the day's lines by the verb
 that wrote them: rains as rains); with `morning: true`, what
-still wants a hand, the eight longest waiting, oldest first, by their readings and without spells (the exact list
+still wants a hand, up to eight wants this reader may answer, oldest-first rotated from `clock day mod count`,
+wrapping, by their readings and without spells (the exact list
 beneath carries them). Up to 600 characters. That is the morning card; without `morning`, the chronicle's day.
 
 **A telling** (the owner: "not just 'while you were away' but also a 'before you arrived... [painted past]'";

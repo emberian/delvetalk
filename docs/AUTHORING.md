@@ -116,6 +116,19 @@ A spell already is a typed block (`?` prints it), as Scratch's are, and hob is t
   version and leaves an ordinary write's roots and digest alone. The counter survives removal of all rows,
   snapshot and replay through `placedCid`; `test_interpret_object` exercises both resumes and the controls.
 
+**Wants that ask a hand (world.md 16; HOST-HANDOFF 5.223).** Keep a want as the one clause modality. Its
+condition is completion evidence: while it holds, the description stays; when it stops holding, the want closes.
+Use the same domain fact as the action and its rules, such as `count(new.lines where verb == "rain" and author ==
+new.maker)` for the maker's rains, excluding other gestures. Discovery uses the existing `?` judgment: a filled
+ask must name a visible card and an action its law and Bend `actions` offer this reader. `wants` retains every
+held description, marking each answerable or waiting on other hands; `unwant` cancels it. Blocked is held but
+not answerable for this hand, derived rather than stored. `World.WantPage` adds `waiting` and `next` beside rows
+and more. The commonplace counts the waiting wants, and it and the morning rotate their oldest-first page by
+`clock day mod answerable count`, wrapping. For `oldest: true`, use the returned offset `next` as `after` on the
+same day and answerable set; restart at zero after either changes. Newest-first paging retains whole heights.
+An ask naming `?` is descriptive, so it is counted as waiting. The generic errand `open` want is removed: its
+open card already prints its work and its rule's condition, and only that rule's settlement supplies completion.
+
 ## 5. The recommendation
 
 **One mechanism:** *behaviour is a package layer.* A resident authors it at three distances, all judged by one checker (`world.check`, which already reads clause text), code held and adopted through the workshop:
@@ -229,7 +242,7 @@ delvetalk room/1 rule / name: twokeys / reading: both keys here light lantern/9 
 delvetalk lantern/9 want / name: dark / reading: unlit / when: count(new.lines where verb == "light") == 0 / asks: delvetalk room/1 ?
 ```
 
-Lit is having a `light` line; the want leaves the town's list when it lights. Taking a key out does not unlight it; a lantern that goes dark needs a body.
+Lit is having a `light` line; this descriptive want asks a card read, so it stays in `wants` as waiting and is counted rather than offered as work. It closes when the rule lights the lantern. Taking a key out does not unlight it; a lantern that goes dark needs a body.
 
 **6.4 A market stall that trades a thing for a promise.** The promise is the buyer's line, the trade an errand's shape (a rule with a pay), the custody THING's (`offer` by the holder, the stall's keeper):
 

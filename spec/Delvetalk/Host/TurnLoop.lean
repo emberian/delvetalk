@@ -894,26 +894,6 @@ def storedPure (id : String) (o : Object) (c : Compiled) (rest : List Data) : M 
     return .error failure
   | .error e => return .error e
 
-/-- An object's card as `reader` sees it (asked by `caller` under `intent`, `cardContext`), run on its
-    committed state under this turn's ticks: `renderWanting(state, context, wanting)` when the package
-    declares it, handed what wants a hand across the world as the reader may view it (`wanting`, the
-    newest `Limits.cardWanting`, each `wantedData`; derived, no root) as it is handed the reader; else
-    `render`, which may take the state alone or `(state, context)`. `noCard` when it has neither, `render`
-    when it fails or runs out. It runs on the stored state (`storedPure`): what it read of `id` is a root. -/
-def renderCard (id : String) (o : Object) (reader caller intent : String) (whole : Bool := false) : M (Except String Data) := do
-  let name := if o.declaresDef "renderWanting" then "renderWanting" else "render"
-  let compiled ← tryCatch (some <$> compiledMethod o name) fun _ => pure none
-  let some c := compiled | return .error "noCard"
-  let w := (← get).world
-  let context := fun ct => fitRecord c.bounds ct (cardContext w id reader caller intent w.height name whole)
-  let arguments := match arrowDomains 3 c.type with
-    | [_, ct] => [context ct]
-    | [_, ct, _] => [context ct, listData ((wanting w reader 0 Limits.cardWanting).1.map wantedData)]
-    | _ => []
-  match ← storedPure id o c arguments with
-  | .ok value => return .ok value
-  | .error _ => return .error "render"
-
 /-- The views a package declares: the labels its pure `views()` returns (`def views() ->
     List<String>`), read as `lawReads()` is; none when it has no such definition. -/
 def declaredViews (o : Object) : M (List String) := do
@@ -1437,31 +1417,6 @@ def rulesText (w : World) (id : String) (o : Object) (shown : String) : String :
     if rules.isEmpty then s!"{shown} carries no rules.\nTo place one: delvetalk {shown} rule / name: <name> / when: <condition> / then: <spell>\n" else
     s!"The rules {shown} carries:\n\n" ++ String.join (rules.map (line false))
 
-/-- `delvetalk <card> wants`: the wants that hold of the card now, each with the spell that answers it
-    and since when it has held. -/
-def wantsText (w : World) (reader id : String) (o : Object) (shown : String) : String :=
-  let rows := wantRows w reader id o
-  let line := fun (row : Json) =>
-    let text := fun (k : String) => (row.getObjValAs? String k).toOption.getD ""
-    let since := match (row.getObjValAs? Nat "since").toOption with
-      | some h => s!"since entry {h}"
-      | none => "by the clock"
-    let reading := if text "reading" == "" then "" else s!" {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading (text "reading")}"
-    s!"» {text "name"}{reading} ({since}):\n{text "asks"}\n"
-  match thingsText o with
-  | some text =>
-    let things := (clausesForThings w id o text).filter (Law.isWant ·.clause)
-    let clauseLine := fun (c : CarriedClause) =>
-      let held := if c.holder == id then "" else s!", carried from {c.holder}"
-      let reading := if c.clause.reading.isEmpty then "" else s!" {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading c.clause.reading}"
-      s!"» {c.clause.name} (the thing{held}){reading}: when {c.clause.condition.render} asks {(c.clause.modality.spell?.map (·.render)).getD ""}\n"
-    s!"The wants of {shown}:\n\nfor its things (each acts as the thing):\n" ++
-      (if things.isEmpty then "No wants.\n" else String.join (things.map clauseLine)) ++
-      "\non the kind (holding now):\n" ++ (if rows.isEmpty then "No wants.\n" else String.join (rows.map line))
-  | none =>
-    if rows.isEmpty then s!"{shown} wants nothing now.\n" else
-    s!"What {shown} wants now:\n\n" ++ String.join (rows.map line)
-
 /-- `delvetalk <card> verbs` (docs/FOUNDATION.md §10): the verbs the card takes, the ones its kind
     declares first, then each grown one with its grower, the entry that grew it, its reading, what it
     takes and the rule it does. -/
@@ -1500,23 +1455,198 @@ def growLine : String := "name: <one word>\nreading: <what it does>\ntakes: <tex
 /-- `adopt`'s field as the usage prints it: a law written inline, or the id of what holds one. -/
 def adoptLine : String := "law: law <name> \"<reading>\": <expression>, or a kind's or a page's id"
 
+/-- The host actions the card's usage offers this hand, judged with the same facts as its methods. -/
+def hostOfferedTo (w : World) (id : String) (o : Object) (principal : String) : String → Bool :=
+  let facts := admitFacts w o principal id
+  let things := (thingsText o).isSome && principal == ownerOf o.state && kindAdmitsBy o facts 2
+  fun (action : String) => match action with
+    | "become" => kindAdmitsBy o facts 1
+    | "adopt" => kindAdmitsBy o facts 2
+    | "lend" => ((offeredRows o.methods).getArr?.toOption.getD #[]).any fun (m : Json) =>
+      match (m.getObjValAs? String "name").toOption with
+      | some n => isActionRow m && methodAdmitsBy o facts n == Json.bool true
+      | none => false
+    | "rule" | "want" => kindAdmitsBy o facts 4 (verb := action) || things
+    | "unrule" | "unwant" => things
+    | "grow" => o.offers actMethod && kindAdmitsBy o facts 4 (verb := "grow")
+    | "rules" | "wants" => true
+    | "verbs" => o.offers actMethod
+    | _ => false
+
 /-- The host spells' templates a card's usage shows `principal`: those its law would admit them. -/
 def hostUsage (w : World) (o : Object) (principal card : String) : String :=
-  let facts := admitFacts w o principal
+  let id := namedCard w principal card
+  let facts := admitFacts w o principal id
+  let offered := hostOfferedTo w id o principal
   let target := if (thingsText o).isSome && principal == ownerOf o.state && kindAdmitsBy o facts 2 then forThingsLine else ""
-  let lines := (if kindAdmitsBy o facts 1 then [s!"delvetalk {card} become\nkind: <a kind's id>\n"] else []) ++
-    (if kindAdmitsBy o facts 2 then [s!"delvetalk {card} adopt\n{adoptLine}\n"] else []) ++
-    (if ((offeredRows o.methods).getArr?.toOption.getD #[]).any (fun m => match (m.getObjValAs? String "name").toOption with
-        | some n => isActionRow m && methodAdmitsBy o facts n == Json.bool true | none => false)
-      then [s!"delvetalk {card} lend\nto: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n"] else []) ++
-    (if kindAdmitsBy o facts 4 (verb := "rule") || !target.isEmpty then [s!"delvetalk {card} rule\n{ruleLine target}\n"] else []) ++
-    (if kindAdmitsBy o facts 4 (verb := "want") || !target.isEmpty then [s!"delvetalk {card} want\n{wantLine target}\n"] else []) ++
+  let lines := (if offered "become" then [s!"delvetalk {card} become\nkind: <a kind's id>\n"] else []) ++
+    (if offered "adopt" then [s!"delvetalk {card} adopt\n{adoptLine}\n"] else []) ++
+    (if offered "lend" then [s!"delvetalk {card} lend\nto: <a handle, or me>\nmethod: <one of its methods>\nuntil: +<clock units>\n"] else []) ++
+    (if offered "rule" then [s!"delvetalk {card} rule\n{ruleLine target}\n"] else []) ++
+    (if offered "want" then [s!"delvetalk {card} want\n{wantLine target}\n"] else []) ++
     (if target.isEmpty then [] else [s!"delvetalk {card} unrule\nname: <the rule's name>\n{target}",
       s!"delvetalk {card} unwant\nname: <the want's name>\n{target}"]) ++
-    (if o.offers actMethod && kindAdmitsBy o facts 4 (verb := "grow") then [s!"delvetalk {card} grow\n{growLine}\n"] else []) ++
+    (if offered "grow" then [s!"delvetalk {card} grow\n{growLine}\n"] else []) ++
     [s!"delvetalk {card} rules\n", s!"delvetalk {card} wants\n"] ++
     (if o.offers actMethod then [s!"delvetalk {card} verbs\n"] else [])
   if lines.isEmpty then "" else "\nThe host's spells for any card:\n" ++ String.join (lines.map ("\n" ++ ·))
+
+/-- Whether a filled want asks an action this reader is offered now. Reads pose descriptions,
+    not work; unresolved holes, missing cards and hidden targets wait on other hands. -/
+def wantAnswerable (w : World) (reader asks : String) : Bool :=
+  match Spell.parse asks with
+  | .spell card action _ =>
+    let card := if Spell.fold card == meCard then meCard else card
+    let id := namedCard w reader card
+    match w.objects[id]? with
+    | none => false
+    | some o =>
+      if !o.read.permits reader || action == "?" || hostReads.contains action || Surfaces.reads.contains action then false
+      else if (spellForms w id o).any (fun (form : Spell.Form) => form.action == action) then offeredTo w id o reader action
+      else hostOfferedTo w id o reader action
+  | _ => false
+
+/-- Holding wants stay descriptive on their card; answerability is derived for this reader. -/
+def wantRows (w : World) (reader id : String) (o : Object) : List Json :=
+  let facts := wantFacts w w.height id o
+  (posing w w.height id o).map fun (c : CarriedClause) =>
+    let since := ((w.wanting[id]?).bind (·.lookup c.clause.name)).map toJson |>.getD (toJson 0)
+    let (asks, filled) := wantAsks w reader facts id o c
+    Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("when", toJson c.clause.condition.render),
+        ("asks", toJson asks), ("answerable", toJson (filled && wantAnswerable w reader asks)),
+        ("line", toJson c.clause.render), ("from", toJson c.holder), ("since", since)] ++
+      (if c.clause.reading.isEmpty then [] else [("reading", toJson c.clause.reading)]))
+
+structure Wanted where
+  object : String
+  name : String
+  reading : String
+  asks : String
+  since : Nat
+  answerable : Bool
+
+/-- A derived page: waiting counts only visible held wants; next is the cursor in this day's ordering. -/
+structure WantingPage where
+  rows : List Wanted
+  more : Bool
+  waiting : Nat
+  next : Nat
+
+/-- Answerable wants, newest first by whole heights, or oldest-first discovery rotated by clock day.
+    In discovery, after/next is an offset in the rotated list; pages stay within the row bound even
+    at a shared height. No entry or root is written by this read. -/
+def wanting (w : World) (reader : String) (after limit : Nat) (oldest : Bool := false) : WantingPage := Id.run do
+  let held : List Wanted := w.wanting.toList.flatMap fun (entry : String × List (String × Nat)) =>
+    let (id, xs) := entry
+    match w.objects[id]? with
+    | none => []
+    | some o =>
+      if !o.read.permits reader then [] else
+      let holding := posing w w.height id o
+      let facts := wantFacts w w.height id o
+      xs.filterMap fun (indexed : String × Nat) =>
+        let (name, since) := indexed
+        (holding.find? (fun (c : CarriedClause) => c.clause.name == name)).map fun (c : CarriedClause) =>
+          let (asks, filled) := wantAsks w reader facts id o c
+          { object := id, name, reading := c.clause.reading, asks, since,
+              answerable := filled && wantAnswerable w reader asks }
+  let (answerable, blocked) := held.partition (fun (r : Wanted) => r.answerable)
+  let sorted := (answerable.toArray.qsort fun (a b : Wanted) =>
+    (if oldest then a.since < b.since else a.since > b.since) ||
+      (a.since == b.since && (a.object < b.object || (a.object == b.object && a.name < b.name)))).toList
+  let cap := if limit == 0 then Limits.listPage else min limit Limits.listPage
+  if oldest then
+    let start := if sorted.isEmpty then 0 else (w.clock / Limits.clockDay) % sorted.length
+    let rotated := sorted.drop start ++ sorted.take start
+    let rest := rotated.drop after
+    let page := rest.take cap
+    return { rows := page, more := rest.length > page.length, waiting := blocked.length,
+               next := min after sorted.length + page.length }
+  let mut page : Array Wanted := #[]
+  let mut rest := sorted.filter fun (r : Wanted) => after == 0 || r.since < after
+  while true do
+    let some first := rest.head? | break
+    let group := rest.takeWhile (fun (r : Wanted) => r.since == first.since)
+    unless page.isEmpty || page.size + group.length ≤ cap do break
+    page := page ++ group.toArray
+    rest := rest.drop group.length
+  return { rows := page.toList, more := !rest.isEmpty, waiting := blocked.length,
+             next := ((page.toList.getLast?).map (fun (r : Wanted) => r.since)).getD after }
+
+/-- A row as Bend reads it (`World.Want`). -/
+def wantedData (r : Wanted) : Data := .record [("object", .label r.object), ("name", .label r.name),
+  ("reading", .label r.reading), ("asks", .label r.asks), ("since", .natural r.since)]
+
+def wantingData (page : WantingPage) : Data := .record [("rows", listData (page.rows.map wantedData)),
+  ("more", .boolean page.more), ("waiting", .natural page.waiting), ("next", .natural page.next)]
+
+/-- The wire read shares the page the Bend query and the commonplace receive. -/
+def wantingOp (w : World) (j : Json) : Except String Json := do
+  let reader ← readerOf j
+  let nat := fun (k : String) => (j.getObjValAs? Nat k).toOption.getD 0
+  let page := wanting w reader (nat "after") (nat "limit") ((j.getObjValAs? Bool "oldest").toOption.getD false)
+  return Json.mkObj [("status", toJson "wanting"), ("more", toJson page.more),
+    ("waiting", toJson page.waiting), ("next", toJson page.next), ("rows", Json.arr (page.rows.toArray.map fun (r : Wanted) =>
+      Json.mkObj ([("object", toJson r.object), ("name", toJson r.name), ("asks", toJson r.asks), ("since", toJson r.since)] ++
+        (if r.reading.isEmpty then [] else [("reading", toJson r.reading)]))))]
+
+/-- `world-rules {object, principal?}`: every rule `object` carries (`ruleRow`), for a reader who may
+    view it. `world-wants {object, principal?}`: the wants that hold of it now (`wantRows`). Derived
+    reads: no root, no entry. -/
+def rulesOp (w : World) (j : Json) (wants : Bool) : Except String Json := do
+  let reader ← readerOf j
+  let id ← j.getObjValAs? String "object"
+  let some o := w.objects[id]? | return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
+  if !o.read.permits reader then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
+  let rows := if wants then wantRows w reader id o else (carriedRules w id o).map (ruleRow w id)
+  return Json.mkObj [("status", toJson (if wants then "wants" else "rules")), ("object", toJson id), ("rows", Json.arr rows.toArray)]
+
+/-- `delvetalk <card> wants`: the wants that hold of the card now, each with the spell that answers it
+    and since when it has held. -/
+def wantsText (w : World) (reader id : String) (o : Object) (shown : String) : String :=
+  let rows := wantRows w reader id o
+  let line := fun (row : Json) =>
+    let text := fun (k : String) => (row.getObjValAs? String k).toOption.getD ""
+    let since := match (row.getObjValAs? Nat "since").toOption with
+      | some h => s!"since entry {h}"
+      | none => "by the clock"
+    let reading := if text "reading" == "" then "" else s!" {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading (text "reading")}"
+    let answerable := (row.getObjValAs? Bool "answerable").toOption.getD false
+    let status := if answerable then "answerable" else "waiting on other hands"
+    s!"» {text "name"}{reading} ({since}; {status}): {text "asks"}\n"
+  match thingsText o with
+  | some text =>
+    let things := (clausesForThings w id o text).filter (Law.isWant ·.clause)
+    let clauseLine := fun (c : CarriedClause) =>
+      let held := if c.holder == id then "" else s!", carried from {c.holder}"
+      let reading := if c.clause.reading.isEmpty then "" else s!" {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading c.clause.reading}"
+      s!"» {c.clause.name} (the thing{held}){reading}: when {c.clause.condition.render} asks {(c.clause.modality.spell?.map (·.render)).getD ""}\n"
+    s!"The wants of {shown}:\n\nfor its things (each acts as the thing):\n" ++
+      (if things.isEmpty then "No wants.\n" else String.join (things.map clauseLine)) ++
+      "\non the kind (holding now):\n" ++ (if rows.isEmpty then "No wants.\n" else String.join (rows.map line))
+  | none =>
+    if rows.isEmpty then s!"{shown} wants nothing now.\n" else
+    s!"What {shown} wants now:\n\n" ++ String.join (rows.map line)
+
+/-- An object's card as `reader` sees it (asked by `caller` under `intent`, `cardContext`), run on its
+    committed state under this turn's ticks: `renderWanting(state, context, wanting)` when the package
+    declares it, handed what wants a hand across the world as the reader may view it (`wanting`, the
+    daily rotated `Limits.cardWanting`, `wantingData`; derived, no root) as it is handed the reader; else
+    `render`, which may take the state alone or `(state, context)`. `noCard` when it has neither, `render`
+    when it fails or runs out. It runs on the stored state (`storedPure`): what it read of `id` is a root. -/
+def renderCard (id : String) (o : Object) (reader caller intent : String) (whole : Bool := false) : M (Except String Data) := do
+  let name := if o.declaresDef "renderWanting" then "renderWanting" else "render"
+  let compiled ← tryCatch (some <$> compiledMethod o name) fun _ => pure none
+  let some c := compiled | return .error "noCard"
+  let w := (← get).world
+  let context := fun (ct : Ty) => fitRecord c.bounds ct (cardContext w id reader caller intent w.height name whole)
+  let arguments := match arrowDomains 3 c.type with
+    | [_, ct] => [context ct]
+    | [_, ct, _] => [context ct, wantingData (wanting w reader 0 Limits.cardWanting (oldest := true))]
+    | _ => []
+  match ← storedPure id o c arguments with
+  | .ok value => return .ok value
+  | .error _ => return .error "render"
 
 /-- `delvetalk objects ?` (docs/METAPHYSICS.md §5): the cards `principal` may read under `prefix:`, in
     id order, twenty a reply, `after:` the last of the reply before. A principal's own cards (ids
@@ -2350,13 +2480,14 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     let day := match f.lookup "day" with | some (.natural d) => d | _ => s.world.clock / Limits.clockDay
     respond bounds responseType "chronicled"
       [.record [("day", .natural day), ("lines", listData ((chronicle s.world s.subject day).map Data.label))]]
-  -- `wanting {after, limit}`: what wants a hand across the world (`Ops.wanting`), as the turn's subject may
+  -- `wanting {after, limit}`: what wants a hand across the world (`wanting`), as the turn's subject may
   -- view it; derived, no root.
   | .variant "wanting" (.record f) =>
     let nat := fun (k : String) => match f.lookup k with | some (.natural n) => n | _ => 0
     let s ← get
-    let (rows, more) := wanting s.world s.subject (nat "after") (nat "limit")
-    respond bounds responseType "wanting" [.record [("rows", listData (rows.map wantedData)), ("more", .boolean more)]]
+    let oldest := match f.lookup "oldest" with | some (.boolean b) => b | _ => false
+    let page := wanting s.world s.subject (nat "after") (nat "limit") oldest
+    respond bounds responseType "wanting" [wantingData page]
   -- `holds {object, when}`: a condition in the law's grammar (FOUNDATION §4) judged of `object` as it stands, by the
   -- one `denote`, at the clock, `request.subject` the turn's subject (a scene's guard, world/lib/Scenes.obend): no
   -- `old`, nothing written. The object and every object the condition cites are roots, each the subject's to view.

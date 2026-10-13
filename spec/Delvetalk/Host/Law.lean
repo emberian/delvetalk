@@ -56,7 +56,7 @@ end Delvetalk.Host
 
 namespace Delvetalk.Host.Law
 open Delvetalk.Theory.ObjectiveBendDemandData (Data)
-open Delvetalk.Compiler.ObjectiveBendLaw (LawExpr LawTerm LawSide Clause Modality Spell)
+open Delvetalk.Compiler.ObjectiveBendLaw (LawExpr LawTerm LawFilter LawSide Clause Modality Spell)
 
 /-- What a thing stands at, as a law, a rule or a want reads it (`request.laws`, `request.refusedBy`): the
     count of its law clauses, its own and those its `under` citations' texts hold (`lawClauses`), and the
@@ -237,7 +237,6 @@ partial def read (facts : Facts) (old : Option Data) (new : Data) : LawTerm → 
   | .fact .object => some (.text facts.object)
   | .fact .laws => (facts.standing.lookup facts.object).map fun s => .num s.laws
   | .fact .refusedBy => (facts.standing.lookup facts.object).map fun s => .num s.refusedBy
-  | .count side field .all => (rowsAt facts old new side field).map fun rows => .num rows.length
   | .int value => some (.num value)
   | .text text => some (.text text)
   | .sum left right => match number (read facts old new left), number (read facts old new right) with
@@ -248,10 +247,18 @@ partial def read (facts : Facts) (old : Option Data) (new : Data) : LawTerm → 
     | some x => if modulus == 0 then none else some (.num (x % Int.ofNat modulus))
     | none => none
   -- The rows whose column holds the value, by canonical bytes (docs/LAW.md §4 C).
-  | .count side field (.eq col value) => do
+  | .count side field filter => do
     let rows ← rowsAt facts old new side field
+    return .num (← filterRows facts old new rows filter).length
+
+partial def filterRows (facts : Facts) (old : Option Data) (new : Data) (rows : List Data) : LawFilter → Option (List Data)
+  | .all => some rows
+  | .eq col value => do
     let want := canon (← memberData facts old new value)
-    return .num (rows.filter fun r => (rawField col r).map canon == some want).length
+    return rows.filter fun (r : Data) => (rawField col r).map canon == some want
+  | .and left right => do
+    let selected ← filterRows facts old new rows left
+    filterRows facts old new selected right
 
 /-- The exact text a term reads as: a principal as given, a text field, a constant. -/
 partial def textOf (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Option String
@@ -422,13 +429,18 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
   | .or left right => denote facts old new left depth || denote facts old new right depth
   | .implies premise conclusion => !denote facts old new premise depth || denote facts old new conclusion depth
 
+mutual
 /-- What reading `t` walks: one for the term, and a row for each row a count reads. -/
 partial def termWork (facts : Facts) (old : Option Data) (new : Data) : LawTerm → Nat
-  | .count side field filter => 1 + ((rowsAt facts old new side field).map (·.length)).getD 0 +
-      (match filter with | .eq _ v => termWork facts old new v | .all => 0)
+  | .count side field filter => 1 + filterWork facts old new (((rowsAt facts old new side field).map (·.length)).getD 0) filter
   | .sum l r => 1 + termWork facts old new l + termWork facts old new r
   | .mod t _ => 1 + termWork facts old new t
   | _ => 1
+partial def filterWork (facts : Facts) (old : Option Data) (new : Data) (rows : Nat) : LawFilter → Nat
+  | .all => rows
+  | .eq _ value => rows + termWork facts old new value
+  | .and left right => filterWork facts old new rows left + filterWork facts old new rows right
+end
 
 /-- What judging `e` reads, as `denote` reads it: a step per atom and a row (or list item) per row it walks, on
     each side; through `under` and `wants`, what the cited clauses read. A judgment's clauses together are
@@ -726,6 +738,9 @@ private def alive : String := "request.method == \"tend\" or request.clock <= ol
 
 -- The relational atoms (docs/LAW.md §4 B, C, D, F): a filtered count and the quorum it makes, a
 -- change of rows by whom, membership in a cited object's relation, and a cited object's law.
+#guard denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b", rain "ann" 3 "c"]) (parsed "count(new.rains where author == \"ann\" and at == 3) == 1")
+#guard denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b", rain "ann" 3 "c"]) (parsed "count(new.rains where author == \"kim\" and at == 3) == 0")
+#guard !denote facts none (rel [rain "ann" 1 "a"]) (parsed "count(new.rains where author == \"ann\" and at == new.absent) == 0")
 private def as (who : String) : Facts := { facts with subject := who }
 #guard denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b", rain "ann" 3 "c"]) (parsed "count(new.rains where author == \"ann\") <= 2")
 #guard !denote facts none (rel [rain "ann" 1 "a", rain "kim" 2 "b", rain "ann" 3 "c"]) (parsed "count(new.rains where author == \"ann\") <= 1")

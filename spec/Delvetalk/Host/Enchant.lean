@@ -229,7 +229,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
       (if l.handle.isEmpty then "someone" else l.handle) ++ on ++ (if tag.isEmpty then "" else s!" ({tag})") ++ ": " ++ quoted l.text) ++
     part "Marks:" (s.marks.map fun m => if m.handle.isEmpty then m.name else s!"{m.name}, by {m.handle}") ++
     part "Counts:" (s.quantities.map Quantity.text) ++
-    part (if s.day.isSome then "What still wants a hand, oldest first:" else "What it wants now:") (s.wants.map fun x =>
+    part (if s.day.isSome then "What still wants a hand, turning daily:" else "What it wants now:") (s.wants.map fun x =>
       (if x.object.isEmpty then "" else s!"{x.object}, ") ++ x.name ++ (if x.reading.isEmpty then "" else ": " ++ quoted x.reading) ++
         (if x.spell.isEmpty then "" else s!"; the spell it asks for: {x.spell}")) ++
     part "Rules on it:" (s.rules.map fun r =>
@@ -491,11 +491,11 @@ def eventSentence (w : World) (e : DayEvent) : String :=
   | "wanted" => s!"{e.object} came to want {e.name}{r true}"
   | _ => s!"{e.object} stopped wanting {e.name}"
 
-/-- What still wants a hand across the world now (`Ops.wanting`), the eight that have waited longest, oldest first,
+/-- What still wants a hand across the world now (`wanting`), an answerable page of eight, oldest-first rotated by clock day,
     as `hand morning` lists them exact beneath the paint: by their readings, without spells, since a morning's paint
     names no spell (`Paint.contract`) and the `spells` clause holds it to that. -/
 def wantsOfDay (w : World) (reader : String) : List Want :=
-  (wanting w reader 0 newestLines (oldest := true)).1.map fun r => { object := r.object, name := r.name, reading := r.reading, spell := "" }
+  (wanting w reader 0 newestLines (oldest := true)).rows.map fun (r : Wanted) => { object := r.object, name := r.name, reading := r.reading, spell := "" }
 
 /-- How many of a day's newest events its strokes carry. -/
 def dayEvents : Nat := 16

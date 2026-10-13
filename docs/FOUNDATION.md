@@ -180,7 +180,7 @@ previous}`), and the block store `J.blocks`, each entry's canonical record at `a
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
 Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 14: component bodies
-replaced at their journaled positions, bounded grown-verb shares and behaviour revisions, HOST-HANDOFF 5.219–5.222), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+replaced at their journaled positions, bounded grown-verb shares, behaviour revisions and answerable want reads, HOST-HANDOFF 5.219–5.223), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -317,7 +317,7 @@ outside the table is `noMethod`.
 | `rule`, `unrule {object, name, when?, then?}`; `want`, `unwant {…, asks?}`; `grow`, `ungrow {…, reading?, takes?, does?}` | `placed`, `refused {clause, reading}` | a placing (`request.kind` `rule`, 4), judged by the target's law, advancing `behaviour` while leaving the state `version` alone (§10) |
 | `act<R> {object, verb, text}` | `returned` | uses a grown verb: one line tagged with the verb, and the thing tended |
 | `chronicle {day}` | `chronicled {day, lines}` | one clock day of the journal folded into lines, derived, never written |
-| `wanting {after, limit}` | `wanting {rows, more}` | declared; the host does not answer it yet (HOST-HANDOFF §7 1a) |
+| `wanting {after, limit, oldest}` | `wanting {rows, more, waiting, next}` | answerable held wants; `oldest` rotates daily with an offset cursor, otherwise whole heights newest first; visible blocked wants counted |
 
 Only the objects that use a facility name it, and the artifact lists the world
 methods an entry's sites name (`world`), so `inspect` says what an object asks
@@ -375,7 +375,7 @@ ATOM  ::= REF == TERM | REF <= TERM | REF + TERM <= TERM | TERM in [INT, …] | 
 TERM  ::= REF | INT | "TEXT" | TERM + TERM | TERM % INT
 REF   ::= new.F | old.F | "OBJECT".F | request.subject | request.caller | request.height | request.turn
         | request.pin | request.kind | request.method | request.verb | request.clock | request.object
-        | count(new.F) | count(old.F) | count(new.F where COL == TERM) | count(old.F where COL == TERM)
+        | count(new.F) | count(old.F) | count(new.F where COL == TERM [and COL == TERM …]) | count(old.F where COL == TERM [and COL == TERM …])
 ```
 
 A SPELL's holes are terms (`{request.subject}`, `{request.object}`, `{new.F}`, `{"card".F}`), filled at the write, a
@@ -390,6 +390,15 @@ prints "for its things" and "on the kind"; `wants` prints the things' clause tem
 wants under the same targets. The kind's owner is offered `for:` on `?`; a stranger's amendment is refused by
 the kind's law, and `for: things` on a non-kind is refused. The existing state-edit journal records the text
 amendment; replay derives it through the same judgment.
+
+A want closes when its condition stops holding; its asked spell names the next action, not a promise of
+completion. Count the domain evidence that action produces: bell wants and the seventh-rain rule count only
+`lines where verb == "rain"`; `second` also filters `author == new.maker` on those same rows. A count's `where`
+accepts equality predicates joined by `and`, all on one row. `wants` keeps every held description and marks it
+`answerable` or `waiting on other hands` for its reader. Discovery lists it only when its filled spell names an
+existing visible card that offers the action and admits the reader by the same law and Bend `actions` judgment
+as `?`. An unresolved hole, missing target or read-only ask waits too. Blocked means held but not answerable by
+this reader; cancelled means taken off with `unwant`. Neither is stored separately.
 
 **Tenure.** A thing a kind makes holds its owner's law in its own text (its root package's: RECORD's or KIND's),
 then `law kind: under "kind/<name>"`: the kind's text only adds to it, so a kind's maker cannot write a law line
@@ -460,7 +469,7 @@ replies `merge`; reposting the title is a checkpoint; `[[Title]]` links.
 A DelveTalk object's encounter is a card. Every object has
 `render(state, context) -> Document` and `receive(state, input: Card.Reply,
 context)` for what runs no method; a card that leads with what wants a hand across the world (the commonplace)
-declares `renderWanting(state, context, wanting: List<World.Want>)` instead, and the host hands it the rows as it
+declares `renderWanting(state, context, wanting: World.WantPage)` instead, and the host hands it the page as it
 hands it the reader. One state renders a member's card and a stranger's. A reply is the card plus the receipt line the bridge stamps, within 1,400 characters, where readers
 clip: a card takes `Card.limit(context)` (1,400 less twice the id and 120) and every renderer clips its lists with
 `Card.left`/`Card.clippedWithin`, "… and N more" counted; a list alone keeps at most 1,200 (`Card.budget`).
@@ -827,8 +836,13 @@ deleting a closed sum or a convention:
   stands on the card beside the law, in the same voice, and a fired rule is stamped on the admitted reply, so a
   thing says what it will do before anyone fails at it. A want is a fact about a thing with the condition that made
   it printed and the spell that answers it; RECORD's default wants are a line waiting for its keeper (`admit`) and
-  a record with no door (`door`). An errand (`world/bodies/errand.obend`) is a rule with a pay: its maker's
-  `asks`, the condition `done` judged at each write on the thing it is `on`, and the spell that `pays`, cast
+  a record with no door (`door`), offered to their keeper and owner respectively. `world.wanting` counts the visible
+  wants waiting on other hands as `waiting`. The commonplace says "N more wait on other hands". Its page and the
+  morning's page sort answerable wants by `(since, object, name)` ascending, start at `clock day mod count`, wrap,
+  and take at most eight. `oldest: true` uses `after`/`next` as an offset in that rotated list; keep the day and
+  answerable set fixed while paging, or restart at zero. Newest-first reads retain whole-height pages and return
+  their last height as `next`. No root, entry, task registry or stored rotation is added. An errand (`world/bodies/errand.obend`) is a rule with a pay: its maker's
+  `asks` printed on its open card (no generic `?` want claims that reading completes it), the condition `done` judged at each write on the thing it is `on`, and the spell that `pays`, cast
   under the maker. Payment and completion are one settlement: the errand's one rule on `on` casts `settle`, which
   takes the call from that rule alone and claims the errand for the writer, once, in one turn: marked `done` by them
   (a mark, a fact never dropped: marks have no retention), its rule off `on`, and its own `pay` placed with the doer
@@ -934,14 +948,14 @@ cards.
 
 ## 12. Backlog
 
-Closed since run 11, each by its commit (the earlier list is in git history): the review's findings
+Closed since run 11, each by its change (the earlier list is in git history): the review's findings
 (`docs/review/codex-2026-10-10/ROUTING.md`, all but docs 6); the voice; the commonplace with the furniture as kinds;
 inspirit and the porch's things; tending; several spells in a post; a card's own refusal refusing its turn
 (kernel16, 5.157); the overhaul through step 4 and 3b: the carry and the no-wipe gate (5.159), one clause language
 (KERNEL §27), rules firing and wants posing with the revealing reply (5.160, edition 9), the paint (5.161), grown
 verbs and the chronicle with Wake's host support deleted (5.161), reach as a host op (5.162), words a card heard as
 hob's (5.163), Wake, Env, Event, Mentions and subscriptions deleted from `world/`, errands and fronts, the minimal
-genesis with its coinages and wants, the web front (docs/WEB.md); the astra world review's medium 14: explicit
+genesis with its coinages and wants, the web front (docs/WEB.md); answerable wants with daily rotation and derived blocked/cancelled states (world.md 16, 5.223); the astra world review's medium 14: explicit
 kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221); finding 15's behaviour revisions in offered-card roots and action receipts (5.222).
 
 Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDOFF §16, OBJECTS-HANDOFF "Open");
@@ -949,7 +963,7 @@ each handoff keeps the detail, this table the order across lanes:
 
 | Item | Owner | Done when |
 | --- | --- | --- |
-| `world.wanting` answered by the host (HOST §7 1a.1), then "What wants a hand" on the commonplace and its preview re-cut (OBJECTS Open 2) | host, then objects | the commonplace card lists the bare town's wants, oldest first |
+| `world.wanting` answered by the host (HOST §7 1a.1), then "What wants a hand" on the commonplace and its preview re-cut (OBJECTS Open 2) | host, then objects | the commonplace lists the reader's answerable wants, rotates daily through oldest-first order and counts those waiting (5.223) |
 | the seal's want: `laws` and `refusedBy` facts (HOST §7 1a.2, OBJECTS Open 1) | host, then objects | a kind/seal wants a law and a second hand's try |
 | the carried ring: `seven` fires on a carried bell but `ring` writes nothing, so `rang` never fires (HOST §7 item 0) | objects | on the playtest-3 copy the seventh rain rings and notes the planter |
 | the Bend world arms tested from a body (`world.rule` from `made`, `world.grow`, `world.act`, `world.chronicle`) (HOST §7 item 0) | objects | a test per arm |
@@ -971,7 +985,8 @@ each handoff keeps the detail, this table the order across lanes:
 | the regenerated `/examples` (`docs/AGENTS-EXAMPLES.md`, still env, wake, the garden and eight doors) | transport | `deploy/capture-examples.py` re-run on a genesis of this head |
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
-| the astra world review's 11 (archival and reclamation of objects, grants and journal), 16 (wants as tasks: eligible actors, blocked and cancelled; discovery that rotates past the permanently blocked), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
+| 5.223's remaining deployment text: the hand's morning title, clapper's next ask after grow, station register's sign evidence | transport, root | title says turning daily; after grow the clapper asks hang; an unrelated register gesture never answers its sign want |
+| the astra world review's 11 (archival and reclamation of objects, grants and journal), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
 | rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder) | kernel | a level rule fires at its crossing alone unless written as a level |
 
 After the fourth playtest, in the order the town will feel them: fronts and `relay` as seeded or cut back to the

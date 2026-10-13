@@ -195,12 +195,16 @@ class Strokes(unittest.TestCase):
         self.assertTrue(morning['wants'], morning)
         # The live morning of day 20737 painted the open wants under "Answered so far:", read off "answered by: <spell>":
         # a morning's wants are what still wants a hand, the ones `hand morning` lists exact beneath (the longest
-        # waiting first), by their readings, and carry no spell for a paint to list.
+        # waiting first, rotated daily), by their readings, and carry no spell for a paint to list.
         oldest = self.town.send(op='world-wanting', principal=KIM, limit=8, oldest=True)['rows']
-        self.assertEqual([r['since'] for r in oldest], sorted(r['since'] for r in oldest))
+        held = self.town.send(op='world-wanting', principal=KIM)['rows']
+        ordered = sorted(held, key=lambda r: (r['since'], r['object'], r['name']))
+        day = self.town.send(op='world-status')['clock'] // 1440
+        start = day % len(ordered)
+        self.assertEqual(oldest, (ordered[start:] + ordered[:start])[:8])
         self.assertEqual([(w['object'], w['name']) for w in morning['wants']], [(r['object'], r['name']) for r in oldest])
         self.assertEqual([w.get('spell') for w in morning['wants']], [None] * len(oldest))
-        self.assertIn('What still wants a hand, oldest first:', painted['text'])
+        self.assertIn('What still wants a hand, turning daily:', painted['text'])
         self.assertNotIn('answered', painted['text'])
         spelled = self.town.send(op='world-render-check', principal=KIM, morning=True, text='The bell waits for its clapper.\n' + oldest[0]['asks'])
         self.assertEqual((spelled['status'], spelled.get('clause')), ('rejected', 'spells'), spelled)

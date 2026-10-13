@@ -53,7 +53,7 @@ def trieTail() -> String:
 def framed(head: String, changed: Changed, branches: Document.Documents, wants: Lists.List<String>, tail: String, context: Abi.Context) -> Document.Document:
   let fixed = textLength(head) + textLength(changed.foot) + textLength(tail)
   let doors = Card.clippedWithin(branches, 64n, Card.left(context, fixed))
-  let wanted = section("What wants a hand, newest first:\n", wants, Card.left(context, fixed + sized(doors)))
+  let wanted = section("What wants a hand, turning daily:\n", wants, Card.left(context, fixed + sized(doors)))
   let news = headed("What changed, newest first:\n", changed.lines, Card.left(context, fixed + sized(doors) + sized(wanted)))
   Document.Document.sequence({items: Document.Documents.cons({head: Document.text(head), tail: Lists.concat(Lists.concat(wanted, news), Document.Documents.cons({head: Document.text(changed.foot), tail: Lists.append(doors, Document.text(tail))}))})})
 def sized(items: Document.Documents) -> Nat:

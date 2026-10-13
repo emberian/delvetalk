@@ -137,16 +137,22 @@ sum Chronicled:
   chronicled: {day: Nat, lines: Document.Names}
   refused: {clause: String}
 # What wants a hand across the world (`wanting {after, limit}`): each want that holds now, the thing's
-# own and the ones it follows, newest first (pages of whole heights by `after`), with the height since
-# which it has held; derived, no root.
+# own and the ones it follows, answerable by this hand. `oldest` rotates the oldest-first list by
+# clock day; `after`/`next` is its offset. Newest-first pages keep whole heights and `next` is the last
+# height. `waiting` counts visible held wants that ask another hand; derived, no root.
 record Want:
   object: String
   name: String
   reading: String
   asks: String
   since: Nat
+record WantPage:
+  rows: Lists.List<Want>
+  more: Bool
+  waiting: Nat
+  next: Nat
 sum Wanting:
-  wanting: {rows: Lists.List<Want>, more: Bool}
+  wanting: WantPage
   refused: {clause: String}
 # A condition in the law's grammar judged of a thing as it stands, the turn's subject reading it (`holds
 # {object, when}`): no `old`, nothing written; what it cites are roots (a scene's guard, Scenes.obend).
@@ -250,6 +256,6 @@ protocol world:
   ungrow({object: Plans.Reference, name: String, check: Bool}) -> Placed
   act<R>({object: Plans.Reference, verb: String, text: String}) -> Returned<R>
   chronicle({day: Nat}) -> Chronicled
-  wanting({after: Nat, limit: Nat}) -> Wanting
+  wanting({after: Nat, limit: Nat, oldest: Bool}) -> Wanting
   holds({object: Plans.Reference, when: String}) -> Held
   principal({handle: String}) -> Named

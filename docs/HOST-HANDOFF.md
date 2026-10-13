@@ -2685,6 +2685,67 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    discarded or re-offered by the carry before settlement. Administrative `applyRoot` program and law overrides
    bypass `judge` and its revision counter; those overrides are outside this offered-card change.
 
+223. **A want offers work to the hand that may answer it (lane/cx-world; astra 2026-10-12 world.md 16; pending
+   replay edition 14).** `want` stays the one clause modality: held until its condition stops holding, cancelled
+   by `unwant`; blocked means held but not answerable by this reader, with neither status stored. `wantAsks` carries the filled text and whether filling
+   succeeded, so a hole in a field cannot pass as literal text. The filled ask is read by `wantAnswerable`: its target must exist and be visible and offer its action to this
+   reader. It reuses `offeredTo` (method law plus the package's pure `actions`, grown verbs judged as `act` with
+   their own verb) and `hostOfferedTo`, the host-action judgment extracted from `hostUsage` and still used there.
+   A missing target, unfilled hole or read-only ask (`?`, host reads, surfaces) waits. `wantRows` remains the full
+   held list with derived `answerable`; `wantsText` prints each want with answerable/waiting status and its ask
+   on one line. `wanting`, `wantRows`, their wire ops and `wantedData` move from Ops to TurnLoop after those
+   admission functions; `renderCard` moves after them. Host usage judges the canonical target id, including
+   when its printed card is `me` or a handle. No second law evaluator or callback is installed.
+   `WantingPage` / Bend `World.WantPage` is `{rows, more, waiting, next}`; the sum's wanting arm, world call and
+   `renderWanting` share `wantingData`. Hidden things contribute neither rows nor waiting count. `waiting` is
+   the count of all visible held wants this hand cannot answer, before paging. The commonplace prints "N more
+   wait on other hands" and offers eight answerable wants. `oldest` sorts `(since, object, name)` ascending,
+   rotates its start by `(clock / clockDay) mod count`, wraps, and takes a bounded page. `after` and `next` are
+   row offsets in that day's rotated ordering, even within a shared height; restart after the day or answerable
+   set changes. Newest-first reads retain whole heights and return the last height as `next`. Morning strokes
+   and the commonplace ask this same rotated page, titled "turning daily" in Bend and the paint's strokes.
+   - *Completion audit.* Bell `rain` counts only `verb == "rain"`; `second` counts those same rains, and the
+     maker's subset by `where verb == "rain" and author == new.maker`. The clause's existing `LawFilter` gains
+     conjunction, with parser, names, facts, read-time checks, rendering, canonical row selection and work
+     accounting following every predicate. `seven` already counted that domain. `tend` reads the clock minus
+     `tended`, which tend writes. RECORD's door and pending conditions count `cites` and `pending`, which door
+     and admit change; its `actions` admits owner and keeper respectively. Room and porch company count
+     `presence` (enter), garden five counts `things` (plant), door shut reads `marks` (knock), THING claimed
+     reads `keeper` (inspirit): unchanged. No want is declared by front, weather or other shipped bodies.
+     Errand's generic open want asked only `?`, which cannot settle it; that clause and its body comment are
+     removed. Its open card still prints the work and condition, and its rule still marks completion and pays.
+     Genesis's `kinds` read-only want stays descriptive and is counted as waiting; the seeded clapper is a
+     two-step grow/use ask, whose description says so and whose condition closes on the `hang` line.
+   - *Live kinds.* `deploy/genesis.py` reads `world/kinds/*.kind` through `read_kind`, `kind_text` and `KINDS`.
+     `texts` includes each kind's `.law`; `refresh` compares the text genesis last gave it (`given`) and writes
+     stale `.law` with its existing world-propose path, retaining owner amendments. Instances follow `under`
+     at the next read/write; no relay or new deploy path. Tests install the old bell text under a refresh
+     identity, make a grown gesture, refresh, and read the first-rain want on the same existing bell and reopen.
+   - *Tests first.* `test_wanting.Wanting` covers owner-only law admission, status in the complete wants list,
+     Bend waiting/next, missing/unoffered/unfilled/read asks, Bend actions versus grown verbs, five unanswered
+     wants across consecutive days and wraparound cursor pages, and 96 wants opened at one height split at
+     listPage plus an out-of-range cursor. `test_wanting.Shipped` covers RECORD owner/keeper wants, their waiting
+     count on the commonplace and closure by the right spells. `test_rules.Wants` covers first and second rain
+     despite another hand's grown gestures, closure by a real rain and existing-kind refresh. Before the change
+     refused asks are listed, status/count/cursor are absent, every day starts at the oldest, a shared height
+     exceeds the discovery page bound, and a gesture closes or corrupts the rain wants. Parser accept/readback
+     cases and Law guards cover intersected counts and missing evidence. Existing `test_genesis.Commonplace`
+     expectations now name the rotated eligible first row instead of the newest planted bell; `test_enchant`
+     checks the exact rotation instead of monotonic heights; `test_reaction.Errand` expects its descriptive
+     open card with no generic open want, retaining every settlement assertion. The three commonplace preview headings and their
+     list/count change by design (candidate day-zero renders: five waiting, porch company, bell/1 rain); pins follow the changed World/Menu/commonplace closure without constants.
+   These changed Bend query responses can alter a turn's derived result on replay; compound filters also
+   change clause parsing/evaluation, so this is inside pending edition 14, not an edition bump. Newest-first
+   existing single-filter semantics and work charges are retained. The supervisor reports a green Lean build
+   and passing wanting, rules, reaction, enchant, law, tending, authority and chronicle suites. Its live bare
+   commonplace shows two more answerable wants after the two shown, separately from five waiting on other
+   hands; the three previews and GENESIS's embedded card follow that render. Commonplace's new query uses
+   HostClient's dictionary request, as its fixture requires; HostCase and Town retain their keyword calls.
+   Preview/genesis rechecks and the carry check remain with the supervisor. Python syntax and diff checks pass.
+   Adjacent: `transport/hand.py` still labels its exact rotated list "oldest first"; this lane cannot edit it.
+   Genesis's clapper ask still names grow after hang exists, and the optional station register condition counts
+   all register lines rather than sign lines; both are deploy-owned text outside this lane's edit scope.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -2705,7 +2766,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
   anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
-  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219; grown verbs admitted within a stranger's share, 5.221; behaviour revisions on offered-card roots and placed commitments, 5.222). Test: `tests/test_replay_edition.py`.
+  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219; grown verbs admitted within a stranger's share, 5.221; behaviour revisions on offered-card roots and placed commitments, 5.222; answerable want queries and compound count filters, 5.223). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.

@@ -400,6 +400,49 @@ class Wants(Bell):
     def wants(self):
         return {r["name"]: r for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]}
 
+    def test_refresh_replaces_the_old_bell_counts_on_an_existing_bell(self):
+        from deploy import genesis
+        now = self.field("kind/bell", "law")["value"]
+        old = now.replace('count(new.lines where verb == "rain" and author == new.maker)',
+                          'count(new.lines where author == new.maker)')
+        old = old.replace('count(new.lines where verb == "rain") == 0', 'count(new.lines) == 0')
+        old = old.replace('count(new.lines where verb == "rain") >= 1', 'count(new.lines) >= 1')
+        old = old.replace('>= count(new.lines where verb == "rain")', '>= count(new.lines)')
+        self.assertNotEqual(now, old)
+        version = self.town.send(op="world-object", principal=OPENER, object="kind/bell")["record"]["version"]
+        edit = record(law={"tag": "variant", "label": "set", "payload": record(value=label(old))})
+        installed = self.town.send(op="world-propose", principal=OPENER, identity="refresh-kind/bell-old-counts",
+                                   roots=[{"object": "kind/bell", "version": version}],
+                                   writes=[{"object": "kind/bell", "edits": [edit]}])
+        self.assertEqual(installed["status"], "admitted", installed)
+        self.assertEqual(self.place("grow / name: brush / reading: brushed")["status"], "admitted")
+        self.assertEqual(self.say(KIM, self.bell, "delvetalk %s brush / text: no rain" % self.bell)["status"], "admitted")
+        self.assertNotIn("rain", [r["name"] for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]])
+        refreshed = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
+        self.assertEqual(next(r["status"] for r in refreshed if (r["object"], r.get("slot")) == ("kind/bell", ".law")), "refreshed")
+        self.assertIn("rain", [r["name"] for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]])
+        self.town.reopen()
+        self.assertIn("rain", [r["name"] for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]])
+
+    def test_shipped_bell_wants_count_rains_and_not_other_hands_grown_gestures(self):
+        def holding():
+            return {r["name"] for r in self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]}
+        self.assertIn("rain", holding())
+        self.assertEqual(self.place("grow / name: brush / reading: brushed")["status"], "admitted")
+        self.assertEqual(self.say(KIM, self.bell, "delvetalk %s brush / text: no rain" % self.bell)["status"], "admitted")
+        self.assertIn("rain", holding())
+        self.assertNotIn("second", holding())
+        self.rain("its maker's first rain", who=GLM)
+        self.assertNotIn("rain", holding())
+        self.assertIn("second", holding())
+        self.assertEqual(self.say(KIM, self.bell, "delvetalk %s brush / text: still no second rain" % self.bell)["status"], "admitted")
+        self.assertIn("second", holding())
+        self.town.reopen()
+        self.assertIn("second", holding())
+        closed = self.rain("a second hand's rain")
+        self.assertNotIn("second", holding())
+        self.assertIn({"object": self.bell, "want": "second"}, closed["receipt"]["unwanted"])
+
     def test_a_want_poses_while_it_holds_and_the_write_that_closes_it_says_so(self):
         placed = self.place("want / name: hands / reading: a second hand / when: count(new.lines) <= 1 / asks: delvetalk {request.object} rain / text: <a rain>")
         self.assertEqual(placed["status"], "admitted", placed)

@@ -5679,90 +5679,13 @@ def ruleRow (w : World) (id : String) (c : CarriedClause) : Json :=
       else [("fired", (receipt.map fun r => l.setObjVal! "receipt" (toJson r)).getD l)]).getD []))
 
 /-- What answers a want, filled at the read for `reader` (`Law.fill` over `Law.asItStands`): the line's
-    template when a hole reads nothing, or the want cites what the reader may not view. -/
-def wantAsks (w : World) (reader : String) (facts : Law.Facts) (id : String) (o : Object) (c : CarriedClause) : String :=
+    template when a hole reads nothing, or the want cites what the reader may not view; the second
+    component says whether filling succeeded, so a literal template is never offered as work. -/
+def wantAsks (w : World) (reader : String) (facts : Law.Facts) (id : String) (o : Object) (c : CarriedClause) : String × Bool :=
   let template := (c.clause.modality.spell?.map (·.render)).getD ""
-  if (unviewable w reader (citesOf w c.clause.names).objects).isSome then template else
-  ((c.clause.modality.spell?).bind (Law.fill (Law.asItStands facts id) none o.state)).getD template
-
-/-- The wants that hold of `id` as it stands now, as `wants` reads them: name, owner, reading,
-    condition, the spell that answers it (`wantAsks`, for its reader), the line, the object holding it,
-    and `since`: the height of the entry that made it true (a write, a law's refusal, or the clock's move). -/
-def wantRows (w : World) (reader id : String) (o : Object) : List Json :=
-  let facts := wantFacts w w.height id o
-  (posing w w.height id o).map fun c =>
-    let since := ((w.wanting[id]?).bind (·.lookup c.clause.name)).map toJson |>.getD (toJson 0)
-    Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("when", toJson c.clause.condition.render),
-        ("asks", toJson (wantAsks w reader facts id o c)), ("line", toJson c.clause.render), ("from", toJson c.holder), ("since", since)] ++
-      (if c.clause.reading.isEmpty then [] else [("reading", toJson c.clause.reading)]))
-
-/-- One row of the world's wanting index as `wanting` reads it: the thing, the want's name and reading,
-    what answers it (`wantAsks`), and the height of the entry that made it true. -/
-structure Wanted where
-  object : String
-  name : String
-  reading : String
-  asks : String
-  since : Nat
-
-/-- What wants a hand across the world (`world.wanting {after, limit}`, `world-wanting`): each row of the
-    wanting index (`World.wanting`) whose want still holds of its thing as it stands, for things `reader`
-    may view, newest first (by `since`, then thing and name), or with `oldest` oldest first (what has
-    waited longest: the morning card's). A page holds whole heights, each past `after` in that order
-    (below it, or with `oldest` above it; 0: from the first), while it stays within `limit` rows (0, or
-    past `Limits.listPage`, is `listPage`); its first height is whole whatever its size, so `after` set
-    to a page's last `since` reads on without a gap. `more` when rows remain past the page. A want that
-    came true by the clock alone is in the index, made so by the `advanced` entry that moved the clock
-    (`clockFlips`). Derived, no root. -/
-def wanting (w : World) (reader : String) (after limit : Nat) (oldest : Bool := false) : List Wanted × Bool := Id.run do
-  let rows : List Wanted := w.wanting.toList.flatMap fun (id, xs) => match w.objects[id]? with
-    | none => []
-    | some o =>
-      if !o.read.permits reader then [] else
-      let holding := posing w w.height id o
-      let facts := wantFacts w w.height id o
-      xs.filterMap fun (name, since) =>
-        if after != 0 && (if oldest then since ≤ after else since ≥ after) then none else
-        (holding.find? (·.clause.name == name)).map fun c =>
-          { object := id, name, reading := c.clause.reading, asks := wantAsks w reader facts id o c, since }
-  let sorted := (rows.toArray.qsort fun (a b : Wanted) =>
-    (if oldest then a.since < b.since else a.since > b.since) ||
-      (a.since == b.since && (a.object < b.object || (a.object == b.object && a.name < b.name)))).toList
-  let cap := if limit == 0 then Limits.listPage else min limit Limits.listPage
-  let mut page : Array Wanted := #[]
-  let mut rest := sorted
-  while true do
-    let some first := rest.head? | break
-    let group := rest.takeWhile (·.since == first.since)
-    unless page.isEmpty || page.size + group.length ≤ cap do break
-    page := page ++ group.toArray
-    rest := rest.drop group.length
-  return (page.toList, !rest.isEmpty)
-
-/-- A row of `wanting` as Bend reads it (`World.Want`): `world.wanting`'s rows, and a card's third parameter. -/
-def wantedData (r : Wanted) : Data := .record [("object", .label r.object), ("name", .label r.name),
-  ("reading", .label r.reading), ("asks", .label r.asks), ("since", .natural r.since)]
-
-/-- `world-wanting {principal?, after?, limit?, oldest?}` → `{status: wanting, rows: [{object, name, reading?, asks,
-    since}], more}` (`wanting`). -/
-def wantingOp (w : World) (j : Json) : Except String Json := do
-  let reader ← readerOf j
-  let nat := fun (k : String) => (j.getObjValAs? Nat k).toOption.getD 0
-  let (rows, more) := wanting w reader (nat "after") (nat "limit") ((j.getObjValAs? Bool "oldest").toOption.getD false)
-  return Json.mkObj [("status", toJson "wanting"), ("more", toJson more), ("rows", Json.arr (rows.toArray.map fun r =>
-    Json.mkObj ([("object", toJson r.object), ("name", toJson r.name), ("asks", toJson r.asks), ("since", toJson r.since)] ++
-      (if r.reading.isEmpty then [] else [("reading", toJson r.reading)]))))]
-
-/-- `world-rules {object, principal?}`: every rule `object` carries (`ruleRow`), for a reader who may
-    view it. `world-wants {object, principal?}`: the wants that hold of it now (`wantRows`). Derived
-    reads: no root, no entry. -/
-def rulesOp (w : World) (j : Json) (wants : Bool) : Except String Json := do
-  let reader ← readerOf j
-  let id ← j.getObjValAs? String "object"
-  let some o := w.objects[id]? | return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
-  if !o.read.permits reader then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
-  let rows := if wants then wantRows w reader id o else (carriedRules w id o).map (ruleRow w id)
-  return Json.mkObj [("status", toJson (if wants then "wants" else "rules")), ("object", toJson id), ("rows", Json.arr rows.toArray)]
+  if (unviewable w reader (citesOf w c.clause.names).objects).isSome then (template, false) else
+  let filled := (c.clause.modality.spell?).bind (Law.fill (Law.asItStands facts id) none o.state)
+  (filled.getD template, filled.isSome)
 
 /-- Why a rule that held was not cast, in words (`Ops.reactions`'s `why`). -/
 def unfiredWords : String → String

@@ -25,7 +25,7 @@ naming what it found and the rule it breaks.
                | under "OBJECT" | "OBJECT" wants NAME
     RULE     ::= monotone | writeOnce | appendOnly | unchanged | insertOnly
     TERM     ::= TERM + TERM | TERM % INT | REF | INT | "TEXT"
-    REF      ::= SIDE.FIELD | request.FACT | count(SIDE.FIELD) | count(SIDE.FIELD where COLUMN == TERM)
+    REF      ::= SIDE.FIELD | request.FACT | count(SIDE.FIELD) | count(SIDE.FIELD where COLUMN == TERM [and COLUMN == TERM …])
     SIDE     ::= new | old | "OBJECT"
     FACT     ::= subject | caller | height | turn | pin | kind | method | verb | clock | object | laws | refusedBy
     INT      ::= -?[0-9]+
@@ -125,6 +125,7 @@ inductive LawTerm where
 inductive LawFilter where
   | all
   | eq (column : String) (value : LawTerm)
+  | and (left right : LawFilter)
 end
 deriving instance DecidableEq for LawTerm, LawFilter
 deriving instance Repr for LawTerm, LawFilter
@@ -221,6 +222,7 @@ def LawTerm.names : LawTerm → List LawName
 def LawFilter.names : LawFilter → List LawName
   | .all => []
   | .eq column value => .column column :: value.names
+  | .and left right => left.names ++ right.names
 end
 
 -- The request facts a term reads (`request.FACT`), in source order.
@@ -234,6 +236,7 @@ def LawTerm.facts : LawTerm → List LawFact
 def LawFilter.facts : LawFilter → List LawFact
   | .all => []
   | .eq _ value => value.facts
+  | .and left right => left.facts ++ right.facts
 end
 
 /-- The request facts a condition reads, in source order (with repetition). -/
@@ -347,14 +350,15 @@ mutual
 def LawTerm.render : LawTerm → String
   | .field side name => side.render ++ "." ++ name
   | .fact fact => "request." ++ fact.name
-  | .count side name filter => "count(" ++ side.render ++ "." ++ name ++ filter.render ++ ")"
+  | .count side name filter => "count(" ++ side.render ++ "." ++ name ++ (match filter with | .all => "" | _ => " where " ++ filter.render) ++ ")"
   | .int value => toString value
   | .text t => "\"" ++ t ++ "\""
   | .sum left right => left.render ++ " + " ++ right.render
   | .mod term modulus => term.render ++ " % " ++ toString modulus
 def LawFilter.render : LawFilter → String
   | .all => ""
-  | .eq column value => " where " ++ column ++ " == " ++ value.render
+  | .eq column value => column ++ " == " ++ value.render
+  | .and left right => left.render ++ " and " ++ right.render
 end
 
 def LawPlace.render : LawPlace → String
@@ -413,6 +417,7 @@ def LawTerm.atRead : LawTerm → Option String
 def LawFilter.atRead : LawFilter → Option String
   | .all => none
   | .eq _ value => value.atRead
+  | .and left right => left.atRead <|> right.atRead
 end
 
 def LawPlace.atRead : LawPlace → Option String
@@ -451,7 +456,7 @@ def termRule : String := "a term is new.FIELD, old.FIELD, \"OBJECT\".FIELD, requ
 def factRule : String :=
   "a clause reads " ++ ", ".intercalate (LawFact.all.map fun f => "request." ++ f.name)
 def pathRule : String := "a clause reads top-level fields only: new.FIELD, old.FIELD, \"OBJECT\".FIELD"
-def countRule : String := "a count is count(SIDE.FIELD), optionally with where COLUMN == TERM; SIDE is new, old or \"OBJECT\""
+def countRule : String := "a count is count(SIDE.FIELD), optionally with where COLUMN == TERM joined by and; SIDE is new, old or \"OBJECT\""
 def atomRule : String := "an atom is TERM == TERM, TERM <= TERM, TERM >= TERM, TERM in …, RULE(FIELD), \
   changed(new.FIELD.COLUMN) by TERM, under \"OBJECT\" or \"OBJECT\" wants NAME"
 def compareRule : String := "a comparison reads the write: one side is new.FIELD, old.FIELD, \"OBJECT\".FIELD, \
@@ -648,9 +653,9 @@ def parseOperand : Nat → List Tok → Except String (LawTerm × List Tok)
       let ((side, field), after) ← parseRef rest
       match after with
       | .sym ")" :: more => return (.count side field .all, more)
-      | .ident "where" :: .ident column :: .sym "==" :: more =>
-        let (value, after') ← parseTerm fuel more
-        return (.count side field (.eq column value), ← expectSym ")" after')
+      | .ident "where" :: more =>
+        let (filter, after') ← parseFilter fuel more
+        return (.count side field filter, ← expectSym ")" after')
       | _ => refuse (found after) countRule
     | .ident "count" :: _ => refuse (found toks) countRule
     | _ =>
@@ -660,6 +665,17 @@ def parseOperand : Nat → List Tok → Except String (LawTerm × List Tok)
       else do
         let ((side, field), rest) ← parseRef toks
         return (.field side field, rest)
+/-- Equality tests joined by `and` inside a count's `where`, all on the same row. -/
+def parseFilter : Nat → List Tok → Except String (LawFilter × List Tok)
+  | 0, toks => refuse (found toks) "nested deeper than the parser's capacity"
+  | fuel + 1, .ident column :: .sym "==" :: more => do
+    let (value, rest) ← parseTerm fuel more
+    match rest with
+    | .ident "and" :: tail =>
+      let (next, after) ← parseFilter fuel tail
+      return (.and (.eq column value) next, after)
+    | _ => return (.eq column value, rest)
+  | _, toks => refuse (found toks) countRule
 /-- A term: operands, each with its remainders, joined by `+`, to the left. -/
 def parseTerm : Nat → List Tok → Except String (LawTerm × List Tok)
   | 0, toks => refuse (found toks) "nested deeper than the parser's capacity"
@@ -1034,6 +1050,8 @@ def accepted : List (String × LawExpr) := [
     .and (.rule .insertOnly "signatures") (.changed "signatures" "principal" (.fact .caller))),
   ("changed(new.made.owner) by new.owner", .changed "made" "owner" (.field .new "owner")),
   -- LAW §4 C, G: filtered counts (SEEDING folkway 3), their growth, the quorum.
+  ("count(new.lines where verb == \"rain\" and author == new.maker) >= 1",
+    .ge (.count .new "lines" (.and (.eq "verb" (.text "rain")) (.eq "author" (.field .new "maker")))) (.int 1)),
   ("count(new.lines where author == request.subject) <= 1",
     .le (.count .new "lines" (.eq "author" (.fact .subject))) (.int 1)),
   ("count(new.votes where vote == \"yes\") <= 3 and count(new.votes where n == -1) <= 0",

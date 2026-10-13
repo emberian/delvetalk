@@ -208,6 +208,12 @@ law of SEEDING folkway 3 (`count(new.lines where author == request.subject) <=
 1`) and of a bond's rest: `new.closed == 0 or count(new.signatures where
 principal in new.parties) >= count(new.parties)` beside `writeOnce(closed)`.
 
+A count's equality filter also accepts `and`: `count(new.lines where verb == "rain" and author == new.maker)`
+counts only rows meeting both tests, with canonical equality and the same term reads as a single test. Names,
+citations and clock dependencies include every predicate. Work charges each predicate's row walk and value
+read; a compound count is still inside the clause budget. Bell wants and the seventh-rain rule use this same
+rain domain, so a grown gesture supplies no completion evidence for a rain want.
+
 **D. `REF in "<object>".F.COL`** (and `REF in "<object>".F`): membership read
 in another object, recorded as a root. Denotation: `Facts` gains
 `reads : List (String × Data)` (what `bendLaw` builds for the predicate);

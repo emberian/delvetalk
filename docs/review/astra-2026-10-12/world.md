@@ -77,6 +77,7 @@
    References: [Record.obend:136](world/objects/Record.obend:136), [VOICE, morning strokes](docs/VOICE.md:136), [bell.kind:19](world/kinds/bell.kind:19).  
    **Scenario:** The oldest wants can indefinitely occupy the morning card: a door only an absent owner may add, pending work only an absent keeper may admit, or an intentionally impossible condition. Their spells may only show blanks or a card. Conversely, a bell’s “wants rain” closes after any grown gesture because it counts all lines, although its ringing rule counts only `rain`.  
    **Fix:** Distinguish descriptive conditions from actionable tasks. Tasks need eligible actors, a concrete next action, completion evidence and blocked/cancelled states. Rotate or filter discovery so permanently blocked wants do not monopolize it; use the same domain facts for wants and effects.
+   **Implementation:** [HOST-HANDOFF 5.223](../../HOST-HANDOFF.md): the existing want clause and cast admission supply reader eligibility, a waiting count, daily rotation and derived blocked/cancelled status; bell completion counts rain lines alone. Runtime and carry validation are pending with the supervisor; remaining deploy-owned asks are tracked in FOUNDATION §12.
 
 17. **Medium — The paint’s factual guarantee exceeds what its verifier establishes.**  
    References: [OVERHAUL §4(b–d)](docs/OVERHAUL.md:85), [VOICE:165](docs/VOICE.md:165), [Enchant.lean:883](spec/Delvetalk/Host/Enchant.lean:883).  
