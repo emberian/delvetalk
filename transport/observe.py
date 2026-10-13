@@ -7,10 +7,10 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 
+from transport import delve
 from transport.delve import Failure, canonical
 
 MAX_TEXT = 64 * 1024
-AT_URI = re.compile(r'at://did:[a-z0-9]+:[A-Za-z0-9._:-]+/[A-Za-z0-9.]+/[A-Za-z0-9._~:-]+\Z')
 SUMMON_TAG = 'gsb'
 EDIT = re.compile(r'edit:\s*(.+?)\s*›\s*(.+)')
 DECISION = re.compile(r'(?:merge|reject)\b.*')
@@ -78,7 +78,12 @@ def observation(post, summon=''):
         did, handle = author['did'], author['handle']
     except (KeyError, TypeError):
         raise Failure('malformed_post') from None
-    if not (isinstance(uri, str) and AT_URI.fullmatch(uri) and all(isinstance(x, str) for x in (cid, text, created, did, handle))):
+    try:
+        parsed = delve.parse_at_uri(uri)
+        instant(created)
+    except (Failure, ValueError):
+        raise Failure('malformed_post', str(uri)[:100]) from None
+    if not (parsed.repo.startswith('did:') and all(isinstance(x, str) for x in (cid, text, did, handle))):
         raise Failure('malformed_post', str(uri)[:100])
     if len(text.encode()) > MAX_TEXT:
         raise Failure('post_body_too_large', uri)
@@ -99,7 +104,12 @@ def posts_of(page):
 
 def instant(stamp):
     """An ISO-8601 time as UNIX seconds."""
-    return datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
+    if not isinstance(stamp, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})', stamp):
+        raise ValueError('not a timestamp')
+    try:
+        return datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
+    except (OverflowError, OSError) as error:
+        raise ValueError('not a timestamp') from error
 
 
 def start_cursor(st, explicit=None, now=None):
@@ -129,10 +139,8 @@ class Observer:
         self.requests, self.problems = requests, []  # a requests.Poller: residents' request records, proven
 
     def before_start(self, created):
-        try:
-            return self.since is not None and instant(created) < self.since
-        except ValueError:
-            return False
+        at = instant(created)
+        return self.since is not None and at < self.since
 
     def store(self, post):
         """Store one post and its observation in one transaction. True if new."""

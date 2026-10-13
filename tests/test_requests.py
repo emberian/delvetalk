@@ -271,6 +271,22 @@ class Requests(unittest.TestCase):
         self.step()
         self.assertEqual(self.answer('3aaaaaaaaaaa2')['outcome']['status'], 'admitted')
 
+    def test_a_signed_request_created_at_not_a_date_is_answered_invalid_without_a_turn(self):
+        self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT, created='not-a-date'))
+        identity = {'principal': DID, 'intent': f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa2'}
+        ran = self.step()
+        self.assertFalse(any(e.get('identity') == identity for e in self.acts()))
+        self.assertEqual(ran['failed'], [])
+        self.assertEqual(self.answer('3aaaaaaaaaaa2')['outcome'],
+                         {'status': 'invalid', 'line': 'createdAt is not a timestamp'})
+        (obs,) = self.st.observations()
+        self.assertEqual(obs['request']['invalid'], 'createdAt is not a timestamp')
+        self.assertEqual(obs['request']['call'], {})
+        first = self.answer('3aaaaaaaaaaa2')
+        self.step()
+        self.assertEqual(self.answer('3aaaaaaaaaaa2'), first)
+        self.assertFalse(any(e.get('identity') == identity for e in self.acts()))
+
     def test_a_try_another_services_request_and_one_from_before_observing_are_never_run(self):
         self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT, mode='try'))
         self.pds.put(DID, '3aaaaaaaaaaa3', request(PLANT, service='did:web:elsewhere.example'))
@@ -570,6 +586,28 @@ class Requests(unittest.TestCase):
 
 class Held(unittest.TestCase):
     """A request hob must read first (a misfit spell) is answered when its turn settles, once, never run again meanwhile."""
+
+    def test_not_a_date_missing_and_non_string_request_times_are_quarantined_beside_a_maximum_timestamp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            st, pds, host = State(directory, config=LOOPBACK), FakePDS(), Stub()
+            pds.repo(DID)
+            for key, stamp in (('3aaaaaaaaaaa2', None), ('3aaaaaaaaaaa3', 42), ('3aaaaaaaaaaa4', 'not-a-date')):
+                value = request(PLANT, created=stamp)
+                if stamp is None:
+                    del value['createdAt']
+                pds.put(DID, key, value)
+            pds.put(DID, '3aaaaaaaaaaa5', request(PLANT, created='9999-12-31T23:59:59.999999Z'))
+            client = delve.Client(pds)
+            ob = observe.Observer(st, client, requests=Poller(st, client))
+            self.addCleanup(ob.db.close)
+            ran = bridge.run(st, host, ob)
+            self.assertEqual(ran['failed'], [])
+            for key in ('3aaaaaaaaaaa2', '3aaaaaaaaaaa3', '3aaaaaaaaaaa4'):
+                value = json.loads((st.answers / f'{DID}.{key}.json').read_text())
+                self.assertEqual(record_problems(value), [])
+                self.assertEqual(value['outcome'], {'status': 'invalid', 'line': 'createdAt is not a timestamp'})
+            turns = [q for q in host.ops if q['op'] == 'world-turn']
+            self.assertEqual([q['identity'] for q in turns], [f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa5'])
 
     def test_a_request_with_two_suspended_children_waits_for_both_and_keeps_the_settled_offer_and_refusal(self):
         from tests.test_bridge import Spells
