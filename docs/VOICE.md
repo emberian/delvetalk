@@ -184,8 +184,9 @@ clause reads in it, English's the ones named here:
 | `wants` | a want claimed ("wants", "still wants", "needs", "lacks", "asks for", unnegated) only when the strokes hold one (a want now, or one a day's events name), and only of what one is for: a word after it beside a held want's name, reading or thing (filler like "a hand", "someone" aside). The live porch telling "the porch still wants a hand to keep what lies unclaimed", over a porch wanting nothing, is refused; so is the nook's "still wants someone to listen from it" over its `door` want |
 | `length` | 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival |
 
-A paint refused for its length alone is asked for once more, told its length; any other refused paint, or a second
-long one, shows the card exact until its next version and is not asked again for that one; `world-status.renders`
+A paint refused for its length, or for any clause in a tongue other than English, is asked for once more, told the
+clause and its reason in plain words and shown the refused paint (`Enchant.refusalNote`); a second refusal, or any other
+refused paint, shows the card exact until its next version and is not asked again for that one; `world-status.renders`
 counts `cached`, `rejected`, `pending` and `retried`. `world-render-check` judges any text against a thing's (or a day's) strokes
 without caching it.
 
@@ -225,6 +226,10 @@ every language and answers each resident in theirs (`spec/Delvetalk/Host/Tongue.
   whole; attribution by handle or the tongue's word for the maker; numbers and negation as the table above. A tongue
   with no table is never painted (`exact`, reason `tongue`), and a paint in another tongue than asked is refused
   (`tongue`).
+- **The painter is taught by example.** The contract carries a true paint per tongue (ja zh es ru ar) of a thing, of a
+  telling before arrival and of one while away, each checked against the real strokes in the tests; a telling's strokes
+  give the host's frame in the tongue (`Frame:`) so the paint never opens with the English one; a name is plain, never
+  quoted. A refusal in a tongue other than English is asked once more with its reason (the length retry's one mechanism).
 - **hob's own lines** (`resumeHeard`'s asks-first, still-needs and none-takes, the `?` and hint tails) are in the
   speaker's tongue (`Tongue.say`): `hob: まだ text が要る。埋めて送って:`.
 - **The guide's opening and the welcome** are library pages in each tongue (`guide.ja`, `welcome.es`), read in place
