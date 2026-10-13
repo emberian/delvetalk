@@ -44,23 +44,25 @@ record State:
   heard: Relations.Relation<Heard>
   hear: Bool
   seen: Nat
+  tongue: String
 # Only its own methods write it: a write no method made is refused (`methods`), and a rule is
 # placed on it by its principal alone (the object's id is the principal's DID). The predicate, not
 # a text law, so the host's default law (its creator alone reprograms or amends it) stands beside it.
 def law(old: State, new: State, request: Abi.Request) -> Abi.Verdict:
   if request.kind == 3n || (request.kind == 0n && request.method == "") then Abi.Verdict.refused({clause: "methods", reading: "Only its own methods write it; a proposed write is refused."}) else if request.kind == 4n && request.context.principal != request.context.object then Abi.Verdict.refused({clause: "rules", reading: "Only its principal places a rule on it."}) else Abi.Verdict.admitted({})
-# The avatar as edition 9 keeps it (a carry lays this package over it, `migrate`): no `heard` yet,
-# hearing on.
-record State9:
+# The avatar as edition 10 keeps it (a carry lays this package over it, `migrate`): no tongue yet.
+record State10:
   handle: String
   at: Plans.Reference
   holding: Lists.List<Plans.Reference>
   inbox: Relations.Relation<Note>
+  heard: Relations.Relation<Heard>
+  hear: Bool
   seen: Nat
-def migrate(old: State9) -> State:
-  {handle: old.handle, at: old.at, holding: old.holding, inbox: old.inbox, heard: Relations.empty(), hear: true, seen: old.seen}
+def migrate(old: State10) -> State:
+  {handle: old.handle, at: old.at, holding: old.holding, inbox: old.inbox, heard: old.heard, hear: old.hear, seen: old.seen, tongue: ""}
 def initial() -> State:
-  {handle: "", at: Plans.nobody(), holding: Lists.List.nil(), inbox: Relations.empty(), heard: Relations.empty(), hear: true, seen: 0n}
+  {handle: "", at: Plans.nobody(), holding: Lists.List.nil(), inbox: Relations.empty(), heard: Relations.empty(), hear: true, seen: 0n, tongue: ""}
 def relations() -> Relations.Decls:
   Lists.append(Lists.append(Relations.Decls.nil(), {field: "inbox", key: Text.words("at from n"), limit: 64n}), {field: "heard", key: Text.words("at n"), limit: 64n})
 # An avatar answers only to its own principal: its id is the principal's DID.
@@ -236,14 +238,21 @@ form since:
 def methods() -> Lists.List<String>:
   Text.words("hold release ~heard")
 # Its principal's lenses: the handle the card shows (`delvetalk me set / handle: ...`), and whether
-# it hears what others do to the things they made (`delvetalk me set / hear: no`).
+# it hears what others do to the things they made (`delvetalk me set / hear: no`), and the language
+# its principal states (`delvetalk me set / tongue: ja`), one of the town's tongues, which it answers in.
 def lenses() -> Lists.List<Form.Field>:
-  Lists.append(Lists.append(Lists.List.nil(), {name: "handle", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "hear", kind: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")})})
+  Lists.append(Lists.append(Lists.append(Lists.List.nil(), {name: "handle", kind: Form.Kind.text({min: 1n, max: 64n})}), {name: "hear", kind: Form.Kind.choice({options: Lists.append(Lists.append(Form.Names.nil(), "yes"), "no")})}), {name: "tongue", kind: Form.Kind.choice({options: tongues()})})
+# The tongues the town paints, checks and speaks hob's lines in (spec/Delvetalk/Host/Tongue.lean `tongues`).
+def tongues() -> Form.Names:
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Form.Names.nil(), "en"), "ja"), "zh"), "es"), "ru"), "ar")
 def set(state: State, input: {field: String, value: Form.Value}, context: Abi.Context) -> Activity<Done>:
-  if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "changes it"}), context) else if input.field == "hear" then setHear(Card.valueText(input.value) == "yes") else setHandle(Card.valueText(input.value))
+  if mine(context) == false then told(Why.notMine({who: owner(state, context), doing: "changes it"}), context) else if input.field == "hear" then setHear(Card.valueText(input.value) == "yes") else if input.field == "tongue" then setTongue(Card.valueText(input.value)) else setHandle(Card.valueText(input.value))
 def setHandle(handle: String) -> Activity<Done>:
   let written(_) = write {handle: set handle}
   Card.tell(Done.done({}), Document.text("Set handle to {handle}.\n"))
+def setTongue(tongue: String) -> Activity<Done>:
+  let written(_) = write {tongue: set tongue}
+  Card.tell(Done.done({}), Document.text("Set tongue to {tongue}.\n"))
 def setHear(hear: Bool) -> Activity<Done>:
   let written(_) = write {hear: set hear}
   Card.tell(Done.done({}), Document.text(if hear then "Hearing again what others do to what you made.\n" else "No longer hearing what others do to what you made: delvetalk me set / hear: yes\n"))

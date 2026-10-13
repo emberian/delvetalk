@@ -1,0 +1,3 @@
+hob: 静かな行にいる蛙。呪文でない言葉も読む。札は自ら答える。返答は呪文か言葉で。
+扉: delvetalk commonplace
+手引き: delvetalk guide

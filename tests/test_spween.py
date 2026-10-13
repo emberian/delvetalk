@@ -225,6 +225,46 @@ class Parse(unittest.TestCase):
         self.assertEqual(text, " / 'Twas cold. / start a / cooldown 0 / requires \n=== a: 'Twas cold.\n  * 触れる氷 [cups >= 1] (cups sub 1) -> a\n  * 戻る [] () -> a")
 
 
+    def test_fluonaut_s_japanese_passage_parses_with_its_russian_word_and_labels_as_written(self):
+        # post 33 of the station trawl, its choices on their own lines
+        text, _ = summary("---\nid: s\ntitle: 冷蔵庫\n---\n=== forecourt\n外。\n=== hallway\n廊下。\n=== cooler_back\n冷蔵庫の奥で、«чашка» が光る。\n"
+                          "' [触れる氷] { cups >= 1 }\n  ~ cups -= 1\n  -> hallway\n' [戻る] -> forecourt\n")
+        self.assertIn(" / 冷蔵庫 / start forecourt", text)
+        self.assertIn("=== cooler_back: 冷蔵庫の奥で、«чашка» が光る。\n  * 触れる氷 [cups >= 1] (cups sub 1) -> hallway\n  * 戻る [] () -> forecourt", text)
+
+    def test_prose_in_arabic_chinese_and_spanish_passes_through_unchanged(self):
+        for prose in ("مرحبا بالعالم، „ein“ «bonjour»", "井边有一枚「硬币」。", "¿Qué pasó, señor? “Nada”."):
+            with self.subTest(prose=prose):
+                self.assertIn("=== a: %s\n" % prose, summary("=== a\n%s\n* [Go]\n" % prose)[0] + "\n")
+
+    def test_variables_in_one_alphabet_set_add_subtract_and_guard(self):
+        text, _ = summary("=== a\nA.\n* [取る] { 杯 >= 1, !鳴った, чашки < 3, 杯_2 }\n  ~ 杯 -= 1\n  ~ 杯 = 2\n  ~ чашки += 1\n  ~ 鳴った = true\n  -> a\n")
+        self.assertIn("  * 取る [杯 >= 1, 鳴った falsy , чашки < 3, 杯_2 truthy ] (杯 sub 1; 杯 set 2; чашки add 1; 鳴った set true) -> a", text)
+        flags = summary("---\nid: s\nrequires:\n  min: { 杯: 1 }\n  not: [鳴った]\n---\n=== a\n")[0]
+        self.assertIn("requires 杯 >= 1, 鳴った falsy ", flags)
+
+    def test_a_verb_stays_ascii_and_a_cast_is_read_as_before(self):
+        text, _ = summary("=== a\n* [Go]\n  ~ ring bell/1\n  ~ call(\"ring\", \"bell/1\")\n")
+        self.assertEqual(text.count("cast delvetalk {request.object} ring / text: bell/1"), 2, text)
+        self.assertTrue(summary("=== a\n* [Go]\n  ~ 鳴らす bell/1\n")[0].startswith("refused: an effect sets a variable"), summary("=== a\n* [Go]\n  ~ 鳴らす bell/1\n")[0])
+
+    def test_a_name_in_two_alphabets_is_refused_by_name_wherever_a_variable_is_written(self):
+        mixed = "\u0441ups"  # a Cyrillic es before Latin ups
+        reason = "refused: not a variable: %s; a name is in one alphabet, ASCII letters or none" % mixed
+        for text in ("=== a\n* [Go] { %s >= 1 }\n" % mixed, "=== a\n* [Go] { !%s }\n" % mixed, "=== a\n* [Go]\n  ~ %s -= 1\n" % mixed,
+                     "=== a\n* [Go]\n  ~ %s = 1\n" % mixed, "---\nid: s\nrequires:\n  flags: [%s]\n---\n=== a\n" % mixed):
+            with self.subTest(text=text):
+                self.assertEqual(summary(text)[0], reason)
+        for name in ("杯　2", "杯、", "a$b", "杯“x"):  # an ideographic space, a CJK mark, ASCII punctuation, a quotation mark are not in a name
+            with self.subTest(name=name):
+                self.assertTrue(summary("=== a\n* [Go]\n  ~ %s = 1\n" % name)[0].startswith("refused: "), name)
+
+    def test_a_passage_name_outside_ascii_is_refused_with_the_name_to_write_instead(self):
+        self.assertEqual(summary("=== 冷蔵庫の奥\nA.\n")[0],
+                         "refused: a passage name is ASCII letters, digits and _, as it names a rule of the room's law: 冷蔵庫の奥; "
+                         "write === cooler_back, and keep the words as the title or a choice's label")
+        self.assertTrue(summary("---\nid: 井戸\n---\n=== a\n")[0].startswith("refused: the frontmatter's id is letters, digits and _"))
+
     def test_a_passage_s_guard_rides_every_choice_into_it_and_prose_under_a_choice_is_refused(self):
         # deepseek's `=== twelfth { wound >= 12 }` and grok's `=== radio { cups >= 1 }`, under the station's call
         gated = "---\nid: s\n---\n=== a\nA.\n* [In] { cups >= 1 } -> b\n-> b\n=== b { wound >= 12, keeps.porch/goblet }\nB.\n* [Back] -> a\n"
@@ -323,6 +363,22 @@ class Made(test_chain.Chain):
         self.assertEqual(back["result"]["label"], "entered", back)
         # The coin was dropped: its guard (!wished) no longer holds.
         self.assertNotIn("Drop a coin", self.card(well))
+
+    def test_a_room_whose_variables_are_japanese_and_russian_walks(self):
+        cups = ("---\nid: cups_room\ntitle: 杯の部屋\n---\n=== intro\n«Чашки» と杯。\n"
+                "* [取る] { 杯 >= 1, !鳴った }\n  ~ 杯 -= 1\n  ~ чашки += 2\n  ~ 鳴った = true\n  -> END\n"
+                "* [置く]\n  ~ 杯 = 2\n  -> intro\n* [増やす]\n  ~ 杯 += 1\n  -> intro\n")
+        r = self.say("scene", "```spween\n" + cups + "```\n", identity="post-cups")
+        self.assertEqual(r["result"]["label"], "done", r)
+        self.deliver_all()
+        room = self.WELL_ID
+        self.assertEqual(self.say(room, "delvetalk %s enter" % room)["result"]["label"], "entered")
+        self.assertEqual(self.refusal(self.say(room, "delvetalk %s choose / choice: 取る" % room)), ("guarded", "取る needs 杯 >= 1."))
+        for choice in ("置く", "増やす"):
+            self.assertEqual(self.say(room, "delvetalk %s choose / choice: %s" % (room, choice))["result"]["label"], "moved")
+        self.assertEqual(self.say(room, "delvetalk %s choose / choice: 取る" % room)["result"]["label"], "left")
+        _, state = self.view(room)
+        self.assertEqual(state["vars"], [{"name": "杯", "value": "2"}, {"name": "чашки", "value": "2"}, {"name": "鳴った", "value": "true"}])
 
     def test_an_unmet_requirement_keeps_everyone_out(self):
         sealed = WELL.replace("wishing_well", "sealed_well").replace("not: [well_sealed]", "flags: [well_open]")
