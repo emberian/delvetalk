@@ -29,11 +29,33 @@ from transport.identity import slug
 # (the carry seals the configured one; serve rebuilds it at start), the root socket's directory, scratch worlds (not
 # custody), sockets and pid files.
 SKIP_DIRS = {'library', 'root', 'scratch'}
+# A SQLite database's side files: the write-ahead log, its index and a rollback journal.
+SQLITE_SIDES = ('.sqlite-wal', '.sqlite-shm', '.sqlite-journal')
 
 
 def skipped(name):
     return (name.endswith(('.journal', '.journal.blocks', '.cbor', '.sock', '.pid', '.tmp')) or '.journal.snapshot.' in name
+            or name.endswith(SQLITE_SIDES)  # read with their database (copy_sqlite), never laid beside the new one
             or name in ('journal.lock', 'delvetalk.toml'))  # the configuration: the new state's own, or the old one copied first
+
+
+def copy_sqlite(src, dst):
+    """SRC into DST through SQLite's backup API, read from a private copy beside DST. OLD is mounted read-only in the
+    ops container (`/towns`), where a WAL database whose `-shm` its last writer removed at a clean close cannot be
+    opened even to read; and a `-wal` or hot `-journal` a stopped writer left holds what the main file lacks. The lock is
+    free, so nothing writes OLD: the file with its side files is the database, and opening the copy recovers it."""
+    with tempfile.TemporaryDirectory(dir=dst.parent) as stage:  # beside DST: the ops container's /tmp is 16 MB
+        staged = Path(stage) / src.name
+        shutil.copy2(src, staged)
+        for side in ('-wal', '-journal'):
+            if src.with_name(src.name + side).exists():
+                shutil.copy2(src.with_name(src.name + side), staged.with_name(staged.name + side))
+        a, b = sqlite3.connect(staged), sqlite3.connect(dst)
+        try:
+            a.backup(b)
+        finally:
+            b.close()
+            a.close()
 
 
 def worlds(old):
@@ -60,10 +82,7 @@ def copy_transport(old, new):
         dst = Path(new) / rel
         dst.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if src.suffix == '.sqlite':
-            a, b = sqlite3.connect(f'file:{src}?mode=ro', uri=True), sqlite3.connect(dst)
-            a.backup(b)
-            b.close()
-            a.close()
+            copy_sqlite(src, dst)
         else:
             shutil.copy2(src, dst)
 
