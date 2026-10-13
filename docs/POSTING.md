@@ -65,19 +65,25 @@ mirror or request poller. ATPROTO §5 defines the exact output and ledger.
 quotation and never casts) is `world-try` of them: the turn exactly as `world-turn` runs it, settling pass and all,
 with the write switched off (one program, not a simulation). It answers what they would do: admitted or refused with
 its clause, the exact card each would offer, what each would fire, open or close, each write's state CID (the bytes
-that land if the act is sent at the same head) and the roots it read with their versions, against `{height, hash}`.
+that land if the act is sent at the same head) and the roots it read with their state and behaviour revisions,
+against `{height, hash}`.
 Nothing is journaled and no receipt is named: a preview says `would be admitted` and can never pass for a real
-receipt. By post its reply opens `preview, nothing done` and ends with an `if:` line (`if: bell/1 v0, kind/bell v2`);
+receipt. By post its reply opens `preview, nothing done` and ends with an `if:` line
+(`if: bell/1 v0/b2, kind/bell v2/b0`): `v` names the state version and `/b` the behaviour revision;
 that line above the same spells sends them only if nothing they read has moved, else `refused moved: bell/1 is at
-v1, not v0`, journaled nowhere. The JSON route takes `try: true` and `if: [{object, version}]`.
+v1, not v0`, journaled nowhere. A rule placed after the preview refuses the act even when state did not move:
+`refused moved: bell/1's behaviour changed from revision 2 to 3; read its offers again`.
+The JSON route takes `try: true` and `if: [{object, version, behaviour}]`. Behaviour is optional: a root whose
+receipt carries none is said without `/b<n>`, and old `if: bell/1 v0` guards still check state alone.
 
 What a preview covers: the act and what the host settles in the same write (rules fired, resumptions and the
 deliveries it runs at once, each `then …`); sends left pending and turns waiting on hob run later on a world that may
 have moved, so they are counted (`left for later, not foreseen`), never foreseen. What `if:` pins: every object the
-post's turns read (their receipts' roots, so the kind whose law a thing inherits is among them), all checked before
-any spell runs; one `if:` line guards every spell of its post. Not pinned: the clock (a law or want reading `clock`
+post's turns read (their receipts' roots, so the kind whose law a thing inherits is among them), their versions and
+any supplied behaviour revisions (rules, wants, verbs, code and clause-text edits), all checked before any spell
+runs; one `if:` line guards every spell of its post. Not pinned: the clock (a law or want reading `clock`
 may judge otherwise an hour later) and hob's reading of words. A line that starts `if:` and does not read refuses the
-post: an act never runs unguarded by mistake.
+post: an act never runs unguarded by mistake. Bad suffixes such as `v3/b` or `v3/x1` refuse the whole post.
 
 **Public, all of it.** A preview by post is a public reply and says so by its first words. AT records are public and
 a deleted one is never recalled from mirrors, so no preview or draft is ever a record; a private preview is the

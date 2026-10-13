@@ -1,8 +1,8 @@
 """`try` is the commit with the write switched off (docs/POSTING.md §2): `world-try` runs a turn exactly as `world-turn`
-does, settling pass and all, answers what it would write (the entry, its roots with their versions, each write's
+does, settling pass and all, answers what it would write (the entry, its roots with state and behaviour revisions, each write's
 state CID, the exact cards it would offer, what it would fire and open) and drops the world it leaves. Any act may
-carry `if: [{object, version}]`, the roots a try read, and is refused `moved`, unjournaled, when one has moved since.
-A post says the same: `delvetalk try` with spells indented under it, and a margin line `if: bell/1 v3` ahead of
+carry `if: [{object, version, behaviour}]`, the roots a try read, and is refused `moved`, unjournaled, when one has moved since.
+A post says the same: `delvetalk try` with spells indented under it, and a margin line `if: bell/1 v3/b0` ahead of
 the spells.
 
 Evidence for docs/POSTING.md §2 (layer: host).
@@ -17,8 +17,9 @@ import unittest
 from tests.poster import Poster
 from tests.host import bounds
 from tests.town import Town
-from tests.test_heard import HeardCase
-from tests.wire import label, record
+from tests.test_heard import BELL, HeardCase
+from tests.wire import field, label, record
+from transport import bridge
 
 WHO = 'did:plc:tryer'
 
@@ -106,11 +107,42 @@ class Try(unittest.TestCase):
         self.assertEqual(held['status'], 'admitted', held)
         self.assertNotIn('if:', ''.join(o['text'] for o in held.get('offers') or []))
         v = self.version('bell/1')
-        for bad in ('if: bell/1', 'if: bell/1 version 3', 'IF:'):
+        before = self.height()
+        for bad in ('if: bell/1', 'if: bell/1 version 3', 'IF:',
+                    f'if: bell/1 v{v}/b', f'if: bell/1 v{v}/x1', f'if: bell/1 v{v}/b-1',
+                    f'if: bell/1 v{v}/b1/b2', f'if: bell/1 v{v}, kind/bell v2/b'):
             refused = self.turn(f'{bad}\ndelvetalk bell/1 rain / text: guarded badly')
             self.assertEqual(refused.get('class'), 'moved', refused)  # a guard that does not read fails closed
             self.assertTrue(refused['line'].startswith('refused moved: the if: line does not read'), refused)
         self.assertEqual(self.version('bell/1'), v)
+        self.assertEqual(self.height(), before)
+
+    def test_a_posted_if_line_accepts_the_maximum_number_of_revision_roots_and_refuses_one_more(self):
+        tried = self.turn('delvetalk bell/1 rain / text: maximum roots', op='world-try')
+        root = next(r for r in tried['receipt']['roots'] if r['object'] == 'bell/1')
+        token = f"bell/1 v{root['version']}/b{root['behaviour']}"
+        maximum = bounds()['host']['maxRoots']
+        before = self.height()
+        refused = self.turn('if: ' + ', '.join([token] * (maximum + 1)) + '\ndelvetalk bell/1 rain / text: too many roots')
+        self.assertEqual((refused.get('status'), refused.get('class')), ('refused', 'moved'), refused)
+        self.assertIn(f'if names at most {maximum} roots', refused['line'])
+        self.assertEqual(self.height(), before)
+        ran = self.turn('if: ' + ', '.join([token] * maximum) + '\ndelvetalk bell/1 rain / text: maximum roots')
+        self.assertEqual(ran['status'], 'admitted', ran)
+
+    def test_a_posted_if_line_reads_multi_digit_revisions_and_mixes_old_and_new_roots(self):
+        tried = self.turn('delvetalk bell/1 rain / text: mixed roots', op='world-try')
+        root = next(r for r in tried['receipt']['roots'] if r['object'] == 'bell/1')
+        v, b = root['version'], root['behaviour']
+        before = self.height()
+        moved = self.turn(f'if: bell/1 v{v}/b{b + 12}\ndelvetalk bell/1 rain / text: wrong revision')
+        self.assertEqual((moved.get('status'), moved.get('class')), ('refused', 'moved'), moved)
+        self.assertEqual(moved['moved'], [{'object': 'bell/1', 'was': v, 'now': v,
+                                         'behaviour': {'was': b + 12, 'now': b}}])
+        self.assertEqual(self.height(), before)
+        held = self.turn(f'if: bell/1 v{v}/b{b}, kind/bell v{self.version("kind/bell")}\n'
+                         'delvetalk bell/1 rain / text: mixed roots')
+        self.assertEqual(held['status'], 'admitted', held)
 
 
 
@@ -263,10 +295,49 @@ class ByPost(unittest.TestCase):
         self.assertTrue(preview['preview'])
         self.assertEqual(version(), v)  # the preview wrote nothing
         guard = next(line for line in text.splitlines() if line.startswith('if: '))
+        self.assertEqual(text.splitlines()[-1], guard)
+        self.assertRegex(guard, rf'^if: bell/1 v{v}/b\d+(?:, |$)')
         [done] = self.poster.say(guard + '\ndelvetalk bell/1 tend')
         self.assertIn('admitted bell/1', done['text'])
         [moved] = self.poster.say(guard + '\ndelvetalk bell/1 tend')
         self.assertTrue(moved['text'].startswith('refused moved: bell/1 is at v'), moved['text'])
+
+    def test_a_posted_preview_guard_refuses_a_new_rule_and_an_old_guard_still_admits(self):
+        host = self.town.client
+        for name in ('posted-bell', 'posted-square'):
+            made = host.send({'op': 'world-create', 'principal': self.poster.did, 'identity': 'mk-' + name,
+                              'object': name, 'source': BELL, 'entry': 'initial', 'seed': record(owner=label(self.poster.did))})
+            self.assertEqual(made['status'], 'created', made)
+        spell = 'delvetalk posted-bell rain / text: previewed rain'
+        [preview] = self.poster.say('delvetalk try\n  ' + spell)
+        guard = preview['text'].splitlines()[-1]
+        self.assertEqual(guard, 'if: posted-bell v0/b0')
+        placed = host.send({'op': 'world-turn', 'principal': 'did:plc:ruleplacer', 'identity': 'posted-rule',
+                            'object': 'posted-bell', 'method': 'receive',
+                            'argument': record(text=label('delvetalk posted-bell rule / name: echo / when: request.method == "rain" / '
+                                                          'then: delvetalk posted-square rain / text: echo'), post=label(''))})
+        self.assertEqual(placed['status'], 'admitted', placed)
+        self.assertEqual(host.send({'op': 'world-view', 'principal': self.poster.did, 'object': 'posted-bell'})['version'], 0)
+        before = host.send({'op': 'world-status'})['height']
+        refused = host.send({'op': 'world-turn', 'principal': self.poster.did, 'identity': 'posted-guard',
+                             'object': 'posted-bell', 'method': 'receive',
+                             'argument': record(text=label(guard + '\n' + spell), post=label(''))})
+        self.assertEqual((refused.get('status'), refused.get('class')), ('refused', 'moved'), refused)
+        self.assertEqual(refused['moved'], [{'object': 'posted-bell', 'was': 0, 'now': 0,
+                                           'behaviour': {'was': 0, 'now': 1}}])
+        self.assertIn("posted-bell's behaviour changed from revision 0 to 1", refused['line'])
+        self.assertEqual(host.send({'op': 'world-status'})['height'], before)
+        [moved] = self.poster.say(guard + '\n' + spell)
+        self.assertTrue(moved['text'].startswith('refused moved:'), moved['text'])
+        self.assertIn("posted-bell's behaviour changed from revision 0 to 1", moved['text'])
+        for name in ('posted-bell', 'posted-square'):
+            state = host.send({'op': 'world-view', 'principal': self.poster.did, 'object': name})['state']
+            self.assertEqual(field(state, 'rains')['value'], '0')
+        [done] = self.poster.say('if: posted-bell v0\n' + spell)  # old guards remain unguarded on behaviour
+        self.assertIn('admitted posted-bell', done['text'])
+        for name in ('posted-bell', 'posted-square'):
+            state = host.send({'op': 'world-view', 'principal': self.poster.did, 'object': name})['state']
+            self.assertEqual(field(state, 'rains')['value'], '1')
 
 
 
@@ -274,6 +345,16 @@ class Settled(unittest.TestCase):
     """What a try would settle in the same write, as the live v12 town's settling pass met it (2026-10-12): the tide's
     carried tick delivered 64 times, each answered by the receipt its identity was bound to in v9 (no roots, no
     writes). The preview names the card and says that receipt once; it crashed on `KeyError: 'object'` before."""
+
+    def test_the_last_preview_line_keeps_zero_and_multi_digit_behaviour_revisions_and_legacy_roots(self):
+        roots = [{'object': 'bell/2', 'version': 3, 'behaviour': 12},
+                 {'object': 'kind/bell', 'version': 2, 'behaviour': 0}, {'object': 'old-bell', 'version': 7}]
+        turn = {'status': 'admitted', 'object': 'bell/2', 'inPublic': True,
+                'receipt': {'outcome': {'tag': 'admitted'}, 'roots': roots}}
+        reply = {'status': 'spells', 'tried': True, 'against': {'height': 10},
+                 'turns': [turn, {**turn, 'receipt': {**turn['receipt'], 'roots': [dict(roots[0], version=4)]}}]}
+        self.assertEqual(bridge.preview_text(reply).splitlines()[-1],
+                         'if: bell/2 v3/b12, kind/bell v2/b0, old-bell v7')
 
     def test_a_delivery_with_no_roots_is_named_by_its_card_and_one_receipt_is_said_once(self):
         from transport import bridge
