@@ -72,7 +72,7 @@ def counted(title: String, n: Nat, room: Nat) -> Document.Documents:
 def section(title: String, rows: Lists.List<String>, room: Nat) -> Document.Documents:
   match rows:
     case nil(_): Document.Documents.nil()
-    case cons(c): if textLength(title) + textLength(c.head) + (if Lists.length(c.tail) == 0n then 0n else textLength(Card.more(Lists.length(c.tail)))) > room then Document.Documents.nil() else Document.Documents.cons({head: Document.text(title), tail: Card.clippedWithin(Lists.map(rows, Document.text), 8n, room - textLength(title))})
+    case cons(c): if textLength(title) + textLength(c.head) + (if Lists.length(c.tail) == 0n then 0n else textLength(Card.more(Lists.length(c.tail)))) > room then Document.Documents.nil() else Document.Documents.cons({head: Document.text(title), tail: Card.clippedWithin(Lists.map(rows, Document.text), Lists.length(rows), room - textLength(title))})
 # An arc: a door whose object is a card under another door's object.
 def arcOf(parent: Door, door: Door) -> Bool:
   Plans.isNobody(parent.to) == false && Text.starts(door.to.object, "{parent.to.object}/")

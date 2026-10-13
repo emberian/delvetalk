@@ -288,12 +288,16 @@ class Whole(Surfaces):
             self.admitted(GLM, "kind/bell", "delvetalk kind/bell make\ncolour: amber\nseed: a bell wanting a door %d\nid:" % i)
         clipped = self.town.send(op="world-card", principal=GLM, object="commonplace")["text"]
         whole = self.town.send(op="world-card", principal=GLM, object="commonplace", whole=True)["text"]
+        page = self.town.send(op="world-wanting", principal=GLM, oldest=True, limit=8)
+        self.assertEqual(len(page["rows"]), 8)
+        self.assertGreater(page["waiting"], 0)
         self.assertLessEqual(len(clipped), CLIP)
         self.assertGreater(len(whole), len(clipped))
-        wanted = lambda text: text.split("What wants a hand, newest first:\n")[1].split("  delvetalk commonplace since")[0]
+        wanted = lambda text: text.split("What wants a hand, turning daily:\n")[1].split("  delvetalk commonplace since")[0]
         self.assertIn("… and", wanted(clipped))
         self.assertNotIn("… and", wanted(whole))  # the host's eight, none clipped
-        self.assertEqual(len([l for l in wanted(whole).split("\n") if l and not l.startswith(" ")]), 8)
+        self.assertEqual(wanted(whole), "%d more wait on other hands\n" % page["waiting"] +
+                         "".join("%s: %s\n  %s\n" % (r["object"], r.get("reading", ""), r["asks"]) for r in page["rows"]))
 
 
 class Web(test_http.InTown):

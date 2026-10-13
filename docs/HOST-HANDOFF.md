@@ -2704,6 +2704,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    row offsets in that day's rotated ordering, even within a shared height; restart after the day or answerable
    set changes. Newest-first reads retain whole heights and return the last height as `next`. Morning strokes
    and the commonplace ask this same rotated page, titled "turning daily" in Bend and the paint's strokes.
+   `Menu.section` gives the clipper the supplied list's length as its row allowance: the host already bounds
+   the page at eight, and the waiting-count line takes no want slot. Its character room still clips ordinary
+   cards; a whole card shows the count and all eight rows. The old allowance of eight dropped the ninth line
+   even with whole-card room, producing a clipping marker unrelated to `WantPage.more`.
+   `test_surfaces.Whole` retains the no-marker assertion and compares the complete section with the query's
+   eight rows plus its waiting count; the previous count of eight unindented lines now includes the count line.
    - *Completion audit.* Bell `rain` counts only `verb == "rain"`; `second` counts those same rains, and the
      maker's subset by `where verb == "rain" and author == new.maker`. The clause's existing `LawFilter` gains
      conjunction, with parser, names, facts, read-time checks, rendering, canonical row selection and work

@@ -48,7 +48,9 @@ out), then `delvetalk kinds make …` and `delvetalk <the newest id> ?`; with no
 yet." The body asks `world.wanting {after: 0, limit: 8, oldest: true}` and leads with "What wants a hand, turning daily:", each row
 `<id>: <reading>` with its answering spell indented. Only asks the reader's hand is offered are listed; "N more wait on other hands" counts other visible held wants. The oldest-first order starts at clock day modulo the answerable count, wraps and returns an offset cursor. One budget: the head, the spells under what changed and the tail are
 said whole, the doors get what they leave, the wants what the doors leave, and what changed yields the rest ("… and N
-more" counted; a list that cannot show its first row is not shown). The wants a thing holds are on its own card and
+more" counted; a list that cannot show its first row is not shown). The host bounds the wanting page at eight;
+the waiting-count line takes no want slot. The menu clips the supplied page only to its character room, so a
+whole card shows all eight wants and that line without a clipping marker. The wants a thing holds are on its own card and
 `delvetalk <card> wants`.
 
 ## 2. Words at the commonplace
