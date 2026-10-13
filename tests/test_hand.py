@@ -672,12 +672,12 @@ class Speak(unittest.TestCase):
         self.town.send(op='world-renders')  # the worker attends
         asked = self.town.send(op='world-render', principal=self.hand.owner, object='commonplace')
         self.assertEqual(asked['status'], 'pending', asked)
-        reply = {'status': 'replied', 'json': None, 'raw': 'x' * 900, 'model': 'claude-haiku-5-5', 'usage': {}}
+        reply = {'status': 'replied', 'json': None, 'raw': 'Like ' + 'x' * 900, 'model': 'claude-haiku-5-5', 'usage': {}}
         for _ in range(2):  # a paint refused for its length alone is asked for once more
             interpret.paint(self.town.client, lambda req: reply)
         got = painted(self.town.client, self.hand.owner, 'commonplace', sleep=lambda s: None)
         self.assertEqual((got.get('text'), got['reason']), (None, 'rejected'), got)
-        self.assertTrue(got['clause'], got)
+        self.assertEqual(got['clause'], 'length', got)
         self.assertTrue(fell_back(got).startswith(f"the paint fell back: rejected at its {got['clause']} clause"), fell_back(got))
         self.assertIsNone(fell_back({'text': 'a paint'}))
 
@@ -688,7 +688,7 @@ class Speak(unittest.TestCase):
         self.town.send(op='world-renders')  # the worker attends
         queued = self.town.send(op='world-render', principal=self.hand.owner, morning=True)
         self.assertEqual(queued['status'], 'pending', queued)
-        paint = 'The town kept its day with its porch and its bells, and the clapper still waits.'
+        paint = 'Like moonlight through silk.'
         reply = {'status': 'replied', 'json': None, 'raw': paint, 'model': 'claude-haiku-5-5', 'usage': {}}
         done = interpret.paint(self.town.client, lambda req: reply if 'a day of the town' in req['user'] else dict(reply, raw='x' * 900))
         self.assertIn(queued['key'], done['painted'], done)

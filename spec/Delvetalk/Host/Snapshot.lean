@@ -91,7 +91,7 @@ def indexJson (w : World) : Json :=
     ("receipts", mapJson w.receipts toJson),
     ("touched", mapJson w.touched toJson),
     ("touches", mapJson w.touches fun ts => Json.arr (ts.map fun t => pairJson t.version t.height)),
-    ("anchors", mapJson w.anchors fun a => Json.arr #[toJson a.version, toJson a.pin, toJson a.law, toJson a.placed, toJson a.read]),
+    ("anchors", mapJson w.anchors fun a => Json.arr #[toJson a.version, toJson a.pin, toJson a.law, toJson a.placed, toJson a.read, toJson a.maker]),
     ("changes", Json.arr (w.changes.map fun c => Json.arr #[toJson c.height, toJson c.object, toJson c.version, toJson c.principal])),
     ("ruleLog", mapJson w.ruleLog fun xs => Json.mkObj xs),
     ("wanting", mapJson w.wanting fun xs => Json.mkObj (xs.map fun (n, h) => (n, toJson h))),
@@ -137,10 +137,11 @@ def installIndex (w : World) (j : Json) : Except String World := do
       return ({ version, height } : Touch)
     anchors := ← mapOf (← field "anchors") fun x => do
       match ← x.getArr? with
+      | #[v, p, l, d, r, m] => return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat?, placed := ← d.getNat?, read := ← r.getNat?, maker := ← m.getNat? } : Anchor)
       | #[v, p, l, d, r] => return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat?, placed := ← d.getNat?, read := ← r.getNat? } : Anchor)
       -- `previousEdition`'s, read by a carry alone (`checkAnchors` without `whole`).
       | #[v, p, l] => return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat? } : Anchor)
-      | _ => throw "an anchor is not five heights"
+      | _ => throw "an anchor is not six heights"
     changes := ← arrOf (← field "changes") change
     ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
     wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
@@ -189,7 +190,8 @@ def storeJson (w : World) : Except String Json := do
         ("predicateReads", toJson o.predicateReads)])]
     out := out.push (Json.mkObj ([("id", toJson id), ("pin", toJson o.pin), ("law", toJson o.lawText),
       ("version", toJson o.version), ("state", dataJson o.state), ("stateCid", toJson o.stateCid), ("read", o.read.json),
-      ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)] ++
+      ("maker", toJson o.maker), ("chain", o.chain.json), ("compile", knownByCid w o.inputs), ("supervisor", toJson o.supervisor)] ++
+      (if o.behaviour == 0 then [] else [("behaviour", toJson o.behaviour)]) ++
       (if o.minted == 0 then [] else [("minted", toJson o.minted)]) ++
       (if o.packet.isEmpty then [] else [("packet", toJson o.packet)]) ++
       (if o.readings.isEmpty then [] else [("readings", Json.arr (o.readings.toArray.map fun (n, r) =>
@@ -216,6 +218,7 @@ def storeJson (w : World) : Except String Json := do
       (if w.name.isEmpty then [] else [("name", toJson w.name)]))),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
     ("grants", Json.arr (grants.toArray.map fun (_, g) => (g.json).setObjVal! "revoked" (toJson g.revoked))),
+    ("grantTombstones", Json.arr (w.grantTombstones.map (fun (g : GrantTombstone) => g.json))),
     ("posts", Json.arr (posts.toArray.map fun (uri, p) => p.json uri))]
 
 /-- The body of a snapshot of `w`: its edition, height and head, the store and the indexes. -/
@@ -332,11 +335,28 @@ def install (b : Json) (base : World) (naming : Naming := .cells) : Except Strin
     let read ← parseRead (some (← o.getObjVal? "read"))
     let chain ← parseChain (some (← o.getObjVal? "chain"))
     let placedOf := fun (k : String) => (((o.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Placed.ofJson
+    let allocationEntry : Option Nat := ((w.anchors[id]?).map (fun (a : Anchor) => a.maker)).filter (fun (h : Nat) => h != 0)
+    let mut allocationOrigin : Option (Nat × String) := allocationEntry.bind fun (h : Nat) =>
+      (w.entries.get? (h - 1)).bind fun (entry : Json) => (makerIn entry id).map (h, ·)
+    if allocationOrigin.isNone then
+      for index in (w.touched.getD id #[]).reverse do
+        if let some maker := (w.entries.get? index).bind (makerIn · id) then
+          allocationOrigin := some (index + 1, maker)
+          break
+    if allocationOrigin.isNone then
+      if let some maker := w.entries.genesis?.bind (makerIn · id) then
+        allocationOrigin := some (w.entries.base + 1, maker)
+    if allocationEntry.isNone then
+      if let some (height, _) := allocationOrigin then
+        let anchor := w.anchors.getD id {}
+        w := { w with anchors := w.anchors.insert id { anchor with maker := height } }
+    let allocation := ((allocationOrigin.map (·.2)).getD (let owner := ownerOf state; if owner.isEmpty then w.opener else owner))
     let obj : Object :=
       { pin := pin
         law := law
         lawText := lawText
         version := version
+        behaviour := (o.getObjValAs? Nat "behaviour").toOption.getD 0
         cells := Delvetalk.Turn.StateCells.of (cellDecls relations) state
         stateType := stateType
         bounds := bounds
@@ -348,6 +368,7 @@ def install (b : Json) (base : World) (naming : Naming := .cells) : Except Strin
         predicate := predicate
         predicateReads := predicateReads
         supervisor := (o.getObjValAs? String "supervisor").toOption.getD ""
+        maker := (o.getObjValAs? String "maker").toOption.getD allocation
         minted := (o.getObjValAs? Nat "minted").toOption.getD 0
         packet := (o.getObjValAs? String "packet").toOption.getD ""
         readings := artifactReadings (Json.mkObj [("laws", (o.getObjVal? "readings").toOption.getD (Json.arr #[]))])
@@ -368,7 +389,14 @@ def install (b : Json) (base : World) (naming : Naming := .cells) : Except Strin
   for p in ← (← b.getObjVal? "posts").getArr? do
     let (uri, post) ← Post.ofJson p
     posts := posts.insert uri post
-  return { w with objects, grants, posts, clock := ← natField b "clock" }
+  let grantTombstones ← (((b.getObjVal? "grantTombstones").toOption.bind (·.getArr?.toOption)).getD #[]).mapM GrantTombstone.ofJson
+  if grantTombstones.size > Limits.maxGrantTombstones then throw "grant tombstones exceed maxGrantTombstones"
+  w := { w with objects, grants, grantTombstones, posts, clock := ← natField b "clock" }
+  let endings : List (String × GrantTombstone) := w.grants.toList.filterMap fun (entry : String × Grant) =>
+    let (id, g) := entry
+    if !g.revoked && w.clock ≤ g.expires then none else
+      (grantHistory w id).bind fun (row : Json) => (GrantTombstone.ofJson row).toOption.map (id, ·)
+  return compactGrants w endings
 
 /-! ## Store-installing geneses: forks and carries
 
@@ -435,7 +463,8 @@ def forkGenesis (w : World) (principal world : String) (height : Nat) (cid : Str
   let keeps := fun (id : String) => carried.contains id
   let lawText ← libraryLawText principal
   let grants := w.grants.filter fun _ g => keeps g.object
-  let shown : World := { w with objects := carried, posts := {}, grants, opener := principal,
+  let grantTombstones : Array GrantTombstone := w.grantTombstones.filter fun (g : GrantTombstone) => keeps g.object
+  let shown : World := { w with objects := carried, posts := {}, grants, grantTombstones, opener := principal,
                                 clockPrincipal := principal, settled := true, libraryLaw := lawText }
   let pending := w.pending.filter fun p => keeps ((p.getObjValAs? String "to").toOption.getD "")
   let suspended ← (w.suspended.filter fun e => keeps (suspendedObject e)).mapM (wholeSuspension w)
@@ -503,7 +532,7 @@ def installBody (b : Json) (entries : Entries) (caches : Caches) : Except String
 
 /-- Each object against the entries its anchors name (`World.anchors`): the version, the state's CID
     where that entry names one (by `naming`, the journal's edition's), the pin, the law text, the read policy,
-    and the rules, wants and verbs placed on it (their CID, `placedIn`; an object with rows no entry commits to
+    and its behaviour revision with the rules, wants and verbs placed on it (their CID, `placedIn`; an object with rows no entry commits to
     is not the journal's, and a world whose rows predate their CIDs is replayed whole). A forger who recomputes
     a snapshot's CIDs moves no entry. A carry reading `previousEdition`, whose anchors hold the first three
     alone, checks those (`whole` false). -/
@@ -511,8 +540,9 @@ def checkAnchors (w : World) (naming : Naming := .cells) (whole : Bool := true) 
   let mut read : Std.HashMap Nat Json := {}
   for (id, o) in w.objects.toList do
     let some a := w.anchors[id]? | throw s!"object {id} is not the journal's"
+    unless a.maker != 0 do throw s!"the maker of {id} has no journal anchor"
     let mut entries : List (Nat × Json) := []
-    for h in ([a.version, a.pin, a.law] ++ (if whole then [a.placed, a.read].filter (· != 0) else [])).eraseDups do
+    for h in ([a.version, a.pin, a.law, a.maker] ++ (if whole then [a.placed, a.read].filter (· != 0) else [])).eraseDups do
       match read[h]? with
       | some e => entries := (h, e) :: entries
       | none =>
@@ -526,6 +556,8 @@ def checkAnchors (w : World) (naming : Naming := .cells) (whole : Bool := true) 
     unless pinIn (at_ a.pin) id == some o.pin do throw s!"object {id} is not at the journal's version and pin"
     if let some law := lawIn (at_ a.law) id then
       unless law == o.lawText do throw s!"the law of {id} is not the journal's"
+    unless makerIn (at_ a.maker) id == some o.maker do
+      throw s!"the maker of {id} is not the journal's"
     if whole then
       unless (if a.read == 0 then none else readPolicyIn (at_ a.read) id) == some o.read.json do
         throw s!"the read policy of {id} is not the journal's"
@@ -745,7 +777,14 @@ def openJournal (journal : String) (verify : Bool := false) (caches : Caches := 
     if heights.contains w.height then
       let some (_, f) := snaps.find? (·.1 == w.height) | continue
       let bytes ← IO.FS.readBinFile f
-      match verifiedBody bytes w.height src, body w with
+      let normalized : Except String Json := do
+        let mine ← verifiedBody bytes w.height src
+        let installedBody : Except String Json := do
+          let installed ← installBody mine src {}
+          checkAnchors installed
+          body installed
+        installedBody.mapError (fun (_ : String) => "it disagrees with replay at its height")
+      match normalized, body w with
       | .ok mine, .ok replayed =>
         if mine != replayed then
           report := { report with refused := report.refused ++ [(w.height, "it disagrees with replay at its height")] }

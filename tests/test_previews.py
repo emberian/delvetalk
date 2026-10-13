@@ -1,5 +1,6 @@
 """The previews are cut from a bare genesis's live cards (no furnishing, as production begins): the card text each embeds equals the live render, and every seed-post spell is admitted."""
 import os
+import html
 import re
 import tempfile
 import unittest
@@ -45,6 +46,16 @@ class Previews(unittest.TestCase):
             for card in cards:
                 self.assertIn(self.render[card].rstrip('\n'), text, '%s: re-cut it from the live %s card' % (name, card))
         self.assertEqual(read('commonplace-card.txt'), self.render['commonplace'])
+
+    def test_paint_is_followed_by_the_open_exact_card_with_current_status_and_actions(self):
+        from transport import pages
+        card = self.render['bell/1']
+        self.assertIn('silent', card)
+        self.assertIn('delvetalk bell/1 rain', card)
+        shown = pages.place(card, paint='Like moonlight through silk.')
+        self.assertLess(shown.index('class="paint"'), shown.index('<pre class="card">'))
+        self.assertIn('<details class="card" open><summary>the card</summary>', shown)
+        self.assertIn(html.escape(card), shown)
 
     def test_every_seed_post_has_its_header_and_its_spells_are_admitted(self):
         seeds = sorted(n for n in os.listdir(os.path.join(PREVIEWS, 'seed-posts')) if n.endswith('.txt'))

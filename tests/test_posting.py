@@ -83,7 +83,7 @@ class Resident(unittest.TestCase):
         host.send({'op': 'world-renders'})  # a worker attends
         asked = host.send({'op': 'world-render', 'principal': 'anonymous', 'object': 'library'})
         self.assertIn(asked['status'], ('pending', 'painted'), asked)
-        paint = 'A shelf of pages under a lamp, each one ending on the next to read.'
+        paint = 'Like moonlight through silk.'
         reply = lambda req: {'status': 'replied', 'raw': paint, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 1, 'output_tokens': 1}}  # noqa: E731
         interpret.paint(host, reply)
         self.assertEqual(host.send({'op': 'world-render', 'principal': 'anonymous', 'object': 'library'}).get('text'), paint)
@@ -96,12 +96,34 @@ class Resident(unittest.TestCase):
         host = self.town.client
         self.poster.say('delvetalk porch ?')  # the poster has arrived
         host.send({'op': 'world-renders'})  # a worker attends: the bridge waits the host's patience for it
-        told = 'The porch was swept and quiet, its lamp lit over the step.'
-        model = lambda req: {'status': 'replied', 'raw': told if 'a telling of porch' in req['user'][:80] else 'A plain thing.',  # noqa: E731
-                             'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 1, 'output_tokens': 1}}
+        selected = {}
+        def model(req):
+            source = 'A plain thing.'
+            if 'a telling of porch' in req['user'][:80]:
+                event = re.search(r'^- (\d+): event; porch; .*; clause: (.+)$', req['user'], re.M)
+                self.assertIsNotNone(event, req['user'])
+                selected['clause'] = event[2]
+                source = '[[%s]]\nLike moonlight through silk.' % event[1]
+            return {'status': 'replied', 'raw': source, 'model': 'claude-haiku-5-5',
+                    'usage': {'input_tokens': 1, 'output_tokens': 1}}
         with mock.patch('transport.bridge.time.sleep', lambda _: interpret.paint(host, model)):  # the worker paints while the bridge waits
             [entered] = self.poster.say('delvetalk porch enter')
-        self.assertTrue(entered['text'].startswith('Before you arrived\n' + told + '\n\n'), entered['text'][:300])
+        told = selected['clause'] + '.\nLike moonlight through silk.'
+        lead = 'Before you arrived\n' + told + '\n\n'
+        self.assertTrue(entered['text'].startswith(lead), entered['text'][:300])
+        self.assertEqual(entered['told'], len(lead))
+        reply = entered['text'][len(lead):]
+        if reply.startswith('Next, see it before it is real'):
+            reply = reply.partition('\n')[2]
+        offers = [o['text'] for o in entered['receipt']['offers'] if o['to'] == self.poster.did]
+        self.assertTrue(offers, entered['receipt'])
+        self.assertTrue(reply.startswith('\n'.join(offers).rstrip('\n') + '\n'), reply)
+        self.assertIn('● admitted porch', reply)
+        rendered = host.send({'op': 'world-render', 'principal': self.poster.did, 'object': 'porch', 'telling': {}})
+        self.assertEqual((rendered['status'], rendered.get('text')), ('painted', told), rendered)
+        exact = rendered['telling']['exact']
+        self.assertTrue(any(line.startswith('entry ') and not line.endswith(selected['clause']) for line in exact), exact)
+        self.assertTrue(reply.endswith('\nWhat it draws on:\n' + '\n'.join(exact) + '\n'), reply)
         self.assertLessEqual(len(entered['text']), post.CLIP)
 
     def test_the_welcome_is_one_move_done_and_offered_back_and_a_first_reply_teaches_the_next(self):

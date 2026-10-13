@@ -26,7 +26,6 @@ import ./Text.obend as Text
 # second write doing it finds it claimed and pays nobody. The pay is judged by what it touches; refused
 # (its maker no longer holds what it offers), the claim stands, `rules` says why, and its maker casts it
 # again for the same hand (`repay`), never for another.
-# kind/errand's want `open` puts an errand nobody has done on "What wants a hand".
 type State = Super.State
 form arm:
 form repay:

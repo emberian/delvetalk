@@ -79,16 +79,21 @@ def methods() -> Lists.List<String>:
 """
 
 
-class Make(Reflection):
+class MakerFixture(Reflection):
+    opener = None
+
     def setUp(self):
         super().setUp()
-        self.open_library()
+        self.open_library(**({"opener": self.opener} if self.opener else {}))
         self.make("workshop", MAKER, record(made=nat(0)))
 
     def held(self):
         """A receipt the journal holds: the workshop's creation stands in for the hold of the checked package."""
         return self.host.send(op="world-receipt", principal="ember", identity="mk-workshop")["receipt"]["hash"]
 
+
+
+class Make(MakerFixture):
     def test_a_residents_source_is_made_with_its_lineage(self):
         receipt = self.held()
         r = self.turn("workshop", "make", record(source=label(LAMP), id=label("lamp"),
@@ -131,6 +136,95 @@ class Make(Reflection):
             r = self.turn("workshop", "make", record(source=label(LAMP), id=label("lamp"), origin=label(frm),
                                                     receipt=label(receipt)), principal="kim")
             self.assertTrue(r["result"]["value"].startswith("madeFrom | "), r)
+
+
+class ObjectShares(MakerFixture):
+    opener = "ember"
+
+    def make_as(self, who, name):
+        return self.turn("workshop", "make", record(source=label(LAMP), id=label(name),
+                         origin=label("workshop"), receipt=label(self.held())), principal=who)
+
+    def test_kind_makings_charge_the_resident_and_retirement_releases_only_their_share(self):
+        for i in range(128):
+            r = self.make_as("kim", f"kim/{i}")
+            self.assertEqual((r["status"], r["result"]), ("admitted", label(f"kim/{i}")), r)
+        r = self.make_as("kim", "kim/over")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "capacity"), r)
+        self.assertIn("objectsPerPrincipal", r["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.make_as("yue", "yue/0")["status"], "admitted")
+        retired = self.turn("kim/0", "retire", record(reading=label("finished")), principal=self.opener)
+        self.assertEqual(retired["status"], "admitted", retired)
+        self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="kim/0")["status"], "inspected")
+        self.assertEqual(self.make_as("kim", "kim/replacement")["status"], "admitted")
+        self.reopen()
+        self.assertEqual(self.make_as("kim", "kim/still-full")["status"], "refused")
+        restored = self.turn("kim/0", "unretire", record(reading=label("restored")))
+        self.assertEqual(restored["status"], "refused", restored)
+        self.assertIn("objectsPerPrincipal", restored["receipt"]["outcome"]["reason"])
+
+    def test_a_resident_releases_their_share_by_an_amendable_retirement_and_cannot_restore_over_it(self):
+        for i in range(128):
+            self.assertEqual(self.make_as("kim", f"kim/{i}")["status"], "admitted")
+        inspected = self.host.send(op="world-inspect", principal="kim", object="kim/0")
+        prior = inspected["law"]
+        retired = self.host.send(op="world-amend", principal="kim", identity="own-retirement", object="kim/0", version=0,
+                                 law=prior + '\nlaw retired "finished": request.kind == 2 and request.subject == "kim"')
+        self.assertEqual(retired["status"], "admitted", retired)
+        self.assertTrue(self.host.send(op="world-inspect", principal="kim", object="kim/0")["retired"])
+        self.assertEqual(self.turn("kim/0", "light", principal="kim")["receipt"]["outcome"]["clause"], "retired")
+        self.assertEqual(self.make_as("kim", "kim/replacement")["status"], "admitted")
+        version = self.host.send(op="world-view", principal="kim", object="kim/0")["version"]
+        restored = self.host.send(op="world-amend", principal="kim", identity="own-restoration", object="kim/0", version=version, law=prior)
+        self.assertEqual(restored["status"], "refused", restored)
+        self.assertIn("objectsPerPrincipal", restored["receipt"]["outcome"]["reason"])
+        live_law = self.host.send(op="world-inspect", principal="kim", object="kim/1")["law"]
+        marked = self.host.send(op="world-amend", principal="kim", identity="false-retirement", object="kim/1", version=0,
+                                law=live_law + '\nlaw retired: request.kind == 0 or request.subject == "kim"')
+        self.assertEqual(marked["status"], "admitted", marked)
+        self.assertFalse(self.host.send(op="world-inspect", principal="kim", object="kim/1")["retired"])
+        self.assertEqual(self.make_as("kim", "kim/not-freed-by-name")["status"], "refused")
+        self.reopen()
+        self.assertTrue(self.host.send(op="world-inspect", principal="kim", object="kim/0")["retired"])
+        self.assertEqual(self.make_as("kim", "kim/still-full-after-retirement")["status"], "refused")
+
+    def test_a_resealed_snapshot_cannot_change_the_maker_to_bypass_the_share(self):
+        from tests.test_snapshot import read_snapshot, write_snapshot
+        self.assertEqual(self.make_as("kim", "kim/one")["status"], "admitted")
+        snapshot = self.host.send(op="world-snapshot")
+        self.assertEqual(snapshot["status"], "snapshot", snapshot)
+        path = self.path + f".snapshot.{snapshot['height']}.cbor"
+        body = read_snapshot(path)
+        next(obj for obj in body["objects"] if obj["id"] == "kim/one")["maker"] = "ember"
+        write_snapshot(path, body)
+        self.reopen()
+        opened = self.host.send(op="world-open", path=self.path)
+        self.assertTrue(any("maker" in r["reason"] for r in opened["snapshot"]["refused"]), opened)
+        self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="kim/one")["maker"], "kim")
+
+    def test_retiring_does_not_reclaim_the_global_object_limit(self):
+        opened = self.host.send(op="world-open", path=self.path, maxObjects=2)
+        self.assertEqual(opened["status"], "opened", opened)
+        self.assertEqual(self.make_as("kim", "last")["status"], "admitted")
+        retired = self.turn("last", "retire", record(reading=label("finished")), principal=self.opener)
+        self.assertEqual(retired["status"], "admitted", retired)
+        r = self.make_as("kim", "still-no-global-slot")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "capacity"), r)
+        self.assertIn("maxObjects", r["receipt"]["outcome"]["reason"])
+
+    def test_direct_creations_and_in_turn_creations_use_the_same_share_and_opener_is_exempt(self):
+        spoofed = LAMP.replace("  lit: Bool", "  lit: Bool\n  owner: String").replace("{lit: false}", '{lit: false, owner: "ember"}')
+        for who, count in (("kim", 128), ("ember", 129)):
+            for i in range(count):
+                r = self.host.send(op="world-create", principal=who, identity=f"{who}-direct-{i}",
+                                   object=f"{who}/direct/{i}", source=spoofed if i == 0 else LAMP, entry="initial", seed=record(owner=label("ember")) if i == 0 else record())
+                self.assertEqual(r["status"], "created", r)
+        self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="kim/direct/0")["maker"], "kim")
+        r = self.host.send(op="world-create", principal="kim", identity="over-direct", object="over-direct",
+                           source=LAMP, entry="initial", seed=record())
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "capacity"), r)
+        self.assertIn("objectsPerPrincipal", r["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.make_as("kim", "over-through-kind")["status"], "refused")
 
 
 class CreateThenExtend(Reflection):

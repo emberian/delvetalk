@@ -66,5 +66,14 @@ class CardBudgets(Chain):
         self.assertIn("4 " + "s" * 270, text)  # the newest line leads
 
 
+class AllocationBudgets(unittest.TestCase):
+    def test_allocation_limits_leave_the_global_caps_shared(self):
+        from tests.host import bounds
+        limits = bounds()["host"]
+        self.assertEqual((limits["objectsPerPrincipal"], limits["grantsPerPrincipal"], limits["maxGrantTombstones"]), (128, 64, 256))
+        self.assertLessEqual(limits["objectsPerPrincipal"] * 64, limits["maxObjects"])
+        self.assertEqual(limits["grantsPerPrincipal"] * 64, limits["maxGrants"])
+
+
 if __name__ == "__main__":
     unittest.main()

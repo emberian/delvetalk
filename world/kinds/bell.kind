@@ -16,8 +16,8 @@ text: <<END
 law alive "answers while tended within 1440 minutes": request.method == "tend" or request.kind == rule or request.clock <= old.tended + 1440
 rule seven "rings at its seventh rain": count(new.lines where verb == "rain") >= 7 and count(old.lines where verb == "rain") <= 6 then delvetalk {request.object} ring
 rule rang "notes its planter when it rings": "rung" in new.marks.name and not "rung" in old.marks.name then delvetalk {new.maker} note / text: {request.object} rang
-want rain "a bell nobody has rained on": count(new.lines) == 0 asks delvetalk {request.object} rain
-want second "a bell only its planter has rained on": count(new.lines) >= 1 and count(new.lines where author == new.maker) >= count(new.lines) asks delvetalk {request.object} rain
+want rain "a bell nobody has rained on": count(new.lines where verb == "rain") == 0 asks delvetalk {request.object} rain
+want second "a bell only its planter has rained on": count(new.lines where verb == "rain") >= 1 and count(new.lines where verb == "rain" and author == new.maker) >= count(new.lines where verb == "rain") asks delvetalk {request.object} rain
 want tend "a bell gone quiet, untended a day": request.clock >= new.tended + 1441 asks delvetalk {request.object} tend
 END
 body: bell

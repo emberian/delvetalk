@@ -188,7 +188,7 @@ structure CreateRec where
 /-- One change to an object, by the object whose method made it. `caller` is the
     object that called the running one (empty when the running object was the turn's
     own method, or for a direct proposal). `kind` is 0 for a write of state, 1 for a
-    reprogram, 2 for an amendment; kinds 1 and 2 carry no edits. -/
+    reprogram, 2 for an amendment; a kind's clause-text amendment edits its state's `law` field. -/
 structure Written where
   caller : String
   kind : Nat := 0
@@ -323,6 +323,8 @@ structure Proposal where
   principal : String
   intent : String
   roots : List (String × Nat)
+  /-- Revisions of roots whose offers the turn read; ordinary state roots carry none. -/
+  behaviours : List (String × Nat) := []
   writes : List (String × List Written)
   /-- Assigned by the host (`commit` sets it to the entry's height); never read from a client. -/
   turn : Nat := 0
@@ -342,8 +344,8 @@ structure Proposal where
   spent : List (String × Nat) := []
   /-- How the turn read each root it did not read whole, by object (`Cells`). -/
   cells : List (String × Cells) := []
-  /-- A reprogram's lineage, by object (`become`: the kind whose body it laid), journaled on the
-      reprogram as `madeFrom {object, pin, receipt}`. -/
+  /-- A reprogram's lineage, by object: `madeFrom {object, pin, receipt, components?}`, with the
+      source kind and the body positions its installation replaces. -/
   madeFrom : List (String × Json) := []
   /-- A resumed turn's own object: it may be re-based on the object's current state when it
       moved while the turn waited (`movedRootAdmits`). An entry with `resumes` sets it on replay. -/
@@ -394,6 +396,11 @@ def Proposal.allWrites (p : Proposal) : List (String × List Written) :=
       acc.map fun (i, ws) => if i == id then (i, ws ++ [w]) else (i, ws)
     else acc ++ [(id, [w])]) p.writes
 
+/-- Each placing is one revision, including removals; code and clause-text edits revise offers too. -/
+def Proposal.behaviourMoves (p : Proposal) (id : String) : Nat :=
+  (p.placements.filter (·.object == id)).length +
+    (if (p.programs.lookup id).isSome then 1 else 0) + (if (p.laws.lookup id).isSome then 1 else 0)
+
 /-- A child id `<parent>/<kind>/<n>` raises its parent's `minted` counter to `n` (any creation of
     that shape, named or minted, so a later mint never collides with a named child). -/
 def noteMinted (w : World) (id : String) : World :=
@@ -428,9 +435,12 @@ def stateBytes (state : Data) : Nat := (Delvetalk.Canonical.encode state).size
 /-- Roots as an entry records them: `{object, version}` for a root read whole, and for one read by
     its cells (`Cells`) what was read: `scalar: true`, `fields [f]`, `rows [{field, key}]`, `spans
     [{field, through?}]` (no `through`: the whole key set), `gaps [{field, after?, before?}]`. The state
-    at that version is named by the entry that wrote it (`writes[].cid`, `world-state-cid`). -/
-def rootsJson (roots : List (String × Nat)) (cells : List (String × Cells) := []) : Json :=
+    at that version is named by the entry that wrote it (`writes[].cid`, `world-state-cid`). A root
+    whose offers were read also names their `behaviour` revision. -/
+def rootsJson (roots : List (String × Nat)) (cells : List (String × Cells) := [])
+    (behaviours : List (String × Nat) := []) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj ([("object", toJson o), ("version", toJson v)] ++
+    ((behaviours.lookup o).map fun r => [("behaviour", toJson r)]).getD [] ++
     match cells.lookup o with
     | none => []
     | some r =>
@@ -486,6 +496,14 @@ def parseRoots (j : Json) : Except String (List (String × Nat) × List (String 
   if out.length + (cells.map (·.2.extra)).sum > Limits.maxRoots then throw "too many roots"
   return (out, cells)
 
+/-- Behaviour dependencies are optional on the same roots as versions and cells. -/
+def parseBehaviours (j : Json) : Except String (List (String × Nat)) := do
+  let mut out := []
+  for r in ← j.getArr? do
+    if (r.getObjVal? "behaviour").toOption.isSome then
+      out := out ++ [(← r.getObjValAs? String "object", ← natField r "behaviour")]
+  return out
+
 /-- Writes as a client sends them: direct, so every step has the empty caller, and proposed (kind
     `Law.proposedKind`): no method of the object made them. A client cannot name a caller. -/
 def parseWrites (j : Json) : Except String (List (String × List Written)) := do
@@ -537,7 +555,7 @@ def parseProposal (j : Json) : Except String Proposal := do
   let writes ← parseWrites (← j.getObjVal? "writes")
   for (id, _) in writes do
     unless roots.any (·.1 == id) do throw s!"write names {id}, which is not among the roots"
-  return { principal, intent, roots, writes, cells }
+  return { principal, intent, roots, writes, cells, behaviours := ← parseBehaviours (← j.getObjVal? "roots") }
 
 def spentJson (spent : List (String × Nat)) : Json :=
   Json.arr (spent.toArray.map fun (id, n) => Json.mkObj [("id", toJson id), ("uses", toJson n)])
@@ -551,9 +569,10 @@ def Proposal.digest (p : Proposal) : String :=
   let programs := p.programs.map fun (id, (src, mig)) => Json.mkObj
     [("object", toJson id), ("source", toJson (Journal.bodyHash src)), ("migration", toJson mig)]
   let laws := p.laws.map fun (id, text) => Json.mkObj [("object", toJson id), ("law", toJson text)]
-  Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots p.cells), ("writes", writesJson p.allWrites)] ++
+  Journal.bodyHash (Json.mkObj ([("roots", rootsJson p.roots p.cells p.behaviours), ("writes", writesJson p.allWrites)] ++
     (if programs.isEmpty then [] else [("programs", Json.arr programs.toArray)]) ++
     (if p.layered.isEmpty then [] else [("extends", toJson p.layered)]) ++
+    (if p.madeFrom.isEmpty then [] else [("madeFrom", Json.mkObj p.madeFrom)]) ++
     (if laws.isEmpty then [] else [("laws", Json.arr laws.toArray)]) ++
     (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++
     (if p.creates.isEmpty then [] else [("creates", Json.arr (p.creates.toArray.map fun (id, c) => Json.mkObj
@@ -674,7 +693,7 @@ def Refusal.voiced (r : Refusal) : Refusal :=
   let obj := r.object.getD ""
   let given := (r.reason.map fun t => if t.startsWith kernelPrefix then (t.drop kernelPrefix.length).toString else t)
   let reason := match r.cls with
-    | "staleRoot" => some s!"{obj} moved while you wrote; send the same spell again."
+    | "staleRoot" => some (given.getD s!"{obj} moved while you wrote; send the same spell again.")
     | "budget" => some s!"the turn ran out of {given.getD "ticks"}; make it smaller, or send it again later."
     | "evaluation" => given
     | "capacity" => match given with
@@ -704,6 +723,13 @@ def Refusal.voiced (r : Refusal) : Refusal :=
     | "lawRefused" | "cardRefused" => (r.reading.map fun t => s!"refused {r.clause.getD "law"}: {t}") <|> given
     | _ => given
   { r with reason }
+
+/-- A changed offer uses the same stale-root refusal as a changed state read. -/
+def staleBehaviour (w : World) (behaviours : List (String × Nat)) : Option Refusal := do
+  let (id, seen) ← behaviours.find? fun (id, seen) => (w.objects[id]?).map (·.behaviour) != some seen
+  let now := ((w.objects[id]?).map (·.behaviour)).getD seen
+  pure { cls := "staleRoot", object := some id,
+         reason := some s!"{id}'s behaviour changed from revision {seen} to {now}; read its offers again." }
 
 /-- Why an edit does not apply: `typeMismatch` (the field or value is not of the kind the
     edit needs), `absentItem`, `keyTaken`, `duplicateKey`. -/
@@ -1186,11 +1212,15 @@ def layersOf (inputs : Json) : Nat := (inputs.getObjValAs? Nat "layers").toOptio
 /-- The line that makes a module a layer over the module below. -/
 def layerLine (below : String) : String := s!"layer over ./{below}.obend"
 
+/-- A package's own modules, including the single-source form of a base package. -/
+def inputModules (inputs : Json) : Except String (Array Json) := do
+  match inputs.getObjVal? "modules" with
+  | .ok (.arr ms) => pure ms
+  | _ => pure #[Json.mkObj [("name", toJson "Main"), ("source", toJson (← inputs.getObjValAs? String "source"))]]
+
 /-- The inputs with `source` as one more layer over the current entry module. -/
 def extendInputs (inputs : Json) (source : String) : Except String Json := do
-  let modules ← match inputs.getObjVal? "modules" with
-    | .ok (.arr ms) => pure ms
-    | _ => pure #[Json.mkObj [("name", toJson "Main"), ("source", toJson (← inputs.getObjValAs? String "source"))]]
+  let modules ← inputModules inputs
   let some top := modules.back? | throw "package has no modules"
   let below ← top.getObjValAs? String "name"
   let n := layersOf inputs + 1
@@ -1221,6 +1251,85 @@ def layeredInputs (inputs : Json) (layers : List String) : Except String Json :=
     if layer.utf8ByteSize > Limits.maxPackageBytes then
       throw s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)"
     else extendInputs inputs layer
+
+/-- The text field `name` of a state, if it has one. -/
+def textField (state : Data) (name : String) : Option String :=
+  match Law.rawField name state with
+  | some (.label t) => some t
+  | _ => none
+
+/-- The hash of the entry that made `id`'s current version. -/
+def versionReceipt (w : World) (id : String) : String :=
+  (((w.touched[id]?).bind (·.back?)).bind w.entries.hashAt?).getD ""
+
+structure KindStack where
+  package : String
+  layers : List String := []
+  form : String := ""
+  head : String := ""
+  voice : String := ""
+  kinds : List (String × Object) := []
+
+/-- The package below `of` and its ancestor bodies, bottom first, with the nearest ancestor's
+    form, head and voice. The roots are the kinds whose states supplied those bodies. -/
+def kindStack (w : World) (principal of body : String) (depth : Nat) : Except (String × String) KindStack := do
+    let below ← if of == "record" || of == "kind" then
+        pure ({ package := if of == "kind" then "Kind" else "Record" } : KindStack)
+      else match depth with
+      | 0 => throw ("of", s!"Kinds stack four deep at most; {of} is the fifth")
+      | n + 1 => do
+        let some k := (w.objects[of]?).filter (·.read.permits principal)
+          | throw ("of", s!"{of} is no kind; of: record, or a kind's id such as kind/bell")
+        let some inheritedBody := textField k.state "body"
+          | throw ("of", s!"{of} is no kind; of: record, or a kind's id such as kind/bell")
+        let base := (textField k.state "of").getD "record"
+        if base == "kind" then throw ("of", s!"{of} makes kinds; a kind is made over record or a kind of things")
+        let s ← kindStack w principal base inheritedBody n
+        pure { s with form := (textField k.state "form").getD "", head := (textField k.state "head").getD "",
+                         voice := (textField k.state "voice").getD "", kinds := s.kinds ++ [(of, k)] }
+    return { below with layers := below.layers ++ (if body.isEmpty then [] else [body]) }
+termination_by structural depth
+
+/-- The component rows live in lineage, beside its source object, pin and receipt. `at` is the
+    body's position among the closure's layers; an empty body occupies no layer. -/
+def lineageComponents (lineage : Option Json) : List Json :=
+  (((lineage.bind fun j => (j.getObjVal? "components").toOption).bind (·.getArr?.toOption)).getD #[]).toList
+
+def componentText (c : Json) (key : String) : String :=
+  (c.getObjValAs? String key).toOption.getD ""
+
+/-- Replacing the entry module detaches the component whose body occupied it. Extending preserves
+    the installed components; an installation supplies their revised rows. -/
+def programLineage (o : Object) (lineage : Option Json) (extend : Bool) : Option Json :=
+  lineage.orElse fun _ => o.madeFrom.map fun m =>
+    if extend || (lineageComponents o.madeFrom).isEmpty then m else
+      m.setObjVal! "components" (toJson ((lineageComponents o.madeFrom).filter fun c =>
+        (componentText c "body").isEmpty || (c.getObjValAs? Nat "at").toOption != some (layersOf o.inputs - 1)))
+
+/-- Replace each installed kind's body at its position, retain every other layer, and append
+    newly installed bodies. Rebuilding through `layeredInputs` gives every `Super` its new module.
+    The returned rows name the positions in that rebuilt closure. -/
+def componentInputs (inputs : Json) (old fresh : List Json) : Except String (Json × List Json) := do
+  let modules ← inputModules inputs
+  let count := layersOf inputs
+  if modules.size < count + 1 then throw "the layer stack has no base module"
+  let fields := (inputs.getObj?.toOption.map (·.toList) |>.getD []).filter fun (k, _) => k != "source" && k != "modules" && k != "layers"
+  let base := Json.mkObj ([("modules", .arr (modules.extract 0 (modules.size - count)))] ++ fields)
+  let sources ← (modules.toList.drop (modules.size - count)).mapM fun m => m.getObjValAs? String "source"
+  let mut layers : List String := []
+  let mut rows : List Json := []
+  for i in List.range (count + 1) do
+    for c in old.filter (fun c => (c.getObjValAs? Nat "at").toOption == some i) do
+      let next := (fresh.find? fun n => componentText n "object" == componentText c "object").getD c
+      let body := componentText next "body"
+      rows := rows ++ [next.setObjVal! "at" (toJson layers.length)]
+      if !body.isEmpty then layers := layers ++ [body]
+    if i < count && !(old.any fun c => (c.getObjValAs? Nat "at").toOption == some i && !(componentText c "body").isEmpty) then
+      if let some source := sources[i]? then layers := layers ++ [source]
+  for c in fresh.filter (fun c => !(old.any fun n => componentText n "object" == componentText c "object")) do
+    rows := rows ++ [c.setObjVal! "at" (toJson layers.length)]
+    if !(componentText c "body").isEmpty then layers := layers ++ [componentText c "body"]
+  return (← layeredInputs base layers, rows)
 
 /-- What an object would run with `layers` laid over it, checked (`checkInputs`); `[]` is what it runs.
     A layer alone does not compile: its `layer over` names a module below it. -/
@@ -1634,11 +1743,14 @@ def runMigration (m : Compiled) (state : Data) : Except String Data :=
 
 /-- Compile a replacement for an object's entry module (its imports stay as
     sealed at creation). Failures are `(clause, message)`. -/
-def prepareProgram (w : World) (o : Object) (source migration : String) (extend : Bool := false) :
+def prepareProgram (w : World) (o : Object) (source migration : String) (extend : Bool := false)
+    (lineage : Option Json := none) :
     Except (String × String) Program := do
   if source.utf8ByteSize > Limits.maxPackageBytes then
     throw ("packageBytes", s!"package source exceeds maxPackageBytes ({Limits.maxPackageBytes} bytes)")
-  let replaced ← (if extend then extendInputs o.inputs source else replaceSource o.inputs source).mapError (("compile", ·))
+  let replaced ← (if extend && !(lineageComponents lineage).isEmpty then
+      (componentInputs o.inputs (lineageComponents o.madeFrom) (lineageComponents lineage)).map (·.1)
+    else if extend then extendInputs o.inputs source else replaceSource o.inputs source).mapError (("compile", ·))
   -- A reprogram is compiled against the library the world has now.
   let inputs ← (match w.library with
     | some lib => if (replaced.getObjVal? "library").toOption.isSome then
@@ -1671,18 +1783,23 @@ def prepareProgram (w : World) (o : Object) (source migration : String) (extend 
 
 /-- A prepared reprogram's key: the object's inputs, the source, the migration, the mode, and the
     library it compiles against now (a reprogram takes the world's current library). -/
-def programKey (w : World) (o : Object) (source migration : String) (extend : Bool := false) : String :=
+def programKey (w : World) (o : Object) (source migration : String) (extend : Bool := false)
+    (lineage : Option Json := none) : String :=
   o.inputsKey ++ "/" ++ Journal.bodyHash source ++ "/" ++ migration ++ (if extend then "/extend" else "") ++
-    "/" ++ ((w.library.map (·.pin)).getD "")
+    "/" ++ ((w.library.map (·.pin)).getD "") ++
+    ((lineage.map fun j => "/" ++ Journal.bodyHash j ++ "/" ++
+      Journal.bodyHash (toJson (lineageComponents o.madeFrom))).getD "")
 
-def programFor (w : World) (o : Object) (source migration : String) (extend : Bool := false) : Except (String × String) Program :=
-  match w.programs[programKey w o source migration extend]? with
+def programFor (w : World) (o : Object) (source migration : String) (extend : Bool := false)
+    (lineage : Option Json := none) : Except (String × String) Program :=
+  match w.programs[programKey w o source migration extend lineage]? with
   | some p => pure p
-  | none => prepareProgram w o source migration extend
+  | none => prepareProgram w o source migration extend lineage
 
-def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) (extend : Bool := false) : World :=
+def cacheProgram (w : World) (o : Object) (source migration : String) (p : Program) (extend : Bool := false)
+    (lineage : Option Json := none) : World :=
   if w.programs.size < Limits.maxPreparedPrograms then
-    { w with programs := w.programs.insert (programKey w o source migration extend) p }
+    { w with programs := w.programs.insert (programKey w o source migration extend lineage) p }
   else w
 
 /-! ## Sources by CID
@@ -2055,6 +2172,15 @@ def applyGrants (w : World) (grants : List Grant) (revokes : List String) (spent
     | some g => { w with grants := w.grants.insert id { g with revoked := true } }
     | none => w) w
 
+/-- Endings are derived after recording the entry that revokes a grant or advances past its expiry. -/
+def compactGrants (w : World) (endings : List (String × GrantTombstone) := []) : World := Id.run do
+  let ended := (w.grants.toList.filter fun (_, g) => g.revoked || w.clock > g.expires).toArray
+  if ended.isEmpty then return w
+  let added := ended.map fun (_, g) => (endings.lookup g.id).getD (GrantTombstone.ofGrant g (if g.revoked then "revoked" else "expired") w.height)
+  let stones := (w.grantTombstones ++ added).qsort fun a b => a.endedAt < b.endedAt || (a.endedAt == b.endedAt && a.id < b.id)
+  return { w with grants := ended.foldl (fun gs (id, _) => gs.erase id) w.grants,
+                  grantTombstones := stones.extract (stones.size - Limits.maxGrantTombstones) stones.size }
+
 /-- The argument a use of grant `g` runs with: the caller's, with the grant's fixed part merged
     in. A fixed record field the caller gives with other bytes is a conflict; a fixed value that is
     not a record must be the whole argument (or the caller gives `{}`). -/
@@ -2246,6 +2372,12 @@ def citedLaw (w : World) (id : String) : Option Law := do
   let .label text ← (w.objects[id]?).bind fun o => Law.rawField "law" o.state | none
   (parseLawText text).toOption
 
+/-- A kind's citation, shared by making and installation; absent when `under` has no parsed text
+    to follow in its state. -/
+def kindCitation (w : World) (id : String) (name : String := "kind") : String :=
+  if (citedLaw w id).isNone then "" else
+    s!"law {name} \"{id}'s law holds\": under \"{id}\""
+
 /-- What some names read beyond the written object, closed `Limits.lawDepth` deep, each once in the
     order met: every object they cite (`"O".F`, `under "O"`, `"O" wants N`); through `under "O"`, what
     O's law text names; through `"O" wants N` (when `wanting`), what O's want N names, with every want
@@ -2303,6 +2435,25 @@ def ownerOf (state : Data) : String :=
     | some (.label t) => t
     | _ => ""
   | _ => ""
+
+/-- A retirement allows only an amendment by its named principal; its name alone releases nothing. -/
+def objectRetired (o : Object) : Bool :=
+  match o.law.lookup "retired" with
+  | some (.and (.eq (.fact .kind) (.int k)) (.eq (.fact .subject) (.text _))) => k == 2
+  | _ => false
+
+/-- Admit the final objects a commit would install, counting each maker's non-retired objects. -/
+def objectCapacity (w : World) (updates : List (String × Object)) : Option Refusal := Id.run do
+  let objects := updates.foldl (fun (os : Std.HashMap String Object) (id, o) => os.insert id o) w.objects
+  if objects.size > w.objects.size && objects.size > w.objectBound then
+    return some { cls := "capacity", object := some "objects", reason := some "maxObjects" }
+  let principals := (updates.map (·.2.maker)).eraseDups
+  for principal in principals do
+    if principal == w.opener then continue
+    let count := fun (os : Std.HashMap String Object) => os.toList.filter (fun (_, o) => o.maker == principal && !objectRetired o) |>.length
+    if count objects > Limits.objectsPerPrincipal && count objects > count w.objects then
+      return some { cls := "capacity", object := some "objects", reason := some "objectsPerPrincipal" }
+  return none
 
 mutual
 /-- `Cites` of some names (see the structure). -/
@@ -2790,6 +2941,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     { c with objects := c.objects.insert id { x.object with madeFrom := x.madeFrom } }) w
   for id in p.roots.map (·.1) ++ writes.map (·.1) do
     unless made.objects.contains id do throw { cls := "unknownObject", object := id }
+  if let some r := staleBehaviour w p.behaviours then throw r
   -- A root the turn only changes by `add`/`append` (FOUNDATION section 13, row 1) need only be a
   -- version the object had: its changes re-apply on the state as it is now and are judged there.
   for (id, seen) in p.roots do
@@ -2805,11 +2957,17 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   -- An absence is a root too: something appearing since the turn looked makes it stale.
   for id in p.absent do
     if w.objects.contains id then throw { cls := "staleRoot", object := id }
-  if w.objects.size + p.creates.length > w.objectBound then
-    throw { cls := "evaluation", reason := some "object capacity reached" }
-  if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants", reason := some "maxGrants" }
+  let live := fun (g : Grant) => !g.revoked && w.clock ≤ g.expires && !p.revokes.contains g.id
+  let existing := w.grants.toList.map (·.2) |>.filter live
+  let incoming := p.grants.filter live
+  if !incoming.isEmpty && existing.length + incoming.length > w.grantBound then
+    throw { cls := "capacity", object := some "grants", reason := some "maxGrants" }
+  for principal in (incoming.map (·.grantor)).eraseDups do
+    if principal == w.opener then continue
+    if (existing.filter (·.grantor == principal)).length + (incoming.filter (·.grantor == principal)).length > Limits.grantsPerPrincipal then
+      throw { cls := "capacity", object := some "grants", reason := some "grantsPerPrincipal" }
   for g in p.grants do
-    if w.grants.contains g.id then throw { cls := "evaluation", reason := some "a grant id is already taken" }
+    if w.grants.contains g.id || w.grantTombstones.any (·.id == g.id) then throw { cls := "evaluation", reason := some "a grant id is already taken" }
   -- A limited grant must have the uses the turn spends left when it commits.
   for (id, n) in p.spent do
     match w.grants[id]? with
@@ -2817,7 +2975,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       if let some left := g.uses then
         if left < n then throw { cls := "lawRefused", clause := some "grantSpent", object := some g.object,
                                   reading := some s!"the grant has {left} of its uses left, and the turn spends {n}." }
-    | none => throw { cls := "evaluation", reason := some "a turn spends an unknown grant" }
+    | none => throw { cls := "lawRefused", clause := some "noGrant",
+                      reading := some s!"no standing grant {id} lets this turn spend its uses." }
   -- A revocation needs the grantor's turn, or a turn that read the object holding the grant.
   for id in p.revokes do
     match w.grants[id]? with
@@ -2861,7 +3020,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     if let some (source, migration) := p.programs.lookup id then
       let refuse := fun (clause message : String) => ({ cls := "programRefused", clause := some clause, object := some id, reason := some message } : Refusal)
       let extend := p.layered.contains id
-      let prog ← match programFor w o source migration extend with
+      let prog ← match programFor w o source migration extend (p.madeFrom.lookup id) with
         | .ok prog => pure prog
         | .error (clause, message) => throw (refuse clause message)
       let written := applied.cells.state
@@ -2889,7 +3048,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       next := { o with pin := prog.pin, packet := prog.packet, inputs := prog.inputs, inputsKey := inputsKeyOf prog.inputs,
                        stateType := prog.stateType, bounds := prog.bounds, methods := prog.methods,
                        predicate := prog.predicate, predicateReads := prog.predicateReads, relations := prog.relations,
-                       fixed := prog.fixed, declares := prog.declares, madeFrom := (p.madeFrom.lookup id).orElse fun _ => o.madeFrom }
+                       fixed := prog.fixed, declares := prog.declares, madeFrom := programLineage o (p.madeFrom.lookup id) extend }
       reprograms := reprograms ++ [Json.mkObj [("object", toJson id), ("oldPin", toJson o.pin),
         ("newPin", toJson prog.pin),
         ("source", toJson source), ("migration", toJson migration),
@@ -2899,7 +3058,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
             | none => j]
     staged := staged ++ [(id, changes, o, next, cells, applied.evicted)]
   let cand := staged.foldl (fun (c : World) (id, changes, o, next, cells, _) =>
-      { c with objects := c.objects.insert id { next with cells, version := if changes.any (·.kind != 4) then o.version + 1 else o.version } })
+      let updated : Object := { next with cells,
+                                          version := if changes.any (·.kind != 4) then o.version + 1 else o.version,
+                                          behaviour := o.behaviour + p.behaviourMoves id }
+      { c with objects := c.objects.insert id updated })
     made
   for (id, changes, o, next, cells, evicted) in staged do
     let mut next := next
@@ -2983,6 +3145,12 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- the thing's text and placed lines; a verb's name a spell's action word new to the thing's forms,
     -- the host's spells and its verbs, on a thing with an `act`; each within its bound; a removal by
     -- its placer, the thing's owner or the opener.
+    let checkShare (placers : List String) (byOthers : Nat) (limit : String) : Except Refusal Unit := do
+      unless p.principal == ownerOf o.state || openerActs w p.principal do
+        if (placers.filter (· == p.principal)).length ≥ Limits.placedPerHand then
+          throw { cls := "capacity", object := some id, reason := some "placedPerHand" }
+        if (placers.filter (· != ownerOf o.state)).length ≥ byOthers then
+          throw { cls := "capacity", object := some id, reason := some limit }
     for x in p.placements.filter (·.object == id) do
       let refuse := fun (clause reading : String) => ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
       let mayRemove := fun (placer : String) => placer == p.principal || ownerOf o.state == p.principal || openerActs w p.principal
@@ -2992,7 +3160,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           let some row := next.verbs.find? (·.name == x.name)
             | throw (refuse "unplaced" s!"{id} has no verb {x.name} that a hand grew.")
           unless mayRemove row.grower do
-            throw (refuse "notPlacer" s!"only who grew verb {x.name}, or the owner of {id}, takes it off.")
+            let rule := if row.does.isEmpty then "" else s!" and the rule {row.does} it does"
+            throw (refuse "notPlacer" s!"only who grew verb {x.name}, or the owner of {id}, takes it{rule} off.")
           next := { next with verbs := next.verbs.filter (·.name != x.name) }
         else
           let bad := fun (reason : String) => ({ cls := "programRefused", clause := some "verb", object := some id, reason := some reason } : Refusal)
@@ -3012,6 +3181,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
             throw (refuse "nameTaken" s!"{x.name} is grown on {id} already; use it: delvetalk {id} {x.name}")
           unless x.does.isEmpty || p.placements.any (fun r => r.object == id && r.what == .rule && r.name == x.does && !r.line.isEmpty) do
             throw (bad s!"a verb does a rule placed with it; {x.does} is placed by no rule of this turn")
+          checkShare (next.verbs.map (·.grower)) Limits.verbsByOthers "verbsByOthers"
           if next.verbs.length ≥ Limits.verbsPerObject then
             throw { cls := "capacity", object := some id, reason := some "verbsPerObject" }
           next := { next with verbs := next.verbs ++ [{ name := x.name, grower := p.principal, height, reading := x.line,
@@ -3042,25 +3212,20 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           -- A line reads, and its spell carries, only what its placer may view.
           if let some r := unviewable cand p.principal (citesOf cand clause.names).objects then
             throw (refuse "lawReads" s!"{x.keyword} {x.name} cites {r}, which you may not view.")
-          -- A hand other than the owner holds a bounded share, and all such hands together leave the owner room
-          -- (docs/review/astra-2026-10-12 world 6).
-          unless p.principal == ownerOf o.state || openerActs w p.principal do
-            if (rows.filter (·.owner == p.principal)).length ≥ Limits.placedPerHand then
-              throw { cls := "capacity", object := some id, reason := some "placedPerHand" }
-            if (rows.filter (·.owner != ownerOf o.state)).length ≥ Limits.placedByOthers then
-              throw { cls := "capacity", object := some id, reason := some "placedByOthers" }
+          checkShare (rows.map (·.owner)) Limits.placedByOthers "placedByOthers"
           if rows.length ≥ (if want then Limits.wantsPerObject else Limits.rulesPerObject) then
             throw { cls := "capacity", object := some id, reason := some (if want then "wantsPerObject" else "rulesPerObject") }
           let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }
           next := if want then { next with wants := next.wants ++ [row] } else { next with rules := next.rules ++ [row] }
-    -- A placing (rule, want, verb, or one taken off) is not a state move: the version roots judge, and a
-    -- suspended turn rooted on the thing, stay where they were.
     let moves := changes.any (·.kind != 4)
-    out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version, cells })]
+    out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version,
+                                    behaviour := o.behaviour + p.behaviourMoves id, cells })]
     factsOf := factsOf ++ [(id, judgedBy)]
+  let creations := (p.creates.filter fun (id, _) => !out.any (·.1 == id)).map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom })
+  if let some refusal := objectCapacity w (out ++ creations) then throw refusal
   return { updates := out, reprograms, amendments, evicted := evictions, facts := factsOf,
            -- A creation the turn also wrote or placed on is its update, made at the state the turn leaves it in.
-           creations := (p.creates.filter fun (id, _) => !out.any (·.1 == id)).map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom }),
+           creations,
            creates := p.creates.map fun (id, c) => createRecJson id c }
 
 /-! ## Entries -/
@@ -3214,16 +3379,17 @@ def genesisRow (outcome : Json) (id : String) : Option Json :=
 
 /-- The rules and wants hands placed on an object and the verbs they grew, as one value: what a placing,
     a creation and a store-installing genesis commit to (`placedIn`), so a snapshot's rows rest on the
-    journal as its state does on a write's `cid`. -/
-def placedRows (rules wants verbs : Json) : Json :=
-  Json.mkObj [("rules", rules), ("wants", wants), ("verbs", verbs)]
+    journal as its state does on a write's `cid`; the revision keeps removals and code edits distinct. -/
+def placedRows (rules wants verbs : Json) (behaviour : Nat := 0) : Json :=
+  Json.mkObj ([("rules", rules), ("wants", wants), ("verbs", verbs)] ++
+    (if behaviour == 0 then [] else [("behaviour", toJson behaviour)]))
 
 def placedCid (o : Object) : String :=
   Journal.bodyHash (placedRows (Json.arr (o.rules.toArray.map (·.json))) (Json.arr (o.wants.toArray.map (·.json)))
-    (Json.arr (o.verbs.toArray.map (·.json))))
+    (Json.arr (o.verbs.toArray.map (·.json))) o.behaviour)
 
-/-- An object with nothing placed or grown on it. -/
-def Object.unplaced (o : Object) : Bool := o.rules.isEmpty && o.wants.isEmpty && o.verbs.isEmpty
+/-- An object with nothing placed or grown and no behaviour edits. -/
+def Object.unplaced (o : Object) : Bool := o.rules.isEmpty && o.wants.isEmpty && o.verbs.isEmpty && o.behaviour == 0
 
 /-- `placed [{object, cid}]` of an admitted entry: each written or created object whose placed rows the
     entry changed or made, with their CID (`placedCid`). Replay compares it when the entry has it. -/
@@ -3303,7 +3469,8 @@ def placedIn (entry : Json) (id : String) : Option String :=
   | "admitted" => (rowsNaming outcome "placed" id).back?.bind (·.getObjValAs? String "cid" |>.toOption)
   | "forked" | "carried" => (genesisRow outcome id).map fun o =>
     let rows := fun (k : String) => (o.getObjVal? k).toOption.getD (Json.arr #[])
-    Journal.bodyHash (placedRows (rows "rules") (rows "wants") (rows "verbs"))
+    Journal.bodyHash (placedRows (rows "rules") (rows "wants") (rows "verbs")
+      ((o.getObjValAs? Nat "behaviour").toOption.getD 0))
   | _ => none
 
 /-- The read policy the entry gives `id`: a creation's, a root `set` of it, `hide` or `show`, a
@@ -3365,6 +3532,27 @@ def objectsNamed (entry : Json) : List String :=
   (((outcome.getObjValAs? String "object").toOption.toList ++ ids "writes" ++ ids "creates" ++ ids "reprograms" ++
     ids "amendments" ++ ids "placed" ++ installed)).eraseDups
 
+/-- The immutable allocation principal an entry creates or carries for an object. -/
+def makerIn (entry : Json) (id : String) : Option String := do
+  let outcome ← (entry.getObjVal? "outcome").toOption
+  let principal := ((entry.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+  match tagOf entry with
+  | "created" =>
+    if (outcome.getObjValAs? String "object").toOption != some id then none
+    else some ((outcome.getObjValAs? String "owner").toOption.getD principal)
+  | "admitted" =>
+    let rows ← (outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption)
+    if rows.any (fun r => (r.getObjValAs? String "object").toOption == some id) then some principal else none
+  | "carried" | "forked" =>
+    let row ← genesisRow outcome id
+    if let some maker := (row.getObjValAs? String "maker").toOption then return maker
+    let state ← (row.getObjVal? "state").toOption
+    let owner := ownerOf (← (decodeData Limits.dataDepth state).toOption)
+    let opener := ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "settings" |>.toOption)
+      |>.bind (·.getObjValAs? String "opener" |>.toOption)).getD ""
+    return if owner.isEmpty then opener else owner
+  | _ => none
+
 /-- `World.anchors` after the entry at `height`: each object it gives a version, a pin or a law is
     anchored there for that; a root `delete` forgets the object. -/
 def anchorsAfter (w : World) (height : Nat) (entry : Json) : Std.HashMap String Anchor :=
@@ -3378,6 +3566,7 @@ def anchorsAfter (w : World) (height : Nat) (entry : Json) : Std.HashMap String 
     let a := if (lawIn entry id).isSome then { a with law := height } else a
     let a := if (placedIn entry id).isSome then { a with placed := height } else a
     let a := if (readPolicyIn entry id).isSome then { a with read := height } else a
+    let a := if (makerIn entry id).isSome then { a with maker := height } else a
     if a == m.getD id {} then m else m.insert id a) w.anchors
 
 /-- The indexes a root or moderation entry moves (docs/ROOT.md §1.3: rebuilt as `record` rebuilds
@@ -3619,7 +3808,7 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   -- The want index follows what the entry wrote and the readers it re-judged (`wantReview`).
   let indexed := if touch.isEmpty then w else reindexWants w (touch ++ wantReview w touch)
-  recordActs (recordCore indexed entry key touch) entry
+  compactGrants (recordActs (recordCore indexed entry key touch) entry)
 
 /-- The facts a want of `o` (`id`) is judged and filled by, as `w` holds it at `height`: the clock, the
     thing, the states its lines cite and the wants they name (`Law.asItStands` keeps only these). -/
@@ -3940,7 +4129,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
     -- The turn number is the host's: the height of the entry about to be written.
     let p := { p with turn := w.height + 1 }
     let key := identityKey p.principal p.intent
-    let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots p.cells),
+    let base := [("identity", identityJson p.principal p.intent), ("roots", rootsJson p.roots p.cells p.behaviours),
       ("turn", toJson p.turn), ("request", toJson p.digest)] ++
       (if p.absent.isEmpty then [] else [("absent", toJson p.absent)]) ++ extra
     let verdict : Except Refusal Judged :=
@@ -4071,7 +4260,7 @@ def makeObject (w : World) (b : Built) (inputs : Json) (state : Data) (read : Op
   -- A package's rules and wants are placed on what is made of it, by its creator, when no text is given.
   let placed := if lawText.isSome then [] else b.lines.map fun c =>
     ({ name := c.name, owner := creator, since := height, line := c.render, clause := c } : Placed)
-  return ({ pin, law := laws, lawText := lawText.getD (renderLaw laws), version := 0, cells, stateType := b.ty, readings,
+  return ({ maker := creator, pin, law := laws, lawText := lawText.getD (renderLaw laws), version := 0, cells, stateType := b.ty, readings,
             rules := placed.filter (Law.isRule ·.clause), wants := placed.filter (Law.isWant ·.clause),
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet,
@@ -4148,7 +4337,6 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
     if !openerActs w principal then
       throw s!"only the opener of the world{if w.resident && principal == w.opener then ", on the root socket," else ""} may name an owner{if w.opener.isEmpty then "; this world names no opener" else s!"; that is {w.opener}"}"
   if w.objects.contains id then throw s!"object {id} already exists"
-  if w.objects.size ≥ w.objectBound then throw "object capacity reached"
   let inputs ← attachLibrary w (← compileInputs j)
   -- The seed is laid over initial(), as the create Plan does: a record of some of the state's
   -- fields ({} is initial() itself). The journal keeps the whole state, so replay needs no merge.
@@ -4172,6 +4360,8 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   unless supervisor.isEmpty || ((w.objects[supervisor]?).map (·.offers "ended")).getD false do
     throw s!"supervisor {supervisor} does not take ended: a supervisor's package declares it"
   let o := { o with supervisor }
+  if let some refusal := objectCapacity w [(id, o)] then
+    return commit w { principal, intent, roots := [], writes := [] } [("request", toJson digest)] (some refusal)
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   discard <| pure sources
   let outcome := createOutcome id o (compactInputs inputs) seed
@@ -4771,9 +4961,10 @@ def readingsJson (rs : List (String × String)) : Json :=
 
 /-- An object's whole record, as `delete`'s `before` names it. -/
 def objectRecord (o : Object) : Json :=
-  Json.mkObj ([("pin", toJson o.pin), ("law", toJson o.lawText), ("version", toJson o.version),
+  Json.mkObj ([("maker", toJson o.maker), ("pin", toJson o.pin), ("law", toJson o.lawText), ("version", toJson o.version),
     ("state", dataJson o.state), ("read", o.read.json), ("chain", o.chain.json), ("compile", o.inputs),
     ("supervisor", toJson o.supervisor), ("fixed", toJson o.fixed), ("readings", readingsJson o.readings)] ++
+    (if o.behaviour == 0 then [] else [("behaviour", toJson o.behaviour)]) ++
     (if o.minted == 0 then [] else [("minted", toJson o.minted)]))
 
 /-- The suspensions waiting on an activity of `id`, by entry hash. -/
@@ -5134,6 +5325,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       unless cid == placedCid o do throw s!"object {id} is not made with the rows its creation journaled"
     let w := noteRecompiled w o
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
+    if let some refusal := objectCapacity w [(id, o)] then throw (refusal.reason.getD refusal.cls)
     return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]
   | "refused" =>
     let cls ← outcome.getObjValAs? String "class"
@@ -5176,7 +5368,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       (fun s => (s.getObjValAs? String "sender").toOption) |>.getD ""
     let p : Proposal := { principal, intent, roots, rebaseOwn, writes, turn, programs, laws,
                           absent, creates, grants, revokes, spent, layered, cells, madeFrom, sender,
-                          placements }
+                          placements, behaviours := ← parseBehaviours (← entry.getObjVal? "roots") }
     unless turn == w.height + 1 do throw "turn is not the height of its entry"
     unless (entry.getObjValAs? String "request").toOption == some p.digest do throw "request digest does not match"
     let w := warmLaws w (p.writes.map (·.1))
@@ -5446,7 +5638,9 @@ def publicRefusal (entry : Json) : Json :=
   let cls := (outcome.getObjValAs? String "class").toOption.getD "unknown"
   let roots := (entry.getObjVal? "roots").toOption.getD (Json.arr #[])
   let version := (((parseRoots roots).toOption.map (·.1)).getD []).lookup id
-  let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [])
+  let behaviour := (((parseBehaviours roots).toOption).getD []).lookup id
+  let root := Json.mkObj ([("object", toJson id)] ++ (version.map fun v => [("version", toJson v)]).getD [] ++
+    (behaviour.map fun r => [("behaviour", toJson r)]).getD [])
   -- A law's reading is the law's public text about the clause, never state.
   let law := if cls == "lawRefused" then ["reason", "reading"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·) else []
   let slug := (entry.getObjValAs? String "hash").toOption.bind Slug.ofCid
@@ -5459,8 +5653,8 @@ def publicRefusal (entry : Json) : Json :=
     -- A spell that did not fit: which part, where, and the spell to resend; all from the reply itself.
     else if cls == "badSpell" then
       [("object", toJson named)] ++ ["clause", "reason", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
-    -- A quota: how many, and when the next may start; nothing about the turn.
-    else if cls == "quota" || cls == "quiet" then ["clause", "reason", "next"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
+    -- What the speaker may retry: the quota or the changed revision, without state.
+    else if cls == "quota" || cls == "quiet" || (cls == "staleRoot" && behaviour.isSome) then ["clause", "reason", "next"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
     else if id != named then [("object", toJson named)] else []))
 
 /-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else
@@ -5546,90 +5740,13 @@ def ruleRow (w : World) (id : String) (c : CarriedClause) : Json :=
       else [("fired", (receipt.map fun r => l.setObjVal! "receipt" (toJson r)).getD l)]).getD []))
 
 /-- What answers a want, filled at the read for `reader` (`Law.fill` over `Law.asItStands`): the line's
-    template when a hole reads nothing, or the want cites what the reader may not view. -/
-def wantAsks (w : World) (reader : String) (facts : Law.Facts) (id : String) (o : Object) (c : CarriedClause) : String :=
+    template when a hole reads nothing, or the want cites what the reader may not view; the second
+    component says whether filling succeeded, so a literal template is never offered as work. -/
+def wantAsks (w : World) (reader : String) (facts : Law.Facts) (id : String) (o : Object) (c : CarriedClause) : String × Bool :=
   let template := (c.clause.modality.spell?.map (·.render)).getD ""
-  if (unviewable w reader (citesOf w c.clause.names).objects).isSome then template else
-  ((c.clause.modality.spell?).bind (Law.fill (Law.asItStands facts id) none o.state)).getD template
-
-/-- The wants that hold of `id` as it stands now, as `wants` reads them: name, owner, reading,
-    condition, the spell that answers it (`wantAsks`, for its reader), the line, the object holding it,
-    and `since`: the height of the entry that made it true (a write, a law's refusal, or the clock's move). -/
-def wantRows (w : World) (reader id : String) (o : Object) : List Json :=
-  let facts := wantFacts w w.height id o
-  (posing w w.height id o).map fun c =>
-    let since := ((w.wanting[id]?).bind (·.lookup c.clause.name)).map toJson |>.getD (toJson 0)
-    Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("when", toJson c.clause.condition.render),
-        ("asks", toJson (wantAsks w reader facts id o c)), ("line", toJson c.clause.render), ("from", toJson c.holder), ("since", since)] ++
-      (if c.clause.reading.isEmpty then [] else [("reading", toJson c.clause.reading)]))
-
-/-- One row of the world's wanting index as `wanting` reads it: the thing, the want's name and reading,
-    what answers it (`wantAsks`), and the height of the entry that made it true. -/
-structure Wanted where
-  object : String
-  name : String
-  reading : String
-  asks : String
-  since : Nat
-
-/-- What wants a hand across the world (`world.wanting {after, limit}`, `world-wanting`): each row of the
-    wanting index (`World.wanting`) whose want still holds of its thing as it stands, for things `reader`
-    may view, newest first (by `since`, then thing and name), or with `oldest` oldest first (what has
-    waited longest: the morning card's). A page holds whole heights, each past `after` in that order
-    (below it, or with `oldest` above it; 0: from the first), while it stays within `limit` rows (0, or
-    past `Limits.listPage`, is `listPage`); its first height is whole whatever its size, so `after` set
-    to a page's last `since` reads on without a gap. `more` when rows remain past the page. A want that
-    came true by the clock alone is in the index, made so by the `advanced` entry that moved the clock
-    (`clockFlips`). Derived, no root. -/
-def wanting (w : World) (reader : String) (after limit : Nat) (oldest : Bool := false) : List Wanted × Bool := Id.run do
-  let rows : List Wanted := w.wanting.toList.flatMap fun (id, xs) => match w.objects[id]? with
-    | none => []
-    | some o =>
-      if !o.read.permits reader then [] else
-      let holding := posing w w.height id o
-      let facts := wantFacts w w.height id o
-      xs.filterMap fun (name, since) =>
-        if after != 0 && (if oldest then since ≤ after else since ≥ after) then none else
-        (holding.find? (·.clause.name == name)).map fun c =>
-          { object := id, name, reading := c.clause.reading, asks := wantAsks w reader facts id o c, since }
-  let sorted := (rows.toArray.qsort fun (a b : Wanted) =>
-    (if oldest then a.since < b.since else a.since > b.since) ||
-      (a.since == b.since && (a.object < b.object || (a.object == b.object && a.name < b.name)))).toList
-  let cap := if limit == 0 then Limits.listPage else min limit Limits.listPage
-  let mut page : Array Wanted := #[]
-  let mut rest := sorted
-  while true do
-    let some first := rest.head? | break
-    let group := rest.takeWhile (·.since == first.since)
-    unless page.isEmpty || page.size + group.length ≤ cap do break
-    page := page ++ group.toArray
-    rest := rest.drop group.length
-  return (page.toList, !rest.isEmpty)
-
-/-- A row of `wanting` as Bend reads it (`World.Want`): `world.wanting`'s rows, and a card's third parameter. -/
-def wantedData (r : Wanted) : Data := .record [("object", .label r.object), ("name", .label r.name),
-  ("reading", .label r.reading), ("asks", .label r.asks), ("since", .natural r.since)]
-
-/-- `world-wanting {principal?, after?, limit?, oldest?}` → `{status: wanting, rows: [{object, name, reading?, asks,
-    since}], more}` (`wanting`). -/
-def wantingOp (w : World) (j : Json) : Except String Json := do
-  let reader ← readerOf j
-  let nat := fun (k : String) => (j.getObjValAs? Nat k).toOption.getD 0
-  let (rows, more) := wanting w reader (nat "after") (nat "limit") ((j.getObjValAs? Bool "oldest").toOption.getD false)
-  return Json.mkObj [("status", toJson "wanting"), ("more", toJson more), ("rows", Json.arr (rows.toArray.map fun r =>
-    Json.mkObj ([("object", toJson r.object), ("name", toJson r.name), ("asks", toJson r.asks), ("since", toJson r.since)] ++
-      (if r.reading.isEmpty then [] else [("reading", toJson r.reading)]))))]
-
-/-- `world-rules {object, principal?}`: every rule `object` carries (`ruleRow`), for a reader who may
-    view it. `world-wants {object, principal?}`: the wants that hold of it now (`wantRows`). Derived
-    reads: no root, no entry. -/
-def rulesOp (w : World) (j : Json) (wants : Bool) : Except String Json := do
-  let reader ← readerOf j
-  let id ← j.getObjValAs? String "object"
-  let some o := w.objects[id]? | return Json.mkObj [("status", toJson "unknown"), ("object", toJson id)]
-  if !o.read.permits reader then return Json.mkObj [("status", toJson "denied"), ("object", toJson id)]
-  let rows := if wants then wantRows w reader id o else (carriedRules w id o).map (ruleRow w id)
-  return Json.mkObj [("status", toJson (if wants then "wants" else "rules")), ("object", toJson id), ("rows", Json.arr rows.toArray)]
+  if (unviewable w reader (citesOf w c.clause.names).objects).isSome then (template, false) else
+  let filled := (c.clause.modality.spell?).bind (Law.fill (Law.asItStands facts id) none o.state)
+  (filled.getD template, filled.isSome)
 
 /-- Why a rule that held was not cast, in words (`Ops.reactions`'s `why`). -/
 def unfiredWords : String → String
@@ -5983,23 +6100,83 @@ def sourcesOp (w : World) (j : Json) : Except String Json := do
   let (shown, more, cursor) ← pageByHeight j ((sourceRecords w).filterMap fun (h, cid, r) => if readable.contains cid then some (h, r) else none)
   return Json.mkObj ([("status", toJson "sources"), ("sources", Json.arr shown)] ++ pageFields more cursor)
 
-/-- `world-grants {principal, after?, before?, reverse?, limit?}`: every grant an admitted entry made whose
-    object the reader may view, as it stands now (`revoked`, `uses` left), with the `height` and `hash` of
-    the entry that made it, paged by that height. -/
+/-- Resolve an ended id outside the tombstone ring from the journal, including a genesis's held grants. -/
+def grantHistory (w : World) (id : String) : Option Json := Id.run do
+  let mut found : Option Json := none
+  let mut terms : Option Grant := none
+  let mut clock := 0
+  for i in [w.entries.base:w.entries.count] do
+    let some entry := w.entries.get? i | continue
+    if w.ignoring.contains (i + 1) || w.shadowed.any (fun (e : Json) => (e.getObjValAs? Nat "height").toOption == some (i + 1)) then continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let held := if ["carried", "forked"].contains (tagOf entry) then (outcome.getObjVal? "state").toOption.getD Json.null else outcome
+    if tagOf entry == "advanced" then clock := (outcome.getObjValAs? Nat "to").toOption.getD clock
+    if ["carried", "forked"].contains (tagOf entry) then clock := (held.getObjValAs? Nat "clock").toOption.getD clock
+    if ["root", "moderated"].contains (tagOf entry) && actOf outcome == "settings" then
+      clock := ((outcome.getObjVal? "after").toOption.bind (·.getObjValAs? Nat "clock" |>.toOption)).getD clock
+    let arr := fun (key : String) => ((held.getObjVal? key).toOption.bind (·.getArr?.toOption)).getD #[]
+    if ["admitted", "carried", "forked"].contains (tagOf entry) then
+      for raw in arr "grants" do
+        if (raw.getObjValAs? String "id").toOption != some id then continue
+        if let .ok g := Grant.ofJson raw then
+          terms := some { g with revoked := (raw.getObjValAs? Bool "revoked").toOption.getD false }
+          found := some ((g.json.setObjVal! "revoked" (toJson false)).setObjVal! "height" (toJson (i + 1))
+            |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null))
+      for raw in arr "grantTombstones" do
+        if (raw.getObjValAs? String "id").toOption == some id then
+          let row := raw.setObjVal! "revoked" (toJson ((raw.getObjValAs? String "ended").toOption == some "revoked"))
+          found := some ((row.setObjVal! "height" (toJson (i + 1))).setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null))
+          terms := none
+    let some g := terms | continue
+    let revoked := g.revoked || (arr "revokes").any (fun (r : Json) => r.getStr?.toOption == some id) ||
+      (["root", "moderated"].contains (tagOf entry) && actOf outcome == "revoke" &&
+        (outcome.getObjValAs? String "grant").toOption == some id)
+    let next := compactGrants (applyGrants { clock, height := i + 1 } [g] (if revoked then [id] else []))
+    if let some stone := next.grantTombstones[0]? then
+      let ended := stone.json.setObjVal! "revoked" (toJson (stone.ended == "revoked"))
+      let origin := found.getD Json.null
+      found := some ((ended.setObjVal! "height" ((origin.getObjVal? "height").toOption.getD Json.null))
+        |>.setObjVal! "hash" ((origin.getObjVal? "hash").toOption.getD Json.null))
+      terms := none
+  return found
+
+/-- The live index, the bounded tombstones, then the journal; reads never compact. -/
+def grantRead (w : World) (id : String) (origin : Option Json := none) : Option Json :=
+  let history := origin.orElse fun _ => grantHistory w id
+  let now : Option Json := match w.grants[id]? with
+    | some g => some (g.json.setObjVal! "revoked" (toJson g.revoked))
+    | none => (w.grantTombstones.find? (fun (g : GrantTombstone) => g.id == id)).map
+        (fun (g : GrantTombstone) => g.json.setObjVal! "revoked" (toJson (g.ended == "revoked")))
+  match now, history with
+  | some row, some old => some ((row.setObjVal! "height" ((old.getObjVal? "height").toOption.getD Json.null))
+      |>.setObjVal! "hash" ((old.getObjVal? "hash").toOption.getD Json.null))
+  | some row, none => some row
+  | none, _ => grantHistory w id
+
+/-- `world-grants {principal, grant?, after?, before?, reverse?, limit?}`: live terms or a compact ending,
+    with the entry that made or carried it, for objects the reader may view. -/
 def grantsOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
+  if let some asked := ← optText j "grant" then
+    let id ← boundedText "grant" Limits.maxIntentBytes asked
+    let row : Option Json := (grantRead w id).filter fun (g : Json) => viewable w reader ((g.getObjValAs? String "object").toOption.getD "")
+    return Json.mkObj [("status", toJson "grants"), ("grants", Json.arr ((row.map (#[·])).getD #[]))]
   let mut items : Array (Nat × Json) := #[]
   for i in [w.entries.base:w.entries.count] do
     let some entry := w.entries.get? i | continue
-    if tagOf entry != "admitted" then continue
-    let made := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "grants" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]
-    for g in made do
+    if !["admitted", "carried", "forked"].contains (tagOf entry) then continue
+    if w.ignoring.contains (i + 1) || w.shadowed.any (fun (e : Json) => (e.getObjValAs? Nat "height").toOption == some (i + 1)) then continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let held := if ["carried", "forked"].contains (tagOf entry) then (outcome.getObjVal? "state").toOption.getD Json.null else outcome
+    let arr := fun (key : String) => ((held.getObjVal? key).toOption.bind (·.getArr?.toOption)).getD #[]
+    for g in arr "grants" ++ arr "grantTombstones" do
       let some id := (g.getObjValAs? String "id").toOption | continue
-      let some now := w.grants[id]? | continue
-      unless viewable w reader now.object do continue
-      items := items.push (i + 1, (now.json.setObjVal! "revoked" (toJson now.revoked)).setObjVal! "height" (toJson (i + 1))
-        |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null))
-  let (shown, more, cursor) ← pageByHeight j items
+      unless viewable w reader ((g.getObjValAs? String "object").toOption.getD "") do continue
+      let origin := (g.setObjVal! "height" (toJson (i + 1))).setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null)
+      items := items.push (i + 1, origin)
+  let (page, more, cursor) ← pageByHeight j items
+  let shown : Array Json := page.filterMap fun (origin : Json) =>
+    ((origin.getObjValAs? String "id").toOption.bind fun (id : String) => grantRead w id (some origin))
   return Json.mkObj ([("status", toJson "grants"), ("grants", Json.arr shown)] ++ pageFields more cursor)
 
 /-- `world-entry {principal, hash, bytes?}`: the entry whose hash it is, as the reader may see it

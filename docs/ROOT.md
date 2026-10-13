@@ -209,11 +209,16 @@ does, so that the opener's amendments are law and not root.
 
 ### 2.2 The powers
 
-Each is a host spell the opener alone casts (`hostSpells` grows; a
-non-opener is refused `badSpell`, clause `opener`), on the card it touches
-or on `world`, the reserved id the host answers for; each journals one
-entry under the opener's identity with a required reading, visible in
-`world-history` and on the object page; hob's line within VOICE's 25 tokens.
+These are host spells the opener casts on the card they touch or on `world`, the reserved id
+the host answers for. They refuse a non-opener as `badSpell`, clause `opener`. Each journals
+one entry under the opener's identity with a required reading,
+visible in `world-history` and on the object page; hob's line within VOICE's 25 tokens.
+Retirement frees the maker's `objectsPerPrincipal` share, preserving its name and state and
+its global object slot. The ordinary `unretire` spell must fit that maker's share; unrestricted
+root overrides remain outside these admission checks. A maker whose law admits their amendment
+can instead use the existing `world-amend` mechanism to add a `retired` clause admitting only
+their own amendments (FOUNDATION §2); the amendment metarule still applies and removal of that
+clause must fit their share. This is not a widening of the opener's `retire` power.
 
 | Problem | Power | Journaled as | hob |
 | --- | --- | --- | --- |

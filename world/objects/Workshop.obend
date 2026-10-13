@@ -249,7 +249,7 @@ def draftedOver(held: Held, drafted: Drafted, context: Abi.Context) -> Activity<
     case made(m): madeWritten(held, m.object, context)
     case refused(r): refusing(r.clause, r.reading, context)
 def laidOn(held: Held, over: String, context: Abi.Context) -> Activity<Verdict>:
-  match world.extend({object: {world: context.world, object: over}, package: held.package, migration: ""}):
+  match layingLayer(over, held.package, context):
     case reprogrammed(_): laidWritten(held, over)
     case refused(r): refusing(r.clause, "#{natText(held.n)} cannot be laid on {over}: {faultReading(r.clause, r.reading, over)}", context)
 def laidWritten(held: Held, over: String) -> Activity<Verdict>:
@@ -327,9 +327,26 @@ def bodyGrowing(object: String, name: String, layer: String, written: Nat, conte
     case checked(c): if Lists.length::<String>(c.diagnostics) == 0n then bodyLaying(object, name, layer, context, state) else Card.tell(Verdict.flawed({diagnostics: c.diagnostics}), Document.concat(checkedCard(c.diagnostics), Document.text("Lines 1 to {natText(written)} are what the workshop wrote around your body; its first line is line {natText(written + 1n)}.\n")))
     case refused(_): refusing("noObject", "No card called {object}", context)
 def bodyLaying(object: String, name: String, layer: String, context: Abi.Context, state: State) -> Activity<Verdict>:
-  match world.extend({object: {world: context.world, object: object}, package: layer, migration: ""}):
+  match layingLayer(object, layer, context):
     case reprogrammed(r): Card.tell(Verdict.reprogrammed({pin: r.pin}), Document.text("✾ WORKSHOP\n\n{name} grows on {object}, with its body. Use it:\n  delvetalk {object} {name}\n"))
     case refused(r): if programFault(r.clause) then refusing(r.clause, faultReading(r.clause, r.reading, object), context) else bodyHeld(draftRow(name, noted(object, layer), context, state), object, state)
+def layingLayer(object: String, layer: String, context: Abi.Context) -> Activity<World.Programmed>:
+  match replacing(object, Forms.formNames(layer), true, context):
+    case refused(r): refuse(Card.refusalLine(r))
+    case placed(_):
+      match world.extend({object: {world: context.world, object: object}, package: layer, migration: ""}):
+        case refused(r): World.Programmed.refused(r)
+        case reprogrammed(r):
+          match replacing(object, Forms.formNames(layer), false, context):
+            case refused(f): refuse(Card.refusalLine(f))
+            case placed(_): World.Programmed.reprogrammed(r)
+def replacing(object: String, names: Lists.List<String>, check: Bool, context: Abi.Context) -> Activity<World.Placed>:
+  match names:
+    case nil(_): World.Placed.placed({})
+    case cons(c):
+      match world.ungrow({object: {world: context.world, object: object}, name: c.head, check: check}):
+        case placed(_): replacing(object, c.tail, check, context)
+        case refused(r): if r.clause == "unplaced" then replacing(object, c.tail, check, context) else World.Placed.refused({clause: "nameTaken", reading: "The gesture verb {c.head} on {object} cannot be replaced: {r.reading}"})
 def bodyHeld(held: Held, object: String, state: State) -> Activity<Verdict>:
   let written(_) = write {held: insert held, next: add 1n}
   Card.tell(Verdict.held({n: held.n, clause: "owner"}), Document.text("✾ WORKSHOP\n\n{held.name} with its body is held as #{natText(held.n)} for the owner of {object} to lay:\n\n    delvetalk workshop adopt\n    n: {natText(held.n)}\n\n{dropping(state)}"))

@@ -92,7 +92,7 @@ spell, so each thing has a maker and a post.
 bell/1's `clapper` (its spell grows `hang`, a verb nobody seeded; `delvetalk bell/1 hang` then answers it), both bells'
 `rain`, the porch's `company`, each porch thing's `claimed`, and `kinds`' `made` (no kind made but the town's own);
 then, as the town moves, `second`, `tend`, `door`, `pending`, `five`, `shut` and an errand's `open`. The commonplace
-prints "What wants a hand, oldest first" once the host answers `world.wanting`.
+prints "What wants a hand, turning daily" from the reader's answerable wants (`world.wanting`), with a count waiting on other hands.
 
 **The posts**, the hand's after the welcome (`gsb-welcome.txt`, or `zulip-welcome.txt` starting at KINDS) and each
 door's page:
