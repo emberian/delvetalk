@@ -486,6 +486,32 @@ intent, the record key chosen before the first send (Zulip: the stream's newest 
 rerun after a crash adopts the post instead of writing again. A draft whose `world-posted` failed keeps `sent` and is
 recorded by the bridge's next run, never posted twice.
 
+## Posting by hand
+
+The default deploy has no credential: `/etc/delvetalk/delve/` stays empty, the posting account's password never
+reaches the box, and the hand says on every outbox `posting by hand`. The owner posts each draft himself from his own
+delve.town client as ember.delve.town (config `poster`, `did:plc:6amo7col5h4ciq2gpm5eur7b`) and gives the hand its link
+(docs/POSTING.md "Posting by hand"):
+
+1. Open the outbox (`/hand/town/` over the forward below). The draft that has waited longest is first, with where it
+   came from. Open the post it replies under (its delve.town link; a draft with none starts a post of its own), reply
+   there, and paste the draft's text with its Copy button. A thread's parts each reply under the part before.
+2. Copy the new post's link from the client (`https://delve.town/profile/ember.delve.town/post/<rkey>`) into the
+   draft's "I posted it" field, Record it; or over ssh
+   `docker compose run --rm delvetalk-ops python3 -m transport hand posted <draft> --url <link>` (one `--url` a part).
+   The hand reads the post back from pds.delve.town, refuses another account's post (`wrong_author`) or one under
+   another post (`wrong_parent`), records a changed text as the owner's edit, and records it with the host
+   (reservation, then `world-posted`), so replies under it reach its card.
+3. Or let it find them: the outbox reads the account's newest posts each time it is opened (at most every 30 s; Find
+   my posts, or `hand match`), links a post whose text and parent are exactly a waiting draft's and says so, and offers
+   a near one to link with a click. `hand_find = false` in `delvetalk.toml` turns the reading off.
+
+To withdraw one, delete it from the client, then `hand unpost <draft> --reason R`: with no credential the hand
+checks it is gone from delve.town and tells the host, so replies stop routing to it.
+
+Whoever wants the automatic path places `credentials.json` there (below); the outbox then says `posting automatically`,
+Post posts with it, and posting by hand stays offered beneath each draft.
+
 ## Open the hand
 
 The front keeps running, and the bridge and interpreter run against serve (a step every `poll` seconds, or one by
@@ -509,7 +535,9 @@ The token is asked once (query, then a cookie scoped to `/hand/`); without it ev
 opens on the town; `/hand/<world>/` is any world `serve` holds, with the same pages (`--world W` on the command line). A
 world's console has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
 retries, host pid), a search by receipt slug (`world-resolve`), the OUTBOX and the INBOX. The outbox groups drafts by
-the post they answer, the post beside an editable textarea of the draft, with three buttons: **Post** runs
+the post they answer, longest waiting first, and says which way they leave: posting by hand (no credential file:
+each draft ready to copy and an "I posted it" field, "Posting by hand" above) or automatically, the post beside an
+editable textarea of the draft, with three buttons: **Post** runs
 `post.post_draft`, the code `post.py --draft` runs (the edited text, the owner's credentials file, `world-posted` for the
 draft's object, the draft marked posted); **Skip** marks it `skipped` with a reason and it leaves the outbox; **Hold**
 leaves it. Nothing is posted without a click, and every action is a line in `<state>/hand-log.jsonl`
@@ -529,10 +557,16 @@ The same operations have a command-line face for the owner's assistant over ssh:
 
 - `inbox [--since HEIGHT] [--kind summon|reply|post|wiki-page|wiki-edit|wiki-merge]`: observations newest first, with
   what became of each (whether a post is a spell is the host's reading, shown in its fate).
-- `outbox [--all]`: drafts grouped by the post they answer (`--all` includes posted and skipped).
+- `outbox [--all]`: drafts grouped by the post they answer, the longest waiting first, each with its source, and a
+  waiting delve.town draft with its parts and the post it goes under (`--all` includes posted and skipped).
 - `draft DRAFT`: the post, the draft text and its receipt line (`show` is the moderation power that reverses `hide`).
 - `edit DRAFT --text-file F | --stdin`: replace the draft text, keeping the original.
-- `post DRAFT [--object ID]`: post it, record it with the host for its object (or `--object`), mark it posted.
+- `post DRAFT [--object ID]`: post it with the credential file, record it with the host for its object (or `--object`),
+  mark it posted; refused with no credential file (posting by hand).
+- `posted DRAFT --url LINK [--url LINK ...]` (the draft's "I posted it" field): the owner posted it from his own client;
+  each link (a delve.town post link or an at:// URI; a thread's parts in order) is read back, checked and recorded as
+  "Posting by hand" says. `match` (Find my posts): the account's newest posts against the waiting drafts, an exact one
+  linked, a near one offered.
 - `skip DRAFT --reason R` and `hold DRAFT`: take it out of the outbox with a reason, or leave it.
 - `status`: the readable strip: height, posts this hour, model spend, pending interpretations and retries, host pid.
 - `spend [--month YYYY-MM]`: calls and tokens by month, dollars at Haiku 5.5's published rates and the grant remaining.
@@ -541,7 +575,8 @@ The same operations have a command-line face for the owner's assistant over ssh:
 - `reply URI --text-file F --object ID`: draft a hand-written reply to any observed post as if the object had offered it;
   then `post` it. The web page offers the same as Retry on skipped inbox rows and "reply by hand" on every row.
 - `unpost DRAFT --reason R`: withdraw the post a draft became, ours alone: Delve's `deleteRecord` in the
-  credentials' own repo, or Zulip's delete of the message by the bot the world's bridge row names; then
+  credentials' own repo (with no credential file, the owner deletes it from his client and the hand checks it is
+  gone), or Zulip's delete of the message by the bot the world's bridge row names; then
   `world-posted {unposted: true, reason}` so replies stop routing to it, and the draft and `hand-log.jsonl` keep the fact.
   Anyone else's post is refused before any call.
 - `log [--tail N]`: the last actions in `hand-log.jsonl`.
@@ -1061,6 +1096,29 @@ station's card; `enter`; "Push the door" fired `forecourt_1` and bell/1 rang (v8
 `counter_1`, which vended `station/coffee/thing/1`, accepted (entry 1130); "Wind the wall clock" under `try`, `wound =
 1`, nothing journaled. The chronicle's day counted 25 admitted, none of the 21 refreshes, but named the station
 refresh's `sign` as the first grown verb (lane/station-refresh ca31ed6a).
+
+Carried 2026-10-12 (23:54 UTC), v13 to v14 (`43a8ec4c956e` to foundation 1219d5ba's `b62b69e97a3c…654b`, transport
+image `ffefe418…4228`, edition 13 to 13: the town shown as the town, the site, the guest door at `/enter`, the town's own
+feed, fluonaut's passage, re-arms of their own). The station thread re-trawled first (`getPostThread` of the call): 34
+posts, none after fluonaut's 21:16:37Z. Gates on hbox: suite 1212 tests, 0 failed; carry-check with
+`DELVETALK_STATION=on` green, breaking. The first carry (v13 at 1325, closing backup `delvetalk-20261012T234932Z`) was
+refused before writing: a commonplace suspension (entry 1325, a post waiting on hob) whose object moves and whose code
+cannot resume it; the interpreter had been stopped for the count just after the post came. The carry-check's tarball
+(23:47Z) did not hold it. v13 went back up on its images, `v14` was moved aside (`v14.failed-20261012T235042Z`), hob read
+the post (admitted at 1327), and the switch ran again: v13 at 1335 with 167 objects (twice, no interpretation pending),
+closing backup `delvetalk-20261012T235347Z` (also in `closing/`), carry-check on that tarball green, the carry 32 s,
+exit 0: `check {objects: 167, rendered: 167, receipts: 264, problems: []}`, `left`, `kept` empty, the tide's waiting
+tick `dropped` and `rearmed: [tide]`, refresh 72 `current` and 17 `refreshed`, receipt `zodiz-jufid`, the carried
+genesis at 1336. The re-arm ran as `carried:tide:1336` (1338) and its `due` waits (1339). Count with the interpreter
+stopped only when nothing waits on hob: `world-interpretations` empty. Then lane/membrane 276b7042 (posting by hand)
+restarted in place on v14 (the same binary, transport image `9cd4374e…22c0`, carry-check plain green). Live: the porch
+and bell/2 name the town ("planted by the town"); `/enter` with a fresh open code and a name signed a browser in
+(Playwright; cookie HttpOnly, Secure, SameSite Strict; `/play/` as the guest); its post at `/feed` (`delvetalk guide`) was
+answered in the feed 6.9 s later (receipt `doril-limor`); the guest `deploycheck14` was revoked after. The hand's page
+says posting by hand and lists the waiting drafts. The station: a coffee vended to the town and accepted, "Push the door"
+fired `forecourt_1` (bell/1 answered `false`: a bell rings once, and it rang at v13's check), the clock wound under
+`try` only. The chronicle's day left out the refreshes (11 admitted) but named the station refresh's `sign` (1098, in
+v13) as the first grown verb again (lane/firsts 7c45f51a).
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 

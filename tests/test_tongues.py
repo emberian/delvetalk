@@ -1,0 +1,339 @@
+"""Tongues (docs/VOICE.md "Tongues"): the town reads and answers every resident in their language. hob reads words in
+any language into the same spells (the policy's prompt says so, with examples in five languages, and a value stays the
+speaker's words); a reply's paint and telling are painted in the tongue the resident states (`delvetalk me set /
+tongue: ja`) or speaks, cached per thing, version and tongue, and checked by that tongue's table; hob's own lines are
+in it; a tongue the host holds no checks for is never painted, and a paint in another tongue than asked is refused.
+
+Evidence for the tongues lane (layer: host and objects). Refuted by: a Japanese or Spanish rain read to anything but
+the bell's `rain` with the speaker's words as its text; a paint cached for one tongue shown to a reader of another; a
+paint in a tongue with no table, or in another tongue than asked, shown; a misattributed quotation, a wrong count, an
+invented want or a false negation passing in any of the five tongues; hob answering a Japanese speaker in English.
+
+    python3 -W error -m unittest tests.test_tongues -v
+"""
+import os
+import re
+import tempfile
+import unittest
+from unittest import mock
+
+from tests.host import as_owner
+from tests.town import Town
+from tests.wire import label, record
+from transport import interpret
+
+GLM, KIM, MOO = 'did:plc:glm', 'did:plc:kim', 'did:plc:moo'
+HANDLES = {GLM: 'glm.delve.town', KIM: 'kimik3.delve.town', MOO: 'moth.delve.town'}
+BELL = 'garden/bell/1'
+YUE = 'the anchor remembers what the garden can\'t; the soil keeps the corrections'
+
+
+def replied(text):
+    return {'status': 'replied', 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 900, 'output_tokens': 60}}
+
+
+CODES = {'Japanese': 'ja', 'Chinese': 'zh', 'Spanish': 'es', 'Russian': 'ru', 'Arabic': 'ar'}
+PAINT_OBEND = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'world', 'lib', 'Paint.obend')
+
+
+def contract_examples(kind):
+    """The worked examples of the painter's contract (world/lib/Paint.obend) of that kind: [(tongue code, paint)], one per tongue."""
+    out = []
+    with open(PAINT_OBEND, encoding='utf-8') as f:
+        for part in f.read().split('\\n'):  # the contract's own line breaks, written as escapes in the source
+            m = re.match(r'(%s), a %s\. Strokes: .*? Paint: (.+)$' % ('|'.join(CODES), kind), part)
+            if m:
+                out.append((CODES[m.group(1)], m.group(2)))
+    return out
+
+
+class Tongued(unittest.TestCase):
+    """A town with a bell of two rains, kimik3's line among them; the render cache on disk."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        env = mock.patch.dict(os.environ, {'DELVETALK_RENDER_CACHE': os.path.join(cls.tmp.name, 'cache')})
+        env.start()
+        cls.addClassCleanup(env.stop)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
+        for did, handle in HANDLES.items():
+            cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
+        cls.town.send(op='world-advance', principal='transport', height=60)
+        cls.n = 0
+        cls.act(GLM, 'garden', 'delvetalk garden plant / seed: a bell for lost moths / colour: amber')
+        cls.act(KIM, BELL, 'delvetalk garden/bell/1 rain / text: ' + YUE)
+        cls.act(GLM, BELL, 'delvetalk garden/bell/1 rain / text: drop 77')
+
+    @classmethod
+    def act(cls, who, obj, text, status='admitted', **more):
+        cls.n += 1
+        got = cls.town.send(op='world-turn', principal=who, object=obj, method='receive',
+                            argument=record(text=label(text), post=label('at://x/p/%d' % cls.n)), identity='t%d' % cls.n, **more)
+        assert got['status'] == status, got
+        return got
+
+    def lines(self):
+        return [(l.get('verb'), l['text']) for l in self.town.send(op='world-strokes', principal=GLM, object=BELL)['strokes']['lines']]
+
+
+class Hob(Tongued):
+    """hob reads any language into the town's spells, and answers in the speaker's."""
+
+    def read(self, who, words, answer):
+        """Words to the bell, hob's reading of them by a mocked model, the resumed turn: (the request, the resumed turn)."""
+        before = self.town.send(op='world-status')['height']
+        self.act(who, BELL, words, status='suspended', reach='mention')
+        [item] = self.town.send(op='world-interpretations')['pending']
+        req = interpret.request(item)
+        settled = self.town.send(op='world-interpretation', id=item['id'], reply=replied(answer))
+        self.assertEqual(settled['status'], 'interpreted', settled)
+        [resumed] = [as_owner(self.town, r) for r in settled['resumed']]
+        self.assertGreater(self.town.send(op='world-status')['height'], before)
+        return req, resumed
+
+    def test_a_japanese_and_a_spanish_rain_are_read_to_the_same_spell(self):
+        spells = []
+        for who, words, text in ((KIM, '鐘に雨を降らせたい。遅れて来る人のために', '遅れて来る人のために'),
+                                 (GLM, 'que llueva sobre la campana, para quien llega tarde', 'para quien llega tarde')):
+            spell = 'delvetalk garden/bell/1 rain / text: ' + text
+            req, resumed = self.read(who, words, spell)
+            # The prompt says hob reads any language, and shows the same reading in five; the words are the speaker's.
+            self.assertIn('in whatever language they write', req['system'])
+            self.assertIn('Said: 鐘に雨を。遅れて来る人のために\ndelvetalk bell/1 rain / text: 遅れて来る人のために', req['system'])
+            self.assertIn('delvetalk bell/1 rain / text: para quien llega tarde', req['system'])
+            self.assertIn('never translated', req['system'])
+            self.assertTrue(req['user'].endswith('Their words:\n' + words), req['user'])
+            self.assertEqual(resumed['receipt']['outcome']['tag'], 'admitted', resumed)
+            self.assertEqual(self.lines()[-1], ('rain', text))  # the bell's own verb, the speaker's words as written
+            spells.append(spell.split(' / ')[0])
+        self.assertEqual(spells[0], spells[1])
+
+    def test_hob_answers_in_the_tongue_the_speaker_spoke_or_states(self):
+        _, asked = self.read(KIM, '鐘に何か降らせて', 'ask: what text?')
+        [card] = [o['text'] for o in asked['receipt']['offers']]
+        self.assertTrue(card.startswith('hob: まだ text が要る。埋めて送って:\n\n    delvetalk garden/bell/1 rain\n'), card)
+        _, missed = self.read(GLM, 'la campana debería cantar una canción', 'ask: which song?')
+        [card] = [o['text'] for o in missed['receipt']['offers']]
+        self.assertEqual(card, 'hob: ningún hechizo de garden/bell/1 toma eso; sus hechizos: delvetalk garden/bell/1 ?\n')
+        # A stated tongue governs hob's tail under `?`, where there are no words to read.
+        self.act(MOO, MOO, 'delvetalk me set / tongue: ru')
+        usage = self.town.send(op='world-turn', principal=MOO, object=BELL, method='receive', identity='usage-ru',
+                               argument=record(text=label('delvetalk garden/bell/1 ?'), post=label('')))
+        self.assertTrue(usage['text'].rstrip().endswith('hob: как читается заклинание: delvetalk library read / page: spells'), usage['text'])
+        usage = self.town.send(op='world-turn', principal=GLM, object=BELL, method='receive', identity='usage-en',
+                               argument=record(text=label('delvetalk garden/bell/1 ?'), post=label('')))
+        self.assertTrue(usage['text'].rstrip().endswith('hob: how a spell is read: delvetalk library read / page: spells'), usage['text'])
+
+
+AR_PAINT = 'جرس صغير من النحاس، مضبوط النغمة لا مضروب، ينتظر المطر. عليه مطران؛ كتب kimik3.delve.town «%s».' % YUE
+JA_PAINT = '琥珀の鐘に二つの雨。kimik3.delve.townの「%s」が残る。' % YUE
+ES_PAINT = 'Una campana de ámbar con dos lluvias; kimik3.delve.town escribió «%s».' % YUE
+EN_PAINT = 'An amber bell for lost moths. Two rains have come; kimik3.delve.town\'s says “%s”.' % YUE
+
+
+class Paint(Tongued):
+    """A paint in the reader's tongue, through the one model worker with a mocked model."""
+
+    def setUp(self):
+        self.asked = []
+
+    def model(self, by_tongue):
+        """A model that paints in the tongue the strokes ask for: `by_tongue[name]`, English for none."""
+        def ask(req):
+            self.asked.append(req)
+            for name, text in by_tongue.items():
+                if 'Paint in: ' + name in req['user']:
+                    return replied(text)
+            return replied(by_tongue.get('English', EN_PAINT))
+        return ask
+
+    def render(self, who, **more):
+        return self.town.send(op='world-render', principal=who, object=BELL, **more)
+
+    def test_1_a_stated_tongue_is_painted_in_it_and_cached_per_tongue(self):
+        self.town.send(op='world-renders')  # the worker attends
+        self.act(KIM, KIM, 'delvetalk me set / tongue: ja')
+        ja = self.render(KIM)
+        en = self.render(GLM)
+        self.assertEqual((ja['status'], en['status']), ('pending', 'pending'), (ja, en))
+        self.assertNotEqual(ja['key'], en['key'])  # one paint a tongue
+        [req] = [i['request'] for i in self.town.send(op='world-renders')['pending'] if i['key'] == ja['key']]
+        self.assertIn('Paint in: 日本語 (Japanese)', req['user'])
+        self.assertIn('rains: 2 [in Japanese: 雨]', req['user'])
+        self.assertIn('kimik3.delve.town (rain): “%s”' % YUE, req['user'])  # a resident's line as written, never translated
+        self.assertEqual(req['maxTokens'], 800)
+        self.assertIn('When the strokes say "Paint in:" a language', req['system'])
+        done = interpret.paint(self.town.client, self.model({'日本語': JA_PAINT}))
+        self.assertEqual(sorted(done['painted']), sorted([ja['key'], en['key']]), done)
+        self.assertEqual(self.render(KIM)['text'], JA_PAINT)
+        self.assertEqual(self.render(GLM)['text'], EN_PAINT)
+        # Each tongue was one call, and no more are asked for.
+        self.assertEqual(interpret.paint(self.town.client, self.model({})), {'painted': []})
+        self.assertEqual(len(self.asked), 2)
+        # The exact card is never translated: cards are data.
+        card = self.town.send(op='world-card', principal=KIM, object=BELL)['text']
+        self.assertFalse([c for c in card if '\u3040' <= c <= '\u9fff'], card)
+
+    def test_2_words_choose_the_tongue_when_none_is_stated(self):
+        self.town.send(op='world-renders')
+        es = self.render('anonymous', speaker=GLM, words='que llueva sobre la campana, para quien llega tarde')
+        [req] = [i['request'] for i in self.town.send(op='world-renders')['pending'] if i['key'] == es['key']]
+        self.assertIn('Paint in: español (Spanish)', req['user'])
+        self.assertIn('rains: 2 [in Spanish: lluvia]', req['user'])
+        interpret.paint(self.town.client, self.model({'español': ES_PAINT}))
+        self.assertEqual(self.render('anonymous', speaker=GLM, words='para quien llega tarde, sobre la campana')['text'], ES_PAINT)
+
+    def test_3_a_paint_in_another_tongue_than_asked_is_shown_exact(self):
+        self.town.send(op='world-renders')
+        ru = self.render(GLM, words='пусть на колокол прольётся дождь')
+        # A refusal in another tongue is asked once more; the painter, still in English, is refused for good.
+        self.assertEqual(interpret.paint(self.town.client, self.model({'русский': EN_PAINT}))['retrying'], [ru['key']])
+        interpret.paint(self.town.client, self.model({'русский': EN_PAINT}))
+        got = self.render(GLM, words='пусть на колокол прольётся дождь')
+        self.assertEqual((got['status'], got['reason'], got['clause']), ('exact', 'rejected', 'tongue'), got)
+        self.assertEqual(got['key'], ru['key'])
+
+    def test_4_a_tongue_with_no_checks_is_never_painted(self):
+        self.town.send(op='world-renders')
+        got = self.render(GLM, tongue='fr')
+        self.assertEqual((got['status'], got['reason']), ('exact', 'tongue'), got)
+        self.assertFalse([i for i in self.town.send(op='world-renders')['pending'] if i.get('object') == BELL and 'fr' in i['request']['user']])
+
+    def check(self, tongue, text):
+        got = self.town.send(op='world-render-check', principal=GLM, object=BELL, tongue=tongue, text=text)
+        return got.get('clause', '') if got['status'] == 'rejected' else got['status']
+
+    def test_5_each_check_holds_in_each_tongue(self):
+        cases = {
+            'ja': (JA_PAINT, 'glm.delve.townが「%s」と書いた。' % YUE, '琥珀の鐘に五つの雨。', '鐘は訪問者を求めている。',
+                   'まだ誰も雨を降らせていない。'),
+            'zh': ('一口琥珀色的钟，下过两场雨；kimik3.delve.town 写下“%s”。' % YUE, 'glm.delve.town 写下“%s”。' % YUE,
+                   '这口钟下过五场雨。', '这口钟想要访客。', '没有人在钟上下过雨。'),
+            'es': (ES_PAINT, 'glm.delve.town escribió «%s» sobre la campana.' % YUE, 'Una campana de ámbar con cinco lluvias.',
+                   'La campana quiere un visitante de la noche.', 'Nadie ha traído lluvia a la campana todavía.'),
+            'ru': ('Янтарный колокол, на нём два дождя; kimik3.delve.town написал «%s».' % YUE,
+                   'glm.delve.town написал «%s» о колоколе.' % YUE, 'На колоколе пять дождей.', 'Колокол хочет гостей.',
+                   'Никто не приносил дождь колоколу.'),
+            'ar': ('جرس كهرماني عليه اثنان من الأمطار؛ كتب kimik3.delve.town «%s».' % YUE, 'كتب glm.delve.town «%s» على الجرس.' % YUE,
+                   'على الجرس خمسة أمطار.', 'الجرس يريد زائرا.', 'لم يأت مطر على الجرس.'),
+        }
+        for tongue, (true, misattributed, miscounted, wanting, negated) in cases.items():
+            with self.subTest(tongue=tongue):
+                self.assertEqual(self.check(tongue, true), 'verified')
+                self.assertEqual(self.check(tongue, misattributed), 'attribution')
+                self.assertEqual(self.check(tongue, miscounted), 'numbers')
+                self.assertEqual(self.check(tongue, wanting), 'wants')
+                self.assertEqual(self.check(tongue, negated), 'negation')
+        self.assertEqual(self.check('en', JA_PAINT), 'tongue')
+        self.assertEqual(self.check('fr', 'Une cloche ambrée, deux pluies.'), 'tongue')
+
+
+    def test_6_the_contracts_thing_examples_are_true_paints_of_the_real_strokes(self):
+        examples = contract_examples('thing')
+        self.assertEqual(sorted(t for t, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
+        for tongue, paint in examples:
+            with self.subTest(tongue=tongue):
+                self.assertEqual(self.check(tongue, paint), 'verified')
+
+    def test_7_a_refusal_in_another_tongue_is_asked_once_more_with_its_reason(self):
+        self.town.send(op='world-renders')
+        ar = self.render(GLM, tongue='ar')
+        asked = []
+        replies = [replied('الجرس يريد زائرا.'), replied(AR_PAINT)]
+
+        def ask(req):
+            asked.append(req)
+            return replies[len(asked) - 1]
+        before = self.town.send(op='world-status')['renders']['retried']
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [], 'retrying': [ar['key']]})
+        self.assertEqual(self.town.send(op='world-status')['renders']['retried'], before + 1)
+        self.assertEqual(self.render(GLM, tongue='ar')['status'], 'pending')
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [ar['key']]})
+        # The second ask is the first with the refused clause, its reason and the refused paint, in plain words.
+        first, second = asked
+        self.assertEqual(first['system'], second['system'])
+        self.assertTrue(second['user'].startswith(first['user'] + '\n\nThe last paint was thrown away whole: it claimed a want ('), second['user'])
+        self.assertIn('the strokes hold no want', second['user'])
+        self.assertIn('in Arabic', second['user'])
+        self.assertTrue(second['user'].endswith('(the paint was: الجرس يريد زائرا.)'), second['user'])
+        self.assertEqual(self.render(GLM, tongue='ar')['text'], AR_PAINT)
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': []})  # painted: no third ask
+        self.assertEqual(len(asked), 2)
+
+    def test_8_a_second_refusal_is_final_and_asks_no_more(self):
+        self.town.send(op='world-renders')
+        zh = self.render(GLM, tongue='zh')
+        asked = []
+        replies = [replied('这口钟下过五场雨。'), replied('这口钟想要访客。')]
+
+        def ask(req):
+            asked.append(req)
+            return replies[len(asked) - 1]
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [], 'retrying': [zh['key']]})
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [], 'exact': [zh['key']]})
+        self.assertIn('a number was wrong (', asked[1]['user'])
+        self.assertIn('in Chinese', asked[1]['user'])
+        got = self.render(GLM, tongue='zh')
+        self.assertEqual((got['status'], got['reason'], got['clause']), ('exact', 'rejected', 'wants'), got)
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': []})
+        self.assertEqual(len(asked), 2)
+
+
+class Telling(unittest.TestCase):
+    """The porch told in Japanese to one who arrives stating it."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
+        for did, handle in HANDLES.items():
+            cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
+        cls.town.send(op='world-advance', principal='transport', height=60)
+        cls.n = 0
+        for who, obj, text in ((GLM, 'porch', 'delvetalk porch enter'), (GLM, 'porch', 'delvetalk porch say / line: the lintel creaked at dusk'),
+                               (KIM, 'porch', 'delvetalk porch enter'), (KIM, 'porch/goblet', 'delvetalk porch/goblet acquire'),
+                               (MOO, MOO, 'delvetalk me set / tongue: ja'), (MOO, 'porch', 'delvetalk porch enter')):
+            cls.n += 1
+            got = cls.town.send(op='world-turn', principal=who, object=obj, method='receive',
+                                argument=record(text=label(text), post=label('')), identity='t%d' % cls.n)
+            assert got['status'] == 'admitted', got
+
+    def test_the_contracts_before_arrival_examples_are_true_paints_of_the_real_strokes(self):
+        examples = contract_examples('telling before arrival')
+        self.assertEqual(sorted(t for t, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
+        for tongue, paint in examples:
+            with self.subTest(tongue=tongue):
+                got = self.town.send(op='world-render-check', principal=MOO, object='porch', telling={}, tongue=tongue, text=paint)
+                self.assertEqual(got['status'], 'verified', got)
+
+    def test_a_spanish_plural_in_e_is_its_unit(self):
+        # visitantes is visitante (the stem keeps clase/clases, carácter/caracteres meeting too), so the count beside it is read.
+        for count, status in (('dos', 'verified'), ('tres', 'rejected')):
+            got = self.town.send(op='world-render-check', principal=MOO, object='porch', telling={}, tongue='es',
+                                 text='El pueblo dejó porch/goblet sobre la pizarra. %s visitantes llegaron al umbral.' % count.capitalize())
+            self.assertEqual((got['status'], got.get('clause', 'verified' if status == 'verified' else '')), (status, 'verified' if status == 'verified' else 'numbers'), got)
+
+    def test_a_japanese_telling(self):
+        self.town.send(op='world-renders')
+        first = self.town.send(op='world-render', principal=MOO, object='porch', telling={})
+        self.assertEqual((first['status'], first['telling']['frame']), ('pending', 'あなたが来る前に'), first)
+        [req] = [i['request'] for i in self.town.send(op='world-renders')['pending'] if i['key'] == first['key']]
+        self.assertIn('What it is: a telling of porch', req['user'])
+        self.assertIn('Paint in: 日本語 (Japanese)', req['user'])
+        paint = 'あなたが来る前に、glm.delve.townが「the lintel creaked at dusk」と言い、kimik3.delve.townが porch/goblet を持ち去った。'
+        done = interpret.paint(self.town.client, lambda r: replied(paint))
+        self.assertIn(first['key'], done['painted'], done)
+        got = self.town.send(op='world-render', principal=MOO, object='porch', telling={})
+        # The frame is the host's, in the reader's tongue, lifted off the paint; the paint addresses nobody.
+        self.assertEqual(got['telling']['frame'], 'あなたが来る前に')
+        self.assertEqual(got['text'], 'glm.delve.townが「the lintel creaked at dusk」と言い、kimik3.delve.townが porch/goblet を持ち去った。')
+        wrong = 'あなたが来る前に、kimik3.delve.townが「the lintel creaked at dusk」と言った。'
+        checked = self.town.send(op='world-render-check', principal=MOO, object='porch', telling={}, text=wrong)
+        self.assertEqual((checked['status'], checked['clause']), ('rejected', 'attribution'), checked)
+
+
+if __name__ == '__main__':
+    unittest.main()

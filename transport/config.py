@@ -47,8 +47,13 @@ class Config:
                               "pds.delve.town's repos and verified claims; at most 256 non-delve-PDS participants per poll")
     station: bool = field(False, "a carry's refresh makes the all-night station on a town that lacks it, as genesis "
                           "--with-gas-station makes it (deploy/genesis.py gas_station); the owner's word, on in the live .env")
-    credentials: str = field('~/.config/delvetown/credentials.json', "the posting account's credentials, read only for authorized posts and record writes")
+    credentials: str = field('~/.config/delvetown/credentials.json', "the posting account's credentials, read only for authorized posts and record writes; "
+                             "no file there, and the hand posts by hand: the owner posts each draft from his own client and gives its link")
     lexicon_authority: str = field('did:plc:6amo7col5h4ciq2gpm5eur7b', "the DID named by _lexicon.gsb.fg-goose.online TXT; lexicons refuses a session for any other DID")
+    poster: str = field('did:plc:6amo7col5h4ciq2gpm5eur7b', "the posting account (ember.delve.town), whose posts carry the town's replies: "
+                        "a post recorded by hand must be its, and the hand looks for them in its repository")
+    hand_find: bool = field(True, "the hand reads the posting account's repository (listRecords, read only) when its outbox is opened: "
+                            "a post whose text and parent are exactly a waiting draft's is linked, a near one offered")
     repo_keys: str = field('/etc/delvetalk/repo', "the directory of the repositories' signing keys, <world>.key; unsigned without one")
     backups: str = field('/var/backups/delvetalk', "backup.sh's destination, whose newest tarball and last verify the probe reads")
     anthropic_key_file: str = field('', 'the file holding the Anthropic API key (model_auth key)')

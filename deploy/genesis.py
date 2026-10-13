@@ -127,6 +127,19 @@ def guide_cuts(text, room):
     return parts + [rest]
 
 
+# The guide's contents page in each tongue an avatar can state (`delvetalk me set / tongue: ja`; Library.obend's `read`
+# gives it a page named `<page>.<tongue>`): hob's line, then the English part list, then the last line, spell unchanged.
+# The parts themselves stay English: only the contents is translated.
+GUIDE_TONGUES = [
+    ('ja', 'japanese', 'hob: 手引き、{n}部。webが /AGENTS.md で出す文。各部がここの一頁。部は英語。', '一つ読む'),
+    ('zh', 'chinese', 'hob: 指南，共{n}部分，即网站在 /AGENTS.md 提供的文本；每部分是这里的一页。各部分为英文。', '读一部分'),
+    ('es', 'spanish', 'hob: la guía, en {n} partes, el texto que la web sirve en /AGENTS.md; cada parte es una página aquí. Las partes están en inglés.', 'Lee una'),
+    ('ru', 'russian', 'hob: руководство, частей: {n}; это текст, который веб отдаёт по /AGENTS.md, каждая часть здесь страница. Части на английском.', 'Прочти одну'),
+    ('ar', 'arabic', 'hob: الدليل، في {n} جزءاً، النص الذي يقدمه الويب في /AGENTS.md؛ كل جزء صفحة هنا. الأجزاء بالإنجليزية.', 'اقرأ جزءاً')]
+WELCOME = [('welcome', 'page', "hob's opening for one who arrives")] + \
+    [(f'welcome.{t}', 'page', f"hob's opening, in {english}") for t, english, _, _ in GUIDE_TONGUES]
+
+
 def guide_pages(origin=None):
     """[(name, kind, title, body)]: the guide's contents page and its parts, each ending with the spell for the next."""
     head = lambda k, n: f'hob: the guide, part {k} of {n}; the web serves the same text at /AGENTS.md.\n'  # noqa: E731
@@ -147,9 +160,20 @@ def guide_pages(origin=None):
         [(f'guide-{k}', 'page', f'the guide, part {k}: {titles[k - 1]}'[:80], head(k, n) + cut + tail(k, n)) for k, cut in enumerate(cuts, 1)]
 
 
+def guide_tongues(pages):
+    """The guide's contents page (`guide_pages`'s first) in each of GUIDE_TONGUES: hob's line in it, the part list as the
+    English one has it, the last line's words in it and its spell unchanged."""
+    listing = ''.join(line + '\n' for line in pages[0][3].splitlines() if line.startswith('  guide-'))
+    return [(f'guide.{tongue}', 'page', f"the guide's contents, in {english}",
+             f'{hob.format(n=len(pages) - 1)}\n{listing}{read}: delvetalk library read / page: guide-1')
+            for tongue, english, hob, read in GUIDE_TONGUES]
+
+
 def shelf(origin=None):
-    """Every page genesis shelves, in order: the capsules' (PAGES), then the guide's."""
-    return [(name, kind, title, page_body(name)) for name, kind, title in PAGES] + guide_pages(origin)
+    """Every page genesis shelves, in order: the capsules' (PAGES), the guide's, its contents in each tongue, the welcome in each."""
+    guide = guide_pages(origin)
+    return [(name, kind, title, page_body(name)) for name, kind, title in PAGES] + guide + guide_tongues(guide) + \
+        [(name, kind, title, page_body(name)) for name, kind, title in WELCOME]
 
 
 # Record.lawText() (world/objects/Record.obend): a record's package declares no law, since every kind imports the

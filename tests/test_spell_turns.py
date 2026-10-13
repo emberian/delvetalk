@@ -233,7 +233,7 @@ class FixedFields(Reflection):
         inspected = self.host.send(op="world-inspect", principal="glm", object="lamp", source=False)
         self.assertEqual(inspected.get("fixed"), ["mood"], inspected)
         usage = self.say("delvetalk lamp ?")
-        self.assertIn("delvetalk lamp set\nname: <text, 1 to 12 characters>", usage["text"])
+        self.assertIn("To set a field: delvetalk lamp set, then one of these lines (one field a spell):\nname: <text, 1 to 12 characters>\n", usage["text"])
         self.assertNotIn("mood", usage["text"])
         out = self.say("delvetalk lamp set\nmood: wild", identity="fix")["receipt"]["outcome"]
         self.assertEqual((out["class"], out["clause"]), ("badSpell", "fixed"), out)

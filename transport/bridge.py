@@ -126,12 +126,13 @@ def offered_object(reply, addressed=None):
     return (made or [reply.get('object') or addressed])[0]
 
 
-def with_paint(host, obj, text, sleep=None):
+def with_paint(host, obj, text, sleep=None, speaker=None, words=None):
     """`text` with the thing's verified paint above it (docs/OVERHAUL.md section 4; the owner: posting paint is fine, it
     is what the place says), as the public reads it, when one is verified and the two fit one post; else `text`. The
-    paint is the one `painted` the front's pages show: the host's, checked, cached per version."""
+    paint is the one `painted` the front's pages show: the host's, checked, cached per version and tongue, in the tongue
+    the host chooses for `speaker` and their `words` (docs/VOICE.md "Tongues")."""
     from transport.post import CLIP
-    paint = painted(host, PUBLIC, obj, sleep or time.sleep).get('text') if obj and text else None
+    paint = painted(host, PUBLIC, obj, sleep or time.sleep, speaker=speaker, words=words).get('text') if obj and text else None
     return f'{paint.rstrip()}\n\n{text}' if paint and len(paint.rstrip()) + 2 + len(text) <= CLIP else text
 
 
@@ -161,16 +162,16 @@ def telling_lead(told):
         shown = shown[1:]
 
 
-def with_telling(host, principal, reply, obj, text, sleep=None):
+def with_telling(host, principal, reply, obj, text, sleep=None, words=None):
     """`text` led by the place's telling when the turn entered the place (an admitted `enter`, `result` `entered`) and its
     draft is the reply itself, not its receipt line alone (`inPublic`), for `principal` who entered (`world-render
     {telling}`, waiting the host's patience for the paint), as `telling_lead` sets it; else `text`. -> (the text, the
     telling's characters at its head, 0 for none), which a draft notes as `told` for whoever posts or threads it. A
-    receipt never carries it."""
+    receipt never carries it. Told in the tongue the host chooses for `principal` and their `words`."""
     obj = reply.get('object') or obj
     if reply.get('status') != 'admitted' or (reply.get('result') or {}).get('label') != 'entered' or not reply.get('inPublic') or not obj or not text:
         return text, 0
-    lead = telling_lead(painted(host, principal, obj, sleep or time.sleep, telling={}))
+    lead = telling_lead(painted(host, principal, obj, sleep or time.sleep, telling={}, words=words))
     return lead + text, len(lead)
 
 
@@ -457,7 +458,9 @@ def offer_drafts(st, host):
     makes public; a resumption with no offer and no refusal (hob's `none`) drafts nothing. Either is marked
     `settled` and never asked again."""
     waiting = [json.loads(p.read_text()) for p in sorted(st.awaiting.glob('*.json')) if not json.loads(p.read_text()).get('settled')]
-    drafted, handles = [], {o['author']['did']: o['author']['handle'] for o in st.observations()} if waiting else {}
+    seen = st.observations() if waiting else []
+    drafted, handles = [], {o['author']['did']: o['author']['handle'] for o in seen}
+    said = {o['uri']: o.get('text') or '' for o in seen}  # the words hob read, so the paint is in their tongue
     for principal in dict.fromkeys(w['principal'] for w in waiting):
         for w in [w for w in waiting if w['principal'] == principal and w.get('request')]:  # a request: its answer, once settled
             got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': w['uri']})
@@ -485,7 +488,8 @@ def offer_drafts(st, host):
             rc = got.get('receipt')
             text = ('\n'.join(o['text'] for o in offers).rstrip('\n') + '\n' if got.get('inPublic') else '') + receipt_line(rc, st.config.origin, w.get('object'), handles) if rc else ''
             if rc and got.get('inPublic'):
-                text = with_paint(host, offered_object({'receipt': rc, 'object': w.get('object')}), text)
+                text = with_paint(host, offered_object({'receipt': rc, 'object': w.get('object')}), text,
+                                  speaker=principal, words=said.get(w.get('post', uri)))
             st.write(st.outbox / f"{offers[-1]['height']}-off-{key}.json", {
                 'replyTo': w.get('post', uri), 'replyHandle': w['replyHandle'], 'principal': principal, 'principalVerified': False,
                 'object': w.get('object'), 'slot': w.get('slot'),
@@ -700,7 +704,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             ran = [t for t in turns if 'receipt' in t]
             text, told = ''.join(draft_text(t).rstrip('\n') + '\n' if 'receipt' not in t else spell_line(t, origin, handles) for t in turns), 0
             for t in ran:  # the first spell that entered a place leads the reply with its telling
-                text, told = with_telling(host, did, t, t.get('object') or obj, text)
+                text, told = with_telling(host, did, t, t.get('object') or obj, text, words=obs['text'])
                 if told:
                     break
             # A reply answering several cards is no one card's: a bare verb under it would reach whichever came first,
@@ -734,9 +738,9 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
         obj = reply.get('object') or obj  # the card the host ran the turn on: a spell's card as it resolved it
         text = draft_public(reply, origin, obj, handles)
         if reply.get('status') == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
-            text = with_paint(host, offered_object(reply, obj), text)  # the place speaking, above its exact card
+            text = with_paint(host, offered_object(reply, obj), text, speaker=did, words=obs['text'])  # the place speaking, above its exact card
         text = first_move(st, did, reply, text)
-        text, told = with_telling(host, did, reply, obj, text)  # entering a place: what happened there, above it all
+        text, told = with_telling(host, did, reply, obj, text, words=obs['text'])  # entering a place: what happened there, above it all
         st.write(st.outbox / f"{reply['receipt']['height']}-{uri_hash(obs['uri'])}.json", {
             'replyTo': obs['uri'], 'replyHandle': handle, 'principal': did, 'principalVerified': False,
             'object': obj, 'slot': slot,

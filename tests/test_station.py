@@ -372,6 +372,17 @@ class Carried(unittest.TestCase):
         host.close()
         again = genesis.carried(binary(), outs[0], station=True)
         self.assertEqual([r for r in again if r["object"] == "station" and r["slot"] == "placed"], [{"object": "station", "slot": "placed", "status": "current"}])
+        # Carried once more, the refresh's `sign` is a height of the world before: still no first (v14 named it, 2026-10-13).
+        held = HostProcess(binary(), outs[0])
+        self.assertEqual(held.send(op="world-snapshot")["status"], "snapshot")
+        held.close()
+        third = os.path.join(tmp.name, "v4.journal")
+        p = subprocess.run([binary(), "carry", "--from", outs[0], "--out", third, "--reason", "once more"], capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        later = HostProcess(binary(), third)
+        self.addCleanup(later.close)
+        day = later.send(op="world-surface", principal="anonymous", read="chronicle")
+        self.assertNotIn("sign on station/register", day.get("whole") or day["text"])
 
 
 if __name__ == "__main__":

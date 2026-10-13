@@ -80,7 +80,9 @@ class HandCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        (Path(self.tmp.name) / 'delvetalk.toml').write_text(f'credentials = "{self.tmp.name}/creds.json"\nbackups = "{self.tmp.name}/backups"\n')
+        # A world posting automatically: its credential file is there (tests/test_byhand.py is the world without one).
+        (Path(self.tmp.name) / 'delvetalk.toml').write_text(f'credentials = "{self.tmp.name}/creds.json"\nbackups = "{self.tmp.name}/backups"\nhand_find = false\n')
+        (Path(self.tmp.name) / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
         self.state = State(self.tmp.name)
         posts = [spell_post(1, 'garden-1', '2026-10-09T10:00:01Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:02Z')]
         from tests.test_transport import Script
@@ -727,6 +729,7 @@ class Measure(unittest.TestCase):
         cls.town = t = Town(cls.dir.name, cleanup=cls.addClassCleanup)
         (Path(t.state) / 'delvetalk.toml').write_text(f'owner_principals = "{cls.OWNER}"\n')
         cls.st, S0 = State(t.state), cls.M0 * 60
+        cls.st.write(cls.st.row, {'world': 'town', 'transport': 'zulip', 'realm': 'tulip.example', 'channel': 'delvetalk', 'zuliprc': None})  # its posts are its bot's
         for did, handle in ((cls.A, 'kestrel'), (cls.B, 'yue'), (cls.OWNER, 'Hyphaed Biscuit')):
             t.send(op='world-arrive', principal=CLOCK, did=did, handle=handle)
         t.send(op='world-advance', principal=CLOCK, height=cls.M0)

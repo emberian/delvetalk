@@ -1,5 +1,5 @@
 <!-- foot: the hand's footer -->
-The owner's console. Nothing reaches a town without Post; every act is a line in the hand's log, every root act an entry in the journal.
+The owner's console. Nothing reaches a town without the owner: his own post, given here by its link, or Post with a credential file; every act is a line in the hand's log, every root act an entry in the journal.
 <!-- nav: one world's pages -->
 <nav><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
 <!-- worlds: every world serve holds, and the scratch worlds -->
@@ -21,8 +21,17 @@ The owner's console. Nothing reaches a town without Post; every act is a line in
 <h1 class="title">{world}<small>what the world drafted, waiting for Post, and what it heard; nothing leaves without a click</small></h1>{note}
 <p class="codes">{codes}</p>
 <section><h2>Search</h2><form method="get" action="{base}/"><label>Receipt slug <input name="slug" placeholder="bofab-lukid"></label><button class="door">Resolve</button></form>{found}</section>
-<section id="outbox"><h2>Outbox</h2>{outbox}</section>
+<section id="outbox"><h2>Outbox</h2><p class="hint">{mode}</p>{outbox}</section>
 <section><h2>Inbox</h2>{inbox}</section>
+<script>document.addEventListener('click', function (ev) {{
+  var b = ev.target.closest && ev.target.closest('[data-copy]'); if (!b) return;
+  var t = document.getElementById(b.getAttribute('data-copy')); t.focus(); t.select();
+  var done = function () {{ b.textContent = 'Copied'; setTimeout(function () {{ b.textContent = 'Copy'; }}, 2000); }};
+  if (navigator.clipboard) navigator.clipboard.writeText(t.value).then(done, function () {{ document.execCommand('copy'); done(); }});
+  else {{ document.execCommand('copy'); done(); }}
+}});</script>
+<!-- look: the posting account's repository read for the waiting drafts' posts -->
+<form method="post" action="{base}/match"><p class="doors"><button class="door">Find my posts</button> <small>{looked}</small></p></form>
 <!-- speak: a spell cast as the opener, and the plan's seeds and invitations -->
 <h1 class="title">Speak<small>a spell cast as the opener into {world}: the card and the receipt come back, and the post that says so waits in the outbox for Post; words go to a card, and hob's answer comes back</small></h1>{note}{spoken}
 <section><h2>A spell</h2><form method="post" action="{base}/speak"><input type="hidden" name="intent" value="{intent}"><label>Spell, or words <textarea name="spell" rows="4" required placeholder="delvetalk garden plant / colour: silver / seed: …"></textarea></label><label>Words go to <small>a card, as a resident's direct reply; hob answers here as the town would hear it</small><input name="to" placeholder="commonplace"></label>{where}<button class="door">Cast</button></form></section>
@@ -79,11 +88,23 @@ The owner's console. Nothing reaches a town without Post; every act is a line in
 <p class="hint">{text}</p>
 <!-- card -->
 <pre class="card">{text}</pre>
-<!-- group: a post and the drafts that answer it -->
-<div class="entry">{original}{drafts}</div>
-<!-- draft: a slip with the receipt line, the draft to edit, and the three bracketed buttons -->
-<ol class="receipts"><li class="slip {fate}"><span class="code">entry {height}</span><span class="name">{name}</span><span class="stamp">{stamp}</span><span class="by">to {object}</span></li></ol>
+<!-- group: a post and the drafts that answer it, where they came from and how long they have waited -->
+<div class="entry"><p class="quiet">{source} · waiting {waiting}</p>{original}{drafts}</div>
+<!-- draft: a slip with the receipt line, and the ways the draft leaves -->
+<ol class="receipts"><li class="slip {fate}"><span class="code">entry {height}</span><span class="name">{name}</span><span class="stamp">{stamp}</span><span class="by">{id} · to {object}</span></li></ol>
+{leave}
+<!-- by_post: Post with the credential file, the draft editable, and the three bracketed buttons -->
 <form method="post" action="{base}/draft/{id}"><textarea name="text" rows="8">{text}</textarea><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="post">Post</button><button class="door" name="do" value="skip">Skip</button><button class="door" name="do" value="hold">Hold</button></p></form>
+<!-- by_hand: the draft ready to copy part by part, where it goes, and the link of the post made -->
+<div class="byhand" id="hand-{id}"><p class="hint">{where}</p>{parts}{offers}
+<form method="post" action="{base}/draft/{id}"><label>{ask} <small>its delve.town link, https://delve.town/profile/&lt;handle&gt;/post/&lt;rkey&gt;, or its at:// URI; a thread's parts one a line, in order</small><textarea name="link" rows="2" required placeholder="https://delve.town/profile/ember.delve.town/post/…"></textarea></label><p class="doors"><button class="door" name="do" value="posted">Record it</button></p></form>
+<details><summary>edit the draft first, or skip it</summary><form method="post" action="{base}/draft/{id}"><textarea name="text" rows="8">{text}</textarea><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="edit">Save the edit</button><button class="door" name="do" value="skip">Skip</button></p></form></details></div>
+<!-- by_hand_folded: with a credential file, posting by hand is still offered, folded -->
+<details><summary>or post it by hand</summary>{byhand}</details>
+<!-- part: one post of a draft: its exact text to copy, its count, its link once posted -->
+<figure class="part"><figcaption><span class="code">{label}</span> {chars} of {clip} characters{done}</figcaption><textarea id="{tid}" readonly rows="{rows}">{text}</textarea><p class="doors"><button type="button" class="door" data-copy="{tid}">Copy</button></p></figure>
+<!-- offer: a post of the posting account's that looks like a draft, linked only by a click -->
+<div class="hint"><p>This looks like {id}{part}: <a href="{link}">{link}</a>, {like} alike{why}. Link it?</p><pre class="card">{text}</pre><form method="post" action="{base}/draft/{id}"><input type="hidden" name="link" value="{uri}"><p class="doors"><button class="door" name="do" value="posted">Link it</button></p></form></div>
 <!-- row: an observation as a slip, what became of it, and a reply by hand -->
 <div class="entry"><ol class="receipts"><li class="slip {outcome}"><span class="code">{kind}</span><span class="name">{handle}</span><span class="line">{text}</span><span class="stamp">{stamp}</span></li></ol>{retry}<details><summary>reply by hand</summary><form method="post" action="{base}/reply"><input type="hidden" name="uri" value="{uri}"><input name="object" placeholder="object"><textarea name="text" rows="4"></textarea><button class="door">Draft</button></form></details></div>
 <!-- retry: a skipped row's quiet line -->

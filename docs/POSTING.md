@@ -132,6 +132,43 @@ The guide whole is twelve posts, three hours of one resident's share, so it is n
 answers its contents in one post (each part's name and spell), and every part is one `library read`, and a
 `online.fg-goose.gsb.page` record on the façade, read for nothing.
 
+## Posting by hand
+
+The owner, 2026-10-12: "didn't we agree to make tools that would help me manage the posting manually?" The owner is
+the membrane: residents summon the town at `@livedelvetalk.delve.town`, the bridge drafts each reply into the hand's
+outbox, and Ember posts it himself from his own client, so the posting account's credential need not be on the server.
+`transport/byhand.py` holds it; nothing in it can write to delve.town (its client has no `allow_write`).
+
+- **Ready to copy.** The outbox (`/hand/<world>/`, `hand outbox`) lists the waiting drafts by how long they have
+  waited (since the post they answer was made, else since the draft was written), each with where it came from (a
+  summon on delve.town, a reply under a town post, the hand's own, a page the town published, a turn made on the web).
+  A delve.town draft shows the post it replies under as a delve.town link to open, then its exact text, part by part
+  for a thread (`post.parts`: each next part under the one before), each part with its character count against the
+  clip and a Copy button. A draft answering the town's own feed is not there: the feed posts itself.
+- **I posted it.** The owner pastes the post's link (`https://delve.town/profile/<handle>/post/<rkey>`, or its
+  `at://` URI) into the draft's field, or runs `hand posted DRAFT --url LINK` (a thread's parts each a `--url`, in
+  order). The hand reads the post back (`getRecord`, read only; a handle by `resolveHandle`) and checks it: the posting
+  account's (config `poster`, `did:plc:6amo7col5h4ciq2gpm5eur7b`), else refused `wrong_author`; under the post the
+  draft (or the part before) goes under, its thread's root that post's root, else `wrong_parent`; a post another draft
+  holds, `already_linked`. Its text against the draft's, line ends and trailing spaces aside: different, it is
+  recorded as the owner's edit (`original` keeps the draft, as an edited Post keeps it). Then the host is told exactly
+  as the automatic path tells it (`post.settle`): the reservation under the draft's intent (`draft-<id>`, a thread's
+  part `#k`), counted against the hour and the resident it answers, then `world-posted {object, intent}`, so replies
+  under it reach the card. The post has left already, so a full hour refuses nothing: the draft keeps the link and the
+  bridge's next run (`record_sent`) reserves and records it when the hour has room.
+- **Find it for me.** With `hand_find` on (the default), opening the outbox (at most every 30 seconds), its Find my
+  posts button, or `hand match` reads the posting account's newest posts (`listRecords`, read only). A post no draft
+  holds, under the post a waiting draft's next part goes under, whose text is exactly that part's (or the whole
+  draft's), is linked at once and the page says so; one whose text is near (60% alike) is offered, "this looks like
+  draft N: link it?", and linked only by the click.
+- **The automatic path stays.** With a credential file at `credentials` the hand says it posts automatically, Post
+  reads the file as before, and posting by hand is offered folded beneath it. Without one (the default deploy), the
+  hand says it posts by hand, offers no Post, and `hand post` refuses. `hand unpost` with no credential checks the
+  post is gone from delve.town (deleted from the owner's client) before telling the host.
+- Tested in tests/test_byhand.py over a real `serve` and the fixture Delve: a post recorded by its link routes
+  replies to its card; a changed text records the edit; another account's post and one under another parent are
+  refused by name; an exact post is linked by the hand itself and a near one only offered; a thread part by part.
+
 ## Built, and where
 
 1. The mirror: `transport/mirror.py`, `online.fg-goose.gsb.card`, `.page`, `.index` (a headless manifest), `.checkpoint` (posting account only); getRepo of a carried journal. Built and not running.
@@ -142,7 +179,8 @@ answers its contents in one post (each part's name and spell), and every part is
 6. The paint above the card, an enter's telling above the reply: `bridge.with_paint`, `with_telling`.
 7. Receipts by post: `delvetalk receipt / of: …`; the STUDIO door and the world page with no URL.
 8. `hand welcome`, one move done; a first reply's next moves (`bridge.first_move`).
-9. tests/test_posting.py: a resident who only posts learns the town, previews, makes, grows, rules and sees it fire,
+9. Posting by hand (above): `transport/byhand.py`, the outbox ready to copy, `hand posted`, `hand match`.
+10. tests/test_posting.py: a resident who only posts learns the town, previews, makes, grows, rules and sees it fire,
    reads the library and finds a receipt, all as replies, each within the clip.
 
 Open: a card's full text past its renderer's clip (8). (Resident text left hob's system turn in HOST-HANDOFF 5.212;

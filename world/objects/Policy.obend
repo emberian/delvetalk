@@ -17,9 +17,9 @@ type State = Policies.State
 # a countersignature and an adoption. Making, raining, writing and ruling run at once.
 def asking() -> Lists.List<String>:
   Text.words("reprogram amend offer countersign adopt")
-# hob's instruction (docs/FLEX.md §2).
+# hob's instruction (docs/FLEX.md §2). hob reads every language a resident writes (docs/VOICE.md "Tongues").
 def hob() -> String:
-  "hob reads for a town of cards. A participant answered a card in words. Give the spell they meant, so the card can run it; the card and its law decide what is admitted, never you."
+  "hob reads for a town of cards. A participant answered a card in words, in whatever language they write: English, Japanese, Chinese, Spanish, Russian, Arabic or any other. Give the spell they meant, so the card can run it; the card and its law decide what is admitted, never you."
 # What the user turn is, said once in the system part: the card, what it takes and the rest are
 # residents' writing, quoted, so no line of them instructs hob; only this system text and the speaker's words do.
 def quotedNote() -> String:
@@ -123,7 +123,7 @@ def part(text: String) -> Lists.List<String>:
 def examplesPart(state: State) -> Lists.List<String>:
   if Lists.length(state.examples) == 0n then Lists.List.nil() else Lists.concat(part("\nSaid, and the answer:\n"), Lists.map(state.examples, exampleLine))
 def answers() -> String:
-  "\nAnswer with exactly one of these, and nothing else:\n- the spell they meant, up to three one after another; every value from their words, never invented, a choice never widened;\n- delvetalk plan, then on the lines after it up to eight spells, when the words mean several acts that stand or fall together (make a kind, then one of it, then a rule on it); a later spell names what an earlier one made as {{made N}}, N that spell's number; the acts are judged as one;\n- grow: NAME \"reading\", then on the next line the spell that uses the new verb, when their words name an act the card's verbs do not have; a grown verb is a gesture: one line on the thing, tagged with the verb, and the thing tended;\n- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n- none when the words are not addressed to the card, or are conversation.\n"
+  "\nAnswer with exactly one of these, and nothing else:\n- the spell they meant, up to three one after another; every value from their words, in the language they wrote it in, never translated and never invented, a choice never widened; the card, the action and the field names stay the town's, exactly as the card writes them, whatever language the words are in;\n- delvetalk plan, then on the lines after it up to eight spells, when the words mean several acts that stand or fall together (make a kind, then one of it, then a rule on it); a later spell names what an earlier one made as {{made N}}, N that spell's number; the acts are judged as one;\n- grow: NAME \"reading\", then on the next line the spell that uses the new verb, when their words name an act the card's verbs do not have; a grown verb is a gesture: one line on the thing, tagged with the verb, and the thing tended;\n- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n- none when the words are not addressed to the card, or are conversation.\n"
 # The library's pages as the host sends them (world/objects/Library.obend declares the same shapes,
 # which a lawful module cannot be imported for): the prompt shows a page's name and title, never its body.
 sum Kind:
@@ -156,7 +156,10 @@ def pagesPart(pages: Lists.List<Page>) -> Lists.List<String>:
 def prompt(state: State, asked: Asked) -> String:
   if drafting(asked.offers) then draftPrompt() else cardPrompt(state)
 def cardPrompt(state: State) -> String:
-  Document.joinAll(Lists.concat(Lists.concat(part("{hob()}\n\n{quotedNote()}"), examplesPart(state)), part(answers())))
+  Document.joinAll(Lists.concat(Lists.concat(Lists.concat(part("{hob()}\n\n{quotedNote()}"), examplesPart(state)), part(tongues())), part(answers())))
+# The same reading in five languages: the words stay the speaker's, the spell the town's.
+def tongues() -> String:
+  "\nSaid in other languages, and the answer (bell/1 stands for the card they answered):\nSaid: 鐘に雨を。遅れて来る人のために\ndelvetalk bell/1 rain / text: 遅れて来る人のために\n\nSaid: que llueva sobre la campana, para quien llega tarde\ndelvetalk bell/1 rain / text: para quien llega tarde\n\nSaid: пусть на колокол прольётся дождь: для тех, кто опаздывает\ndelvetalk bell/1 rain / text: для тех, кто опаздывает\n\nSaid: 给钟下一场雨：为迟到的人\ndelvetalk bell/1 rain / text: 为迟到的人\n\nSaid: أمطر على الجرس: لمن يأتي متأخرًا\ndelvetalk bell/1 rain / text: لمن يأتي متأخرًا\n\nSaid: みんな、元気？\nnone\n\n"
 # The user turn: the card as the speaker reads it, its forms in the spell grammar, what the card wants and
 # the library's pages by title, the misfit spell hob reads past, each resident line marked `| `; then the
 # speaker's words. For words asked for Bend, the words alone.
