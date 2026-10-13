@@ -188,6 +188,8 @@ class Listener(unittest.TestCase):
             self.addCleanup(f.shutdown)
         at = {f.server_address[0]: f for f in made}
         self.assertEqual(set(at), {'127.0.0.2', '127.0.0.1'})
+        self.assertTrue(hasattr(at['127.0.0.2'], 'serviceauth'))
+        self.assertFalse(hasattr(at['127.0.0.1'], 'serviceauth'))
         get = lambda f, path: (lambda c: (c.request('GET', path), c.getresponse().status)[1])(http.client.HTTPConnection(*f.server_address[:2]))
         self.assertEqual(get(at['127.0.0.2'], '/hand/?token=' + TOKEN), 404)  # the public port has no hand
         self.assertEqual(get(at['127.0.0.1'], '/hand/?token=' + TOKEN), 302)

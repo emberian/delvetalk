@@ -18,7 +18,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.town import Town
-from tests.test_lexicons import record_problems
+from transport.lexicon import record_problems
 from tests.wire import label, record
 from transport import mirror, post
 from transport.atproto.cbor import block, from_json

@@ -153,7 +153,7 @@ class Repository(unittest.TestCase):
         self.now[0] += 61  # past the front's rate window: these tests read far more than 32 times
         got = self.get(f'/xrpc/{nsid}?{urlencode(q)}', token, raw)
         if not raw and got[0] == 200 and nsid in (NS + 'getProjection', NS + 'listProjections'):
-            from tests.test_lexicons import record_problems
+            from transport.lexicon import record_problems
             for value in (got[1]['projections'] if nsid.endswith('listProjections') else [got[1]]):
                 self.assertEqual(record_problems(value), [], value)
         return got
@@ -278,8 +278,10 @@ class Repository(unittest.TestCase):
         s, e = self.xrpc('com.atproto.sync.getRepo', did=REPO)
         self.assertEqual((s, e['error']), (400, 'RepoNotServed'))
         self.assertIn(NS + 'getProjection', e['hint'])
-        s, e = self.xrpc('com.atproto.repo.createRecord')
+        s, e = self.xrpc('com.atproto.repo.applyWrites')
         self.assertEqual((s, e['error']), (501, 'MethodNotImplemented'))
+        s, e = self.xrpc('com.atproto.repo.createRecord')
+        self.assertEqual((s, e['error']), (405, 'InvalidRequest'))
         s, e = self.xrpc('com.atproto.repo.describeRepo', 'dt_agent_' + 'A' * 43, repo=REPO)
         self.assertEqual((s, e['error']), (401, 'InvalidToken'))  # a bad bearer is not the public reader
         s, e = self.xrpc(NS + 'getProjection', 'dt_agent_' + 'A' * 43, kind='object', key='diary.0')
@@ -596,11 +598,14 @@ class ProjectionBoundary(unittest.TestCase):
     def test_every_served_collection_hashes_the_listed_and_fetched_value(self):
         from unittest.mock import patch
         from transport import mirror
-        from tests.test_lexicons import record_problems
+        from transport.lexicon import record_problems
         pages = [{'name': 'bell', 'kind': 'page', 'title': 'Bell', 'body': 'rain', 'place': 0}]
-        answer = {'$type': NS + 'answer', 'request': {'uri': 'at://did:plc:x/' + NS + 'request/r', 'cid': self.world.entries[0]['hash']},
+        answer = {'$type': NS + 'answer',
+                  'source': {'$type': NS + 'answer#request',
+                             'request': {'uri': 'at://did:plc:x/' + NS + 'request/r', 'cid': self.world.entries[0]['hash']}},
                   'outcome': {'status': 'admitted', 'line': 'admitted'}, 'height': 1,
                   'receipt': {'slug': 'babab-babab', 'height': 1, 'entry': {'$link': self.world.entries[0]['hash']}}}
+        self.assertEqual(record_problems(answer), [], answer)
         def card(host, oid, reader='anonymous', **kw):
             self.assertEqual(reader, 'anonymous')
             return {'$type': NS + 'card', 'object': oid, 'version': 0, 'card': 'rain', 'wants': [], 'doors': []}
@@ -644,7 +649,7 @@ class ProjectionBoundary(unittest.TestCase):
             self.assertEqual((code, body['error']), (400, 'InvalidRequest'))
 
     def test_all_projection_kinds_keep_keys_subjects_and_cursors(self):
-        from tests.test_lexicons import record_problems
+        from transport.lexicon import record_problems
         for kind in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):
             def walk(limit, reverse=False):
                 rows, cursor = [], None

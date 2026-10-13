@@ -86,7 +86,8 @@ and a key rotation emits identity before sync. An unchanged restart adds no even
 `participants` defaults to the empty string and names explicit participant DIDs, space-separated, in
 `<state>/delvetalk.toml` (`DELVETALK_PARTICIPANTS` overrides it). Both did:plc and hostname-level did:web are supported.
 The registry unions this list with active repositories discovered at pds.delve.town and verified identity-table
-claims. Each DID is read at its current document's `#atproto_pds`, through public-address-checked, pinned HTTPS.
+claims, plus this world's hosted accounts in `State.hosted`. Hosted accounts supply documents and proof CARs
+locally to the ordinary `requests.proven` verifier and do not consume the external-participant cap. Each external DID is read at its current document's `#atproto_pds`, through public-address-checked, pinned HTTPS.
 No PDS write is made by the poller. The mirror has its own authorization and remains off.
 
 Documents cache ten minutes; a proof verification failure refreshes once per participant per poll before refusal.
@@ -98,6 +99,45 @@ requires both PDS and revision to match. A migrated participant is scanned in fu
 CIDs in `observe.sqlite`, refused records in `requests.json` and `answers/` remain intact. Backups retain all three.
 Identity changes are observed at the next document refresh, at most ten minutes after the last fetch. Requests must
 remain in the resident's repository until answered. ATPROTO §2 describes verification and discovery.
+
+## Hosted account origins
+
+The mapping and request repositories are built (ATPROTO §4, REPO); DNS and certificates are the owner's
+ops step. Hosted account hosts route to the world's existing front, preserving Host, with no second Front
+or listener. The account DID document's PDS endpoint is the same configured front origin. The front and
+bridge share `<state>/worlds/<world>/hosted/`; neither provisions a second copy of an account elsewhere.
+The request poller remains off unless `requests = true`; the mirror keeps its separate authorization.
+
+For the deployed origin, add wildcard A/AAAA records pointing to the front's existing edge:
+
+    *.guest.gsb.fg-goose.online.
+    *.zulip.gsb.fg-goose.online.
+
+For each configured Zulip realm, also publish its explicit account zone, for example:
+
+    *.chat.example.zulip.gsb.fg-goose.online.
+
+Caddy must obtain certificates by DNS-01 in the owner's Google Cloud DNS zone `fg-goose.online` and route
+these hosts to the existing HTTP upstream. A TLS wildcard covers exactly one label: `*.zulip.gsb.fg-goose.online`
+does **not** cover `42.chat.example.zulip.gsb.fg-goose.online`. Each realm needs its corresponding
+`*.<realm>.zulip.gsb.fg-goose.online` certificate (or explicit account SANs); guests need
+`*.guest.gsb.fg-goose.online`. Keep DNS credentials out of Git. Completion: HTTPS on each chosen account
+hostname serves its matching DID document, and sync.getRecord verifies under its #atproto key. This lane
+installs no records or certificates and starts no process.
+
+Account keys live at `<state>/worlds/<world>/hosted/<stem>.key`, mode 0400, directory 0700;
+guest stems are names and Zulip stems are `<id>.<realm>.zulip`. They are generated randomly once, not derived.
+`deploy/backup.sh` excludes `hosted/*.key` and `hosted/*.lock` from the mirror rsync and from the tarball, so no backup holds an account key. Its named paths are
+`/var/backups/delvetalk/mirror/` and `/var/backups/delvetalk/delvetalk-<stamp>.tar.gz`, then the pulled
+`/tank/delvetalk-backups/` copies. Keep public `.json` snapshots, counters, request consumption and answers
+in the state backup; custody keys belong in a separate operator-managed secret store. Restore the same
+keys to the same stems; a missing key must fail, not produce a new identity key. Account keys must be
+carried separately when restoring from a key-free state tarball. Do not remove an existing staging copy
+or backup here; the owner decides its custody.
+
+Remaining transport completion checks are in ATPROTO §4: a Zulip message written once as a public request
+and consumed once, and reciprocal link records/document claims. Neither is built. Existing Zulip messages
+remain observations under their Zulip principals; feed posts remain feed posts.
 
 ## Costs
 

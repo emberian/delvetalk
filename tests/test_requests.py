@@ -30,7 +30,7 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from tests.host import served
 from tests.test_bridge import DID, LOOPBACK, Stub, modules
 from tests.test_chain import town_garden
-from tests.test_lexicons import record_problems
+from transport.lexicon import record_problems
 from transport import bridge, delve, identity, mirror, observe
 from transport.atproto.cbor import CID, block, car, encode, from_json
 from transport.atproto.mst import Tree

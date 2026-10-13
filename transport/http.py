@@ -20,7 +20,8 @@ from transport.bridge import turn_line
 from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, TOWN, door_rows, handles, paged, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
-from transport.repo import Repo, Refusal
+from transport.repo import Repo, Refusal, WRITES
+from transport.hosted import Accounts, MAX_CAR_BYTES, MAX_WRITE_BODY
 from transport.acts import INTENT_BYTES, judge_call, text
 from transport.serviceauth import Rejected, Verifier
 from transport.firehose import Firehose
@@ -196,7 +197,7 @@ DOOR_LINES = {'invitation_unknown': 'That code does not match any invitation. Ch
               'invitation_expired': 'That invitation has expired. Ask the person who invited you for a new one.',
               'invitation_revoked': 'That invitation was withdrawn. Ask the person who invited you.',
               'name_required': 'This invitation lets you choose your name. Type one, then press Come in.',
-              'invalid_guest_name': 'A name starts with a lowercase letter, then up to 31 lowercase letters, digits or hyphens: robin, or sam-2.',
+              'invalid_guest_name': 'A name starts with a lowercase letter, then up to 31 lowercase letters, digits or hyphens, ending in a letter or digit: robin, or sam-2.',
               'name_fixed': 'This invitation already has a name on it. Leave the name empty and press Come in.',
               'taken': 'Someone here already goes by that name. Choose another; your code still works.',
               'invalid_credential': 'That key does not open anything here. Check it was copied whole; it begins dt_agent_.',
@@ -205,8 +206,8 @@ ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever 
                 'invitation_spent': 'that invitation was accepted already; the credential it gave speaks for you, and the operator can invite you again',
                 'invitation_expired': 'that invitation lapsed before it was accepted; ask for a new one',
                 'invitation_revoked': 'that invitation was revoked',
-                'name_required': 'that invitation leaves your name to you; send {"code": ..., "name": ...}, a name like [a-z][a-z0-9-]{0,31}',
-                'invalid_guest_name': 'a name is a lowercase letter, then up to 31 lowercase letters, digits or hyphens',
+                'name_required': 'that invitation leaves your name to you; send {"code": ..., "name": ...}, a name like [a-z][a-z0-9-]{0,31}, ending in a letter or digit',
+                'invalid_guest_name': 'a name is a lowercase letter, then up to 31 lowercase letters, digits or hyphens, ending in a letter or digit',
                 'name_fixed': 'that invitation already names its guest; send that name, or none',
                 'taken': 'that name is taken; the code is still unused, so choose another'}
 
@@ -331,7 +332,10 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self._feed = None  # object -> (height, principal) of the first entry touching it: it never changes
         self.repo = Repo(c.origin, Key.load(st.repo_key) if not hand and st.repo_key.exists() else None,
                          st.world, st.answers, st.repo_ledger, c.firehose_port if not hand else 0)  # the journal as AT Protocol records, read only
-        self.serviceauth = Verifier(self.repo.did, identity.client, clock=clock)
+        self.accounts = Accounts(st)
+        if not hand:
+            self.accounts.provision_guests()
+            self.serviceauth = Verifier(self.repo.did, identity.client, clock=clock)
         self.firehose = None
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
@@ -488,7 +492,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
     def catalogue(self, here):
         """Every route, the error envelope, the error and refusal classes (static/catalogue.json) and the limits, as data."""
         return {'status': 'catalogue', 'origin': self.origin, **API,
-                'limits': {'bodyBytes': MAX_BODY, 'moduleBytes': self.bounds['kernel']['maxPackageBytes'], 'modules': self.bounds['kernel']['maxModules'], 'bodyDepth': MAX_DEPTH,
+                'limits': {'bodyBytes': MAX_BODY, 'hostedWriteBodyBytes': MAX_WRITE_BODY, 'moduleBytes': self.bounds['kernel']['maxPackageBytes'], 'modules': self.bounds['kernel']['maxModules'], 'bodyDepth': MAX_DEPTH,
                            'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'workers': WORKERS, 'hostSeconds': self.host_timeout,
                            'requestLineBytes': 65536, 'headerLineBytes': 65536, 'headers': 100, 'offersWaitSeconds': WAIT_MAX,
                            'ratePerCredential': [RATE, WINDOW], 'ratePerAddressOnChallengeAndVerify': [OPEN_RATE, WINDOW],
@@ -543,9 +547,9 @@ class Handler(BaseHTTPRequestHandler):
             self.server.access.write(self.server.clock(), getattr(self, 'command', '-'), urllib.parse.urlsplit(self.path).path,
                                      self.status, self.wfile.sent, self.did, self.auth_reason)
 
-    def reply(self, code, body, ctype='application/json', headers=()):
+    def reply(self, code, body, ctype='application/json', headers=(), maximum=None):
         raw = body.encode('utf-8', 'backslashreplace') if isinstance(body, str) else body  # a lone surrogate the host echoed stays a JSON escape
-        if len(raw) > MAX_REPLY and code < 400:
+        if len(raw) > (MAX_REPLY if maximum is None else maximum) and code < 400:
             return self.fail('replyTooLarge', hint='?compact=1, a page (after, limit), or the receipt alone')
         self.replied = True
         self.send_response(code)
@@ -598,7 +602,7 @@ class Handler(BaseHTTPRequestHandler):
         if n < 0:
             return fail('badRequest', 'Content-Length is not a number')
         if n > limit:
-            return fail('bodyTooLarge')
+            return fail('bodyTooLarge', f'the body is over {limit} bytes')
         try:
             raw = self.rfile.read(n)
         except TimeoutError:
@@ -874,9 +878,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def xrpc(self, method, nsid):
         """Method-bound service reads and procedures; repository queries use credentials."""
+        try:
+            repo = self.repository_host()
+        except Refusal as r:
+            return self.xrpc_reply(r.code, r.body)
+        if repo is not self.server.repo and nsid != 'did.json' and nsid not in repo.METHODS and nsid not in WRITES:
+            return self.xrpc_reply(501, {'error': 'MethodNotImplemented', 'message': 'hosted accounts serve request repositories only'})
         procedure = nsid in PROCEDURES or nsid == sessions.OPEN
         query = nsid in Repo.METHODS or nsid in sessions.QUERIES
-        if (procedure and method != 'POST') or (query and method != 'GET'):
+        if ((procedure or nsid in WRITES) and method != 'POST') or (query and method != 'GET'):
             return self.xrpc_reply(405, {'error': 'InvalidRequest', 'message': 'a procedure uses POST; a query uses GET'})
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else ''
@@ -898,16 +908,54 @@ class Handler(BaseHTTPRequestHandler):
             return self.xrpc_reply(429, {'error': 'RateLimitExceeded', 'message': f'more than {RATE} requests per {WINDOW} seconds'},
                                    [('Retry-After', str(wait))])
         if nsid == 'did.json':
-            return self.reply(200, canonical(self.server.repo.did_document()), 'application/did+json')
+            return self.reply(200, canonical(repo.did_document()), 'application/did+json')
         if nsid == sessions.OPEN or nsid in sessions.QUERIES:
             return self.session(nsid, self.did)
         if nsid in PROCEDURES:
             return self.procedure(PROCEDURES[nsid], self.did)
-        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True).items()}
-        code, body, ctype = self.server.repo.serve(self.server.host, method, nsid, q, who.get('did'))
+        if nsid in WRITES:
+            q = self.body(limit=MAX_WRITE_BODY, xrpc=True)
+            if q is None:
+                return
+        else:
+            params = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True)
+            if any(len(v) != 1 for v in params.values()):
+                return self.xrpc_reply(400, {'error': 'InvalidRequest', 'message': 'repeated query parameters'})
+            q = {k: v[0] for k, v in params.items()}
+        if repo is self.server.repo:
+            target = q.get('repo') or q.get('did') or q.get('handle')
+            if isinstance(target, str) and target not in (repo.did, repo.handle):
+                try:
+                    repo = self.server.accounts.by_did(target if target.startswith('did:') else 'did:web:' + target)
+                except Refusal as r:
+                    if nsid in WRITES:
+                        return self.xrpc_reply(r.code, r.body)
+            if nsid in WRITES and repo is self.server.repo:
+                return self.xrpc_reply(405, {'error': 'InvalidRequest', 'message': 'the world repository is read-only'})
+        code, body, ctype = repo.serve(self.server.host, method, nsid, q, who.get('did'))
         if code == 426:
             return self.xrpc_reply(code, body, [('Upgrade', 'websocket')])
-        self.reply(code, body if isinstance(body, bytes) else canonical(body), ctype) if code < 400 else self.xrpc_reply(code, body)
+        self.reply(code, body if isinstance(body, bytes) else canonical(body), ctype,
+                   maximum=MAX_CAR_BYTES if repo is not self.server.repo and isinstance(body, bytes) else MAX_REPLY) if code < 400 else self.xrpc_reply(code, body)
+
+    def repository_host(self):
+        """Host selects this world's front or an existing hosted account on this same listener."""
+        headers = self.headers.get_all('Host') or []
+        if len(headers) != 1:
+            raise Refusal(400, 'RepoNotFound', 'one Host header is required')
+        try:
+            parts = urllib.parse.urlsplit('//' + headers[0])
+            name = parts.hostname
+            port = parts.port
+            if parts.username or parts.password or parts.path or parts.query or parts.fragment or not name:
+                raise ValueError('Host')
+        except ValueError:
+            raise Refusal(400, 'RepoNotFound', 'invalid Host') from None
+        bound, bound_port = self.server.server_address[:2]
+        local = name == bound and port == bound_port
+        if local or name in (urllib.parse.urlsplit(self.server.origin).hostname, self.server.repo.handle):
+            return self.server.repo
+        return self.server.accounts.by_host(name)
 
     def procedure(self, mode, principal):
         """Authenticated JSON framing; law refusals are caller answers with HTTP 200."""
@@ -1317,5 +1365,4 @@ def command(st, a, out):
     try:
         front.serve_forever()
     finally:
-        front.server_close()
         front.host.close()

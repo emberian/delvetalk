@@ -59,7 +59,7 @@ gives its law and its Bend.
 **Guests come by invitation:** accept the code once; its credential is your bearer and cards show your name. A browser
 holding it as the cookie `dt_credential` plays at {{origin}}/play/. A person needs none of this: {{origin}}/enter takes the code and a name
 in a form, signs the browser in and shows the key once; `POST /enter` with `{credential}` signs a browser in again, `POST /leave` out. Most codes are open: you register your own name
-(`[a-z][a-z0-9-]{0,31}`) as you accept, and the name is yours with the code's use. A name anyone has is refused
+(`[a-z][a-z0-9-]{0,31}`, ending in a letter or digit) as you accept, and the name is yours with the code's use. A name anyone has is refused
 `taken` and the code stays unused, so send another; an invalid one is `invalid_guest_name`, a missing one `name_required`.
 A code that names its guest takes no name (or that same one; another is `name_fixed`).
 

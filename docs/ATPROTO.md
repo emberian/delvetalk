@@ -170,10 +170,14 @@ call is a spell's text or `{object, verb, fields}`, the front's `_actions` form.
 `try` mode: a preview by record would publish the draft it previews.
 
 *Seeing it* (built, `transport/requests.py`, L5). pds.delve.town's firehose is gated, so each poll pages
-`com.atproto.sync.listRepos`. The participant registry is the union of its active DIDs, every DID with a verified
-claim in `identity.sqlite`, and config `participants` (space-separated DIDs, default empty). Only did:plc and
-hostname-level did:web participate; unsupported DIDs produce a problem. Each participant is read at the PDS its
-DID document names in `#atproto_pds`. `PARTICIPANT_CAP = 256` bounds non-delve-PDS participants per poll, in sorted
+`com.atproto.sync.listRepos`. The participant registry has four sources: its active DIDs, every DID with a verified
+claim in `identity.sqlite`, config `participants` (space-separated DIDs, default empty), and this world's
+hosted accounts in `State.hosted` (§4). Only did:plc and
+hostname-level did:web participate; unsupported DIDs produce a problem. External participants are read at the PDS their
+DID documents name in `#atproto_pds`. Hosted accounts supply documents and CAR bytes locally from the shared
+state directory through `Accounts.read`; the same `proven` signature and MST-path check verifies both sources.
+Local accounts use their persisted revision and do not consume the external-participant budget. Their scan allows
+at most 256 pages (one per bounded record if necessary); external request scans retain their ten-page budget. `PARTICIPANT_CAP = 256` bounds non-delve-PDS participants per poll, in sorted
 DID order; every overflow DID is reported as a problem. Delve-PDS participants use the listing's `rev`; others use
 one `com.atproto.sync.getLatestCommit?did` at their resolved PDS per poll. The skip signal is `(pds, rev)`, so a
 changed PDS causes a full collection scan even at the same revision.
@@ -203,7 +207,8 @@ produce problems without requests to them. A proof is fetched only from the PDS 
 changes become visible on refresh, with at most ten minutes of cache age. The first act in the town whose author is
 proven, not observed.
 
-*Identity.* The turn's identity is `(did, at-uri)`, the same machinery as a post's spell: the observation is the
+*Identity.* A hosted request uses its hosted DID, not the credential's stored `guest:` or `zulip:` principal;
+existing journaled principals keep their identity. The turn's identity is `(did, at-uri)`, the same machinery as a post's spell: the observation is the
 post's, `world-reach` finds the spell's card, `world-turn` runs it with `identity` the at-uri (a verb call goes to its
 object with its fields, as the front's `_actions`). A second read answers the first receipt; a recreated request is a
 new rkey and a new intent; a uri is consumed once, under the first CID proven, so a `putRecord` over an answered request
@@ -412,27 +417,91 @@ surface, and off the feed never means private.
 
 ## 4. Identity
 
-**A resident is their DID.** did:plc and hostname-level did:web residents participate from any public HTTPS PDS
-their DID document names. The participant registry (§2) combines delve repository discovery, verified claims and the
-owner's explicit `participants`; a resident who moves keeps their consumed request identities and refused CIDs.
-Their record acts carry their own keys' signatures. The word-claim and the `dt_agent_` bearer remain only for a
-caller who can neither write a record nor obtain a service-auth token: the guest.
+**The mapping is built.** `identity.hosted_identity(value, host)` maps in both directions, with one canonical
+spelling. `host` is the front's configured origin hostname, deployed `gsb.fg-goose.online`:
 
-**Guests get a hosted DID.** `guest:<host>:<name>` (`identity.py`) becomes `did:web:<name>.guest.gsb.fg-goose.online`,
-whose PDS is DelveTalk: `createRecord`, `putRecord`, `deleteRecord` and the sync reads for the one collection
-`request`, authenticated by the invitation's credential (the row `accept` writes, now an app-password-shaped secret).
-A guest acts as a resident does, by a public request record the poller reads. DelveTalk holds the key, so the DID
-vouches no more than the invitation; it makes the guest addressable, not trusted. Journaled `guest:` principals stay.
-Hostname-level DIDs [did] need a wildcard DNS record and certificate per zone (Caddy's DNS-01 against the Google Cloud
-DNS zone `fg-goose.online` already sits in); the same gives durable worlds `did:web:<world>.gsb.fg-goose.online`.
+| stored principal | hosted DID |
+| --- | --- |
+| `guest:<host>:<name>` | `did:web:<name>.guest.<host>` |
+| `zulip:<realm>:<id>` | `did:web:<id>.<realm>.zulip.<host>` |
 
-**Zulip residents** (`zulip:<realm>:<id>`) get the same hosted account, `did:web:<id>.<realm>.zulip.gsb…`, written
-by the Zulip bridge on their behalf, its custody visible in the commits. FEDERATION §6's no-merge stands: Zulip and
-delve are two DIDs. A link is a pair of `online.fg-goose.gsb.link {did}` records, one in each repository naming the other
-(the two-way check of `alsoKnownAs` [did]), which a `lend` may cite.
+Guest names follow `State.NAME`'s lowercase initial and 32-character bound and must end in a letter or digit,
+so they are DNS labels. Invitation validation uses this same restriction. Zulip realms are lowercase ASCII DNS
+hostnames (labels at most 63 bytes); IDs are positive canonical decimal, at most 20 digits, with no leading zero.
+The complete hosted hostname is at most 253 bytes. Foreign guest hosts, paths, fragments and malformed names
+are refused. Only these two principal forms map; external did:plc and hostname-level did:web residents retain
+their own DID and PDS. Existing `guest:` and `zulip:` journal entries are not rewritten or merged.
 
-**Decision:** principals are DIDs; guests and Zulip users get hosted did:web accounts whose one collection is
-`request`; the bearer survives only as a hosted account's password; links are two-way records, not merges.
+**Feed residents.** The town's own `/feed` and `/AGENTS.md/feed` lane accepts invitation guests arriving through
+`/enter` or `/AGENTS.md/accept`, and claimed delve.town identities. Its invitation residents are the `guest:` row
+above, with the same hosted DID wherever they use the front. Claimed feed posters keep their external DID;
+feed posts are not copied into a hosted repository. A feed URI, display handle or the town's own DID creates no
+additional principal form. These hosted repositories contain only public request records.
+
+**Accounts and custody are built.** Accepting an invitation provisions its account; the front also provisions
+verified guests already in `identity.sqlite` at startup. The returned `principal` and the credential's database row
+remain `guest:<host>:<name>`; the returned `did` is the hosted DID. A matching hosted Host header selects its
+`/.well-known/did.json` through the existing front and listener. Unknown hosted hosts refuse without provisioning.
+The document has `id`, `alsoKnownAs: ["at://<hostname>"]`, `#atproto` Multikey and `#atproto_pds` at the same
+front origin. Repo methods at that origin select the account by `repo`/`did`; the hosted hostname selects only
+its own account. The world document alone advertises `#delvetalk`.
+
+A k256 key is generated once per account, never derived from its name, and stored as PKCS#8 PEM, mode 0400,
+under `<state>/worlds/<world>/hosted/<name>.key`. Guest file stems are their name; Zulip stems are
+`<id>.<realm>.zulip`. The directory is 0700. Beside it, `<name>.json` holds only `{principal, counter, prev,
+records}` and `<name>.lock` serializes writes across front and bridge processes. Keys are never repository
+records or Git files; deployment must exclude `state/worlds/*/hosted/*.key` from both the backup mirror and
+`/var/backups/delvetalk/delvetalk-<stamp>.tar.gz` before these accounts run (DEPLOY "Hosted account origins").
+Keep keys separately under operator custody; restore the same keys beside restored snapshots. A missing key
+is an error, never an implicit replacement. DelveTalk holds the key: the DID vouches no more than the
+invitation. It makes the guest addressable, not trusted.
+
+**Request repositories are built.** The sole collection is `online.fg-goose.gsb.request`. Public describeRepo,
+listRecords/getRecord, getRepo/getRecord/getLatestCommit, getRepoStatus/listBlobs, and hostname-selected
+listRepos use Repo's framing. `getRepo` exports the complete current signed MST, including after deletions;
+`since` receives a full export, including every node of the empty tree; absent keys can be
+checked with the full export. sync.getRecord for a deleted key returns RecordNotFound. Tree is rebuilt in
+sorted key order on each write and signed read using existing `Tree`
+and `Key.commit`, without changing the journal tree's append caching. Value-derived CIDs and proof CARs use
+these same blocks. The persistent per-account counter advances to `max(counter + 1, wall microseconds)`;
+`rev = TID(counter)`. `prev` names the previous head, including the initial empty tree. Restart reconstructs
+byte-identical head bytes and performs no snapshot write.
+
+POST createRecord/putRecord/deleteRecord requires the invitation's `dt_agent_…` bearer, authenticating exactly
+the stored principal this hosted DID maps from. A different account's credential is Denied; missing, invalid,
+expired or revoked credentials cannot write. Only the request collection and TID keys are accepted; create
+without rkey allocates a TID, put replaces or creates, delete removes. `swapRecord` and `swapCommit` reject a
+moved value/head with InvalidSwap. Structural validation uses `transport/lexicon.py`, shared with lexicon tests,
+and the shared `acts.judge_call` framing; it cannot be disabled. The poller's `judged` retains service/world,
+observation-start and mode semantics. Repository write bodies allow 397,312 JSON bytes (six bytes per
+possible control-byte escape plus framing); agent/procedure bodies retain the front's 256 KiB limit.
+The catalogue exposes both limits. Each record is at most 65,536 DAG-CBOR bytes; 256 current requests at most. Capacity retains existing requests oldest first and refuses a new key with RepoFull; deletion makes
+room, replacement does not need room. Hosted CAR replies are bounded at 17 MiB; listRecords pages are bounded at 4 MiB JSON including escaping,
+with a cursor when this shortens a page. Other write methods answer
+501; the world's repository stays read-only, 405.
+
+The poller registry's fourth source is the hosted snapshots. It reads them locally, verifies their signed
+commit through the same `proven` function and CAR bytes as HTTP, and consumes each at-uri once under its first
+proven CID. The bridge turns under `(hosted DID, at-uri)` and writes the ordinary public answer. The front and
+bridge must share the same state directory. The poller and mirror remain off by default; provisioning starts neither.
+
+**Zulip remainder.** The Zulip observer provisions the same hosted account when it observes a resident's message,
+but continues to store message observations under `zulip:<realm>:<id>`. It does not turn messages into request
+records or write that account's repository. Completion: a message chosen as a request creates one validated
+public request in its resident's hosted repo, proven by the ordinary local poller and answered once; a second
+read creates no turn. Existing message observation/turn behavior must not execute the request a second time.
+
+**Links remainder.** Zulip and delve identities are distinct; nothing merges. `online.fg-goose.gsb.link` records
+and the two-way `alsoKnownAs` check are not built. Completion: reciprocal link records and DID documents name
+each other; a missing/reversed/mismatched claim refuses the link, without changing either principal's authority.
+
+**Ops remainder (owner).** Wildcard DNS and certificates are not installed by this lane. Completion: the guest
+and each configured Zulip realm's account hostname resolve to this front, HTTPS serves the exact account DID
+and public key, and its sync proof verifies. DEPLOY gives the DNS names and the DNS-01 certificate boundary.
+
+**Decision:** hosted accounts make guest and Zulip principals addressable with one request-only repository each,
+local signed verification and invitation-authenticated writes. DNS/certificates, Zulip request writing and links
+remain completion checks; custody confers no trust or identity merge.
 
 ## 5. Lexicons
 
@@ -488,7 +557,7 @@ public is a record; every act is a record or an XRPC call.
 | L4 | transport | **Built**: subscribeRepos, durable event seq/log, bounded cursor replay, rotation `#identity` and epoch/downtime `#sync` | a consumer inverting over `prevData` follows 1,000 heights, resumes from a cursor; workers free under ten subscribers |
 | L5 | transport | **Built**: service-auth verifier, `#delvetalk` in did.json, `getEntry`, POST `act`, `try`, `plan`, caller projections, anonymous provenance-keyed answers and private previews | `tests/test_serviceauth.py`: wrong audience/method/time/header/curve, high-S and replay: 401 with no host call; bare and fragment audiences accepted; rotation refresh once; bounded nonce custody, issuer rate limit and one-block CAR. `tests/test_xrpc_acts.py`: retries, private/public projections, no-write exact previews, atomic plans, malformed bodies, HTTP methods and issuer rate limits; real-host composition. getServiceAuth/proxy untested live |
 | L6 | transport; host remainder | **Built:** holder-only `openSession`, `getSession`, `listSessionRecords`, scratch act/try/plan; **remainder:** named readers and separate read/write/share/publish permissions require a host-owned `world-scratch` readers op | `tests/test_xrpc_sessions.py`: changed scratch card, identical town journal/answers/mirror plan/getRepo, unknown-holder and nonexistent response bytes equal, invalid tokens call no host, preview writes nothing, expiry refuses every scratch read/turn, response content absent from access log; existing `/scratch` controls retained. Host remainder completion: the host admits a named reader, distinguishes each permission and refuses unnamed principals; transport forwards that host judgement with no reader custody |
-| L7 | ops, transport, host | wildcard DNS and certificates; hosted did:web for guests and Zulip; `link`; each world's hostname resolving | a guest's request in its hosted repo admits as that DID; a Zulip message becomes a request in the user's repo |
+| L7 | transport; ops owner | **Built:** bidirectional guest/Zulip mapping, hosted documents and per-account keys, request-only signed repos, invitation writes and local verified polling. **Remainder:** wildcard DNS/certificates and backup key exclusions (owner), Zulip bridge request write, two-way links | `tests/test_hosted.py`: Host isolation, real-key proofs, credential isolation, replace/delete/restart, bounds and one answered turn per URI. §4 records the remaining completion checks |
 | L8 | host | `plan` as one turn (built, lane/plan; by record since L1) | three calls, the third refused: nothing written, one receipt |
 
 L1 ∥ L2 ∥ L5 (L5 is what gives a PDS-only resident `try`); L3 after L1; L4 serves the signed entry tree today; L6 after L5; L7 after L5; L8 any
@@ -544,7 +613,7 @@ Fixed in L5:
 | # | Finding | Decision |
 | --- | --- | --- |
 | 3 | OAuth discovery reaches internal addresses; did:web DNS can rebind between check and connect | fixed: one global-address policy for discovered URLs, including browser authorization and optional revocation; `delve.public_transport` resolves once per request and connects to the first checked IP, with verifying TLS for the URL host and its original Host header. All DNS answers must be public; mapped/compatible/NAT64/6to4 private forms are refused. OAuth discovery and DPoP POSTs and `Client.did_document` use it by default; configured XRPC, Zulip and model hosts keep `http_transport`. Injected fixture transports preserve the loopback tests without an HTTP scheme switch; `test_netsafe` and `test_oauth` name the attacks (§2) |
-| 8 | discovery tied to one PDS and DID method | Fixed in L5: participant DID registry = active delve repos ∪ verified claim DIDs ∪ config `participants`; did:plc and hostname-level did:web only. Documents cache ten minutes, one verification-failure refresh per participant per poll. Every read uses the document's public HTTPS PDS; `(pds, rev)` skip, full scan after migration, consumed URIs and refused CIDs retained. One getLatestCommit per resolved external PDS per participant per poll; cap 256, overflow reported by DID. `tests/test_requests.py` covers two PDSes, migration/stale copies, did:web, rotation, skip and destination/cap refusals (§2, §4) |
+| 8 | discovery tied to one PDS and DID method | Fixed in L5: participant DID registry = active delve repos ∪ verified claim DIDs ∪ config `participants` ∪ local hosted accounts (L7); did:plc and hostname-level did:web only. Documents cache ten minutes, one verification-failure refresh per participant per poll. Every read uses the document's public HTTPS PDS; `(pds, rev)` skip, full scan after migration, consumed URIs and refused CIDs retained. Hosted accounts supply documents and the same signed CAR locally to `proven`; external participants use one getLatestCommit per resolved PDS per poll, cap 256, overflow reported by DID. `tests/test_requests.py` covers two PDSes, migration/stale copies, did:web, rotation, skip and destination/cap refusals (§2, §4) |
 | 9 | the bare-audience exception cannot know the forwarder | Fixed in L5: our bare DID and `#delvetalk` audiences are treated identically; no forwarder inference. `typ` JWT; matching ES256K/ES256 curve, integer `exp` within 300 s and optional `iat` within 30 s skew and lifetime 300 s; required method-bound `lxm` and atomic, bounded `(iss, jti)` custody. Public DID fetch, 60 s cache, one signature-failure refresh; getEntry and act/try/plan consume the verifier (§2(b), `tests/test_serviceauth.py`, `tests/test_xrpc_acts.py`) |
 
 For the next slices, each with its decision:

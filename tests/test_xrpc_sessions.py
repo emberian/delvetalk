@@ -13,7 +13,7 @@ from pathlib import Path
 
 from tests.host import served
 from tests.test_http import DID
-from tests.test_lexicons import DOCS, record_problems, validate
+from transport.lexicon import DOCS, record_problems, validate
 from tests.test_serviceauth import OTHER
 from tests.test_xrpc_acts import ActsWorld, ProcedureCase
 from tests.wire import nat, record

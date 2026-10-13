@@ -37,6 +37,7 @@ chmod 750 "$dest"
 # post) is written after its entry commits, so each mark copied names an entry the journal copied later holds. An entry
 # copied without its mark is the bridge's to ask again, and the host answers a repeated identity with its first receipt.
 rsync -a --delete --exclude journal.lock --exclude '*.pid' --exclude '*.tmp' --exclude host.sock --exclude /state/library --exclude /state/scratch \
+  --exclude '/state/worlds/*/hosted/*.key' --exclude '/state/worlds/*/hosted/*.lock' \
   --exclude '/state/*.journal' --exclude '/state/*.journal.*' "$data/" "$dest/mirror/"
 # SQLite files copied while open may be mid-transaction; take SQLite's backup instead.
 for db in "$data"/state/*.sqlite "$data"/state/worlds/*/*.sqlite; do
@@ -74,7 +75,7 @@ fi
 echo "ok $(date -u +%Y%m%dT%H%M%SZ)" > "$dest/last-verify"
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-tar -czf "$dest/delvetalk-$stamp.tar.gz.part" -C "$dest/mirror" .
+tar -czf "$dest/delvetalk-$stamp.tar.gz.part" --exclude './state/worlds/*/hosted/*.key' --exclude './state/worlds/*/hosted/*.lock' -C "$dest/mirror" .
 mv "$dest/delvetalk-$stamp.tar.gz.part" "$dest/delvetalk-$stamp.tar.gz"
 if command -v sha256sum >/dev/null; then sum=(sha256sum); else sum=(shasum -a 256); fi
 (cd "$dest" && "${sum[@]}" "delvetalk-$stamp.tar.gz" > "delvetalk-$stamp.tar.gz.sha256")

@@ -2,7 +2,8 @@
 records, proves each, and keeps it as an observation the bridge turns as it turns a post.
 
 pds.delve.town's firehose answers 401, so the poller unions `com.atproto.sync.listRepos`, verified claim DIDs and the
-owner's configured participants. Each is read at the PDS its DID document names; (PDS, rev) is the skip signal.
+owner's configured participants and this world's hosted accounts. External reads use the document's PDS; local
+accounts supply the same proof CAR without a network fetch. (PDS, rev) is the skip signal.
 Documents cache for ten minutes; verification failure refreshes once before refusal. A moved pair lists the repository's
 whole request collection and takes every record it has not yet
 consumed or refused, whatever its key: record keys are not an insertion order. Each is fetched with
@@ -22,10 +23,10 @@ from transport.atproto.mst import find
 from transport.atproto.sign import public_key, verify
 from transport.delve import DID, PDS, Failure
 from transport.identity import verified_dids
+from transport.hosted import Accounts, COLLECTION, MAX_REQUESTS
 from transport.acts import judge_call
-from transport.repo import NS, json_of, world_did
+from transport.repo import json_of, world_did
 
-COLLECTION = NS + 'request'
 MODES = ('act', 'plan')
 PAGES = 10  # a repository's request collection read per poll, 100 records a page
 PARTICIPANT_CAP = 256  # non-delve-PDS participants read per poll; overflow is a problem, with its DID
@@ -94,8 +95,13 @@ class Poller:
     def __init__(self, st, client, clock=time.monotonic):
         self.st, self.client, self.clock = st, client, clock
         self.documents = {}
+        self.local, self.local_dids = Accounts(st), set()
         self.service, _ = world_did(st.config.origin)
         self.world = st.world
+
+    def source(self, did):
+        """Local accounts supply the same signed CAR to proven; all other participants use Client."""
+        return self.local if did in self.local_dids else self.client
 
     def document(self, did, refresh=False):
         """An identity held for ten minutes; forced refresh discards the old document even if its fetch fails."""
@@ -104,7 +110,7 @@ class Poller:
         if not refresh and held and held[0] > now:
             return held[1]
         self.documents.pop(did, None)
-        doc = self.client.did_document(did)
+        doc = self.source(did).did_document(did)
         if doc.get('id') != did:
             raise Failure('did_document_mismatch', did)
         endpoint(doc, did)
@@ -112,7 +118,7 @@ class Poller:
         return doc
 
     def registry(self, problems):
-        """Union of active delve repositories, verified claim DIDs and the owner's explicit participants."""
+        """Active delve repos, verified claims, config participants and local hosted accounts."""
         listed, cursor = {}, None
         while True:
             try:
@@ -127,7 +133,8 @@ class Poller:
             cursor = page.get('cursor')
             if not cursor or not page.get('repos'):
                 break
-        dids = set(listed) | set(self.st.config.participants.split())
+        self.local_dids = self.local.dids()
+        dids = set(listed) | set(self.st.config.participants.split()) | self.local_dids
         try:
             dids |= verified_dids(self.st)
         except Failure as error:
@@ -151,11 +158,11 @@ class Poller:
 
         def revision(did, pds):
             if (did, pds) not in latest:
-                if pds != PDS and did not in remote:
+                if did not in self.local_dids and pds != PDS and did not in remote:
                     if len(remote) >= PARTICIPANT_CAP:
                         raise Failure('participant_overflow', f'limit {PARTICIPANT_CAP}')
                     remote.add(did)
-                rev = listed[did] if pds == PDS and did in listed else self.client.read(
+                rev = listed[did] if pds == PDS and did in listed else self.source(did).read(
                     pds, 'com.atproto.sync.getLatestCommit', did=did).get('rev')
                 if not isinstance(rev, str) or not rev:
                     raise Failure('bad_revision', did)
@@ -181,14 +188,14 @@ class Poller:
         A refresh naming another PDS restarts the collection read there; the old listing is never used with new proofs.
         """
         pds, cursor = endpoint(doc, did), None
-        for _ in range(PAGES):
-            page = self.client.read(pds, 'com.atproto.repo.listRecords', repo=did, collection=COLLECTION, limit=100, cursor=cursor)
+        for _ in range(MAX_REQUESTS if did in self.local_dids else PAGES):
+            page = self.source(did).read(pds, 'com.atproto.repo.listRecords', repo=did, collection=COLLECTION, limit=100, cursor=cursor)
             for listed in page.get('records') or []:
                 uri, rkey = listed.get('uri', ''), str(listed.get('uri', '')).rsplit('/', 1)[-1]
                 if observer.seen(uri) or (refused.get(uri) or {}).get('cid') == listed.get('cid'):
                     continue
                 try:
-                    cid, value, handle = proven(self.client, did, rkey, doc)
+                    cid, value, handle = proven(self.source(did), did, rkey, doc)
                 except Failure as error:
                     if error.code not in PROOF_FAILURES:
                         raise
@@ -198,7 +205,7 @@ class Poller:
                             revision(did, endpoint(doc, did))  # the cap applies before reading the new PDS
                             return self.repository(observer, did, doc, refused, revision, refreshed=True)
                         try:
-                            cid, value, handle = proven(self.client, did, rkey, doc)
+                            cid, value, handle = proven(self.source(did), did, rkey, doc)
                         except Failure as retry:
                             if retry.code not in PROOF_FAILURES:
                                 raise

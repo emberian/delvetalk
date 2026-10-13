@@ -1,6 +1,6 @@
 # The repository: the journal as a signed AT Protocol repository
 
-One repository per world. The town's is `did:web:<origin host>` (deployed: `did:web:gsb.fg-goose.online`), the same
+One journal repository per world, plus request-only hosted accounts (ATPROTO §4). The town's is `did:web:<origin host>` (deployed: `did:web:gsb.fg-goose.online`), the same
 principal a new world opens as (config `opener`, `config.town_did`; docs/GENESIS.md "The town");
 under federation (FEDERATION §1) each further world is `did:web:<world>.<origin host>` (`ring.gsb.fg-goose.online`),
 its document at `https://<world>.<origin host>/.well-known/did.json` and its key `/etc/delvetalk/repo/<world>.key`
@@ -14,13 +14,59 @@ MST in `mst.py`, keys, TIDs and commits in `sign.py`; standard library and `cryp
 in `lexicons/`. Tests: `tests/test_repo.py` (interop vectors, fake world and real serve), `tests/test_repo_epochs.py`,
 `tests/test_firehose.py` and `tests/test_firehose_consumer.py` (sparse inversion and a real WebSocket consumer).
 
-The transport decides nothing: it renders the journal, and the signature is over bytes the host produced or
-over their CIDs. Two layers: the **signed repository** (below), the same for every reader; and the
+The journal repository renders the host's journal and signs host-produced bytes or their CIDs. Hosted
+accounts validate and sign public request bytes supplied by their holders; world admission stays with the host. Two layers: the **signed repository** (below), the same for every reader; and the
 **façade** (after it), the host's per-reader projections of entries, objects, sources and laws.
 
 The next carry re-derives every MST key and commit CID from the journal under `online.fg-goose.gsb.*`,
 and the front serves records and projection queries under this namespace. Residents' mirror readers must list these collections;
 the posting account's orphaned old records are deleted by the owner's authorized mirror run (DEPLOY "A new binary").
+
+## Hosted public request accounts
+
+`transport/hosted.py` mounts hosted guest and Zulip accounts through the existing Front and listener.
+`identity.hosted_identity` is the bidirectional mapping: `guest:<host>:<name>` ↔
+`did:web:<name>.guest.<host>`, `zulip:<realm>:<id>` ↔ `did:web:<id>.<realm>.zulip.<host>`.
+ATPROTO §4 defines the grammar and feed-resident scope. Invitation acceptance provisions a guest;
+startup provisions existing verified guests. The Zulip observer provisions accounts for observed users,
+without copying their messages into request records. External claimed DIDs keep their own repositories.
+
+Each hosted hostname serves its own did.json: `alsoKnownAs` is its `at://<hostname>`, `#atproto` is
+its unique random k256 key and `#atproto_pds` names the same front origin. Host selection never creates
+accounts. At that origin, repo/sync parameters select the existing account by DID/handle; an account
+Host cannot select another account. Hosted hosts expose only repository methods, not world procedures
+or projection queries. Describe/list/get return only `online.fg-goose.gsb.request`, with value-derived
+CIDs. Sync.getRecord returns the current commit, MST path and value; getRepo returns the whole current
+tree (also for `since`), including its empty root after deleting the last record. Full exports
+contain every node needed to prove absence; sync.getRecord for an absent key is RecordNotFound.
+Host-selected listRepos reports that one account. Empty accounts have a signed empty tree. Unsupported methods are 501; the journal repository refuses writes with 405.
+
+Create/put/delete use the invitation credential and require exactly the stored principal mapping to
+that DID. The shared lexicon validator and shared call framing validate every write; validation cannot
+be disabled. Keys are TIDs, generated on create when absent. Puts replace or create; deletes remove;
+duplicate create is RecordAlreadyExists. Optional swapCommit/swapRecord compare current CIDs before
+changing anything and refuse InvalidSwap. At 256 records, RepoFull refuses a new key while preserving
+all existing requests; replacement is allowed and deletion makes room. A record is at most 65,536
+DAG-CBOR bytes. Repository write bodies allow 397,312 JSON bytes for worst-case escaping and framing;
+agent/procedure body limits remain 256 KiB. The catalogue exposes both limits. listRecords bounds
+pages at 4 MiB of JSON, returning a cursor when the byte budget shortens a page. This includes adversarial control-character escaping. CAR exports are bounded at 17 MiB.
+
+`State.hosted` is `<state>/worlds/<world>/hosted/`, directory mode 0700. Stems are `<guest name>` and
+`<id>.<realm>.zulip`. A `.key` is generated once as PKCS#8 PEM, mode 0400. A public `.json` snapshot
+holds `{principal, counter, prev, records}`; a `.lock` flock serializes front/bridge writers. A write
+rebuilds the sorted bounded MST with the existing Tree/Key.commit, fsyncs the snapshot, atomically replaces
+it and fsyncs the directory. Readers see one complete snapshot. Revs are `TID(counter)`, counter advanced
+to `max(counter + 1, wall microseconds)` for each mutation, even if the wall clock moves backward. The
+commit signs version 3, this account's DID, its current root, rev and previous head CID. The counter and
+prev are kept beside the records, so restart yields byte-identical head CARs without writing. There is
+no historical export or hosted firehose; consumers reconcile the bounded full current tree.
+
+Keys must be excluded from the deployment backup mirror and dated state tarballs (DEPLOY "Hosted
+account origins"); keep them separately and restore the same key alongside its snapshot. Loss is
+an error, never silent regeneration. DelveTalk's custody vouches no more than the invitation: addressability,
+not trust. The local poller source supplies the same proof CAR bytes to `requests.proven`, with no network
+and no alternate verifier. Each URI turns once under its hosted DID and yields the ordinary answer.
+The poller and mirror remain disabled by default. Tests: `test_hosted`; signing needs cryptography >=43.
 
 ## Authenticated scratch responses
 

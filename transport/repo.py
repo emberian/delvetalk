@@ -34,6 +34,7 @@ COLLECTIONS = tuple(NS + c for c in MIRRORED)
 PROJECTIONS = ('receipt', 'object', 'source', 'publication', 'grant', 'law')
 ENTRY = NS + 'entry'  # the signed repository's one collection: an entry's CID and height under its rev
 LIMIT, MAX_LIMIT = 50, 100
+WRITES = {f'com.atproto.repo.{verb}': verb for verb in ('createRecord', 'putRecord', 'deleteRecord')}
 CAR = 'application/vnd.ipld.car'
 OBJECT_KEY = re.compile(r'([A-Za-z0-9._~:-]+)\.([0-9]+)')  # <object with / as ~>.<version>
 # Projections a host op pages by journal height: (op, reply list, key field, subject CID field).
@@ -70,6 +71,16 @@ def json_of(v):
     if isinstance(v, dict):
         return {k: json_of(x) for k, x in v.items()}
     return [json_of(x) for x in v] if isinstance(v, list) else v
+
+
+def repository_document(did, handle, origin, key, world=False):
+    """The common hostname-level DID document; only world repos advertise the DelveTalk service."""
+    return {'@context': ['https://www.w3.org/ns/did/v1'] + (['https://w3id.org/security/multikey/v1'] if key else []),
+            'id': did, 'alsoKnownAs': ['at://' + handle],
+            **({'verificationMethod': [{'id': did + '#atproto', 'type': 'Multikey', 'controller': did,
+                                        'publicKeyMultibase': multikey(key.private.public_key())}]} if key else {}),
+            'service': [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer', 'serviceEndpoint': origin}] +
+                       ([{'id': '#delvetalk', 'type': 'DelvetalkWorld', 'serviceEndpoint': origin}] if world else [])}
 
 
 class Signed:
@@ -244,16 +255,12 @@ class Repo:
         self.signed = Signed(self.did, key, ledger) if key else None
 
     def did_document(self):
-        key = self.signed and self.signed.key.private.public_key()
-        return {'@context': ['https://www.w3.org/ns/did/v1'] + (['https://w3id.org/security/multikey/v1'] if key else []),
-                'id': self.did, 'alsoKnownAs': ['at://' + self.handle],
-                **({'verificationMethod': [{'id': self.did + '#atproto', 'type': 'Multikey', 'controller': self.did,
-                                            'publicKeyMultibase': multikey(key)}]} if key else {}),
-                'service': [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer', 'serviceEndpoint': self.origin},
-                            {'id': '#delvetalk', 'type': 'DelvetalkWorld', 'serviceEndpoint': self.origin}]}
+        return repository_document(self.did, self.handle, self.origin, self.signed and self.signed.key, world=True)
 
     def serve(self, host, method, nsid, query, principal):
         """-> (HTTP status, body, content type): body a dict to send as JSON, or the bytes of a CAR."""
+        if nsid in WRITES:
+            return 405, {'error': 'InvalidRequest', 'message': 'this repository is read-only'}, 'application/json'
         if nsid not in self.METHODS:
             return 501, {'error': 'MethodNotImplemented', 'message': f'{nsid} is not served here; read docs/REPO.md'}, 'application/json'
         if method != 'GET':

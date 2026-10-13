@@ -47,7 +47,12 @@ class State:
         # fsynced before delivery, newest 10,000 retained, atomic rewrite at 20,000; copied by carry and state backups
         self.taught = h / 'taught.txt'  # the residents whose first admitted reply carried the next move
         self.requests = h / 'requests.json'  # {revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}; consumed URIs stay in observe.sqlite
+        self.hosted = h / 'hosted'  # public request snapshots and separate per-account signing keys
         self.answers = h / 'answers'  # online.fg-goose.gsb.answer records, <did>.<rkey>.json: the façade and the mirror serve them
+
+    def hosted_paths(self, name):
+        """An Accounts-validated file stem -> (key, public snapshot, process lock)."""
+        return tuple(self.hosted / (name + suffix) for suffix in ('.key', '.json', '.lock'))
 
     def host(self, **more):
         return HostClient(self.host_socket, **{'world': self.world, **more})

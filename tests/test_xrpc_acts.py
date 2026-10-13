@@ -17,7 +17,7 @@ from pathlib import Path
 from tests.host import bounds, serve, served
 from tests.test_bridge import modules
 from tests.test_http import DID
-from tests.test_lexicons import DOCS, record_problems, validate
+from transport.lexicon import DOCS, record_problems, validate
 from tests.test_repo import World
 from tests.test_serviceauth import Documents, Tokens
 from transport import bridge, delve, identity, mirror
