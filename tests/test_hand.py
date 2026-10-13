@@ -1160,7 +1160,8 @@ class Portal(RouteCase):
         verbs = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices
         covered = {'inbox', 'outbox', 'draft', 'edit', 'post', 'posted', 'match', 'skip', 'hold', 'unpost', 'status', 'search',
                    'retry', 'reply', 'log', 'spend', 'modlog', 'find', 'speak', 'morning', 'plan', 'watch', 'worlds',
-                   'invite', 'invites', 'revoke-invite', 'welcome', 'root', *root.POWERS, 'settings'}
+                   'invite', 'invites', 'revoke-invite', 'welcome', 'root', *root.POWERS, 'settings',
+                   'limits'}  # an open town's root page, "Newcomers" (tests/test_newcomers.py HandPage)
         self.assertEqual(set(verbs), covered | {'serve'})  # starts a listener; cannot run inside its own page
 
     def test_console_forwards_inbox_filters_and_all_outbox_without_hiding_finished_drafts(self):
@@ -1403,7 +1404,7 @@ class Portal(RouteCase):
             Path(directory, 'Bell.obend').write_text('bell source')
             values = {'object': 'bell', 'field': 'owner', 'value': '"p"', 'principal': 'p', 'method': 'rain',
                       'argument': '{"n":1}', 'intent': 'i', 'clock': '20', 'postQuota': '30', 'interpretQuota': '40',
-                      'modelQuota': '50', 'dir': directory, 'height': '7', 'text': 'paint', 'hours': '2',
+                      'modelQuota': '50', 'turnQuota': '60', 'objectQuota': '70', 'paintQuota': '80', 'dir': directory, 'height': '7', 'text': 'paint', 'hours': '2',
                       'grant': 'g', 'scratch': 's', 'who': 'p'}
             for face, specs in (('root', root.ROOT), ('mod', {v: spec for v, (_, spec) in root.POWERS.items()} | {'settings': root.MOD_SETTINGS})):
                 for verb, spec in specs.items():

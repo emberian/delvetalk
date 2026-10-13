@@ -818,6 +818,20 @@ structure World where
   /-- Model calls one clock day may start (`Limits.modelQuota`; `world-settings`), and the day's count. -/
   modelQuota : Nat := Limits.modelQuota
   modelDay : Nat × Nat := (0, 0)
+  /-- Turns one hand may start per clock hour (`world-settings {turnQuota}`; 0, the default, counts none): every
+      principal's but the opener's, the clock principal's and a thing's acting as itself (`Ops.turnCounted`).
+      An open town's newcomer limit, and what its `slow` lowers (docs/DEPLOY.md "A second instance"). -/
+  turnQuota : Nat := 0
+  /-- The turns each counted hand started, while `turnQuota` is set: the clock hour of the last and how many that
+      hour. Derived by `recordActs` from the direct turns' entries (`Ops.startsTurn`). -/
+  turnsStarted : Std.HashMap String (Nat × Nat) := {}
+  /-- Objects one hand may keep made (`Limits.objectsPerPrincipal`, or lower: `world-settings {objectQuota}`),
+      its retired ones not counted (`Ops.objectCapacity`). -/
+  objectQuota : Nat := Limits.objectsPerPrincipal
+  /-- Paints the world may queue for the model per clock day (`world-settings {paintQuota}`; 0, the default, caps
+      none). Past it a card is read exact, `exact {reason: budget}` (`Enchant.paintOf`); the day's count is the
+      render cache's, never journaled, as paints are not. -/
+  paintQuota : Nat := 0
   /-- This clock hour's counts. -/
   hourCounts : HourCounts := {}
 

@@ -2497,7 +2497,7 @@ def objectCapacity (w : World) (updates : List (String × Object)) : Option Refu
   for principal in principals do
     if principal == w.opener then continue
     let count := fun (os : Std.HashMap String Object) => os.toList.filter (fun (_, o) => hand o.maker == principal && !objectRetired o) |>.length
-    if count objects > Limits.objectsPerPrincipal && count objects > count w.objects then
+    if count objects > w.objectQuota && count objects > count w.objects then
       return some { cls := "capacity", object := some "objects", reason := some "objectsPerPrincipal" }
   return none
 
@@ -3419,6 +3419,40 @@ def modelCall (entry : Json) : Bool :=
   tagOf entry == "attempted" || (tagOf entry == "suspended" &&
     ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "interpretation" |>.toOption)).isSome)
 
+/-- Whether `principal`'s turns count against `turnQuota`: anyone's but the opener's, the clock principal's, the
+    interpreter's and a thing's acting as itself (the world's own motion). -/
+def turnCounted (w : World) (principal : String) : Bool :=
+  !principal.isEmpty && principal != w.opener && principal != w.clockPrincipal && principal != interpretationPrincipal &&
+    (principalThing principal).isNone
+
+/-- The counted hand whose direct turn an entry is, if it is one: a turn's admitted, refused or suspended entry with
+    no delivery, resumption or root marker, and not itself refused by a quota or a quiet (`turnGate`, `quietOf`). -/
+def startsTurn (w : World) (entry : Json) : Option String := do
+  let tag := tagOf entry
+  guard (tag == "admitted" || tag == "refused" || tag == "suspended")
+  guard ((entry.getObjVal? "delivery").toOption.isNone && (entry.getObjVal? "resumes").toOption.isNone &&
+    (entry.getObjVal? "root").toOption.isNone)
+  let cls := ((entry.getObjVal? "outcome").toOption.bind (·.getObjValAs? String "class" |>.toOption)).getD ""
+  guard (cls != "quota" && cls != "quiet")
+  let principal ← ((entry.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption))
+  guard (turnCounted w principal)
+  return principal
+
+/-- The turns `principal` has started this clock hour (`turnsStarted`). -/
+def turnsThisHour (w : World) (principal : String) : Nat :=
+  match w.turnsStarted[principal]? with
+  | some (h, n) => if h == w.clock / 60 then n else 0
+  | none => 0
+
+/-- Why `principal`'s next turn waits (docs/DEPLOY.md "A second instance"): it has started `turnQuota` this clock
+    hour. Refused `quota`, transiently, with the clock at which the hour turns; none while `turnQuota` is 0. -/
+def turnGate (w : World) (principal object : String) : Option Refusal := do
+  guard (w.turnQuota > 0 && turnCounted w principal && turnsThisHour w principal ≥ w.turnQuota)
+  let next := (w.clock / 60 + 1) * 60
+  return { cls := "quota", clause := some "turnQuota", object := if object.isEmpty then none else some object,
+           reason := some s!"the town takes {w.turnQuota} turns an hour from each hand; yours for this hour are spent. The same spell again at clock {next}.",
+           next := some next }
+
 /-- The act of a root entry (`kind`) or a moderation entry (`power`): one name for what `record`
     and `applyRoot` do with it. -/
 def actOf (outcome : Json) : String :=
@@ -3671,6 +3705,9 @@ def recordActs (w : World) (entry : Json) : World := Id.run do
   let mut w := { w with hourCounts := hourAfter w entry,
                         modelDay := if !modelCall entry then w.modelDay
                           else if w.modelDay.1 == day then (day, w.modelDay.2 + 1) else (day, 1) }
+  if w.turnQuota > 0 then
+    if let some p := startsTurn w entry then
+      w := { w with turnsStarted := w.turnsStarted.insert p (w.clock / 60, turnsThisHour w p + 1) }
   let tag := tagOf entry
   unless tag == "root" || tag == "moderated" do return w
   if tag == "root" then w := { w with rootActs := w.rootActs + 1 }
@@ -4624,19 +4661,26 @@ def settingsOp (w : World) (clock : Option String) (quota : Option Nat) (opener 
      ("outcome", Json.mkObj ([("tag", toJson "settings")] ++ fields))] []
   return (w', reply entry)
 
+/-- The quotas a later `settings` entry may name, each a natural: the hour's posts, a hand's readings an hour, the
+    world's model readings a day, a hand's turns an hour, a hand's objects, the world's paints a day. -/
+def quotaKeys : List String := ["postQuota", "interpretQuota", "modelQuota", "turnQuota", "objectQuota", "paintQuota"]
+
+/-- `w` with each quota `get` names (`quotaKeys`), the rest as they stand. -/
+def withQuotas (w : World) (get : String → Option Nat) : World :=
+  { w with postQuota := (get "postQuota").getD w.postQuota, interpretQuota := (get "interpretQuota").getD w.interpretQuota,
+           modelQuota := (get "modelQuota").getD w.modelQuota, turnQuota := (get "turnQuota").getD w.turnQuota,
+           objectQuota := (get "objectQuota").getD w.objectQuota, paintQuota := (get "paintQuota").getD w.paintQuota }
+
 /-- A later `settings` entry (`world-settings`, the `settings` power; docs/ROOT.md §2.2): the opener
-    replaces quotas (`postQuota`, `interpretQuota`, `modelQuota`), each value the last one named,
-    with a reading. -/
+    replaces quotas (`quotaKeys`), each value the last one named, with a reading. -/
 def settingsChange (w : World) (principal intent digest : String) (values : List (String × Nat)) (reading : String)
     (extra : List (String × Json) := []) : Except String (World × Json) := do
   if w.opener.isEmpty || principal != w.opener then throw "settings are the opener's"
-  if values.isEmpty then throw "settings names none of postQuota, interpretQuota, modelQuota"
+  if values.isEmpty then throw s!"settings names none of {", ".intercalate quotaKeys}"
   for (k, _) in values do
-    unless ["postQuota", "interpretQuota", "modelQuota"].contains k do throw s!"no setting {k}"
+    unless quotaKeys.contains k do throw s!"no setting {k}"
   if let some r := retained w principal intent digest then return (w, r)
-  let get := fun (k : String) (d : Nat) => (values.lookup k).getD d
-  let w1 := { w with postQuota := get "postQuota" w.postQuota, interpretQuota := get "interpretQuota" w.interpretQuota,
-                     modelQuota := get "modelQuota" w.modelQuota }
+  let w1 := withQuotas w (fun k => values.lookup k)
   let outcome := Json.mkObj ([("tag", toJson "settings")] ++ values.map (fun (k, n) => (k, toJson n)) ++ [("reading", toJson reading)])
   let (w', entry) := push w1 (identityKey principal intent)
     ([("identity", identityJson principal intent), ("roots", rootsJson []), ("turn", toJson 0), ("request", toJson digest)] ++
@@ -5145,6 +5189,9 @@ def settingValue (w : World) (k : String) : Option Json :=
   | "postQuota" => some (toJson w.postQuota)
   | "interpretQuota" => some (toJson w.interpretQuota)
   | "modelQuota" => some (toJson w.modelQuota)
+  | "turnQuota" => some (toJson w.turnQuota)
+  | "objectQuota" => some (toJson w.objectQuota)
+  | "paintQuota" => some (toJson w.paintQuota)
   | "opener" => some (toJson w.opener)
   | "libraryLaw" => some (toJson w.libraryLaw)
   | _ => none
@@ -5256,6 +5303,9 @@ def applyRoot (w : World) (outcome : Json) : Except String World := do
         | "postQuota" => pure { w with postQuota := ← natOf v }
         | "interpretQuota" => pure { w with interpretQuota := ← natOf v }
         | "modelQuota" => pure { w with modelQuota := ← natOf v }
+        | "turnQuota" => pure { w with turnQuota := ← natOf v }
+        | "objectQuota" => pure { w with objectQuota := ← natOf v }
+        | "paintQuota" => pure { w with paintQuota := ← natOf v }
         | "opener" => pure { w with opener := ← v.getStr? }
         | "libraryLaw" => pure { w with libraryLaw := ← v.getStr? }
         | _ => throw s!"no setting {k}"
@@ -5344,11 +5394,9 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
     -- A later settings entry is the opener's `world-settings`: quotas only, each replacing the last.
     if w.settled then
       unless !w.opener.isEmpty && principal == w.opener do throw "settings recorded twice"
-      let q := fun (k : String) (d : Nat) => (outcome.getObjValAs? Nat k).toOption.getD d
       for k in ["clock", "opener"] do
         if (outcome.getObjVal? k).toOption.isSome then throw s!"a later settings entry names {k}"
-      return record { w with postQuota := q "postQuota" w.postQuota, interpretQuota := q "interpretQuota" w.interpretQuota,
-                             modelQuota := q "modelQuota" w.modelQuota } entry key []
+      return record (withQuotas w fun k => (outcome.getObjValAs? Nat k).toOption) entry key []
     return record { w with clockPrincipal := ← outcome.getObjValAs? String "clock",
                            postQuota := ← natField outcome "postQuota", settled := true,
                            interpretQuota := (outcome.getObjValAs? Nat "interpretQuota").toOption.getD 48,
@@ -5812,7 +5860,7 @@ def publicRefusal (entry : Json) : Json :=
     else if cls == "badSpell" then
       [("object", toJson named)] ++ ["clause", "reason", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
     -- What the speaker may retry: the quota or the changed revision, without state.
-    else if cls == "quota" || cls == "quiet" || (cls == "staleRoot" && behaviour.isSome) then ["clause", "reason", "next"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
+    else if cls == "quota" || cls == "quiet" || (cls == "staleRoot" && behaviour.isSome) then ["clause", "reason", "next", "hint"].filterMap fun k => (outcome.getObjVal? k).toOption.map (k, ·)
     else if id != named then [("object", toJson named)] else []))
 
 /-- An entry as `reader` may see it. The identity's own principal sees it whole. Anyone else

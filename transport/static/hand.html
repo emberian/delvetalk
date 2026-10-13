@@ -76,8 +76,12 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <section><h2>Object</h2><form method="get" action="{base}/root/"><label>Edit <input name="object" placeholder="garden"></label><button class="door">Open</button></form>{editor}</section>
 {reads}
 <section><h2>Journal</h2><ol class="receipts">{entries}</ol><p class="doors"><a class="door" href="{base}/root/?before={before}">OLDER</a></p></section>
-<section><h2>Moderation</h2>{mod}</section>
+{newcomers}<section><h2>Moderation</h2>{mod}</section>
 <section><h2>Root acts</h2>{acts}</section>
+<!-- newcomers: an open town's limits for newcomers as the world holds them, and the form that sets the config's (docs/DEPLOY.md "A second instance") -->
+<section><h2>Newcomers</h2><p>This town's door is open: anyone may ask for a key. What one hand may do, and what the town spends a day, are the world's settings, each a receipted entry.</p>
+<p class="codes">{codes}</p>
+<details class="action"><summary><span class="code">newcomers</span> limits</summary><form method="post" action="{base}/newcomers/limits"><p>Set the config's: {config}.</p><input name="reading" placeholder="reading (default: the open town's limits for newcomers)"><button class="door">set</button></form></details></section>
 <!-- editor: an object's fields as the opener reads them, each editable; Save sets those that changed -->
 <form method="post" action="{base}/root/save"><input type="hidden" name="object" value="{object}"><input type="hidden" name="shown" value="{shown}">{fields}<input name="reason" required placeholder="reason (required)"><button class="door">Save</button></form>
 <!-- form: one verb; the reason or the reading is required -->

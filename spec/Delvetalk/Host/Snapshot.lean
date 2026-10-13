@@ -88,7 +88,8 @@ def arrOf {α : Type} (j : Json) (f : Json → Except String α) : Except String
 /-- Every index `record` derives from the entries up to the world's height (`Ops.recordCore`,
     `recordActs`, `recordInert`), so an open reads them instead of reading those entries. -/
 def indexJson (w : World) : Json :=
-  Json.mkObj [
+  -- The turns counted while a `turnQuota` is set, only then: a world that never set one keeps its snapshot's bytes.
+  Json.mkObj <| (if w.turnsStarted.isEmpty then [] else [("turnsStarted", mapJson w.turnsStarted fun (a, b) => pairJson a b)]) ++ [
     ("receipts", mapJson w.receipts toJson),
     ("touched", mapJson w.touched toJson),
     ("touches", mapJson w.touches fun ts => Json.arr (ts.map fun t => pairJson t.version t.height)),
@@ -163,6 +164,7 @@ def installIndex (w : World) (j : Json) : Except String World := do
     reservations := ← mapOf (← field "reservations") Reservation.ofJson
     attempts := ← mapOf (← field "attempts") pairOf
     interpretsStarted := ← mapOf (← field "interpretsStarted") pairOf
+    turnsStarted := ← mapOf ((field "turnsStarted").toOption.getD (Json.mkObj [])) pairOf
     rootActs := ← (← field "rootActs").getNat?
     cards := ← mapOf (← field "cards") (·.getStr?)
     quiets := ← mapOf (← field "quiets") quiet
@@ -217,6 +219,10 @@ def storeJson (w : World) : Except String Json := do
     ("settings", Json.mkObj ([("settled", toJson w.settled), ("clock", toJson w.clockPrincipal),
       ("postQuota", toJson w.postQuota), ("interpretQuota", toJson w.interpretQuota)] ++
       (if w.modelQuota == Limits.modelQuota then [] else [("modelQuota", toJson w.modelQuota)]) ++
+      -- A quota at its default is not written, so a world that never set one keeps its snapshot's bytes.
+      (if w.turnQuota == 0 then [] else [("turnQuota", toJson w.turnQuota)]) ++
+      (if w.objectQuota == Limits.objectsPerPrincipal then [] else [("objectQuota", toJson w.objectQuota)]) ++
+      (if w.paintQuota == 0 then [] else [("paintQuota", toJson w.paintQuota)]) ++
       (if w.opener.isEmpty then [] else [("opener", toJson w.opener)]) ++
       (if w.name.isEmpty then [] else [("name", toJson w.name)]))),
     ("types", Json.arr (types.toArray.map (·.2))), ("objects", Json.arr out),
@@ -311,6 +317,9 @@ def install (b : Json) (base : World) (naming : Naming := .cells) : Except Strin
                 postQuota := ← natField settings "postQuota",
                 interpretQuota := (settings.getObjValAs? Nat "interpretQuota").toOption.getD 48,
                 modelQuota := (settings.getObjValAs? Nat "modelQuota").toOption.getD Limits.modelQuota,
+                turnQuota := (settings.getObjValAs? Nat "turnQuota").toOption.getD 0,
+                objectQuota := (settings.getObjValAs? Nat "objectQuota").toOption.getD Limits.objectsPerPrincipal,
+                paintQuota := (settings.getObjValAs? Nat "paintQuota").toOption.getD 0,
                 opener := (settings.getObjValAs? String "opener").toOption.getD "",
                 name := (settings.getObjValAs? String "name").toOption.getD "" }
   let mut types : Std.HashMap String (Ty × DataBounds × Json × Bool × Bool) := {}

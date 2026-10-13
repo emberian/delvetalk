@@ -841,6 +841,15 @@ class Hand:
         self.log(f'{face}:{verb}', None, reason=req.get('reason') or req.get('reading'), height=(got.get('receipt') or {}).get('height'))
         return got
 
+    def limits(self, reading=None):
+        """An open town's limits for newcomers (config; `root.newcomers`), set in the world as the receipted quotas: the
+        turns a hand starts an hour, the objects it keeps, the town's paints and hob's readings a day. An invited town
+        keeps the host's own."""
+        if self.st.config.arrival != 'open':
+            raise HandError('limits: an invited town keeps the host\'s own limits (config arrival is invited)')
+        return self.act('mod', 'settings', {**{k: str(v) for k, v in root.newcomers(self.st.config).items()},
+                                            'reading': reading or "the open town's limits for newcomers, from its config"})
+
     def save(self, obj, form):
         """The object editor's Save: a `set` for each field whose text changed from the dump it was shown, one entry each."""
         shown = json.loads(form.get('shown') or '{}')
@@ -877,7 +886,7 @@ class Hand:
                 done = {'note': str(err)}
             if done is not None:
                 note = ' '.join(str(v) for v in done.values() if isinstance(v, (str, list)))
-                back = {'root': '/root/?', 'mod': '/root/?', 'speak': '/speak?', 'invite': '/speak?',
+                back = {'root': '/root/?', 'mod': '/root/?', 'newcomers': '/root/?', 'speak': '/speak?', 'invite': '/speak?',
                         'morning': '/speak?', 'welcome': '/speak?'}.get(rest.partition('/')[0], '/?')
                 anchor = '#outbox' if back == '/?' else ''
                 back = '/hand/?' if rest == 'root/expire' else base + back  # a scratch world is expired from the worlds
@@ -899,6 +908,9 @@ class Hand:
         face, _, verb = rest.partition('/')
         if rest == 'root/save':
             return self.save(form.get('object', ''), form)
+        if rest == 'newcomers/limits':  # an open town's limits, set from its config (root page, "Newcomers")
+            got = self.limits(form.get('reading') or None)
+            return {'done': f"limits: {got.get('status')}, entry {(got.get('receipt') or {}).get('height')}"}
         if face in ('root', 'mod') and (verb in root.ROOT if face == 'root' else verb in root.POWERS or verb == 'settings'):
             got = self.act(face, verb, form)
             return {'done': f"{verb}: {got.get('status')}" + (f", entry {got['receipt'].get('height')}" if got.get('receipt') else '')}
@@ -1082,9 +1094,21 @@ class Hand:
             f'<label>{n} <textarea name="{n}" rows="3"></textarea></label>' if k == 'json' or n == 'text' else f'<label>{n} <input name="{n}"></label>' for n, k in spec))
         mod = ''.join(form('mod', v, spec, 'reading') for v, (_, spec) in root.POWERS.items()) + form('mod', 'settings', root.MOD_SETTINGS, 'reading')
         return shell('root', self.st.world, H['root'].format(base=base, note=self.note(query), codes=codes, editor=editor, entries=entries,
+                                                             newcomers=self.newcomers(st, base),
                                                              reads=H['root_reads'].format(controls=self.read_controls(query, root_only=True)),
                                                              before=q(min([r.get('height') or 0 for r in rows] or [0])), mod=mod,
                                                              acts=''.join(form('root', v, spec, 'reason') for v, spec in root.ROOT.items())))
+
+    def newcomers(self, st, base):
+        """An open town's limits for newcomers as the world holds them (`world-status`), and the form that sets the config's;
+        nothing on an invited town."""
+        if self.st.config.arrival != 'open':
+            return ''
+        q, c = lambda t: e(str(t)), self.st.config
+        used = lambda k: f"{(st.get(k) or {}).get('used', 0)} of {(st.get(k) or {}).get('quota')}"
+        codes = self.codes([f"turns a hand an hour: {st.get('turnQuota') or 'no cap'}", f"objects a hand: {st.get('objectQuota')}",
+                            f"paints today: {used('paintQuota')}", f"hob's readings today: {used('modelQuota')}"])
+        return H['newcomers'].format(base=base, codes=codes, config=q(', '.join(f'{k} {v}' for k, v in root.newcomers(c).items())))
 
     def read_controls(self, query, root_only=False):
         q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
@@ -1202,6 +1226,7 @@ def parser(p, common):
                        ('--count', dict(type=int, metavar='N', help='mint N open codes at once, one per line')), ('--note', dict(default='', metavar='TEXT')),
                        ('--expires', dict(type=float, default=INVITE_DAYS, metavar='DAYS', help=f'the code may be accepted for DAYS (default {INVITE_DAYS})'))],
             'invites': [], 'revoke-invite': [('name', dict(help='the guest, or for an open code its id from `invites`'))],
+            'limits': [('--reading', dict(help="why, for the receipt (default: the open town's limits for newcomers)"))],
             'welcome': [('--spell', dict(help='the move the welcome makes and offers (default WELCOME)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))]}
     flags = lambda fields, why: [(f'--{n}', {}) for n, _ in fields] + [(f'--{n}-file', {}) for n, k in fields if k == 'json' or n == 'text'] + \
         [(f'--{why}', dict(required=True))]
@@ -1236,7 +1261,7 @@ def command(st, a, out, host=None, poster=post.post_draft):
                 'modlog': lambda: root.modlog(h.host, h.owner, a.object, a.tail), 'find': lambda: root.find(h.host, h.owner, a.text, h.observed().values()),
                 'speak': lambda: cli_speak(h, a), 'morning': lambda: h.morning(a.day, a.topic, a.reply_to), 'plan': h.spoken, 'watch': lambda: h.watch(a.object, a.limit), 'worlds': h.worlds,
                 'root': lambda: cli_root(h, a), 'invite': lambda: cli_invite(h, a), 'invites': h.guests,
-                'revoke-invite': lambda: h.revoke_guest(a.name), 'welcome': lambda: h.welcome(a.spell, a.topic, a.reply_to), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
+                'revoke-invite': lambda: h.revoke_guest(a.name), 'limits': lambda: h.limits(a.reading), 'welcome': lambda: h.welcome(a.spell, a.topic, a.reply_to), **{v: (lambda: h.act('mod', a.verb, given(a))) for v in [*root.POWERS, 'settings']}}[a.verb]()
     except (HandError, OSError) as err:
         print(f'hand: {err}', file=sys.stderr)
         return 1

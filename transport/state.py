@@ -73,11 +73,13 @@ class State:
         return HostClient(self.root_socket, self.world)
 
     def serve_argv(self):
-        """`delvetalk-obend serve` as the config has it; an empty opener, library or group is left to serve's default."""
+        """`delvetalk-obend serve` as the config has it; an empty opener, library or group is left to serve's default, and an
+        invited town's scratch worlds to serve's own limit."""
         c = self.config
         given = {'--opener': c.opener, '--library': c.library, '--root-group': c.root_group}
+        newcomers = ['--scratch-quota', str(c.scratch_quota)] if c.arrival == 'open' else []  # an open town's limit; else serve's own
         return [c.obend, 'serve', '--state', str(self.root), '--socket', str(self.host_socket), '--root-socket', str(self.root_socket),
-                '--sync', c.sync, *(x for k, v in given.items() if v for x in (k, v))]
+                '--sync', c.sync, *(x for k, v in given.items() if v for x in (k, v)), *newcomers]
 
     # ---- files
 

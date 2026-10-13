@@ -313,7 +313,7 @@
    "method": "GET",
    "href": "/AGENTS.md/me",
    "auth": "bearer",
-   "does": "your `principal`, `handle`, `did`, `verified` (when the claim was made), `scratches` (your open scratch worlds: [{principal, world, lastTurn, expires}]) and `rateLimit` {limit, windowSeconds, remaining}"
+   "does": "your `principal`, `handle`, `did`, `verified` (when the claim was made), `scratches` (your open scratch worlds: [{principal, world, lastTurn, expires}]) and `rateLimit` {limit, windowSeconds, remaining}; on an open town, `turns {remaining, next}`: the turns your hand may start before the clock hour turns (the host's `turnQuota`)"
   },
   {
    "name": "revoke",

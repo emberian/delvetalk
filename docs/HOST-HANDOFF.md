@@ -2999,6 +2999,29 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    frame, a DID credit); the English retry and the expanded-length note; the anthology and telling refusals retry
    once before showing exact.
 
+229. **An open town's limits are the host's settings (lane/open-town; no edition change: a world that sets none
+   derives and snapshots what it did).** docs/DEPLOY.md "A second instance": a town anyone may enter needs limits a
+   hand cannot talk past, and admission is the host's. `Ops.quotaKeys` is the one list a later `settings` entry,
+   `world-settings`, the `settings` power and root `settings` take (`withQuotas` applies it live and in replay):
+   `postQuota`, `interpretQuota`, `modelQuota` as before, and `turnQuota` (a hand's direct turns a clock hour; 0, the
+   default, counts none), `objectQuota` (`Limits.objectsPerPrincipal` made the world's, `objectCapacity`), `paintQuota`
+   (the town's paints a clock day; 0 caps none). `turnGate` refuses a direct turn or plan (`runOne`, `runPlanTurn`, and
+   `routedOf`, so a misfit is not read past it) `quota`, clause `turnQuota`, transient, with `next` at the hour, beside
+   `quietOf` and journaled as its refusal is (`quietRefusal`). `recordActs` counts, while `turnQuota` is set, each
+   entry `startsTurn` names: an admitted, refused or suspended entry with no `delivery`, `resumes` or root marker, not
+   itself a `quota` or `quiet` refusal, by a hand `turnCounted` (not the opener, the clock principal, the interpreter or
+   a thing acting as itself) into `turnsStarted`, which the snapshot index carries only when non-empty and an open of an
+   older one reads as empty; a carry does not keep it (an hour's count). Snapshot `settings` writes the three only off
+   their defaults. Paints are not journaled, so their day is the render cache's (`Cache.paintDay`): past `paintQuota`
+   a render not cached is `exact {reason: budget, detail}`, never queued; `world-status.paintQuota {quota, used}`.
+   `world-status` answers `turnQuota`, `objectQuota` and, for a counted principal while one is set, `turns {remaining,
+   next}`. `heardTurn`'s readings-spent refusal (the hand's hour or the world's day) carries the card's `spellUsage` as
+   its `hint`, which a `quota` refusal's public projection now keeps: hob's spent day answers with the card's spells.
+   Serve takes `--scratch-quota N` (`Config.scratchQuota`, default `Limits.scratchPerPrincipal`; 0 opens none).
+   Tests: `test_newcomers` (the hour counted per hand and kept across a reopen, the opener and other hands apart, slow
+   as the same setting lower, objects, paints said exact, hob's spells, one scratch world, a world that sets none
+   unchanged in status and snapshot bytes).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay

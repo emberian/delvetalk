@@ -1339,8 +1339,10 @@ class Handler(BaseHTTPRequestHandler):
     def me(self, credential, who):
         rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []
         mine = [r for r in rows if r.get('principal') == who['did']]
+        status = self.server.host.send({'op': 'world-status', 'principal': who['did']})
+        turns = {'turns': status['turns']} if isinstance(status.get('turns'), dict) else {}  # an open town's hour of turns (`turnQuota`)
         self.answer({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'], 'scratches': mine,
-                     'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - self.server.limited(credential, count=False))}},
+                     'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - self.server.limited(credential, count=False))}, **turns},
                     links={'world': link(PREFIX + '/world'), 'scratch': link(PREFIX + '/scratch'), 'offers': link(PREFIX + '/offers'), 'revoke': link(PREFIX + '/revoke')})
 
     def open_scratch(self, principal):
@@ -1427,7 +1429,7 @@ class Handler(BaseHTTPRequestHandler):
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
         self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered, paint=here['paint'], wants=here['wants'],
                                   view=here['view'], ways=self.ways(host, did, name), entries=self.history(host, name, did, pages.LATELY),
-                                  said=say, told=told, did=did, town=self.server.town()))
+                                  said=say, told=told, did=did, town=self.server.town(), spent=here.get('spent')))
 
     def html(self, code, body, headers=()):
         if not self.server.hand and pages.POST_FORM.search(body):
@@ -1484,7 +1486,7 @@ class Handler(BaseHTTPRequestHandler):
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
                                  self.ways(host, principal, name) if here['card'] is not None else (), seen, here['wants'], brief, here['paint'], told,
-                                 town=self.server.town()))
+                                 town=self.server.town(), spent=here.get('spent')))
 
     SURFACE_FIELDS = ('page', 'day', 'from', 'to')
     TITLES = {'chronicle': "the town's history", 'map': 'the door map'}

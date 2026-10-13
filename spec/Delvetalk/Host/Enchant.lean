@@ -1562,6 +1562,9 @@ structure Cache where
   polled : Option Nat := none
   /-- Paints asked for again after a refusal (`world-status.renders.retried`). -/
   retried : Nat := 0
+  /-- The clock day of the last paint queued for the model and how many that day, against `World.paintQuota`:
+      memory only, as paints are (a restart begins the day's count again). -/
+  paintDay : Nat × Nat := (0, 0)
 
 def Cache.attended (c : Cache) (now : Nat) : Bool := match c.polled with
   | some at_ => now ≤ at_ + workerGraceMs
@@ -1573,7 +1576,11 @@ def Cache.count (c : Cache) (p : Fate → Bool) : Nat := c.entries.fold (fun n _
 def Cache.counts (c : Cache) : Json :=
   Json.mkObj [("cached", toJson (c.count fun | .painted _ => true | _ => false)),
     ("rejected", toJson (c.count fun | .rejected _ _ => true | _ => false)),
-    ("pending", toJson (c.count fun | .pending _ _ => true | _ => false)), ("retried", toJson c.retried)]
+    ("pending", toJson (c.count fun | .pending _ _ => true | _ => false)), ("retried", toJson c.retried),
+    ("paintDay", Json.arr #[toJson c.paintDay.1, toJson c.paintDay.2])]
+
+/-- The paints queued on clock day `day`. -/
+def Cache.paintsOn (c : Cache) (day : Nat) : Nat := if c.paintDay.1 == day then c.paintDay.2 else 0
 
 def Cache.insert (c : Cache) (key : String) (r : Render) : Cache :=
   let entries := if c.entries.size < maxRenders then c.entries else
@@ -1668,14 +1675,19 @@ def paintOf (c : Cache) (w : World) (s : Strokes) (now : Nat) : IO (Except Strin
         ("user", toJson ("Strokes:\n" ++ s.text)), ("maxTokens", toJson (if s.tongue == "en" then renderTokens else 2 * renderTokens))]
       let fresh : Render := { object := id, version := s.version, strokes := s, request, fate := .pending 0 0 }
       if let some r ← fromDisk key fresh then return .ok (c.insert key r, w, fateAnswer id key r attended)
+      -- The day's paints spent (`World.paintQuota`): the exact card, saying why; a paint already made still shows.
+      let day := w.clock / Limits.clockDay
+      if w.paintQuota > 0 && c.paintsOn day ≥ w.paintQuota then
+        return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "budget"),
+          ("detail", toJson s!"the town's {w.paintQuota} paints for the day are spent; the card as it stands")]))
       if c.count (fun | .pending _ _ => true | _ => false) ≥ maxPending then
         return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "busy")]))
-      return .ok (c.insert key fresh, w, fateAnswer id key fresh attended)
+      return .ok ({ (c.insert key fresh) with paintDay := (day, c.paintsOn day + 1) }, w, fateAnswer id key fresh attended)
 
 /-- `world-render {principal, object | day, version?, morning?, telling?, tongue?, speaker?, words?}`: `painted {text, key, version}`; `pending
     {key, patience}` while the worker paints (the first read of a version queues it); `exact {reason}` when there
     is no paint to show (`rejected` with its clause, `override` for a root card, `unavailable` without a model or
-    contract, `busy`, `quiet` for a day with nothing in it, `unattended` while no worker has asked for renders
+    contract, `busy`, `budget` when the day's `paintQuota` is spent, `quiet` for a day with nothing in it, `unattended` while no worker has asked for renders
     within `workerGraceMs`, the render queued for when one does); `plain` when the owner opted out; `unknown` /
     `denied` as `world-card`. With no `object` the town's day is painted (`dayStrokes`): the chronicle's day,
     and with `morning` what wants a hand, the morning card; its `object` is "" and its `version` the day. With

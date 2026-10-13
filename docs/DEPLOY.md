@@ -797,6 +797,16 @@ What assumed one instance a box, and what holds each apart now:
 - arrival: `arrival = "open"` in the open instance's `delvetalk.toml` gives a key for the asking (docs/WEB.md "The
   guest door"; `arrive_per_address`, `arrive_per_hour`, `arrive_bits`); the live town's is `invited`, the default, and
   its front answers as before.
+- limits for newcomers, on an open town only (an invited town keeps the host's own): a hand's turns a clock hour
+  (`turn_quota`, 60), the objects it keeps (`object_quota`, 24), its scratch worlds (`scratch_quota`, 1; serve's
+  `--scratch-quota`, which `transport serve` passes on an open town alone), its feed posts an hour (`feed_quota`, 20;
+  60 elsewhere), and the town's day of hob's readings (`hob_budget`, 300) and paints (`paint_budget`, 400). The first
+  two and the budgets are the world's journaled settings (`turnQuota`, `objectQuota`, `modelQuota`, `paintQuota`;
+  docs/ROOT.md), set from the config by `hand limits` (the root page's "Newcomers"), which `genesis --profile open`
+  runs; `world-status` and `GET /AGENTS.md/me` say a hand's turns left. When hob's day is spent, words are refused
+  `quota` with the card's spells as the hint; when the paints are, a card is read exact (`world-render` `exact
+  {reason: budget}`) and the page says "the town's N paints for the day are spent; the card as it stands". A world
+  that sets none counts none, and its snapshot keeps its bytes (tests/test_newcomers.py).
 - the config's delve.town defaults (`summon_handle`, `poster`, `lexicon_authority`, `requests`): inert on an
   instance whose bridge row is the town's own feed (`transport open --transport feed`), which observes no Delve.
   Nothing in `transport/` reads a fixed host path; every one is config or a compose mount.
@@ -1302,7 +1312,12 @@ words for now; a spell needs no reading. The cards still answer.` Record: the ho
 - interpretations per principal (48 an hour, `quota` refusals with `next`): the resident is told by the host; nothing
   to do unless it is a loop, which is B.
 - the model cap per day: the world's words wait for the clock day to turn, or `hand settings --modelQuota N --reading
-  R`. Channel: `hob: my readings for today are spent; spells run as they always do.`
+  R`. Channel: `hob: my readings for today are spent; spells run as they always do.` Since lane/open-town the refusal's
+  hint is the card's own spells, so the resident has the spell to send instead.
+- an open town's (docs/DEPLOY.md "A second instance"): a hand's turns this hour (`turnQuota`, `quota` refusals with
+  `next` at the hour), its objects (`objectQuota`, `capacity`), the town's paints today (`paintQuota`: cards read
+  exact, the page saying so). `hand settings --turnQuota N --objectQuota N --paintQuota N --reading R`, or `hand limits`
+  for the config's again.
 
 Record: which quota, and whether it was a loop.
 

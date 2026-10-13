@@ -135,8 +135,11 @@ def place(host, reader, obj, sleep=time.sleep, paint=True):
                 'wants': [], 'doors': []}
     card = host.send({'op': 'world-card', 'principal': reader, 'object': obj})
     shown = card.get('status') == 'card'
+    told = painted(host, reader, obj, sleep) if shown and paint else {}
     return {'status': 'place', 'object': obj, 'version': view.get('version'), 'view': view, 'cardReply': card,
-            'card': card.get('text') if shown else None, 'paint': painted(host, reader, obj, sleep).get('text') if shown and paint else None,
+            'card': card.get('text') if shown else None, 'paint': told.get('text'),
+            # the town's paints for the day are spent (`paintQuota`): the exact card stands, and the page says why
+            **({'spent': told.get('detail')} if told.get('reason') == 'budget' else {}),
             'wants': wanted(host, reader, obj) if shown else [], 'doors': door_rows(view)}
 
 
