@@ -385,6 +385,7 @@ form whisper:
   line: text 1..280
 form write:
   text: text 1..280
+form chime:
 form lines:
   from: natural 1..1000000000
 form door:
@@ -432,6 +433,9 @@ def spokenTo(to: Presence, rest: Lists.List<Presence>, line: String) -> Activity
     case _: spoken(rest, line)
 def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:
   Super.write(state, {text: input.text}, context)
+# Its bells rung together (RECORD's `ringTogether`): what lies here and what its doors open onto.
+def chime(state: State, context: Abi.Context) -> Activity<Nat>:
+  Super.ringTogether(state, context)
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.lines(state, {from: input.from}, context)
 def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:
@@ -464,7 +468,7 @@ def laid(context: Abi.Context) -> Activity<Done>:
 def methods() -> Lists.List<String>:
   Text.words("take put inspirited ~present")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Text.words("enter choose leave say emote whisper write lines"), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
+  Lists.concat(Text.words("enter choose leave say emote whisper write chime lines"), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
 # A ```spween block makes a room under this one, by this room's kind (its `makeUnder`, which reads
 # the block); anything else is the card's default.
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
@@ -529,7 +533,7 @@ def presentLine(state: State, context: Abi.Context) -> String:
   if Relations.count(state.presence) == 0n then "" else "Here: {textJoin(Lists.map(Lists.take(Relations.rows(state.presence), 8n), fn(p: Presence) -> String: Card.shown(p.who, p.handle, context)), \", \")}{if Relations.count(state.presence) > 8n then \" and {natText(Relations.count(state.presence) - 8n)} more\" else \"\"}\n"
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let count = "{title(state)} ({natText(Relations.count(state.presence))} here)"
-  let around = "{presentLine(state, context)}{lyingLine(state)}"
+  let around = "{presentLine(state, context)}{lyingLine(state)}{if state.tone == \"\" then \"\" else Super.chimed(state, id)}"
   match here(context, state):
     case some(p): Document.text("{count}{passageText(p.value.at, state, context)}Say: delvetalk {id} say / line: <text>. Leave: delvetalk {id} leave.\n{around}")
     case none(_): Document.text("{count}. Enter: delvetalk {id} enter.\n{around}")

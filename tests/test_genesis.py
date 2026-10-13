@@ -39,10 +39,11 @@ class Genesis(unittest.TestCase):
         host, made, refusal = self.host, self.made, self.refusal
         hands = [dict(fields)['id'] for _, fields, _ in genesis.HANDS]
         # world-create seeds the frame; the town's coinages are then admitted by spell on their kinds, the porch's
-        # doors to the two bells and the seeded wants after; then the porch's things are created and laid there
+        # doors to the three bells and their chord rung once (docs/HARMONIC.md), the seeded wants after; then the porch's
+        # things are created and laid there
         self.assertEqual((refusal, [(m['object'], m['status']) for m in made]),
                          (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [(id, 'admitted') for id in hands]
-                          + [('porch', 'admitted')] * len(genesis.PORCH_DOORS) + [(w[0], 'admitted') for w in genesis.WANTS]
+                          + [('porch', 'admitted')] * (len(genesis.PORCH_DOORS) + 1) + [(w[0], 'admitted') for w in genesis.WANTS]
                           + [(t, 'created') for t, _ in genesis.THINGS] + [(dict(f)['id'], 'admitted') for _, f in genesis.MOTION]), made)
         o = genesis.OPENER
         self.assertEqual(sorted(genesis.existing(host, o)), sorted([n for n, _, _ in genesis.seeds(o)] + ['kind/' + k[0] for k in genesis.KINDS] + hands + [t for t, _ in genesis.THINGS] + [dict(f)['id'] for _, f in genesis.MOTION] + [o]))

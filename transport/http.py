@@ -336,7 +336,8 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         if not hand:
             self.accounts.reconcile()
             self.accounts.provision_guests()
-            self.serviceauth = Verifier(self.repo.did, identity.client, clock=clock)
+            self.serviceauth = Verifier(self.repo.did, identity.client, st.serviceauth_ledger,
+                                        clock=clock, limited=self.limited)
         self.firehose = None
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
@@ -894,7 +895,7 @@ class Handler(BaseHTTPRequestHandler):
         service = procedure or nsid in sessions.QUERIES or nsid == 'online.fg-goose.gsb.getEntry'
         if service:
             try:
-                self.did = self.server.serviceauth.authenticate(credential, nsid)
+                self.did = self.server.serviceauth.authenticate(credential, nsid, self.client_ip())
             except Rejected as r:
                 self.auth_reason = r.reason
                 return self.xrpc_reply(r.code, r.body, [('Retry-After', str(r.retry))] if r.retry else ())

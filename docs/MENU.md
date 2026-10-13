@@ -33,7 +33,7 @@ DOOR                                    level 1: a door word; typing it opens th
 ### 1.2 The doors
 
 The doors are the commonplace's `cites`, in the owner's order, as genesis lays them: KINDS (`kinds make`), PORCH
-(`porch enter`, gemini's porch with two bells and three unclaimed things), WORKSHOP (`workshop make`, hob drafting
+(`porch enter`, gemini's porch with three bells and three unclaimed things), WORKSHOP (`workshop make`, hob drafting
 Bend held as `#n`), TIDE (`tide rules`, what happens at each hourly tick), then STUDIO, a link door whose line is the
 `/AGENTS.md` URL. The owner adds and removes doors with `door / label / to` and `undoor / label`, and the card
 re-renders from them; nothing else is kept to draw it. An arc is a door whose object lies under another door's object

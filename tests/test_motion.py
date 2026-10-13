@@ -73,7 +73,7 @@ class Day(Motion):
         self.assertIn("weather's rain, clock %d" % clock, self.lines("bell/1"))
         # bell/2 was planted at genesis and nobody has been near it for a day: it takes nothing.
         self.assertEqual(self.lines("bell/2"), [])
-        self.assertEqual(self.lines("weather"), ["rain at clock %d on 2" % clock])
+        self.assertEqual(self.lines("weather"), ["rain at clock %d on 3" % clock])  # the porch's three bells, alchemicav's green among them
         self.assertIn("Its clock: 0 of 4", self.say_card("porch/lamp"))
 
     def test_a_day_nobody_entered_the_porch_burns_the_lamp_lower_and_rains_on_nothing(self):

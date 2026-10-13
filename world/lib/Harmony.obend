@@ -1,0 +1,310 @@
+edition ObjectiveBend 1
+import ./List.obend as Lists
+# HARMONY (docs/HARMONIC.md): a colour's tone, as the town's thread of 2026-10-13 designed it (alchemicav's
+# harmonizer, gemini's partition, hy3's pins and synthesis). Exact rationals throughout; Hz shown to a tenth.
+#
+# Light. The visible band, split at the conventional hue boundaries, in tenths of a nanometre, red end first:
+# red [6250, 7500), orange [5900, 6250), yellow [5650, 5900), green [5000, 5650), cyan [4850, 5000), blue [4500,
+# 4850), violet [3800, 4500). A spectral colour's light is its band's midpoint (red 687.5 nm); amber is 595 nm.
+# Its frequency is c / wavelength, c = 299,792,458 m/s exactly; shifted down forty octaves (f x 2^-40, exact), its
+# own pitch: red's 436.06 THz is 396.6 Hz. The band spans less than an octave, so one shift serves every colour.
+#
+# The partition. The seven bands bind, in order from red, the seven degrees of the 5-limit just major scale,
+# 1/1 9/8 5/4 4/3 3/2 5/3 15/8 (gemini's): a wavelength binds the degree of the band it falls in, so amber, inside
+# orange's band, rings orange's 9/8. A bell rings its degree over red's own pitch, the one anchor nobody chose; its
+# own light's pitch is shown beside it (`ownHz`), and how far the partition moved it is the difference.
+#
+# Extra-spectral hues are chords, not notes (hy3's synthesis): a mixture of spectral lights rings their degrees
+# together. Magenta: red with violet above it (1/1 + 15/8). Purple: the same two ends, violet below red's octave
+# (15/8 + 2/1). Silver, no hue: red with its complement, cyan (1/1 + 3/2; white is a complementary pair). Pink, a
+# pale magenta: magenta with that white (1/1 + 3/2 + 15/8). A colour of none of these names sounds nothing.
+#
+# Consonance is the odd limit (Partch): an interval p/q in lowest terms is in the n-odd-limit when the odd parts of p
+# and q are at most n; a chord's is its widest interval's. Within 5 (the unisons and octaves, the fifth and fourth,
+# the thirds and sixths) is consonant; past it (seconds, sevenths, the tritone, the wolves) dissonant.
+record Ratio:
+  p: Nat
+  q: Nat
+def gcd(a: Nat, b: Nat) -> Nat:
+  if b == 0n then a else gcd(b, a % b)
+def ratio(p: Nat, q: Nat) -> Ratio:
+  let g = gcd(p, q)
+  if g == 0n then {p: 0n, q: 1n} else {p: p / g, q: q / g}
+def times(a: Ratio, b: Ratio) -> Ratio:
+  ratio(a.p * b.p, a.q * b.q)
+def over(a: Ratio, b: Ratio) -> Ratio:
+  ratio(a.p * b.q, a.q * b.p)
+def below(a: Ratio, b: Ratio) -> Bool:
+  a.p * b.q < b.p * a.q
+def same(a: Ratio, b: Ratio) -> Bool:
+  a.p * b.q == b.p * a.q
+def ratioText(r: Ratio) -> String:
+  "{natText(r.p)}/{natText(r.q)}"
+def twoTo(n: Nat) -> Nat:
+  if n == 0n then 1n else 2n * twoTo(n - 1n)
+record Band:
+  name: String
+  low: Nat
+  high: Nat
+  degree: Ratio
+def band(name: String, low: Nat, high: Nat, p: Nat, q: Nat) -> Band:
+  {name: name, low: low, high: high, degree: {p: p, q: q}}
+# The seven bands, red first, each with the degree it binds.
+def bands() -> Lists.List<Band>:
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.List.nil(), band("red", 6250n, 7500n, 1n, 1n)), band("orange", 5900n, 6250n, 9n, 8n)), band("yellow", 5650n, 5900n, 5n, 4n)), band("green", 5000n, 5650n, 4n, 3n)), band("cyan", 4850n, 5000n, 3n, 2n)), band("blue", 4500n, 4850n, 5n, 3n)), band("violet", 3800n, 4500n, 15n, 8n))
+def named(name: String) -> Lists.Maybe<Band>:
+  Lists.find(bands(), fn(b: Band) -> Bool: b.name == name)
+# The band a wavelength (tenths of a nanometre) falls in; none outside the visible band.
+def bandAt(tenths: Nat) -> Lists.Maybe<Band>:
+  Lists.find(bands(), fn(b: Band) -> Bool: b.low <= tenths && tenths < b.high)
+# A colour's light, in tenths of a nanometre: a band's midpoint, amber's 595 nm; 0 for a colour no single
+# wavelength makes.
+def wavelength(colour: String) -> Nat:
+  if colour == "amber" then 5950n else midpoint(named(colour))
+def midpoint(found: Lists.Maybe<Band>) -> Nat:
+  match found:
+    case some(b): (b.value.low + b.value.high) / 2n
+    case none(_): 0n
+# Its frequency in hertz, exact: c / wavelength.
+def lightHz(tenths: Nat) -> Ratio:
+  ratio(299792458n * 10000000000n, tenths)
+# The shift: forty octaves down, the same for every colour (the band is less than an octave).
+def octaves() -> Nat:
+  40n
+def shifted(hz: Ratio) -> Ratio:
+  ratio(hz.p, hz.q * twoTo(octaves()))
+# A colour's own pitch: its light shifted; red's is the anchor every degree sounds over.
+def ownPitch(colour: String) -> Ratio:
+  if wavelength(colour) == 0n then {p: 0n, q: 1n} else shifted(lightHz(wavelength(colour)))
+def tonic() -> Ratio:
+  ownPitch("red")
+# The degree a spectral colour binds: its light's band's.
+def degree(colour: String) -> Lists.Maybe<Ratio>:
+  if wavelength(colour) == 0n then Lists.Maybe.none({}) else bound(bandAt(wavelength(colour)))
+def bound(found: Lists.Maybe<Band>) -> Lists.Maybe<Ratio>:
+  match found:
+    case some(b): Lists.Maybe.some({value: b.value.degree})
+    case none(_): Lists.Maybe.none({})
+# The spectral colours a mixture rings, each with the octave it sounds in (0 or 1).
+record Voice:
+  colour: String
+  octave: Nat
+def voice(colour: String, octave: Nat) -> Voice:
+  {colour: colour, octave: octave}
+def mixture(colour: String) -> Lists.List<Voice>:
+  if colour == "magenta" then Lists.append(Lists.append(Lists.List.nil(), voice("red", 0n)), voice("violet", 0n)) else if colour == "purple" then Lists.append(Lists.append(Lists.List.nil(), voice("violet", 0n)), voice("red", 1n)) else if colour == "silver" then Lists.append(Lists.append(Lists.List.nil(), voice("red", 0n)), voice("cyan", 0n)) else if colour == "pink" then Lists.append(Lists.append(Lists.append(Lists.List.nil(), voice("red", 0n)), voice("cyan", 0n)), voice("violet", 0n)) else Lists.List.nil()
+def voiced(v: Voice) -> Lists.List<Ratio>:
+  match degree(v.colour):
+    case some(d): Lists.List.cons({head: times(d.value, {p: twoTo(v.octave), q: 1n}), tail: Lists.List.nil()})
+    case none(_): Lists.List.nil()
+# What a colour rings, lowest first, as ratios over red's own pitch: one degree for a colour of the spectrum, a
+# chord for a mixture, nothing for a colour of no name here.
+def tones(colour: String) -> Lists.List<Ratio>:
+  match degree(colour):
+    case some(d): Lists.List.cons({head: d.value, tail: Lists.List.nil()})
+    case none(_): chord(Lists.fold(mixture(colour), Lists.List.nil(), fn(v: Voice) -> Lists.List<Ratio> -> Lists.List<Ratio>: fn(acc: Lists.List<Ratio>) -> Lists.List<Ratio>: Lists.concat(voiced(v), acc)))
+# What sounds: the colour's own (none, or `amber`, `silver`, the extra-spectral hues).
+def kindOf(colour: String) -> String:
+  if wavelength(colour) > 0n then "spectral" else if colour == "silver" then "achromatic" else if Lists.length(mixture(colour)) > 0n then "extra-spectral" else ""
+# Ratios lowest first, each once.
+def chord(rs: Lists.List<Ratio>) -> Lists.List<Ratio>:
+  Lists.fold(rs, Lists.List.nil(), fn(r: Ratio) -> Lists.List<Ratio> -> Lists.List<Ratio>: fn(acc: Lists.List<Ratio>) -> Lists.List<Ratio>: placed(r, acc))
+def placed(r: Ratio, sorted: Lists.List<Ratio>) -> Lists.List<Ratio>:
+  match sorted:
+    case nil(_): Lists.List.cons({head: r, tail: Lists.List.nil()})
+    case cons(c): if same(r, c.head) then sorted else if below(r, c.head) then Lists.List.cons({head: r, tail: sorted}) else Lists.List.cons({head: c.head, tail: placed(r, c.tail)})
+# Hertz to a tenth, rounded half up from the exact rational.
+def hzText(x: Ratio) -> String:
+  let tenths = (x.p * 20n + x.q) / (x.q * 2n)
+  "{natText(tenths / 10n)}.{natText(tenths % 10n)}"
+def pitch(r: Ratio) -> Ratio:
+  times(r, tonic())
+def hz(r: Ratio) -> String:
+  hzText(pitch(r))
+def ownHz(colour: String) -> String:
+  if wavelength(colour) == 0n then "" else hzText(ownPitch(colour))
+# The nearest note of equal temperament (A at 440 Hz), as a hint: the pitch folded by octaves into C4's span, then
+# placed by the lower edges of C to B in millihertz (440 x 2^((k - 9.5) / 12), floored).
+def folded(x: Ratio) -> Ratio:
+  if x.p == 0n then x else if x.p * 1000n < 254177n * x.q then folded(ratio(x.p * 2n, x.q)) else if x.p * 1000n >= 508355n * x.q then folded(ratio(x.p, x.q * 2n)) else x
+def note(r: Ratio) -> String:
+  noteAt(pitch(r))
+def noteAt(p: Ratio) -> String:
+  let x = folded(p)
+  let m = x.p * 1000n / x.q
+  if m < 269291n then "C" else if m < 285304n then "C#" else if m < 302269n then "D" else if m < 320243n then "D#" else if m < 339286n then "E" else if m < 359461n then "F" else if m < 380836n then "F#" else if m < 403481n then "G" else if m < 427474n then "G#" else if m < 452892n then "A" else if m < 479823n then "A#" else "B"
+# An interval by name, octave-reduced first; a ratio of no common name is said as itself.
+def reduced(r: Ratio) -> Ratio:
+  if r.p == 0n then r else if r.p < r.q then reduced(ratio(r.p * 2n, r.q)) else if r.p > r.q * 2n then reduced(ratio(r.p, r.q * 2n)) else r
+def intervalName(r: Ratio) -> String:
+  let x = reduced(r)
+  let n = named5(x.p, x.q)
+  if n == "" then ratioText(x) else n
+def named5(p: Nat, q: Nat) -> String:
+  if q == 1n then (if p == 1n then "a unison" else if p == 2n then "an octave" else "") else if q == 2n then (if p == 3n then "a perfect fifth" else "") else if q == 3n then (if p == 4n then "a perfect fourth" else if p == 5n then "a major sixth" else "") else if q == 4n then (if p == 5n then "a major third" else "") else if q == 5n then (if p == 6n then "a minor third" else if p == 8n then "a minor sixth" else if p == 9n then "a minor seventh" else "") else if q == 8n then (if p == 9n then "a major second" else if p == 15n then "a major seventh" else "") else if q == 9n then (if p == 10n then "a minor whole tone" else if p == 16n then "a minor seventh" else "") else if q == 15n then (if p == 16n then "a minor second" else "") else if q == 16n then (if p == 27n then "a Pythagorean major sixth" else "") else if q == 20n then (if p == 27n then "a wolf fourth" else "") else if q == 27n then (if p == 32n then "a Pythagorean minor third" else if p == 40n then "a wolf fifth" else "") else if q == 32n then (if p == 45n then "a tritone" else "") else if q == 45n then (if p == 64n then "a tritone" else "") else ""
+# The odd limit of an interval, and of a chord (its widest pair's; 1 for one tone, 0 for none).
+def oddPart(n: Nat) -> Nat:
+  if n == 0n then 0n else if n % 2n == 0n then oddPart(n / 2n) else n
+def larger(a: Nat, b: Nat) -> Nat:
+  if a < b then b else a
+def pairLimit(a: Ratio, b: Ratio) -> Nat:
+  let r = over(b, a)
+  larger(oddPart(r.p), oddPart(r.q))
+def oddLimit(rs: Lists.List<Ratio>) -> Nat:
+  match rs:
+    case nil(_): 0n
+    case cons(c): larger(1n, larger(Lists.fold(c.tail, 0n, fn(r: Ratio) -> Nat -> Nat: fn(m: Nat) -> Nat: larger(m, pairLimit(c.head, r))), oddLimit(c.tail)))
+def consonant(limit: Nat) -> Bool:
+  limit >= 1n && limit <= 5n
+def consonance(limit: Nat) -> String:
+  if consonant(limit) then "consonant" else "dissonant"
+# A chord as whole numbers in proportion, lowest first: 1/1 5/4 3/2 is 4:5:6.
+def lcm(a: Nat, b: Nat) -> Nat:
+  a / gcd(a, b) * b
+def proportion(rs: Lists.List<Ratio>) -> String:
+  let l = Lists.fold(rs, 1n, fn(r: Ratio) -> Nat -> Nat: fn(m: Nat) -> Nat: lcm(m, r.q))
+  let whole = Lists.map(rs, fn(r: Ratio) -> Nat: r.p * l / r.q)
+  let g = Lists.fold(whole, 0n, fn(n: Nat) -> Nat -> Nat: fn(m: Nat) -> Nat: gcd(m, n))
+  textJoin(Lists.map(whole, fn(n: Nat) -> String: natText(n / g)), ":")
+# The intervals between neighbours, lowest first.
+def steps(rs: Lists.List<Ratio>) -> Lists.List<String>:
+  match rs:
+    case nil(_): Lists.List.nil()
+    case cons(c): stepsFrom(c.head, c.tail)
+def stepsFrom(low: Ratio, rest: Lists.List<Ratio>) -> Lists.List<String>:
+  match rest:
+    case nil(_): Lists.List.nil()
+    case cons(d): Lists.List.cons({head: intervalName(over(d.head, low)), tail: stepsFrom(d.head, d.tail)})
+def joined(items: Lists.List<String>) -> String:
+  match Lists.at(items, Lists.length(items) - 1n):
+    case some(last): if Lists.length(items) <= 1n then last.value else "{textJoin(Lists.take(items, Lists.length(items) - 1n), \", \")} and {last.value}"
+    case none(_): ""
+def notes(rs: Lists.List<Ratio>) -> String:
+  joined(Lists.map(rs, fn(r: Ratio) -> String: "{note(r)}-ish"))
+def hzs(rs: Lists.List<Ratio>) -> String:
+  joined(Lists.map(rs, hz))
+def degreeName(r: Ratio) -> String:
+  if same(r, {p: 1n, q: 1n}) then "red's own tone" else intervalName(r)
+# What a colour rings, in words with its unit (a bell's `tone`): "a perfect fourth, 4/3 over red: C-ish, 528.8 Hz";
+# a mixture "a chord, 1/1 and 15/8 over red (8:15, a major seventh): G-ish and F#-ish, 396.6 and 743.6 Hz"; "" for
+# a colour that sounds nothing.
+def toneText(colour: String) -> String:
+  ringing(tones(colour))
+def ringing(rs: Lists.List<Ratio>) -> String:
+  match rs:
+    case nil(_): ""
+    case cons(c): if Lists.length(rs) == 1n then single(c.head, pitch(c.head)) else "a chord, {joined(Lists.map(rs, ratioText))} over red ({proportion(rs)}, {joined(steps(rs))}): {notes(rs)}, {hzs(rs)} Hz"
+def single(r: Ratio, p: Ratio) -> String:
+  "{degreeName(r)}, {ratioText(r)} over red: {noteAt(p)}-ish, {hzText(p)} Hz"
+# What a place's bells ring together (its `tone` once they are rung): "27:32:45 (A, C and F#; 446.2, 528.8 and 743.6
+# Hz), a Pythagorean minor third and a tritone; odd limit 45, dissonant".
+def chordText(rs: Lists.List<Ratio>) -> String:
+  let limit = oddLimit(rs)
+  if Lists.length(rs) == 0n then "" else if Lists.length(rs) == 1n then "one tone, {ringing(rs)}; odd limit 1, consonant" else "{proportion(rs)} ({joined(Lists.map(rs, note))}; {hzs(rs)} Hz), {joined(steps(rs))}; odd limit {natText(limit)}, {consonance(limit)}"
+# COMPLEMENTS. A colour's complement and the interval it lands on (docs/HARMONIC.md; hy3's first pin: "the complement->interval
+# claim is emergent, not free ... worth computing, not assuming"). Two lights are complementary when they mix to
+# white: on the CIE 1931 chromaticity diagram (the 2-degree standard observer's colour-matching functions, below,
+# x-bar y-bar z-bar every 5 nm from 380 to 780 nm in billionths, from the CIE's published table), the line from a
+# colour through white, continued, meets its complement. White here is equal energy at every wavelength (x = y =
+# 1/3): no illuminant chosen, as no fundamental was. Between two rows the functions are read linearly. A complement
+# the line meets on the spectrum is a wavelength and binds its band's degree, as any light does; one it meets on the
+# line of purples (green's) has none: it is a mixture of the spectrum's two ends, red and violet, a chord.
+#
+# Exact, in whole numbers: a direction from white is (3X - S, 3Y - S), S = X + Y + Z, signed as a difference of two
+# naturals; where its cross product with the colour's turns sign, facing away from it, is the complement, the
+# crossing found between two rows to a tenth of a nanometre (floored).
+record Row:
+  nm: Nat
+  x: Nat
+  y: Nat
+  z: Nat
+def observer() -> Lists.List<Row>:
+  r(380n, 1368000n, 39000n, 6450001n, r(385n, 2236000n, 64000n, 10549990n, r(390n, 4243000n, 120000n, 20050010n, r(395n, 7650000n, 217000n, 36210000n, r(400n, 14310000n, 396000n, 67850010n, r(405n, 23190000n, 640000n, 110200000n, r(410n, 43510000n, 1210000n, 207400000n, r(415n, 77630000n, 2180000n, 371300000n, r(420n, 134380000n, 4000000n, 645600000n, r(425n, 214770000n, 7300000n, 1039050100n, r(430n, 283900000n, 11600000n, 1385600000n, r(435n, 328500000n, 16840000n, 1622960000n, r(440n, 348280000n, 23000000n, 1747060000n, r(445n, 348060000n, 29800000n, 1782600000n, r(450n, 336200000n, 38000000n, 1772110000n, r(455n, 318700000n, 48000000n, 1744100000n, r(460n, 290800000n, 60000000n, 1669200000n, r(465n, 251100000n, 73900000n, 1528100000n, r(470n, 195360000n, 90980000n, 1287640000n, r(475n, 142100000n, 112600000n, 1041900000n, r(480n, 95640000n, 139020000n, 812950100n, r(485n, 57950010n, 169300000n, 616200000n, r(490n, 32010000n, 208020000n, 465180000n, r(495n, 14700000n, 258600000n, 353300000n, r(500n, 4900000n, 323000000n, 272000000n, r(505n, 2400000n, 407300000n, 212300000n, r(510n, 9300000n, 503000000n, 158200000n, r(515n, 29100000n, 608200000n, 111700000n, r(520n, 63270000n, 710000000n, 78249990n, r(525n, 109600000n, 793200000n, 57250010n, r(530n, 165500000n, 862000000n, 42160000n, r(535n, 225749900n, 914850100n, 29840000n, r(540n, 290400000n, 954000000n, 20300000n, r(545n, 359700000n, 980300000n, 13400000n, r(550n, 433449900n, 994950100n, 8749999n, r(555n, 512050100n, 1000000000n, 5749999n, r(560n, 594500000n, 995000000n, 3900000n, r(565n, 678400000n, 978600000n, 2749999n, r(570n, 762100000n, 952000000n, 2100000n, r(575n, 842500000n, 915400000n, 1800000n, r(580n, 916300000n, 870000000n, 1650001n, r(585n, 978600000n, 816300000n, 1400000n, r(590n, 1026300000n, 757000000n, 1100000n, r(595n, 1056700000n, 694900000n, 1000000n, r(600n, 1062200000n, 631000000n, 800000n, r(605n, 1045600000n, 566800000n, 600000n, r(610n, 1002600000n, 503000000n, 340000n, r(615n, 938400000n, 441200000n, 240000n, r(620n, 854449900n, 381000000n, 190000n, r(625n, 751400000n, 321000000n, 100000n, r(630n, 642400000n, 265000000n, 50000n, r(635n, 541900000n, 217000000n, 30000n, r(640n, 447900000n, 175000000n, 20000n, r(645n, 360800000n, 138200000n, 10000n, r(650n, 283500000n, 107000000n, 0n, r(655n, 218700000n, 81600000n, 0n, r(660n, 164900000n, 61000000n, 0n, r(665n, 121200000n, 44580000n, 0n, r(670n, 87400000n, 32000000n, 0n, r(675n, 63600000n, 23200000n, 0n, r(680n, 46770000n, 17000000n, 0n, r(685n, 32900000n, 11920000n, 0n, r(690n, 22700000n, 8210000n, 0n, r(695n, 15840000n, 5723000n, 0n, r(700n, 11359160n, 4102000n, 0n, r(705n, 8110916n, 2929000n, 0n, r(710n, 5790346n, 2091000n, 0n, r(715n, 4109457n, 1484000n, 0n, r(720n, 2899327n, 1047000n, 0n, r(725n, 2049190n, 740000n, 0n, r(730n, 1439971n, 520000n, 0n, r(735n, 999949n, 361100n, 0n, r(740n, 690079n, 249200n, 0n, r(745n, 476021n, 171900n, 0n, r(750n, 332301n, 120000n, 0n, r(755n, 234826n, 84800n, 0n, r(760n, 166150n, 60000n, 0n, r(765n, 117413n, 42400n, 0n, r(770n, 83075n, 30000n, 0n, r(775n, 58707n, 21200n, 0n, r(780n, 41510n, 14990n, 0n, Lists.List.nil())))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+def r(nm: Nat, x: Nat, y: Nat, z: Nat, rest: Lists.List<Row>) -> Lists.List<Row>:
+  Lists.List.cons({head: {nm: nm, x: x, y: y, z: z}, tail: rest})
+# A signed whole number: `plus` less `minus`.
+record Signed:
+  plus: Nat
+  minus: Nat
+def signedTimes(a: Signed, b: Signed) -> Signed:
+  {plus: a.plus * b.plus + a.minus * b.minus, minus: a.plus * b.minus + a.minus * b.plus}
+def signedLess(a: Signed, b: Signed) -> Signed:
+  {plus: a.plus + b.minus, minus: a.minus + b.plus}
+def signedSum(a: Signed, b: Signed) -> Signed:
+  {plus: a.plus + b.plus, minus: a.minus + b.minus}
+def negative(a: Signed) -> Bool:
+  a.plus < a.minus
+def zero(a: Signed) -> Bool:
+  a.plus == a.minus
+def size(a: Signed) -> Nat:
+  if a.plus < a.minus then a.minus - a.plus else a.plus - a.minus
+record Direction:
+  x: Signed
+  y: Signed
+def direction(x: Nat, y: Nat, z: Nat) -> Direction:
+  {x: {plus: 3n * x, minus: x + y + z}, y: {plus: 3n * y, minus: x + y + z}}
+def ofRow(r: Row) -> Direction:
+  direction(r.x, r.y, r.z)
+def cross(a: Direction, b: Direction) -> Signed:
+  signedLess(signedTimes(a.x, b.y), signedTimes(a.y, b.x))
+def dot(a: Direction, b: Direction) -> Signed:
+  signedSum(signedTimes(a.x, b.x), signedTimes(a.y, b.y))
+def at(table: Lists.List<Row>, nm: Nat) -> Row:
+  match Lists.find(table, fn(w: Row) -> Bool: w.nm == nm):
+    case some(w): w.value
+    case none(_): {nm: nm, x: 0n, y: 0n, z: 0n}
+# The direction of a wavelength in tenths of a nanometre, read linearly between its two rows (a direction is the same
+# for any positive multiple, so the weights need no dividing).
+def towards(table: Lists.List<Row>, tenths: Nat) -> Direction:
+  let low = tenths / 50n * 5n
+  let w = tenths - low * 10n
+  let a = at(table, low)
+  let b = at(table, low + 5n)
+  direction((50n - w) * a.x + w * b.x, (50n - w) * a.y + w * b.y, (50n - w) * a.z + w * b.z)
+# The complement of a wavelength, in tenths of a nanometre, where the line through white meets the spectrum; none
+# when it meets the line of purples.
+def complementOf(tenths: Nat) -> Lists.Maybe<Nat>:
+  let table = observer()
+  crossing(towards(table, tenths), table)
+def crossing(a: Direction, rest: Lists.List<Row>) -> Lists.Maybe<Nat>:
+  match rest:
+    case nil(_): Lists.Maybe.none({})
+    case cons(c): crossingFrom(a, c.head, c.tail)
+def crossingFrom(a: Direction, r: Row, rest: Lists.List<Row>) -> Lists.Maybe<Nat>:
+  match rest:
+    case nil(_): Lists.Maybe.none({})
+    case cons(n): if turns(a, r, n.head) then Lists.Maybe.some({value: between(r.nm, size(cross(a, ofRow(r))), size(cross(a, ofRow(n.head))))}) else crossingFrom(a, n.head, n.tail)
+def between(nm: Nat, here: Nat, next: Nat) -> Nat:
+  nm * 10n + 50n * here / (here + next)
+def turns(a: Direction, r: Row, n: Row) -> Bool:
+  let here = cross(a, ofRow(r))
+  let next = cross(a, ofRow(n))
+  (zero(here) || negative(here) != negative(next)) && negative(dot(a, ofRow(r)))
+def nmText(tenths: Nat) -> String:
+  "{natText(tenths / 10n)}.{natText(tenths % 10n)} nm"
+# A colour's complement and what it lands on from the colour's degree: "red, 687.5 nm: its complement 493.9 nm, cyan:
+# a perfect fifth, 3/2". A colour no wavelength makes has none here ("").
+def complement(colour: String) -> String:
+  let t = wavelength(colour)
+  if t == 0n then "" else lineFrom(colour, t, complementOf(t))
+def lineFrom(colour: String, t: Nat, found: Lists.Maybe<Nat>) -> String:
+  match found:
+    case some(c): "{colour}, {nmText(t)}: its complement {nmText(c.value)}, {bandName(c.value)}: {landing(colour, bound(bandAt(c.value)))}"
+    case none(_): "{colour}, {nmText(t)}: its complement has no wavelength, on the line of purples: red and violet together, {landing(colour, degree(\"red\"))} and {landing(colour, degree(\"violet\"))}"
+def bandName(tenths: Nat) -> String:
+  match bandAt(tenths):
+    case some(b): b.value.name
+    case none(_): "outside the visible band"
+def landing(colour: String, other: Lists.Maybe<Ratio>) -> String:
+  match degree(colour):
+    case some(d): landed(reduced(over(degreeOf(other), d.value)))
+    case none(_): ""
+def degreeOf(found: Lists.Maybe<Ratio>) -> Ratio:
+  match found:
+    case some(r): r.value
+    case none(_): {p: 1n, q: 1n}
+def landed(r: Ratio) -> String:
+  "{intervalName(r)}, {ratioText(r)}"
+# Every colour of the spectrum, then amber, one line each: the table docs/HARMONIC.md prints.
+def complements() -> String:
+  textJoin(Lists.append(Lists.map(bands(), fn(b: Band) -> String: complement(b.name)), complement("amber")), "\n")

@@ -15,6 +15,8 @@ import json
 import re
 import socket
 import ssl
+import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -138,15 +140,43 @@ class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def __init__(self, host, port, address, timeout, socket_factory):
         super().__init__(host, port, timeout=timeout, context=ssl.create_default_context())
         self.address, self.socket_factory = address, socket_factory
+        self.deadline = time.monotonic() + timeout
+        self.active_socket = None
+        self.expired, self.socket_lock = threading.Event(), threading.Lock()
+
+    def remaining(self):
+        left = self.deadline - time.monotonic()
+        if left <= 0 or self.expired.is_set():
+            raise TimeoutError('absolute deadline')
+        return left
+
+    def abort(self):
+        self.expired.set()
+        with self.socket_lock:
+            sock = self.active_socket
+            if sock is not None:
+                try:
+                    sock.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                sock.close()
 
     def connect(self):
         # socket.connect takes the numeric sockaddr directly: neither proxies nor another DNS lookup intervene.
         family, kind, proto, _, target = self.address
         sock = self.socket_factory(family, kind, proto)
         try:
-            sock.settimeout(self.timeout)
+            with self.socket_lock:
+                self.remaining()
+                self.sock = self.active_socket = sock
+            sock.settimeout(self.remaining())
             sock.connect(target)
-            self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+            wrapped = self._context.wrap_socket(sock, server_hostname=self.host, do_handshake_on_connect=False)
+            with self.socket_lock:
+                self.sock = self.active_socket = wrapped
+                self.remaining()
+            wrapped.settimeout(self.remaining())
+            wrapped.do_handshake()
         except Exception:
             sock.close()
             raise
@@ -157,9 +187,11 @@ def public_transport(method, url, headers, body, limit=MAX_RESPONSE, timeout=TIM
     """-> (status, bytes, headers): HTTPS to an entirely global DNS answer, connected to its first checked address.
 
     TLS verifies the URL host with the default context; Host retains the URL authority. No redirects or proxies;
-    at most limit + 1 response bytes. Refusals are Failure('not_public', host), network failures
-    Failure('network_error', reason code). resolve and socket_factory are offline test seams.
+    at most limit + 1 response bytes. A wall-clock deadline shuts down trickling sockets.
+    Refusals are Failure('not_public', host), network failures Failure('network_error', reason code).
+    resolve and socket_factory are offline test seams.
     """
+    deadline = time.monotonic() + timeout
     parts, host, port, address = public_destination(url, resolve=resolve)
     authority = f'[{host}]' if ':' in host else host
     if parts.port is not None:
@@ -167,16 +199,27 @@ def public_transport(method, url, headers, body, limit=MAX_RESPONSE, timeout=TIM
     headers = {k: v for k, v in headers.items() if k.lower() != 'host'}
     headers['Host'] = authority
     path = urllib.parse.urlunsplit(('', '', parts.path or '/', parts.query, ''))
-    connection = None
+    connection, timer = None, None
     try:
-        connection = _PinnedHTTPSConnection(host, port, address, timeout, socket_factory)
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise TimeoutError('absolute deadline')
+        connection = _PinnedHTTPSConnection(host, port, address, left, socket_factory)
+        connection.deadline = deadline
+        timer = threading.Timer(connection.remaining(), connection.abort)
+        timer.daemon = True
+        timer.start()
         connection.request(method, path, body, headers)
         response = connection.getresponse()
         with response:
-            return response.status, response.read(limit + 1), dict(response.headers)
+            got = response.read(limit + 1)
+            connection.remaining()
+            return response.status, got, dict(response.headers)
     except (OSError, http.client.HTTPException, UnicodeError, ValueError) as error:
         raise Failure('network_error', type(error).__name__) from None
     finally:
+        if timer is not None:
+            timer.cancel()
         if connection is not None:
             connection.close()
 
@@ -256,13 +299,13 @@ class Client:
                 raise Failure('param_invalid', k)
         return self._send('GET', f'{base.rstrip("/")}/xrpc/{nsid}?{urllib.parse.urlencode(params)}', raw=raw, transport=transport)
 
-    def did_document(self, did):
+    def did_document(self, did, *, plc=PLC):
         """A DID's document via pinned public HTTPS: did:plc from plc.directory, hostname-level did:web from its host.
         Any other DID is refused. An injected Client transport supplies both documents and XRPC in offline tests."""
         if not isinstance(did, str) or not DID.fullmatch(did):
             raise Failure('did_refused', str(did)[:100])
         if did.startswith('did:plc:'):
-            return self._send('GET', f'{PLC}/{did}', transport=self.document_transport)
+            return self._send('GET', f'{plc.rstrip("/")}/{did}', transport=self.document_transport)
         host = did[len('did:web:'):]
         return self._send('GET', f'https://{host}/.well-known/did.json', transport=self.document_transport)
 

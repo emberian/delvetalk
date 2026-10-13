@@ -11,6 +11,7 @@ import ./Rows.obend as Rows
 import ./Text.obend as Text
 import ./Scenes.obend as Scenes
 import ./Spween.obend as Spween
+import ./Harmony.obend as Harmony
 # RECORD (docs/METAPHYSICS.md §7): the commonplace's one page. What was said, by whom, in order; a
 # line is written, never edited; a keeper, when there is one, admits lines by number, and a record
 # with no keeper lets every line stand as written. The commonplace is a record its owner keeps; a
@@ -40,6 +41,11 @@ import ./Spween.obend as Spween
 # (`tended`; its kind sets it when it is made). A kind whose law reads
 # `request.clock <= old.tended + N` makes things that go quiet untended: they answer `tend` alone,
 # and a card says how long by the same clock, which runs on across every carry.
+#
+# A record sounds (docs/HARMONIC.md): `tone` is what it rings in words with their unit, and `oddLimit` how consonant
+# that is (0 for nothing sounded). A record made with a colour that names a hue rings it from its making (KIND's
+# seed: a bell's colour is its tone); a place rings its bells' chord when they are rung together (`chime`). A rule
+# reads either: `request.method == "chime" and new.oddLimit >= 1 and new.oddLimit <= 5`.
 #
 # A record that reads words keeps its `policy` (hob's, nobody for none): the commonplace
 # (world/bodies/commonplace.obend) reads words with it.
@@ -82,12 +88,16 @@ record State:
   weather: String
   tended: Nat
   chose: String
+  tone: String
+  oddLimit: Nat
 type Pending = Rows.Pending
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), pending: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), mine: Relations.empty(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, chose: ""}
+  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), pending: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), mine: Relations.empty(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, chose: "", tone: "", oddLimit: 0n}
 # A record as the live town keeps it (edition 13, carried 2026-10-12; a carry lays this package over it, `migrate`):
 # its scene's choices before their `text` and `among`, which a choice carried gets none of; before `mine` (none);
-# its presence before a reader's `draw`, which one present at the carry gets 0 of.
+# its presence before a reader's `draw`, which one present at the carry gets 0 of; before `tone` and `oddLimit`,
+# which a carried record is given as its making would give them now, from its colour (a bell's; "" and 0 for a record
+# of no hue), and a place gets when its bells are next rung together.
 record Presence13:
   who: String
   handle: String
@@ -129,7 +139,8 @@ record State13:
   tended: Nat
   chose: String
 def migrate(old: State13) -> State:
-  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: Lists.map(old.passages, passage13), cooldown: old.cooldown, requires: old.requires, presence: Relations.Relation.rows({items: Lists.map(Relations.rows(old.presence), fn(p: Presence13) -> Presence: {who: p.who, handle: p.handle, at: p.at, draw: 0n})}), vars: old.vars, mine: Relations.empty(), left: old.left, things: old.things, weather: old.weather, tended: old.tended, chose: old.chose}
+  let colour = fieldIn(old.fields, "colour")
+  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: Lists.map(old.passages, passage13), cooldown: old.cooldown, requires: old.requires, presence: Relations.Relation.rows({items: Lists.map(Relations.rows(old.presence), fn(p: Presence13) -> Presence: {who: p.who, handle: p.handle, at: p.at, draw: 0n})}), vars: old.vars, mine: Relations.empty(), left: old.left, things: old.things, weather: old.weather, tended: old.tended, chose: old.chose, tone: Harmony.toneText(colour), oddLimit: Harmony.oddLimit(Harmony.tones(colour))}
 def passage13(p: Passage13) -> Scenes.Passage:
   {id: p.id, text: p.text, guard: Lists.List.nil(), choices: Lists.map(p.choices, fn(c: Choice13) -> Scenes.Choice: {label: c.label, to: c.to, effects: c.effects, guard: c.guard, text: "", among: Lists.List.nil()})}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes. A
@@ -238,9 +249,42 @@ def markWritten(m: Rows.Mark) -> Activity<Bool>:
   true
 # A value the kind's form took when the record was made ("" when none).
 def field(state: State, name: String) -> String:
-  match Lists.find(state.fields, fn(f: Rows.Field) -> Bool: f.name == name):
+  fieldIn(state.fields, name)
+def fieldIn(fields: Lists.List<Rows.Field>, name: String) -> String:
+  match Lists.find(fields, fn(f: Rows.Field) -> Bool: f.name == name):
     case some(f): f.value.value
     case none(_): ""
+# What it rings, as a card says it ("" when it sounds nothing).
+def ringing(state: State) -> String:
+  if state.tone == "" then "" else "Rings {state.tone}.\n"
+# What a place's bells rang together (its usage offers `chime` again); how to ring them, before they have been.
+def chimed(state: State, id: String) -> String:
+  if state.tone == "" then "Ring the bells here together: delvetalk {id} chime\n" else "Its bells rung together: {state.tone}.\n"
+# Rings together every bell here (a place's `chime`, its body's spell): what it made or holds (`things`) and what its
+# doors open onto, the first sixteen;
+# each sounds what its colour rings (docs/HARMONIC.md), and their chord is written: `tone` and `oddLimit`, and a
+# line of the verb `chime` by whoever rang them, which tends it. A rule on a place reads it as it reads any write.
+# Nothing here sounding is refused `silent`, writing nothing.
+sum Sounded:
+  sounded: {tones: Lists.List<Harmony.Ratio>}
+def ringTogether(state: State, context: Abi.Context) -> Activity<Nat>:
+  match sounding(Lists.take(bellsOf(state, context), 16n), Lists.List.nil(), context):
+    case sounded(s): rung(state, Harmony.chord(s.tones), context)
+def bellsOf(state: State, context: Abi.Context) -> Lists.List<String>:
+  Lists.fold(Lists.concat(Lists.map(Relations.rows(state.things), fn(t: Plans.Reference) -> String: t.object), Lists.map(state.cites, fn(d: Card.Doorway) -> String: d.to.object)), Lists.List.nil(), fn(id: String) -> Lists.List<String> -> Lists.List<String>: fn(rest: Lists.List<String>) -> Lists.List<String>: if id == context.object || Lists.any(rest, fn(o: String) -> Bool: o == id) then rest else Lists.List.cons({head: id, tail: rest}))
+def sounding(ids: Lists.List<String>, got: Lists.List<Harmony.Ratio>, context: Abi.Context) -> Activity<Sounded>:
+  match ids:
+    case nil(_): Sounded.sounded({tones: got})
+    case cons(c): soundOf(c.head, c.tail, got, context)
+def soundOf(id: String, rest: Lists.List<String>, got: Lists.List<Harmony.Ratio>, context: Abi.Context) -> Activity<Sounded>:
+  match world.viewField::<Lists.List<Rows.Field>>({object: {world: context.world, object: id}, field: "fields"}):
+    case viewed(v): sounding(rest, Lists.concat(Harmony.tones(fieldIn(v.state, "colour")), got), context)
+    case _: sounding(rest, got, context)
+def rung(state: State, tones: Lists.List<Harmony.Ratio>, context: Abi.Context) -> Activity<Nat>:
+  if Lists.length(tones) == 0n then Card.refusing(0n, {clause: "silent", reading: "No bell here rings: none lies here or behind its doors"}, context) else ringsNow(state, Harmony.chordText(tones), Harmony.oddLimit(tones), Harmony.proportion(tones), context)
+def ringsNow(state: State, tone: String, limit: Nat, proportion: String, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {tone: set tone, oddLimit: set limit}
+  inscribe(extend(state, {tone: tone, oddLimit: limit}), "chime", "rang its bells together: {proportion}, odd limit {natText(limit)}", context)
 # Doors on the card are the owner's: what the record cites.
 # Each answers what the card now cites. A door hung to a thing another hand made tells its maker
 # (`heard`), as a line written on it does.
@@ -401,7 +445,7 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   let title = if state.head == "" then "A RECORD" else state.head
   let kept = if state.keeper == "" then "" else "; keeper {Card.shown(state.keeper, state.keeperHandle, context)}{Card.mine(state.keeper, context)}"
   let until = if state.keeper == "" then "" else ", [pending] until admitted"
-  Document.text("{title}{kept}. Write: delvetalk {id} write / text: <1 to 280 characters>; numbered{until}.\n")
+  Document.text("{title}{kept}. Write: delvetalk {id} write / text: <1 to 280 characters>; numbered{until}.\n{ringing(state)}")
 def render(state: State, context: Abi.Context) -> Document.Document:
   renderFrom(state, context, 0n, 0n)
 # A thing made from another's post (`post`, set when it is made) credits it under its head: a coinage
