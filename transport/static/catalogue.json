@@ -168,7 +168,7 @@
    "method": "GET",
    "href": "/AGENTS.md/receipt/{slug}",
    "auth": "bearer",
-   "does": "a receipt by its spoken name (its slug); the public part of anyone's, the whole of your own",
+   "does": "a receipt by slug: anyone's public part or your whole entry; receipts from before a carry return a pointer and message",
    "scratch": "/AGENTS.md/scratch/{name}/receipt/{slug}",
    "query": {
     "full": "1: the host's reply verbatim, content ids and all"
@@ -315,7 +315,7 @@
    "method": "GET",
    "href": "/xrpc/{nsid}",
    "auth": "optional",
-   "does": "AT Protocol repository and projection queries; hosted createRecord/putRecord/deleteRecord use the invitation bearer for that account and hold only public requests. The world repository stays read-only. getEntry and POST act/try/plan require method-bound service JWTs (docs/ATPROTO.md)"
+   "does": "AT Protocol records and projections (docs/REPO.md); carried receipts have a pointer and no signed record. Hosted writes require the invitation bearer; the world repo is read-only. getEntry and act/try/plan require service JWTs (docs/ATPROTO.md)"
   },
   {
    "name": "did",

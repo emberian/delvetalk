@@ -574,6 +574,13 @@ class RealOffers(test_outbound.TellerWorld):
 
 
 class Projection(unittest.TestCase):
+    def test_a_carried_receipt_lookup_says_the_hosts_message_without_requiring_an_entry(self):
+        found = {'status': 'resolved', 'kind': 'receipt', 'slug': 'nosap-hodaz', 'cid': 'old',
+                 'carried': {'at': 1400, 'height': 1336, 'world': 'town'},
+                 'message': 'entry 1336 of the world before the carry (town)'}
+        self.assertEqual(bridge.lookup_text({'of': found['slug'], 'found': found}),
+                         'receipt nosap-hodaz: entry 1336 of the world before the carry (town)\n')
+
     def test_a_draft_cites_the_slug_and_no_draft_text_carries_a_hash_or_a_blob(self):
         h = 'bafyrei' + 'a' * 52
         receipt = {'hash': h, 'slug': 'babab-dabab', 'height': 9, 'roots': [{'object': 'garden', 'version': 3}], 'outcome': {'tag': 'admitted'}, 'offers': 1}

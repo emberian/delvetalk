@@ -89,6 +89,8 @@ def record_problems(value):
     kind = value.get('kind')
     if kind not in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):
         return problems + ['$.kind: not a projection kind']
-    return list(dict.fromkeys(problems + validate(value.get('value'), doc['defs'][kind], doc, '$.value')))
+    subject = value.get('value')
+    shape = 'carriedReceipt' if kind == 'receipt' and isinstance(subject, dict) and 'carried' in subject else kind
+    return list(dict.fromkeys(problems + validate(subject, doc['defs'][shape], doc, '$.value')))
 
 

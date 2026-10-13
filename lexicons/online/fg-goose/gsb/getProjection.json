@@ -149,6 +149,64 @@
       },
       "description": "One journal entry, as the host projects it to the reader (world-entry, world-entries, world-resolve). The identity's own principal sees the whole entry; anyone else sees a refusal as its public projection and any other entry as its chain fields, identity, turn, outcome tag and the roots and writes of objects it may view."
     },
+    "carriedReceipt": {
+      "type": "object",
+      "required": [
+        "status",
+        "kind",
+        "slug",
+        "cid",
+        "carried",
+        "message"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "resolved"
+        },
+        "kind": {
+          "type": "string",
+          "const": "receipt"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "cid": {
+          "type": "string",
+          "format": "cid",
+          "description": "The old entry's CID, also the projection's of."
+        },
+        "carried": {
+          "type": "ref",
+          "ref": "#carriedPosition"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "description": "The host's world-resolve reply for a receipt from before a carry, verbatim. A receipt projection with carried in value uses this shape and has no signed record in the current tree."
+    },
+    "carriedPosition": {
+      "type": "object",
+      "required": [
+        "at",
+        "height",
+        "world"
+      ],
+      "properties": {
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "world": {
+          "type": "string"
+        }
+      }
+    },
     "identity": {
       "type": "object",
       "required": [
@@ -441,7 +499,7 @@
         "of": {
           "type": "string",
           "format": "cid",
-          "description": "The CID of the thing projected, not of value: receipt/publication/grant: entry hash; object: stateCid; source: module CID; absent for law."
+          "description": "The CID of the thing projected, not of value: receipt: entry hash or carried receipt cid; publication/grant: entry hash; object: stateCid; source: module CID; absent for law."
         },
         "signed": {
           "type": "string",
@@ -450,7 +508,7 @@
         },
         "value": {
           "type": "unknown",
-          "description": "The host reply for this kind, verbatim, without $type: #receipt, #object, #source, #publication, #grant or #law selects its shape."
+          "description": "The host reply for this kind, verbatim, without $type: #receipt, #object, #source, #publication, #grant or #law selects its shape; a receipt value with carried uses #carriedReceipt."
         }
       },
       "description": "kind is the discriminator selecting the shape of the host reply in value."

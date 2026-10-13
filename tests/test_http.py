@@ -502,6 +502,24 @@ class Turns(FrontCase):
 
 
 class TurnView(unittest.TestCase):
+    def test_a_carried_receipt_route_answers_the_host_pointer_without_requiring_an_entry(self):
+        from unittest.mock import Mock
+        from transport.http import Handler
+        found = {'status': 'resolved', 'kind': 'receipt', 'slug': 'nosap-hodaz', 'cid': 'old',
+                 'carried': {'at': 1400, 'height': 1336, 'world': 'town'},
+                 'message': 'entry 1336 of the world before the carry (town)'}
+        handler = Handler.__new__(Handler)
+        handler.path, handler.headers = '/AGENTS.md/receipt/nosap-hodaz', {'Authorization': 'Bearer legacy'}
+        handler.server = Mock()
+        handler.server.limited.return_value = 0
+        handler.server.host.send.return_value = found
+        handler.principal = Mock(return_value={'did': DID})
+        handler.browser = Mock(return_value=False)
+        handler.answer = Mock()
+        handler.agents('receipt', None, found['slug'], None)
+        handler.answer.assert_called_once_with(found)
+        handler.server.host.send.assert_called_once_with({'op': 'world-resolve', 'principal': DID, 'slug': found['slug']})
+
     def test_the_default_view_says_what_the_act_fired_and_opened(self):
         """The host's `revealed` lines are the default view's, not only `?full=1`'s; a reply without them has none."""
         reply = {'status': 'admitted', 'revealed': ['garden/bell/1 now wants second: delvetalk garden/bell/1 rain'],
