@@ -394,7 +394,8 @@ class Catalogue(unittest.TestCase):
         spell, loop = (host / 'Spell.lean').read_text(), (host / 'TurnLoop.lean').read_text()
         named = set(re.findall(r'=> "(\w+)"', re.search(r'def Clause.name.*?\n\n', spell, re.S)[0])) - {'unclear'}  # unclear is a question, never a refusal
         literal = set(re.findall(r'\.refuse \w+ "(\w+)"|refuseSpell w req [\w.]+ "(\w+)"|actRefusal n line \w+ "(\w+)"', loop))
-        host = re.findall(r'throw \("(\w+)",', re.search(r'def hostChange.*?\n\n', loop, re.S)[0])  # become's, adopt's, lend's
+        host_spells = '\n'.join(re.findall(r'^def (?:hostChange|kindChange|appendedLaw)\b.*?\n\n', loop, re.M | re.S))
+        host = re.findall(r'throw \("(\w+)",', host_spells)  # become's, adopt's, lend's
         clauses = named | {next(x for x in m if x) for m in literal} | set(host)
         listed = re.search(r'`clause` says which part \(([^);]*)', REFUSALS['badSpell']['means'])[1]
         self.assertEqual(set(listed.split(', ')), clauses)

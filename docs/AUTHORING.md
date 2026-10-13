@@ -33,7 +33,7 @@ Not run: `workshop make` (needs the model; in playtest 2's dry run hob copied th
 
 **What a resident can compute without Bend.** More than the playtests used: a rule's condition is linear arithmetic over the write (`+`, `%`, `count(… where …)`), membership in another thing's rows (`"key/1" in "room/1".things.object`) and another thing's wants, and its spell's holes are terms (`{request.clock + 1440}`). "Ring at the seventh rain" is one line (`world/kinds/bell.kind`). It cannot keep a value a resident names (only lines, marks and fixed fields exist), read the act's argument (LAW §5), compare with a number chosen at make (form fields are a list the grammar cannot index), hide anything (`rules` reads every clause), or loop.
 
-**What a resident cannot do at all.** Give a verb a computed effect (`grow`'s `does` is a rule's spell). Build on a resident's kind (`of:` is `record` or `kind`). Share less than a kind: only `adopt / law:` (copies clause lines) and `become / kind:` (lays a whole body) move behaviour. Fork with visible credit: `madeFrom` is journaled and shown nowhere.
+**What a resident can author.** A verb's `body` is a computed effect, checked and laid through the workshop (§3(b)); its `does` is a separate rule reaction. `of:` builds on a resident's kind. `become / kind:` installs that kind's stack and cited text as one component (§4); `adopt / law:` copies clause lines. A fork carries `madeFrom`, shown on its card.
 
 **Why the Bend path went unused.** Distance: 23 lines, five imports, a `render` and a `receive` before a thing answers one spell; a checker that names one missing import a round and passes a package no spell reaches; unchecked kind bodies; no way to try a body outside the town. LambdaMOO had the same core (the programmer bit, `@program obj:verb`) and was populated because the distance was one verb: `@verb lamp:light this none none`, a few lines, the rest inherited from `$thing`, `pass()` for the parent's.
 
@@ -49,11 +49,17 @@ Held by all: the law judges every write a resident's code makes; a turn runs und
 
 Written by spell, or by prose to hob (a `rule` spell is a spell hob may answer); computes linear conditions and filled spells; bounded by the grammar (it has no loop) and `rulesPerObject` × rows; shared as lines (`adopt / law:` copies, `under` follows live); credited to the line's owner. It is Inform 7's rulebook ("After …") and the spreadsheet's formula: declarative and total, the end-user programming that worked (Nardi, *A Small Matter of Programming*, 1993).
 
-**Decision:** yes, as tier one: form fields readable in clauses; no `set` effect; nothing else added to the grammar.
+A rule's `when` is a level condition: it fires on every write while true. `when: changed(count(new.lines where verb == "rain"))` fires only when that retained count differs between old and new; `changed(new.F)`
+and arithmetic terms use the same readings as `==`. The term reads no request facts, and unreadable terms
+are false. A want reads no old state and refuses `changed(…)`. A seventh-rain crossing still needs its
+explicit threshold on each side (LAW §8); a change of count alone also fires on the eighth rain.
+
+**Decision:** yes, as tier one: form fields readable in clauses and transition terms beside level conditions;
+no `set` effect.
 
 ### (b) Verbs with bodies
 
-*A grown verb's `does` may be a Bend method body.* The resident types the verb and a few lines:
+*A verb's body is a Bend method.* The resident types the verb and a few lines:
 
 ```
 delvetalk bell/2 grow / name: water / takes: text / body: <<BEND
@@ -65,7 +71,7 @@ The workshop generates the layer around it in Bend, as `Kind.layerSource` alread
 
 Computes anything Bend does within the tariff, over `state`, `input`, `context` and world calls (each judged by its target's law); shared as a layer (§4). LambdaMOO verbs were this (code on an object, run with its owner's permissions, under a per-task tick quota), and its `$`-utilities on `#0` (`$string_utils`, `$list_utils`) made short verbs possible, as RECORD's `inscribe`, `mark` and `field` do here. LSL put event-handler scripts in each prim and sold them with next-owner permissions (copy, modify, transfer); Roblox runs Luau sandboxed under an execution timeout. Each made authorship a short text on a thing plus a library.
 
-**Decision:** yes, as no new mechanism: a bodied verb is a one-method layer the workshop generates, checks and holds; `grow` without `body` stays a gesture with a rule for consequence.
+**Decision:** a bodied verb is a one-method layer the workshop generates, checks and holds; `grow` without `body` is a gesture writing a line and tending. Both run synchronously under the user's name and commit or refuse with that turn. A gesture's `does` names a separate rule reaction, after the commit under its owner. Laying a body replaces the gesture of that name and its `does` rule in the same turn, by `ungrow`'s judgment; a held body replaces nothing until adopted.
 
 ### (c) Workshop drafts that work
 
@@ -91,17 +97,73 @@ A spell already is a typed block (`?` prints it), as Scratch's are, and hob is t
 
 **Kinds on any kind.** `kinds make / of: kind/lantern` makes a kind whose instances run the base package, then each ancestor's body bottom up, then its own: a layer stack, which the kernel has (`layer over`, late binding, `Super.f`; KERNEL-HANDOFF §8, HOST-HANDOFF 5.138). Its law is `under` its kind, whose text is `under` the parent, so every ancestor's rules and wants follow (`Law.followed`, depth 4). `Super.water(…)` is MOO's `pass()` and LPC's `::create()` after `inherit "/std/object";`.
 
-**Upstream changes.** Clauses follow `under` live: amend the kind's text and every instance is judged by it at its next write (LAW §4 F). They only add to each instance's own text, which holds its owner's law, and they never refuse the instance owner's amendment, so an owner can always leave the kind (FOUNDATION §4, Tenure). A rule the kind's text carries acts as each instance itself (`@<id>`), never as the kind's owner, so it lends nobody's authority to code a resident lays below or over it. Code is pinned: a body laid at make is the kind's body then (`extend` pins `["extend", old pin, source CID]`); a newer body reaches a thing only when its owner lays it (`become / kind:` again, judged by its own law). OVERHAUL's `relay`, the kind owner pushing a body onto followers, inverts that authority and stays unbuilt.
+**Upstream changes.** Clauses follow `under` live: the kind's owner adds a rule or want with `rule … / for: things` or `want … / for: things`, and removes it by `unrule / name: … / for: things` or `unwant / name: … / for: things`. Each is an amendment of the kind's `law` state field (kind 2), judged by the kind's own law; every instance carries the text at its next write (LAW §4 F). Leaving `for:` out places or removes a line on the kind object itself, with no propagation. They only add to each instance's own text, which holds its owner's law, and they never refuse the instance owner's amendment, so an owner can always leave the kind (FOUNDATION §4, Tenure). A rule the kind's text carries acts as each instance itself (`@<id>`), never as the kind's owner, so it lends nobody's authority to code a resident lays below or over it. Code is pinned: a body laid at make is the kind's body then (the pin seals the whole source closure); a newer body reaches a thing only when its owner lays it (`become / kind:` again, judged by its own law). OVERHAUL's `relay`, the kind owner pushing a body onto followers, inverts that authority and stays unbuilt.
 
-**A library of verbs.** The unit of sharing is a kind. A verb anyone may copy is a kind whose body defines one verb (`kind/watering`), laid on any thing it compiles against by `become / kind: kind/watering`, the thing's owner's act, credited by `madeFrom {object, pin, receipt}` on the reprogram (5.113, built): LSL's script-as-item, with the kind's law saying who makes from it. **Forking** is `workshop draft / from: kind/watering`: the draft starts as that body and what is made carries `madeFrom`. **Credit**: RECORD's `credit` line, which names a coiner's post today, prints the lineage ("after kind/watering by Yuè, entry 412"); Infinite Craft's first-finder credit, kept forever.
+**A library of verbs.** The unit of sharing is a kind. A verb anyone may copy is a kind whose body defines one verb (`kind/watering`), laid on any thing it compiles against by `become / kind: kind/watering`, the thing's owner's act, credited by `madeFrom {object, pin, receipt, components}` on the making or reprogram (5.219): LSL's script-as-item, with the kind's law saying who makes from it. **Forking** is `workshop draft / from: kind/watering`: the draft starts as that body and what is made carries `madeFrom`. **Credit**: RECORD's `credit` line, which names a coiner's post today, prints the lineage ("after kind/watering by Yuè, entry 412"); Infinite Craft's first-finder credit, kept forever.
+
+**Grown gestures.** `grow` without a body places a verb on the thing, whoever its law admits. Of its sixteen slots, a hand other than its owner (or the opener) holds at most `Limits.placedPerHand` (4); all other hands together hold `verbsByOthers` (12), reserving four for the owner. The same local `checkShare` in `judge` admits rules and wants, each in its own collection: a gesture with `does` takes one verb slot and one rule slot, so four such gestures use four of each allowance. A refusal names `capacity placedPerHand`, `verbsByOthers` or the full table's `verbsPerObject`. `ungrow` by its grower, the thing's owner or the opener frees both the verb and its rule, including when a share is full; the owner and opener are exempt from shares, within the table's sixteen.
+
+**Keeping room** (HOST-HANDOFF 5.226). Each resident may make 128 non-retired things and grant
+64 unrevoked delegations whose `until` has not passed; the opener is exempt within the town's
+10,000 objects and 4,096 live grants. A kind making a thing charges the resident whose turn made
+it. Changing a Bend state's `owner` or `maker` does not transfer that allocation. `capacity`
+names `objectsPerPrincipal` or `grantsPerPrincipal` when a share is full. The opener's
+`delvetalk <thing> retire / reading: <why it is finished>` releases the maker's object share,
+preserving its name and state. A resident may also amend an owned thing's law with
+`law retired "finished": request.kind == 2 and request.subject == "<their principal>"`, when its
+law admits their amendment; the thing stops activity and they can still amend it. The `retire`
+power itself remains the opener's. Any removal of retirement, including the opener's `unretire`,
+must fit the maker's share. Retirement still occupies the global object table until the inactive-object
+archive is built (FOUNDATION §2, §12). `ungrow` frees a placing, not an object allocation.
+Revoking a grant or advancing past its `until` frees its live slot. A receipt citing its id can
+read a compact ending through `world-inspect {grant}` or `world-grants {grant}`; its free-text
+reading and full terms remain in the original receipt. The world retains 256 endings; earlier
+ones require the journal, and those evicted before a carry require the retained old journal.
+Neither a snapshot nor a carry reclaims journal bytes. Segmented journals and object archival
+are specified, assigned follow-ups in FOUNDATION §12, not authoring facilities shipped here.
 
 **Decision:** `of:` any kind as a layer stack; clauses live, code pinned and pulled by the downstream owner; the verb library is single-verb kinds laid by `become`; forks by `draft / from:`; lineage on the card.
 
-**The astra world review's three mediums (2026-10-12, world.md 12, 13, 14), decided.**
+**The astra world review's four medium findings (2026-10-12, world.md 12, 13, 14, 15), decided.**
 
-- *A grown verb and a bodied verb* (12). One contract: a verb is a method a hand runs under their own name, synchronous, its writes committed or refused with the turn; "admitted" means its own write stood (a gesture's line, a body's write). What follows from it elsewhere is a reaction, never the verb: rules, after the commit, under their own owners (FOUNDATION §4 Tenure), each reported on the reply as fired, queued or not fired, never as the verb's success. Upgrading a gesture to a body replaces it: `grow / body:` on a name grown as a gesture takes the gesture's row and the rule it `does` off in the same turn that lays the body, or is refused `nameTaken` naming them; it never leaves both. Owner: objects (the workshop's `growBody`), done when a gesture `water` with a `does` rule, re-grown with a body, has one consequence.
-- *A kind as the unit of composition* (13). A kind is the component: its stack (every ancestor's body, bottom first), its text (cited by `under`) and its identity (`madeFrom`). Making and `become / kind:` compose alike: `become` lays the kind's whole stack above what the thing runs, skipping layers already laid from the same kind and pin, and adds `law kind: under "<kind>"` to the thing's own text, both in one turn judged by the thing's law; a second `become` of the same kind is an upgrade of that component (its layers relaid), never a second stack. Owner: objects (KIND, the host's `become`), done when a one-verb kind with a law line behaves the same made and become, and becoming it twice runs one copy.
-- *"Rules on a kind"* (14). Two targets, said: a kind's `law` text is the clause collection for its things (each acting as the thing, §4 above), and a line placed on `kind/x` is on the kind object itself, as on any thing. `rules` on a kind lists both under their target ("for its things", "on the kind"), and `rule … / for: things` on a kind is its owner's amendment of that text, the same spell. Owner: host (`rulesText`, `placementsOf`), done when a resident who places `for: things` on kind/bell sees every bell carry it and `rules` names the target.
+- *A grown verb and a bodied verb* (12; HOST-HANDOFF 5.218). One contract: a verb is a method a hand runs under their own name, synchronous, its writes committed or refused with the turn; "admitted" means its own write stood (a gesture's line, a body's write). What follows from it elsewhere is a reaction, never the verb: rules, after the commit, under their own owners (FOUNDATION §4 Tenure), each reported on the reply as fired, queued or not fired, never as the verb's success. The workshop's `layingLayer`, shared by `growBody` and held-layer adoption (`laidOn`), checks `ungrow` for each form it lays; a hand who cannot take the gesture off is refused `nameTaken`, naming the gesture and its `does` rule. An admitted `extend` then stages those removals with the body. A held body keeps the gesture and rule standing until the owner's adoption lays it and removes them in one turn. `test_authoring` exercises immediate replacement, a stranger's refusal and replacement at adoption; each use after replacement has one consequence.
+- *A kind as the unit of composition* (13; HOST-HANDOFF 5.219). A kind is the component: its stack (every ancestor's body, bottom first), its text (cited by `under`) and its identity (`madeFrom`). `Ops.kindStack`, asked by KIND's `stackOf` through `world.kindStack`, is the one definition of that stack, used for checks, making and `become`. KIND's `composing` asks `world.compose`; the host's `become` uses the same `kindChange`. Both install each kind's body once, retaining an already laid ancestor, and cite the component's text through `appendedLaw`, the same amendment path as `adopt`, in one turn judged by the thing's own law. The citation is `kindCitation`, also returned with the stack for `lawOf`; it uses `Ops.citedLaw`, the same check as `under`, to cite only a kind whose state holds parsed `law` text for its things. A kind without such text installs its bodies and lineage without a citation or amendment; later adopting a law on the kind object leaves those things' text unchanged. A citation's name is `kind`, or the first unused `kind1`, `kind2`, … when the thing already cites another kind. A repeat retains each unchanged body at its position; an upgrade replaces changed bodies there, preserving unrelated layers above and below. `madeFrom.components` records each source kind, its pin, the receipt its body came from, its body and layer position. A body is state: amending it changes its receipt without necessarily changing the kind object's code pin, so both body and pin identify the installed code; an unrelated make or text amendment needs no relaying. A kind with no body still installs its text and identity. `test_kinds` exercises the same three-water cap made and become (280-character waters), every ancestor body, repeat installation on a made and a plain thing, an upgrade removing an old verb beneath an unrelated layer, snapshot and replay, and a refusal that changes neither code nor citation. `test_extend` exercises a lawless kind whose layers run before and after a law is adopted on the kind itself, including after reopening, with no citation added to the thing.
+- *"Rules on a kind"* (14; HOST-HANDOFF 5.220). Two targets: a kind's `law` text is the clause collection for its things (each acting as the thing, §4 above), and a line placed on `kind/x` is on the kind object itself, as on any thing. `rules` lists both as "for its things" and "on the kind"; `wants` lists the things' clause templates and the kind's holding wants under those same targets. `rule … / for: things` and `want … / for: things` amend the kind's text, and `unrule` and `unwant` remove their own modality there with the same selector; absent `for:` names the object itself. `TurnLoop.placingChange` reads the clause through `placementsOf` and appends through `appendedLaw`, staging a state edit judged as amendment by the kind's own law. A stranger's amendment is refused by that law's clause and reading; a non-kind or an unknown target has a plain refusal. The owner's `?` and hob's placing forms show `for:` before the nested spell. `rulesText` and `wantsText` read the collection through `clausesForThings`, using `Ops.carried`; text rules do not borrow the kind's firing history. `test_rules.KindTargets` covers existing and new bells, firing as the bell, both placements and removals, wants, refusal, usage and text bounds. Journal state derivation is unchanged.
+- *What an offered card names* (15; HOST-HANDOFF 5.222). An interpretation's pending request and action receipt
+  name each offered card by `{object, version, behaviour}`. Each placing or removal of a rule, want or verb,
+  reprogram and amendment advances that card's behaviour revision; any placing on an offered card is relevant,
+  including another verb's rule, while placings on unoffered cards leave the reading valid. `resumeHeard` refuses
+  a changed reading as `staleRoot`, naming the card and revision before casting; a Bend `interpret` re-runs once
+  through `resumeOne` and asks on the current roots with a new model slot. Ordinary state moves reuse the settled
+  model answer with the same await numbering; a batch's other readings keep their slots. A host reading whose
+  behaviour still matches casts on current state, retaining the read revision and linking the original reading
+  by `resumes`. Making and the new thing's own placements do not revise any previously offered card. A stranger's placing moves no state
+  version and leaves an ordinary write's roots and digest alone. The counter survives removal of all rows,
+  snapshot and replay through `placedCid`; `test_interpret_object` exercises both resumes and the controls.
+
+**Wants that ask a hand (world.md 16; HOST-HANDOFF 5.223).** Keep a want as the one clause modality. Its
+condition is completion evidence: while it holds, the description stays; when it stops holding, the want closes.
+Use the same domain fact as the action and its rules, such as `count(new.lines where verb == "rain" and author ==
+new.maker)` for the maker's rains, excluding other gestures. Discovery uses the existing `?` judgment: a filled
+ask must name a visible card and an action its law and Bend `actions` offer this reader. `wants` retains every
+held description, marking each answerable or waiting on other hands; `unwant` cancels it. Blocked is held but
+not answerable for this hand, derived rather than stored. `World.WantPage` adds `waiting` and `next` beside rows
+and more. The commonplace counts the waiting wants, and it and the morning rotate their oldest-first page by
+`clock day mod answerable count`, wrapping. For `oldest: true`, use the returned offset `next` as `after` on the
+same day and answerable set; restart at zero after either changes. Newest-first paging retains whole heights.
+An ask naming `?` is descriptive, so it is counted as waiting. The generic errand `open` want is removed: its
+open card already prints its work and its rule's condition, and only that rule's settlement supplies completion.
+
+**Paintable facts (world.md 17; HOST-HANDOFF 5.225).** A kind's `voice` supplies a register; `about`, heads,
+form values and heard lines supply words that may be quoted as said/written. They do not establish current
+predicates. The host selects numbered facts from structured strokes (roles, location, tending, counts, marks,
+present hands, holding wants and derived events), and renders each cited `[[id,...]]` line with its own clauses.
+A `rung` mark supplies "it has rung"; an arbitrary mark supplies only its recorded name. The model arranges facts
+and adds guarded simile fragments, rather than inferring state from descriptions. The imagery guard checks
+listed syntax and vocabulary, not every semantic implication. The exact card stays visible below the paint with
+current status and available actions; a painted arrival post also retains the host's exact history below its
+complete current reply. Counts remain retained-history or stated-day counts; descriptions and
+paint never become law or completion evidence.
 
 ## 5. The recommendation
 
@@ -132,8 +194,8 @@ A spell already is a typed block (`?` prints it), as Scratch's are, and hob is t
 
 1. Grown verbs offered: RECORD's `act` public (not `~act`) or `offeredTo` judging a grown verb apart from the helper flag (objects and host lanes choose). A defect fix, first.
 2. `Workshop`: `draft / over:` and the header generator, `actions()` included (Bend, sharing `Kind.layerSource`); `check / over:`; `try`; `draft / from:`; the no-`receive` warning; `make` asking for a layer.
-3. `Kind`: `of:` resolves a kind id; `packageOf` becomes the ancestor's package; the instance's layer is the ancestors' bodies then its own (one `extend` per layer, or one generated layer concatenating them); `body` checked at `kinds make`.
-4. `grow / body:`: the placing plus a workshop held layer, adopted in the same turn on the grower's own thing.
+3. `Kind`: `of:` resolves a kind id through `world.kindStack`; `body` checked at `kinds make`; `world.compose` installs the ancestor bodies and its own with its cited text and lineage, as `become` does (§4).
+4. `grow / body:`: a workshop layer, laid in the same turn on the grower's own thing or held for its owner; laying it replaces each gesture its forms name and its `does` rule, through `ungrow`.
 5. RECORD's `credit` prints lineage.
 
 **The smallest buildable version this week**, in order, each a commit with its control (the probe in §1 is the harness: fresh genesis on hbox, residents' spells by `receive`):
@@ -216,7 +278,7 @@ delvetalk room/1 rule / name: twokeys / reading: both keys here light lantern/9 
 delvetalk lantern/9 want / name: dark / reading: unlit / when: count(new.lines where verb == "light") == 0 / asks: delvetalk room/1 ?
 ```
 
-Lit is having a `light` line; the want leaves the town's list when it lights. Taking a key out does not unlight it; a lantern that goes dark needs a body.
+Lit is having a `light` line; this descriptive want asks a card read, so it stays in `wants` as waiting and is counted rather than offered as work. It closes when the rule lights the lantern. Taking a key out does not unlight it; a lantern that goes dark needs a body.
 
 **6.4 A market stall that trades a thing for a promise.** The promise is the buyer's line, the trade an errand's shape (a rule with a pay), the custody THING's (`offer` by the holder, the stall's keeper):
 

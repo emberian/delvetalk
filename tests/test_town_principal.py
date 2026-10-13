@@ -155,7 +155,11 @@ class CarriedFromAPerson(unittest.TestCase):
 
     def test_the_paint_verifier_credits_the_town_and_not_the_owner(self):
         check = lambda text: self.send(op='world-render-check', principal=GLM, object='anthology', text=text)
-        self.assertEqual(check('THE ANTHOLOGY, kept by the town.')['status'], 'verified')
+        facts = self.send(op='world-strokes', principal=GLM, object='anthology')['strokes']['facts']
+        keeper = next(f for f in facts if f['kind'] == 'keeper')
+        self.assertEqual(keeper['value'], 'the town')
+        got = check('[[%d]]' % keeper['id'])
+        self.assertEqual((got['status'], got['text']), ('verified', 'kept by the town.'))
         self.assertEqual(check(f'THE ANTHOLOGY, kept by {OWNER_HANDLE}.')['clause'], 'handles')
 
 

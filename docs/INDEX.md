@@ -1,6 +1,6 @@
 # Documents
 
-State on 2026-10-13: foundation 392c1f98, replay edition 13. The live town runs 1219d5ba with lane/membrane 276b7042
+State on 2026-10-13: foundation 392c1f98; with lane/cx-world merged, replay edition 14 (HOST-HANDOFF 5.219). The live town runs 1219d5ba with lane/membrane 276b7042
 (v14, carried at entry 1336); the multilingual town, the AT Protocol lanes and derived account keys are merged and not
 deployed (README section 3 has the table). A document dated earlier says so in its head; the ones whose surfaces are
 gone carry an "As built" note (VOICE, MENU, CATALOGUE, FLEX) or were rewritten (LIBRARY, SEEDING, AGENTS-API).

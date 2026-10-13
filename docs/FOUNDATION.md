@@ -1,6 +1,6 @@
 # Foundation
 
-State on 2026-10-12 (replay edition 12, snapshot `v5`; the live town carried to edition 12 into v10): docs/OVERHAUL.md's steps 0 to 4 and 3b
+State on 2026-10-12 (replay edition 14, snapshot `v5`; the live town's recorded carry was to edition 12 into v10): docs/OVERHAUL.md's steps 0 to 4 and 3b
 are built. Every thing carries a law, rules, wants and grown verbs; hob reads words at any card; worlds are carried
 across editions, never wiped; cards are painted above the exact card.
 
@@ -117,7 +117,8 @@ moderation (quiet a principal until a clock, hide, shadow) is the opener's recei
 quieted principal's turns are refused `quiet` until the clock passes (`docs/ROOT.md`; HOST-HANDOFF 5.126).
 `delvetalk-obend root-edit` and `migrate` are the offline tools (`RootEdit.lean`).
 
-**Store.** Objects by id: `{pin, law, version, state, activities}`. `pin` is the
+**Store.** Objects by id: `{maker, pin, law, version, behaviour, state, activities}`.
+`maker` is the immutable allocation principal; a Bend state's fields do not replace it. `pin` is the
 CID of the sealed source closure. `state` is typed data against the package's
 state type. `activities` are suspended turns, as checkpoints bound to object,
 principal, intent and roots. Ids are 1 to 128 bytes of `[A-Za-z0-9._:/-]` at
@@ -128,7 +129,8 @@ replay accepts any id an older journal holds.
 **Turn.** Input: principal, object, method, typed argument, and the identity
 `(principal, intent)`. The host loads the pinned package, applies the argument,
 runs. At each yield it answers the message (§3), recording every root read as
-`{object, version}` (or a field root, §9). At `done` it holds a write set and
+`{object, version}` (or a field root, §9); a reading of offers also records `behaviour`, the card's
+revision of placings and code or clause-text edits (§6). Ordinary state roots carry no such field. At `done` it holds a write set and
 commits iff every root is still current, or moved only in ways the turn's edits
 commute with (§9), and every written object's law admits the write. A turn
 exhausting its budget is a named refusal.
@@ -156,7 +158,8 @@ roots, writes or refusal class, budget spent, height. Reading a whole receipt
 needs the identity's principal. The public projection of a refusal is
 `{class, root, reason?}`, with the object for `unknownObject` and
 `requiredAbsence` and the `hint` for `badSpell`: "observed, not committed", and
-nothing about hidden state.
+nothing about hidden state. An offered-card `staleRoot` also shows the read behaviour revision and the plain
+reason naming its change, so the speaker knows to read the offers again.
 
 **Refusal classes**, closed (`refusalClasses`, `Ops.lean`): `staleRoot`,
 `typeMismatch`, `capacity`, `absentItem`, `lawRefused`, `unknownObject`,
@@ -177,8 +180,8 @@ replays only the tail. A journal at `J` is two files: the chain `J`, one link a 
 previous}`), and the block store `J.blocks`, each entry's canonical record at `at`; an append writes and syncs the
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
-Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 9: rules fire and wants
-pose, 5.160), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 14: component bodies
+replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -191,7 +194,7 @@ replayed; the new binary reads the world from the snapshot the old one took at i
 a journal with a `carried` genesis chained to the old head, holding the store, grants, pending deliveries,
 suspensions, posts, handles, settings and the old chain's entries by hash, so a receipt of the world before resolves
 by its slug as "entry N of the world before the carry"; `carriedFrom {world, height, cid, replay, hostSha256,
-reason}` names the origin and height 2 continues. Old entries are not re-judged (they were judged under their own
+reason}` names the origin; the carrying genesis takes the old height plus one and heights continue. Old entries are not re-judged (they were judged under their own
 edition), and the old journal is kept, read-only. Every object is rebuilt from its sources (pins are source CIDs, so
 none moves): its sources seal to its pin, its state conforms to the type this host compiles and its rows are
 canonical, and every suspended checkpoint decodes. `--library DIR` seals the image's library into the carried world
@@ -212,6 +215,78 @@ everything is where it was, and the carry is receipt X.` A genesis over a living
 `--towns`) is refused, naming each journal and its height, unless `--wipe-with-the-owners-word R`; R is then the
 town's first line, written on the commonplace, admitted by the opener and the first line of the welcome. A commit
 that touches the host ships `deploy/carry-check.sh` green on the newest backup, or it does not merge.
+
+**Active allocations** (HOST-HANDOFF 5.226). `maxGrants` (4,096) counts unrevoked grants whose
+`until` has not passed, including a limited grant with no uses left until it is revoked or expires.
+The clock equals `until` while the grant still stands. Recording a revocation or the first entry
+whose clock passes `until` removes its full terms from the live grant index and derives a tombstone:
+`{id, grantor, holder, to, object, method, ended, endedAt}`. `ended` is `revoked` or `expired`,
+`endedAt` is that entry's height; its reading, fixed argument and uses are kept only in its creation
+receipt. The newest 256 endings (`maxGrantTombstones`), ordered by ending height then id, remain
+in the world, snapshots and carries. An older tombstone's id is resolvable only through the journal;
+`world-grants {grant}` and `world-inspect {grant}` read the current chain when the ring no longer
+holds it. After a carry, an eviction predating that carry is in the retained old journal, not the new
+live index; the current host does not open another edition's archived chain on a grant read.
+Receipt hashes and slugs still identify that old chain. Grant reads obey the target object's read
+policy and report the ending, with `revoked` derived for readers of the earlier grant shape.
+Snapshotting alone releases no grant capacity; the journal-derived ending does. No journal bytes
+are reclaimed by compaction.
+
+A principal other than the opener holds at most 64 such grants (`grantsPerPrincipal`) and makes
+at most 128 non-retired objects (`objectsPerPrincipal`): 1/64 of the 4,096 grants and about 1/78
+of the 10,000 objects, leaving space shared among many residents. These are upper shares, not
+reservations or protection against multiple identities. The opener and the town's own makings
+are exempt from shares, within the global bounds. An object's allocation principal is immutable:
+the creating turn's principal, including when a kind makes it for that resident; a direct creation
+with an opener-named `owner` is allocated to that owner. Mutable `owner`/`maker` fields in Bend
+state do not move this allocation. Both creation routes and the ordinary restoration spell use
+one `objectCapacity` check on the final store; unrestricted root overrides bypass admission. Refusals are transient `capacity` naming
+`objectsPerPrincipal`, `grantsPerPrincipal`, `maxObjects` or `maxGrants`.
+The opener's `retire / reading:` or a carry's `--leave` releases the maker's share. A resident
+whose law permits amendment can also append `law retired "finished": request.kind == 2 and
+request.subject == "<resident>"` through the existing amendment mechanism: activity stops while
+the resident retains amendment permission. Only that guarded retirement shape releases a share;
+a clause merely named `retired` does not. The named principal is retained across forks and carries,
+so a different opener does not make the object live again. Its name and state stay available,
+and it still counts toward `maxObjects`. Any ordinary removal of the retirement clause, including
+the opener's `unretire`, needs room in the maker's share. Revocation and expiry release grant shares even when an allocation is already full.
+`world-open {maxGrants}` may lower the process's grant bound, never raise it, as `maxObjects` does.
+Old snapshots carried without allocation metadata recover the creation's principal from its
+journal when available, otherwise the state's owner, or the opener for an ownerless old carried
+object; these legacy attributions are sealed in the carried genesis. A snapshot without maker
+fields or a sixth anchor height reconstructs those from the available creation or genesis row
+under `outcome.state.objects`; grant normalization uses the same store contract. Verification
+compares the normalized store and indexes against replay, preserving all anchor checks. An existing allocation over
+its share can shrink or stay unchanged, but cannot grow.
+
+**Archival contracts, queued in §12; not implemented.** Preservation of names and receipts does
+not require keeping every representation in a live index. The remaining lifecycle work is:
+
+- **Segmented journal** (owner: host/block-store). Seal an active segment before its byte or entry
+  bound, take a snapshot at that seal, and begin the next segment with the sealed head's hash-chain
+  link. A checked manifest maps height ranges and receipt CIDs to sealed segments. Move each old
+  segment's chain and canonical records into the block-store archive; retain its seal, snapshot CID
+  and chain link. A receipt hash continues to resolve to the exact canonical record and its chain
+  proof, including across carries, without loading every segment. `maxJournalBytes` then bounds
+  the active segment's chain plus record bytes; `maxJournalEntries` bounds its entries. Sealing
+  releases those active append capacities and replay/index memory, not archive disk space or
+  object/grant allocations. Completion: lower both bounds, append through two seals, restart at
+  each crash boundary, verify both chain links and snapshots, and resolve the earliest receipt by
+  hash with its bytes unchanged, including an evicted pre-carry grant id through its archive.
+- **Inactive-object archive** (owner: host/objects). After 30 days of the journaled world clock
+  (`K = 30`, 43,200 minutes) without a touch, and with no live grant or suspension referencing
+  it (as target, holder, grantee, frame or checkpoint root), seal the complete object to an archive
+  CID and remove it from the live object index. Keep a bounded name-to-CID directory, law/read
+  policy and allocation metadata; names remain reserved. A touch, including an authorized read,
+  faults the same object back in, journals its access clock at most once per clock day, and admits
+  it against the live global and principal bounds, archiving another eligible object first when
+  possible. If none can move, return the named capacity without changing the archived object or
+  losing its name. Retirement is not required. This releases live-object memory and `maxObjects`
+  live count (and its live principal share), never journal bytes. Completion: lower the live cap,
+  archive an eligible object, make another, reopen and fault the old name back with identical pin,
+  version and state CID; a live grant or suspended root prevents archival; a denied read reveals
+  no archived state; receipts resolve before and after faulting. The directory must be disk-paged,
+  not another ever-growing in-memory object collection.
 
 An object's pin is the CID of its sealed source closure, not of a compiled
 packet. A compiler or library change never moves the pin of an object whose
@@ -263,12 +338,19 @@ and writes 64, call depth 8, sends 32 a turn, rules and wants 32 an object, verb
 down a chain, relation rows 4,096 by default, chain ledger `{depth 100, work 10,000,000, storage 1 MiB}`, suspended
 turns 4,096). One name per bound.
 
-**The paint** (`Host/Enchant.lean`, HOST-HANDOFF 5.161, OVERHAUL §4). The host assembles a thing's strokes at a
-version (head, fields, kind and its `voice`, maker, keeper, counts, the eight newest lines, marks, verbs, laws, rules,
-wants, doors, who is present), the model worker renders them under `Paint.contract()`, and `Enchant.verify` admits
-the prose only when every id, number, handle, spell and quotation is a stroke's and no clause it forbids is broken;
-an admitted paint is cached per (strokes, library pin, model), never journaled, so replay needs no model. The exact
-card stands beneath it on every surface; a refusal, a receipt and a law line are never painted.
+**The paint** (`Host/Enchant.lean`, HOST-HANDOFF 5.225, OVERHAUL §4). The host assembles strokes at a version
+and selects numbered structured facts from their roles, location, tending, counts, marks, present hands, holding
+wants and host-derived events. The model selects and orders `[[id,...]]` lines; the host substitutes its canonical
+clauses. Historical heads, `about`, seeds and heard lines appear only quoted as said/written, never as current
+truth. Other model prose is explicit simile fragments checked by the existing token rules and a syntax/vocabulary
+imagery guard. That guard does not prove arbitrary metaphor free of factual implications; the factual guarantee
+belongs to the host clauses. Worked examples in five tongues use this same citation contract. Length retries
+once in every tongue; non-model refusals in a supported non-English tongue retry once through the same mechanism,
+with the clause, detail and citation-aware remedy. Source and expanded text share the existing length bounds. Verified source is cached
+per (strokes including facts, library pin, model), reverified on disk load and expanded on read, never journaled;
+replay needs no model and its derivation is unchanged. The exact card, current status and available actions stand
+visible beneath the paint; a painted arrival post retains all the host's exact history after the complete
+current reply, independently of the model's selected events. A refusal, a receipt and a law line are never painted.
 
 ## 3. Plans: the world protocol
 
@@ -312,10 +394,10 @@ outside the table is `noMethod`.
 | `grant {to, object, method, until}` | `granted {id}` | `to` may call `method` on `object` as the grantor until the clock passes `until` |
 | `grantWith {…, fixed, uses}` | `granted {id}` | attenuated: binds part of the argument (`grantConflict`), serves `uses` calls (`grantSpent` after) |
 | `revoke {id}` | `revoked` | by the grantor, or the holder (`notGrantor` otherwise) |
-| `rule`, `unrule {object, name, when?, then?}`; `want`, `unwant {…, asks?}`; `grow`, `ungrow {…, reading?, takes?, does?}` | `placed`, `refused {clause, reading}` | a placing (`request.kind` `rule`, 4), judged by the target's law, moving no version (§10) |
+| `rule`, `unrule {object, name, when?, then?}`; `want`, `unwant {…, asks?}`; `grow`, `ungrow {…, reading?, takes?, does?}` | `placed`, `refused {clause, reading}` | a placing (`request.kind` `rule`, 4), judged by the target's law, advancing `behaviour` while leaving the state `version` alone (§10) |
 | `act<R> {object, verb, text}` | `returned` | uses a grown verb: one line tagged with the verb, and the thing tended |
 | `chronicle {day}` | `chronicled {day, lines}` | one clock day of the journal folded into lines, derived, never written |
-| `wanting {after, limit}` | `wanting {rows, more}` | declared; the host does not answer it yet (HOST-HANDOFF §7 1a) |
+| `wanting {after, limit, oldest}` | `wanting {rows, more, waiting, next}` | answerable held wants; `oldest` rotates daily with an offset cursor, otherwise whole heights newest first; visible blocked wants counted |
 
 Only the objects that use a facility name it, and the artifact lists the world
 methods an entry's sites name (`world`), so `inspect` says what an object asks
@@ -369,18 +451,40 @@ want NAME "reading": EXPR asks SPELL      poses while it holds, judged at read a
 EXPR  ::= EXPR implies|or|and EXPR | not EXPR | ( EXPR ) | ATOM
 ATOM  ::= REF == TERM | REF <= TERM | REF + TERM <= TERM | TERM in [INT, …] | TERM in new.F | TERM in new.F.COL
         | TERM in "OBJECT".F.COL | TERM in old.F.COL | monotone(F) | writeOnce(F) | appendOnly(F)
-        | unchanged(F) | insertOnly(F) | changed(new.F.COL) by TERM | under "OBJECT" | "OBJECT" wants NAME
+        | unchanged(F) | insertOnly(F) | changed(TERM) | changed(new.F.COL) by TERM | under "OBJECT" | "OBJECT" wants NAME
 TERM  ::= REF | INT | "TEXT" | TERM + TERM | TERM % INT
 REF   ::= new.F | old.F | "OBJECT".F | request.subject | request.caller | request.height | request.turn
         | request.pin | request.kind | request.method | request.verb | request.clock | request.object
-        | count(new.F) | count(old.F) | count(new.F where COL == TERM) | count(old.F where COL == TERM)
+        | count(new.F) | count(old.F) | count(new.F where COL == TERM [and COL == TERM …]) | count(old.F where COL == TERM [and COL == TERM …])
 ```
+
+A rule's `when` is a level condition: every commit while it holds fires it. `changed(TERM)` is
+true only when a state term's reading differs between old and new, with the same equality as `==`;
+its term reads no request facts, and unreadable terms make it false. Wants read no old state and
+refuse this atom. `by` after `changed(new.F.COL)` selects the existing row-column atom instead
+(LAW §8). Threshold crossings remain explicit old/new comparisons.
 
 A SPELL's holes are terms (`{request.subject}`, `{request.object}`, `{new.F}`, `{"card".F}`), filled at the write, a
 hole naming nothing refused when placed; a hole fills one field's value as data, never syntax (the filled spell is
 rendered so it parses back to exactly that card, verb and fields); `me` is the rule owner's avatar. A want reads no
 `old`. `under "kind/bell"` follows all three modalities to the kind, so a kind carries rules and wants for every
-instance and its owner changes them once.
+instance and its owner changes them once. On a kind, `rule … / for: things` and `want … / for: things` amend
+that collection in its state (`law`), judged by the kind's own law as `request.kind == amend` (2). `unrule` and
+`unwant` with the same selector remove their own modality from that text. Absent `for:` names the
+object itself: a placed row on the kind affects the kind alone and is judged as a placing (4). `rules` on a kind
+prints "for its things" and "on the kind"; `wants` prints the things' clause templates and the kind's holding
+wants under the same targets. The kind's owner is offered `for:` on `?`; a stranger's amendment is refused by
+the kind's law, and `for: things` on a non-kind is refused. The existing state-edit journal records the text
+amendment; replay derives it through the same judgment.
+
+A want closes when its condition stops holding; its asked spell names the next action, not a promise of
+completion. Count the domain evidence that action produces: bell wants and the seventh-rain rule count only
+`lines where verb == "rain"`; `second` also filters `author == new.maker` on those same rows. A count's `where`
+accepts equality predicates joined by `and`, all on one row. `wants` keeps every held description and marks it
+`answerable` or `waiting on other hands` for its reader. Discovery lists it only when its filled spell names an
+existing visible card that offers the action and admits the reader by the same law and Bend `actions` judgment
+as `?`. An unresolved hole, missing target or read-only ask waits too. Blocked means held but not answerable by
+this reader; cancelled means taken off with `unwant`. Neither is stored separately.
 
 **Tenure.** A thing a kind makes holds its owner's law in its own text (its root package's: RECORD's or KIND's),
 then `law kind: under "kind/<name>"`: the kind's text only adds to it, so a kind's maker cannot write a law line
@@ -390,7 +494,23 @@ can always amend it out from under the kind. Lines in the kind's text act, in ev
 itself: the principal `@<id>`, which no object id, DID or handle can spell, and which a law admits only as it admits
 any hand (or names it by `request.caller`). Neither the kind's owner, who amends that text live, lends their
 authority to the code the instance runs, nor the instance's owner theirs to the kind's text. A line of a thing's own
-text acts as its owner, who alone amends it; a placed line acts as its placer. A thing's text holds at most 16 lines of the three; placed rules and wants are 32 each beside it.
+text acts as its owner, who alone amends it; a placed line acts as its placer. A thing's text holds at most 16
+lines of the three; placed rules and wants are 32 each beside it, grown verbs 16. Each collection bounds a
+stranger's share and leaves its owner room (§10); the thing's law decides who may place.
+
+Making and `become / kind:` install the same component: the kind's ancestor bodies bottom first, its own body,
+its followable text and its source identity. `kindCitation` uses `citedLaw`, the same check as `under`: when the
+kind's state holds no parsed `law` text for its things, its bodies and lineage are installed without a citation.
+Later adopting a law on that kind object leaves the thing's text unchanged. The owner's `become` stages the
+layers and any citation in one turn, judged as a reprogram and amendment by the thing's own law. Each source kind has one installed body: an unchanged
+body and pin stay where laid, a changed body replaces it there, and unrelated layers retain their order. A
+citation is named `kind`, or the first free `kind1`, `kind2`, … beside a thing's other citations; repeating the
+component adds no second line. Its `madeFrom.components` records each source kind's object, pin, body receipt,
+body and layer position, in the making or reprogram and in snapshots. The body is state, so its amendment can
+change the receipt without changing the kind object's code pin. Clauses follow live, code is pulled by the
+thing's owner; a repeat with unchanged code changes neither the package nor its version. A kind without a body
+still lends its text and keeps its identity. `Ops.kindStack` defines the stack for KIND's checks and making and
+for `become`; `kindChange` installs it, `componentInputs` rebuilds it through the existing layer mechanism.
 
 Top-level fields only. `request.kind`, by name or number, is `write` 0 (the object's own method's
 write), `reprogram` 1, `amend` 2, `proposed` 3, `rule` 4 (placing a rule, want or grown verb; `request.verb` is
@@ -435,7 +555,7 @@ replies `merge`; reposting the title is a checkpoint; `[[Title]]` links.
 A DelveTalk object's encounter is a card. Every object has
 `render(state, context) -> Document` and `receive(state, input: Card.Reply,
 context)` for what runs no method; a card that leads with what wants a hand across the world (the commonplace)
-declares `renderWanting(state, context, wanting: List<World.Want>)` instead, and the host hands it the rows as it
+declares `renderWanting(state, context, wanting: World.WantPage)` instead, and the host hands it the page as it
 hands it the reader. One state renders a member's card and a stranger's. A reply is the card plus the receipt line the bridge stamps, within 1,400 characters, where readers
 clip: a card takes `Card.limit(context)` (1,400 less twice the id and 120) and every renderer clips its lists with
 `Card.left`/`Card.clippedWithin`, "… and N more" counted; a list alone keeps at most 1,200 (`Card.budget`).
@@ -531,6 +651,21 @@ proposal runs as the speaker's turn on the card (origin `interpreted`) unless th
 (reprogram, amend, offer, countersign, adopt), where hob offers the spell back filled and holds nothing; an `ask:`
 naming offered fields offers "hob: that still needs …" with the spells; `none`, a failed model or the deadline is
 silence. The workshop's `make` asks `world.interpret` for a draft, whose one ```obend block is the form's `source`.
+The asking card and every card whose forms hob is offered have a root `{object, version, behaviour}` in
+both the pending request and its action receipt. The pending roots name the state versions when the offers
+were read; a valid host reading starts its cast on current state, recording those state versions with the same
+read behaviour revisions, and `resumes` names the original reading. `behaviour` advances for each placed or removed rule, want or
+verb and for each reprogram or amendment; any such edit on an offered card is relevant, including a rule for
+another verb, while an edit on an unoffered card is not. `resumeHeard` refuses an obsolete reading before any
+spell runs, as `staleRoot`, naming the card and its changed revision. A Bend `interpret` follows `resumeOne`'s
+one re-run on a moved root, re-offering from current state. `interpretationSlot` keeps the turn's await numbering
+and binds only nonzero behaviour revisions: a behaviour edit renews the reading's slot, while ordinary state
+moves reuse its settled answer, so a batch settles without further model calls. `placedCid` commits to the counter beside the placed rows, and
+snapshots and replay retain it even after every row is removed. Ordinary writes retain their root bytes and
+request digests; a stranger's placing cannot stale an owner's write that did not read offers.
+Making and a made thing's own reprograms or placings revise only that new thing, never the maker or another
+offered card. A plant's state writes therefore leave the other pending readings valid; the existing batch of
+64 settles with its 64 model replies.
 Three things stay separate on the receipt: the wording, the interpretation, the admitted outcome. The interpreter
 submits every model result verbatim and the host decides: a transient failure (`transport`, `rate`) is journaled
 `attempted` with a clock backoff (2^(n-1) minutes, at most 60) and the reading keeps waiting; the eighth
@@ -604,7 +739,7 @@ Each adopted because it is general and deletes bespoke machinery.
 | the furniture is fiction, and fiction is kinds | METAPHYSICS §7 | a garden, a room, the weather, a bell are kinds anyone instantiates; each made thing's law, rules and wants are `under` its kind's |
 | free play, owned creations | | a refused `propose` is held for the target's owner to `adopt` |
 | the spell is the free, exact form; everything else reaches hob | `docs/FLEX.md` | a well-formed spell costs no model and waits for nothing; words a card leaves silent go to hob, whose answer is held to the same grammar and fitted by the same `Spell.fit` |
-| paint from strokes | OVERHAUL §4 | the card a resident reads is prose the model renders from the thing's exact strokes, verified token by token, the exact card beneath |
+| paint from strokes | OVERHAUL §4 | the host selects and renders factual clauses from structured strokes; the model orders references and adds guarded simile fragments or quoted words; the exact card remains visible beneath |
 | making is the first move | `docs/GROUND.md` | `make` creates from a resident's own source under the maker's authority, its lineage journaled (`madeFrom`) |
 
 **The invariants.** What every lane keeps and a reviewer should try to break:
@@ -645,8 +780,7 @@ answer. A card says, in the third person and the present, what the thing is
 now, what it takes, and the law line that says who may change it; it ends on
 the spell to type, whole, blanks in angle brackets, and a `»` line says what
 comes back. Three voices, and a reader can tell which: the thing (its
-`render`, and above it the paint, the thing in its kind's voice, nothing in it
-the strokes do not hold), the host (the receipt line, `refused <clause>:
+`render`, and above it the paint: selected host facts, guarded simile imagery and quoted words in the kind's voice), the host (the receipt line, `refused <clause>:
 <reading>`, the `?` usage, the revealed lines: never a character, the clause
 never translated), and hob, the creature at the membrane, who reads words that
 are not a spell and answers with a spell, a grown verb, a question or nothing,
@@ -755,7 +889,7 @@ deleting a closed sum or a convention:
   alone, and `receive` exists for prose and bare field lines. A spell missing a field is asked for
   and kept nowhere; the speaker sends it whole again.
 - **Things react by rules.** A thing's text and its placed rows hold `rule` and `want` lines in the law's grammar
-  (§4). At commit, after the law admits, each written object's rules whose condition the write made true stage
+  (§4). At commit, after the law admits, each written object's rules whose condition holds of the write stage
   `receive {text: SPELL}` to the spell's card under the rule's writer, or as the thing for a line it inherits (§4
   Tenure) (`fired`, identity
   `rule:<object>:<name>:<height>`; 4 down a chain; past 8 a commit a firing is queued, never dropped, each next
@@ -765,13 +899,15 @@ deleting a closed sum or a convention:
   the thing's own text, what it inherits, then what hands placed. A rule is judged after the commit, on the world it
   leaves: what it cites is no root of the write, and its condition no part of the law's budget; it reads within
   `Limits.clauseTicks` or is `unfired budget` (a want past it does not pose), so a stranger's rule never refuses,
-  stales or starves the owner's own acts. A hand other than the owner holds at most `placedPerHand` (4) rules and 4
+  stales or starves the owner's ordinary writes; a suspended reading of that card's offers depends on its
+  behaviour revision (§6). A hand other than the owner (or the opener) holds at most `placedPerHand` (4) rules and 4
   wants on a thing, all such hands together `placedByOthers` (24) of the 32. The rule's owner is the follow-on
   turn's principal, so its quota, refusal and receipt are theirs, and a stranger's rule on your thing runs their
   spells under their name and spends nothing of yours. The follow-on turn is a delivery under
   the triggering turn's ledger. `delvetalk CARD rules` reads each rule back: name, owner, reading, condition, spell,
   and its last firing (entry and receipt) or why it did not fire. Conditions are state, never counters: "two
-  rains" is `count(new.lines) >= 2 and count(old.lines) <= 1`, true once, at the crossing.
+  rains" is `count(new.lines) >= 2 and count(old.lines) <= 1`, true once, at the crossing;
+  `changed(count(new.lines))` instead fires each time that count changes (§4, LAW §8).
 - **The clock is a condition, never the cause.** Nothing is evaluated in a silence. A condition on `request.clock`
   fires at the first write after the clock passes it, and whoever writes next pays. The tide is the one thing
   that writes on the clock, ticking itself every `gap` minutes, for ever: a thing's wait on the clock in its own
@@ -786,8 +922,13 @@ deleting a closed sum or a convention:
   stands on the card beside the law, in the same voice, and a fired rule is stamped on the admitted reply, so a
   thing says what it will do before anyone fails at it. A want is a fact about a thing with the condition that made
   it printed and the spell that answers it; RECORD's default wants are a line waiting for its keeper (`admit`) and
-  a record with no door (`door`). An errand (`world/bodies/errand.obend`) is a rule with a pay: its maker's
-  `asks`, the condition `done` judged at each write on the thing it is `on`, and the spell that `pays`, cast
+  a record with no door (`door`), offered to their keeper and owner respectively. `world.wanting` counts the visible
+  wants waiting on other hands as `waiting`. The commonplace says "N more wait on other hands". Its page and the
+  morning's page sort answerable wants by `(since, object, name)` ascending, start at `clock day mod count`, wrap,
+  and take at most eight. `oldest: true` uses `after`/`next` as an offset in that rotated list; keep the day and
+  answerable set fixed while paging, or restart at zero. Newest-first reads retain whole-height pages and return
+  their last height as `next`. No root, entry, task registry or stored rotation is added. An errand (`world/bodies/errand.obend`) is a rule with a pay: its maker's
+  `asks` printed on its open card (no generic `?` want claims that reading completes it), the condition `done` judged at each write on the thing it is `on`, and the spell that `pays`, cast
   under the maker. Payment and completion are one settlement: the errand's one rule on `on` casts `settle`, which
   takes the call from that rule alone and claims the errand for the writer, once, in one turn: marked `done` by them
   (a mark, a fact never dropped: marks have no retention), its rule off `on`, and its own `pay` placed with the doer
@@ -806,12 +947,23 @@ deleting a closed sum or a convention:
   `when: "rung" in new.marks.name and not "rung" in old.marks.name / then: delvetalk <first> door / label: next /
   to: <second>`. The weather's company is a rule on the tide: `delvetalk tide rule / name: company / when:
   request.method == "tick" and request.clock <= "<garden>".tended + 1440 / then: …`.
-- **Verbs are data.** A grown verb is a row `{name, by, at, reading, takes, does}` on the thing (16 at most; `ungrow`
-  makes room); using it is `act {verb, text}`, one line tagged with the verb and the thing tended, and the host's
+- **Verbs are data.** A grown verb is a row `{name, by, at, reading, takes, does}` on the thing (`verbsPerObject`,
+  16 at most). A hand other than the owner (or the opener) holds at most `placedPerHand` (4), all other hands
+  together `verbsByOthers` (12), leaving four slots for the owner. `judge`'s `checkShare` checks verbs, rules and
+  wants alike, each separately; a gesture with `does` holds one verb slot and one rule slot, never two of either.
+  A full share refuses `capacity placedPerHand` or `verbsByOthers`, the full table `capacity verbsPerObject`;
+  the law decides who may grow. `ungrow` by the grower, owner or opener frees the verb and its `does` rule.
+  Using it is `act {verb, text}`, one line tagged with the verb and the thing tended, and the host's
   grammar reads it as it reads a declared form, so its spell is exact, free and model-less the moment it exists.
-  Its consequence, when it has one, is a rule naming `request.verb`. A kind's declared methods are the table's
+  A reaction, when it has one, is a rule naming `request.verb`. A kind's declared methods are the table's
   first rows. Words that run no spell reach hob (§5, §6); `grow:` is for a verb the words mean that the card lacks. A
-  gesture is one line and a tend, nothing more until a rule gives it a consequence. Hob decides which verb the words mean and
+  verb runs synchronously under the user's name, its writes committed or refused with its turn: a gesture's line
+  and tend, or a body's writes. Rules react after that commit under their own owners, reported as fired, queued or
+  not fired independently of the verb's admission. `grow / body:` lays a workshop layer (`Workshop.growBody`,
+  `layingLayer`); laying removes each gesture its forms replace and the rule it `does` through `ungrow` in that
+  same turn. `ungrow {check: true}` judges the removal without staging it: a grower who cannot remove the gesture
+  is refused `nameTaken`, naming it and its rule. A body held for the owner leaves both standing until `workshop
+  adopt` lays it (`laidOn`), which removes them under the adopter. Hob decides which verb the words mean and
   whether none does, never admission, a fact, a number, a consequence, or the card (reach, §5).
 - **A scene is the same grammar.** A room's spween scene (world/lib/Spween.obend, Scenes.obend) has an inside, the
   room's own variables, and an outside braided into the world: a choice's guard may be any condition the law reads
@@ -882,21 +1034,22 @@ cards.
 
 ## 12. Backlog
 
-Closed since run 11, each by its commit (the earlier list is in git history): the review's findings
+Closed since run 11, each by its change (the earlier list is in git history): the review's findings
 (`docs/review/codex-2026-10-10/ROUTING.md`, all but docs 6); the voice; the commonplace with the furniture as kinds;
 inspirit and the porch's things; tending; several spells in a post; a card's own refusal refusing its turn
 (kernel16, 5.157); the overhaul through step 4 and 3b: the carry and the no-wipe gate (5.159), one clause language
 (KERNEL §27), rules firing and wants posing with the revealing reply (5.160, edition 9), the paint (5.161), grown
 verbs and the chronicle with Wake's host support deleted (5.161), reach as a host op (5.162), words a card heard as
 hob's (5.163), Wake, Env, Event, Mentions and subscriptions deleted from `world/`, errands and fronts, the minimal
-genesis with its coinages and wants, the web front (docs/WEB.md).
+genesis with its coinages and wants, the web front (docs/WEB.md); answerable wants with daily rotation and derived blocked/cancelled states (world.md 16, 5.223); the astra world review's medium 14: explicit
+kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221); finding 15's behaviour revisions in offered-card roots and action receipts (5.222); finding 7's transition terms alongside level conditions (5.224); finding 17's structured paint facts and visible exact card (5.225); finding 11's live-grant compaction and principal shares (5.226), with archival still queued below.
 
 Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDOFF §16, OBJECTS-HANDOFF "Open");
 each handoff keeps the detail, this table the order across lanes:
 
 | Item | Owner | Done when |
 | --- | --- | --- |
-| `world.wanting` answered by the host (HOST §7 1a.1), then "What wants a hand" on the commonplace and its preview re-cut (OBJECTS Open 2) | host, then objects | the commonplace card lists the bare town's wants, oldest first |
+| `world.wanting` answered by the host (HOST §7 1a.1), then "What wants a hand" on the commonplace and its preview re-cut (OBJECTS Open 2) | host, then objects | the commonplace lists the reader's answerable wants, rotates daily through oldest-first order and counts those waiting (5.223) |
 | the seal's want: `laws` and `refusedBy` facts (HOST §7 1a.2, OBJECTS Open 1) | host, then objects | a kind/seal wants a law and a second hand's try |
 | the carried ring: `seven` fires on a carried bell but `ring` writes nothing, so `rang` never fires (HOST §7 item 0) | objects | on the playtest-3 copy the seventh rain rings and notes the planter |
 | the Bend world arms tested from a body (`world.rule` from `made`, `world.grow`, `world.act`, `world.chronicle`) (HOST §7 item 0) | objects | a test per arm |
@@ -906,7 +1059,7 @@ each handoff keeps the detail, this table the order across lanes:
 | 5.160's remainder: `offeredTo`'s diff in `revealed`; judging cost measured on 768 rains and 32 rules; parsed clauses kept; placed rows anchored; a want citing another thing re-judged when that thing is written (HOST §7 item 3) | host | as listed there |
 | verbs' remainder: `world.verbs` for `Grown here:`; `grow` in `confirmFor` (HOST §7 item 4) | host, objects | the card's grown verbs read from Bend |
 | the morning card and the chronicle as painted surfaces; `hand morning` (OVERHAUL §4 (c), §5 step 5) | transport, objects | the hand posts the painted chronicle and wants once a day |
-| edition 9 deployed by a carry of the live town (HOST §7 items 2, 5) | root | `carry-check.sh` green on the newest backup and the deployed `serve-status` answers `replay: 9` |
+| edition 14 deployed by a carry of the live town (HOST §7 items 2, 5; 5.219) | root | `carry-check.sh` green on the newest backup and the deployed `serve-status` answers `replay: 14` |
 | the carry's remainder: pre-carry receipts by hash, identity receipts, the genesis's size (HOST §7 item 5) | host | as listed there |
 | `workshop check / target:` of a layered card checks its closure (OBJECTS Open 7) | host | `workshop check / target: bell/1` answers "it compiles" |
 | `test_http.Play`'s shared quota (OBJECTS Open 5) | transport | the quota test isolated |
@@ -918,9 +1071,10 @@ each handoff keeps the detail, this table the order across lanes:
 | the regenerated `/examples` (`docs/AGENTS-EXAMPLES.md`, still env, wake, the garden and eight doors) | transport | `deploy/capture-examples.py` re-run on a genesis of this head |
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
-| the astra world review's mediums 12, 13, 14, as decided in AUTHORING §4 | objects, host | each "done when" there |
-| the astra world review's 11 (archival and reclamation of objects, grants and journal), 15 (a behaviour revision in roots, offers and receipts), 16 (wants as tasks: eligible actors, blocked and cancelled; discovery that rotates past the permanently blocked), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
-| rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder); a placed line's verbs (`grow`) bounded per hand as rules are (world.md 6's remainder) | kernel, host | a level rule fires at its crossing alone unless written as a level; a stranger holds at most `placedPerHand` verbs |
+| 5.223's remaining deployment text: the hand's morning title, clapper's next ask after grow, station register's sign evidence | transport, root | title says turning daily; after grow the clapper asks hang; an unrelated register gesture never answers its sign want |
+| segmented journal (world.md 11; §2 archival contract) | host/block-store | two seals under lowered byte/entry bounds, crash-safe restart, exact oldest receipt bytes and evicted pre-carry grant lookup through the archive |
+| inactive-object archive, K = 30 clock days (world.md 11; §2 archival contract) | host/objects | lower live cap, archive/make/reopen/fault with unchanged name, pin, version and state CID; grants/suspended references prevent archival; denied reads stay private |
+| legacy allocation and receipt origins across older carries (5.226) | host | recover ownerless makers and original grant creation hashes from retained ancestry, replacing the documented genesis/owner fallback |
 
 After the fourth playtest, in the order the town will feel them: fronts and `relay` as seeded or cut back to the
 season (OVERHAUL §6's week row); a `Conversation` object per thread; Workshop `try {target, package, examples}` on

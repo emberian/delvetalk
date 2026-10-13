@@ -330,6 +330,13 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
             return (session, .error s!"maxObjects may lower the bound ({Limits.maxObjects}), never raise it")
           pure n
         | .error e => return (session, .error e)
+      let grantBound ← match optNat request "maxGrants" with
+        | .ok none => pure Limits.maxGrants
+        | .ok (some n) =>
+          if n > Limits.maxGrants then
+            return (session, .error s!"maxGrants may lower the bound ({Limits.maxGrants}), never raise it")
+          pure n
+        | .error e => return (session, .error e)
       -- How many entries apart this process writes snapshots.
       let every ← match optNat request "snapshotEvery" with
         | .ok none => pure Limits.snapshotEvery
@@ -341,7 +348,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
       match ← openWorld path held verify ((session.map (·.world.caches)).getD {}) bound with
       | .error e => return (session, .error e)
       | .ok o =>
-        let o := { o with sync, every, world := { o.world with objectBound } }
+        let o := { o with sync, every, world := { o.world with objectBound, grantBound } }
         -- The first open naming a clock principal or a posting quota journals them.
         let o ← match (do
             let quota ← match request.getObjVal? "postQuota" with
@@ -453,7 +460,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
             | .error e => return .error e
             | .ok (w3, _) =>
               let w3 := w3.withCachesOf w2
-              return .ok ({ w3 with entries := w2.entries, objectBound := w2.objectBound }, if w3.shadowed.isEmpty then r else r.setObjVal! "shadowed" (Json.arr w3.shadowed)))
+              return .ok ({ w3 with entries := w2.entries, objectBound := w2.objectBound, grantBound := w2.grantBound }, if w3.shadowed.isEmpty then r else r.setObjVal! "shadowed" (Json.arr w3.shadowed)))
       | "world-settings" => durable s reader (fun w => worldSettingsOp w request)
       | "world-advance" => durable s reader (fun w => advance w request)
       | "world-propose" => durable s reader (fun w => do return commit w (← parseProposal request))
