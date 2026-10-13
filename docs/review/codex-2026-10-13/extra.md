@@ -1,0 +1,1 @@
+- old receipts (before the last carry) fail on live repo.getRecord: 'internal: the front failed' (nosap-hodaz, fupum-sodum); found by readme2 10-13
