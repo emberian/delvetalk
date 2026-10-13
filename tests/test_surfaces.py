@@ -153,14 +153,18 @@ class Book(Surfaces):
         self.assertEqual(sorted(int(x) for x in __import__("re").findall(r"rain number (\d+),", shown)), list(range(30)))
         usage = self.read(pager, "me", "delvetalk me ?")["text"]
         self.assertIn("\nTo read it (nothing is written):\n\ndelvetalk me book\ndelvetalk me book / page: <a page after the first>\n", usage)
-        # The reply carries every page as one text beside the first, for the poster to thread into parts; a draft of it
-        # is that text, and the card a transport asks for whole is unclipped too.
+        # The caller's reply carries every page beside the first; the web can read the same whole text.
         whole = self.read(pager, "me", "delvetalk me book")["whole"]
         self.assertGreater(len(whole), CLIP)
         self.assertNotIn("Page ", whole)
         self.assertEqual(sorted(int(x) for x in __import__("re").findall(r"rain number (\d+),", whole)), list(range(30)))
-        from transport.bridge import draft_text
-        self.assertEqual(draft_text(self.read(pager, "me", "delvetalk me book")), whole)
+        from transport.bridge import draft_text, read_text
+        from transport.host import typed
+        reply = self.read(pager, "me", "delvetalk me book")
+        self.assertEqual(read_text(self.town.client, pager, reply), whole)
+        request = {'op': 'world-turn', 'principal': pager, 'object': 'pager.delve.town', 'method': 'receive', 'identity': 'public-pager-book',
+                   'argument': typed({'text': 'delvetalk pager.delve.town book', 'post': ''})}
+        self.assertEqual(draft_text(reply, host=self.town.client, request=request), whole)
         self.assertEqual(self.town.send(op="world-surface", principal=GLM, object="pager.delve.town", read="book")["whole"], whole)
         bad = self.say(pager, "me", "delvetalk me book / page: two")
         self.assertIn("page takes a natural number in plain digits", str(bad))
@@ -303,7 +307,7 @@ class History(Surfaces):
         self.assertIn("day %d: nothing was journaled.\n" % (self.day + 1), nxt)
         self.assertNotIn("The next day", nxt)
 
-    def test_a_drafted_history_carries_the_days_verified_paint_above_its_exact_lines(self):
+    def test_a_callers_history_carries_the_days_verified_paint_above_its_exact_lines(self):
         from transport.bridge import read_text
         r = self.read(GLM, "commonplace", "delvetalk chronicle")
         asked = []

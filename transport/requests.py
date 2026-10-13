@@ -27,6 +27,7 @@ from transport.identity import verified_dids
 from transport.hosted import Accounts, COLLECTION, MAX_REQUESTS
 from transport.acts import judge_call
 from transport.repo import json_of, world_did
+from transport.observe import instant
 
 MODES = ('act', 'plan')
 PAGES = 10  # a repository's request collection read per poll, 100 records a page
@@ -92,7 +93,11 @@ def judged(value, service, world, before_start):
         return False, 'addressed to another service', None
     if value.get('world', 'town') != world:
         return False, 'addressed to another world', None
-    if not isinstance(value.get('createdAt'), str) or before_start(value['createdAt']):
+    try:
+        instant(value.get('createdAt'))
+    except ValueError:
+        return True, 'createdAt is not a timestamp', None
+    if before_start(value['createdAt']):
         return False, 'created before this world began observing', None
     if value.get('mode') not in MODES:
         return False, f"mode {str(value.get('mode'))[:20]} is never run by record", None
@@ -234,7 +239,8 @@ class Poller:
                     refused[uri] = {'cid': cid, 'why': why}
                     continue
                 call = call or {}
-                observer.insert({'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': value['createdAt'],
+                created = value.get('createdAt')
+                observer.insert({'uri': uri, 'cid': cid, 'author': {'did': did, 'handle': handle}, 'createdAt': created if isinstance(created, str) else '',
                                  'text': call.get('spell', ''), 'replyTo': None, 'root': None,
                                  'mentions': [], 'tags': [], 'kind': 'request',
                                  'request': {'call': call, **({'if': value['if']} if 'if' in value and not why else {}),

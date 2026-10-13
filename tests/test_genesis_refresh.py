@@ -141,6 +141,29 @@ class RefreshRegressions(unittest.TestCase):
         self.assertTrue(all('baseline is unknown' in r['reading'] for r in result), result)
         self.assertFalse([r for r in self.host.requests if r['op'] in ('world-propose', 'world-turn')])
 
+    def carried_with(self, rows):
+        return self.journal([{'outcome': {'tag': 'carried', 'made': [
+            {'object': 'kind/bell', 'identity': {'principal': genesis.OPENER, 'intent': 'genesis-kind-bell'}, 'height': 12}],
+            'baseline': [{'object': 'kind/bell', 'slot': slot, 'text': text} for slot, text in rows.items()]}}])
+
+    def test_a_carried_baseline_is_the_text_last_given_and_refresh_needs_no_ancestor(self):
+        obj = 'kind/bell'
+        self.host.put(obj, **{name: genesis.lab('old ' + name) for name in ('law', 'form', 'voice', 'about')})
+        journals = self.carried_with({'.' + name: 'old ' + name for name in ('law', 'form', 'voice', 'about')})
+        self.assertEqual(genesis.given(journals, genesis.OPENER)[(obj, '.form')], 'old form')
+        result = self.refresh({(obj, '.' + name): 'image ' + name for name in ('law', 'form', 'voice', 'about')}, journals)
+        self.assertEqual({r['status'] for r in result}, {'refreshed'}, result)
+        self.assertEqual(self.host.objects[obj]['state'], {name: genesis.lab('image ' + name) for name in ('law', 'form', 'voice', 'about')})
+
+    def test_a_slot_the_owner_amended_since_the_baseline_is_left_and_the_rest_are_given(self):
+        obj = 'kind/bell'
+        self.host.put(obj, law=genesis.lab('old law'), form=genesis.lab('owner form'))
+        journals = self.carried_with({'.law': 'old law', '.form': 'old form'})
+        result = {r['slot']: r for r in self.refresh({(obj, '.law'): 'image law', (obj, '.form'): 'image form'}, journals)}
+        self.assertEqual((result['.law']['status'], result['.form']['status'], result['.form']['reading']),
+                         ('refreshed', 'left', 'changed since genesis gave it'), result)
+        self.assertEqual(self.host.objects[obj]['state']['form'], genesis.lab('owner form'))
+
     def test_unknown_carried_baseline_reports_matching_slots_current_without_writes(self):
         obj = 'kind/bell'
         texts = {name: 'image ' + name for name in ('law', 'form', 'voice', 'about')}

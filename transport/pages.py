@@ -2,6 +2,7 @@
 transport/static/style.css, the one stylesheet; reading and acting need no script. Python fills the sections with escaped
 host facts and decides nothing. `text` reads any page back off its own markup as plain text, so the two views cannot drift."""
 import re
+import secrets
 import textwrap
 from html import escape as e
 from html.parser import HTMLParser
@@ -19,7 +20,12 @@ def sections(name):
 
 
 T = sections('pages.html')
+POST_FORM = re.compile(r'<form\b[^>]*\bmethod="post"[^>]*>', re.I)
 SUGGESTIONS = 6  # spells offered under the box, at most
+
+
+def csrf_forms(body, token):
+    return POST_FORM.sub(lambda m: m[0] + T['csrf'].format(token=e(token)), body)
 
 
 def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav=None, foot=None, wide=False):
@@ -130,15 +136,17 @@ A_SPELL = re.compile(r'\s+delvetalk \S')
 
 def speech(card):
     """An exact card read as speech: its first paragraph of prose, and its spells as (label, spell). A spell is an indented
-    line beginning `delvetalk`, with the more indented lines under it; its label is the line that introduces it (`Rain on
-    it:`, or the last clause of `…; 10 made. Make one:`), else its card and action. `»` lines say what a spell gives back."""
+    line beginning `delvetalk`, through its indented continuation, preserving internal blank lines; extraction stops at
+    the next example spell or result line at the same indent, or a nonblank line less indented than the spell. The host alone parses its syntax.
+    Its label is the line that introduces it (`Rain on it:`, or the last clause of `…; 10 made. Make one:`), else its card and action. `»` lines say what a spell gives back."""
     prose, spells, lines, i = [], [], card.split('\n'), 0
     while i < len(lines):
         line = lines[i]
         if A_SPELL.match(line):
             indent, j = len(line) - len(line.lstrip()), i + 1
-            while j < len(lines) and lines[j].strip() and len(lines[j]) - len(lines[j].lstrip()) >= indent \
-                    and not lines[j].lstrip().startswith(('delvetalk ', '»')):
+            while j < len(lines) and (not lines[j].strip() or len(lines[j]) - len(lines[j].lstrip()) >= indent) \
+                    and not (len(lines[j]) - len(lines[j].lstrip()) == indent and
+                             lines[j].lstrip().startswith(('delvetalk ', '»'))):
                 j += 1
             spell, label = textwrap.dedent('\n'.join(lines[i:j])).strip(), None
             k = next((k for k in range(len(prose) - 1, -1, -1) if prose[k].strip()), None)
@@ -421,9 +429,9 @@ def welcome(handle, credential):
     return page('welcome', handle, T['welcome'].format(handle=e(handle), credential=e(credential), book=e(quote(handle, safe=''))))
 
 
-def leave(handle):
-    """Signing out, or (nobody signed in) that this browser speaks for nobody."""
-    return page('sign out', handle, T['leave_page'].format(handle=e(handle)) if handle else T['left'])
+def leave(handle, done=False):
+    """The sign-out confirmation, or completion after clearing the browser's credential."""
+    return page('sign out', handle, T['left'] if done else T['leave_page'].format(who=', ' + e(handle) if handle else ''))
 
 
 def anchor(uri):
@@ -438,22 +446,29 @@ def feed_post(row):
             **({'receipt': {'slug': row['receipt'], 'href': f"/AGENTS.md/receipt/{row['receipt']}"}} if row['receipt'] else {})}
 
 
-def feed(threads, who, *, more=None, reply=None, posted=None, refresh=None, note='', said=''):
+def feed_earlier(root, cursor, base='/feed'):
+    return base + '?thread=' + quote(root, safe='') + '&replies_before=' + quote(cursor, safe='')
+
+
+def feed(threads, who, *, more=None, reply=None, posted=None, refresh=None, waiting=None, note='', said='', submission=None, composer=True, limit=30):
     """The town's own feed (transport/feed.py): the box (a post, or a reply under `reply`), then the threads, each post
-    with who and when, the town's answers with their receipt; `posted` the post just sent, `refresh` where to look again
-    while the town has not answered it."""
+    with who and when, the town's answers with their receipt; `waiting` embeds the answer document, whose `refresh`
+    runs only without a composer."""
     one = lambda r, cls='': T['feed_post'].format(cls=cls + (' town' if r['town'] else '') + (' just' if posted is not None and r['uri'] == posted['uri'] else ''),
                                                   anchor=anchor(r['uri']), who=e('the town' if r['town'] else r['handle']), when=e(r['created'][:16].replace('T', ' ')),
                                                   receipt=T['feed_receipt'].format(slug=e(r['receipt'])) if r['receipt'] else '', text=e(r['text']),
                                                   uri=e(quote(r['uri'], safe='')))
-    shown = ''.join(T['feed_thread'].format(head=one(h), replies=''.join(one(r, ' reply') for r in rs)) for h, rs in threads) or T['feed_empty']
+    shown = T['feed_waiting'].format(href=e(waiting)) if waiting else ''.join(T['feed_thread'].format(head=one(h), replies=''.join(one(r, ' reply') for r in rs),
+                    earlier=T['feed_earlier'].format(href=e(feed_earlier(h['uri'], earlier))) if earlier else '')
+                    for h, rs, earlier in threads) or T['feed_empty']
     box = T['feed_box'].format(replying=T['feed_replying'].format(uri=e(reply['uri']), who=e(reply['handle']), text=e(reply['text'][:140])) if reply else '',
-                               prompt='Reply to ' + e(reply['handle']) if reply else 'Say something to the town', said=e(said)) if who else T['feed_comein']
+                               prompt='Reply to ' + e(reply['handle']) if reply else 'Say something to the town', said=e(said),
+                               submission=e(submission or secrets.token_urlsafe(24))) if who and composer else T['feed_comein'] if composer else ''
     if posted is not None and not note:
-        note = 'Posted. The town is answering; this page looks again in a moment.' if refresh else 'Posted.'
-    head = T['head'] + (f'<meta http-equiv="refresh" content="3;url={e(refresh)}">' if refresh else '')
+        note = 'Posted. The town is answering below.' if waiting or refresh else 'Posted.'
+    head = '<link rel="stylesheet" href="/static/style.css">' + (f'<meta http-equiv="refresh" content="3;url={e(refresh)}">' if refresh and not composer else '')
     return page('the feed', who, T['feed'].format(note=T['feed_note'].format(note=e(note)) if note else '', box=box, threads=shown,
-                                                  more=T['more'].format(href=e('/feed?before=' + quote(more, safe=''))) if more else ''), head=head)
+                                                  more=T['more'].format(href=e('/feed?before=' + quote(more, safe='') + '&limit=' + str(limit))) if more else ''), head=head)
 
 
 def catalogue(api, who):

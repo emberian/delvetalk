@@ -547,7 +547,7 @@ class Recorder:
         if self.fail:
             self.fail -= 1
             return {'status': 'error', 'message': 'journal busy'}
-        return {'status': 'posted'}
+        return {'status': 'unposted' if req.get('unposted') else 'posted'}
 
     def reserved(self):
         return [o['intent'] for o in self.ops[:-1] if o['op'] == 'world-post-reserve']
@@ -631,6 +631,128 @@ class Idempotent(unittest.TestCase):
         code, plan = 0, io.StringIO()
         code = main(['post', '--state', self.tmp.name, '--intent', 'x', '--draft', str(self.draft)], plan, client=pds)
         self.assertEqual((code, json.loads(plan.getvalue())['record']['object']), (2, 'genesis'))
+
+
+class PostingSafety(Threaded):
+    def test_an_indented_spell_immediately_after_a_boundary_keeps_its_indent(self):
+        text = 'x' * (post.CLIP - post.NOTE) + '\n    delvetalk bell/1 tend\n' + 'x' * 100
+        chunks = post.parts(text)
+        self.assertTrue(any('    delvetalk bell/1 tend' in c for c in chunks))
+        self.assertFalse(any(l.startswith('delvetalk') for c in chunks for l in c.splitlines()))
+
+    def test_a_tagged_fence_spanning_a_boundary_is_reopened_before_its_spell(self):
+        text = 'example:\n```text\n' + 'x\n' * 700 + 'delvetalk bell/1 tend\n```\nend'
+        chunks = post.parts(text)
+        for chunk in chunks:
+            fenced = False
+            for line in chunk.splitlines():
+                if line.startswith('```'):
+                    fenced = not fenced
+                if line.startswith('delvetalk'):
+                    self.assertTrue(fenced, chunk)
+            self.assertFalse(fenced, chunk)
+
+    def test_a_maximum_byte_draft_and_a_midline_spell_keep_bounded_parts(self):
+        text = 'x' * (post.CLIP - post.NOTE) + 'delvetalk bell/1 tend' + 'x' * (post.MAX_TEXT - (post.CLIP - post.NOTE) - len('delvetalk bell/1 tend'))
+        chunks = post.parts(text)
+        self.assertLessEqual(len(chunks), 50)
+        self.assertTrue(all(len(c) <= post.CLIP for c in chunks))
+        self.assertFalse(any(l.startswith('delvetalk') for c in chunks for l in c.splitlines()))
+
+    def test_each_sent_part_keeps_its_registration_error_until_repaired_without_sending(self):
+        pds, host = Pds(), Recorder(fail=1)
+        post.post_draft(self.draft, self.state, host, reader=pds, client=pds)
+        d = json.loads(self.draft.read_text())
+        self.assertEqual(d['sentParts'][0]['recorded']['status'], 'error')
+        self.assertEqual(d['recorded']['status'], 'error')
+        self.assertEqual(post.record_sent(self.state, host), [self.draft.name])
+        self.assertEqual(pds.creates, 3)
+        self.assertEqual([p['intent'] for p in json.loads(self.draft.read_text())['sentParts']], ['draft-8-bbbb#1', 'draft-8-bbbb#2', 'draft-8-bbbb#3'])
+
+    def test_a_crash_after_saving_a_sent_part_is_repaired_before_thread_completion(self):
+        class Crash(Recorder):
+            def send(self, req):
+                if req['op'] == 'world-posted':
+                    raise RuntimeError('crash before registration')
+                return super().send(req)
+        pds = Pds()
+        with self.assertRaises(RuntimeError):
+            post.post_draft(self.draft, self.state, Crash(), reader=pds, client=pds)
+        host = Recorder()
+        self.assertEqual(post.record_sent(self.state, host), [self.draft.name])
+        d = json.loads(self.draft.read_text())
+        self.assertFalse(d['posted'])
+        self.assertEqual(d['sentParts'][0]['recorded']['status'], 'posted')
+        self.assertEqual(pds.creates, 1)
+
+    def test_replacing_the_draft_field_cannot_change_the_frozen_resume_text(self):
+        pds = Pds()
+        post.post_draft(self.draft, self.state, Recorder(quota=1), reader=pds, client=pds)
+        d = json.loads(self.draft.read_text())
+        self.state.write(self.draft, dict(d, text=self.text + ' replacement'))
+        with self.assertRaisesRegex(delve.Failure, 'partly_posted'):
+            post.post_draft(self.draft, self.state, Recorder(), reader=pds, client=pds)
+        self.assertEqual(pds.creates, 1)
+
+    def test_a_long_blockquote_keeps_the_quote_on_its_midline_spell_continuation(self):
+        text = '> ' + 'x' * (post.CLIP - post.NOTE - 6) + 'delvetalk bell/1 tend' + 'x' * 200
+        chunks = post.parts(text)
+        self.assertTrue(chunks[1].startswith('> '))
+        self.assertFalse(any(l.startswith('delvetalk') for c in chunks for l in c.splitlines()))
+
+    def test_a_maximum_byte_fenced_draft_keeps_every_part_closed_and_within_the_clip(self):
+        text = 'example:\n```text\n' + 'x' * (post.MAX_TEXT - len('example:\n```text\n\n```')) + '\n```'
+        chunks = post.parts(text)
+        self.assertLessEqual(len(chunks), 50)
+        self.assertTrue(all(len(c) <= post.CLIP for c in chunks))
+        self.assertTrue(all(c.count('```') == 2 for c in chunks))
+
+    def test_a_lost_send_reply_cannot_leave_an_editable_draft_after_the_part_has_left(self):
+        from transport.hand import Hand, HandError
+        pds = Pds(lose=1)
+        with self.assertRaises(delve.Failure):
+            post.post_draft(self.draft, self.state, Recorder(), reader=pds, client=pds)
+        self.assertEqual(pds.creates, 1)
+        with self.assertRaisesRegex(HandError, 'frozen'):
+            Hand(self.state, Recorder()).edit(self.draft.stem, 'a replacement')
+
+
+    def test_post_draft_enters_the_lock_once_and_progress_never_reenters_it(self):
+        import contextlib
+        original, entered = self.state.draft_lock, []
+        @contextlib.contextmanager
+        def lock(path):
+            self.assertFalse(entered, 'post_draft -> progress reentered the lock')
+            entered.append(path)
+            try:
+                with original(path): yield
+            finally:
+                entered.pop()
+        pds = Pds()
+        with mock.patch.object(self.state, 'draft_lock', lock):
+            post.post_draft(self.draft, self.state, Recorder(), reader=pds, client=pds)
+        self.assertEqual(list(self.state.outbox.glob('*.lock')), [])
+        self.assertEqual(list(self.state.outbox.glob('*.tmp')), [])
+        self.assertEqual([p for p, _ in self.state.drafts()], [self.draft])
+
+    def test_a_maximum_byte_text_of_short_lines_has_bounded_parts(self):
+        text = 'x\n' * (post.MAX_TEXT // 2)
+        chunks = post.parts(text)
+        self.assertLessEqual(len(chunks), 50)
+        self.assertTrue(all(len(c) <= post.CLIP for c in chunks))
+
+class SplitSpellParsing(unittest.TestCase):
+    def test_the_host_casts_no_part_of_a_split_indented_example_or_spanning_tagged_fence(self):
+        from tests.test_host_spell import host
+        quoted = 'x' * (post.CLIP - post.NOTE) + '\n    delvetalk bell/1 tend\n' + 'x' * 100
+        fenced = 'example:\n```text\n' + 'x\n' * 700 + 'delvetalk bell/1 tend\n```\nend'
+        for text in (quoted, fenced):
+            for part in post.parts(text):
+                with self.subTest(part=part[-50:]):
+                    got = host({'text': part})
+                    self.assertNotIn('spell', got)
+                    self.assertFalse(got.get('spells'))
+
 
 if __name__ == '__main__':
     unittest.main()

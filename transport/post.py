@@ -8,6 +8,7 @@ import hashlib
 import json
 import sys
 import time
+from bisect import bisect_right
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -208,39 +209,147 @@ def settle(host, d, one, intent, said, first):
     return record_posted(host, one, obj, d.get('slot'), wiki_target(said) if first else None, intent) if obj else {'status': 'reserved'}
 
 
+def sent_parts(d):
+    """The confirmed posts a draft holds, including a single post."""
+    distinct = {}
+    for one in list(d.get('sentParts') or []) + list(d.get('byHand') or []) + ([d['sent']] if d.get('sent') else []):
+        if one.get('uri'):
+            distinct.setdefault(one['uri'], one)
+    return list(distinct.values())
+
+
+def summarize(d):
+    """Derive completion and registration from the durable part records."""
+    sent = d['sentParts']
+    d['posted'] = len(sent) == len(d['frozenParts'])
+    if d['posted']:
+        d['sent'] = {k: sent[-1][k] for k in ('uri', 'cid')}
+    manual = {p['uri'] for p in d.get('byHand') or []}
+    if manual or any(p.get('link') for p in sent):
+        d['byHand'] = [p for p in sent if p.get('link') or p['uri'] in manual]
+    if sent:
+        if len(d['frozenParts']) == 1:
+            d['recorded'] = sent[0].get('recorded') or {'status': 'error', 'message': 'a part is not recorded yet'}
+        else:
+            d['recorded'] = {'status': 'recorded', 'parts': len(sent)} if all(registered(p) for p in sent) else {'status': 'error', 'message': 'a part is not recorded yet'}
+    return d
+
+
+def registered(one):
+    return (one.get('recorded') or {}).get('status') in ('posted', 'recorded', 'reserved')
+
+
+def register_part(d, one, host):
+    if one.get('link') or one in (d.get('byHand') or []):
+        return settle(host, d, one, one['intent'], one['text'], one['part'] == 1)
+    obj = draft_object(d)
+    return record_posted(host, one, obj, d.get('slot'), wiki_target(one['text']) if one['part'] == 1 else None, one['intent']) if obj else {'status': 'reserved'}
+
+
 def record_sent(st, host):
-    """Tell the host of every posted draft it has not confirmed: registration is retried on its own, never by posting
-    again; a post made by hand is reserved and recorded again (`settle`). -> the drafts recorded now."""
+    """Retry each sent part's registration independently of sending and thread completion."""
     done = []
-    for path, d in st.drafts():
-        obj = draft_object(d)
-        if d.get('byHand'):
-            again = [dict(p, recorded=settle(host, d, p, p['intent'], p['text'], p['part'] == 1)) if (p.get('recorded') or {}).get('status') == 'error' else p
-                     for p in d['byHand']]
-            if again != d['byHand']:
-                st.write(path, dict(d, byHand=again))
-                done += [path.name] if all((p['recorded'] or {}).get('status') != 'error' for p in again) else []
-            continue
-        if d.get('posted') and d.get('sent') and obj and (d.get('recorded') or {}).get('status') in (None, 'error'):
-            got = record_posted(host, d['sent'], obj, d.get('slot'), wiki_target(d['text']), d.get('intent'))
-            st.write(path, dict(d, recorded=got))
-            done += [path.name] if got.get('status') != 'error' else []
+    for path, _ in st.drafts():
+        with st.draft_lock(path):
+            d = json.loads(path.read_text())
+            if d.get('unposted') or not sent_parts(d):
+                continue
+            sent = sent_parts(d)
+            base = d.get('intent') or f'draft-{path.stem}'
+            d.update(sentParts=sent, frozenText=d.get('frozenText', d['text']), frozenParts=d.get('frozenParts') or parts(d['text']))
+            changed = False
+            for k, one in enumerate(sent):
+                one.setdefault('part', k + 1)
+                one.setdefault('intent', base if len(d['frozenParts']) == 1 else f'{base}#{k + 1}')
+                one.setdefault('text', d['frozenParts'][min(k, len(d['frozenParts']) - 1)])
+                if one.get('unposted') or registered(one):
+                    continue
+                one['recorded'] = register_part(d, one, host)
+                st.write(path, summarize(d))
+                changed = True
+            if changed and all(registered(p) for p in sent):
+                done.append(path.name)
     return done
 
 
+class LineIndex:
+    """Offsets, quoting prefixes and fence context computed in one pass."""
+    def __init__(self, text):
+        self.starts, self.ends, self.indents, self.quotes, self.delimiters, self.fences = [], [], [], [], [], []
+        offset, fence = 0, None
+        for line in text.splitlines(keepends=True):
+            marker = line.lstrip(' \t').rstrip('\r\n')
+            self.starts.append(offset)
+            self.ends.append(offset + len(line.rstrip('\r\n')))
+            self.indents.append(line[:len(line) - len(line.lstrip(' \t'))])
+            self.quotes.append(line.lstrip().startswith('>'))
+            self.delimiters.append(marker.startswith('```'))
+            self.fences.append(fence)
+            if self.delimiters[-1]:
+                fence = None if fence else (marker if marker[3:].strip() else None)
+            offset += len(line)
+        self.starts.append(offset)
+        self.ends.append(offset)
+        self.indents.append('')
+        self.quotes.append(False)
+        self.delimiters.append(False)
+        self.fences.append(fence)
+
+    def at(self, offset):
+        return bisect_right(self.starts, offset) - 1
+
+    def fence_at(self, offset):
+        k = self.at(offset)
+        return self.fences[k + 1] if self.delimiters[k] and offset >= self.ends[k] else self.fences[k]
+
+
+def continuation(index, start):
+    k = index.at(start)
+    prefix = index.fences[k] + '\n' if index.fences[k] else ''
+    if start > index.starts[k]:
+        indent = index.indents[k]
+        prefix += ('> ' if index.quotes[k] else indent if len(indent) <= NOTE else ' ') or ' '
+    return prefix
+
+
+def split_point(text, index, start, available):
+    end = min(len(text), start + available)
+    if end < len(text):
+        end = next((c for c in (text.rfind('\n\n', start, end), text.rfind('\n', start, end), text.rfind(' ', start, end)) if c >= start + available // 2), end)
+    k = index.at(end)
+    if index.delimiters[k] and end < index.ends[k]:
+        if index.starts[k] <= start:
+            raise Failure('unsafe_split', 'a fence delimiter exceeds the part limit')
+        end = index.starts[k]
+    return end
+
+
+def close_fence(index, end):
+    return '\n```' if index.fence_at(end) else ''
+
+
+def next_chunk(text, end, line_start):
+    start = end
+    while start < len(text) and text[start] == '\n':
+        start += 1
+    return start + 1 if end < len(text) and text[end] == ' ' and end > line_start else start
+
+
 def parts(text, limit=CLIP):
-    """A text over the clip as the numbered parts of a thread, each at most `limit` characters with its number
-    (`(2/5)` on its own last line): cut at a blank line where one falls in the second half of the room, else at a
-    line, else at a space, else hard. Each part leaves NOTE characters for its number and a note. A text within the
-    clip is one part, unnumbered."""
+    """Number bounded parts, preserving line indentation and literal fence context at every boundary."""
+    if len(text.encode()) > MAX_TEXT:
+        raise Failure('post_body_too_large')
     if len(text) <= limit:
         return [text]
-    room, rest, chunks = limit - NOTE, text, []
-    while len(rest) > room:
-        cut = next((c for c in (rest.rfind('\n\n', 0, room), rest.rfind('\n', 0, room), rest.rfind(' ', 0, room)) if c >= room // 2), room)
-        chunks.append(rest[:cut].rstrip())
-        rest = rest[cut:].lstrip('\n ')
-    chunks.append(rest.rstrip())
+    index, start, chunks = LineIndex(text), 0, []
+    while start < len(text):
+        prefix = continuation(index, start)
+        available = limit - NOTE - len(prefix) - 4
+        if available <= 0:
+            raise Failure('unsafe_split', 'the quoting prefix exceeds the part limit')
+        end = split_point(text, index, start, available)
+        chunks.append(prefix + text[start:end].rstrip() + close_fence(index, end))
+        start = next_chunk(text, end, index.starts[index.at(start)])
     return [f'{c}\n({k}/{len(chunks)})' for k, c in enumerate(chunks, 1)]
 
 
@@ -253,72 +362,72 @@ def room(host, source='delve', resident=None):
     return min(left, max(0, s['share'] - (s.get('residents') or {}).get(resident, 0))) if resident and s.get('share') else left
 
 
-def thread(path, d, st, host, body, texts, reader, client, intent, object):
-    """A draft over the clip, posted as its parts in one thread (`parts`): the first under the post it answers, each
-    next under the one before, each its own intent (`<intent>#k`) reserved against the hour's quota and recorded with
-    the host, so a reply under any part reaches the card. When the hour has room for fewer than all, the last that
-    fits says the next follows when the hour turns, and the draft keeps what was sent (`sentParts`): posted again,
-    it goes on from there. -> the last part's result, with `parts` and `sent`."""
-    if d.get('sentParts') and body != d['text']:
+def progress(path, d, st, host, body, texts, intent, source, deliver, count=None):
+    """Persist the posting plan, then each confirmed part before its registration; all channels advance here."""
+    if (sent_parts(d) or d.get('frozenParts')) and body != d.get('frozenText', d['text']):
         raise Failure('partly_posted', 'its first parts are posted: the rest is the same text, never another')
-    sent = list(d.get('sentParts') or [])
-    resident = answering(d)
-    if room(host, 'delve', resident) == 0 and len(sent) < len(texts):
+    texts = d.get('frozenParts') or texts
+    sent = sent_parts(d)
+    if d.get('unposted') or d.get('skipped') or d.get('posted'):
+        raise Failure('draft_already_posted')
+    left = room(host, source, answering(d)) if source == 'delve' and len(texts) > 1 and count is None else None
+    if left == 0 and not count:
         raise Failure('rate_limited', "the host's quota: no post left this hour for this reply")
-    left, under, n = room(host, 'delve', resident), (d.get('sentParts') or [{}])[-1].get('uri') if sent else d.get('replyTo'), len(texts)
-    for k in range(len(sent), n):
-        if left is not None and left <= 0:
+    if body != d['text']:
+        d.setdefault('original', d['text'])
+    d.update(text=body, frozenText=d.get('frozenText', body), frozenParts=texts, intent=intent, sentParts=sent)
+    st.write(path, d)
+    stop = len(texts) if count is None else min(len(texts), len(sent) + count)
+    for k in range(len(sent), stop):
+        if left == 0 and count is None:
             break
-        said = texts[k] if left != 1 or k == n - 1 else texts[k][:texts[k].rindex('(')] + f'({k + 1}/{n}; the next part follows when the hour turns)'
+        key = intent if len(texts) == 1 else f'{intent}#{k + 1}'
+        said = texts[k]
+        if source == 'delve' and count is None and left == 1 and k < len(texts) - 1:
+            said = said[:said.rindex('(')] + f'({k + 1}/{len(texts)}; the next part follows when the hour turns)'
+        under = sent[-1]['uri'] if sent else d.get('replyTo')
         try:
-            one = send(build_request(said, reply_ref(reader, under) if under else None, mention_facets(reader, said)), f'{intent}#{k + 1}', st, host,
-                       client=client, resident=resident)
-        except Failure as f:
-            if f.code != 'rate_limited' or not sent:
+            one = deliver(said, under, key)
+        except Failure as err:
+            if err.code != 'rate_limited' or not sent:
                 raise
             break
-        sent.append(one)
-        under, left = one['uri'], None if left is None else left - 1
-        st.write(path, dict(d, text=body, sentParts=sent))
-        if object:
-            record_posted(host, one, object, d.get('slot'), wiki_target(said) if k == 0 else None, f'{intent}#{k + 1}')
-    done = len(sent) == n
-    d = dict(d, text=body, sentParts=sent, posted=done, intent=intent, **({'sent': sent[-1]} if done else {}),
-             **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
-    if done and object:
-        d['recorded'] = {'status': 'recorded', 'parts': n}
-    st.write(path, d)
-    return {**(sent[-1] if sent else {}), 'parts': n, 'sent': len(sent)}
+        entry = dict(one, part=k + 1, intent=key, source=source, text=one.get('text', said))
+        sent.append(entry)
+        st.write(path, summarize(d))
+        entry['recorded'] = register_part(d, entry, host)
+        st.write(path, summarize(d))
+        left = None if left is None else left - 1
+    result = {k: sent[-1][k] for k in ('uri', 'cid')} if sent else {}
+    if len(texts) > 1:
+        result.update(parts=len(texts), sent=len(sent))
+    elif sent:
+        result['recorded'] = sent[-1]['recorded']
+    return result
 
 
 def post_draft(path, st, host, text=None, reader=None, client=None, intent=None, object=None, zulip=None):
-    """Post an outbox draft where its world lives (its replyTo, object and slot; `text` replaces its text), record it with
-    the host and mark it posted: on delve.town a record (`reader` reads the thread, `client` writes), on a Zulip world a
-    message in the draft's topic addressed to its author (`zulip` the bot's client). -> the post result."""
+    """Send a locked draft through the durable progression, using its world's channel adapter."""
     path = Path(path)
-    d = json.loads(path.read_text())
-    if d.get('posted') or d.get('skipped'):
-        raise Failure('draft_already_posted')
-    body, row, object = d['text'] if text is None else text, st.bridge(), object or draft_object(d)
-    if row['transport'] == 'zulip':
-        from transport import zulip as z
-        stream, topic = z.target(d, row)
-        intent = intent or f'zulip-{path.stem}'
-        said = f"@**{d['replyHandle']}**\n{body}" if d.get('replyTo') and 'publication' not in d else body
-        result = z.deliver(st, host, zulip or z.Client(row['zuliprc']), stream, topic, said, intent)
-    else:
-        reader, intent = reader or Client(http_transport), intent or f'draft-{path.stem}'
-        texts = parts(body)
-        if len(texts) > 1:
-            return thread(path, d, st, host, body, texts, reader, client, intent, object)
-        result = send(build_request(body, reply_ref(reader, d['replyTo']) if d.get('replyTo') else None, mention_facets(reader, body)),
-                      intent, st, host, client=client, resident=answering(d))
-    d = dict(d, text=body, posted=True, sent=result, intent=intent, **({} if body == d['text'] else {'original': d.get('original', d['text'])}))
-    st.write(path, d)  # sent, whatever the host says next: record_sent retries the registration alone
-    if object:
-        result = dict(result, recorded=record_posted(host, result, object, d.get('slot'), wiki_target(body), intent))
-        st.write(path, dict(d, recorded=result['recorded']))
-    return result
+    with st.draft_lock(path):
+        d = json.loads(path.read_text())
+        body, row = d['text'] if text is None else text, st.bridge()
+        if object:
+            d['object'] = object
+        if row['transport'] == 'zulip':
+            from transport import zulip as z
+            stream, topic = z.target(d, row)
+            intent = d.get('intent') or intent or f'zulip-{path.stem}'
+            said = f"@**{d['replyHandle']}**\n{body}" if d.get('replyTo') and 'publication' not in d else body
+            def deliver(text, under, key):
+                return z.deliver(st, host, zulip or z.Client(row['zuliprc']), stream, topic, text, key)
+            return progress(path, d, st, host, body, [said], intent, 'zulip', deliver)
+        reader = reader or Client(http_transport)
+        intent = d.get('intent') or intent or f'draft-{path.stem}'
+        def deliver(said, under, key):
+            return send(build_request(said, reply_ref(reader, under) if under else None, mention_facets(reader, said)), key, st, host,
+                        client=client, resident=answering(d))
+        return progress(path, d, st, host, body, parts(body), intent, 'delve', deliver)
 
 
 def command(st, a, out, client=None, zulip=None):

@@ -133,7 +133,7 @@ class FrontCase(ServeCase):
         # A bare counter: Counter's closure with Card and Spell (about 67 KB) exceeds the front's 64 KiB body.
         self.scratch_open(tok, scratch)  # already open is an error the create below does not need
         return self.call('POST', f'/AGENTS.md/scratch/{scratch}/objects', {'object': name, 'modules': closure('World') + [{'name': 'Counter', 'source': REPL_COUNTER}], 'entry': 'initial',
-                                                             'seed': record(count=nat(0)), 'intent': 'mk-' + name}, tok)
+                                                             'seed': {'count': 0}, 'intent': 'mk-' + name}, tok)
 
     def request(self, method, path, body=None, token=None, raw=None, headers=None):
         c = http.client.HTTPConnection('127.0.0.1', self.port, timeout=30)
@@ -141,6 +141,17 @@ class FrontCase(ServeCase):
         if token:
             headers['Authorization'] = 'Bearer ' + token
         payload = raw if raw is not None else (json.dumps(body) if body is not None else None)
+        if method == 'POST' and headers.get('Content-Type') == 'application/x-www-form-urlencoded' and not (payload or '').lstrip().startswith('{'):
+            _, fields, page = self.request('GET', '/enter', headers={'Accept': 'text/html', 'Cookie': headers.get('Cookie', '')})
+            csrf = re.search(rb'name="csrf" value="([^"]+)"', page)[1].decode()
+            cookies = dict(part.strip().split('=', 1) for part in headers.get('Cookie', '').split(';') if '=' in part)
+            for name, value in fields:
+                if name == 'Set-Cookie':
+                    key, value = value.split(';', 1)[0].split('=', 1)
+                    cookies[key] = value
+            headers['Cookie'] = '; '.join(key + '=' + value for key, value in cookies.items())
+            headers.setdefault('Origin', self.front.origin)
+            payload = (payload + '&' if payload else '') + urllib.parse.urlencode({'csrf': csrf})
         c.request(method, path, payload, headers)
         r = c.getresponse()
         data = r.read()
@@ -238,7 +249,7 @@ class Claim(FrontCase):
     def word_page(self):
         s, headers, page = self.request('POST', '/AGENTS.md/challenge', raw='handle=' + HANDLE, headers={'Content-Type': FORM, 'Accept': 'text/html'})
         self.assertEqual(s, 200)
-        return [v for k, v in headers if k == 'Set-Cookie'][0].split(';')[0], page.decode()
+        return next(v for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential=')).split(';')[0], page.decode()
 
     def press(self, cookie):
         return self.request('POST', '/AGENTS.md/verify', raw='handle=' + HANDLE, headers={'Content-Type': FORM, 'Cookie': cookie, 'Accept': 'text/html'})
@@ -502,6 +513,24 @@ class Turns(FrontCase):
 
 
 class TurnView(unittest.TestCase):
+    def test_a_carried_receipt_route_answers_the_host_pointer_without_requiring_an_entry(self):
+        from unittest.mock import Mock
+        from transport.http import Handler
+        found = {'status': 'resolved', 'kind': 'receipt', 'slug': 'nosap-hodaz', 'cid': 'old',
+                 'carried': {'at': 1400, 'height': 1336, 'world': 'town'},
+                 'message': 'entry 1336 of the world before the carry (town)'}
+        handler = Handler.__new__(Handler)
+        handler.path, handler.headers = '/AGENTS.md/receipt/nosap-hodaz', {'Authorization': 'Bearer legacy'}
+        handler.server = Mock()
+        handler.server.limited.return_value = 0
+        handler.server.host.send.return_value = found
+        handler.principal = Mock(return_value={'did': DID})
+        handler.browser = Mock(return_value=False)
+        handler.answer = Mock()
+        handler.agents('receipt', None, found['slug'], None)
+        handler.answer.assert_called_once_with(found)
+        handler.server.host.send.assert_called_once_with({'op': 'world-resolve', 'principal': DID, 'slug': found['slug']})
+
     def test_the_default_view_says_what_the_act_fired_and_opened(self):
         """The host's `revealed` lines are the default view's, not only `?full=1`'s; a reply without them has none."""
         reply = {'status': 'admitted', 'revealed': ['garden/bell/1 now wants second: delvetalk garden/bell/1 rain'],
@@ -510,6 +539,247 @@ class TurnView(unittest.TestCase):
         self.assertEqual(view['revealed'], reply['revealed'])
         self.assertEqual(list(view), ['status', 'line', 'revealed', 'offers', 'receipt'])
         self.assertNotIn('revealed', turn_view({**reply, 'revealed': []}))
+
+
+class ProcedureRetries(unittest.TestCase):
+    def setUp(self):
+        from transport.http import Handler
+        from transport import bridge
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.front = Front.__new__(Front)
+        self.front.st = State(tmp.name, config=Config())
+        self.front.bounds = {'transientClasses': ['quota', 'quiet', 'newHostTransient']}
+        self.front.host = mock.Mock()
+        self.front.turn_lock = threading.Lock()
+        self.front.draft_turn = mock.Mock()
+        self.intent = 'é' * 128
+        self.source = bridge.xrpc_source(DID, self.intent)
+        self.path = bridge.answer_path(self.front.st, self.source)
+        self.handler = Handler.__new__(Handler)
+        self.handler.server = self.front
+        self.handler.body = mock.Mock(return_value={'intent': self.intent, 'call': {'object': 'bell', 'verb': 'rain', 'fields': {}}})
+        self.handler.reply = mock.Mock()
+
+    def receipt(self, tag, height=1, **outcome):
+        return {'status': tag, 'inPublic': True, 'receipt': {'hash': f'entry-{height}', 'slug': f'name-{height}',
+                'height': height, 'identity': {'principal': DID, 'intent': self.intent},
+                'roots': [{'object': 'bell', 'version': height}], 'outcome': {'tag': tag, **outcome}}}
+
+    def procedure(self):
+        self.handler.procedure('act', DID)
+        code, raw = self.handler.reply.call_args.args
+        self.assertEqual(code, 200)
+        return json.loads(raw)
+
+    def test_each_host_marked_transient_refusal_retries_at_the_maximum_intent_despite_a_saved_terminal_answer(self):
+        from transport import bridge
+        for cls in self.front.bounds['transientClasses']:
+            with self.subTest(cls=cls):
+                self.front.st.write(self.path, {'source': self.source, 'receipt': {'entry': {'$link': 'unrelated-terminal'}}})
+                refused = self.receipt('refused', **{'class': cls})
+                admitted = self.receipt('admitted', 2)
+                self.front.host.send.reset_mock()
+                self.front.host.send.side_effect = [refused, admitted]
+                view = self.procedure()
+                self.assertEqual(view['outcome']['status'], 'admitted')
+                self.assertEqual([c.args[0]['op'] for c in self.front.host.send.call_args_list], ['world-receipt', 'world-turn'])
+                self.assertEqual(json.loads(self.path.read_text())['receipt'], bridge.public_view(self.front.host, admitted)['receipt'])
+
+    def test_a_settled_identity_replaces_a_suspended_answer_and_excludes_another_intents_offer(self):
+        from transport import bridge
+        bridge.write_answer(self.front.st, self.source, bridge.public_view(self.front.host, self.receipt('suspended')))
+        settled = self.receipt('admitted', 3)
+        self.front.host.send.side_effect = [settled, {'status': 'offers', 'offers': [
+            {'identity': {'principal': DID, 'intent': self.intent}, 'text': 'Rang.'},
+            {'identity': {'principal': DID, 'intent': 'another'}, 'text': 'another private answer'}]}]
+        view = self.procedure()
+        self.assertEqual((view['outcome']['status'], view['offers']), ('admitted', ['Rang.']))
+        saved = json.loads(self.path.read_text())
+        self.assertEqual((saved['outcome']['status'], saved['receipt']), ('admitted', view['receipt']))
+        self.assertNotIn('another private answer', json.dumps(saved))
+        self.assertEqual([c.args[0]['op'] for c in self.front.host.send.call_args_list], ['world-receipt', 'world-offers'])
+
+    def test_an_unknown_identity_runs_and_a_host_timeout_never_runs_from_a_saved_answer(self):
+        self.front.st.write(self.path, {'receipt': {'entry': {'$link': 'forged'}}})
+        self.front.host.send.side_effect = [{'status': 'unknown'}, self.receipt('admitted', 2)]
+        self.assertEqual(self.procedure()['outcome']['status'], 'admitted')
+        self.front.host.send.reset_mock()
+        self.front.host.send.side_effect = None
+        self.front.host.send.return_value = {'status': 'error', 'class': 'hostTimeout'}
+        reply = self.front.turn(self.front.host, DID, 'bell', 'rain', {'intent': self.intent}, first_receipt=True)
+        self.assertEqual(reply['class'], 'hostTimeout')
+        self.assertEqual([c.args[0]['op'] for c in self.front.host.send.call_args_list], ['world-receipt'])
+
+    def test_a_current_suspension_and_a_terminal_refusal_never_rerun_a_changed_call(self):
+        for tag, outcome in [('suspended', {}), ('refused', {'class': 'cardRefused'})]:
+            with self.subTest(tag=tag):
+                current = self.receipt(tag, **outcome)
+                self.front.host.send.reset_mock()
+                self.front.host.send.side_effect = [current] if tag == 'suspended' else [current, {'status': 'offers', 'offers': []}]
+                self.handler.body.return_value['call'] = {'object': 'missing', 'verb': 'missing'}
+                view = self.procedure()
+                self.assertEqual(view['outcome']['status'], tag)
+                self.assertEqual(view['receipt']['entry']['$link'], current['receipt']['hash'])
+                self.assertFalse(any(c.args[0]['op'] == 'world-turn' for c in self.front.host.send.call_args_list))
+
+
+class PlainFields(unittest.TestCase):
+    def test_tag_named_fields_at_the_top_nested_and_in_lists_are_records_even_when_they_spell_data(self):
+        from transport.host import typed
+        fields = {'tag': 'blue', 'text': 'rain', 'nested': {'tag': 'label', 'value': 'ordinary'},
+                  'list': [{'tag': 'record', 'fields': []}]}
+        expected = record(tag=label('blue'), text=label('rain'), nested=record(tag=label('label'), value=label('ordinary')),
+                          list={'tag': 'list', 'items': [record(tag=label('record'), fields={'tag': 'list', 'items': []})]})
+        self.assertEqual(typed(fields), expected)
+        self.assertEqual(typed({'nested': fields['nested']}), record(nested=record(tag=label('label'), value=label('ordinary'))))
+        self.assertEqual(typed({'list': fields['list']}), record(list={'tag': 'list', 'items': [
+            record(tag=label('record'), fields={'tag': 'list', 'items': []})]}))
+
+    def test_tag_named_fields_at_the_body_limit_are_converted_and_explicit_typed_arguments_pass_directly(self):
+        from transport.http import argument, MAX_BODY
+        body = {'call': {'object': 'bell', 'verb': 'rain', 'fields': {'tag': 'blue', 'text': ''}}}
+        body['call']['fields']['text'] = 'x' * (MAX_BODY - len(json.dumps(body).encode()))
+        self.assertEqual(len(json.dumps(body).encode()), MAX_BODY)
+        fields = body['call']['fields']
+        self.assertEqual(argument({'fields': fields}), record(tag=label('blue'), text=label(fields['text'])))
+        explicit = record(tag=label('blue'), text=label('rain'))
+        self.assertIs(argument({'argument': explicit}), explicit)
+
+    def test_the_create_route_converts_empty_tag_named_and_maximum_body_seeds_to_typed_records(self):
+        from transport.http import Handler, MAX_BODY
+        handler = Handler.__new__(Handler)
+        handler.path, handler.headers = '/AGENTS.md/scratch/try/objects', {'Authorization': 'Bearer token'}
+        handler.server = mock.Mock()
+        handler.server.limited.return_value = 0
+        handler.server.host.send.return_value = {'status': 'parsed', 'spell': {'card': 'bell'}}
+        host = handler.server.host.at.return_value
+        host.send.return_value = {'status': 'created'}
+        handler.principal = mock.Mock(return_value={'did': DID})
+        handler.browser = mock.Mock(return_value=False)
+        handler.body = mock.Mock()
+        handler.answer = mock.Mock()
+        maximum = {'object': 'bell', 'intent': 'make', 'seed': {'text': ''}}
+        maximum['seed']['text'] = 'x' * (MAX_BODY - len(json.dumps(maximum).encode()))
+        self.assertEqual(len(json.dumps(maximum).encode()), MAX_BODY)
+        for seed, expected in [({}, record()), ({'count': 0}, record(count=nat(0))),
+                               ({'tag': 'label', 'nested': {'tag': 'blue'}}, record(tag=label('label'), nested=record(tag=label('blue')))),
+                               (maximum['seed'], record(text=label(maximum['seed']['text'])))]:
+            with self.subTest(keys=list(seed), size=len(json.dumps(seed))):
+                handler.body.return_value = {'object': 'bell', 'intent': 'make', 'seed': seed}
+                handler.agents('create', 'try', None, None)
+                self.assertEqual(host.send.call_args.args[0]['seed'], expected)
+
+    def test_the_scratch_create_helper_sends_a_plain_seed_to_the_api(self):
+        front = FrontCase.__new__(FrontCase)
+        front.scratch_open, front.call = mock.Mock(), mock.Mock()
+        front.scratch_create('token')
+        self.assertEqual(front.call.call_args.args[2]['seed'], {'count': 0})
+
+
+class CurrentReceiptHost(ServeCase):
+    OPENER = 'did:plc:' + 'r' * 24
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from deploy import genesis
+        _, refusal = genesis.run(cls.root, cls.OPENER)
+        assert refusal is None, refusal
+
+    def setUp(self):
+        from transport.http import Handler
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.front = Front.__new__(Front)
+        self.front.st = State(tmp.name)
+        self.front.host = self.host
+        self.front.bounds = self.host.send({'op': 'bounds'})
+        self.front.turn_lock = threading.Lock()
+        self.front.draft_turn = mock.Mock()
+        self.handler = Handler.__new__(Handler)
+        self.handler.server = self.front
+        self.handler.reply = mock.Mock()
+
+    def procedure(self, body):
+        self.handler.body = mock.Mock(return_value=body)
+        self.handler.procedure('act', DID)
+        code, raw = self.handler.reply.call_args.args
+        self.assertEqual(code, 200)
+        return json.loads(raw)
+
+    def test_quota_zero_then_a_new_hour_and_quota_one_reruns_the_maximum_intent_at_the_host(self):
+        from transport import bridge
+        settings = lambda n: self.root.send({'op': 'world-settings', 'principal': self.OPENER,
+                                             'reading': 'test interpretation quota', 'interpretQuota': n})
+        self.addCleanup(settings, 48)
+        self.assertEqual(settings(0)['status'], 'settings')
+        body = {'intent': 'é' * 128, 'call': {'object': 'commonplace', 'verb': 'receive',
+                                            'fields': {'text': 'something green', 'post': ''}}}
+        refused = self.procedure(body)
+        self.assertEqual((refused['outcome']['status'], refused['outcome']['class']), ('refused', 'quota'), refused)
+        clock = self.host.send({'op': 'world-status'})['clock']
+        advanced = self.host.send({'op': 'world-advance', 'principal': 'transport', 'height': (clock // 60 + 1) * 60})
+        self.assertEqual(advanced['status'], 'advanced', advanced)
+        self.assertEqual(settings(1)['status'], 'settings')
+        retried = self.procedure(body)
+        self.assertEqual(retried['outcome']['status'], 'suspended', retried)
+        self.assertGreater(retried['receipt']['height'], refused['receipt']['height'])
+        current = self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': body['intent']})['receipt']
+        self.assertEqual(retried['receipt']['entry']['$link'], current['hash'])
+        saved = json.loads(bridge.answer_path(self.front.st, bridge.xrpc_source(DID, body['intent'])).read_text())
+        self.assertEqual(saved['receipt'], retried['receipt'])
+
+    def test_a_suspended_strike_retries_without_a_turn_then_settlement_replaces_the_answer_even_for_a_changed_call(self):
+        from tests.test_await import HUB, STRIKER
+        from transport import bridge
+        for name, source, seed in [('receipt-hub', HUB, record(count=nat(0))),
+                                   ('receipt-striker', STRIKER, record(principal=label(DID), intent=label('receipt-answer')))]:
+            made = self.root.send({'op': 'world-create', 'principal': self.OPENER, 'identity': 'make-' + name,
+                                   'object': name, 'modules': closure('World', 'Card') + [{'name': 'Test', 'source': source}],
+                                   'entry': 'initial', 'seed': seed})
+            self.assertEqual(made['status'], 'created', made)
+        body = {'intent': 'receipt-strike', 'call': {'object': 'receipt-striker', 'verb': 'strike'}}
+        suspended = self.procedure(body)
+        self.assertEqual(suspended['outcome']['status'], 'suspended', suspended)
+        height = self.host.send({'op': 'world-status'})['height']
+        self.assertEqual(self.procedure(body)['receipt'], suspended['receipt'])
+        self.assertEqual(self.host.send({'op': 'world-status'})['height'], height)
+        settled = self.host.send({'op': 'world-turn', 'principal': DID, 'identity': 'receipt-answer',
+                                  'object': 'receipt-hub', 'method': 'receive', 'argument': record(text=label('yes'), post=label(''))})
+        self.assertEqual(settled['status'], 'admitted', settled)
+        height = self.host.send({'op': 'world-status'})['height']
+        retried = self.procedure({**body, 'call': {'object': 'missing', 'verb': 'missing'}})
+        self.assertEqual(retried['outcome']['status'], 'admitted', retried)
+        self.assertNotEqual(retried['receipt'], suspended['receipt'])
+        self.assertEqual(self.host.send({'op': 'world-status'})['height'], height)
+        current = self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': body['intent']})['receipt']
+        self.assertEqual(retried['receipt']['entry']['$link'], current['hash'])
+        saved = json.loads(bridge.answer_path(self.front.st, bridge.xrpc_source(DID, body['intent'])).read_text())
+        self.assertEqual((saved['outcome']['status'], saved['receipt']), ('admitted', retried['receipt']))
+
+    def test_plain_top_and_nested_tag_fields_and_an_explicit_typed_argument_are_admitted_by_the_host(self):
+        source = declared('''edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./World.obend as World
+record State:
+  count: Nat
+def initial() -> State:
+  {count: 0n}
+def rain(state: State, input: {tag: String, nested: {tag: String, text: String}}, context: Abi.Context) -> Activity<String>:
+  input.nested.text
+''', 'rain')
+        made = self.root.send({'op': 'world-create', 'principal': self.OPENER, 'identity': 'make-tag-fields',
+                               'object': 'tag-fields', 'modules': counter_modules()[:-1] + [{'name': 'Test', 'source': source}],
+                               'entry': 'initial', 'seed': record()})
+        self.assertEqual(made['status'], 'created', made)
+        body = {'intent': 'tag-plain', 'call': {'object': 'tag-fields', 'verb': 'rain',
+                                             'fields': {'tag': 'blue', 'nested': {'tag': 'label', 'text': 'rain'}}}}
+        answer = self.procedure(body)
+        self.assertEqual(answer['outcome']['status'], 'admitted', answer)
+        explicit = record(tag=label('blue'), nested=record(tag=label('label'), text=label('rain')))
+        answer = self.front.turn(self.host, DID, 'tag-fields', 'rain', {'intent': 'tag-typed', 'argument': explicit})
+        self.assertEqual(answer['status'], 'admitted', answer)
 
 
 class Repl(FrontCase):
@@ -685,13 +955,13 @@ FORM = 'application/x-www-form-urlencoded'
 def browser_login(case, handle=HANDLE):
     """The login page's two forms, as a browser sends them: the challenge sets the session cookie, verify keeps it."""
     s, headers, _ = case.request('POST', '/AGENTS.md/challenge', raw='handle=' + handle, headers={'Content-Type': FORM})
-    cookie = [v for k, v in headers if k == 'Set-Cookie'][0].split(';')[0]
+    cookie = next(v for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential=')).split(';')[0]
     case.assertTrue(cookie.startswith('dt_credential=dt_agent_'))
     did = PEOPLE[handle]
     case.provider.texts[did] = case.front.identity.db.execute('SELECT text FROM challenges WHERE handle = ? ORDER BY created DESC', (handle,)).fetchone()['text']
     s, headers, _ = case.request('POST', '/AGENTS.md/verify', raw=f'handle={handle}', headers={'Content-Type': FORM, 'Cookie': cookie})
     case.assertEqual(s, 200)
-    case.assertIn(cookie, [v for k, v in headers if k == 'Set-Cookie'][0])
+    case.assertIn(cookie, next(v for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential=')))
     return cookie
 
 
@@ -944,12 +1214,12 @@ class GuestDoor(InTown):
         robin = f'robin-{self.c}'
         s, headers, page = self.door({'code': code, 'name': robin})
         self.assertEqual(s, 200, page[:500])
-        cookie = next(v for k, v in headers if k == 'Set-Cookie')
+        cookie = next(v for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential='))
         self.assertIn('HttpOnly', cookie)
         key = cookie.split(';')[0].split('=', 1)[1]
         self.assertTrue(key.startswith('dt_agent_'))
         self.assertIn(f'<pre class="key">{key}</pre>'.encode(), page)  # shown once, to keep
-        self.assertEqual(dict(headers)['Cache-Control'], 'no-store')
+        self.assertEqual(dict(headers)['Cache-Control'], 'private, no-store')
         self.assertIn(f'Welcome, {robin}'.encode(), page)
         jar = 'dt_credential=' + key
         # Playing every place as a resident does: the avatar, `me`, the book, trying first, acting.
@@ -970,8 +1240,9 @@ class GuestDoor(InTown):
         # Signing out forgets the cookie; the key is not revoked.
         s, _, page = self.request('GET', '/leave', headers={'Cookie': jar, 'Accept': 'text/html'})
         self.assertIn(b'<form method="post" action="/leave">', page)
-        s, headers, _ = self.request('POST', '/leave', headers={'Cookie': jar, 'Content-Type': FORM})
-        self.assertEqual((s, dict(headers)['Location']), (303, '/leave'))
+        s, headers, page = self.request('POST', '/leave', headers={'Cookie': jar, 'Content-Type': FORM})
+        self.assertEqual(s, 200)
+        self.assertIn(b'Signed out', page)
         self.assertIn('Max-Age=0', dict(headers)['Set-Cookie'])
         self.assertEqual(self.request('GET', '/play/')[1] and dict(self.request('GET', '/play/')[1])['Location'], '/enter')
         # A returning guest signs in with the key.
@@ -1129,6 +1400,22 @@ class Cookie(unittest.TestCase):
         cookie = lambda origin: Handler.login_cookie(SimpleNamespace(server=SimpleNamespace(origin=origin)), 'dt_agent_x')[0][1]
         self.assertIn('; Secure', cookie('https://gsb.fg-goose.online'))
         self.assertNotIn('Secure', cookie('http://127.0.0.1:8765'))  # a loopback test front, which a browser reaches over http
+
+class SpeechSpans(unittest.TestCase):
+    def test_an_indented_source_heredoc_keeps_two_definitions_separated_by_a_blank_line(self):
+        from transport import pages
+        spell = 'delvetalk workshop draft\n  source: <<END\n    def first() -> Nat: 1n\n\n    def second() -> Nat: 2n\n  END'
+        card = 'Draft it:\n\n' + '\n'.join('  ' + line if line else '' for line in spell.split('\n')) + '\n\nOutside prose.'
+        prose, suggestions = pages.speech(card)
+        self.assertEqual(suggestions, [('Draft it', spell)])
+        self.assertIn('Outside prose.', prose)
+
+    def test_an_indented_fence_preserves_blank_lines_and_never_consumes_the_next_spell_or_margin_prose(self):
+        from transport import pages
+        spell = 'delvetalk workshop draft\n  source:\n  ```obend\n  ' + 'x' * 65536 + '\n\n  delvetalk literal text\n  » literal result\n  ```'
+        card = '\n'.join('  ' + line if line else '' for line in spell.split('\n')) + '\n\n  delvetalk workshop ?\n» result\n\nMargin prose.'
+        _, suggestions = pages.speech(card)
+        self.assertEqual([s for _, s in suggestions], [spell, 'delvetalk workshop ?'])
 
 if __name__ == '__main__':
     unittest.main()

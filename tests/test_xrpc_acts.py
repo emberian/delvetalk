@@ -293,13 +293,15 @@ class XrpcActs(ProcedureCase):
         self.assertEqual(len(self.host.entries), 1)
         self.assertEqual(len(mirror.answer_records(self.st.answers)), 1)
 
-    def test_retry_keeps_the_first_public_projection_even_if_a_receipt_reread_lacks_offers(self):
+    def test_retry_exports_the_current_public_projection_even_if_a_receipt_reread_lacks_offers(self):
         self.assertEqual(self.request(body=self.act())[0], 200)
         source = bridge.xrpc_source(DID, 'one')
         path = bridge.answer_path(self.st, source)
         first = json.loads(path.read_text())
-        bridge.write_answer(self.st, source, {'outcome': {'status': 'admitted', 'line': 'changed'}, 'receipt': first['receipt']})
-        self.assertEqual(json.loads(path.read_text()), first)
+        current = {'outcome': {'status': 'admitted', 'line': 'changed'}, 'receipt': first['receipt']}
+        bridge.write_answer(self.st, source, current)
+        self.assertEqual(json.loads(path.read_text()), {'source': source, **current, '$type': NS + 'answer',
+                                                       'height': first['receipt']['height']})
 
 
 class XrpcHost(ProcedureCase):
