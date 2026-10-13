@@ -414,7 +414,7 @@ def play(out):
                 p.cast('covenant', MEITAN, reg, 'ring')
             if k == 7:
                 p.row('return', GEMINI, reg, 'voice', on=e3, evidence='checked', anchor=strong('3mxqax5sa2s2v'),
-                      text='Back at the stand: the third object has to sit out in the weather.', note='passed over in round 4; her own words again')
+                      text='Back at the stand: the third object has to sit out in the weather.', note='her own words again')
             if k == 6:
                 for s in SYBILS:
                     p.row('flood', s, reg, 'dispute', on=summary, evidence='testimony', anchor='me too', text='seat me', note='anchorless would-be member')
