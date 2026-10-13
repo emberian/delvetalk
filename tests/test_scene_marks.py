@@ -136,6 +136,20 @@ class SceneMarks(unittest.TestCase):
         self.assert_surfaces(host)
         self.assertEqual(genesis.station_restitch(host, OPENER)['status'], 'current')
 
+    def test_a_paint_citing_every_scene_mark_is_not_refused_for_length(self):
+        """The early v15 fallbacks: five digest-named marks cited together expanded to 519 characters against the
+        500 limit, were refused by `length` and again on the retry, and the card fell back to exact."""
+        town = self.station()
+        facts = [f for f in town.send(op='world-strokes', principal=READER, object='station')['strokes']['facts']
+                 if f['kind'] == 'mark']
+        self.assertGreaterEqual(len(facts), 5, facts)
+        rendered = town.send(op='world-render', principal=READER, object='station')
+        town.send(op='world-renders')
+        submitted = town.send(op='world-render-submit', key=rendered['key'],
+                              reply={'status': 'replied', 'raw': '[[' + ','.join(str(f['id']) for f in facts) + ']]',
+                                     'model': 'claude-haiku-5-5', 'usage': {}})
+        self.assertEqual(submitted['status'], 'painted', submitted)
+
     def test_maximum_wing_and_expanded_budget_keep_the_digest_internal(self):
         town = self.station()
         wing = '=== forecourt\nA start.\n// '

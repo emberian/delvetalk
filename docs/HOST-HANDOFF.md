@@ -3170,19 +3170,13 @@ replaces in the same commit, and this file describes only what is. A merge touch
      Found while testing, queued (owner: next host lane; check: a bare telling of the station lists its scene marks): a
      telling's `spanOf` sees no edits of a write holding a kind-2 step (`Ops.writeEdits` returns none for the whole
      write), so the station's stitch, which amends its law and inserts the mark in one write, tells no mark.
-   - Early v15 paint fallbacks (Task 2, Codex, lane/cx-tidy, investigation incomplete): the deployment logs record
-     one `retrying` then `exact` for each affected key, but `interpret.paint` discarded the host's verdict except
-     its status and key. The original clauses and model replies were not retained. `paint` now also reports
-     `verdicts` for retries and exact submissions (object/version, reason, clause/detail or attempts/next), keeping
-     the existing key lists. The missing diagnostic test failed before this change; 31 Python model/refresh/worker
-     tests pass locally. This is diagnostic work, not a fix of the paint refusal's cause.
-     Queue waiting does not spend an attempt: `Enchant.submitOp` increments only on a submitted transport/rate
-     failure, `rendersOp` only filters by `notBefore`, and reader patience/worker attendance do not settle a render.
-     Carry/check/refresh read exact cards and do not enqueue paints. The observed one-retry sequence and replied
-     calls in the spend ledger support a verifier refusal, but do not identify its clause or establish a carry-specific
-     bug. `tests.test_carry_paint.CarriedPaints` carries a town with an old station scene, refreshes it, then uses
-     serve, `model_mock`, and `interpret.paint` to separate a full 64-render queue crossing patience/worker grace,
-     a clause refusal with one retry, and three transport failures with backoff. These host tests are unrun here;
-     run `python3 -m unittest tests.test_carry_paint -v` against the current build. Outstanding: obtain the original
-     verdict/reply (or a new captured reproduction), add a regression failing on that specific defect, and fix its
-     cause. No Lean, timeout, attempt-limit or verifier changes were made on this evidence.
+   - Early v15 paint fallbacks: **found for the station, fixed by the scene-mark names (f)**. Queue waiting, reader
+     patience and a carry's refresh do not spend a paint's attempts (`submitOp` counts only submitted transport and
+     rate failures; a carry enqueues no paint). The `retrying` then `exact` sequence is a verifier refusal asked once
+     more. Reproduced on the pre-(f) binary: a paint citing the station's five digest-named marks expands to 519
+     characters against the 500 limit and is refused by `length` twice, so the card falls back to exact
+     (`tests.test_scene_marks.test_a_paint_citing_every_scene_mark_is_not_refused_for_length`, failing before (f)).
+     Not shown to be the whole story: porch, station/dj and station/bee carry no scene marks, so a fallback seen
+     there is not explained by this. `interpret.paint` now also reports `verdicts` (object, version, reason, clause,
+     detail, attempts, next) for each retry and exact submission, so the next fallback names its clause in the
+     worker's output; `tests.test_carry_paint` runs a carried, refreshed station through the real worker path.
