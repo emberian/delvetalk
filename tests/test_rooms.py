@@ -37,7 +37,7 @@ def make_room(chain, name, owner="ember", **fields):
 def room_seed(name, doors=(), present=(), things=()):
     """The fields of a room: its head, the doors it cites, who is in it, what lies in it."""
     return dict(head=label(name), cites=listing([record(label=label(l), to=reference(t), description=label(""), examples=listing([])) for l, t in doors]),
-                presence=relation(*[record(who=label(p), handle=label(""), at=label("")) for p in keyed(present)]),
+                presence=relation(*[record(who=label(p), handle=label(""), at=label(""), draw=nat(0)) for p in keyed(present)]),
                 things=relation(*[reference(t) for t in keyed(things)]))
 
 

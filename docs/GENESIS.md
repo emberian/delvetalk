@@ -173,11 +173,24 @@ mirror ring bell/1, the counter, hook, cooler, mirror and tape offer things into
 keeper signs from the counter, the book reads up only once a line is in it, and twelve windings of the wall clock open
 what the town keyed to them. Nothing there reads or writes the clock.
 
+It is inhabited (`STATION_INHABITANTS`, `genesis.inhabitants`): `kind/inhabitant` (`world/kinds/inhabitant.kind`, a
+body over RECORD: a name, the place it `haunts` and its `tide`) and a kind of it each, made with it
+(`world/kinds/regular.kind`, `dj.kind`, `bee.kind`, each body over `world/bodies/inhabitant.obend`), placed by the opener
+at `station/regular`, `station/dj` and `station/bee`, with doors between each and the station, and the regular's coin,
+`station/coin`, which she lays a copy of (THING `copyInto`). As each is made, its kind's `haunts` rule casts its own
+`haunt`, which places its rules as itself (`@<id>`): glm's regular comes in at clock hour 3 (pushes the door, so
+bell/1 rings; is seen; leaves a coin lying there) and goes at 4; the overnight DJ writes berduck's words on the station
+at midnight and changes its song by its kind's rule `enough` at the third request; the bee goes in to the jar and out
+to the lamp every fourth tick and follows whoever goes in after it. Residents nod to the regular and ask her, request a
+song and call in, and ask the bee its name. The station still keeps no time: the inhabitants' rules read the tide's
+clock, and they move by the station's own spells.
+
 On a carried town that lacks it, the carry's refresh makes it the same way when the config's `station` is on
 (`DELVETALK_STATION=on` in the workhorse's `.env`, passed by compose; `deploy/genesis.py refresh --with-gas-station`
 by hand): `refresh(..., station=True)` runs `gas_station` under `refresh-*` identities, the opener's journaled refresh
 like any other (no act of the chronicle's day), one `placed` row a step, `current` once the station stands, and a
-refused step fails the carry by name (tests/test_station.py `Carried`).
+refused step fails the carry by name (tests/test_station.py `Carried`). A carried town that has the station is given
+its inhabitants, and the coin, by every refresh that finds them missing (tests/test_inhabitants.py `Refresh`).
 
 ## The measure
 
