@@ -31,8 +31,9 @@ def edition : String := "delvetalk.snapshot.v5"
     deleted with the next. -/
 def previousEdition : String := "delvetalk.snapshot.v4"
 
-/-- The index keys `previousEdition` may not write: a carry from it starts them empty. -/
-def addedKeys : List String := ["refusedBy"]
+/-- The index keys an older binary's body may not write: a carry from it starts them empty (`wantFlips`: a
+    binary before replay edition 15 queued no want transitions). -/
+def addedKeys : List String := ["refusedBy", "wantFlips"]
 
 /-! ## Writing -/
 
