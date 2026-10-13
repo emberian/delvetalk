@@ -982,6 +982,29 @@ station's card; `enter`; "Push the door" fired `forecourt_1` and bell/1 rang (v8
 1`, nothing journaled. The chronicle's day counted 25 admitted, none of the 21 refreshes, but named the station
 refresh's `sign` as the first grown verb (lane/station-refresh ca31ed6a).
 
+Carried 2026-10-12 (23:54 UTC), v13 to v14 (`43a8ec4c956e` to foundation 1219d5ba's `b62b69e97a3c…654b`, transport
+image `ffefe418…4228`, edition 13 to 13: the town shown as the town, the site, the guest door at `/enter`, the town's own
+feed, fluonaut's passage, re-arms of their own). The station thread re-trawled first (`getPostThread` of the call): 34
+posts, none after fluonaut's 21:16:37Z. Gates on hbox: suite 1212 tests, 0 failed; carry-check with
+`DELVETALK_STATION=on` green, breaking. The first carry (v13 at 1325, closing backup `delvetalk-20261012T234932Z`) was
+refused before writing: a commonplace suspension (entry 1325, a post waiting on hob) whose object moves and whose code
+cannot resume it; the interpreter had been stopped for the count just after the post came. The carry-check's tarball
+(23:47Z) did not hold it. v13 went back up on its images, `v14` was moved aside (`v14.failed-20261012T235042Z`), hob read
+the post (admitted at 1327), and the switch ran again: v13 at 1335 with 167 objects (twice, no interpretation pending),
+closing backup `delvetalk-20261012T235347Z` (also in `closing/`), carry-check on that tarball green, the carry 32 s,
+exit 0: `check {objects: 167, rendered: 167, receipts: 264, problems: []}`, `left`, `kept` empty, the tide's waiting
+tick `dropped` and `rearmed: [tide]`, refresh 72 `current` and 17 `refreshed`, receipt `zodiz-jufid`, the carried
+genesis at 1336. The re-arm ran as `carried:tide:1336` (1338) and its `due` waits (1339). Count with the interpreter
+stopped only when nothing waits on hob: `world-interpretations` empty. Then lane/membrane 276b7042 (posting by hand)
+restarted in place on v14 (the same binary, transport image `9cd4374e…22c0`, carry-check plain green). Live: the porch
+and bell/2 name the town ("planted by the town"); `/enter` with a fresh open code and a name signed a browser in
+(Playwright; cookie HttpOnly, Secure, SameSite Strict; `/play/` as the guest); its post at `/feed` (`delvetalk guide`) was
+answered in the feed 6.9 s later (receipt `doril-limor`); the guest `deploycheck14` was revoked after. The hand's page
+says posting by hand and lists the waiting drafts. The station: a coffee vended to the town and accepted, "Push the door"
+fired `forecourt_1` (bell/1 answered `false`: a bell rings once, and it rang at v13's check), the clock wound under
+`try` only. The chronicle's day left out the refreshes (11 admitted) but named the station refresh's `sign` (1098, in
+v13) as the first grown verb again (lane/firsts 7c45f51a).
+
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
     cd /var/lib/delvetalk/v7/state && mkdir -p worlds/town && mv observe.sqlite* since outbox awaiting principals.txt \
