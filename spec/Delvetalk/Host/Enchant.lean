@@ -274,6 +274,9 @@ def Strokes.text (s : Strokes) : String := Id.run do
            else ": its past, before the reader's first arrival, in the third person")]
       | none, none => [s!"What it is: {s.object}" ++ (if s.kind.isEmpty then "" else s!", a {kindName} ({s.kind})")]) ++
     line (s.speech.code != "en") s!"Paint in: {s.speech.name} ({s.speech.english}), quoting in {s.speech.quotes}; residents' lines, ids, handles and spells exactly as written here; each count with the {s.speech.english} unit word given beside it" ++
+    (match s.telling with
+      | some t => line (s.speech.code != "en") s!"Frame: the page prints {t.frame s.tongue} above the paint, so the paint begins with what happened and never writes a frame, in this language or another"
+      | none => []) ++
     line (!s.head.isEmpty) s!"Called: {s.head}" ++
     [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
     line (!s.about.isEmpty) s!"What its kind is: {s.about}" ++
@@ -1434,7 +1437,7 @@ structure Render where
   strokes : Strokes
   request : Json
   fate : Fate
-  /-- Asked again once already, after a paint refused for its length alone. -/
+  /-- Asked again once already, after a refusal (its length in any tongue, any clause in another than English). -/
   retried : Bool := false
 
 /-- How long after the worker last listed `world-renders` the host still counts on it (ms): past it a reader is
@@ -1445,7 +1448,7 @@ def workerGraceMs : Nat := 10000
 structure Cache where
   entries : Std.HashMap String Render := {}
   polled : Option Nat := none
-  /-- Paints asked for again after a refusal for length alone (`world-status.renders.retried`). -/
+  /-- Paints asked for again after a refusal (`world-status.renders.retried`). -/
   retried : Nat := 0
 
 def Cache.attended (c : Cache) (now : Nat) : Bool := match c.polled with
@@ -1590,9 +1593,29 @@ def rendersOp (c : Cache) (now : Nat) : Json :=
     | _ => acc) #[]
   Json.mkObj [("status", toJson "renders"), ("pending", Json.arr (pending.qsort fun a b => a.compress < b.compress))]
 
+/-- What the painter is told after a refusal, in plain words: the clause that refused its paint and what failed it, and
+    what to do instead. The one retry for every refusal, the length's included. -/
+def refusalNote (s : Strokes) (clause detail paint : String) : String :=
+  let again := s!"paint it again from the Facts above, in {s.speech.english} for imagery and quotation frames, correcting only that"
+  let last := "The last paint was thrown away whole: "
+  let shown := s!" (the paint was: {paint})"
+  match clause with
+  | "length" => s!"The last paint was {detail} characters and was thrown away: paint it again, under {s.limit} characters, the spell included."
+  | "facts" => s!"{last}the facts check rejected a reference ({detail}). A factual line contains only [[id,...]]; use only ids from this paint's Facts, with no surrounding prose. The host supplies the clauses; {again}.{shown}"
+  | "imagery" => s!"{last}the imagery check rejected prose ({detail}). Put factual claims on separate [[id,...]] lines. Other lines are a simile fragment with no state or source words, or exact quotations with only a said/wrote attribution frame; {again}.{shown}"
+  | "tongue" => s!"{last}it was not written in {s.speech.english}, or not in it alone. Paint it again from the Facts above, imagery and quotation frames in {s.speech.english}, with no page frame. Select [[id,...]] for facts; host clauses remain in the catalogue language, and quoted words, ids, handles and spells stay as supplied.{shown}"
+  | "numbers" => s!"{last}a number was wrong ({detail}). Select the counted fact with [[id,...]] instead of wording a count. Any number left in imagery must pass the existing counted-unit check, and counts and units themselves are not imagery; {again}.{shown}"
+  | "quotes" => s!"{last}a quotation is not in the strokes ({detail}). Quote a resident's line whole, or a verbatim part of other historical stroke text, untranslated, with only a said/wrote attribution frame. A head or name may only be quoted as historical words, never asserted as state; {again}.{shown}"
+  | "attribution" => s!"{last}a quotation is credited wrongly or not at all ({detail}). Put the writer's handle beside each resident's line. Credit other historical words only to their author, a coinage to its coiner. Each quotation has only a said/wrote frame; {again}.{shown}"
+  | "wants" => s!"{last}it claimed a want ({detail}). Select only an offered want fact with [[id,...]]; never assert the want or its reading in model prose, or infer what is awaited or missing; {again}.{shown}"
+  | "negation" => s!"{last}it said something is missing or never was ({detail}). Do not infer absence from empty fields or historical words. Select an offered fact with [[id,...]], without rewording it or adding a negative claim; {again}.{shown}"
+  | "secondPerson" | "forbidden" => s!"{last}it spoke to the reader or as a speaker ({detail}). Nobody is addressed (no you, your, I, my, thanks, sorry, welcome, please) in {s.speech.english} either; {again}.{shown}"
+  | _ => s!"{last}the check {clause} failed ({detail}). Use [[id,...]] lines for facts, guarded simile fragments or attributed quotations for other lines, and an offered spell verbatim on its own line. Copy ids and handles exactly, with no heading; {again}.{shown}"
+
 /-- `world-render-submit {key, reply}`: settle a pending render with the model's reply verbatim (model.py's
     result object). A reply is verified and cached, painted or refused by its clause; a paint refused for its
-    length alone is asked for once more with its length (`retrying`, counted in `renders.retried`); a network
+    length, or for any clause in a tongue other than English, is asked for once more, told the clause and why in plain
+    words (`refusalNote`; `retrying`, counted in `renders.retried`); a network
     or rate failure is asked again after `renderBackoffMs`, `renderAttempts` in all; any other failure shows
     the thing exact (`model`). -/
 def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Json)) := do
@@ -1610,14 +1633,15 @@ def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Js
       | .error (cl, d) => .rejected cl d
     else if ["transport", "rate"].contains reason && tried + 1 < renderAttempts then .pending (tried + 1) (now + renderBackoffMs)
     else .rejected "model" (if reason.isEmpty then "no reply" else reason)
-  -- A paint refused for its length alone is asked for once more, told its length (every other clause held).
-  if let .rejected "length" d := fate then
-    unless r.retried do
+  -- A paint refused is asked for once more, told in plain words what was refused and why: for its length in any
+  -- tongue, for any clause in a tongue other than English (every other paint is shown exact).
+  if let .rejected cl d := fate then
+    if !r.retried && cl != "model" && (cl == "length" || r.strokes.tongue != "en") then
       let user := (r.request.getObjValAs? String "user").toOption.getD ""
-      let again := s!"{user}\n\nThe last paint was {d} characters and was thrown away: paint it again, under {r.strokes.limit} characters, the spell included."
+      let again := s!"{user}\n\n{refusalNote r.strokes cl d (trimmed ((reply.getObjValAs? String "raw").toOption.getD ""))}"
       let r := { r with fate := .pending 0 now, retried := true, request := r.request.setObjVal! "user" (toJson again) }
       return .ok ({ c.insert key r with retried := c.retried + 1 },
-        answer "retrying" r.object [("key", toJson key), ("clause", toJson "length"), ("detail", toJson d), ("next", toJson now)])
+        answer "retrying" r.object [("key", toJson key), ("clause", toJson cl), ("detail", toJson d), ("next", toJson now)])
   let r := { r with fate }
   toDisk key r
   let c := c.insert key r

@@ -205,8 +205,11 @@ are named here; each supported tongue's existing table supplies its token checks
 | `imagery` | quoted words have only a said/wrote attribution frame; unquoted prose starts with an explicit simile marker (`Like`, `As if`, `Como`, `Как`, `مثل`, `まるで`, `如`). No listed copula, auxiliary, perfect/state verb or subject pronoun; no named field, mark, verb, counted unit, want words, identifier, handle, or meaningful head/about/seed/heard-line word. This is a syntactic guard, not a semantic proof about arbitrary imagery |
 | `length` | both source and expanded text: 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival |
 
-A paint refused for its length alone is asked for once more, told its length; any other refused paint, or a second
-long one, shows the card exact until its next version and is not asked again for that one; `world-status.renders`
+A paint refused for its length, or for any clause in a tongue other than English, is asked for once more, told the
+clause and its reason in plain words and shown the refused paint (`Enchant.refusalNote`). Fact-id and imagery
+failures ask for local references or attributed quotations/similes in the requested tongue, preserving the supplied
+host clauses and historical words; a second refusal, or any other
+refused paint, shows the card exact until its next version and is not asked again for that one; `world-status.renders`
 counts `cached`, `rejected`, `pending` and `retried`. `world-render-check` judges any text against a thing's (or a day's) strokes
 without caching it and returns the host-expanded text when verified. The cache stores the verified source, expands
 it on read and reverifies it on disk load; fact clauses participate in the strokes hash. Nothing is journaled.
@@ -247,6 +250,13 @@ every language and answers each resident in theirs (`spec/Delvetalk/Host/Tongue.
   whole; attribution by handle or the tongue's word for the maker; numbers and negation as the table above. A tongue
   with no table is never painted (`exact`, reason `tongue`), and a paint in another tongue than asked is refused
   (`tongue`).
+- **The painter is taught by example** (HOST-HANDOFF 5.225, lane/tongues2 reconciled). The contract carries a
+  citation example per tongue (ja zh es ru ar) of a thing, a telling before arrival and one while away: numbered
+  structured facts, an arrangement of `[[ids]]`, a whole attributed quotation in that tongue's frame and a simile
+  fragment. Tests bind the example's facts to real strokes and check the host expansion. A telling's strokes give
+  the host's frame in the tongue (`Frame:`); examples leave it out of the paint. Heads and names are historical
+  words, quoted as said when selected. A refusal in a tongue other than English is asked once more with its reason
+  through the same retry as length, including fact-id and imagery failures.
 - **hob's own lines** (`resumeHeard`'s asks-first, still-needs and none-takes, the `?` and hint tails) are in the
   speaker's tongue (`Tongue.say`): `hob: まだ text が要る。埋めて送って:`.
 - **The guide's opening and the welcome** are library pages in each tongue (`guide.ja`, `welcome.es`), read in place

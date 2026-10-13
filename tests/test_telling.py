@@ -189,6 +189,17 @@ class Told(unittest.TestCase):
             return replied(answer(req['user']) if told else 'A plain thing.')
         return interpret.paint(self.town.client, ask)
 
+    def test_the_contracts_while_away_examples_are_true_paints_of_the_real_strokes(self):
+        from tests.test_tongues import contract_examples
+        since = self.left['receipt']['height'] - 1
+        facts = self.town.send(op='world-strokes', principal=GLM, object='porch', telling={'since': since})['strokes']['facts']
+        examples = contract_examples('telling while away', facts)
+        self.assertEqual(sorted(t for t, _, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
+        for tongue, paint, expanded in examples:
+            with self.subTest(tongue=tongue):
+                got = self.town.send(op='world-render-check', principal=GLM, object='porch', telling={'since': since}, tongue=tongue, text=paint)
+                self.assertEqual((got['status'], got.get('text')), ('verified', expanded), got)
+
     def test_1_one_call_per_arrival_never_per_read(self):
         first = self.render(MOO)
         self.assertEqual(first['status'], 'pending', first)

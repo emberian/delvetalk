@@ -2804,7 +2804,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    identifiers, handles and meaningful head/about/seed/heard-line words. This is a syntax/vocabulary guard;
    it does not establish that every possible metaphor or predicate in every tongue is harmless. The factual
    guarantee is the host-selected clauses. Source and expanded text both satisfy the existing length bound;
-   only length retries once, all other failures use the existing exact fallback. Host clauses remain in the
+   length retries once in every tongue, and every non-model refusal retries once in a supported non-English
+   tongue through the same `retried` flag; a second refusal uses the existing exact fallback. Host clauses remain in the
    host catalogue language; imagery and quotation frames use the requested tongue, with existing language
    checks. A reference-only paint still requires a supported tongue.
    `world/lib/Paint.obend` is the one updated contract. The one catalogue string in
@@ -2850,6 +2851,28 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    `[[999]]` text without interpreting it; receipt contents and the prefix's `told` count stay unchanged.
    Ember explicitly authorized this rendering-only exception on 2026-10-12, confined to `with_telling`
    and nothing else in `transport/bridge.py`; no other transport file was touched for this correction.
+   Foundation's lane/tongues2 (`060ff21b`, merged by `d3a918b3`) is reconciled into this citation contract,
+   not retained as a prose-painting alternative. All fifteen worked examples (thing, before arrival, while
+   away in ja/zh/es/ru/ar) now offer numbered `{kind, subject, value, clause}` facts, arrange `[[ids]]`,
+   quote an attributed line in that tongue's said-word frame and add a guarded simile. Example ids are local;
+   tests bind their declared structured facts to the matching real strokes and check the exact expansion,
+   not merely that some numbered clause verifies. AR/JA/ES/EN fixtures likewise bind their rain fact from
+   the actual model request and expect the host's canonical count; the script, quotation, per-tongue cache,
+   wrong-count/want/negation, native-frame, retry-count and final-second-refusal assertions remain.
+   The native `Frame:` prompt line, doubled non-English response budget and Spanish plural stem remain.
+   A true uncited "dos visitantes" now passes numbers then refuses imagery; "tres visitantes" still
+   refuses numbers, while the cited two-visitor fact verifies. Singular/plural stem guards also cover
+   visitante/visitantes, clase/clases and carácter/caracteres. The retry notes name `facts` and `imagery`
+   failures and their details, teach local `[[id,...]]` selection or attributed quotations/similes, and ask
+   for imagery and quotation frames in the speaker's tongue without translating host clauses or history.
+   No retry remedy asks for unmarked factual prose or an unquoted historical name. New tests written before
+   the prompt/note changes require the fact-id and imagery-specific remedies and a successful second paint;
+   those remedies were absent from the textually merged helper. No check or retry limit is weakened.
+   The Paint source pin is updated with the existing DAG-CBOR/CID encoder after reproducing foundation's
+   imported pin from its exact source; the compiled packet digest remains the imported observation until
+   the supervisor recompiles it. No host compilation or runtime suite ran here. The old live-model 89%
+   result measured prose painting; the citation examples and retry need their own real-model measurement.
+   This merge changes no journal derivation; replay edition 14 remains unchanged.
    Python syntax and diff checks pass; new runtime assertions and real-model validation remain with the
    supervisor. Least certain: the rejection rate/cost of the stricter prompt. Adjacent: retained marks
    and counts still have the lifecycle issue in world.md 9; this paint exposes recorded facts and does not

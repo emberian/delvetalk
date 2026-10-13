@@ -271,7 +271,9 @@ wants and host-derived events. The model selects and orders `[[id,...]]` lines; 
 clauses. Historical heads, `about`, seeds and heard lines appear only quoted as said/written, never as current
 truth. Other model prose is explicit simile fragments checked by the existing token rules and a syntax/vocabulary
 imagery guard. That guard does not prove arbitrary metaphor free of factual implications; the factual guarantee
-belongs to the host clauses. Source and expanded text share the existing length bounds. Verified source is cached
+belongs to the host clauses. Worked examples in five tongues use this same citation contract. Length retries
+once in every tongue; non-model refusals in a supported non-English tongue retry once through the same mechanism,
+with the clause, detail and citation-aware remedy. Source and expanded text share the existing length bounds. Verified source is cached
 per (strokes including facts, library pin, model), reverified on disk load and expanded on read, never journaled;
 replay needs no model and its derivation is unchanged. The exact card, current status and available actions stand
 visible beneath the paint; a painted arrival post retains all the host's exact history after the complete

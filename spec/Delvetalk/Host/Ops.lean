@@ -5768,6 +5768,16 @@ def refreshEntry (w : World) (e : Json) : Bool :=
   carryRefresh w ((e.getObjVal? "identity").toOption.getD Json.null) carried ||
     (((e.getObjVal? "delivery").toOption.bind (·.getObjVal? "from" |>.toOption)).map (carryRefresh w · carried)).getD false
 
+/-- Whether the entry at height `h` was a carry's refresh: this chain's (`refreshEntry`), or, for a height of a world
+    before the carry, the identity its carried genesis kept for that height (`identities`, read as `carriedIds`): the
+    station's `sign`, grown by the v13 carry's `refresh-station-sign` at 1098, is a refresh in v14 too. -/
+def refreshAt (w : World) (h : Nat) : Bool :=
+  match w.entries.get? (h - 1) with
+  | some e => refreshEntry w e
+  | none => w.carriedIds.fold (fun found _ row => found ||
+      ((row.getObjValAs? Nat "height").toOption == some h &&
+        carryRefresh w ((row.getObjVal? "identity").toOption.getD Json.null) false)) false
+
 def chronicleDay (w : World) (reader : String) (day : Nat) : Option Day := Id.run do
   let some i := w.days.findIdx? (·.1 == day) | return none
   let start := w.days[i]!.2
