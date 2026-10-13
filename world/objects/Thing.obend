@@ -304,7 +304,8 @@ def cited(state: State, context: Abi.Context) -> Activity<World.Sent>:
 def citedBy(state: State, context: Abi.Context) -> Activity<World.Sent>:
   match world.viewField::<Card.Doorways>({object: {world: context.world, object: context.sender}, field: "cites"}):
     case viewed(v): if Lists.any(v.state, fn(d: Card.Doorway) -> Bool: d.to.world == context.world && d.to.object == context.object) then heard(state, "door", context) else World.Sent.refused({clause: "notCited"})
-    case _: World.Sent.refused({clause: "notCited"})
+    case denied(_): World.Sent.refused({clause: "notCited"})
+    case refused(_): World.Sent.refused({clause: "notCited"})
 def inspiritTold(surrounding: String, context: Abi.Context, state: State) -> Activity<Done>:
   Card.tell(Done.done({}), Document.concat(Document.text("Inspirited, {Card.name(context.principal, context)}: you keep it.\n\n"), render(extend(state, {keeper: context.principal, keeperHandle: context.handle, description: surrounding}), context)))
 # The card: what it is, who keeps it and where it is; unclaimed, the spell that inspirits it; then

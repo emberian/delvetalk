@@ -42,17 +42,20 @@ def here(context: Abi.Context, state: State) -> Lists.Maybe<Presence>:
 def isHere(context: Abi.Context, state: State) -> Bool:
   Rows.isPresent(state.presence, context.principal)
 # A call reads the room with the calling turn's staged entry or departure applied.
-def present(state: State, context: Abi.Context) -> Bool:
+def present(state: State, context: Abi.Context) -> Activity<Bool>:
   isHere(context, state)
 # Principals with avatars index presence in the room's transaction; a principal without an
 # avatar still enters and leaves. A failed index refuses the presence write with it.
-def indexPresence(context: Abi.Context) -> Activity<Bool>:
+sum Indexed:
+  indexed: {}
+def indexPresence(context: Abi.Context) -> Activity<Indexed>:
   match world.viewField::<Plans.Reference>({object: {world: context.world, object: context.principal}, field: "at"}):
     case viewed(_): indexAvatar(context)
-    case _: true
-def indexAvatar(context: Abi.Context) -> Activity<Bool>:
+    case denied(_): Indexed.indexed({})
+    case refused(_): Indexed.indexed({})
+def indexAvatar(context: Abi.Context) -> Activity<Indexed>:
   match world.call::<Bool>({object: {world: context.world, object: context.principal}, method: "locate", argument: Plans.nothing()}):
-    case returned(r): if r.result then true else refuse("refused location: The avatar did not index presence.")
+    case returned(r): if r.result then Indexed.indexed({}) else refuse("refused location: The avatar did not index presence.")
     case refused(r): refuse("refused {r.clause}: {r.reading}")
     case denied(_): refuse("refused location: The avatar did not admit its room.")
 def passageAt(id: String, state: State) -> Lists.Maybe<Passage>:
@@ -223,7 +226,7 @@ def performed(verdict: Verdict, context: Abi.Context, state: State) -> Activity<
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}, tended: set context.clock}
   match indexPresence(context):
-    case _: entryTold(at, after, context)
+    case indexed(_): entryTold(at, after, context)
 def entryTold(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   match lastLeft(context.principal, after):
     case some(l): if l.value.entry == 0n then welcomed(at, after, Document.text(""), context) else away(at, after, l.value.entry, context)
@@ -292,7 +295,7 @@ def wroteVar(edit: Plans.Entries<Var, Var>, rest: Lists.List<Plans.Entries<Var, 
 def departing(me: Presence, chose: String, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {presence: retract {who: me.who}, chose: set if chose == "" then state.chose else chose}
   match indexPresence(context):
-    case _: departureRecorded(me, vars, after, context, state)
+    case indexed(_): departureRecorded(me, vars, after, context, state)
 def departureRecorded(me: Presence, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context, state: State) -> Activity<Done>:
   match lastLeft(me.who, state):
     case some(l): forgotten(l.value, vars, after, context)

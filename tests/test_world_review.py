@@ -8,8 +8,8 @@ import unittest
 from tests.bend import closure, declared
 from tests.host import bounds
 from tests.test_chain import Chain
-from tests.test_objects import run_pure
-from tests.test_rooms import avatar_seed, make_room, room_seed, thing_seed
+from tests.test_objects import BIG, run_pure
+from tests.test_rooms import avatar_seed, body, make_room, room_seed, thing_seed
 from tests.test_scene import choice, passage, plain, scene_fields
 from tests.wire import field, label, nat, record, reference, relation
 
@@ -33,6 +33,51 @@ def locate(state: State, input: {avatar: String}, context: Abi.Context) -> Activ
 
 def relay_modules():
     return closure("World", "Abi") + [{"name": "Relay", "source": RELAY}]
+
+
+DECLINING_AVATAR = declared('''edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  at: Plans.Reference
+def initial() -> State:
+  {at: Plans.nobody()}
+def locate(state: State, context: Abi.Context) -> Activity<Bool>:
+  false
+''')
+
+
+class RoomIndexing(Chain):
+    def test_presence_query_is_an_activity_read_without_state_writes(self):
+        make_room(self, "room", **room_seed("Room"))
+        for expected in (False, True):
+            before = self.state("room")
+            reply = self.turn("room", "present", principal="visitor")
+            self.assertEqual(reply["status"], "admitted", reply)
+            self.assertEqual(reply["result"], {"tag": "boolean", "value": expected}, reply)
+            self.assertEqual(reply["receipt"]["outcome"]["writes"], [])
+            self.assertEqual(self.state("room"), before)
+            if not expected:
+                entered = self.turn("room", "enter", principal="visitor")
+                self.assertEqual(entered["status"], "admitted", entered)
+
+    def test_room_entry_and_departure_without_an_avatar_compile_and_execute(self):
+        make_room(self, "room", **room_seed("Room"))
+        for method, result, presence in (("enter", "entered", ["visitor"]), ("leave", "left", [])):
+            reply = self.turn("room", method, principal="visitor")
+            self.assertEqual(reply["status"], "admitted", reply)
+            self.assertEqual(reply["result"]["label"], result, reply)
+            self.assertEqual([r["who"] for r in plain(field(self.state("room"), "presence"))], presence)
+
+    def test_a_false_avatar_index_result_refuses_the_presence_write(self):
+        self.make("visitor", closure("World", "Abi") + [{"name": "DecliningAvatar", "source": DECLINING_AVATAR}], record())
+        make_room(self, "room", **room_seed("Room"))
+        before = self.state("room")
+        reply = self.turn("room", "enter", principal="visitor")
+        self.assertEqual(reply["status"], "refused", reply)
+        self.assertEqual(reply["receipt"]["outcome"]["clause"], "location", reply)
+        self.assertEqual(self.state("room"), before)
 
 
 class Location(Chain):
@@ -104,8 +149,9 @@ class Location(Chain):
         direct = self.turn("glm", "locate", principal="glm")
         self.assertEqual(direct["status"], "refused", direct)
         self.make("relay", relay_modules(), record(owner=label("glm")))
-        relayed = self.admitted("relay", "locate", record(avatar=label("glm")))
-        self.assertEqual(relayed["result"]["label"], "refused", relayed)
+        relayed = self.turn("relay", "locate", record(avatar=label("glm")), principal="glm")
+        self.assertEqual(relayed["status"], "refused", relayed)
+        self.assertEqual(relayed["receipt"]["outcome"]["clause"], "location", relayed)
         self.assertEqual(self.at(), reference(""))
 
     def test_go_uses_presence_when_the_previous_index_names_an_empty_room(self):
@@ -114,6 +160,26 @@ class Location(Chain):
         self.assertEqual(went["status"], "admitted", went)
         self.assertEqual(field(self.state("kim"), "at"), reference("garden"))
         self.assertEqual((self.present("scene"), self.present("garden")), ([], ["kim"]))
+
+    def test_station_entry_end_and_departure_share_the_presence_index_without_tending(self):
+        make_room(self, "station", **scene_fields([
+            passage("gate", "A station.", [choice("Out", "END")])]))
+        extended = self.host.send(op="world-reprogram", principal="ember", identity="station-body", object="station",
+                                  version=1, package=body("station"), mode="extend")
+        self.assertEqual(extended["status"], "admitted", extended)
+        tended = field(self.state("station"), "tended")
+        self.admitted("station", "enter")
+        self.assertEqual(self.at(), reference("station"))
+        self.assertEqual(field(self.state("station"), "tended"), tended)
+        self.admitted("station", "choose", record(choice=label("Out")))
+        self.assertEqual((self.present("station"), self.at()), ([], reference("")))
+        self.admitted("glm", "go", record(to=label("garden")))
+        self.admitted("station", "enter")
+        self.assertEqual((self.present("garden"), self.present("station"), self.at()),
+                         ([], ["glm"], reference("station")))
+        self.admitted("station", "leave")
+        self.assertEqual((self.present("station"), self.at()), ([], reference("")))
+        self.assertEqual(field(self.state("station"), "tended"), tended)
 
 
 class Notifications(Chain):
@@ -134,9 +200,10 @@ class Notifications(Chain):
         self.assertEqual(sent["status"], "admitted", sent)
         self.deliver_all()
         self.assertEqual(field(self.state("alice"), "heard"), before)
-        refused = [d for d in sent.get("delivered", []) if d["status"] == "refused"]
-        self.assertTrue(refused, sent)
-        self.assertEqual(refused[0]["receipt"]["outcome"]["clause"], "heard", refused)
+        [delivered] = [d for d in sent.get("delivered", []) if d.get("object") == "alice"]
+        self.assertEqual(delivered["result"]["label"], "refused", delivered)
+        self.assertEqual(field(delivered["result"]["payload"], "clause"), label("heard"))
+        self.assertEqual(delivered["receipt"]["outcome"]["writes"], [])
 
     def test_records_things_and_committed_doors_still_notify_from_the_thing(self):
         self.make_avatar()
@@ -194,12 +261,9 @@ class VerbBodies(Chain):
     def test_match_cases_and_nested_records_compile_and_execute_with_common_indentation(self):
         self.grow("water", '''    match state.next == 1n:
       case true:
-        let words = {
-          first: "first",
-          second: "cup"
-        }
+        let words = {cup: {first: "first", second: "cup"}}
 
-        Super.inscribe(state, "water", "{words.first} {words.second}", context)
+        Super.inscribe(state, "water", "{words.cup.first} {words.cup.second}", context)
       case false:
         match state.next == 2n:
           case true: Super.inscribe(state, "water", "second cup", context)
@@ -217,20 +281,35 @@ class VerbBodies(Chain):
         self.assertEqual(reply["result"]["label"], "flawed", reply)
 
 
+MARGIN_PROBE = '''edition ObjectiveBend 1
+import ./Workshop.obend as Workshop
+import ./Forms.obend as Forms
+def margin(body: String) -> String:
+  Workshop.bodyMargin(Forms.split(body, "\\n"))
+'''
+
+
 class VerbLayer(unittest.TestCase):
     def layer(self, body):
         reply = run_pure("Workshop", "verbLayer", label("water"), label("nothing"), label(body),
-                         limits={"ticks": "20000000", "bytes": "16777216", "heap": "262144"})
-        self.assertEqual(reply["status"], "done", reply)
+                         limits=BIG)
+        self.assertEqual(reply["status"], "finished", reply)
         return reply["value"]["value"]
 
-    def test_a_maximum_length_body_preserves_its_nested_case_indentation(self):
+    def test_a_maximum_length_body_preserves_its_common_margin(self):
         tail = '    match state.next == 0n:\n      case true: 0n\n      case false: 1n'
         size = bounds()["kernel"]["maxPackageBytes"]
         comment = "x" * (size - len(tail) - len("    #\n"))
         body = "    #" + comment + "\n" + tail
         self.assertEqual(len(body.encode()), size)
-        layer = self.layer(body)
+        reply = run_pure("Workshop", "margin", label(body), probe=MARGIN_PROBE, limits=BIG)
+        self.assertEqual(reply["status"], "finished", reply)
+        self.assertEqual(reply["value"], label("    "))
+
+    def test_a_long_body_preserves_its_nested_case_indentation(self):
+        tail = '    match state.next == 0n:\n      case true: 0n\n      case false: 1n'
+        comment = "x" * 8192
+        layer = self.layer("    #" + comment + "\n" + tail)
         self.assertTrue(layer.endswith('  match state.next == 0n:\n    case true: 0n\n    case false: 1n\n'))
         self.assertIn("  #" + comment + "\n", layer)
 

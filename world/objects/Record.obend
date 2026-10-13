@@ -243,7 +243,8 @@ def tellMaker(maker: String, thing: String, said: String, context: Abi.Context) 
   if maker == "" || maker == context.principal then doorTold(said) else citationSent(thing, said, context)
 def citationSent(thing: String, said: String, context: Abi.Context) -> Activity<Card.Replied>:
   match world.send({object: {world: context.world, object: thing}, method: "cited", argument: Plans.nothing()}):
-    case _: doorTold(said)
+    case delivery(_): doorTold(said)
+    case refused(_): doorTold(said)
 # A committed door to this record: the citing card sends, this record verifies its door and
 # tells its own maker. The avatar's notice is sent by the thing it describes.
 def cited(state: State, context: Abi.Context) -> Activity<World.Sent>:
@@ -251,7 +252,8 @@ def cited(state: State, context: Abi.Context) -> Activity<World.Sent>:
 def citedBy(state: State, context: Abi.Context) -> Activity<World.Sent>:
   match world.viewField::<Card.Doorways>({object: {world: context.world, object: context.sender}, field: "cites"}):
     case viewed(v): if Lists.any(v.state, fn(d: Card.Doorway) -> Bool: d.to.world == context.world && d.to.object == context.object) then heard(if state.maker == "" then state.owner else state.maker, "door", context) else World.Sent.refused({clause: "notCited"})
-    case _: World.Sent.refused({clause: "notCited"})
+    case denied(_): World.Sent.refused({clause: "notCited"})
+    case refused(_): World.Sent.refused({clause: "notCited"})
 def doorTold(said: String) -> Activity<Card.Replied>:
   Card.tell(Card.Replied.done({action: "door"}), Document.text(said))
 def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activity<Card.Replied>:

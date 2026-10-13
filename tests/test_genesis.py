@@ -444,12 +444,14 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
         made = self.town.send(op='world-create', principal=resident, object='resident/counter', identity='resident-counter',
                               source=source, entry='initial', seed=record(owner=label(resident)), law=citation)
         self.assertEqual(made['status'], 'created', made)
-        before = self.town.send(op='world-turn', principal=resident, object='resident/counter', method='bump', identity='before-refresh')
+        before = self.town.send(op='world-turn', principal=resident, object='resident/counter', method='bump',
+                                argument=record(), identity='before-refresh')
         self.assertEqual(before['status'], 'admitted', before)
         result = genesis.refresh(self.town.client, genesis.OPENER, genesis.ancestry(self.town.journal))
         self.assertFalse([r for r in result if r['object'] == 'resident/counter'], result)
         self.assertEqual(self.town.send(op='world-object', principal=resident, object='resident/counter')['record']['law'], citation)
-        after = self.town.send(op='world-turn', principal=resident, object='resident/counter', method='bump', identity='after-refresh')
+        after = self.town.send(op='world-turn', principal=resident, object='resident/counter', method='bump',
+                               argument=record(), identity='after-refresh')
         self.assertEqual(after['status'], 'admitted', after)
         self.assertEqual(field(self.town.send(op='world-view', principal=resident, object='resident/counter')['state'], 'count'), nat(2))
 

@@ -194,17 +194,20 @@ def locate(state: State, context: Abi.Context) -> Activity<Bool>:
 def roomLocated(state: State, room: Plans.Reference, context: Abi.Context) -> Activity<Bool>:
   match world.viewField::<Relations.Relation<Rows.Presence>>({object: room, field: "presence"}):
     case viewed(_): presenceLocated(state, room, context)
-    case _: refuse("refused location: The calling room has no readable presence.")
+    case denied(_): refuse("refused location: The calling room has no readable presence.")
+    case refused(_): refuse("refused location: The calling room has no readable presence.")
 def presenceLocated(state: State, room: Plans.Reference, context: Abi.Context) -> Activity<Bool>:
   match world.call::<Bool>({object: room, method: "present", argument: Plans.nothing()}):
     case returned(r): if r.result then relocating(state.at, room, context) else if Plans.same(state.at, room) then located(Plans.nobody()) else true
-    case _: refuse("refused location: The calling room did not answer its presence.")
+    case denied(_): refuse("refused location: The calling room did not answer its presence.")
+    case refused(_): refuse("refused location: The calling room did not answer its presence.")
 def relocating(from: Plans.Reference, to: Plans.Reference, context: Abi.Context) -> Activity<Bool>:
   if Plans.isNobody(from) || Plans.same(from, to) then located(to) else departingFrom(from, to, context)
 def departingFrom(from: Plans.Reference, to: Plans.Reference, context: Abi.Context) -> Activity<Bool>:
   match world.call::<Bool>({object: from, method: "present", argument: Plans.nothing()}):
     case returned(r): if r.result then leavingFor(from, to, context) else located(to)
-    case _: refuse("refused location: The previous room did not answer its presence.")
+    case denied(_): refuse("refused location: The previous room did not answer its presence.")
+    case refused(_): refuse("refused location: The previous room did not answer its presence.")
 def leavingFor(from: Plans.Reference, to: Plans.Reference, context: Abi.Context) -> Activity<Bool>:
   match world.call::<Done>({object: from, method: "leave", argument: Plans.nothing()}):
     case returned(r): locationLeft(r.result, to)
@@ -213,7 +216,10 @@ def leavingFor(from: Plans.Reference, to: Plans.Reference, context: Abi.Context)
 def locationLeft(result: Done, to: Plans.Reference) -> Activity<Bool>:
   match result:
     case refused(r): refuse("refused {r.clause}: {r.reading}")
-    case _: located(to)
+    case done(_): located(to)
+    case entered(_): located(to)
+    case moved(_): located(to)
+    case left(_): located(to)
 def located(at: Plans.Reference) -> Activity<Bool>:
   let written(_) = write {at: set at}
   true
@@ -224,7 +230,8 @@ def move(state: State, input: {exit: String}, context: Abi.Context) -> Activity<
 def looked(label: String, state: State, context: Abi.Context) -> Activity<Moved>:
   match world.viewField::<Card.Doorways>({object: state.at, field: "cites"}):
     case viewed(v): through(label, Lists.find(v.state, fn(e: Card.Doorway) -> Bool: e.label == label), context)
-    case _: moveRefused(Why.noExit({label: label}), context)
+    case denied(_): moveRefused(Why.noExit({label: label}), context)
+    case refused(_): moveRefused(Why.noExit({label: label}), context)
 def through(label: String, found: Lists.Maybe<Card.Doorway>, context: Abi.Context) -> Activity<Moved>:
   match found:
     case none(_): moveRefused(Why.noExit({label: label}), context)
@@ -232,11 +239,15 @@ def through(label: String, found: Lists.Maybe<Card.Doorway>, context: Abi.Contex
 def entering(to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
   match world.call::<Done>({object: to, method: "enter", argument: Plans.nothing()}):
     case returned(r): entered(r.result, to, context)
-    case _: moveRefused(Why.roomSilent({}), context)
+    case denied(_): moveRefused(Why.roomSilent({}), context)
+    case refused(_): moveRefused(Why.roomSilent({}), context)
 def entered(result: Done, to: Plans.Reference, context: Abi.Context) -> Activity<Moved>:
   match result:
     case refused(r): movedRefused(r, context)
-    case _: Moved.moved({to: to})
+    case done(_): Moved.moved({to: to})
+    case entered(_): Moved.moved({to: to})
+    case moved(_): Moved.moved({to: to})
+    case left(_): Moved.moved({to: to})
 # Go to a room by its id, from anywhere, through that room's entry transaction.
 def go(state: State, input: {to: String}, context: Abi.Context) -> Activity<Moved>:
   if mine(context) == false then moveRefused(Why.notMine({who: owner(state, context), doing: "moves it"}), context) else entering({world: context.world, object: input.to}, context)

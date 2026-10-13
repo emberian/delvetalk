@@ -210,7 +210,7 @@ class Errand(Reaction):
         errand = self.made(OPENER, "kind/errand", "\nasks: a second rain\non: %s\n"
                            "done: count(new.lines) >= 2 and count(old.lines) <= 1\n"
                            "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
-        squatter = self.say(KIM, errand, "delvetalk %s rule / name: pay / when: 0 == 1 / then: delvetalk porch write / text: squatted" % errand)
+        squatter = self.say(KIM, errand, 'delvetalk %s rule / name: pay / when: request.method == "x" / then: delvetalk porch write / text: squatted' % errand)
         self.assertEqual((squatter["status"], squatter["receipt"]["outcome"].get("clause")),
                          ("refused", "nameTaken"), squatter)
         removal = self.say(KIM, errand, "delvetalk %s unrule / name: pay" % errand)
@@ -234,7 +234,7 @@ class Errand(Reaction):
         self.town.send(op="world-deliver", principal="transport", limit=16)
         self.assertEqual(self.marks(errand), [("done", GLM)])
         self.admitted(self.say(OPENER, errand, "delvetalk %s unrule / name: pay" % errand))
-        self.place(KIM, errand, "pay / when: 0 == 1 / then: delvetalk porch write / text: squatted")
+        self.place(KIM, errand, 'pay / when: request.method == "x" / then: delvetalk porch write / text: squatted')
         self.admitted(self.say(OPENER, errand, "delvetalk %s unrule / name: pay" % errand))
         repaid = self.admitted(self.say(OPENER, errand, "delvetalk %s repay" % errand))
         self.assertEqual([(f["rule"], f["principal"]) for f in self.fired(repaid)], [("pay", OPENER)])
@@ -253,7 +253,7 @@ class Errand(Reaction):
                            "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
         if any(r["name"] == "pay" for r in self.town.send(op="world-rules", principal=OPENER, object=errand)["rows"]):
             self.admitted(self.say(OPENER, errand, "delvetalk %s unrule / name: pay" % errand))
-        self.admitted(self.say(OPENER, errand, "delvetalk %s want / name: pay / when: 0 == 1 / asks: delvetalk porch write / text: blocked" % errand))
+        self.admitted(self.say(OPENER, errand, 'delvetalk %s want / name: pay / when: new.owner == "" / asks: delvetalk porch write / text: blocked' % errand))
         self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: first" % bell))
         second = self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: second" % bell))
         self.town.send(op="world-deliver", principal="transport", limit=16)
