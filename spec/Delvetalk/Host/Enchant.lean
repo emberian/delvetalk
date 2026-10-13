@@ -829,9 +829,13 @@ def edgeMark (c : Char) : Bool := ",.;:!?()[]{}\"“”‘’'«»„—–…*_
 def stripEdges (cs : List Char) : List Char :=
   ((cs.dropWhile edgeMark).reverse.dropWhile edgeMark).reverse
 
-/-- A token as compared: edges stripped, `’` as `'`, a possessive `'s` dropped. -/
+/-- A token as compared: edges stripped except a leading numeric separator, `’` as `'`, a possessive `'s` dropped. -/
 def normal (t : String) : String :=
-  let cs := stripEdges (t.toList.map fun c => if c == '’' then '\'' else c)
+  let cs := t.toList.map fun c => if c == '’' then '\'' else c
+  let leading := cs.takeWhile edgeMark
+  let numericPrefix := leading.getLast?.any (fun c => ".,．，".toList.contains c) &&
+    (cs.drop leading.length).head?.any (fun c => (Tongue.digitOf c).isSome)
+  let cs := (if numericPrefix then leading.drop (leading.length - 1) else []) ++ stripEdges cs
   let cs := if cs.length > 2 && cs.drop (cs.length - 2) == ['\'', 's'] then stripEdges (cs.take (cs.length - 2)) else cs
   String.ofList cs
 
@@ -1141,27 +1145,37 @@ def numberFault (t : Tongue) (s : Strokes) (ws : List String) : Option String :=
     let w := ws[i]!
     if unread w || t.free.contains w then none else
     match t.number w with
-    | none => none
+    | none => if (Tongue.asciiDigits w).any Char.isDigit then some s!"{w}: beside no unit the strokes count" else none
     | some (n, o) =>
-      let near := ((List.range ws.length).filter fun j => j != i && j + 3 ≥ i && j ≤ i + 3).flatMap fun j => unitsNear t ws[j]!
-      if near.any (fun u => pairs.contains (n, o, u)) then none
-      else match near.find? units.contains with
-        | some u => some s!"{w} {u}: the strokes do not count it so"
-        | none => if o then none else some s!"{w}: beside no unit the strokes count"
+      if (Tongue.asciiDigits w).any Char.isDigit &&
+          ((ws[i + 1]?).any fun next => (Tongue.asciiDigits next).toList.head?.any Char.isDigit) then
+        some s!"{w}: beside no unit the strokes count"
+      else
+        let near := ((List.range ws.length).filter fun j => j != i && j + 3 ≥ i && j ≤ i + 3).flatMap fun j => unitsNear t ws[j]!
+        if near.any (fun u => pairs.contains (n, o, u)) then none
+        else match near.find? units.contains with
+          | some u => some s!"{w} {u}: the strokes do not count it so"
+          | none => if o then none else some s!"{w}: beside no unit the strokes count"
 
-/-- The numerals of an unspaced sentence: where each run of digits or han numerals, or a tongue's number word
-    (ふたつ), stands, how long it is and what it counts. -/
-def numeralRuns (t : Tongue) (cs : List Char) : List (Nat × Nat × Nat) := Id.run do
-  let mut out : Array (Nat × Nat × Nat) := #[]
+/-- The numerals of an unspaced sentence: their position, length and value; a malformed numeric token has no value. -/
+def numeralRuns (t : Tongue) (cs : List Char) : List (Nat × Nat × Option Nat) := Id.run do
+  let mut out : Array (Nat × Nat × Option Nat) := #[]
   let mut next := 0
   for i in [0:cs.length] do
     if i < next then continue
     if Tongue.numeralChar cs[i]! then
       let run := (cs.drop i).takeWhile Tongue.numeralChar
-      out := out.push (i, run.length, Tongue.numeralValue run)
-      next := i + run.length
+      let after := cs.drop (i + run.length)
+      let attached := after.takeWhile fun c => Tongue.numeralChar c || Tongue.scriptOf c == .latin || ".,٫٬．，".toList.contains c
+      let invalid := (attached.dropWhile edgeMark).any fun c => !edgeMark c
+      let separated := (after.dropWhile Char.isWhitespace).head?.any Tongue.numeralChar
+      let prefixed := i > 0 && (Tongue.scriptOf cs[i - 1]! == .latin || ".,٫٬．，".toList.contains cs[i - 1]!)
+      let len := run.length + if invalid then attached.length else 0
+      out := out.push (i, len,
+        if invalid || separated || prefixed then none else some (Tongue.numeralValue run))
+      next := i + len
     else if let some (w, n) := t.cardinals.find? fun (w, _) => (cs.drop i).take w.length == w.toList then
-      out := out.push (i, w.length, n)
+      out := out.push (i, w.length, some n)
       next := i + w.length
   return out.toList
 
@@ -1173,16 +1187,19 @@ def unspacedNumberFault (t : Tongue) (s : Strokes) (raw : String) : Option Strin
   let cs := raw.toList
   firstSome (numeralRuns t cs) fun (at_, len, n) =>
     let run := String.ofList ((cs.drop at_).take len)
-    if t.free.contains run then none else
-    let before := String.ofList ((cs.take at_).drop (at_ - min at_ 6))
-    let after := String.ofList ((cs.drop (at_ + len)).take 6)
-    let o := before.endsWith "第" || holdsIn (String.ofList (after.toList.take 3)) "目"
-    let near := (t.lexicon.filter fun (_, forms) => forms.any fun f => holdsIn after f || holdsIn before f).map (englishStem ·.1) ++
-      (((words after).take 1).flatMap fun w => unitsNear Tongue.english (normal w).toLower)
-    if near.any (fun u => pairs.contains (n, o, u)) then none
-    else match near.find? units.contains with
-      | some u => some s!"{run} {u}: the strokes do not count it so"
-      | none => if o then none else some s!"{run}: beside no unit the strokes count"
+    match n with
+    | none => some s!"{run}: beside no unit the strokes count"
+    | some n =>
+      if t.free.contains run then none else
+      let before := String.ofList ((cs.take at_).drop (at_ - min at_ 6))
+      let after := String.ofList ((cs.drop (at_ + len)).take 6)
+      let o := before.endsWith "第" || holdsIn (String.ofList (after.toList.take 3)) "目"
+      let near := (t.lexicon.filter fun (_, forms) => forms.any fun f => holdsIn after f || holdsIn before f).map (englishStem ·.1) ++
+        (((words after).take 1).flatMap fun w => unitsNear Tongue.english (normal w).toLower)
+      if near.any (fun u => pairs.contains (n, o, u)) then none
+      else match near.find? units.contains with
+        | some u => some s!"{run} {u}: the strokes do not count it so"
+        | none => if o then none else some s!"{run}: beside no unit the strokes count"
 
 /-- A negation in a spaced tongue's phrase within three words of a field the strokes hold: the field after an
     ordinal ("its seventh rain has not come") is that one, not the field. -/
