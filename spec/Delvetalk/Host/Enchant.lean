@@ -276,6 +276,10 @@ def Strokes.json (s : Strokes) : Json :=
 
 /-! ### Reading the store -/
 
+/-- The objects a reader may use to assemble strokes. -/
+def readableWorld (w : World) (reader : String) : World :=
+  { w with objects := w.objects.filter fun _ o => o.read.permits reader }
+
 def fieldsOf : Data → List (String × Data)
   | .record f => f
   | _ => []
@@ -386,7 +390,8 @@ def lineQuantities (verbs : List String) (note : String := "") : List Quantity :
     (if byVerb.length > 1 || byVerb.any (·.1 != "line") then [{ n := verbs.length, unit := "line", note }] else [])
 
 /-- The strokes of object `id` with `state` and `lawText` (its own at `version`). -/
-def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
+def assemble (w : World) (reader id : String) (o : Object) : Strokes := Id.run do
+  let seen := readableWorld w reader
   let (version, state, lawText) := (o.version, o.state, o.lawText)
   let fs := fieldsOf state
   let kind := (text? fs "kind").getD ""
@@ -407,29 +412,29 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
     ({ name := (text? r "name").getD "", handle := handleIn w r "handle" "who", entry := (nat? r "at").getD 0 } : Mark)
   -- The verbs: the card's spells (its forms, the grown ones among them), the kind's first, then each grown on it
   -- (`Object.verbs`) with its grower and reading.
-  let forms := (spellForms w id o).map fun f => (f.action, oneLine (spellTemplate id f))
+  let forms := (spellForms seen id o).map fun f => (f.action, oneLine (spellTemplate id f))
   let grown := o.verbs.map fun v =>
     ({ name := v.name, grower := shownName w v.grower, reading := v.reading,
        spell := (forms.lookup v.name).getD s!"delvetalk {id} {v.name}" } : Verb)
   let verbs := (forms.filter fun (n, _) => !grown.any (·.name == n)).map (fun (name, spell) =>
     ({ name, grower := "", reading := "", spell } : Verb)) ++ grown
   -- The law its kind adds: each clause `under "K"` stands as K's clauses, the frame's left out.
-  let frame := frameLaws w
+  let frame := frameLaws seen
   let lawsOf := fun (t : String) => (textClauses t).filter (·.1 == "law")
   let laws := ((lawsOf lawText).flatMap fun (_, _, _, body) =>
     match underOf body with
-    | some k => ((w.objects[k]?).bind fun ko => text? (fieldsOf ko.state) "law").map (fun t =>
+    | some k => ((seen.objects[k]?).bind fun ko => text? (fieldsOf ko.state) "law").map (fun t =>
         (lawsOf t).map fun (_, n, r, _) => (n, r.getD "")) |>.getD []
     | none => []).filter fun (n, _) => !frame.contains n
   -- The rules it carries (placed, its text's, its kind's), each with its owner and its last firing; the wants
   -- that hold of it now, each with the spell that answers it as filled at this read (`world-rules`, `world-wants`).
-  let carried := carriedRules w id o
+  let carried := carriedRules seen id o
   let rules := carried.map fun c =>
     let last := (w.ruleLog[id]?).bind (·.lookup c.clause.name)
     let fired := if (last.bind fun l => (l.getObjVal? "why").toOption).isSome then 0
       else (last.bind fun l => (l.getObjValAs? Nat "height").toOption).getD 0
     ({ name := c.clause.name, owner := (principalThing c.owner).getD (handleShown w c.owner), reading := c.clause.reading, fired } : Rule)
-  let wants := (wantRows w "" id o).map fun r =>
+  let wants := (wantRows w reader id o).map fun r =>
     ({ name := (r.getObjValAs? String "name").toOption.getD "", reading := (r.getObjValAs? String "reading").toOption.getD "",
        spell := (r.getObjValAs? String "asks").toOption.getD "",
        owner := handleShown w ((r.getObjValAs? String "owner").toOption.getD "") } : Want)
@@ -438,7 +443,7 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
     pure ({ label := (text? r "label").getD "", target := ← (r.lookup "to").bind referenceId } : Door)
   let around := match (fs.lookup "location").bind referenceId with
     | some place => place
-    | none => madeUnder w id
+    | none => madeUnder seen id
   let present := (rows fs "presence").map fun r => handleIn w r "handle" "who"
   -- Each number with its unit: the lines by the verb that wrote them (a bell's rains), the count a rule
   -- fires at as the nth, what lies here by what it is called, who is here, its doors, any other relation.
@@ -470,8 +475,8 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
   -- The coiner is the post's author: their handle when the host knows it, else the at:// authority itself.
   let author := (((post.drop 5).toString).splitOn "/").head?.getD ""
   let coiner := if !coined then "" else if (handleShown w author).isEmpty then author else handleShown w author
-  let kindHere := if kind.isEmpty then kindOf w around else kind
-  return { object := id, version, kind, voice := kindText w kindHere "voice", about := kindText w kindHere "about",
+  let kindHere := if kind.isEmpty then kindOf seen around else kind
+  return { object := id, version, kind, voice := kindText seen kindHere "voice", about := kindText seen kindHere "about",
            head := (text? fs "head").getD ((text? fs "name").getD ""), fields,
            maker, coined, coiner, made, tended, tendedAgo,
            keeper := handleIn w fs "keeperHandle" "keeper", owner := handleIn w fs "ownerHandle" "owner",
@@ -486,20 +491,21 @@ def strokesAt (w : World) (reader id : String) (version : Option Nat) : Except S
   if let some v := version then
     if v > o.version then throw "unknown"
     if v < o.version then throw "historical"
-  return assemble w id o
+  return assemble w reader id o
 
 /-! ### A day of the town -/
 
 /-- The reading of `name` among the rules (or wants) `id` carries now, "" for none. -/
-def readingOf (w : World) (id name : String) (wants : Bool) : String :=
+def readingOf (w : World) (reader id name : String) (wants : Bool) : String :=
+  let w := readableWorld w reader
   match w.objects[id]? with
   | some o => (((if wants then carriedWants w id o else carriedRules w id o).find? (·.clause.name == name)).map (·.clause.reading)).getD ""
   | none => ""
 
 /-- A day event as a sentence of the day's strokes: who did what to which thing, a rule or want by its
     reading; no entry number. -/
-def eventSentence (w : World) (e : DayEvent) : String :=
-  let r := fun (wants : Bool) => let t := readingOf w e.object e.name wants; if t.isEmpty then "" else ", " ++ quoted t
+def eventSentence (w : World) (reader : String) (e : DayEvent) : String :=
+  let r := fun (wants : Bool) => let t := readingOf w reader e.object e.name wants; if t.isEmpty then "" else ", " ++ quoted t
   match e.what with
   | "made" => s!"{e.who} made {e.object}"
   | "grew" => s!"{e.who} grew the verb {e.name} on {e.object}"
@@ -539,7 +545,7 @@ def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Stro
   let made := (events.filter (·.what == "made")).map (·.object)
   -- What was made, by what each is called: two bells, a goblet, twelve kinds.
   let byKind := tally (made.map fun id => if id.startsWith "kind/" then "kind" else calledBy id)
-  return { object := "", version := day, day := some day, today := (events.drop (events.length - dayEvents)).map (eventSentence w), hands := d.hands,
+  return { object := "", version := day, day := some day, today := (events.drop (events.length - dayEvents)).map (eventSentence w reader), hands := d.hands,
            lines := lines.drop (lines.length - newestLines),
            quantities := [{ n := d.admitted, unit := "act", note := "admitted" }] ++
              (if refused == 0 then [] else [{ n := refused, unit := "refusal" }]) ++
@@ -584,7 +590,7 @@ structure Act where
 /-- What the journal holds of `id` between entries `since` and `upto`, `reader`'s own comings and goings left out:
     the acts in order (came, left, took, laid down, hung or took down a door, made here, a rule fired), the lines
     written there and the marks made. -/
-def spanOf (w : World) (id reader : String) (since upto : Nat) : Array Act × Array Line × Array Mark := Id.run do
+def spanOf (w : World) (id reader asker : String) (since upto : Nat) : Array Act × Array Line × Array Mark := Id.run do
   let ts := w.touches.getD id #[]
   let mut acts : Array Act := #[]
   let mut lines : Array Line := #[]
@@ -640,7 +646,7 @@ def spanOf (w : World) (id reader : String) (since upto : Nat) : Array Act × Ar
       if (f.getObjValAs? String "sender").toOption == some id then
         let name := (f.getObjValAs? String "rule").toOption.getD ""
         let owner := shownName w ((f.getObjValAs? String "principal").toOption.getD "")
-        let reading := readingOf w id name false
+        let reading := readingOf w asker id name false
         acts := acts.push (act owner "fired" (s!"its rule {name}, {owner}'s, fired" ++ (if reading.isEmpty then "" else ": " ++ quoted reading)))
   return (acts, lines, marks)
 
@@ -664,9 +670,9 @@ def tellingOf (w : World) (asker id : String) (o : Object) (j : Json) : Except S
   let newest := (((w.touches.getD id #[]).back?).map (·.height)).getD 0
   let upto := (arrival.map (·.height)).getD (newest + 1)
   let version := (arrival.map (·.version - 1)).getD o.version
-  let (acts, lines, marks) := spanOf w id reader since upto
+  let (acts, lines, marks) := spanOf w id reader asker since upto
   let away := since > 0
-  let base := assemble w id o
+  let base := assemble w asker id o
   let visitors := ((acts.toList.filter (·.what == "came")).map (·.who)).eraseDups
   let all := lines.toList
   -- The lines the painter reads: while away all of them up to the newest eight; a past, its first two and its newest four.

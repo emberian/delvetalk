@@ -2350,6 +2350,15 @@ end
 
 def carriedRules (w : World) (id : String) (o : Object) : List CarriedClause := (carried w id o).filter (Law.isRule ·.clause)
 
+/-- A clause's holder, subject and transitive citations are readable by `who`. -/
+def clauseReadable (w : World) (who id : String) (c : CarriedClause) : Bool :=
+  (unviewable w who (id :: c.holder :: (citesOf w c.clause.names).objects)).isNone
+
+/-- The wants whose owners, and an optional reader, may read everything they cite. -/
+def readableWants (w : World) (id : String) (o : Object) (reader : Option String := none) : List CarriedClause :=
+  (carriedWants w id o).filter fun c => clauseReadable w c.owner id c &&
+    (reader.map fun who => clauseReadable w who id c).getD true
+
 /-- The objects a law cites, closed (`citesOf`). -/
 def lawCitations (w : World) (law : Law) : List String :=
   (citesOf w (lawNames law)).objects
@@ -2364,7 +2373,9 @@ def standingOf (w : World) (id : String) (law : Law) : Law.Standing :=
     thing stand at (`Law.Facts.standing`: a cited want reads its own thing's). -/
 def citing (w : World) (law : Law) (names : List Delvetalk.Compiler.ObjectiveBendLaw.LawName) (facts : Law.Facts) : Law.Facts :=
   let c := citesOf w names
-  { facts with reads := statesOf w c.objects, wants := c.wants,
+  let wants := c.wants.map fun (id, _) =>
+    (id, ((w.objects[id]?).map fun o => (readableWants w id o).map (·.clause)).getD [])
+  { facts with reads := statesOf w c.objects, wants,
                standing := (facts.object, standingOf w facts.object law) :: c.objects.filterMap fun r =>
                  if r == facts.object then none else (w.objects[r]?).map fun o => (r, standingOf w r o.law) }
 
@@ -3623,16 +3634,16 @@ def record (w : World) (entry : Json) (key : String) (touch : List String) : Wor
 
 /-- The facts a want of `o` (`id`) is judged and filled by, as `w` holds it at `height`: the clock, the
     thing, the states its lines cite and the wants they name (`Law.asItStands` keeps only these). -/
-def wantFacts (w : World) (height : Nat) (id : String) (o : Object) : Law.Facts :=
-  citing w o.law ((carriedWants w id o).flatMap (·.clause.names))
+def wantFacts (w : World) (height : Nat) (id : String) (o : Object) (reader : Option String := none) : Law.Facts :=
+  citing w o.law ((readableWants w id o reader).flatMap (·.clause.names))
     { subject := "", caller := "", height, turn := height, clock := w.clock, object := id }
 
 /-- The wants of `o` (`id`) that hold of its state as it stands in `w`, at its clock, each with its
     clause: the want's condition judged with what the thing's lines cite as `w` holds them. -/
-def posing (w : World) (height : Nat) (id : String) (o : Object) : List CarriedClause :=
-  let facts := wantFacts w height id o
+def posing (w : World) (height : Nat) (id : String) (o : Object) (reader : Option String := none) : List CarriedClause :=
+  let facts := wantFacts w height id o reader
   -- A want whose judging reads past `clauseTicks` does not pose (docs/review/astra-2026-10-12 world 6).
-  (carriedWants w id o).filter fun c => Law.work (Law.asItStands facts id) none o.state c.clause.condition ≤ Limits.clauseTicks &&
+  (readableWants w id o reader).filter fun c => Law.work (Law.asItStands facts id) none o.state c.clause.condition ≤ Limits.clauseTicks &&
     !(Law.poses facts id o.state [c.clause]).isEmpty
 
 /-- `{object, want}` rows for the wants of `id` that hold `now` and did not before (`was`), and the reverse. -/
@@ -3865,6 +3876,9 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
     for r in rules do
       let refuse := fun (why : String) => Json.mkObj [("object", toJson id), ("rule", toJson r.clause.name),
         ("owner", toJson r.owner), ("why", toJson why)]
+      if !clauseReadable after r.owner id r then
+        unfired := unfired.push (refuse "reads")
+        continue
       -- What judging the rule reads is its own, within `clauseTicks`: past it the rule does not fire, and the
       -- write it watched stands (docs/review/astra-2026-10-12 world 6).
       let judgedBy := (judged.facts.lookup id).getD []
@@ -3875,11 +3889,6 @@ def reactions (before after : World) (height : Nat) (judged : Judged) (child : L
         !(Law.fires (cite f) (some oldState) newState [r.clause]).isEmpty
       let some f := held | continue
       let facts := cite f
-      -- A rule reads, and its spell carries, only what its owner may view: the thing it is on and all
-      -- its condition and holes cite.
-      if (unviewable after r.owner (id :: (citesOf after r.clause.names).objects)).isSome then
-        unfired := unfired.push (refuse "reads")
-        continue
       let filled := match r.clause.modality.spell? with
         | some spell => Law.filled facts (some oldState) newState spell
         | none => .hole
@@ -5545,22 +5554,21 @@ def ruleRow (w : World) (id : String) (c : CarriedClause) : Json :=
     ((last.map fun l => if (l.getObjVal? "why").toOption.isSome then [("unfired", l)]
       else [("fired", (receipt.map fun r => l.setObjVal! "receipt" (toJson r)).getD l)]).getD []))
 
-/-- What answers a want, filled at the read for `reader` (`Law.fill` over `Law.asItStands`): the line's
-    template when a hole reads nothing, or the want cites what the reader may not view. -/
-def wantAsks (w : World) (reader : String) (facts : Law.Facts) (id : String) (o : Object) (c : CarriedClause) : String :=
+/-- What answers a readable want, filled at the read (`Law.fill` over `Law.asItStands`): the line's
+    template when a hole reads nothing. -/
+def wantAsks (facts : Law.Facts) (id : String) (o : Object) (c : CarriedClause) : String :=
   let template := (c.clause.modality.spell?.map (·.render)).getD ""
-  if (unviewable w reader (citesOf w c.clause.names).objects).isSome then template else
   ((c.clause.modality.spell?).bind (Law.fill (Law.asItStands facts id) none o.state)).getD template
 
 /-- The wants that hold of `id` as it stands now, as `wants` reads them: name, owner, reading,
     condition, the spell that answers it (`wantAsks`, for its reader), the line, the object holding it,
     and `since`: the height of the entry that made it true (a write, a law's refusal, or the clock's move). -/
 def wantRows (w : World) (reader id : String) (o : Object) : List Json :=
-  let facts := wantFacts w w.height id o
-  (posing w w.height id o).map fun c =>
+  let facts := wantFacts w w.height id o (some reader)
+  (posing w w.height id o (some reader)).map fun c =>
     let since := ((w.wanting[id]?).bind (·.lookup c.clause.name)).map toJson |>.getD (toJson 0)
     Json.mkObj ([("name", toJson c.clause.name), ("owner", toJson c.owner), ("when", toJson c.clause.condition.render),
-        ("asks", toJson (wantAsks w reader facts id o c)), ("line", toJson c.clause.render), ("from", toJson c.holder), ("since", since)] ++
+        ("asks", toJson (wantAsks facts id o c)), ("line", toJson c.clause.render), ("from", toJson c.holder), ("since", since)] ++
       (if c.clause.reading.isEmpty then [] else [("reading", toJson c.clause.reading)]))
 
 /-- One row of the world's wanting index as `wanting` reads it: the thing, the want's name and reading,
@@ -5586,12 +5594,12 @@ def wanting (w : World) (reader : String) (after limit : Nat) (oldest : Bool := 
     | none => []
     | some o =>
       if !o.read.permits reader then [] else
-      let holding := posing w w.height id o
-      let facts := wantFacts w w.height id o
+      let holding := posing w w.height id o (some reader)
+      let facts := wantFacts w w.height id o (some reader)
       xs.filterMap fun (name, since) =>
         if after != 0 && (if oldest then since ≤ after else since ≥ after) then none else
         (holding.find? (·.clause.name == name)).map fun c =>
-          { object := id, name, reading := c.clause.reading, asks := wantAsks w reader facts id o c, since }
+          { object := id, name, reading := c.clause.reading, asks := wantAsks facts id o c, since }
   let sorted := (rows.toArray.qsort fun (a b : Wanted) =>
     (if oldest then a.since < b.since else a.since > b.since) ||
       (a.since == b.since && (a.object < b.object || (a.object == b.object && a.name < b.name)))).toList

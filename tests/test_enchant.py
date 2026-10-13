@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest import mock
 
 from deploy import genesis
+from tests.host import HostCase
 from tests.town import Town
 from tests.wire import label, record
 from transport import interpret, model
@@ -32,6 +33,75 @@ GLM, KIM = 'did:plc:glm', 'did:plc:kim'
 KIND_RULES = [{'name': name, 'owner': 'garden/bell/1', 'reading': reading}
               for name, reading in re.findall(r'^rule (\w+) "([^"]*)"', genesis.kind_text('bell'), re.M)]
 YUE = 'the anchor remembers what the garden can\'t; the soil keeps the corrections'
+
+
+class PrivateStrokes(HostCase):
+    OWNER = 'law owner: request.kind == 0 or request.subject == "ember"'
+
+    def setUp(self):
+        super().setUp()
+        opened = self.host.send(op='world-open', path=self.path, opener='ember')
+        self.assertEqual(opened['status'], 'opened', opened)
+
+    def make(self, obj, fields, **more):
+        source = ('edition ObjectiveBend 1\nrecord State:\n' +
+                  ''.join('  %s: String\n' % k for k in fields) +
+                  'def initial() -> State:\n  {' +
+                  ', '.join('%s: %s' % (k, json.dumps(v)) for k, v in fields.items()) + '}\n')
+        made = self.host.send(op='world-create', principal='ember', identity='mk-' + obj,
+                              object=obj, source=source, entry='initial', seed=record(), **more)
+        self.assertEqual(made['status'], 'created', made)
+
+    def strokes(self, obj, who='mallory'):
+        got = self.host.send(op='world-strokes', principal=who, object=obj)
+        self.assertEqual(got['status'], 'strokes', got)
+        return got
+
+    def test_strokes_read_a_private_kind_only_for_a_reader_who_can_view_it(self):
+        secret = 'k' * 128
+        voice, about = 'v' * 200, 'a' * 200
+        self.make(secret, dict(voice=voice, about=about), read={'principals': ['ember']})
+        self.make('bait', dict(kind=secret))
+        hidden = self.strokes('bait')
+        self.assertEqual((hidden['strokes']['voice'], hidden['strokes']['about']), ('', ''), hidden)
+        self.assertNotIn(voice, hidden['text'])
+        self.assertNotIn(about, hidden['text'])
+        visible = self.strokes('bait', 'ember')['strokes']
+        self.assertEqual((visible['voice'], visible['about']), (voice, about))
+
+    def test_strokes_keep_private_inherited_laws_rules_and_wants_out_of_the_reading(self):
+        law = ('law secretLaw "private law reading": request.kind == 0\n'
+               'rule secretRule "private rule reading": request.kind == 0 then delvetalk bait note / text: x\n'
+               'want secretWant "private want reading": request.clock >= 0 asks delvetalk bait note / text: x')
+        self.make('hidden', dict(law=law), read={'principals': ['ember']})
+        self.make('middle', dict(law='law inherited: under "hidden"'))
+        self.make('bait', dict(owner='ember', kind='hidden'), law='law inherited: under "hidden"\n' + self.OWNER)
+        hidden = self.strokes('bait')
+        self.assertEqual((hidden['strokes']['laws'], hidden['strokes']['rules'], hidden['strokes']['wants']), ([], [], []), hidden)
+        for text in ('private law reading', 'private rule reading', 'private want reading'):
+            self.assertNotIn(text, json.dumps(hidden))
+        visible = self.strokes('bait', 'ember')['strokes']
+        self.assertEqual([r['name'] for r in visible['rules']], ['secretRule'])
+        self.make('indirect', dict(owner='ember', kind='middle'), law='law inherited: under "middle"\n' + self.OWNER)
+        indirect = self.strokes('indirect')
+        self.assertEqual((indirect['strokes']['rules'], indirect['strokes']['wants']), ([], []), indirect)
+        self.assertNotIn('private', json.dumps(indirect))
+
+    def test_strokes_do_not_inherit_a_voice_through_a_private_surrounding(self):
+        self.make('kind/place', dict(voice='private surroundings voice', about='private surroundings about'))
+        self.make('hidden', dict(kind='kind/place'), read={'principals': ['ember']})
+        self.make('hidden/bait', dict(head='bait'))
+        hidden = self.strokes('hidden/bait')['strokes']
+        self.assertEqual((hidden['around'], hidden['voice'], hidden['about']), ('', '', ''))
+        visible = self.strokes('hidden/bait', 'ember')['strokes']
+        self.assertEqual((visible['around'], visible['voice']), ('hidden', 'private surroundings voice'))
+
+    def test_a_private_record_frame_does_not_suppress_a_public_law_reading(self):
+        self.make('kind/record', dict(law='law shared: request.kind == 0'), read={'principals': ['ember']})
+        self.make('kind/public', dict(law='law shared "public reading": request.kind == 0'))
+        self.make('bait', dict(owner='ember', kind='kind/public'), law='law inherited: under "kind/public"\n' + self.OWNER)
+        self.assertEqual(self.strokes('bait')['strokes']['laws'], [{'name': 'shared', 'reading': 'public reading'}])
+        self.assertEqual(self.strokes('bait', 'ember')['strokes']['laws'], [])
 
 
 class Strokes(unittest.TestCase):
@@ -303,6 +373,23 @@ class Render(unittest.TestCase):
     def attend(self):
         """The worker's presence: it lists the renders (and so the host keeps a reader waiting for one)."""
         return self.town.send(op='world-renders')['pending']
+
+    def test_a_private_kinds_fields_are_model_input_only_for_an_authorized_reader(self):
+        kind = 'edition ObjectiveBend 1\nrecord State:\n  voice: String\n  about: String\ndef initial() -> State:\n  {voice: "private model voice", about: "private model description"}\n'
+        thing = 'edition ObjectiveBend 1\nrecord State:\n  kind: String\ndef initial() -> State:\n  {kind: "kind/private-model"}\n'
+        for obj, source, read in (('kind/private-model', kind, {'principals': [GLM]}), ('private-model-bait', thing, 'public')):
+            made = self.town.send(op='world-create', principal=genesis.OPENER, identity='mk-' + obj,
+                                  object=obj, source=source, entry='initial', seed=record(), read=read)
+            self.assertEqual(made['status'], 'created', made)
+        self.attend()
+        visible = self.render('private-model-bait', GLM)
+        hidden = self.render('private-model-bait', KIM)
+        self.assertEqual((visible['status'], hidden['status']), ('pending', 'pending'))
+        self.assertNotEqual(visible['key'], hidden['key'])
+        requests = {i['key']: i['request']['user'] for i in self.attend()}
+        for text in ('private model voice', 'private model description'):
+            self.assertIn(text, requests[visible['key']])
+            self.assertNotIn(text, requests[hidden['key']])
 
     def test_a_version_is_painted_once_and_read_painted_after(self):
         self.attend()
