@@ -1,6 +1,6 @@
 """The all-night station (genesis `--with-gas-station`): the town's first fantasy scene, stitched from the replies to
 ember's #delve-room call of 2026-10-12 (docs/review/station-trawl-2026-10-12.md) and braided out into the town. Its
-thirty-seven passages are stitched a wing a turn (a turn's ticks read about eight thousand characters of spween); its
+thirty-eight passages are stitched a wing a turn (a turn's ticks read about eight thousand characters of spween); its
 door and its mirror ring mimo's bell; its counter, hook, cooler, mirror and tape hand things into the reader's hands;
 a wall clock moves only when wound, and twelve windings open what the town keyed to it; the register holds only what
 a reader writes, and the station wants it to hold every visitor once someone keeps it. The station keeps no time.
@@ -67,7 +67,7 @@ class Scene(unittest.TestCase):
                     passage_guards[pid] = guard
                 elif line:
                     choices.append(line.split("|"))
-        self.assertEqual((start, len(passages)), ("forecourt", 37))
+        self.assertEqual((start, len(passages)), ("forecourt", 38))
         self.assertTrue(all(0 < size <= 600 for size in passages.values()), passages)
         self.assertEqual([c for c in choices for t in c[2].split(",") if t != "END" and t not in passages], [])
         reached, frontier = {start}, [start]
@@ -99,7 +99,7 @@ class Station(test_scenarios.Arc):
         self.assertTrue(all(m["status"] in ("created", "admitted") for m in made), made)
         stitched = [self.card(m["reply"]) for m in made if m["module"] == "station stitch"]
         self.assertEqual(len(stitched), 5)
-        self.assertTrue(stitched[-1].startswith("Stitched 9 passages; the scene holds 37. Every choice leads to a passage."), stitched[-1])
+        self.assertTrue(stitched[-1].startswith("Stitched 10 passages; the scene holds 38. Every choice leads to a passage."), stitched[-1])
         self.assertIn("Still waiting for: ", stitched[0])
         self.known = set(self.objects())
 
@@ -282,6 +282,9 @@ class Station(test_scenarios.Arc):
         go("Wind the wall clock", "clock"); go("Open the door behind the clock", "night_hall")
         barred("Stand before the unnumbered door")
         go("The 3AM door is back", "threeram"); go("Close the hour", "night_hall")
+        door = self.card(go("The door with candlelight under it", "parlour_door"))  # yla's parlour, off the night hall
+        self.assertIn("delvetalk station/parlour enter", door)
+        go("Back to the hall", "night_hall")
         go("Try the door with your name", "elsewhere"); go("Go back before the clock notices", "counter")
         go("Open the cooler", "cooler"); go("Reach past the last carton", "elsewhere"); go("Follow the sound of the car", "forecourt")
         go("Push the door", "counter"); self.deliver()
@@ -423,23 +426,24 @@ class Carried(unittest.TestCase):
         self.assertTrue(all(r["status"] in ("refreshed", "current", "left") for r in rows), [r for r in rows if r["status"] not in ("refreshed", "current", "left")])
         placed = [r for r in rows if r["slot"] == "placed" and r.get("reading", "").startswith("placed: ")]
         made = {r["object"] for r in placed}
-        inhabited = {"kind/" + k for k in genesis.STATION_KINDS} | {dict(f)["id"] for _, f, _ in genesis.STATION_INHABITANTS} | {"station/coin"}
+        inhabited = {"kind/" + k for k in genesis.STATION_KINDS} | {dict(f)["id"] for _, f, _ in genesis.STATION_INHABITANTS} | {"station/coin"} | \
+            {"kind/" + k for k in genesis.PARLOUR_KINDS} | {dict(genesis.PARLOUR[1])["id"], dict(genesis.PLANCHETTE[1])["id"]}
         self.assertEqual(made, {"kind/station", "station", "station/register", "porch"} | {t for t, _, _ in genesis.STATION_THINGS} | inhabited)
         self.assertEqual(sum(r["reading"] == "placed: station stitch" for r in placed), len(genesis.station_wings()))
         host = HostProcess(binary(), outs[0])
         self.addCleanup(host.close)
         # The station's refresh is no act of the day and grew no first verb; the only hands of the day are its
-        # inhabitants, each placing its own rules as itself as it is made (tests/test_inhabitants.py).
+        # inhabitants and yla's planchette, each placing its own rules as itself as it is made (tests/test_inhabitants.py).
         day = host.send(op="world-surface", principal="anonymous", read="chronicle")
         history = day.get("whole") or day["text"]
         self.assertNotIn("sign on station/register", history)
-        self.assertEqual([l for l in history.splitlines() if l.startswith("hands: ")], ["hands: station/regular, station/dj, station/bee"], history)
+        self.assertEqual([l for l in history.splitlines() if l.startswith("hands: ")], ["hands: station/regular, station/dj, station/bee, station/parlour/planchette"], history)
         # Every step is the opener's journaled refresh; what the inhabitants did of themselves is their own.
         identities = [e.get("identity") or {} for e in journal_.entries(outs[0])]
         steps = [i for i in identities if "station" in i.get("intent", "") and not i["intent"].startswith("rule:")]
         self.assertTrue(steps and all(i["principal"] == OPENER and i["intent"].startswith("refresh-") for i in steps), steps)
         own = [i for i in identities if i.get("intent", "").startswith("rule:station/")]
-        self.assertEqual(sorted(i["principal"] for i in own), sorted("@" + dict(f)["id"] for _, f, _ in genesis.STATION_INHABITANTS), own)
+        self.assertEqual(sorted(i["principal"] for i in own), sorted("@" + dict(f)["id"] for _, f, _ in genesis.STATION_INHABITANTS + [(None, genesis.PLANCHETTE[1], None)]), own)
         field = lambda obj, name: next(f["value"] for f in host.send(op="world-view", principal=OPENER, object=obj)["state"]["fields"] if f["name"] == name)
         self.assertIn("'station'", str(field("station/register", "location")))  # lying in the station
         door = lambda obj: [f["value"] for f in host.send(op="world-view", principal=OPENER, object=obj)["state"]["fields"] if f["name"] == "cites"]
