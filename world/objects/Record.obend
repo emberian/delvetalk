@@ -34,7 +34,7 @@ import ./Harmony.obend as Harmony
 # A room is a record whose body (world/bodies/room.obend) reads the rest: `start`, `passages`,
 # `cooldown` and `requires` are its scene (world/lib/Scenes.obend), set when it is made and
 # changed only by its owner's reprogram; `presence` who is in it and at which passage; `vars`
-# what its choices set; `left` when each reader last left; `things` what lies in it; `chose` the
+# what its choices set, `mine` what they set for one reader (`my.<name>`); `left` when each reader last left; `things` what lies in it; `chose` the
 # last choice taken here, `<passage>.<n>`, which the rules its scene's casts are read (Scenes.ruleText).
 #
 # A record is tended (`tend`, or its body's own attention: a bell's rain) at a clock minute
@@ -82,6 +82,7 @@ record State:
   requires: Scenes.Guard
   presence: Relations.Relation<Presence>
   vars: Lists.List<Scenes.Var>
+  mine: Relations.Relation<Rows.Mine>
   left: Relations.Relation<Departure>
   things: Relations.Relation<Plans.Reference>
   weather: String
@@ -91,11 +92,26 @@ record State:
   oddLimit: Nat
 type Pending = Rows.Pending
 def initial() -> State:
-  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), pending: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, chose: "", tone: "", oddLimit: 0n}
-# A record as the live town keeps it (edition 14, the braid's `chose`; a carry lays this package over it,
-# `migrate`): before `tone` and `oddLimit`, which a carried record is given as its making would give them now, from
-# its colour (a bell's; "" and 0 for a record of no hue), and a place gets when its bells are next rung together.
-record State14:
+  {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), pending: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), mine: Relations.empty(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, chose: "", tone: "", oddLimit: 0n}
+# A record as the live town keeps it (edition 13, carried 2026-10-12; a carry lays this package over it, `migrate`):
+# its scene's choices before their `text` and `among`, which a choice carried gets none of; before `mine` (none);
+# its presence before a reader's `draw`, which one present at the carry gets 0 of; before `tone` and `oddLimit`,
+# which a carried record is given as its making would give them now, from its colour (a bell's; "" and 0 for a record
+# of no hue), and a place gets when its bells are next rung together.
+record Presence13:
+  who: String
+  handle: String
+  at: String
+record Choice13:
+  label: String
+  to: String
+  effects: Lists.List<Scenes.Effect>
+  guard: Scenes.Guard
+record Passage13:
+  id: String
+  text: String
+  choices: Lists.List<Choice13>
+record State13:
   owner: String
   keeper: String
   keeperHandle: String
@@ -112,19 +128,21 @@ record State14:
   next: Nat
   cites: Card.Doorways
   start: String
-  passages: Lists.List<Scenes.Passage>
+  passages: Lists.List<Passage13>
   cooldown: Nat
   requires: Scenes.Guard
-  presence: Relations.Relation<Presence>
+  presence: Relations.Relation<Presence13>
   vars: Lists.List<Scenes.Var>
   left: Relations.Relation<Departure>
   things: Relations.Relation<Plans.Reference>
   weather: String
   tended: Nat
   chose: String
-def migrate(old: State14) -> State:
+def migrate(old: State13) -> State:
   let colour = fieldIn(old.fields, "colour")
-  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, tended: old.tended, chose: old.chose, tone: Harmony.toneText(colour), oddLimit: Harmony.oddLimit(Harmony.tones(colour))}
+  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: Lists.map(old.passages, passage13), cooldown: old.cooldown, requires: old.requires, presence: Relations.Relation.rows({items: Lists.map(Relations.rows(old.presence), fn(p: Presence13) -> Presence: {who: p.who, handle: p.handle, at: p.at, draw: 0n})}), vars: old.vars, mine: Relations.empty(), left: old.left, things: old.things, weather: old.weather, tended: old.tended, chose: old.chose, tone: Harmony.toneText(colour), oddLimit: Harmony.oddLimit(Harmony.tones(colour))}
+def passage13(p: Passage13) -> Scenes.Passage:
+  {id: p.id, text: p.text, choices: Lists.map(p.choices, fn(c: Choice13) -> Scenes.Choice: {label: c.label, to: c.to, effects: c.effects, guard: c.guard, text: "", among: Lists.List.nil()})}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes. A
 # condition counting lines counts these, the retained history (`next` counts every line ever written).
 # Marks are facts, kept whole and never dropped for newer ones (no `limit`): a bell's `rung`, an errand's
@@ -133,10 +151,14 @@ def migrate(old: State14) -> State:
 def relations() -> Relations.Decls:
   relationsWith(128n)
 def relationsWith(lines: Nat) -> Relations.Decls:
-  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("n author"), limit: lines}), {field: "pending", key: Text.words("n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 0n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n})
+  Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Lists.append(Relations.Decls.nil(), {field: "lines", key: Text.words("n author"), limit: lines}), {field: "pending", key: Text.words("n"), limit: lines}), {field: "admitted", key: Text.words("n"), limit: 128n}), {field: "marks", key: Text.words("name"), limit: 0n}), {field: "presence", key: Text.words("who"), limit: presenceMax()}), {field: "left", key: Text.words("at who"), limit: leftMax()}), {field: "things", key: Text.words("object"), limit: 256n}), {field: "mine", key: Text.words("who name"), limit: mineMax()})
 # Who may be in a room at once: one turn offers a line to at most 32 (the host's sendsPerTurn).
 def presenceMax() -> Nat:
   32n
+# Readers' own variables a room keeps, every reader's together: the room refuses one more before the host would
+# drop any (the room's `effects`), and a reader keeps sixteen at most, as the room does.
+def mineMax() -> Nat:
+  1024n
 # Departures kept; one still cooling is never dropped for a newer one (the room's `crowded`).
 def leftMax() -> Nat:
   64n
@@ -146,7 +168,7 @@ def leftMax() -> Nat:
 # admissions, marks, presence, departures, variables, the floor) no proposal writes, the owner's
 # included; a kept record wants its keeper while a line waits, and any record a door while it has none.
 def lawText() -> String:
-  "law owner \"the owner stays; only the owner changes the keeper, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission or a mark is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, waits, was admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(pending) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\nwant pending \"a line waits for its keeper\": not (new.keeper == \"\") and count(new.pending) >= 1 asks delvetalk {{request.object}} admit\nwant door \"it opens onto nothing yet\": count(new.cites) == 0 asks delvetalk {{request.object}} door"
+  "law owner \"the owner stays; only the owner changes the keeper, the doors, its scene or its code; anyone else only by its spells, and places rules, wants and verbs on it\": unchanged(owner) and (request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(keeper) and unchanged(cites) and unchanged(start) and unchanged(passages) and unchanged(cooldown) and unchanged(requires)))\nlaw kept \"a line, an admission or a mark is only added; only the keeper admits\": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) and (unchanged(admitted) or request.subject == new.keeper)\nlaw methods \"what was written, waits, was admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal\": request.kind == proposed implies (unchanged(lines) and unchanged(pending) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(mine) and unchanged(things) and unchanged(tended))\nwant pending \"a line waits for its keeper\": not (new.keeper == \"\") and count(new.pending) >= 1 asks delvetalk {{request.object}} admit\nwant door \"it opens onto nothing yet\": count(new.cites) == 0 asks delvetalk {{request.object}} door"
 def pendingKey(p: Pending) -> {n: Nat}:
   {n: p.n}
 def lineKey(line: Line) -> {n: Nat, author: String}:

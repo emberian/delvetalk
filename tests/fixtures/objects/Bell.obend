@@ -76,9 +76,18 @@ def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<C
   Card.answer(input, context, forms(), render(state, context))
 def colourName(colour: Colour) -> String:
   match colour:
-    case amber(_): "amber"
+    case red(_): "red"
+    case orange(_): "orange"
+    case yellow(_): "yellow"
+    case green(_): "green"
+    case cyan(_): "cyan"
+    case blue(_): "blue"
     case violet(_): "violet"
+    case amber(_): "amber"
     case silver(_): "silver"
+    case magenta(_): "magenta"
+    case purple(_): "purple"
+    case pink(_): "pink"
 def line(rain: Rain) -> Document.Document:
   Document.text("{Card.shown(rain.author, rain.handle, Card.stranger())}: {rain.text}\n")
 # Newest rains are last; the card shows the first eight and counts the rest, within what the

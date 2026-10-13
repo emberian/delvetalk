@@ -111,8 +111,11 @@ def naturalFault(spec: Spec, value: String) -> Lists.Maybe<Fault>:
 # thing runs, whatever its first line names.
 def layer(body: String) -> String:
   if whole(body) then body else "{header()}{Text.trimEnd(body)}\n{offering(body)}"
+# Read from its first non-blank characters alone: a trim measures the whole text, and `kinds make` reads a body of
+# forty thousand characters several times in one turn.
 def whole(body: String) -> Bool:
-  Text.blank(body) || Text.starts(Text.trim(body), "layer over") || Text.starts(Text.trim(body), "edition")
+  let start = textTake(Text.trimStart(body), 10n)
+  start == "" || Text.starts(start, "layer over") || Text.starts(start, "edition")
 def header() -> String:
   "layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\nimport ./Text.obend as Text\nimport ./Plan.obend as Plans\nimport ./World.obend as World\nimport ./Card.obend as Card\nimport ./Document.obend as Document\nimport ./Relation.obend as Relations\nimport ./Rows.obend as Rows\nimport ./Scenes.obend as Scenes\nimport ./Spween.obend as Spween\ntype State = Super.State\n"
 # How many lines the header is: a checker's line past it is the body's line that much less.

@@ -68,7 +68,7 @@ def plantSpell(id: String) -> String:
   "    delvetalk {id} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <red to violet, silver, magenta, purple or pink>\n"
 def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:
   Super.write(state, {text: input.text}, context)
-# Its bells rung together (RECORD's `chime`): every bell it planted, the first sixteen.
+# Its bells rung together (RECORD's `ringTogether`): every bell it planted, the first sixteen.
 def chime(state: State, context: Abi.Context) -> Activity<Nat>:
   Super.ringTogether(state, context)
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
