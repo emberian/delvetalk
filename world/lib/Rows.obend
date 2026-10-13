@@ -63,6 +63,13 @@ record Presence:
   who: String
   handle: String
   at: String
+# A reader's own variable in a room (spween's `my.<name>`: world/lib/Scenes.obend), keyed {who, name}.
+record Mine:
+  who: String
+  name: String
+  value: String
+def mineKey(m: Mine) -> {who: String, name: String}:
+  {who: m.who, name: m.name}
 def presenceKey(p: Presence) -> {who: String}:
   {who: p.who}
 def presentAs(presence: Relations.Relation<Presence>, who: String) -> Lists.Maybe<Presence>:

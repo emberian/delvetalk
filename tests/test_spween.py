@@ -20,8 +20,8 @@ import unittest
 
 from tests import test_chain, test_scenarios
 from tests.test_objects import run_pure
-from tests.test_scene import GATE, GLM, heard, plain, scene_fields
-from tests.test_rooms import make_room
+from tests.test_scene import GATE, GLM, KIM, heard, plain, scene_fields
+from tests.test_rooms import body as room_body, make_room
 from tests.wire import cast_refusal, label, record
 
 # The README's running example, verbatim.
@@ -245,6 +245,22 @@ class Parse(unittest.TestCase):
         flags = summary("---\nid: s\nrequires:\n  min: { 杯: 1 }\n  not: [鳴った]\n---\n=== a\n")[0]
         self.assertIn("requires 杯 >= 1, 鳴った falsy ", flags)
 
+    def test_the_reader_s_own_variables_are_written_my_and_read_and_set_as_the_room_s(self):
+        text, _ = summary("---\nid: s\nrequires:\n  min: { my.visits: 0 }\n---\n=== a\nA.\n* [Wind] { my.wound < 12, !my.gone, wound >= 0, my.杯 }\n  ~ wound += 1\n  ~ my.wound += 1\n  ~ my.杯 = 2\n  -> a\n")
+        self.assertIn("requires my.visits >= 0", text)
+        self.assertIn("  * Wind [my.wound < 12, my.gone falsy , wound >= 0, my.杯 truthy ] (wound add 1; my.wound add 1; my.杯 set 2) -> a", text)
+        self.assertEqual(summary("=== a\n* [Go] { my.\u0441ups >= 1 }\n")[0], "refused: not a variable: my.\u0441ups; a name is in one alphabet, ASCII letters or none")
+        self.assertTrue(summary("=== a\n* [Go]\n  ~ my. = 1\n")[0].startswith("refused: an effect sets a variable"), summary("=== a\n* [Go]\n  ~ my. = 1\n")[0])
+
+    def test_a_kind_s_body_is_read_as_a_layer_from_its_first_characters(self):
+        # `kinds make` reads the room's body (forty thousand characters) several times a turn: Forms.whole must not
+        # measure it, or the room kind outgrows the turn's ticks.
+        body = room_body("room")
+        probe = "edition ObjectiveBend 1\nimport ./Forms.obend as Forms\ndef lay(text: String) -> Bool:\n  textTake(Forms.layer(text), 10n) == \"layer over\"\n"
+        out = run_pure("Forms", "lay", label(body + "\n# " + "x" * 20000 + "\n"), probe=probe, limits={"ticks": "1000000"})
+        self.assertEqual((out["status"], out["value"]["value"]), ("finished", True), out)
+        self.assertLess(out["ticksUsed"], 1000, out)
+
     def test_a_verb_stays_ascii_and_a_cast_is_read_as_before(self):
         text, _ = summary("=== a\n* [Go]\n  ~ ring bell/1\n  ~ call(\"ring\", \"bell/1\")\n")
         self.assertEqual(text.count("cast delvetalk {request.object} ring / text: bell/1"), 2, text)
@@ -275,7 +291,7 @@ class Parse(unittest.TestCase):
         self.assertIn("  * Continue [wound >= 12, keeps holding porch/goblet] () -> b", text)
         self.assertIn("=== b: B.\n  * Back [] () -> a", text)
         self.assertTrue(summary("=== a { wound >= 12 }\nA.\n")[0].startswith(" / A. / start a / cooldown 0 / requires wound >= 12\n"), summary("=== a { wound >= 12 }\nA.\n")[0])
-        self.assertEqual(summary("=== a { 1a b }\nA.\n")[0], "refused: === a: not a condition: 1a b; a variable (gold >= 2, !rang), keeps.<thing> or holds.<thing>, or a law's condition (\"bell/1\".tended >= 5)")
+        self.assertEqual(summary("=== a { 1a b }\nA.\n")[0], "refused: === a: not a condition: 1a b; a variable (gold >= 2, !rang, my.cups), keeps.<thing> or holds.<thing>, or a law's condition (\"bell/1\".tended >= 5)")
 
     def test_prose_under_a_choice_is_what_taking_it_says(self):
         # gemini's wash (station trawl 12) and grok's step: indented under the choice, before or after its effects
@@ -400,6 +416,31 @@ class Made(test_chain.Chain):
         gone = self.say(room, "delvetalk %s choose / choice: Go" % room)
         self.assertEqual(gone["result"]["label"], "left")
         self.assertTrue(gone["offers"][0]["text"].startswith("The door sighs shut.\n\n"), gone["offers"][0]["text"])
+
+    def test_a_reader_s_own_variable_is_theirs_while_the_room_s_is_everyone_s(self):
+        # deepseek's "You keep that minute. Nobody else does": `my.wound` per reader, `wound` the room's
+        clock = ("---\nid: clock\n---\n=== clock\nA wall clock.\n* [Wind it]\n  ~ wound += 1\n  ~ my.wound += 1\n  -> clock\n"
+                 "* [Keep the minute] { my.wound >= 2 }\n  -> clock\n* [Fill your pockets]\n" + "".join("  ~ my.p%d = 1\n" % i for i in range(17)) + "  -> clock\n")
+        self.assertEqual(self.say("scene", "```spween\n" + clock + "```\n", identity="post-clock")["result"]["label"], "done")
+        self.deliver_all()
+        room = self.WELL_ID
+        for who in (GLM, KIM):
+            self.assertEqual(self.say(room, "delvetalk %s enter" % room, principal=who)["result"]["label"], "entered")
+        for who in (GLM, GLM, KIM):
+            self.assertEqual(self.say(room, "delvetalk %s choose / choice: Wind it" % room, principal=who)["result"]["label"], "moved")
+        self.assertIn("  * Keep the minute\n", self.card(room, GLM))
+        self.assertIn("wound = 3\nmy.wound = 2\n", self.card(room, GLM))
+        self.assertNotIn("Keep the minute", self.card(room, KIM))
+        self.assertIn("wound = 3\nmy.wound = 1\n", self.card(room, KIM))
+        self.assertEqual(self.refusal(self.say(room, "delvetalk %s choose / choice: Keep the minute" % room, principal=KIM)), ("guarded", "Keep the minute needs my.wound >= 2."))
+        self.assertEqual(self.say(room, "delvetalk %s choose / choice: Keep the minute" % room, principal=GLM)["result"]["label"], "moved")
+        _, state = self.view(room)
+        self.assertEqual(state["vars"], [{"name": "wound", "value": "3"}])
+        self.assertEqual(sorted((m["who"], m["name"], m["value"]) for m in state["mine"]), sorted([(GLM, "wound", "2"), (KIM, "wound", "1")]))
+        # a reader keeps sixteen of their own, as the room keeps sixteen: the seventeenth is refused, nothing written
+        self.assertEqual(self.refusal(self.say(room, "delvetalk %s choose / choice: Fill your pockets" % room, principal=KIM)),
+                         ("varsFull", "Sixteen of your own variables are already set here."))
+        self.assertEqual(len(self.view(room)[1]["mine"]), 2)
 
     def test_an_unmet_requirement_keeps_everyone_out(self):
         sealed = WELL.replace("wishing_well", "sealed_well").replace("not: [well_sealed]", "flags: [well_open]")

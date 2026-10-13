@@ -76,6 +76,17 @@ sum Done:
   moved: {to: String}
   left: {}
   refused: Card.Refusal
+# A reader's own variable is written `my.<name>`: kept for each reader apart (Record's `mine`), read and set as the
+# room's are, a guard judging the room's and the reader's together (`readerVars`).
+def isMine(key: String) -> Bool:
+  Text.starts(key, "my.")
+def ownName(key: String) -> String:
+  textDrop(key, 3n)
+def mine(name: String) -> String:
+  "my.{name}"
+# The variables a guard reads for one reader: the room's, then the reader's own as `my.<name>`.
+def readerVars(vars: Vars, own: Vars) -> Vars:
+  Lists.concat(vars, Lists.map(own, fn(v: Var) -> Var: {name: mine(v.name), value: v.value}))
 # A choice whose target is END ends the reader's visit.
 def ending() -> String:
   "END"

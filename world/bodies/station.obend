@@ -102,7 +102,7 @@ def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   match Super.lastLeft(context.principal, after):
     case some(l): Super.away(at, after, l.value.entry, context)
     case none(_): Super.welcomed(at, after, Document.text(""), context)
-def recorded(vars: Lists.List<Plans.Entries<Scenes.Var, Scenes.Var>>, said: String, after: State, context: Abi.Context) -> Activity<Done>:
+def recorded(vars: Lists.List<Super.Edit>, said: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {left: insert {at: 0n, who: context.principal, entry: context.height}}
   Super.varied(vars, Done.left({}), said, after, context)
 def awayLines(state: State, since: Nat, changes: Lists.List<World.Change>, context: Abi.Context) -> Document.Document:

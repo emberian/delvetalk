@@ -184,7 +184,7 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
               'law kept "a line, an admission or a mark is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) '
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
               'law methods "what was written, waits, was admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal": '
-              'request.kind == proposed implies (unchanged(lines) and unchanged(pending) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\n'
+              'request.kind == proposed implies (unchanged(lines) and unchanged(pending) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(mine) and unchanged(things) and unchanged(tended))\n'
               'want pending "a line waits for its keeper": not (new.keeper == "") and count(new.pending) >= 1 asks delvetalk {request.object} admit\n'
               'want door "it opens onto nothing yet": count(new.cites) == 0 asks delvetalk {request.object} door')
 
