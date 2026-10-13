@@ -60,11 +60,22 @@ proving world membership. Book and paint must retain cited versions under immuta
 Authority: the owner controls `gsb.fg-goose.online`. The live, verified `_lexicon.gsb.fg-goose.online` TXT is
 `"did=did:plc:6amo7col5h4ciq2gpm5eur7b"`, naming the posting account `ember.delve.town`.
 `python3 -m transport lexicons` reads every schema file fresh, in NSID order, and prints the TXT check command,
-canonical JSON lines `{collection, rkey, cid, bytes}`, then `{count, did}`; `bytes` is the DAG-CBOR block length.
-It exits 2, reads no credentials, writes no ledger and opens no socket. Each publication value preserves the
+canonical JSON lines `{collection, rkey, cid, bytes, published}`, then `{count, did, reference}`; `bytes` is the DAG-CBOR block length.
+`records()` checks each document's id and basic shape. The reference validator is `@atproto/lexicon` 0.7.16
+(the checked `tests/lexicon_reference.mjs` CLI), resolved through `ATPROTO_LEXICON_PACKAGE` or normal
+Node resolution from the script and current directory. To install it separately, run
+`npm i @atproto/lexicon@0.7.16` in a directory of your choice, then set
+`ATPROTO_LEXICON_PACKAGE=/path/to/that/directory/node_modules/@atproto/lexicon`.
+The summary explicitly names an unavailable reference validator. Invalid files exit 1. A valid dry run
+exits 2, reads no credentials and writes no ledger. Public GETs resolve the authority's DID document
+and read `com.atproto.repo.listRecords` at its PDS, without authentication. Per-file `published` is
+`new`, `same` or `differs`, comparing the DAG-CBOR CID of each record value (including the publication
+`$type`); a failed or incomplete read yields `unknown (<why>)` for every file and the dry run continues. Each publication value preserves the
 complete document and adds `$type: "com.atproto.lexicon.schema"`; `id` equals the NSID record key.
 The owner chooses when to add `--authorized` with `--state DIR` or `DELVETALK_STATE`. The credential session must
-match `lexicon_authority` (default the TXT's DID) before any putRecord in its own repo. The account-wide ledger
+match `lexicon_authority` (default the TXT's DID) before any putRecord in its own repo.
+An authorized run requires reference validation, refusing an absent Node/package before credentials,
+writer or ledger changes; it prints the same published-value comparison before writing. The account-wide ledger
 `<state>/lexicons/<URL-encoded authority DID>.json` records successful value digests and skips unchanged values.
 Publication never deletes: a removed file stays published. No service starts publication, the mirror or request
 poller (docs/ATPROTO.md §5, docs/POSTING.md).

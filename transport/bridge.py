@@ -418,8 +418,8 @@ def preview_text(reply, handles=None, host=None, request=None):
     """A try's answer (`world-try`, docs/POSTING.md §2) as a post says it: `preview, nothing done`, then each act as it
     would go (`would_line`), what it would fire, open or close, and the card it would offer, exactly; then what the
     host would settle in the same write (`then …`) and what it would leave for later, counted, not foreseen; last the
-    `if:` line of every root the acts read, to put above the same spells so they land only if none has moved. An act
-    that reads what the public may not (`inPublic` false) is said by its outcome alone."""
+    `if:` line of every root's state and supplied behaviour revisions, to put above the same spells so they land only
+    if none has moved. An act that reads what the public may not (`inPublic` false) is said by its outcome alone."""
     against = reply.get('against') or {}
     reply = public_reply(reply, host, request)
     turns = reply.get('turns') if reply.get('status') == 'spells' else [reply]
@@ -429,7 +429,7 @@ def preview_text(reply, handles=None, host=None, request=None):
             out.append(str(t.get('text') or t.get('message') or t.get('status')).rstrip('\n'))
             continue
         for r in t['receipt'].get('roots') or []:
-            roots.setdefault(r['object'], r.get('version'))
+            roots.setdefault(r['object'], r)
         out.append(would_line(t, handles))
         if not t.get('receiptOnly') and (t['receipt'].get('outcome') or {}).get('tag') not in ('refused', 'suspended'):
             out += [line for line in t.get('revealed') or []] + [o['text'].rstrip('\n') for o in t.get('offers') or []]
@@ -447,7 +447,8 @@ def preview_text(reply, handles=None, host=None, request=None):
     if later.get('answered'):  # sends whose receipt the world binds already: never run again (Ops.answered)
         out.append(f"{later['answered']} sends answered already by their receipts, never run again")
     if roots and all(not t.get('receiptOnly') for t in turns if 'receipt' in t):
-        out.append('if: ' + ', '.join(f'{o} v{v}' for o, v in roots.items() if v is not None))
+        out.append('if: ' + ', '.join(f"{o} v{r['version']}" + (f"/b{r['behaviour']}" if 'behaviour' in r else '')
+                                    for o, r in roots.items() if r.get('version') is not None))
     return '\n'.join(out) + '\n'
 
 

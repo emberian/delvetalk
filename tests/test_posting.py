@@ -154,6 +154,8 @@ class Resident(unittest.TestCase):
         self.assertTrue(preview.startswith('preview, nothing done'), preview)
         self.assertEqual(self.town.client.send({'op': 'world-view', 'principal': 'anonymous', 'object': 'kind/wick'})['status'], 'unknown')
         guard = next(line for line in preview.splitlines() if line.startswith('if: '))
+        self.assertEqual(preview.splitlines()[-1], guard)
+        self.assertRegex(guard, r'/b\d+(?:, |$)')
         self.assertIn('admitted', said(guard + '\n' + make))
         thing = said('delvetalk kind/wick make / light: moth glow')
         self.assertIn('admitted', thing)

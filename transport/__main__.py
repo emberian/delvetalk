@@ -80,8 +80,8 @@ def parser():
     p.add_argument('--once', action='store_true', help='one step, not a step every `poll` seconds')
     p.add_argument('--limit', type=int, default=200, help='at most this many record writes a step')
     p.add_argument('--i-am-ember-and-authorize-posting', dest='authorized', action='store_true', default=False)
-    p = add('lexicons', "prepare every lexicon for its authority's repository; local dry run without --authorized")
-    p.add_argument('--authorized', action='store_true', default=False, help='publish changed schemas using the authority account credential')
+    p = add('lexicons', "validate lexicons and compare published values; dry run without --authorized")
+    p.add_argument('--authorized', action='store_true', default=False, help='require the reference validator, then publish changed schemas using the authority credential')
     from transport import hand
     hand.parser(sub.add_parser('hand', help="the owner's console: drafts, moderation and root, as the opener"), common)
     add('http', 'the public front: /AGENTS.md for agents, pages for people')

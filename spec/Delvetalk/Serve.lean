@@ -465,7 +465,8 @@ def withFieldText (record : Json) (name value : String) : Json :=
 def blankLine (line : String) : Bool := line.toList.all (·.isWhitespace)
 def indentOf (line : String) : Nat := (line.toList.takeWhile fun c => c == ' ' || c == '\t').length
 
-/-- `if: bell/2 v3, kind/bell v2`: the roots an act was read at (a try's `roots`), or none when the line is not one. -/
+/-- `if: bell/2 v3/b2, kind/bell v2/b0`: a try's roots with state and optional behaviour revisions.
+    Older `v<n>` roots guard state alone; an unreadable suffix makes the whole line unreadable. -/
 def ifRoots (line : String) : Option Json := do
   let low := String.ofList (line.toList.dropWhile (·.isWhitespace))
   guard ((low.take 3).toString.toLower == "if:")
@@ -473,12 +474,20 @@ def ifRoots (line : String) : Option Json := do
     let words := (part.splitOn " ").filter (!·.isEmpty)
     let [id, v] := words | none
     guard (v.startsWith "v")
-    let version ← (v.drop 1).toString.toNat?
-    pure (Json.mkObj [("object", toJson id), ("version", toJson version)])
+    let parts := v.splitOn "/"
+    let version ← ((parts.headD "").drop 1).toString.toNat?
+    let behaviour ← match parts with
+      | [_] => pure []
+      | [_, b] => do
+        guard (b.startsWith "b")
+        let revision ← (b.drop 1).toString.toNat?
+        pure [("behaviour", toJson revision)]
+      | _ => none
+    pure (Json.mkObj ([("object", toJson id), ("version", toJson version)] ++ behaviour))
   guard (!roots.isEmpty)
   return Json.arr roots.toArray
 
-/-- A post's spells as `serve` reads them before any world does (docs/POSTING.md §2): a margin line `if: <id> v<n>, …`
+/-- A post's spells as `serve` reads them before any world does (docs/POSTING.md §2): a margin line `if: <id> v<n>/b<n>, …`
     ahead of the spells becomes the act's `if` (refused `moved` when a root moved since), and `delvetalk try`
     with spells indented under it (an indented spell is a quotation, never cast) becomes `world-try` of those spells,
     dedented, as words to the commonplace: the host runs them where they name, then drops what they wrote. -/

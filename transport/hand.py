@@ -32,6 +32,15 @@ CLIP, HAND_COOKIE = 400, 'dt_hand'
 LOOK_EVERY = 30  # seconds between two looks of the outbox into the posting account's repository (config hand_find)
 H, CSS = pages.sections('hand.html'), (pages.STATIC / 'style.css').read_text()
 
+# Read controls share their renderer; the operations remain Hand's and root's CLI operations.
+READ_FORMS = {
+    'status': ('Status', ()), 'draft': ('Draft', (('draft', ''),)),
+    'log': ("The hand's log", (('tail', '20'),)), 'spend': ('Model spending', (('month', 'YYYY-MM'),)),
+    'modlog': ('Moderation log', (('object', ''), ('tail', '20'))), 'find': ('Find', (('query', ''),)),
+    'root/dump': ('Object dump', (('object', ''),)),
+    'root/entries': ('Journal entries', (('after', ''), ('object', ''), ('principal', ''), ('limit', '20'))),
+}
+
 
 class HandError(Exception):
     pass
@@ -39,6 +48,14 @@ class HandError(Exception):
 
 def clip(text, n=CLIP):
     return text if len(text) <= n else text[:n] + ' ...'
+
+
+def integer(form, name, default=None):
+    raw = form.get(name, '').strip()
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        raise HandError(f'{name}: give an integer') from None
 
 
 def outcome_of(receipt):
@@ -279,6 +296,7 @@ class Hand:
         state = 'withdrawn' if d.get('unposted') else 'posted' if d['posted'] else 'skipped' if d.get('skipped') else 'waiting'
         return {'id': i, 'object': post.draft_object(d), 'receipt': line, 'slug': (r or {}).get('slug') or 'by hand', 'height': (r or {}).get('height'),
                 'outcome': outcome_of(r) if r else 'drafted', 'text': d['text'], 'state': state,
+                'withdrawable': any(((p.get('unposted') or {}).get('recorded') or {}).get('status') != 'unposted' for p in post.sent_parts(d)),
                 **({'original': d['original']} if d.get('original') else {}), **({'reason': d['reason']} if d.get('reason') else {})}
 
     def view(self, draft_id):
@@ -308,6 +326,12 @@ class Hand:
 
     def seed_intent(self, spell):
         return 'hand:seed:' + hashlib.sha256(spell.encode()).hexdigest()[:16]
+
+    def cast_seed(self, n, topic=None, reply_to=None, wait=WAIT_MAX):
+        if not 1 <= n <= len(self.plan['seeds']):
+            raise HandError(f"the plan has {len(self.plan['seeds'])} seeds")
+        spell = self.plan['seeds'][n - 1]
+        return self.cast(spell, topic, reply_to, self.seed_intent(spell), wait=wait)
 
     def cast(self, spell, topic=None, reply_to=None, intent=None, to=None, wait=WAIT_MAX):
         """Cast `spell` as the opener on the root socket, as the bridge turns a post: `receive` on the card the host reads
@@ -497,7 +521,12 @@ class Hand:
         try:
             if verb == 'invite':
                 days = form.get('expires', '').strip()
-                got = self.invite_guest(form.get('name', ''), form.get('note', ''), float(days) if days else INVITE_DAYS)
+                name, count = form.get('name', '').strip(), integer(form, 'count')
+                if count is not None:
+                    if name:
+                        raise HandError('invite: --count mints open codes; give no name')
+                    return '\n'.join(g['code'] for g in self.invite_open(count, form.get('note', ''), float(days) if days else INVITE_DAYS))
+                got = self.invite_guest(name, form.get('note', ''), float(days) if days else INVITE_DAYS)
                 return (f"invited {got['name'] or 'whoever arrives (open)'}{' as ' + got['principal'] if got['principal'] else ''}; its code, shown this once: {got['code']} "
                         f"(accept by {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(got['expires']))})")
             got = self.revoke_guest(form.get('name', ''))
@@ -509,7 +538,7 @@ class Hand:
         q, w = lambda t: e(str(t)), self.worlds()
         when = lambda t: time.strftime('%Y-%m-%d %H:%M', time.gmtime(t)) if t else 'never'
         guests = ''.join(H['guest'].format(fate='admitted' if g['state'] == 'accepted' else 'suspended' if g['state'] == 'open' else 'refused',
-                                           state=q(g['state']), name=q(g['name']), principal=q(g['principal'] or 'name to be registered'), note=q(g['note'] or 'no note'),
+                                           state=q(g['state']), name=q(g['name']), id=q(g['id']), principal=q(g['principal'] or 'name to be registered'), note=q(g['note'] or 'no note'),
                                            taken=q(f"taken by {g['name']} on {when(g['accepted'])}" if g['state'] == 'accepted' or g.get('accepted') else 'not taken yet'),
                                            created=q(when(g['created'])), expires=q(when(g['expires'])), used=q(when(g['used'])),
                                            revoke=H['guest_revoke'].format(name=q(g['id'] if g['name'] == '(open)' else g['name'])) if g['state'] != 'revoked' else '')
@@ -523,7 +552,8 @@ class Hand:
                             for r in w['scratches']) or '<li class="quiet">— no scratch world is open —</li>'
         codes = self.codes([counted(len(w['worlds']), 'world'), counted(len(w['scratches']), 'scratch world'), f"host pid {w['pid']}", f"replay edition {w['replay']}",
                             f"{w['home']} clock {w['clock']}"])
-        return shell('the worlds', None, H['worlds'].format(note=self.note({'note': said} if said else query), codes=codes, worlds=rows, scratches=scratches,
+        note = H['card'].format(text=q(said)) if said and '\n' in said else self.note({'note': said} if said else query)
+        return shell('the worlds', None, H['worlds'].format(note=note, codes=codes, worlds=rows, scratches=scratches,
                                                             home=q(w['home']), guests=guests))
 
     # ---- guests: agents with no account here, let in by an invitation (transport/identity.py)
@@ -748,6 +778,8 @@ class Hand:
 
     def unpost(self, draft_id, reason, zulip=None, client=None):
         """Withdraw every distinct post, retaining each part's deletion and unregister progress."""
+        if not reason.strip():
+            raise HandError('unpost needs a reason')
         path, _ = self.draft(draft_id)
         with self.st.draft_lock(path):
             d = json.loads(path.read_text())
@@ -841,19 +873,26 @@ class Hand:
         if method == 'POST':
             try:
                 done = h.web_action(rest, form or {})
-            except HandError as err:
+            except (HandError, ValueError, OSError) as err:
                 done = {'note': str(err)}
             if done is not None:
                 note = ' '.join(str(v) for v in done.values() if isinstance(v, (str, list)))
-                back = {'root': '/root/?', 'mod': '/root/?', 'speak': '/speak?', 'invite': '/speak?'}.get(rest.partition('/')[0], '/?')
+                back = {'root': '/root/?', 'mod': '/root/?', 'speak': '/speak?', 'invite': '/speak?',
+                        'morning': '/speak?', 'welcome': '/speak?'}.get(rest.partition('/')[0], '/?')
                 anchor = '#outbox' if back == '/?' else ''
                 back = '/hand/?' if rest == 'root/expire' else base + back  # a scratch world is expired from the worlds
                 more = {'came': done['intent']} if rest == 'speak' and done.get('intent') else {}
                 return 303, '', [('Location', back + urllib.parse.urlencode({'note': note, **more}) + anchor)]
-        page = {'': h.page, 'speak': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page}.get(rest) if method == 'GET' else None
+        page = None
+        if method == 'GET':
+            page = (lambda query: h.read_page(rest, query)) if rest in READ_FORMS else {
+                '': h.page, 'speak': h.speak_page, 'plan': h.speak_page, 'watch': h.watch_page, 'measure': h.measure_page, 'root': h.root_page}.get(rest)
         if page is None:
             return 404, shell('not here', world, H['missing'].format(text=e(f'no page {rest} in the hand'))), []
-        return 200, page(query), []
+        try:
+            return 200, page(query), []
+        except (HandError, ValueError, OSError) as err:
+            return 400, shell('cannot read', world, H['note'].format(text=e(str(err)))), []
 
     def web_action(self, rest, form):
         """The POSTed form as one of the operations above; None for an unknown path or action."""
@@ -864,15 +903,18 @@ class Hand:
             got = self.act(face, verb, form)
             return {'done': f"{verb}: {got.get('status')}" + (f", entry {got['receipt'].get('height')}" if got.get('receipt') else '')}
         if face == 'draft':
-            acts = {'post': lambda: self.post(verb, form.get('text')), 'skip': lambda: self.skip(verb, form.get('reason', '')), 'hold': lambda: self.hold(verb),
+            acts = {'post': lambda: self.post(verb, form.get('text'), object=form.get('object') or None), 'skip': lambda: self.skip(verb, form.get('reason', '')), 'hold': lambda: self.hold(verb),
+                    'unpost': lambda: self.unpost(verb, form.get('reason', '')),
                     'posted': lambda: {'note': self.posted(verb, form.get('link', ''))['note']}, 'edit': lambda: self.edit(verb, (form.get('text') or '').replace('\r\n', '\n'))}
             act = acts.get(form.get('do'))
         else:
             act = {'retry': lambda: self.retry(form.get('uri', '')), 'reply': lambda: self.reply(form.get('uri', ''), form.get('text', ''), form.get('object', '')),
-                   'speak': lambda: self.spoke(self.cast(form.get('spell', ''), form.get('topic'), form.get('replyTo'), form.get('intent'), form.get('to'), wait=0)),
+                   'speak': lambda: self.spoke(self.cast_seed(integer(form, 'seed', 0), form.get('topic'), form.get('replyTo'), wait=0)
+                       if form.get('seed') else self.cast(form.get('spell', ''), form.get('topic'), form.get('replyTo'), form.get('intent'), form.get('to'), wait=0)),
+                   'welcome': lambda: {'drafted': self.welcome(form.get('spell') or None, form.get('topic'), form.get('replyTo'))['drafted']},
                    'invite': lambda: self.invite(form.get('minute', ''), form.get('topic'), form.get('replyTo')),
                    'match': lambda: {'note': self.matched(self.find_posts())},
-                   'morning': lambda: {k: v for k, v in self.morning(None, form.get('topic'), form.get('replyTo')).items() if k in ('drafted', 'fellBack') and v}}.get(rest)
+                   'morning': lambda: {k: v for k, v in self.morning(integer(form, 'day'), form.get('topic'), form.get('replyTo')).items() if k in ('drafted', 'fellBack') and v}}.get(rest)
         return act and act()
 
     @staticmethod
@@ -910,23 +952,30 @@ class Hand:
             original=H['card'].format(text=q(f'{g["original"]["handle"]}\n{g["original"]["text"]}')) if g['original'] else H['note'].format(text=q(g['post'])),
             drafts=''.join(H['draft'].format(base=base, fate=q(d['outcome']), stamp=q(pages.stamp(d['outcome'])), height=q('-' if d['height'] is None else d['height']),
                                              name=q(d['slug']), object=q(d['object']), id=q(d['id']), leave=self.leave(d, how, offers.get(d['id']) or []))
-                           for d in g['drafts'])) for g in self.outbox()) or '<p class="quiet">— no drafts waiting —</p>'
+                           for d in g['drafts'])) for g in self.outbox(query.get('all') == '1')) or '<p class="quiet">— no drafts waiting —</p>'
         inbox = ''.join(H['row'].format(
             base=base, outcome=q(r['outcome'] or ''), kind=q(r['kind']), handle=q(r['handle']), text=q(r['text']), uri=q(r['uri']),
             stamp=q('' if r['skipped'] or not r['fate'] else pages.stamp(r['fate'])), retry=H['retry'].format(base=base, uri=q(r['uri'])) if r['skipped'] else '')
-            for r in self.inbox()) or '<p class="quiet">— nothing observed —</p>'
+            for r in self.inbox(integer(query, 'since'), query.get('kind') or None)) or '<p class="quiet">— nothing observed —</p>'
         look = '' if how == 'zulip' else H['look'].format(base=base, looked=q(looked or (f"looked {self.waited(self.looked)} ago" if self.looked else
                                                                                           "reads your newest posts on delve.town, read only")))
         return shell(self.st.world, self.st.world, H['console'].format(base=base, world=q(self.st.world), note=self.note(query), codes=codes, found=found,
-                                                                       mode=q(self.posting()), outbox=look + outbox, inbox=inbox))
+                            mode=q(self.posting()), outbox=look + outbox, inbox=inbox, all='checked' if query.get('all') == '1' else '',
+                            since=q(query.get('since', '')), kinds=''.join(f'<option value="{k}"' + (' selected' if query.get('kind', '') == k else '') +
+                            f'>{k or "all kinds"}</option>' for k in ('', 'summon', 'reply', 'post', 'wiki-page', 'wiki-edit', 'wiki-merge'))))
 
     def leave(self, d, how, offers):
         """How a waiting draft leaves, on the page: by hand (each part to copy, where it goes, the link to give), and with
         a credential file Post as well, by hand folded beneath it; on Zulip, Post."""
         q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
+        tools = H['draft_read'].format(base=base, id=q(urllib.parse.quote(d['id'], safe='')))
+        if d.get('withdrawable'):
+            tools += H['unpost'].format(base=base, id=q(d['id']))
+        if d['state'] != 'waiting':
+            return tools
         by_post = H['by_post'].format(base=base, id=q(d['id']), text=q(d['text']))
         if how == 'zulip' or not d.get('parts'):
-            return by_post if d['state'] == 'waiting' else ''
+            return tools + by_post
         n, under = len(d['parts']), d['under']
         where = (f'Part {d["next"]} of {n}: reply' if n > 1 else 'Reply') + (
             f' under <a href="{q(under["link"])}" target="_blank" rel="noopener">{q("@" + under["handle"] + "’s post" if under["handle"] else under["link"])}</a>'
@@ -939,7 +988,7 @@ class Hand:
                                             like=q(f"{int(o['like'] * 100)}%"), why=q(f" ({o['why']})" if o.get('why') else ''), text=q(o['text'])) for o in offers)
         hand = H['by_hand'].format(base=base, id=q(d['id']), where=where, parts=parts, offers=offered, text=q(d['text']),
                                    ask=q(f'I posted part {d["next"]}: paste its link' if n > 1 else 'I posted it: paste the link'))
-        return by_post + H['by_hand_folded'].format(byhand=hand) if how == 'automatic' else hand
+        return tools + (by_post + H['by_hand_folded'].format(byhand=hand) if how == 'automatic' else hand)
 
     def speak_page(self, query):
         q, base, row = lambda t: e(str(t)), f'/hand/{self.st.world}', self.st.bridge()
@@ -948,7 +997,7 @@ class Hand:
         seeds = ''.join(H['seed'].format(
             fate=q((s['cast'] or {}).get('outcome') or ''), stamp=q(pages.stamp(s['cast']['outcome']) if s['cast'] else '◦ not cast'), n=s['n'], spell=q(s['spell']),
             done=q(f"entry {s['cast']['height']}, {s['cast']['state']}" if s['cast'] else 'cast once, as the opener'),
-            cast='' if s['cast'] else H['seed_cast'].format(base=base, intent=q(s['intent']), spell=q(s['spell']), where=where)) for s in said['seeds']) \
+            cast='' if s['cast'] else H['seed_cast'].format(base=base, n=s['n'], where=where)) for s in said['seeds']) \
             or '<li class="quiet">— the plan names no seeds —</li>'
         invitations = ''.join(H['invitation'].format(
             fate='admitted' if r['draft'] else '', stamp=q(f"● {r['draft']['state']}" if r['draft'] else '◦ not drafted'), minute=r['minute'],
@@ -965,6 +1014,7 @@ class Hand:
                                         (H['note'].format(text=quiet) if came['waiting'] or not came['text'] else ''))
         return shell('speak', self.st.world, H['speak'].format(base=base, world=q(self.st.world), note=self.note(query), spoken=spoken,
                                                                morning=H['morning'].format(base=base, where=where),
+                                                               welcome=H['welcome'].format(base=base, where=where),
                                                                intent=q(f'hand:speak:{int(self.clock() * 1000)}'), where=where,
                                                                plan=q(Path(self.plan['path']).name), seeds=seeds, invitations=invitations),
                      refresh=3 if came and came['waiting'] else 0)
@@ -980,18 +1030,19 @@ class Hand:
     def watch_page(self, query, every=5):
         """The watch, refreshed every `every` seconds by the page itself (a meta refresh; `still` holds it)."""
         q, base, obj, still = lambda t: e(str(t)), f'/hand/{self.st.world}', query.get('object', '').strip(), query.get('still') == '1'
-        here = base + '/watch' + ('?' + urllib.parse.urlencode({'object': obj}) if obj else '')
+        limit = integer(query, 'limit', 30)
+        here = base + '/watch?' + urllib.parse.urlencode({'object': obj, 'limit': limit})
         rows = ''.join(H['watched'].format(
             tag=q(r['tag']), stamp=q(pages.stamp(r['outcome']) if r['tag'] else '◦ drafted'), height=q(f"entry {r['height']}" if r['height'] else 'outbox'),
             who=q(r['who']), turn=q(r['turn']), first=q(r['first']),
             links=self.links(r))
-            for r in self.watch(obj or None)) or '<li class="quiet">— nothing journaled —</li>'
+            for r in self.watch(obj or None, limit)) or '<li class="quiet">— nothing journaled —</li>'
         st = self.host.send({'op': 'world-status'})
         codes = self.codes((f"entry {st.get('height')}", f"clock {st.get('clock')}", f"{sum(1 for _ in self.st.unposted())} waiting in the outbox"))
         return shell('watch', self.st.world, H['watch'].format(
-            base=base, world=q(self.st.world), object=q(obj), of=q(f' of {obj}' if obj else ''), codes=codes, rows=rows,
+            base=base, world=q(self.st.world), object=q(obj), limit=limit, of=q(f' of {obj}' if obj else ''), codes=codes, rows=rows,
             pace=q('held still' if still else f'every {every} seconds'),
-            toggle=f'<a class="door" href="{q(here)}">FOLLOW</a>' if still else f'<a class="door" href="{q(here + ("&" if obj else "?") + "still=1")}">HOLD STILL</a>'),
+            toggle=f'<a class="door" href="{q(here)}">FOLLOW</a>' if still else f'<a class="door" href="{q(here + "&still=1")}">HOLD STILL</a>'),
             refresh=0 if still else every)
 
     def measure_page(self, query):
@@ -1017,7 +1068,7 @@ class Hand:
         if query.get('object'):
             d = root.dump(self.host, self.owner, query['object'])
             fields = {'state': (d['view'].get('state')), 'law': (d['record'].get('record') or {}).get('law')}
-            editor = H['card'].format(text=q(json.dumps(d, indent=1, sort_keys=True)[:6000])) + H['editor'].format(
+            editor = H['card'].format(text=q(json.dumps(d, indent=1, sort_keys=True))) + H['editor'].format(
                 base=base, object=q(query['object']), shown=q(json.dumps(fields)),
                 fields=''.join(f'<label>{k} <textarea name="{k}" rows="6">{q(json.dumps(v, indent=1))}</textarea></label>' for k, v in fields.items()))
         before = int(query['before']) if query.get('before', '').isdigit() else None
@@ -1028,11 +1079,33 @@ class Hand:
             links=self.links(r), raw=q(json.dumps(r['raw'], indent=1, sort_keys=True)), verb='unignore' if r['height'] in ignored else 'ignore')
             for r in self.rows(rows)) or '<li class="quiet">— nothing journaled —</li>'
         form = lambda face, verb, spec, why: H['form'].format(base=base, face=face, verb=verb, why=why, inputs=''.join(
-            f'<label>{n} <textarea name="{n}" rows="3"></textarea></label>' if k == 'json' else f'<label>{n} <input name="{n}"></label>' for n, k in spec))
+            f'<label>{n} <textarea name="{n}" rows="3"></textarea></label>' if k == 'json' or n == 'text' else f'<label>{n} <input name="{n}"></label>' for n, k in spec))
         mod = ''.join(form('mod', v, spec, 'reading') for v, (_, spec) in root.POWERS.items()) + form('mod', 'settings', root.MOD_SETTINGS, 'reading')
         return shell('root', self.st.world, H['root'].format(base=base, note=self.note(query), codes=codes, editor=editor, entries=entries,
+                                                             reads=H['root_reads'].format(controls=self.read_controls(query, root_only=True)),
                                                              before=q(min([r.get('height') or 0 for r in rows] or [0])), mod=mod,
                                                              acts=''.join(form('root', v, spec, 'reason') for v, spec in root.ROOT.items())))
+
+    def read_controls(self, query, root_only=False):
+        q, base = lambda t: e(str(t)), f'/hand/{self.st.world}'
+        return ''.join(H['read_form'].format(base=base, verb=verb, label=q(label), inputs=''.join(
+            f'<label>{name} <input name="{name}" value="{q(query.get(name, ""))}" placeholder="{default}"></label>' for name, default in fields))
+            for verb, (label, fields) in READ_FORMS.items() if verb.startswith('root/') == root_only)
+
+    def read_page(self, verb, query):
+        data = {'status': self.status, 'draft': lambda: self.view(query.get('draft', '')),
+                'log': lambda: self.tail(integer(query, 'tail', 20)), 'spend': lambda: self.spend(query.get('month') or None),
+                'modlog': lambda: root.modlog(self.host, self.owner, query.get('object') or None, integer(query, 'tail', 20)),
+                'find': lambda: root.find(self.host, self.owner, query.get('query', ''), self.observed().values()),
+                'root/dump': lambda: root.dump(self.host, self.owner, query.get('object', '')),
+                'root/entries': lambda: root.entries(self.st, integer(query, 'after'), integer(query, 'limit', 20), query.get('object') or None, query.get('principal') or None)}[verb]()
+        draft = ''
+        if verb == 'draft':
+            path, raw = self.draft(query.get('draft', ''))
+            d = dict(self.summary(path.stem, raw), **self.ready(path, raw))
+            draft = self.leave(d, byhand.mode(self.st), [])
+        return shell(verb, self.st.world, H['reads'].format(world=e(self.st.world), note=self.note(query), verb=e(verb),
+                     controls=self.read_controls(query, root_only=verb.startswith('root/')), result=e(text_of(data)), draft=draft))
 
 
 # ---- the command-line face
@@ -1081,10 +1154,7 @@ def cli_speak(h, a):
     if a.invitation is not None:
         return h.invite(a.invitation, a.topic, a.reply_to)
     if a.seed is not None:
-        if not 1 <= a.seed <= len(h.plan['seeds']):
-            raise HandError(f"the plan has {len(h.plan['seeds'])} seeds")
-        spell = h.plan['seeds'][a.seed - 1]
-        return h.cast(spell, a.topic, a.reply_to, h.seed_intent(spell))
+        return h.cast_seed(a.seed, a.topic, a.reply_to)
     spell = Path(a.spell_file).read_text() if a.spell_file else sys.stdin.read() if a.spell in (None, '-') else a.spell
     return h.cast(spell, a.topic, a.reply_to, a.intent, a.to)
 
