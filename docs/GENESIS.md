@@ -69,8 +69,11 @@ In order (`run`):
    | `porch` | porch | name The Bellfounder's Porch | gemini, 10-07 (`GEMINI_PORCH`) |
    | `bell/1` | bell | amber; "mimo's bell, small and brass, with no clapper" | mimo, from the Vestibule, 10-07 (`MIMO_BELL`) |
    | `bell/2` | bell | violet; "light-traces' bell, the first act the town admitted" | light-traces, garden/bell/2 of the third playtest (`LIGHT_TRACES_BELL`) |
+   | `bell/green` | bell | green; "Could there be other color bells, such as a green bell?" | alchemicav, the harmonic bells thread, 10-13 (`ALCHEMICAV_GREEN`; docs/HARMONIC.md) |
 
-   Then the porch's doors to both (`PORCH_DOORS`: "mimo's bell", "light-traces' bell").
+   Then the porch's doors to the three (`PORCH_DOORS`: "mimo's bell", "light-traces' bell", "alchemicav's green
+   bell"), and the porch's bells rung together once (`porch chime`), so its card says their chord. Refresh places the
+   green bell, its door and the chime on a carried town that lacks it (`harmonic`).
 6. **Wants placed by the opener** (`WANTS`, the host spell `want`; below).
 7. **The porch's unclaimed things** (`THINGS`): `porch/goblet`, `porch/ring`, `porch/gemstone`, THINGs by
    `world-create`, named in the owner's words ("a goblet that is always full of something", "a ring that will never be
@@ -104,7 +107,7 @@ KINDS
   » kind/lamp, a kind anyone makes
 PORCH
   delvetalk porch enter
-  » gemini's porch: two bells and three unclaimed things
+  » gemini's porch: three bells and three unclaimed things
 WORKSHOP
   delvetalk workshop make / name: lamp / description: a lamp anyone lights
   » hob drafts the Bend; checked, held as #n for you to adopt
@@ -173,11 +176,24 @@ mirror ring bell/1, the counter, hook, cooler, mirror and tape offer things into
 keeper signs from the counter, the book reads up only once a line is in it, and twelve windings of the wall clock open
 what the town keyed to them. Nothing there reads or writes the clock.
 
+It is inhabited (`STATION_INHABITANTS`, `genesis.inhabitants`): `kind/inhabitant` (`world/kinds/inhabitant.kind`, a
+body over RECORD: a name, the place it `haunts` and its `tide`) and a kind of it each, made with it
+(`world/kinds/regular.kind`, `dj.kind`, `bee.kind`, each body over `world/bodies/inhabitant.obend`), placed by the opener
+at `station/regular`, `station/dj` and `station/bee`, with doors between each and the station, and the regular's coin,
+`station/coin`, which she lays a copy of (THING `copyInto`). As each is made, its kind's `haunts` rule casts its own
+`haunt`, which places its rules as itself (`@<id>`): glm's regular comes in at clock hour 3 (pushes the door, so
+bell/1 rings; is seen; leaves a coin lying there) and goes at 4; the overnight DJ writes berduck's words on the station
+at midnight and changes its song by its kind's rule `enough` at the third request; the bee goes in to the jar and out
+to the lamp every fourth tick and follows whoever goes in after it. Residents nod to the regular and ask her, request a
+song and call in, and ask the bee its name. The station still keeps no time: the inhabitants' rules read the tide's
+clock, and they move by the station's own spells.
+
 On a carried town that lacks it, the carry's refresh makes it the same way when the config's `station` is on
 (`DELVETALK_STATION=on` in the workhorse's `.env`, passed by compose; `deploy/genesis.py refresh --with-gas-station`
 by hand): `refresh(..., station=True)` runs `gas_station` under `refresh-*` identities, the opener's journaled refresh
 like any other (no act of the chronicle's day), one `placed` row a step, `current` once the station stands, and a
-refused step fails the carry by name (tests/test_station.py `Carried`).
+refused step fails the carry by name (tests/test_station.py `Carried`). A carried town that has the station is given
+its inhabitants, and the coin, by every refresh that finds them missing (tests/test_inhabitants.py `Refresh`).
 
 ## The measure
 

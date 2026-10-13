@@ -4,14 +4,16 @@
 # tending once it has gone quiet. Tending (world/bodies/bell.obend quietAfter): a bell answers while
 # tended within 1440 clock minutes, and untended past it takes tend alone (tests/test_tending.py
 # compares the two). A rain is a line whose verb is rain (a hand's, the weather's); a grown verb's
-# gesture is no rain
+# gesture is no rain. Its colour is its tone (docs/HARMONIC.md, world/lib/Harmony.obend): a colour of the spectrum
+# rings the just degree of its band over red, a hue no wavelength makes a chord; its card says it, and a place
+# holding bells rings their chord together (`chime`).
 of: record
 form: <<END
-colour: amber | violet | silver
+colour: red | orange | yellow | green | cyan | blue | violet | amber | silver | magenta | purple | pink
 seed: text 1..80
 END
 voice: small and brass, tuned rather than struck; it waits for rain, and scatters light when it rings
-about: rings at its seventh rain; goes quiet untended a day
+about: its colour is its tone; rings at its seventh rain; goes quiet untended a day
 text: <<END
 law alive "answers while tended within 1440 minutes": request.method == "tend" or request.kind == rule or request.clock <= old.tended + 1440
 rule seven "rings at its seventh rain": count(new.lines where verb == "rain") >= 7 and count(old.lines where verb == "rain") <= 6 then delvetalk {request.object} ring

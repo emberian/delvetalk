@@ -87,7 +87,7 @@ def record_problems(value):
     doc = DOCS['online.fg-goose.gsb.getProjection']
     problems = validate(value, doc['defs']['projection'], doc)
     kind = value.get('kind')
-    if kind not in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):
+    if kind not in doc['defs']['projection']['properties']['kind']['enum']:
         return problems + ['$.kind: not a projection kind']
     subject = value.get('value')
     shape = 'carriedReceipt' if kind == 'receipt' and isinstance(subject, dict) and 'carried' in subject else kind

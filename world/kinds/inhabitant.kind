@@ -1,0 +1,16 @@
+# an inhabitant (world/bodies/inhabitant.obend, a body over RECORD): a thing that lives in a place and keeps
+# its own hours there. Its rules on the tide and on the places it haunts are its own, placed as itself
+# (`@<id>`) by the rule below when it is made or its maker arms it; they move it (presence, by the place's
+# own `enter` and `leave`), and it leaves lines where it goes. A kind of it (`of: kind/inhabitant`) gives
+# a character its voice, its verbs and what it does at which hour (its body's `haunting`).
+of: record
+form: <<END
+name: text 1..64
+haunts: text 1..128
+tide: text 1..128
+END
+head: {name}
+voice: one who lives here and keeps its own hours; what it does it has done before, and does again
+about: lives in a place by its own hours: its own rules on the tide move it, and it leaves lines where it goes
+text: rule haunts "places its own rules where it haunts, as itself, when it is made or armed": request.method == "made" or request.method == "arm" then delvetalk {request.object} haunt
+body: inhabitant

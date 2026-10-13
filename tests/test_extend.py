@@ -63,7 +63,7 @@ def graft(state: State, input: {target: String, package: String}, context: Abi.C
 def shining():
     from tests.bend import MODULES
     source = open(MODULES["Thing"]).read()
-    return source.replace('  Text.words("transfer copy copyFor drop ~act")', '  Text.words("transfer copy copyFor drop ~act shine")') + "def shine(state: State, context: Abi.Context) -> Activity<Bool>:\n  true\n"
+    return source.replace('  Text.words("transfer copy copyFor copyInto drop ~act")', '  Text.words("transfer copy copyFor copyInto drop ~act shine")') + "def shine(state: State, context: Abi.Context) -> Activity<Bool>:\n  true\n"
 
 
 class Copy(Chain):

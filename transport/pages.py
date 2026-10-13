@@ -184,6 +184,18 @@ def place(card, paint=None, wants=()):
                              wants=''.join(T['wants'].format(reading=e(w.get('reading') or w.get('name', ''))) for w in wants))
 
 
+HERTZ = re.compile(r'\b\d+\.\d\b')  # a tone's hertz, to a tenth (world/lib/Harmony.obend `hzText`); its ratios and proportions are whole
+
+
+def ring(view):
+    """What a bell or a place rings (its state's `tone`, docs/HARMONIC.md), said, with a button that sounds each hertz
+    it names; nothing for a thing that sounds nothing."""
+    tone = state_of(view).get('tone')
+    if not isinstance(tone, str) or not tone:
+        return ''
+    return T['ring'].format(words=e(tone), hz=e(' '.join(HERTZ.findall(tone))))
+
+
 def state_of(view):
     """A view's state as plain JSON, a dict or nothing."""
     s = plain((view or {}).get('state') or {})
@@ -300,7 +312,7 @@ def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), 
     one box and its suggestions (the reply's spells, then what the thing wants, then the card's own), then what is around it."""
     wanted = [(' '.join(w['asks'].split()[1:3]), w['asks']) for w in wants if w.get('asks')]
     return page(name, who, T['play'].format(heading=heading(name, view, did, town), name=e(name), path=e(path), reply=telling(told) + answer, said=e(said),
-                                            place=place(card, paint, wants) if card is not None else '',
+                                            place=(place(card, paint, wants) + ring(view)) if card is not None else '',
                                             suggestions=suggestions(path, [*offered, *wanted, *(speech(card)[1] if card else [])], f'delvetalk {name} ?'),
                                             around=around(name, view, ways, entries, town=town) if card is not None else ''))
 
@@ -313,7 +325,7 @@ def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), 
     wants), a way to speak to it (or in), what is around it, then its law, source and journal on demand. `brief` (the text
     view's default, the href of the whole page): the place, the doors and the newest BRIEF entries; the law and the source
     are a link away."""
-    shown = telling(told) + (place(card, paint, wants) if card else T['state'].format(state=dl(view.get('state'))))
+    shown = telling(told) + (place(card, paint, wants) + ring(view) if card else T['state'].format(state=dl(view.get('state'))))
     play = T['playlink'].format(href=e(quote(name, safe='/:'))) if who else T['comein'] if card else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
     source = T['source'].format(law=e(seen.get('law') or ''), pin=e(str(seen.get('pinSlug') or '')), source=e(seen.get('source') or ''),

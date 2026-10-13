@@ -16,6 +16,7 @@ under the first CID proven, and the record must stay until its answer is written
 The poller reads; it never writes to any PDS. Python carries and checks bytes: whether the act is admitted is the host's.
 """
 import json
+import re
 import time
 
 from transport.atproto.cbor import decode, encode, read_car
@@ -33,6 +34,16 @@ PAGES = 10  # a repository's request collection read per poll, 100 records a pag
 PARTICIPANT_CAP = 256  # non-delve-PDS participants read per poll; overflow is a problem, with its DID
 DOCUMENT_TTL = 600  # seconds; the current DID document is refreshed again on proof verification failure
 PROOF_FAILURES = {'bad_signature', 'not_in_commit', 'bad_proof', 'no_atproto_key', 'did_document_mismatch'}
+REQUEST_URI = re.compile(r'at://([^/]+)/([^/]+)/([A-Za-z0-9._~:-]{1,512})\Z')
+
+
+def request_uri(listed_uri, did):
+    """A listing must name this repository's request path; return its canonical URI and record key."""
+    parsed = REQUEST_URI.fullmatch(listed_uri) if isinstance(listed_uri, str) else None
+    if not parsed or parsed[1] != did or parsed[2] != COLLECTION or parsed[3] in ('.', '..'):
+        raise Failure('bad_request_uri', did)
+    rkey = parsed[3]
+    return f'at://{did}/{COLLECTION}/{rkey}', rkey
 
 
 def atproto_key(doc, did):
@@ -101,7 +112,7 @@ class Poller:
         self.st, self.client, self.clock = st, client, clock
         self.documents = {}
         self.local, self.local_dids = Accounts(st), set()
-        self.service, _ = world_did(st.config.origin)
+        self.service, _ = world_did(st.config.origin, st.world)
         self.world = st.world
 
     def source(self, did):
@@ -196,7 +207,11 @@ class Poller:
         for _ in range(MAX_REQUESTS if did in self.local_dids else PAGES):
             page = self.source(did).read(pds, 'com.atproto.repo.listRecords', repo=did, collection=COLLECTION, limit=100, cursor=cursor)
             for listed in page.get('records') or []:
-                uri, rkey = listed.get('uri', ''), str(listed.get('uri', '')).rsplit('/', 1)[-1]
+                try:
+                    uri, rkey = request_uri(listed.get('uri'), did)
+                except Failure as error:
+                    refused['listing:' + did] = {'why': str(error)[:256]}
+                    continue
                 if observer.seen(uri) or (refused.get(uri) or {}).get('cid') == listed.get('cid'):
                     continue
                 try:

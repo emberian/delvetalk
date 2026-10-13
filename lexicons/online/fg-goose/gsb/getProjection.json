@@ -1,11 +1,11 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.getProjection",
-  "description": "A per-reader projection of a journal entry, object, source, publication, grant or law.",
+  "description": "Per-reader host projections and public live card, page, index and answer values outside the world repository.",
   "defs": {
     "main": {
       "type": "query",
-      "description": "Read under the principal authenticated by the front, or PUBLIC when anonymous. cid filters of, never the bytes of value.",
+      "description": "Host kinds read under the authenticated principal, or PUBLIC anonymously. Live card/page/index/answer always use the public mirror renderer. cid filters of; live kinds have no of or signed membership.",
       "parameters": {
         "type": "params",
         "required": [
@@ -21,7 +21,11 @@
               "source",
               "publication",
               "grant",
-              "law"
+              "law",
+              "card",
+              "page",
+              "index",
+              "answer"
             ]
           },
           "key": {
@@ -489,17 +493,21 @@
             "source",
             "publication",
             "grant",
-            "law"
+            "law",
+            "card",
+            "page",
+            "index",
+            "answer"
           ]
         },
         "key": {
           "type": "string",
-          "description": "receipt: slug or entry CID; object: <id with / as ~>.<version>; source: module CID; publication/grant: id; law: <id with / as ~>.<clause>."
+          "description": "receipt: slug or entry CID; object: <id with / as ~>.<version>; source: module CID; publication/grant: id; law: <id with / as ~>.<clause>. card: object id with / as ~; page: page name; index: self; answer: answer key."
         },
         "of": {
           "type": "string",
           "format": "cid",
-          "description": "The CID of the thing projected, not of value: receipt: entry hash or carried receipt cid; publication/grant: entry hash; object: stateCid; source: module CID; absent for law."
+          "description": "The CID of the thing projected, not of value: receipt: entry hash or carried receipt cid; publication/grant: entry hash; object: stateCid; source: module CID; absent for law. Absent for live card/page/index/answer values."
         },
         "signed": {
           "type": "string",
@@ -508,10 +516,26 @@
         },
         "value": {
           "type": "unknown",
-          "description": "The host reply for this kind, verbatim, without $type: #receipt, #object, #source, #publication, #grant or #law selects its shape; a receipt value with carried uses #carriedReceipt."
+          "description": "Host kinds use their untagged reply definitions (a receipt value with carried uses #carriedReceipt); card/page/index/answer use the tagged posting-record schemas and the public mirror renderer."
         }
       },
-      "description": "kind is the discriminator selecting the shape of the host reply in value."
+      "description": "kind selects the value schema. Public live values carry no repository URI or signed membership."
+    },
+    "card": {
+      "type": "ref",
+      "ref": "online.fg-goose.gsb.card"
+    },
+    "page": {
+      "type": "ref",
+      "ref": "online.fg-goose.gsb.page"
+    },
+    "index": {
+      "type": "ref",
+      "ref": "online.fg-goose.gsb.index"
+    },
+    "answer": {
+      "type": "ref",
+      "ref": "online.fg-goose.gsb.answer"
     }
   }
 }

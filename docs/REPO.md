@@ -51,7 +51,9 @@ DAG-CBOR bytes. Repository write bodies allow 397,312 JSON bytes for worst-case 
 agent/procedure body limits remain 256 KiB. The catalogue exposes both limits. listRecords bounds
 pages at 4 MiB of JSON, returning a cursor when the byte budget shortens a page. This includes adversarial control-character escaping. CAR exports are bounded at 17 MiB.
 
-`State.hosted` is `<state>/worlds/<world>/hosted/`, directory mode 0700. Stems are `<guest name>` and
+Hosted accounts are origin-wide: every world's front uses the same town key and snapshot store, so
+Host- and parameter-selected account reads return identical documents and repository bytes.
+`State.hosted` is `<state>/hosted/<URL-encoded origin>/`, directory mode 0700. Stems are `<guest name>` and
 `<id>.<realm>.zulip`. The k256 key derives from the town private scalar and account DID using HKDF-SHA256
 (ATPROTO §4); no account key or lock file is written. A public `.json` snapshot holds
 `{principal, counter, prev, records, key}` and optional `epochs: [{counter, cause, key}]`;
@@ -64,6 +66,10 @@ prev are kept beside the records, so restart yields byte-identical head CARs wit
 no historical export or hosted firehose; consumers reconcile the bounded full current tree.
 
 State backups keep hosted snapshots; the same town key reproduces account keys and signed heads on restore.
+The first access atomically moves an existing `<state>/worlds/town/hosted/` directory into the origin store,
+preserving snapshot bytes. If both stores exist, access refuses with 503 `RepoNotServed` and names the paths
+for operator reconciliation. A non-town front with nonempty legacy `<state>/worlds/<world>/hosted/` likewise
+refuses startup and hosted access: those snapshots are preserved, never merged or re-signed under the town DID.
 Startup and account access reconcile changed keys under the directory lock: a higher counter, `prev` null,
 the new `key`, and a `rotation` epoch, with the same records and rkeys. Legacy snapshots instead record
 `migration`, unless their legacy key already equals the derived key (only `key` is added); legacy key/lock
@@ -142,11 +148,18 @@ must keep it. Deleting the ledger is the one way to regress revs: the next start
 journal and key, and followers must re-sync.
 
 **Cache.** Per height: rev, entry hash, record block, commit block (absent before the current signing epoch),
-MST root before and after, and the inversion-complete event CAR captured when the height is appended;
+MST root before and after;
 the served head, which can be a rotation's sync commit; the current tree's nodes, each with the height that
 made it (what `since` filters on). Every signed read first pages
-`world-entries` (as `anonymous`, `after` the last height, 100 a page) and appends what is new. Cold start signs and captures event CARs for the current signing epoch; warm catch-ups process only new
-heights. The firehose polls the same cache once a second.
+`world-entries` (as `anonymous`, `after` the last height, 100 a page) and appends what is new.
+The firehose polls the same cache once a second. Only an active producer captures inversion-complete
+CARs for new heights, in a pending queue capped at 32 MiB. Each append reserves the 2,000,000-byte event
+maximum before changing the signed chain; insufficient room refuses signed catch-up with HTTP 503 and
+`reply.class: capacity`. Production drains accepted heights and resumes catch-up on the next poll.
+A durable commit or head sync releases the covered pending bytes. Cold reconstruction and signed reads
+with the firehose disabled retain no event CARs; `EventLog` alone keeps replay bytes.
+Normal shutdown disables capture and drains pending events. Failed durable writes keep their bounded
+pending bytes until a subsequent producer logs them or reconciles the head with a durable sync.
 
 **The key.** One per world: k256 or p256, PKCS#8 PEM, `/etc/delvetalk/repo/<world>.key`, mode 0400, owner 10425, in
 a 0700 directory owned by 10425. `python3 -m transport repokey` makes it at first start (DEPLOY "First start"), refuses an
@@ -156,7 +169,7 @@ state backup tarballs exclude this directory. The DID document names the key as 
 Rotation or key loss: replace the key out of band and restart the front (DEPLOY); the first signed read records
 a rotation epoch and signs one higher-rev sync commit over the same tree. Entry records keep their keys and CIDs,
 and old-rev deltas still work within this journal. Loss of the ledger requires a full re-sync. Without a key the signed routes answer
-`RepoNotServed`; projection queries and the four mirrored record collections remain available.
+`RepoNotServed`; host and live public projection queries remain available.
 Hosted keys always derive as k256 from this key's private scalar and each DID, independently of its PEM
 encoding or curve. Losing the town key loses every hosted key too; replacing it rotates all hosted documents
 and signs higher-rev sync heads with `prev` null, keeping records unchanged. Hosted epochs live in their
@@ -189,7 +202,7 @@ data, prev, sig, bytes}`, the host's own commit for that height under the key th
 | `com.atproto.sync.listBlobs?did` | `{cids: []}`: the journal holds no blobs |
 | `com.atproto.repo.getRecord?…&collection=online.fg-goose.gsb.entry&rkey=<rev>` | `{uri, cid, value}`, the signed record itself, `entry` as `{$link}` |
 | `com.atproto.repo.listRecords?…&collection=online.fg-goose.gsb.entry` | those records by height (`reverse`; the cursor is the last rev listed) |
-| `com.atproto.repo.describeRepo` | `collections` lists `card`, `page`, `index`, `answer`, plus `online.fg-goose.gsb.entry` when signed |
+| `com.atproto.repo.describeRepo` | `collections` lists only `online.fg-goose.gsb.entry` when signed; empty when unsigned |
 | `com.atproto.sync.subscribeRepos?cursor?` | binary WebSocket event stream on `firehose_port`; the HTTP front answers 426 `UpgradeRequired` with `Upgrade: websocket`, or 501 when the port is off |
 
 **Live subscription.** `transport/firehose.py` runs one thread in the front process. Its `selectors` loop
@@ -197,6 +210,8 @@ owns its own TCP listener and every subscriber socket, polls `Signed.catch_up(ho
 new journal heights independently of the front's 48 HTTP workers. `firehose_bind` defaults to `127.0.0.1`,
 `firehose_port` to `0` (off); a signing key is required. RFC 6455 handshake, binary messages, validated masked
 client controls, ping/pong and close use the standard library. Application frames from clients are closed.
+Closing clears inbound bytes, disables read interest, and drops the socket after five seconds if output
+has not drained. Invalid HTTP upgrades use the same close deadline.
 The edge Caddy route (before the general HTTP proxy), with the deployment's port 8767:
 
     reverse_proxy /xrpc/com.atproto.sync.subscribeRepos 10.10.1.10:8767
@@ -252,20 +267,15 @@ high-S and DER refused).
 
 ## Records and projections
 
-`com.atproto.repo.getRecord` and `listRecords` serve only public records. Their `cid` is always
-`str(block(from_json(value))[0])`, including `$type` and DAG-CBOR links. The signed `entry` record is in the
-MST. `card`, `page`, `index` and `answer` are read by `transport/mirror.py`, exactly the values the mirror
-writes to the posting account. These four are read as PUBLIC even with a credential; they have no signed
-paths yet, so `sync.getRecord` accepts only `entry/<rev>`. `describeRepo.collections` lists the four and, on a
-signing box, `entry`. No projection kind is accepted as a repository collection.
+The world's `com.atproto.repo.getRecord`, `listRecords` and `sync.getRecord` accept only `entry`, the signed
+MST's collection. `describeRepo.collections` lists `entry` on a signing box and is empty on an unsigned box.
+Record CIDs hash their complete values, including `$type` and DAG-CBOR links. Live `card`, `page`, `index`
+and `answer` values are projections outside this repository. They use `transport/mirror.py`'s public renderer,
+exactly the values it can write to the posting account; only that account's actual records have posting at-uris.
 
-| Public record | Key | Source; listing order |
+| World repository record | Key | Source; listing order |
 | --- | --- | --- |
 | `online.fg-goose.gsb.entry` | rev | signed height/hash link; journal height, cursor the last rev |
-| `online.fg-goose.gsb.card` | object id, `/` as `~` | `mirror.card_record` (`place`); object id |
-| `online.fg-goose.gsb.page` | page name | `mirror.library_pages`; shelf order |
-| `online.fg-goose.gsb.index` | `self` | `mirror.index_record`; one record |
-| `online.fg-goose.gsb.answer` | `<did>.<request rkey>` | bridge answer files (`bridge.answer_turn`); key order |
 
 `repo.getRecord?repo&collection&rkey&cid?` returns `{uri, cid, value}`; a differing `cid` is `RecordNotFound`.
 `repo.listRecords?repo&collection&limit&cursor&reverse` returns `{records: [...], cursor?}`. Limits are 1..100,
@@ -273,9 +283,10 @@ default 50. `identity.resolveHandle?handle=<host>` returns `{did}`; another hand
 
 **Projection queries.** `online.fg-goose.gsb.getProjection?kind&key&cid?` returns `{kind, key, of?, value, signed?}`.
 `online.fg-goose.gsb.listProjections?kind&limit&cursor&reverse` returns `{projections: [the same shape], cursor?}`;
-limit is 1..100, default 50. `value` is the host's reply for this reader, verbatim, without `$type`.
+limit is 1..100, default 50. Host kinds return this reader's reply verbatim, without `$type`; live public
+kinds return the mirror's tagged posting-record values even when the query carries a credential.
 `of` is the CID of the thing projected, not of `value`. The optional `cid` filter compares `of`; a mismatch
-is `RecordNotFound` (a law has no `of`, so any filter mismatches).
+is `RecordNotFound` (law and live public kinds have no `of`, so any filter mismatches).
 
 | Kind | Key | `of` | Host read; listing cursor |
 | --- | --- | --- | --- |
@@ -285,8 +296,12 @@ is `RecordNotFound` (a law has no `of`, so any filter mismatches).
 | `publication` | publication id | retaining entry's hash | look up in `world-publications`; opaque host cursor |
 | `grant` | grant id | installing entry's hash | look up in `world-grants`; opaque host cursor |
 | `law` | `<id, / as ~>.<clause>` | absent | clause in `world-object.laws`; object-id cursor or `<id>#<n>` within its clauses |
+| `card` | object id, `/` as `~` | absent | public `mirror.card_record`; object-id cursor |
+| `page` | page name | absent | public `mirror.library_pages`; shelf-order key cursor |
+| `index` | `self` | absent | public `mirror.index_record`; one value |
+| `answer` | `<did>.<rkey>` or `xrpc.<iss>.<intent hash>` | absent | bridge answer files; key-order cursor |
 
-Host-paged kinds support `reverse`; objects and laws reject it because `world-objects` lists ids in ascending
+Host-paged and live public kinds support `reverse`; objects and laws reject it because `world-objects` lists ids in ascending
 byte order. A receipt's `signed`, on a signing box when its entry is in the current tree, is
 `at://<did>/online.fg-goose.gsb.entry/<rev>`: the record whose `entry` link names `of`. A receipt retained
 from before a carry can still resolve without a record in the current tree. Its `value` is the host's
@@ -320,7 +335,8 @@ gets its canonical block beside the proof, hashing to the record's `entry` link.
 
 Object versions and sources are projections: `getProjection?kind=object&key=garden~bell~1.0` and
 `getProjection?kind=source&key=<module CID>`. Their `of` names the state or module, not a repository record
-of the returned JSON. Public card/page/index/answer at-uris name actual records with value-derived CIDs.
+of the returned JSON. Live card/page/index/answer queries return no at-uri or signed membership. StrongRefs to
+those values must name an actual posting-account record until they join the world's signed MST.
 
 ## Not served
 

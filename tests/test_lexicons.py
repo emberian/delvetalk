@@ -90,6 +90,11 @@ class Lexicons(unittest.TestCase):
         self.assertEqual(record_problems(good), [])
         self.assertEqual(record_problems({**good, 'value': {'hash': 'bafy'}}), ['$.value.height: required'])
         self.assertEqual(record_problems({**good, 'value': {'height': '1', 'hash': 'bafy'}}), ['$.value.height: not a integer'])
+        for kind in ('card', 'page', 'index', 'answer'):
+            for query in (doc, listing):
+                self.assertIn(kind, query['defs']['main']['parameters']['properties']['kind']['enum'])
+            self.assertTrue(any(p.startswith('$.value.') and p.endswith(': required') for p in
+                record_problems({'kind': kind, 'key': 'self', 'value': {}})))
 
     def test_a_carried_receipt_projection_matches_its_own_definition_at_maximum_height(self):
         from transport.lexicons import COLLECTION, records

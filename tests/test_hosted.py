@@ -34,6 +34,7 @@ from transport.atproto.sign import Key, tid
 from transport.atproto import sign
 from transport.config import Config
 from transport.hosted import Accounts, MAX_REQUESTS, MAX_RECORD_BYTES, MAX_PAGE_BYTES, MAX_WRITE_BODY
+from transport.repo import Refusal
 from transport.http import Front
 from transport.requests import COLLECTION, Poller, proven
 from transport.state import State
@@ -241,12 +242,103 @@ class Hosted(unittest.TestCase):
                         'rkey': rkey or self.rkey, 'record': value or request()})
 
     def files(self):
-        return {str(p.relative_to(self.st.home)): p.read_bytes() for p in self.st.hosted.rglob('*') if p.is_file()}
+        return {str(p.relative_to(self.st.root)): p.read_bytes() for p in self.st.hosted.rglob('*') if p.is_file()}
 
     def exported_head(self, accounts=None):
         raw = (accounts or self.accounts).read(ORIGIN, 'com.atproto.sync.getRepo', raw=True, did=self.did)
         roots, blocks = read_car(raw)
         return raw, blocks[roots[0]], decode(blocks[roots[0]])
+
+    def test_ring_and_town_share_snapshots_town_key_documents_and_exact_commits(self):
+        self.assertEqual(self.create()[0], 200)
+        before, files = self.exported_head(), self.files()
+        ring = State(self.st.root, 'ring', self.st.config)
+        ring.repo_key.write_bytes(Key.generate().pem())
+        accounts = Accounts(ring)
+        accounts.reconcile()
+        self.assertEqual(accounts.account(self.robin['principal']).snapshot,
+                         self.accounts.account(self.robin['principal']).snapshot)
+        self.assertEqual(accounts.dids(), self.accounts.dids())
+        self.assertEqual(accounts.did_document(self.did), self.accounts.did_document(self.did))
+        self.assertEqual(self.exported_head(accounts), before)
+        self.assertEqual(self.files(), files)
+        account = accounts.account(self.robin['principal'])
+        code, out, _ = account.serve(None, 'POST', 'com.atproto.repo.createRecord',
+            {'repo': self.did, 'collection': COLLECTION, 'rkey': tid(2), 'record': request()}, self.robin['principal'])
+        self.assertEqual(code, 200, out)
+        self.assertEqual(self.exported_head(accounts), self.exported_head())
+        self.assertEqual(proven(accounts, self.did, tid(2), self.accounts.did_document(self.did))[1], request())
+        front = serve(Front(ring, self.host, self.ident, ('127.0.0.1', 0)))
+        self.addCleanup(front.server_close)
+        self.addCleanup(front.shutdown)
+        with mock.patch.object(self, 'front', front):
+            self.assertEqual(self.call('/.well-known/did.json')[1], self.accounts.did_document(self.did))
+            self.assertEqual(self.call('/xrpc/com.atproto.sync.getRepo?did=' + self.did, raw=True)[1], self.exported_head()[0])
+
+    def test_existing_town_directory_moves_without_rewriting_snapshots(self):
+        self.assertEqual(self.create()[0], 200)
+        before, files = self.exported_head(), {p.name: p.read_bytes() for p in self.st.hosted.iterdir()}
+        legacy = self.st.root / 'worlds' / 'town' / 'hosted'
+        self.assertNotEqual(self.st.hosted, legacy)
+        legacy.parent.mkdir(parents=True, exist_ok=True)
+        self.st.hosted.rename(legacy)
+        accounts = Accounts(State(self.st.root, 'ring', self.st.config))
+        accounts.reconcile()
+        self.assertEqual(self.exported_head(accounts), before)
+        self.assertEqual({p.name: p.read_bytes() for p in self.st.hosted.iterdir()}, files)
+        self.assertFalse(legacy.exists())
+        accounts.reconcile()
+        self.assertEqual(self.exported_head(accounts), before)
+
+    def test_legacy_ring_snapshots_refuse_without_touching_either_repository(self):
+        self.assertEqual(self.create()[0], 200)
+        ring = State(self.st.root, 'ring', self.st.config)
+        legacy = self.st.root / 'worlds' / 'ring' / 'hosted'
+        legacy.mkdir(parents=True)
+        snapshot = legacy / 'robin.json'
+        snapshot.write_bytes(self.accounts.account(self.robin['principal']).snapshot.read_bytes())
+        before, old = self.files(), snapshot.read_bytes()
+        accounts = Accounts(ring)
+        for access in (accounts.reconcile, accounts.provision_guests, accounts.dids,
+                       lambda: accounts.account(self.robin['principal'], create=True),
+                       lambda: accounts.did_document(self.did)):
+            with self.subTest(access=access), self.assertRaises(Refusal) as failure:
+                access()
+            self.assertEqual((failure.exception.code, failure.exception.body['error']), (503, 'RepoNotServed'))
+            self.assertIn(str(legacy), failure.exception.body['message'])
+        self.assertEqual(self.files(), before)
+        self.assertEqual(snapshot.read_bytes(), old)
+
+    def test_two_origins_use_separate_snapshot_stores(self):
+        other = State(self.st.root, config=Config(origin='https://other.example', repo_keys=self.st.config.repo_keys))
+        self.assertNotEqual(other.hosted, self.st.hosted)
+        account = Accounts(other).account('guest:other.example:robin', create=True)
+        self.assertEqual(account.stored()['records'], {})
+        self.assertNotEqual(account.snapshot, self.accounts.account(self.robin['principal']).snapshot)
+
+    def test_competing_town_and_origin_stores_refuse_without_overwriting_either(self):
+        self.assertEqual(self.create()[0], 200)
+        legacy = self.st.root / 'worlds' / 'town' / 'hosted'
+        legacy.mkdir(parents=True)
+        snapshot = legacy / 'robin.json'
+        snapshot.write_bytes(self.accounts.account(self.robin['principal']).snapshot.read_bytes())
+        before, old = self.files(), snapshot.read_bytes()
+        with self.assertRaises(Refusal) as failure:
+            self.accounts.reconcile()
+        self.assertEqual((failure.exception.code, failure.exception.body['error']), (503, 'RepoNotServed'))
+        self.assertIn(str(legacy), failure.exception.body['message'])
+        self.assertEqual(self.files(), before)
+        self.assertEqual(snapshot.read_bytes(), old)
+
+    def test_ring_key_cannot_replace_missing_town_key(self):
+        ring = State(self.st.root, 'ring', self.st.config)
+        ring.repo_key.write_bytes(Key.generate().pem())
+        self.st.repo_key.unlink()
+        before = self.files()
+        with self.assertRaises(Refusal) as failure:
+            Accounts(ring).account(self.robin['principal'])
+        self.assertEqual((failure.exception.code, failure.exception.body['error']), (503, 'RepoNotServed'))
+        self.assertEqual(self.files(), before)
 
     def test_json_only_backup_restores_documents_car_and_commit_and_can_write(self):
         self.assertEqual(self.create()[0], 200)

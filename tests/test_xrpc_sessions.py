@@ -22,7 +22,7 @@ from transport import mirror
 from transport.atproto.cbor import block, from_json
 from transport.atproto.sign import Key
 from transport.host import HostClient
-from transport.repo import NS, Repo
+from transport.repo import NS, Repo, Refusal
 
 
 class SessionClient:
@@ -347,6 +347,19 @@ class XrpcSessions(SessionCase):
             self.host.calls.clear()
             self.assertEqual(self.request(proc, {'name': 'lab'}, method=method)[0], 405)
             self.assertEqual(self.host.calls, [])
+
+    def test_session_limit_refusals_match_repository_limits(self):
+        session = self.open()
+        for limit in ('0', '101', '-1', '²', '', '9' * 5000):
+            with self.subTest(limit=limit):
+                with self.assertRaises(Refusal) as failure:
+                    self.front.repo.paging({'limit': limit})
+                code, body, _ = self.request('listSessionRecords', session=session, collection=NS + 'card', limit=limit)
+                self.assertEqual((code, body['error'], body['message']),
+                    (failure.exception.code, failure.exception.body['error'], failure.exception.body['message']))
+        for limit in ('100', '000100', '0' * 5000 + '1'):
+            code, body, _ = self.request('listSessionRecords', session=session, collection=NS + 'card', limit=limit)
+            self.assertEqual(code, 200, body)
 
     def test_access_file_contains_method_path_status_did_and_no_session_response(self):
         session = self.open()
