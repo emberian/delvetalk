@@ -34,13 +34,44 @@ READS = {k: v for k, v in Repo.METHODS.items() if v in (
 
 
 class Accounts:
-    """One world's hosted accounts; provision only from an authenticated principal."""
+    """One origin's hosted accounts, signed by its town key."""
     def __init__(self, st):
-        self.st = st
+        self.front = st
+        self.st = st if st.world == 'town' else State(st.root, 'town', st.config)
         self.host = urllib.parse.urlsplit(st.config.origin).hostname
+
+    def storage(self):
+        """Adopt the town directory atomically; refuse competing per-world repositories."""
+        parent = self.st.hosted.parent
+        parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        fd = os.open(parent, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            legacy = self.front.legacy_hosted
+            if self.front.world != 'town' and legacy.exists() and any(legacy.iterdir()):
+                raise Refusal(503, 'RepoNotServed', f'per-world hosted snapshots at {legacy} require operator reconciliation')
+            town = self.st.legacy_hosted
+            if town.exists() and any(town.iterdir()):
+                if self.st.hosted.exists():
+                    raise Refusal(503, 'RepoNotServed', f'competing hosted stores at {town} and {self.st.hosted} require operator reconciliation')
+                for path in town.glob('*.json'):
+                    try:
+                        hosted_identity(json.loads(path.read_text())['principal'], self.host)
+                    except ValueError:
+                        raise Refusal(503, 'RepoNotServed', f'hosted snapshot at {path} belongs to another origin') from None
+                town.rename(self.st.hosted)
+                os.fsync(fd)
+                source = os.open(town.parent, os.O_RDONLY)
+                try:
+                    os.fsync(source)
+                finally:
+                    os.close(source)
+        finally:
+            os.close(fd)
 
     def provision_guests(self):
         """Accepted guests already in identity.sqlite have the same hosted address as new arrivals."""
+        self.storage()
         if not self.st.repo_key.exists():
             return
         for principal in sorted(verified_principals(self.st)):
@@ -49,12 +80,14 @@ class Accounts:
 
     def reconcile(self):
         """Reconcile every existing hosted snapshot with the current town key, including legacy custody."""
+        self.storage()
         if not self.st.repo_key.exists():
             return
         for path in sorted(self.st.hosted.glob('*.json')):
             self.account(json.loads(path.read_text())['principal'])
 
     def account(self, principal, create=False):
+        self.storage()
         did = hosted_identity(principal, self.host)
         # The mapping also validates the file stem; no principal supplies a path.
         name = did[8:-(len(self.host) + 1)]
@@ -78,7 +111,8 @@ class Accounts:
         return self.by_did('did:web:' + host)
 
     def dids(self):
-        """The fourth poller source: public snapshots in this world's state directory."""
+        """The fourth poller source: this origin's public snapshots."""
+        self.storage()
         out = set()
         for path in sorted(self.st.hosted.glob('*.json')):
             value = json.loads(path.read_text())
