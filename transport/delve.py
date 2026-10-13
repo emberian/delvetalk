@@ -299,13 +299,13 @@ class Client:
                 raise Failure('param_invalid', k)
         return self._send('GET', f'{base.rstrip("/")}/xrpc/{nsid}?{urllib.parse.urlencode(params)}', raw=raw, transport=transport)
 
-    def did_document(self, did):
+    def did_document(self, did, *, plc=PLC):
         """A DID's document via pinned public HTTPS: did:plc from plc.directory, hostname-level did:web from its host.
         Any other DID is refused. An injected Client transport supplies both documents and XRPC in offline tests."""
         if not isinstance(did, str) or not DID.fullmatch(did):
             raise Failure('did_refused', str(did)[:100])
         if did.startswith('did:plc:'):
-            return self._send('GET', f'{PLC}/{did}', transport=self.document_transport)
+            return self._send('GET', f'{plc.rstrip("/")}/{did}', transport=self.document_transport)
         host = did[len('did:web:'):]
         return self._send('GET', f'https://{host}/.well-known/did.json', transport=self.document_transport)
 

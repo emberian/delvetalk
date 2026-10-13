@@ -1,7 +1,7 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.index",
-  "description": "The journal-derived manifest (transport/mirror.py): the height its records were read at and each card's version; identical bytes in both repositories at the same projection, never a did, rev, commit or head. Written after every record it lists has landed and before the posting-only checkpoint.",
+  "description": "The public journal-derived mirror manifest: live projection and posting-account record, absent from the world signed MST. Never names a DID, rev, commit or head; written after its posting records and before the posting-only checkpoint.",
   "defs": {
     "main": {
       "type": "record",

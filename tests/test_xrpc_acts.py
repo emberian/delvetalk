@@ -141,7 +141,10 @@ class XrpcActs(ProcedureCase):
         self.assertNotIn('secret', json.dumps(public))
         self.assertNotIn('offers', public)
         self.assertNotIn('trace', public)
-        self.assertEqual(self.front.repo.mirrored(self.host, 'answer', key, 'anonymous'), public)
+        code, projected, _ = self.front.repo.serve(self.host, 'GET', NS + 'getProjection',
+                                                  {'kind': 'answer', 'key': key}, 'anonymous')
+        self.assertEqual(code, 200, projected)
+        self.assertEqual(projected['value'], public)
 
     def test_invalid_tokens_never_call_host_or_write_entries(self):
         cases = [self.token({'lxm': NS + 'act', 'aud': 'did:web:wrong.example'}),

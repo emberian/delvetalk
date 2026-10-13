@@ -584,18 +584,18 @@ class ProjectionBoundary(unittest.TestCase):
         code, body, _ = (endpoint or self.repo).serve(self.world, 'GET', method, q, who)
         return code, body
 
-    def test_six_projection_collections_are_invalid_on_all_repository_record_methods(self):
+    def test_projection_collections_are_invalid_on_all_repository_record_methods(self):
         for repo in (self.repo, Repo(ORIGIN)):
-            for kind in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):
+            for kind in ('receipt', 'object', 'source', 'publication', 'grant', 'law', 'card', 'page', 'index', 'answer'):
                 for method in ('com.atproto.repo.getRecord', 'com.atproto.repo.listRecords', 'com.atproto.sync.getRecord'):
                     with self.subTest(kind=kind, method=method, signed=bool(repo.signed)):
                         code, body = self.call(method, endpoint=repo, **{'repo': REPO, 'did': REPO, 'collection': NS + kind, 'rkey': 'bell~1.0'})
                         self.assertEqual((code, body['error']), (400, 'InvalidRequest'), body)
                         self.assertTrue(body['message'].startswith('collection must be one of '), body)
             code, body = self.call('com.atproto.repo.describeRepo', endpoint=repo, **{'repo': REPO})
-            self.assertEqual(body['collections'], [NS + c for c in ('card', 'page', 'index', 'answer')] + ([NS + 'entry'] if repo.signed else []))
+            self.assertEqual(body['collections'], [NS + 'entry'] if repo.signed else [])
 
-    def test_every_served_collection_hashes_the_listed_and_fetched_value(self):
+    def test_live_mirror_values_are_only_projections_using_the_mirrors_renderer(self):
         from unittest.mock import patch
         from transport import mirror
         from transport.lexicon import record_problems
@@ -606,13 +606,14 @@ class ProjectionBoundary(unittest.TestCase):
                   'outcome': {'status': 'admitted', 'line': 'admitted'}, 'height': 1,
                   'receipt': {'slug': 'babab-babab', 'height': 1, 'entry': {'$link': self.world.entries[0]['hash']}}}
         self.assertEqual(record_problems(answer), [], answer)
-        def card(host, oid, reader='anonymous', **kw):
+        def card(host, oid, reader=mirror.PUBLIC, sleep=mirror.time.sleep, paint=True):
             self.assertEqual(reader, 'anonymous')
             return {'$type': NS + 'card', 'object': oid, 'version': 0, 'card': 'rain', 'wants': [], 'doors': []}
         with patch.object(mirror, 'card_record', card), patch.object(mirror, 'library_pages', return_value=pages), \
              patch.object(mirror, 'height', return_value=3), patch.object(mirror, 'answer_records', return_value={'did:plc:x.r': answer}):
             code, described = self.call('com.atproto.repo.describeRepo', **{'repo': REPO})
             self.assertEqual(code, 200)
+            self.assertEqual(described['collections'], [NS + 'entry'])
             for collection in described['collections']:
                 code, page = self.call('com.atproto.repo.listRecords', **{'repo': REPO, 'collection': collection, 'limit': '100'})
                 self.assertEqual(code, 200, page)
@@ -627,7 +628,49 @@ class ProjectionBoundary(unittest.TestCase):
                         self.assertEqual(got['cid'], str(block(from_json(got['value']))[0]))
                     code, wrong = self.call('com.atproto.repo.getRecord', **{'repo': REPO, 'collection': collection, 'rkey': key, 'cid': 'wrong'})
                     self.assertEqual((code, wrong['error']), (400, 'RecordNotFound'))
-            self.assertEqual(set(described['collections']), {NS + c for c in ('entry', 'card', 'page', 'index', 'answer')})
+            rendered = mirror.records(self.world, answers=self.repo.answers)
+            for kind in ('card', 'page', 'index', 'answer'):
+                expected = [(key, value) for (collection, key), value in rendered.items() if collection == NS + kind]
+                for who in (None, OWNER):
+                    code, page = self.call(NS + 'listProjections', who=who, kind=kind, limit='100')
+                    self.assertEqual(code, 200, page)
+                    self.assertEqual([(row['key'], row['value']) for row in page['projections']], expected)
+                    for row in page['projections']:
+                        self.assertEqual(row['kind'], kind)
+                        self.assertEqual(record_problems(row), [], row)
+                        for field in ('uri', 'cid', 'of', 'signed'):
+                            self.assertNotIn(field, row)
+                        code, got = self.call(NS + 'getProjection', who=who, kind=kind, key=row['key'])
+                        self.assertEqual((code, got), (200, row))
+                        code, wrong = self.call(NS + 'getProjection', who=who, kind=kind, key=row['key'], cid='wrong')
+                        self.assertEqual((code, wrong['error']), (400, 'RecordNotFound'))
+                code, short = self.call(NS + 'listProjections', kind=kind, limit='1')
+                self.assertEqual(code, 200, short)
+                self.assertEqual(short['projections'], page['projections'][:1])
+                code, backward = self.call(NS + 'listProjections', kind=kind, limit='100', reverse='true')
+                self.assertEqual((code, backward['projections']), (200, page['projections'][::-1]))
+                for key in ('absent', '../bell'):
+                    code, wrong = self.call(NS + 'getProjection', kind=kind, key=key)
+                    self.assertEqual((code, wrong['error']), (400, 'RecordNotFound'))
+                code, wrong = self.call(NS + 'listProjections', kind=kind, cursor='absent')
+                self.assertEqual((code, wrong['error']), (400, 'InvalidRequest'))
+
+    def test_live_card_projection_maximum_page_resumes_both_directions(self):
+        from unittest.mock import patch
+        from transport import mirror
+        cards = {(NS + 'card', f'card{i:03}'): {'$type': NS + 'card', 'object': f'card{i:03}',
+                 'version': 0, 'card': 'rain', 'wants': [], 'doors': []} for i in range(103)}
+        with patch.object(mirror, 'records', return_value=cards):
+            for reverse in (False, True):
+                q = {'kind': 'card', 'limit': '100', 'reverse': str(reverse).lower()}
+                code, first = self.call(NS + 'listProjections', **q)
+                self.assertEqual(code, 200, first)
+                self.assertEqual(len(first['projections']), 100)
+                code, rest = self.call(NS + 'listProjections', **q, cursor=first['cursor'])
+                self.assertEqual(code, 200, rest)
+                keys = list(cards)[::-1] if reverse else list(cards)
+                self.assertEqual([row['key'] for row in first['projections'] + rest['projections']], [k for _, k in keys])
+                self.assertNotIn('cursor', rest)
 
     def test_entry_sync_proofs_find_exactly_the_requested_path(self):
         code, page = self.call('com.atproto.repo.listRecords', **{'repo': REPO, 'collection': NS + 'entry'})
@@ -693,7 +736,7 @@ class ProjectionBoundary(unittest.TestCase):
 
     def test_projection_parameters_and_object_law_cursors_refuse_adversarial_inputs(self):
         for method in ('getProjection', 'listProjections'):
-            for bad in ('', 'entry', 'card', 'receipt' * 100):
+            for bad in ('', 'entry', 'checkpoint', 'receipt' * 100):
                 code, body = self.call(NS + method, kind=bad, key='bell~1.0')
                 self.assertEqual((code, body['error']), (400, 'InvalidRequest'))
         for kind in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):

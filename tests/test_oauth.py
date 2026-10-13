@@ -264,6 +264,32 @@ class Login(unittest.TestCase):
         self.refused(self.get(f'{self.origin}/oauth/start?handle=nobody.example.com'), 'is not a handle this town knows')
         self.assertEqual(self.town.requests, {})
 
+    def test_did_web_discovery_uses_its_host_document_and_keeps_handle_binding(self):
+        did = 'did:web:login.example'
+        document_url = 'https://login.example/.well-known/did.json'
+        documents = []
+        doc = {'id': did, 'alsoKnownAs': ['at://' + HANDLE],
+               'service': [{'id': did + '#atproto_pds', 'serviceEndpoint': self.town.base}]}
+        def document_transport(method, url, headers, body):
+            self.assertEqual((method, url, body), ('GET', document_url, None))
+            documents.append(url)
+            return 200, json.dumps(doc).encode(), {}
+        login = oauth.OAuth(self.origin, transport=self.town.transport, resolve=self.town.resolve)
+        login.client.document_transport = document_transport
+        state, url = login.start(HANDLE, lambda _: {'did': did})
+        self.assertIn(state, login.pending)
+        self.assertTrue(url.startswith(self.town.base + '/oauth/authorize?'))
+        self.assertEqual(documents, [document_url])
+        self.assertTrue(self.town.requests)
+        self.town.calls.clear()
+        for bad in ({**doc, 'id': DID}, {**doc, 'alsoKnownAs': ['at://someone.else']}):
+            doc = bad
+            with self.assertRaises(oauth.Refused) as failure:
+                login.discover(HANDLE, lambda _: {'did': did})
+            self.assertEqual(failure.exception.line, 'unvouched')
+            self.assertEqual(self.town.calls, [])
+        self.assertEqual(documents, [document_url] * 3)
+
 
     def test_a_private_pds_in_the_did_document_is_refused_before_any_request_to_it(self):
         for private in ('https://10.0.0.5', 'https://private.example'):

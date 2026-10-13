@@ -29,9 +29,8 @@ from transport.identity import SLUG
 from transport.mirror import NS
 from transport.state import State
 
-MIRRORED = ('card', 'page', 'index', 'answer')  # transport/mirror.py renders them, for the PDS and for this façade alike
-COLLECTIONS = tuple(NS + c for c in MIRRORED)
-PROJECTIONS = ('receipt', 'object', 'source', 'publication', 'grant', 'law')
+LIVE = ('card', 'page', 'index', 'answer')
+PROJECTIONS = ('receipt', 'object', 'source', 'publication', 'grant', 'law') + LIVE
 ENTRY = NS + 'entry'  # the signed repository's one collection: an entry's CID and height under its rev
 LIMIT, MAX_LIMIT = 50, 100
 WRITES = {f'com.atproto.repo.{verb}': verb for verb in ('createRecord', 'putRecord', 'deleteRecord')}
@@ -302,8 +301,8 @@ class Repo:
             raise Refusal(400, 'RepoNotFound', f'this server holds one repository, {self.did}')
 
     def collection(self, q):
-        if q.get('collection') not in COLLECTIONS + (ENTRY,):
-            raise Refusal(400, 'InvalidRequest', 'collection must be one of ' + ', '.join(COLLECTIONS + (ENTRY,)))
+        if q.get('collection') != ENTRY:
+            raise Refusal(400, 'InvalidRequest', 'collection must be one of ' + ENTRY)
         return q['collection'][len(NS):]
 
     def kind(self, q):
@@ -311,7 +310,8 @@ class Repo:
             raise Refusal(400, 'InvalidRequest', 'kind must be one of ' + ', '.join(PROJECTIONS))
         return q['kind']
 
-    def paging(self, q):
+    @staticmethod
+    def paging(q):
         limit = q.get('limit', str(LIMIT))
         digits = limit.lstrip('0')
         if not (limit.isascii() and limit.isdigit()) or len(digits) > 3 or not 1 <= int(digits or '0') <= MAX_LIMIT:
@@ -334,7 +334,7 @@ class Repo:
 
     def describe(self, host, q, who):
         self.repo(q)
-        return {'did': self.did, 'handle': self.handle, 'didDoc': self.did_document(), 'collections': list(COLLECTIONS) + ([ENTRY] if self.signed else []),
+        return {'did': self.did, 'handle': self.handle, 'didDoc': self.did_document(), 'collections': [ENTRY] if self.signed else [],
                 'handleIsCorrect': True}
 
     def resolve_handle(self, host, q, who):
@@ -387,21 +387,32 @@ class Repo:
 
     def list_records(self, host, q, who):
         self.repo(q)
-        collection = self.collection(q)
+        self.collection(q)
         cursor, limit, reverse = self.paging(q)
-        if collection == 'entry':  # by height; the cursor is the last rev listed
-            n, size = len(self.head(host, {}, None) and self.signed.heights), int(limit)
-            at = self.signed.revs.get(cursor) if cursor else (n + 1 if reverse else 0)
-            if at is None:
-                raise Refusal(400, 'InvalidRequest', f'cursor: no commit here has rev {cursor}')
-            hs = range(at - 1, max(at - 1 - size, 0), -1) if reverse else range(at + 1, min(at + size, n) + 1)
-            more = len(hs) and (hs[-1] > 1 if reverse else hs[-1] < n)
-            return {'records': [self.signed_record(h) for h in hs], **({'cursor': self.signed.heights[hs[-1] - 1].rev} if more else {})}
-        return self.mirrored_page(host, collection, PUBLIC, cursor, limit, reverse)
+        n = len(self.head(host, {}, None) and self.signed.heights)
+        at = self.signed.revs.get(cursor) if cursor else (n + 1 if reverse else 0)
+        if at is None:
+            raise Refusal(400, 'InvalidRequest', f'cursor: no commit here has rev {cursor}')
+        hs = range(at - 1, max(at - 1 - limit, 0), -1) if reverse else range(at + 1, min(at + limit, n) + 1)
+        more = len(hs) and (hs[-1] > 1 if reverse else hs[-1] < n)
+        return {'records': [self.signed_record(h) for h in hs], **({'cursor': self.signed.heights[hs[-1] - 1].rev} if more else {})}
 
     def list_projections(self, host, q, who):
         kind = self.kind(q)
         cursor, limit, reverse = self.paging(q)
+        if kind in LIVE:
+            from transport import mirror
+            rows = [self.projection(host, kind, key, None, value)
+                    for (collection, key), value in mirror.records(host, answers=self.answers).items()
+                    if collection == NS + kind]
+            if reverse:
+                rows.reverse()
+            keys = [row['key'] for row in rows]
+            if cursor and cursor not in keys:
+                raise Refusal(400, 'InvalidRequest', 'cursor: not one this listing gave')
+            at = keys.index(cursor) + 1 if cursor else 0
+            page = rows[at:at + limit]
+            return {'projections': page, **({'cursor': page[-1]['key']} if at + limit < len(rows) else {})}
         if kind in PAGED:
             op, field, key, cid = PAGED[kind]
             # The host's (height, item) cursor keeps projections sharing an entry from being skipped.
@@ -428,45 +439,6 @@ class Repo:
             taken.append(record)
             last = oid if ended else f'{oid}#{listed}'
         return {'projections': taken}
-
-    def mirrored(self, host, collection, rkey, who):
-        """A record the mirror writes to the PDS, as `who` reads it here (transport/mirror.py), or None."""
-        from transport import mirror
-        if collection == 'answer':
-            return mirror.answer_records(self.answers).get(rkey)
-        if collection == 'card':
-            return mirror.card_record(host, rkey.replace('~', '/'), who)
-        pages = mirror.library_pages(host, who)
-        if collection == 'page':
-            return next((mirror.page_record(p) for p in pages if p['name'] == rkey), None)
-        if rkey != 'self':
-            return None
-        before = mirror.height(host)
-        cards = {oid: c['version'] for oid in mirror.ids(host, who) if (c := mirror.card_record(host, oid, who, paint=False))}
-        return mirror.index_record(cards, pages, before, mirror.height(host))
-
-    def mirrored_page(self, host, collection, who, cursor, limit, reverse):
-        """Cards by id and pages in shelf order, `limit` a page, the cursor the last key listed."""
-        from transport import mirror
-        if collection == 'index':
-            keys = ['self']
-        elif collection == 'answer':
-            keys = sorted(mirror.answer_records(self.answers))
-        elif collection == 'page':
-            keys = [p['name'] for p in mirror.library_pages(host, who)]
-        else:
-            keys = [mirror.card_key(oid) for oid in mirror.ids(host, who)]
-        keys = keys[::-1] if reverse else keys
-        start = keys.index(cursor) + 1 if cursor in keys else 0
-        if cursor and cursor not in keys:
-            raise Refusal(400, 'InvalidRequest', 'cursor: not one this listing gave')
-        out, at = [], start
-        while at < len(keys) and len(out) < limit:
-            value = self.mirrored(host, collection, keys[at], who)
-            if value is not None:
-                out.append({'uri': f'at://{self.did}/{NS}{collection}/{keys[at]}', 'cid': str(block(from_json(value))[0]), 'value': value})
-            at += 1
-        return {'records': out, **({'cursor': keys[at - 1]} if at < len(keys) else {})}
 
     def walk(self, host, who, collection, after, skip, inside):
         """(object id, its laws listed so far, record, whether that ends the object) in id order from `after` (exclusive; inside
@@ -499,14 +471,9 @@ class Repo:
 
     def get_record(self, host, q, who):
         self.repo(q)
-        collection, rkey = self.collection(q), q.get('rkey') or ''
-        if collection == 'entry':
-            out = self.signed_record(self.signed_height(host, rkey))
-        else:
-            value = self.mirrored(host, collection, rkey, PUBLIC)
-            if value is None:
-                raise Refusal(400, 'RecordNotFound', f'no {NS}{collection} here is {rkey}')
-            out = {'uri': f'at://{self.did}/{NS}{collection}/{rkey}', 'cid': str(block(from_json(value))[0]), 'value': value}
+        self.collection(q)
+        rkey = q.get('rkey') or ''
+        out = self.signed_record(self.signed_height(host, rkey))
         if q.get('cid') and q['cid'] != out['cid']:
             raise Refusal(400, 'RecordNotFound', f"the record at {rkey} has cid {out['cid']}")
         return out
@@ -554,8 +521,7 @@ class Repo:
 
     def sync_record(self, host, q, who):
         self.repo(q, 'did')
-        if self.collection(q) != 'entry':
-            raise Refusal(400, 'InvalidRequest', 'only entry records are in the signed tree')
+        self.collection(q)
         h = self.signed_height(host, q.get('rkey') or '')
         cid = self.signed.heights[h - 1].hash
         whole = host.send({'op': 'world-entry', 'principal': who, 'hash': cid, 'bytes': True}) if who != PUBLIC else {}
