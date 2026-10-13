@@ -1161,7 +1161,8 @@ class Portal(RouteCase):
         covered = {'inbox', 'outbox', 'draft', 'edit', 'post', 'posted', 'match', 'skip', 'hold', 'unpost', 'status', 'search',
                    'retry', 'reply', 'log', 'spend', 'modlog', 'find', 'speak', 'morning', 'plan', 'watch', 'worlds',
                    'invite', 'invites', 'revoke-invite', 'welcome', 'root', *root.POWERS, 'settings',
-                   'limits'}  # an open town's root page, "Newcomers" (tests/test_newcomers.py HandPage)
+                   'limits',  # an open town's root page, "Newcomers" (tests/test_newcomers.py)
+                   'slow', 'held', 'let-in', 'turn-away', 'flag', 'unflag'}  # the root page's slow, the worlds page's door (tests/test_moderation.py)
         self.assertEqual(set(verbs), covered | {'serve'})  # starts a listener; cannot run inside its own page
 
     def test_console_forwards_inbox_filters_and_all_outbox_without_hiding_finished_drafts(self):

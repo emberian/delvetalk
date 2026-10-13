@@ -75,6 +75,8 @@ class Config:
                          "code alone; open, also by asking the door for a key (`/enter`, `POST /AGENTS.md/arrive`) with a small proof of work")
     arrive_per_address: int = field(3, "open arrival: keys one address may be given an hour")
     arrive_per_hour: int = field(30, "open arrival: keys the whole town gives an hour")
+    arrive_flagged: str = field('', "open arrival: addresses or networks (space-separated) whose arrivals are held for the owner, "
+                                "beside those the hand flags (<state>/arrive-flagged.txt)")
     arrive_bits: int = field(18, "open arrival: the leading zero bits of SHA-256(challenge:name:nonce) a key costs (18: about a quarter "
                              "of a million hashes, a second or two in a browser)")
     # An open town's limits for newcomers (docs/DEPLOY.md "A second instance"): read only where `arrival` is open. The
@@ -84,6 +86,7 @@ class Config:
     object_quota: int = field(24, "open town: objects one hand may keep made (host `objectQuota`; the host's own is 128)")
     scratch_quota: int = field(1, "open town: scratch worlds one hand may hold open (serve's --scratch-quota; the host's own is 2)")
     feed_quota: int = field(20, "open town: posts one resident may make to the town's feed an hour (60 on an invited town)")
+    slow_turns: int = field(6, "the turns one hand may start a clock hour while the town is slow (`hand slow on`; any town)")
     hob_budget: int = field(300, "open town: hob's readings a clock day, the whole town's (host `modelQuota`; when spent, words are refused "
                             "with the card's spells to send instead)")
     paint_budget: int = field(400, "open town: paints a clock day, the whole town's (host `paintQuota`; when spent, a card is read "

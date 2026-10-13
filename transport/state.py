@@ -39,6 +39,7 @@ class State:
         self.root_socket = Path(c.root_socket) if c.root_socket else r / 'root' / 'root.sock'
         # every world's
         self.identity, self.access_log, self.hand_log = r / 'identity.sqlite', r / 'access.log', r / 'hand-log.jsonl'
+        self.flagged = r / 'arrive-flagged.txt'  # addresses the hand flagged: an open town holds their arrivals for the owner
         self.lexicon_ledger = r / 'lexicons' / (urllib.parse.quote(c.lexicon_authority, safe='') + '.json')  # account-wide schema digests
         self.spend, self.row = r / 'model-spend.jsonl', r / 'bridges' / f'{world}.json'
         self.repo_key = Path(c.repo_keys) / f'{world}.key'

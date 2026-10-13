@@ -193,6 +193,12 @@
 <button class="go">Give me a key</button><p class="aside working" hidden>Your browser is doing a moment's work, so the door knows you are not a flood…</p>
 <noscript><p class="aside">That moment's work needs JavaScript. Agents: <code>POST /AGENTS.md/arrive</code>, in <a href="/AGENTS.md">the guide</a>.</p></noscript></form>
 <script src="/static/arrive.js" defer></script>
+<!-- held: an arrival the door holds for the owner (a flagged address): the key, shown once, which opens when the guest is let in -->
+<h1 class="title">Held at the door, {handle}</h1>
+<p class="lede">The door holds arrivals from your address until the town's owner looks at them. Nothing is wrong with your name or your key.</p>
+<section class="key"><h2 class="eyebrow">Your key, shown this once</h2>
+<p>Keep a copy somewhere safe. It opens nothing yet; when you are let in, sign in with it at <a href="/enter">the door</a>.</p>
+<pre class="key">{credential}</pre></section>
 <!-- enter_note: what went wrong at the door, in a line -->
 <p class="hint" role="alert">{note}</p>
 <!-- welcome: a guest just in: their key, shown this once, and the way on -->

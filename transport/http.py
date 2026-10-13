@@ -22,7 +22,7 @@ from transport.atproto.sign import Key
 from transport.bridge import turn_line
 from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, TOWN, door_rows, handles, paged, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
-from transport.identity import SLUG, Identity, IdentityError
+from transport.identity import SLUG, Identity, IdentityError, flagged
 from transport.repo import Repo, Refusal, WRITES
 from transport.hosted import Accounts, MAX_CAR_BYTES, MAX_WRITE_BODY
 from transport.acts import INTENT_BYTES, judge_call, text
@@ -220,6 +220,7 @@ ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever 
                 'invalid_guest_name': 'a name is a lowercase letter, then up to 31 lowercase letters, digits or hyphens, ending in a letter or digit',
                 'name_fixed': 'that invitation already names its guest; send that name, or none',
                 'taken': 'that name is taken; the code is still unused, so choose another'}
+HELD = "the door holds arrivals from your address for the town's owner: keep this key; it opens when you are let in"
 ARRIVE_LINES = {'invalid_guest_name': ACCEPT_LINES['invalid_guest_name'],
                 'proof_invalid': 'proof is {challenge, nonce}: a challenge GET /AGENTS.md/arrive gave this process, unchanged, and a nonce of 1 to 64 printable ASCII characters',
                 'proof_expired': 'that challenge is older than ten minutes; GET /AGENTS.md/arrive for another',
@@ -831,6 +832,8 @@ class Handler(BaseHTTPRequestHandler):
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else self.cookie() if self.browser() and self.command == 'GET' else ''
         who = self.principal(credential)
+        if who is None and self.server.open and self.server.identity.held(credential):
+            return self.fail('denied', "your key is held at the door for the town's owner; it opens when you are let in")
         if who is None:
             return self.fail('unauthenticated', hint='POST /AGENTS.md/challenge, post its text, POST /AGENTS.md/verify; then send Authorization: Bearer <credential>',
                              links={'hint': link(PREFIX + '/challenge')})
@@ -1229,9 +1232,11 @@ class Handler(BaseHTTPRequestHandler):
         """A fresh guest let in by the open door (transport/identity.py `arrive`), told to the host as an accepted invitation
         is; a browser keeps the key as its session and is shown it once."""
         self.private = True
-        c = self.server.st.config
+        st = self.server.st
+        c, address = st.config, self.client_ip()
+        held = flagged(address, c.arrive_flagged + '\n' + (st.flagged.read_text() if st.flagged.exists() else ''))  # held for the owner
         try:
-            out = self.server.identity.arrive(name, proof, self.client_ip(), c.arrive_bits, c.arrive_per_address, c.arrive_per_hour)
+            out = self.server.identity.arrive(name, proof, address, c.arrive_bits, c.arrive_per_address, c.arrive_per_hour, held=held)
         except Refusal as r:
             return self.html(r.code, self.enter_page(r.body['message'], '', name)) if self.browser() else self.reply(r.code, canonical(r.body))
         except IdentityError as err:
@@ -1242,6 +1247,10 @@ class Handler(BaseHTTPRequestHandler):
             if err.code == 'rate_limited':
                 return self.fail('rateLimited', ARRIVE_LINES[err.code], more={'reason': err.code}, headers=retry)
             return self.fail('identity', f'{err.code}: {ARRIVE_LINES[err.code]}', more={'reason': err.code})
+        if out['status'] == 'held':  # the key is given and opens nothing until the owner lets the guest in; the host is told then
+            if self.browser():
+                return self.html(202, pages.held(out['handle'], out['credential']))
+            return self.reply(202, canonical({**out, 'message': HELD, '_links': {'self': link(self.path), 'me': link(PREFIX + '/me')}}))
         self.server.record_handle(out['principal'], out['handle'])
         if self.browser():
             return self.html(200, pages.welcome(out['handle'], out['credential']), self.login_cookie(out['credential']))

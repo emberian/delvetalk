@@ -807,6 +807,18 @@ What assumed one instance a box, and what holds each apart now:
   `quota` with the card's spells as the hint; when the paints are, a card is read exact (`world-render` `exact
   {reason: budget}`) and the page says "the town's N paints for the day are spent; the card as it stands". A world
   that sets none counts none, and its snapshot keeps its bytes (tests/test_newcomers.py).
+- moderation for an open door (tests/test_moderation.py): **slow** (`hand slow on|off --reading R`, the root page's
+  Moderation, any town) sets the world's `turnQuota` to `slow_turns` (6) and back to `turn_quota` (an invited town's
+  none), a receipted settings entry whose reading says `slow: R`; **quiet** a guest from the worlds page's guest list
+  (the `quiet` power, hours and a reading; unquiet is root's `quiet` of zero hours, as playbook E); an arrival from a
+  **flagged** address (`arrive_flagged` in the config, or flagged by the hand into `<state>/arrive-flagged.txt` from a
+  guest's row or the door's form; `hand flag|unflag ADDRESS`) is **held**: its key is given and answered 202 `held`,
+  and opens nothing (403 `denied`, "held at the door") until the owner **lets it in** (`hand let-in NAME`: the key
+  opens and the host is told it arrived, journaled) or **turns it away** (`hand turn-away NAME --reading R`: the key
+  ends and the world quiets the name for ten years of the clock, the reading on the receipt). Every act is a line in
+  `hand-log.jsonl`; the journal holds every one that changes the world: slow and the limits (settings), a quiet (a
+  moderated or root entry), an arrival let in, a name turned away. A flag and a hold change no world, so they are
+  the hand's log and `identity.sqlite`'s alone.
 - the config's delve.town defaults (`summon_handle`, `poster`, `lexicon_authority`, `requests`): inert on an
   instance whose bridge row is the town's own feed (`transport open --transport feed`), which observes no Delve.
   Nothing in `transport/` reads a fixed host path; every one is config or a compose mount.
@@ -1328,7 +1340,9 @@ the bot already said on Zulip:
 
     hand unpost DRAFT --reason 'abuse'
 
-Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on the receipt.
+Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on the receipt. On an open town the guest
+list on `/hand/` quiets a guest in one click; a flood from one address is flagged there (`hand flag ADDRESS`), its next
+arrivals held for you, and `hand slow on --reading R` holds every hand to `slow_turns` an hour until `slow off`.
 
 **F. The box is full.**
 

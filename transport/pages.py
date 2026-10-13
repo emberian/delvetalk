@@ -445,6 +445,11 @@ def welcome(handle, credential):
     return page('welcome', handle, T['welcome'].format(handle=e(handle), credential=e(credential), book=e(quote(handle, safe=''))))
 
 
+def held(handle, credential):
+    """An arrival held at the door (an open town, a flagged address): the key shown once, and what it waits for."""
+    return page('held at the door', None, T['held'].format(handle=e(handle), credential=e(credential)))
+
+
 def leave(handle, done=False):
     """The sign-out confirmation, or completion after clearing the browser's credential."""
     return page('sign out', handle, T['left'] if done else T['leave_page'].format(who=', ' + e(handle) if handle else ''))

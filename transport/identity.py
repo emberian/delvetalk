@@ -9,10 +9,13 @@ a credential exactly like a claim's (a verified row, no word).
 
 An open town (config `arrival = "open"`) also gives a key to whoever asks the door (`arrive`): a fresh guest with a name of
 their choosing, no code, for a small proof of work over a challenge the door signed, so many an hour from one address and
-in all. Its row is an invitation accepted at once, so the hand lists it and revokes it as any guest.
+in all. Its row is an invitation accepted at once, so the hand lists it and revokes it as any guest. One asking from a
+flagged address (config `arrive_flagged`, and the hand's `flagged` file) is held: the key is given, and opens nothing
+until the owner lets the guest in (`release`) or turns them away (`revoke_invitation`).
 """
 import hashlib
 import hmac
+import ipaddress
 import re
 import secrets
 import sqlite3
@@ -71,6 +74,21 @@ class IdentityError(Exception):
     def __init__(self, code, retry=None):
         self.code, self.retry = code, retry  # `retry`: seconds until a rate limit lifts
         super().__init__(code)
+
+
+def flagged(address, flags):
+    """Whether `address` (an IP) is one of `flags` (addresses or networks, space- or line-separated)."""
+    try:
+        ip = ipaddress.ip_address((address or '').strip())
+    except ValueError:
+        return False
+    for flag in flags.split():
+        try:
+            if ip in ipaddress.ip_network(flag, strict=False):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def zero_bits(digest):
@@ -345,11 +363,34 @@ class Identity:
         q = 'SELECT created FROM invitations WHERE proof IS NOT NULL AND created>?' + (' AND address IS ?' if address is not None else '')
         return [r['created'] for r in self.db.execute(q + ' ORDER BY created', (since, *([address] if address is not None else [])))]
 
-    def arrive(self, name, proof, address='', bits=18, per_address=3, per_hour=30):
+    def held(self, credential):
+        """Whether `credential` is a key the door gave and holds for the owner (an arrival from a flagged address)."""
+        if not isinstance(credential, str) or not CREDENTIAL.fullmatch(credential):
+            return False
+        with self.lock:
+            return self.db.execute("SELECT 1 FROM challenges WHERE credential=? AND state='held'", (digest(credential),)).fetchone() is not None
+
+    def release(self, name):
+        """Let a held guest in: its key opens from now on, as any accepted invitation's. -> {principal, handle}."""
+        now = self.clock()
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                row = self.db.execute("SELECT id,name,principal FROM invitations WHERE name=? AND state='held'", (name,)).fetchone()
+                if row is None:
+                    raise IdentityError('not_held')
+                self.db.execute("UPDATE invitations SET state='accepted',accepted=? WHERE id=?", (now, row['id']))
+                self.db.execute("UPDATE challenges SET state='verified',verified=? WHERE did=? AND state='held'", (now, row['principal']))
+            finally:
+                self.db.execute('COMMIT')
+        return {'status': 'released', 'principal': row['principal'], 'handle': row['name']}
+
+    def arrive(self, name, proof, address='', bits=18, per_address=3, per_hour=30, held=False):
         """A fresh guest named `name`, for a proof of work (`arrival_challenge`): its credential, as an accepted invitation's.
         Refused, in this order: `invalid_guest_name`; `proof_invalid`, `proof_expired`, `proof_short`; `rate_limited` (with
         `retry`) past `per_address` keys from `address` or `per_hour` from everyone in the last hour; `proof_spent` (that challenge
-        has given a key already); `taken` (any principal or invitation has the name). Nothing is written on refusal."""
+        has given a key already); `taken` (any principal or invitation has the name). Nothing is written on refusal. `held` (a
+        flagged address): the guest is made and its key given, but both wait for the owner (`release`), answered `held`."""
         if not isinstance(name, str) or not GUEST_NAME.fullmatch(name):
             raise IdentityError('invalid_guest_name')
         challenge = self._judge_proof(name, proof, bits)
@@ -369,10 +410,11 @@ class Identity:
                 from transport.hosted import Accounts
                 account = Accounts(self.st).account(principal, create=True)
                 self.db.execute('INSERT INTO invitations(name,principal,code,note,created,expires,state,accepted,address,proof) VALUES(?,?,?,?,?,?,?,?,?,?)',
-                                (name, principal, hashlib.sha256(secrets.token_bytes(32)).hexdigest(), 'arrived', now, now, 'accepted', now,
-                                 address or '', challenge))
+                                (name, principal, hashlib.sha256(secrets.token_bytes(32)).hexdigest(), 'arrived', now, now,
+                                 'held' if held else 'accepted', None if held else now, address or '', challenge))
                 self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state,verified) VALUES(?,?,?,?,?,?,?,?,?)',
-                                ('guest:' + secrets.token_hex(16), name, principal, '', digest(credential), now, now, 'verified', now))
+                                ('guest:' + secrets.token_hex(16), name, principal, '', digest(credential), now, now,
+                                 'held' if held else 'verified', None if held else now))
             except sqlite3.IntegrityError:
                 self.db.execute('ROLLBACK')
                 raise IdentityError('taken') from None
@@ -381,7 +423,7 @@ class Identity:
                 raise
             else:
                 self.db.execute('COMMIT')
-        return {'status': 'arrived', 'principal': principal, 'did': account.did, 'handle': name, 'credential': credential}
+        return {'status': 'held' if held else 'arrived', 'principal': principal, 'did': account.did, 'handle': name, 'credential': credential}
 
     # ---- invitations: a code accepted once, naming its guest or leaving the name for the guest to register
 
@@ -463,7 +505,7 @@ class Identity:
         """Every invitation, newest first, with its state and the time its credential was last used; never a code. A code
         still waiting for its guest's name is `(open)`."""
         with self.lock:
-            rows = self.db.execute('SELECT id,name,principal,note,state,created,expires,accepted,revoked,used FROM invitations ORDER BY created DESC, id DESC').fetchall()
+            rows = self.db.execute('SELECT id,name,principal,note,state,created,expires,accepted,revoked,used,address FROM invitations ORDER BY created DESC, id DESC').fetchall()
         now = self.clock()
         return [{**dict(r), 'name': r['name'] or '(open)', 'state': 'expired' if r['state'] == 'open' and now >= r['expires'] else r['state']} for r in rows]
 
@@ -479,7 +521,7 @@ class Identity:
                 if row is None or row['state'] == 'revoked':
                     raise IdentityError('no_invitation' if row is None else 'invitation_revoked')
                 self.db.execute("UPDATE invitations SET state='revoked',revoked=? WHERE id=?", (now, row['id']))
-                ended = self.db.execute("UPDATE challenges SET state='revoked',revoked=? WHERE did=? AND state='verified'", (now, row['principal'])).rowcount
+                ended = self.db.execute("UPDATE challenges SET state='revoked',revoked=? WHERE did=? AND state IN ('verified','held')", (now, row['principal'])).rowcount
             finally:
                 self.db.execute('COMMIT')
         return {'status': 'revoked', 'id': row['id'], 'name': row['name'] or '(open)', 'principal': row['principal'], 'credentials': ended}
