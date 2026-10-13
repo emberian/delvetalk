@@ -96,6 +96,31 @@ class SpellTurns(Reflection):
         self.assertEqual(r["status"], "admitted", r)
         self.assertEqual((self.field("planted", "plot"), self.field("planted", "garden")), (label("amber:oak"), label("violet:rue")))
 
+    def test_two_read_spells_each_carry_the_exact_text_of_the_spell_they_ran(self):
+        spells = ["delvetalk garden ?\n", "Delvetalk plot rules  "]
+        before = self.host.send(op="world-status")["height"]
+        r = self.say("\n".join(spells))
+        self.assertEqual(r["status"], "spells", r)
+        self.assertEqual([t["status"] for t in r["turns"]], ["usage", "usage"], r)
+        self.assertEqual([t.get("spell") for t in r["turns"]], spells, r)
+        self.assertEqual([t["object"] for t in r["turns"]], ["garden", "plot"], r)
+        for turn in r["turns"]:
+            self.assertNotIn("receipt", turn)
+        self.assertEqual(self.host.send(op="world-status")["height"], before)
+
+    def test_a_mixed_post_carries_the_read_spell_and_leaves_the_write_named_by_its_receipt(self):
+        read = "delvetalk garden ?"
+        write = "delvetalk plot plant\ncolour: silver\nseed: fern"
+        r = self.say(read + "\n" + write, identity="mixed")
+        self.assertEqual(r["status"], "spells", r)
+        self.assertEqual([t["status"] for t in r["turns"]], ["usage", "admitted"], r)
+        reading, writing = r["turns"]
+        self.assertEqual(reading.get("spell"), read, r)
+        self.assertNotIn("receipt", reading)
+        self.assertNotIn("spell", writing)
+        self.assertEqual(writing["receipt"]["identity"]["intent"], "mixed#2")
+        self.assertEqual(self.field("planted", "plot"), label("silver:fern"))
+
     def test_several_spells_at_a_lines_start_are_a_turn_each_and_a_fourth_is_refused(self):
         post = ("first the garden:\ndelvetalk garden plant / colour: amber / seed: a\n"
                 "delvetalk plot plant / colour: silver / seed: b\n\nand then:\ndelvetalk garden plant / colour: gold / seed: c\n"

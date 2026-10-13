@@ -4107,11 +4107,15 @@ def misfitOf (w : World) (req : TurnRequest) : Option (String × Misfit) :=
     one refusal, `badSpell` clause `tooManySpells` (`#4`). A post is read by hob at most once: its misfit spells
     (`misfitOf`) are one reading after the spells that run, under the first one's identity, offered each one's
     card's table, its utterance those spells, a retry answered from that identity; where hob cannot read, each
-    is refused alone as it would be. The reply lists the turns in order, the reading last. -/
+    is refused alone as it would be. The reply lists the turns in order, the reading last. Each child
+    without a receipt carries `spell`, the exact text used for that turn; a grouped reading carries
+    its joined text. Children with receipts carry no `spell`. -/
 def runSpells (w : World) (req : TurnRequest) (spells : List String) : Except String (World × Json) := do
   let mut w := w
   let mut turns : Array Json := #[]
   let mut misfits : Array (TurnRequest × String × String × Misfit) := #[]
+  let withSpell := fun (r : Json) (spell : String) =>
+    if (r.getObjVal? "receipt").isOk then r else r.setObjVal! "spell" (toJson spell)
   for (spell, i) in (spells.take Limits.spellsPerReply).zipIdx do
     let argument := match req.argument with
       | .record fs => Data.record (fs.map fun (k, v) => if k == "text" then (k, .label spell) else (k, v))
@@ -4124,7 +4128,7 @@ def runSpells (w : World) (req : TurnRequest) (spells : List String) : Except St
       continue
     let (w', r) ← runOne w one routed
     w := w'
-    turns := turns.push r
+    turns := turns.push (withSpell r spell)
   if let some (first, _, _, m) := misfits[0]? then
     let text := "\n\n".intercalate (misfits.toList.map (·.2.1.trimAscii.toString))
     let joined : Misfit := if misfits.size == 1 then m else
@@ -4140,12 +4144,12 @@ def runSpells (w : World) (req : TurnRequest) (spells : List String) : Except St
     | some turn =>
       let (w', r) ← turn
       w := w'
-      turns := turns.push r
+      turns := turns.push (withSpell r text)
     | none =>
-      for (one, _, card, x) in misfits do
+      for (one, spell, card, x) in misfits do
         let (w', r) ← refuseSpell w { one with object := resolveCard one.principal one.object } card x.clause x.reason x.hint
         w := w'
-        turns := turns.push r
+        turns := turns.push (withSpell r spell)
   if spells.length > Limits.spellsPerReply then
     let n := Limits.spellsPerReply + 1
     let card := req.object
@@ -4155,7 +4159,7 @@ def runSpells (w : World) (req : TurnRequest) (spells : List String) : Except St
         s!"A post casts at most {Limits.spellsPerReply} spells; the {spells.length - Limits.spellsPerReply} after them are not cast. Post them again."
         ""
     w := w'
-    turns := turns.push r
+    turns := turns.push (withSpell r (heardText req.method req.argument))
   return (w, Json.mkObj [("status", toJson "spells"), ("turns", Json.arr turns)])
 
 /-- A post that is a plan (`Spell.plan`): its acts as one turn of the speaker under the post's identity (`runPlan`),
