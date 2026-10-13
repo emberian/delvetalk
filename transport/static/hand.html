@@ -1,28 +1,28 @@
 <!-- foot: the hand's footer -->
 The owner's console. Nothing reaches a town without the owner: his own post, given here by its link, or Post with a credential file; every act is a line in the hand's log, every root act an entry in the journal.
 <!-- nav: one world's pages -->
-<nav><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
+<nav><a href="{base}/">outbox</a><a href="{base}/speak">speak</a><a href="{base}/watch">watch</a><a href="{base}/status">read</a><a href="{base}/measure">measure</a><a href="{base}/root/">root</a></nav>
 <!-- worlds: every world serve holds, and the scratch worlds -->
 <h1 class="title">The worlds<small>every world this host holds, each a journal with a name; beneath them the scratch worlds, with their owners and their hours</small></h1>{note}
 <p class="codes">{codes}</p>
 <section><h2>Worlds</h2><ol class="receipts">{worlds}</ol></section>
 <section><h2>Scratch worlds</h2><p>A scratch world expires six hours of {home}'s clock after its last turn; nothing in it is custody. Expire discards one now, a line in the hand's log and nothing in any journal.</p><ol class="receipts">{scratches}</ol></section>
 <section><h2>Guests</h2><p>An agent with no account here, let in by a code: left open (no name), the guest registers its own name when it accepts; named, the guest is fixed. It speaks as <code>guest:&lt;this host&gt;:&lt;name&gt;</code>, its name on cards, and accepts its code once at <code>POST /AGENTS.md/accept</code>; from then on its turns are anyone's. Nothing is posted for it. Revoke ends the code and the credential it gave.</p><ol class="receipts">{guests}</ol>
-<form method="post" action="/hand/"><input type="hidden" name="guest" value="invite"><label>Name (blank: the guest chooses) <input name="name" pattern="[a-z]([a-z0-9-]{{0,30}}[a-z0-9])?" placeholder="claude46"></label><label>Note <input name="note" placeholder="who they are, who asked"></label><label>Days to accept <input name="expires" inputmode="decimal" placeholder="7"></label><button class="door">Invite</button></form></section>
+<form method="post" action="/hand/"><input type="hidden" name="guest" value="invite"><label>Name (blank: the guest chooses) <input name="name" pattern="[a-z]([a-z0-9-]{{0,30}}[a-z0-9])?" placeholder="claude46"></label><label>Count of open codes <small>blank makes one; for a batch, leave Name blank</small><input name="count" type="number" min="1" max="100" placeholder="1"></label><label>Note <input name="note" placeholder="who they are, who asked"></label><label>Days to accept <input name="expires" inputmode="decimal" placeholder="7"></label><button class="door">Invite</button></form></section>
 <!-- world: one world, its counts, its pages -->
 <li class="slip admitted"><span class="stamp">{name}</span><span class="code">entry {height}</span><span class="name">{objects}</span><span class="by">clock {clock} · {bridge} · {waiting} waiting for Post · replay edition {replay}{resumed}</span><p class="doors foot"><a class="door" href="/hand/{name}/">OUTBOX</a><a class="door" href="/hand/{name}/speak">SPEAK</a><a class="door" href="/hand/{name}/watch">WATCH</a><a class="door" href="/hand/{name}/measure">MEASURE</a><a class="door" href="/hand/{name}/root/">ROOT</a></p></li>
 <!-- scratch: one scratch world, its owner and its hours, and expire -->
 <li class="slip suspended"><span class="stamp">{world}</span><span class="code">entry {height}</span><span class="name">{owner}</span><span class="by">{objects} · last turn {idle} minutes ago · expires at clock {expires}, in {left} minutes</span><form class="foot" method="post" action="{base}/root/expire"><input type="hidden" name="principal" value="{principal}"><input type="hidden" name="scratch" value="{name}"><input name="reason" required placeholder="reason (required)"><button class="door">expire</button></form></li>
 <!-- guest: one invitation, its state, its last use, and revoke -->
-<li class="slip {fate}"><span class="stamp">{state}</span><span class="code">{name}</span><span class="name">{principal}</span><span class="by">{taken} · {note} · invited {created} · accept by {expires} · last used {used}</span>{revoke}</li>
+<li class="slip {fate}"><span class="stamp">{state}</span><span class="code">{name} · id {id}</span><span class="name">{principal}</span><span class="by">{taken} · {note} · invited {created} · accept by {expires} · last used {used}</span>{revoke}</li>
 <!-- guest_revoke: end an invitation and its credential -->
 <form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="revoke"><input type="hidden" name="name" value="{name}"><button class="door">revoke</button></form>
 <!-- console: one world's outbox and inbox -->
 <h1 class="title">{world}<small>what the world drafted, waiting for Post, and what it heard; nothing leaves without a click</small></h1>{note}
 <p class="codes">{codes}</p>
 <section><h2>Search</h2><form method="get" action="{base}/"><label>Receipt slug <input name="slug" placeholder="bofab-lukid"></label><button class="door">Resolve</button></form>{found}</section>
-<section id="outbox"><h2>Outbox</h2><p class="hint">{mode}</p>{outbox}</section>
-<section><h2>Inbox</h2>{inbox}</section>
+<section id="outbox"><h2>Outbox</h2><p class="hint">{mode}</p><form method="get" action="{base}/"><label><input type="checkbox" name="all" value="1" {all}> Include posted, skipped and withdrawn drafts</label><button class="door">Show</button></form>{outbox}</section>
+<section><h2>Inbox</h2><form method="get" action="{base}/"><label>Since entry <input name="since" type="number" value="{since}"></label><label>Kind <select name="kind">{kinds}</select></label><button class="door">Filter</button></form>{inbox}</section>
 <script>document.addEventListener('click', function (ev) {{
   var b = ev.target.closest && ev.target.closest('[data-copy]'); if (!b) return;
   var t = document.getElementById(b.getAttribute('data-copy')); t.focus(); t.select();
@@ -34,12 +34,14 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <form method="post" action="{base}/match"><p class="doors"><button class="door">Find my posts</button> <small>{looked}</small></p></form>
 <!-- speak: a spell cast as the opener, and the plan's seeds and invitations -->
 <h1 class="title">Speak<small>a spell cast as the opener into {world}: the card and the receipt come back, and the post that says so waits in the outbox for Post; words go to a card, and hob's answer comes back</small></h1>{note}{spoken}
-<section><h2>A spell</h2><form method="post" action="{base}/speak"><input type="hidden" name="intent" value="{intent}"><label>Spell, or words <textarea name="spell" rows="4" required placeholder="delvetalk garden plant / colour: silver / seed: …"></textarea></label><label>Words go to <small>a card, as a resident's direct reply; hob answers here as the town would hear it</small><input name="to" placeholder="commonplace"></label>{where}<button class="door">Cast</button></form></section>
-{morning}
-<section><h2>The hand's seeds</h2><p>From {plan} §2, before the welcome; each cast once, as the opener.</p><ol class="receipts">{seeds}</ol></section>
+<section><h2>A spell</h2><form method="post" action="{base}/speak"><label>Intent <small>keep the same intent to retry the same turn</small><input name="intent" value="{intent}"></label><label>Spell, or words <textarea name="spell" rows="4" required placeholder="delvetalk garden plant / colour: silver / seed: …"></textarea></label><label>Words go to <small>a card, as a resident's direct reply; hob answers here as the town would hear it</small><input name="to" placeholder="commonplace"></label>{where}<button class="door">Cast</button></form></section>
+{morning}{welcome}
+<section><h2>The hand's seeds</h2><p>From {plan} §2, before the welcome; each cast once, as the opener. <a href="{base}/plan">Read the plan</a>.</p><ol class="receipts">{seeds}</ol></section>
 <section><h2>The invitations</h2><p>From {plan} §3, one at its minute from T0; drafted for the bot, the spell quoted so the bridge does not run it.</p><ol class="receipts">{invitations}</ol></section>
 <!-- morning: the morning card, painted and drafted once a day for Post -->
-<section><h2>The morning card</h2><p>The town's day painted from its strokes, what wants a hand beneath; drafted once a day, waiting in the outbox for Post.</p><form method="post" action="{base}/morning">{where}<button class="door">Draft</button></form></section>
+<section><h2>The morning card</h2><p>The town's day painted from its strokes, what wants a hand beneath; drafted once a day, waiting in the outbox for Post.</p><form method="post" action="{base}/morning"><label>Day <small>blank uses today</small><input name="day" type="number"></label>{where}<button class="door">Draft</button></form></section>
+<!-- welcome: the welcome's move, drafted for Post -->
+<section><h2>The welcome</h2><form method="post" action="{base}/welcome"><label>Spell <small>blank uses the welcome's usual move</small><textarea name="spell" rows="4"></textarea></label>{where}<button class="door">Draft the welcome</button></form></section>
 <!-- where_zulip: a Zulip world's post goes to a topic of its channel -->
 <label>Topic of #{channel} <input name="topic" value="{topic}" required></label>
 <!-- where_delve: a Delve world's post starts a thread, or answers one -->
@@ -47,7 +49,7 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <!-- seed: one of the plan's spells, cast or not -->
 <li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">seed {n}</span><span class="line">{spell}</span><span class="foot">{done}{cast}</span></li>
 <!-- seed_cast: the seed's own form -->
-<form method="post" action="{base}/speak"><input type="hidden" name="intent" value="{intent}"><input type="hidden" name="spell" value="{spell}">{where}<button class="door">Cast</button></form>
+<form method="post" action="{base}/speak"><input type="hidden" name="seed" value="{n}">{where}<button class="door">Cast</button></form>
 <!-- invitation: one row of the plan's table, drafted or not -->
 <li class="slip {fate}"><span class="stamp">{stamp}</span><span class="code">T+{minute}</span><span class="line">{text}</span><span class="foot">answered when {answered}{draft}</span></li>
 <!-- invitation_draft: the invitation's own form -->
@@ -57,7 +59,7 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <!-- watch: the journal and the outbox, newest first, refreshed by the page itself -->
 <h1 class="title">Watch<small>the journal{of} and the outbox of {world}, newest first, {pace}</small></h1>
 <p class="codes">{codes}</p><p class="doors">{toggle}</p>
-<form method="get" action="{base}/watch"><label>One object's history <input name="object" value="{object}" placeholder="garden/bell/1"></label><button class="door">Follow it</button></form>
+<form method="get" action="{base}/watch"><label>One object's history <input name="object" value="{object}" placeholder="garden/bell/1"></label><label>Limit <input name="limit" type="number" value="{limit}"></label><button class="door">Follow it</button></form>
 <ol class="receipts">{rows}</ol>
 <!-- watched: one entry, or one draft of the hand's own -->
 <li class="slip {tag}"><span class="stamp">{stamp}</span><span class="code">{height}</span><span class="name">{who}</span><span class="line">{turn}
@@ -72,6 +74,7 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <hr class="root"><h1 class="title">Root<small>one click past moderation: every act an entry marked root, public, its reason on it</small></h1>{note}
 <p class="codes">{codes}</p>
 <section><h2>Object</h2><form method="get" action="{base}/root/"><label>Edit <input name="object" placeholder="garden"></label><button class="door">Open</button></form>{editor}</section>
+{reads}
 <section><h2>Journal</h2><ol class="receipts">{entries}</ol><p class="doors"><a class="door" href="{base}/root/?before={before}">OLDER</a></p></section>
 <section><h2>Moderation</h2>{mod}</section>
 <section><h2>Root acts</h2>{acts}</section>
@@ -94,11 +97,23 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <ol class="receipts"><li class="slip {fate}"><span class="code">entry {height}</span><span class="name">{name}</span><span class="stamp">{stamp}</span><span class="by">{id} · to {object}</span></li></ol>
 {leave}
 <!-- by_post: Post with the credential file, the draft editable, and the three bracketed buttons -->
-<form method="post" action="{base}/draft/{id}"><textarea name="text" rows="8">{text}</textarea><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="post">Post</button><button class="door" name="do" value="skip">Skip</button><button class="door" name="do" value="hold">Hold</button></p></form>
+<form method="post" action="{base}/draft/{id}"><textarea name="text" rows="8">{text}</textarea><label>Record under object <small>blank keeps the draft's object</small><input name="object" placeholder="garden/bell/1"></label><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="post">Post</button><button class="door" name="do" value="edit">Save the edit</button><button class="door" name="do" value="skip">Skip</button><button class="door" name="do" value="hold">Hold</button></p></form>
 <!-- by_hand: the draft ready to copy part by part, where it goes, and the link of the post made -->
 <div class="byhand" id="hand-{id}"><p class="hint">{where}</p>{parts}{offers}
 <form method="post" action="{base}/draft/{id}"><label>{ask} <small>its delve.town link, https://delve.town/profile/&lt;handle&gt;/post/&lt;rkey&gt;, or its at:// URI; a thread's parts one a line, in order</small><textarea name="link" rows="2" required placeholder="https://delve.town/profile/ember.delve.town/post/…"></textarea></label><p class="doors"><button class="door" name="do" value="posted">Record it</button></p></form>
-<details><summary>edit the draft first, or skip it</summary><form method="post" action="{base}/draft/{id}"><textarea name="text" rows="8">{text}</textarea><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="edit">Save the edit</button><button class="door" name="do" value="skip">Skip</button></p></form></details></div>
+<details><summary>edit the draft first, or skip it</summary><form method="post" action="{base}/draft/{id}"><textarea name="text" rows="8">{text}</textarea><input name="reason" placeholder="reason to skip"><p class="doors"><button class="door" name="do" value="edit">Save the edit</button><button class="door" name="do" value="skip">Skip</button><button class="door" name="do" value="hold">Hold</button></p></form></details></div>
+<!-- draft_read: read one draft whole -->
+<p class="doors"><a class="door" href="{base}/draft?draft={id}">Read the draft</a></p>
+<!-- unpost: withdraw a complete or partly posted draft -->
+<form method="post" action="{base}/draft/{id}"><input name="reason" required placeholder="reason to withdraw"><button class="door" name="do" value="unpost">Withdraw</button></form>
+<!-- reads: complete readings with their own GET controls -->
+<h1 class="title">Read<small>status, a draft, the hand's log, model spending, moderation and finding in {world}</small></h1>{note}
+{controls}
+<section><h2>{verb}</h2><pre class="listing">{result}</pre>{draft}</section>
+<!-- read_form: one read with its filters -->
+<details class="action" open><summary>{label}</summary><form method="get" action="{base}/{verb}">{inputs}<button class="door">Read</button></form></details>
+<!-- root_reads: root's complete object and journal reads -->
+<section><h2>Read whole</h2>{controls}</section>
 <!-- by_hand_folded: with a credential file, posting by hand is still offered, folded -->
 <details><summary>or post it by hand</summary>{byhand}</details>
 <!-- part: one post of a draft: its exact text to copy, its count, its link once posted -->

@@ -15,6 +15,7 @@ import tempfile
 import threading
 import unittest
 import urllib.parse
+from unittest import mock
 from pathlib import Path
 
 from transport.journal import records, size
@@ -111,6 +112,7 @@ class Poster:
 
 class HandCase(unittest.TestCase):
     hosted_accounts = False
+    listen = True
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -133,6 +135,8 @@ class HandCase(unittest.TestCase):
             'receipt': {'slug': 'bofab-lukid', 'height': 7, 'outcome': {'tag': 'admitted'}}, 'text': 'planted <b>a</b>', 'posted': False})
         self.poster, self.host = Poster(), StubHost()
         self.hand = hand.Hand(self.state, self.host, TOKEN, poster=self.poster)
+        if not self.listen:
+            return
         self.front = Front(self.state, self.host, identity.Identity(self.state, delve.Client(None)), ('127.0.0.1', 0), hand=self.hand)
         threading.Thread(target=self.front.serve_forever, daemon=True).start()
         self.addCleanup(lambda: (self.front.shutdown(), self.front.server_close()))
@@ -1072,3 +1076,401 @@ class PartialPosting(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class RouteCase(HandCase):
+    """Real HTTP dispatch and form decoding, without opening a listener."""
+    listen = False
+
+    def req(self, method, path, form=None, cookie=''):
+        from types import SimpleNamespace
+        from transport.http import Handler
+        h = Handler.__new__(Handler)
+        h.server = SimpleNamespace(hand=self.hand)
+        h.command, h.path = method, path
+        raw = urllib.parse.urlencode(form or {}).encode()
+        h.headers = {'Cookie': cookie, 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': str(len(raw))}
+        h.rfile, h.wfile = io.BytesIO(raw), io.BytesIO()
+        h.client_address, h.did, h.head = ('127.0.0.1', 1), None, False
+        responses, headers = [], []
+        h.send_response = responses.append
+        h.send_header = lambda key, value: headers.append((key, value))
+        h.end_headers = lambda: None
+        h.dispatch(method)
+        return responses[0], h.wfile.getvalue().decode(), dict(headers)
+
+
+class Portal(RouteCase):
+    """Every hand verb has a reachable form and exercises the same operation as the CLI.
+
+    Refuted by a filter silently dropped, a control without a route, incomplete raw reads,
+    a thread linked out of order, or a malformed form reaching the host.
+    """
+    def send_form(self, path, form):
+        return self.req('POST', '/hand/town/' + path, form, f'dt_hand={TOKEN}')
+
+    def test_parser_verbs_have_controls_and_routes_or_an_explicit_local_only_reason(self):
+        import argparse
+        from transport import root
+        from html.parser import HTMLParser
+        class Controls(HTMLParser):
+            def __init__(self, page):
+                super().__init__()
+                self.actions, self.links, self.names, self.fields, self.textareas, self.current = set(), set(), set(), {}, {}, None
+                self.feed(page)
+            def handle_starttag(self, tag, attrs):
+                attrs = dict(attrs)
+                if tag == 'form':
+                    self.current = attrs.get('action')
+                    self.actions.add(self.current)
+                    self.fields.setdefault(self.current, set())
+                    self.textareas.setdefault(self.current, set())
+                if tag == 'a': self.links.add(attrs.get('href'))
+                if tag in ('input', 'textarea', 'select'):
+                    self.names.add(attrs.get('name'))
+                    if self.current: self.fields[self.current].add(attrs.get('name'))
+                    if self.current and tag == 'textarea': self.textareas[self.current].add(attrs.get('name'))
+            def handle_endtag(self, tag):
+                if tag == 'form': self.current = None
+        pages = {p: Controls(self.get('/hand/town/' + p)[1]) for p in ('', 'speak', 'watch', 'root/', 'status')}
+        worlds = Controls(self.get('/hand/')[1])
+        read = pages['status']
+        for verb in ('status', 'draft', 'log', 'spend', 'modlog', 'find'):
+            self.assertIn('/hand/town/' + verb, read.actions, verb)
+        for verb in ('root/dump', 'root/entries'):
+            self.assertIn('/hand/town/' + verb, pages['root/'].actions)
+        for face, specs in (('root', root.ROOT), ('mod', {**root.POWERS, 'settings': root.MOD_SETTINGS})):
+            for verb, spec in specs.items():
+                action = f'/hand/town/{face}/{verb}'
+                self.assertIn(action, pages['root/'].actions)
+                fields = spec[1] if face == 'mod' and verb != 'settings' else spec
+                self.assertTrue({n for n, _ in fields} <= pages['root/'].fields[action])
+        self.assertIn('text', pages['root/'].textareas['/hand/town/root/card'])
+        for name in ('all', 'since', 'kind'):
+            self.assertIn(name, pages[''].names)
+        for name in ('spell', 'intent', 'to', 'replyTo', 'day'):
+            self.assertIn(name, pages['speak'].names)
+        self.assertIn('/hand/town/welcome', pages['speak'].actions)
+        self.assertIn('/hand/town/morning', pages['speak'].actions)
+        self.assertIn('limit', pages['watch'].names)
+        self.assertIn('count', worlds.names)
+        common = argparse.ArgumentParser(add_help=False)
+        parser = argparse.ArgumentParser()
+        hand.parser(parser, common)
+        verbs = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices
+        covered = {'inbox', 'outbox', 'draft', 'edit', 'post', 'posted', 'match', 'skip', 'hold', 'unpost', 'status', 'search',
+                   'retry', 'reply', 'log', 'spend', 'modlog', 'find', 'speak', 'morning', 'plan', 'watch', 'worlds',
+                   'invite', 'invites', 'revoke-invite', 'welcome', 'root', *root.POWERS, 'settings'}
+        self.assertEqual(set(verbs), covered | {'serve'})  # starts a listener; cannot run inside its own page
+
+    def test_console_forwards_inbox_filters_and_all_outbox_without_hiding_finished_drafts(self):
+        with mock.patch.object(self.hand, 'inbox', wraps=self.hand.inbox) as inbox, \
+                mock.patch.object(self.hand, 'outbox', wraps=self.hand.outbox) as outbox:
+            self.assertEqual(self.get('/hand/town/?since=6&kind=summon&all=1')[0], 200)
+            inbox.assert_called_once_with(6, 'summon')
+            outbox.assert_called_once_with(True)
+        self.hand.skip('7-aaaa', 'noise')
+        page = self.get('/hand/town/?all=1')[1]
+        self.assertIn('7-aaaa', page)
+        self.assertIn('/hand/town/draft?draft=7-aaaa', page)
+
+    def test_read_controls_forward_every_option_and_show_complete_escaped_results(self):
+        from transport import root
+        payload = '<script>' + 'x' * post.MAX_TEXT + '</script>'
+        cases = [('status', 'status', {}, (), {}), ('draft?draft=7-aaaa', 'view', {}, ('7-aaaa',), {}),
+                 ('log?tail=1', 'tail', {}, (1,), {}), ('spend?month=2026-09', 'spend', {}, ('2026-09',), {}),
+                 ('modlog?object=bell&tail=7', 'modlog', root, (self.host, self.hand.owner, 'bell', 7), {}),
+                 ('find?query=bell', 'find', root, (self.host, self.hand.owner, 'bell'), {}),
+                 ('root/dump?object=bell', 'dump', root, (self.host, self.hand.owner, 'bell'), {}),
+                 ('root/entries?after=6&object=bell&principal=p&limit=7', 'entries', root,
+                  (self.state, 6, 7, 'bell', 'p'), {})]
+        for path, name, module, args, kwargs in cases:
+            with self.subTest(path=path), mock.patch.object(module or self.hand, name, return_value={'value': payload}) as call:
+                code, page, _ = self.get('/hand/town/' + path)
+                self.assertEqual(code, 200)
+                self.assertIn(html.escape(payload), page)
+                self.assertNotIn(payload, page)
+                if name == 'find':
+                    self.assertEqual(call.call_args.args[:3], args)
+                    self.assertEqual(list(call.call_args.args[3]), list(self.hand.observed().values()))
+                else:
+                    call.assert_called_once_with(*args, **kwargs)
+
+    def test_search_retry_reply_and_edit_routes_use_real_hand_operations(self):
+        self.get('/hand/town/?slug=bofab-lukid')
+        self.assertEqual(self.host.ops[-1]['slug'], 'bofab-lukid')
+        self.state.skipped.write_text(self.uri + '\n')
+        self.assertEqual(self.send_form('retry', {'uri': self.uri})[0], 303)
+        self.assertNotIn(self.uri, self.state.words(self.state.skipped))
+        text = '<script>' + 'r' * (post.MAX_TEXT - 12)
+        self.assertEqual(self.send_form('reply', {'uri': self.uri, 'object': 'garden-1', 'text': text})[0], 303)
+        draft = self.hand.tail(1)[0]['draft']
+        self.assertEqual(self.hand.draft(draft)[1]['text'], text)
+        self.send_form('draft/7-aaaa', {'do': 'edit', 'text': text + '\r\nend'})
+        self.assertEqual(self.hand.draft('7-aaaa')[1]['text'], text + '\nend')
+        self.assertIn(html.escape(text), self.get()[1])
+        self.assertNotIn(text, self.get()[1])
+
+    def test_post_object_override_and_unpost_control_use_the_existing_methods(self):
+        self.send_form('draft/7-aaaa', {'do': 'post', 'object': 'bell'})
+        self.assertEqual(self.poster.calls[-1][-1], 'bell')
+        Unpost.posted(self, 'at://did:plc:me/town.delve.feed.post/r9')
+        with mock.patch.object(self.hand, 'unpost', return_value={'unposted': 'a'}) as withdraw:
+            code, page, _ = self.get('/hand/town/?all=1')
+            self.assertIn('value="unpost"', page)
+            self.assertEqual(self.send_form('draft/7-aaaa', {'do': 'unpost', 'reason': 'withdraw'})[0], 303)
+            withdraw.assert_called_once_with('7-aaaa', 'withdraw')
+
+    def test_posted_threads_forward_links_in_order_and_match_uses_existing_finder(self):
+        links = '\r\n'.join(f'at://did:plc:me/town.delve.feed.post/p{n}' for n in range(1, 4))
+        self.assertIn('one a line, in order', self.get()[1])
+        with mock.patch.object(self.hand, 'posted', return_value={'note': 'recorded'}) as record:
+            self.assertEqual(self.send_form('draft/7-aaaa', {'do': 'posted', 'link': links})[0], 303)
+            record.assert_called_once_with('7-aaaa', links)
+        with mock.patch.object(self.hand, 'find_posts', return_value={'linked': [], 'offers': []}) as finder:
+            self.assertEqual(self.send_form('match', {})[0], 303)
+            finder.assert_called_once_with()
+
+    def fixture_posts(self, text):
+        """A read-only posting account repository; no request leaves the test."""
+        from types import SimpleNamespace
+        root_ref = {'uri': self.uri, 'cid': 'parent'}
+        records = {self.uri: {'uri': self.uri, 'cid': 'parent', 'value': {'text': 'the parent'}}}
+        uris, parent = [], root_ref
+        for n, part in enumerate(post.parts(text), 1):
+            uri = f'at://{self.state.config.poster}/town.delve.feed.post/part{n}'
+            record = {'uri': uri, 'cid': str(n), 'value': {'text': part, 'createdAt': '2099-01-01T00:00:00Z',
+                      'reply': {'parent': parent, 'root': root_ref}}}
+            records[uri] = record
+            uris.append(uri)
+            parent = {'uri': uri, 'cid': str(n)}
+        self.hand._reader = SimpleNamespace(record=lambda uri: records[uri],
+                                           get=lambda *a, **kw: {'records': [records[u] for u in uris]})
+        return uris
+
+    def test_a_real_multi_link_thread_is_registered_in_order_and_wrong_order_is_refused(self):
+        text = 'the bell rings ' * 180
+        self.hand.edit('7-aaaa', text)
+        uris = self.fixture_posts(text)
+        self.assertGreater(len(uris), 1)
+        _, _, headers = self.send_form('draft/7-aaaa', {'do': 'posted', 'link': uris[1]})
+        self.assertIn('wrong_parent', urllib.parse.unquote_plus(headers['Location']))
+        self.assertFalse(self.hand.draft('7-aaaa')[1]['posted'])
+        self.assertEqual(self.send_form('draft/7-aaaa', {'do': 'posted', 'link': '\r\n'.join(uris)})[0], 303)
+        d = self.hand.draft('7-aaaa')[1]
+        self.assertTrue(d['posted'])
+        self.assertEqual([one['uri'] for one in d['sentParts']], uris)
+        self.assertEqual([r['uri'] for r in self.host.ops if r['op'] == 'world-posted'], uris)
+        self.assertEqual(self.poster.calls, [])
+
+    def test_real_match_links_a_thread_and_withdrawal_unregisters_each_part_once(self):
+        text = 'the bell rings ' * 180
+        self.hand.edit('7-aaaa', text)
+        uris = self.fixture_posts(text)
+        self.send_form('match', {})
+        self.assertTrue(self.hand.draft('7-aaaa')[1]['posted'])
+        page = self.get('/hand/town/?all=1')[1]
+        self.assertIn('value="unpost"', page)
+        with mock.patch.object(post, 'unsend') as delete:
+            self.send_form('draft/7-aaaa', {'do': 'unpost', 'reason': 'wrong card'})
+        self.assertEqual([c.args[0] for c in delete.call_args_list], uris)
+        self.assertEqual([r['uri'] for r in self.host.ops if r['op'] == 'world-posted' and r.get('unposted')], uris)
+        self.assertEqual(self.hand.draft('7-aaaa')[1]['unposted']['reason'], 'wrong card')
+        self.assertNotIn('value="unpost"', self.get('/hand/town/?all=1')[1])
+
+    def test_a_partly_posted_thread_can_be_withdrawn_and_cannot_be_edited(self):
+        text = 'the bell rings ' * 180
+        self.hand.edit('7-aaaa', text)
+        uris = self.fixture_posts(text)
+        self.send_form('draft/7-aaaa', {'do': 'posted', 'link': uris[0]})
+        self.assertIn('value="unpost"', self.get()[1])
+        _, _, headers = self.send_form('draft/7-aaaa', {'do': 'edit', 'text': 'changed'})
+        self.assertIn('frozen', urllib.parse.unquote_plus(headers['Location']))
+        self.assertEqual(self.hand.draft('7-aaaa')[1]['text'], text)
+        with mock.patch.object(post, 'unsend') as delete:
+            self.send_form('draft/7-aaaa', {'do': 'unpost', 'reason': 'partial'})
+        delete.assert_called_once()
+        self.assertEqual(delete.call_args.args[0], uris[0])
+
+    def test_speak_all_options_seeds_and_invitations_reach_the_existing_operations(self):
+        self.hand.plan = {'path': 'plan.md', 'seeds': ['delvetalk bell rain'], 'invitations': []}
+        came = {'line': 'admitted', 'intent': 'i', 'drafted': 'd'}
+        with mock.patch.object(self.hand, 'cast', return_value=came) as cast:
+            self.send_form('speak', {'spell': 'words', 'intent': 'i', 'to': 'bell', 'topic': 't', 'replyTo': self.uri})
+            cast.assert_called_once_with('words', 't', self.uri, 'i', 'bell', wait=0)
+            cast.reset_mock()
+            self.send_form('speak', {'seed': '1', 'topic': 't', 'replyTo': self.uri})
+            cast.assert_called_once_with('delvetalk bell rain', 't', self.uri, self.hand.seed_intent('delvetalk bell rain'), wait=0)
+        with mock.patch.object(self.hand, 'invite', return_value={'drafted': 'd'}) as invite:
+            self.send_form('invite', {'minute': '9', 'topic': 't', 'replyTo': self.uri})
+            invite.assert_called_once_with('9', 't', self.uri)
+        self.assertEqual(self.get('/hand/town/plan')[0], 200)
+
+    def test_seed_number_is_shared_with_the_cli_and_invalid_seeds_do_not_cast(self):
+        import argparse
+        self.hand.plan = {'path': 'plan.md', 'seeds': ['delvetalk bell rain'], 'invitations': []}
+        args = argparse.Namespace(invitation=None, seed=1, topic='t', reply_to=self.uri)
+        with mock.patch.object(self.hand, 'cast', return_value={'line': 'admitted', 'intent': 'i', 'drafted': 'd'}) as cast:
+            hand.cli_speak(self.hand, args)
+            cast.assert_called_once_with('delvetalk bell rain', 't', self.uri, self.hand.seed_intent('delvetalk bell rain'), wait=hand.WAIT_MAX)
+            cast.reset_mock()
+            for seed in ('0', '2', 'NaN', ' '):
+                self.assertEqual(self.send_form('speak', {'seed': seed})[0], 303)
+            cast.assert_not_called()
+
+    def test_withdrawal_requires_a_reason_even_when_the_browser_form_is_bypassed(self):
+        Unpost.posted(self, 'at://did:plc:me/town.delve.feed.post/r9')
+        before = list(self.host.ops)
+        with mock.patch.object(post, 'unsend') as delete:
+            _, _, headers = self.send_form('draft/7-aaaa', {'do': 'unpost', 'reason': ' '})
+        delete.assert_not_called()
+        self.assertEqual(self.host.ops, before)
+        self.assertIn('reason', urllib.parse.unquote_plus(headers['Location']))
+
+    def test_morning_day_and_welcome_spell_topic_and_reply_target_are_forwarded(self):
+        with mock.patch.object(self.hand, 'morning', return_value={'drafted': 'd'}) as morning:
+            self.send_form('morning', {'day': '137', 'topic': 't', 'replyTo': self.uri})
+            morning.assert_called_once_with(137, 't', self.uri)
+            morning.reset_mock()
+            self.send_form('morning', {})
+            morning.assert_called_once_with(None, None, None)
+        with mock.patch.object(self.hand, 'welcome', return_value={'drafted': 'd'}) as welcome:
+            self.send_form('welcome', {'spell': 'delvetalk bell rain', 'topic': 't', 'replyTo': self.uri})
+            welcome.assert_called_once_with('delvetalk bell rain', 't', self.uri)
+
+    def test_morning_and_welcome_make_real_drafts_and_never_post_them(self):
+        send = self.host.send
+        def reply(req):
+            if req['op'] == 'world-chronicle':
+                return {'status': 'chronicled', 'day': req.get('day', 137), 'lines': ['A public day.']}
+            if req['op'] == 'world-render':
+                return {'status': 'painted', 'text': 'The morning paint.'}
+            return send(req)
+        with mock.patch.object(self.host, 'send', side_effect=reply):
+            self.send_form('morning', {'day': '137', 'replyTo': self.uri})
+        morning = self.hand.tail(1)[0]['draft']
+        self.assertEqual(self.hand.draft(morning)[1]['speak'], {'morning': 137})
+        self.assertEqual(self.hand.draft(morning)[1]['replyTo'], self.uri)
+        self.assertEqual(self.hand.draft(morning)[1]['text'], 'The morning paint.')
+        came = {'drafted': '7-aaaa', 'line': 'admitted', 'intent': 'i'}
+        with mock.patch.object(self.hand, 'cast', return_value=came):
+            self.send_form('welcome', {'spell': 'delvetalk bell rain', 'replyTo': self.uri})
+        d = self.hand.draft('7-aaaa')[1]
+        self.assertTrue(d['welcome'])
+        self.assertIn('delvetalk bell rain', d['text'])
+        self.assertFalse(d['posted'])
+        self.assertEqual(self.poster.calls, [])
+
+    def test_worlds_and_invites_are_read_on_the_worlds_page_and_forms_select_the_named_world(self):
+        send = self.host.send
+        def reply(req):
+            if req['op'] == 'serve-status':
+                return {'pid': 123, 'worlds': [{'name': w, 'objects': 2, 'height': 7, 'clock': 10, 'replay': 14} for w in ('town', 'pond')]}
+            return send(req)
+        pond_host = StubHost()
+        with mock.patch.object(self.host, 'send', side_effect=reply), mock.patch.object(self.host, 'at', return_value=pond_host) as at:
+            page = self.get('/hand/')[1]
+            self.assertIn('/hand/pond/', page)
+            self.assertIn('Guests', page)
+            self.assertEqual(self.get('/hand/pond/status')[0], 200)
+            at.assert_called_once_with('pond')
+            self.req('POST', '/hand/pond/root/set', {'object': 'bell', 'field': 'colour', 'value': '"silver"', 'reason': 'repair'}, f'dt_hand={TOKEN}')
+            self.assertEqual(pond_host.ops[-1]['act'], {'kind': 'set', 'object': 'bell', 'field': 'colour', 'value': 'silver'})
+            self.assertEqual(self.hand.hands['pond'].tail(1)[0]['world'], 'pond')
+            self.assertEqual(self.get('/hand/not-held/status')[0], 404)
+
+    def test_added_readings_and_controls_are_also_available_as_plain_text(self):
+        for path in ('status', 'log', 'spend', 'modlog', 'find?query=bell', 'root/dump?object=bell', 'root/entries', 'draft?draft=7-aaaa'):
+            with self.subTest(path=path):
+                code, text, headers = self.get('/hand/town/' + path + ('&' if '?' in path else '?') + 'text=1')
+                self.assertEqual(code, 200)
+                self.assertEqual(headers['Content-Type'].split(';')[0], 'text/plain')
+                self.assertNotIn('<form', text)
+                self.assertIn('GET /hand/town/', text)
+
+    def test_watch_limit_and_zulip_destination_controls_are_present_and_forwarded(self):
+        with mock.patch.object(self.hand, 'watch', return_value=[]) as watch:
+            self.get('/hand/town/watch?object=bell&limit=7&still=1')
+            watch.assert_called_once_with('bell', 7)
+        self.state.write(self.state.row, {'world': 'town', 'transport': 'zulip', 'channel': 'delvetalk'})
+        page = self.get('/hand/town/speak')[1]
+        self.assertIn('name="topic"', page)
+        self.assertIn('/hand/town/welcome', page)
+
+    def test_every_root_act_and_moderation_power_posts_its_typed_fields_and_reason(self):
+        from transport import root
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, 'Bell.obend').write_text('bell source')
+            values = {'object': 'bell', 'field': 'owner', 'value': '"p"', 'principal': 'p', 'method': 'rain',
+                      'argument': '{"n":1}', 'intent': 'i', 'clock': '20', 'postQuota': '30', 'interpretQuota': '40',
+                      'modelQuota': '50', 'dir': directory, 'height': '7', 'text': 'paint', 'hours': '2',
+                      'grant': 'g', 'scratch': 's', 'who': 'p'}
+            for face, specs in (('root', root.ROOT), ('mod', {v: spec for v, (_, spec) in root.POWERS.items()} | {'settings': root.MOD_SETTINGS})):
+                for verb, spec in specs.items():
+                    form = {n: values[n] for n, _ in spec} | {'reason' if face == 'root' else 'reading': 'because'}
+                    with self.subTest(face=face, verb=verb):
+                        self.assertEqual(self.send_form(f'{face}/{verb}', form)[0], 303)
+                        expected = root.request(face, verb, form, self.hand.owner, self.hand.clock)
+                        got = self.host.ops[-1]
+                        # Identity is clock-derived; the root request's remaining fields are exact.
+                        self.assertEqual({k: v for k, v in got.items() if k != 'identity'}, {k: v for k, v in expected.items() if k != 'identity'})
+            self.assertEqual(len(self.logged()), len(root.ROOT) + len(root.POWERS) + 1)
+
+    def test_root_editor_saves_only_changed_fields_and_shows_the_complete_dump(self):
+        from transport import root
+        dump = {'view': {'state': {'tag': 'text', 'value': 'x' * 8000}}, 'record': {'record': {'law': []}}, 'dump': {}, 'source': {}}
+        with mock.patch.object(root, 'dump', return_value=dump):
+            page = self.get('/hand/town/root/?object=bell')[1]
+            self.assertIn(html.escape(json.dumps(dump, indent=1, sort_keys=True)), page)
+        self.send_form('root/save', {'object': 'bell', 'shown': '{"state":0,"law":[]}', 'state': '1', 'law': '[]', 'reason': 'repair'})
+        self.assertEqual(self.host.ops[-1]['act'], {'kind': 'set', 'object': 'bell', 'field': 'state', 'value': 1})
+
+    def test_malformed_and_unauthenticated_controls_never_reach_the_host_or_poster(self):
+        for path, form in [('root/set', {'object': 'bell', 'field': 'state', 'value': 'broken', 'reason': 'why'}),
+                           ('root/save', {'object': 'bell', 'shown': 'broken', 'reason': 'why'}),
+                           ('mod/quiet', {'who': 'p', 'hours': 'NaN', 'reading': 'why'}),
+                           ('morning', {'day': 'NaN'}), ('draft/7-aaaa', {'do': 'unpost', 'reason': ''})]:
+            before = list(self.host.ops)
+            code, _, headers = self.send_form(path, form)
+            self.assertEqual(code, 303, path)
+            self.assertIn('note=', headers['Location'])
+            self.assertEqual(self.host.ops, before)
+        for path in ('log?tail=NaN', 'watch?limit=NaN', 'root/entries?after=NaN', '?since=NaN'):
+            self.assertEqual(self.get('/hand/town/' + path)[0], 400)
+        self.assertEqual(self.req('GET', '/hand/town/log')[0], 404)
+        self.assertEqual(self.req('POST', '/hand/town/root/set', {'reason': 'x'})[0], 404)
+        self.assertEqual(self.poster.calls, [])
+        self.assertEqual(self.get('/hand/town/serve')[0], 404)
+        self.assertEqual(self.get('/hand/town/root/edit?height=7')[0], 404)
+
+
+class PortalGuests(RouteCase):
+    hosted_accounts = True
+
+    def test_open_batch_codes_are_one_per_line_shown_once_and_revoked_by_visible_id(self):
+        code, page, headers = self.req('POST', '/hand/', {'guest': 'invite', 'count': '3', 'name': '', 'note': '<tag>', 'expires': '14'}, f'dt_hand={TOKEN}')
+        self.assertEqual(code, 200)
+        import re
+        codes = re.findall(r'dt_invite_[A-Za-z0-9_-]{32}', page)
+        self.assertEqual(len(set(codes)), 3)
+        self.assertIn('\n'.join(codes), page)
+        self.assertNotIn('Location', headers)
+        rows = self.hand.guests()
+        self.assertEqual(len(rows), 3)
+        for row in rows:
+            self.assertIn(f'id {row["id"]}', page)
+            self.assertIn(f'name="name" value="{row["id"]}"', page)
+        self.assertIn('&lt;tag&gt;', page)
+        later = self.get('/hand/')[1]
+        self.assertTrue(all(c not in later + self.state.hand_log.read_text() for c in codes))
+        self.req('POST', '/hand/', {'guest': 'revoke', 'name': str(rows[0]['id'])}, f'dt_hand={TOKEN}')
+        self.assertEqual(sum(r['state'] == 'revoked' for r in self.hand.guests()), 1)
+
+    def test_batch_limit_and_named_batch_refusals_create_no_invitations(self):
+        for count, name in (('0', ''), ('101', ''), ('NaN', ''), ('2', 'named')):
+            code, page, _ = self.req('POST', '/hand/', {'guest': 'invite', 'count': count, 'name': name}, f'dt_hand={TOKEN}')
+            self.assertEqual(code, 200)
+            self.assertEqual(self.hand.guests(), [])
+        code, page, _ = self.req('POST', '/hand/', {'guest': 'invite', 'count': '100'}, f'dt_hand={TOKEN}')
+        self.assertEqual(code, 200)
+        self.assertEqual(len(self.hand.guests()), 100)
