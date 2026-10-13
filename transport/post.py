@@ -186,12 +186,32 @@ def record_writer(st, client=None):
     return write
 
 
+def settle(host, d, one, intent, said, first):
+    """A post the owner made by hand (transport/byhand.py), told to the host as `send` and `record_posted` tell one made
+    here: its reservation under `intent`, against the hour and the resident it answers, then `world-posted` for the
+    draft's object. The post has left already, so a full hour is no refusal of it: -> the host's answer, or an error the
+    bridge's next run (`record_sent`) asks again."""
+    try:
+        reserve(host, intent, 'delve', answering(d))
+    except Failure as f:
+        return {'status': 'error', 'message': f'{f.code}: {f.detail}'}
+    obj = draft_object(d)
+    return record_posted(host, one, obj, d.get('slot'), wiki_target(said) if first else None, intent) if obj else {'status': 'reserved'}
+
+
 def record_sent(st, host):
     """Tell the host of every posted draft it has not confirmed: registration is retried on its own, never by posting
-    again. -> the drafts recorded now."""
+    again; a post made by hand is reserved and recorded again (`settle`). -> the drafts recorded now."""
     done = []
     for path, d in st.drafts():
         obj = draft_object(d)
+        if d.get('byHand'):
+            again = [dict(p, recorded=settle(host, d, p, p['intent'], p['text'], p['part'] == 1)) if (p.get('recorded') or {}).get('status') == 'error' else p
+                     for p in d['byHand']]
+            if again != d['byHand']:
+                st.write(path, dict(d, byHand=again))
+                done += [path.name] if all((p['recorded'] or {}).get('status') != 'error' for p in again) else []
+            continue
         if d.get('posted') and d.get('sent') and obj and (d.get('recorded') or {}).get('status') in (None, 'error'):
             got = record_posted(host, d['sent'], obj, d.get('slot'), wiki_target(d['text']), d.get('intent'))
             st.write(path, dict(d, recorded=got))

@@ -377,6 +377,32 @@ intent, the record key chosen before the first send (Zulip: the stream's newest 
 rerun after a crash adopts the post instead of writing again. A draft whose `world-posted` failed keeps `sent` and is
 recorded by the bridge's next run, never posted twice.
 
+## Posting by hand
+
+The default deploy has no credential: `/etc/delvetalk/delve/` stays empty, the posting account's password never
+reaches the box, and the hand says on every outbox `posting by hand`. The owner posts each draft himself from his own
+delve.town client as ember.delve.town (config `poster`, `did:plc:6amo7col5h4ciq2gpm5eur7b`) and gives the hand its link
+(docs/POSTING.md "Posting by hand"):
+
+1. Open the outbox (`/hand/town/` over the forward below). The draft that has waited longest is first, with where it
+   came from. Open the post it replies under (its delve.town link; a draft with none starts a post of its own), reply
+   there, and paste the draft's text with its Copy button. A thread's parts each reply under the part before.
+2. Copy the new post's link from the client (`https://delve.town/profile/ember.delve.town/post/<rkey>`) into the
+   draft's "I posted it" field, Record it; or over ssh
+   `docker compose run --rm delvetalk-ops python3 -m transport hand posted <draft> --url <link>` (one `--url` a part).
+   The hand reads the post back from pds.delve.town, refuses another account's post (`wrong_author`) or one under
+   another post (`wrong_parent`), records a changed text as the owner's edit, and records it with the host
+   (reservation, then `world-posted`), so replies under it reach its card.
+3. Or let it find them: the outbox reads the account's newest posts each time it is opened (at most every 30 s; Find
+   my posts, or `hand match`), links a post whose text and parent are exactly a waiting draft's and says so, and offers
+   a near one to link with a click. `hand_find = false` in `delvetalk.toml` turns the reading off.
+
+To withdraw one, delete it from the client, then `hand unpost <draft> --reason R`: with no credential the hand
+checks it is gone from delve.town and tells the host, so replies stop routing to it.
+
+Whoever wants the automatic path places `credentials.json` there (below); the outbox then says `posting automatically`,
+Post posts with it, and posting by hand stays offered beneath each draft.
+
 ## Open the hand
 
 The front keeps running, and the bridge and interpreter run against serve (a step every `poll` seconds, or one by
@@ -400,7 +426,9 @@ The token is asked once (query, then a cookie scoped to `/hand/`); without it ev
 opens on the town; `/hand/<world>/` is any world `serve` holds, with the same pages (`--world W` on the command line). A
 world's console has a status strip (journal height, posts this hour of the quota, model spend this month, pending interpretations and
 retries, host pid), a search by receipt slug (`world-resolve`), the OUTBOX and the INBOX. The outbox groups drafts by
-the post they answer, the post beside an editable textarea of the draft, with three buttons: **Post** runs
+the post they answer, longest waiting first, and says which way they leave: posting by hand (no credential file:
+each draft ready to copy and an "I posted it" field, "Posting by hand" above) or automatically, the post beside an
+editable textarea of the draft, with three buttons: **Post** runs
 `post.post_draft`, the code `post.py --draft` runs (the edited text, the owner's credentials file, `world-posted` for the
 draft's object, the draft marked posted); **Skip** marks it `skipped` with a reason and it leaves the outbox; **Hold**
 leaves it. Nothing is posted without a click, and every action is a line in `<state>/hand-log.jsonl`
@@ -420,10 +448,16 @@ The same operations have a command-line face for the owner's assistant over ssh:
 
 - `inbox [--since HEIGHT] [--kind summon|reply|post|wiki-page|wiki-edit|wiki-merge]`: observations newest first, with
   what became of each (whether a post is a spell is the host's reading, shown in its fate).
-- `outbox [--all]`: drafts grouped by the post they answer (`--all` includes posted and skipped).
+- `outbox [--all]`: drafts grouped by the post they answer, the longest waiting first, each with its source, and a
+  waiting delve.town draft with its parts and the post it goes under (`--all` includes posted and skipped).
 - `draft DRAFT`: the post, the draft text and its receipt line (`show` is the moderation power that reverses `hide`).
 - `edit DRAFT --text-file F | --stdin`: replace the draft text, keeping the original.
-- `post DRAFT [--object ID]`: post it, record it with the host for its object (or `--object`), mark it posted.
+- `post DRAFT [--object ID]`: post it with the credential file, record it with the host for its object (or `--object`),
+  mark it posted; refused with no credential file (posting by hand).
+- `posted DRAFT --url LINK [--url LINK ...]` (the draft's "I posted it" field): the owner posted it from his own client;
+  each link (a delve.town post link or an at:// URI; a thread's parts in order) is read back, checked and recorded as
+  "Posting by hand" says. `match` (Find my posts): the account's newest posts against the waiting drafts, an exact one
+  linked, a near one offered.
 - `skip DRAFT --reason R` and `hold DRAFT`: take it out of the outbox with a reason, or leave it.
 - `status`: the readable strip: height, posts this hour, model spend, pending interpretations and retries, host pid.
 - `spend [--month YYYY-MM]`: calls and tokens by month, dollars at Haiku 5.5's published rates and the grant remaining.
@@ -432,7 +466,8 @@ The same operations have a command-line face for the owner's assistant over ssh:
 - `reply URI --text-file F --object ID`: draft a hand-written reply to any observed post as if the object had offered it;
   then `post` it. The web page offers the same as Retry on skipped inbox rows and "reply by hand" on every row.
 - `unpost DRAFT --reason R`: withdraw the post a draft became, ours alone: Delve's `deleteRecord` in the
-  credentials' own repo, or Zulip's delete of the message by the bot the world's bridge row names; then
+  credentials' own repo (with no credential file, the owner deletes it from his client and the hand checks it is
+  gone), or Zulip's delete of the message by the bot the world's bridge row names; then
   `world-posted {unposted: true, reason}` so replies stop routing to it, and the draft and `hand-log.jsonl` keep the fact.
   Anyone else's post is refused before any call.
 - `log [--tail N]`: the last actions in `hand-log.jsonl`.
