@@ -512,20 +512,30 @@ def finished(meta: Meta, gated: Gates, read: Body, strict: Bool) -> Parsed:
 def bodied(meta: Meta, gates: Lists.List<Gate>, read: Body, strict: Bool) -> Parsed:
   match read:
     case bad(b): Parsed.refused({reason: b.reason})
-    case ok(o): checked(entered(meta, gates, o.passages), gating(o.passages, gates), problem(o.passages, strict))
+    case ok(o): checked(entered(meta, gates, o.passages), gating(o.passages, gates), orProblem(written(o.passages), o.passages, strict))
+# What a text read here holds that the scene's bounds do not see, read once, where it is written: its braces, its draws.
+# A wing stitched later is read so; the scene it joins is not read again (`joined`).
+def written(passages: Lists.List<Scenes.Passage>) -> String:
+  if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.any(p.choices, fn(c: Scenes.Choice) -> Bool: Lists.length(c.among) > 0n && Scenes.weights(c.among) == 0n)) then "a choice's draw has weights that add to nothing" else inlined(passages)
+def orProblem(found: String, passages: Lists.List<Scenes.Passage>, strict: Bool) -> String:
+  if found != "" then found else problem(passages, strict)
 def problem(passages: Lists.List<Scenes.Passage>, strict: Bool) -> String:
-  if Lists.length(passages) == 0n then needsStart() else if Lists.length(passages) > 40n then "a scene holds forty passages" else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.length(p.choices) > 8n) then "a passage offers at most eight choices" else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: textLength(p.text) > 600n) then "a passage holds at most 600 characters" else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.any(p.choices, fn(c: Scenes.Choice) -> Bool: textLength(c.text) > 280n)) then "a choice's text holds at most 280 characters" else if inlined(passages) != "" then inlined(passages) else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.any(p.choices, fn(c: Scenes.Choice) -> Bool: Lists.length(c.among) > 0n && Scenes.weights(c.among) == 0n)) then "a choice's draw has weights that add to nothing" else if Scenes.castCount(passages) > 15n then "a scene casts at most fifteen spells: each is a rule in the room's text, which holds sixteen lines" else if strict then unknownTarget(passages, waiting(passages)) else ""
+  if Lists.length(passages) == 0n then needsStart() else if Lists.length(passages) > 40n then "a scene holds forty passages" else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.length(p.choices) > 8n) then "a passage offers at most eight choices" else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: textLength(p.text) > 600n) then "a passage holds at most 600 characters" else if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.any(p.choices, fn(c: Scenes.Choice) -> Bool: textLength(c.text) > 280n)) then "a choice's text holds at most 280 characters" else  if Scenes.castCount(passages) > 15n then "a scene casts at most fifteen spells: each is a rule in the room's text, which holds sixteen lines" else if strict then unknownTarget(passages, waiting(passages)) else ""
 # The first problem the braces of a scene's texts hold, "" for none.
 def inlined(passages: Lists.List<Scenes.Passage>) -> String:
   match passages:
     case nil(_): ""
-    case cons(c): if textInlined(c.head.text, c.head.choices) != "" then textInlined(c.head.text, c.head.choices) else inlined(c.tail)
+    case cons(c): orElse(textInlined(c.head.text, c.head.choices), c.tail)
+def orElse(found: String, rest: Lists.List<Scenes.Passage>) -> String:
+  if found != "" then found else inlined(rest)
 def textInlined(text: String, choices: Lists.List<Scenes.Choice>) -> String:
   firstProblem(Lists.List.cons({head: text, tail: Lists.map(choices, fn(c: Scenes.Choice) -> String: c.text)}))
 def firstProblem(texts: Lists.List<String>) -> String:
   match texts:
     case nil(_): ""
-    case cons(c): if inlineProblem(c.head) != "" then inlineProblem(c.head) else firstProblem(c.tail)
+    case cons(c): problemOr(inlineProblem(c.head), c.tail)
+def problemOr(found: String, rest: Lists.List<String>) -> String:
+  if found != "" then found else firstProblem(rest)
 # The targets no passage of a scene answers, in order.
 def waiting(passages: Lists.List<Scenes.Passage>) -> Lists.List<String>:
   Lists.filterMap(passages, fn(p: Scenes.Passage) -> Lists.Maybe<String>: missing(passages, p.choices))

@@ -1,27 +1,28 @@
 hob: a scene is a room's own story, walked by choosing.
----  optional: id, title, cooldown (clock minutes), requires (min max flags not has)
-=== start  a passage; the first is where a reader begins; prose alone is a scene of one
+---  optional: id, title, cooldown, requires (min max flags not has)
+=== start  a passage; the first is where you begin; prose alone is one
 === key { cups >= 1 }  a passage's guard rides every choice into it
-Prose.  what a reader there reads; no passage falls through to the next
 * [Label] -> next  a choice; with no -> it ends the visit
-* [Label] { gold >= 2, keeps.porch/goblet, "bell/1" wants rain }  a guard: the room's own variables, what the reader keeps or holds, any law condition
-  ~ gold += 1  the room's variables: = += -=
-  ~ cast delvetalk bell/1 ring  a spell, cast under the room's owner as a rule's then
-  ~ ring bell/1  the room's verb: delvetalk <room> ring / text: bell/1
--> next  outside a choice: a Continue to next
+* [Label] { gold >= 2, keeps.porch/goblet, "bell/1" wants rain }  variables, what you keep, a law condition
+  The tap runs warm.  its text, shown on taking it
+  ~ gold += 1  the room's, for everyone: = += -=
+  ~ my.gold += 1  yours alone
+  ~ cast delvetalk bell/1 ring  a spell, as the owner
+  -> a weight: 3  two or more -> draw one by weight (10 unwritten)
+  -> b
+{gold} {my.gold}  in text: a value, read when shown
+{ gold >= 2: rich | poor }  text by a guard on the variables
+{~ rain | snow weight: 3 }  drawn by your turn, the same each reading
 Choices are sticky; once is a guard: { !rang } with ~ rang = true.
 A whole one:
 delvetalk kind/room make / name: the well / spween: <<END
 === well
-A well hums under the square.
-* [Drop a coin] { !wished }
-  ~ wished = true
-  -> deep
+A well hums{coins >= 1: over {coins} coins}.
+* [Drop a coin]
+  ~ coins += 1
+  The water answers {~ low | lower}.
+  -> well
 * [Walk on]
-=== deep
-The water answers with a low bell.
-* [Ring it back]
-  ~ cast delvetalk bell/1 ring
 END
 A ```spween block posted to a room makes one under it.
 Next: delvetalk library read / page: laws

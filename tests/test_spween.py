@@ -641,7 +641,7 @@ class Braid(test_scenarios.Arc):
         page = self.card(self.say(test_scenarios.GLM, "library", "delvetalk library read / page: spween"))
         self.assertTrue(page.startswith("hob: a scene is a room's own story, walked by choosing."), page)
         # The room kind's card shows a scene inline.
-        self.assertIn("delvetalk kind/room make / name: the well / spween: A well hums.", self.card(self.say(test_scenarios.GLM, "kind/room", "")))
+        self.assertIn("delvetalk kind/room make / name: the well / spween: A well hums, {~ low | lower}.", self.card(self.say(test_scenarios.GLM, "kind/room", "")))
 
     def test_a_guard_the_host_cannot_read_refuses_the_making_by_name(self):
         text = "---\nid: s\n---\n=== a\nA door.\n* [Knock] { count(new.presence) >> 1 }\n"
