@@ -483,6 +483,187 @@ class Facts(unittest.TestCase):
         self.assertEqual(self.town.send(op='world-status')['height'], height)
 
 
+MOO = 'did:plc:moo'
+
+
+class LivePaints(unittest.TestCase):
+    """Paints the real model wrote on a fresh genesis with the station (lane/paintfix, 2026-10-12, claude-haiku-5-5),
+    each true of its strokes and refused after finding 17's contract by the verifier's frame words or its source-word
+    block, beside finding 17's false paints, which stay refused. The town: kimik3 and glm rain on bell/1, talk on the
+    porch and in the station, and the clock runs to four, past the regular's hour, so she has come, paid and gone."""
+
+    STATION_LINE = ('comes in with frost on her shoulders that does not melt indoors, nods at the clock the way you nod at a '
+                    'coworker, and pays for a coffee with a coin from a country that redraws its borders')
+    TOWN_LINE = 'made to live at station, keeping its own hours by tide'
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.tmp.cleanup)
+        cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup)
+        for did, handle in ((GLM, 'glm.delve.town'), (KIM, 'kimik3.delve.town'), (MOO, 'moth.delve.town')):
+            cls.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
+        made = genesis.gas_station(cls.town.client, genesis.OPENER)
+        assert all(m['status'] in ('created', 'admitted') for m in made), made
+        deliver = lambda: cls.town.send(op='world-deliver', principal='transport', limit=64)
+        deliver()
+        for who, obj, text, ident in ((KIM, 'bell/1', 'delvetalk bell/1 rain / text: ' + YUE, 'l1'),
+                                      (GLM, 'bell/1', 'delvetalk bell/1 rain / text: drop 77', 'l2'),
+                                      (GLM, 'porch', 'delvetalk porch enter', 'p1'),
+                                      (GLM, 'porch', 'delvetalk porch say / line: the lintel creaked at dusk', 'p2'),
+                                      (KIM, 'porch', 'delvetalk porch enter', 'p3'),
+                                      (KIM, 'porch', 'delvetalk porch say / line: it was empty after all', 'p4'),
+                                      (KIM, 'station', 'delvetalk station enter', 'l3'),
+                                      (KIM, 'station', 'delvetalk station say / line: the coffee here tastes of 3am', 'l4')):
+            Strokes.say.__func__(cls, who, obj, text, ident)
+        clock = lambda: int(next(f['value'] for f in cls.town.send(op='world-view', principal=genesis.OPENER, object='tide')['state']['fields']
+                                 if f['name'] == 'last')['value'])
+        for _ in range(30):
+            cls.town.send(op='world-advance', principal='transport', height=clock() + 61)
+            deliver()
+            if clock() % 1440 // 60 == 4:
+                break
+
+    def check(self, obj, text, tongue='en', **more):
+        # The porch is told to moth, who has not been there: a telling leaves out its reader's own comings.
+        got = self.town.send(op='world-render-check', principal=MOO if obj == 'porch' else GLM, object=obj, text=text, tongue=tongue, **more)
+        return got['status'] if got['status'] == 'verified' else got.get('clause')
+
+    def test_the_strokes_hold_what_the_live_paints_drew_on(self):
+        station = self.town.send(op='world-strokes', principal=GLM, object='station', telling={})['strokes']
+        self.assertIn(self.STATION_LINE, [l['text'] for l in station['lines'] if l['handle'] == 'station/regular'])
+        regular = self.town.send(op='world-strokes', principal=GLM, object='station/regular')['strokes']
+        self.assertIn('frost', regular['voice'])
+        self.assertIn(('the town', self.TOWN_LINE), [(l['handle'], l['text']) for l in regular['lines']])
+        # The painter is never handed a DID to credit: a coiner the town holds no handle for is "its coiner".
+        told = self.town.send(op='world-strokes', principal=GLM, object='station')
+        self.assertTrue(told['strokes']['coined'] and told['strokes']['coiner'].startswith('the author of at://did:'), told['strokes'])
+        self.assertIn("The words it was made with, its coiner's: name: THE ALL-NIGHT STATION", told['text'])
+        self.assertIn('a quotation of these words is credited to its coiner', told['text'])
+        # The painter is told which names imagery may not use: its kind, verbs, marks, units and wants.
+        bell = self.town.send(op='world-strokes', principal=GLM, object='bell/1')['text']
+        self.assertIn('Never in imagery, in any form or language: bell, rain,', bell)
+        spanish = self.town.send(op='world-strokes', principal=GLM, object='bell/1', tongue='es')['text']
+        self.assertIn('lluvia', spanish)
+        # Lines in the marks the paint writes, one pair to copy.
+        self.assertIn('kimik3.delve.town (rain): «%s»' % YUE, spanish)
+        self.assertFalse([m for m in self.town.send(op='world-strokes', principal=GLM, object='bell/2')['strokes']['marks'] if m['name'] == 'rung'])
+
+    def test_true_paints_the_verifier_refused_now_pass(self):
+        for obj, tongue, paint, more in (
+                # ja station telling: `と書き込んだ` (wrote in) is a said/wrote frame.
+                ('station', 'ja', 'station/regularが「%s」と書き込んだ。\nまるで月光の絹。' % self.STATION_LINE, {'telling': {}}),
+                # ja regular: the quotation first, its writer after, the particle joined to the verb.
+                ('station/regular', 'ja', '「%s」とthe townが言った。\nまるで月光の絹。' % self.TOWN_LINE, {}),
+                ('station/regular', 'ja', '「%s」と the town が書き込んだ。' % self.TOWN_LINE, {}),
+                # zh bell: 由 … 写下, written by.
+                ('bell/1', 'zh', '“%s”由kimik3.delve.town写下。\n如月光穿过丝绸。' % YUE, {}),
+                # ar station telling: كما قال, as … said.
+                ('station', 'ar', 'كما قال kimik3.delve.town «the coffee here tastes of 3am».\nمثل ضوء النيون عبر ضباب الفجر.', {'telling': {}}),
+                # ru: the regular is "her"; a feminine said.
+                ('station', 'ru', 'station/regular сказала «%s».\nКак лунный свет сквозь шёлк.' % self.STATION_LINE, {'telling': {}}),
+                # zh regular: the town credited by its name, which is no tongue's words.
+                ('station/regular', 'zh', 'the town 写下“%s”。\n如月光穿过丝绸。' % self.TOWN_LINE, {}),
+                # en station telling: a line framed by the verb that wrote it, as its record holds it.
+                ('station', 'en', 'station/regular emoted “%s”.' % self.STATION_LINE, {'telling': {}}),
+                # ar porch telling and bell: كما (as) opens a simile; يقول (says) frames a quotation.
+                ('porch', 'ar', 'كما يلمس ضوء القمر الحرير.', {'telling': {}}),
+                ('bell/1', 'ar', 'kimik3.delve.town يقول “%s”.\nمثل ضوء القمر عبر الحرير.' % YUE, {}),
+                # ar porch telling: كأن (as if) opens a simile though it folds to كان (was); قاله (said it) frames.
+                ('porch', 'ar', 'كأن ضوء القمر عبر الحرير القديم.', {'telling': {}}),
+                ('porch', 'ar', '«the lintel creaked at dusk» قاله glm.delve.town.', {'telling': {}}),
+                # es porch telling: two quotations on one line, joined by y.
+                ('porch', 'es', 'glm.delve.town dijo «the lintel creaked at dusk» y kimik3.delve.town dijo «it was empty after all».', {'telling': {}}),
+                # The town is named in the paint's tongue: 町, 小镇, el pueblo, город, البلدة.
+                ('station/regular', 'ja', '「%s」と町が書いた。' % self.TOWN_LINE, {}),
+                ('station/regular', 'zh', '小镇写下“%s”。' % self.TOWN_LINE, {}),
+                ('station/regular', 'es', 'el pueblo escribió «%s».' % self.TOWN_LINE, {}),
+                ('station/regular', 'ru', 'город написал «%s».' % self.TOWN_LINE, {}),
+                ('station/regular', 'ar', 'كتبت البلدة «%s».' % self.TOWN_LINE, {}),
+                # zh regular: 像 (like) opens a simile.
+                ('station/regular', 'zh', '像霜落在肩上。', {}),
+                # zh regular: its own line on its own card is its words there, credited by the card.
+                ('station/regular', 'zh', '“came in at the hour, frost on her shoulders”\n如冰霜落在窗上。', {}),
+                # ja station telling: the words marked by を, the writer by が.
+                ('station', 'ja', '「the coffee here tastes of 3am」をkimik3.delve.townが書き込んだ。', {'telling': {}}),
+                # ja regular: the writer marked by は.
+                ('station/regular', 'ja', 'station/regularは「came in at the hour, frost on her shoulders」と書いた。\nまるで月光の絹。', {}),
+                # A coinage whose coiner has no handle here is credited to its coiner, by role, never by DID.
+                ('station', 'en', 'Its coiner named it “THE ALL-NIGHT STATION”.', {}),
+                # en regular: a simile in its voice's words ("frost on her shoulders"), which a line repeats. The live
+                # paint, "As if frost settled on a window before dawn.", stays refused: `settled` is a line's verb.
+                ('station/regular', 'en', 'As if frost crossed a window before dawn.', {})):
+            with self.subTest(obj=obj, tongue=tongue, paint=paint):
+                self.assertEqual(self.check(obj, paint, tongue, **more), 'verified')
+
+    def test_finding_17s_false_paints_stay_refused(self):
+        for obj, tongue, paint, more, clause in (
+                # An uncited ringing claim and a seed promoted to the present, in plain prose and in imagery.
+                ('bell/2', 'en', 'The bell has rung.', {}, 'imagery'),
+                ('bell/2', 'en', 'Like a bell that has rung.', {}, 'imagery'),
+                ('bell/1', 'en', 'The bell is small and brass, with no clapper.', {}, 'imagery'),
+                ('bell/1', 'en', 'Like a bell without a clapper.', {}, 'imagery'),
+                # The voice lends its words, never a unit, verb or want: bell/1's voice says rain and rings.
+                ('bell/1', 'en', 'As if rain scatters light.', {}, 'imagery'),
+                ('bell/1', 'es', 'Como una campana de latón que espera la lluvia.', {}, 'imagery'),
+                ('bell/1', 'es', 'Como un hilo de ámbar que suena.', {}, 'imagery'),
+                ('station/regular', 'en', 'Like frost that does not melt indoors.', {}, 'imagery'),
+                ('station/regular', 'en', 'As if frost settled on a window before dawn.', {}, 'imagery'),
+                ('bell/1', 'ar', 'كأن المطر على النحاس.', {}, 'imagery'),
+                ('bell/1', 'ru', 'Как дождём по меди.', {}, 'imagery'),
+                ('bell/1', 'es', 'Como lluvias sobre el latón.', {}, 'imagery'),
+                ('bell/1', 'ar', 'كأن الجرس كان صامتا.', {}, 'imagery'),
+                # A deed in the frame is an uncited claim: the regular came.
+                ('station/regular', 'zh', 'station/regular来过，“came in at the hour, frost on her shoulders”。', {}, 'imagery'),
+                # A frame word is no licence to misattribute: the town's line given to the regular.
+                ('station/regular', 'zh', 'station/regular说“%s”。' % self.TOWN_LINE, {}, 'attribution'),
+                ('station/regular', 'ja', '「%s」とstation/regularが言った。' % self.TOWN_LINE, {}, 'attribution'),
+                # The town's word credits the town alone, and a run holding more than frame words and names is no frame.
+                ('station/regular', 'ja', '「came in at the hour, frost on her shoulders」と町が書いた。', {}, 'attribution'),
+                ('station/regular', 'ja', '「%s」と町が雨の中で書いた。' % self.TOWN_LINE, {}, 'imagery'),
+                ('station/regular', 'es', 'el pueblo escribió «came in at the hour, frost on her shoulders».', {}, 'attribution'),
+                # Only on its own card: on the station the regular's line is hers, and uncredited.
+                ('station', 'zh', '“%s”' % self.STATION_LINE, {'telling': {}}, 'attribution'),
+                # Nor the town's line on the regular's card.
+                ('station/regular', 'zh', '“%s”' % self.TOWN_LINE, {}, 'attribution'),
+                # Quotation marks hold the words alone: a frame nested inside is no stroke's text.
+                ('station/regular', 'ru', '«station/regular сказал “came in at the hour, frost on her shoulders”».', {}, 'quotes'),
+                ('station', 'en', 'did:plc:6amo7col5h4ciq2gpm5eur7b coined THE ALL-NIGHT STATION in a post on delve.town.', {'telling': {}}, 'imagery'),
+                ('station', 'en', 'did:plc:6amo7col5h4ciq2gpm5eur7b said “THE ALL-NIGHT STATION”.', {}, 'imagery'),
+                ('station', 'en', 'the town named it “THE ALL-NIGHT STATION”.', {}, 'attribution'),
+                # A line's own verb frames only that line: the town's line was not written by `came`.
+                ('station/regular', 'en', 'the town came “%s”.' % self.TOWN_LINE, {}, 'imagery'),
+                # A preface is a line of the paint.
+                ('bell/1', 'en', 'I select facts 1, 4 and 6.\n[[1]]', {}, 'numbers')):
+            with self.subTest(obj=obj, tongue=tongue, paint=paint):
+                self.assertEqual(self.check(obj, paint, tongue, **more), clause)
+
+    def test_an_english_refusal_is_asked_once_more_and_a_long_expansion_is_told_its_cost(self):
+        self.town.send(op='world-renders')
+        queued = self.town.send(op='world-render', principal=GLM, object='station/regular')
+        self.assertEqual(queued['status'], 'pending', queued)
+        bad = 'Strokes give no Paint-in language, so the default is English.\n[[1]]\nLike moonlight through silk.'
+        refused = self.town.send(op='world-render-submit', key=queued['key'], reply=replied(bad))
+        self.assertEqual(refused['status'], 'retrying', refused)
+        retry = next(i['request'] for i in self.town.send(op='world-renders')['pending'] if i['key'] == queued['key'])
+        self.assertIn('reply with the paint alone', retry['user'])
+        self.assertTrue(retry['user'].endswith('(the paint was: %s)' % bad), retry['user'])
+        done = self.town.send(op='world-render-submit', key=queued['key'], reply=replied('[[1]]\nLike moonlight through silk.'))
+        self.assertEqual((done['status'], done.get('text')), ('painted', 'made by the town.\nLike moonlight through silk.'), done)
+        # A telling whose cited clauses run past its length: the retry is told the expanded length and what costs it.
+        facts = self.town.send(op='world-strokes', principal=GLM, object='station', telling={}, tongue='ja')['strokes']['facts']
+        events = ','.join(str(f['id']) for f in facts if f['kind'] == 'event')
+        long = '[[%s]]\nstation/regularが「%s」と言った。\nまるで月光の絹。' % (events, self.STATION_LINE)
+        got = self.town.send(op='world-render-check', principal=GLM, object='station', telling={}, tongue='ja', text=long)
+        self.assertEqual(got.get('clause'), 'length', got)
+        self.assertTrue(got['detail'].endswith(' expanded'), got)
+        queued = self.town.send(op='world-render', principal=GLM, object='station', telling={}, tongue='ja')
+        refused = self.town.send(op='world-render-submit', key=queued['key'], reply=replied(long))
+        self.assertEqual((refused['status'], refused.get('clause')), ('retrying', 'length'), refused)
+        retry = next(i['request'] for i in self.town.send(op='world-renders')['pending'] if i['key'] == queued['key'])
+        self.assertRegex(retry['user'], r"once the host's clauses replaced its references, \d+ over 500")
+
+
 GOOD = 'Like moonlight through silk.\nkimik3.delve.town said “%s”.' % YUE
 
 
@@ -562,8 +743,10 @@ class Render(unittest.TestCase):
         for who in (KIM, GLM, 'anonymous'):
             got = self.render('garden/bell/1', who=who)
             self.assertEqual((got['status'], got['text']), ('painted', GOOD), got)
-        # The same version rendered twice costs one call; the worker finds nothing more to ask.
-        self.assertEqual(interpret.paint(self.town.client, self.model([])), {'painted': []})
+        # The same version rendered twice costs one call; the worker asks nothing more of it (another render it listed,
+        # refused once, is asked again: every refusal retries once).
+        again = interpret.paint(self.town.client, self.model([GOOD] * len(listed)))
+        self.assertNotIn(first['key'], [k for v in again.values() for k in v if isinstance(k, str)], again)
         self.assertEqual(sum(1 for r in self.asked if r['user'] == req['user']), 1)
         self.assertEqual(self.town.send(op='world-status')['renders']['pending'], 0)
         # A restarted host reads the paint back from the derived cache, verified again; still no call.
@@ -583,7 +766,10 @@ class Render(unittest.TestCase):
         line = "it has no editor named here, so Ember's keeping of it isn't something this card records."
         others = [i for i in self.town.send(op='world-renders')['pending'] if i['key'] != got['key']]
         done = interpret.paint(self.town.client, lambda req: (self.asked.append(req), replied(line if 'anthology' in req['user'] else GOOD))[1])
-        self.assertIn(got['key'], done['exact'], (done, others))
+        # Asked once more with its reason (every refusal, in every tongue), refused again, and shown exact.
+        self.assertIn(got['key'], done['retrying'], (done, others))
+        done = interpret.paint(self.town.client, lambda req: (self.asked.append(req), replied(line if 'anthology' in req['user'] else GOOD))[1])
+        self.assertIn(got['key'], done['exact'], done)
         again = self.render('anthology')
         self.assertEqual((again['status'], again['reason'], again['clause']), ('exact', 'rejected', 'negation'), again)
         self.assertNotIn(got['key'], [i['key'] for i in self.town.send(op='world-renders')['pending']])

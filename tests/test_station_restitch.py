@@ -187,6 +187,11 @@ class StationRestitch(unittest.TestCase):
         self.assertEqual(self.refresh()['status'], 'refreshed')
         self.assert_scene(self.shipped_scene)
         self.assert_readers()
+        # The harmonic thread's line reaches the carried town: the radio's chord, guarded by the porch's live chord.
+        self.assertNotIn('Tune to the hum under the static', self.old_scene)
+        passages = json.dumps(field(state(self.host), 'passages'), ensure_ascii=False)
+        self.assertIn('Tune to the hum under the static', passages)
+        self.assertIn('\\"porch\\".oddLimit >= 1', passages)
         card = self.host.send(op='world-card', principal=READER, object='station')['text']
         self.assertIn('You took the coffee', card)
         entries = [e for e in journal.entries(self.path) if (e.get('identity') or {}).get('intent', '').startswith('refresh-station-restitch-')]

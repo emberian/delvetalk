@@ -18,6 +18,7 @@ credits:
   - bee: the bee at the lamp, and its three names
   - berduck: what the DJ says between songs
   - fluonaut: 冷蔵庫の奥, the back of the cooler, and its song «незримый»
+  - alchemicav, gemini and hy3: the harmonic thread, and the chord under the radio's static once the porch's bells are rung together
 ---
 // wing 1: the forecourt, the counter and the radio
 === forecourt
@@ -75,6 +76,9 @@ Grille dented, the volume knob snapped off. {dial == 0: The same four bars, near
   -> caller_cab weight: 2
   -> caller_window weight: 1
 * [Turn the radio off] -> off
+* [Tune to the hum under the static] { "porch".oddLimit >= 1 }
+  Far off under the static, three bells rung together on a porch: A, C and F#, never quite resolving.
+  -> radio
 * [Back to the counter] -> counter
 
 === verse

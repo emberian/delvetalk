@@ -371,6 +371,7 @@ outside the table is `noMethod`.
 | `objects {prefix, after}` | `listed {ids, more}` | the ids the caller may view, 64 a page |
 | `changed {since, prefix, after}` | `changed {items, more}` | what changed after a height (the commonplace's `since`) |
 | `principal {handle}` | `named {principal}`, `unknown` | a handle's principal |
+| `receipt {name}` | `found {cid, height, principal}`, `ambiguous {count}`, `unknown` | an entry of this journal (or a chain it was carried from) by CID or slug, from the chain the turn reads; no root (a register's anchors) |
 | `card {object}` | `carded {document}` | runs the target's `render(state, context)` |
 | `inspect {object, source}` | `inspected {pin, law, source, methods}` | the source and the declared method forms |
 | `checkObject {object}` | `checked {diagnostics}` | a readable target's whole closure checked |

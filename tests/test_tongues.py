@@ -33,7 +33,7 @@ def replied(text):
     return {'status': 'replied', 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 900, 'output_tokens': 60}}
 
 
-CODES = {'Japanese': 'ja', 'Chinese': 'zh', 'Spanish': 'es', 'Russian': 'ru', 'Arabic': 'ar'}
+CODES = {'English': 'en', 'Japanese': 'ja', 'Chinese': 'zh', 'Spanish': 'es', 'Russian': 'ru', 'Arabic': 'ar'}
 PAINT_OBEND = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'world', 'lib', 'Paint.obend')
 
 
@@ -204,7 +204,7 @@ class Paint(Tongued):
         [req] = [i['request'] for i in self.town.send(op='world-renders')['pending'] if i['key'] == ja['key']]
         self.assertIn('Paint in: 日本語 (Japanese)', req['user'])
         self.assertIn('rains: 2 [in Japanese: 雨]', req['user'])
-        self.assertIn('kimik3.delve.town (rain): “%s”' % YUE, req['user'])  # a resident's line as written, never translated
+        self.assertIn('kimik3.delve.town (rain): 「%s」' % YUE, req['user'])  # a resident's line as written, never translated, in the marks a paint in it writes
         self.assertEqual(req['maxTokens'], 800)
         self.assertIn('When the strokes say "Paint in:" a language', req['system'])
         done = interpret.paint(self.town.client, self.model({'日本語': JA_PAINT}))
@@ -275,7 +275,7 @@ class Paint(Tongued):
     def test_6_the_contracts_thing_examples_are_true_paints_of_the_real_strokes(self):
         facts = self.town.send(op='world-strokes', principal=GLM, object=BELL)['strokes']['facts']
         examples = contract_examples('thing', facts)
-        self.assertEqual(sorted(t for t, _, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
+        self.assertEqual(sorted(t for t, _, _ in examples), ['ar', 'en', 'es', 'ja', 'ru', 'zh'])
         for tongue, paint, expanded in examples:
             with self.subTest(tongue=tongue):
                 got = self.town.send(op='world-render-check', principal=GLM, object=BELL, tongue=tongue, text=paint)
@@ -411,7 +411,7 @@ class Telling(unittest.TestCase):
     def test_the_contracts_before_arrival_examples_are_true_paints_of_the_real_strokes(self):
         facts = self.town.send(op='world-strokes', principal=MOO, object='porch', telling={})['strokes']['facts']
         examples = contract_examples('telling before arrival', facts)
-        self.assertEqual(sorted(t for t, _, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
+        self.assertEqual(sorted(t for t, _, _ in examples), ['ar', 'en', 'es', 'ja', 'ru', 'zh'])
         for tongue, paint, expanded in examples:
             with self.subTest(tongue=tongue):
                 got = self.town.send(op='world-render-check', principal=MOO, object='porch', telling={}, tongue=tongue, text=paint)

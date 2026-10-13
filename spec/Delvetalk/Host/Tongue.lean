@@ -188,7 +188,8 @@ structure Tongue where
   free : List String := []
   stem : String → String := fold
   lexicon : List (String × List String)
-  /-- The words that name the maker and the coiner as the one whose words a quotation is. -/
+  /-- The words that name the maker, the coiner and the town (the world's own principal, `the town` in its clauses) as
+      the one whose words a quotation is. -/
   roles : List (String × List String) := []
   /-- hob's lines (`say`), and the frames the host sets above a telling. -/
   hob : List (String × String)
@@ -306,7 +307,7 @@ def japanese : Tongue :=
        ("act", ["行い", "行為"]), ("refusal", ["拒否", "却下"]), ("hand", ["手"]), ("minute", ["分"]),
        ("character", ["文字", "字"]), ("bell", ["鐘", "ベル"]), ("kind", ["種類"]), ("time", ["回", "度"]),
        ("ring", ["鳴"]), ("water", ["水"]), ("here", ["いる", "ここに"])],
-    roles := [("maker", ["作り手", "作者", "製作者"]), ("coiner", ["名付け親", "造語者"])],
+    roles := [("maker", ["作り手", "作者", "製作者"]), ("coiner", ["名付け親", "造語者"]), ("town", ["町", "街"])],
     hob := [("asksFirst", "hob: それは先に訊く。埋めて送って:"),
             ("needs", "hob: まだ {fields} が要る。埋めて送って:"),
             ("noneTakes", "hob: {card} のどの呪文もそれを取らない。呪文は: delvetalk {card} ?"),
@@ -337,7 +338,7 @@ def chinese : Tongue :=
        ("act", ["举动", "行为"]), ("refusal", ["拒绝"]), ("hand", ["手"]), ("minute", ["分钟", "分"]),
        ("character", ["字"]), ("bell", ["钟", "铃"]), ("kind", ["种"]), ("time", ["次", "遍"]),
        ("ring", ["响"]), ("water", ["水"]), ("here", ["在这里", "在此"])],
-    roles := [("maker", ["制作者", "作者", "创造者"]), ("coiner", ["命名者", "首创者"])],
+    roles := [("maker", ["制作者", "作者", "创造者"]), ("coiner", ["命名者", "首创者"]), ("town", ["小镇", "城镇", "镇"])],
     hob := [("asksFirst", "hob: 这要先问；填好再发:"),
             ("needs", "hob: 还缺 {fields}；填好再发:"),
             ("noneTakes", "hob: {card} 的咒语都不接这个；它的咒语: delvetalk {card} ?"),
@@ -384,7 +385,7 @@ def spanish : Tongue :=
        ("character", ["carácter", "caracteres", "letra"]), ("bell", ["campana"]), ("kind", ["clase", "tipo"]),
        ("time", ["vez", "veces"]), ("ring", ["toque", "campanada", "repique"]), ("water", ["riego", "agua"]),
        ("here", ["aquí"])],
-    roles := [("maker", ["creador", "creadora", "hacedor", "autor", "autora"]), ("coiner", ["acuñador", "acuñadora"])],
+    roles := [("maker", ["creador", "creadora", "hacedor", "autor", "autora"]), ("coiner", ["acuñador", "acuñadora"]), ("town", ["pueblo", "ciudad"])],
     hob := [("asksFirst", "hob: eso pregunta antes; envíalo relleno:"),
             ("needs", "hob: aún falta {fields}; envíalo relleno:"),
             ("noneTakes", "hob: ningún hechizo de {card} toma eso; sus hechizos: delvetalk {card} ?"),
@@ -437,7 +438,7 @@ def russian : Tongue :=
        ("act", ["действие", "поступок"]), ("refusal", ["отказ"]), ("hand", ["рука"]), ("minute", ["минута", "минут"]),
        ("character", ["символ", "знак", "буква"]), ("bell", ["колокол", "колокольчик"]), ("kind", ["вид", "род"]),
        ("time", ["раз"]), ("ring", ["звон"]), ("water", ["полив", "вода"]), ("here", ["здесь"])],
-    roles := [("maker", ["создатель", "создательница", "автор"]), ("coiner", ["автор слова"])],
+    roles := [("maker", ["создатель", "создательница", "автор"]), ("coiner", ["автор слова"]), ("town", ["город", "городок"])],
     hob := [("asksFirst", "hob: это сперва спрашивают; пришли заполненным:"),
             ("needs", "hob: ещё нужно {fields}; пришли заполненным:"),
             ("noneTakes", "hob: ни одно заклинание {card} этого не берёт; его заклинания: delvetalk {card} ?"),
@@ -480,7 +481,7 @@ def arabic : Tongue :=
        ("act", ["فعل", "افعال"]), ("refusal", ["رفض"]), ("hand", ["يد"]), ("minute", ["دقيقة", "دقائق"]),
        ("character", ["حرف", "حروف"]), ("bell", ["جرس", "اجراس"]), ("kind", ["نوع"]), ("time", ["مرة", "مرات"]),
        ("ring", ["رنين"]), ("water", ["سقي", "ماء"]), ("here", ["هنا"])],
-    roles := [("maker", ["صانع", "صانعه", "صانعها", "مبدع"]), ("coiner", ["صائغ"])],
+    roles := [("maker", ["صانع", "صانعه", "صانعها", "مبدع"]), ("coiner", ["صائغ"]), ("town", ["البلده", "المدينه", "بلده", "مدينه"])],
     hob := [("asksFirst", "hob: هذا يُسأل عنه أولًا؛ أرسله مملوءًا:"),
             ("needs", "hob: ما زال ينقصه {fields}؛ أرسله مملوءًا:"),
             ("noneTakes", "hob: لا تعويذة من تعاويذ {card} تأخذ هذا؛ تعاويذه: delvetalk {card} ?"),

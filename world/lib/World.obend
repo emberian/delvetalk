@@ -210,6 +210,13 @@ record Ways:
   ways: Lists.List<Way>
   lying: Lists.List<Lying>
   page: Nat
+# A receipt of this town's journal named by its CID or its slug (`receipt {name}`): the entry's CID, its height and
+# whose turn it was (`principal`, "" for an entry of a world this one was carried from); `ambiguous` for a slug that
+# names two or more entries; `unknown`. Read from the chain the turn reads, which only grows: no root.
+sum Receipted:
+  found: {cid: String, height: Nat, principal: String}
+  ambiguous: {count: Nat}
+  unknown: {}
 sum Carded:
   carded: {document: Document.Document}
   denied: {}
@@ -259,3 +266,4 @@ protocol world:
   wanting({after: Nat, limit: Nat, oldest: Bool}) -> Wanting
   holds({object: Plans.Reference, when: String}) -> Held
   principal({handle: String}) -> Named
+  receipt({name: String}) -> Receipted
