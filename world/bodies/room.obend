@@ -174,10 +174,12 @@ def outwardBy(verdict: Verdict, guard: Scenes.Guard, clause: String, lead: Strin
 def choiceAt(at: String, chose: String, state: State) -> Choice:
   match passageAt(at, state):
     case some(p): nthChoice(p.value.choices, chose, at, 1n)
-    case none(_): {label: "", to: "", effects: Lists.List.nil(), guard: Lists.List.nil()}
+    case none(_): noChoice()
+def noChoice() -> Choice:
+  {label: "", to: "", effects: Lists.List.nil(), guard: Lists.List.nil(), text: ""}
 def nthChoice(choices: Lists.List<Choice>, chose: String, at: String, n: Nat) -> Choice:
   match choices:
-    case nil(_): {label: "", to: "", effects: Lists.List.nil(), guard: Lists.List.nil()}
+    case nil(_): noChoice()
     case cons(c): if Scenes.chosen(at, n) == chose then c.head else nthChoice(c.tail, chose, at, n + 1n)
 # The edits a choice's effects make, in order, each against the variables as the ones before it
 # leave them, and the variables as they stand after them all.
@@ -230,15 +232,22 @@ def clip(text: String) -> String:
   if textLength(text) > 100n then "{textTake(text, 99n)}…" else text
 def moving(me: Presence, c: Choice, chose: String, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {presence: upsert {who: me.who, handle: me.handle, at: c.to}, chose: set chose}
-  varied(vars, Done.moved({to: c.to}), after, context)
-# The variables' edits in order, then the reader is shown the room as the turn leaves it.
-def varied(vars: Lists.List<Plans.Entries<Var, Var>>, result: Done, after: State, context: Abi.Context) -> Activity<Done>:
+  varied(vars, Done.moved({to: c.to}), c.text, after, context)
+# The variables' edits in order, then the reader is shown what taking the choice said (its `text`, "" for none) and the
+# room as the turn leaves it.
+def varied(vars: Lists.List<Plans.Entries<Var, Var>>, result: Done, said: String, after: State, context: Abi.Context) -> Activity<Done>:
   match vars:
-    case nil(_): told(result, after, context)
-    case cons(c): wroteVar(c.head, c.tail, result, after, context)
-def told(result: Done, after: State, context: Abi.Context) -> Activity<Done>:
+    case nil(_): told(result, said, after, context)
+    case cons(c): wroteVar(c.head, c.tail, result, said, after, context)
+# What a choice said comes first: above the passage it led to, so the card's budget counts it with the passage, or
+# alone above the room when it ended the visit.
+def told(result: Done, said: String, after: State, context: Abi.Context) -> Activity<Done>:
   match seen(after, context):
-    case seen(v): Card.tell(result, Super.render(v.state, context))
+    case seen(v): Card.tell(result, if said == "" then Super.render(v.state, context) else if isHere(context, after) then Super.render(saying(said, v.state, context), context) else Document.concat(Document.text("{said}\n\n"), Super.render(v.state, context)))
+def saying(said: String, state: State, context: Abi.Context) -> State:
+  match here(context, state):
+    case some(p): extend(state, {passages: Lists.map(state.passages, fn(q: Passage) -> Passage: if q.id == p.value.at then extend(q, {text: "{said}\n\n{q.text}"}) else q)})
+    case none(_): state
 # The room as the turn's reader sees it: at their passage, the choices whose outside holds, shown without
 # it (a pure read of the card judges the inside alone and shows the outside beside each choice).
 sum Seen:
@@ -267,22 +276,22 @@ def siftedOne(c: Choice, rest: Lists.List<Choice>, context: Abi.Context) -> Acti
 def keptBefore(c: Choice, rest: Lists.List<Choice>, context: Abi.Context) -> Activity<Sifted>:
   match sifted(rest, context):
     case sifted(r): Sifted.sifted({choices: Lists.List.cons({head: c, tail: r.choices})})
-def wroteVar(edit: Plans.Entries<Var, Var>, rest: Lists.List<Plans.Entries<Var, Var>>, result: Done, after: State, context: Abi.Context) -> Activity<Done>:
+def wroteVar(edit: Plans.Entries<Var, Var>, rest: Lists.List<Plans.Entries<Var, Var>>, result: Done, said: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = world.write(extend(keep(), {vars: edit}))
-  varied(rest, result, after, context)
+  varied(rest, result, said, after, context)
 # Leaving (or reaching END) records when, for the cooldown: the reader's last departure is
 # retracted and this one inserted.
 def departing(me: Presence, chose: String, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {presence: retract {who: me.who}, chose: set if chose == "" then state.chose else chose}
   match lastLeft(me.who, state):
-    case some(l): forgotten(l.value, vars, after, context)
-    case none(_): recorded(vars, after, context)
-def forgotten(last: Departure, vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context) -> Activity<Done>:
+    case some(l): forgotten(l.value, vars, choiceAt(me.at, chose, state).text, after, context)
+    case none(_): recorded(vars, choiceAt(me.at, chose, state).text, after, context)
+def forgotten(last: Departure, vars: Lists.List<Plans.Entries<Var, Var>>, said: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {left: retract leftKey(last)}
-  recorded(vars, after, context)
-def recorded(vars: Lists.List<Plans.Entries<Var, Var>>, after: State, context: Abi.Context) -> Activity<Done>:
+  recorded(vars, said, after, context)
+def recorded(vars: Lists.List<Plans.Entries<Var, Var>>, said: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {left: insert {at: context.clock, who: context.principal, entry: context.height}}
-  varied(vars, Done.left({}), after, context)
+  varied(vars, Done.left({}), said, after, context)
 form enter:
 form choose:
   choice: text 1..64

@@ -35,7 +35,7 @@ def listing(items):
 def choice(text, to, key="", value=""):
     """A choice; a key sets that variable to value when it is taken (one `set` effect)."""
     effects = [record(key=label(key), op={"tag": "variant", "label": "set", "payload": record()}, value=label(value))] if key else []
-    return record(label=label(text), to=label(to), effects=listing(effects), guard=listing([]))
+    return record(label=label(text), to=label(to), effects=listing(effects), guard=listing([]), text=label(""))
 
 
 def passage(pid, text, choices):

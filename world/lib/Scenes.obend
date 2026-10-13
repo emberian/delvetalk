@@ -44,11 +44,14 @@ record Clause:
   test: Test
   value: String
 type Guard = Lists.List<Clause>
+# A choice's `text` is shown to the reader who takes it, before the passage it leads to (spween's prose indented
+# under a choice; "" for none).
 record Choice:
   label: String
   to: String
   effects: Lists.List<Effect>
   guard: Guard
+  text: String
 record Passage:
   id: String
   text: String

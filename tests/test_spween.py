@@ -111,8 +111,10 @@ def clauses(guard: Scenes.Guard) -> String:
   textJoin(Lists.map(guard, fn(c: Scenes.Clause) -> String: "{c.key} {test(c.test)} {c.value}"), ", ")
 def effects(list: Lists.List<Scenes.Effect>) -> String:
   textJoin(Lists.map(list, fn(e: Scenes.Effect) -> String: "{e.key} {op(e.op)} {e.value}"), "; ")
+def said(text: String) -> String:
+  if text == "" then "" else " / {text}"
 def choice(c: Scenes.Choice) -> String:
-  "  * {c.label} [{clauses(c.guard)}] ({effects(c.effects)}) -> {c.to}"
+  "  * {c.label} [{clauses(c.guard)}] ({effects(c.effects)}) -> {c.to}{said(c.text)}"
 def passage(p: Scenes.Passage) -> String:
   "=== {p.id}: {p.text}\\n{textJoin(Lists.map(p.choices, choice), \\"\\\\n\\")}"
 def rules(text: String) -> String:
@@ -265,7 +267,7 @@ class Parse(unittest.TestCase):
                          "write === cooler_back, and keep the words as the title or a choice's label")
         self.assertTrue(summary("---\nid: 井戸\n---\n=== a\n")[0].startswith("refused: the frontmatter's id is letters, digits and _"))
 
-    def test_a_passage_s_guard_rides_every_choice_into_it_and_prose_under_a_choice_is_refused(self):
+    def test_a_passage_s_guard_rides_every_choice_into_it(self):
         # deepseek's `=== twelfth { wound >= 12 }` and grok's `=== radio { cups >= 1 }`, under the station's call
         gated = "---\nid: s\n---\n=== a\nA.\n* [In] { cups >= 1 } -> b\n-> b\n=== b { wound >= 12, keeps.porch/goblet }\nB.\n* [Back] -> a\n"
         text, _ = summary(gated)
@@ -274,9 +276,14 @@ class Parse(unittest.TestCase):
         self.assertIn("=== b: B.\n  * Back [] () -> a", text)
         self.assertTrue(summary("=== a { wound >= 12 }\nA.\n")[0].startswith(" / A. / start a / cooldown 0 / requires wound >= 12\n"), summary("=== a { wound >= 12 }\nA.\n")[0])
         self.assertEqual(summary("=== a { 1a b }\nA.\n")[0], "refused: === a: not a condition: 1a b; a variable (gold >= 2, !rang), keeps.<thing> or holds.<thing>, or a law's condition (\"bell/1\".tended >= 5)")
-        # gemini's text under a choice: refused by name, never folded into the passage above
-        self.assertEqual(summary("=== a\nA.\n* [Wash]\n  The tap runs warm.\n  -> a\n")[0],
-                         "refused: prose under a choice: The tap runs warm.; a choice shows no text of its own here; put the words in the passage it leads to")
+
+    def test_prose_under_a_choice_is_what_taking_it_says(self):
+        # gemini's wash (station trawl 12) and grok's step: indented under the choice, before or after its effects
+        text, _ = summary("=== a\nA.\n* [Wash]\n  The cold tap runs warm.\n  ~ washed += 1\n  The warm tap hums.\n  -> a\n* [Step through]\n  The hour holds. You do not.\n")
+        self.assertIn("=== a: A.\n  * Wash [] (washed add 1) -> a / The cold tap runs warm.\nThe warm tap hums.\n  * Step through [] () -> END / The hour holds. You do not.", text)
+        # unindented prose after a choice is the passage's again
+        self.assertIn("=== a: A.\nB.\n  * Go [] () -> END / Gone.", summary("=== a\nA.\n* [Go]\n  Gone.\nB.\n")[0])
+        self.assertEqual(summary("=== a\n* [Go]\n  %s\n" % ("x" * 281))[0], "refused: a choice's text holds at most 280 characters")
 
     def test_forty_passages_and_a_wing_s_targets_may_wait_for_another_wing(self):
         many = lambda n: "".join("=== p%d\nText.\n-> p%d\n" % (i, (i + 1) % n) for i in range(n))
@@ -379,6 +386,20 @@ class Made(test_chain.Chain):
         self.assertEqual(self.say(room, "delvetalk %s choose / choice: 取る" % room)["result"]["label"], "left")
         _, state = self.view(room)
         self.assertEqual(state["vars"], [{"name": "杯", "value": "2"}, {"name": "чашки", "value": "2"}, {"name": "鳴った", "value": "true"}])
+
+    def test_a_choice_s_text_is_shown_above_the_passage_it_leads_to_and_alone_when_it_ends_the_visit(self):
+        sink = "---\nid: sink\n---\n=== sink\nA sink.\n* [Wash]\n  The cold tap runs warm.\n  -> sink\n* [Go]\n  The door sighs shut.\n"
+        self.assertEqual(self.say("scene", "```spween\n" + sink + "```\n", identity="post-sink")["result"]["label"], "done")
+        self.deliver_all()
+        room = self.WELL_ID
+        self.assertEqual(self.say(room, "delvetalk %s enter" % room)["result"]["label"], "entered")
+        self.assertNotIn("The cold tap", self.card(room))
+        washed = self.say(room, "delvetalk %s choose / choice: Wash" % room)["offers"][0]["text"]
+        self.assertIn("you are at sink:\nThe cold tap runs warm.\n\nA sink.\nChoices:\n", washed)
+        self.assertIn("you are at sink:\nA sink.\nChoices:\n", self.card(room))  # said once, at the taking
+        gone = self.say(room, "delvetalk %s choose / choice: Go" % room)
+        self.assertEqual(gone["result"]["label"], "left")
+        self.assertTrue(gone["offers"][0]["text"].startswith("The door sighs shut.\n\n"), gone["offers"][0]["text"])
 
     def test_an_unmet_requirement_keeps_everyone_out(self):
         sealed = WELL.replace("wishing_well", "sealed_well").replace("not: [well_sealed]", "flags: [well_open]")

@@ -84,10 +84,18 @@ record State:
 type Pending = Rows.Pending
 def initial() -> State:
   {owner: "", keeper: "", keeperHandle: "", head: "", kind: "", fields: Lists.List.nil(), maker: "", makerHandle: "", post: "", lines: Relations.empty(), pending: Relations.empty(), admitted: Relations.empty(), marks: Relations.empty(), next: 1n, cites: Lists.List.nil(), start: "", passages: Lists.List.nil(), cooldown: 0n, requires: Lists.List.nil(), presence: Relations.empty(), vars: Lists.List.nil(), left: Relations.empty(), things: Relations.empty(), weather: "", tended: 0n, chose: ""}
-# A record as the live town keeps it (edition 12 after tending was read by the clock, HOST-HANDOFF 5.200; a
-# carry lays this package over it, `migrate`): before `chose`, the last choice a room's scene took, which a
-# record carried gets none of ("").
-record State12:
+# A record as the live town keeps it (edition 13, carried 2026-10-12; a carry lays this package over it, `migrate`):
+# its scene's choices before their `text`, which a choice carried gets none of ("").
+record Choice13:
+  label: String
+  to: String
+  effects: Lists.List<Scenes.Effect>
+  guard: Scenes.Guard
+record Passage13:
+  id: String
+  text: String
+  choices: Lists.List<Choice13>
+record State13:
   owner: String
   keeper: String
   keeperHandle: String
@@ -104,7 +112,7 @@ record State12:
   next: Nat
   cites: Card.Doorways
   start: String
-  passages: Lists.List<Scenes.Passage>
+  passages: Lists.List<Passage13>
   cooldown: Nat
   requires: Scenes.Guard
   presence: Relations.Relation<Presence>
@@ -113,8 +121,11 @@ record State12:
   things: Relations.Relation<Plans.Reference>
   weather: String
   tended: Nat
-def migrate(old: State12) -> State:
-  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: old.passages, cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, tended: old.tended, chose: ""}
+  chose: String
+def migrate(old: State13) -> State:
+  {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: Lists.map(old.passages, passage13), cooldown: old.cooldown, requires: old.requires, presence: old.presence, vars: old.vars, left: old.left, things: old.things, weather: old.weather, tended: old.tended, chose: old.chose}
+def passage13(p: Passage13) -> Scenes.Passage:
+  {id: p.id, text: p.text, choices: Lists.map(p.choices, fn(c: Choice13) -> Scenes.Choice: {label: c.label, to: c.to, effects: c.effects, guard: c.guard, text: ""})}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes. A
 # condition counting lines counts these, the retained history (`next` counts every line ever written).
 # Marks are facts, kept whole and never dropped for newer ones (no `limit`): a bell's `rung`, an errand's
