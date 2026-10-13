@@ -7,6 +7,7 @@ import json
 import os
 import secrets
 import socket
+import sys
 import threading
 import time
 import traceback
@@ -335,7 +336,9 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.accounts = Accounts(st)
         if not hand:
             self.accounts.reconcile()
-            self.accounts.provision_guests()
+            skipped = self.accounts.provision_guests()
+            if skipped:
+                print('hosted provisioning skipped (no hosted address): ' + ', '.join(skipped), file=sys.stderr)
             self.serviceauth = Verifier(self.repo.did, identity.client, clock=clock)
         self.firehose = None
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)

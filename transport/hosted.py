@@ -40,12 +40,19 @@ class Accounts:
         self.host = urllib.parse.urlsplit(st.config.origin).hostname
 
     def provision_guests(self):
-        """Accepted guests already in identity.sqlite have the same hosted address as new arrivals."""
+        """Provision accepted guests with hosted addresses; return the unsupported principals."""
+        skipped = []
         if not self.st.repo_key.exists():
-            return
+            return skipped
         for principal in sorted(verified_principals(self.st)):
             if principal.startswith('guest:' + self.host + ':'):
+                try:
+                    hosted_identity(principal, self.host)
+                except ValueError:
+                    skipped.append(principal)
+                    continue
                 self.account(principal, create=True)
+        return skipped
 
     def reconcile(self):
         """Reconcile every existing hosted snapshot with the current town key, including legacy custody."""

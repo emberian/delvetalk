@@ -6,10 +6,12 @@ leaving the old leaf, a delete retaining it, or a restart changing the head.
 No external network or Lean process is used.
 """
 import concurrent.futures
+import contextlib
 import copy
 import hashlib
 import hmac
 import http.client
+import io
 import json
 import shutil
 import tempfile
@@ -116,6 +118,68 @@ class HostedWorld(ActsWorld):
         if q['op'] == 'world-publications':
             return {'status': 'publications', 'publications': [], 'more': False}
         return super().send(q)
+
+
+@signs
+class LegacyGuests(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.st = State(tmp.name, config=Config(origin=ORIGIN, repo_keys=str(Path(tmp.name) / 'repo')))
+        self.st.repo_key.parent.mkdir()
+        self.st.repo_key.write_bytes(Key.generate().pem())
+        self.ident = identity.Identity(self.st, delve.Client(mock.Mock(side_effect=AssertionError('network'))))
+        self.addCleanup(self.ident.db.close)
+        self.normal = {'principal': f'guest:{HOST}:wren', 'did': f'did:web:wren.guest.{HOST}'}
+        self.credentials = {}
+        for n, name in enumerate(('wren', 'robin-', 'a' * 31 + '-')):
+            principal, credential = f'guest:{HOST}:{name}', 'dt_agent_' + str(n) * 43
+            self.ident.db.execute("INSERT INTO invitations(name,principal,code,state,accepted) VALUES(?,?,?,?,?)",
+                                  (name, principal, str(n), 'accepted', 1000))
+            self.ident.db.execute("INSERT INTO challenges(nonce,handle,did,credential,state,verified) VALUES(?,?,?,?,?,?)",
+                                  (name, name, principal, identity.digest(credential), 'verified', 1000))
+            if name != 'wren':
+                self.credentials[principal] = credential
+        self.accounts = Accounts(self.st)
+
+    def test_accepted_trailing_dash_guests_keep_credentials_while_only_dns_names_are_provisioned(self):
+        before = list(self.ident.db.execute('SELECT * FROM challenges'))
+        self.assertFalse(self.st.hosted.exists())
+        self.assertEqual(self.accounts.provision_guests(), sorted(self.credentials))
+        self.assertEqual(list(self.ident.db.execute('SELECT * FROM challenges')), before)
+        self.assertEqual(self.accounts.dids(), {self.normal['did']})
+        self.accounts.reconcile()
+        self.assertEqual(self.accounts.provision_guests(), sorted(self.credentials))
+        for principal, credential in self.credentials.items():
+            self.assertEqual(self.ident.authenticate(credential)['did'], principal)
+            name = principal.rsplit(':', 1)[1]
+            with self.assertRaises(delve.Failure) as error:
+                self.accounts.read(ORIGIN, 'com.atproto.repo.describeRepo', repo=f'did:web:{name}.guest.{HOST}')
+            self.assertEqual(error.exception.code, 'RepoNotFound')
+        with self.assertRaises(identity.IdentityError) as error:
+            self.ident.accept('dt_invite_' + 'a' * 32, 'robin-')
+        self.assertEqual(error.exception.code, 'invalid_guest_name')
+
+    def test_front_start_with_only_dns_guests_emits_no_provisioning_message(self):
+        for principal in self.credentials:
+            self.ident.db.execute('DELETE FROM challenges WHERE did=?', (principal,))
+        out = io.StringIO()
+        with mock.patch('transport.http.ThreadingHTTPServer.__init__', return_value=None), \
+             mock.patch('transport.http.threading.Thread'), contextlib.redirect_stderr(out):
+            front = Front(self.st, HostedWorld(), self.ident)
+        self.assertEqual(out.getvalue(), '')
+        self.assertEqual(front.accounts.dids(), {self.normal['did']})
+
+    def test_front_start_reports_unsupported_guests_once_and_keeps_their_principals(self):
+        out = io.StringIO()
+        with mock.patch('transport.http.ThreadingHTTPServer.__init__', return_value=None), \
+             mock.patch('transport.http.threading.Thread'), contextlib.redirect_stderr(out):
+            front = Front(self.st, HostedWorld(), self.ident)
+        self.assertEqual(out.getvalue().splitlines(), [
+            'hosted provisioning skipped (no hosted address): ' + ', '.join(sorted(self.credentials))])
+        self.assertEqual(front.accounts.dids(), {self.normal['did']})
+        for principal, credential in self.credentials.items():
+            self.assertEqual(front.identity.authenticate(credential)['did'], principal)
 
 
 @signs
