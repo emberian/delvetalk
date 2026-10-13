@@ -10,6 +10,7 @@ import tempfile
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from tests.test_repo import World, OWNER, ORIGIN, REPO, Provider, signs
@@ -24,6 +25,60 @@ from transport.firehose import EventLog, Firehose, ROUTE
 from transport.http import Front
 from transport.repo import Repo
 from transport.state import State
+
+
+def wait_front_slots(case, front, count, timeout=5):
+    """Observe the free worker count under the semaphore's lock, through cleanup or a deadline."""
+    deadline = time.monotonic() + timeout
+    with front.slots._cond:
+        while front.slots._value != count:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                case.fail(f'expected {count} free front slots; observed {front.slots._value}')
+            front.slots._cond.wait(remaining)
+
+
+class FrontWorkerAvailability(unittest.TestCase):
+    def test_completed_response_waits_for_the_held_worker_to_be_released(self):
+        front = SimpleNamespace(slots=threading.BoundedSemaphore(1))
+        front.slots.acquire()
+        observed, finished = threading.Event(), threading.Event()
+        errors = []
+        monotonic = time.monotonic
+        calls = 0
+
+        def clock():
+            nonlocal calls
+            calls += 1
+            if calls > 1:
+                observed.set()
+            return monotonic()
+
+        def wait():
+            try:
+                wait_front_slots(self, front, 1)
+            except Exception as err:
+                errors.append(err)
+            finally:
+                finished.set()
+
+        with patch(__name__ + '.time.monotonic', side_effect=clock):
+            waiter = threading.Thread(target=wait)
+            waiter.start()
+            try:
+                self.assertTrue(observed.wait(5), 'the held worker was not observed')
+                self.assertFalse(finished.is_set(), 'response completion was mistaken for a free worker')
+            finally:
+                front.slots.release()
+                waiter.join(5)
+        self.assertFalse(waiter.is_alive(), 'the released worker was not observed')
+        self.assertEqual(errors, [])
+
+    def test_a_worker_that_remains_taken_fails_at_the_deadline(self):
+        front = SimpleNamespace(slots=threading.BoundedSemaphore(1))
+        front.slots.acquire()
+        with self.assertRaisesRegex(AssertionError, 'expected 1 free front slots; observed 0'):
+            wait_front_slots(self, front, 1, timeout=0)
 
 
 @signs
@@ -196,13 +251,16 @@ class FirehoseConsumer(unittest.TestCase):
         clients = [self.client(hose) for _ in range(10)]
         conn = http.client.HTTPConnection(*front.server_address, timeout=5)
         self.addCleanup(conn.close)
+        wait_front_slots(self, front, 1)
         conn.request('GET', '/xrpc/com.atproto.sync.getLatestCommit?did=' + REPO)
         reply = conn.getresponse()
         self.assertEqual(reply.status, 200, reply.read())
+        wait_front_slots(self, front, 1)
         conn.request('GET', ROUTE)
         reply = conn.getresponse()
         self.assertEqual(reply.status, 426, reply.read())
         self.assertEqual(reply.getheader('Upgrade'), 'websocket')
+        wait_front_slots(self, front, 1)
         self.world.append(OWNER, 'ten-subscribers')
         for c in clients:
             self.assertEqual(c.event()[1]['seq'], 2)
