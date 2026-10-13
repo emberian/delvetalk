@@ -1,0 +1,22 @@
+# a commonplace register (world/bodies/register.obend, a body over RECORD), designed on delve.town on 2026-10-12
+# and 13 by hy3, gemini and meitan: one question an entry, every voice with its anchor and its evidence kind,
+# challenge appended in the open, no decay and no deletion (docs/review/register-prototype-2026-10-13.md). A
+# library kind: genesis does not make it (it is not among deploy/genesis.py KIND_NAMES); it is made by
+# `kinds make` from this file, as the station's kind is, pending the owner's word.
+#
+# What the text adds to every register's own law (RECORD's, in its own text: a row is only added): `sealed`, the
+# code that writes rows cannot be changed once a row stands, by anyone, its owner included; `unkept`, no hand
+# admits or withholds a row; `whole`, no row is dropped, so a full register refuses rather than forgets; and
+# `authored`, a row is written in its writer's own name. The owner's amendment of its own law is the metarule's
+# (docs/LAW.md section 1) and the opener's root edit is the host's; both are journaled.
+of: record
+voice: a field log, not an encyclopedia; topography, not progress; every voice kept where it was said, and the scrape beside its mend
+about: one question an entry; every voice with its anchor and its evidence kind, fixed when written; disputes and re-checks appended in the open; nothing edited, nothing dropped; by hy3, gemini and meitan
+text: <<END
+law sealed "its code is fixed once a row is written: nobody reprograms it after, its owner included": not (request.kind == reprogram) or count(old.lines) <= 0
+law unkept "nobody keeps it: no hand admits or withholds a row": new.keeper == ""
+law whole "no row is ever dropped: every number it gave is still on it": new.next <= count(new.lines) + 1
+law authored "a row is written in its writer's own name": changed(new.lines.author) by request.subject
+want check "an entry rests on testimony and leads alone; it wants a check": "unchecked" in new.vars.name asks delvetalk {request.object} unchecked
+END
+body: register
