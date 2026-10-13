@@ -39,7 +39,7 @@ def choice(text, to, key="", value=""):
 
 
 def passage(pid, text, choices):
-    return record(id=label(pid), text=label(text), choices=listing(choices))
+    return record(id=label(pid), text=label(text), guard=listing([]), choices=listing(choices))
 
 
 def scene_fields(passages, start="gate", title="The Moss Gate", cooldown=0):

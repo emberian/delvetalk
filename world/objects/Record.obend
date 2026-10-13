@@ -131,7 +131,7 @@ record State13:
 def migrate(old: State13) -> State:
   {owner: old.owner, keeper: old.keeper, keeperHandle: old.keeperHandle, head: old.head, kind: old.kind, fields: old.fields, maker: old.maker, makerHandle: old.makerHandle, post: old.post, lines: old.lines, pending: old.pending, admitted: old.admitted, marks: old.marks, next: old.next, cites: old.cites, start: old.start, passages: Lists.map(old.passages, passage13), cooldown: old.cooldown, requires: old.requires, presence: Relations.Relation.rows({items: Lists.map(Relations.rows(old.presence), fn(p: Presence13) -> Presence: {who: p.who, handle: p.handle, at: p.at, draw: 0n})}), vars: old.vars, mine: Relations.empty(), left: old.left, things: old.things, weather: old.weather, tended: old.tended, chose: old.chose}
 def passage13(p: Passage13) -> Scenes.Passage:
-  {id: p.id, text: p.text, choices: Lists.map(p.choices, fn(c: Choice13) -> Scenes.Choice: {label: c.label, to: c.to, effects: c.effects, guard: c.guard, text: "", among: Lists.List.nil()})}
+  {id: p.id, text: p.text, guard: Lists.List.nil(), choices: Lists.map(p.choices, fn(c: Choice13) -> Scenes.Choice: {label: c.label, to: c.to, effects: c.effects, guard: c.guard, text: "", among: Lists.List.nil()})}
 # The newest 128 lines: at 280 four-byte characters each they still fit the host's state bytes. A
 # condition counting lines counts these, the retained history (`next` counts every line ever written).
 # Marks are facts, kept whole and never dropped for newer ones (no `limit`): a bell's `rung`, an errand's
