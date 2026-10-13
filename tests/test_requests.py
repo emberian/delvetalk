@@ -1,7 +1,7 @@
 """Acting by record (docs/ATPROTO.md §2, L1): a resident writes `online.fg-goose.gsb.request` in their own repository; the
 poller proves it from the signed commit and the author's DID document, the bridge runs it as the same turn a post's
-spell is, under the record's at-uri, and answers with an `online.fg-goose.gsb.answer` record the façade serves and the mirror
-copies byte for byte.
+spell is, under the record's at-uri, and answers with an `online.fg-goose.gsb.answer` value the façade projects and the mirror
+writes as a posting-account record byte for byte.
 
 Evidence for docs/ATPROTO.md §2 (layer: transport), on a fake PDS here: repositories signed with real keys, served
 over two loopback PDSes, listRepos, listRecords, getLatestCommit, sync.getRecord, PLC and did:web.
@@ -477,12 +477,14 @@ class Requests(unittest.TestCase):
         (value,) = [v for c, k, v in written if c == bridge.ANSWER and k == f'{DID}.3aaaaaaaaaaa2']
         pds_cid = block(from_json(json.loads(canonical(value))))[0]  # the PDS hashes the JSON it is sent
         repo = Repo(LOOPBACK.origin, answers=self.st.answers)
-        code, got, _ = repo.serve(self.host, 'GET', 'com.atproto.repo.getRecord',
-                                  {'repo': repo.did, 'collection': bridge.ANSWER, 'rkey': f'{DID}.3aaaaaaaaaaa2'}, None)
-        self.assertEqual((code, got['cid'], got['value']), (200, str(pds_cid), value))
+        code, got, _ = repo.serve(self.host, 'GET', mirror.NS + 'getProjection',
+                                  {'kind': 'answer', 'key': f'{DID}.3aaaaaaaaaaa2'}, None)
+        self.assertEqual(code, 200, got)
+        self.assertEqual((block(from_json(got['value']))[0], got['value']), (pds_cid, value))
         self.assertIsInstance(from_json(value)['receipt']['entry'], CID)  # a real link, as the lexicon's cid-link
-        code, listed, _ = repo.serve(self.host, 'GET', 'com.atproto.repo.listRecords', {'repo': repo.did, 'collection': bridge.ANSWER}, None)
-        self.assertEqual([r['cid'] for r in listed['records']], [str(pds_cid)])
+        code, listed, _ = repo.serve(self.host, 'GET', mirror.NS + 'listProjections', {'kind': 'answer'}, None)
+        self.assertEqual(code, 200, listed)
+        self.assertEqual([block(from_json(r['value']))[0] for r in listed['projections']], [pds_cid])
 
     def participants(self, *dids):
         self.st.config = dataclasses.replace(self.st.config, participants=' '.join(dids))
