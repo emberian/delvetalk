@@ -208,16 +208,20 @@ class RefreshRegressions(unittest.TestCase):
                 self.assertTrue(any(r['status'] == 'refused' for r in first), first)
                 again = self.refresh(station=True)
                 self.assertTrue(all(r['status'] == ('current' if r['slot'] == 'scene' else 'refreshed') for r in again), again)
-                self.assertEqual(self.host.wings, {f'refresh-station-wing-{k}' for k in range(1, len(genesis.station_wings()) + 1)})
+                self.assertEqual(self.host.wings, {f'refresh-station-wing-{k}' for k in range(1, len(genesis.station_wings()) + 1)} |
+                                 {f'refresh-station-parlour-wing-{k}' for k in range(1, len(genesis.parlour_wings()) + 1)})
                 self.assertTrue({obj for obj, _, _ in genesis.STATION_THINGS} | {'station/register'} <= self.host.objects.keys())
                 inhabitants = [dict(fields)['id'] for _, fields, _ in genesis.STATION_INHABITANTS]
                 self.assertTrue({'station/coin', *inhabitants, *('kind/' + name for name in genesis.STATION_KINDS)} <= self.host.objects.keys())
-                for obj, destinations in [('station', ['porch'] + inhabitants), ('porch', ['station'])] + [(obj, ['station']) for obj in inhabitants]:
+                parlour = dict(genesis.PARLOUR[1])['id']
+                self.assertTrue({parlour, dict(genesis.PLANCHETTE[1])['id'], *('kind/' + name for name in genesis.PARLOUR_KINDS)} <= self.host.objects.keys())
+                for obj, destinations in [('station', ['porch'] + inhabitants + [parlour]), ('porch', ['station'])] + [(obj, ['station']) for obj in inhabitants]:
                     doors = self.host.objects[obj]['state']['cites']['items']
                     self.assertEqual([field(field(d, 'to'), 'object')['value'] for d in doors], destinations)
                 admitted = len(self.host.entries)
                 self.assertEqual(self.refresh(station=True), [{'object': 'station', 'slot': 'placed', 'status': 'current'},
-                                                            {'object': 'station', 'slot': 'scene', 'status': 'current'}])
+                                                            {'object': 'station', 'slot': 'scene', 'status': 'current'},
+                                                            {'object': parlour, 'slot': 'scene', 'status': 'current'}])
                 self.assertEqual(len(self.host.entries), admitted)
 
     def station_manifest(self):

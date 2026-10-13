@@ -357,9 +357,13 @@ def station_scene():
 
 
 def station_wings():
-    """The scene cut at its `// wing` lines, the frontmatter with the first: what the owner stitches, one a turn (a
+    return scene_wings(station_scene())
+
+
+def scene_wings(scene):
+    """A scene cut at its `// wing` lines, the frontmatter with the first: what the owner stitches, one a turn (a
     turn's ticks read about eight thousand characters of spween; world/bodies/station.obend `stitch`)."""
-    parts = re.split(r'(?m)^(?=// wing )', station_scene())
+    parts = re.split(r'(?m)^(?=// wing )', scene)
     return [parts[0] + parts[1]] + parts[2:]
 
 
@@ -371,25 +375,26 @@ def station_digest(wings):
     return digest
 
 
-def station_restitch(host, opener):
-    """Replace a station's scene when its stitched text differs, by the opener's wing turns."""
-    wings = station_wings()
+def station_restitch(host, opener, obj='station', wings=None):
+    """Replace a station's scene (or a room of a kind of it: `obj`, its `wings`) when its stitched text differs, by the
+    opener's wing turns."""
+    wings = wings or station_wings()
     digest = station_digest(wings)
-    state = host.send({'op': 'world-view', 'principal': opener, 'object': 'station'}).get('state') or {}
+    state = host.send({'op': 'world-view', 'principal': opener, 'object': obj}).get('state') or {}
     marks = next((f['value'] for f in state.get('fields', []) if f['name'] == 'marks'), {})
     rows = next((f['value'].get('items', []) for f in marks.get('payload', {}).get('fields', []) if f['name'] == 'items'), [])
     stamps = [{f['name']: f['value'].get('value', '') for f in row['fields']} for row in rows]
     stamps = [m for m in stamps if m['name'].startswith('station-scene-')]
     stitched = max(stamps, key=lambda m: int(m['at']))['name'][14:78] if stamps else None
-    row = {'object': 'station', 'slot': 'scene'}
+    row = {'object': obj, 'slot': 'scene'}
     if stitched == digest:
         return {**row, 'status': 'current'}
-    record = host.send({'op': 'world-object', 'principal': opener, 'object': 'station'}).get('record')
+    record = host.send({'op': 'world-object', 'principal': opener, 'object': obj}).get('record')
     if not record:
         return {**row, 'status': 'absent'}
-    identity = f'refresh-station-restitch-{digest}-{record["version"]}'
+    identity = f'refresh-{obj.replace("/", "-")}-restitch-{digest}-{record["version"]}'
     for k, wing in enumerate(wings, 1):
-        reply = host.send({'op': 'world-turn', 'principal': opener, 'object': 'station', 'method': 'restitch',
+        reply = host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': 'restitch',
                            'identity': f'{identity}-{k}', 'argument': rec(spween=lab(wing), part=nat(k), wings=nat(len(wings)))})
         if reply.get('status') != 'admitted':
             return {**row, **done(reply), 'reading': f'restitch wing {k}'}
@@ -429,7 +434,7 @@ def gas_station(host, opener, prefix='genesis'):
             ('porch', 'door', [('label', 'the lit station'), ('to', 'station')], f'{prefix}-porch-door-station')):
         made.append(said(host, opener, card, action, fields, identity))
         turned(f'{card} {action}', made[-1]['reply'])
-    return made + inhabitants(host, opener, prefix)
+    return made + inhabitants(host, opener, prefix) + parlour(host, opener, prefix)
 
 
 # The station's own inhabitants (docs/review/station-trawl-2026-10-12.md), made with it: kind/inhabitant
@@ -476,6 +481,68 @@ def inhabitants(host, opener, prefix='genesis'):
         turned(f'kind/{name} place {obj}', made[-1]['reply'])
         for card, to, door in ((obj, 'station', 'where it lives'), ('station', obj, label)):
             made.append(said(host, opener, card, 'door', [('label', door), ('to', to)], f'{prefix}-{card.replace("/", "-")}-door-{to.replace("/", "-")}'))
+            turned(f'{card} door {to}', made[-1]['reply'])
+    return made
+
+
+# yla's parlour (world/kinds/parlour.kind, world/bodies/parlour.obend and parlour.spween), off the station's night hall,
+# made with the station: yla.delve.town's séance at a ouija board of 2026-10-13 (`YLA_SEANCE`), its scene her prose,
+# placed from her post so its card cites it; a room of the station's kind (no clock is kept there either), its scene
+# stitched a wing a turn as the station's is (a make reads about three thousand characters of spween, and its scene is
+# more); and its planchette (world/kinds/planchette.kind, over the inhabitant's),
+# placed from the same post, the shared slow spelling every hand at the table nudges toward one letter, which moves
+# when two hands agree or on its own clock at the tide's turn. Doors join the station, the parlour and the planchette.
+# The night hall is where it opens (world/bodies/station.spween `parlour_door`): yla's clock is "the clock in the hall",
+# and the night hall's unnumbered door is a ticking vast and slow; the board sits on 3-3-3 off the hall missing 3AM.
+YLA_SEANCE = 'at://did:plc:stzbome3xlnxvkzlxuxrhi57/town.delve.feed.post/3mxs55gnods2h'
+PARLOUR_KINDS = {name: read_kind(name) for name in ('parlour', 'planchette')}
+PARLOUR = ('parlour', [('id', 'station/parlour'), ('name', 'THE PARLOUR')])
+PLANCHETTE = ('planchette', [('id', 'station/parlour/planchette'), ('name', 'the planchette'), ('haunts', 'station/parlour'), ('tide', 'tide')])
+# (card, label, to): each hung when the card it is on is placed.
+PARLOUR_DOORS = [('station/parlour', 'the night hall', 'station'), ('station', 'the parlour', 'station/parlour'),
+                 ('station/parlour/planchette', 'where it lies', 'station/parlour'), ('station/parlour', 'the planchette', 'station/parlour/planchette')]
+
+
+def parlour_scene():
+    """The parlour's scene, world/bodies/parlour.spween, whole."""
+    return (ROOT / 'world' / 'bodies' / 'parlour.spween').read_text()
+
+
+def parlour_wings():
+    return scene_wings(parlour_scene())
+
+
+def parlour(host, opener, prefix='genesis'):
+    """yla's parlour and its planchette, by the opener's spells, each kind and each made where the town lacks it (a
+    carried town with the station is given them by its refresh, `prefix` 'refresh'), each placed from `YLA_SEANCE`;
+    -> made rows. Stops (Stopped) at a refusal. Needs kind/inhabitant (`inhabitants`) and the station."""
+    turn = lambda obj, method, argument, identity: host.send({'op': 'world-turn', 'principal': opener, 'object': obj, 'method': method,
+                                                              'argument': argument, 'identity': identity})
+    made, have = [], set(existing(host, opener))
+    if not {'station', 'kind/station', 'kind/inhabitant'} <= have:  # a town given its inhabitants later is given this with them
+        return made
+    for name, f in PARLOUR_KINDS.items():
+        if 'kind/' + name not in have:
+            kind = turn('kinds', 'make', rec(name=lab(name), of=lab(f['of']), form=lab(f.get('form', '')), head=lab(f.get('head', '')),
+                                             voice=lab(f.get('voice', '')), about=lab(f.get('about', '')), law=lab(f.get('text', '')),
+                                             body=lab(body_of(f['body']))), f'{prefix}-kind-{name}')
+            made.append({'object': 'kind/' + name, 'module': 'kinds make', 'status': kind.get('status'), 'creator': opener, 'reply': kind})
+            turned('kinds make ' + name, kind)
+    placed = set()
+    for name, fields in (PARLOUR, PLANCHETTE):
+        obj = dict(fields)['id']
+        if obj in have:
+            continue
+        made.append(said(host, opener, 'kind/' + name, 'place', fields, f'{prefix}-{obj.replace("/", "-")}', obj, YLA_SEANCE))
+        turned(f'kind/{name} place {obj}', made[-1]['reply'])
+        placed.add(obj)
+        for k, wing in enumerate(parlour_wings() if name == PARLOUR[0] else [], 1):
+            reply = turn(obj, 'stitch', rec(spween=lab(wing)), f'{prefix}-{obj.replace("/", "-")}-wing-{k}')
+            made.append({'object': obj, 'module': 'parlour stitch', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
+            turned(f'{obj} stitch wing {k}', reply)
+    for card, label, to in PARLOUR_DOORS:
+        if card in placed or to in placed:
+            made.append(said(host, opener, card, 'door', [('label', label), ('to', to)], f'{prefix}-{card.replace("/", "-")}-door-{to.replace("/", "-")}'))
             turned(f'{card} door {to}', made[-1]['reply'])
     return made
 
@@ -858,10 +925,12 @@ def refresh(host, opener, journals, station=False, config=None):
             out.append({'object': 'station', 'slot': 'placed', 'status': 'refused', 'reading': str(e)})
     if whole and 'station' in existing(host, opener):  # a town that has its station whole has its inhabitants
         out.append(station_restitch(host, opener))
+        if dict(PARLOUR[1])['id'] in existing(host, opener):
+            out.append(station_restitch(host, opener, dict(PARLOUR[1])['id'], parlour_wings()))
         if not installed:
             try:
                 out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
-                        for m in inhabitants(host, opener, 'refresh')]
+                        for m in inhabitants(host, opener, 'refresh') + parlour(host, opener, 'refresh')]
             except Stopped as e:
                 out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
     return out

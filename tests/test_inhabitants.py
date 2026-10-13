@@ -244,10 +244,10 @@ class Refresh(test_scenarios.Arc):
         self.assertNotIn(REGULAR, self.objects())
         rows = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
         placed = [r["object"] for r in rows if r.get("reading", "").startswith("placed: kind/")]
-        self.assertEqual(placed, [REGULAR, DJ, BEE], rows)
+        self.assertEqual(placed, [REGULAR, DJ, BEE, "station/parlour", "station/parlour/planchette"], rows)  # and yla's parlour with them
         self.assertTrue(all(r["status"] in ("refreshed", "current", "left") for r in rows), [r for r in rows if r["status"] not in ("refreshed", "current", "left")])
         self.town.send(op="world-deliver", principal="transport", limit=64)
-        self.assertEqual(len([r for r in self.town.send(op="world-rules", principal=OPENER, object="tide")["rows"] if r["owner"].startswith("@station/")]), 4)
+        self.assertEqual(len([r for r in self.town.send(op="world-rules", principal=OPENER, object="tide")["rows"] if r["owner"].startswith("@station/")]), 6)  # the planchette's two
         again = genesis.refresh(self.town.client, OPENER, genesis.ancestry(self.town.journal))
         self.assertEqual([r for r in again if r.get("reading", "").startswith("placed: ")], [])
 

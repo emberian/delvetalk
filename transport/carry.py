@@ -159,7 +159,7 @@ def lock_free(old):
 
 
 def body_args(library):
-    """`--body OBJ=FILE` for each body genesis lays (deploy/genesis.py KINDS, the station's, its inhabitants' and the commonplace's),
+    """`--body OBJ=FILE` for each body genesis lays (deploy/genesis.py KINDS, the station's, its inhabitants', its parlour's and the commonplace's),
     from the image's `bodies/` beside its library: the carry sets each kind's `body` to it and lays it over that
     kind's things (a thing of a kind of a kind, as the station is of kind/room, takes each kind's on its own layer),
     and lays the commonplace's over the commonplace."""
@@ -167,7 +167,7 @@ def body_args(library):
     bodies = Path(library).parent / 'bodies'
     pairs = [('kind/' + name, body) for name, _, _, _, _, body in genesis.KINDS if body] + [
         ('kind/station', genesis.STATION_KIND['body']), ('commonplace', 'commonplace')] + [
-        ('kind/' + name, f['body']) for name, f in genesis.STATION_KINDS.items() if f.get('body')]
+        ('kind/' + name, f['body']) for name, f in (genesis.STATION_KINDS | genesis.PARLOUR_KINDS).items() if f.get('body')]
     return [a for obj, body in pairs for a in ('--body', f'{obj}={bodies / (body + ".obend")}')]
 
 
