@@ -177,8 +177,8 @@ a rule threshold is not an accomplished event. A holding want names a condition,
 
 Heads, `about`, seeds and heard lines are historical words: quote them as said/written, never assert them as
 current state. A quotation line has only its attribution frame, such as `yue.delve.town said “…”` or
-`As said: “…”`; a resident's line remains whole and credited. Between fact lines the model may add an explicitly
-nonfactual simile fragment (`Like moonlight through silk.`), with the guard below. Host clauses stay in the host's
+`As said: “…”`; a resident's line is whole or a marked excerpt, always credited. Between fact lines the model may
+add an explicitly nonfactual simile fragment (`Like moonlight through silk.`), with the guard below. Host clauses stay in the host's
 catalogue language; imagery and quoted-word frames use the requested tongue. These restrictions replace the claim
 that token checks prove all prose factual: the host guarantees the selected clauses, while the imagery guard
 checks listed syntax and vocabulary and cannot prove that every metaphor is free of a state implication.
@@ -195,8 +195,8 @@ are named here; each supported tongue's existing table supplies its token checks
 | `numbers` | a number, in digits or in words (two, twice, seventh, 7th, forty-one), stands beside the unit the strokes count it in, and as they count it: "two rains" over `rains: 2`, "the 7th rain" over the rule's 7th; a stroke's own text pairs a number with the word beside it ("1440 minutes"); an ordinal beside no unit, and one, first and once, are free. "made 41 times", "entry 172", "version 4", "seven rains" over two, "two rains of seven" are refused. In any numerals (full-width `４`, han `四` `二十一`, Arabic-Indic `٤`, a tongue's number words): Japanese and Chinese are read as characters, the tongue's unit word within six characters after (四つの雨) or before (雨が四回), `第` before or `目` after making it the nth |
 | `handles` | every handle is a stroke's |
 | `spells` | a `delvetalk` line equals a stroke's spell byte for byte, on its own line |
-| `quotes` | a resident's line is quoted whole; another stroke text may be a substring (closing stop dropped, first letter raised or not); every quote is closed |
-| `attribution` | a quotation is credited, if at all, to the one whose words it is (`Strokes.authored`: a line its writer's, the made-with words and head its coiner's or maker's, a reading its placer's or grower's): the person named nearest before it back to the previous quotation, else after it, by handle, the handle's first label, or "maker"/"coiner". The bell/2 paint that gave light-traces' seed to its maker is refused |
+| `quotes` | a resident's line is whole or an excerpt marked with U+2026 `…` (never ASCII dots) at either edge or one interior elision; each non-empty, space-trimmed piece is a contiguous substring of one line, in order without overlap; another stroke text may be an unmarked substring (closing stop dropped, first letter raised or not); every quote is closed |
+| `attribution` | a resident's whole line or marked excerpt always names its writer (`Strokes.linesQuoted`); another text, if credited, names its author (`Strokes.authored`: the made-with words and head its coiner's or maker's, a reading its placer's or grower's): the person named nearest before it back to the previous quotation, else after it, by handle, the handle's first label, or "maker"/"coiner". The bell/2 paint that gave light-traces' seed to its maker is refused |
 | `heads` | no line begins `●`, `§`, `refused`, `law `, `rule `, `want `, `hob:` |
 | `forbidden` | none of I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please (a quotation may hold any) |
 | `secondPerson` | no you, your, yours, you're, you've, you'll, you'd, yourself, yourselves, y'all |

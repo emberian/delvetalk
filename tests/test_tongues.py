@@ -330,6 +330,91 @@ class Paint(Tongued):
         self.assertEqual(len(asked), 2)
 
 
+class ExcerptPaint(Tongued):
+    """Refuted by a stitched line passing, a lost credit, or an ellipsis changing any tongue's checks."""
+
+    frames = {
+        'en': '%s said “%s”.',
+        'es': '%s dijo «%s».\nComo seda bajo la luna.',
+        'ru': '%s сказал «%s».',
+        'ar': 'قال %s «%s».',
+        'ja': '%sが「%s」と言った。',
+        'zh': '%s 说“%s”。',
+    }
+
+    def check(self, tongue, text):
+        return self.town.send(op='world-render-check', principal=GLM, object=BELL, tongue=tongue, text=text)
+
+    def test_excerpts_keep_their_author_in_every_tongue_through_render_submit(self):
+        good = ('…the soil keeps the corrections', 'the anchor remembers…',
+                'the anchor … the corrections', '… anchor … corrections …')
+        bad = ('the anchor remembers', 'the corrections … the anchor',
+               'the anchor remembers … remembers what', 'the anchor … garden … corrections',
+               'the anchor … drop 77', 'the anchor … corr ections',
+               'the anchor ... corrections', 'the anchor remembers...',
+               '…', '… …', 'the anchor … … corrections')
+        self.town.send(op='world-renders')
+        for tongue, frame in self.frames.items():
+            with self.subTest(tongue=tongue):
+                for excerpt in good:
+                    paint = frame % (HANDLES[KIM], excerpt)
+                    got = self.check(tongue, paint)
+                    self.assertEqual((got['status'], got.get('text')), ('verified', paint), got)
+                for excerpt in bad:
+                    got = self.check(tongue, frame % (HANDLES[KIM], excerpt))
+                    self.assertEqual((got['status'], got.get('clause')), ('rejected', 'quotes'), got)
+                for author in (HANDLES[GLM], ''):
+                    got = self.check(tongue, frame % (author, good[2]))
+                    self.assertEqual((got['status'], got.get('clause')), ('rejected', 'attribution'), got)
+
+                queued = self.town.send(op='world-render', principal=GLM, object=BELL, tongue=tongue)
+                self.assertEqual(queued['status'], 'pending', queued)
+                # Mocked model replies go verbatim through the real host, including its one reasoned retry.
+                refused = self.town.send(op='world-render-submit', key=queued['key'],
+                                         reply=replied(frame % (HANDLES[KIM], 'the anchor … drop 77')))
+                self.assertEqual((refused['status'], refused.get('clause')), ('retrying', 'quotes'), refused)
+                retry = next(i['request'] for i in self.town.send(op='world-renders')['pending']
+                             if i['key'] == queued['key'])
+                self.assertIn('U+2026, never three ASCII dots', retry['user'])
+                paint = frame % (HANDLES[KIM], good[2])
+                fixed = self.town.send(op='world-render-submit', key=queued['key'], reply=replied(paint))
+                self.assertEqual((fixed['status'], fixed.get('text')), ('painted', paint), fixed)
+                cached = self.town.send(op='world-render', principal=GLM, object=BELL, tongue=tongue)
+                self.assertEqual((cached['status'], cached.get('text')), ('painted', paint), cached)
+
+    def test_maximum_length_excerpts_count_the_marker_as_a_character(self):
+        self.act(KIM, BELL, 'delvetalk garden/bell/1 rain / text: ' + 'x' * 200)
+        frame = self.frames['en']
+        first = frame % (HANDLES[KIM], 'x' * 180 + '…')
+        room = 400 - len(first) - 1 - len(frame % (HANDLES[KIM], '…'))
+        self.assertTrue(0 < room < 200, room)
+        paint = first + '\n' + frame % (HANDLES[KIM], '…' + 'x' * room)
+        self.assertEqual(len(paint), 400)
+        got = self.check('en', paint)
+        self.assertEqual((got['status'], got.get('text')), ('verified', paint), got)
+        longer = first + '\n' + frame % (HANDLES[KIM], '…' + 'x' * (room + 1))
+        got = self.check('en', longer)
+        self.assertEqual((got['status'], got.get('clause')), ('rejected', 'length'), got)
+
+    def test_native_script_pieces_remain_quoted_with_adjacent_ellipsis(self):
+        cases = {
+            'en': ('I remember 999 moons; you remember none', 'I remember 999…you'),
+            'es': ('Yo recuerdo 999 lunas; tú no recuerdas ninguna', 'Yo recuerdo 999…tú'),
+            'ru': ('Я помню 999 лун; ты не помнишь ни одной', 'Я помню 999…ты'),
+            'ar': ('أنا أتذكر ٩٩٩ قمرا وأنت لا تتذكر شيئا', 'أنا أتذكر ٩٩٩…أنت'),
+            'ja': ('私は九百九十九の月を覚えているが、あなたは覚えていない', '私は九百九十九…あなた'),
+            'zh': ('我记得九百九十九个月亮，你不记得任何一个', '我记得九百九十九…你'),
+        }
+        for tongue, (line, excerpt) in cases.items():
+            with self.subTest(tongue=tongue):
+                self.act(KIM, BELL, 'delvetalk garden/bell/1 rain / text: ' + line)
+                # Numbers, negation and first/second person stay inside the quotation, as for a whole line.
+                for quote in (line, excerpt, '…' + excerpt + '…'):
+                    paint = self.frames[tongue] % (HANDLES[KIM], quote)
+                    got = self.check(tongue, paint)
+                    self.assertEqual((got['status'], got.get('text')), ('verified', paint), got)
+
+
 class NumericPaint(Tongued):
     @classmethod
     def setUpClass(cls):

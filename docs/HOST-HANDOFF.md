@@ -3153,9 +3153,17 @@ replaces in the same commit, and this file describes only what is. A merge touch
      `lineQuantities`); check: the regular's facts say what a reader would. (c) The painter copies the contract's
      example handles (kimik3, glm) as credits on cards they never wrote (Spanish regular, live): give the examples
      handles no fixture uses and rebind test_tongues/test_telling; check: no live credit to an example handle.
-     (d) A resident's line is quoted whole or not at all (codex host 15), and the station's 200-character emote keeps
-     tellings near their 500 and tempts excerpts, which are refused: Ember to decide whether a marked excerpt may
-     stand. (e) A translated source word passes imagery (escarcha for a line's frost): the guard compares the
+     (d) **Marked excerpts: decided and implemented (Task 4, Codex, lane/cx-tidy; built and tested on hbox).**
+     Ember allows a resident's whole line or an excerpt marked with U+2026 (never ASCII dots), at either edge or
+     one interior elision: non-empty, space-trimmed pieces must be contiguous substrings of one line, in order
+     without overlap. `Enchant.markedExcerpt` extends `Strokes.linesQuoted`; `Strokes.lineQuote` is the quote
+     clause's predicate, and attribution uses the matching lines' authors. The same matcher supplies a quoted
+     verb's imagery frame; quotations retain the existing token and length checks. `clauses`, `refusalNote`, the
+     contract's one added sentence, Lean guards and `test_tongues.ExcerptPaint` cover the rule and stitched refusals.
+     Queued (owner: next paint lane; check: `kimik3.delve.town dijo «a line»` alone passes the `tongue` clause): in Spanish a
+     paint of one quotation frame and nothing else fails `tongueFault` (`Tongue.detect` wants two Spanish indicators);
+     real paints carry a simile or fact lines, and the excerpt tests carry the simile.
+     (e) A translated source word passes imagery (escarcha for a line's frost): the guard compares the
      strokes' own words; decide whether the tongue's lexicon should carry them. (f) **Scene mark digests: done
      (Task 5, Codex, lane/cx-tidy; build/test pending with Ember).** `Enchant.Mark.ofRow` projects every
      `station-scene-*` row to `the scene`, shared by `assemble` and `spanOf`. Strokes JSON, `Strokes.text`, facts,
