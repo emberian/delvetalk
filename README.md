@@ -63,7 +63,10 @@ want, up to three lines between the card and the stamp say so:
 
     rule seven of the town fired: delvetalk bell/2 ring
     bell/2 no longer wants second
-    bell/2's lines: 7, the first by you.delve.town
+    bell/2's lines: 7, the first by the town
+
+“The first” credits the author of the card's actual first line: here the town seeded #1. If you write #1,
+that reply credits you; your later lines do not repeat your own credit.
 
 What a poster also has:
 

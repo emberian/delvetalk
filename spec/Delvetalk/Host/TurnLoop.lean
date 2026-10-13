@@ -2877,9 +2877,10 @@ def offersJson (offers : List (String × String)) : Json :=
     reply"), each left out when empty: **what it moved** (each rule it fired, with the spell it cast under
     its owner's name, or why one that held did not fire), **what it opened or closed** (each want of a
     written thing that came to hold, with the spell that answers it, or stopped holding), and **where it
-    stands** (each relation it added rows to: how many it holds now, and the first by the speaker when it
-    is), said only while the thing is at the version the entry wrote, so a later read of an old receipt
-    never gives today's count as the entry's. From the entry and the world after it; no model. -/
+    stands** (each relation it added rows to: how many it holds now, crediting its first row's author
+    when it is another principal's or the speaker just added it), said only while the thing is at the
+    version the entry wrote, so a later read of an old receipt never gives today's count as the entry's.
+    From the entry and the world after it; no model. -/
 def revealed (w : World) (entry : Json) : List String := Id.run do
   if tagOf entry != "admitted" then return []
   -- A plan's acts first, one line each, in order (docs/HOST-HANDOFF.md 5.203).
@@ -2907,7 +2908,7 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
       let asks := ((asked id (text x "want")).bind fun r => (r.getObjValAs? String "asks").toOption).getD ""
       s!"{id} now wants {text x "want"}" ++ (if asks.isEmpty then "" else s!": {asks}")) ++
     (rows "unwanted").map fun x => s!"{text x "object"} no longer wants {text x "want"}"
-  -- Where it stands: each relation a write inserted into, its count now, and the speaker's first row.
+  -- Where it stands: each relation a write inserted into, its count now, and its actual first row's author.
   let writes := ((((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)).map
     fun j => (parseRecordedWrites j).toOption.getD []).getD [])
   let wrote := fun (id : String) => ((((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "writes" |>.toOption)).bind
@@ -2922,11 +2923,15 @@ def revealed (w : World) (entry : Json) : List String := Id.run do
       | _ => none
     for field in (inserted.map (·.1)).eraseDups do
       let some now := o.cells.relation? field | continue
-      let mine := fun (r : Data) => (Law.rawField "author" r).bind (fun | .label a => some a | _ => none) == some principal
       let added := (inserted.filter (·.1 == field)).map (·.2)
       let addedKeys := added.map fun r => (Delvetalk.Turn.RowCell.of now.key r).key
-      let first := added.any mine && !(now.rows.any fun c => mine c.row && !addedKeys.contains c.key)
-      stands := stands ++ [s!"{id}'s {field}: {now.rows.size}" ++ (if first then s!", the first by {shownName w principal}" else "")]
+      let credit := match now.rows[0]? with
+        | some c => match Law.rawField "author" c.row with
+          | some (.label author) =>
+            if !author.isEmpty && (author != principal || addedKeys.contains c.key) then s!", the first by {shownName w author}" else ""
+          | _ => ""
+        | none => ""
+      stands := stands ++ [s!"{id}'s {field}: {now.rows.size}" ++ credit]
   return planned ++ [moved, opened, stands].filterMap fun ls => if ls.isEmpty then none else some ("; ".intercalate ls)
 
 /-- The `revealed` field of a reply to an admitted entry, left out when it has no line. -/

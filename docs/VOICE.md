@@ -278,8 +278,10 @@ An admitted reply carries up to three host lines between the card and the receip
    `its owner is quieted`, `the chain of rules is 4 deep`, `8 rules fired on this write already`, `the world holds
    {n} undelivered sends`).
 2. **What it opened or closed**: `{id} now wants {want}: {its spell}`, `{id} no longer wants {want}`.
-3. **Where it stands**: `{id}'s {relation}: {count}`, and `, the first by {handle}` when the speaker's row is their
-   first there.
+3. **Where it stands**: `{id}'s {relation}: {count}`, and `, the first by {name}` credits the author of the
+   relation's actual first row in card order (#1 on a new record), never a speaker's first contribution to it.
+   Name that author through `shownName` (the town as `the town`, others by handle); omit the credit when the
+   first row has no author, or is the speaker's own row from an earlier turn.
 
 A reply that only echoes the spell is a finding against its card.
 
