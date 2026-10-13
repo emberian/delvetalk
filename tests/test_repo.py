@@ -516,6 +516,42 @@ class World:
         return {'status': 'unknown', 'message': q['op']}
 
 
+@signs
+class CarriedRepository(unittest.TestCase):
+    def test_a_served_carried_journal_projects_an_old_receipt_as_the_hosts_pointer(self):
+        import subprocess
+        from tests.host import Host, binary
+        from transport.host import HostClient
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        old = Path(tmp.name) / 'old.journal'
+        state = Path(tmp.name) / 'state'
+        state.mkdir()
+        host = Host()
+        self.addCleanup(host.close)
+        self.assertEqual(host.send(op='world-open', path=str(old), opener=OWNER)['status'], 'opened')
+        turn = host.send(op='world-turn', principal=OWNER, object='absent', method='receive',
+                         identity='before-carry', argument=record())
+        self.assertEqual(turn['status'], 'refused', turn)
+        receipt = turn['receipt']
+        self.assertEqual(host.send(op='world-snapshot')['status'], 'snapshot')
+        host.close()
+        result = subprocess.run([binary(), 'carry', '--from', str(old), '--out', str(state / 'town.journal'),
+                                 '--reason', 'receipt projection'], capture_output=True, text=True, timeout=600)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        serving = served(str(state), cleanup=self.addCleanup, opener=OWNER)
+        public = HostClient(serving.sock)
+        self.addCleanup(public.close)
+        repo = Repo(ORIGIN, sign.Key.generate(), ledger=State(state).repo_ledger)
+        key = receipt['slug']
+        found = public.send({'op': 'world-resolve', 'principal': 'anonymous', 'slug': key})
+        self.assertEqual((found['status'], found['kind'], found['cid'], found['carried']['height']),
+                         ('resolved', 'receipt', receipt['hash'], receipt['height']))
+        self.assertNotIn('receipt', found)
+        code, got, _ = repo.serve(public, 'GET', NS + 'getProjection', {'kind': 'receipt', 'key': key}, None)
+        self.assertEqual((code, got), (200, {'kind': 'receipt', 'key': key, 'of': receipt['hash'], 'value': found}))
+
+
 class ProjectionWorld(World):
     """Three entries and each projection kind, with opaque host cursors and multiple clauses per object."""
 
@@ -583,6 +619,38 @@ class ProjectionBoundary(unittest.TestCase):
     def call(self, method, endpoint=None, who=None, **q):
         code, body, _ = (endpoint or self.repo).serve(self.world, 'GET', method, q, who)
         return code, body
+
+    def test_a_carried_receipt_slug_projects_the_host_pointer_without_a_signed_record(self):
+        from unittest.mock import patch
+        from transport.lexicon import record_problems
+        cid = str(block({'old': 'receipt'})[0])
+        key = identity.slug(cid)
+        send = self.world.send
+        for height in (1336, (1 << 63) - 1):
+            found = {'status': 'resolved', 'kind': 'receipt', 'slug': key, 'cid': cid,
+                     'carried': {'at': 1400, 'height': height, 'world': 'town'},
+                     'message': f'entry {height} of the world before the carry (town)'}
+            with self.subTest(height=height), patch.object(self.world, 'send',
+                    side_effect=lambda q: found if q['op'] == 'world-resolve' and q['slug'] == key else send(q)):
+                for endpoint in (self.repo, Repo(ORIGIN)):
+                    for who in (None, OWNER):
+                        code, got = self.call(NS + 'getProjection', endpoint=endpoint, who=who,
+                                              kind='receipt', key=key, cid=cid)
+                        self.assertEqual((code, got), (200, {'kind': 'receipt', 'key': key, 'of': cid, 'value': found}))
+                        self.assertEqual(record_problems(got), [])
+                    code, wrong = self.call(NS + 'getProjection', endpoint=endpoint, kind='receipt', key=key,
+                                            cid=self.world.entries[0]['hash'])
+                    self.assertEqual((code, wrong['error']), (400, 'RecordNotFound'))
+
+    def test_a_carried_pointer_to_a_source_cannot_be_read_as_a_receipt(self):
+        from unittest.mock import patch
+        cid = str(block({'old': 'source'})[0])
+        key = identity.slug(cid)
+        found = {'status': 'resolved', 'kind': 'source', 'slug': key, 'cid': cid,
+                 'carried': {'at': 1400, 'height': 1336, 'world': 'town'}, 'message': 'old source'}
+        with patch.object(self.world, 'send', return_value=found):
+            code, got = self.call(NS + 'getProjection', kind='receipt', key=key)
+        self.assertEqual((code, got['error']), (400, 'RecordNotFound'))
 
     def test_projection_collections_are_invalid_on_all_repository_record_methods(self):
         for repo in (self.repo, Repo(ORIGIN)):

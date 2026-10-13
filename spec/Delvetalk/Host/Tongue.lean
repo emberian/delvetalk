@@ -209,8 +209,9 @@ def Tongue.wordNumber (t : Tongue) (token : String) : Option (Nat × Bool) :=
   if w.any Char.isDigit then
     let cs := w.toList
     let ds := cs.takeWhile Char.isDigit
-    if ds.isEmpty then (String.ofList ((cs.dropWhile (!·.isDigit)).takeWhile Char.isDigit)).toNat?.map (·, false)
-    else (String.ofList ds).toNat?.map (·, t.ordinalMarks.contains (String.ofList (cs.drop ds.length)))
+    let suffix := String.ofList (cs.drop ds.length)
+    if ds.isEmpty || (!suffix.isEmpty && !t.ordinalMarks.contains suffix) then none
+    else (String.ofList ds).toNat?.map (·, !suffix.isEmpty)
   else
     let look := fun (x : String) => match t.cardinals.lookup x, t.ordinals.lookup x with
       | some n, _ => some (n, false)

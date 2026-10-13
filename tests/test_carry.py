@@ -227,6 +227,18 @@ class Carry(Reflection):
         self.assertEqual(again.send(op="world-inspect", principal="registrar", grant=gid)["grant"], row)
         again.close()
 
+    def test_strokes_keep_the_creation_entry_when_a_carry_replaces_the_first_touch(self):
+        before = self.host.send(op='world-strokes', principal='ember', object='c')['strokes']
+        created = next(e for e in journal_entries(self.path)
+                       if e['outcome'].get('tag') == 'created' and e['outcome'].get('object') == 'c')
+        self.assertEqual(before['made'], created['height'])
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        new = self.opened(out)
+        after = new.send(op='world-strokes', principal='ember', object='c')['strokes']
+        self.assertEqual((after['made'], after['maker']), (before['made'], before['maker']))
+        self.assertNotEqual(after['made'], new.send(op='world-status')['height'])
+
     def test_the_maker_allocation_is_preserved_by_carry(self):
         from tests.test_make import MAKER, LAMP
         made = self.make("allocator", MAKER, record(made=nat(0)))

@@ -35,70 +35,110 @@ def vending(to: String, what: String, context: Abi.Context) -> Activity<Done>:
     case returned(r): r.result
     case refused(r): Super.roomRefused({clause: r.clause, reading: r.reading}, context)
     case denied(_): Super.roomRefused({clause: "denied", reading: "{what} does not answer."}, context)
-# The station's scene is larger than one turn may read (a turn's ticks bound what Spween.parse reads, about
-# eight thousand characters at most and less beside a making), so its owner stitches it a wing at a time,
-# as the owner said they would ("reply with a passage (or a whole wing). i'll stitch them in"): each wing a
-# spween text (frontmatter only on the first, whose `requires` and `cooldown` become the scene's), read by
-# Spween.wing, its passages added after the scene's (never replacing one; the scene's bounds held over the
-# whole), its outside guards read once by the host as a making's are, and each of its casts a rule added to
-# the station's own text. A choice may lead to a passage a later wing brings; until then the room refuses
-# it (`noPassage`), and the reply names what still waits. A passage's own guard rides the choices of its
-# own wing.
+# The owner reads a wing per turn. Stitch extends the scene; restitch replaces it from its first
+# wing. Presence is reconciled after its last wing, so a reader in a later wing keeps their place.
+# Each successful wing keeps a chained SHA-256 mark of the text stitched, in journal order.
 form stitch:
   spween: text 1..8192
+form restitch:
+  spween: text 1..8192
+  part: natural 1..64
+  wings: natural 1..64
+record Stitching:
+  text: String
+  replace: Bool
+  finish: Bool
 def stitch(state: State, input: StitchInput, context: Abi.Context) -> Activity<Done>:
-  if context.principal != state.owner then Super.roomRefused({clause: "notOwner", reading: "Only the station's owner stitches a wing into its scene."}, context) else stitching(Spween.wing(input.spween), state, context)
-def stitching(parsed: Spween.Parsed, state: State, context: Abi.Context) -> Activity<Done>:
+  if context.principal != state.owner then Super.roomRefused({clause: "notOwner", reading: "Only the station's owner stitches a wing into its scene."}, context) else stitching(Spween.wing(input.spween), {text: input.spween, replace: false, finish: true}, state, context)
+def restitch(state: State, input: RestitchInput, context: Abi.Context) -> Activity<Done>:
+  if context.principal != state.owner then Super.roomRefused({clause: "notOwner", reading: "Only the station's owner replaces its scene."}, context) else if input.part > input.wings then Super.roomRefused({clause: "spween", reading: "The wing number exceeds the scene's wing count."}, context) else stitching(Spween.wing(input.spween), {text: input.spween, replace: input.part == 1n, finish: input.part == input.wings}, state, context)
+def stitching(parsed: Spween.Parsed, work: Stitching, state: State, context: Abi.Context) -> Activity<Done>:
   match parsed:
     case refused(r): Super.roomRefused({clause: "spween", reading: r.reason}, context)
-    case parsed(p): if Spween.joined(state.passages, p.seed.passages) != "" then Super.roomRefused({clause: "spween", reading: Spween.joined(state.passages, p.seed.passages)}, context) else stitchGuards(p.seed, Scenes.conditions(p.seed), state, context)
-def stitchGuards(wing: Scenes.Seed, conditions: Lists.List<String>, state: State, context: Abi.Context) -> Activity<Done>:
+    case parsed(p): if Spween.joined(if work.replace then Lists.List.nil() else state.passages, p.seed.passages) != "" then Super.roomRefused({clause: "spween", reading: Spween.joined(if work.replace then Lists.List.nil() else state.passages, p.seed.passages)}, context) else stitchGuards(p.seed, Scenes.conditions(p.seed), work, state, context)
+def stitchGuards(wing: Scenes.Seed, conditions: Lists.List<String>, work: Stitching, state: State, context: Abi.Context) -> Activity<Done>:
   match conditions:
-    case nil(_): stitchRules(wing, state, context)
-    case cons(c): stitchGuard(wing, c.head, c.tail, state, context)
-def stitchGuard(wing: Scenes.Seed, condition: String, rest: Lists.List<String>, state: State, context: Abi.Context) -> Activity<Done>:
+    case nil(_): stitchRules(wing, work, state, context)
+    case cons(c): stitchGuard(wing, c.head, c.tail, work, state, context)
+def stitchGuard(wing: Scenes.Seed, condition: String, rest: Lists.List<String>, work: Stitching, state: State, context: Abi.Context) -> Activity<Done>:
   match world.holds({object: Plans.self(context), when: condition}):
-    case held(_): stitchGuards(wing, rest, state, context)
+    case held(_): stitchGuards(wing, rest, work, state, context)
     case refused(r): Super.roomRefused({clause: "spween", reading: "The guard `{condition}` does not read: {r.reading}"}, context)
-def stitchRules(wing: Scenes.Seed, state: State, context: Abi.Context) -> Activity<Done>:
-  if Scenes.castCount(wing.passages) == 0n then stitchWrite(wing, state, context) else stitchLaw(wing, state, context)
-def stitchLaw(wing: Scenes.Seed, state: State, context: Abi.Context) -> Activity<Done>:
+def stitchRules(wing: Scenes.Seed, work: Stitching, state: State, context: Abi.Context) -> Activity<Done>:
+  let all = Lists.concat(if work.replace then Lists.List.nil() else state.passages, wing.passages)
   match world.inspect({object: Plans.self(context), source: false}):
-    case inspected(i): stitchAmend(wing, "{i.law}{Scenes.ruleText(wing.passages)}", state, context)
+    case inspected(i): stitchAmend(wing, work, all, "{if work.replace then sceneLawWithout(i.law, Scenes.castsOf(state.passages)) else i.law}{Scenes.ruleText(wing.passages)}", state, context)
     case _: Super.roomRefused({clause: "spween", reading: "The station's text is not readable here; nothing was stitched."}, context)
-def stitchAmend(wing: Scenes.Seed, law: String, state: State, context: Abi.Context) -> Activity<Done>:
+# Scene rules have the names of their passage, choice and cast. Only those rule lines are removed;
+# the owner's other laws, rules and wants retain their text, wherever they stand in the law.
+def sceneLawWithout(law: String, casts: Lists.List<Scenes.Cast>) -> String:
+  let at = Text.indexOf(law, "\n")
+  let line = textTake(law, at)
+  let kept = if Lists.any(casts, fn(c: Scenes.Cast) -> Bool: Text.starts(line, "rule {c.id}_{natText(c.n)}{Scenes.suffix(c.k)} ") || Text.starts(line, "rule {c.id}_{natText(c.n)}{Scenes.suffix(c.k)}:")) then "" else line
+  if at == textLength(law) then kept else lawJoined(kept, sceneLawWithout(textDrop(law, at + 1n), casts))
+def lawJoined(first: String, rest: String) -> String:
+  if first == "" then rest else if rest == "" then first else "{first}\n{rest}"
+def stitchAmend(wing: Scenes.Seed, work: Stitching, all: Lists.List<Scenes.Passage>, law: String, state: State, context: Abi.Context) -> Activity<Done>:
   match world.amend({object: Plans.self(context), law: law}):
-    case amended(_): stitchWrite(wing, state, context)
+    case amended(_): stitchCleared(if work.replace then state.passages else Lists.List.nil(), if work.replace then state.requires else Lists.List.nil(), wing, work, all, state, context)
     case refused(r): Super.roomRefused({clause: r.clause, reading: "The wing's casts are rules the station's text could not take: {r.reading}"}, context)
-def stitchWrite(wing: Scenes.Seed, state: State, context: Abi.Context) -> Activity<Done>:
-  let first = Lists.length(state.passages) == 0n
-  let written(_) = write {start: set firstOr(first, wing.start, state.start), cooldown: set if first then wing.cooldown else state.cooldown}
-  stitchPassages(wing.passages, if first then wing.requires else Lists.List::<Scenes.Clause>.nil(), wing, Lists.concat(state.passages, wing.passages), context)
-def firstOr(first: Bool, wing: String, scene: String) -> String:
-  if first then wing else scene
-# One write a passage and a clause, each appended, as the room writes its variables.
-def stitchPassages(passages: Lists.List<Scenes.Passage>, requires: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, context: Abi.Context) -> Activity<Done>:
+def stitchCleared(passages: Lists.List<Scenes.Passage>, requires: Scenes.Guard, wing: Scenes.Seed, work: Stitching, all: Lists.List<Scenes.Passage>, state: State, context: Abi.Context) -> Activity<Done>:
   match passages:
-    case nil(_): stitchRequires(requires, wing, all, context)
-    case cons(c): stitchPassage(c.head, c.tail, requires, wing, all, context)
-def stitchPassage(passage: Scenes.Passage, rest: Lists.List<Scenes.Passage>, requires: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, context: Abi.Context) -> Activity<Done>:
-  let written(_) = world.write(extend(keep(), {passages: Plans.Entries.append({item: passage})}))
-  stitchPassages(rest, requires, wing, all, context)
-def stitchRequires(requires: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, context: Abi.Context) -> Activity<Done>:
+    case nil(_): stitchRequirementsCleared(requires, wing, work, all, state, context)
+    case cons(c): stitchPassageCleared(c.head, c.tail, requires, wing, work, all, state, context)
+def stitchPassageCleared(passage: Scenes.Passage, rest: Lists.List<Scenes.Passage>, requires: Scenes.Guard, wing: Scenes.Seed, work: Stitching, all: Lists.List<Scenes.Passage>, state: State, context: Abi.Context) -> Activity<Done>:
+  let written(_) = world.write(extend(keep(), {passages: Plans.Entries.removeItem({item: passage})}))
+  stitchCleared(rest, requires, wing, work, all, state, context)
+def stitchRequirementsCleared(requires: Scenes.Guard, wing: Scenes.Seed, work: Stitching, all: Lists.List<Scenes.Passage>, state: State, context: Abi.Context) -> Activity<Done>:
   match requires:
-    case nil(_): Card.tell(Done.done({}), Document.text("Stitched {natText(Lists.length(wing.passages))} passages; the scene holds {natText(Lists.length(all))}. {stitchWaiting(Spween.waiting(all))}\n"))
-    case cons(c): stitchRequire(c.head, c.tail, wing, all, context)
-def stitchRequire(clause: Scenes.Clause, rest: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, context: Abi.Context) -> Activity<Done>:
+    case nil(_): stitchWrite(wing, work, all, state, context)
+    case cons(c): stitchRequirementCleared(c.head, c.tail, wing, work, all, state, context)
+def stitchRequirementCleared(clause: Scenes.Clause, rest: Scenes.Guard, wing: Scenes.Seed, work: Stitching, all: Lists.List<Scenes.Passage>, state: State, context: Abi.Context) -> Activity<Done>:
+  let written(_) = world.write(extend(keep(), {requires: Plans.Entries.removeItem({item: clause})}))
+  stitchRequirementsCleared(rest, wing, work, all, state, context)
+def stitchWrite(wing: Scenes.Seed, work: Stitching, all: Lists.List<Scenes.Passage>, state: State, context: Abi.Context) -> Activity<Done>:
+  let first = work.replace || Lists.length(state.passages) == 0n
+  let start = if first then wing.start else state.start
+  let digest = sha256Text("{if first then \"\" else sceneDigest(state)}{work.text}")
+  let written(_) = write {start: set start, cooldown: set if first then wing.cooldown else state.cooldown, marks: insert {name: "station-scene-{digest}-{natText(context.height)}", who: context.principal, handle: context.handle, at: context.height}}
+  stitchPassages(wing.passages, if first then wing.requires else Lists.List.nil(), wing, all, if work.finish then Relations.rows(state.presence) else Lists.List.nil(), start, context)
+def sceneDigest(state: State) -> String:
+  match Lists.find(Lists.reverse(Relations.order(state.marks, fn(m: Rows.Mark) -> Nat: m.at)), fn(m: Rows.Mark) -> Bool: Text.starts(m.name, "station-scene-")):
+    case some(m): textTake(textDrop(m.value.name, 14n), 64n)
+    case none(_): ""
+# One write a passage and a clause, each appended, as the room writes its variables.
+def stitchPassages(passages: Lists.List<Scenes.Passage>, requires: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, presence: Lists.List<Rows.Presence>, start: String, context: Abi.Context) -> Activity<Done>:
+  match passages:
+    case nil(_): stitchRequires(requires, wing, all, presence, start, context)
+    case cons(c): stitchPassage(c.head, c.tail, requires, wing, all, presence, start, context)
+def stitchPassage(passage: Scenes.Passage, rest: Lists.List<Scenes.Passage>, requires: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, presence: Lists.List<Rows.Presence>, start: String, context: Abi.Context) -> Activity<Done>:
+  let written(_) = world.write(extend(keep(), {passages: Plans.Entries.append({item: passage})}))
+  stitchPassages(rest, requires, wing, all, presence, start, context)
+def stitchRequires(requires: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, presence: Lists.List<Rows.Presence>, start: String, context: Abi.Context) -> Activity<Done>:
+  match requires:
+    case nil(_): stitchPresence(presence, wing, all, start, context)
+    case cons(c): stitchRequire(c.head, c.tail, wing, all, presence, start, context)
+def stitchRequire(clause: Scenes.Clause, rest: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, presence: Lists.List<Rows.Presence>, start: String, context: Abi.Context) -> Activity<Done>:
   let written(_) = world.write(extend(keep(), {requires: Plans.Entries.append({item: clause})}))
-  stitchRequires(rest, wing, all, context)
+  stitchRequires(rest, wing, all, presence, start, context)
+def stitchPresence(presence: Lists.List<Rows.Presence>, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, start: String, context: Abi.Context) -> Activity<Done>:
+  match presence:
+    case nil(_): Card.tell(Done.done({}), Document.text("Stitched {natText(Lists.length(wing.passages))} passages; the scene holds {natText(Lists.length(all))}. {stitchWaiting(Spween.waiting(all))}\n"))
+    case cons(c): if Lists.any(all, fn(p: Scenes.Passage) -> Bool: p.id == c.head.at) then stitchPresence(c.tail, wing, all, start, context) else stitchMoved(c.head, c.tail, wing, all, start, context)
+def stitchMoved(me: Rows.Presence, rest: Lists.List<Rows.Presence>, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, start: String, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {presence: upsert {who: me.who, handle: me.handle, at: start, draw: me.draw}}
+  stitchPresence(rest, wing, all, start, context)
 def stitchWaiting(waiting: Lists.List<String>) -> String:
   match waiting:
     case nil(_): "Every choice leads to a passage."
     case cons(_): "Still waiting for: {textJoin(waiting, \", \")}."
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Super.actions(state, context), if context.principal == state.owner then Text.words("vend stitch") else Text.words(""))
+  Lists.concat(Super.actions(state, context), if context.principal == state.owner then Text.words("vend stitch restitch") else Text.words(""))
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at, draw: Super.turnDraw(context)}}
+  match Super.indexPresence(context):
+    case indexed(_): entryTold(at, after, context)
+def entryTold(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   match Super.lastLeft(context.principal, after):
     case some(l): Super.away(at, after, l.value.entry, context)
     case none(_): Super.welcomed(at, after, Document.text(""), context)

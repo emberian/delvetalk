@@ -411,6 +411,22 @@ class Requests(unittest.TestCase):
         self.step()
         self.assertEqual(self.answer('3aaaaaaaaaaa2')['outcome']['status'], 'admitted')
 
+    def test_a_signed_request_created_at_not_a_date_is_answered_invalid_without_a_turn(self):
+        self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT, created='not-a-date'))
+        identity = {'principal': DID, 'intent': f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa2'}
+        ran = self.step()
+        self.assertFalse(any(e.get('identity') == identity for e in self.acts()))
+        self.assertEqual(ran['failed'], [])
+        self.assertEqual(self.answer('3aaaaaaaaaaa2')['outcome'],
+                         {'status': 'invalid', 'line': 'createdAt is not a timestamp'})
+        (obs,) = self.st.observations()
+        self.assertEqual(obs['request']['invalid'], 'createdAt is not a timestamp')
+        self.assertEqual(obs['request']['call'], {})
+        first = self.answer('3aaaaaaaaaaa2')
+        self.step()
+        self.assertEqual(self.answer('3aaaaaaaaaaa2'), first)
+        self.assertFalse(any(e.get('identity') == identity for e in self.acts()))
+
     def test_a_try_another_services_request_and_one_from_before_observing_are_never_run(self):
         self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT, mode='try'))
         self.pds.put(DID, '3aaaaaaaaaaa3', request(PLANT, service='did:web:elsewhere.example'))
@@ -712,6 +728,87 @@ class Requests(unittest.TestCase):
 
 class Held(unittest.TestCase):
     """A request hob must read first (a misfit spell) is answered when its turn settles, once, never run again meanwhile."""
+
+    def test_a_saved_suspended_record_answer_is_replaced_by_settlement_without_replaying_the_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            st, host = State(directory, config=LOOPBACK), Stub()
+            uri = f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa2'
+            obs = {'uri': uri, 'cid': str(block('request')[0]), 'kind': 'request', 'createdAt': '9999-12-31T23:59:59.999999Z',
+                   'author': {'did': DID, 'handle': HANDLE}, 'text': '', 'replyTo': None, 'mentions': [],
+                   'request': {'call': {'object': 'garden-1', 'verb': 'plant', 'fields': {}}}}
+            st.observations = mock.Mock(return_value=[obs])
+            suspended = {'status': 'suspended', 'receipt': {'hash': str(block('waiting')[0]), 'slug': 'waiting-name',
+                         'height': 5, 'identity': {'principal': DID, 'intent': uri}, 'outcome': {'tag': 'suspended'}}}
+            self.assertIsNone(bridge.answer_turn(st, host, obs, suspended))
+            bridge.write_answer(st, bridge.request_source(obs), bridge.public_view(host, suspended))
+            path = bridge.answer_path(st, bridge.request_source(obs))
+            before = path.read_bytes()
+            self.assertEqual(json.loads(before)['outcome']['status'], 'suspended')
+            host.offers[DID] = [{'height': 9, 'identity': {'principal': DID, 'intent': uri}, 'text': 'Planted.'},
+                                {'height': 10, 'identity': {'principal': DID, 'intent': 'another'}, 'text': 'not mine'}]
+            ran = bridge.run(st, host, now=0)
+            self.assertEqual(ran['offered'], [uri])
+            answer = json.loads(path.read_text())
+            self.assertEqual(record_problems(answer), [])
+            self.assertEqual((answer['outcome']['status'], answer['offers']), ('admitted', ['Planted.']))
+            self.assertEqual(answer['receipt']['entry']['$link'], Stub.RESUMED['hash'])
+            self.assertNotIn('not mine', json.dumps(answer))
+            self.assertTrue(json.loads(bridge.awaiting_path(st, uri).read_text())['settled'])
+            first = path.read_bytes()
+            self.assertNotEqual(first, before)
+            host.offers[DID].append({'height': 11, 'identity': {'principal': DID, 'intent': uri}, 'text': 'made later'})
+            self.assertNotIn('offered', bridge.run(st, host, now=0))
+            self.assertEqual(path.read_bytes(), first)
+            self.assertFalse(any(q['op'] == 'world-turn' for q in host.ops))
+
+    def test_not_a_date_missing_and_non_string_request_times_are_quarantined_beside_a_maximum_timestamp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            st, pds, host = State(directory, config=LOOPBACK), FakePDS(), Stub()
+            pds.repo(DID)
+            for key, stamp in (('3aaaaaaaaaaa2', None), ('3aaaaaaaaaaa3', 42), ('3aaaaaaaaaaa4', 'not-a-date')):
+                value = request(PLANT, created=stamp)
+                if stamp is None:
+                    del value['createdAt']
+                pds.put(DID, key, value)
+            pds.put(DID, '3aaaaaaaaaaa5', request(PLANT, created='9999-12-31T23:59:59.999999Z'))
+            client = delve.Client(pds)
+            ob = observe.Observer(st, client, requests=Poller(st, client))
+            self.addCleanup(ob.db.close)
+            ran = bridge.run(st, host, ob)
+            self.assertEqual(ran['failed'], [])
+            for key in ('3aaaaaaaaaaa2', '3aaaaaaaaaaa3', '3aaaaaaaaaaa4'):
+                value = json.loads((st.answers / f'{DID}.{key}.json').read_text())
+                self.assertEqual(record_problems(value), [])
+                self.assertEqual(value['outcome'], {'status': 'invalid', 'line': 'createdAt is not a timestamp'})
+            turns = [q for q in host.ops if q['op'] == 'world-turn']
+            self.assertEqual([q['identity'] for q in turns], [f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa5'])
+
+    def test_a_request_with_two_suspended_children_waits_for_both_and_keeps_the_settled_offer_and_refusal(self):
+        from tests.test_bridge import Spells
+        with tempfile.TemporaryDirectory() as directory:
+            st, host = State(directory, config=LOOPBACK), Spells(['admitted', 'suspended', 'suspended'])
+            uri = f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa2'
+            obs = {'uri': uri, 'cid': str(block('request')[0]), 'author': {'did': DID}}
+            reply = host.send({'op': 'world-turn', 'principal': DID, 'identity': uri, 'object': 'bell-1'})
+            self.assertIsNone(bridge.answer_turn(st, host, obs, reply))
+            path = bridge.answer_path(st, bridge.request_source(obs))
+            self.assertFalse(path.exists())
+            send, settled = host.send, {}
+            host.send = lambda req: settled.get(req.get('identity'), {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended'}}}) if req['op'] == 'world-receipt' else send(req)
+            settled[uri + '#2'] = {'status': 'receipt', 'receipt': Stub.RESUMED, 'inPublic': True}
+            host.offers[DID] = [{'height': 20, 'identity': {'principal': DID, 'intent': uri + '#2'}, 'text': 'Tended.'},
+                                {'height': 21, 'identity': {'principal': DID, 'intent': 'another-request'}, 'text': 'not mine'}]
+            self.assertEqual(bridge.offer_drafts(st, host), [])
+            self.assertFalse(path.exists())
+            out = {'tag': 'refused', 'class': 'lawRefused', 'reason': 'refused owner: another hand'}
+            settled[uri + '#3'] = {'status': 'receipt', 'receipt': {**Stub.RESUMED, 'outcome': out}, 'public': out}
+            self.assertEqual(bridge.offer_drafts(st, host), [uri])
+            answer = json.loads(path.read_text())
+            self.assertEqual(record_problems(answer), [])
+            self.assertEqual(answer['turns'][1]['offers'], ['Tended.'])
+            self.assertEqual(answer['turns'][2]['outcome']['status'], 'refused')
+            self.assertNotIn('not mine', json.dumps(answer))
+            self.assertEqual(bridge.offer_drafts(st, host), [])
 
     def test_a_suspended_request_is_answered_when_it_settles_and_not_turned_again_while_it_waits(self):
         tmp = tempfile.TemporaryDirectory()

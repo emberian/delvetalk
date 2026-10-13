@@ -42,6 +42,8 @@ class StubHost:
                     'posts': {'hour': 0, 'sources': [{'source': 'delve', 'used': 3, 'quota': 16, 'next': 60}]}}
         if req['op'] == 'world-post-reserve':
             return {'status': 'reserved'}
+        if req['op'] == 'world-posted':
+            return {'status': 'unposted' if req.get('unposted') else 'posted'}
         if req['op'] == 'world-interpretations':
             return {'status': 'interpretations', 'pending': [{'id': 'x'}]}
         if req['op'] == 'world-resolve':
@@ -52,6 +54,36 @@ class StubHost:
 
     def at(self, world):
         return self
+
+
+class PublicMorning(unittest.TestCase):
+    def test_a_morning_draft_reads_the_chronicle_paint_and_eight_wants_as_the_public(self):
+        from transport.config import Config
+        from transport.host import PUBLIC
+        with tempfile.TemporaryDirectory() as directory:
+            st = State(directory, config=Config(opener='alice', hand_find=False))
+            calls = []
+            secret = 'Alice alone reads this wanting diary.'
+            rows = [{'object': f'bell/{n}', 'name': 'rain', 'reading': 'r' * 200, 'asks': f'delvetalk bell/{n} rain'} for n in range(8)]
+            class Host:
+                def send(self, req):
+                    calls.append(req)
+                    private = req.get('principal') != PUBLIC
+                    if req['op'] == 'world-chronicle':
+                        return {'status': 'chronicled', 'day': 1, 'lines': [secret if private else 'A public day.']}
+                    if req['op'] == 'world-render':
+                        return {'status': 'painted', 'text': secret if private else 'A public painting.'}
+                    if req['op'] == 'world-wanting':
+                        return {'rows': [{'object': 'diary', 'name': 'secret', 'reading': secret, 'asks': 'delvetalk diary reveal'}] if private else rows}
+                    return {'status': 'ok'}
+            h = hand.Hand(st, Host(), sleep=lambda _: None)
+            got = h.morning()
+            text = h.draft(got['drafted'])[1]['text']
+            self.assertNotIn(secret, text)
+            self.assertNotIn('diary', text)
+            self.assertTrue(text.startswith('A public painting.'))
+            self.assertTrue(all(r['asks'] in text for r in rows))
+            self.assertEqual([c['principal'] for c in calls], [PUBLIC] * 3)
 
 
 class HistoryBound(unittest.TestCase):
@@ -681,12 +713,30 @@ class Speak(unittest.TestCase):
         self.assertTrue(fell_back(got).startswith(f"the paint fell back: rejected at its {got['clause']} clause"), fell_back(got))
         self.assertIsNone(fell_back({'text': 'a paint'}))
 
+    def test_an_owner_private_want_never_enters_a_public_morning_draft(self):
+        from deploy import genesis
+        from deploy.seed import closure, modules_on_disk
+        owner, obj = self.hand.owner, 'morning-private-diary'
+        created = self.town.send(op='world-create', principal=owner, identity=obj, object=obj, entry='initial',
+                                 modules=closure('Record', modules_on_disk()), law=genesis.RECORD_LAW, read={'principals': [owner]},
+                                 seed=genesis.rec(owner=genesis.lab(owner), maker=genesis.lab(owner)))
+        self.assertEqual(created['status'], 'created', created)
+        spell = f'delvetalk {obj} want\nname: secret\nreading: the owner alone knows\nwhen: count(new.lines) == 0\nasks: delvetalk kind/bell make / seed: a bell / colour: silver'
+        wanted = cast(self.town, owner, spell, 'morning-private-want')
+        self.assertEqual(wanted['status'], 'admitted', wanted)
+        rows = self.town.send(op='world-wanting', principal=owner)['rows']
+        self.assertTrue(any(r['object'] == obj for r in rows), rows)
+        h = hand.Hand(self.st, self.town.client, sleep=lambda _: None)
+        got = h.morning(day=137)
+        self.assertNotIn(obj, got['text'])
+        self.assertNotIn('the owner alone knows', got['text'])
+
     def test_the_morning_card_is_painted_shown_and_drafted_once_a_day_never_posted(self):
         """`hand morning` (OVERHAUL §4 (c)): the day painted from its strokes with what wants a hand exact beneath, drafted
         once a day for Post; a day with no paint stands as the chronicle's exact lines."""
         from transport import interpret
         self.town.send(op='world-renders')  # the worker attends
-        queued = self.town.send(op='world-render', principal=self.hand.owner, morning=True)
+        queued = self.town.send(op='world-render', principal='anonymous', morning=True)
         self.assertEqual(queued['status'], 'pending', queued)
         paint = 'Like moonlight through silk.'
         reply = {'status': 'replied', 'json': None, 'raw': paint, 'model': 'claude-haiku-5-5', 'usage': {}}
@@ -696,7 +746,7 @@ class Speak(unittest.TestCase):
         _, d = self.hand.draft(got['drafted'])
         self.assertTrue(got['painted'])
         self.assertTrue(d['text'].startswith(paint + '\n\nWhat wants a hand, oldest first:\n'), d['text'])
-        first = self.town.send(op='world-wanting', principal=self.hand.owner, limit=8, oldest=True)['rows'][0]  # the longest waiting
+        first = self.town.send(op='world-wanting', principal='anonymous', limit=8, oldest=True)['rows'][0]  # the longest waiting
         self.assertIn('%s: %s\n  %s' % (first['object'], first.get('reading') or first['name'], first['asks']), d['text'])
         self.assertEqual((d['speak'], d['posted'], d['topic']), ({'morning': got['day']}, False, 'welcome'))
         with self.assertRaises(hand.HandError):
@@ -848,6 +898,176 @@ class PlaytestTwo(unittest.TestCase):
 def time_of(seconds):
     import time
     return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(seconds))
+
+
+
+class PartialPosting(unittest.TestCase):
+    def setUp(self):
+        from tests.test_transport import Recorder
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.st, self.host = State(self.tmp.name), Recorder()
+        self.hand = hand.Hand(self.st, self.host, TOKEN)
+        self.path = self.st.outbox / '1-thread.json'
+        self.ones = [{'uri': f'at://did:plc:me/town.delve.feed.post/r{k}', 'cid': str(k), 'part': k, 'intent': f'draft-1-thread#{k}', 'recorded': {'status': 'posted'}} for k in (1, 2)]
+        self.st.write(self.path, {'text': 'old', 'posted': False, 'object': 'library', 'sentParts': self.ones, 'byHand': self.ones})
+
+    def test_editing_a_draft_with_a_sent_part_is_refused_with_the_reason(self):
+        with self.assertRaisesRegex(hand.HandError, 'parts.*posted|part.*sent'):
+            self.hand.edit('1-thread', 'new')
+        self.assertEqual(json.loads(self.path.read_text())['text'], 'old')
+
+    def test_withdrawing_a_partial_thread_deletes_and_unregisters_each_distinct_uri(self):
+        from unittest.mock import patch
+        with patch.object(post, 'unsend') as delete:
+            self.hand.unpost('1-thread', 'withdraw', client=object())
+        self.assertEqual([c.args[0] for c in delete.call_args_list], [p['uri'] for p in self.ones])
+        self.assertEqual([r['uri'] for r in self.host.posted], [p['uri'] for p in self.ones])
+        d = json.loads(self.path.read_text())
+        self.assertTrue(all(p['unposted']['recorded']['status'] == 'unposted' for p in d['sentParts']))
+        self.assertEqual(len(d['sentParts']), 2)
+
+    def test_withdrawal_resumes_a_failed_unregister_without_deleting_twice(self):
+        from unittest.mock import patch
+        self.host.fail = 1
+        with patch.object(post, 'unsend') as delete:
+            self.hand.unpost('1-thread', 'withdraw', client=object())
+            self.hand.unpost('1-thread', 'withdraw', client=object())
+        self.assertEqual(delete.call_count, 2)
+        self.assertEqual([r['uri'] for r in self.host.posted], [self.ones[0]['uri'], self.ones[1]['uri'], self.ones[0]['uri']])
+
+    def test_two_threads_updating_a_locked_draft_preserve_both_updates(self):
+        from concurrent.futures import ThreadPoolExecutor
+        def update(key):
+            with self.st.draft_lock(self.path):
+                d = json.loads(self.path.read_text())
+                self.st.write(self.path, dict(d, **{key: True}))
+        with ThreadPoolExecutor(2) as pool:
+            for result in pool.map(update, ('left', 'right')): pass
+        d = json.loads(self.path.read_text())
+        self.assertTrue(d['left'] and d['right'])
+
+    def test_two_atomic_writers_use_different_temporary_files(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from unittest.mock import patch
+        import os
+        barrier, original = threading.Barrier(2), os.replace
+        def replace(source, target):
+            barrier.wait(timeout=5)
+            original(source, target)
+        path = self.st.home / 'atomic.json'
+        with patch('transport.state.os.replace', side_effect=replace):
+            with ThreadPoolExecutor(2) as pool:
+                jobs = [pool.submit(self.st.write, path, {'writer': k, 'text': 'x' * post.MAX_TEXT}) for k in (1, 2)]
+                for job in jobs: job.result()
+        self.assertIn(json.loads(path.read_text())['writer'], (1, 2))
+        self.assertEqual(json.loads(path.read_text())['text'], 'x' * post.MAX_TEXT)
+        self.assertEqual(list(path.parent.glob('atomic.json.*.tmp')), [])
+
+    def test_a_completed_thread_with_a_duplicate_manual_uri_withdraws_every_part_once(self):
+        from unittest.mock import patch
+        d = json.loads(self.path.read_text())
+        self.st.write(self.path, dict(d, posted=True, sent=self.ones[-1]))
+        with patch.object(post, 'unsend') as delete:
+            self.hand.unpost('1-thread', 'withdraw', client=object())
+        self.assertEqual(delete.call_count, 2)
+        self.assertEqual(len(self.host.posted), 2)
+
+    def test_withdrawing_a_part_whose_registration_failed_repairs_it_before_unregistering(self):
+        from unittest.mock import patch
+        from tests.test_transport import Recorder
+        class Strict(Recorder):
+            def __init__(self):
+                super().__init__()
+                self.active = set()
+            def send(self, req):
+                if req['op'] == 'world-posted' and req.get('unposted') and req['uri'] not in self.active:
+                    return {'status': 'error', 'message': 'post was never recorded here'}
+                got = super().send(req)
+                if req['op'] == 'world-posted' and not req.get('unposted') and got['status'] == 'posted':
+                    self.active.add(req['uri'])
+                return got
+        self.host = Strict()
+        self.hand.host = self.host
+        d = json.loads(self.path.read_text())
+        for one in d['sentParts']: one['recorded'] = {'status': 'error'}
+        d.pop('byHand')
+        self.st.write(self.path, d)
+        with patch.object(post, 'unsend'):
+            self.hand.unpost('1-thread', 'withdraw', client=object())
+        self.assertEqual(json.loads(self.path.read_text())['unposted']['recorded']['status'], 'unposted')
+
+    def test_a_new_single_post_is_withdrawn_without_reusing_an_old_parts_withdrawal(self):
+        from unittest.mock import patch
+        old = {'uri': 'zulip://delvetalk/garden/42', 'cid': '42'}
+        self.st.write(self.path, {'text': 'old', 'object': 'library', 'posted': True, 'sent': old, 'intent': 'draft-1-thread'})
+        deleted = []
+        bot = type('Bot', (), {'delete': lambda bot, mid: deleted.append(mid)})()
+        self.hand.unpost('1-thread', 'old', zulip=bot)
+        d = json.loads(self.path.read_text())
+        d.update(posted=True, sent={'uri': 'zulip://delvetalk/garden/43', 'cid': '43'})
+        d.pop('unposted')
+        self.st.write(self.path, d)
+        with self.assertRaisesRegex(hand.HandError, 'no zuliprc'):
+            self.hand.unpost('1-thread', 'new')
+        self.hand.unpost('1-thread', 'new', zulip=bot)
+        self.assertEqual(deleted, [42, 43])
+        d = json.loads(self.path.read_text())
+        self.assertEqual([p['uri'] for p in d['sentParts']], [old['uri'], 'zulip://delvetalk/garden/43'])
+        self.assertTrue(all(p['unposted']['recorded']['status'] == 'unposted' for p in d['sentParts']))
+
+    def test_a_write_in_the_outbox_keeps_the_given_value_without_stamping_it(self):
+        value = {'text': 'given', 'posted': False}
+        self.st.write(self.path, value)
+        self.assertEqual(json.loads(self.path.read_text()), value)
+
+    def test_only_new_draft_stamps_creation_and_an_edit_preserves_it(self):
+        self.st.new_draft(self.path, {'text': 'given', 'posted': False})
+        d = json.loads(self.path.read_text())
+        self.assertGreater(observe.instant(d['createdAt']), 0)
+        self.st.write(self.path, dict(d, text='edited'))
+        self.assertEqual(json.loads(self.path.read_text())['createdAt'], d['createdAt'])
+
+    def test_draft_lock_files_are_outside_the_outbox_and_writes_leave_no_temporary_files(self):
+        with self.st.draft_lock(self.path):
+            self.st.write(self.path, json.loads(self.path.read_text()))
+        self.assertEqual([p for p, _ in self.st.drafts()], [self.path])
+        self.assertEqual(list(self.st.outbox.iterdir()), [self.path])
+
+    def test_draft_lock_rejects_reentry_instead_of_blocking_the_same_thread(self):
+        with self.st.draft_lock(self.path):
+            with self.assertRaisesRegex(RuntimeError, 'already held'):
+                with self.st.draft_lock(self.path):
+                    self.fail('a draft lock cannot be entered twice')
+
+    def test_a_crash_after_deletion_retries_only_registration_and_unregistering(self):
+        from unittest.mock import patch
+        with patch.object(post, 'unsend') as delete:
+            with patch.object(self.host, 'send', side_effect=RuntimeError('crash')):
+                with self.assertRaises(RuntimeError):
+                    self.hand.unpost('1-thread', 'withdraw', client=object())
+            self.hand.unpost('1-thread', 'withdraw', client=object())
+        self.assertEqual(delete.call_count, 2)
+        self.assertEqual(json.loads(self.path.read_text())['unposted']['recorded']['status'], 'unposted')
+
+    def test_outbox_scans_ignore_lock_and_temporary_files_even_when_they_contain_invalid_json(self):
+        artifacts = [self.path.with_suffix('.lock'), self.path.with_name(self.path.name + '.example.tmp')]
+        for artifact in artifacts:
+            artifact.write_text('not JSON')
+            self.addCleanup(artifact.unlink, missing_ok=True)
+        self.assertEqual([p for p, _ in self.st.drafts()], [self.path])
+        self.assertEqual([p for p, _ in self.st.unposted()], [self.path])
+        for artifact in artifacts: artifact.unlink()
+        self.assertEqual(list(self.st.outbox.iterdir()), [self.path])
+
+    def test_a_failed_atomic_replace_keeps_the_draft_and_cleans_its_temporary_file(self):
+        from unittest.mock import patch
+        before = json.loads(self.path.read_text())
+        with patch('transport.state.os.replace', side_effect=OSError('replace failed')):
+            with self.assertRaises(OSError):
+                self.st.write(self.path, {'text': 'replacement', 'posted': False})
+        self.assertEqual(json.loads(self.path.read_text()), before)
+        self.assertEqual(list(self.st.outbox.iterdir()), [self.path])
 
 
 if __name__ == '__main__':

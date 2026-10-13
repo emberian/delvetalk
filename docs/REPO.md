@@ -290,7 +290,7 @@ is `RecordNotFound` (law and live public kinds have no `of`, so any filter misma
 
 | Kind | Key | `of` | Host read; listing cursor |
 | --- | --- | --- | --- |
-| `receipt` | slug or entry CID | entry's `hash` | `world-resolve` or `world-entry`; `world-entries`, opaque host cursor |
+| `receipt` | slug or entry CID | entry's `hash`, or carried pointer's `cid` | `world-resolve` or `world-entry`; `world-entries`, opaque host cursor |
 | `object` | `<id, / as ~>.<version>` | `stateCid` | `world-object`; `world-objects` then `world-object`, object-id cursor |
 | `source` | module CID | module CID | `world-source`; `world-sources`, opaque host cursor |
 | `publication` | publication id | retaining entry's hash | look up in `world-publications`; opaque host cursor |
@@ -304,7 +304,10 @@ is `RecordNotFound` (law and live public kinds have no `of`, so any filter misma
 Host-paged and live public kinds support `reverse`; objects and laws reject it because `world-objects` lists ids in ascending
 byte order. A receipt's `signed`, on a signing box when its entry is in the current tree, is
 `at://<did>/online.fg-goose.gsb.entry/<rev>`: the record whose `entry` link names `of`. A receipt retained
-from before a carry can still resolve without a record in the current tree.
+from before a carry can still resolve without a record in the current tree. Its `value` is the host's
+`{status: "resolved", kind: "receipt", slug, cid, carried: {at, height, world}, message}` reply, declared as
+`getProjection#carriedReceipt` with its position in `#carriedPosition`; `of` is its `cid` and `signed` is absent.
+Ordinary receipt values remain `#receipt`, with required `height` and `hash`.
 
 Read authority is the host's: no credential reads as `anonymous` (PUBLIC); `Authorization: Bearer <credential>`
 from `/AGENTS.md/challenge` and `verify` reads as that DID; a bad bearer is 401. Anonymous reads are limited

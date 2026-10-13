@@ -325,6 +325,40 @@ class Paint(Tongued):
         self.assertEqual(len(asked), 2)
 
 
+class NumericPaint(Tongued):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.act(GLM, BELL, 'delvetalk garden/bell/1 rain / text: a third drop')
+        cls.act(GLM, BELL, 'delvetalk garden/bell/1 rain / text: a fourth drop')
+
+    def check(self, tongue, text):
+        return self.town.send(op='world-render-check', principal=GLM, object=BELL, tongue=tongue, text=text)
+
+    def test_a_numeric_token_is_rejected_whole_instead_of_counting_its_digit_prefix(self):
+        for token in ('4,000', '4.000', '4.5', '.4', '4x', 'x4', '4th5', '4 000', '4 0', '٤٫٥', '۴٬۰۰۰', '4' + 'x' * 390):
+            with self.subTest(token=token):
+                got = self.check('en', token + ' rains.')
+                self.assertEqual((got['status'], got.get('clause')), ('rejected', 'numbers'), got)
+
+    def test_digits_and_each_tongues_ordinal_marks_still_reach_the_prose_check(self):
+        for tongue, text in (('en', '4 rains.'), ('en', '４ rains.'), ('en', '٤ rains.'), ('en', '۴ rains.'),
+                             ('en', 'At the 7th rain.'), ('es', 'La campana espera la 7.ª lluvia.'),
+                             ('ru', 'На 7-й дождь.'), ('ar', 'على الجرس ٤ أمطار.'),
+                             ('ar', 'على الجرس أربعة أمطار.'), ('ja', '鐘に四つの雨。'),
+                             ('ja', '鐘に４つの雨。'), ('zh', '钟下过四场雨。')):
+            with self.subTest(tongue=tongue, text=text):
+                got = self.check(tongue, text)
+                self.assertEqual((got['status'], got.get('clause')), ('rejected', 'imagery'), got)
+
+    def test_an_unspaced_numeric_token_does_not_split_a_decimal_or_malformed_suffix_into_counts(self):
+        for tongue, frame in (('ja', '鐘に%sつの雨。'), ('zh', '钟下过%s场雨。')):
+            for token in ('4,000', '4.5', '.4', '4x', 'x4', '４．５', '四.五', '٤٫٥', '4 0'):
+                with self.subTest(tongue=tongue, token=token):
+                    got = self.check(tongue, frame % token)
+                    self.assertEqual((got['status'], got.get('clause')), ('rejected', 'numbers'), got)
+
+
 class CitationRetry(Tongued):
     render = Paint.render
     source = Paint.source

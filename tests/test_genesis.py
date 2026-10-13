@@ -344,11 +344,11 @@ class Refresh(unittest.TestCase):
 
 class CarriedRefresh(unittest.TestCase):
     """`refresh` on a carried town whose older journals are not on this disk (a deploy check's backup, a container
-    without the old state): the carry keeps each object's making (`made`), so a kind the opener made at the original
-    genesis counts as genesis-made and its law, form and voice are refreshed, never left as "its making is in no
-    journal read"."""
+    without the old state): a carry that kept each object's making (`made`) but no last-given texts (`baseline`, which
+    a carry reads from the journals it cites) has unknown baselines, which leave the kind's fields untouched and
+    report the missing ancestor."""
 
-    def test_a_kind_made_at_the_original_genesis_is_refreshed_through_the_carry(self):
+    def test_a_kind_made_at_the_original_genesis_keeps_unknown_baselines_through_the_carry(self):
         import shutil
         import subprocess
         from tests.host import binary
@@ -360,6 +360,18 @@ class CarriedRefresh(unittest.TestCase):
                      for n, of, form, head, law, body in genesis.KINDS]
         with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}, MOTION=[]):
             town = Town(os.path.join(tmp.name, 'v1'), cleanup=self.addCleanup, furnished=False)
+        custom = {'law': 'law custom "the owner\'s guard": request.clock >= 0', 'voice': 'a voice the owner wrote',
+                  'about': 'a bell the owner described', 'form': 'colour: text 1..32\nseed: text 1..200\nnote: text 0..80'}
+        version = int(town.send(op='world-object', principal=genesis.OPENER, object='kind/bell')['record']['version'])
+        changed = town.send(op='world-propose', principal=genesis.OPENER, identity='owner-bell-fields',
+                            roots=[{'object': 'kind/bell', 'version': version}],
+                            writes=[{'object': 'kind/bell', 'edits': [record(**{
+                                name: {'tag': 'variant', 'label': 'set', 'payload': record(value=label(text))}
+                                for name, text in custom.items() if name != 'form'})]}])
+        self.assertEqual(changed['status'], 'admitted', changed)
+        shaped = town.send(op='world-turn', principal=genesis.OPENER, object='kind/bell', method='reshape',
+                           identity='owner-bell-form', argument=record(form=label(custom['form'])))
+        self.assertEqual(shaped['status'], 'admitted', shaped)
         self.assertEqual(town.send(op='world-snapshot')['status'], 'snapshot')
         town.close()
         out = os.path.join(tmp.name, 'v2.journal')
@@ -387,6 +399,14 @@ class CarriedRefresh(unittest.TestCase):
         p = subprocess.run([binary(), 'carry', '--from', out, '--out', again, '--reason', 'again'], capture_output=True, text=True, timeout=600)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual({r['object']: r for r in genesis_outcome(again)['made']}['kind/bell'], made['kind/bell'])
+        # A carry of an edition before `baseline` kept none: the texts last given are in the journals before alone.
+        [g] = journal.entries(again)
+        g['outcome'].pop('baseline')
+        g.pop('hash')
+        g['hash'] = cid_of(g)
+        os.remove(again)
+        os.remove(again + '.blocks')
+        write_journal(again, [g])
         shutil.rmtree(town.state)  # the worlds before are not on this disk
         os.remove(out)
         out = again
@@ -394,12 +414,165 @@ class CarriedRefresh(unittest.TestCase):
         self.addCleanup(host.close)
         rows = genesis.refresh(host, genesis.OPENER, genesis.ancestry(out))
         status = {(r['object'], r.get('slot')): (r['status'], r.get('reading')) for r in rows}
-        for obj, slot in (('kind/record', '.law'), ('kind/bell', '.law'), ('kind/bell', '.voice')):
+        for obj, slot in [('kind/record', '.law')] + [('kind/bell', '.' + name) for name in custom]:
             with self.subTest(obj=obj, slot=slot):
-                self.assertEqual(status[(obj, slot)], ('refreshed', None))
+                self.assertEqual(status[(obj, slot)][0], 'left')
+                self.assertIn('baseline is unknown', status[(obj, slot)][1])
         kind = {f['name']: f['value']['value'] for f in host.send(op='world-view', principal=genesis.OPENER, object='kind/bell')['state']['fields']
-                if f['name'] in ('law', 'voice')}
-        self.assertEqual(kind, {'law': dict((k[0], k[4]) for k in genesis.KINDS)['bell'], 'voice': genesis.VOICES['bell']})
+                if f['name'] in custom}
+        self.assertEqual(kind, custom)
+
+    def test_a_town_carried_twice_refreshes_from_the_baseline_its_carry_kept_without_the_journals_before(self):
+        """The carry reads, from the journals it cites, the text the opener last gave each refreshable slot and keeps
+        it in the carried genesis (`baseline`), and the next carry keeps it on: refresh needs no ancestor, gives every
+        slot nobody amended since the image's text, and leaves the slot the owner amended."""
+        import shutil
+        import subprocess
+        from tests.host import binary
+        from tests.wire import cid_of, write_journal
+        from transport import journal
+        from transport.host import HostProcess
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        old_record = genesis.RECORD_LAW.rsplit('\nwant pending', 1)[0]
+        old_kinds = [(n, of, form, head, '\n'.join([old_record] + ([law.split('\nrule seven', 1)[0]] if law else [])), body)
+                     for n, of, form, head, law, body in genesis.KINDS]
+        with unittest.mock.patch.multiple(genesis, RECORD_LAW=old_record, KINDS=old_kinds, VOICES={}, MOTION=[]):
+            town = Town(os.path.join(tmp.name, 'v1'), cleanup=self.addCleanup, furnished=False)
+        version = int(town.send(op='world-object', principal=genesis.OPENER, object='kind/bell')['record']['version'])
+        about = 'a bell the owner described'
+        self.assertEqual(town.send(op='world-propose', principal=genesis.OPENER, identity='owner-bell-about',
+                                   roots=[{'object': 'kind/bell', 'version': version}],
+                                   writes=[{'object': 'kind/bell', 'edits': [record(about={'tag': 'variant', 'label': 'set',
+                                            'payload': record(value=label(about))})]}])['status'], 'admitted')
+        self.assertEqual(town.send(op='world-snapshot')['status'], 'snapshot')
+        town.close()
+        v2, v3 = (os.path.join(tmp.name, f'v{n}.journal') for n in (2, 3))
+        p = subprocess.run([binary(), 'carry', '--from', town.journal, '--out', v2, '--reason', 'a newer host'],
+                           capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        baseline = {(r['object'], r['slot']): r['text'] for r in genesis_outcome(v2)['baseline']}
+        self.assertEqual(baseline[('kind/bell', '.law')], dict((k[0], k[4]) for k in old_kinds)['bell'])
+        self.assertEqual(baseline[('kind/bell', '.form')], dict((k[0], k[2]) for k in old_kinds)['bell'])
+        self.assertEqual(baseline[('commonplace', 'law')], old_record)
+        held = HostProcess(binary(), v2)
+        self.assertEqual(held.send(op='world-snapshot')['status'], 'snapshot')
+        held.close()
+        p = subprocess.run([binary(), 'carry', '--from', v2, '--out', v3, '--reason', 'again'], capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(genesis_outcome(v3)['baseline'], genesis_outcome(v2)['baseline'])
+        shutil.rmtree(town.state)  # neither journal before v3 is on this disk
+        os.remove(v2)
+        os.remove(v2 + '.blocks')
+        self.assertEqual(genesis.ancestry(v3), [v3])
+        host = HostProcess(binary(), v3)
+        self.addCleanup(host.close)
+        rows = genesis.refresh(host, genesis.OPENER, genesis.ancestry(v3))
+        status = {(r['object'], r.get('slot')): (r['status'], r.get('reading')) for r in rows}
+        self.assertEqual(status[('kind/bell', '.about')], ('left', 'changed since genesis gave it'))
+        for obj, slot in (('commonplace', 'law'), ('kind/record', '.law'), ('kind/bell', '.law'), ('kind/bell', '.voice')):
+            with self.subTest(obj=obj, slot=slot):
+                self.assertEqual(status[(obj, slot)][0], 'refreshed')
+        self.assertEqual([k for k, v in status.items() if v[0] == 'left'], [('kind/bell', '.about')], status)
+        fields = {f['name']: f['value']['value'] for f in host.send(op='world-view', principal=genesis.OPENER, object='kind/bell')['state']['fields']
+                  if f['name'] in ('law', 'about', 'voice')}
+        self.assertEqual(fields, {'law': dict((k[0], k[4]) for k in genesis.KINDS)['bell'], 'about': about, 'voice': genesis.VOICES['bell']})
+
+
+class RefreshHostRegressions(unittest.TestCase):
+    """Composition checks against serve."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.town = Town(tmp.name, cleanup=self.addCleanup, furnished=False)
+
+    def test_refresh_preserves_a_non_record_residents_custom_kind_citation_and_its_bump(self):
+        from tests.bend import declared
+        source = declared('''edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  owner: String
+  count: Nat
+def initial() -> State:
+  {owner: "", count: 0n}
+def bump(state: State, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {count: add 1n}
+  state.count + 1n
+''')
+        resident = 'did:plc:resident'
+        kind = genesis.said(self.town.client, resident, 'kinds', 'make',
+                            [('name', 'custom'), ('of', 'record'), ('law', 'law cap "under ten": new.count <= 10')], 'resident-custom-kind')['reply']
+        self.assertEqual(kind['status'], 'admitted', kind)
+        citation = 'law kind "kind/custom\'s law holds": under "kind/custom"'
+        made = self.town.send(op='world-create', principal=resident, object='resident/counter', identity='resident-counter',
+                              source=source, entry='initial', seed=record(owner=label(resident)), law=citation)
+        self.assertEqual(made['status'], 'created', made)
+        before = self.town.send(op='world-turn', principal=resident, object='resident/counter', method='bump',
+                                argument=record(), identity='before-refresh')
+        self.assertEqual(before['status'], 'admitted', before)
+        result = genesis.refresh(self.town.client, genesis.OPENER, genesis.ancestry(self.town.journal))
+        self.assertFalse([r for r in result if r['object'] == 'resident/counter'], result)
+        self.assertEqual(self.town.send(op='world-object', principal=resident, object='resident/counter')['record']['law'], citation)
+        after = self.town.send(op='world-turn', principal=resident, object='resident/counter', method='bump',
+                               argument=record(), identity='after-refresh')
+        self.assertEqual(after['status'], 'admitted', after)
+        self.assertEqual(field(self.town.send(op='world-view', principal=resident, object='resident/counter')['state'], 'count'), nat(2))
+
+    def test_station_refresh_retries_after_a_wing_or_register_interruption(self):
+        for identity in ('refresh-station-wing-2', 'refresh-station-register'):
+            with self.subTest(identity=identity):
+                tmp = tempfile.TemporaryDirectory()
+                self.addCleanup(tmp.cleanup)
+                town = Town(tmp.name, cleanup=self.addCleanup, furnished=False)
+                send = town.client.send
+                def interrupted(request):
+                    return {'status': 'refused', 'message': 'injected before admission'} if request.get('identity') == identity else send(request)
+                journals = genesis.ancestry(town.journal)
+                with unittest.mock.patch.object(town.client, 'send', side_effect=interrupted):
+                    first = genesis.refresh(town.client, genesis.OPENER, journals, station=True)
+                self.assertTrue(any(r['object'] == 'station' and r['status'] == 'refused' for r in first), first)
+                self.assertIn('station', genesis.existing(town.client, genesis.OPENER))
+                again = genesis.refresh(town.client, genesis.OPENER, journals, station=True)
+                self.assertFalse([r for r in again if r['status'] not in ('current', 'refreshed')], again)
+                self.assertTrue(genesis.station_complete(town.client, genesis.OPENER))
+                strokes = town.send(op='world-strokes', principal=genesis.OPENER, object='station/register')['strokes']
+                self.assertIn('sign', [v['name'] for v in strokes['verbs']])
+                from transport import journal
+                placed = [p for e in journal.entries(town.journal) for p in e.get('outcome', {}).get('placements', [])]
+                self.assertTrue(any(p.get('object') == 'station' and p.get('want') == 'register' for p in placed), placed)
+                state = town.send(op='world-view', principal=genesis.OPENER, object='station')['state']
+                self.assertEqual({field(p, 'id')['value'] for p in field(state, 'passages')['items']},
+                                 set(re.findall(r'^=== (\S+)', genesis.station_scene(), re.M)))
+                register = town.send(op='world-view', principal=genesis.OPENER, object='station/register')['state']
+                self.assertIn('station', str(field(register, 'location')))
+                height = town.send(op='world-status')['height']
+                third = genesis.refresh(town.client, genesis.OPENER, journals, station=True)
+                self.assertEqual({r['status'] for r in third}, {'current'}, third)
+                self.assertEqual(town.send(op='world-status')['height'], height)
+
+    def test_successive_law_refreshes_follow_the_hosts_amendment_journal(self):
+        for phase in ('B', 'C'):
+            text = genesis.RECORD_LAW + f'\nlaw phase "image {phase}": request.clock >= 0'
+            with unittest.mock.patch.object(genesis, 'RECORD_LAW', text):
+                result = genesis.refresh(self.town.client, genesis.OPENER, genesis.ancestry(self.town.journal))
+            [row] = [r for r in result if (r['object'], r.get('slot')) == ('commonplace', 'law')]
+            self.assertEqual(row['status'], 'refreshed', row)
+            self.assertEqual(self.town.send(op='world-object', principal=genesis.OPENER, object='commonplace')['record']['law'], text)
+
+    def test_library_refresh_changes_title_kind_and_rolls_A_B_A_at_page_bounds(self):
+        from transport.mirror import library_pages
+        name, title, body = 'r' * 32, 't' * 80, 'A' * genesis.PAGE_LIMIT
+        for kind, requested_title, requested_body in (
+                ('page', title, body), ('page', 'u' * 80, body), ('walk', 'u' * 80, body),
+                ('walk', 'u' * 80, 'B' * genesis.PAGE_LIMIT), ('walk', 'u' * 80, body)):
+            with unittest.mock.patch.object(genesis, 'shelf', return_value=[(name, kind, requested_title, requested_body)]):
+                result = genesis.shelved(self.town.client, genesis.OPENER)
+            self.assertEqual(result[0]['status'], 'refreshed', result)
+            [page] = [p for p in library_pages(self.town.client, genesis.OPENER) if p['name'] == name]
+            self.assertEqual((page['kind'], page['title'], page['body']), (kind, requested_title, requested_body))
 
 
 class Reshape(unittest.TestCase):

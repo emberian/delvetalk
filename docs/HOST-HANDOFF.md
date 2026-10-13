@@ -2977,8 +2977,8 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    simile marker is cut before the vocabulary check; source words (head, about, seed, lines) its voice holds are free,
    names (kind, field, mark, verb, unit, want) stay blocked and are now met by the tongue's stem (المطر, дождём,
    lluvias). `tongueFault` reads no quotation mark or person's name, and a line of ids, handles and quotations alone is
-   in no wrong tongue. `aliases` gives a DID no name, and `Strokes.text` says "its coiner" for a coiner without a
-   handle. The strokes list the words imagery may not use (`Strokes.notImagery`: names, and the source words its
+   in no wrong tongue. `aliases` gives a coiner without a handle (`unnamed`: a DID, or `coinerOf`'s "the author of
+   at://…") no name, and `Strokes.text` tells the painter to credit them as its coiner, never by an id or address. The strokes list the words imagery may not use (`Strokes.notImagery`: names, and the source words its
    voice does not hold), the citation budget
    (`Strokes.budget`: the facts' average clause, cite at most half the length's worth), and residents' lines in the
    paint's quotation marks (`Strokes.quote`). An expanded overrun is `"N expanded"`, and its retry is told each cited
@@ -3145,8 +3145,9 @@ replaces in the same commit, and this file describes only what is. A merge touch
    - `readerActions` compiles `actions` per read; `methodAdmits` judges on the state as it stands; a `call` or
      `write` to an object created in the same turn is `unknownObject`.
    - The paint, after 5.228 (lane/paintfix's followups, queued, owner the next Enchant lane unless noted):
-     (a) a telling's exact first line still shows a coiner without a handle as a DID ("made by the town, after a post
-     by did:plc:…", `tellingOf`): show "its coiner", as the strokes now do; check: no `did:` in any `telling.exact`.
+     (a) a telling's exact first line names a coiner without a handle by address ("made by the town, after a post by
+     the author of at://did:plc:…", `tellingOf`, as the chronicle does since cx-fix-host): a reader is shown an at://
+     URI where a name would stand; decide with the transport lane whether the page links the post instead.
      (b) Count clauses read a line's verb as a unit: "1 came", "1 settled", and the strokes' "cames: 1" (`plural`,
      `lineQuantities`); check: the regular's facts say what a reader would. (c) The painter copies the contract's
      example handles (kimik3, glm) as credits on cards they never wrote (Spanish regular, live): give the examples

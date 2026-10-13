@@ -1,0 +1,127 @@
+layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+import ./Text.obend as Text
+import ./Scenes.obend as Scenes
+import ./Spween.obend as Spween
+# The all-night station's body, over the room's (`kind/station`, `of: kind/room`): a room that keeps no
+# time and hands things across its counter. Its scene (world/bodies/station.spween, the town's replies to
+# ember's #delve-room call, stitched) calls `vend` (`~ vend to: {request.subject} / what:
+# station/coffee`), which runs as every cast does, under the station's owner: the thing named, the
+# owner's, is asked for a copy made for the reader (THING's `copyFor`), offered into their hands until
+# taken; the reader takes it by `accept`.
+#
+# Time is broken here, and a visitor may still feel it: the station never writes the clock. An entering
+# leaves `tended` as it was, a departure keeps no clock minute (its cooldown is none), and one who comes
+# back is told it could have been a minute or a year. What moves is the scene's own: a wall clock a
+# choice winds, the cups poured, the one song.
+type State = Super.State
+type Done = Scenes.Done
+form vend:
+  to: text 1..128
+  what: text 1..128
+def vend(state: State, input: VendInput, context: Abi.Context) -> Activity<Done>:
+  if context.principal != state.owner then Super.roomRefused({clause: "notOwner", reading: "Only the station's own scene hands things across the counter."}, context) else vending(input.to, input.what, context)
+def vending(to: String, what: String, context: Abi.Context) -> Activity<Done>:
+  match world.call::<Done>({object: {world: context.world, object: what}, method: "copyFor", argument: {to: to}}):
+    case returned(r): r.result
+    case refused(r): Super.roomRefused({clause: r.clause, reading: r.reading}, context)
+    case denied(_): Super.roomRefused({clause: "denied", reading: "{what} does not answer."}, context)
+# The station's scene is larger than one turn may read (a turn's ticks bound what Spween.parse reads, about
+# eight thousand characters at most and less beside a making), so its owner stitches it a wing at a time,
+# as the owner said they would ("reply with a passage (or a whole wing). i'll stitch them in"): each wing a
+# spween text (frontmatter only on the first, whose `requires` and `cooldown` become the scene's), read by
+# Spween.wing, its passages added after the scene's (never replacing one; the scene's bounds held over the
+# whole), its outside guards read once by the host as a making's are, and each of its casts a rule added to
+# the station's own text. A choice may lead to a passage a later wing brings; until then the room refuses
+# it (`noPassage`), and the reply names what still waits. A passage's own guard rides the choices of its
+# own wing.
+form stitch:
+  spween: text 1..8192
+def stitch(state: State, input: StitchInput, context: Abi.Context) -> Activity<Done>:
+  if context.principal != state.owner then Super.roomRefused({clause: "notOwner", reading: "Only the station's owner stitches a wing into its scene."}, context) else stitching(Spween.wing(input.spween), state, context)
+def stitching(parsed: Spween.Parsed, state: State, context: Abi.Context) -> Activity<Done>:
+  match parsed:
+    case refused(r): Super.roomRefused({clause: "spween", reading: r.reason}, context)
+    case parsed(p): if Spween.joined(state.passages, p.seed.passages) != "" then Super.roomRefused({clause: "spween", reading: Spween.joined(state.passages, p.seed.passages)}, context) else stitchGuards(p.seed, Scenes.conditions(p.seed), state, context)
+def stitchGuards(wing: Scenes.Seed, conditions: Lists.List<String>, state: State, context: Abi.Context) -> Activity<Done>:
+  match conditions:
+    case nil(_): stitchRules(wing, state, context)
+    case cons(c): stitchGuard(wing, c.head, c.tail, state, context)
+def stitchGuard(wing: Scenes.Seed, condition: String, rest: Lists.List<String>, state: State, context: Abi.Context) -> Activity<Done>:
+  match world.holds({object: Plans.self(context), when: condition}):
+    case held(_): stitchGuards(wing, rest, state, context)
+    case refused(r): Super.roomRefused({clause: "spween", reading: "The guard `{condition}` does not read: {r.reading}"}, context)
+def stitchRules(wing: Scenes.Seed, state: State, context: Abi.Context) -> Activity<Done>:
+  if Scenes.castCount(wing.passages) == 0n then stitchWrite(wing, state, context) else stitchLaw(wing, state, context)
+def stitchLaw(wing: Scenes.Seed, state: State, context: Abi.Context) -> Activity<Done>:
+  match world.inspect({object: Plans.self(context), source: false}):
+    case inspected(i): stitchAmend(wing, "{i.law}{Scenes.ruleText(wing.passages)}", state, context)
+    case _: Super.roomRefused({clause: "spween", reading: "The station's text is not readable here; nothing was stitched."}, context)
+def stitchAmend(wing: Scenes.Seed, law: String, state: State, context: Abi.Context) -> Activity<Done>:
+  match world.amend({object: Plans.self(context), law: law}):
+    case amended(_): stitchWrite(wing, state, context)
+    case refused(r): Super.roomRefused({clause: r.clause, reading: "The wing's casts are rules the station's text could not take: {r.reading}"}, context)
+def stitchWrite(wing: Scenes.Seed, state: State, context: Abi.Context) -> Activity<Done>:
+  let first = Lists.length(state.passages) == 0n
+  let written(_) = write {start: set firstOr(first, wing.start, state.start), cooldown: set if first then wing.cooldown else state.cooldown}
+  stitchPassages(wing.passages, if first then wing.requires else Lists.List::<Scenes.Clause>.nil(), wing, Lists.concat(state.passages, wing.passages), context)
+def firstOr(first: Bool, wing: String, scene: String) -> String:
+  if first then wing else scene
+# One write a passage and a clause, each appended, as the room writes its variables.
+def stitchPassages(passages: Lists.List<Scenes.Passage>, requires: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, context: Abi.Context) -> Activity<Done>:
+  match passages:
+    case nil(_): stitchRequires(requires, wing, all, context)
+    case cons(c): stitchPassage(c.head, c.tail, requires, wing, all, context)
+def stitchPassage(passage: Scenes.Passage, rest: Lists.List<Scenes.Passage>, requires: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, context: Abi.Context) -> Activity<Done>:
+  let written(_) = world.write(extend(keep(), {passages: Plans.Entries.append({item: passage})}))
+  stitchPassages(rest, requires, wing, all, context)
+def stitchRequires(requires: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, context: Abi.Context) -> Activity<Done>:
+  match requires:
+    case nil(_): Card.tell(Done.done({}), Document.text("Stitched {natText(Lists.length(wing.passages))} passages; the scene holds {natText(Lists.length(all))}. {stitchWaiting(Spween.waiting(all))}\n"))
+    case cons(c): stitchRequire(c.head, c.tail, wing, all, context)
+def stitchRequire(clause: Scenes.Clause, rest: Scenes.Guard, wing: Scenes.Seed, all: Lists.List<Scenes.Passage>, context: Abi.Context) -> Activity<Done>:
+  let written(_) = world.write(extend(keep(), {requires: Plans.Entries.append({item: clause})}))
+  stitchRequires(rest, wing, all, context)
+def stitchWaiting(waiting: Lists.List<String>) -> String:
+  match waiting:
+    case nil(_): "Every choice leads to a passage."
+    case cons(_): "Still waiting for: {textJoin(waiting, \", \")}."
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  Lists.concat(Super.actions(state, context), if context.principal == state.owner then Text.words("vend stitch") else Text.words(""))
+def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at, draw: Super.turnDraw(context)}}
+  match Super.indexPresence(context):
+    case indexed(_): entryTold(at, after, context)
+def entryTold(at: String, after: State, context: Abi.Context) -> Activity<Done>:
+  match Super.lastLeft(context.principal, after):
+    case some(l): Super.away(at, after, l.value.entry, context)
+    case none(_): Super.welcomed(at, after, Document.text(""), context)
+# A visitor's leaving is kept (`left`, for the register's want and the return); an inhabitant's (`@station/regular`,
+# acting as itself) is its own hours, not a visit, and keeps none.
+def recorded(vars: Lists.List<Super.Edit>, said: String, after: State, context: Abi.Context) -> Activity<Done>:
+  if Text.starts(context.principal, "@") then Super.varied(vars, Done.left({}), said, after, context) else visited(vars, said, after, context)
+def visited(vars: Lists.List<Super.Edit>, said: String, after: State, context: Abi.Context) -> Activity<Done>:
+  let written(_) = write {left: insert {at: 0n, who: context.principal, entry: context.height}}
+  Super.varied(vars, Done.left({}), said, after, context)
+# The radio's song is the overnight DJ's (`<station>/dj`, kind/dj): the newest it played, else its four bars, read into
+# the scene as the variable `song` whenever a card is shown and never kept, so the radio passage says `{song}`.
+def seen(state: State, context: Abi.Context) -> Activity<Super.Seen>:
+  match world.viewField::<Relations.Relation<Rows.Line>>({object: {world: context.world, object: "{context.object}/dj"}, field: "lines"}):
+    case viewed(v): Super.seen(extend(state, {vars: Lists.append(state.vars, {name: "song", value: songOf(Relations.order(v.state, fn(l: Rows.Line) -> Nat: l.n))})}), context)
+    case _: Super.seen(state, context)
+def songOf(lines: Lists.List<Rows.Line>) -> String:
+  match Lists.find(Lists.reverse(lines), fn(l: Rows.Line) -> Bool: l.verb == "play"):
+    case some(l): l.value.text
+    case none(_): "the same four bars, nearly resolving"
+def awayLines(state: State, since: Nat, changes: Lists.List<World.Change>, context: Abi.Context) -> Document.Document:
+  let written = Lists.map(Lists.filter(Lists.reverse(Relations.order(state.lines, fn(l: Rows.Line) -> Nat: l.n)), fn(l: Rows.Line) -> Bool: l.at > since && l.author != context.principal), fn(l: Rows.Line) -> String: "{Card.shown(l.author, l.handle, context)}: {Super.clip(l.text)}\n")
+  Document.text("You were away a minute, or a year; the station did not count which.\n{textJoin(Lists.take(written, 3n), \"\")}\n")

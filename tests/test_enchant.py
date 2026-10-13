@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest import mock
 
 from deploy import genesis
+from tests.host import HostCase
 from tests.town import Town
 from tests.wire import label, record
 from transport import interpret, model
@@ -33,6 +34,94 @@ KIND_RULES = [{'name': name, 'owner': 'garden/bell/1', 'reading': reading}
               for name, reading in re.findall(r'^rule (\w+) "([^"]*)"', genesis.kind_text('bell'), re.M)]
 YUE = 'the anchor remembers what the garden can\'t; the soil keeps the corrections'
 
+
+class PrivateStrokes(HostCase):
+    OWNER = 'law owner: request.kind == 0 or request.subject == "ember"'
+
+    def setUp(self):
+        super().setUp()
+        opened = self.host.send(op='world-open', path=self.path, opener='ember')
+        self.assertEqual(opened['status'], 'opened', opened)
+
+    def make(self, obj, fields, **more):
+        source = ('edition ObjectiveBend 1\nrecord State:\n' +
+                  ''.join('  %s: String\n' % k for k in fields) +
+                  'def initial() -> State:\n  {' +
+                  ', '.join('%s: %s' % (k, json.dumps(v)) for k, v in fields.items()) + '}\n')
+        made = self.host.send(op='world-create', principal='ember', identity='mk-' + obj,
+                              object=obj, source=source, entry='initial', seed=record(), **more)
+        self.assertEqual(made['status'], 'created', made)
+
+    def strokes(self, obj, who='mallory'):
+        got = self.host.send(op='world-strokes', principal=who, object=obj)
+        self.assertEqual(got['status'], 'strokes', got)
+        return got
+
+    def test_strokes_read_the_creation_entry_instead_of_a_states_claimed_making(self):
+        source = ('edition ObjectiveBend 1\nrecord State:\n  made: Nat\n'
+                  'def initial() -> State:\n  {made: 999n}\n')
+        made = self.host.send(op='world-create', principal='ember', identity='mk-claimed', object='claimed',
+                              source=source, entry='initial', seed=record())
+        self.assertEqual(made['status'], 'created', made)
+        got = self.strokes('claimed')['strokes']
+        self.assertEqual(got['made'], made['receipt']['height'])
+        self.assertEqual(got['maker'], 'the town')
+
+    def test_strokes_read_a_private_kind_only_for_a_reader_who_can_view_it(self):
+        secret = 'k' * 128
+        voice, about = 'v' * 200, 'a' * 200
+        self.make(secret, dict(voice=voice, about=about), read={'principals': ['ember']})
+        self.make('bait', dict(kind=secret))
+        hidden = self.strokes('bait')
+        self.assertEqual((hidden['strokes']['voice'], hidden['strokes']['about']), ('', ''), hidden)
+        self.assertNotIn(voice, hidden['text'])
+        self.assertNotIn(about, hidden['text'])
+        visible = self.strokes('bait', 'ember')['strokes']
+        self.assertEqual((visible['voice'], visible['about']), (voice, about))
+
+    def test_strokes_keep_private_inherited_laws_rules_and_wants_out_of_the_reading(self):
+        law = ('law secretLaw "private law reading": request.kind == 0\n'
+               'rule secretRule "private rule reading": request.kind == 0 then delvetalk bait note / text: x\n'
+               'want secretWant "private want reading": request.clock >= 0 asks delvetalk bait note / text: x')
+        self.make('hidden', dict(law=law), read={'principals': ['ember']})
+        self.make('middle', dict(law='law inherited: under "hidden"'))
+        self.make('bait', dict(owner='ember', kind='hidden'), law='law inherited: under "hidden"\n' + self.OWNER)
+        hidden = self.strokes('bait')
+        self.assertEqual((hidden['strokes']['laws'], hidden['strokes']['rules'], hidden['strokes']['wants']), ([], [], []), hidden)
+        for text in ('private law reading', 'private rule reading', 'private want reading'):
+            self.assertNotIn(text, json.dumps(hidden))
+        visible = self.strokes('bait', 'ember')['strokes']
+        self.assertEqual([r['name'] for r in visible['rules']], ['secretRule'])
+        self.make('indirect', dict(owner='ember', kind='middle'), law='law inherited: under "middle"\n' + self.OWNER)
+        indirect = self.strokes('indirect')
+        self.assertEqual((indirect['strokes']['rules'], indirect['strokes']['wants']), ([], []), indirect)
+        self.assertNotIn('private', json.dumps(indirect))
+
+    def test_strokes_do_not_inherit_a_voice_through_a_private_surrounding(self):
+        self.make('kind/place', dict(voice='private surroundings voice', about='private surroundings about'))
+        self.make('hidden', dict(kind='kind/place'), read={'principals': ['ember']})
+        self.make('hidden/bait', dict(head='bait'))
+        hidden = self.strokes('hidden/bait')['strokes']
+        self.assertEqual((hidden['around'], hidden['voice'], hidden['about']), ('', '', ''))
+        visible = self.strokes('hidden/bait', 'ember')['strokes']
+        self.assertEqual((visible['around'], visible['voice']), ('hidden', 'private surroundings voice'))
+
+    def test_a_thing_reads_its_own_private_strokes_and_inherited_voice(self):
+        self.make('private', dict(kind='private', owner='ember', voice='its own voice'), read={'principals': ['ember']})
+        self.make('bait', dict(kind='private'))
+        own = self.strokes('private', '@private')['strokes']
+        self.assertEqual((own['object'], own['kind'], own['voice']), ('private', 'private', 'its own voice'))
+        self.assertEqual(self.strokes('bait', '@private')['strokes']['voice'], 'its own voice')
+        self.assertEqual(self.strokes('bait', '@other')['strokes']['voice'], '')
+        other = self.host.send(op='world-strokes', principal='@other', object='private')
+        self.assertEqual(other['status'], 'denied', other)
+
+    def test_a_private_record_frame_does_not_suppress_a_public_law_reading(self):
+        self.make('kind/record', dict(law='law shared: request.kind == 0'), read={'principals': ['ember']})
+        self.make('kind/public', dict(law='law shared "public reading": request.kind == 0'))
+        self.make('bait', dict(owner='ember', kind='kind/public'), law='law inherited: under "kind/public"\n' + self.OWNER)
+        self.assertEqual(self.strokes('bait')['strokes']['laws'], [{'name': 'shared', 'reading': 'public reading'}])
+        self.assertEqual(self.strokes('bait', 'ember')['strokes']['laws'], [])
 
 def fact_source(town, obj, kind, value=None, **more):
     facts = town.send(op='world-strokes', principal=KIM, **({'object': obj} if obj else {}), **more)['strokes']['facts']
@@ -148,11 +237,11 @@ class Strokes(unittest.TestCase):
 
 
     def test_y_a_coinage_names_its_coiner_and_its_words_are_theirs(self):
-        """The coiner is the coining post's author: the at:// DID until the host knows their handle, then the handle; the
+        """The coiner is the coining post's author: the post until the host knows their handle, then the handle; the
         words it was made with are the coiner's, and a paint crediting them to anyone else is refused."""
         porch = self.strokes('porch')['strokes']
         did = genesis.GEMINI_PORCH.split('/')[2]
-        self.assertEqual((porch['coined'], porch['coiner']), (True, did))
+        self.assertEqual((porch['coined'], porch['coiner']), (True, 'the author of ' + genesis.GEMINI_PORCH))
         self.town.send(op='world-arrive', principal='transport', did=did, handle='gemini.delve.town')
         got = self.strokes('porch')
         self.assertEqual(got['strokes']['coiner'], 'gemini.delve.town')
@@ -161,8 +250,8 @@ class Strokes(unittest.TestCase):
         self.assertEqual(self.check('porch', 'gemini.delve.town said “The Bellfounder\'s Porch”.')['status'], 'verified')
         self.assertEqual(self.check('porch', 'the town named it “The Bellfounder\'s Porch”.')['clause'], 'attribution')
         self.assertEqual(self.check('porch', 'ember.delve.town named it “The Bellfounder\'s Porch”.')['clause'], 'handles')  # no stroke's
-        bell = self.strokes('bell/2')['strokes']  # light-traces has not arrived: the DID stands
-        self.assertEqual(bell['coiner'], genesis.LIGHT_TRACES_BELL.split('/')[2])
+        bell = self.strokes('bell/2')['strokes']
+        self.assertEqual(bell['coiner'], 'the author of ' + genesis.LIGHT_TRACES_BELL)
         self.assertEqual(self.check('bell/2', 'Its maker, ember, called it “the first act the town admitted”.')['clause'], 'attribution')
 
     def test_z_the_rules_it_carries_and_the_wants_that_hold_of_it(self):
@@ -301,6 +390,25 @@ class Facts(unittest.TestCase):
     def facts(self):
         return self.town.send(op='world-strokes', principal=GLM, object=self.bell)['strokes']['facts']
 
+    def test_an_unknown_coiners_post_is_named_the_same_in_strokes_and_the_chronicle(self):
+        clock = self.town.send(op='world-status')['clock']
+        advanced = self.town.send(op='world-advance', principal='transport', height=(clock // 1440 + 1) * 1440 + 5)
+        self.assertEqual(advanced['status'], 'advanced', advanced)
+        post = 'at://did:plc:unregistered/town.delve.feed.post/coinage'
+        made = self.town.send(op='world-turn', principal=GLM, object='garden', method='receive', identity='unknown-coinage',
+                              argument=record(text=label('delvetalk garden plant / seed: unknown words / colour: amber'),
+                                              post=label(post)))
+        self.assertEqual(made['status'], 'admitted', made)
+        obj = made['receipt']['outcome']['creates'][0]['object']
+        got = self.town.send(op='world-strokes', principal=GLM, object=obj)
+        coiner = 'the author of ' + post
+        self.assertEqual((got['strokes']['coined'], got['strokes']['coiner']), (True, coiner))
+        self.assertIn(coiner + ' coined it first', got['text'])
+        day = self.town.send(op='world-status')['clock'] // 1440
+        lines = self.town.send(op='world-chronicle', principal=GLM, day=day)['lines']
+        expected = 'made %s (glm.delve.town, entry %d), coined by %s' % (obj, made['receipt']['height'], coiner)
+        self.assertIn(expected, lines)
+
     def test_an_uncited_ringing_claim_is_rejected_even_without_forbidden_tokens(self):
         got = self.check('The bell has rung.')
         self.assertEqual((got['status'], got.get('clause')), ('rejected', 'imagery'), got)
@@ -429,9 +537,9 @@ class LivePaints(unittest.TestCase):
         self.assertIn(('the town', self.TOWN_LINE), [(l['handle'], l['text']) for l in regular['lines']])
         # The painter is never handed a DID to credit: a coiner the town holds no handle for is "its coiner".
         told = self.town.send(op='world-strokes', principal=GLM, object='station')
-        self.assertTrue(told['strokes']['coined'] and told['strokes']['coiner'].startswith('did:'), told['strokes'])
-        self.assertNotIn('did:', told['text'])
+        self.assertTrue(told['strokes']['coined'] and told['strokes']['coiner'].startswith('the author of at://did:'), told['strokes'])
         self.assertIn("The words it was made with, its coiner's: name: THE ALL-NIGHT STATION", told['text'])
+        self.assertIn('credit them to its coiner, never by an id or an address', told['text'])
         # The painter is told which names imagery may not use: its kind, verbs, marks, units and wants.
         bell = self.town.send(op='world-strokes', principal=GLM, object='bell/1')['text']
         self.assertIn('Never in imagery, in any form or language: bell, rain,', bell)
@@ -601,6 +709,23 @@ class Render(unittest.TestCase):
         """The worker's presence: it lists the renders (and so the host keeps a reader waiting for one)."""
         return self.town.send(op='world-renders')['pending']
 
+    def test_a_private_kinds_fields_are_model_input_only_for_an_authorized_reader(self):
+        kind = 'edition ObjectiveBend 1\nrecord State:\n  voice: String\n  about: String\ndef initial() -> State:\n  {voice: "private model voice", about: "private model description"}\n'
+        thing = 'edition ObjectiveBend 1\nrecord State:\n  kind: String\ndef initial() -> State:\n  {kind: "kind/private-model"}\n'
+        for obj, source, read in (('kind/private-model', kind, {'principals': [GLM]}), ('private-model-bait', thing, 'public')):
+            made = self.town.send(op='world-create', principal=genesis.OPENER, identity='mk-' + obj,
+                                  object=obj, source=source, entry='initial', seed=record(), read=read)
+            self.assertEqual(made['status'], 'created', made)
+        self.attend()
+        visible = self.render('private-model-bait', GLM)
+        hidden = self.render('private-model-bait', KIM)
+        self.assertEqual((visible['status'], hidden['status']), ('pending', 'pending'))
+        self.assertNotEqual(visible['key'], hidden['key'])
+        requests = {i['key']: i['request']['user'] for i in self.attend()}
+        for text in ('private model voice', 'private model description'):
+            self.assertIn(text, requests[visible['key']])
+            self.assertNotIn(text, requests[hidden['key']])
+
     def test_a_version_is_painted_once_and_read_painted_after(self):
         self.attend()
         first = self.render('garden/bell/1')
@@ -618,8 +743,10 @@ class Render(unittest.TestCase):
         for who in (KIM, GLM, 'anonymous'):
             got = self.render('garden/bell/1', who=who)
             self.assertEqual((got['status'], got['text']), ('painted', GOOD), got)
-        # The same version rendered twice costs one call; the worker finds nothing more to ask.
-        self.assertEqual(interpret.paint(self.town.client, self.model([])), {'painted': []})
+        # The same version rendered twice costs one call; the worker asks nothing more of it (another render it listed,
+        # refused once, is asked again: every refusal retries once).
+        again = interpret.paint(self.town.client, self.model([GOOD] * len(listed)))
+        self.assertNotIn(first['key'], [k for v in again.values() for k in v if isinstance(k, str)], again)
         self.assertEqual(sum(1 for r in self.asked if r['user'] == req['user']), 1)
         self.assertEqual(self.town.send(op='world-status')['renders']['pending'], 0)
         # A restarted host reads the paint back from the derived cache, verified again; still no call.

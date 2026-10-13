@@ -15,8 +15,10 @@ import unittest
 from deploy import genesis
 from tests.test_chain import Chain
 from tests.test_kinds import GLM, KIM
-from tests.bend import closure
-from tests.wire import label, record
+from tests.test_properties import OPENER
+from tests.test_scenarios import Arc
+from tests.bend import closure, declared
+from tests.wire import field, label, nat, record
 
 # The thing and rule a plan makes: the rule's own hole `{new.lines}` is left for the rule.
 MAKE_PLACE = ("delvetalk plan\n"
@@ -120,6 +122,136 @@ class Plans(Chain):
         self.assertEqual(r["status"], "admitted", r)
         lines = [f for f in self.state("log/1")["fields"] if f["name"] == "lines"][0]["value"]
         self.assertEqual(str(lines).count("first") + str(lines).count("second"), 2, lines)
+
+    def test_later_acts_use_and_render_a_verb_grown_earlier_in_the_plan(self):
+        reading = "p" * 200
+        r = self.said("delvetalk plan\ndelvetalk kinds make / name: log / of: record\n"
+                      "delvetalk {made 1} make\n"
+                      "delvetalk {made 2} grow / name: polish / reading: " + reading + "\n"
+                      "delvetalk {made 2} ?\ndelvetalk {made 2} polish / text: bright\n"
+                      "delvetalk {made 2} ungrow / name: polish\ndelvetalk {made 2} verbs", who=GLM)
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertIn("delvetalk log/1 polish", r["plan"]["acts"][3]["text"])
+        self.assertNotIn("» polish", r["plan"]["acts"][6]["text"])
+        self.assertIn("bright", str(field(self.state("log/1"), "lines")))
+        self.assertNotIn("» polish", self.said("delvetalk log/1 verbs", who=GLM)["text"])
+
+    def test_a_later_act_cannot_use_a_verb_removed_by_the_plan(self):
+        made = self.said("delvetalk plan\ndelvetalk kinds make / name: log / of: record\n"
+                         "delvetalk {made 1} make\n"
+                         "delvetalk {made 2} grow / name: polish / reading: polished by a hand", who=GLM)
+        self.assertEqual(made["status"], "admitted", made)
+        r = self.said("delvetalk plan\ndelvetalk log/1 ungrow / name: polish\n"
+                      "delvetalk log/1 polish / text: forbidden", who=GLM)
+        self.assertEqual((r["status"], r["receipt"]["outcome"].get("clause")), ("refused", "noAction"), r)
+        self.assertEqual(r["plan"]["refused"], 2, r)
+        self.assertNotIn("forbidden", str(field(self.state("log/1"), "lines")))
+        self.assertIn("» polish", self.said("delvetalk log/1 verbs", who=GLM)["text"])
+
+    def test_later_acts_run_the_method_introduced_by_become(self):
+        layer = """layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Form.obend as Form
+import ./Text.obend as Text
+type State = Super.State
+form polish:
+def polish(state: State, context: Abi.Context) -> Activity<Nat>:
+  Super.inscribe(state, "polish", "bright", context)
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  Text.words("polish write lines")
+"""
+        self.make("kind/polish", closure("Kind"), record(owner=label("ember"), name=label("polish"), body=label(layer)))
+        made = self.said("delvetalk plan\ndelvetalk kinds make / name: log / of: record\ndelvetalk {made 1} make", who="ember")
+        self.assertEqual(made["status"], "admitted", made)
+        r = self.said('delvetalk plan\n'
+                      'delvetalk log/1 adopt / law: rule watched: request.method == "unused" then delvetalk log/1 ?\n'
+                      'delvetalk log/1 become / kind: kind/polish\n'
+                      'delvetalk log/1 rules\ndelvetalk log/1 ?\ndelvetalk log/1 polish', who="ember")
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertIn("» watched", r["plan"]["acts"][2]["text"])
+        self.assertIn("delvetalk log/1 polish", r["plan"]["acts"][3]["text"])
+        self.assertIn("bright", str(field(self.state("log/1"), "lines")))
+        self.reopen()
+        self.assertIn("bright", str(field(self.state("log/1"), "lines")))
+        self.assertIn("watched", [r["name"] for r in self.host.send(op="world-rules", principal="ember", object="log/1")["rows"]])
+
+    def test_a_plan_judges_placement_against_the_lines_it_leaves(self):
+        made = self.said("delvetalk plan\ndelvetalk kinds make / name: log / of: record\ndelvetalk {made 1} make", who=GLM)
+        self.assertEqual(made["status"], "admitted", made)
+        adopted = self.said('delvetalk log/1 adopt / law: law ready "place after a line": request.kind == 4 implies count(new.lines) >= 1', who=GLM)
+        self.assertEqual(adopted["status"], "admitted", adopted)
+        r = self.said('delvetalk plan\ndelvetalk log/1 write / text: first\n'
+                      'delvetalk log/1 rule / name: quiet / when: request.method == "unused" / then: delvetalk log/1 ?', who=GLM)
+        self.assertEqual(r["status"], "admitted", r)
+        rules = self.host.send(op="world-rules", principal=GLM, object="log/1")["rows"]
+        self.assertIn("quiet", [row["name"] for row in rules])
+
+    def test_a_plan_can_place_before_the_write_that_satisfies_its_clause(self):
+        made = self.said("delvetalk plan\ndelvetalk kinds make / name: log / of: record\ndelvetalk {made 1} make", who=GLM)
+        self.assertEqual(made["status"], "admitted", made)
+        adopted = self.said('delvetalk log/1 adopt / law: law ready "place after a line": request.kind == 4 implies count(new.lines) >= 1', who=GLM)
+        self.assertEqual(adopted["status"], "admitted", adopted)
+        r = self.said('delvetalk plan\n'
+                      'delvetalk log/1 rule / name: quiet / when: request.method == "unused" / then: delvetalk log/1 ?\n'
+                      'delvetalk log/1 write / text: first', who=GLM)
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertIn("first", str(field(self.state("log/1"), "lines")))
+        self.assertIn("quiet", [row["name"] for row in self.host.send(op="world-rules", principal=GLM, object="log/1")["rows"]])
+
+    def test_a_plan_refuses_placement_when_its_final_lines_do_not_satisfy_the_clause(self):
+        made = self.said("delvetalk plan\ndelvetalk kinds make / name: log / of: record\ndelvetalk {made 1} make", who=GLM)
+        self.assertEqual(made["status"], "admitted", made)
+        adopted = self.said('delvetalk log/1 adopt / law: law ready "place after two lines": request.kind == 4 implies count(new.lines) >= 2', who=GLM)
+        self.assertEqual(adopted["status"], "admitted", adopted)
+        placing = 'delvetalk log/1 rule / name: quiet / when: request.method == "unused" / then: delvetalk log/1 ?'
+        before = self.said(placing, who=GLM)["receipt"]["outcome"]
+        r = self.said('delvetalk plan\ndelvetalk log/1 write / text: first\n' + placing, who=GLM)
+        self.assertEqual(r["status"], "refused", r)
+        outcome = r["receipt"]["outcome"]
+        self.assertEqual({k: outcome.get(k) for k in ("class", "clause", "object", "reading")},
+                         {k: before.get(k) for k in ("class", "clause", "object", "reading")})
+        self.assertEqual(r["plan"]["refused"], 2, r)
+        self.assertNotIn("first", str(field(self.state("log/1"), "lines")))
+        self.assertEqual(self.host.send(op="world-rules", principal=GLM, object="log/1")["rows"], [])
+
+    def test_bend_code_hears_placement_refusal_and_admission_after_its_own_write(self):
+        source = declared("""edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./Plan.obend as Plans
+import ./World.obend as World
+record State:
+  n: Nat
+def initial() -> State:
+  {n: 0n}
+law ready "place after a write": request.kind == 4 implies new.n >= 1
+def tryRule(state: State, input: {more: Nat}, context: Abi.Context) -> Activity<String>:
+  let written(_) = write {n: add input.more}
+  match world.rule({object: {world: "", object: context.object}, name: "watch", when: "new.n >= 999", then: "delvetalk {context.object} ?"}):
+    case placed(_): "placed"
+    case refused(r): "{r.clause}|{r.reading}"
+""", "tryRule")
+        self.make("armer", closure("Abi", "List", "Plan", "World") + [{"name": "Armer", "source": source}], record())
+        refused = self.turn("armer", "tryRule", record(more=nat(0)))
+        self.assertEqual(refused["status"], "admitted", refused)
+        self.assertEqual(refused["result"]["value"], "ready|place after a write")
+        self.assertEqual(self.host.send(op="world-rules", principal="ember", object="armer")["rows"], [])
+        placed = self.turn("armer", "tryRule", record(more=nat(1)))
+        self.assertEqual((placed["status"], placed["result"]["value"]), ("admitted", "placed"), placed)
+        self.assertEqual(field(self.state("armer"), "n"), nat(1))
+        self.assertEqual([r["name"] for r in self.host.send(op="world-rules", principal="ember", object="armer")["rows"]], ["watch"])
+
+
+class DoorMaps(Arc):
+    def test_a_map_act_reads_the_doors_written_earlier_in_the_plan(self):
+        door = "h" * 32
+        r = self.say(OPENER, "porch", "delvetalk plan\ndelvetalk porch door / label: " + door + " / to: kinds\n"
+                     "delvetalk porch map\ndelvetalk porch undoor / label: " + door + "\n"
+                     "delvetalk porch map")
+        self.assertEqual(r["status"], "admitted", r)
+        self.assertIn("\n  %s → kinds\n" % door, r["plan"]["acts"][1]["text"])
+        self.assertNotIn("%s → kinds" % door, r["plan"]["acts"][3]["text"])
 
 
 if __name__ == "__main__":
