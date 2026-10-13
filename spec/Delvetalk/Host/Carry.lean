@@ -439,7 +439,12 @@ def renamedJson (renamed : List (String × String × String)) : Json :=
 
 A carried genesis keeps each object's making (`made`): who made it, under which intent, at which height of
 the world it was made in. A reader of the world's history (genesis's refresh: is this kind genesis's?) reads it
-there when the journals before are not on its disk. -/
+there when the journals before are not on its disk.
+
+It keeps as well, for each slot genesis may refresh, the text the opener last gave it (`baseline`: a kind's `.law`,
+`.voice`, `.form`, `.about`, and an object's `law`), read at carry time from the journal carried and, while they are
+on this disk, those before it, so a refresh that finds the slot unchanged since is the owner's of the text, without
+the journals. -/
 
 /-- A `made` row: the object, and the identity and height of the entry that made it. -/
 def madeRow (id : String) (e : Json) : Json :=
@@ -467,10 +472,98 @@ def makings (w : World) (src : Entries) (given : Std.HashMap String Json) : Arra
   let found := src.foldl (fun m _ e => (makes e).foldl (fun m id => m.insert id (madeRow id e)) m) given
   ((w.objects.toList.map (·.1)).toArray.qsort (· < ·)).filterMap (found[·]?)
 
+/-! ### Baselines -/
+
+/-- A baseline row: an object's slot (`law`, or a kind's `.law`, `.voice`, `.form`, `.about`) and the text last given. -/
+def baselineRow (object slot text : String) : Json :=
+  Json.mkObj [("object", toJson object), ("slot", toJson slot), ("text", toJson text)]
+
+def baselineKey (object slot : String) : String := object ++ "\n" ++ slot
+
+/-- The baseline a carried genesis keeps, by slot. -/
+def baselineOf (genesis : Json) : Option (Std.HashMap String Json) :=
+  ((genesis.getObjVal? "outcome").toOption.bind (·.getObjVal? "baseline" |>.toOption)).bind (·.getArr?.toOption) |>.map fun rows =>
+    rows.foldl (fun m r => match r.getObjValAs? String "object", r.getObjValAs? String "slot" with
+      | .ok o, .ok s => m.insert (baselineKey o s) r
+      | _, _ => m) {}
+
+/-- The text of a row of a `{name, value: {value}}` list, or `dflt` when it has none. -/
+def rowText (rows : Json) (name : String) (dflt : String := "") : String :=
+  ((rows.getArr?.toOption.getD #[]).find? (fun f => (f.getObjValAs? String "name").toOption == some name)).bind
+    (fun f => (f.getObjVal? "value").toOption.bind (·.getObjValAs? String "value" |>.toOption)) |>.getD dflt
+
+/-- What the opener's turn `e` (`genesis-*` or `refresh-*`) gave: a creation's law, a kind seed's `law`, `voice`,
+    `form` and `about`, an admitted amendment's new law, and a write's `set` of those fields on a kind
+    (deploy/genesis.py `given` reads the same turns). -/
+def baselineTurn (opener : String) (m : Std.HashMap String Json) (e : Json) : Std.HashMap String Json :=
+  let identity := (e.getObjVal? "identity").toOption.getD Json.null
+  let text := fun (k : String) => (identity.getObjValAs? String k).toOption.getD ""
+  if opener.isEmpty || text "principal" != opener || !((text "intent").startsWith "genesis-" || (text "intent").startsWith "refresh-") then m else
+  let o := (e.getObjVal? "outcome").toOption.getD Json.null
+  let arr := fun (j : Json) (k : String) => ((j.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]
+  let put := fun (m : Std.HashMap String Json) (obj slot text : String) => m.insert (baselineKey obj slot) (baselineRow obj slot text)
+  let made := fun (m : Std.HashMap String Json) (c : Json) =>
+    match c.getObjValAs? String "object" with
+    | .error _ => m
+    | .ok obj =>
+      let m := match c.getObjValAs? String "law" with
+        | .ok law => if law.isEmpty then m else put m obj "law" law
+        | .error _ => m
+      match (c.getObjVal? "seed").toOption.bind (·.getObjVal? "fields" |>.toOption) with
+      | some fields =>
+        if (fields.getArr?.toOption.getD #[]).any (fun f => (f.getObjValAs? String "name").toOption == some "law") &&
+           (fields.getArr?.toOption.getD #[]).any (fun f => (f.getObjValAs? String "name").toOption == some "form") then
+          [".law", ".voice", ".form", ".about"].foldl (fun m slot => put m obj slot (rowText fields (slot.drop 1).toString)) m
+        else m
+      | none => m
+  let m := if tagOf e == "created" then made m o else m
+  let m := (arr o "creates").foldl made m
+  let m := if tagOf e == "admitted" then (arr o "amendments").foldl (fun m a =>
+      match a.getObjValAs? String "object", a.getObjValAs? String "new" with
+      | .ok obj, .ok law => put m obj "law" law
+      | _, _ => m) m else m
+  (arr o "writes").foldl (fun m w =>
+    match w.getObjValAs? String "object" with
+    | .error _ => m
+    | .ok obj => (arr w "edits").foldl (fun m edit => (arr edit "fields").foldl (fun m f =>
+        match f.getObjValAs? String "name", f.getObjVal? "value" with
+        | .ok name, .ok v =>
+          if ["law", "voice", "form", "about"].contains name && (v.getObjValAs? String "label").toOption == some "set" then
+            match (v.getObjVal? "payload").toOption.bind (·.getObjVal? "fields" |>.toOption) with
+            | some fields => put m obj ("." ++ name) (rowText fields "value")
+            | none => m
+          else m
+        | _, _ => m) m) m) m
+
+/-- The texts the opener last gave, of the journal at `journal` (entries `src`) and, through each carried genesis
+    that keeps no baseline of its own (one of an edition before it did), the journals before it, as `givenMakings`
+    reads them. -/
+partial def givenBaseline (opener journal : String) (src : Entries) : IO (Std.HashMap String Json) := do
+  let before ← match src.genesis? with
+    | none => pure {}
+    | some g =>
+      if tagOf g != "carried" then pure {} else
+      match baselineOf g with
+      | some kept => pure kept
+      | none => do
+        let some (_, origin) := genesisOrigin g | pure {}
+        let some world := (origin.getObjValAs? String "world").toOption | pure {}
+        let beside := ((journal : System.FilePath).parent.getD ".") / world
+        let some path ← [(world : System.FilePath), beside].findM? (·.pathExists) | pure {}
+        match ← Snapshot.openEntries path.toString with
+        | .ok old => givenBaseline opener path.toString old
+        | .error _ => pure {}
+  return src.foldl (fun m _ e => baselineTurn opener m e) before
+
+/-- The baseline rows of the objects `w` holds, in slot order. -/
+def baselineRows (w : World) (given : Std.HashMap String Json) : Array Json :=
+  (given.toArray.filter fun (_, r) => (r.getObjValAs? String "object").toOption.any (w.objects.contains ·)).qsort
+    (fun a b => a.1 < b.1) |>.map (·.2)
+
 /-- The `carried` genesis of `c` (the world of the journal `world` at `height`, whose head is `cid`, of
     replay edition `replay`), with `before` the old journal's own genesis and `made` its objects' makings. -/
 def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height : Nat) (cid : String)
-    (replay : Nat) (before : Json) (library : Option Library) (made : Array Json) : Except String Json := do
+    (replay : Nat) (before : Json) (library : Option Library) (made baseline : Array Json) : Except String Json := do
   let previous := (c.world.library.map (·.pin)).getD ""
   let changed := library.filter (·.pin != previous)
   let w := match changed with
@@ -508,7 +601,8 @@ def carryGenesis (c : Carried) (src : Entries) (world reason : String) (height :
         Json.mkObj [("object", toJson id), ("law", toJson law)]))]) ++
      (if c.rearmed.isEmpty then [] else [("rearmed", toJson c.rearmed)]) ++
      (if c.renamed.isEmpty then [] else [("renamed", renamedJson c.renamed)]) ++
-     (if made.isEmpty then [] else [("made", Json.arr made)])) (height := height + 1)
+     (if made.isEmpty then [] else [("made", Json.arr made)]) ++
+     (if baseline.isEmpty then [] else [("baseline", Json.arr baseline)])) (height := height + 1)
 
 def fail (message : String) (code : UInt32 := 1) : IO UInt32 := do
   (← IO.getStderr).putStrLn s!"carry: {message}"
@@ -583,7 +677,8 @@ def main (args : List String) : IO UInt32 := do
     return ← fail ("refused, each by name (list an object as --leave OBJ to carry it retired):\n" ++
       "\n".intercalate (carried.refused.map fun (what, why) => s!"  {what}: {why}"))
   let made := makings w src (← givenMakings journal first)
-  let entry ← match carryGenesis carried src journal reason height head replay first (shipped.map (·.library)) made with
+  let baseline := baselineRows w (← givenBaseline w.opener journal src)
+  let entry ← match carryGenesis carried src journal reason height head replay first (shipped.map (·.library)) made baseline with
     | .ok e => pure e
     | .error e => return ← fail e
   -- The new journal replays from its genesis, and holds every object at the state the snapshot held.

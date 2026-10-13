@@ -620,7 +620,8 @@ def run(host, opener=OPENER, gas_station=False):
 # `.form`, by the owner's proposal), which every instance follows by `under`; the world's motion is placed when absent. A slot whose text is not the one genesis last gave it
 # (read from the journals: genesis's own turns and earlier refreshes) was changed since by another turn, and is left
 # and named; so is a slot whose making is in no journal read. A kind genesis made whose journal is not on this disk is
-# known by the making its carry kept (`made`), but its last-given text is unknown and its fields are left. `python3 -m transport carry` runs it at its end
+# known by the making its carry kept (`made`); its last-given text is the carried genesis's `baseline` (the carry read it
+# from the journals it cited), and unknown, its fields left, for a carry that kept none. `python3 -m transport carry` runs it at its end
 # (`carried`); `genesis.py refresh` runs it on a living town through serve's root socket.
 def texts(opener):
     """{(object, slot): genesis's text today}, slot `law` an object's law and `.law`/`.voice`/`.form` a kind's fields."""
@@ -649,8 +650,9 @@ def ancestry(path):
 def given(journals, opener):
     """{(object, slot): the text genesis or a refresh last gave it}, from the opener's `genesis-*` and `refresh-*`
     turns in `journals` (oldest first): a creation's law and a kind seed's `law` and `voice` (none: ""), a refresh's
-    amendment and its write on a kind. A kind's field slot is None when its making, read from a carried genesis's
-    `made` alone, is genesis's but the text genesis gave it is in a journal not read."""
+    amendment and its write on a kind. A carried genesis's `baseline` holds those the carry read, in the journals it
+    cites, up to its own (the journals before it are not read again). A kind's field slot is None when its making,
+    read from a carried genesis's `made` alone, is genesis's but no text genesis gave it is in a journal read."""
     from transport import journal
     gave = {}
 
@@ -671,6 +673,8 @@ def given(journals, opener):
             if genesis_turn(row.get('identity') or {}):
                 for slot in ('.law', '.voice', '.form', '.about'):
                     gave.setdefault((row['object'], slot), None)
+        for row in ((first[0]['outcome'] if first else {}).get('baseline') or []):  # what the carry read, journals in hand
+            gave[(row['object'], row['slot'])] = row['text']
         for e in journal.entries(path):
             who = e.get('identity') or {}
             if not genesis_turn(who):
