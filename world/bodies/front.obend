@@ -18,8 +18,8 @@ import ./Text.obend as Text
 # (`move`) and the tide it reads (`tide`), all fixed. As its kind finishes it, it places two rules
 # under its maker (`made`): on the tide, `request.method == "tick" and (<fills>)` casts `delvetalk
 # <front> fill`; on itself, a fill that brings its count of segments to a whole clock casts `move`.
-# So the move is the maker's turn, judged by the law of whatever it touches, and the clock empties as
-# it moves. Its count of fills only rises: the record's variable `fills` (its lines are kept only so
+# So the move is the maker's turn, judged by the law of whatever it touches, and the clock empties
+# when full. Its count of fills only rises: the record's variable `fills` (its lines are kept only so
 # many), with `full` set by a fill that fills the clock and cleared by the next, which is what the
 # move rule reads. Only its maker's rule on the tide fills: a hand's `fill` is refused by name. The
 # card shows the clock: "2 of 4".
@@ -54,7 +54,7 @@ def segments(state: State) -> Nat:
     case yes(n): if n.value == 0n then 1n else n.value
     case no(_): 1n
 # The fills so far, ever: its variable `fills` (a front carried from before it kept one counts its
-# `fill` lines); a whole clock of them has moved and emptied it.
+# `fill` lines); a whole clock of them has filled and emptied it.
 def fills(state: State) -> Nat:
   match Lists.find(state.vars, fn(v: Scenes.Var) -> Bool: v.name == "fills"):
     case some(v): Text.digits(v.value.value, 0n)
@@ -108,8 +108,8 @@ def counter(state: State) -> Plans.Entries<Scenes.Var, Scenes.Var>:
 def fullness(state: State, filling: Bool) -> Plans.Entries<Scenes.Var, Scenes.Var>:
   if filling == full(state) then Plans.Entries.keep({}) else if filling then Plans.Entries.append({item: {name: "full", value: ""}}) else Plans.Entries.removeItem({item: {name: "full", value: ""}})
 def clock(state: State) -> String:
-  let moved = fills(state) / segments(state)
-  let times = if moved == 0n then "it has not moved yet" else if moved == 1n then "it has moved once" else "it has moved {Text.countWord(moved)} times"
+  let filled = fills(state) / segments(state)
+  let times = if filled == 0n then "it has not filled yet" else if filled == 1n then "it has filled once" else "it has filled {Text.countWord(filled)} times"
   "{natText(fills(state) % segments(state))} of {natText(segments(state))}; {times}"
 def entry(state: State, context: Abi.Context, line: Rows.Line) -> Document.Document:
   if line.verb == "fill" then Document.text("{line.text}\n") else Super.entry(state, context, line)
@@ -117,4 +117,4 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   let name = if state.head == "" then "A FRONT" else state.head
   let fills = Super.field(state, "fills")
   let move = Super.field(state, "move")
-  Document.text("{name}, a front set by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: a slow pressure with a clock that fills while its condition holds, and moves when full. Its clock: {clock(state)}.\nA segment fills at a tick of {tide(state)} when: {fills}\nWhen full: {move}\n{Super.inactiveLine(state, id)}")
+  Document.text("{name}, a front set by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: a slow pressure with a clock that fills while its condition holds, and casts its move when full. Its clock: {clock(state)}.\nA segment fills at a tick of {tide(state)} when: {fills}\nWhen full: {move}\nIts move's firing and delivery receipt: delvetalk {id} rules\n{Super.inactiveLine(state, id)}")

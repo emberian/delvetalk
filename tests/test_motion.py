@@ -53,7 +53,7 @@ class Seeded(Motion):
                       "it rains on every bell porch holds or hangs a door to, by its rule on tide:\n  delvetalk tide rules\n", weather)
         lamp = self.say_card("porch/lamp")
         self.assertIn("THE PORCH'S LAMP, a front set by the town: a slow pressure with a clock that fills while its condition "
-                      "holds, and moves when full. Its clock: 0 of 4; it has not moved yet.", lamp)
+                      "holds, and casts its move when full. Its clock: 0 of 4; it has not filled yet.", lamp)
         self.assertIn("When full: delvetalk porch write / text: the porch's lamp has burned down: four days and nobody came", lamp)
 
     def test_bell_1_wants_its_clapper_grown_as_a_verb(self):
@@ -81,7 +81,7 @@ class Day(Motion):
         self.advance(clock + 2000)  # one jump past the day: nobody has entered the porch since genesis
         self.assertEqual(self.ticks(), 24)
         self.assertEqual(self.lines("weather"), [])
-        self.assertIn("Its clock: 1 of 4; it has not moved yet.", self.say_card("porch/lamp"))
+        self.assertIn("Its clock: 1 of 4; it has not filled yet.", self.say_card("porch/lamp"))
 
 
 if __name__ == "__main__":
