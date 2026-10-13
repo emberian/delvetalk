@@ -6409,6 +6409,38 @@ def slugTargets (w : World) (reader : String) : Array (String × String) := Id.r
     | _ => pure ()
   return out
 
+/-- What `receipt {name}` finds (TurnLoop's world method): an entry by CID or by slug. -/
+inductive ReceiptNamed where
+  | found (cid : String) (height : Nat) (principal : String)
+  | ambiguous (count : Nat)
+  | unknown
+
+/-- The entry `name` names: a CID (`bafy…`) of an entry of this chain, or of a chain it was carried from; or a
+    slug (`lusab-babad`, `Slug.ofCid`) naming exactly one such entry (`ambiguous` for more, `unknown` for none).
+    `principal` is the entry identity's, as every reader's projection shows it ("" for an entry of the world
+    before a carry, which this store does not hold). Only the entries the world holds now: a turn's own entry is
+    not among them, and replay at that height holds the same. -/
+def receiptNamed (w : World) (name : String) : ReceiptNamed := Id.run do
+  let carried := (w.entries.genesis?.map carriedEntries).getD #[]
+  let principalAt := fun (i : Nat) => ((w.entries.get? i).bind fun e =>
+    (e.getObjVal? "identity").toOption.bind fun id => (id.getObjValAs? String "principal").toOption).getD ""
+  if (Slug.decode name).isSome then
+    let mut hits : Array (String × Nat × String) := #[]
+    for i in [w.entries.base:w.entries.count] do
+      if let some h := w.entries.hashAt? i then
+        if Slug.ofCid h == some name then hits := hits.push (h, i + 1, principalAt i)
+    for (h, height, _) in carried do
+      if Slug.ofCid h == some name && !hits.any (·.1 == h) then hits := hits.push (h, height, "")
+    match hits.toList with
+    | [] => return .unknown
+    | [(c, h, p)] => return .found c h p
+    | many => return .ambiguous many.length
+  match w.entries.indexOf? name with
+  | some i => return .found name (i + 1) (principalAt i)
+  | none => match carried.find? (·.1 == name) with
+    | some (c, h, _) => return .found c h ""
+    | none => return .unknown
+
 /-- `world-resolve {principal, slug}`: the one CID the slug names among what `principal` may see
     (`slugTargets`): `{status: "resolved", slug, kind: receipt | pin | state, cid, receipt?}`, with the
     receipt as `world-receipt` renders it to that reader when it names one; `{status: "ambiguous",
