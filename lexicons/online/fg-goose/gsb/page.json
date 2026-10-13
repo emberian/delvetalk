@@ -1,7 +1,7 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.page",
-  "description": "A library page or walk (world/objects/Library.obend), as the library holds it.",
+  "description": "A public library page or walk, written as a posting-account record and served live only through world projection queries; absent from the world signed MST.",
   "defs": {
     "main": {
       "type": "record",

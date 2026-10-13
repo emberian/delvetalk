@@ -4,7 +4,7 @@ No session state, response cache, signing box or reader policy lives here.
 """
 from transport import mirror
 from transport.atproto.cbor import block, from_json
-from transport.repo import NS, Refusal
+from transport.repo import NS, Repo, Refusal
 from transport.state import NAME
 
 QUERIES = {NS + name for name in ('getSession', 'listSessionRecords')}
@@ -86,11 +86,7 @@ def list_records(host, principal, query):
     collection = query.get('collection')
     if collection not in (NS + 'card', NS + 'entry'):
         raise Refusal(400, 'InvalidRequest', 'served session collections: ' + NS + 'card, ' + NS + 'entry')
-    raw_limit = query.get('limit', '50')
-    digits = raw_limit.lstrip('0')
-    if not raw_limit.isascii() or not raw_limit.isdigit() or len(digits) > 3 or not 1 <= int(digits or '0') <= 100:
-        raise Refusal(400, 'InvalidRequest', 'limit is 1..100')
-    limit, cursor = int(digits), query.get('cursor')
+    cursor, limit, _ = Repo.paging(query)
     if collection == NS + 'entry':
         if cursor is not None and (len(cursor) > 20 or not cursor.isascii() or not cursor.isdigit() or int(cursor) < 1 or str(int(cursor)) != cursor):
             raise Refusal(400, 'InvalidRequest', 'cursor is an entry height')
