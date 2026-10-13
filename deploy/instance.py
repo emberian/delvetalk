@@ -39,6 +39,7 @@ class Instance:
     backup_minute: int
     opener: str = ''  # empty: the origin's did:web, the config's default for a new world
     station: bool = False
+    hosted_accounts: bool = False  # DELVETALK_HOSTED_ACCOUNTS: hosted guest DIDs, off for want of wildcard DNS (cx-tidy)
     firehose: bool = False  # publish the firehose's port (deploy/compose.firehose.yml) and route it at the edge
     anthropic_key: str = ''
     watch_zuliprc: str = ''
@@ -83,6 +84,7 @@ class Instance:
                 ('DELVETALK_PRIVATE_IP', PRIVATE_IP), ('DELVETALK_HTTP_PORT', self.http_port), ('DELVETALK_HAND_PORT', self.hand_port),
                 ('DELVETALK_FIREHOSE_PORT', self.firehose_port), ('DELVETALK_BACKUPS', p['backups']),
                 ('DELVETALK_WATCH_ZULIPRC', p['watch_zuliprc']), ('DELVETALK_REQUESTS', 'off'),
+                ('DELVETALK_HOSTED_ACCOUNTS', 'on' if self.hosted_accounts else 'off'),
                 ('DELVETALK_STATION', 'on' if self.station else 'off')]
         return f'# {self.title}: /opt/{self.project}/.env (mode 0600), rendered by `python3 -m deploy.instance render {self.name}`\n' + \
             ''.join(f'{k}={v}\n' for k, v in rows)

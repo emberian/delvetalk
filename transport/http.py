@@ -355,7 +355,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.accounts = Accounts(st)
         if not hand:
             self.accounts.reconcile()
-            skipped = self.accounts.provision_guests()
+            skipped = self.accounts.provision_guests() if c.hosted_accounts else []
             if skipped:
                 print('hosted provisioning skipped (no hosted address): ' + ', '.join(skipped), file=sys.stderr)
             self.serviceauth = Verifier(self.repo.did, identity.client, st.serviceauth_ledger,
@@ -993,6 +993,8 @@ class Handler(BaseHTTPRequestHandler):
         if repo is self.server.repo:
             target = q.get('repo') or q.get('did') or q.get('handle')
             if isinstance(target, str) and target not in (repo.did, repo.handle):
+                if not self.server.st.config.hosted_accounts:
+                    return self.xrpc_reply(400, {'error': 'RepoNotFound', 'message': 'no such hosted account'})
                 try:
                     repo = self.server.accounts.by_did(target if target.startswith('did:') else 'did:web:' + target)
                 except Refusal as r:
@@ -1023,6 +1025,8 @@ class Handler(BaseHTTPRequestHandler):
         local = name == bound and port == bound_port
         if local or name in (urllib.parse.urlsplit(self.server.origin).hostname, self.server.repo.handle):
             return self.server.repo
+        if not self.server.st.config.hosted_accounts:
+            raise Refusal(400, 'RepoNotFound', 'no such hosted account')
         return self.server.accounts.by_host(name)
 
     def procedure(self, mode, principal):

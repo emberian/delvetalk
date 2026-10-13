@@ -376,7 +376,7 @@ class BrowserSecurity(unittest.TestCase):
     def test_a_keyless_open_invitation_has_the_same_503_explanation_in_html_and_json_and_stays_unused(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        st = State(tmp.name, config=Config(origin=ORIGIN))
+        st = State(tmp.name, config=Config(origin=ORIGIN, hosted_accounts=True))
         self.front.identity = identity.Identity(st, delve.Client(mock.Mock()), clock=self.front.clock)
         self.addCleanup(self.front.identity.db.close)
         code = self.front.identity.invite(None, 'open')['code']

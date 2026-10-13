@@ -25,9 +25,20 @@ the posting account's orphaned old records are deleted by the owner's authorized
 ## Hosted public request accounts
 
 `transport/hosted.py` mounts hosted guest and Zulip accounts through the existing Front and listener.
+Hosted DIDs are built and off by default (`hosted_accounts = false`) for want of wildcard DNS:
+the owner chose no `*.guest.gsb.fg-goose.online` DNS, so those names will not resolve.
+To enable them, set `hosted_accounts = true` in `<state>/delvetalk.toml` (environment override
+`DELVETALK_HOSTED_ACCOUNTS=on`; compose uses this in `.env`), install wildcard DNS and matching HTTPS
+routing/certificates, and provide the town repository key, `<repo_keys>/town.key` (DEPLOY "Hosted account origins").
+With hosting off, the front neither provisions nor serves hosted repositories, and the request poller
+does not include their snapshots. Guest credentials and actions retain their exact `guest:` principals
+and returned identity mapping. Revocation and reconciliation remove only canonical snapshot files for
+guests no longer verified; active guests, Zulip snapshots and other operator data stay untouched.
+Off otherwise leaves the hosted directory alone, including an absent or legacy store.
+
 `identity.hosted_identity` is the bidirectional mapping: `guest:<host>:<name>` ↔
 `did:web:<name>.guest.<host>`, `zulip:<realm>:<id>` ↔ `did:web:<id>.<realm>.zulip.<host>`.
-ATPROTO §4 defines the grammar and feed-resident scope. Invitation acceptance provisions a guest;
+ATPROTO §4 defines the grammar and feed-resident scope. When hosting is enabled, invitation acceptance provisions a guest;
 startup provisions existing verified guests. The Zulip observer provisions accounts for observed users,
 without copying their messages into request records. External claimed DIDs keep their own repositories.
 
@@ -66,7 +77,7 @@ prev are kept beside the records, so restart yields byte-identical head CARs wit
 no historical export or hosted firehose; consumers reconcile the bounded full current tree.
 
 State backups keep hosted snapshots; the same town key reproduces account keys and signed heads on restore.
-The first access atomically moves an existing `<state>/worlds/town/hosted/` directory into the origin store,
+With hosting enabled, the first access atomically moves an existing `<state>/worlds/town/hosted/` directory into the origin store,
 preserving snapshot bytes. If both stores exist, access refuses with 503 `RepoNotServed` and names the paths
 for operator reconciliation. A non-town front with nonempty legacy `<state>/worlds/<world>/hosted/` likewise
 refuses startup and hosted access: those snapshots are preserved, never merged or re-signed under the town DID.

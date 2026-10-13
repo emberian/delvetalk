@@ -90,7 +90,7 @@ and a key rotation emits identity before sync. An unchanged restart adds no even
 `participants` defaults to the empty string and names explicit participant DIDs, space-separated, in
 `<state>/delvetalk.toml` (`DELVETALK_PARTICIPANTS` overrides it). Both did:plc and hostname-level did:web are supported.
 The registry unions this list with active repositories discovered at pds.delve.town and verified identity-table
-claims, plus this world's hosted accounts in `State.hosted`. Hosted accounts supply documents and proof CARs
+claims, plus hosted accounts in `State.hosted` only when `hosted_accounts = true`. Hosted accounts supply documents and proof CARs
 locally to the ordinary `requests.proven` verifier and do not consume the external-participant cap. Each external DID is read at its current document's `#atproto_pds`, through public-address-checked, pinned HTTPS.
 No PDS write is made by the poller. The mirror has its own authorization and remains off.
 
@@ -106,10 +106,22 @@ remain in the resident's repository until answered. ATPROTO §2 describes verifi
 
 ## Hosted account origins
 
-The mapping and request repositories are built (ATPROTO §4, REPO); DNS and certificates are the owner's
-ops step. Hosted account hosts route to the world's existing front, preserving Host, with no second Front
+The mapping and request repositories are built (ATPROTO §4, REPO), but hosted DIDs are **off by default**
+(`hosted_accounts = false`) for want of wildcard DNS. The owner chose no `*.guest.gsb.fg-goose.online`
+DNS; those names will not resolve. The front neither provisions nor serves hosted repositories while off,
+and the request poller ignores their snapshots. Guests keep the same credential, returned identity mapping,
+feed behavior and `guest:<host>:<name>` principal for actions; hosting off needs no town repo key for invitations.
+Revocation and reconciliation remove only canonical snapshots of guests no longer verified, including
+snapshots left by earlier deployments. Off otherwise leaves hosted stores untouched: no creation, migration,
+key rotation or removal of active guests, Zulip snapshots, legacy keys or unrelated operator files.
+
+To enable hosting after changing the DNS decision, set `hosted_accounts = true` in `<state>/delvetalk.toml`,
+install wildcard DNS and matching certificates/routes below, and supply `<repo_keys>/town.key`
+(deployed `/etc/delvetalk/repo/town.key`). The environment override is `DELVETALK_HOSTED_ACCOUNTS=on`;
+compose supplies this setting from `.env`, defaulting to `off`, so set it to `on` there to enable hosting.
+Hosted account hosts route to the world's existing front, preserving Host, with no second Front
 or listener. The account DID document's PDS endpoint is the same configured front origin. The front and
-bridge share `<state>/worlds/<world>/hosted/`; neither provisions a second copy of an account elsewhere.
+bridge share `<state>/hosted/<URL-encoded origin>/`; neither provisions a second copy of an account elsewhere.
 The request poller remains off unless `requests = true`; the mirror keeps its separate authorization.
 
 For the deployed origin, add wildcard A/AAAA records pointing to the front's existing edge:
@@ -129,18 +141,19 @@ does **not** cover `42.chat.example.zulip.gsb.fg-goose.online`. Each realm needs
 hostname serves its matching DID document, and sync.getRecord verifies under its #atproto key. This lane
 installs no records or certificates and starts no process.
 
-Account k256 keys derive with HKDF-SHA256 from the world's town-key scalar and each hosted DID (ATPROTO §4).
-Only public `<state>/worlds/<world>/hosted/<stem>.json` snapshots are written, including signing key identifiers
+When enabled, account k256 keys derive with HKDF-SHA256 from the town-key scalar and each hosted DID (ATPROTO §4).
+Only public `<state>/hosted/<URL-encoded origin>/<stem>.json` snapshots are written, including signing key identifiers
 and rotation/migration epochs; the 0700 directory itself carries the flock. Guest stems are names and Zulip
 stems are `<id>.<realm>.zulip`. `deploy/backup.sh` keeps hosted snapshots in
 `/var/backups/delvetalk/mirror/` and `/var/backups/delvetalk/delvetalk-<stamp>.tar.gz`, then the pulled
 `/tank/delvetalk-backups/` copies. Restore snapshots with the same operator-custodied
-`/etc/delvetalk/repo/<world>.key` to reproduce every hosted key and signed head. Loss of that town key loses
-every hosted key too. A box without it starts, but hosted routes and invitation acceptance refuse with
+`/etc/delvetalk/repo/town.key` and the accepted guests' `identity.sqlite` to reproduce every active guest's
+hosted key and signed head. Loss of that town key loses every hosted key too. With hosting enabled,
+a box without it starts, but hosted routes and invitation acceptance refuse with
 503 `RepoNotServed`; the invitation stays open. Legacy account keys/locks are removed after durable migration.
 Migrate legacy state with the town key available before running the updated backup script: it no longer
 filters legacy files, and a keyless front cannot migrate them. A state with no legacy store (v14, carried 2026-10-13)
-has nothing to migrate: the front's first start provisions every accepted, unrevoked guest into
+has nothing to migrate: with hosting enabled, the front's first start provisions every accepted, unrevoked guest into
 `<state>/hosted/<URL-encoded origin>/` (counter 0, no epoch) and logs nothing unless it skips one, so check the
 directory listing before the first backup, not the log.
 
@@ -291,6 +304,7 @@ On the workhorse, in `/opt/delvetalk`, with this `.env` (mode 0600):
     DELVETALK_ORIGIN=https://gsb.fg-goose.online
     DELVETALK_DATA=/var/lib/delvetalk/v8
     DELVETALK_REPO_KEYS=/etc/delvetalk/repo
+    DELVETALK_HOSTED_ACCOUNTS=off
     DELVETALK_WATCH_ZULIPRC=/etc/delvetalk/watch.zuliprc
 
 `DELVETALK_REPO_KEYS` is the directory of `<world>.key`, the repositories' signing keys. No comment after a value: compose
@@ -839,7 +853,7 @@ compose total about 4.5 GB, as the first's.
     dig +short A obend.fg-goose.online @ns-cloud-c1.googledomains.com     # 88.99.126.35
 
 No AAAA (gsb has none) and no wildcard: nothing routes `*.guest.obend.fg-goose.online` (hosted guest accounts are
-cx-tidy's to turn off), and `fg-goose.online` has no CAA record, so Caddy's pinned Let's Encrypt issues for it.
+off, `DELVETALK_HOSTED_ACCOUNTS=off` in the rendered `.env`, as cx-tidy made the default), and `fg-goose.online` has no CAA record, so Caddy's pinned Let's Encrypt issues for it.
 
 **2. The anchor's Caddy (the owner).** Add this block after the gsb block in dregg-infra `edge/anchor/Caddyfile`
 (it is `python3 -m deploy.instance render open`'s `Caddyfile.site`, and `render delvetalk` gives the installed gsb
@@ -1366,8 +1380,9 @@ rings 27:32:45 (A, C, F#); `delvetalk porch chime` from `/feed` was answered in 
 paints in English and, after `me set / tongue: ja`, in Japanese (「ALTIFETHHH」と言った。まるで月光の絹。) rendered;
 `describeRepo` lists `online.fg-goose.gsb.entry`, `getRepo` is a CAR, `subscribeRepos` 501 (off). Still wrong after it:
 a reply card's count line says "lines: 2, the first by <the asker>" where the card's `#1` is the town's (porch, station/dj,
-station/bee); of the paints in the first minutes several came back `exact` after their retry. The revoked guest keeps
-its hosted snapshot. Foundation's a8fe1938 (lane/register2) came after this build and follows in the next restart or carry.
+station/bee); of the paints in the first minutes several came back `exact` after their retry. The revoked guest's
+snapshot was retained by that build; revocation and startup reconciliation now remove inactive guests' snapshots,
+including with hosting off. Foundation's a8fe1938 (lane/register2) came after this build and follows in the next restart or carry.
 
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 

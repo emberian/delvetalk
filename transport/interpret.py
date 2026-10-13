@@ -60,15 +60,19 @@ def run(st, host, ask=model.ask):
 
 
 def paint(host, ask=model.ask):
-    """Ask the model for each render the host lists and submit the reply verbatim; the host verifies and caches it."""
+    """Submit each listed render verbatim; retain the host's retry/refusal verdict for diagnosis."""
     listed = host.send({'op': 'world-renders'})
     if listed.get('status') != 'renders':
         return {'painted': [], 'failed': [{'message': listed.get('message')}]}
-    done = {'painted': [], 'exact': [], 'retrying': [], 'failed': []}
+    done = {'painted': [], 'exact': [], 'retrying': [], 'failed': [], 'verdicts': []}
     for item in listed.get('pending') or []:
         answer = host.send({'op': 'world-render-submit', 'key': item['key'], 'reply': ask(dict(item['request'], use='paint'))})
         which = {'painted': 'painted', 'exact': 'exact', 'retrying': 'retrying'}.get(answer.get('status'), 'failed')
         done[which].append(item['key'] if which != 'failed' else {'key': item['key'], 'message': answer.get('message')})
+        if which in ('exact', 'retrying'):
+            done['verdicts'].append({k: answer[k] for k in
+                                     ('status', 'object', 'version', 'key', 'reason', 'clause', 'detail', 'attempts', 'next')
+                                     if k in answer})
     return {k: v for k, v in done.items() if v or k == 'painted'}
 
 
