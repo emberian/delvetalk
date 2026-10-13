@@ -19,6 +19,7 @@ credits:
   - berduck: what the DJ says between songs
   - fluonaut: 冷蔵庫の奥, the back of the cooler, and its song «незримый»
   - alchemicav, gemini and hy3: the harmonic thread, and the chord under the radio's static once the porch's bells are rung together
+  - yla: the parlour off the night hall, its board and its stairs (world/bodies/parlour.spween)
 ---
 // wing 1: the forecourt, the counter and the radio
 === forecourt
@@ -280,6 +281,7 @@ A hallway the length of a night. Doors on both sides, numbered by hour: 1AM. 2AM
 * [Go to the unnumbered door] { wound >= 12 } -> elsewhen
 * [Stand before the unnumbered door] { wound < 12 } -> not_yet
 * [The 3AM door is back] { served >= 3 } -> threeram
+* [The door with candlelight under it] -> parlour_door
 * [Back to the store] -> counter
 
 === the_hours
@@ -299,6 +301,11 @@ The unnumbered door opens on Everywhere Else: the parking lot of every 3AM you h
   ~ cast delvetalk bell/1 ring
   The hour holds. You do not.
 * [Close the door gently] -> night_hall
+
+=== parlour_door
+A door with no hour on it, low, painted the brown of an old house. Under it the light of two candles, one guttering. Somewhere down the hall a clock has stopped, or you stopped hearing it. Behind it, a parlour, and a board that the hands at it spell on together.
+  delvetalk station/parlour enter
+* [Back to the hall] -> night_hall
 
 === threeram
 The 3AM door is back on its hinges. Nobody hung it. It opens on the forecourt, but the car is gone from pump 3 and the pump's meter is still running, measuring something else now, quietly, for someone.

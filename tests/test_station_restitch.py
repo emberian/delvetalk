@@ -72,6 +72,11 @@ class StationRestitch(unittest.TestCase):
         # This body predates digest marks and has the carried room's mine/draw interfaces.
         legacy = (fixtures / 'station-ed7465f6.obend').read_text() + MEMORY
         cls.town = Town(os.path.join(cls.tmp.name, 'old'), cleanup=cls.addClassCleanup, furnished=False)
+        # The station's scene alone: yla's parlour (genesis.parlour) is laid over the station's newer body, and is
+        # test_parlour's.
+        unparloured = mock.patch.object(genesis, 'parlour', return_value=[])
+        unparloured.start()
+        cls.addClassCleanup(unparloured.stop)
         body_of = genesis.body_of
         with mock.patch.object(genesis, 'station_scene', return_value=cls.old_scene), \
                 mock.patch.object(genesis, 'body_of', side_effect=lambda name: legacy if name == 'station' else body_of(name)):
