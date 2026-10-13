@@ -278,7 +278,7 @@ def Strokes.json (s : Strokes) : Json :=
 
 /-- The objects a reader may use to assemble strokes. -/
 def readableWorld (w : World) (reader : String) : World :=
-  { w with objects := w.objects.filter fun _ o => o.read.permits reader }
+  { w with objects := w.objects.filter fun id _ => viewable w reader id }
 
 def fieldsOf : Data → List (String × Data)
   | .record f => f
@@ -487,7 +487,7 @@ def assemble (w : World) (reader id : String) (o : Object) : Strokes := Id.run d
     (the store keeps no past wants, verbs or firings, so no strokes of one are assembled). -/
 def strokesAt (w : World) (reader id : String) (version : Option Nat) : Except String Strokes := do
   let some o := w.objects[id]? | throw "unknown"
-  unless o.read.permits reader do throw "denied"
+  unless viewable w reader id do throw "denied"
   if let some v := version then
     if v > o.version then throw "unknown"
     if v < o.version then throw "historical"
@@ -531,7 +531,7 @@ def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Stro
     | return { object := "", version := day, day := some day, wants := if morning then wantsOfDay w reader else [], limit := maxDay }
   let mut written : Array Line := #[]
   for (id, o) in w.objects.toList do
-    unless o.read.permits reader do continue
+    unless viewable w reader id do continue
     for r in rows (fieldsOf o.state) "lines" do
       let at_ := (nat? r "at").getD 0
       if d.start ≤ at_ && at_ < d.stop then
@@ -709,7 +709,7 @@ def tellingOf (w : World) (asker id : String) (o : Object) (j : Json) : Except S
     `historical` for a past version named, `notAPlace` for a thing nobody enters. -/
 def tellingAt (w : World) (reader id : String) (version : Option Nat) (j : Json) : Except String (Except String Strokes) := do
   let some o := w.objects[id]? | return .error "unknown"
-  unless o.read.permits reader do return .error "denied"
+  unless viewable w reader id do return .error "denied"
   if let some v := version then
     if v > o.version then return .error "unknown"
     if v < o.version then return .error "historical"

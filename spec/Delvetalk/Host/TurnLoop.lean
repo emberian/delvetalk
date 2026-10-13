@@ -183,8 +183,7 @@ structure TurnState where
   reach : String := ""
   grants : List Grant := []
   revokes : List String := []
-  /-- Rules, wants and verbs this turn places and takes off (`stagePlacements`): judged as asked, they
-      take effect with the commit. -/
+  /-- Rules, wants and verbs this turn places and takes off; admitted at the final commit. -/
   placements : List Placement := []
   /-- Uses of limited grants this turn spent, by grant id. -/
   spent : List (String × Nat) := []
@@ -293,16 +292,22 @@ def Held.kept (h : Held) (s : Delvetalk.Turn.Suspension) : M Delvetalk.Turn.Susp
   unless fields.isEmpty do recordCells h.object h.version { spans := fields.map (·, none) }
   return { s with state }
 
-/-- An object as a turn has written it so far: its committed state with the edits the turn staged on it
-    applied in order, as `judge` applies them at commit; as committed when there are none, or when they do
-    not apply (the commit refuses them). A frame reads its object so (`runFrame`): a turn's later frame, such
-    as the second of hob's spells on one card, sees what its earlier frames wrote. Its version stays the
-    committed one, which the frame's cells are roots at. -/
-def asWritten (o : Object) (staged : List Written) : Object :=
-  if staged.isEmpty then o else
-  match applyEdits o.relations o.cells (staged.map (·.edits)) with
-  | .ok applied => { o with cells := applied.cells }
-  | .error _ => o
+/-- The world a turn sees: created objects and all preceding edits, programs, amendments and placements.
+    Structural checks share the commit's staging; laws admit only at commit. Versions remain root versions. -/
+def turnWorld (s : TurnState) : Except Refusal World := do
+  let p : Proposal := { principal := s.principal, intent := s.intent, roots := s.roots, writes := s.writes,
+                        programs := s.programs, layered := s.layered, madeFrom := s.madeFrom,
+                        laws := s.laws, placements := s.placements, turn := s.world.height + 1 }
+  let staged ← stageProposal s.world (s.world.height + 1) p false
+  let w := staged.updates.foldl (fun (w : World) (id, o) =>
+    { w with objects := w.objects.insert id { o with version := ((s.world.objects[id]?).map (·.version)).getD o.version } }) s.world
+  return applyGrants w s.grants s.revokes s.spent
+
+/-- The running turn's world, or the structural refusal of its staged changes. -/
+def currentWorld : M World := do
+  match turnWorld (← get) with
+  | .ok w => return w
+  | .error r => throw (.named r)
 
 /-- The state a stored frame starts from: its scalar part (its relations emptied), their rows held
     by the store, so neither the machine nor a checkpoint carries a row it did not force. -/
@@ -1480,7 +1485,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
     | if card == meCard then
         return .refuse self "noAvatar" noAvatarReason (unknown ())
       else return .refuse self "otherCard" s!"There is no card {card}; the commonplace lists the doors." (unknown ())
-  unless target.read.permits principal && (retarget || id == self) do
+  unless viewable w principal id && (retarget || id == self) do
     return .refuse self "otherCard" s!"There is no card {card}; the commonplace lists the doors." (unknown ())
   let forms := spellForms w id target
   -- The card's spells as the speaker is offered them, with its lenses (`set`'s: shown only when `set` is
@@ -1629,17 +1634,19 @@ def placementsOf (o : Object) (id action : String) (value spell : String → Opt
 /-- The host's spells that place on a card (`placementsOf`). -/
 def placingSpells : List String := ["rule", "want", "unrule", "unwant", "grow", "ungrow"]
 
-/-- Stage placements on `id` (a `call` of a placing spell on a card that does not declare it; the world's
-    `rule`, `want`, `grow` and their removals): judged now by `id`'s law as the commit will judge them, with
-    those the turn staged before, so the caller hears a refusal by its clause and reading (`some`); they
-    take effect with the commit, under the turn's principal. -/
-def stagePlacements (id : String) (xs : List Placement) : M (Option (String × String)) := do
+/-- Stage placements on `id` against preceding changes. `admit` gives Bend code the target's law verdict;
+    a plan's host-spell act defers that verdict to its final commit. -/
+def stagePlacements (id : String) (xs : List Placement) (admit : Bool := true) : M (Option (String × String)) := do
   let s ← get
   let some o := s.world.objects[id]? | return some ("unknownObject", s!"There is no card {id}.")
   recordRoot id o.version
-  let p : Proposal := { principal := s.principal, intent := s.intent, roots := [(id, o.version)], writes := [],
-                        placements := s.placements.filter (·.object == id) ++ xs, turn := s.world.height + 1 }
-  match judge s.world (s.world.height + 1) p with
+  let staged ← get
+  let checked : Except Refusal Judged := do
+    let world ← turnWorld staged
+    let p : Proposal := { principal := staged.principal, intent := staged.intent, roots := [(id, o.version)], writes := [],
+                          placements := xs, turn := world.height + 1 }
+    if admit then judge world (world.height + 1) p else stageProposal world (world.height + 1) p false
+  match checked with
   | .error r => return some (r.clause.getD r.cls, (r.reading <|> r.voiced.reason).getD "")
   | .ok _ =>
     modify fun s => { s with placements := s.placements ++ xs }
@@ -1702,14 +1709,14 @@ partial def runMethod (depth : Nat) (id method : String) (argument : Data) (call
 /-- The body of `runMethod`, inside the frame it set. -/
 partial def runFrame (depth : Nat) (id method : String) (argument : Data) (caller : String) : M Data := do
   let s ← get
-  let some obj := (s.world.objects[id]?).map (asWritten · ((s.writes.lookup id).getD [])) | evaluation s!"unknown object {id}"
+  let world ← currentWorld
+  let some obj := world.objects[id]? | evaluation s!"unknown object {id}"
   -- Only a method the package makes public is asked from outside (a call or a run checked it).
   if depth == 0 && !s.receiver && !obj.offers method then throw (.refused "noMethod" (noMethodReason id method))
   -- `act` runs a verb grown on the card, never another (docs/FOUNDATION.md §10): its `request.verb`.
   if method == actMethod then
     let verb := actVerb method argument
-    -- A verb this turn grew is used in it (hob's `grow:` and the spell that uses it, one turn).
-    unless obj.verbs.any (·.name == verb) || s.placements.any (fun x => x.object == id && x.what == .verb && x.name == verb && !x.line.isEmpty) do
+    unless obj.verbs.any (·.name == verb) do
       throw (.refused "noMethod" s!"{id} has no verb {verb}; `delvetalk {id} verbs` lists the ones it takes, and grow adds one.")
   -- The frame reads its object by its cells: the scalar part, and the rows its segments force.
   recordCells id obj.version { scalar := true }
@@ -1719,7 +1726,7 @@ partial def runFrame (depth : Nat) (id method : String) (argument : Data) (calle
   -- `spell` read from the text, none for a mention, which is heard and never cast; `misfit` none), whoever sends it:
   -- a mention, a rule's firing or a send of `{text, post}`.
   let argument ← if method != "receive" || argumentFits compiled argument then pure argument else
-    match heardArgument s.world obj argument [] (if s.reach == "mentioned" then some (castData "" "") else none) with
+    match heardArgument world obj argument [] (if s.reach == "mentioned" then some (castData "" "") else none) with
     | some filled => do modify (fun st => { st with argument := filled }); pure filled
     | none => pure argument
   -- What the method takes, with the card's declared bounds: built only for a refusal.
@@ -1937,10 +1944,11 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     match (f.lookup "object").bind referenceId with
     | none => respond bounds responseType "denied" [emptyRecord]
     | some id =>
-      match (← get).world.objects[id]? with
+      let world ← currentWorld
+      match world.objects[id]? with
       | none => respond bounds responseType "denied" [emptyRecord]
       | some o =>
-        if !o.read.permits (← get).subject then respond bounds responseType "denied" [emptyRecord] else
+        if !viewable world (← get).subject id then respond bounds responseType "denied" [emptyRecord] else
         recordRoot id o.version
         -- A state of another type than the call site's `S` is refused by name (a kind asking whether
         -- `of` names a kind), never an evaluation error.
@@ -1969,7 +1977,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
     match referenceId target with
     | none => refusedReading bounds responseType "unknownObject" (callReading "unknownObject" "")
     | some id =>
-      let world := (← get).world
+      let world ← currentWorld
       let some calleeObj := world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
       -- A placing spell called on a card that does not declare it is the host's, as cast (hob's `grow:`).
       if via.isEmpty && placingSpells.contains method && !calleeObj.offers method then
@@ -1990,7 +1998,7 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
         | .ok (subject, argument) => do
           -- A called `receive` to a card of the message dialect is read as a spell, as a direct
           -- turn's is (never under a grant: it names the one method it may run).
-          let world := (← get).world
+          let world ← currentWorld
           let heard := heardPost method argument
           let route := if via.isEmpty then routeSpell world subject id method argument false else .asIs
           let (method, argument, refusal) := match route with
@@ -1998,8 +2006,8 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
             | .refuse _ clause reason _ => (method, argument, some (clause, reason))
             | _ => (method, argument, none)
           if let some (clause, reason) := refusal then refusedReading bounds responseType clause reason else
-          if helperOf (← get).world self id method then refusedReading bounds responseType "noMethod" (noMethodReason id method) else
-          let some calleeObj := (← get).world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
+          if helperOf world self id method then refusedReading bounds responseType "noMethod" (noMethodReason id method) else
+          let some calleeObj := world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
           let callee ← compiledMethod calleeObj method
           if !argumentFits callee argument then
             refusedReading bounds responseType "typeMismatch" (match extraField callee argument with
@@ -2101,12 +2109,12 @@ partial def answer (depth : Nat) (self caller : String) (bounds : DataBounds) (p
           respond bounds responseType "reprogrammed" [.record [("pin", .label prog.pin)]]
   -- The placing arms (docs/OVERHAUL.md §3; World.obend): `rule`, `want`, `grow` and their removals, each the
   -- host spell of that name as a Bend body casts it (a kind's `made` placing its rule), staged under the
-  -- turn's principal and judged now by the target's law (`stagePlacements`).
+  -- turn's principal, with its law verdict returned to the body (`stagePlacements`).
   | .variant "rule" (.record f) | .variant "unrule" (.record f) | .variant "want" (.record f)
   | .variant "unwant" (.record f) | .variant "grow" (.record f) | .variant "ungrow" (.record f) =>
     let action := match plan with | .variant a _ => a | _ => ""
     let some id := (f.lookup "object").bind referenceId | refusedReading bounds responseType "foreignWorld" "a placing names an object of this world."
-    let some o := (← get).world.objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
+    let some o := (← currentWorld).objects[id]? | refusedReading bounds responseType "unknownObject" (callReading "unknownObject" id)
     match placementsOf o id action (labelsOf (.record f)) (labelsOf (.record f)) with
     | .error (clause, reason) => refusedReading bounds responseType clause reason
     | .ok xs => match ← stagePlacements id xs with
@@ -3403,32 +3411,31 @@ def inAct (n : Nat) (line object : String) : Abort → Abort
     judged with the plan at its commit. An opener's power is an entry of its own, never an act. -/
 def stageHost (n : Nat) (line id action : String) (fields : List Spell.Binding) : M Unit := do
   let s ← get
+  let world ← currentWorld
   if worldPowers.contains action || cardPowers.contains action then
     throw (actRefusal n line id "notInPlan" s!"{action} is the hand's power, an entry of its own; cast it alone.")
-  let some o := s.world.objects[id]? | throw (actRefusal n line id "otherCard" s!"There is no card {id}.")
+  let some o := world.objects[id]? | throw (actRefusal n line id "otherCard" s!"There is no card {id}.")
   if placingSpells.contains action then
     match placementsOf o id action (hostValue fields) (hostSpellFrom fields) with
     | .error (clause, reason) => throw (actRefusal n line id clause reason)
-    | .ok xs => if let some (clause, reading) ← stagePlacements id xs then throw (actRefusal n line id clause reading)
+    | .ok xs => if let some (clause, reading) ← stagePlacements id xs false then throw (actRefusal n line id clause reading)
     return
   if s.creates.any (·.1 == id) then
     throw (actRefusal n line id "notMade" s!"{id} is made by this plan; it takes its law and body as its kind makes it.")
-  -- A law an earlier act adopted is the text a later adopt extends.
-  let o := match s.laws.lookup id with | some t => { o with lawText := t } | none => o
-  match hostChange s.world s.principal s.intent o id action (hostValue fields) s.grants.length with
+  match hostChange world s.principal s.intent o id action (hostValue fields) s.grants.length with
   | .error (clause, reason) => throw (actRefusal n line id clause reason)
   | .ok c =>
     if let some r := c.refusal then throw (.named r)
     if !c.programs.isEmpty && s.programs.any (·.1 == id) then
       throw (actRefusal n line id "codeTwice" s!"{id} is given code by an earlier act of this plan.")
     for (x, v) in c.roots do recordRoot x v
-    modify fun s => { s with world := c.world, programs := s.programs ++ c.programs, layered := s.layered ++ c.layered,
+    modify fun s => { s with world := s.world.withCachesOf c.world, programs := s.programs ++ c.programs, layered := s.layered ++ c.layered,
                              madeFrom := s.madeFrom ++ c.madeFrom, grants := s.grants ++ c.grants,
-                             laws := (s.laws.filter (·.1 != id)) ++ c.laws }
+                             laws := (s.laws.filter fun old => !c.laws.any (·.1 == old.1)) ++ c.laws }
 
 /-- Run a plan as one turn of the speaker (`ctx`, its identity and what it resumes; docs/HOST-HANDOFF.md 5.203): each
     act in order at the top of the turn, as a spell posted alone runs, reading the cards as the acts before it left
-    them (`asWritten`; what they made is an object of the turn, `madeIn`); a spell is read when its act comes, against
+    them (`turnWorld`; what they made is an object of the turn, `madeIn`); a spell is read when its act comes, against
     `receiver` with the post's argument (`argOf`), so a later act names what an earlier made (`{made N}`). Nothing is
     judged until the one commit (`finishTurn`), which judges every law against the world the acts leave, fires rules
     once and writes one receipt; any refusal refuses the whole plan, naming the act (`inAct`, `planRefusedAct`).
@@ -3456,7 +3463,10 @@ def runPlan (w : World) (ctx : Ctx) (post reach origin receiver : String) (acts 
       -- What the act touched, so a refusal at the commit names the act that staged it (`planRefusedAct`).
       let staged := fun (t : TurnState) => (t.writes.map (·.1)) ++ (t.placements.map (·.object)) ++ (t.laws.map (·.1)) ++
         (t.programs.map (·.1)) ++ (t.grants.map (·.holder)) ++ (t.creates.map (·.1))
-      let touched := ((staged after).filter fun x => !(staged before).contains x || (after.writes.lookup x).map (·.length) != (before.writes.lookup x).map (·.length)).eraseDups
+      let touched := ((staged after).filter fun x => !(staged before).contains x ||
+        (after.writes.lookup x).map (·.length) != (before.writes.lookup x).map (·.length) ||
+        after.placements.filter (·.object == x) != before.placements.filter (·.object == x) ||
+        after.laws.lookup x != before.laws.lookup x || after.programs.lookup x != before.programs.lookup x).eraseDups
       modify fun s => { s with acts := s.acts.push (Json.mkObj ([("act", toJson n), ("spell", toJson line), ("object", toJson object),
         ("done", toJson done)] ++ (match done, r with | "read", .label t => [("text", toJson t)] | _, _ => []) ++
         (if madeNow.isEmpty then [] else [("made", toJson madeNow)]) ++
@@ -3472,12 +3482,12 @@ where
   runAct (n : Nat) (line : String) (act : Act) (made : Array (List String)) : M (String × String × Data) := do
     match act with
     | .step step =>
-      let world := (← get).world
+      let world ← currentWorld
       let some obj := world.objects[step.object]? | throw (.refused "unknownObject" s!"There is no card {step.object}.")
       if placingSpells.contains step.method && !obj.offers step.method then
         match placementsOf obj step.object step.method (labelsOf step.argument) (labelsOf step.argument) with
         | .error (clause, reason) => throw (.refused clause reason)
-        | .ok xs => if let some (clause, reading) ← stagePlacements step.object xs then throw (.refused clause reading)
+        | .ok xs => if let some (clause, reading) ← stagePlacements step.object xs false then throw (.refused clause reading)
         return (step.object, "staged", emptyRecord)
       let (method, argument) := match grownAct obj step.method step.argument with
         | some a => (actMethod, a)
@@ -3489,7 +3499,7 @@ where
       let filled ← match fillHoles text made n with
         | .ok t => pure t
         | .error why => throw (actRefusal n line receiver "hole" why)
-      let world := (← get).world
+      let world ← currentWorld
       match routeSpell world ctx.principal receiver "receive" (argOf filled) true with
       | .run object method argument command =>
         modify fun s => { s with command }

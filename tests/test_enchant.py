@@ -96,6 +96,16 @@ class PrivateStrokes(HostCase):
         visible = self.strokes('hidden/bait', 'ember')['strokes']
         self.assertEqual((visible['around'], visible['voice']), ('hidden', 'private surroundings voice'))
 
+    def test_a_thing_reads_its_own_private_strokes_and_inherited_voice(self):
+        self.make('private', dict(kind='private', owner='ember', voice='its own voice'), read={'principals': ['ember']})
+        self.make('bait', dict(kind='private'))
+        own = self.strokes('private', '@private')['strokes']
+        self.assertEqual((own['object'], own['kind'], own['voice']), ('private', 'private', 'its own voice'))
+        self.assertEqual(self.strokes('bait', '@private')['strokes']['voice'], 'its own voice')
+        self.assertEqual(self.strokes('bait', '@other')['strokes']['voice'], '')
+        other = self.host.send(op='world-strokes', principal='@other', object='private')
+        self.assertEqual(other['status'], 'denied', other)
+
     def test_a_private_record_frame_does_not_suppress_a_public_law_reading(self):
         self.make('kind/record', dict(law='law shared: request.kind == 0'), read={'principals': ['ember']})
         self.make('kind/public', dict(law='law shared "public reading": request.kind == 0'))

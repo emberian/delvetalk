@@ -2270,10 +2270,15 @@ def thingPrincipal (id : String) : String := "@" ++ id
 def principalThing (principal : String) : Option String :=
   if principal.startsWith "@" then some (principal.drop 1).toString else none
 
+/-- Whether `who` may view `id`: a thing acting of itself views itself; an object no longer in the world is
+    not viewable. -/
+def viewable (w : World) (who id : String) : Bool :=
+  principalThing who == some id || (((w.objects[id]?).map (·.read.permits who)).getD false)
+
 /-- The objects a write's facts read and whether one may read them (`Law.Facts.reads`): the first of
     `ids` that `who` may not view, if any. A thing acting of itself views itself. -/
 def unviewable (w : World) (who : String) (ids : List String) : Option String :=
-  ids.find? fun r => principalThing who != some r && !(((w.objects[r]?).map (·.read.permits who)).getD true)
+  ids.find? fun r => w.objects.contains r && !viewable w who r
 
 /-- The states of some objects as the world holds them (`Law.Facts.reads`). -/
 def statesOf (w : World) (ids : List String) : List (String × Data) :=
@@ -2790,10 +2795,11 @@ def viewFor (names : List Delvetalk.Compiler.ObjectiveBendLaw.LawName) (cells : 
   else Delvetalk.Turn.wholeOf cells.scalar
     ((cells.relations.filter fun r => names.contains (.field r.field)).map fun r => (r.field, r.rows))
 
-/-- Roots current, writes read, results conform, laws admit. Returns the objects
-    as they would be installed. `height` is the height the entry would take. -/
-def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := do
-  if let some r := quietOf w p.principal ((p.roots.head?.map (·.1)).getD "") then throw r
+/-- Apply a proposal's edits, programs, amendments and placements with structural checks. `admit` also
+    checks authority and laws for the final commit. `height` is the height the entry would take. -/
+def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Except Refusal Judged := do
+  if admit then
+    if let some r := quietOf w p.principal ((p.roots.head?.map (·.1)).getD "") then throw r
   let writes := p.allWrites
   -- What the turn makes is an object of the turn (docs/HOST-HANDOFF.md 5.203): a later frame of it, a plan's later
   -- act, reads it, writes it and places on it, judged here by its own law over the state it is made with.
@@ -2937,7 +2943,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     let metered := lawNames o.law
     let conditions := o.law.map (·.2)
     let (meteredOld, meteredNew) := (viewFor metered o.cells, viewFor metered cells)
-    for (caller, kind, method, via, verb) in judgments do
+    for (caller, kind, method, via, verb) in (if admit then judgments else []) do
       let subject ← if via.isEmpty then pure p.principal else
         match grantStands w via id method with
         | some g => pure g.grantor
@@ -2963,7 +2969,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- The Bend law, after the text admits: once for each write of edits (the object's own or a
     -- proposed one, its `kind` saying which), with its argument. A migration's state is the text
     -- law's alone: the old code's law does not read the new type.
-    if o.predicate then
+    if admit && o.predicate then
       -- A placing (a rule, want or verb placed, kind 4 with its verb) is judged too: its state is unchanged,
       -- and a predicate refusing `request.kind == 4` keeps its card from strangers' rules (codex objects 4).
       let judged := changes.filter fun c => Law.editKind c.kind || (c.kind == 4 && !c.verb.isEmpty)
@@ -2981,7 +2987,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       let amender := ((changes.find? (·.kind == 2)).map (·.caller)).getD ""
       -- The opener's amendment needs no clause for itself: the host admits it whatever the law (`openerAmends`).
       if let some message := citationRefusal cand id law then throw (refuse "under" ((message.drop "under: ".length).toString))
-      unless openerAmends w p.principal do
+      if admit && !openerAmends w p.principal then
         if let some message := amendable law p.principal amender height p.turn next.pin cells.state w.clock id (citing cand law (lawNames law)) then throw (refuse "amendable" message)
       -- A reading stays with its clause only while the amendment leaves that clause as it was.
       -- The amendment's own readings; a clause it leaves as it was without one keeps its reading.
@@ -3002,7 +3008,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         if x.line.isEmpty then
           let some row := next.verbs.find? (·.name == x.name)
             | throw (refuse "unplaced" s!"{id} has no verb {x.name} that a hand grew.")
-          unless mayRemove row.grower do
+          if admit && !mayRemove row.grower then
             throw (refuse "notPlacer" s!"only who grew verb {x.name}, or the owner of {id}, takes it off.")
           next := { next with verbs := next.verbs.filter (·.name != x.name) }
         else
@@ -3033,7 +3039,7 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
         if x.line.isEmpty then
           let some row := rows.find? (·.name == x.name)
             | throw (refuse "unplaced" s!"{id} has no {x.keyword} {x.name} that a hand placed.")
-          unless mayRemove row.owner do
+          if admit && !mayRemove row.owner then
             throw (refuse "notPlacer" s!"only who placed {x.keyword} {x.name}, or the owner of {id}, takes it off.")
           next := if want then { next with wants := next.wants.filter (·.name != x.name) }
             else { next with rules := next.rules.filter (·.name != x.name) }
@@ -3051,8 +3057,9 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           if let some message := citationRefusal cand id [(x.name, clause.condition)] then
             throw (refuse "under" ((message.drop "under: ".length).toString))
           -- A line reads, and its spell carries, only what its placer may view.
-          if let some r := unviewable cand p.principal (citesOf cand clause.names).objects then
-            throw (refuse "lawReads" s!"{x.keyword} {x.name} cites {r}, which you may not view.")
+          if admit then
+            if let some r := unviewable cand p.principal (citesOf cand clause.names).objects then
+              throw (refuse "lawReads" s!"{x.keyword} {x.name} cites {r}, which you may not view.")
           -- A hand other than the owner holds a bounded share, and all such hands together leave the owner room
           -- (docs/review/astra-2026-10-12 world 6).
           unless p.principal == ownerOf o.state || openerActs w p.principal do
@@ -3073,6 +3080,10 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
            -- A creation the turn also wrote or placed on is its update, made at the state the turn leaves it in.
            creations := (p.creates.filter fun (id, _) => !out.any (·.1 == id)).map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom }),
            creates := p.creates.map fun (id, c) => createRecJson id c }
+
+/-- Roots current, writes read, results conform, laws admit. Returns the objects as they would be installed. -/
+def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged :=
+  stageProposal w height p true
 
 /-! ## Entries -/
 
@@ -5420,13 +5431,6 @@ def stateCidOp (w : World) (j : Json) : Except String Json := do
     match stateCidAt w id version with
     | some cid => return answer "stateCid" [("cid", toJson cid)]
     | none => return answer "unknown" []
-
-/-- A reader may see an object's changes if it may view the object (an object no longer in
-    the world is not viewable). -/
-def viewable (w : World) (reader id : String) : Bool :=
-  match w.objects[id]? with
-  | some o => o.read.permits reader
-  | none => false
 
 /-- The act of a refused plan's entry its refusal names (docs/HOST-HANDOFF.md 5.203), with how many the plan had: the
     act refused as it ran, else the last act that staged what the commit refused (its `object`, in the act's `touched`). -/
