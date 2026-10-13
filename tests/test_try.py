@@ -15,7 +15,9 @@ import tempfile
 import unittest
 
 from tests.poster import Poster
+from tests.host import bounds
 from tests.town import Town
+from tests.test_heard import HeardCase
 from tests.wire import label, record
 
 WHO = 'did:plc:tryer'
@@ -110,6 +112,133 @@ class Try(unittest.TestCase):
             self.assertTrue(refused['line'].startswith('refused moved: the if: line does not read'), refused)
         self.assertEqual(self.version('bell/1'), v)
 
+
+
+class BehaviorGuards(HeardCase):
+    def request(self, text, op='world-turn', who='glm', roots=None):
+        self.n = getattr(self, 'n', 0) + 1
+        return self.host.send(op=op, principal=who, object='bell', method='receive', identity=f'guard-{self.n}',
+                              argument=record(text=label(text), post=label('')), **({'if': roots} if roots is not None else {}))
+
+    def preview(self, text='delvetalk bell rain / text: previewed rain'):
+        tried = self.request(text, op='world-try')
+        self.assertEqual(tried['status'], 'admitted', tried)
+        self.assertTrue(tried['tried'], tried)
+        return tried['receipt']['roots']
+
+    def place(self, spell, who='kim'):
+        placed = self.request('delvetalk bell ' + spell, who=who)
+        self.assertEqual(placed['status'], 'admitted', placed)
+
+    def moved(self, roots, text='delvetalk bell rain / text: previewed rain'):
+        before = self.host.send(op='world-status')['height']
+        ran = self.request(text, roots=roots)
+        self.assertEqual((ran.get('status'), ran.get('class')), ('refused', 'moved'), ran)
+        self.assertIn('behaviour changed', ran['line'])
+        self.assertEqual(self.host.send(op='world-status')['height'], before)
+        self.assertEqual((self.value('rains'), self.value('rains', 'square')), ('0', '0'))
+
+    def test_a_guarded_rain_is_refused_after_another_resident_places_a_rule(self):
+        roots = self.preview()
+        version = self.host.send(op='world-view', principal='glm', object='bell')['version']
+        self.place('rule / name: echo / when: request.method == "rain" / then: delvetalk square rain / text: echo')
+        self.assertEqual(self.host.send(op='world-view', principal='glm', object='bell')['version'], version)
+        self.moved(roots)
+
+    def test_a_guarded_rain_is_refused_after_another_resident_grows_a_verb(self):
+        roots = self.preview()
+        self.place('grow / name: water / reading: poured on by a hand')
+        self.moved(roots)
+
+    def test_a_guarded_rain_is_refused_after_its_rule_is_removed(self):
+        self.place('rule / name: echo / when: request.method == "rain" / then: delvetalk square rain / text: echo')
+        roots = self.preview()
+        self.place('unrule / name: echo')
+        self.moved(roots)
+
+    def test_a_guarded_grown_verb_is_refused_after_the_verb_is_removed(self):
+        self.place('grow / name: water / reading: poured on by a hand')
+        text = 'delvetalk bell water / text: previewed water'
+        roots = self.preview(text)
+        self.place('ungrow / name: water')
+        self.moved(roots, text)
+        self.assertEqual(self.value('acts'), '0')
+
+    def test_a_guarded_rain_is_refused_after_its_law_is_amended(self):
+        roots = self.preview()
+        amended = self.host.send(op='world-amend', principal='ember', identity='amended-guard', object='bell', version=0,
+                                 law='law open: request.kind == 0 or request.subject == "ember"')
+        self.assertEqual(amended['status'], 'admitted', amended)
+        self.moved(roots)
+
+    def test_a_guarded_rain_is_refused_after_a_want_is_placed_or_removed(self):
+        for spell in ('want / name: water / when: new.rains == 0 / asks: delvetalk bell rain / text: water',
+                      'unwant / name: water'):
+            roots = self.preview()
+            self.place(spell)
+            self.moved(roots)
+
+    def test_an_untouched_object_accepts_its_preview_guards(self):
+        text = 'delvetalk bell rain / text: unchanged'
+        roots = self.preview(text)
+        self.assertEqual(roots[0]['behaviour'], 0)
+        ran = self.request(text, roots=roots)
+        self.assertEqual(ran['status'], 'admitted', ran)
+        self.assertEqual(self.value('rains'), '1')
+
+    def test_an_unchanged_placing_accepts_its_preview_guards(self):
+        self.place('grow / name: water / reading: poured on by a hand')
+        text = 'delvetalk bell rain / text: unchanged'
+        roots = self.preview(text)
+        self.assertEqual(roots[0]['behaviour'], 1)
+        ran = self.request(text, roots=roots)
+        self.assertEqual(ran['status'], 'admitted', ran)
+
+    def test_a_guard_with_behaviour_zero_is_refused_after_the_behaviour_changes(self):
+        roots = [{'object': 'bell', 'version': 0, 'behaviour': 0}]
+        self.place('grow / name: water / reading: poured on by a hand')
+        self.moved(roots)
+
+    def test_a_version_only_guard_still_passes_after_the_objects_behaviour_changes(self):
+        roots = [{'object': 'bell', 'version': 0}]
+        self.place('grow / name: water / reading: poured on by a hand')
+        current = self.preview()
+        self.assertEqual(current[0]['behaviour'], 1)
+        self.assertEqual(current[0]['version'], 0)
+        ran = self.request('delvetalk bell rain / text: version only', roots=roots)
+        self.assertEqual(ran['status'], 'admitted', ran)
+        self.assertEqual(self.value('rains'), '1')
+
+    def test_an_unplaced_object_accepts_a_guard_without_a_behaviour_field(self):
+        ran = self.request('delvetalk bell rain / text: old guard', roots=[{'object': 'bell', 'version': 0}])
+        self.assertEqual(ran['status'], 'admitted', ran)
+
+    def test_a_malformed_behaviour_guard_refuses_before_the_act_runs(self):
+        for behaviour in (-1, None, True, {}, 'bad'):
+            ran = self.request('delvetalk bell rain / text: malformed',
+                               roots=[{'object': 'bell', 'version': 0, 'behaviour': behaviour}])
+            self.assertEqual((ran.get('status'), ran.get('class')), ('refused', 'moved'), ran)
+            self.assertIn('behaviour must be a natural number', ran['line'])
+        self.assertEqual(self.value('rains'), '0')
+
+    def test_a_guard_accepts_the_maximum_number_of_roots_and_refuses_one_more(self):
+        maximum = bounds()['host']['maxRoots']
+        roots = [{'object': 'bell', 'version': 0, 'behaviour': 0}] * maximum
+        refused = self.request('delvetalk bell rain / text: too many roots', roots=roots + roots[:1])
+        self.assertEqual((refused.get('status'), refused.get('class')), ('refused', 'moved'), refused)
+        self.assertIn(f'if names at most {maximum} roots', refused['line'])
+        self.assertEqual(self.value('rains'), '0')
+        ran = self.request('delvetalk bell rain / text: maximum roots', roots=roots)
+        self.assertEqual(ran['status'], 'admitted', ran)
+
+    def test_previewing_a_direct_method_retains_behaviour_without_changing_ordinary_state_roots(self):
+        tried = self.host.send(op='world-try', principal='glm', identity='direct-preview', object='bell', method='rain',
+                               argument=record(text=label('direct')))
+        self.assertEqual(tried['status'], 'admitted', tried)
+        self.assertEqual(tried['receipt']['roots'][0]['behaviour'], 0)
+        ran = self.turn('bell', 'rain', record(text=label('direct')), principal='glm')
+        self.assertEqual(ran['status'], 'admitted', ran)
+        self.assertNotIn('behaviour', ran['receipt']['roots'][0])
 
 
 class ByPost(unittest.TestCase):

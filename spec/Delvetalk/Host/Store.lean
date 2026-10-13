@@ -674,6 +674,8 @@ structure World where
       the opener's privileges (amending another's thing, revoking any grant, the powers, naming an
       owner) are the root socket's (docs/ROOT.md §1.4). Never journaled: replay admits what either did. -/
   resident : Bool := false
+  /-- Memory only: preview turns retain behaviour revisions on all their guard roots. -/
+  preview : Bool := false
   /-- Memory only: the objects this world may hold (`Limits.maxObjects`, or lower for this process:
       `world-open {maxObjects}`, a scratch world's `Limits.scratchObjects`). -/
   objectBound : Nat := Limits.maxObjects

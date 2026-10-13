@@ -323,7 +323,7 @@ structure Proposal where
   principal : String
   intent : String
   roots : List (String × Nat)
-  /-- Revisions of roots whose offers the turn read; ordinary state roots carry none. -/
+  /-- Behaviour revisions read by offers or retained as preview guards; ordinary state roots carry none. -/
   behaviours : List (String × Nat) := []
   writes : List (String × List Written)
   /-- Assigned by the host (`commit` sets it to the entry's height); never read from a client. -/
@@ -355,6 +355,13 @@ structure Proposal where
   sender : String := ""
   /-- Rules, wants and verbs the turn places and takes off; they take effect with the commit. -/
   placements : List Placement := []
+
+/-- A preview reads each guard root's behaviour, retaining any revision already read by offers. -/
+def Proposal.previewReadings (p : Proposal) (w : World) : Proposal :=
+  if !w.preview then p else
+  { p with behaviours := p.behaviours ++ p.roots.filterMap fun (id, _) =>
+      if p.behaviours.any (·.1 == id) then none else
+      (w.objects[id]?).map fun o => (id, o.behaviour) }
 
 /-- The method a grown verb runs (`act {verb, text}`, docs/FOUNDATION.md §10): its `request.verb` is the verb. -/
 def actMethod : String := "act"
@@ -436,7 +443,7 @@ def stateBytes (state : Data) : Nat := (Delvetalk.Canonical.encode state).size
     its cells (`Cells`) what was read: `scalar: true`, `fields [f]`, `rows [{field, key}]`, `spans
     [{field, through?}]` (no `through`: the whole key set), `gaps [{field, after?, before?}]`. The state
     at that version is named by the entry that wrote it (`writes[].cid`, `world-state-cid`). A root
-    whose offers were read also names their `behaviour` revision. -/
+    read for offers or retained as a preview guard also names its `behaviour` revision. -/
 def rootsJson (roots : List (String × Nat)) (cells : List (String × Cells) := [])
     (behaviours : List (String × Nat) := []) : Json :=
   Json.arr (roots.toArray.map fun (o, v) => Json.mkObj ([("object", toJson o), ("version", toJson v)] ++
@@ -4154,6 +4161,7 @@ def commit (w : World) (p : Proposal) (extra : List (String × Json) := [])
   let expanded := withLawReads w p
   let (p, forced) := if forced.isNone && expanded.roots.length + (expanded.cells.map (·.2.extra)).sum > Limits.maxRoots
     then (p, some ({ cls := "capacity", reason := some "maxRoots" } : Refusal)) else (expanded, forced)
+  let p := p.previewReadings w
   match retained w p.principal p.intent p.digest with
   | some r => (w, r)
   | none =>

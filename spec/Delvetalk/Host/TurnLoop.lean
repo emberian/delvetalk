@@ -3108,6 +3108,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       placements := st.placements
       cells := st.cells
       sender := st.sender }
+  let proposal := proposal.previewReadings w
   let base := entryBase ctx used ++ (if st.cites.isEmpty then [] else [("cites", Json.arr st.cites)])
   -- An activity of a supervised object that ends broken, out of budget, or after its await
   -- timed out tells the supervisor (`endedField`), under the ledger it ran with.
@@ -3178,7 +3179,7 @@ def finishTurn (w : World) (ctx : Ctx) (result : Except Abort Data) (st : TurnSt
       (crossing.map fun c => [("crossing", c.setObjVal! "ledger"
         (Ledger.json ⟨ctx.ledger.depth - 1, ctx.ledger.work - used, ctx.ledger.storage⟩))]).getD []
     let (w', entry) := push w (identityKey ctx.principal ctx.intent)
-      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots st.cells st.behaviours),
+      ([("identity", identityJson ctx.principal ctx.intent), ("roots", rootsJson st.roots st.cells proposal.behaviours),
         ("turn", toJson proposal.turn), ("request", toJson ctx.digest)] ++ base ++ [("outcome", outcome)] ++
         newSources w (st.creates.flatMap fun (_, c) => inputSources c.object.inputs) ++ journaledCheckpoint.2) []
     return (w', turnReply w' (reply entry))
