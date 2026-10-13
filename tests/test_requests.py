@@ -38,7 +38,7 @@ from transport.atproto.sign import CURVES, multikey, tid
 from transport.delve import canonical
 from transport.host import HostClient
 from transport.repo import Repo, world_did
-from transport.requests import COLLECTION, Poller
+from transport.requests import COLLECTION, Poller, proven
 from transport.config import Config
 from transport.state import State
 from tests.wire import nat, record
@@ -61,7 +61,7 @@ class FakePDS:
 
     def __init__(self, base=delve.PDS, documents=None):
         self.base, self.documents = base, documents if documents is not None else {}
-        self.repos, self.calls, self.proof = {}, [], None
+        self.repos, self.calls, self.proof, self.listing = {}, [], None, None
 
     def repo(self, did, pds=delve.PDS):
         key = ec.generate_private_key(ec.SECP256K1())
@@ -106,8 +106,9 @@ class FakePDS:
             return 200, json.dumps({'rev': tid(r['rev']), 'cid': str(self.commit(q['did'])[2][0])}).encode()
         if nsid == 'com.atproto.repo.listRecords':
             _, blocks, _ = self.commit(q['repo'])
-            return 200, json.dumps({'records': [{'uri': f"at://{q['repo']}/{COLLECTION}/{k}", 'cid': str(blocks[k][0]), 'value': r['records'][k]}
-                                                for k in sorted(r['records'])]}).encode()
+            records = [{'uri': f"at://{q['repo']}/{COLLECTION}/{k}", 'cid': str(blocks[k][0]), 'value': r['records'][k]}
+                       for k in sorted(r['records'])]
+            return 200, json.dumps({'records': self.listing(q, records) if self.listing else records}).encode()
         if nsid == 'com.atproto.sync.getRecord':
             tree, blocks, commit = self.commit(q['did'])
             at = sorted(r['records']).index(q['rkey'])
@@ -173,6 +174,145 @@ def request(spell=None, created='2026-10-12T10:00:00Z', service=SERVICE, **more)
 
 
 PLANT = 'delvetalk garden-1 plant\nseed: a\ncolour: amber'
+
+
+class RequestIdentity(unittest.TestCase):
+    """Signed request proofs cannot consume a different repository's URI or another world's service address."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.st = State(Path(tmp.name) / 'state', config=dataclasses.replace(LOOPBACK, origin='https://world.example'))
+        self.pds, self.host = FakePDS(), Stub()
+        self.pds.repo(DID)
+        self.client = delve.Client(self.pds)
+        self.service = world_did(self.st.config.origin)[0]
+        self.poller = Poller(self.st, self.client)
+
+    def observer(self):
+        ob = observe.Observer(self.st, self.client, '2026-10-12T00:00:00Z', self.poller)
+        self.addCleanup(ob.db.close)
+        return ob
+
+    def step(self):
+        ob = self.observer()
+        return bridge.run(self.st, self.host, ob, now=observe.instant('2026-10-12T10:00:00Z'))
+
+    def refused(self):
+        return json.loads(self.st.requests.read_text())['refused']
+
+    def test_a_signed_proof_with_b_uri_cannot_observe_answer_or_suppress_bs_request(self):
+        other, rkey = 'did:plc:' + 'b' * 24, '3aaaaaaaaaaa2'
+        uri = f'at://{other}/{COLLECTION}/{rkey}'
+        self.pds.put(DID, rkey, request(PLANT, service=self.service))
+        cid, value, _ = proven(self.client, DID, rkey, self.client.did_document(DID))
+        self.assertEqual(value, request(PLANT, service=self.service))
+        self.assertEqual(cid, str(block(from_json(value))[0]))
+        self.pds.listing = lambda q, rows: [{**row, 'uri': uri} for row in rows] if q['repo'] == DID else rows
+        ob = self.observer()
+        with mock.patch.object(ob, 'seen', wraps=ob.seen) as seen:
+            self.assertEqual(bridge.run(self.st, self.host, ob)['failed'], [])
+        seen.assert_not_called()
+        self.assertEqual(self.st.observations(), [])
+        self.assertFalse(bridge.answer_path(self.st, bridge.request_source({'uri': uri, 'cid': cid})).exists())
+        self.assertNotIn(uri, self.refused())
+        self.assertEqual(self.refused(), {'listing:' + DID: {'why': 'bad_request_uri: ' + DID}})
+
+        self.pds.repo(other)
+        genuine = request('delvetalk garden-1 plant\nseed: b\ncolour: violet', service=self.service)
+        self.pds.put(other, rkey, genuine)
+        self.assertEqual(self.step()['failed'], [])
+        (obs,) = self.st.observations()
+        self.assertEqual((obs['uri'], obs['author']['did'], obs['cid']),
+                         (uri, other, str(block(from_json(genuine))[0])))
+        answer = json.loads(bridge.answer_path(self.st, bridge.request_source(obs)).read_text())
+        self.assertEqual(answer['source']['request'], {'uri': uri, 'cid': obs['cid']})
+        self.assertEqual(answer['outcome']['status'], 'admitted')
+        self.assertEqual([(op['principal'], op['identity']) for op in self.host.ops if op['op'] == 'world-turn'], [(other, uri)])
+
+        self.pds.listing = None
+        self.pds.put(DID, rkey, value)
+        self.assertEqual(self.step()['failed'], [])
+        self.assertEqual({obs['uri'] for obs in self.st.observations()}, {uri, f'at://{DID}/{COLLECTION}/{rkey}'})
+
+    def test_malformed_or_misaddressed_listings_are_refused_before_seen_or_proof_reads(self):
+        rkey = '3aaaaaaaaaaa2'
+        uri = f'at://{DID}/{COLLECTION}/{rkey}'
+        invalid = [None, 42, {}, '', uri.replace('at://', 'https://'), uri.replace(DID, HANDLE),
+                   uri.replace(COLLECTION, 'town.delve.feed.post'), uri + '/extra', uri + '?x=1', uri + '#fragment',
+                   uri + '\n', uri.replace(rkey, ''), uri.replace(rkey, '%33aaaaaaaaaaa2')]
+        ob = self.observer()
+        for n, listed_uri in enumerate(invalid):
+            with self.subTest(uri=listed_uri):
+                self.pds.put(DID, rkey, request(PLANT, service=self.service, created=f'2026-10-12T10:00:{n:02d}Z'))
+                self.pds.listing = lambda q, rows: [{**row, 'uri': listed_uri} for row in rows]
+                before = sum('com.atproto.sync.getRecord?' in url for url in self.pds.calls)
+                with mock.patch.object(ob, 'seen', wraps=ob.seen) as seen:
+                    self.assertEqual(self.poller.poll(ob), [])
+                seen.assert_not_called()
+                self.assertEqual(sum('com.atproto.sync.getRecord?' in url for url in self.pds.calls), before)
+                self.assertEqual(self.st.observations(), [])
+                self.assertEqual(self.refused(), {'listing:' + DID: {'why': 'bad_request_uri: ' + DID}})
+        self.assertTrue(all('bad_request_uri' in row['why'] for row in self.refused().values()))
+
+    def test_signed_requests_with_invalid_record_keys_are_refused_without_proof_reads(self):
+        invalid = ['', '.', '..', 'a' * 513, 'with space', 'with/slash', 'with%escape', 'with?query', 'with#fragment', 'é']
+        for rkey in invalid:
+            self.pds.put(DID, rkey, request(PLANT, service=self.service))
+        ob = self.observer()
+        with mock.patch.object(ob, 'seen', wraps=ob.seen) as seen:
+            self.assertEqual(self.poller.poll(ob), [])
+        seen.assert_not_called()
+        self.assertEqual(self.st.observations(), [])
+        self.assertEqual(self.refused(), {'listing:' + DID: {'why': 'bad_request_uri: ' + DID}})
+        self.assertFalse(any('com.atproto.sync.getRecord?' in url for url in self.pds.calls))
+
+    def test_malformed_listing_refusals_overwrite_one_bounded_entry_per_did(self):
+        other = 'did:plc:' + 'b' * 24
+        self.pds.repo(other)
+        ob = self.observer()
+        for n in range(3):
+            for did in (DID, other):
+                self.pds.put(did, f'3aaaaaaaaaaa{n + 2}', request(PLANT, service=self.service))
+            self.pds.listing = lambda q, rows: [{**row, 'uri': row['uri'] + '?' + 'x' * 65536, 'cid': 'c' * 65536}
+                                               for row in rows]
+            why = 'bad_request_uri: ' + str(n) * 65536
+            with mock.patch('transport.requests.request_uri', side_effect=delve.Failure('bad_request_uri', str(n) * 65536)):
+                self.assertEqual(self.poller.poll(ob), [])
+            self.assertEqual(self.refused(), {'listing:' + did: {'why': why[:256]} for did in (DID, other)})
+            self.assertLess(len(canonical(self.refused())), 1024)
+        self.assertEqual(self.st.observations(), [])
+        self.assertFalse(any('com.atproto.sync.getRecord?' in url for url in self.pds.calls))
+
+    def test_a_512_character_record_key_and_every_allowed_character_prove_and_are_seen_once(self):
+        keys = ['a' * 512, 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._~:-', '_']
+        for rkey in keys:
+            self.pds.put(DID, rkey, request(PLANT, service=self.service))
+        ob = self.observer()
+        self.assertEqual(self.poller.poll(ob), [])
+        self.assertEqual({obs['uri'] for obs in self.st.observations()}, {f'at://{DID}/{COLLECTION}/{rkey}' for rkey in keys})
+        self.assertEqual(self.refused(), {})
+        self.pds.put(DID, keys[0], request(PLANT, service=self.service))
+        reads = sum('com.atproto.sync.getRecord?' in url for url in self.pds.calls)
+        self.assertEqual(self.poller.poll(ob), [])
+        self.assertEqual(sum('com.atproto.sync.getRecord?' in url for url in self.pds.calls), reads)
+        self.assertEqual(len(self.st.observations()), len(keys))
+
+    def test_a_ring_poller_runs_the_ring_service_request_and_refuses_the_town_service(self):
+        self.st = State(self.st.root, world='ring', config=self.st.config)
+        self.poller = Poller(self.st, self.client)
+        ring = world_did(self.st.config.origin, 'ring')[0]
+        self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT, service=ring, world='ring'))
+        self.pds.put(DID, '3aaaaaaaaaaa3', request(PLANT, service=self.service, world='ring'))
+        self.assertEqual(self.step()['failed'], [])
+        (obs,) = self.st.observations()
+        self.assertEqual(obs['uri'], f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa2')
+        self.assertEqual([(op['principal'], op['identity']) for op in self.host.ops if op['op'] == 'world-turn'], [(DID, obs['uri'])])
+        self.assertEqual(self.refused(), {f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa3':
+                                        {'cid': str(block(from_json(request(PLANT, service=self.service, world='ring')))[0]),
+                                         'why': 'addressed to another service'}})
+        answer = json.loads(bridge.answer_path(self.st, bridge.request_source(obs)).read_text())
+        self.assertEqual(answer['outcome']['status'], 'admitted')
 
 
 class Requests(unittest.TestCase):
