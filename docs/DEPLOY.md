@@ -11,6 +11,8 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/build.sh` | builds both, prints the binary's SHA-256, writes `deploy/out/host.sha256` |
 | `deploy/compose.yml` | `delvetalk-host` (`delvetalk-obend serve`), `delvetalk-http`, `delvetalk-bridge`; `delvetalk-interpret` (profile `town`); `delvetalk-ops` |
 | `deploy/compose.hand.yml` | laid over compose.yml: `delvetalk-hand`, the owner's console on its own loopback port, with the root socket and the Delve credentials directory |
+| `deploy/compose.firehose.yml` | laid over compose.yml when an instance publishes its firehose ("Firehose") |
+| `deploy/instances.toml`, `deploy/instance.py` | each instance on the box, and its kit rendered from its name ("A second instance") |
 | `deploy/seed.py` | `world-create` of one object from `world/` |
 | `deploy/backup.sh`, `restore.sh`, `verify.sh` | journal custody |
 | `deploy/smoke.sh` | the newcomer's journey against an origin |
@@ -55,7 +57,9 @@ The listener is public through the edge; it requires no subscriber credential. I
 
 `deploy/compose.yml` publishes `delvetalk-http`'s HTTP port 8765 on the private address 10.10.1.10, and uses
 Docker's default service network. The hand uses 8766. To enable the firehose, add this overlay for
-`delvetalk-http` (its inherited HTTP settings, state/key mounts and HTTP port remain):
+`delvetalk-http` (its inherited HTTP settings, state/key mounts and HTTP port remain); it is
+`deploy/compose.firehose.yml`, its port `DELVETALK_FIREHOSE_PORT` (8767), which an instance whose table says
+`firehose = true` names in `COMPOSE_FILE` ("A second instance"):
 
 ```yaml
 services:
@@ -743,6 +747,56 @@ with `--topic T`, docs/FEDERATION.md section 4), and prints it; it starts nothin
 world's journal is serve's `<state>/ring.journal`, opened at the first op naming `world: ring`; its bridge and
 interpreter, `python3 -m transport bridge --world ring` and `python3 -m transport interpret --world ring`, keep their own state under `<state>/worlds/ring/`. A world name is `[a-z][a-z0-9-]{0,31}`, never `did`, `zulip`, `guest`, `at`, `world`, `me` or `scratch`; a second open of the
 same name is refused. Genesis and the welcome follow as for the town.
+
+## A second instance
+
+The owner, 2026-10-13: "a separate instance on a different domain". One box holds several DelveTalk instances side by
+side, each a compose project of its own: its own data directory and journals, root socket, repository and hand keys,
+ports, backups, watch and origin, and nothing of another's. `deploy/instances.toml` lists them; a name gives every
+path (`deploy/instance.py` `Instance`): `delvetalk`, the live town, keeps the paths it has always had, and any other
+name N lives under `delvetalk-N`:
+
+| what | `delvetalk` (gsb) | `open` (obend) |
+| --- | --- | --- |
+| compose project, `/opt/<project>` | `delvetalk` | `delvetalk-open` |
+| data directory (`DELVETALK_DATA`), the genesis guard's `/towns` | `/var/lib/delvetalk/v15`, `/var/lib/delvetalk` | `/var/lib/delvetalk-open/v1`, `/var/lib/delvetalk-open` |
+| root socket's directory | `/var/lib/delvetalk/root` | `/var/lib/delvetalk-open/root` |
+| repository keys, hand token, Delve credentials | `/etc/delvetalk/{repo,hand.token,delve}` | `/etc/delvetalk-open/{repo,hand.token,delve}` |
+| front, hand, firehose ports (10.10.1.10, 127.0.0.1, 10.10.1.10) | 8765, 8766, 8767 | 8775, 8776, 8777 |
+| origin, opener | `https://gsb.fg-goose.online`, ember's DID | `https://obend.fg-goose.online`, its did:web |
+| backups, their timer, hbox's pull | `/var/backups/delvetalk`, :17, `/tank/delvetalk-backups` | `/var/backups/delvetalk-open`, :27, `/tank/delvetalk-open-backups` |
+| watch | `delvetalk-watch.timer`, topic `watch` | `delvetalk-open-watch.timer`, topic `watch-open` |
+| shared on purpose | the Anthropic key `/etc/delvetalk/anthropic.key` and the watch bot's rc; spend is tallied per state |
+
+    python3 -m deploy.instance check                   # no two instances share a port, a path, an origin or a backup minute
+    python3 -m deploy.instance render open --out kit --image delvetalk:<sha12> --host-image delvetalk-host:<sha12>
+
+`render` writes the instance's kit: `env` (its `/opt/<project>/.env`), the watch and backup units for the workhorse,
+the pull units for hbox, `Caddyfile.site` (its block for the anchor) and `delvetalk.toml` (its state's config, from the
+table's `config`). `compose.yml` and `compose.hand.yml` are one pair of files for every instance and are unchanged by
+this: what differs enters through `.env` alone (`COMPOSE_PROJECT_NAME` outranks the files' `name: delvetalk`), and
+every variable the compose files read is named in every rendered `.env`, so none falls through to a compose default,
+which are the live town's (`tests/test_instances.py`). The proof that the live town is unchanged: `render delvetalk`
+gives byte for byte `deploy/delvetalk-watch.{service,timer}`, the backup units under "Durability and backups",
+the installed gsb Caddy block above and dregg-infra's `hbox/delvetalk-backups/delvetalk-pull-backups.{service,timer}`;
+its `.env` differs from compose's own defaults in `DELVETALK_DATA` (v15, which the carries moved and `.env` names)
+and `DELVETALK_STATION` (on, the owner's word) only, as the workhorse's `.env` does today.
+
+What assumed one instance a box, and what holds each apart now:
+
+- compose's project name and its defaults (the live paths): `COMPOSE_PROJECT_NAME` and a whole `.env` per instance.
+- the genesis guard's `/towns` (`DELVETALK_TOWNS`, default `/var/lib/delvetalk`): each instance's own root, so a
+  second town's genesis neither sees nor is refused by the first's journals; neither can write the other's directory.
+- the watch unit (`DELVETALK_HOME=/opt/delvetalk`), the backup units and the pull: rendered per project; the pull
+  key's `rrsync -ro` pins one directory, so each instance has its own key line on the workhorse and its own pull.
+- the firehose overlay's port: `deploy/compose.firehose.yml` and `DELVETALK_FIREHOSE_PORT`.
+- the firewall (dregg-infra `edge/delvetalk/delvetalk-firewall`) names 8765 and 8766 only: a second front's port must
+  join `DELVETALK-FRONT` (anchor only) and its hand's `DELVETALK-LOCAL`, or the private net reaches it and chooses its
+  own `X-Forwarded-For` key ("Bringing up obend" below).
+- the anchor's Caddy: one site block per origin.
+- the config's delve.town defaults (`summon_handle`, `poster`, `lexicon_authority`, `requests`): inert on an
+  instance whose bridge row is the town's own feed (`transport open --transport feed`), which observes no Delve.
+  Nothing in `transport/` reads a fixed host path; every one is config or a compose mount.
 
 ## Rotating the Anthropic key
 

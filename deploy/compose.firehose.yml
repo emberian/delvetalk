@@ -1,0 +1,12 @@
+# deploy/compose.firehose.yml: the firehose's listener published, laid over compose.yml (docs/DEPLOY.md "Firehose").
+# An instance whose table says `firehose = true` names it in COMPOSE_FILE (deploy/instance.py), and its Caddy block
+# routes /xrpc/com.atproto.sync.subscribeRepos to this port before the general route. Enable it only with the world's
+# signing key in the key directory. The 0.0.0.0 bind is inside the container; the port is published on the private
+# address alone, as the front's.
+services:
+  delvetalk-http:
+    environment:
+      DELVETALK_FIREHOSE_BIND: 0.0.0.0
+      DELVETALK_FIREHOSE_PORT: ${DELVETALK_FIREHOSE_PORT:-8767}
+    ports:
+      - "${DELVETALK_PRIVATE_IP:-10.10.1.10}:${DELVETALK_FIREHOSE_PORT:-8767}:${DELVETALK_FIREHOSE_PORT:-8767}/tcp"
