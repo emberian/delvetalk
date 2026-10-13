@@ -3043,11 +3043,17 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
           if let some r := unviewable cand p.principal (citesOf cand clause.names).objects then
             throw (refuse "lawReads" s!"{x.keyword} {x.name} cites {r}, which you may not view.")
           -- A hand other than the owner holds a bounded share, and all such hands together leave the owner room
-          -- (docs/review/astra-2026-10-12 world 6).
-          unless p.principal == ownerOf o.state || openerActs w p.principal do
-            if (rows.filter (·.owner == p.principal)).length ≥ Limits.placedPerHand then
+          -- (docs/review/astra-2026-10-12 world 6). A thing acting as itself (`thingPrincipal`, an inhabitant
+          -- placing its own rules) places within the share of the hand that owns it, so making things that act of
+          -- themselves never mints a hand.
+          let hand := fun (who : String) => match principalThing who with
+            | some t => ((cand.objects[t]?).map fun x => ownerOf x.state).getD who
+            | none => who
+          let placer := hand p.principal
+          unless placer == ownerOf o.state || openerActs w placer do
+            if (rows.filter (hand ·.owner == placer)).length ≥ Limits.placedPerHand then
               throw { cls := "capacity", object := some id, reason := some "placedPerHand" }
-            if (rows.filter (·.owner != ownerOf o.state)).length ≥ Limits.placedByOthers then
+            if (rows.filter (hand ·.owner != ownerOf o.state)).length ≥ Limits.placedByOthers then
               throw { cls := "capacity", object := some id, reason := some "placedByOthers" }
           if rows.length ≥ (if want then Limits.wantsPerObject else Limits.rulesPerObject) then
             throw { cls := "capacity", object := some id, reason := some (if want then "wantsPerObject" else "rulesPerObject") }

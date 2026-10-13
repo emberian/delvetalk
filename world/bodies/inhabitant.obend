@@ -1,0 +1,152 @@
+layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Card.obend as Card
+import ./Scenes.obend as Scenes
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+import ./Text.obend as Text
+# The inhabitant's body, over RECORD (`kind/inhabitant`): a thing that lives in a place (`haunts`) and keeps
+# its own hours by a tide (`tide`), both fixed at its making. It acts as itself, `@<id>`, the principal a
+# rule its kind's text carries runs under: its kind's `haunts` rule, at its making (`made` writes the line
+# that says where it lives) and whenever its maker arms it again, casts its own `haunt`, which places what
+# its character's body says it does (`haunting`: a rule on the tide at an hour, a rule on its place) under
+# its own name, each taken off first where it stood. Those rules cast its own moves, so what it does is
+# journaled as its own turns, bounded as every rule is (eight a commit, four deep, four placed a hand on a
+# thing), judged by the law of whatever it touches, and replayed without running anything again. It moves
+# by its place's own spells (`enter`, `leave`, `choose`, `emote`, `write`), so a room shows it among who is
+# here and tells who came and went; it never posts. Its own lines (`came`, `went`, a character's) are the
+# strokes its card and its paint are made from; a resident's verb on it is a line by that resident.
+type State = Super.State
+type Done = Scenes.Done
+# A rule it places as itself: on which thing, its name there, its condition and its spell.
+record Haunting:
+  on: String
+  name: String
+  when: String
+  then: String
+form haunt:
+form arm:
+def place(state: State) -> String:
+  Super.field(state, "haunts")
+def tide(state: State) -> String:
+  Super.field(state, "tide")
+def placeOf(state: State, context: Abi.Context) -> Plans.Reference:
+  {world: context.world, object: place(state)}
+# The turn is its own: a rule it carries or placed, run as itself.
+def own(context: Abi.Context) -> Bool:
+  context.principal == "@{context.object}"
+# What its character does, as rules it places as itself: none for a bare inhabitant.
+def haunting(state: State, context: Abi.Context) -> Lists.List<Haunting>:
+  Lists.List.nil()
+# Its rule on its tide, named for it, firing at the clock hour `hour` each day (a tick lands once in each
+# clock hour: the tide ticks every sixty minutes).
+def atHour(state: State, context: Abi.Context, name: String, hour: Nat, then: String) -> Haunting:
+  {on: tide(state), name: "{Text.identifier(context.object)}_{name}", when: "request.method == \"tick\" and request.clock % 1440 >= {natText((hour % 24n) * 60n)} and request.clock % 1440 <= {natText((hour % 24n) * 60n + 59n)}", then: then}
+# As its kind finishes it: the line that says where it lives, which its kind's `haunts` rule answers.
+def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
+  if context.caller != state.kind then false else Super.arming(state, "settled", "made to live at {place(state)}, keeping its own hours by {tide(state)}", context)
+# Its maker arms it again: a line, which the same rule answers.
+def arm(state: State, context: Abi.Context) -> Activity<Bool>:
+  if context.principal != state.maker then Super.armRefused(state, context) else Super.arming(state, "armed", "armed again", context)
+# Its own rules, placed as itself; refused, it says so in a line and is inactive until armed again.
+def haunt(state: State, context: Abi.Context) -> Activity<Bool>:
+  if own(context) == false then Card.refusing(false, {clause: "itself", reading: "{context.object} places its own rules, as itself; its maker arms it again: delvetalk {context.object} arm"}, context) else placing(haunting(state, context), state, context)
+def placing(rules: Lists.List<Haunting>, state: State, context: Abi.Context) -> Activity<Bool>:
+  match rules:
+    case nil(_): Super.armedNow(state, context)
+    case cons(c): replacing(c.head, c.tail, state, context)
+def replacing(h: Haunting, rest: Lists.List<Haunting>, state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.unrule({object: {world: context.world, object: h.on}, name: h.name}):
+    case _: laying(h, rest, state, context)
+def laying(h: Haunting, rest: Lists.List<Haunting>, state: State, context: Abi.Context) -> Activity<Bool>:
+  match world.rule({object: {world: context.world, object: h.on}, name: h.name, when: h.when, then: h.then}):
+    case placed(_): placing(rest, state, context)
+    case refused(r): Super.unarmed(state, h.on, r.clause, r.reading, context)
+# One of its own moves refused to a hand: only its own rules move it.
+def moveRefused(state: State, context: Abi.Context) -> Activity<Nat>:
+  Card.refusing(0n, {clause: "itself", reading: "{context.object} moves by its own rules: delvetalk {tide(state)} rules"}, context)
+# Its own line: by itself, under the verb that says what it did; it is not tended by its own acts.
+def ownLine(state: State, verb: String, text: String, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}, next: add 1n}
+  state.next
+# Whether it is in its place now: its newest coming or going is a coming.
+def present(state: State) -> Bool:
+  match Lists.find(Lists.reverse(Relations.order(state.lines, fn(l: Rows.Line) -> Nat: l.n)), fn(l: Rows.Line) -> Bool: l.verb == "came" || l.verb == "went"):
+    case some(l): l.value.verb == "came"
+    case none(_): false
+# A move into or out of its place: its line's number, or none when the place refused it (and so the turn).
+sum Moved:
+  moved: {n: Nat}
+  stayed: {}
+def number(moved: Moved) -> Nat:
+  match moved:
+    case moved(m): m.n
+    case stayed(_): 0n
+# Coming in: its place's `enter`, as itself; going out, its `leave`. A refusal there is the turn's.
+def comeIn(state: State, text: String, context: Abi.Context) -> Activity<Moved>:
+  moving(state, "enter", "came", text, context)
+def goOut(state: State, text: String, context: Abi.Context) -> Activity<Moved>:
+  moving(state, "leave", "went", text, context)
+def moving(state: State, method: String, verb: String, text: String, context: Abi.Context) -> Activity<Moved>:
+  match world.call::<Done>({object: placeOf(state, context), method: method, argument: Plans.nothing()}):
+    case returned(r): if refusedDone(r.result) then toldBack(r.result, context) else movedLine(state, verb, text, context)
+    case refused(r): Card.refusing(Moved.stayed({}), {clause: r.clause, reading: r.reading}, context)
+    case denied(_): Card.refusing(Moved.stayed({}), {clause: "denied", reading: "{place(state)} does not answer"}, context)
+def movedLine(state: State, verb: String, text: String, context: Abi.Context) -> Activity<Moved>:
+  let written(_) = write {lines: insert {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}, next: add 1n}
+  Moved.moved({n: state.next})
+# A line it writes on its place as itself (the place's `write`): its number there.
+def writeOn(state: State, text: String, context: Abi.Context) -> Activity<Moved>:
+  match world.call::<Nat>({object: placeOf(state, context), method: "write", argument: {text: text}}):
+    case returned(r): Moved.moved({n: r.result})
+    case _: Moved.stayed({})
+# A spell on its place as itself (`choose`, `emote`): the place's answer; a refusal there is the turn's.
+def onPlace(state: State, method: String, argument: Data, context: Abi.Context) -> Activity<Done>:
+  match world.call::<Done>({object: placeOf(state, context), method: method, argument: argument}):
+    case returned(r): r.result
+    case refused(r): Done.refused({clause: r.clause, reading: r.reading})
+    case denied(_): Done.refused({clause: "denied", reading: "{place(state)} does not answer"})
+def refusedDone(done: Done) -> Bool:
+  match done:
+    case refused(_): true
+    case _: false
+def toldBack(done: Done, context: Abi.Context) -> Activity<Moved>:
+  match done:
+    case refused(r): Card.refusing(Moved.stayed({}), r, context)
+    case _: Moved.stayed({})
+# A resident's verb on it: their line, under the verb, and its answer above its card. The thing is tended
+# by it, as a hand's line tends any record.
+def hears(state: State, verb: String, text: String, answer: String, context: Abi.Context) -> Activity<Nat>:
+  let line = {author: context.principal, handle: context.handle, verb: verb, text: text, at: context.height, n: state.next}
+  let written(_) = write {lines: insert line, next: add 1n, tended: set context.clock}
+  let said = Document.text("{answer}\n\n")
+  Card.tell(state.next, Document.concat(said, Super.renderFrom(extend(state, {lines: Relations.insert(state.lines, line, Super.lineKey), next: state.next + 1n, tended: context.clock}), context, 0n, Document.size(said))))
+# A resident's verb while it is away: refused by name, with when it comes back.
+def away(when: String, context: Abi.Context) -> Activity<Nat>:
+  Card.refusing(0n, {clause: "away", reading: "{context.object} is not here now; {when}"}, context)
+# The verbs a hand uses on it (its character's), its own moves to itself, arming to its maker, its doors to
+# its owner; the lines to everyone.
+def verbs() -> String:
+  ""
+def moves() -> String:
+  "haunt"
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  Lists.concat(Lists.concat(Text.words("lines {verbs()}"), if own(context) then Text.words(moves()) else Text.words("")), Lists.concat(if context.principal == state.maker then Text.words("arm") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words("")))
+def methods() -> Lists.List<String>:
+  Text.words("~made ~act")
+def title(state: State) -> String:
+  if state.head == "" then "AN INHABITANT" else state.head
+# What it does, as its card says it (its character's).
+def doing(state: State) -> String:
+  "it keeps its own hours here"
+# Where it is now and what a hand may do with it, the card's last line (its character's).
+def now(state: State, id: String) -> String:
+  if present(state) then "In {place(state)} now.\n" else "Not in {place(state)} now.\n"
+def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
+  Document.text("{title(state)}, of {place(state)}: {doing(state)}. What moves it: delvetalk {tide(state)} rules\n{now(state, id)}{Super.inactiveLine(state, id)}")

@@ -2511,6 +2511,15 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    every door (`cites`, a link door left out) on a card the reader may view onto one they may view, cards in id order,
    and how many things lie in each place; `pathTo`, the shortest way from the square. The reply carries `ways` and
    `root` for a drawing; `/map` draws them (`pages.door_map`). Tests: `test_surfaces.Map`, `test_surfaces.Web`.
+218. **A thing acting as itself is named by its id and places within its owner's share (lane/inhabitants; no edition
+   change).** The station's inhabitants (docs/GENESIS.md "The all-night station") act as themselves (`@<id>`, 5.209)
+   from rules they place on the tide and their place. `Enchant.handleIn`: a line, mark or presence whose principal
+   is a thing acting as itself and holds no handle is named by its id, as `shownName` names it (it read "someone",
+   and a telling's "came in" had no subject); Bend's `Card.handle` shows such a principal by its id too. The
+   placement share (`placedPerHand`, `placedByOthers`, 5.210) counts a rule or want a thing places as itself against
+   the hand that owns the thing, so making things that act of themselves mints no hand; the opener's own are the
+   owner's, as the weather's are. No journal before this has a thing placing as itself, so replay is unchanged. Tests:
+   `test_inhabitants` (a hand's third regular is left inactive by `placedPerHand`; strokes in the live run).
 
 ## 6. Gotchas
 
