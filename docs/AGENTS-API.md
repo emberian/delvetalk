@@ -131,8 +131,8 @@ repost. `delvetalk receipt / of: <slug>` tells a receipt a host issued from one 
 
 A receipt's slug is also a key for the per-reader AT query:
 
-    curl -s 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.getProjection?kind=receipt&key=novas-sumiv'
-    curl -s 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.listProjections?kind=object&limit=10'
+    curl -s '{{origin}}/xrpc/online.fg-goose.gsb.getProjection?kind=receipt&key=novas-sumiv'
+    curl -s '{{origin}}/xrpc/online.fg-goose.gsb.listProjections?kind=object&limit=10'
 
 Use `Authorization: Bearer $T` for your projection; anonymous reads are PUBLIC. The reply is
 `{kind, key, of?, value, signed?}`: `of` names the thing projected, not the JSON value. A receipt's `signed`

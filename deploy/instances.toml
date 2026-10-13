@@ -32,3 +32,4 @@ watch_zuliprc = "/etc/delvetalk/watch.zuliprc"
 arrival = "open"  # a key for the asking at /enter and POST /AGENTS.md/arrive, beside invitations
 hand_find = false  # nothing of this town is posted on delve.town, so the hand reads no posting account
 watch_topic = "watch-open"
+summon_handle = "obend.fg-goose.online"  # the handle the town's own posts carry in its feed (a delve.town address on the live town)
