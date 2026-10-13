@@ -264,8 +264,9 @@ def varied(vars: Lists.List<Edit>, result: Done, said: String, after: State, con
 # What a choice said comes first: above the passage it led to, so the card's budget counts it with the passage, or
 # alone above the room when it ended the visit.
 def told(result: Done, said: String, after: State, context: Abi.Context) -> Activity<Done>:
+  let shown = Spween.rendered(said, readerVars(context.principal, after))
   match seen(after, context):
-    case seen(v): Card.tell(result, if said == "" then Super.render(v.state, context) else if isHere(context, after) then Super.render(saying(said, v.state, context), context) else Document.concat(Document.text("{said}\n\n"), Super.render(v.state, context)))
+    case seen(v): Card.tell(result, if shown == "" then Super.render(v.state, context) else if isHere(context, after) then Super.render(saying(said, v.state, context), context) else Document.concat(Document.text("{shown}\n\n"), Super.render(v.state, context)))
 def saying(said: String, state: State, context: Abi.Context) -> State:
   match here(context, state):
     case some(p): extend(state, {passages: Lists.map(state.passages, fn(q: Passage) -> Passage: if q.id == p.value.at then extend(q, {text: "{said}\n\n{q.text}"}) else q)})
@@ -482,12 +483,12 @@ def headLine(state: State, context: Abi.Context, id: String) -> Document.Documen
   match here(context, state):
     case some(p): Document.text("{count}{passageText(p.value.at, state, context)}Say: delvetalk {id} say / line: <text>. Leave: delvetalk {id} leave.\n{around}")
     case none(_): Document.text("{count}. Enter: delvetalk {id} enter.\n{around}")
-# The passage, then the choices whose guards hold and the variables, as many as fit in what the
+# The passage, its braces read for the reader (Spween.rendered), then the choices whose guards hold and the variables, as many as fit in what the
 # card's room (Card.limit) leaves after the passage and the room's other lines (300 kept for them).
 def passageText(at: String, state: State, context: Abi.Context) -> String:
   match passageAt(at, state):
     case none(_): ", you are here.\n"
-    case some(ps): passageWith(ps.value, state, context, ", you are at {ps.value.id}:\n{ps.value.text}\n{choicesHead(ps.value, state, context)}")
+    case some(ps): passageWith(ps.value, state, context, ", you are at {ps.value.id}:\n{Spween.rendered(ps.value.text, readerVars(context.principal, state))}\n{choicesHead(ps.value, state, context)}")
 # A passage with no choice open keeps its reader; the owner of a scene of prose alone is shown the shape.
 def choicesHead(ps: Passage, state: State, context: Abi.Context) -> String:
   match ps.choices:
