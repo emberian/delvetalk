@@ -3156,7 +3156,33 @@ replaces in the same commit, and this file describes only what is. A merge touch
      (d) A resident's line is quoted whole or not at all (codex host 15), and the station's 200-character emote keeps
      tellings near their 500 and tempts excerpts, which are refused: Ember to decide whether a marked excerpt may
      stand. (e) A translated source word passes imagery (escarcha for a line's frost): the guard compares the
-     strokes' own words; decide whether the tongue's lexicon should carry them. (f) The station's scene marks are
-     named by a 64-hex digest (`station-scene-<digest>-119`) and offered as facts, so a paint citing one shows a hash
-     on a card: the spween lane's marks want a reader's name, or `Strokes.facts` leaves such marks out; check: no
-     fact clause matches test_properties' HASH.
+     strokes' own words; decide whether the tongue's lexicon should carry them. (f) **Scene mark digests: done
+     (Task 5, Codex, lane/cx-tidy; build/test pending with Ember).** `Enchant.Mark.ofRow` projects every
+     `station-scene-*` row to `the scene`, shared by `assemble` and `spanOf`. Strokes JSON, `Strokes.text`, facts,
+     telling exact lines and paints all use that name; the relation key, station's digest chain and genesis refresh
+     keep their real names. No object-id check or second display mechanism. A shown-name field would change the
+     fixed `Rows.Mark` schema shared by retained states and old bodies, requiring carry/replay migrations; the
+     prefix projection preserves that schema and works on old carried rows. The Bend card renderers (`Card`,
+     `Record`, room and bodies) do not print raw scene mark names, so need no parallel replacement. Regressions
+     written first in `tests/test_scene_marks.py`: genesis after stitch, carry/refresh preserving old rows, current
+     and telling strokes, fact expansion, painter request and cached card all checked against test_properties' HASH;
+     an 8,192-character wing, expanded length boundary and adversarial/ordinary mark names on another object.
+     Found while testing, queued (owner: next host lane; check: a bare telling of the station lists its scene marks): a
+     telling's `spanOf` sees no edits of a write holding a kind-2 step (`Ops.writeEdits` returns none for the whole
+     write), so the station's stitch, which amends its law and inserts the mark in one write, tells no mark.
+   - Early v15 paint fallbacks (Task 2, Codex, lane/cx-tidy, investigation incomplete): the deployment logs record
+     one `retrying` then `exact` for each affected key, but `interpret.paint` discarded the host's verdict except
+     its status and key. The original clauses and model replies were not retained. `paint` now also reports
+     `verdicts` for retries and exact submissions (object/version, reason, clause/detail or attempts/next), keeping
+     the existing key lists. The missing diagnostic test failed before this change; 31 Python model/refresh/worker
+     tests pass locally. This is diagnostic work, not a fix of the paint refusal's cause.
+     Queue waiting does not spend an attempt: `Enchant.submitOp` increments only on a submitted transport/rate
+     failure, `rendersOp` only filters by `notBefore`, and reader patience/worker attendance do not settle a render.
+     Carry/check/refresh read exact cards and do not enqueue paints. The observed one-retry sequence and replied
+     calls in the spend ledger support a verifier refusal, but do not identify its clause or establish a carry-specific
+     bug. `tests.test_carry_paint.CarriedPaints` carries a town with an old station scene, refreshes it, then uses
+     serve, `model_mock`, and `interpret.paint` to separate a full 64-render queue crossing patience/worker grace,
+     a clause refusal with one retry, and three transport failures with backoff. These host tests are unrun here;
+     run `python3 -m unittest tests.test_carry_paint -v` against the current build. Outstanding: obtain the original
+     verdict/reply (or a new captured reproduction), add a regression failing on that specific defect, and fix its
+     cause. No Lean, timeout, attempt-limit or verifier changes were made on this evidence.

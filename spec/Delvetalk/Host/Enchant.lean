@@ -29,7 +29,8 @@ structure Line where
   state : String
   on : String := ""
 
-/-- A named moment (a bell's `rung`), by whom and at which entry. -/
+/-- A named moment (a bell's `rung`), by whom and at which entry. `name` is its presentation
+    name; relation keys and scene digests stay in the stored row, never in the painter's strokes. -/
 structure Mark where
   name : String
   handle : String
@@ -406,6 +407,15 @@ def Line.ofRow (w : World) (r : List (String × Data)) (entry : Option Nat := no
   { n := (nat? r "n").getD 0, handle := handleIn w r "handle" "author", verb := (text? r "verb").getD "",
     text := (text? r "text").getD "", entry := entry.getD ((nat? r "at").getD 0), state }
 
+/-- One projection for current and historical marks, including carried four-field rows. A shown-name
+    column would change `Rows.Mark` and require migrations of retained record states and old bodies.
+    Keep that schema: scene stamp keys have a presentation name, independent of the object's id.
+    All consumers (JSON, text, facts and a telling's exact lines) receive only this short name. -/
+def Mark.ofRow (w : World) (r : List (String × Data)) (entry : Option Nat := none) : Mark :=
+  let name := (text? r "name").getD ""
+  { name := if name.startsWith "station-scene-" then "the scene" else name,
+    handle := handleIn w r "handle" "who", entry := entry.getD ((nat? r "at").getD 0) }
+
 def isRelation : Data → Bool
   | .variant "rows" _ => true
   | _ => false
@@ -501,8 +511,7 @@ def assemble (w : World) (reader id : String) (o : Object) : Strokes := Id.run d
   if let some d := text? fs "description" then
     unless d.isEmpty do
       lines := { n := 0, handle := handleIn w fs "keeperHandle" "keeper", verb := "inspirit", text := d, entry := 0, state := "" } :: lines
-  let marks := (rows fs "marks").map fun r =>
-    ({ name := (text? r "name").getD "", handle := handleIn w r "handle" "who", entry := (nat? r "at").getD 0 } : Mark)
+  let marks := (rows fs "marks").map fun r => Mark.ofRow w r
   -- The verbs: the card's spells (its forms, the grown ones among them), the kind's first, then each grown on it
   -- (`Object.verbs`) with its grower and reading.
   let forms := (spellForms seen id o).map fun f => (f.action, oneLine (spellTemplate id f))
@@ -714,7 +723,7 @@ def spanOf (w : World) (id reader asker : String) (picked : Array Touch) : Array
       | "lines", some r =>
         lines := lines.push (Line.ofRow w r (entry := some t.height))
       | "marks", some r =>
-        marks := marks.push { name := (text? r "name").getD "", handle := handleIn w r "handle" "who", entry := t.height }
+        marks := marks.push (Mark.ofRow w r (entry := some t.height))
       | "things", some r =>
         if let some thing := referenceId (.record r) then
           unless made.contains thing do acts := acts.push (act by_ "laid" s!"{by_} laid {thing} down here")
