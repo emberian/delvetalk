@@ -189,7 +189,7 @@ def paged(host, request, field):
 def typed(value):
     """Plain JSON as the host's typed data: text is a label, an integer a natural, an object a record."""
     if isinstance(value, dict):
-        return value if 'tag' in value else {'tag': 'record', 'fields': [{'name': k, 'value': typed(v)} for k, v in value.items()]}
+        return {'tag': 'record', 'fields': [{'name': k, 'value': typed(v)} for k, v in value.items()]}
     if isinstance(value, list):
         return {'tag': 'list', 'items': [typed(v) for v in value]}
     if isinstance(value, bool):

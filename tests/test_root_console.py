@@ -39,6 +39,17 @@ class Shapes(unittest.TestCase):
     def root(self, verb, *flags):
         return self.run_hand('root', verb, *flags)[1]
 
+    def test_the_hands_search_and_root_find_keep_a_carried_receipt_pointer(self):
+        from unittest import mock
+        from transport import root
+        found = {'status': 'resolved', 'kind': 'receipt', 'slug': 'nosap-hodaz', 'cid': 'old',
+                 'carried': {'at': 1400, 'height': 1336, 'world': 'town'},
+                 'message': 'entry 1336 of the world before the carry (town)'}
+        console = hand.Hand(self.state, self.host, TOKEN)
+        with mock.patch.object(self.host, 'send', side_effect=lambda q: found if q['op'] == 'world-resolve' else {'ids': []}):
+            self.assertEqual(console.search(' nosap-hodaz '), found)
+            self.assertEqual(root.find(self.host, console.owner, ' nosap-hodaz ')['receipt'], found)
+
     def test_each_root_act_is_one_world_root_with_its_reason(self):
         lib = self.state.root / 'lib'
         lib.mkdir()

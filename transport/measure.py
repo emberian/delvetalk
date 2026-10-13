@@ -50,10 +50,18 @@ def kind_of(obj, seed):
     return named.split('/', 1)[1] if isinstance(named, str) and named.startswith('kind/') else re.sub(r'/\d+$', '', obj).rsplit('/', 1)[-1]
 
 
+def confirmed_post(line, world):
+    return line.get('what') in ('post', 'posted') and line.get('world') == world and bool(line.get('uri'))
+
+
+def post_time(line):
+    return instant(line['createdAt']) if line.get('createdAt') else line['at']
+
+
 def t0(st):
     """The playtest's T0: the Post of the T+0 invitation the hand drafted (docs/PLAYTEST-2.md §6 step 4); None before."""
     zero = {p.stem for p, d in st.drafts() if (d.get('speak') or {}).get('invitation') == 0}
-    return next((l['at'] for l in st.lines(st.hand_log) if l.get('what') == 'post' and l.get('draft') in zero and l.get('world') == st.world), None)
+    return min((post_time(l) for l in st.lines(st.hand_log) if confirmed_post(l, st.world) and l.get('draft') in zero), default=None)
 
 
 def no_reply(st, observed, entries):
@@ -68,13 +76,19 @@ def no_reply(st, observed, entries):
 
 
 def hand_posts(st):
-    """[(wall seconds, text)] of every draft the hand posted (its log's `post` lines), oldest first."""
+    """[(wall seconds, text)] of every draft the hand confirmed posting, oldest first."""
     drafts = {p.stem: d for p, d in st.drafts()}
-    return [(l['at'], (drafts.get(l.get('draft')) or {}).get('text') or '') for l in st.lines(st.hand_log)
-            if l.get('what') == 'post' and l.get('world') == st.world]
+    return sorted((post_time(l), (drafts.get(l.get('draft')) or {}).get('text') or '') for l in st.lines(st.hand_log)
+                  if confirmed_post(l, st.world))
 
 
 PROMPTED = 600  # seconds after a hand post naming a thing within which an act on it counts as prompted (docs/GENESIS.md)
+
+
+def clock_after(out, clock):
+    if out.get('tag') in ('carried', 'forked'):
+        return (out.get('state') or {}).get('clock', 0)
+    return out.get('to') or clock if out.get('tag') == 'advanced' else clock
 
 
 def wants(entries, posted_at, hand, resident=lambda p: True):
@@ -85,7 +99,10 @@ def wants(entries, posted_at, hand, resident=lambda p: True):
     holding, answered, clock = {}, [], 0
     for x in entries:
         out, ident = x.get('outcome') or {}, x.get('identity') or {}
-        clock = out.get('to') or clock if out.get('tag') == 'advanced' else clock
+        if out.get('tag') in ('carried', 'forked'):
+            holding = {(obj, name): height for obj, wants in ((out.get('index') or {}).get('wanting') or {}).items()
+                       for name, height in wants.items()}
+        clock = clock_after(out, clock)
         for w in x.get('wanted') or []:
             holding.setdefault((w.get('object'), w.get('want')), x.get('height'))
         for w in x.get('unwanted') or []:
@@ -113,7 +130,15 @@ def measures(st, entries=None):
             settings.update(out)
         if out.get('tag') in ('carried', 'forked'):  # a store-installing genesis holds the settings of the world before
             settings.update((out.get('state') or {}).get('settings') or {})
-    obs = st.observations()
+    obs, posted_at, invalid_observations = [], {}, 0
+    for o in st.observations():
+        try:
+            at = instant(o.get('createdAt'))
+        except ValueError:
+            invalid_observations += 1
+            continue
+        obs.append(o)
+        posted_at[o['uri']] = at
     for o in obs:
         names.setdefault(o['author']['did'], o['author']['handle'])
     staff = {settings.get('opener') or c.opener, settings.get('clock') or 'transport', 'world', *c.owner_principals.split()}
@@ -121,11 +146,10 @@ def measures(st, entries=None):
     who = lambda p: names.get(p) or p
     # Wall time: a turn's is the post it answers (the transport's timestamp); the clock's minutes only stand in for a turn
     # no post made. T0 and every first are wall time, so a make 21 s after T0 is 21 s, never a minute's rounding.
-    posted_at = {o['uri']: instant(o['createdAt']) for o in obs}
     first = {}
-    for o in sorted(obs, key=lambda o: o['createdAt']):
+    for o in sorted(obs, key=lambda o: posted_at[o['uri']]):
         if resident(o['author']['did']):
-            first.setdefault(o['author']['did'], instant(o['createdAt']))
+            first.setdefault(o['author']['did'], posted_at[o['uri']])
     start = t0(st)
     start = start if start is not None else min(first.values(), default=None)
 
@@ -142,8 +166,7 @@ def measures(st, entries=None):
         out, ident, height = x.get('outcome') or {}, x.get('identity') or {}, x.get('height')
         p, tag = ident.get('principal'), out.get('tag')
         by_identity[(p, ident.get('intent'))] = height
-        if tag == 'advanced':
-            now_clock = out.get('to') or now_clock
+        now_clock = clock_after(out, now_clock)
         direct = 'delivery' not in x
         creates = [out] if tag == 'created' else out.get('creates') or []
         for cr in creates:
@@ -201,6 +224,7 @@ def measures(st, entries=None):
         next((w for w in ('delvetalk', 'none', 'unclear') if (i.get('reply') or {}).get('raw', '').strip().lower().startswith(w)), 'other').replace('delvetalk', 'spell')
     return {
         'world': st.world, 'names': names, 'height': entries[-1].get('height') if entries else 0, 'clock': now_clock,
+        'invalidObservations': invalid_observations,
         'T0': None if start is None else time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(start)),
         'made': {'count': len(made), 'byKind': count(made, 'kind'), 'byMaker': count(made, 'maker'), 'rows': made},
         'used': {'count': len(used), 'residentMade': len(theirs), 'makers': len({u['maker'] for u in theirs}), 'rows': list(used.values())},
@@ -239,6 +263,7 @@ def table(m):
         ('seconds to the first resident-made thing', first['secondsFromT0'], f"T0 {m['T0'] or 'not yet'}",
          [f"{h}: {v} s from their first post" for h, v in first['byResident'].items()]),
         ('addressed posts with no reply', len(m['noReply']), 'heard by the world, answered with nothing', m['noReply']),
+        ('invalid observation timestamps', m['invalidObservations'], 'skipped', []),
         ('wants answered unprompted', len(w['unprompted']), f"{len(w['prompted'])} prompted (within ten minutes of a hand post naming the thing); {len(w['ignored'])} still wanted",
          [f"{r['object']} {r['want']} by {who(r['by'])}, entry {r['height']} (wanted since {r['since']})" for r in w['unprompted']]
          + [f"still wanted: {r['object']} {r['want']}, since entry {r['since']}" for r in w['ignored']]),

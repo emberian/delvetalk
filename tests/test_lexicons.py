@@ -96,6 +96,48 @@ class Lexicons(unittest.TestCase):
             self.assertTrue(any(p.startswith('$.value.') and p.endswith(': required') for p in
                 record_problems({'kind': kind, 'key': 'self', 'value': {}})))
 
+    def test_a_carried_receipt_projection_matches_its_own_definition_at_maximum_height(self):
+        from transport.lexicons import COLLECTION, records
+        doc = DOCS['online.fg-goose.gsb.getProjection']
+        for height in (1336, (1 << 63) - 1):
+            pointer = {'status': 'resolved', 'kind': 'receipt', 'slug': 'nosap-hodaz', 'cid': 'bafyreia',
+                       'carried': {'at': height, 'height': height, 'world': '/old/town.journal'},
+                       'message': f'entry {height} of the world before the carry (/old/town.journal)'}
+            projection = {'kind': 'receipt', 'key': pointer['slug'], 'of': pointer['cid'], 'value': pointer}
+            with self.subTest(height=height):
+                self.assertEqual(record_problems(projection), [])
+                self.assertEqual(validate(pointer, doc['defs']['carriedReceipt'], doc), [])
+                self.assertEqual(validate(pointer, doc['defs']['receipt'], doc), ['$.height: required', '$.hash: required'])
+        self.assertEqual(records()[COLLECTION, doc['id']]['defs']['carriedReceipt'], doc['defs']['carriedReceipt'])
+        self.assertEqual(doc['defs']['receipt']['required'], ['height', 'hash'])
+
+    def test_a_carried_receipt_projection_refuses_missing_pointer_fields_and_adversarial_values(self):
+        doc = DOCS['online.fg-goose.gsb.getProjection']
+        pointer = {'status': 'resolved', 'kind': 'receipt', 'slug': 'nosap-hodaz', 'cid': 'bafyreia',
+                   'carried': {'at': 1400, 'height': 1336, 'world': '/old/town.journal'},
+                   'message': 'entry 1336 of the world before the carry (/old/town.journal)'}
+        schema = doc['defs']['carriedReceipt']
+        for field in pointer:
+            bad = {k: v for k, v in pointer.items() if k != field}
+            with self.subTest(missing=field):
+                self.assertEqual(validate(bad, schema, doc), [f'$.{field}: required'])
+                self.assertTrue(record_problems({'kind': 'receipt', 'key': pointer['slug'], 'value': bad}))
+        for field in pointer['carried']:
+            bad = {**pointer, 'carried': {k: v for k, v in pointer['carried'].items() if k != field}}
+            with self.subTest(missing_position=field):
+                self.assertEqual(record_problems({'kind': 'receipt', 'key': pointer['slug'], 'value': bad}),
+                                 [f'$.value.carried.{field}: required'])
+        for changes in ({'status': 'receipt'}, {'kind': 'source'}, {'cid': 7}, {'slug': []}, {'message': None},
+                        {'carried': None}, {'carried': {}}, {'carried': {**pointer['carried'], 'at': -1}},
+                        {'carried': {**pointer['carried'], 'height': 0}},
+                        {'carried': {**pointer['carried'], 'height': True}},
+                        {'carried': {**pointer['carried'], 'world': []}}):
+            bad = {**pointer, **changes}
+            with self.subTest(changes=changes):
+                problems = validate(bad, schema, doc, '$.value')
+                self.assertTrue(problems)
+                self.assertEqual(record_problems({'kind': 'receipt', 'key': pointer['slug'], 'value': bad}), problems)
+
     def test_session_response_shapes_are_holder_only_and_nested_by_ref(self):
         ns = 'online.fg-goose.gsb.'
         status = {'session': 'scratch/lab', 'status': 'world', 'expires': 360}

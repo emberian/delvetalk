@@ -483,8 +483,8 @@ class Repo:
         if not key:
             raise Refusal(400, 'InvalidRequest', 'key is required')
         if kind == 'receipt':
-            value = self.entry(host, key, who)['receipt']
-            out = self.projection(host, kind, key, value.get('hash'), value)
+            value = self.entry(host, key, who)
+            out = self.projection(host, kind, key, value.get('hash') or value.get('cid'), value)
         elif kind == 'object':
             parsed = OBJECT_KEY.fullmatch(key)
             if not parsed:
@@ -552,11 +552,11 @@ class Repo:
                 found = {'status': 'unknown', 'message': f"{rkey} names a {found.get('kind')}, not a receipt"}
             if found.get('status') != 'resolved':
                 raise refused(found)
-            return {'status': 'receipt', 'receipt': found['receipt']}
+            return found.get('receipt', found)
         reply = host.send({'op': 'world-entry', 'principal': who, 'hash': rkey})
         if reply.get('status') != 'receipt':
             raise refused(reply)
-        return reply
+        return reply['receipt']
 
     def object(self, host, oid, version, who):
         reply = host.send({'op': 'world-object', 'principal': who, 'object': oid, **({} if version is None else {'version': version})})

@@ -21,6 +21,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import NamedTuple
 
 PDS = 'https://pds.delve.town'
 APPVIEW = 'https://api.delve.town'
@@ -61,6 +62,26 @@ class Failure(Exception):
 
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+
+
+class ATUri(NamedTuple):
+    repo: str
+    collection: str
+    rkey: str
+
+
+def parse_at_uri(uri):
+    """A record URI as bounded repo, collection and record key; no path, query or fragment after the key."""
+    parts = uri.split('/') if isinstance(uri, str) and len(uri) <= 2 * MAX_PARAM + 512 + 7 else []
+    if len(parts) != 5 or parts[:2] != ['at:', '']:
+        raise Failure('bad_at_uri')
+    repo, collection, rkey = parts[2:]
+    if (len(repo) > MAX_PARAM or len(collection) > MAX_PARAM
+            or not re.fullmatch(r'did:[a-z0-9]+:[A-Za-z0-9._:%-]+|[A-Za-z0-9.-]+\.[A-Za-z]+', repo)
+            or not re.fullmatch(r'[A-Za-z0-9.]+', collection)
+            or not re.fullmatch(r'[A-Za-z0-9._~:-]{1,512}', rkey) or rkey in ('.', '..')):
+        raise Failure('bad_at_uri')
+    return ATUri(repo, collection, rkey)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -321,10 +342,8 @@ class Client:
         return self.get('town.delve.feed.searchPosts', q=q, limit=limit, cursor=cursor)
 
     def record(self, at_uri):
-        m = re.fullmatch(r'at://([^/]+)/([^/]+)/([^/]+)', at_uri)
-        if not m:
-            raise Failure('bad_at_uri')
-        return self.get('com.atproto.repo.getRecord', repo=m[1], collection=m[2], rkey=m[3])
+        parsed = parse_at_uri(at_uri)
+        return self.get('com.atproto.repo.getRecord', repo=parsed.repo, collection=parsed.collection, rkey=parsed.rkey)
 
     def resolve_handle(self, handle):
         return self.get('com.atproto.identity.resolveHandle', handle=handle)
