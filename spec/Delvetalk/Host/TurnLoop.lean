@@ -9,6 +9,7 @@ import Delvetalk.Turn
 import Delvetalk.Document
 import Delvetalk.Host.Spell
 import Delvetalk.Host.Surfaces
+import Delvetalk.Host.Tongue
 
 namespace Delvetalk.Host
 open Lean (Json toJson)
@@ -1078,12 +1079,14 @@ def spellTemplate (card : String) (form : Spell.Form) (given : List Spell.Bindin
 def lensTemplate (card : String) (lens : Spell.Field) (value : Option String := none) : String :=
   s!"delvetalk {card} set\n{lens.name}: {value.getD (spellHint lens.kind)}\n"
 
-/-- A card's usage (`Card.help`): every form as a template, then every lens. -/
+/-- A card's usage (`Card.help`): every form as a template, then the `set` spell once with every lens a line under
+    it, so a card's usage grows a line a lens, not a spell. -/
 def spellUsage (card : String) (forms : List Spell.Form) (lenses : List Spell.Field := []) : String :=
   if forms.isEmpty && lenses.isEmpty then s!"{card} takes no spells; reply in words and hob places them." else
   (if forms.isEmpty then "" else "Reply with a spell:\n" ++ String.join (forms.map fun f => "\n" ++ spellTemplate card f)) ++
   (if lenses.isEmpty then "" else
-    "\nTo set a field, reply with one of these (one field a spell):\n" ++ String.join (lenses.map fun l => "\n" ++ lensTemplate card l))
+    s!"\nTo set a field: delvetalk {card} set, then one of these lines (one field a spell):\n" ++
+      String.join (lenses.map fun l => s!"{l.name}: {spellHint l.kind}\n"))
 
 /-- The spell line a reply's spell stands on, for `inputOrigin.command`. -/
 def spellLine (card action : String) : String := s!"delvetalk {card} {action}"
@@ -2928,15 +2931,12 @@ def refuseSpell (w : World) (req : TurnRequest) (object clause reason hint : Str
   return (w', turnReply w' r)
 
 /-- hob's one tail line (docs/VOICE.md "hob") under `?` usage or a badSpell hint of a direct turn,
-    when a `library` card the speaker may see exists: the page that says how a spell is read. Never
-    in a refusal's reason, never twice. -/
+    when a `library` card the speaker may see exists: the page that says how a spell is read, in the
+    speaker's stated tongue (`Tongue.say`). Never in a refusal's reason, never twice. -/
 def hobTail (w : World) (principal text line : String) : String :=
   match w.objects["library"]? with
-  | some lib => if lib.read.permits principal && !text.isEmpty then s!"{text.trimAsciiEnd}\n\n{line}" else text
+  | some lib => if lib.read.permits principal && !text.isEmpty then s!"{text.trimAsciiEnd}\n\n{Tongue.say (Tongue.choose w principal "") line}" else text
   | none => text
-
-def hobUsageLine : String := "hob: how a spell is read: delvetalk library read / page: spells"
-def hobHintLine : String := "hob: the page on this: delvetalk library read / page: spells"
 
 /-- The hash of the entry that made `id`'s current version (its newest touching entry). -/
 def versionReceipt (w : World) (id : String) : String :=
@@ -3694,11 +3694,11 @@ def spellTurn (w : World) (req : TurnRequest) (routed : Option SpellRoute := non
     some (if words then heard w asked ran else ran)
   | .usage object text =>
     some (.ok (w, Json.mkObj [("status", toJson "usage"), ("object", toJson object),
-      ("text", toJson (hobTail w req.principal text hobUsageLine))]))
+      ("text", toJson (hobTail w req.principal text "usage"))]))
   | .read object text extra =>
     some (.ok (w, Json.mkObj ([("status", toJson "usage"), ("object", toJson object), ("text", toJson text)] ++ extra)))
   | .refuse object clause reason hint =>
-    let hint := hobTail w req.principal hint hobHintLine
+    let hint := hobTail w req.principal hint "hint"
     let refused := refuseSpell w req object clause reason hint
     some (if misfitClauses.contains clause then
       (heardTurn w req [object] (heardText req.method req.argument) (some { clause, reason, hint })).getD refused else refused)
@@ -3761,7 +3761,7 @@ def routedOf (w : World) (req : TurnRequest) : Option SpellRoute := do
 /-- The misfit a route is, with its card (`misfitOf`). -/
 def misfitIn (w : World) (req : TurnRequest) : SpellRoute → Option (String × Misfit)
   | .refuse object clause reason hint =>
-    if misfitClauses.contains clause then some (object, { clause, reason, hint := hobTail w req.principal hint hobHintLine }) else none
+    if misfitClauses.contains clause then some (object, { clause, reason, hint := hobTail w req.principal hint "hint" }) else none
   | _ => none
 
 /-- The misfit a direct turn's spell is (`spellTurn`'s `.refuse` of a `misfitClauses` clause), with its
@@ -4147,7 +4147,8 @@ def cardAnswer (w : World) (id reader : String) : String :=
     first for one of its actions (`confirmFor`): then the speaker is offered the spells to send. A question
     (`ask:`, or hob's spell that did not fit) naming fields of the forms offered is offered as what is still
     needed, with the spells that take them; naming none, as one fixed line pointing at the card's spells.
-    Anything else is silence: `none`, a model that could not be asked, the reading's deadline passed. A misfit spell hob read nothing better for is the host's refusal of it. -/
+    Anything else is silence: `none`, a model that could not be asked, the reading's deadline passed. A misfit spell hob read nothing better for is the host's refusal of it.
+    hob's lines are in the speaker's tongue: the one they state, else the one their words are in (`Tongue.choose`). -/
 def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World × Json) := do
   let identity ← sus.getObjVal? "identity"
   let principal ← identity.getObjValAs? String "principal"
@@ -4156,6 +4157,7 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
   let act ← outcome.getObjVal? "activity"
   let card ← act.getObjValAs? String "object"
   let i := (expandInterpretation w outcome).getD Json.null
+  let tongue := Tongue.choose w principal ((i.getObjValAs? String "utterance").toOption.getD "")
   let ctx : Ctx := { principal, intent, object := card, method := "receive",
                      argument := ← decodeData Limits.dataDepth (← activityArgument w act),
                      digest := ← sus.getObjValAs? String "turnRequest", ledger := ← ledgerOf (← sus.getObjVal? "ledger"),
@@ -4183,7 +4185,7 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
     let acts := strings (verdict.getObjVal? "acts").toOption
     let asks := confirmFor w
     if acts.any (fun a => match Spell.parse a with | .spell _ action _ => asks.contains action | _ => false) then
-      return close ("hob: that asks first; send it filled:\n\n" ++ indentSpell ("delvetalk plan\n" ++ "\n".intercalate acts)) none
+      return close (Tongue.say tongue "asksFirst" ++ "\n\n" ++ indentSpell ("delvetalk plan\n" ++ "\n".intercalate acts)) none
     let text := fun (k : String) => (act.getObjValAs? String k).toOption.getD ""
     let argOf := fun (t : String) => match ctx.argument with
       | .record fs => Data.record (fs.map fun (k, v) => if k == "text" then (k, .label t) else (k, v))
@@ -4192,7 +4194,7 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
   if !items.isEmpty && steps.length == items.length then
     let asks := confirmFor w
     if steps.any (asks.contains ·.action) then
-      return close ("hob: that asks first; send it filled:\n" ++ String.join (steps.map fun x => "\n" ++ indentSpell x.spell)) none
+      return close (Tongue.say tongue "asksFirst" ++ "\n" ++ String.join (steps.map fun x => "\n" ++ indentSpell x.spell)) none
     let text := fun (k : String) => (act.getObjValAs? String k).toOption.getD ""
     return ← runHeard w ctx (text "post") (text "reach") steps
   if let some r := (i.getObjVal? "refusal").toOption then
@@ -4202,15 +4204,15 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
   let forms := (((i.getObjVal? "offers").toOption.bind (decodeData Limits.dataDepth · |>.toOption)).bind listOf |>.getD []).filterMap Spell.Form.ofData
   let asked := needs.any fun n => !n.isEmpty && n != "not addressed" && !n.startsWith "model:"
   -- A question hob reads no spell or ask into is answered by the card itself (`cardAnswer`); other words, by silence.
-  let question := ((i.getObjValAs? String "utterance").toOption.getD "").trimAscii.toString.endsWith "?"
+  let question := ["?", "？", "؟"].any (((i.getObjValAs? String "utterance").toOption.getD "").trimAscii.toString.endsWith ·)
   let answered := match kind with | .reply _ => !needs.any (·.startsWith "model:") | .timedOut => false
   if !asked && question && answered then return close (cardAnswer w card principal) none
   if !asked then return close "" none
   let fields := neededFields needs forms
   -- An ask naming no field the card's spells take: none of them fits the words; the card's `?` lists them.
-  if fields.isEmpty then return close s!"hob: none of {card}'s spells takes that; its spells: delvetalk {card} ?\n" none
+  if fields.isEmpty then return close (Tongue.say tongue "noneTakes" [("card", card)] ++ "\n") none
   let taking := forms.filter fun f => f.fields.any (fields.contains ·.name)
-  return close (s!"hob: that still needs {", ".intercalate fields}; send it filled:\n" ++
+  return close (Tongue.say tongue "needs" [("fields", ", ".intercalate fields)] ++ "\n" ++
     String.join (taking.map fun f => "\n" ++ indentSpell (spellTemplate f.card f))) none
 
 /-- Continue a suspended activity (hob's reading of words a card heard is the host's: `resumeHeard`). A

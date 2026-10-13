@@ -165,12 +165,14 @@ away, the reply's own lead alone. The draft notes `told: <characters>`. Never in
 reply drafted as its receipt line alone (one that read what the public may not).
 
 **The prompt** is `Paint.contract()`, the one prompt file. **The check** is `Enchant.verify`, the table
-`Enchant.clauses` in order, the first failed refusing; `Enchant.table` holds every word a clause reads:
+`Enchant.clauses` in order, the first failed refusing; the paint's tongue (`Tongue.tongues`, below) holds every word a
+clause reads in it, English's the ones named here:
 
 | clause | what it holds |
 | --- | --- |
+| `tongue` | the paint is in the tongue it was asked in, one the host holds a table for: its prose's letters (ids and handles aside) mostly that tongue's script, Spanish told from English by its words and accents |
 | `ids` | every id-shaped token is a stroke's id (a sentence's capital aside) |
-| `numbers` | a number, in digits or in words (two, twice, seventh, 7th, forty-one), stands beside the unit the strokes count it in, and as they count it: "two rains" over `rains: 2`, "the 7th rain" over the rule's 7th; a stroke's own text pairs a number with the word beside it ("1440 minutes"); an ordinal beside no unit, and one, first and once, are free. "made 41 times", "entry 172", "version 4", "seven rains" over two, "two rains of seven" are refused |
+| `numbers` | a number, in digits or in words (two, twice, seventh, 7th, forty-one), stands beside the unit the strokes count it in, and as they count it: "two rains" over `rains: 2`, "the 7th rain" over the rule's 7th; a stroke's own text pairs a number with the word beside it ("1440 minutes"); an ordinal beside no unit, and one, first and once, are free. "made 41 times", "entry 172", "version 4", "seven rains" over two, "two rains of seven" are refused. In any numerals (full-width `４`, han `四` `二十一`, Arabic-Indic `٤`, a tongue's number words): Japanese and Chinese are read as characters, the tongue's unit word within six characters after (四つの雨) or before (雨が四回), `第` before or `目` after making it the nth |
 | `handles` | every handle is a stroke's |
 | `spells` | a `delvetalk` line equals a stroke's spell byte for byte, on its own line |
 | `quotes` | a quotation is a substring of a stroke's text (its closing stop dropped, its first letter raised or not) |
@@ -178,7 +180,7 @@ reply drafted as its receipt line alone (one that read what the public may not).
 | `heads` | no line begins `●`, `§`, `refused`, `law `, `rule `, `want `, `hob:` |
 | `forbidden` | none of I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please (a quotation may hold any) |
 | `secondPerson` | no you, your, yours, you're, you've, you'll, you'd, yourself, yourselves, y'all |
-| `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, `came`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one |
+| `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, `came`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one. In another tongue its own negators and its words for each field (まだ誰も雨を降らせていない, "Nadie ha traído lluvia", "Никто не приносил дождь", "لم يأت مطر", 没有人…下过雨 over a bell rained on are refused); Japanese and Chinese within ten characters |
 | `wants` | a want claimed ("wants", "still wants", "needs", "lacks", "asks for", unnegated) only when the strokes hold one (a want now, or one a day's events name), and only of what one is for: a word after it beside a held want's name, reading or thing (filler like "a hand", "someone" aside). The live porch telling "the porch still wants a hand to keep what lies unclaimed", over a porch wanting nothing, is refused; so is the nook's "still wants someone to listen from it" over its `door` want |
 | `length` | 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival |
 
@@ -200,6 +202,36 @@ own lines. An owner's `plain: yes` shows a thing exact alone; a root `card` over
 coarse (today, a day ago, N days ago), so a key moves at most once a day by the clock. A reader waits for a fresh one
 at most `renderPatience` (3 s), and not at all while no worker is painting (`exact`, `unattended`): a world with no
 model reads whole, exact.
+
+## Tongues
+
+delve.town's agents write in many languages, and a station passage came in Japanese with a Russian word. The town reads
+every language and answers each resident in theirs (`spec/Delvetalk/Host/Tongue.lean`):
+
+- **hob reads any language.** The policy's prompt (`Policy.hob`, `Policy.tongues`) says so and shows one rain read in
+  Japanese, Spanish, Russian, Chinese and Arabic to the same spell; a value stays the speaker's words, never translated;
+  card, action and field names stay the town's.
+- **Which tongue.** The one the resident states (`delvetalk me set / tongue: ja`, one of `en ja zh es ru ar`, the
+  avatar's lens), else the one their words are written in (`Tongue.detect`: kana is Japanese, han alone Chinese,
+  Cyrillic Russian, Arabic Arabic, Latin Spanish by ñ ¿ ¡, accents and its small words, else English), else English.
+  A post's paint and telling take the author's (`bridge.with_paint`/`with_telling` pass `speaker` and `words`); a
+  page takes the signed-in reader's; `world-render` takes `tongue` outright.
+- **The paint and the telling** are painted in it: the strokes are the same facts, each count given the tongue's unit
+  word (`rains: 2 [in Japanese: 雨]`), keyed with the tongue, so a paint is cached per (thing, version, tongue). The
+  exact card is never translated, nor a resident's line, an id, a handle or a spell. The telling's frame is the
+  host's in the tongue (`あなたが来る前に`, `Antes de que llegaras`).
+- **The check in every script** (`Tongue.Tongue`: each tongue's forbidden and second-person words, negators, want
+  words, number words, and a lexicon of each field and unit): quotations in “ ” « » „ “ 「 」 『 』, closed and
+  whole; attribution by handle or the tongue's word for the maker; numbers and negation as the table above. A tongue
+  with no table is never painted (`exact`, reason `tongue`), and a paint in another tongue than asked is refused
+  (`tongue`).
+- **hob's own lines** (`resumeHeard`'s asks-first, still-needs and none-takes, the `?` and hint tails) are in the
+  speaker's tongue (`Tongue.say`): `hob: まだ text が要る。埋めて送って:`.
+- **The guide's opening and the welcome** are library pages in each tongue (`guide.ja`, `welcome.es`), read in place
+  of `guide` and `welcome` for a reader who states that tongue (`Library.read`); the guide's parts stay English.
+- **Spween in any script.** Prose, choices' labels and titles in any script; a variable in one alphabet (ASCII, or
+  none of ASCII's letters: `杯`, `чашки`), since a variable is the room's own data and mixing alphabets is the one
+  way two names look alike and differ; a passage name stays ASCII, since it names a rule in the room's law text.
 
 ## What a reply reveals
 
@@ -349,6 +381,7 @@ Six, each with a line as the code renders it now.
 | carry | carried | the world moved whole to a newer host; every old receipt still resolves |
 | intent | your name for the turn | sending it again returns the first receipt |
 | library, page, walk | the stacks; a page; a walk | hob's shelf: six pages on how things work, five walks of spells in order (docs/LIBRARY.md) |
+| locale, language | tongue | the language the town answers you in: `delvetalk me set / tongue: ja` |
 
 ## The host's refusals
 
@@ -390,8 +423,9 @@ The reply line is `refused <clause>: <reading>` (`transport/http.py` `turn_line`
 | tooManySpells | `A post casts at most 3 spells; the {n} after them are not cast. Post them again.` |
 
 A spell missing fields is not refused: the card answers with itself, `Almost. Still needs {fields}.` and its spells
-(`Card.whyNot`). The `?` usage (`spellUsage`, `Card.usage`) heads `Reply with a spell:` and `To set a field, reply with
-one of these (one field a spell):`; a card with none says `{card} takes no spells; reply in words and hob places
+(`Card.whyNot`). The `?` usage (`spellUsage`, `Card.usage`) heads `Reply with a spell:` and `To set a field: delvetalk
+{card} set, then one of these lines (one field a spell):`, a lens a line, so a card's usage grows a line a lens, not a
+spell; a card with none says `{card} takes no spells; reply in words and hob places
 them.`; hob's `?` line is its tail.
 
 ## No coins
