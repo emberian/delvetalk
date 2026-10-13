@@ -11,7 +11,6 @@ the did:web façade (transport/repo.py) answers the journal-derived collections 
 reader's projection is written. Without the authorizing flag the run reads and prints what it would write;
 with it, `post.record_writer` writes what changed since the last run and deletes what is gone.
 """
-import hashlib
 import json
 import time
 import urllib.parse
@@ -19,6 +18,7 @@ from pathlib import Path
 
 from transport.delve import Client, Failure, canonical, http_transport
 from transport.host import PUBLIC, place, plain
+from transport import records as record_plan
 
 NS = 'online.fg-goose.gsb.'
 CARD, PAGE, INDEX, ANSWER = NS + 'card', NS + 'page', NS + 'index', NS + 'answer'
@@ -141,22 +141,18 @@ def signed_checkpoint(st, fetch):
         return None, str(error)
 
 
-def digest(value):
-    return hashlib.sha256(canonical(value).encode()).hexdigest()
+def fingerprint(value):
+    """The index's height alone moving is no change."""
+    return record_plan.digest({**value, 'height': None} if value.get('$type') == INDEX else value)
 
 
 def plan(st, now):
-    """-> (writes, deletes, ledger): the records whose value changed since the ledger's last write, and the keys
-    the ledger holds that the world no longer shows. The index's height alone moving is no change.
-    An unavailable checkpoint stays held; an available one also follows every changed index."""
-    ledger = json.loads(st.mirror.read_text()) if st.mirror.exists() else {}
-    held = {f'{c} {k}': v for (c, k), v in now.items()}
-    same = lambda key, v: ledger.get(key) == digest({**v, 'height': None} if v.get('$type') == INDEX else v)
-    writes = {key: v for key, v in held.items() if not same(key, v)}
+    """-> (writes, deletes, ledger): the mirror's shared digest plan. An unavailable checkpoint
+    stays held; an available one also follows every changed index."""
     checkpoint = f'{CHECKPOINT} self'
-    if f'{INDEX} self' in writes and checkpoint in held:
-        writes[checkpoint] = held[checkpoint]
-    deletes = [key for key in ledger if key not in held and key != checkpoint]
+    writes, deletes, ledger = record_plan.plan(st.mirror, now, fingerprint, retain=(checkpoint,))
+    if f'{INDEX} self' in writes and (CHECKPOINT, 'self') in now:
+        writes[checkpoint] = now[CHECKPOINT, 'self']
     return writes, deletes, ledger
 
 
@@ -173,31 +169,8 @@ def run(st, host, writer=None, sleep=lambda _: None, limit=200, fetch=http_trans
     status = {'checkpoint': why} if checkpoint is None else {}
     if writer is None:
         return {'dry_run': True, 'writes': sorted(writes), 'deletes': sorted(deletes), **status}
-    index = f'{INDEX} self'
-    manifest = writes.pop(index, None)
-    checkpoint_key = f'{CHECKPOINT} self'
-    checkpoint = writes.pop(checkpoint_key, None)
-    done = []
-
-    def put(key, value):
-        collection, rkey = key.split(' ', 1)
-        writer(collection, rkey, value)
-        if value is None:
-            ledger.pop(key, None)
-        else:
-            ledger[key] = digest({**value, 'height': None} if collection == INDEX else value)
-        st.write(st.mirror, ledger)
-        done.append(key)
-    for key, value in list(writes.items())[:limit]:
-        put(key, value)
-    for key in deletes[:max(0, limit - len(done))]:
-        put(key, None)
-    left = len(writes) + len(deletes) - len(done)
-    if manifest is not None and left == 0:  # the manifest moves only once everything it lists is there
-        put(index, manifest)
-    if checkpoint is not None and left == 0:
-        put(checkpoint_key, checkpoint)
-    return {'written': done, 'left': left + ((manifest is not None) + (checkpoint is not None) if left > 0 else 0), **status}
+    return {**record_plan.put_records(st, st.mirror, writes, deletes, ledger, writer, fingerprint,
+                                      limit=limit, final=(f'{INDEX} self', f'{CHECKPOINT} self')), **status}
 
 
 def command(st, a, out, client=None, fetch=http_transport):

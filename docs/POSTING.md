@@ -51,6 +51,16 @@ same collection and rkey, bytes and CID (ATPROTO §1). Equal CIDs verify bytes a
 copying does not retarget a strongRef or preserve an overwritten version. Book and paint must use immutable
 versioned keys and retain every referenced version when they land.
 
+**Lexicon publication: the owner's step.** The live `_lexicon.gsb.fg-goose.online` TXT names the posting account
+`did:plc:6amo7col5h4ciq2gpm5eur7b`. From the repository, the owner reviews `python3 -m transport lexicons`
+(the offline inventory, exit 2), and may check DNS with the printed `dig +short TXT _lexicon.gsb.fg-goose.online`.
+When the owner chooses to publish, the same command takes `--authorized` and the intended `--state DIR` (or
+`DELVETALK_STATE`). The configured `credentials` must authenticate as `lexicon_authority`; the session DID is
+checked before any putRecord. Each value is the lexicon document plus the publication `$type`, keyed by its NSID.
+Account-wide digests remember successful writes; unchanged values are skipped, changed ones replaced. Removing a
+lexicon file never deletes its published record. No service or deployment step runs publication or starts the
+mirror or request poller. ATPROTO §5 defines the exact output and ledger.
+
 **2. A preview: `try`, and `if:`.** `delvetalk try` with spells indented under it (an indented spell is a
 quotation and never casts) is `world-try` of them: the turn exactly as `world-turn` runs it, settling pass and all,
 with the write switched off (one program, not a simulation). It answers what they would do: admitted or refused with

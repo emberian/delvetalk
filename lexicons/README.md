@@ -51,9 +51,17 @@ the reference. Book and paint must retain their cited versions under immutable v
 | `online.fg-goose.gsb.getEntry` | query, CAR out (built, L5) | service auth; the entry's principal only; one entry block rooted at its CID | no |
 | `online.fg-goose.gsb.openSession`, `.getSession`, `.listSessionRecords` | procedure, queries (built, L6) | method-bound service auth; the holder is `iss`, judged by the host | no: returned, never written |
 
-Authority: the NSIDs belong to whoever controls `gsb.fg-goose.online`, which the owner does; publication is
-`_lexicon.gsb.fg-goose.online` TXT pointing at the posting account `ember.delve.town`
-(`did:plc:6amo7col5h4ciq2gpm5eur7b`) and `com.atproto.lexicon.schema/<nsid>` records there (docs/ATPROTO.md §5).
+Authority: the owner controls `gsb.fg-goose.online`. The live, verified `_lexicon.gsb.fg-goose.online` TXT is
+`"did=did:plc:6amo7col5h4ciq2gpm5eur7b"`, naming the posting account `ember.delve.town`.
+`python3 -m transport lexicons` reads every schema file fresh, in NSID order, and prints the TXT check command,
+canonical JSON lines `{collection, rkey, cid, bytes}`, then `{count, did}`; `bytes` is the DAG-CBOR block length.
+It exits 2, reads no credentials, writes no ledger and opens no socket. Each publication value preserves the
+complete document and adds `$type: "com.atproto.lexicon.schema"`; `id` equals the NSID record key.
+The owner chooses when to add `--authorized` with `--state DIR` or `DELVETALK_STATE`. The credential session must
+match `lexicon_authority` (default the TXT's DID) before any putRecord in its own repo. The account-wide ledger
+`<state>/lexicons/<URL-encoded authority DID>.json` records successful value digests and skips unchanged values.
+Publication never deletes: a removed file stays published. No service starts publication, the mirror or request
+poller (docs/ATPROTO.md §5, docs/POSTING.md).
 
 `act` and `try` take one untagged `defs#call`, exactly `{spell}` or `{object, verb, fields?}`;
 `plan` takes 1..8 `defs#planCall` spells. The shared wire judge enforces exclusive call forms and

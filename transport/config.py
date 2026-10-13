@@ -47,7 +47,8 @@ class Config:
                               "pds.delve.town's repos and verified claims; at most 256 non-delve-PDS participants per poll")
     station: bool = field(False, "a carry's refresh makes the all-night station on a town that lacks it, as genesis "
                           "--with-gas-station makes it (deploy/genesis.py gas_station); the owner's word, on in the live .env")
-    credentials: str = field('~/.config/delvetown/credentials.json', "the Delve posting account's credentials, read only to post")
+    credentials: str = field('~/.config/delvetown/credentials.json', "the posting account's credentials, read only for authorized posts and record writes")
+    lexicon_authority: str = field('did:plc:6amo7col5h4ciq2gpm5eur7b', "the DID named by _lexicon.gsb.fg-goose.online TXT; lexicons refuses a session for any other DID")
     repo_keys: str = field('/etc/delvetalk/repo', "the directory of the repositories' signing keys, <world>.key; unsigned without one")
     backups: str = field('/var/backups/delvetalk', "backup.sh's destination, whose newest tarball and last verify the probe reads")
     anthropic_key_file: str = field('', 'the file holding the Anthropic API key (model_auth key)')

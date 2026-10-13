@@ -513,13 +513,42 @@ recurse [lexicon "Publication and Resolution"].
 
 **Authority.** The group `online.fg-goose.gsb.*` belongs to whoever controls `gsb.fg-goose.online` [nsid],
 which the owner does. Hyphens are allowed inside authority segments; the final names here are alphabetic.
-The owner adds this exact record, pointing to the posting account `ember.delve.town`:
+The TXT record is live and verified (2026-10-12), pointing to the posting account `ember.delve.town`:
 
     _lexicon.gsb.fg-goose.online.   TXT   "did=did:plc:6amo7col5h4ciq2gpm5eur7b"
 
-Then the mirror writes each file as `com.atproto.lexicon.schema/<nsid>` in that account, as delve.town does.
-The posting account, not the did:web repository: the signed tree stays a function of the journal and epoch ledger, and the authority
+`python3 -m transport lexicons` prepares every JSON file under `lexicons/online/fg-goose/gsb/`, sorted by NSID,
+as `com.atproto.lexicon.schema/<nsid>` in that account [lexicon "Publication and Resolution"]. Each value is the
+complete lexicon document with `$type: "com.atproto.lexicon.schema"` added; `id` equals its record key. Publication
+uses the posting account; the did:web signed tree stays a function of the journal and epoch ledger, and the authority
 sits on a did:plc that survives a move of host.
+
+The default is an offline dry run, exit 2. It reads files, opens no socket, reads no credential and writes no ledger.
+It prints the exact TXT check command (without running it), then one canonical JSON line per schema and a final
+count/DID summary. `cid` hashes the value's canonical DAG-CBOR through `transport.atproto.cbor`; `bytes` is that
+block's byte length. The full local inventory is printed every dry run, including schemas already in the ledger.
+Example first record and final summary for the current 18 files (the intervening 17 record lines are omitted here):
+
+```text
+dig +short TXT _lexicon.gsb.fg-goose.online
+{"bytes":1184,"cid":"bafyreictrvq6zusqkmjxnehvjpsm7lhkno2ydluzadraip2nr4ekcveyq4","collection":"com.atproto.lexicon.schema","rkey":"online.fg-goose.gsb.act"}
+{"count":18,"did":"did:plc:6amo7col5h4ciq2gpm5eur7b"}
+```
+
+The owner decides when to publish, after reviewing that dry run and TXT. Publication requires `--authorized` and
+`--state DIR` (or `DELVETALK_STATE`); no deploy, compose service, timer, test or document step invokes publication
+against a live account. `lexicon_authority` defaults to `did:plc:6amo7col5h4ciq2gpm5eur7b`, overridden by
+`<state>/delvetalk.toml` or `DELVETALK_LEXICON_AUTHORITY`. `credentials` selects the posting credential. Before any
+record write, `post.record_writer` authenticates and refuses unless the session DID equals that authority, even
+on an unchanged run. Every putRecord addresses only the session's own repo.
+
+The mirror and publication share `transport.records.plan` and `put_records`: canonical-value SHA-256 digests,
+with the ledger saved atomically after each successful write. Publication's account-wide ledger is
+`<state>/lexicons/<URL-encoded authority DID>.json`; selecting another world shares it, selecting another authority
+uses its own ledger. The first publication writes every file, a second writes none, and changed values alone
+are rewritten. A failed record remains pending for retry. **Publication never deletes:** removing a file leaves
+its published record and digest held. Authorized output reports the written keys, remaining count and authority.
+This command starts no daemon; the mirror and request poller remain off by default.
 
 Owner decision, 2026-10-12: `delvetalk.town` cannot be bought; the group moved to `online.fg-goose.gsb`.
 
@@ -529,7 +558,7 @@ The six projection value definitions live in `getProjection`; `kind` selects the
 adding a `$type` to host replies. The list query references the same projection definition.
 
 **Decision:** one NSID group, `online.fg-goose.gsb.*`, under the owner's `gsb.fg-goose.online`;
-point `_lexicon.gsb.fg-goose.online` at the posting account and publish there; validated by test.
+the TXT is live and publication is prepared for that account; the owner chooses when to authorize it.
 
 ## 6. What stays non-AT
 
