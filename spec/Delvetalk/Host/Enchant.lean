@@ -209,15 +209,27 @@ def quoted (t : String) : String := "“" ++ t ++ "”"
 /-- The tongue the strokes are painted in, English for a code with no table (`paintOf` paints none such). -/
 def Strokes.speech (s : Strokes) : Tongue := (Tongue.find? s.tongue).getD Tongue.english
 
-/-- The names imagery may not use, as the painter is told them: its kind, what it records (marks), does (verbs), counts
-    (units) and wants, in English and in the tongue it is painted in. The check (`imageryFault`) blocks these and more
-    (state verbs, handles, ids, the words of its lines, seed, head and about its voice does not hold). -/
+/-- A resident's line as the painter is shown it: in the quotation marks its paint writes («…» for Russian), so the
+    painter has one pair to copy, never a pair to nest inside another. -/
+def Strokes.quote (s : Strokes) (t : String) : String :=
+  match s.speech.quotes.splitOn " " with
+  | [o, c] => o ++ t ++ c
+  | _ => quoted t
+
+/-- The words imagery may not use, as the painter is told them: its kind, what it records (marks), does (verbs), counts
+    (units) and wants, in English and in the tongue it is painted in, and the words of its lines, seed, head and about
+    its voice does not hold. The check (`imageryFault`) blocks these and more (state verbs, handles, ids). -/
 def Strokes.notImagery (s : Strokes) : List String :=
   let t := s.speech
   let kindName := (s.kind.splitOn "/").getLast?.getD ""
   let units := s.quantities.filter (!·.ordinal) |>.map (·.unit)
   let names := [kindName] ++ s.verbs.map (·.name) ++ s.marks.map (·.name) ++ units ++ s.wants.map (·.name)
-  (names ++ (if t.code == "en" then [] else names.flatMap t.wordsFor)).filter (fun w => !w.isEmpty && !w.contains ' ') |>.eraseDups
+  -- And the words of its lines, seed, head and about that its voice does not hold, as plainly as a space cuts them.
+  let plain := fun (text : String) => (text.splitOn " ").map fun w => Tongue.lower (String.ofList (w.toList.filter Char.isAlphanum))
+  let voice := plain s.voice
+  let source := (([s.head, s.about] ++ s.fields.map (·.2) ++ s.lines.map (·.text)).flatMap plain).filter fun w =>
+    w.length ≥ 2 && !voice.contains w && !Tongue.english.small.contains w && !w.all Char.isDigit
+  (names ++ (if t.code == "en" then [] else names.flatMap t.wordsFor) ++ source).filter (fun w => !w.isEmpty && !w.contains ' ') |>.eraseDups
 
 /-- A count as the painter of tongue `t` reads it: beside it the unit word to write it with in `t`, or, where `t`
     has none, the English one. -/
@@ -324,7 +336,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
     part "Lines written, oldest first:" (s.lines.map fun l =>
       let tag := ", ".intercalate ([l.verb, l.state].filter (!·.isEmpty))
       let on := if l.on.isEmpty then "" else s!" on {l.on}"
-      (if l.handle.isEmpty then "someone" else l.handle) ++ on ++ (if tag.isEmpty then "" else s!" ({tag})") ++ ": " ++ quoted l.text) ++
+      (if l.handle.isEmpty then "someone" else l.handle) ++ on ++ (if tag.isEmpty then "" else s!" ({tag})") ++ ": " ++ s.quote l.text) ++
     part "Marks:" (s.marks.map fun m => if m.handle.isEmpty then m.name else s!"{m.name}, by {m.handle}") ++
     part "Counts:" (s.quantities.map (·.textIn s.speech)) ++
     part (if s.day.isSome then "What still wants a hand, turning daily:" else "What it wants now:") (s.wants.map fun x =>
@@ -1299,7 +1311,7 @@ def frameWords : List String :=
    "maker", "coiner", "words", "in", "that", "and", "y", "и", "و", "el", "la",
    "dijo", "escribió", "dice", "escribe", "сказал", "сказала", "сказало", "написал", "написала", "написало", "пишет", "говорит",
    "كتب", "كتبت", "قال", "قالت", "قاله", "يقول", "يكتب", "كما",
-   "が", "は", "と", "と言った", "と書いた", "と書き込んだ", "が言った", "が書いた", "が書き込んだ", "说", "说过", "写下", "写下过", "写道", "由"]
+   "が", "は", "を", "と", "と言った", "と書いた", "と書き込んだ", "が言った", "が書いた", "が書き込んだ", "说", "说过", "写下", "写下过", "写道", "由"]
 
 /-- Quoted words have only an attribution frame; imagery is explicitly a simile fragment. This is a
     syntactic guard, not a semantic proof that arbitrary imagery cannot suggest a condition. A simile may use its
@@ -1324,7 +1336,7 @@ def imageryFault (s : Strokes) (text : String) : Option String :=
     if p.spans.any (!·.isEmpty) then
       (ws.find? fun w => !framed w).map fun w => s!"{w}: a quotation has only a said/wrote attribution frame"
     else
-      let similes := ["Like ", "As if ", "Como ", "Как ", "مثل ", "كأن", "كما ", "まるで", "如"]
+      let similes := ["Like ", "As if ", "Como ", "Как ", "مثل ", "كأن", "كما ", "まるで", "如", "像", "仿佛", "好像", "宛如"]
       match similes.find? (line.startsWith ·) with
       | none => some "imagery must be a simile fragment, or quoted as said"
       | some marker =>
@@ -1403,7 +1415,8 @@ def clauses : List Clause :=
            match before.head?.orElse fun _ => after.head? with
            | some who => if authors.any (fun a => a == who.toLower || (aliases a).any ((aliases who).contains ·)) then none
                else some s!"“{q}” is {authors.head!}'s, not {who}'s"
-           | none => (s.linesQuoted (quoteSpan spans[k]!)).head?.map fun l => s!"“{q}” is {l.handle}'s line, uncredited" },
+           -- A thing's own line on its own card is its own words there (the regular's "came in at the hour").
+           | none => ((s.linesQuoted (quoteSpan spans[k]!)).filter (·.handle != s.object)).head?.map fun l => s!"“{q}” is {l.handle}'s line, uncredited" },
    { name := "heads", holds := "no line begins a receipt's stamp, a refusal, a law, rule or want line, or hob:",
      fails := fun _ p => firstSome p.lines fun line => heads.find? (line.toLower.startsWith ·) },
    { name := "forbidden", holds := "no I, me, my, thanks, sorry, welcome or please outside a quotation, in the paint's tongue",
@@ -1675,10 +1688,10 @@ def refusalNote (s : Strokes) (clause detail paint : String) : String :=
       s!"The last paint came to {n} characters once the host's clauses replaced its references, {n.toNat! - s.limit} over {s.limit}, and was thrown away: each cited id costs its whole clause as listed in Facts (yours: {", ".intercalate costs}; quotations: {", ".intercalate (quoted.map toString)} characters). Drop cited ids or quoted words worth more than {n.toNat! - s.limit} characters (the shortest clauses that matter, at most one short quoted line), and {again}, under {s.limit} characters with the clauses counted.{shown}"
     else s!"The last paint was {detail} characters and was thrown away: paint it again, under {s.limit} characters, the spell included."
   | "facts" => s!"{last}the facts check rejected a reference ({detail}). A factual line contains only [[id,...]]; use only ids from this paint's Facts, with no surrounding prose. The host supplies the clauses; {again}.{shown}"
-  | "imagery" => s!"{last}the imagery check rejected prose ({detail}): a word named there, or any listed under “Never in imagery”, in any form or language, stays out of imagery. Put factual claims on separate [[id,...]] lines. Other lines are a simile fragment (its voice's words may serve; no state verb, and no word of a line, seed or head, nor the name of a count, mark, verb or want), or exact quotations with only the writer's handle and said/wrote as the frame; {again}.{shown}"
+  | "imagery" => s!"{last}the imagery check rejected prose ({detail}): a simile is a noun phrase (Like frost on a coat), with no verb and no that, which or who clause, drawn from its voice ({if s.voice.isEmpty then "plain" else s.voice}) or from words found nowhere in the strokes, never from a line, seed, head or about; a word named there, or any listed under “Never in imagery”, in any form or language, stays out of imagery. Put factual claims on separate [[id,...]] lines. Other lines are a simile fragment (its voice's words may serve; no state verb, and no word of a line, seed or head, nor the name of a count, mark, verb or want), or exact quotations with only the writer's handle and said/wrote as the frame; {again}.{shown}"
   | "tongue" => s!"{last}it was not written in {s.speech.english}, or not in it alone. Paint it again from the Facts above, imagery and quotation frames in {s.speech.english}, with no page frame. Select [[id,...]] for facts; host clauses remain in the catalogue language, and quoted words, ids, handles and spells stay as supplied.{shown}"
   | "numbers" => s!"{last}a number was wrong ({detail}). Select the counted fact with [[id,...]] instead of wording a count. Any number left in imagery must pass the existing counted-unit check, and counts and units themselves are not imagery; {again}.{shown}"
-  | "quotes" => s!"{last}a quotation is not in the strokes ({detail}). Quote a resident's line whole, or a verbatim part of other historical stroke text, untranslated, with only a said/wrote attribution frame. A head or name may only be quoted as historical words, never asserted as state; {again}.{shown}"
+  | "quotes" => s!"{last}a quotation is not in the strokes ({detail}). The quotation marks hold the quoted words alone, one pair, never nested: the handle and said stand outside them. Quote a resident's line whole, or a verbatim part of other historical stroke text, untranslated, with only a said/wrote attribution frame. A head or name may only be quoted as historical words, never asserted as state; {again}.{shown}"
   | "attribution" => s!"{last}a quotation is credited wrongly or not at all ({detail}). Put the writer's handle beside each resident's line. Credit other historical words only to their author, a coinage to its coiner. Each quotation has only a said/wrote frame; {again}.{shown}"
   | "wants" => s!"{last}it claimed a want ({detail}). Select only an offered want fact with [[id,...]]; never assert the want or its reading in model prose, or infer what is awaited or missing; {again}.{shown}"
   | "negation" => s!"{last}it said something is missing or never was ({detail}). Do not infer absence from empty fields or historical words. Select an offered fact with [[id,...]], without rewording it or adding a negative claim; {again}.{shown}"

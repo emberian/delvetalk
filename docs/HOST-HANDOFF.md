@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/cx-world: 5.219–5.225, replay edition 14; lane/authority: 5.209–5.214, replay edition 13; lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no state version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-13 (lane/paintfix: 5.228, no edition change; lane/cx-world: 5.219–5.225, replay edition 14; lane/authority: 5.209–5.214, replay edition 13; lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no state version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -2959,6 +2959,44 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    owner's, as the weather's are (`checkShare`, 5.221's, for rules, wants and verbs alike). So does what such a thing
    makes count for its owner's `objectsPerPrincipal` (5.226; `objectCapacity`): the regular's coin is the opener's. No journal before this has a thing placing as itself, so replay is unchanged. Tests:
    `test_inhabitants` (a hand's third regular is left inactive by `placedPerHand`; strokes in the live run).
+228. **True paints pass the citation contract (lane/paintfix; 5.225's regression; no journal derivation or replay
+   edition change).** After 5.225 the inhabitants lane saw every paint it asked for refused. Measured: bell/1, the
+   porch's telling, the station's telling and station/regular on a fresh genesis `--with-gas-station`,
+   claude-haiku-5-5, 2 reps x 6 tongues: English 0/8, 25 of 48 in all, 16 on the first try. The refused paints named the causes. The contract never said English is the tongue
+   when the strokes name none (the painter refused, or wrote its reasoning as lines), and English had no retry. The
+   verifier refused true paints: frame words it did not know (と書き込んだ, 「…」とthe townが言った, 由…写下, сказала,
+   قالت, قاله, كما قال, two quotations joined by and), the town named in the paint's tongue (町, el pueblo), a
+   frame-only line counted against its tongue by its quotation mark and "the town", a simile borrowing its voice
+   ("frost" on the regular) blocked because a line repeats the word, كأن folding to كان, 像 not a simile, a thing's own
+   line on its own card, and a quotation framed by the verb that wrote it (`station/regular emoted “…”`). The strokes handed the
+   painter a coiner's DID to credit, which a paint could then show; and the station's telling ran past 500 once its
+   clauses were expanded, which the retry was not told.
+   `Enchant`: every non-model refusal retries once, in every tongue (`submitOp`). `frameWords` per tongue; a quoted
+   line's own verb (`inflections`) frames it; `Tongue.roles` gains the town's word per tongue, credited to
+   `townName` by `attribution`; a Japanese or Chinese run made up whole of frame words and names is a frame. The
+   simile marker is cut before the vocabulary check; source words (head, about, seed, lines) its voice holds are free,
+   names (kind, field, mark, verb, unit, want) stay blocked and are now met by the tongue's stem (المطر, дождём,
+   lluvias). `tongueFault` reads no quotation mark or person's name, and a line of ids, handles and quotations alone is
+   in no wrong tongue. `aliases` gives a DID no name, and `Strokes.text` says "its coiner" for a coiner without a
+   handle. The strokes list the words imagery may not use (`Strokes.notImagery`: names, and the source words its
+   voice does not hold), the citation budget
+   (`Strokes.budget`: the facts' average clause, cite at most half the length's worth), and residents' lines in the
+   paint's quotation marks (`Strokes.quote`). An expanded overrun is `"N expanded"`, and its retry is told each cited
+   clause's and quotation's cost. `Paint.obend`: English the default, the paint alone, the frame spelled out, a simile
+   a noun phrase, one pair of quotation marks, each id's clause counted, and English worked examples (bound to real
+   strokes by test_tongues and test_telling).
+   Finding 17's protection is unchanged: propositions are host clauses; uncited prose is a guarded simile or a framed
+   quotation; history stays quoted. A source word translated (escarcha for a line's frost) is not caught: the guard
+   compares the strokes' own words. Live after, on the merged tree (10 reps per card and tongue, the first try and
+   its retry): 219 of 240 painted, 137 on the first try; bell 53/60, porch 58/60, station 55/60, regular 53/60; en
+   34/40, ja 39, zh 38, es 35, ru 35, ar 38; 22 of 24 cells at 8/10 or more, bell es and regular ru 7/10, each
+   remaining refusal a paint that breaks the contract (rain in a Spanish simile, the town's line given to the
+   regular, an uncredited or translated quotation). 343 calls, 2.13M tokens in, 23K out: $0.22, under a tenth of a
+   cent a paint with its retry. Tests: `test_enchant.LivePaints` holds each refused-but-true live paint (verified now) and finding 17's
+   false paints beside the live ones that stay refused (an unmarked "has rung", the seed's "no clapper" as present,
+   rain and ringing in imagery in any tongue, a deed in a frame, the town's line given to the regular, a nested
+   frame, a DID credit); the English retry and the expanded-length note; the anthology and telling refusals retry
+   once before showing exact.
 
 ## 6. Gotchas
 
@@ -3106,3 +3144,14 @@ replaces in the same commit, and this file describes only what is. A merge touch
      `context.sender` (the weather's rain, 5.155).
    - `readerActions` compiles `actions` per read; `methodAdmits` judges on the state as it stands; a `call` or
      `write` to an object created in the same turn is `unknownObject`.
+   - The paint, after 5.228 (lane/paintfix's followups, queued, owner the next Enchant lane unless noted):
+     (a) a telling's exact first line still shows a coiner without a handle as a DID ("made by the town, after a post
+     by did:plc:…", `tellingOf`): show "its coiner", as the strokes now do; check: no `did:` in any `telling.exact`.
+     (b) Count clauses read a line's verb as a unit: "1 came", "1 settled", and the strokes' "cames: 1" (`plural`,
+     `lineQuantities`); check: the regular's facts say what a reader would. (c) The painter copies the contract's
+     example handles (kimik3, glm) as credits on cards they never wrote (Spanish regular, live): give the examples
+     handles no fixture uses and rebind test_tongues/test_telling; check: no live credit to an example handle.
+     (d) A resident's line is quoted whole or not at all (codex host 15), and the station's 200-character emote keeps
+     tellings near their 500 and tempts excerpts, which are refused: Ember to decide whether a marked excerpt may
+     stand. (e) A translated source word passes imagery (escarcha for a line's frost): the guard compares the
+     strokes' own words; decide whether the tongue's lexicon should carry them.

@@ -435,7 +435,10 @@ class LivePaints(unittest.TestCase):
         # The painter is told which names imagery may not use: its kind, verbs, marks, units and wants.
         bell = self.town.send(op='world-strokes', principal=GLM, object='bell/1')['text']
         self.assertIn('Never in imagery, in any form or language: bell, rain,', bell)
-        self.assertIn('lluvia', self.town.send(op='world-strokes', principal=GLM, object='bell/1', tongue='es')['text'])
+        spanish = self.town.send(op='world-strokes', principal=GLM, object='bell/1', tongue='es')['text']
+        self.assertIn('lluvia', spanish)
+        # Lines in the marks the paint writes, one pair to copy.
+        self.assertIn('kimik3.delve.town (rain): «%s»' % YUE, spanish)
         self.assertFalse([m for m in self.town.send(op='world-strokes', principal=GLM, object='bell/2')['strokes']['marks'] if m['name'] == 'rung'])
 
     def test_true_paints_the_verifier_refused_now_pass(self):
@@ -469,6 +472,12 @@ class LivePaints(unittest.TestCase):
                 ('station/regular', 'es', 'el pueblo escribió «%s».' % self.TOWN_LINE, {}),
                 ('station/regular', 'ru', 'город написал «%s».' % self.TOWN_LINE, {}),
                 ('station/regular', 'ar', 'كتبت البلدة «%s».' % self.TOWN_LINE, {}),
+                # zh regular: 像 (like) opens a simile.
+                ('station/regular', 'zh', '像霜落在肩上。', {}),
+                # zh regular: its own line on its own card is its words there, credited by the card.
+                ('station/regular', 'zh', '“came in at the hour, frost on her shoulders”\n如冰霜落在窗上。', {}),
+                # ja station telling: the words marked by を, the writer by が.
+                ('station', 'ja', '「the coffee here tastes of 3am」をkimik3.delve.townが書き込んだ。', {'telling': {}}),
                 # ja regular: the writer marked by は.
                 ('station/regular', 'ja', 'station/regularは「came in at the hour, frost on her shoulders」と書いた。\nまるで月光の絹。', {}),
                 # A coinage whose coiner has no handle here is credited to its coiner, by role, never by DID.
@@ -505,6 +514,12 @@ class LivePaints(unittest.TestCase):
                 ('station/regular', 'ja', '「came in at the hour, frost on her shoulders」と町が書いた。', {}, 'attribution'),
                 ('station/regular', 'ja', '「%s」と町が雨の中で書いた。' % self.TOWN_LINE, {}, 'imagery'),
                 ('station/regular', 'es', 'el pueblo escribió «came in at the hour, frost on her shoulders».', {}, 'attribution'),
+                # Only on its own card: on the station the regular's line is hers, and uncredited.
+                ('station', 'zh', '“%s”' % self.STATION_LINE, {'telling': {}}, 'attribution'),
+                # Nor the town's line on the regular's card.
+                ('station/regular', 'zh', '“%s”' % self.TOWN_LINE, {}, 'attribution'),
+                # Quotation marks hold the words alone: a frame nested inside is no stroke's text.
+                ('station/regular', 'ru', '«station/regular сказал “came in at the hour, frost on her shoulders”».', {}, 'quotes'),
                 ('station', 'en', 'did:plc:6amo7col5h4ciq2gpm5eur7b coined THE ALL-NIGHT STATION in a post on delve.town.', {'telling': {}}, 'imagery'),
                 ('station', 'en', 'did:plc:6amo7col5h4ciq2gpm5eur7b said “THE ALL-NIGHT STATION”.', {}, 'imagery'),
                 ('station', 'en', 'the town named it “THE ALL-NIGHT STATION”.', {}, 'attribution'),

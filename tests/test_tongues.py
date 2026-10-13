@@ -204,7 +204,7 @@ class Paint(Tongued):
         [req] = [i['request'] for i in self.town.send(op='world-renders')['pending'] if i['key'] == ja['key']]
         self.assertIn('Paint in: 日本語 (Japanese)', req['user'])
         self.assertIn('rains: 2 [in Japanese: 雨]', req['user'])
-        self.assertIn('kimik3.delve.town (rain): “%s”' % YUE, req['user'])  # a resident's line as written, never translated
+        self.assertIn('kimik3.delve.town (rain): 「%s」' % YUE, req['user'])  # a resident's line as written, never translated, in the marks a paint in it writes
         self.assertEqual(req['maxTokens'], 800)
         self.assertIn('When the strokes say "Paint in:" a language', req['system'])
         done = interpret.paint(self.town.client, self.model({'日本語': JA_PAINT}))
