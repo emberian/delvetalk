@@ -265,7 +265,7 @@ What answers today, and what is merged and not deployed:
 | `subscribeRepos` | 501, with the hint to poll `getLatestCommit` | built on its own listener and durable event log; off until the edge routes it |
 | acting by XRPC | no | `online.fg-goose.gsb.act`, `.try` and `.plan` under inter-service auth; `getEntry` for an entry's whole bytes to its principal |
 | hidden sessions | no | `openSession`, `getSession`, `listSessionRecords`: a scratch world answered to its holder alone |
-| hosted accounts | no | guests and Zulip residents as `did:web:<name>.guest.gsb.fg-goose.online`, holding request records only, keys derived from the town key and the DID, never stored; their hostnames wait on wildcard DNS |
+| hosted accounts | no | built, off by default (`hosted_accounts = false`) for want of wildcard DNS: the owner chose no `*.guest.gsb.fg-goose.online` DNS; guest principals and actions stay unchanged. To enable: `hosted_accounts = true` (compose `.env`: `DELVETALK_HOSTED_ACCOUNTS=on`), wildcard DNS/HTTPS routing and the town repo key (`<repo_keys>/town.key`). Request records only; keys derive from the town key and DID, never stored. See [DEPLOY](docs/DEPLOY.md#hosted-account-origins) |
 | request records | no | `online.fg-goose.gsb.request` in a resident's own repository, proven and run, answered by an `answer` record; the poller is off until the owner starts it |
 | the mirror on delve.town | no | built and not running: cards, pages and the index as records in the posting account, so a PDS-only resident reads the town with no post; the owner has not authorized it |
 

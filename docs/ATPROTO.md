@@ -176,8 +176,8 @@ call is a spell's text or `{object, verb, fields}`, the front's `_actions` form.
 
 *Seeing it* (built, `transport/requests.py`, L5). pds.delve.town's firehose is gated, so each poll pages
 `com.atproto.sync.listRepos`. The participant registry has four sources: its active DIDs, every DID with a verified
-claim in `identity.sqlite`, config `participants` (space-separated DIDs, default empty), and this world's
-hosted accounts in `State.hosted` (§4). Only did:plc and
+claim in `identity.sqlite`, config `participants` (space-separated DIDs, default empty), and origin-wide
+hosted accounts in `State.hosted` when `hosted_accounts = true` (§4). Only did:plc and
 hostname-level did:web participate; unsupported DIDs produce a problem. External participants are read at the PDS their
 DID documents name in `#atproto_pds`. Hosted accounts supply documents and CAR bytes locally from the shared
 state directory through `Accounts.read`; the same `proven` signature and MST-path check verifies both sources.
@@ -454,8 +454,18 @@ feed posts are not copied into a hosted repository. A feed URI, display handle o
 additional principal form. These hosted repositories contain only public request records.
 
 **Accounts and custody are built.** Accepting an invitation provisions its account; the front also provisions
-verified guests already in `identity.sqlite` at startup. The returned `principal` and the credential's database row
-remain `guest:<host>:<name>`; the returned `did` is the hosted DID. A matching hosted Host header selects its
+verified guests already in `identity.sqlite` at startup, **only with `hosted_accounts = true`**.
+The default is `hosted_accounts = false`: hosted DIDs are built but off for want of wildcard DNS.
+The owner chose no `*.guest.gsb.fg-goose.online` DNS; these names will not resolve. To turn hosting on,
+set `hosted_accounts = true` in `<state>/delvetalk.toml` (or `DELVETALK_HOSTED_ACCOUNTS=on`, including
+compose's `.env`), supply wildcard DNS and matching HTTPS certificates/routes, and the town repo key
+`<repo_keys>/town.key` (DEPLOY "Hosted account origins"). Hosting off provisions nothing and serves no
+hosted repository or DID document, including retained snapshots; the local poller source is empty.
+Invitation credentials, feed posts, and ordinary turns keep their exact guest principals and identity mapping.
+Revocation and reconciliation remove canonical snapshots of guests no longer verified, even with hosting
+off or the key absent. Off otherwise leaves hosted stores untouched; active guests, Zulip snapshots,
+legacy keys and unrelated operator files are preserved. The returned `principal` and the credential's database row
+remain `guest:<host>:<name>`; the returned `did` is the hosted DID. With hosting enabled, a matching hosted Host header selects its
 `/.well-known/did.json` through the existing front and listener. Unknown hosted hosts refuse without provisioning.
 The document has `id`, `alsoKnownAs: ["at://<hostname>"]`, `#atproto` Multikey and `#atproto_pds` at the same
 front origin. Repo methods at that origin select the account by `repo`/`did`; the hosted hostname selects only
@@ -504,12 +514,12 @@ room, replacement does not need room. Hosted CAR replies are bounded at 17 MiB; 
 with a cursor when this shortens a page. Other write methods answer
 501; the world's repository stays read-only, 405.
 
-The poller registry's fourth source is the hosted snapshots. It reads them locally, verifies their signed
+With `hosted_accounts = true`, the poller registry's fourth source is the hosted snapshots. It reads them locally, verifies their signed
 commit through the same `proven` function and CAR bytes as HTTP, and consumes each at-uri once under its first
 proven CID. The bridge turns under `(hosted DID, at-uri)` and writes the ordinary public answer. The front and
 bridge must share the same state directory. The poller and mirror remain off by default; provisioning starts neither.
 
-**Zulip remainder.** The Zulip observer provisions the same hosted account when it observes a resident's message,
+**Zulip remainder.** With hosting enabled, the Zulip observer provisions the same hosted account when it observes a resident's message,
 but continues to store message observations under `zulip:<realm>:<id>`. It does not turn messages into request
 records or write that account's repository. Completion: a message chosen as a request creates one validated
 public request in its resident's hosted repo, proven by the ordinary local poller and answered once; a second
@@ -519,7 +529,8 @@ read creates no turn. Existing message observation/turn behavior must not execut
 and the two-way `alsoKnownAs` check are not built. Completion: reciprocal link records and DID documents name
 each other; a missing/reversed/mismatched claim refuses the link, without changing either principal's authority.
 
-**Ops remainder (owner).** Wildcard DNS and certificates are not installed by this lane. Completion: the guest
+**Ops remainder (owner).** Wildcard DNS and certificates are not installed, and the owner has decided against
+guest wildcard DNS. Hosting stays off unless that decision changes and `hosted_accounts` is enabled. Completion: the guest
 and each configured Zulip realm's account hostname resolve to this front, HTTPS serves the exact account DID
 and public key, and its sync proof verifies. DEPLOY gives the DNS names and the DNS-01 certificate boundary.
 

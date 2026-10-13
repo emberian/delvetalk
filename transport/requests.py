@@ -149,7 +149,7 @@ class Poller:
             cursor = page.get('cursor')
             if not cursor or not page.get('repos'):
                 break
-        self.local_dids = self.local.dids()
+        self.local_dids = self.local.dids() if self.st.config.hosted_accounts else set()
         dids = set(listed) | set(self.st.config.participants.split()) | self.local_dids
         try:
             dids |= verified_dids(self.st)

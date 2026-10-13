@@ -111,7 +111,7 @@ class FrontCase(ServeCase):
         self.provider = Provider()
         self.now = [1000.0]
         self.host = HostClient(self.socket)  # a test may replace its send
-        st = State(self.tmp.name, config=Config(host_socket=self.socket, repo_keys=str(Path(self.tmp.name) / 'repo')))
+        st = State(self.tmp.name, config=Config(host_socket=self.socket, hosted_accounts=self.hosted_accounts, repo_keys=str(Path(self.tmp.name) / 'repo')))
         if self.hosted_accounts:
             write_repo_key(st)
         ident = identity.Identity(st, delve.Client(self.provider), clock=lambda: self.now[0])

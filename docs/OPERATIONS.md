@@ -102,7 +102,7 @@ what is a fact of the container (mount paths, secret files, the bind address);
 the operator's choices live in the file. Fields: `origin`, `opener`,
 `host_socket`, `root_socket`, `root_group`, `library`, `sync`, `obend`,
 `poll`, `http_bind`, `http_port`, `firehose_bind`, `firehose_port`, `trust_proxy`, `hand_bind`, `hand_port`,
-`hand_token_file`, `summon_handle`, `requests`, `participants`, `credentials`, `lexicon_authority`, `poster`, `hand_find`, `repo_keys`, `backups`,
+`hand_token_file`, `summon_handle`, `requests`, `hosted_accounts`, `participants`, `credentials`, `lexicon_authority`, `poster`, `hand_find`, `repo_keys`, `backups`,
 `anthropic_key_file`, `model_auth`, `model_thinking`, `model_account`,
 `key_name`, `tokens_toml`, `delve_mock`, `model_mock`, `watch_zuliprc`,
 `watch_stream`, `watch_topic`, `grant`. A world's bridge (Delve or a Zulip
@@ -125,14 +125,14 @@ directory per world for everything that is the world's, the town's included
     <state>/model-spend.jsonl         one line per replied model call, with its world
     <state>/lexicons/<URL-encoded authority DID>.json  account-wide published schema digests, never deletes
     <state>/bridges/<world>.json      a world's bridge row
+    <state>/hosted/<URL-encoded origin>/*.json  optional public request snapshots, signing key ids and epochs;
+                                      keys derived from the town key and DID, directory fd flock
     <state>/worlds/<world>/           observe.sqlite, since; outbox/, awaiting/;
                                       principals.txt, mentioned.txt, skipped.txt,
                                       publications.after; posting/; interpretations/;
                                       bridge.pid, interpret.pid; watch.jsonl, alerted.json;
                                       repo.json (chain epochs), events (durable firehose log);
-                                      requests.json (participant revisions and refused CIDs), answers/;
-                                      hosted/*.json (public requests, signing key ids and epochs;
-                                        keys derived from repo_key and DID, directory fd flock)
+                                      requests.json (participant revisions and refused CIDs), answers/
     <repo_keys>/<world>.key           the repository's signing key
 
 `events` is fsynced before emission; its independent seq survives carry and front restart. Backups keep it
@@ -145,6 +145,12 @@ list of did:plc or hostname-level did:web DIDs; `DELVETALK_PARTICIPANTS` overrid
 with active pds.delve.town repositories and verified DIDs in `identity.sqlite`. Every participant is read at its DID
 document's PDS through pinned public HTTPS. Documents cache for ten minutes, with one refresh on verification
 failure per participant per poll; 256 non-delve-PDS participants may be read in a poll, every overflow DID reported.
+
+`hosted_accounts = false` disables guest/Zulip repository provisioning, serving and the local poller source;
+it preserves guest principals and the identity mapping. The front only removes canonical snapshots of guests
+no longer verified, leaving active guests and other operator data alone. Enable it with `hosted_accounts = true`;
+`DELVETALK_HOSTED_ACCOUNTS=on` is the environment override (compose passes `.env`, default `off`).
+Enabling hosting also requires wildcard DNS, HTTPS routes/certificates and `<repo_keys>/town.key` (DEPLOY).
 
 `worlds/<world>/requests.json` is `{revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}`. A matching PDS and revision
 skips listing; a changed PDS scans the whole collection. Consumed URIs and their first proven CIDs remain in

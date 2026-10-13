@@ -401,12 +401,16 @@ class Firehose:
                 raise ValueError('duplicate header')
             headers[k] = v.strip()
         url = urllib.parse.urlsplit(target)
+        origin_host = urllib.parse.urlsplit(getattr(self.repo, 'origin', '')).hostname
+        request_host = (urllib.parse.urlsplit('//' + headers.get('host', '')).hostname or '').rstrip('.')
+        # Hosted accounts have no firehose; their Host must never alias the world's stream.
+        hosted_host = origin_host and request_host.endswith(('.guest.' + origin_host, '.zulip.' + origin_host))
         try:
             key = headers['sec-websocket-key']
             valid_key = len(base64.b64decode(key, validate=True)) == 16
         except (KeyError, ValueError):
             valid_key = False
-        if (method != 'GET' or version != 'HTTP/1.1' or url.path != ROUTE or not headers.get('host') or
+        if (method != 'GET' or version != 'HTTP/1.1' or url.path != ROUTE or not headers.get('host') or hosted_host or
                 headers.get('upgrade', '').lower() != 'websocket' or
                 'upgrade' not in [v.strip().lower() for v in headers.get('connection', '').split(',')] or
                 headers.get('sec-websocket-version') != '13' or not valid_key):

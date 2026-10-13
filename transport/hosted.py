@@ -42,6 +42,8 @@ class Accounts:
 
     def storage(self):
         """Adopt the town directory atomically; refuse competing per-world repositories."""
+        if not self.st.config.hosted_accounts:
+            return
         parent = self.st.hosted.parent
         parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         fd = os.open(parent, os.O_RDONLY)
@@ -71,6 +73,8 @@ class Accounts:
 
     def provision_guests(self):
         """Provision accepted guests with hosted addresses; return the unsupported principals."""
+        if not self.st.config.hosted_accounts:
+            return []
         self.storage()
         skipped = []
         if not self.st.repo_key.exists():
@@ -86,14 +90,46 @@ class Accounts:
         return skipped
 
     def reconcile(self):
-        """Reconcile every existing hosted snapshot with the current town key, including legacy custody."""
+        """Remove inactive guests; when enabled, reconcile remaining snapshots with the town key."""
         self.storage()
-        if not self.st.repo_key.exists():
+        self.prune_guests()
+        if not self.st.config.hosted_accounts or not self.st.repo_key.exists():
             return
         for path in sorted(self.st.hosted.glob('*.json')):
             self.account(json.loads(path.read_text())['principal'])
 
+    def prune_guests(self):
+        """Delete only canonical snapshots of inactive guests, without creating or migrating a store."""
+        directories = [p for p in dict.fromkeys((self.st.hosted, self.st.legacy_hosted, self.front.legacy_hosted))
+                       if not p.is_symlink() and p.is_dir()]
+        if not directories:
+            return
+        active = verified_principals(self.st)
+        for directory in directories:
+            fd = os.open(directory, os.O_RDONLY)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                removed = False
+                for path in directory.glob('*.json'):
+                    if path.is_symlink() or not path.is_file():
+                        continue
+                    try:
+                        principal = json.loads(path.read_text())['principal']
+                        hosted_identity(principal, self.host)
+                    except (ValueError, KeyError, TypeError):
+                        continue
+                    if (principal.startswith('guest:' + self.host + ':') and principal not in active
+                            and path.name == principal.rsplit(':', 1)[1] + '.json'):
+                        path.unlink()
+                        removed = True
+                if removed:
+                    os.fsync(fd)
+            finally:
+                os.close(fd)
+
     def account(self, principal, create=False):
+        if not self.st.config.hosted_accounts:
+            raise Refusal(400, 'RepoNotFound', 'no such hosted account')
         self.storage()
         did = hosted_identity(principal, self.host)
         # The mapping also validates the file stem; no principal supplies a path.
@@ -119,6 +155,8 @@ class Accounts:
 
     def dids(self):
         """The fourth poller source: this origin's public snapshots."""
+        if not self.st.config.hosted_accounts:
+            return set()
         self.storage()
         out = set()
         for path in sorted(self.st.hosted.glob('*.json')):
