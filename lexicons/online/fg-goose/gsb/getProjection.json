@@ -520,22 +520,6 @@
         }
       },
       "description": "kind selects the value schema. Public live values carry no repository URI or signed membership."
-    },
-    "card": {
-      "type": "ref",
-      "ref": "online.fg-goose.gsb.card"
-    },
-    "page": {
-      "type": "ref",
-      "ref": "online.fg-goose.gsb.page"
-    },
-    "index": {
-      "type": "ref",
-      "ref": "online.fg-goose.gsb.index"
-    },
-    "answer": {
-      "type": "ref",
-      "ref": "online.fg-goose.gsb.answer"
     }
   }
 }

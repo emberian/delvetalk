@@ -12,10 +12,16 @@ import json
 import unittest
 from pathlib import Path
 
-from transport.lexicon import DIR, DOCS, resolve, validate, record_problems
+from transport.lexicon import DIR, DOCS, validate, record_problems
 
 
 class Lexicons(unittest.TestCase):
+    def test_integer_maximum_refuses_a_limit_of_101_and_accepts_100(self):
+        doc = DOCS['online.fg-goose.gsb.listSessionRecords']
+        schema = doc['defs']['main']['parameters']['properties']['limit']
+        self.assertEqual(validate(100, schema, doc), [])
+        self.assertEqual(validate(101, schema, doc), ['$: above 100'])
+
     def test_every_lexicon_id_matches_its_path_and_one_authority(self):
         root = Path(__file__).resolve().parent.parent / 'lexicons'
         files = sorted(root.rglob('*.json'))
@@ -38,42 +44,6 @@ class Lexicons(unittest.TestCase):
                 if isinstance(node, ast.Constant) and isinstance(node.value, str):
                     with self.subTest(path=path.relative_to(root), line=node.lineno):
                         self.assertNotIn(old_prefix, node.value)
-
-    def test_every_document_takes_nested_objects_only_by_ref_and_every_ref_resolves(self):
-        problems = []
-
-        def walk(node, path, top, doc):
-            if not isinstance(node, dict):
-                return
-            if node.get('type') == 'object':
-                if not top:
-                    problems.append(f'{path}: an inline object; name it in defs and ref it')
-                undeclared = set(node.get('required', [])) - set(node.get('properties') or {})
-                problems.extend(f'{path}: requires undeclared {k}' for k in undeclared)
-            if node.get('type') == 'ref':
-                try:
-                    resolve(node['ref'], doc)
-                except KeyError:
-                    problems.append(f"{path}: ref {node['ref']} names nothing")
-            if node.get('type') == 'union':
-                for ref in node['refs']:
-                    try:
-                        resolve(ref, doc)
-                    except KeyError:
-                        problems.append(f'{path}: union ref {ref} names nothing')
-            for k, v in node.items():
-                if k == 'properties':
-                    for name, sub in v.items():
-                        walk(sub, f'{path}.{name}', False, doc)
-                elif k == 'items':
-                    walk(v, path + '[]', False, doc)
-                elif k in ('record', 'schema', 'input', 'output', 'parameters', 'message'):
-                    walk(v, f'{path}.{k}', True, doc)
-        for nsid, doc in DOCS.items():
-            self.assertEqual(doc['lexicon'], 1, nsid)
-            for name, d in doc['defs'].items():
-                walk(d, f'{nsid}#{name}', True, doc)
-        self.assertEqual(problems, [])
 
     def test_projection_values_are_definitions_and_queries_share_one_envelope(self):
         doc = DOCS['online.fg-goose.gsb.getProjection']

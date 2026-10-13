@@ -1,7 +1,7 @@
-"""Offline preparation of every Lexicon v1 schema for its DNS authority (ATPROTO §5).
+"""Validated preparation of every Lexicon v1 schema for its DNS authority (ATPROTO §5).
 
 Refuted by: a missing/extra NSID, altered document, wrong DAG-CBOR CID/size, a socket or file write
-in a dry run, an unchanged record written twice, a failed write remembered, a removed file deleted
+in a dry run (except injected public GETs), an unchanged record written twice, a failed write remembered, a removed file deleted
 from the account, or a credential session belonging to another DID allowed to write.
 """
 import json
@@ -9,22 +9,31 @@ import os
 import shutil
 import tempfile
 import unittest
+from functools import wraps
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from tests import test_lexicons
 from transport import post
 from transport.__main__ import main, parser
 from transport.atproto.cbor import block, from_json
 from transport.config import Config
 from transport.delve import Failure, canonical
-from transport.lexicon import DIR
+from transport.lexicon import DIR, reference_problems
 from transport.state import State
 
 AUTHORITY = 'did:plc:6amo7col5h4ciq2gpm5eur7b'
 COLLECTION = 'com.atproto.lexicon.schema'
 TXT_CHECK = 'dig +short TXT _lexicon.gsb.fg-goose.online'
+
+
+def needs_reference(test):
+    @wraps(test)
+    def run(self):
+        if self.reference_unavailable:
+            self.skipTest('reference validator unavailable: ' + self.reference_unavailable)
+        return test(self)
+    return run
 
 
 class Writer:
@@ -51,6 +60,10 @@ class Client:
 
 
 class Publication(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        _, cls.reference_unavailable, cls.reference_validator = reference_problems()
+
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -62,16 +75,145 @@ class Publication(unittest.TestCase):
         self.state = self.root / 'state'
         self.state.mkdir()
         (self.state / 'delvetalk.toml').write_text(f'credentials = {json.dumps(str(self.credential))}\n')
-        self.env = patch.dict(os.environ, {}, clear=True)
+        env = {name: os.environ[name] for name in ('PATH', 'ATPROTO_LEXICON_PACKAGE') if name in os.environ}
+        self.env = patch.dict(os.environ, env, clear=True)
         self.env.start()
         self.addCleanup(self.env.stop)
 
     def invoke(self, authorized=False, **seams):
         output = StringIO()
         argv = ['lexicons', '--state', str(self.state)] + (['--authorized'] if authorized else [])
+        seams.setdefault('fetch', self.offline)
         with patch('socket.socket', side_effect=AssertionError('socket opened')):
             code = main(argv, output, directory=self.directory, **seams)
         return code, output.getvalue()
+
+    @staticmethod
+    def offline(*args):
+        raise OSError('offline test')
+
+    @needs_reference
+    def test_published_values_compare_by_dag_cbor_cid_at_the_resolved_pds_across_pages(self):
+        values = list(sorted(self.values().items()))
+        calls = []
+        def fetch(method, url, headers, body):
+            from urllib.parse import parse_qs, urlsplit
+            calls.append(url)
+            self.assertEqual(method, 'GET')
+            self.assertIsNone(body)
+            self.assertNotIn('Authorization', headers)
+            if url == 'https://plc.directory/' + AUTHORITY:
+                response = {'id': AUTHORITY, 'service': [{'id': '#atproto_pds',
+                            'serviceEndpoint': 'https://owner.example/'}]}
+            else:
+                parts = urlsplit(url)
+                self.assertEqual(parts.netloc, 'owner.example')
+                self.assertEqual(parts.path, '/xrpc/com.atproto.repo.listRecords')
+                query = parse_qs(parts.query)
+                self.assertEqual(query['repo'], [AUTHORITY])
+                self.assertEqual(query['collection'], [COLLECTION])
+                index = 1 if 'cursor' in query else 0
+                nsid, value = values[index]
+                # Advertised cid is deliberately wrong; compare the actual value, with reordered keys.
+                value = dict(reversed(list(value.items()))) if index == 0 else {**value, 'description': 'different'}
+                response = {'records': [{'uri': f'at://{AUTHORITY}/{COLLECTION}/{nsid}',
+                                        'cid': 'untrusted', 'value': value}],
+                            **({'cursor': 'next'} if index == 0 else {})}
+            return 200, json.dumps(response).encode(), {}
+        code, output = self.invoke(fetch=fetch)
+        self.assertEqual(code, 2)
+        rows = [json.loads(line) for line in output.splitlines()[1:-1]]
+        self.assertEqual([r['published'] for r in rows], ['same', 'differs'] + ['new'] * (len(values) - 2))
+        self.assertEqual(len(calls), 3)
+        writer = Writer()
+        with patch.object(post, 'record_writer', return_value=writer):
+            code, output = self.invoke(True, fetch=fetch)
+        self.assertEqual(code, 0)
+        self.assertEqual([json.loads(line)['published'] for line in output.splitlines()[1:-1]],
+                         ['same', 'differs'] + ['new'] * (len(values) - 2))
+
+    @needs_reference
+    def test_invalid_nested_schema_refuses_authorized_before_reads_credentials_or_writes(self):
+        path = self.directory / 'card.json'
+        doc = json.loads(path.read_text())
+        doc['defs']['main']['record']['properties']['doors']['items'] = {'type': 'object', 'properties': {}}
+        path.write_text(canonical(doc))
+        before = {p: p.read_bytes() for p in self.state.rglob('*') if p.is_file()}
+        with patch.object(post, 'record_writer', side_effect=AssertionError('writer opened')):
+            code, output = self.invoke(True, fetch=lambda *a: self.fail('network read before validation'))
+        self.assertEqual(code, 1)
+        self.assertIn('lexicon_validation', output)
+        self.assertIn('card', output)
+        self.assertEqual({p: p.read_bytes() for p in self.state.rglob('*') if p.is_file()}, before)
+
+    @needs_reference
+    def test_reference_only_syntax_error_in_the_last_file_refuses_the_whole_batch(self):
+        path = self.directory / 'try.json'
+        doc = json.loads(path.read_text())
+        doc['defs']['main']['input']['schema']['properties']['intent']['format'] = 'not-a-format'
+        path.write_text(canonical(doc))
+        with patch.object(post, 'record_writer', side_effect=AssertionError('writer opened')):
+            code, output = self.invoke(True, fetch=lambda *a: self.fail('network read before validation'))
+        self.assertEqual(code, 1)
+        self.assertIn('try.json', output)
+        self.assertIn('not-a-format', output)
+        self.assertFalse(State(self.state).lexicon_ledger.exists())
+
+    def test_authorized_refuses_when_reference_validator_cannot_run_but_dry_run_explains_it(self):
+        with patch('transport.lexicon.reference_problems', return_value=([], 'node missing', None)), \
+                patch.object(post, 'record_writer', side_effect=AssertionError('writer opened')):
+            self.assertEqual(self.invoke(True)[0], 1)
+            code, output = self.invoke()
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(output.splitlines()[-1])['reference'], 'unavailable (node missing)')
+        self.assertEqual(len(output.splitlines()[1:-1]), len(self.values()))
+
+    def test_status_uses_the_validator_identity_returned_by_the_reference_script(self):
+        with patch('transport.lexicon.reference_problems', return_value=([], None, 'reported validator')), \
+                patch.object(post, 'record_writer', return_value=Writer()):
+            for authorized in (False, True):
+                with self.subTest(authorized=authorized):
+                    code, output = self.invoke(authorized)
+                    self.assertEqual(code, 0 if authorized else 2)
+                    self.assertEqual(json.loads(output.splitlines()[-1])['reference'], 'reported validator: passed')
+
+    @unittest.skipUnless(shutil.which('node'), 'node is absent')
+    def test_missing_reference_package_is_refused_and_named_without_a_writer_or_ledger(self):
+        with patch.dict(os.environ, {'ATPROTO_LEXICON_PACKAGE': str(self.root / 'absent-package')}), \
+                patch.object(post, 'record_writer', side_effect=AssertionError('writer opened')):
+            code, output = self.invoke(True)
+            self.assertEqual(code, 1)
+            self.assertIn('reference validator required', output)
+            self.assertIn('absent-package', output)
+            code, output = self.invoke()
+            self.assertEqual(code, 2)
+            self.assertIn('unavailable', output)
+        self.assertFalse(State(self.state).lexicon_ledger.exists())
+
+    def test_partial_read_failure_or_wrong_did_document_is_unknown_for_the_whole_batch(self):
+        for wrong_did in (True, False):
+            with self.subTest(wrong_did=wrong_did):
+                def fetch(method, url, headers, body):
+                    if url == 'https://plc.directory/' + AUTHORITY:
+                        response = {'id': 'did:plc:wrong' if wrong_did else AUTHORITY,
+                                    'service': [{'id': AUTHORITY + '#atproto_pds', 'serviceEndpoint': 'https://owner.example'}]}
+                    elif 'cursor=' not in url:
+                        nsid, value = next(iter(self.values().items()))
+                        response = {'records': [{'uri': f'at://{AUTHORITY}/{COLLECTION}/{nsid}', 'value': value}], 'cursor': 'next'}
+                    else:
+                        raise OSError('page two unavailable')
+                    return 200, json.dumps(response).encode(), {}
+                code, output = self.invoke(fetch=fetch)
+                self.assertEqual(code, 2)
+                rows = [json.loads(line) for line in output.splitlines()[1:-1]]
+                self.assertTrue(all(row['published'].startswith('unknown (') for row in rows))
+                self.assertIn('did_document_mismatch' if wrong_did else 'page two unavailable', output)
+
+    def test_offline_published_state_is_unknown_for_every_document(self):
+        code, output = self.invoke()
+        self.assertEqual(code, 2)
+        rows = [json.loads(line) for line in output.splitlines()[1:-1]]
+        self.assertTrue(all(row['published'] == 'unknown (offline test)' for row in rows))
 
     def values(self):
         return {json.loads(p.read_text())['id']: {**json.loads(p.read_text()), '$type': COLLECTION}
@@ -80,7 +222,6 @@ class Publication(unittest.TestCase):
     def test_default_dry_run_lists_exact_files_in_nsid_order_with_canonical_cids_and_no_effects(self):
         before = {p.relative_to(self.root): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
         with patch.object(post, 'record_writer', side_effect=AssertionError('writer opened')), \
-                patch('subprocess.Popen', side_effect=AssertionError('TXT command executed')), \
                 patch.object(State, 'host', side_effect=AssertionError('host opened')), \
                 patch.object(Path, 'write_text', side_effect=AssertionError('file written')), \
                 patch.object(State, 'write', side_effect=AssertionError('ledger written')):
@@ -94,21 +235,28 @@ class Publication(unittest.TestCase):
         expected = []
         for nsid, value in sorted(values.items()):
             cid, raw = block(from_json(value))
-            expected.append({'collection': COLLECTION, 'rkey': nsid, 'cid': str(cid), 'bytes': len(raw)})
+            expected.append({'collection': COLLECTION, 'rkey': nsid, 'cid': str(cid), 'bytes': len(raw),
+                             'published': 'unknown (offline test)'})
             self.assertEqual(value['id'], nsid)
         self.assertEqual(rows[:-1], expected)
-        self.assertEqual(rows[-1], {'count': len(values), 'did': AUTHORITY})
+        reference = (f'unavailable ({self.reference_unavailable})' if self.reference_unavailable
+                     else f'{self.reference_validator}: passed')
+        self.assertEqual(rows[-1], {'count': len(values), 'did': AUTHORITY, 'reference': reference})
         self.assertEqual({p.relative_to(self.root): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}, before)
 
     def test_exact_command_needs_no_state_or_credential_for_a_dry_run(self):
         output = StringIO()
         with patch('socket.socket', side_effect=AssertionError('socket opened')), \
                 patch.object(post, 'record_writer', side_effect=AssertionError('writer opened')):
-            self.assertEqual(main(['lexicons'], output), 2)
+            self.assertEqual(main(['lexicons'], output, fetch=self.offline), 2)
+        reference = (f'unavailable ({self.reference_unavailable})' if self.reference_unavailable
+                     else f'{self.reference_validator}: passed')
         self.assertEqual(json.loads(output.getvalue().splitlines()[-1]),
-                         {'count': len(list(DIR.rglob('*.json'))), 'did': AUTHORITY})
+                         {'count': len(list(DIR.rglob('*.json'))), 'did': AUTHORITY,
+                          'reference': reference})
         self.assertFalse(parser().parse_args(['lexicons']).authorized)
 
+    @needs_reference
     def test_fake_writer_puts_every_document_once_then_only_a_changed_document_and_never_deletes(self):
         writer = Writer()
         with patch.object(post, 'record_writer', return_value=writer) as factory:
@@ -140,6 +288,7 @@ class Publication(unittest.TestCase):
             # Publication belongs to the account, independent of the selected world.
             self.assertEqual(State(self.state, 'garden').lexicon_ledger, st.lexicon_ledger)
 
+    @needs_reference
     def test_a_maximum_length_nsid_name_keeps_every_document_field_and_dag_cbor_byte(self):
         name = 'a' * 63
         nsid = 'online.fg-goose.gsb.' + name
@@ -150,12 +299,14 @@ class Publication(unittest.TestCase):
         rows = [json.loads(line) for line in output.splitlines()[1:-1]]
         cid, raw = block(from_json({**value, '$type': COLLECTION}))
         self.assertEqual(next(row for row in rows if row['rkey'] == nsid),
-                         {'collection': COLLECTION, 'rkey': nsid, 'cid': str(cid), 'bytes': len(raw)})
+                         {'collection': COLLECTION, 'rkey': nsid, 'cid': str(cid), 'bytes': len(raw),
+                          'published': 'unknown (offline test)'})
         writer = Writer()
         with patch.object(post, 'record_writer', return_value=writer):
             self.invoke(True)
         self.assertIn((COLLECTION, nsid, {**value, '$type': COLLECTION}), writer.calls)
 
+    @needs_reference
     def test_each_put_is_the_verbatim_v1_document_in_the_sessions_own_repo(self):
         client = Client()
         self.invoke(True, client=client)
@@ -163,11 +314,8 @@ class Publication(unittest.TestCase):
         self.assertEqual(client.calls[1:], [('com.atproto.repo.putRecord',
                          {'repo': AUTHORITY, 'collection': COLLECTION, 'rkey': k, 'record': v, 'validate': False}, 'jwt')
                          for k, v in sorted(self.values().items())])
-        published = {body['rkey']: body['record'] for _, body, _ in client.calls[1:]}
-        with patch.object(test_lexicons, 'DOCS', published):
-            test_lexicons.Lexicons('test_every_document_takes_nested_objects_only_by_ref_and_every_ref_resolves') \
-                .test_every_document_takes_nested_objects_only_by_ref_and_every_ref_resolves()
 
+    @needs_reference
     def test_wrong_credential_did_aborts_before_any_put_even_when_the_ledger_is_complete(self):
         for complete in (False, True):
             with self.subTest(complete=complete):
@@ -180,6 +328,7 @@ class Publication(unittest.TestCase):
                 self.assertEqual([n for n, _, _ in client.calls], ['com.atproto.server.createSession'])
                 self.assertEqual({p: p.read_bytes() for p in self.state.rglob('*') if p.is_file()}, before)
 
+    @needs_reference
     def test_configured_authority_is_checked_and_has_its_own_ledger(self):
         self.invoke(True, client=Client())
         old = State(self.state).lexicon_ledger
@@ -193,6 +342,7 @@ class Publication(unittest.TestCase):
         self.assertTrue(all(body['repo'] == other for _, body, _ in client.calls[1:]))
         self.assertNotEqual(State(self.state).lexicon_ledger, old)
 
+    @needs_reference
     def test_a_failed_write_is_not_remembered_and_retry_writes_only_the_remaining_records(self):
         writer = Writer()
         values = sorted(self.values().items())
@@ -217,8 +367,9 @@ class Publication(unittest.TestCase):
             with self.subTest(bad=bad):
                 path.write_text(canonical(bad))
                 with patch.object(post, 'record_writer', side_effect=AssertionError('writer opened')):
-                    with self.assertRaisesRegex(Failure, 'lexicon_document'):
-                        self.invoke(True)
+                    code, output = self.invoke(True)
+                    self.assertEqual(code, 1)
+                    self.assertIn('lexicon_document', output)
 
 
 if __name__ == '__main__':

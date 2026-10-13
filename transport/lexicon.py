@@ -2,12 +2,33 @@
 import json
 from datetime import datetime
 import re
+import subprocess
 from pathlib import Path
 
 DIR = Path(__file__).resolve().parent.parent / 'lexicons' / 'online' / 'fg-goose' / 'gsb'
 DOCS = {json.loads(p.read_text())['id']: json.loads(p.read_text()) for p in sorted(DIR.glob('*.json'))}
 EXTERNAL = {'com.atproto.repo.strongRef#main': {'type': 'object', 'required': ['uri', 'cid'],
                                                 'properties': {'uri': {'type': 'string', 'format': 'at-uri'}, 'cid': {'type': 'string', 'format': 'cid'}}}}
+
+
+def reference_problems(directory=DIR, samples=()):
+    """-> (errors, unavailable reason, reported validator). Run the checked CLI with the pinned npm validator."""
+    script = Path(__file__).resolve().parent.parent / 'tests' / 'lexicon_reference.mjs'
+    try:
+        result = subprocess.run(['node', str(script), str(directory)], input=json.dumps(samples),
+                                capture_output=True, text=True)
+    except OSError as error:
+        return [], str(error), None
+    try:
+        report = json.loads(result.stdout)
+        if result.returncode == 2:
+            return [], report['unavailable'], report.get('validator')
+        if (result.returncode in (0, 1) and isinstance(report.get('errors'), list)
+                and isinstance(report.get('validator'), str) and report['validator']):
+            return report['errors'], None, report['validator']
+    except (ValueError, KeyError, TypeError):
+        pass
+    return [], f'reference validator failed (exit {result.returncode}): {result.stderr.strip() or result.stdout.strip()}', None
 
 
 def resolve(ref, doc):
@@ -58,6 +79,8 @@ def validate(value, schema, doc, at='$'):
         return [f'{at}: not a {kind}']
     if kind == 'integer' and value < schema.get('minimum', value):
         return [f'{at}: below {schema["minimum"]}']
+    if kind == 'integer' and value > schema.get('maximum', value):
+        return [f'{at}: above {schema["maximum"]}']
     if 'const' in schema and value != schema['const']:
         return [f'{at}: not {schema["const"]}']
     if 'enum' in schema and value not in schema['enum']:
@@ -91,6 +114,11 @@ def record_problems(value):
         return problems + ['$.kind: not a projection kind']
     subject = value.get('value')
     shape = 'carriedReceipt' if kind == 'receipt' and isinstance(subject, dict) and 'carried' in subject else kind
-    return list(dict.fromkeys(problems + validate(subject, doc['defs'][shape], doc, '$.value')))
+    if kind in ('card', 'page', 'index', 'answer'):
+        owner = DOCS['online.fg-goose.gsb.' + kind]
+        schema = owner['defs']['main']
+    else:
+        owner, schema = doc, doc['defs'][shape]
+    return list(dict.fromkeys(problems + validate(subject, schema, owner, '$.value')))
 
 
