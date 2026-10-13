@@ -30,9 +30,13 @@ SCHEMA = '''
 CREATE TABLE IF NOT EXISTS feed(seq INTEGER PRIMARY KEY AUTOINCREMENT, uri TEXT UNIQUE NOT NULL, cid TEXT NOT NULL,
   did TEXT NOT NULL, handle TEXT NOT NULL, created TEXT NOT NULL, text TEXT NOT NULL, parent TEXT, root TEXT,
   town INTEGER NOT NULL DEFAULT 0, answers TEXT, receipt TEXT, intent TEXT UNIQUE);
-CREATE INDEX IF NOT EXISTS feed_root ON feed(root);
+CREATE INDEX IF NOT EXISTS feed_answers ON feed(parent, town);
+CREATE INDEX IF NOT EXISTS feed_replies ON feed(root, seq);
+CREATE INDEX IF NOT EXISTS feed_author_created ON feed(did, created) WHERE town=0;
+CREATE TABLE IF NOT EXISTS feed_threads(root TEXT PRIMARY KEY, last_seq INTEGER NOT NULL UNIQUE);
 '''
-PAGE = 30  # threads a page of the feed shows
+PAGE = 30  # total posts, including roots, in one response
+PAGE_BYTES = 2 * 1024 * 1024
 HOUR_POSTS = 60  # posts one resident may make to the feed in an hour (the town's own replies are not counted)
 GUEST_MENTION = __import__('re').compile(r'(?<![\w.@])@([a-z][a-z0-9-]{0,31})\b(?![.\w])')
 
@@ -81,7 +85,17 @@ class Feed:
         self.db = sqlite3.connect(st.home / 'feed.sqlite', isolation_level=None, check_same_thread=False, timeout=10)
         self.db.row_factory = sqlite3.Row
         self.db.execute('PRAGMA journal_mode=WAL')
-        self.db.executescript(SCHEMA)
+        self.db.executescript('BEGIN IMMEDIATE;\n' + SCHEMA)
+        columns = {r['name'] for r in self.db.execute('PRAGMA table_info(feed)')}
+        for name in ('submission_key', 'payload_digest'):
+            if name not in columns:
+                self.db.execute(f'ALTER TABLE feed ADD COLUMN {name} TEXT')
+        self.db.execute('CREATE UNIQUE INDEX IF NOT EXISTS feed_submission ON feed(did, submission_key)')
+        if self.db.execute('PRAGMA user_version').fetchone()[0] == 0:
+            self.db.execute('INSERT INTO feed_threads SELECT COALESCE(root, uri), MAX(seq) FROM feed GROUP BY COALESCE(root, uri)')
+            self.db.execute('DROP INDEX IF EXISTS feed_root')
+            self.db.execute('PRAGMA user_version=1')
+        self.db.execute('COMMIT')
         self.lock = threading.Lock()
 
     def close(self):
@@ -96,41 +110,66 @@ class Feed:
         with self.lock:
             return self.db.execute('SELECT * FROM feed WHERE uri=?', (uri,)).fetchone()
 
-    def recent(self, did, since):
+    def answered(self, uri):
         with self.lock:
-            return self.db.execute('SELECT COUNT(*) FROM feed WHERE did=? AND town=0 AND created>=?', (did, since)).fetchone()[0]
+            return self.db.execute('SELECT 1 FROM feed WHERE parent=? AND town=1 LIMIT 1', (uri,)).fetchone() is not None
 
-    def post(self, author, text, reply_to=None, now=None, town=False, answers=None, receipt=None, intent=None):
-        """Keep one post -> its row. `reply_to` must be a post of this feed; the root is its parent's root, or the parent.
-        With an `intent` (the town's), at most one post: a retry answers the post it made."""
-        if intent:
-            with self.lock:
-                kept = self.db.execute('SELECT * FROM feed WHERE intent=?', (intent,)).fetchone()
-            if kept is not None:
-                return kept
+    def post(self, author, text, reply_to=None, now=None, town=False, answers=None, receipt=None, intent=None,
+             idempotency_key=None):
+        """Persist a post, its retry identity and hourly admission in one writer transaction.
+        Town drafts retain their intent; resident submissions bind a key to their text and parent."""
         if not isinstance(text, str) or not text.strip():
             raise Failure('empty_post', 'say something')
-        if len(text.encode()) > MAX_TEXT:
+        try:
+            size = len(text.encode())
+        except UnicodeEncodeError:
+            raise Failure('invalid_post', 'post text must be Unicode without lone surrogates')
+        if size > MAX_TEXT:
             raise Failure('post_body_too_large', f'at most {MAX_TEXT} bytes')
-        parent = self.get(reply_to) if reply_to else None
-        if reply_to and parent is None:
-            raise Failure('unknown_post', f'{reply_to} is not a post of this feed')
-        micros = int((time.time() if now is None else now) * 1e6)
-        created = datetime.fromtimestamp(micros / 1e6, tz=timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
+        if reply_to is not None and not isinstance(reply_to, str):
+            raise Failure('invalid_parent', 'reply_to must be a post URI')
+        if idempotency_key is not None and (not isinstance(idempotency_key, str) or
+                not 1 <= len(idempotency_key) <= 128 or not idempotency_key.isascii() or
+                any(ord(c) < 33 or ord(c) > 126 for c in idempotency_key)):
+            raise Failure('invalid_idempotency_key', 'idempotencyKey must be 1 to 128 printable ASCII characters')
+        digest = hashlib.sha256(canonical({'text': text, 'reply_to': reply_to or None}).encode()).hexdigest()
+        now = time.time() if now is None else now
+        micros = int(now * 1e6)
+        created = datetime.fromtimestamp(micros / 1e6, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+        since = datetime.fromtimestamp(now - 3600, tz=timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
         with self.lock:
             self.db.execute('BEGIN IMMEDIATE')
             try:
-                seq = (self.db.execute('SELECT COALESCE(MAX(seq), 0) FROM feed').fetchone()[0] or 0) + 1
-                uri = f"at://{authority(self.origin, self.world)}/{COLLECTION}/{tid(micros, seq & 1023)}"
-                cid = 'feed' + hashlib.sha256(canonical({'uri': uri, 'text': text, 'did': author['did']}).encode()).hexdigest()[:32]
-                root = (parent['root'] or parent['uri']) if parent else None
-                self.db.execute('INSERT INTO feed(uri,cid,did,handle,created,text,parent,root,town,answers,receipt,intent) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-                                (uri, cid, author['did'], author['handle'], created, text, parent['uri'] if parent else None, root, int(town), answers, receipt, intent))
+                kept = None
+                if intent:
+                    kept = self.db.execute('SELECT * FROM feed WHERE intent=?', (intent,)).fetchone()
+                elif idempotency_key is not None:
+                    kept = self.db.execute('SELECT * FROM feed WHERE did=? AND submission_key=?',
+                                           (author['did'], idempotency_key)).fetchone()
+                    if kept is not None and kept['payload_digest'] != digest:
+                        raise Failure('idempotency_conflict', 'this author already used idempotencyKey with a different payload')
+                if kept is None:
+                    parent = self.db.execute('SELECT * FROM feed WHERE uri=?', (reply_to,)).fetchone() if reply_to else None
+                    if reply_to and parent is None:
+                        raise Failure('unknown_post', f'{reply_to} is not a post of this feed')
+                    if not town and self.db.execute('SELECT COUNT(*) FROM feed WHERE did=? AND town=0 AND created>=?',
+                                                    (author['did'], since)).fetchone()[0] >= HOUR_POSTS:
+                        raise Failure('feed_quota', f'at most {HOUR_POSTS} posts an hour to the feed from one resident')
+                    seq = self.db.execute('SELECT COALESCE(MAX(seq), 0) + 1 FROM feed').fetchone()[0]
+                    uri = f"at://{authority(self.origin, self.world)}/{COLLECTION}/{tid(micros, seq & 1023)}"
+                    cid = 'feed' + hashlib.sha256(canonical({'uri': uri, 'text': text, 'did': author['did']}).encode()).hexdigest()[:32]
+                    root = (parent['root'] or parent['uri']) if parent else None
+                    self.db.execute('INSERT INTO feed(uri,cid,did,handle,created,text,parent,root,town,answers,receipt,intent,submission_key,payload_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                                    (uri, cid, author['did'], author['handle'], created, text, parent['uri'] if parent else None,
+                                     root, int(town), answers, receipt, intent, idempotency_key, digest))
+                    self.db.execute('INSERT INTO feed_threads(root,last_seq) VALUES(?,?) ON CONFLICT(root) DO UPDATE SET last_seq=excluded.last_seq',
+                                    (root or uri, seq))
+                    kept = self.db.execute('SELECT * FROM feed WHERE uri=?', (uri,)).fetchone()
                 self.db.execute('COMMIT')
             except BaseException:
                 self.db.execute('ROLLBACK')
                 raise
-        return self.get(uri)
+        return kept
 
     def record(self, row):
         """A post as delve.town's postView carries it: the same record the observer reads (and the archive keeps), a
@@ -158,23 +197,60 @@ class Feed:
         with self.lock:
             return self.db.execute('SELECT * FROM feed WHERE seq>? ORDER BY seq', (after,)).fetchall()
 
-    def threads(self, before=None, limit=PAGE, thread=None):
-        """The newest `limit` threads (a top-level post and every reply under it, in order), newest activity first, from
-        before the thread whose root is `before`; or the one `thread`. -> ([(root row, [reply rows])], the next page's
-        `before` or None)."""
+    def threads(self, before=None, limit=PAGE, thread=None, replies_before=None):
+        """SQL keyset pages, newest activity first; each thread has a root, newest replies in sequence order, and an
+        earlier-replies cursor. `limit` counts every post. Text costs six bytes per raw UTF-8 byte (HTML entities and
+        JSON escapes); metadata costs 32 times its bytes for repeated/quoted links, plus 4096 markup bytes per post.
+        PAGE_BYTES leaves six MiB of the HTTP ceiling for the skeleton, composer and request-derived links."""
+        def cursor(value):
+            if value is None:
+                return 9223372036854775807
+            if not isinstance(value, str) or not value.isascii() or not value.isdigit() or len(value) > 19 or not 0 < int(value) <= 9223372036854775807:
+                raise Failure('invalid_cursor', 'a feed cursor must be a positive 64-bit sequence')
+            return int(value)
+        before, replies_before = cursor(before), cursor(replies_before)
+        if isinstance(limit, str) and limit.isascii() and limit.isdigit() and len(limit) <= 2:
+            limit = int(limit)
+        if type(limit) is not int or not 1 <= limit <= PAGE:
+            raise Failure('invalid_limit', f'limit must be 1 to {PAGE} total posts')
+        def cost(row):
+            return 4096 + 6 * len(row['text'].encode()) + 32 * sum(len(v.encode()) for k, v in dict(row).items()
+                                                                if k != 'text' and isinstance(v, str))
+        out, more, remaining, budget = [], None, limit, PAGE_BYTES
         with self.lock:
-            last = self.db.execute('SELECT COALESCE(root, uri) AS t, MAX(seq) AS s FROM feed GROUP BY t ORDER BY s DESC').fetchall()
-        order = [r['t'] for r in last] if thread is None else [thread]
-        start = order.index(before) + 1 if before in order else 0
-        shown = order[start:start + limit]
-        out = []
-        for t in shown:
-            with self.lock:
-                rows = self.db.execute('SELECT * FROM feed WHERE uri=? OR root=? ORDER BY seq', (t, t)).fetchall()
-            head = next((r for r in rows if r['uri'] == t), None)
-            if head is not None:
-                out.append((head, [r for r in rows if r['uri'] != t]))
-        return out, (shown[-1] if start + limit < len(order) and shown else None)
+            self.db.execute('BEGIN')
+            try:
+                if thread is None:
+                    roots = self.db.execute('SELECT root,last_seq FROM feed_threads WHERE last_seq<? ORDER BY last_seq DESC LIMIT ?',
+                                            (before, limit + 1)).fetchall()
+                else:
+                    roots = self.db.execute('SELECT root,last_seq FROM feed_threads WHERE root=?', (thread,)).fetchall()
+                for index, root in enumerate(roots):
+                    if remaining == 0:
+                        break
+                    head = self.db.execute('SELECT * FROM feed WHERE uri=?', (root['root'],)).fetchone()
+                    if cost(head) > budget:
+                        break
+                    remaining, budget = remaining - 1, budget - cost(head)
+                    candidates = self.db.execute('SELECT * FROM feed WHERE root=? AND seq<? ORDER BY seq DESC LIMIT ?',
+                                                 (root['root'], replies_before, remaining + 1)).fetchall()
+                    replies = []
+                    for row in candidates:
+                        if remaining == 0 or cost(row) > budget:
+                            break
+                        replies.append(row)
+                        remaining, budget = remaining - 1, budget - cost(row)
+                    earlier = str(replies[-1]['seq'] if replies else replies_before) if len(candidates) > len(replies) else None
+                    out.append((head, list(reversed(replies)), earlier))
+                    if thread is None and index + 1 < len(roots):
+                        more = str(root['last_seq'])
+                    else:
+                        more = None
+                self.db.execute('COMMIT')
+            except BaseException:
+                self.db.execute('ROLLBACK')
+                raise
+        return out, more
 
 
 def observe_feed(st, feed=None):

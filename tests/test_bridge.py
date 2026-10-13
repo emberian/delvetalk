@@ -732,6 +732,44 @@ class PublicReads(ServeCase):
 
 
 class Projection(unittest.TestCase):
+    def test_a_settled_receipt_replaces_the_suspended_xrpc_answer_at_the_maximum_intent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            st = State(directory)
+            source = bridge.xrpc_source(DID, 'é' * 128)
+            suspended = {'outcome': {'status': 'suspended', 'line': 'waiting'},
+                         'receipt': {'slug': 'first', 'height': 1, 'entry': {'$link': 'suspended'}}}
+            settled = {'outcome': {'status': 'admitted', 'line': 'rang'},
+                       'receipt': {'slug': 'second', 'height': 2, 'entry': {'$link': 'settled'}}}
+            bridge.write_answer(st, source, suspended)
+            bridge.write_answer(st, source, settled)
+            saved = json.loads(bridge.answer_path(st, source).read_text())
+            self.assertEqual((saved['outcome'], saved['receipt'], saved['height']),
+                             (settled['outcome'], settled['receipt'], 2))
+
+    def test_an_answered_record_request_keeps_its_first_bytes_even_when_later_deliveries_add_offers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            st, host = State(directory, config=LOOPBACK), Stub()
+            uri = f'at://{DID}/{bridge.NS}request/3aaaaaaaaaaa2'
+            obs = {'uri': uri, 'cid': 'proven', 'kind': 'request', 'createdAt': '2026-10-12T00:00:00Z',
+                   'author': {'did': DID, 'handle': 'talkie.delve.town'}, 'text': '', 'replyTo': None, 'mentions': [],
+                   'request': {'call': {'object': 'bell', 'verb': 'rain', 'fields': {'tag': 'blue'}}}}
+            st.observations = mock.Mock(return_value=[obs])
+            admitted = {'status': 'admitted', 'inPublic': True, 'offers': [{'text': 'Planted.'}],
+                        'receipt': {**Stub.RESUMED, 'identity': {'principal': DID, 'intent': uri}}}
+            bridge.answer_turn(st, host, obs, admitted)
+            path = bridge.answer_path(st, bridge.request_source(obs))
+            first = path.read_bytes()
+            host.offers[DID] = [{'height': 10, 'identity': {'principal': DID, 'intent': uri}, 'text': "kind/bell's made"}]
+            send = host.send
+            def no_retry(req):
+                self.assertNotIn(req['op'], ('world-receipt', 'world-turn', 'world-reach'))
+                return send(req)
+            host.send = no_retry
+            ran = bridge.run(st, host, now=0)
+            self.assertEqual(ran['failed'], [])
+            self.assertEqual(ran['turns'], [])
+            self.assertEqual(path.read_bytes(), first)
+
     def test_a_tried_admitted_public_read_drafts_its_offers_without_a_hypothetical_receipt(self):
         request = {'op': 'world-turn', 'principal': DID, 'object': 'commonplace', 'method': 'receive', 'identity': 'a-read',
                    'argument': typed({'text': 'delvetalk guide', 'post': ''})}

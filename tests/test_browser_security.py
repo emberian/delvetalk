@@ -91,6 +91,142 @@ class BrowserSecurity(unittest.TestCase):
     def post(self, path, data=None, jar=JAR, **headers):
         return self.request('POST', path, data, {'Accept': 'text/html', 'Content-Type': FORM, 'Cookie': jar, **headers})
 
+    def real_feed(self):
+        from transport.feed import Feed
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.front._feed = Feed(State(tmp.name, config=Config(origin=ORIGIN)))
+        self.addCleanup(self.front._feed.close)
+
+    def test_a_lost_303_form_retry_and_a_json_retry_use_the_same_durable_submission(self):
+        self.real_feed()
+        _, headers, body = self.request('GET', '/feed', headers={'Accept': 'text/html', 'Cookie': JAR})
+        key = re.search(rb'name="idempotencyKey" value="([^"]+)"', body)[1].decode()
+        _, _, next_body = self.request('GET', '/feed', headers={'Accept': 'text/html', 'Cookie': JAR})
+        self.assertNotEqual(key, re.search(rb'name="idempotencyKey" value="([^"]+)"', next_body)[1].decode())
+        token, jar = self.form()
+        data = {'text': '&' * 65536, 'idempotencyKey': key}
+        first = self.post('/feed', {**data, 'csrf': token}, jar, Origin=ORIGIN)
+        retry = self.post('/feed', {**data, 'csrf': token}, jar, Origin=ORIGIN)
+        self.assertEqual((first[0], retry[0]), (303, 303))
+        self.assertEqual(dict(first[1])['Location'], dict(retry[1])['Location'])
+        status, _, raw = self.request('POST', '/AGENTS.md/feed', data, {'Authorization': 'Bearer ' + KEY})
+        self.assertEqual(status, 200)
+        self.assertEqual(len(self.front._feed.rows()), 1)
+        self.assertIn(urllib.parse.quote(json.loads(raw)['post']['uri'], safe=''), dict(first[1])['Location'])
+        for path in ('/feed', '/AGENTS.md/feed'):
+            self.front.hits.clear()
+            status, _, raw = self.request('POST', path, {**data, 'text': 'changed'}, {'Authorization': 'Bearer ' + KEY})
+            self.assertEqual(status, 400)
+            self.assertIn(b'idempotency_conflict', raw)
+
+    def test_feed_html_and_json_limit_one_and_reply_cursors_share_the_store_budget(self):
+        self.real_feed()
+        root = self.front._feed.post(WHO, '&' * 65536)
+        for _ in range(25):
+            self.front._feed.post(WHO, '&' * 65536, root['uri'])
+        status, _, body = self.request('GET', '/feed', headers={'Cookie': JAR})
+        self.assertEqual(status, 200)
+        self.assertLess(len(body), 8 * 1024 * 1024)
+        self.assertIn(b'earlier replies', body)
+        for path in ('/feed?limit=1', '/AGENTS.md/feed?limit=1'):
+            self.front.hits.clear()
+            status, _, body = self.request('GET', path, headers={'Authorization': 'Bearer ' + KEY})
+            self.assertEqual(status, 200)
+            if path.startswith('/AGENTS'):
+                document = json.loads(body)
+                self.assertEqual(len(document['threads']), 1)
+                self.assertEqual(document['threads'][0]['replies'], [])
+                earlier = document['threads'][0]['_links']['earlier']['href']
+                status, _, raw = self.request('GET', earlier, headers={'Authorization': 'Bearer ' + KEY})
+                self.assertEqual(status, 200)
+                self.assertTrue(json.loads(raw)['threads'][0]['replies'])
+            else:
+                self.assertEqual(body.count(b'<article '), 1)
+        for limit in ('0', '31', 'x', '9' * 100):
+            self.assertEqual(self.request('GET', '/AGENTS.md/feed?limit=' + limit, headers={'Authorization': 'Bearer ' + KEY})[0], 400)
+
+    def test_maximum_control_character_posts_fit_the_json_escape_budget_and_html_links_keep_limit_one(self):
+        self.real_feed()
+        root = self.front._feed.post(WHO, '\x01' * 65536)
+        for _ in range(25):
+            self.front._feed.post(WHO, '\x01' * 65536, root['uri'])
+        status, _, raw = self.request('GET', '/AGENTS.md/feed', headers={'Authorization': 'Bearer ' + KEY})
+        self.assertEqual(status, 200)
+        self.assertLess(len(raw), 8 * 1024 * 1024)
+        self.assertIn(b'\\u0001', raw)
+        self.front._feed.post(WHO, 'another root')
+        status, _, body = self.request('GET', '/feed?limit=1')
+        self.assertEqual(status, 200)
+        url = html.unescape(re.search(rb'href="([^"]*before=[^"]+)"', body)[1].decode())
+        self.assertIn('limit=1', url)
+        status, _, body = self.request('GET', url)
+        self.assertEqual(status, 200)
+        self.assertEqual(body.count(b'<article '), 1)
+
+    def test_feed_json_reply_and_root_links_round_trip_without_losing_or_repeating_rows(self):
+        self.real_feed()
+        roots = [self.front._feed.post(WHO, str(i)) for i in range(10)]
+        replies = [self.front._feed.post(WHO, str(i), roots[0]['uri']) for i in range(35)]
+        url, seen = '/AGENTS.md/feed?limit=1', []
+        while url:
+            self.front.hits.clear()
+            status, _, raw = self.request('GET', url, headers={'Authorization': 'Bearer ' + KEY})
+            self.assertEqual(status, 200)
+            page = json.loads(raw)
+            seen.extend(t['post']['uri'] for t in page['threads'])
+            self.assertEqual(sum(1 + len(t['replies']) for t in page['threads']), 1)
+            url = page['_links'].get('next', {}).get('href')
+        self.assertEqual(seen, [roots[0]['uri']] + [r['uri'] for r in reversed(roots[1:])])
+        url, seen = '/AGENTS.md/feed?thread=' + urllib.parse.quote(roots[0]['uri'], safe=''), []
+        while url:
+            self.front.hits.clear()
+            status, _, raw = self.request('GET', url, headers={'Authorization': 'Bearer ' + KEY})
+            self.assertEqual(status, 200)
+            [thread] = json.loads(raw)['threads']
+            seen.extend(r['uri'] for r in reversed(thread['replies']))
+            url = thread['_links'].get('earlier', {}).get('href')
+        self.assertEqual(seen, [r['uri'] for r in reversed(replies)])
+
+    def test_feed_renderers_refuse_the_same_adversarial_inputs_and_charge_each_submission_once(self):
+        self.real_feed()
+        bad = ({'text': 'hello', 'reply_to': []}, {'text': 'hello', 'idempotencyKey': 'x' * 129},
+               {'text': '\ud800'}, {'text': 'x' * 65537}, {'text': {}})
+        for data in bad:
+            for path in ('/feed', '/AGENTS.md/feed'):
+                self.front.hits.clear()
+                status, _, _ = self.request('POST', path, data, {'Authorization': 'Bearer ' + KEY})
+                self.assertEqual(status, 400)
+                self.assertEqual(self.front.limited(KEY, count=False), 1)
+        self.assertEqual(self.front._feed.rows(), [])
+        for path in ('/feed', '/AGENTS.md/feed'):
+            self.front.hits.clear()
+            for i in range(RATE):
+                status, _, _ = self.request('POST', path, {'text': 'hello', 'idempotencyKey': str(i)}, {'Authorization': 'Bearer ' + KEY})
+                self.assertIn(status, (200, 303))
+            self.assertEqual(self.request('POST', path, {'text': 'hello'}, {'Authorization': 'Bearer ' + KEY})[0], 429)
+
+    def test_waiting_answers_refresh_a_scriptless_frame_and_leave_the_composer_document_in_place(self):
+        self.real_feed()
+        row = self.front._feed.post(WHO, 'hello')
+        url = '/feed?posted=' + urllib.parse.quote(row['uri'], safe='')
+        status, headers, body = self.request('GET', url, headers={'Cookie': JAR})
+        self.assertEqual(status, 200)
+        self.assertIn(b'<textarea', body)
+        self.assertNotIn(b'http-equiv="refresh"', body)
+        self.assertNotIn('Refresh', dict(headers))
+        self.assertNotIn(b'<script', body)
+        frame = html.unescape(re.search(rb'<iframe[^>]*src="([^"]+)"', body)[1].decode())
+        status, _, body = self.request('GET', frame, headers={'Cookie': JAR})
+        self.assertEqual(status, 200)
+        self.assertIn(b'http-equiv="refresh"', body)
+        self.assertNotIn(b'<textarea', body)
+        self.front._feed.post(self.front._feed.town, 'the answer arrived', row['uri'], town=True)
+        status, _, body = self.request('GET', frame, headers={'Cookie': JAR})
+        self.assertEqual(status, 200)
+        self.assertIn(b'the answer arrived', body)
+        self.assertNotIn(b'http-equiv="refresh"', body)
+
     def test_foreign_and_missing_origins_refuse_every_browser_write_before_effects(self):
         token, jar = self.form()
         for path in ('/enter', '/leave', '/feed', '/AGENTS.md/accept', '/play/garden', '/AGENTS.md/challenge', '/AGENTS.md/verify'):

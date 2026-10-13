@@ -729,6 +729,38 @@ class Requests(unittest.TestCase):
 class Held(unittest.TestCase):
     """A request hob must read first (a misfit spell) is answered when its turn settles, once, never run again meanwhile."""
 
+    def test_a_saved_suspended_record_answer_is_replaced_by_settlement_without_replaying_the_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            st, host = State(directory, config=LOOPBACK), Stub()
+            uri = f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa2'
+            obs = {'uri': uri, 'cid': str(block('request')[0]), 'kind': 'request', 'createdAt': '9999-12-31T23:59:59.999999Z',
+                   'author': {'did': DID, 'handle': HANDLE}, 'text': '', 'replyTo': None, 'mentions': [],
+                   'request': {'call': {'object': 'garden-1', 'verb': 'plant', 'fields': {}}}}
+            st.observations = mock.Mock(return_value=[obs])
+            suspended = {'status': 'suspended', 'receipt': {'hash': str(block('waiting')[0]), 'slug': 'waiting-name',
+                         'height': 5, 'identity': {'principal': DID, 'intent': uri}, 'outcome': {'tag': 'suspended'}}}
+            self.assertIsNone(bridge.answer_turn(st, host, obs, suspended))
+            bridge.write_answer(st, bridge.request_source(obs), bridge.public_view(host, suspended))
+            path = bridge.answer_path(st, bridge.request_source(obs))
+            before = path.read_bytes()
+            self.assertEqual(json.loads(before)['outcome']['status'], 'suspended')
+            host.offers[DID] = [{'height': 9, 'identity': {'principal': DID, 'intent': uri}, 'text': 'Planted.'},
+                                {'height': 10, 'identity': {'principal': DID, 'intent': 'another'}, 'text': 'not mine'}]
+            ran = bridge.run(st, host, now=0)
+            self.assertEqual(ran['offered'], [uri])
+            answer = json.loads(path.read_text())
+            self.assertEqual(record_problems(answer), [])
+            self.assertEqual((answer['outcome']['status'], answer['offers']), ('admitted', ['Planted.']))
+            self.assertEqual(answer['receipt']['entry']['$link'], Stub.RESUMED['hash'])
+            self.assertNotIn('not mine', json.dumps(answer))
+            self.assertTrue(json.loads(bridge.awaiting_path(st, uri).read_text())['settled'])
+            first = path.read_bytes()
+            self.assertNotEqual(first, before)
+            host.offers[DID].append({'height': 11, 'identity': {'principal': DID, 'intent': uri}, 'text': 'made later'})
+            self.assertNotIn('offered', bridge.run(st, host, now=0))
+            self.assertEqual(path.read_bytes(), first)
+            self.assertFalse(any(q['op'] == 'world-turn' for q in host.ops))
+
     def test_not_a_date_missing_and_non_string_request_times_are_quarantined_beside_a_maximum_timestamp(self):
         with tempfile.TemporaryDirectory() as directory:
             st, pds, host = State(directory, config=LOOPBACK), FakePDS(), Stub()

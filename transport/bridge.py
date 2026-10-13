@@ -358,11 +358,27 @@ def public_view(host, reply):
 def write_answer(st, source, view):
     """One public answer writer for proven request references and XRPC provenance."""
     path = answer_path(st, source)
-    if source['$type'] == ANSWER + '#provenance' and path.exists() and json.loads(path.read_text()).get('receipt'):
-        return  # the intent's first receipt keeps its first public projection
     height = ((view.get('receipt') or {}).get('height') or max([(t.get('receipt') or {}).get('height') or 0 for t in view.get('turns') or []] + [0]))
     st.write(path, {'source': source, **view, '$type': ANSWER,
                                            **({'height': height} if height else {})})
+
+
+def retained_reply(host, principal, intent, transient):
+    """The current identity receipt and its offers, or no bound answer to retain."""
+    got = host.send({'op': 'world-receipt', 'principal': principal, 'identity': intent})
+    if got.get('class') in ('hostUnavailable', 'hostTimeout') or got.get('status') == 'error':
+        return got
+    rc = got.get('receipt') or {}
+    if not rc:
+        return None
+    outcome = rc.get('outcome') or {}
+    if outcome.get('tag') == 'refused' and outcome.get('class') in transient:
+        return None
+    reply = {**got, 'status': outcome.get('tag', 'refused'), 'object': (rc.get('roots') or [{}])[0].get('object')}
+    if reply['status'] != 'suspended':
+        reply['offers'] = [o for o in paged(host, {'op': 'world-offers', 'principal': principal, 'after': rc['height'] - 1}, 'offers')
+                           if (o.get('from') or o.get('identity') or {}).get('intent') == intent]
+    return reply
 
 
 def answer_turn(st, host, obs, reply):

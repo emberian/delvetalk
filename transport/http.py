@@ -410,30 +410,14 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                                  'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
 
     def turn(self, host, principal, obj, method, data, scratch=False, first_receipt=False):
-        """The agent and procedure act/try path: one host call, then town drafting.
+        """The agent and procedure act/try path, then town drafting.
 
-        XRPC intents answer their first bound receipt even when the retry changes
+        XRPC intents answer their current bound receipt even when the retry changes
         the call. The host remains the authority for receipt lookup and offers.
         """
         reply = None
         if first_receipt:
-            saved = {}
-            if not scratch:
-                source = bridge.xrpc_source(principal, data['intent'])
-                path = bridge.answer_path(self.st, source)
-                saved = json.loads(path.read_text()) if path.exists() else {}
-            entry = (saved.get('receipt') or {}).get('entry', {}).get('$link')
-            got = host.send({'op': 'world-entry', 'principal': principal, 'hash': entry}) if entry else \
-                host.send({'op': 'world-receipt', 'principal': principal, 'identity': data['intent']})
-            if got.get('class') in ('hostUnavailable', 'hostTimeout') or (scratch and got.get('status') == 'error'):
-                return got
-            rc = got.get('receipt') or {}
-            if rc:
-                reply = {**got, 'status': (rc.get('outcome') or {}).get('tag', 'refused'),
-                         'object': (rc.get('roots') or [{}])[0].get('object')}
-                offers = paged(host, {'op': 'world-offers', 'principal': principal, 'after': rc['height'] - 1}, 'offers')
-                reply['offers'] = [o for o in offers
-                                   if (o.get('from') or o.get('identity') or {}).get('intent') == data['intent']]
+            reply = bridge.retained_reply(host, principal, data['intent'], self.bounds['transientClasses'])
         if reply is None:
             if obj is None:  # a spell's destination is read by the host, as for a record request
                 reached = host.send({'op': 'world-reach', 'principal': principal, 'author': principal, 'kind': 'request',
@@ -818,6 +802,8 @@ class Handler(BaseHTTPRequestHandler):
     # ---- agents
 
     def agents(self, kind, scratch, obj, tail):
+        if kind == 'feedPost':
+            return self.feed_json(None, True)
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else self.cookie() if self.browser() and self.command == 'GET' else ''
         who = self.principal(credential)
@@ -830,8 +816,8 @@ class Handler(BaseHTTPRequestHandler):
                              headers=[('Retry-After', str(wait))])
         if kind == 'me':
             return self.me(credential, who)
-        if kind in ('feedRead', 'feedPost'):
-            return self.feed_json(who, kind == 'feedPost')
+        if kind == 'feedRead':
+            return self.feed_json(who, False)
         if kind == 'revoke':
             self.server.identity.revoke(credential)
             return self.reply(200, canonical({'status': 'revoked', '_links': {'self': link(self.path), 'challenge': link(PREFIX + '/challenge')}}),
@@ -1192,61 +1178,90 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- the town's own feed (transport/feed.py): residents post, the bridge answers in it
 
-    def feed_say(self, who, text, reply_to):
-        """Keep a resident's post in the feed -> (row, None), or (None, (error class, words)). At most feed.HOUR_POSTS an
-        hour from one resident."""
-        from transport import feed
+    def feed_say(self, browser=False):
+        """The resident submission driver: authenticate, charge a request, read the body and persist through Feed.post."""
         from transport.delve import Failure
-        since = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(self.server.clock() - 3600))
-        if self.server.feed.recent(who['did'], since) >= feed.HOUR_POSTS:
-            return None, ('rateLimited', f'{feed.HOUR_POSTS} posts an hour to the feed from one resident; the town answers each, and they wait for nothing')
+        auth = self.headers.get('Authorization') or ''
+        credential = self.credential() if browser or self.browser() else auth[7:] if auth.startswith('Bearer ') else ''
+        who = self.principal(credential)
+        if self.server.limited(credential if who else 'page:' + self.client_ip()):
+            return who, {}, None, ('rateLimited', f'more than {RATE} requests per {WINDOW} seconds')
+        data = self.body(browser_write=True)
+        if data is None:
+            return None
+        if who is None:
+            return who, data, None, ('unauthenticated', 'sign in to post to the feed')
         try:
-            return self.server.feed.post({'did': who['did'], 'handle': who['handle']}, text, reply_to or None, now=self.server.clock()), None
+            row = self.server.feed.post({'did': who['did'], 'handle': who['handle']}, data.get('text'), data.get('reply_to'),
+                                        now=self.server.clock(), idempotency_key=data.get('idempotencyKey'))
+            return who, data, row, None
         except Failure as f:
-            return None, ('badRequest', f.detail or f.code)
+            return who, data, None, ('rateLimited' if f.code == 'feed_quota' else 'badRequest', f'{f.code}: {f.detail}')
+
+    def feed_threads(self, q, thread=None):
+        from transport.delve import Failure
+        try:
+            return self.server.feed.threads(q.get('before'), q.get('limit', 30), thread=thread or q.get('thread'),
+                                            replies_before=q.get('replies_before'))
+        except Failure as f:
+            self.fail('badRequest', f'{f.code}: {f.detail}')
+            return None
 
     def feed_json(self, who, posting):
-        """`GET /AGENTS.md/feed?before=` the newest threads, as JSON; `POST /AGENTS.md/feed {text, reply_to?}` a post."""
+        """Read a bounded feed page or render the common submission driver's result as JSON."""
         if posting:
-            data = self.body()
-            if data is None:
+            submitted = self.feed_say()
+            if submitted is None:
                 return
-            row, err = self.feed_say(who, data.get('text'), data.get('reply_to') if isinstance(data.get('reply_to'), str) else None)
+            who, data, row, err = submitted
             if err:
                 return self.fail(err[0], err[1], links={'feed': link(PREFIX + '/feed')})
             return self.reply(200, canonical({'status': 'posted', 'post': pages.feed_post(row), '_links': {
                 'self': link(self.path), 'feed': link(PREFIX + '/feed'), 'thread': link(PREFIX + '/feed?thread=' + urllib.parse.quote(row['root'] or row['uri'], safe=''))}}))
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
-        threads, more = self.server.feed.threads(q.get('before'), thread=q.get('thread'))
-        return self.reply(200, canonical({'status': 'feed', 'threads': [{'post': pages.feed_post(h), 'replies': [pages.feed_post(r) for r in rs]} for h, rs in threads],
-                                          '_links': {'self': link(self.path), 'post': link(PREFIX + '/feed'),
-                                                     **({'next': link(PREFIX + '/feed?before=' + urllib.parse.quote(more, safe=''))} if more else {})}}))
+        selected = self.feed_threads(q)
+        if selected is None:
+            return
+        threads, more = selected
+        return self.reply(200, canonical({'status': 'feed', 'threads': [
+            {'post': pages.feed_post(h), 'replies': [pages.feed_post(r) for r in rs],
+             '_links': {'earlier': link(pages.feed_earlier(h['uri'], earlier, PREFIX + '/feed'))} if earlier else {}}
+            for h, rs, earlier in threads], '_links': {'self': link(self.path), 'post': link(PREFIX + '/feed'),
+            **({'next': link(PREFIX + '/feed?before=' + urllib.parse.quote(more, safe='') + '&limit=' + str(q.get('limit', 30)))} if more else {})}}))
 
     def feed_page(self, posting):
-        """`/feed`: the newest threads, newest activity first, and (signed in) the box: a post to the town, or with
-        `?reply=` a reply under one post. A post sent goes back to the feed, which looks again until the town answers."""
-        credential = self.credential()
-        who = self.principal(credential)
-        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
-        if self.server.limited(credential if who else 'page:' + self.client_ip()):
-            return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds')
+        """Render a bounded feed page, a submission result, or a refreshing answer document without a composer."""
         if posting:
-            data = self.body(browser_write=True)
-            if data is None:
+            submitted = self.feed_say(browser=True)
+            if submitted is None:
                 return
-            if who is None:
-                return self.reply(303, '', 'text/plain', [('Location', '/enter')])
-            row, err = self.feed_say(who, data.get('text'), data.get('reply_to'))
+            who, data, row, err = submitted
             if err:
+                if err[0] == 'unauthenticated':
+                    return self.reply(303, '', 'text/plain', [('Location', '/enter')])
+                if who is None:
+                    return self.fail(err[0], err[1])
                 return self.html(429 if err[0] == 'rateLimited' else 400, pages.feed(self.server.feed.threads()[0], who['handle'], note=err[1],
-                                                                                         said=str(data.get('text') or ''), reply=self.server.feed.get(data.get('reply_to') or '')))
+                                  said=data.get('text') if isinstance(data.get('text'), str) else '',
+                                  reply=self.server.feed.get(data.get('reply_to')) if isinstance(data.get('reply_to'), str) else None,
+                                  submission=data.get('idempotencyKey') if isinstance(data.get('idempotencyKey'), str) else None))
             return self.reply(303, '', 'text/plain', [('Location', '/feed?posted=' + urllib.parse.quote(row['uri'], safe='') + '#' + pages.anchor(row['uri']))])
-        threads, more = self.server.feed.threads(q.get('before'))
-        posted = self.server.feed.get(q.get('posted') or '')
-        waiting = posted is not None and not any(r['town'] and r['parent'] == posted['uri'] for _, rs in threads for r in rs)
-        tries = int(q['wait']) if digits(q.get('wait', '')) else 0
-        refresh = f'/feed?posted={urllib.parse.quote(posted["uri"], safe="")}&wait={tries + 1}#{pages.anchor(posted["uri"])}' if waiting and tries < 8 else None
-        self.html(200, pages.feed(threads, who and who['handle'], more=more, reply=self.server.feed.get(q.get('reply') or ''), posted=posted, refresh=refresh))
+        who = self.principal(self.credential())
+        if self.server.limited(self.credential() if who else 'page:' + self.client_ip()):
+            return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds')
+        q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        posted = self.server.feed.get(q.get('answer') or q.get('posted') or '')
+        selected = self.feed_threads(q, thread=(posted['root'] or posted['uri']) if posted else None)
+        if selected is None:
+            return
+        threads, more = selected
+        answer = '/feed?answer=' + urllib.parse.quote(posted['uri'], safe='') if posted is not None else None
+        if q.get('answer'):
+            tries = int(q['wait']) if digits(q.get('wait', '')) and len(q['wait']) <= 2 else 0
+            refresh = answer + '&wait=' + str(tries + 1) if posted is not None and not self.server.feed.answered(posted['uri']) and tries < 8 else None
+            return self.html(200, pages.feed(threads, who and who['handle'], posted=posted, refresh=refresh, composer=False))
+        self.html(200, pages.feed(threads, who and who['handle'], more=more, reply=self.server.feed.get(q.get('reply') or ''),
+                                 posted=posted, waiting=answer, limit=q.get('limit', 30)))
 
     def me(self, credential, who):
         rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []

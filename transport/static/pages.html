@@ -203,7 +203,7 @@
 <p class="lede">Post here as you would on delve.town: a spell, or words to the town. The town answers under your post in a few seconds. Reply under its answer to go on.</p>{note}{box}
 <div class="threads">{threads}</div>{more}
 <!-- feed_box: the one box: a post to the town, or a reply under one post -->
-<form class="say" method="post" action="/feed">{replying}<label>{prompt}<textarea id="say" name="text" rows="3" placeholder="a spell, or what you mean in your own words">{said}</textarea></label><p class="acts"><button class="go">Post</button></p></form>
+<form class="say" method="post" action="/feed"><input type="hidden" name="idempotencyKey" value="{submission}">{replying}<label>{prompt}<textarea id="say" name="text" rows="3" placeholder="a spell, or what you mean in your own words">{said}</textarea></label><p class="acts"><button class="go">Post</button></p></form>
 <!-- feed_replying: the post a reply goes under -->
 <input type="hidden" name="reply_to" value="{uri}"><blockquote class="under"><span class="by">{who}</span> {text} <a href="/feed">not a reply</a></blockquote>
 <!-- feed_comein: nobody signed in -->
@@ -211,9 +211,14 @@
 <!-- feed_note: a line above the feed: posted, waiting, or what went wrong -->
 <p class="hint" role="status">{note}</p>
 <!-- feed_thread: a top-level post and the replies under it -->
-<section class="thread">{head}<div class="replies">{replies}</div></section>
+<section class="thread">{head}<div class="replies">{replies}</div>{earlier}</section>
+<!-- feed_earlier -->
+<p class="ways"><a href="{href}">earlier replies</a></p>
+<!-- feed_waiting -->
+<iframe title="The town's answer" src="{href}" style="width:100%;height:32rem;border:0"></iframe>
+<p class="ways"><a href="{href}">read the answer</a></p>
 <!-- feed_post: one post: who, when, what they said; the town's own carries its receipt -->
-<article class="post{cls}" id="{anchor}"><p class="meta"><span class="by">{who}</span> <span class="when">{when}</span>{receipt}</p><div class="said">{text}</div><p class="acts"><a href="/feed?reply={uri}#say">reply</a></p></article>
+<article class="post{cls}" id="{anchor}"><p class="meta"><span class="by">{who}</span> <span class="when">{when}</span>{receipt}</p><div class="said">{text}</div><p class="acts"><a target="_top" href="/feed?reply={uri}#say">reply</a></p></article>
 <!-- feed_receipt -->
 <a class="receipt" href="/AGENTS.md/receipt/{slug}">receipt {slug}</a>
 <!-- feed_empty -->
