@@ -142,10 +142,12 @@ class LawFacts(Reflection):
         self.assertEqual(r["status"], "error", r)
 
 
-class Grants(Reflection):
+class GrantFixture(Reflection):
+    opener = None
+
     def setUp(self):
         super().setUp()
-        self.open_library()
+        self.open_library(**({"opener": self.opener} if self.opener else {}))
         self.make("scheduler", SCHEDULER, record(note=label("")))
         self.make("bell", BELL, record(count=nat(0), by=label(""), **{"from": label("")}))
 
@@ -170,6 +172,9 @@ class Grants(Reflection):
         state = self.state("bell")
         return field(state, "count")["value"], field(state, "by")["value"], field(state, "from")["value"]
 
+
+
+class Grants(GrantFixture):
     def test_a_scheduler_sending_via_the_registrars_grant_is_admitted_by_a_law_naming_the_registrar(self):
         grant = self.authorize()
         held = self.lines()[-1]
@@ -241,6 +246,133 @@ class Grants(Reflection):
         self.assertEqual(r["result"], label("notDirect"), r)
         direct = self.turn("scheduler", "authorizeBell", principal="registrar")
         self.assertEqual(len(direct["result"]["value"]), 59, direct)
+
+
+class GrantLifecycle(GrantFixture):
+    opener = "ember"
+
+    def lower_bound(self, n=1):
+        r = self.host.send(op="world-open", path=self.path, maxGrants=n)
+        self.assertEqual(r["status"], "opened", r)
+
+    def listed(self, gid):
+        rows = self.host.send(op="world-grants", principal="registrar", grant=gid)["grants"]
+        self.assertEqual(len(rows), 1, rows)
+        self.assertEqual(rows[0]["id"], gid)
+        return rows[0]
+
+    def test_revocation_releases_capacity_and_the_cited_id_keeps_its_ending(self):
+        self.lower_bound()
+        gid = self.authorize()
+        self.fire(gid)
+        receipt = whole(self.host, self.deliver())
+        self.assertEqual(receipt["outcome"]["writes"][0]["vias"], [gid])
+        refused = self.turn("scheduler", "authorizeBell", principal="registrar")
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["class"]), ("refused", "capacity"), refused)
+        self.assertIn("maxGrants", refused["receipt"]["outcome"]["reason"])
+        revoked = self.host.send(op="world-revoke", principal="registrar", identity="end", grant=gid)
+        self.assertEqual(revoked["status"], "admitted", revoked)
+        ended = self.listed(gid)
+        self.assertEqual((ended["ended"], ended["endedAt"]), ("revoked", revoked["receipt"]["height"]))
+        self.assertNotIn("reading", ended)
+        self.assertNotIn("fixed", ended)
+        self.assertNotEqual(self.authorize(), gid)
+        for snapshot in (False, True):
+            if snapshot:
+                self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+            self.reopen()
+            self.assertEqual(self.listed(gid), ended)
+            self.assertEqual(self.fire(gid), "noGrant")
+            inspected = self.host.send(op="world-inspect", principal="registrar", grant=gid)
+            self.assertEqual(inspected["grant"], ended)
+
+    def test_expiry_is_inclusive_and_compacts_at_the_clock_entry_not_the_read(self):
+        self.lower_bound()
+        gid = self.authorize(until=5)
+        self.host.send(op="world-advance", height=5)
+        r = self.turn("scheduler", "authorizeBell", principal="registrar")
+        self.assertEqual(r["status"], "refused", r)
+        expired = self.host.send(op="world-advance", height=6)
+        ended = self.listed(gid)
+        self.assertEqual((ended["ended"], ended["endedAt"]), ("expired", expired["receipt"]["height"]))
+        self.authorize()
+        self.reopen()
+        self.assertEqual(self.listed(gid), ended)
+
+    def test_a_residents_65th_live_grant_is_refused_but_other_residents_and_opener_have_room(self):
+        for _ in range(64):
+            self.authorize()
+        r = self.turn("scheduler", "authorizeBell", principal="registrar")
+        self.assertEqual((r["status"], r["receipt"]["outcome"]["class"]), ("refused", "capacity"), r)
+        self.assertIn("grantsPerPrincipal", r["receipt"]["outcome"]["reason"])
+        self.authorize(principal="kim")
+        for _ in range(65):
+            self.authorize(principal="ember")
+        gid = self.host.send(op="world-grants", principal="registrar")["grants"][0]["id"]
+        ended = self.host.send(op="world-revoke", principal="ember", identity="release-share", grant=gid)
+        self.assertEqual(ended["status"], "admitted", ended)
+        self.authorize()
+
+    def test_the_257th_tombstone_evicts_only_the_live_index_copy_and_journal_resolves_the_oldest(self):
+        self.lower_bound()
+        first = None
+        for i in range(257):
+            gid = self.authorize()
+            r = self.host.send(op="world-revoke", principal="registrar", identity=f"end-{i}", grant=gid)
+            self.assertEqual(r["status"], "admitted", r)
+            if first is None:
+                first = gid
+                height = r["receipt"]["height"]
+        self.assertEqual(self.host.send(op="world-snapshot")["status"], "snapshot")
+        from tests.test_snapshot import read_snapshot
+        body = read_snapshot(self.path + ".snapshot." + str(self.host.send(op="world-status")["height"]) + ".cbor")
+        self.assertEqual(body["grants"], [])
+        self.assertEqual(len(body["grantTombstones"]), 256)
+        self.assertNotIn(first, [g["id"] for g in body["grantTombstones"]])
+        self.reopen()
+        oldest = self.listed(first)
+        self.assertEqual((oldest["ended"], oldest["endedAt"]), ("revoked", height))
+
+    def test_a_lent_reading_is_only_in_the_creation_receipt_after_compaction(self):
+        from tests.test_extend import CARD
+        self.make("card", CARD, record(count=nat(0)))
+        lent = self.turn("card", "receive", record(text=label("delvetalk card lend / to: kim / method: bump / until: +5"), post=label("")))
+        self.assertEqual(lent["status"], "admitted", lent)
+        [terms] = lent["receipt"]["outcome"]["grants"]
+        self.assertIn("lent by ember", terms["reading"])
+        self.host.send(op="world-advance", height=6)
+        row = self.listed(terms["id"])
+        self.assertEqual(row["ended"], "expired")
+        self.assertNotIn("reading", row)
+        self.assertNotIn("until", row)
+
+    def test_expired_on_creation_is_immediately_a_tombstone_and_does_not_fill_the_cap(self):
+        self.lower_bound()
+        self.host.send(op="world-advance", height=6)
+        gid = self.authorize(until=5)
+        row = self.listed(gid)
+        self.assertEqual((row["ended"], row["endedAt"]), ("expired", row["height"]))
+        self.authorize()
+
+    def test_grant_reads_bound_unknown_ids_and_do_not_reveal_a_private_targets_tombstone(self):
+        gid = self.authorize()
+        self.host.send(op="world-revoke", principal="registrar", identity="ended-private", grant=gid)
+        hidden = self.host.send(op="world-root", principal="ember", reason="private target",
+                                act={"kind": "set", "object": "bell", "field": "read", "value": {"principals": ["registrar", "ember"]}})
+        self.assertEqual(hidden["status"], "root", hidden)
+        self.assertEqual(self.host.send(op="world-inspect", principal="mallory", grant=gid)["status"], "denied")
+        self.assertEqual(self.host.send(op="world-grants", principal="mallory", grant=gid)["grants"], [])
+        for op in ("world-inspect", "world-grants"):
+            r = self.host.send(op=op, principal="registrar", grant="g" * 256)
+            self.assertEqual(r["status"], "unknown" if op == "world-inspect" else "grants", r)
+            too_long = self.host.send(op=op, principal="registrar", grant="g" * 257)
+            self.assertEqual(too_long["status"], "error", too_long)
+            self.assertIn("1..256", too_long["message"])
+
+    def test_a_grant_bound_can_only_be_lowered(self):
+        r = self.host.send(op="world-open", path=self.path, maxGrants=4097)
+        self.assertEqual(r["status"], "error", r)
+        self.assertIn("never raise", r["message"])
 
 
 LAMP = declared("""edition ObjectiveBend 1
@@ -334,6 +466,21 @@ class Attenuation(Reflection):
         self.host.send(op="world-revoke", principal="owner", identity="rv", grant=g)
         [after] = self.host.send(op="world-grants", principal="", reverse=True)["grants"]
         self.assertTrue(after["revoked"], after)
+
+    def test_revocation_drops_fixed_arguments_and_uses_from_the_compact_record(self):
+        gid = self.grant()
+        terms = next(g for e in journal_entries(self.path) for g in e.get("outcome", {}).get("grants", []) if g["id"] == gid)
+        self.assertIn("fixed", terms)
+        self.assertEqual(terms["uses"], 2)
+        revoked = self.host.send(op="world-revoke", principal="owner", identity="compact-fixed", grant=gid)
+        self.assertEqual(revoked["status"], "admitted", revoked)
+        [row] = self.host.send(op="world-grants", principal="owner", grant=gid)["grants"]
+        self.assertEqual((row["id"], row["ended"], row["endedAt"]), (gid, "revoked", revoked["receipt"]["height"]))
+        self.assertNotIn("fixed", row)
+        self.assertNotIn("uses", row)
+        self.reopen()
+        [after] = self.host.send(op="world-grants", principal="owner", grant=gid)["grants"]
+        self.assertEqual(after, row)
 
     def test_the_fixed_part_is_merged_into_the_callers_argument_and_a_grant_needs_a_use(self):
         self.assertEqual(self.grant(uses=0), "uses")

@@ -138,6 +138,10 @@ def spanishStem (w : String) : String :=
   let cs := (stripEnding ["s"] 3 w).toList
   String.ofList (if cs.length > 4 && cs.getLast? == some 'e' then cs.dropLast else cs)
 
+#guard spanishStem "visitantes" == spanishStem "visitante"
+#guard spanishStem "clases" == spanishStem "clase"
+#guard spanishStem (fold "caracteres") == spanishStem (fold "carácter")
+
 def russianStem : String → String :=
   stripEnding ["ями", "ами", "его", "ого", "ему", "ому", "ыми", "ими", "иях", "ах", "ях", "ей", "ой", "ий", "ый", "ая", "яя", "ое",
     "ее", "ые", "ие", "ов", "ев", "ам", "ям", "ом", "ем", "ую", "юю", "а", "я", "ы", "и", "у", "ю", "о", "е", "ь", "й"] 3

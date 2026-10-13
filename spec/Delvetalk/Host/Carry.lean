@@ -69,7 +69,7 @@ def allArgs (args : List String) (flag : String) : List String :=
     blocks by the entry carrying each; the anchors its objects are checked against). Any other key of an
     older binary's body is not read, so a snapshot edition is a contract on these alone. -/
 def readKeys : List String :=
-  Snapshot.carriedKeys ++ ["pending", "suspended", "handles", "modules", "blocks", "anchors", "receipts"]
+  Snapshot.carriedKeys ++ ["pending", "suspended", "handles", "modules", "blocks", "anchors", "receipts", "touched"]
 
 /-- The world a snapshot body at `height` of `src` holds, as this binary reads it: the indexes in
     `readKeys`, laid over an empty world's, then the store, every object checked against its anchors by
