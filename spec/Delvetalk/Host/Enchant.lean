@@ -148,6 +148,10 @@ structure Strokes where
 /-- Whose words its form values are: the coiner's for a coinage, else its maker's. -/
 def Strokes.wordsBy (s : Strokes) : String := if s.coined && !s.coiner.isEmpty then s.coiner else s.maker
 
+/-- Whose words they are, as the painter is told: a coiner the town knows no handle for is "its coiner", never a DID. -/
+def Strokes.wordsByShown (s : Strokes) : String :=
+  if s.wordsBy.startsWith "did:" then "its coiner's" else s!"{s.wordsBy}'s"
+
 /-- How many of the newest lines the strokes carry. -/
 def newestLines : Nat := 8
 
@@ -201,6 +205,16 @@ def quoted (t : String) : String := "“" ++ t ++ "”"
 
 /-- The tongue the strokes are painted in, English for a code with no table (`paintOf` paints none such). -/
 def Strokes.speech (s : Strokes) : Tongue := (Tongue.find? s.tongue).getD Tongue.english
+
+/-- The names imagery may not use, as the painter is told them: its kind, what it records (marks), does (verbs), counts
+    (units) and wants, in English and in the tongue it is painted in. The check (`imageryFault`) blocks these and more
+    (state verbs, handles, ids, the words of its lines, seed, head and about its voice does not hold). -/
+def Strokes.notImagery (s : Strokes) : List String :=
+  let t := s.speech
+  let kindName := (s.kind.splitOn "/").getLast?.getD ""
+  let units := s.quantities.filter (!·.ordinal) |>.map (·.unit)
+  let names := [kindName] ++ s.verbs.map (·.name) ++ s.marks.map (·.name) ++ units ++ s.wants.map (·.name)
+  (names ++ (if t.code == "en" then [] else names.flatMap t.wordsFor)).filter (fun w => !w.isEmpty && !w.contains ' ') |>.eraseDups
 
 /-- A count as the painter of tongue `t` reads it: beside it the unit word to write it with in `t`, or, where `t`
     has none, the English one. -/
@@ -257,6 +271,15 @@ def Strokes.facts (s : Strokes) : List Fact := Id.run do
     out := out.push { id := out.size + 1, kind := "event", subject, value := t, clause := t }
   return out.toList
 
+/-- How many facts a paint may cite, as the painter is told it: each cited id costs its clause, and half the length
+    in clauses of the facts' average leaves room for a quotation and a simile (the station's telling, seven events of
+    fifty characters and a two-hundred-character line, ran past 500 on most first tries). -/
+def Strokes.budget (s : Strokes) : String :=
+  let fs := s.facts
+  if fs.isEmpty then "" else
+  let avg := max 1 ((fs.foldl (· + ·.clause.length) 0) / fs.length)
+  s!" Each cited id counts its whole clause; these average {avg} characters, so cite at most {max 1 (s.limit / 2 / avg)} and quote at most one line."
+
 /-- The strokes as the painter reads them: what the thing is, then its maker's words, its life (lines,
     wants, rules), its counts with their units, its spells; a field it does not hold is not written. -/
 def Strokes.text (s : Strokes) : String := Id.run do
@@ -280,8 +303,10 @@ def Strokes.text (s : Strokes) : String := Id.run do
     line (!s.head.isEmpty) s!"Called: {s.head}" ++
     [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
     line (!s.about.isEmpty) s!"What its kind is: {s.about}" ++
-    line (!s.fields.isEmpty) (s!"The words it was made with, {s.wordsBy}'s: " ++ "; ".intercalate (s.fields.map fun (k, v) => s!"{k}: {v}")) ++
-    line s.coined s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it, and its words are {s.coiner}'s" ++
+    line (!s.fields.isEmpty) (s!"The words it was made with, {s.wordsByShown}: " ++ "; ".intercalate (s.fields.map fun (k, v) => s!"{k}: {v}")) ++
+    line s.coined (if s.coiner.startsWith "did:" then
+      "A coinage of the town's: its coiner, whose handle the town does not hold, coined it first, in a post on delve.town that its card links; its maker here only placed it, and its words are its coiner's (credit them to its coiner, never by an id)"
+      else s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it, and its words are {s.coiner}'s") ++
     line (!who.isEmpty) ("Who: " ++ ", ".intercalate who) ++
     line (!s.around.isEmpty) s!"It lies in: {s.around}" ++
     line (!s.doors.isEmpty) ("Its doors: " ++ ", ".intercalate (s.doors.map fun d => if d.label == d.target then d.target else s!"{d.label} (to {d.target})")) ++
@@ -303,9 +328,10 @@ def Strokes.text (s : Strokes) : String := Id.run do
     part "What its kind holds it to:" (s.laws.map fun (n, r) => if r.isEmpty then n else s!"{n}: {quoted r}") ++
     line (!s.verbs.isEmpty) ("Its verbs: " ++ ", ".intercalate (s.verbs.map fun v =>
       v.name ++ (if v.grower.isEmpty then "" else s!" (grown by {v.grower}" ++ (if v.reading.isEmpty then ")" else ": " ++ quoted v.reading ++ ")")))) ++
+    line (!s.notImagery.isEmpty) ("Never in imagery, in any form or language: " ++ ", ".intercalate s.notImagery) ++
     part "Facts (select ids on a line as [[1,2]]; the host supplies their clauses):"
       (s.facts.map fun f => s!"{f.id}: {f.kind}; {f.subject}; {f.value}; clause: {f.clause}") ++
-    [s!"Length: at most {s.limit} characters, the spell included: about {s.limit / 8} words."]
+    [s!"Length: at most {s.limit} characters, the spell included: about {s.limit / 8} words." ++ s.budget]
   return "\n".intercalate out
 
 /-- The strokes as exact data (`world-strokes`), every field present, and the text the painter reads. -/
@@ -912,10 +938,10 @@ def Strokes.authored (s : Strokes) : List (String × String) :=
   all.filter fun (t, a) => !t.isEmpty && !a.isEmpty
 
 /-- The names a person goes by in a paint: the handle, and its first label (`yue.delve.town`, `yue`); the town
-    (`townName`, the world's own principal) by the word `town`. -/
+    (`townName`, the world's own principal) by the word `town`; a DID by none, since a card shows no DID. -/
 def aliases (handle : String) : List String :=
   let h := handle.toLower
-  if h == townName then [h, "town"] else if h.startsWith "did:" then [h] else [h, (h.splitOn ".").head?.getD h]
+  if h == townName then [h, "town"] else if h.startsWith "did:" then [] else [h, (h.splitOn ".").head?.getD h]
 
 /-- Every text of the strokes a paint may quote from. -/
 def Strokes.texts (s : Strokes) : List String :=
@@ -1114,11 +1140,14 @@ def tongueFault (s : Strokes) (p : Paint) : Option String :=
   match Tongue.find? s.tongue with
   | none => some s!"no table for {s.tongue}: the exact card"
   | some t =>
-    let cs := p.prose.flatMap fun ws => (ws.filter (!unread ·)).flatMap (·.toList)
+    -- A quotation's mark and a name a person goes by ("the town") are no tongue's words: `the town 写下“…”` is Chinese.
+    let named := (s.handles.flatMap aliases).flatMap words |>.map Tongue.fold
+    let cs := p.prose.flatMap fun ws => (ws.filter fun w => !unread w && w != quoteMark && !named.contains w).flatMap (·.toList)
     let count := fun (k : Tongue.Script) => (cs.filter (Tongue.scriptOf · == k)).length
     let (latin, cyr, arab, kana, han) := (count .latin, count .cyrillic, count .arabic, count .kana, count .han)
     let all := latin + cyr + arab + kana + han
-    let ok : Bool := match t.code with
+    -- Nothing written but ids, handles and quotations is in no wrong tongue.
+    let ok : Bool := all == 0 || match t.code with
       | "en" => latin * 2 ≥ all
       | "es" => latin * 2 ≥ all && Tongue.detect (" ".intercalate p.rawProse) == "es"
       | "ru" => cyr * 2 > all
@@ -1255,33 +1284,59 @@ def part (s : Strokes) (text : String) : Except (String × String) (String × St
       imagery := imagery ++ [raw]
   return ("\n".intercalate rendered, "\n".intercalate imagery)
 
+/-- The words of a quotation's frame: said or wrote in each tongue the town paints in, as the painter writes them (a
+    Russian speaker's gender, the Japanese particle joined to its verb: `「…」とthe townが言った`). -/
+def frameWords : List String :=
+  [quoteMark, "said", "says", "wrote", "writes", "called", "named", "saying", "as", "it", "its", "the", "town",
+   "maker", "coiner", "words", "in", "that", "and", "y", "и", "و", "el", "la",
+   "dijo", "escribió", "dice", "escribe", "сказал", "сказала", "сказало", "написал", "написала", "написало", "пишет", "говорит",
+   "كتب", "كتبت", "قال", "قالت", "قاله", "يقول", "يكتب", "كما",
+   "が", "は", "と", "と言った", "と書いた", "と書き込んだ", "が言った", "が書いた", "が書き込んだ", "说", "说过", "写下", "写下过", "写道", "由"]
+
 /-- Quoted words have only an attribution frame; imagery is explicitly a simile fragment. This is a
-    syntactic guard, not a semantic proof that arbitrary imagery cannot suggest a condition. -/
+    syntactic guard, not a semantic proof that arbitrary imagery cannot suggest a condition. A simile may use its
+    voice's words (the register it is painted in, "frost on her shoulders"), even where a line or seed repeats them;
+    a field, mark, verb, unit or want name stays blocked though the voice holds it. -/
 def imageryFault (s : Strokes) (text : String) : Option String :=
   firstSome ((text.splitOn "\n").map trimmed) fun line =>
     if line.isEmpty || isSpellLine line then none else
     let p := Paint.of s.speech line
     let ws := p.prose.flatMap (fun (row : List String) => row)
-    let reports := [quoteMark, "said", "says", "wrote", "writes", "called", "named", "saying", "as", "it", "its", "the", "town",
-      "maker", "coiner", "words", "in", "that", "dijo", "escribió", "сказал", "написал", "كتب", "قال",
-      "が", "と", "と言った", "と書いた", "说", "写下"] ++ s.handles.flatMap aliases
+    -- A quoted line may be framed by the verb that wrote it, as its record holds it: `station/regular emoted “…”`.
+    let wrote := (p.spans.getD []).flatMap fun q => (s.linesQuoted (quoteSpan q)).flatMap fun l => if l.verb.isEmpty then [] else inflections l.verb
+    let town := if s.handles.contains townName then (s.speech.roles.lookup "town").getD [] else []
+    let reports := frameWords ++ wrote ++ s.handles.flatMap aliases ++ town
     let reports := reports.map Tongue.fold
+    -- A spaced tongue's word is a frame word or a name, by its stem (городом); an unspaced tongue's run is made up whole
+    -- of them (と町が書いた).
+    let longestFirst := (reports.filter (!·.isEmpty)).mergeSort (·.length ≥ ·.length)
+    let strip := fun (w : String) => longestFirst.foldl (fun (rest : String) (r : String) => "".intercalate (rest.splitOn r)) w
+    let framed := fun (w : String) =>
+      reports.contains w || (s.speech.spaced && town.any (s.speech.matches w ·)) || (!s.speech.spaced && (strip w).isEmpty)
     if p.spans.any (!·.isEmpty) then
-      (ws.find? fun w => !reports.contains w).map fun w => s!"{w}: a quotation has only a said/wrote attribution frame"
+      (ws.find? fun w => !framed w).map fun w => s!"{w}: a quotation has only a said/wrote attribution frame"
     else
-      let similes := ["Like ", "As if ", "Como ", "Как ", "مثل ", "まるで", "如"]
-      if !similes.any (line.startsWith ·) then some "imagery must be a simile fragment, or quoted as said" else
+      let similes := ["Like ", "As if ", "Como ", "Как ", "مثل ", "كأن", "كما ", "まるで", "如"]
+      match similes.find? (line.startsWith ·) with
+      | none => some "imagery must be a simile fragment, or quoted as said"
+      | some marker =>
+      -- The marker is not the simile's words (كأن folds to كان, was).
+      let line := (line.drop marker.length).toString
+      let ws := (Paint.of s.speech line).prose.flatMap (fun (row : List String) => row)
       let stateWords := ["is", "are", "am", "was", "were", "be", "been", "being", "has", "have", "had", "does", "do", "did",
         "it", "he", "she", "they", "we", "this", "that", "can", "could", "will", "would", "shall", "should", "must", "may", "might", "seems", "looks", "feels",
         "stands", "lies", "holds", "keeps", "remains", "waits", "hangs", "rings", "rung", "rang",
         "es", "está", "son", "ha", "han", "había", "есть", "был", "была", "كانت", "كان", "يكون", "是", "有", "いる", "ある"]
+      let fold := fun (ws : List String) => ws.map (fun w => Tongue.fold (normal w)) |>.filter fun w => !w.isEmpty && !s.speech.small.contains w
       let named := (s.named s.speech).flatMap (·.2) ++ s.marks.map (·.name) ++
         s.quantities.flatMap (fun q => [q.unit, plural q.unit 2] ++ s.speech.wordsFor q.unit) ++
-        s.wants.flatMap (fun x => words (x.name ++ " " ++ x.reading)) ++ s.handles ++ s.ids ++
-        ([s.head, s.about, ((s.kind.splitOn "/").getLast?.getD "")] ++ s.fields.map (·.2) ++ s.lines.map (·.text)).flatMap words
-      let names := named.map (fun w => Tongue.fold (normal w)) |>.filter fun w => !w.isEmpty && !s.speech.small.contains w
-      let blocked := (stateWords ++ names).map Tongue.fold
-      if let some w := ws.find? (fun w => blocked.contains w || ["'ve", "'ll", "'d", "n't"].any (w.endsWith ·)) then some s!"{w}: imagery names state or source words" else
+        s.wants.flatMap (fun x => words (x.name ++ " " ++ x.reading)) ++ s.handles ++ s.ids ++ [((s.kind.splitOn "/").getLast?.getD "")]
+      let voice := fold (words s.voice)
+      let source := (fold (([s.head, s.about] ++ s.fields.map (·.2) ++ s.lines.map (·.text)).flatMap words)).filter (!voice.contains ·)
+      let blocked := (stateWords ++ fold named ++ source).map Tongue.fold
+      -- A name is met by its stem in a tongue that inflects it: المطر, дождём, lluvias.
+      let stems := (fold named).map s.speech.stem |>.filter (·.length ≥ 2)
+      if let some w := ws.find? (fun w => blocked.contains w || stems.contains (s.speech.stem w) || ["'ve", "'ll", "'d", "n't"].any (w.endsWith ·)) then some s!"{w}: imagery names state or source words" else
       if !s.speech.spaced then blocked.find? (holdsIn line ·) else none
 
 /-- The check, in order (VOICE "The paint" gives each). -/
@@ -1321,7 +1376,7 @@ def clauses : List Clause :=
          -- (its maker, its coiner) in the paint's tongue; a keeper or owner is named in passing too often to read as
          -- a speaker.
          let people := (s.handles.eraseDups).filter (!·.isEmpty)
-         let roles := [("maker", s.maker), ("coiner", s.coiner)].filter (!·.2.isEmpty)
+         let roles := [("maker", s.maker), ("coiner", s.coiner), ("town", if s.handles.contains townName then townName else "")].filter (!·.2.isEmpty)
          let t := p.tongue
          let who? := fun (w : String) => (roles.findSome? fun (role, h) =>
              if w == role || (t.roles.lookup role |>.getD []).any (t.matches w ·) then some h else none).orElse fun _ =>
@@ -1338,7 +1393,7 @@ def clauses : List Clause :=
            let before := ((List.range i).reverse.takeWhile (ws[·]! != quoteMark)).filterMap (fun j => who? ws[j]!)
            let after := ((List.range ws.length).filter (· > i) |>.takeWhile (ws[·]! != quoteMark)).filterMap (fun j => who? ws[j]!)
            match before.head?.orElse fun _ => after.head? with
-           | some who => if authors.any (fun a => (aliases a).any ((aliases who).contains ·)) then none
+           | some who => if authors.any (fun a => a == who.toLower || (aliases a).any ((aliases who).contains ·)) then none
                else some s!"“{q}” is {authors.head!}'s, not {who}'s"
            | none => (s.linesQuoted (quoteSpan spans[k]!)).head?.map fun l => s!"“{q}” is {l.handle}'s line, uncredited" },
    { name := "heads", holds := "no line begins a receipt's stamp, a refusal, a law, rule or want line, or hob:",
@@ -1382,9 +1437,10 @@ def verify (s : Strokes) (text : String) : Except (String × String) String := d
     if c.name == "length" then continue
     if c.name == "tongue" && (trimmed imagery).isEmpty && (Tongue.find? s.tongue).isSome then continue
     if let some detail := c.fails s p then throw (c.name, detail)
-  for candidate in [text, rendered] do
+  -- The reply as written, then as the host's clauses expand it: "574 expanded" names the second.
+  for (candidate, tag) in [(text, ""), (rendered, " expanded")] do
     if let some c := clauses.find? (·.name == "length") then
-      if let some detail := c.fails s (Paint.of s.speech candidate) then throw (c.name, detail)
+      if let some detail := c.fails s (Paint.of s.speech candidate) then throw (c.name, detail ++ tag)
   return rendered
 
 /-- `world-render-check {principal, object | day, version?, morning?, text}`: `text` judged against the strokes
@@ -1438,7 +1494,7 @@ structure Render where
   strokes : Strokes
   request : Json
   fate : Fate
-  /-- Asked again once already, after a refusal (its length in any tongue, any clause in another than English). -/
+  /-- Asked again once already, after a refusal. -/
   retried : Bool := false
 
 /-- How long after the worker last listed `world-renders` the host still counts on it (ms): past it a reader is
@@ -1597,13 +1653,21 @@ def rendersOp (c : Cache) (now : Nat) : Json :=
 /-- What the painter is told after a refusal, in plain words: the clause that refused its paint and what failed it, and
     what to do instead. The one retry for every refusal, the length's included. -/
 def refusalNote (s : Strokes) (clause detail paint : String) : String :=
-  let again := s!"paint it again from the Facts above, in {s.speech.english} for imagery and quotation frames, correcting only that"
+  let again := s!"paint it again from the Facts above, in {s.speech.english} for imagery and quotation frames, correcting only that, within {s.limit} characters with each cited clause counted, and reply with the paint alone (every line written is checked and shown: no note, heading or reasoning)"
   let last := "The last paint was thrown away whole: "
   let shown := s!" (the paint was: {paint})"
   match clause with
-  | "length" => s!"The last paint was {detail} characters and was thrown away: paint it again, under {s.limit} characters, the spell included."
+  | "length" =>
+    if detail.endsWith " expanded" then
+      let n := (detail.dropEnd 9).toString
+      let cited := ((paint.splitOn "\n").map trimmed |>.filter (·.startsWith "[[")).flatMap fun l =>
+        ((l.drop 2).toString.takeWhile (· != ']')).toString.splitOn "," |>.filterMap fun t => (trimmed t).toNat?
+      let costs := cited.filterMap fun id => (s.facts.find? (·.id == id)).map fun f => s!"[[{id}]] {f.clause.length}"
+      let quoted := ((quotations paint).map (·.1)).getD [] |>.map (·.length)
+      s!"The last paint came to {n} characters once the host's clauses replaced its references, {n.toNat! - s.limit} over {s.limit}, and was thrown away: each cited id costs its whole clause as listed in Facts (yours: {", ".intercalate costs}; quotations: {", ".intercalate (quoted.map toString)} characters). Drop cited ids or quoted words worth more than {n.toNat! - s.limit} characters (the shortest clauses that matter, at most one short quoted line), and {again}, under {s.limit} characters with the clauses counted.{shown}"
+    else s!"The last paint was {detail} characters and was thrown away: paint it again, under {s.limit} characters, the spell included."
   | "facts" => s!"{last}the facts check rejected a reference ({detail}). A factual line contains only [[id,...]]; use only ids from this paint's Facts, with no surrounding prose. The host supplies the clauses; {again}.{shown}"
-  | "imagery" => s!"{last}the imagery check rejected prose ({detail}). Put factual claims on separate [[id,...]] lines. Other lines are a simile fragment with no state or source words, or exact quotations with only a said/wrote attribution frame; {again}.{shown}"
+  | "imagery" => s!"{last}the imagery check rejected prose ({detail}): a word named there, or any listed under “Never in imagery”, in any form or language, stays out of imagery. Put factual claims on separate [[id,...]] lines. Other lines are a simile fragment (its voice's words may serve; no state verb, and no word of a line, seed or head, nor the name of a count, mark, verb or want), or exact quotations with only the writer's handle and said/wrote as the frame; {again}.{shown}"
   | "tongue" => s!"{last}it was not written in {s.speech.english}, or not in it alone. Paint it again from the Facts above, imagery and quotation frames in {s.speech.english}, with no page frame. Select [[id,...]] for facts; host clauses remain in the catalogue language, and quoted words, ids, handles and spells stay as supplied.{shown}"
   | "numbers" => s!"{last}a number was wrong ({detail}). Select the counted fact with [[id,...]] instead of wording a count. Any number left in imagery must pass the existing counted-unit check, and counts and units themselves are not imagery; {again}.{shown}"
   | "quotes" => s!"{last}a quotation is not in the strokes ({detail}). Quote a resident's line whole, or a verbatim part of other historical stroke text, untranslated, with only a said/wrote attribution frame. A head or name may only be quoted as historical words, never asserted as state; {again}.{shown}"
@@ -1614,9 +1678,9 @@ def refusalNote (s : Strokes) (clause detail paint : String) : String :=
   | _ => s!"{last}the check {clause} failed ({detail}). Use [[id,...]] lines for facts, guarded simile fragments or attributed quotations for other lines, and an offered spell verbatim on its own line. Copy ids and handles exactly, with no heading; {again}.{shown}"
 
 /-- `world-render-submit {key, reply}`: settle a pending render with the model's reply verbatim (model.py's
-    result object). A reply is verified and cached, painted or refused by its clause; a paint refused for its
-    length, or for any clause in a tongue other than English, is asked for once more, told the clause and why in plain
-    words (`refusalNote`; `retrying`, counted in `renders.retried`); a network
+    result object). A reply is verified and cached, painted or refused by its clause; a paint refused by any clause,
+    in any tongue, is asked for once more, told the clause and why in plain words (`refusalNote`; `retrying`, counted
+    in `renders.retried`); a network
     or rate failure is asked again after `renderBackoffMs`, `renderAttempts` in all; any other failure shows
     the thing exact (`model`). -/
 def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Json)) := do
@@ -1634,10 +1698,9 @@ def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Js
       | .error (cl, d) => .rejected cl d
     else if ["transport", "rate"].contains reason && tried + 1 < renderAttempts then .pending (tried + 1) (now + renderBackoffMs)
     else .rejected "model" (if reason.isEmpty then "no reply" else reason)
-  -- A paint refused is asked for once more, told in plain words what was refused and why: for its length in any
-  -- tongue, for any clause in a tongue other than English (every other paint is shown exact).
+  -- A paint refused is asked for once more, in every tongue, told in plain words what was refused and why.
   if let .rejected cl d := fate then
-    if !r.retried && cl != "model" && (cl == "length" || r.strokes.tongue != "en") then
+    if !r.retried && cl != "model" then
       let user := (r.request.getObjValAs? String "user").toOption.getD ""
       let again := s!"{user}\n\n{refusalNote r.strokes cl d (trimmed ((reply.getObjValAs? String "raw").toOption.getD ""))}"
       let r := { r with fate := .pending 0 now, retried := true, request := r.request.setObjVal! "user" (toJson again) }

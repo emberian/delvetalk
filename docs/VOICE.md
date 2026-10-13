@@ -202,11 +202,13 @@ are named here; each supported tongue's existing table supplies its token checks
 | `secondPerson` | no you, your, yours, you're, you've, you'll, you'd, yourself, yourselves, y'all |
 | `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, `came`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one. In another tongue its own negators and its words for each field (まだ誰も雨を降らせていない, "Nadie ha traído lluvia", "Никто не приносил дождь", "لم يأت مطر", 没有人…下过雨 over a bell rained on are refused); Japanese and Chinese within ten characters |
 | `wants` | a want claimed ("wants", "still wants", "needs", "lacks", "asks for", unnegated) only when the strokes hold one (a want now, or one a day's events name), and only of what one is for: a word after it beside a held want's name, reading or thing (filler like "a hand", "someone" aside). The live porch telling "the porch still wants a hand to keep what lies unclaimed", over a porch wanting nothing, is refused; so is the nook's "still wants someone to listen from it" over its `door` want |
-| `imagery` | quoted words have only a said/wrote attribution frame; unquoted prose starts with an explicit simile marker (`Like`, `As if`, `Como`, `Как`, `مثل`, `まるで`, `如`). No listed copula, auxiliary, perfect/state verb or subject pronoun; no named field, mark, verb, counted unit, want words, identifier, handle, or meaningful head/about/seed/heard-line word. This is a syntactic guard, not a semantic proof about arbitrary imagery |
-| `length` | both source and expanded text: 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival |
+| `imagery` | quoted words have only a said/wrote attribution frame (`Enchant.frameWords` in each tongue: 「…」とthe townが言った, 由…写下, сказала, قالت, كما قال, two quotations joined by and; or the verb that wrote the quoted line, as its record holds it: `station/regular emoted “…”`), its names a stroke's handle or the town in the paint's tongue (町, 小镇, el pueblo, город, البلدة; `Tongue.roles`), and a Japanese or Chinese run made up whole of these (と町が書いた); unquoted prose starts with an explicit simile marker (`Like`, `As if`, `Como`, `Как`, `مثل`, `كأن`, `كما`, `まるで`, `如`). No listed copula, auxiliary, perfect/state verb or subject pronoun; no named field, mark, verb, counted unit, want words, identifier, handle, or meaningful head/about/seed/heard-line word the thing's voice does not hold (a simile may borrow its register, "frost" on the regular, never a name: bell/1's voice says rain, and rain stays blocked). Names are met by the tongue's stem (المطر, дождём, lluvias are rain); a simile's marker is not its words (كأن folds to كان). The strokes list these names for the painter ("Never in imagery, in any form or language: bell, rain, ring, …"). A DID is never a name a paint may write, and the strokes never offer one: a coiner the town holds no handle for is "its coiner". This is a syntactic guard, not a semantic proof about arbitrary imagery |
+| `length` | both source and expanded text: 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival; an expanded overrun is reported as `574 expanded` |
 
-A paint refused for its length, or for any clause in a tongue other than English, is asked for once more, told the
-clause and its reason in plain words and shown the refused paint (`Enchant.refusalNote`). Fact-id and imagery
+A paint refused by any clause, in any tongue, is asked for once more, told the clause and its reason in plain words
+and shown the refused paint (`Enchant.refusalNote`); an expanded overrun is told how far over and what each cited id
+and quotation cost. The strokes' length line gives the budget beforehand (`Strokes.budget`: the facts' average clause,
+and so how many ids to cite at most, half the length in clauses). Fact-id and imagery
 failures ask for local references or attributed quotations/similes in the requested tongue, preserving the supplied
 host clauses and historical words; a second refusal, or any other
 refused paint, shows the card exact until its next version and is not asked again for that one; `world-status.renders`
@@ -251,12 +253,13 @@ every language and answers each resident in theirs (`spec/Delvetalk/Host/Tongue.
   with no table is never painted (`exact`, reason `tongue`), and a paint in another tongue than asked is refused
   (`tongue`).
 - **The painter is taught by example** (HOST-HANDOFF 5.225, lane/tongues2 reconciled). The contract carries a
-  citation example per tongue (ja zh es ru ar) of a thing, a telling before arrival and one while away: numbered
+  citation example per tongue (en ja zh es ru ar) of a thing, a telling before arrival and one while away: numbered
   structured facts, an arrangement of `[[ids]]`, a whole attributed quotation in that tongue's frame and a simile
   fragment. Tests bind the example's facts to real strokes and check the host expansion. A telling's strokes give
   the host's frame in the tongue (`Frame:`); examples leave it out of the paint. Heads and names are historical
-  words, quoted as said when selected. A refusal in a tongue other than English is asked once more with its reason
-  through the same retry as length, including fact-id and imagery failures.
+  words, quoted as said when selected. Every refusal, English's included, is asked once more with its reason through
+  the same retry as length, including fact-id and imagery failures. The contract says English is the tongue when the
+  strokes name none, and that the reply is the paint alone: a preface or a note of reasoning is a line of the paint.
 - **hob's own lines** (`resumeHeard`'s asks-first, still-needs and none-takes, the `?` and hint tails) are in the
   speaker's tongue (`Tongue.say`): `hob: まだ text が要る。埋めて送って:`.
 - **The guide's opening and the welcome** are library pages in each tongue (`guide.ja`, `welcome.es`), read in place

@@ -194,7 +194,7 @@ class Told(unittest.TestCase):
         since = self.left['receipt']['height'] - 1
         facts = self.town.send(op='world-strokes', principal=GLM, object='porch', telling={'since': since})['strokes']['facts']
         examples = contract_examples('telling while away', facts)
-        self.assertEqual(sorted(t for t, _, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
+        self.assertEqual(sorted(t for t, _, _ in examples), ['ar', 'en', 'es', 'ja', 'ru', 'zh'])
         for tongue, paint, expanded in examples:
             with self.subTest(tongue=tongue):
                 got = self.town.send(op='world-render-check', principal=GLM, object='porch', telling={'since': since}, tongue=tongue, text=paint)
@@ -248,14 +248,16 @@ class Told(unittest.TestCase):
         self.act(GLM, 'porch', 'delvetalk porch say / line: the bronze has gone cold')
         got = self.render(KIM)
         self.assertEqual(got['status'], 'pending', got)
-        done = self.paint(lambda user: 'While you were away, glm.delve.town told you “the bronze has gone cold”.')
+        addressed = lambda user: 'While you were away, glm.delve.town told you “the bronze has gone cold”.'
+        self.assertIn(got['key'], self.paint(addressed)['retrying'])  # asked once more, told why
+        done = self.paint(addressed)
         self.assertIn(got['key'], done['exact'], done)
         again = self.render(KIM)
         self.assertEqual((again['status'], again['reason'], again['clause']), ('exact', 'rejected', 'secondPerson'), again)
         self.assertTrue(any(l.endswith('glm.delve.town (say): the bronze has gone cold') for l in again['telling']['exact']), again)
         self.assertEqual(self.render(KIM)['key'], got['key'])  # not asked again for this version
         self.paint(lambda user: 'unused')
-        self.assertFalse([r for r in self.asked if r['user'].startswith('Strokes:\nWhat it is: a telling of porch') and 'the bronze' in r['user']][1:])
+        self.assertFalse([r for r in self.asked if r['user'].startswith('Strokes:\nWhat it is: a telling of porch') and 'the bronze' in r['user']][2:])
 
     def test_4_a_thing_nobody_enters_is_never_painted_as_a_telling(self):
         self.assertEqual(self.render(KIM, obj='bell/1')['status'], 'notAPlace')
