@@ -150,9 +150,9 @@ class Strangers(Forging):
     def test_a_stranger_cannot_place_themselves_in_a_room(self):
         secret = GATE + [passage("vault", "The vault.", [choice("Out", "gate")])]
         make_room(self, "scene", **scene_fields(secret))
-        here = record(who=label(STRANGER), handle=label(""), at=label("vault"))
+        here = record(who=label(STRANGER), handle=label(""), at=label("vault"), draw=nat(0))
         self.refused(self.propose("scene", {"presence": inserting(here)}), "owner")
-        self.refused(self.propose("scene", {"presence": inserting(record(who=label(CREATOR), handle=label(""), at=label("vault")))}, who=CREATOR), "methods")
+        self.refused(self.propose("scene", {"presence": inserting(record(who=label(CREATOR), handle=label(""), at=label("vault"), draw=nat(0)))}, who=CREATOR), "methods")
         self.assertEqual(rows(field(self.view("scene")["state"], "presence")), [])
 
     # And a law that admits anyone's kind-0 write, or a lawless object's default law, admits only its methods' writes.
@@ -161,7 +161,7 @@ class Strangers(Forging):
         make_room(self, "porch", **room_seed("porch"))
         self.make("bell", closure("Bell"), record(colour=variant("silver"), seed=label("s"), planting=label(""), planter=label(ALICE), planterHandle=label("glm")))
         thing = record(world=label(""), object=label("garden/bell/forged"))
-        presence = record(who=label(ALICE), handle=label(""), at=label(""))
+        presence = record(who=label(ALICE), handle=label(""), at=label(""), draw=nat(0))
         rain = record(author=label(ALICE), handle=label("glm"), verb=label(""), text=label("forged"), at=nat(0), n=nat(0))
         # The garden is made by its kind and judged by the kind's law, which it cites (`under "kind/garden"`): the
         # refusal names the cited clause.

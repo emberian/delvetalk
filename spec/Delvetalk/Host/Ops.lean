@@ -2447,10 +2447,15 @@ def objectCapacity (w : World) (updates : List (String × Object)) : Option Refu
   let objects := updates.foldl (fun (os : Std.HashMap String Object) (id, o) => os.insert id o) w.objects
   if objects.size > w.objects.size && objects.size > w.objectBound then
     return some { cls := "capacity", object := some "objects", reason := some "maxObjects" }
-  let principals := (updates.map (·.2.maker)).eraseDups
+  -- What a thing acting as itself makes (an inhabitant's coin) counts for the hand that owns the thing, so making
+  -- things that act of themselves mints no share of objects.
+  let hand := fun (who : String) => match principalThing who with
+    | some t => ((objects[t]?).map fun x => ownerOf x.state).getD who
+    | none => who
+  let principals := (updates.map (hand ·.2.maker)).eraseDups
   for principal in principals do
     if principal == w.opener then continue
-    let count := fun (os : Std.HashMap String Object) => os.toList.filter (fun (_, o) => o.maker == principal && !objectRetired o) |>.length
+    let count := fun (os : Std.HashMap String Object) => os.toList.filter (fun (_, o) => hand o.maker == principal && !objectRetired o) |>.length
     if count objects > Limits.objectsPerPrincipal && count objects > count w.objects then
       return some { cls := "capacity", object := some "objects", reason := some "objectsPerPrincipal" }
   return none
@@ -3145,11 +3150,17 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     -- the thing's text and placed lines; a verb's name a spell's action word new to the thing's forms,
     -- the host's spells and its verbs, on a thing with an `act`; each within its bound; a removal by
     -- its placer, the thing's owner or the opener.
+    -- A thing acting as itself (`thingPrincipal`, an inhabitant placing its own rules) places within the share of
+    -- the hand that owns it, so making things that act of themselves never mints a hand.
+    let hand := fun (who : String) => match principalThing who with
+      | some t => ((cand.objects[t]?).map fun x => ownerOf x.state).getD who
+      | none => who
     let checkShare (placers : List String) (byOthers : Nat) (limit : String) : Except Refusal Unit := do
-      unless p.principal == ownerOf o.state || openerActs w p.principal do
-        if (placers.filter (· == p.principal)).length ≥ Limits.placedPerHand then
+      let placer := hand p.principal
+      unless placer == ownerOf o.state || openerActs w placer do
+        if (placers.filter (hand · == placer)).length ≥ Limits.placedPerHand then
           throw { cls := "capacity", object := some id, reason := some "placedPerHand" }
-        if (placers.filter (· != ownerOf o.state)).length ≥ byOthers then
+        if (placers.filter (hand · != ownerOf o.state)).length ≥ byOthers then
           throw { cls := "capacity", object := some id, reason := some limit }
     for x in p.placements.filter (·.object == id) do
       let refuse := fun (clause reading : String) => ({ cls := "lawRefused", clause := some clause, object := some id, reading := some reading } : Refusal)
