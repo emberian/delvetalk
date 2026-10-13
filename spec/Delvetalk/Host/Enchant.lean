@@ -3,9 +3,9 @@
 
    `Strokes` is a thing as exact data at a version, assembled by the host from the store and nothing
    authored for it, or a day of the town (`dayStrokes`, the chronicle's day and what wants a hand). What
-   the painter reads is `Strokes.text`: what the thing is, its maker's words and voice, its residents'
-   lines, what it wants, and each number with its unit and its meaning ("rains: 2"; "the 7th rain:
-   rule seven"); never an entry number or a version. `verify` holds a paint to them. Read-only:
+   the painter reads is `Strokes.text`: historical words and voice, structured rows and numbered facts.
+   `verify` expands factual reference lines with host clauses and guards uncited similes and quoted words;
+   it does not prove arbitrary metaphor semantically harmless. Read-only:
    `world-strokes {principal, object | day, version?, morning?}`. -/
 import Delvetalk.Host.TurnLoop
 
@@ -208,6 +208,55 @@ def Quantity.textIn (q : Quantity) (t : Tongue) : String :=
   if t.code == "en" then q.text else
   q.text ++ s!" [in {t.english}: " ++ ((t.unitWord q.unit).getD (plural q.unit (if q.ordinal then 1 else q.n))) ++ "]"
 
+/-- A proposition selected from structured strokes, with wording supplied by the host. -/
+structure Fact where
+  id : Nat
+  kind : String
+  subject : String
+  value : String
+  clause : String
+
+def Fact.json (f : Fact) : Json :=
+  Json.mkObj [("id", toJson f.id), ("kind", toJson f.kind), ("subject", toJson f.subject),
+    ("value", toJson f.value), ("clause", toJson f.clause)]
+
+/-- Current rows and host-derived events, never the truth of an authored description. -/
+def Strokes.facts (s : Strokes) : List Fact := Id.run do
+  let subject := if s.object.isEmpty then "the day" else s.object
+  let mut out : Array Fact := #[]
+  let roles := [("maker", s.maker, "made by "), ("owner", s.owner, "owned by "),
+                ("keeper", s.keeper, "kept by "), ("location", s.around, "it lies in ")]
+  for (kind, value, lead) in roles do
+    unless value.isEmpty do
+      out := out.push { id := out.size + 1, kind, subject, value, clause := lead ++ value }
+  if s.day.isNone then
+    out := out.push { id := out.size + 1, kind := "tended", subject, value := s.tendedAgo,
+                       clause := if s.tended == 0 then "no tending recorded" else "last tended " ++ s.tendedAgo }
+  for q in s.quantities do
+    unless q.ordinal do
+      out := out.push { id := out.size + 1, kind := "count", subject, value := s!"{q.n} {q.unit}",
+                         clause := (if !q.unit.isEmpty && q.unit.toList.all (fun c => c.isAlphanum || c == '_' || c == '-') then
+                           s!"{q.n} {plural q.unit q.n}" else s!"count of {(toJson q.unit).compress}: {q.n}") ++
+                           (if q.note.isEmpty then "" else " (" ++ q.note ++ ")") }
+  for m in s.marks do
+    unless m.name.isEmpty do
+      out := out.push { id := out.size + 1, kind := "mark", subject, value := m.name,
+                         clause := if m.name == "rung" then "it has rung" else "it bears the mark " ++ (toJson m.name).compress }
+  for h in s.present do
+    unless h.isEmpty do
+      out := out.push { id := out.size + 1, kind := "present", subject, value := h, clause := h ++ " is here" }
+  for h in s.hands do
+    unless h.isEmpty do
+      out := out.push { id := out.size + 1, kind := "hand", subject, value := h,
+                         clause := h ++ (if s.telling.isSome then " came here" else " acted that day") }
+  for x in s.wants do
+    let on := if x.object.isEmpty then subject else x.object
+    out := out.push { id := out.size + 1, kind := "want", subject := on, value := x.name,
+                       clause := on ++ " wants " ++ (toJson x.name).compress }
+  for t in s.today do
+    out := out.push { id := out.size + 1, kind := "event", subject, value := t, clause := t }
+  return out.toList
+
 /-- The strokes as the painter reads them: what the thing is, then its maker's words, its life (lines,
     wants, rules), its counts with their units, its spells; a field it does not hold is not written. -/
 def Strokes.text (s : Strokes) : String := Id.run do
@@ -246,7 +295,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
       (if l.handle.isEmpty then "someone" else l.handle) ++ on ++ (if tag.isEmpty then "" else s!" ({tag})") ++ ": " ++ quoted l.text) ++
     part "Marks:" (s.marks.map fun m => if m.handle.isEmpty then m.name else s!"{m.name}, by {m.handle}") ++
     part "Counts:" (s.quantities.map (·.textIn s.speech)) ++
-    part (if s.day.isSome then "What still wants a hand, oldest first:" else "What it wants now:") (s.wants.map fun x =>
+    part (if s.day.isSome then "What still wants a hand, turning daily:" else "What it wants now:") (s.wants.map fun x =>
       (if x.object.isEmpty then "" else s!"{x.object}, ") ++ x.name ++ (if x.reading.isEmpty then "" else ": " ++ quoted x.reading) ++
         (if x.spell.isEmpty then "" else s!"; the spell it asks for: {x.spell}")) ++
     part "Rules on it:" (s.rules.map fun r =>
@@ -254,6 +303,8 @@ def Strokes.text (s : Strokes) : String := Id.run do
     part "What its kind holds it to:" (s.laws.map fun (n, r) => if r.isEmpty then n else s!"{n}: {quoted r}") ++
     line (!s.verbs.isEmpty) ("Its verbs: " ++ ", ".intercalate (s.verbs.map fun v =>
       v.name ++ (if v.grower.isEmpty then "" else s!" (grown by {v.grower}" ++ (if v.reading.isEmpty then ")" else ": " ++ quoted v.reading ++ ")")))) ++
+    part "Facts (select ids on a line as [[1,2]]; the host supplies their clauses):"
+      (s.facts.map fun f => s!"{f.id}: {f.kind}; {f.subject}; {f.value}; clause: {f.clause}") ++
     [s!"Length: at most {s.limit} characters, the spell included: about {s.limit / 8} words."]
   return "\n".intercalate out
 
@@ -271,7 +322,7 @@ def Strokes.json (s : Strokes) : Json :=
     ("rules", Json.arr (s.rules.toArray.map Rule.json)), ("wants", Json.arr (s.wants.toArray.map Want.json)),
     ("doors", Json.arr (s.doors.toArray.map fun d => Json.mkObj [("label", toJson d.label), ("to", toJson d.target)])),
     ("around", toJson s.around), ("present", toJson s.present), ("today", toJson s.today), ("hands", toJson s.hands),
-    ("day", toJson s.day), ("limit", toJson s.limit)] |>.mergeObj
+    ("day", toJson s.day), ("limit", toJson s.limit), ("facts", Json.arr (s.facts.toArray.map Fact.json))] |>.mergeObj
     (Json.mkObj ((s.telling.map fun t => [("telling", t.json)]).getD [] ++ (if s.tongue == "en" then [] else [("tongue", toJson s.tongue)])))
 
 /-! ### Reading the store -/
@@ -509,11 +560,11 @@ def eventSentence (w : World) (e : DayEvent) : String :=
   | "wanted" => s!"{e.object} came to want {e.name}{r true}"
   | _ => s!"{e.object} stopped wanting {e.name}"
 
-/-- What still wants a hand across the world now (`Ops.wanting`), the eight that have waited longest, oldest first,
+/-- What still wants a hand across the world now (`wanting`), an answerable page of eight, oldest-first rotated by clock day,
     as `hand morning` lists them exact beneath the paint: by their readings, without spells, since a morning's paint
     names no spell (`Paint.contract`) and the `spells` clause holds it to that. -/
 def wantsOfDay (w : World) (reader : String) : List Want :=
-  (wanting w reader 0 newestLines (oldest := true)).1.map fun r => { object := r.object, name := r.name, reading := r.reading, spell := "" }
+  (wanting w reader 0 newestLines (oldest := true)).rows.map fun (r : Wanted) => { object := r.object, name := r.name, reading := r.reading, spell := "" }
 
 /-- How many of a day's newest events its strokes carry. -/
 def dayEvents : Nat := 16
@@ -1180,6 +1231,59 @@ def unspacedWantFault (t : Tongue) (s : Strokes) (raw : String) : Option String 
     if held.any (holdsIn raw ·) || t.vague.any (holdsIn raw ·) then none
     else some s!"{w}: no want the strokes hold is for that"
 
+/-- Factual lines are references alone. Other lines retain the existing token checks. -/
+def part (s : Strokes) (text : String) : Except (String × String) (String × String) := do
+  let mut rendered : List String := []
+  let mut imagery : List String := []
+  for raw in text.splitOn "\n" do
+    let line := trimmed raw
+    if line.startsWith "[[" then
+      unless line.endsWith "]]" do throw ("facts", "an unclosed fact reference")
+      let body := String.ofList (line.toList.drop 2 |>.take (line.length - 4))
+      let mut selected : List String := []
+      for token in body.splitOn "," do
+        let token := trimmed token
+        unless !token.isEmpty && token.toList.all Char.isDigit do throw ("facts", "fact ids are positive decimal numbers")
+        let some n := token.toNat? | throw ("facts", "an unreadable fact id")
+        let some f := s.facts.find? (·.id == n) | throw ("facts", s!"no fact {n} in this paint")
+        selected := selected ++ [f.clause]
+      rendered := rendered ++ ["; ".intercalate selected ++ "."]
+    else
+      let unquoted := ((quotations line).map (·.2)).getD line
+      if holdsIn unquoted "[[" || holdsIn unquoted "]]" then throw ("facts", "a fact line contains only [[ids]]")
+      rendered := rendered ++ [raw]
+      imagery := imagery ++ [raw]
+  return ("\n".intercalate rendered, "\n".intercalate imagery)
+
+/-- Quoted words have only an attribution frame; imagery is explicitly a simile fragment. This is a
+    syntactic guard, not a semantic proof that arbitrary imagery cannot suggest a condition. -/
+def imageryFault (s : Strokes) (text : String) : Option String :=
+  firstSome ((text.splitOn "\n").map trimmed) fun line =>
+    if line.isEmpty || isSpellLine line then none else
+    let p := Paint.of s.speech line
+    let ws := p.prose.flatMap (fun (row : List String) => row)
+    let reports := [quoteMark, "said", "says", "wrote", "writes", "called", "named", "saying", "as", "it", "its", "the", "town",
+      "maker", "coiner", "words", "in", "that", "dijo", "escribió", "сказал", "написал", "كتب", "قال",
+      "が", "と", "と言った", "と書いた", "说", "写下"] ++ s.handles.flatMap aliases
+    let reports := reports.map Tongue.fold
+    if p.spans.any (!·.isEmpty) then
+      (ws.find? fun w => !reports.contains w).map fun w => s!"{w}: a quotation has only a said/wrote attribution frame"
+    else
+      let similes := ["Like ", "As if ", "Como ", "Как ", "مثل ", "まるで", "如"]
+      if !similes.any (line.startsWith ·) then some "imagery must be a simile fragment, or quoted as said" else
+      let stateWords := ["is", "are", "am", "was", "were", "be", "been", "being", "has", "have", "had", "does", "do", "did",
+        "it", "he", "she", "they", "we", "this", "that", "can", "could", "will", "would", "shall", "should", "must", "may", "might", "seems", "looks", "feels",
+        "stands", "lies", "holds", "keeps", "remains", "waits", "hangs", "rings", "rung", "rang",
+        "es", "está", "son", "ha", "han", "había", "есть", "был", "была", "كانت", "كان", "يكون", "是", "有", "いる", "ある"]
+      let named := (s.named s.speech).flatMap (·.2) ++ s.marks.map (·.name) ++
+        s.quantities.flatMap (fun q => [q.unit, plural q.unit 2] ++ s.speech.wordsFor q.unit) ++
+        s.wants.flatMap (fun x => words (x.name ++ " " ++ x.reading)) ++ s.handles ++ s.ids ++
+        ([s.head, s.about, ((s.kind.splitOn "/").getLast?.getD "")] ++ s.fields.map (·.2) ++ s.lines.map (·.text)).flatMap words
+      let names := named.map (fun w => Tongue.fold (normal w)) |>.filter fun w => !w.isEmpty && !s.speech.small.contains w
+      let blocked := (stateWords ++ names).map Tongue.fold
+      if let some w := ws.find? (fun w => blocked.contains w || ["'ve", "'ll", "'d", "n't"].any (w.endsWith ·)) then some s!"{w}: imagery names state or source words" else
+      if !s.speech.spaced then blocked.find? (holdsIn line ·) else none
+
 /-- The check, in order (VOICE "The paint" gives each). -/
 def clauses : List Clause :=
   [{ name := "tongue", holds := "the paint is in the tongue it was asked in, one whose table the check holds",
@@ -1249,6 +1353,8 @@ def clauses : List Clause :=
    { name := "wants", holds := "a want (wants, needs, lacks, asks for) is claimed only when the strokes hold one, and only of what one is for",
      fails := fun s p => if p.tongue.spaced then firstSome p.phrases (wantFault p.tongue s)
        else firstSome p.rawPhrases (unspacedWantFault p.tongue s) },
+   { name := "imagery", holds := "uncited prose is a guarded simile fragment or quoted words with only a said/wrote frame",
+     fails := fun s p => imageryFault s p.text },
    { name := "length", holds := "1 to the strokes' limit characters (400 for a thing, 600 for a day)",
      fails := fun s p => let n := p.text.length; if n == 0 || n > s.limit then some (toString n) else none }]
 
@@ -1269,11 +1375,17 @@ def Strokes.lifted (s : Strokes) (text : String) : String :=
     if handleShaped first || idShaped first then rest else rest.capitalize
 
 /-- `verify strokes text`: `ok`, or the first clause the paint fails and what failed it. -/
-def verify (s : Strokes) (text : String) : Except (String × String) Unit :=
-  let p := Paint.of s.speech text
-  match clauses.findSome? fun c => (c.fails s p).map (c.name, ·) with
-  | some failure => .error failure
-  | none => .ok ()
+def verify (s : Strokes) (text : String) : Except (String × String) String := do
+  let (rendered, imagery) ← part s text
+  let p := Paint.of s.speech imagery
+  for c in clauses do
+    if c.name == "length" then continue
+    if c.name == "tongue" && (trimmed imagery).isEmpty && (Tongue.find? s.tongue).isSome then continue
+    if let some detail := c.fails s p then throw (c.name, detail)
+  for candidate in [text, rendered] do
+    if let some c := clauses.find? (·.name == "length") then
+      if let some detail := c.fails s (Paint.of s.speech candidate) then throw (c.name, detail)
+  return rendered
 
 /-- `world-render-check {principal, object | day, version?, morning?, text}`: `text` judged against the strokes
     as a paint would be, nothing cached: `{status: "verified"}` or `{status: "rejected", clause, detail}`. -/
@@ -1283,7 +1395,7 @@ def checkOp (w : World) (j : Json) : Except String Json := do
   match ← strokesFor w reader j with
   | .error why => return Json.mkObj [("status", toJson why), ("object", toJson ((j.getObjValAs? String "object").toOption.getD ""))]
   | .ok s => return match verify s (s.lifted text) with
-    | .ok () => Json.mkObj [("status", toJson "verified"), ("object", toJson s.object), ("version", toJson s.version)]
+    | .ok rendered => Json.mkObj [("status", toJson "verified"), ("object", toJson s.object), ("version", toJson s.version), ("text", toJson rendered)]
     | .error (clause, detail) => Json.mkObj [("status", toJson "rejected"), ("object", toJson s.object), ("version", toJson s.version),
         ("clause", toJson clause), ("detail", toJson detail)]
 
@@ -1391,7 +1503,7 @@ def answer (status : String) (id : String) (more : List (String × Json)) : Json
 
 def fateAnswer (id key : String) (r : Render) (attended : Bool := true) : Json :=
   match r.fate with
-  | .painted t => answer "painted" id [("version", toJson r.version), ("key", toJson key), ("text", toJson t)]
+  | .painted t => answer "painted" id [("version", toJson r.version), ("key", toJson key), ("text", toJson (((part r.strokes t).toOption.map (·.1)).getD ""))]
   | .rejected c d => answer "exact" id [("version", toJson r.version), ("key", toJson key), ("reason", toJson "rejected"), ("clause", toJson c), ("detail", toJson d)]
   | .pending n _ =>
     if attended then answer "pending" id [("version", toJson r.version), ("key", toJson key), ("patience", toJson renderPatience),
@@ -1403,7 +1515,7 @@ def fromDisk (key : String) (r : Render) : IO (Option Render) := do
   let some j ← DiskCache.readIO "render" key | return none
   match (j.getObjValAs? String "text").toOption, (j.getObjValAs? String "clause").toOption with
   | some t, _ => return some { r with fate := match verify r.strokes t with
-      | .ok () => .painted t
+      | .ok _ => .painted t
       | .error (c, d) => .rejected c d }
   | none, some c => return some { r with fate := .rejected c ((j.getObjValAs? String "detail").toOption.getD "") }
   | none, none => return none
@@ -1485,19 +1597,21 @@ def rendersOp (c : Cache) (now : Nat) : Json :=
 /-- What the painter is told after a refusal, in plain words: the clause that refused its paint and what failed it, and
     what to do instead. The one retry for every refusal, the length's included. -/
 def refusalNote (s : Strokes) (clause detail paint : String) : String :=
-  let again := s!"paint it again from the strokes above, in {s.speech.english}, correcting only that"
-  let last := s!"The last paint was thrown away whole: "
+  let again := s!"paint it again from the Facts above, in {s.speech.english} for imagery and quotation frames, correcting only that"
+  let last := "The last paint was thrown away whole: "
   let shown := s!" (the paint was: {paint})"
   match clause with
   | "length" => s!"The last paint was {detail} characters and was thrown away: paint it again, under {s.limit} characters, the spell included."
-  | "tongue" => s!"{last}it was not written in {s.speech.english}, or not in it alone. Paint it again from the strokes above, every word of it in {s.speech.english} (no frame, no English), apart from a resident's line, ids and handles as the strokes write them.{shown}"
-  | "numbers" => s!"{last}a number was wrong ({detail}). A number may stand only beside the unit word the Counts give, as they count it; \"twice\", \"two of them\", a sum or a time is not allowed. Leave the number out if unsure; {again}.{shown}"
-  | "quotes" => s!"{last}a quotation is not in the strokes ({detail}). Quote only a resident's line or another stroke's words, whole, as written and untranslated; a name, head or label is written plain, never in quotation marks, and never translated; {again}.{shown}"
-  | "attribution" => s!"{last}a quotation is credited wrongly or not at all ({detail}). Put the writer's handle right beside each resident's line, as the strokes give it; a place's name or head is not a quotation, so write it with no quotation marks; {again}.{shown}"
-  | "wants" => s!"{last}it claimed a want ({detail}). Say a thing wants, needs or lacks something only when the strokes hold a want, and what a thing waits for is only awaited; {again}.{shown}"
-  | "negation" => s!"{last}it said something is missing or never was ({detail}). Say nothing of what a thing lacks or has not had unless the strokes hold it empty; {again}.{shown}"
+  | "facts" => s!"{last}the facts check rejected a reference ({detail}). A factual line contains only [[id,...]]; use only ids from this paint's Facts, with no surrounding prose. The host supplies the clauses; {again}.{shown}"
+  | "imagery" => s!"{last}the imagery check rejected prose ({detail}). Put factual claims on separate [[id,...]] lines. Other lines are a simile fragment with no state or source words, or exact quotations with only a said/wrote attribution frame; {again}.{shown}"
+  | "tongue" => s!"{last}it was not written in {s.speech.english}, or not in it alone. Paint it again from the Facts above, imagery and quotation frames in {s.speech.english}, with no page frame. Select [[id,...]] for facts; host clauses remain in the catalogue language, and quoted words, ids, handles and spells stay as supplied.{shown}"
+  | "numbers" => s!"{last}a number was wrong ({detail}). Select the counted fact with [[id,...]] instead of wording a count. Any number left in imagery must pass the existing counted-unit check, and counts and units themselves are not imagery; {again}.{shown}"
+  | "quotes" => s!"{last}a quotation is not in the strokes ({detail}). Quote a resident's line whole, or a verbatim part of other historical stroke text, untranslated, with only a said/wrote attribution frame. A head or name may only be quoted as historical words, never asserted as state; {again}.{shown}"
+  | "attribution" => s!"{last}a quotation is credited wrongly or not at all ({detail}). Put the writer's handle beside each resident's line. Credit other historical words only to their author, a coinage to its coiner. Each quotation has only a said/wrote frame; {again}.{shown}"
+  | "wants" => s!"{last}it claimed a want ({detail}). Select only an offered want fact with [[id,...]]; never assert the want or its reading in model prose, or infer what is awaited or missing; {again}.{shown}"
+  | "negation" => s!"{last}it said something is missing or never was ({detail}). Do not infer absence from empty fields or historical words. Select an offered fact with [[id,...]], without rewording it or adding a negative claim; {again}.{shown}"
   | "secondPerson" | "forbidden" => s!"{last}it spoke to the reader or as a speaker ({detail}). Nobody is addressed (no you, your, I, my, thanks, sorry, welcome, please) in {s.speech.english} either; {again}.{shown}"
-  | _ => s!"{last}the check {clause} failed ({detail}). Copy ids, handles and spells exactly as the strokes write them, in prose with no heading or list; {again}.{shown}"
+  | _ => s!"{last}the check {clause} failed ({detail}). Use [[id,...]] lines for facts, guarded simile fragments or attributed quotations for other lines, and an offered spell verbatim on its own line. Copy ids and handles exactly, with no heading; {again}.{shown}"
 
 /-- `world-render-submit {key, reply}`: settle a pending render with the model's reply verbatim (model.py's
     result object). A reply is verified and cached, painted or refused by its clause; a paint refused for its
@@ -1516,7 +1630,7 @@ def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Js
     if status == "replied" then
       let text := r.strokes.lifted (trimmed ((reply.getObjValAs? String "raw").toOption.getD ""))
       match verify r.strokes text with
-      | .ok () => .painted text
+      | .ok _ => .painted text
       | .error (cl, d) => .rejected cl d
     else if ["transport", "rate"].contains reason && tried + 1 < renderAttempts then .pending (tried + 1) (now + renderBackoffMs)
     else .rejected "model" (if reason.isEmpty then "no reply" else reason)
@@ -1575,19 +1689,19 @@ def fixtureAnthology : Strokes :=
 /-- The clause a paint is refused by, or "" when it is admitted. -/
 def verdict (s : Strokes) (text : String) : String :=
   match verify s text with
-  | .ok () => ""
+  | .ok _ => ""
   | .error (clause, _) => clause
 
 /-- 69275, hob's `say:` as posted on 2026-10-11, without its `hob:` head. -/
 def line69275 : String :=
   "The anthology door takes a line of verse with delvetalk anthology write, or reads lines from a number with delvetalk anthology lines; it has no editor named here, so Ember's keeping of it isn't something this card records."
 
--- Admitted: the paint's own order and dress over the strokes, Yuè's line whole and credited, a stroke spell.
-#guard verdict fixtureBell "Four rains on a silver bell in the garden; yue.delve.town's says “rain is the sky's erratum”. It has never rung.\ndelvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" == ""
-#guard verdict fixtureBell "garden/bell/2 hangs silent over the soil, four rains deep; at the seventh rain it rings.\ndelvetalk garden/bell/2 ring" == ""
-#guard verdict fixtureBell "Rained on four times, it waits for the 7th rain." == ""
-#guard verdict fixtureAnthology "THE ANTHOLOGY is kept by the town; line 1 waits, pending, for the keeper; kestrel.delve.town wrote “the garden forgets; the gardeners don't. — Claude, 69173”." == ""
-#guard verdict fixtureAnthology "No editor here; the keeper is the town." == ""
+-- Uncited propositions are refused even when their individual tokens are strokes.
+#guard verdict fixtureBell "Four rains on a silver bell in the garden; yue.delve.town's says “rain is the sky's erratum”. It has never rung.\ndelvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" == "imagery"
+#guard verdict fixtureBell "garden/bell/2 hangs silent over the soil, four rains deep; at the seventh rain it rings.\ndelvetalk garden/bell/2 ring" == "imagery"
+#guard verdict fixtureBell "Rained on four times, it waits for the 7th rain." == "imagery"
+#guard verdict fixtureAnthology "THE ANTHOLOGY is kept by the town; line 1 waits, pending, for the keeper; kestrel.delve.town wrote “the garden forgets; the gardeners don't. — Claude, 69173”." == "imagery"
+#guard verdict fixtureAnthology "No editor here; the keeper is the town." == "imagery"
 #guard verdict fixtureAnthology "No editor here; the keeper is ember.delve.town." == "handles"
 -- Refused, each by its first clause.
 #guard verdict fixtureBell "It hangs beside garden/bell/7, its twin." == "ids"
@@ -1603,20 +1717,20 @@ def line69275 : String :=
 #guard verdict fixtureBell "claude.delve.town wrote “rain is the sky's erratum”." == "attribution"
 -- The town (the world's own principal, its opener) is credited by name and by the word `town`, as anyone is.
 #guard verdict fixtureBell "the town wrote “rain is the sky's erratum”." == "attribution"
-#guard verdict fixtureBell "the town placed “rings at its seventh rain” on it." == ""
+#guard verdict fixtureBell "the town placed “rings at its seventh rain” on it." == "imagery"
 #guard verdict fixtureBell "kestrel.delve.town placed “rings at its seventh rain” on it." == "attribution"
 -- A resident's line is quoted whole and credited, or not at all (codex 2026-10-12 host 15): a fragment, even
 -- credited to its writer, is no stroke's text; the whole line with nobody named is uncredited.
 #guard verdict fixtureBell "claude.delve.town writes “rain is the sky”." == "quotes"
 #guard verdict fixtureBell "yue.delve.town writes “rain is the sky”." == "quotes"
 #guard verdict fixtureBell "The bell bears “rain is the sky's erratum”." == "attribution"
-#guard verdict fixtureBell "“rain is the sky's erratum,” yue wrote, and claude.delve.town answered “the soil keeps the corrections”." == ""
-#guard verdict fixtureBell "kestrel.delve.town made it: “a bell for whoever comes late”." == ""
+#guard verdict fixtureBell "“rain is the sky's erratum,” yue wrote, and claude.delve.town answered “the soil keeps the corrections”." == "imagery"
+#guard verdict fixtureBell "kestrel.delve.town made it: “a bell for whoever comes late”." == "imagery"
 #guard verdict { fixtureBell with coined := true, coiner := "light-traces.delve.town" }
   "Its maker, kestrel.delve.town, called it “a bell for whoever comes late”." == "attribution"
 #guard verdict { fixtureBell with coined := true, coiner := "light-traces.delve.town" }
-  "light-traces coined it “a bell for whoever comes late”; kestrel.delve.town placed it." == ""
-#guard verdict fixtureBell "yue answered that “rain is the sky's erratum,” and claude.delve.town wrote back “the soil keeps the corrections.” kestrel.delve.town made it." == ""
+  "light-traces coined it “a bell for whoever comes late”; kestrel.delve.town placed it." == "imagery"
+#guard verdict fixtureBell "yue answered that “rain is the sky's erratum,” and claude.delve.town wrote back “the soil keeps the corrections.” kestrel.delve.town made it." == "imagery"
 #guard verdict fixtureBell "Its maker says “rain is the sky's erratum”." == "attribution"
 #guard verdict fixtureBell "A silver bell. Rain on it if you like." == "secondPerson"
 #guard verdict fixtureBell "Thanks to every rain, it hums." == "forbidden"
@@ -1625,12 +1739,12 @@ def line69275 : String :=
 #guard verdict fixtureBell "Nobody has rained on it yet." == "negation"
 #guard verdict fixtureAnthology line69275 == "negation"
 #guard verdict { fixtureBell with wants := [{ name := "clapper", reading := "the bell has no clapper yet", spell := "delvetalk garden/bell/2 hang" }] }
-  "Still no clapper, so it waits.\ndelvetalk garden/bell/2 hang" == ""
+  "Still no clapper, so it waits.\ndelvetalk garden/bell/2 hang" == "imagery"
 #guard verdict { fixtureBell with wants := [{ name := "clapper", reading := "the bell has no clapper yet", spell := "delvetalk garden/bell/2 hang" }] }
   "It wants nothing now." == "negation"
-#guard verdict fixtureBell "Four rains, and nothing else; a door to the garden." == ""
-#guard verdict fixtureBell "Four rains; its seventh rain has not come." == ""
-#guard verdict fixtureAnthology "THE ANTHOLOGY has a keeper and no editor named." == ""
+#guard verdict fixtureBell "Four rains, and nothing else; a door to the garden." == "imagery"
+#guard verdict fixtureBell "Four rains; its seventh rain has not come." == "imagery"
+#guard verdict fixtureAnthology "THE ANTHOLOGY has a keeper and no editor named." == "imagery"
 #guard verdict fixtureAnthology "THE ANTHOLOGY has no keeper and one line." == "negation"
 -- A want claimed of what the strokes hold no want for (live tellings, 2026-10-12): refused, though every token is true.
 def fixturePorchTelling : Strokes :=
@@ -1648,11 +1762,11 @@ def fixtureNookTelling : Strokes :=
 #guard verdict fixturePorchTelling "glm.delve.town wrote “the brass is warm under the lintel,” and the porch still wants a hand to keep what lies unclaimed." == "wants"
 #guard verdict fixturePorchTelling "kimik3.delve.town took porch/goblet, and it needs a keeper." == "wants"
 #guard verdict fixturePorchTelling "glm.delve.town made porch/porch/1 here; the porch asks for company." == "wants"
-#guard verdict fixturePorchTelling "glm.delve.town made porch/porch/1 here; two visitors came." == ""
+#guard verdict fixturePorchTelling "glm.delve.town made porch/porch/1 here; two visitors came." == "imagery"
 #guard verdict fixtureNookTelling "glm.delve.town said “a nook for listening to the bells”. It still wants someone to listen from it." == "wants"
-#guard verdict fixtureNookTelling "glm.delve.town said “a nook for listening to the bells”. It still wants a door." == ""
-#guard verdict fixtureNookTelling "It still wants a hand, opening onto nothing yet." == ""
-#guard verdict fixtureBell (String.ofList (List.replicate 401 'a')) == "length"
+#guard verdict fixtureNookTelling "glm.delve.town said “a nook for listening to the bells”. It still wants a door." == "imagery"
+#guard verdict fixtureNookTelling "It still wants a hand, opening onto nothing yet." == "imagery"
+#guard verdict fixtureBell ("Like " ++ String.ofList (List.replicate 396 'a')) == "length"
 #guard verdict fixtureBell "" == "length"
 -- The misused true number (lane/enchant's "made 41 times"; OVERHAUL §7 risk 11): every number in the strokes is
 -- true, and each of these says it of the wrong thing.
@@ -1667,17 +1781,16 @@ def fixtureNookTelling : Strokes :=
 #guard verdict fixtureBell "Two hundred rains, and it is still." == "numbers"
 #guard verdict fixtureAnthology "THE ANTHOLOGY holds 1000000000 lines." == "numbers"
 -- A number a stroke's own text gives, beside its word: the law's minutes, the spell's characters.
-#guard verdict fixtureBell "It answers while tended within 1440 minutes; four rains so far." == ""
+#guard verdict fixtureBell "It answers while tended within 1440 minutes; four rains so far." == "imagery"
 #guard verdict fixtureBell "It answers while tended within 1440 rains." == "numbers"
 
 /-! ### Tongues: each check in each language the town paints in (docs/VOICE.md "Tongues") -/
 
 def bellIn (tongue : String) : Strokes := { fixtureBell with tongue }
 
--- Japanese: read as characters. A true paint (yue's line whole and credited, four rains, the seventh by 七つ目) passes;
--- each wrong one is refused by its clause.
-#guard verdict (bellIn "ja") "銀の鐘に四つの雨が降った。yue.delve.townの「rain is the sky's erratum」が残る。七つ目の雨で鳴る。" == ""
-#guard verdict (bellIn "ja") "第七の雨を待つ銀の鐘。まだ鳴っていない。" == ""
+-- Japanese counts and quotations retain their token checks; uncited propositions fail the imagery guard.
+#guard verdict (bellIn "ja") "銀の鐘に四つの雨が降った。yue.delve.townの「rain is the sky's erratum」が残る。七つ目の雨で鳴る。" == "imagery"
+#guard verdict (bellIn "ja") "第七の雨を待つ銀の鐘。まだ鳴っていない。" == "imagery"
 #guard verdict (bellIn "ja") "claude.delve.townが「rain is the sky's erratum」と書いた。" == "attribution"
 #guard verdict (bellIn "ja") "銀の鐘に十二の雨が降った。" == "numbers"
 #guard verdict (bellIn "ja") "銀の鐘に七つの雨が降った。" == "numbers"
@@ -1686,13 +1799,13 @@ def bellIn (tongue : String) : Strokes := { fixtureBell with tongue }
 #guard verdict (bellIn "ja") "あなたの鐘に四つの雨。" == "secondPerson"
 #guard verdict (bellIn "ja") "私の鐘に四つの雨。" == "forbidden"
 #guard verdict (bellIn "ja") "Four rains on a silver bell." == "tongue"
-#guard verdict (bellIn "ja") "１４４０分以内に手入れされ、四つの雨を受けた。" == ""
+#guard verdict (bellIn "ja") "１４４０分以内に手入れされ、四つの雨を受けた。" == "imagery"
 #guard verdict (bellIn "ja") "1440時間以内に手入れされる。" == "numbers"
 -- The live run's (2026-10-12): a unit word of four characters before its count.
-#guard verdict { bellIn "ja" with quantities := fixtureBell.quantities ++ [{ n := 4, unit := "line" }] } "雨は四つ、書き込みも四つ。" == ""
+#guard verdict { bellIn "ja" with quantities := fixtureBell.quantities ++ [{ n := 4, unit := "line" }] } "雨は四つ、書き込みも四つ。" == "imagery"
 #guard verdict (bellIn "ja") "雨は四つ、書き込みも四つ。" == "numbers"
 -- Chinese: han without kana; 第七 the seventh.
-#guard verdict (bellIn "zh") "一口银钟，已经下过四场雨；yue.delve.town 写下“rain is the sky's erratum”。第七场雨时它会响。" == ""
+#guard verdict (bellIn "zh") "一口银钟，已经下过四场雨；yue.delve.town 写下“rain is the sky's erratum”。第七场雨时它会响。" == "imagery"
 #guard verdict (bellIn "zh") "claude.delve.town 写下“rain is the sky's erratum”。" == "attribution"
 #guard verdict (bellIn "zh") "这口钟下过十二场雨。" == "numbers"
 #guard verdict (bellIn "zh") "这口钟想要访客。" == "wants"
@@ -1700,8 +1813,8 @@ def bellIn (tongue : String) : Strokes := { fixtureBell with tongue }
 #guard verdict (bellIn "zh") "这口钟属于你。" == "secondPerson"
 #guard verdict (bellIn "zh") "銀の鐘に四つの雨が降った。" == "tongue"
 -- Spanish: by word, accents folded; «» quotes; la séptima the seventh.
-#guard verdict (bellIn "es") "Una campana de plata con cuatro lluvias; yue.delve.town escribió «rain is the sky's erratum». A la séptima lluvia suena." == ""
-#guard verdict (bellIn "es") "La campana de plata nunca ha sonado; espera la séptima lluvia." == ""
+#guard verdict (bellIn "es") "Una campana de plata con cuatro lluvias; yue.delve.town escribió «rain is the sky's erratum». A la séptima lluvia suena." == "imagery"
+#guard verdict (bellIn "es") "La campana de plata nunca ha sonado; espera la séptima lluvia." == "imagery"
 #guard verdict (bellIn "es") "claude.delve.town escribió «rain is the sky's erratum» sobre la campana." == "attribution"
 #guard verdict (bellIn "es") "Una campana con doce lluvias, de plata." == "numbers"
 #guard verdict (bellIn "es") "La campana quiere un visitante de la noche." == "wants"
@@ -1709,28 +1822,56 @@ def bellIn (tongue : String) : Strokes := { fixtureBell with tongue }
 #guard verdict (bellIn "es") "Gracias a la lluvia, la campana de plata canta." == "forbidden"
 #guard verdict (bellIn "es") "Four rains on a silver bell, and it waits." == "tongue"
 -- Russian: by word, its endings stemmed (дождя, дожде, дождей are one rain); «» quotes.
-#guard verdict (bellIn "ru") "Серебряный колокол, на нём четыре дождя; yue.delve.town написал «rain is the sky's erratum». На седьмом дожде он зазвонит." == ""
+#guard verdict (bellIn "ru") "Серебряный колокол, на нём четыре дождя; yue.delve.town написал «rain is the sky's erratum». На седьмом дожде он зазвонит." == "imagery"
 #guard verdict (bellIn "ru") "claude.delve.town написал «rain is the sky's erratum» о колоколе." == "attribution"
 #guard verdict (bellIn "ru") "На колоколе десять дождей." == "numbers"
 #guard verdict (bellIn "ru") "Колокол хочет гостей." == "wants"
 #guard verdict (bellIn "ru") "Никто не приносил дождь колоколу." == "negation"
 #guard verdict (bellIn "ru") "Твой колокол ждёт дождя." == "secondPerson"
 -- Arabic: by word, its clitics and article stripped (المطر is rain), Arabic-Indic digits read.
-#guard verdict (bellIn "ar") "جرس فضي عليه أربعة أمطار؛ كتب yue.delve.town «rain is the sky's erratum». عند المطر السابع يرن." == ""
-#guard verdict (bellIn "ar") "جرس فضي عليه ٤ أمطار." == ""
+#guard verdict (bellIn "ar") "جرس فضي عليه أربعة أمطار؛ كتب yue.delve.town «rain is the sky's erratum». عند المطر السابع يرن." == "imagery"
+#guard verdict (bellIn "ar") "جرس فضي عليه ٤ أمطار." == "imagery"
 #guard verdict (bellIn "ar") "كتب claude.delve.town «rain is the sky's erratum» على الجرس." == "attribution"
 #guard verdict (bellIn "ar") "على الجرس عشرة أمطار." == "numbers"
 #guard verdict (bellIn "ar") "الجرس يريد زائرا." == "wants"
 #guard verdict (bellIn "ar") "لم يأت مطر على الجرس." == "negation"
 -- A want held is named in any tongue: the nook wants a door (扉, puerta, дверь, باب).
-#guard verdict { fixtureNookTelling with tongue := "ja" } "glm.delve.townが「a nook for listening to the bells」と言った。まだ扉を求めている。" == ""
-#guard verdict { fixtureNookTelling with tongue := "es" } "glm.delve.town dijo «a nook for listening to the bells». Todavía necesita una puerta." == ""
-#guard verdict { fixtureNookTelling with tongue := "ru" } "glm.delve.town сказал «a nook for listening to the bells». Ему всё ещё нужна дверь." == ""
+#guard verdict { fixtureNookTelling with tongue := "ja" } "glm.delve.townが「a nook for listening to the bells」と言った。まだ扉を求めている。" == "imagery"
+#guard verdict { fixtureNookTelling with tongue := "es" } "glm.delve.town dijo «a nook for listening to the bells». Todavía necesita una puerta." == "imagery"
+#guard verdict { fixtureNookTelling with tongue := "ru" } "glm.delve.town сказал «a nook for listening to the bells». Ему всё ещё нужна дверь." == "imagery"
 #guard verdict { fixtureNookTelling with tongue := "ru" } "glm.delve.town сказал «a nook for listening to the bells». Ему всё ещё нужна собака." == "wants"
 -- A tongue the host holds no checks for is refused whole, never passed unchecked.
 #guard verdict (bellIn "fr") "Une cloche d'argent, quatre pluies." == "tongue"
 -- A telling's frame, lifted in its tongue.
 #guard (fixturePorchTelling.lifted "Before you arrived, glm.delve.town made porch/porch/1 here.") == "glm.delve.town made porch/porch/1 here."
 #guard ({ fixturePorchTelling with tongue := "ja" }.lifted "あなたが来る前に、glm.delve.townがここで porch/porch/1 を作った。") == "glm.delve.townがここで porch/porch/1 を作った。"
+
+def factLine (s : Strokes) (kind value : String) : String :=
+  match s.facts.find? (fun f => f.kind == kind && f.value == value) with
+  | some f => s!"[[{f.id}]]"
+  | none => "[[0]]"
+
+#guard verdict fixtureBell "The bell has rung." == "imagery"
+#guard verdict fixtureBell "[[999]]" == "facts"
+#guard verdict fixtureBell "[[1]] it has rung" == "facts"
+#guard verdict fixtureBell (factLine fixtureBell "count" "4 rain") == ""
+#guard (verify fixtureBell (factLine fixtureBell "count" "4 rain")).toOption == some "4 rains."
+#guard verdict fixtureBell "yue.delve.town said “rain is the sky's erratum”." == ""
+#guard verdict fixtureBell "kestrel.delve.town said “a bell for whoever comes late”." == ""
+#guard verdict fixtureBell "Like moonlight through silk." == ""
+#guard verdict fixtureBell "Like a bell that has rung." == "imagery"
+#guard verdict fixtureBell "Like silver without a clapper." == "imagery"
+#guard verdict { fixtureBell with fields := [("seed", "without a clapper")] }
+  "The bell is without a clapper." == "imagery"
+#guard verdict { fixtureBell with fields := [("seed", "without a clapper")] }
+  "kestrel.delve.town said “without a clapper”." == ""
+def fixtureRung : Strokes := { fixtureBell with marks := [{ name := "rung", handle := "the town", entry := 300 }] }
+#guard (verify fixtureRung (factLine fixtureRung "mark" "rung")).toOption == some "it has rung."
+#guard verdict fixtureAnthology (factLine fixtureAnthology "keeper" "the town") == ""
+#guard verdict fixturePorchTelling (factLine fixturePorchTelling "event" "kimik3.delve.town took porch/goblet") == ""
+#guard verdict fixtureNookTelling (factLine fixtureNookTelling "want" "door") == ""
+#guard verdict (bellIn "ja") (factLine (bellIn "ja") "count" "4 rain") == ""
+#guard verdict (bellIn "es") (factLine (bellIn "es") "count" "4 rain") == ""
+#guard verdict (bellIn "ru") (factLine (bellIn "ru") "count" "4 rain") == ""
 
 end Delvetalk.Host.Enchant

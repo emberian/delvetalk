@@ -90,14 +90,13 @@ The commonplace's card (`docs/previews/commonplace-card.txt` is it verbatim):
 ✾ DELVETALK · THE COMMONPLACE
 
 Five doors. Indented lines are typed back whole; » is what comes back; words reach hob.
-What wants a hand, newest first:
-porch/lamp: it opens onto nothing yet
-  delvetalk porch/lamp door
-weather: it opens onto nothing yet
-  delvetalk weather door
-kinds: no kind made here yet but the town's own
-  delvetalk kinds ?
-… and 5 more
+What wants a hand, turning daily:
+5 more wait on other hands
+porch: a room nobody is in
+  delvetalk porch enter
+bell/1: a bell nobody has rained on
+  delvetalk bell/1 rain
+… and 2 more
   delvetalk commonplace since / entry: 0
   » what changed since that entry, newest first
 KINDS
@@ -120,13 +119,13 @@ READ · delvetalk chronicle · delvetalk map · delvetalk me book
 Every reply is a receipt: admitted, or refused <clause>: <reading>. No reply: ask for it; never repost.
 ```
 
-A blank reply or `since` leads with "What wants a hand, newest first" (`world.wanting`), then what changed: the doors
+A blank reply or `since` leads with "What wants a hand, turning daily" (`world.wanting`), then what changed: the doors
 are clipped first against the head and the tail, the wants take what they leave, and what changed yields the rest.
 
 ## Wants
 
 The onboarding is wants, never posts: each is a condition the thing prints with the spell that answers it, in the
-thing's own words, and none is a request of anyone. A want holds while its condition does; the journal records each
+thing's own words, and none is a request of anyone. Only the wants whose filled action this reader is offered appear on the commonplace; visible held wants for other hands are counted. Its oldest-first answerable page rotates daily, starting at clock day modulo its count. `wants` retains every held description, marking answerable or waiting; `unwant` cancels it. A want holds while its condition does; the journal records each
 `wanted` and `unwanted` with the entry that flipped it. At a bare genesis (`delvetalk <card> wants`):
 
 | Thing | Want | Reading | Spell | From |
@@ -142,7 +141,6 @@ thing's own words, and none is a request of anyone. A want holds while its condi
 | `kinds` | `made` | no kind made here yet but the town's own | `delvetalk kinds ?` | the opener's `want`, on `kinds` alone |
 | a garden | `five` | a garden of fewer than five bells | `delvetalk <it> plant` | kind/garden |
 | a door | `shut` | a door nobody has opened | `delvetalk <it> knock` | kind/door |
-| an errand | `open` | an errand nobody has done | `delvetalk <it> ?` | kind/errand |
 
 The seal's want waits on the host's `laws` and `refusedBy` facts (HOST-HANDOFF section 7, 1a).
 

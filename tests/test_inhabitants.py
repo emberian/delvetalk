@@ -169,6 +169,23 @@ class Inhabitants(test_scenarios.Arc):
         self.assertEqual({o: self.town.send(op="world-view", principal=OPENER, object=o)["state"] for o in objects}, before)
         self.assertEqual(self.clock(), start + 26 * 61)
 
+    def test_three_of_her_coins_lie_in_the_till_at_most(self):
+        """She lays a coin each day while fewer than three of hers lie untaken; then she pays with one already there,
+        until a hand takes one."""
+        paid = lambda: [l["text"] for l in self.lines(REGULAR) if l["verb"] == "paid"]
+        coins = lambda: sorted(t for t in self.things() if t.startswith("station/coin/"))
+        while len(paid()) < 4:
+            self.hour()
+        self.assertEqual(paid(), ["left a coin in the till"] * 3 + ["paid with a coin already in the till"])
+        self.assertEqual(len(coins()), 3)
+        self.admitted(KIM, "station", "delvetalk station enter")
+        self.admitted(KIM, coins()[0], "delvetalk %s acquire" % coins()[0])
+        self.admitted(KIM, "station", "delvetalk station leave")
+        while len(paid()) < 5:
+            self.hour()
+        self.assertEqual(paid()[-1], "left a coin in the till")
+        self.assertEqual(len(coins()), 3)
+
     def test_a_resident_entering_while_she_is_there_meets_her_and_speaks_to_each(self):
         refused = self.say(KIM, REGULAR, "delvetalk %s nod" % REGULAR)
         self.assertEqual(refused["status"], "refused", refused)

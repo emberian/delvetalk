@@ -75,6 +75,173 @@ class Carry(Reflection):
         self.assertEqual((got["status"], got["snapshot"]["refused"]), ("opened", []), got)
         return h
 
+    def test_compacted_grants_and_their_receipts_cross_carry_and_reopen(self):
+        from tests.test_grants import SCHEDULER, BELL
+        self.make("scheduler", SCHEDULER, record(note=label("")))
+        self.make("bell", BELL, record(count=nat(0), by=label(""), **{"from": label("")}))
+        ended = []
+        for i, until in enumerate((100, 1)):
+            r = self.turn("scheduler", "authorize", record(target=label("bell"), method=label("ring"), until=nat(until)), principal="registrar")
+            self.assertEqual(r["status"], "admitted", r)
+            gid = r["result"]["value"]
+            end = (self.host.send(op="world-revoke", principal="registrar", identity="revoke-before-carry", grant=gid)
+                   if i == 0 else self.host.send(op="world-advance", height=2))
+            self.assertEqual(end["status"], "admitted" if i == 0 else "advanced", end)
+            ended.append((gid, "revoked" if i == 0 else "expired", end["receipt"]["height"]))
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        new = self.opened(out)
+        for snapshot in (False, True):
+            for gid, how, height in ended:
+                row = new.send(op="world-inspect", principal="registrar", grant=gid)["grant"]
+                self.assertEqual((row["id"], row["ended"], row["endedAt"]), (gid, how, height), row)
+                self.assertNotIn("reading", row)
+            if not snapshot:
+                self.assertEqual(new.send(op="world-snapshot")["status"], "snapshot")
+                new.close()
+                new = self.opened(out)
+        new.close()
+
+    def test_legacy_full_grants_are_compacted_from_their_journal_endings_on_carry(self):
+        from tests.test_grants import SCHEDULER, BELL
+        self.make("scheduler", SCHEDULER, record(note=label("")))
+        self.make("bell", BELL, record(count=nat(0), by=label(""), **{"from": label("")}))
+        made = self.turn("scheduler", "authorize", record(target=label("bell"), method=label("ring"), until=nat(1)), principal="registrar")
+        self.assertEqual(made["status"], "admitted", made)
+        [terms] = made["receipt"]["outcome"]["grants"]
+        expired = self.host.send(op="world-advance", height=2)
+        self.assertEqual(expired["status"], "advanced", expired)
+        snapshot = self.host.send(op="world-snapshot")
+        path = self.path + f".snapshot.{snapshot['height']}.cbor"
+        body = read_snapshot(path)
+        body.pop("grantTombstones")
+        body["grants"] = [dict(terms, revoked=False)]
+        for obj in body["objects"]:
+            obj.pop("maker")
+        for anchor in body["index"]["anchors"].values():
+            anchor.pop()
+        write_snapshot(path, body)
+        p, out = self.carry(snapshot=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        new = self.opened(out)
+        row = new.send(op="world-inspect", principal="registrar", grant=terms["id"])["grant"]
+        self.assertEqual((row["ended"], row["endedAt"]), ("expired", expired["receipt"]["height"]))
+        new.close()
+
+    def test_a_foundation_snapshot_without_maker_metadata_loads_and_carries_twice(self):
+        made = self.host.send(op="world-create", principal="kim", identity="legacy-owned",
+                              object="legacy-owned", source=PACKAGE, entry="initial", seed=source_seed())
+        self.assertEqual(made["status"], "created", made)
+        snapshot = self.host.send(op="world-snapshot")
+        self.assertEqual(snapshot["status"], "snapshot", snapshot)
+        path = self.path + f".snapshot.{snapshot['height']}.cbor"
+        body = read_snapshot(path)
+        body.pop("grantTombstones")
+        for obj in body["objects"]:
+            obj.pop("maker")
+        for anchor in body["index"]["anchors"].values():
+            anchor.pop()
+        write_snapshot(path, body)
+        self.release()
+        self.host = self.spawn()
+        opened = self.host.send(op="world-open", path=self.path)
+        self.assertEqual((opened["status"], opened["snapshot"]["resumed"], opened["snapshot"]["refused"]),
+                         ("opened", snapshot["height"], []), opened)
+        checked = self.host.send(op="world-open", path=self.path, verify=True)
+        self.assertEqual((checked["status"], checked["snapshot"]["refused"]), ("opened", []), checked)
+        self.assertEqual(self.host.send(op="world-inspect", principal="kim", object="legacy-owned")["maker"], "kim")
+        p, out = self.carry(snapshot=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        new = self.opened(out)
+        self.assertEqual(new.send(op="world-inspect", principal="kim", object="legacy-owned")["maker"], "kim")
+        self.assertEqual(new.send(op="world-snapshot")["status"], "snapshot")
+        new.close()
+        twice = os.path.join(self.dir.name, "legacy-twice.journal")
+        q = subprocess.run([binary(), "carry", "--from", out, "--out", twice, "--reason", "again"],
+                           capture_output=True, text=True, timeout=600)
+        self.assertEqual(q.returncode, 0, q.stderr)
+        again = self.opened(twice)
+        self.assertEqual(again.send(op="world-inspect", principal="kim", object="legacy-owned")["maker"], "kim")
+        again.close()
+
+    def test_an_edition_13_foundation_snapshot_without_maker_metadata_carries(self):
+        snapshot = self.host.send(op="world-snapshot")
+        self.assertEqual(snapshot["status"], "snapshot", snapshot)
+        source = self.path + f".snapshot.{snapshot['height']}.cbor"
+        body = read_snapshot(source)
+        body.pop("grantTombstones")
+        for obj in body["objects"]:
+            obj.pop("maker")
+        for anchor in body["index"]["anchors"].values():
+            anchor.pop()
+        self.release()
+        journal = journal_entries(self.path)
+        previous = "0" * 64
+        for entry in journal:
+            entry.pop("hash")
+            entry["previous"] = previous
+            if entry["height"] == 1:
+                entry["replay"] = 13
+            entry["hash"] = cid_of(entry)
+            previous = entry["hash"]
+        legacy = os.path.join(self.dir.name, "edition-13.journal")
+        write_journal(legacy, journal)
+        body["head"] = journal[-1]["hash"]
+        write_snapshot(legacy + f".snapshot.{snapshot['height']}.cbor", body)
+        out = os.path.join(self.dir.name, "edition-13-carried.journal")
+        p = subprocess.run([binary(), "carry", "--from", legacy, "--out", out, "--reason", "edition 13"],
+                           capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(p.stdout)["carriedFrom"]["replay"], 13)
+        new = self.opened(out)
+        self.assertEqual(new.send(op="world-inspect", principal="ember", object="c")["maker"], "ember")
+        new.close()
+
+    def test_a_grant_carried_live_is_listed_and_resolves_after_its_tombstone_is_evicted(self):
+        from tests.test_grants import SCHEDULER, BELL
+        self.make("scheduler", SCHEDULER, record(note=label("")))
+        self.make("bell", BELL, record(count=nat(0), by=label(""), **{"from": label("")}))
+        made = self.turn("scheduler", "authorize", record(target=label("bell"), method=label("ring"), until=nat(1)), principal="registrar")
+        self.assertEqual(made["status"], "admitted", made)
+        gid = made["result"]["value"]
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        new = self.opened(out)
+        [listed] = new.send(op="world-grants", principal="registrar")["grants"]
+        self.assertEqual((listed["id"], listed["until"]), (gid, 1), listed)
+        expired = new.send(op="world-advance", height=2)
+        self.assertEqual(expired["status"], "advanced", expired)
+        for i in range(256):
+            r = new.send(op="world-turn", principal="registrar", identity=f"after-carry-{i}", object="scheduler",
+                         method="authorize", argument=record(target=label("bell"), method=label("ring"), until=nat(100)))
+            self.assertEqual(r["status"], "admitted", r)
+            ended = new.send(op="world-revoke", principal="registrar", identity=f"end-after-carry-{i}", grant=r["result"]["value"])
+            self.assertEqual(ended["status"], "admitted", ended)
+        snapshot = new.send(op="world-snapshot")
+        body = read_snapshot(out + f".snapshot.{snapshot['height']}.cbor")
+        self.assertNotIn(gid, [g["id"] for g in body["grantTombstones"]])
+        row = new.send(op="world-inspect", principal="registrar", grant=gid)["grant"]
+        self.assertEqual((row["id"], row["ended"], row["endedAt"]), (gid, "expired", expired["receipt"]["height"]))
+        new.close()
+        again = self.opened(out)
+        self.assertEqual(again.send(op="world-inspect", principal="registrar", grant=gid)["grant"], row)
+        again.close()
+
+    def test_the_maker_allocation_is_preserved_by_carry(self):
+        from tests.test_make import MAKER, LAMP
+        made = self.make("allocator", MAKER, record(made=nat(0)))
+        for i in range(128):
+            r = self.turn("allocator", "make", record(source=label(LAMP), origin=label("allocator"), receipt=label(made["receipt"]["hash"]), id=label(f"kim/{i}")), principal="kim")
+            self.assertEqual(r["status"], "admitted", r)
+        p, out = self.carry()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        new = self.opened(out)
+        over = new.send(op="world-create", principal="kim", identity="over-after-carry", object="kim/over",
+                        source=LAMP, entry="initial", seed=record())
+        self.assertEqual((over["status"], over["receipt"]["outcome"]["class"]), ("refused", "capacity"), over)
+        self.assertIn("objectsPerPrincipal", over["receipt"]["outcome"]["reason"])
+        new.close()
+
     def test_every_object_and_receipt_crosses_and_the_world_goes_on(self):
         self.policy()
         commonplace(self, doors=[("GARDEN", "garden", [])])

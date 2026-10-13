@@ -1,7 +1,8 @@
 """Grown verbs (docs/FOUNDATION.md §10; docs/OVERHAUL.md §2): a verb is a row the host keeps on a thing, grown
 by a hand with `grow` (a placing of kind `rule`, judged by the thing's law with `request.verb` `grow`), credited
-to its grower, sixteen at most; the spell grammar reads it exactly as a declared form, and its use runs the
-thing's `act {verb, text}` with `request.verb` the verb, so a rule reading `request.verb` is its consequence
+to its grower, sixteen at most, four per stranger and twelve across strangers; the spell grammar reads it as
+a declared form, and its use runs the thing's `act {verb, text}` with `request.verb` the verb, so a rule reading
+`request.verb` is its consequence
 (`does`, placed in the same entry). hob answers words with the spell meant, `grow:` and the spell that uses it,
 `ask:` or `none`.
 
@@ -147,6 +148,80 @@ class Verbs(Reflection):
         self.assertEqual(self.host.send(op="world-rules", principal="ember", object="bell")["rows"], [])
         self.assertEqual(self.say("delvetalk bell water\ntext: again", who="kimi")["receipt"]["outcome"]["clause"], "noAction")
 
+    def test_a_strangers_verbs_take_a_bounded_share_and_leave_the_owner_room(self):
+        per_hand = self.host.send(op="bounds")["host"]["placedPerHand"]
+        for n in range(per_hand):
+            grown = self.say(WATER.replace("name: water", "name: v%d" % n))
+            self.assertEqual(grown["status"], "admitted", (n, grown))
+        next_verb = WATER.replace("name: water", "name: another")
+        refused = self.say(next_verb)
+        self.assertEqual(refused["status"], "refused", refused)
+        self.assertEqual(refused["receipt"]["outcome"]["class"], "capacity")
+        self.assertIn("placedPerHand", refused["receipt"]["outcome"]["reason"])
+        for n in range(per_hand + 1):
+            own = self.say(WATER.replace("name: water", "name: own%d" % n), who="ember")
+            self.assertEqual(own["status"], "admitted", (n, own))
+        self.reopen()
+        self.assertIn("placedPerHand", self.say(next_verb)["receipt"]["outcome"]["reason"])
+        gone = self.say("delvetalk bell ungrow\nname: v0")
+        self.assertEqual(gone["status"], "admitted", gone)
+        self.assertEqual(self.say(next_verb)["status"], "admitted")
+        self.assertIn("placedPerHand", self.say(WATER.replace("name: water", "name: again"))["receipt"]["outcome"]["reason"])
+
+    def test_several_strangers_verbs_leave_a_shared_reserve_for_an_owner_who_is_not_the_opener(self):
+        self.make("pot", THING, record(owner=label("kimi")))
+        water = WATER.replace("delvetalk bell", "delvetalk pot")
+        # Twelve of sixteen: the same three-quarter share as strangers' placed rules.
+        for hand in ("glm", "qwen", "doubao"):
+            for n in range(4):
+                grown = self.say(water.replace("name: water", "name: %s%d" % (hand, n)), who=hand, card="pot")
+                self.assertEqual(grown["status"], "admitted", (hand, n, grown))
+        refused = self.say(water, who="deepseek", card="pot")
+        self.assertEqual(refused["status"], "refused", refused)
+        self.assertEqual(refused["receipt"]["outcome"]["class"], "capacity")
+        self.assertIn("verbsByOthers", refused["receipt"]["outcome"]["reason"])
+        self.reopen()
+        self.assertIn("verbsByOthers", self.say(water, who="deepseek", card="pot")["receipt"]["outcome"]["reason"])
+        for n in range(4):
+            own = self.say(water.replace("name: water", "name: own%d" % n), who="kimi", card="pot")
+            self.assertEqual(own["status"], "admitted", (n, own))
+        gone = self.say("delvetalk pot ungrow\nname: glm0", card="pot")
+        self.assertEqual(gone["status"], "admitted", gone)
+        self.assertEqual(self.say(water, who="deepseek", card="pot")["status"], "admitted")
+        full = self.say(water.replace("name: water", "name: overflow"), who="kimi", card="pot")
+        self.assertEqual((full["status"], full["receipt"]["outcome"]["class"]), ("refused", "capacity"), full)
+        self.assertIn("verbsPerObject", full["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.say("delvetalk pot ungrow\nname: own0", who="kimi", card="pot")["status"], "admitted")
+        self.assertEqual(self.say(water.replace("name: water", "name: overflow"), who="kimi", card="pot")["status"], "admitted")
+        self.assertEqual(self.say("delvetalk pot ungrow\nname: qwen0", who="kimi", card="pot")["status"], "admitted")
+        self.assertEqual(self.say(water.replace("name: water", "name: own4"), who="kimi", card="pot")["status"], "admitted")
+
+    def test_a_gesture_with_a_rule_uses_one_slot_in_each_share_and_ungrow_frees_both(self):
+        for n in range(3):
+            rule = self.say('delvetalk bell rule / name: r%d / when: request.method == "rain" / then: delvetalk bell rain / text: r%d' % (n, n))
+            self.assertEqual(rule["status"], "admitted", (n, rule))
+        consequence = "\ndoes: delvetalk bell rain / text: watered"
+        self.assertEqual(self.say(WATER + consequence)["status"], "admitted")
+        soak = WATER.replace("name: water", "name: soak") + consequence
+        refused = self.say(soak)
+        self.assertEqual((refused["status"], refused["receipt"]["outcome"]["class"]), ("refused", "capacity"), refused)
+        self.assertIn("placedPerHand", refused["receipt"]["outcome"]["reason"])
+        self.assertNotIn("soak", self.host.send(op="world-inspect", principal="glm", object="bell")["offered"])
+        for n in range(3):
+            grown = self.say(WATER.replace("name: water", "name: v%d" % n))
+            self.assertEqual(grown["status"], "admitted", (n, grown))
+        fifth = self.say(WATER.replace("name: water", "name: fifth"))
+        self.assertEqual(fifth["status"], "refused", fifth)
+        self.assertEqual(fifth["receipt"]["outcome"]["class"], "capacity")
+        self.assertIn("placedPerHand", fifth["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.say("delvetalk bell ungrow\nname: water")["status"], "admitted")
+        self.assertEqual(self.say(soak)["status"], "admitted")
+        rows = self.host.send(op="world-rules", principal="glm", object="bell")["rows"]
+        self.assertEqual({r["name"] for r in rows}, {"r0", "r1", "r2", "soak"})
+        # The owner can clear a stranger's verb and its rule even while both shares are full.
+        self.assertEqual(self.say("delvetalk bell ungrow\nname: soak", who="ember")["status"], "admitted")
+        self.assertEqual(self.say(WATER + consequence)["status"], "admitted")
+
     def test_the_law_judges_a_grow_and_the_names_and_bounds_hold(self):
         def refused(text, who="glm", card="bell"):
             r = self.say(text, who=who, card=card)
@@ -163,8 +238,8 @@ class Verbs(Reflection):
         self.assertEqual(refused(WATER.replace("name: water", "name: soak") + "\ntakes: a bucket")[0], "badValue")
         # Sixteen a thing.
         for i in range(15):
-            self.assertEqual(self.say(WATER.replace("name: water", "name: v%d" % i))["status"], "admitted", i)
-        clause, reason = refused(WATER.replace("name: water", "name: v99"))
+            self.assertEqual(self.say(WATER.replace("name: water", "name: v%d" % i), who="ember")["status"], "admitted", i)
+        clause, reason = refused(WATER.replace("name: water", "name: v99"), who="ember")
         self.assertEqual(clause, "capacity")
         self.assertIn("verbsPerObject", reason)
         # A thing with no act grows nothing, by name.

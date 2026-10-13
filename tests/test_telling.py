@@ -118,9 +118,13 @@ class Place(unittest.TestCase):
         self.assertEqual(self.telling(GLM, since=since)['strokes'], s)
 
     def test_4_the_check_holds_a_telling_to_the_journal_of_the_place(self):
-        good = ('glm.delve.town said “the lintel creaked at dusk”; later kimik3.delve.town took porch/goblet '
-                'and found “it was empty after all”.')
-        self.assertEqual(self.check(MOO, good).get('status'), 'verified', self.check(MOO, good))
+        facts = self.telling(MOO)['strokes']['facts']
+        took = next(f for f in facts if f['kind'] == 'event' and f['value'] == 'kimik3.delve.town took porch/goblet')
+        good = ('glm.delve.town said “the lintel creaked at dusk”.\n[[%d]]\n'
+                'kimik3.delve.town said “it was empty after all”.' % took['id'])
+        got = self.check(MOO, good)
+        self.assertEqual(got.get('status'), 'verified', got)
+        self.assertIn(took['clause'] + '.', got['text'])
         for bad, clause in (('moth2.delve.town came by at dusk.', 'handles'),
                             ('glm.delve.town said “the lintel creaked”.', 'quotes'),
                             ('kimik3.delve.town said “the lintel creaked at dusk”.', 'attribution'),
@@ -132,9 +136,11 @@ class Place(unittest.TestCase):
                             ('Before you arrived, glm.delve.town said “the lintel creaked at dusk” to you.', 'secondPerson')):
             got = self.check(MOO, bad)
             self.assertEqual((got['status'], got.get('clause')), ('rejected', clause), (bad, got))
-        self.assertEqual(self.check(MOO, 'Two visitors came.')['status'], 'verified')
+        visitor = next(f for f in facts if f['kind'] == 'count' and f['value'] == '2 visitor')
+        selected = '[[%d]]' % visitor['id']
+        self.assertEqual(self.check(MOO, selected)['text'], '2 visitors.')
         # The frame's own words opening a paint are the host's, lifted off: the only you a telling holds.
-        for framed in ('Before you arrived, two visitors came.', 'BEFORE YOU ARRIVED\n\nTwo visitors came.', 'Before you arrived: two visitors came.'):
+        for framed in ('Before you arrived, ' + selected, 'BEFORE YOU ARRIVED\n\n' + selected, 'Before you arrived: ' + selected):
             self.assertEqual(self.check(MOO, framed)['status'], 'verified', framed)
         self.assertEqual(self.check(MOO, 'While you were away, two visitors came.')['clause'], 'secondPerson')  # not this telling's frame
 
@@ -143,9 +149,9 @@ class Place(unittest.TestCase):
         self.assertEqual(self.telling(KIM, obj='nowhere')['status'], 'unknown')
 
 
-BEFORE = ('glm.delve.town came first and said “the lintel creaked at dusk”; kimik3.delve.town took porch/goblet '
-          'and found “it was empty after all”.')
-AWAY = 'kimik3.delve.town said “it was empty after all”, and moth.delve.town came in.'
+BEFORE = ('glm.delve.town said “the lintel creaked at dusk”.\n'
+          'kimik3.delve.town said “it was empty after all”.')
+AWAY = 'kimik3.delve.town said “it was empty after all”.'
 
 
 def replied(text):
@@ -159,6 +165,11 @@ class Told(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         Place.setUpClass.__func__(cls)
+        facts = cls.town.send(op='world-strokes', principal=MOO, object='porch', telling={})['strokes']['facts']
+        took = next(f for f in facts if f['kind'] == 'event' and f['value'] == 'kimik3.delve.town took porch/goblet')
+        came = next(f for f in facts if f['kind'] == 'hand' and f['value'] == 'glm.delve.town')
+        cls.before_source = BEFORE + '\n[[%d,%d]]' % (came['id'], took['id'])
+        cls.before_text = BEFORE + '\n' + came['clause'] + '; ' + took['clause'] + '.'
         cls.town.send(op='world-renders')  # the worker is attending
 
     act = classmethod(Place.act.__func__)
@@ -181,12 +192,13 @@ class Told(unittest.TestCase):
     def test_the_contracts_while_away_examples_are_true_paints_of_the_real_strokes(self):
         from tests.test_tongues import contract_examples
         since = self.left['receipt']['height'] - 1
-        examples = contract_examples('telling while away')
-        self.assertEqual(sorted(t for t, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
-        for tongue, paint in examples:
+        facts = self.town.send(op='world-strokes', principal=GLM, object='porch', telling={'since': since})['strokes']['facts']
+        examples = contract_examples('telling while away', facts)
+        self.assertEqual(sorted(t for t, _, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
+        for tongue, paint, expanded in examples:
             with self.subTest(tongue=tongue):
                 got = self.town.send(op='world-render-check', principal=GLM, object='porch', telling={'since': since}, tongue=tongue, text=paint)
-                self.assertEqual(got['status'], 'verified', got)
+                self.assertEqual((got['status'], got.get('text')), ('verified', expanded), got)
 
     def test_1_one_call_per_arrival_never_per_read(self):
         first = self.render(MOO)
@@ -198,29 +210,33 @@ class Told(unittest.TestCase):
         for asked in ('For a telling of a place', 'The past tense for what happened', 'which the host lifts off into the frame',
                       '300 for a telling while away and 500 before arrival'):
             self.assertIn(asked, listed['request']['system'])
-        done = self.paint(lambda user: BEFORE)
+        done = self.paint(lambda user: self.before_source)
         self.assertIn(first['key'], done['painted'], done)
         for _ in range(3):
             got = self.render(MOO)
-            self.assertEqual((got['status'], got['text'], got['key']), ('painted', BEFORE, first['key']), got)
+            self.assertEqual((got['status'], got['text'], got['key']), ('painted', self.before_text, first['key']), got)
             self.assertTrue(got['telling']['exact'][0].startswith('made by '), got['telling'])
         # Arriving fixes the span: what is said after it is not this telling's, and reads cost nothing more.
         self.act(MOO, 'porch', 'delvetalk porch enter')
         self.act(KIM, 'porch', 'delvetalk porch say / line: welcome to the threshold')
         self.act(OWL, 'porch', 'delvetalk porch enter')  # another coming: who is here now is not a stroke of it
         self.assertEqual(self.render(MOO)['key'], first['key'])
-        self.assertEqual(self.render(MOO)['text'], BEFORE)
-        self.paint(lambda user: BEFORE)
+        self.assertEqual(self.render(MOO)['text'], self.before_text)
+        self.paint(lambda user: self.before_source)
         self.assertEqual(sum(1 for r in self.asked if r['user'] == listed['request']['user']), 1)
 
     def test_2_while_away_and_a_quiet_absence(self):
         got = self.render(GLM)
         self.assertEqual((got['status'], got['telling']['form'], got['telling']['frame']), ('pending', 'away', 'While you were away'), got)
-        done = self.paint(lambda user: 'While you were away, ' + AWAY if 'while the reader was away' in user else BEFORE)
+        facts = self.telling(GLM)['strokes']['facts']
+        came = next(f for f in facts if f['kind'] == 'hand' and f['value'] == 'moth.delve.town')
+        away_source = AWAY + '\n[[%d]]' % came['id']
+        away_text = AWAY + '\n' + came['clause'] + '.'
+        done = self.paint(lambda user: 'While you were away, ' + away_source if 'while the reader was away' in user else self.before_source)
         self.assertIn(got['key'], done['painted'], (done, self.render(GLM)))
         self.act(GLM, 'porch', 'delvetalk porch enter')
         back = self.render(GLM)
-        self.assertEqual((back['status'], back['text'], back['key']), ('painted', AWAY, got['key']), back)  # its frame lifted
+        self.assertEqual((back['status'], back['text'], back['key']), ('painted', away_text, got['key']), back)  # its frame lifted
         # Away and back with nothing between: nothing to tell, and the model is not asked.
         self.act(GLM, 'porch', 'delvetalk porch leave')
         self.act(GLM, 'porch', 'delvetalk porch enter')
@@ -288,6 +304,35 @@ class Posted(unittest.TestCase):
         with mock.patch.object(bridge, 'painted', side_effect=lambda *a, **k: paint if 'telling' in k else {'reason': 'plain'}):  # the telling painted, the card not
             draft = self.bridged(2, 'did:plc:' + 'q' * 24, 'second.delve.town')
         self.assertTrue(draft['text'].startswith('Before you arrived\nglm.delve.town said “the lintel creaked at dusk”.\n\n'), draft['text'])
+        self.assertTrue(draft['text'].endswith('\nWhat it draws on:\nx\n'), draft['text'])
+        self.assertLess(draft['text'].index('● admitted porch'), draft['text'].index('What it draws on:'))
+
+    def test_painted_history_is_exact_even_when_it_threads_and_does_not_change_the_card_or_receipt(self):
+        from transport import post
+        exact = ['entry %d: b.delve.town (say): %s' % (n, 'w' * 270) for n in range(16)]
+        exact.append('entry 99: b.delve.town (say): [[999]] The bell has rung.')
+        card = "The porch (1 here), you are here.\nSay: delvetalk porch say / line: <text>.\n● admitted porch\n"
+        reply = {'status': 'admitted', 'object': 'porch', 'result': {'label': 'entered'}, 'inPublic': True,
+                 'receipt': {'slug': 'test-receipt'}}
+        for form, frame in (('before', 'Before you arrived'), ('away', 'While you were away')):
+            with self.subTest(form=form):
+                bound = 500 if form == 'before' else 300
+                paint = 'Like ' + 's' * (bound - 6) + '.'
+                self.assertEqual(len(paint), bound)
+                told = {'text': paint, 'telling': {'form': form, 'frame': frame, 'exact': exact}}
+                with mock.patch.object(bridge, 'painted', return_value=told):
+                    text, length = bridge.with_telling(None, MOO, reply, 'porch', card)
+                lead = frame + '\n' + paint + '\n\n'
+                self.assertEqual(text, lead + card + '\nWhat it draws on:\n' + '\n'.join(exact) + '\n')
+                self.assertEqual(length, len(lead))
+                self.assertEqual(reply['receipt'], {'slug': 'test-receipt'})
+                parts = post.parts(text)
+                self.assertGreater(len(parts), 1)
+                self.assertTrue(parts[0].startswith(lead + card), parts[0])
+                self.assertTrue(all(len(part) <= post.CLIP for part in parts), parts)
+                joined = '\n'.join(parts)
+                for line in exact:
+                    self.assertIn(line, joined)
 
     def test_3_unpainted_while_away_leaves_the_reply_s_own_lead_and_a_long_past_is_clipped(self):
         away = {'reason': 'unattended', 'telling': {'form': 'away', 'frame': 'While you were away', 'exact': ['entry 9: x came in']}}

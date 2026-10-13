@@ -72,6 +72,16 @@ sum Published:
 sum Programmed:
   reprogrammed: {pin: String}
   refused: {clause: String, reading: String}
+record Stack:
+  package: String
+  layers: Lists.List<String>
+  form: String
+  head: String
+  voice: String
+  law: String
+sum Stacked:
+  stacked: Stack
+  refused: {clause: String, reading: String}
 sum Amended:
   amended: {}
   refused: {clause: String, reading: String}
@@ -117,6 +127,7 @@ sum Since:
   denied: {}
 # A rule, a want or a grown verb placed on a thing or taken off it (OVERHAUL §2): judged by the
 # thing's law as a request of kind `rule`, the verb naming which (`rule`, `want`, `grow`).
+# `ungrow` with `check: true` judges the same removal without staging it for the commit.
 sum Placed:
   placed: {}
   refused: {clause: String, reading: String}
@@ -126,16 +137,22 @@ sum Chronicled:
   chronicled: {day: Nat, lines: Document.Names}
   refused: {clause: String}
 # What wants a hand across the world (`wanting {after, limit}`): each want that holds now, the thing's
-# own and the ones it follows, newest first (pages of whole heights by `after`), with the height since
-# which it has held; derived, no root.
+# own and the ones it follows, answerable by this hand. `oldest` rotates the oldest-first list by
+# clock day; `after`/`next` is its offset. Newest-first pages keep whole heights and `next` is the last
+# height. `waiting` counts visible held wants that ask another hand; derived, no root.
 record Want:
   object: String
   name: String
   reading: String
   asks: String
   since: Nat
+record WantPage:
+  rows: Lists.List<Want>
+  more: Bool
+  waiting: Nat
+  next: Nat
 sum Wanting:
-  wanting: {rows: Lists.List<Want>, more: Bool}
+  wanting: WantPage
   refused: {clause: String}
 # A condition in the law's grammar judged of a thing as it stands, the turn's subject reading it (`holds
 # {object, when}`): no `old`, nothing written; what it cites are roots (a scene's guard, Scenes.obend).
@@ -219,6 +236,8 @@ protocol world:
   publish({page: String, section: String, body: String}) -> Published
   reprogram({object: Plans.Reference, package: String, migration: String}) -> Programmed
   extend({object: Plans.Reference, package: String, migration: String}) -> Programmed
+  compose({object: Plans.Reference, kind: String}) -> Programmed
+  kindStack({of: String, body: String, depth: Nat, kind: String}) -> Stacked
   amend({object: Plans.Reference, law: String}) -> Amended
   inspect({object: Plans.Reference, source: Bool}) -> Inspected
   check({package: String, layers: Lists.List<String>}) -> Checked
@@ -234,9 +253,9 @@ protocol world:
   want({object: Plans.Reference, name: String, when: String, asks: String}) -> Placed
   unwant({object: Plans.Reference, name: String}) -> Placed
   grow({object: Plans.Reference, name: String, reading: String, takes: String, does: String}) -> Placed
-  ungrow({object: Plans.Reference, name: String}) -> Placed
+  ungrow({object: Plans.Reference, name: String, check: Bool}) -> Placed
   act<R>({object: Plans.Reference, verb: String, text: String}) -> Returned<R>
   chronicle({day: Nat}) -> Chronicled
-  wanting({after: Nat, limit: Nat}) -> Wanting
+  wanting({after: Nat, limit: Nat, oldest: Bool}) -> Wanting
   holds({object: Plans.Reference, when: String}) -> Held
   principal({handle: String}) -> Named

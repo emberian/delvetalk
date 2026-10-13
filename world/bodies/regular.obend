@@ -45,9 +45,13 @@ def pushing(state: State, context: Abi.Context) -> Activity<Nat>:
 def seen(state: State, context: Abi.Context) -> Activity<Nat>:
   match Super.onPlace(state, "emote", {line: "comes in with frost on her shoulders that does not melt indoors, nods at the clock the way you nod at a coworker, and pays for a coffee with a coin from a country that redraws its borders"}, context):
     case _: paying(state, context)
-# The coin: a copy of her place's coin (`<place>/coin`, a THING) made hers and laid where she stands, for
-# anyone to inspirit or pick up.
+# The coin: a copy of her place's coin (`<place>/coin`, a THING) made hers and laid where she stands, for anyone
+# to inspirit or pick up; while three of hers lie there untaken she pays with one of those.
 def paying(state: State, context: Abi.Context) -> Activity<Nat>:
+  match world.viewField::<Relations.Relation<Plans.Reference>>({object: Super.placeOf(state, context), field: "things"}):
+    case viewed(v): if Lists.length(Lists.filter(Relations.rows(v.state), fn(t: Plans.Reference) -> Bool: Text.starts(t.object, "{Super.place(state)}/coin/"))) >= 3n then Super.ownLine(state, "paid", "paid with a coin already in the till", context) else coining(state, context)
+    case _: coining(state, context)
+def coining(state: State, context: Abi.Context) -> Activity<Nat>:
   match world.call::<Done>({object: {world: context.world, object: "{Super.place(state)}/coin"}, method: "copyInto", argument: {at: Super.placeOf(state, context)}}):
     case returned(r): if Super.refusedDone(r.result) then Super.ownLine(state, "paid", "paid; no coin was left", context) else Super.ownLine(state, "paid", "left a coin in the till", context)
     case _: Super.ownLine(state, "paid", "paid; no coin was left", context)
