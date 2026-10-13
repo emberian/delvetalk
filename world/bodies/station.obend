@@ -98,13 +98,27 @@ def stitchWaiting(waiting: Lists.List<String>) -> String:
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Super.actions(state, context), if context.principal == state.owner then Text.words("vend stitch") else Text.words(""))
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}}
+  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at, draw: Super.turnDraw(context)}}
   match Super.lastLeft(context.principal, after):
     case some(l): Super.away(at, after, l.value.entry, context)
     case none(_): Super.welcomed(at, after, Document.text(""), context)
-def recorded(vars: Lists.List<Plans.Entries<Scenes.Var, Scenes.Var>>, after: State, context: Abi.Context) -> Activity<Done>:
+# A visitor's leaving is kept (`left`, for the register's want and the return); an inhabitant's (`@station/regular`,
+# acting as itself) is its own hours, not a visit, and keeps none.
+def recorded(vars: Lists.List<Super.Edit>, said: String, after: State, context: Abi.Context) -> Activity<Done>:
+  if Text.starts(context.principal, "@") then Super.varied(vars, Done.left({}), said, after, context) else visited(vars, said, after, context)
+def visited(vars: Lists.List<Super.Edit>, said: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {left: insert {at: 0n, who: context.principal, entry: context.height}}
-  Super.varied(vars, Done.left({}), after, context)
+  Super.varied(vars, Done.left({}), said, after, context)
+# The radio's song is the overnight DJ's (`<station>/dj`, kind/dj): the newest it played, else its four bars, read into
+# the scene as the variable `song` whenever a card is shown and never kept, so the radio passage says `{song}`.
+def seen(state: State, context: Abi.Context) -> Activity<Super.Seen>:
+  match world.viewField::<Relations.Relation<Rows.Line>>({object: {world: context.world, object: "{context.object}/dj"}, field: "lines"}):
+    case viewed(v): Super.seen(extend(state, {vars: Lists.append(state.vars, {name: "song", value: songOf(Relations.order(v.state, fn(l: Rows.Line) -> Nat: l.n))})}), context)
+    case _: Super.seen(state, context)
+def songOf(lines: Lists.List<Rows.Line>) -> String:
+  match Lists.find(Lists.reverse(lines), fn(l: Rows.Line) -> Bool: l.verb == "play"):
+    case some(l): l.value.text
+    case none(_): "the same four bars, nearly resolving"
 def awayLines(state: State, since: Nat, changes: Lists.List<World.Change>, context: Abi.Context) -> Document.Document:
   let written = Lists.map(Lists.filter(Lists.reverse(Relations.order(state.lines, fn(l: Rows.Line) -> Nat: l.n)), fn(l: Rows.Line) -> Bool: l.at > since && l.author != context.principal), fn(l: Rows.Line) -> String: "{Card.shown(l.author, l.handle, context)}: {Super.clip(l.text)}\n")
   Document.text("You were away a minute, or a year; the station did not count which.\n{textJoin(Lists.take(written, 3n), \"\")}\n")

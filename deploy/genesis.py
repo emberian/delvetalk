@@ -184,7 +184,7 @@ RECORD_LAW = ('law owner "the owner stays; only the owner changes the keeper, th
               'law kept "a line, an admission or a mark is only added; only the keeper admits": insertOnly(lines) and insertOnly(admitted) and insertOnly(marks) '
               'and (unchanged(admitted) or request.subject == new.keeper)\n'
               'law methods "what was written, waits, was admitted and marked, who is here, who left, the variables, what lies here and when it was tended change only by their spells, never by a proposal": '
-              'request.kind == proposed implies (unchanged(lines) and unchanged(pending) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(things) and unchanged(tended))\n'
+              'request.kind == proposed implies (unchanged(lines) and unchanged(pending) and unchanged(admitted) and unchanged(marks) and unchanged(presence) and unchanged(left) and unchanged(vars) and unchanged(mine) and unchanged(things) and unchanged(tended))\n'
               'want pending "a line waits for its keeper": not (new.keeper == "") and count(new.pending) >= 1 asks delvetalk {request.object} admit\n'
               'want door "it opens onto nothing yet": count(new.cites) == 0 asks delvetalk {request.object} door')
 
@@ -310,8 +310,11 @@ THINGS = [('porch/goblet', 'a goblet that is always full of something'),
 # its register, once kept, hold every visitor it has had; and doors between it and the porch.
 STATION_KIND = read_kind('station')
 STATION_CALL = 'at://did:plc:6amo7col5h4ciq2gpm5eur7b/town.delve.feed.post/3mxp732zoec2n'
-STATION_WANT = ('register', 'the register is kept now, and holds fewer arrivals than the station has had',
-                'not ("station/register".keeper == "") and count("station/register".lines) + 1 <= count(new.left)',
+# The register keeps 32 lines (Thing.relations) and the station a row for each visitor who has left (an inhabitant's
+# hours are not visits: station.obend `recorded`), so the want asks while the book has room and fewer lines than
+# visitors, and rests once it is full: never a want no hand could meet (codex-2026-10-13 world 12).
+STATION_WANT = ('register', 'the register is kept now, has room, and holds fewer arrivals than the station has had',
+                'not ("station/register".keeper == "") and count("station/register".lines) + 1 <= 32 and count("station/register".lines) + 1 <= count(new.left)',
                 'delvetalk station/register sign / text: <who came, in their own words; no time>')
 # (id, name, description): what the scene's `~ vend` copies, each named as its contributor wrote it.
 STATION_THINGS = [
