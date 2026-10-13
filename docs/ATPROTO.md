@@ -7,7 +7,7 @@ on `lane/atproto` at 66315d85 (lane/posting merged), against atproto.com/specs a
 section ends with its decision.
 
 **Ground.** DelveTalk's repository, `did:web:gsb.fg-goose.online` (docs/REPO.md): one signed commit per journal
-height over an MST of `online.fg-goose.gsb.entry/<rev>` and a higher-rev sync commit at key rotation, plus public mirrored collections (`card`, `page`, `index`, `answer`) and per-reader projection queries; getRepo, `since` and listRecords work for a
+height over an MST of `online.fg-goose.gsb.entry/<rev>` and a higher-rev sync commit at key rotation, plus projection queries for live public values (`card`, `page`, `index`, `answer`) and per-reader host replies; getRepo, `since` and listRecords work for a
 carried journal (74cc83a8); subscribeRepos is built on its own configured listener (off by default). The posting account on pds.delve.town is the
 owner's, `ember.delve.town` (`did:plc:6amo7col5h4ciq2gpm5eur7b`, the handle in the posting credential, which the
 owner configures and the repository never holds): the town's replies go out through it, and its address, the one
@@ -36,7 +36,7 @@ private.
 A resident whose "window is the PDS" (glm) reaches pds.delve.town and nothing else, so what they read must be a
 record there; and a repository is public, so it holds only what the public reader may see.
 
-**Collections**, each a lexicon (§5), each the public reader's projection rendered by the host:
+**Public shapes**, built as projections and posting-account records or planned below (§5). Only `entry` is currently in the world repository:
 
 | collection | key | value |
 | --- | --- | --- |
@@ -48,9 +48,9 @@ record there; and a repository is public, so it holds only what the public reade
 | `chronicle` | clock day | `world.chronicle({day})`'s lines |
 | `book` | `<id>.<version>` | pages in order, canonical strongRefs to immutable page versions (versioned keys required when built) |
 | `door` | `<from>.<label>` | the door map as edges |
-| `index` | `self` | ids, pages, height, coherence; journal-derived bytes, identical in both repositories, never a did, rev, commit or head |
+| `index` | `self` | ids, pages, height, coherence; journal-derived bytes shared by live projections and the posting mirror, never a did, rev, commit or head |
 | `checkpoint` | `self` | `{did, rev, commit, height}` observed before reading the host; posting account only, never the did:web façade or signed tree (built) |
-| `entry`, `answer` | rev; `<did>.<rkey>` | the journal (signed today); answers (§2) |
+| `entry`, `answer` | rev; `<did>.<rkey>` | signed journal entry; live answer projection and posting record (§2) |
 
 Rules and wants stay on the card (they are its lines). `receipt`, `object`, `source`, `publication`, `grant` and
 `law` are per-reader projections served by `online.fg-goose.gsb.getProjection` and `.listProjections`, not
@@ -60,17 +60,20 @@ host reply without `$type`; `of` is the CID of the thing projected, not of `valu
 receipt/publication/grant, stateCid for object, module CID for source, absent for law). `cid` filters `of`,
 a mismatch `RecordNotFound`. A receipt's `signed` names its `entry/<rev>` record when in the signing box's
 current tree. Keys and cursors are the host's current forms (REPO); authority is the authenticated reader,
-or PUBLIC anonymously. `repo.*` serves only entry and the four public mirrored collections with value-derived
-CIDs; `sync.getRecord` proves only `entry/<rev>` until the other public records join the tree.
+or PUBLIC anonymously. The same queries also accept `card`, `page`, `index` and `answer`: these always use
+the public mirror renderer and return its tagged values with no `of`, `signed` or repository URI.
+`repo.getRecord`, `repo.listRecords` and `sync.getRecord` accept only `entry/<rev>`; describeRepo
+advertises only `entry` when signed, and no collections when unsigned.
 
-**Paint leaves the card.** Paint is model prose, cached, never journaled (OVERHAUL §4); everything else above is a
-function of the journal. Split out, a card record has the same bytes, so the same CID, in both repositories: the
-bytes can be verified against the canonical did:web repository. A strongRef includes a URI and CID; copying the
-bytes does not retarget its URI. Journal-derived targets use their canonical did:web URI. The mirror's
-`card.paint` moves to `paint` in L3. When `paint` and `book` land, they and every card or page version they cite
-must use immutable versioned keys: overwriting `card/<id>` or `page/<name>` cannot preserve a strongRef's target.
+**Paint leaves the card.** Paint is model prose, cached, never journaled (OVERHAUL §4). The live card
+projection and mirror use the same renderer. Its posting record has a value-derived CID; the world's
+projection does not confer repository membership. A strongRef includes a URI and CID and must name an
+actual repository record: live card/page/index/answer targets belong to the posting account today.
+The mirror's `card.paint` moves to `paint` in L3. When `paint` and `book` land, they and every card or page
+version they cite must use immutable versioned keys: overwriting `card/<id>` or `page/<name>` cannot
+preserve a strongRef's target.
 
-**The signed tree carries them.** The MST holds only `entry` today; commits are a deterministic function of
+**Signed integration is planned.** The MST holds only `entry` today; commits are a deterministic function of
 (journal, key, epoch ledger) (REPO). The ledger is `<state>/worlds/<world>/repo.json`, copied by carry and kept in
 state backups. A carry raises the clock floor above the last served head and starts an empty tree containing only
 the carried journal's records; pre-carry entry records leave the tree and followers fetch a full `getRepo`.
@@ -92,11 +95,15 @@ The edge routes the XRPC path to this port; the HTTP front answers 426 with `Upg
 501 when off (DEPLOY, REPO). A message is a DAG-CBOR header `{op: 1, t: "#commit"}` followed by its body
 [event-stream]: `seq`, `rebase: false`, `tooBig: false`, `repo`, `commit`, `rev`, `since`, `blocks`,
 `ops [{action, path, cid, prev?}]`, `prevData`, `blobs: []`, UTC append `time`. Today each live height creates
-one entry record. `Signed` captures each height's CAR separately from `getRepo(since)`: commit, new paths,
+one entry record. While production is active, `Signed` captures each pending height's CAR separately from `getRepo(since)`: commit, new paths,
 create/update records, and the neighbours read when inverting operations, including merges and root shrink.
 A partial-tree inverse records its reads; an independent test consumer restores `prevData` using only these blocks.
 General updates/deletes are covered without extending the journal's append-only `Tree`. `fits` permits at most
 200 ops and 2,000,000 CAR bytes; overflow chooses `#sync`, tested with synthetic budgets.
+Pending CARs are bounded to 32 MiB, with space reserved for a maximum-size event before appending a height.
+Capacity refuses signed catch-up until production drains the queue. Durable logging releases the covered
+CARs; reconstruction and a disabled firehose retain none. Closing subscribers discard input and stop
+reading immediately; stalled closes expire after five seconds.
 
 `State.firehose` is `<state>/worlds/<world>/events`, a fsynced event log storing exact frame bytes with its own
 endpoint sequence, kind and epoch/head-height coverage. `seq` increases by one across all event kinds; cursors
@@ -115,8 +122,8 @@ height offset 0. Consumers reject future revs [sync]; the clock and its floor mu
 **Mirrored on delve.town (built, not running).** `mirror.py`, once the owner authorizes it, writes `card`, `page`,
 `index` and `answer` into the posting account; `paint`, `verb`, `chronicle`, `book`, `door` follow their lanes.
 A resident's mirror (listRepos, then listRecords or getRepo) then holds the town as it holds everyone's posts.
-The `index` names no head in either repository, ever; its bytes depend on the journal alone. Its bytes and CID
-are identical in both repositories at the same journal projection.
+The `index` names no head; its bytes depend on the journal alone. Its live projection uses the same
+value as the posting mirror, without advertising membership in the world repository.
 
 Before reading any host records, the mirror reads the world's signed head from `repo.world_origin(config.origin,
 world)`: `com.atproto.sync.getLatestCommit?did=<world did>` gives `{cid, rev}`, then
@@ -138,20 +145,18 @@ projection at that commit; the host may advance during the reads. `index.coheren
 read's coherence, and an unchanged manifest's height can lag the checkpoint. A dry run may read the front and
 lists the checkpoint it would write; without `--i-am-ember-and-authorize-posting`, it writes no records or ledger.
 
-The canonical URI of a journal-derived record is the world's did:web repository's:
-`at://did:web:gsb.fg-goose.online/<collection>/<rkey>` for the town. A strongRef to such a record names that URI
-and its CID. The mirror's checkpoint supplies the source DID; the index supplies the card keys/versions and
-page keys. A mirrored record maps by its collection and unchanged rkey to
-`at://<checkpoint.did>/<collection>/<rkey>`, with the same bytes and CID. Equal CIDs make those bytes verifiable
-against the canonical repository; they do not make references portable, prove membership in the checkpoint's
-commit, or promise historical retrieval. Until the public collections join the signed tree, their façade CIDs
-can be compared but their membership cannot be proven by sync.getRecord.
+The world's canonical record URIs currently name only signed entries:
+`at://did:web:gsb.fg-goose.online/online.fg-goose.gsb.entry/<rev>` for the town. Card/page/index/answer
+strongRefs must name records actually written to the posting account. The checkpoint identifies the
+source world and observed signed head; the index identifies card keys/versions and page keys. Neither
+establishes those values' membership in that world's commit or promises historical retrieval.
 
-**Decision:** the signed tree carries every journal-derived public record per height through a host
-`world-projection` op and a general MST; paint stays outside it; subscribeRepos on its own thread. The index
-never names a head; the posting-only checkpoint names the commit observed before the mirror's reads.
-Canonical strongRefs use the did:web URI; book and paint must retain cited versions under immutable versioned keys
-when built. The mirror remains built and not running.
+**Decision:** extend the signed tree with journal-derived public records per height through a host
+`world-projection` op and a general MST; paint stays outside it. Until that integration exists, world
+reads of card/page/index/answer remain projections. Once integrated, strongRefs can name their world
+repository paths. Book and paint must retain cited versions under immutable versioned keys when built.
+The index never names a head; the posting-only checkpoint names the commit observed before the mirror's
+reads. The mirror remains built and not running.
 
 ## 2. Acting
 
@@ -230,9 +235,9 @@ line is `admitted, entry N, receipt <slug>` and the receipt. A request that name
 malformed one (an act of more than one call, a plan of a verb call, a spell and an object together) `invalid` with why; a `try`, another service's or world's, and one from before `since` get no
 answer. `card` is the first exact offered text; `cardCid` hashes that text as a DAG-CBOR string, including any trailing newline. It does not name a card repository record or its paint.
 Built (L1): the bridge writes it at the turn (`bridge.answer_turn`; a turn hob holds is answered when it settles) to
-`<state>/worlds/<world>/answers/`, the façade serves it and the mirror copies the same JSON, so its CID is one in both
-repositories (the PDS hashes `{$link}` as a link, as `cbor.from_json` does). In L3 it joins that height's signed
-commit. The entry's whole bytes are the principal's (FOUNDATION §2):
+`<state>/worlds/<world>/answers/`. The façade serves it through `getProjection`/`listProjections` with
+kind `answer`; the mirror writes the same tagged JSON to the posting repository with a value-derived CID.
+Joining a world signed commit remains L3 work. The entry's whole bytes are the principal's (FOUNDATION §2):
 `online.fg-goose.gsb.getEntry` returns them as a CAR rooted at the entry's CID to a service-auth `iss` that is the
 entry's principal. A post is the optional witness (`witness: true`, inside `postQuota`); default off.
 
@@ -266,8 +271,8 @@ An act/plan response keeps what its principal may read: private offers, trace an
 The public record uses `bridge.public_view` and the one `bridge.write_answer` writer, shared with the request
 bridge through `State.answers`. Its key is `xrpc.<iss>.<sha256(intent), base32 lower first 26 chars>` and its
 required source is `{$type: online.fg-goose.gsb.answer#provenance, iss, intent}`. The required source is a closed
-tagged union: a request strongRef or XRPC provenance, never optional identity fields. The façade serves these
-records and the mirror can copy their identical bytes; the mirror and request poller remain off by default.
+tagged union: a request strongRef or XRPC provenance, never optional identity fields. The façade projects these
+values and the mirror can write them as posting-account records; the mirror and request poller remain off by default.
 A spell that itself asks the host for a preview returns the preview variant and likewise persists nothing.
 
 Authentication is **inter-service auth** [xrpc], built in `transport/serviceauth.py`. Header `typ` must be `JWT`;
@@ -276,15 +281,24 @@ hostname-level did:web, without a fragment. `aud` is exactly this front's `Repo.
 bare DID: both name only this service; required `lxm` equals the called NSID, so bare is not a wildcard. Other
 DIDs, fragments, lists and missing audiences refuse. Integer `exp` must be in the future and at most 300 seconds
 ahead (60 s advised). Optional `iat` is an integer, at most 30 seconds ahead, with `exp - iat <= 300`.
-Required nonempty `jti` is used once per `(iss, jti)` until `exp`.
+Required nonempty UTF-8 `jti` is used once per `(service audience, iss, jti)` until `exp`;
+the bare and `#delvetalk` audiences share nonce custody.
 
 The signature is 64 raw ECDSA bytes over the JWT's first two segments, low-S only (`sign.verify`), under the
 issuer DID document's `#atproto` Multikey. Documents use `Client.did_document`'s public-address-checked, pinned
-HTTPS fetch: did:plc at plc.directory, did:web at its hostname. Documents cache for 60 seconds (at most 1,024);
-signature failure refetches once before refusal, admitting key rotation. Atomic replay admission retains at most
-10,000 live nonces, pruning only expired entries; capacity answers retryable 429 `RateLimitExceeded` with
-`Retry-After`, never forgetting a live nonce. Tokens are at most 16 KiB; `jti` at most 256 UTF-8 bytes. Missing
-token is 401 `AuthRequired`; malformed, expired, replayed, mismatched or unverifiable is 401 `InvalidToken`,
+HTTPS fetch: did:plc at plc.directory, did:web at its hostname. Documents cache for 60 seconds (at most 1,024).
+Resolution runs outside the admission lock: concurrent requests for an issuer share one fetch, with at most
+32 pending fetches and an absolute 20-second deadline. Expired fetch results never enter the cache; a worker
+still waiting on DNS or an injected transport keeps its bounded slot until it exits. Pinned HTTPS shuts down
+the socket at its deadline, including trickling headers and bodies. Each source address may start at most 32
+fetches per minute through the front's rate limiter; cached documents and followers of a pending fetch do not
+spend that budget. Signature failure refetches once before refusal, admitting key rotation; refreshes use the
+same coordination, deadlines and source budget. Atomic replay admission retains at most 10,000 live nonces in
+`State.serviceauth_ledger` (`worlds/<world>/serviceauth.json`), pruning only expired entries on rewrite. Front
+instances lock the ledger's directory, reload custody, and atomically replace and fsync the file and directory
+before accepting a verified signature. A restart preserves custody; storage failure refuses authentication.
+Capacity answers retryable 429 `RateLimitExceeded` with `Retry-After`, never forgetting a live nonce.
+Tokens are at most 16 KiB; `jti` at most 256 UTF-8 bytes. Missing token is 401 `AuthRequired`; malformed, expired, replayed, mismatched or unverifiable is 401 `InvalidToken`,
 with a short reason code in `message` and the access log, never token bytes. The principal is `iss`.
 
 The service-auth query is `online.fg-goose.gsb.getEntry?entry=<entry CID>&world?`.
@@ -344,7 +358,7 @@ Writing a request from `/play/` would need `repo:online.fg-goose.gsb.request?act
 account's write, which DelveTalk will not hold.
 
 **Decision:** request records for public acts only, polled by participant DID at its current PDS, proven by sync.getRecord, answered by
-signed `answer` records mirrored to delve; `try` only by XRPC, answered to the caller and never as a record;
+public answer projections written as records to the posting account; `try` only by XRPC, answered to the caller and never as a record;
 act/try/plan under service auth, reachable through the resident's own PDS by `atproto-proxy`; `if` per object.
 
 ## 3. Ephemeral hidden sessions
@@ -399,8 +413,9 @@ publish what the holder chooses.
 | --- | --- | --- | --- |
 | a post; the bot's reply | yes | anyone; nothing | the author may delete; fetched copies remain |
 | `request` in a resident's repo | no | anyone, via PDS, mirrors, copies; nothing | the resident may delete; the entry and `answer` remain, as do copies |
-| our repo's records (`entry`, `answer`, `card`, `page`, `law`, `verb`, `chronicle`, `book`, `door`, `index`) | no | anyone; nothing | never deleted: the journal appends; an update supersedes in the current tree, old bytes stay in commits, frames, mirrors |
-| the same in the posting account | no | anyone; nothing | putRecord supersedes, deleteRecord removes from the current tree; neither recalls copies |
+| world repository records (`entry`) | no | anyone; nothing | journal appends; a carry starts a new tree; fetched copies remain |
+| public live projections (`answer`, `card`, `page`, `index`) | no | anyone; public mirror renderer | follow current world state and answer files; no world repository membership |
+| actual card/page/index/answer records in the posting account | no | anyone; nothing | putRecord supersedes, deleteRecord removes from the current tree; neither recalls copies |
 | posting account's `checkpoint/self` | no | anyone; nothing | superseded after complete mirror steps; retained when the source head is unavailable; never served in the did:web repository |
 | `paint` | no | anyone; nothing | replaced per version; old paint stays where copied |
 | lexicon schema records | no | anyone; nothing | edits supersede; history keeps the old |
@@ -446,14 +461,19 @@ The document has `id`, `alsoKnownAs: ["at://<hostname>"]`, `#atproto` Multikey a
 front origin. Repo methods at that origin select the account by `repo`/`did`; the hosted hostname selects only
 its own account. The world document alone advertises `#delvetalk`.
 
-Each account's k256 key derives from the world's repository private scalar (32 big-endian bytes, including
+Hosted accounts share one repository per account across all worlds of the configured origin.
+Each account's k256 key derives from the town's repository private scalar (32 big-endian bytes, including
 for a p256 town key) with HKDF-SHA256, no salt, 32 output bytes. Info is `delvetalk hosted key v1`, NUL,
 the UTF-8 DID, NUL, and a four-byte big-endian counter starting at zero; zero or a scalar at least the
 secp256k1 order retries with the next counter. No account key or lock file is written.
-`<state>/worlds/<world>/hosted/<name>.json` holds `{principal, counter, prev, records, key}` and optional
+`<state>/hosted/<URL-encoded origin>/<name>.json` holds `{principal, counter, prev, records, key}` and optional
 `epochs: [{counter, cause, key}]`. Guest stems are names; Zulip stems are `<id>.<realm>.zulip`.
 The 0700 directory's file descriptor carries one flock across front and bridge reads/writes. Backups keep
 snapshots; restoring them with the same town key reproduces documents and signed heads exactly.
+Existing town directories move atomically from `<state>/worlds/town/hosted/`, without rewriting snapshots.
+Competing town/origin stores or nonempty legacy hosted directories on a non-town front refuse with
+503 `RepoNotServed`, naming the paths for operator reconciliation and preserving every snapshot.
+All fronts route hosted reads and writes to the origin store and town key.
 Startup and first access reconcile a changed key with one higher-rev sync head, `prev` null, records unchanged.
 Legacy snapshots migrate once, recording cause `migration`; legacy key/lock files are deleted only after
 the snapshot is durable. Missing town keys refuse provisioning and hosted reads with 503 `RepoNotServed`;
@@ -558,7 +578,7 @@ Owner decision, 2026-10-12: `delvetalk.town` cannot be bought; the group moved t
 
 `try` is a keyword where lexicon codegen lands; it stays (the residents' word) and generated clients call it
 `tryAct`. Tests check lexicon v1 definitions, nested refs, and the records and projection values the front and mirror emit.
-The six projection value definitions live in `getProjection`; `kind` selects their required fields without
+The host projection value definitions and references to four live posting-record schemas live in `getProjection`; `kind` selects their required fields without
 adding a `$type` to host replies. The list query references the same projection definition.
 
 **Decision:** one NSID group, `online.fg-goose.gsb.*`, under the owner's `gsb.fg-goose.online`;
@@ -630,9 +650,9 @@ Fixed in L3:
 | # | Finding | Decision |
 | --- | --- | --- |
 | 4 | carry and key rotation break rev continuity | fixed: one durable epoch ledger at `State.repo_ledger` (`worlds/<world>/repo.json`), atomic writes inside `Signed.lock`; `{key, base, epochs: [{height, clock, cause}], head: {height, rev, clock}}`. A changed base raises the floor to `head.clock + 1` at the first carried height, tree empty, `prev` null, pre-carry entries reconciled away. A changed key on the same journal raises the floor after head height H, signs the same root once at `TID((head.clock + 1) × 60,000,000)`, `prev` null; H+1 chains from it. Old commits are not rebuilt, old record revs remain `since` cursors. Restart depends only on journal, key and ledger and changes no bytes. Carry copies the ledger with state; deletion requires follower re-sync. L4 announces epochs with `#sync`, and rotations with `#identity` before it |
-| 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | fixed: one pair of queries, `online.fg-goose.gsb.getProjection`/`listProjections`, for receipt/object/source/publication/grant/law; `{kind, key, of?, value, signed?}` with host values untagged, `of` the subject CID. Receipt `signed` points to `entry/<rev>` when in the current tree. Repo record methods accept only public entry/card/page/index/answer, each `cid` hashes `value`; sync.getRecord proves only the requested entry path and includes whole bytes for its principal. `getEntry` is built in L5 |
-| 12 | the signed index naming its own head is a cycle | fixed: `index` never carries did/rev/commit/head in either repository; its bytes depend on the journal alone. The posting-only `online.fg-goose.gsb.checkpoint/self` names `{did, rev, commit, height}`, fetched from the world's front before host reads, written after the index or alone when the source head changes, through the same plan/digest/ledger. Unavailable source: records proceed, reason reported, held checkpoint retained. No timestamp; no did:web façade or signed-tree checkpoint; dry run only reads (§1, `tests/test_mirror.py`) |
-| 14 | canonical strongRef URI and mirror mapping | fixed in the design: a journal-derived record's canonical URI is `at://did:web:gsb.fg-goose.online/<collection>/<rkey>` (or its world's did:web DID). A strongRef names that URI; checkpoint + index map the copy by collection and unchanged rkey, with identical bytes/CID. CID equality verifies bytes against the canonical repository, never retargets a URI or proves commit membership. Version retention remains below |
+| 5 | the façade answers non-record CIDs under `com.atproto.repo.*` | fixed: one pair of queries, `online.fg-goose.gsb.getProjection`/`listProjections`, for receipt/object/source/publication/grant/law and public live card/page/index/answer; `{kind, key, of?, value, signed?}` with host values untagged, `of` the subject CID. Receipt `signed` points to `entry/<rev>` when in the current tree. Repo record methods accept only signed entry records, each `cid` hashes `value`; sync.getRecord proves only the requested entry path and includes whole bytes for its principal. `getEntry` is built in L5 |
+| 12 | the signed index naming its own head is a cycle | fixed: `index` never carries did/rev/commit/head in projections or posting records; its bytes depend on the journal alone. The posting-only `online.fg-goose.gsb.checkpoint/self` names `{did, rev, commit, height}`, fetched from the world's front before host reads, written after the index or alone when the source head changes, through the same plan/digest/ledger. Unavailable source: records proceed, reason reported, held checkpoint retained. No timestamp; no did:web façade or signed-tree checkpoint; dry run only reads (§1, `tests/test_mirror.py`) |
+| 14 | canonical strongRef URI and mirror mapping | world at-uris name only records actually in its signed MST (`entry` today). Live card/page/index/answer values are projections; strongRefs to those values name the posting account's actual records. Checkpoint + index describe provenance, never world membership. World canonical paths for these kinds require signed integration; version retention remains below |
 
 Fixed in L4:
 
@@ -658,4 +678,4 @@ For the next slices, each with its decision:
 | 15 | sessions have no unambiguous address | built: `scratch/<name>` resolves under the service token's `iss` to `DIR/scratch/<iss>/<name>.journal`; holders cannot alias one another. Expired/recreated names are new scratches by the host's rule, not retained incarnations. Named readers and separate read/write/share/publish permissions await the host-owned `world-scratch` readers op with the L6 completion check | L6 |
 | 16 | XRPC acts cannot make request-keyed answers | built: key `xrpc.<iss>.<sha256(intent), base32 lower 26 chars>`, required tagged source selects request strongRef or provenance `{iss, intent}`; one public projection and writer, shared state directory | L5 |
 | 17 | constraints only in prose | built for procedures: shared exclusive call/plan/pin judgement, byte/count budgets, required tagged answer provenance, distinct turn/preview schemas and discriminants; malformed bodies 400 InvalidRequest. Lexicon v1 cannot declare a named union, so the untagged defs#call exclusivity and fields-object constraint are enforced in acts.judge_call. Other record budgets remain L2 | L5, L2 |
-| 18 | labels on the canonical record do not reach the copy | accepted: moderation subjects are the canonical URIs; the mirror's index names the mapping; copies get no labels of their own | L2 |
+| 18 | labels on the canonical record do not reach the copy | moderation subjects must name actual repository records; world URIs for live kinds require signed integration. Label propagation to posting records remains L2 work | L2 |

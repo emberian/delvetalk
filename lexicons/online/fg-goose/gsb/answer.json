@@ -1,7 +1,7 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.answer",
-  "description": "The anonymous projection of a request or XRPC act/plan turn. Private caller responses and previews are never records.",
+  "description": "The public projection of a request or XRPC act/plan turn, served through world projection queries and written as a posting-account record; absent from the world signed MST. Private caller responses and previews are never records.",
   "defs": {
     "main": {
       "type": "record",

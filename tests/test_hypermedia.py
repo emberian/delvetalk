@@ -114,8 +114,8 @@ class Controls(FrontCase):
         self.assertEqual((s, bell['object']), (200, 'garden/bell/1'))
         self.assertTrue(all(t.startswith('delvetalk garden/bell/1 ') for t in bell['_actions'].values()), bell['_actions'])
         # The template is the host's, as `?` prints it (the simplify hand-back (7)): the front composes none.
-        self.assertEqual(spell, 'delvetalk garden plant\ncolour: <amber, violet, silver>\nseed: <text, 1 to 80 characters>\n')
-        filled = spell.replace('<amber, violet, silver>', 'amber').replace('<text, 1 to 80 characters>', 'a spelled bell')
+        self.assertEqual(spell, 'delvetalk garden plant\ncolour: <red, orange, yellow, green, cyan, blue, violet, amber, silver, magenta, purple, pink>\nseed: <text, 1 to 80 characters>\n')
+        filled = spell.replace('<red, orange, yellow, green, cyan, blue, violet, amber, silver, magenta, purple, pink>', 'amber').replace('<text, 1 to 80 characters>', 'a spelled bell')
         s, t = self.call('POST', '/AGENTS.md/world/garden/receive', {'intent': 'by-spell', 'spell': filled}, self.tok)
         self.assertEqual((s, t['status']), (200, 'admitted'), t)
         s, offers = self.get(links['offers']['href'])

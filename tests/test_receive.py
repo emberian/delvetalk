@@ -64,7 +64,7 @@ class Cards(Chain):
         self.garden()
         laid = self.version("garden")
         cases = {
-            "delvetalk garden plant\nseed: a fern\ncolour: green": ("badValue", "colour is one of: amber, violet, silver"),
+            "delvetalk garden plant\nseed: a fern\ncolour: verdigris": ("badValue", "colour is one of: red, orange, yellow, green, cyan, blue, violet, amber, silver, magenta, purple, pink"),
             "delvetalk orchard plant\nseed: a fern\ncolour: silver": ("otherCard", "There is no card orchard; the commonplace lists the doors."),
         }
         for spell, (clause, reason) in cases.items():
@@ -100,7 +100,7 @@ class Cards(Chain):
         self.assertEqual(made["status"], "created", made)
         state = self.host.send(op="world-view", principal="ember", object="d1")["state"]
         names = [f["name"] for f in state["fields"]]
-        self.assertEqual(names[-1], "chose")
+        self.assertEqual(names[-1], "oddLimit")
         self.assertEqual(field(state, "cites"), cites)
         self.assertEqual(made["receipt"]["outcome"]["seed"], state)    # the journal keeps the whole state
         # {cites} alone: a seed that does not set `owner` gets the creating principal, so the

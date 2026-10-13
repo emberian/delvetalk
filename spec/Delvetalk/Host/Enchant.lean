@@ -110,6 +110,9 @@ structure Strokes where
   head : String := ""
   /-- The values its kind's form took when it was made (`seed`, `colour`), by name: its maker's words. -/
   fields : List (String × String) := []
+  /-- What it rings, in words with their unit, as its body wrote it (RECORD's `tone`, docs/HARMONIC.md): a bell's
+      colour as a tone, a place's bells rung together as a chord; "" for a thing that sounds nothing. -/
+  tone : String := ""
   maker : String := ""
   /-- Made after another's post (a coinage of the town's): `coined`, and the coiner: the post author's handle
       when the registry knows it, else the at:// author (a DID). -/
@@ -255,6 +258,9 @@ def Strokes.facts (s : Strokes) : List Fact := Id.run do
                        clause := on ++ " wants " ++ (toJson x.name).compress }
   for t in s.today do
     out := out.push { id := out.size + 1, kind := "event", subject, value := t, clause := t }
+  -- What it rings (a bell's colour, a place's bells together), with its unit: the host's words, as its body wrote them.
+  unless s.tone.isEmpty do
+    out := out.push { id := out.size + 1, kind := "tone", subject, value := s.tone, clause := "it rings " ++ s.tone }
   return out.toList
 
 /-- The strokes as the painter reads them: what the thing is, then its maker's words, its life (lines,
@@ -281,6 +287,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
     [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
     line (!s.about.isEmpty) s!"What its kind is: {s.about}" ++
     line (!s.fields.isEmpty) (s!"The words it was made with, {s.wordsBy}'s: " ++ "; ".intercalate (s.fields.map fun (k, v) => s!"{k}: {v}")) ++
+    line (!s.tone.isEmpty) s!"It rings: {s.tone}" ++
     line s.coined s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it, and its words are {s.coiner}'s" ++
     line (!who.isEmpty) ("Who: " ++ ", ".intercalate who) ++
     line (!s.around.isEmpty) s!"It lies in: {s.around}" ++
@@ -323,7 +330,8 @@ def Strokes.json (s : Strokes) : Json :=
     ("doors", Json.arr (s.doors.toArray.map fun d => Json.mkObj [("label", toJson d.label), ("to", toJson d.target)])),
     ("around", toJson s.around), ("present", toJson s.present), ("today", toJson s.today), ("hands", toJson s.hands),
     ("day", toJson s.day), ("limit", toJson s.limit), ("facts", Json.arr (s.facts.toArray.map Fact.json))] |>.mergeObj
-    (Json.mkObj ((s.telling.map fun t => [("telling", t.json)]).getD [] ++ (if s.tongue == "en" then [] else [("tongue", toJson s.tongue)])))
+    (Json.mkObj ((s.telling.map fun t => [("telling", t.json)]).getD [] ++ (if s.tongue == "en" then [] else [("tongue", toJson s.tongue)]) ++
+      (if s.tone.isEmpty then [] else [("tone", toJson s.tone)])))
 
 /-! ### Reading the store -/
 
@@ -529,7 +537,7 @@ def assemble (w : World) (reader id : String) (o : Object) : Strokes := Id.run d
   let coiner := if !coined then "" else if (handleShown w author).isEmpty then author else handleShown w author
   let kindHere := if kind.isEmpty then kindOf seen around else kind
   return { object := id, version, kind, voice := kindText seen kindHere "voice", about := kindText seen kindHere "about",
-           head := (text? fs "head").getD ((text? fs "name").getD ""), fields,
+           head := (text? fs "head").getD ((text? fs "name").getD ""), fields, tone := (text? fs "tone").getD "",
            maker, coined, coiner, made, tended, tendedAgo,
            keeper := handleIn w fs "keeperHandle" "keeper", owner := handleIn w fs "ownerHandle" "owner",
            quantities, lines, marks, verbs, laws, rules, wants, doors, around, present }
@@ -1720,6 +1728,11 @@ def line69275 : String :=
   "The anthology door takes a line of verse with delvetalk anthology write, or reads lines from a number with delvetalk anthology lines; it has no editor named here, so Ember's keeping of it isn't something this card records."
 
 -- Uncited propositions are refused even when their individual tokens are strokes.
+-- What a bell rings is a fact with its unit, the host's words, and a line of its strokes (docs/HARMONIC.md).
+#guard ({ fixtureBell with tone := "a perfect fourth, 4/3 over red: C-ish, 528.8 Hz" }).facts.getLast?.map (fun (f : Fact) => f.clause) ==
+  some "it rings a perfect fourth, 4/3 over red: C-ish, 528.8 Hz"
+#guard (({ fixtureBell with tone := "a perfect fourth, 4/3 over red: C-ish, 528.8 Hz" }).text.splitOn "It rings: a perfect fourth").length == 2
+#guard fixtureBell.facts.all (fun (f : Fact) => f.kind != "tone")
 #guard verdict fixtureBell "Four rains on a silver bell in the garden; yue.delve.town's says “rain is the sky's erratum”. It has never rung.\ndelvetalk garden/bell/2 rain / text: <text, 1 to 200 characters>" == "imagery"
 #guard verdict fixtureBell "garden/bell/2 hangs silent over the soil, four rains deep; at the seventh rain it rings.\ndelvetalk garden/bell/2 ring" == "imagery"
 #guard verdict fixtureBell "Rained on four times, it waits for the 7th rain." == "imagery"

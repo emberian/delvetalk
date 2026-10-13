@@ -8,6 +8,8 @@ import io
 import ipaddress
 import socket
 import ssl
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -53,6 +55,9 @@ class Wire:
 
     def settimeout(self, timeout):
         self.timeouts.append(timeout)
+
+    def do_handshake(self):
+        pass
 
     def sendall(self, raw):
         self.sent.append(raw)
@@ -110,6 +115,27 @@ class PublicTransport(unittest.TestCase):
         self.resolve.assert_not_called()
         self.factory.assert_not_called()
 
+    def test_trickling_body_is_interrupted_at_absolute_deadline(self):
+        for protocol in (b'HTTP/1.1', b'HTTP/1.0'):
+            with self.subTest(protocol=protocol):
+                interrupted = threading.Event()
+                class Trickle(ObservedIO):
+                    def read(self, size=-1):
+                        for _ in range(30):
+                            if interrupted.wait(0.01):
+                                raise TimeoutError('absolute deadline')
+                        return super().read(size)
+                self.wire.response = protocol + b' 200 OK\r\nContent-Length: 2\r\n\r\n{}'
+                self.wire.makefile = lambda mode: Trickle(self.wire.response, self.wire.reads)
+                self.wire.shutdown = lambda how: interrupted.set()
+                start = time.monotonic()
+                with self.assertRaises(delve.Failure) as e:
+                    self.send(timeout=0.05)
+                self.assertEqual(e.exception.code, 'network_error')
+                self.assertTrue(interrupted.is_set())
+                self.assertLess(time.monotonic() - start, 0.25)
+                self.assertTrue(self.wire.closed)
+
     def test_a_tls_context_failure_is_a_network_error_before_connecting(self):
         self.patch_context = mock.patch('transport.delve.ssl.create_default_context', side_effect=OSError('CA store'))
         with self.assertRaises(delve.Failure) as e:
@@ -128,8 +154,9 @@ class PublicTransport(unittest.TestCase):
         self.assertEqual(self.send('https://login.example:8443/doc?q=1#fragment', timeout=7), (200, b'{}', {'Content-Length': '2'}))
         self.resolve.assert_called_once_with('login.example', 8443, type=socket.SOCK_STREAM, proto=socket.IPPROTO_TCP)
         self.assertEqual(self.wire.targets, [(PUBLIC, 8443)])
-        self.assertEqual(self.wire.timeouts, [7])
-        self.wrap.assert_called_once_with(self.wire, server_hostname='login.example')
+        self.assertTrue(all(0 < t <= 7 for t in self.wire.timeouts))
+        self.assertEqual(len(self.wire.timeouts), 2)
+        self.wrap.assert_called_once_with(self.wire, server_hostname='login.example', do_handshake_on_connect=False)
         self.assertTrue(self.context.check_hostname)
         self.assertEqual(self.context.verify_mode, ssl.CERT_REQUIRED)
         request = b''.join(self.wire.sent)

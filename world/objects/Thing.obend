@@ -311,6 +311,15 @@ def inspirited(surrounding: String, context: Abi.Context, state: State) -> Activ
 # of `heard {thing, verb}` to their avatar, run as the hand. The owner's own acts tell nothing.
 def heard(state: State, verb: String, context: Abi.Context) -> Activity<World.Sent>:
   if state.owner == "" || state.owner == context.principal then World.Sent.refused({clause: "self"}) else world.send({object: {world: context.world, object: state.owner}, method: "heard", argument: {thing: context.object, verb: verb}})
+# A committed door to this thing: only its citing card sends, and the thing verifies the door
+# before telling its own maker under its own identity.
+def cited(state: State, context: Abi.Context) -> Activity<World.Sent>:
+  if context.sender == "" || context.caller != context.sender then World.Sent.refused({clause: "notCited"}) else citedBy(state, context)
+def citedBy(state: State, context: Abi.Context) -> Activity<World.Sent>:
+  match world.viewField::<Card.Doorways>({object: {world: context.world, object: context.sender}, field: "cites"}):
+    case viewed(v): if Lists.any(v.state, fn(d: Card.Doorway) -> Bool: d.to.world == context.world && d.to.object == context.object) then heard(state, "door", context) else World.Sent.refused({clause: "notCited"})
+    case denied(_): World.Sent.refused({clause: "notCited"})
+    case refused(_): World.Sent.refused({clause: "notCited"})
 def inspiritTold(surrounding: String, context: Abi.Context, state: State) -> Activity<Done>:
   Card.tell(Done.done({}), Document.concat(Document.text("Inspirited, {Card.name(context.principal, context)}: you keep it.\n\n"), render(extend(state, {keeper: context.principal, keeperHandle: context.handle, description: surrounding}), context)))
 # The card: what it is, who keeps it and where it is; unclaimed, the spell that inspirits it; then
@@ -358,6 +367,6 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Lists.concat(Lists.concat(if state.keeper == "" then Text.words("inspirit") else Text.words(""), if Plans.isNobody(state.holder) then Text.words("acquire") else Text.words("")), if Plans.same(state.holder, person(context)) then Text.words("offer withdraw") else Text.words("")), if context.principal == keeperOf(state) || context.principal == state.owner then Text.words("set") else Text.words(""))
 # An avatar's accept calls transfer, the Workshop's copy sends copy; drop names a place.
 def methods() -> Lists.List<String>:
-  Text.words("transfer copy copyFor copyInto drop ~act")
+  Text.words("transfer copy copyFor copyInto drop ~act ~cited")
 def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
   Card.answer(input, context, forms(), render(state, context))

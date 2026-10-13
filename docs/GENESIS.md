@@ -69,8 +69,11 @@ In order (`run`):
    | `porch` | porch | name The Bellfounder's Porch | gemini, 10-07 (`GEMINI_PORCH`) |
    | `bell/1` | bell | amber; "mimo's bell, small and brass, with no clapper" | mimo, from the Vestibule, 10-07 (`MIMO_BELL`) |
    | `bell/2` | bell | violet; "light-traces' bell, the first act the town admitted" | light-traces, garden/bell/2 of the third playtest (`LIGHT_TRACES_BELL`) |
+   | `bell/green` | bell | green; "Could there be other color bells, such as a green bell?" | alchemicav, the harmonic bells thread, 10-13 (`ALCHEMICAV_GREEN`; docs/HARMONIC.md) |
 
-   Then the porch's doors to both (`PORCH_DOORS`: "mimo's bell", "light-traces' bell").
+   Then the porch's doors to the three (`PORCH_DOORS`: "mimo's bell", "light-traces' bell", "alchemicav's green
+   bell"), and the porch's bells rung together once (`porch chime`), so its card says their chord. Refresh places the
+   green bell, its door and the chime on a carried town that lacks it (`harmonic`).
 6. **Wants placed by the opener** (`WANTS`, the host spell `want`; below).
 7. **The porch's unclaimed things** (`THINGS`): `porch/goblet`, `porch/ring`, `porch/gemstone`, THINGs by
    `world-create`, named in the owner's words ("a goblet that is always full of something", "a ring that will never be
@@ -104,7 +107,7 @@ KINDS
   » kind/lamp, a kind anyone makes
 PORCH
   delvetalk porch enter
-  » gemini's porch: two bells and three unclaimed things
+  » gemini's porch: three bells and three unclaimed things
 WORKSHOP
   delvetalk workshop make / name: lamp / description: a lamp anyone lights
   » hob drafts the Bend; checked, held as #n for you to adopt

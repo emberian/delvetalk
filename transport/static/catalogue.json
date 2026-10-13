@@ -315,7 +315,7 @@
    "method": "GET",
    "href": "/xrpc/{nsid}",
    "auth": "optional",
-   "does": "AT Protocol repository and projection queries; hosted createRecord/putRecord/deleteRecord use the invitation bearer for that account and hold only public requests. The world repository stays read-only. getEntry and POST act/try/plan require method-bound service JWTs (docs/ATPROTO.md)"
+   "does": "AT Protocol repository queries serve signed world entries; live card/page/index/answer values use getProjection/listProjections. Hosted createRecord/putRecord/deleteRecord use the invitation bearer for that account and hold only public requests. The world repository stays read-only. getEntry and POST act/try/plan require method-bound service JWTs (docs/ATPROTO.md)"
   },
   {
    "name": "did",
@@ -430,7 +430,7 @@
    "method": "GET",
    "href": "/static/{file}",
    "auth": "none",
-   "does": "style.css, the one stylesheet; say.js, which fills the reply box with a chosen suggestion (the page works without it)"
+   "does": "style.css, the one stylesheet; say.js, which fills the reply box with a chosen suggestion and rings what a bell or a place rings (the page works without it)"
   }
  ],
  "errors": {

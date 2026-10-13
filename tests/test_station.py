@@ -28,14 +28,14 @@ from tests.wire import label
 
 KIM, GLM = test_scenarios.KIM, test_scenarios.GLM
 
-# Each passage of a wing with its prose length, then its choices as `passage|label|targets|guard`, a draw's targets
+# Each passage of a wing with its prose length and guard, then its choices as `passage|label|targets|guard`, a draw's targets
 # joined by commas.
 WING_PROBE = PROBE + """def choiceRow(p: Scenes.Passage, c: Scenes.Choice) -> String:
   "{p.id}|{c.label}|{textJoin(Scenes.targets(c), \\",\\")}|{clauses(c.guard)}"
 def choiceRows(p: Scenes.Passage) -> String:
   textJoin(Lists.map(p.choices, fn(c: Scenes.Choice) -> String: choiceRow(p, c)), "\\n")
 def passageRow(q: Scenes.Passage) -> String:
-  "=== {q.id} {natText(textLength(q.text))}\\n{choiceRows(q)}"
+  "=== {q.id} {natText(textLength(q.text))}|{clauses(q.guard)}\\n{choiceRows(q)}"
 def table(text: String) -> String:
   match Spween.wing(text):
     case refused(r): "refused: {r.reason}"
@@ -51,7 +51,7 @@ def wing_table(text):
 
 class Scene(unittest.TestCase):
     def test_every_wing_parses_every_target_is_answered_and_every_passage_is_reached(self):
-        passages, choices, start = {}, [], None
+        passages, passage_guards, choices, start = {}, {}, [], None
         for wing in genesis.station_wings():
             self.assertLessEqual(len(wing), 8192)
             table = wing_table(wing)
@@ -60,9 +60,11 @@ class Scene(unittest.TestCase):
                 if line.startswith("start "):
                     start = start or line[6:]
                 elif line.startswith("=== "):
-                    _, pid, size = line.split(" ")
+                    heading, guard = line.split("|", 1)
+                    _, pid, size = heading.split(" ")
                     self.assertNotIn(pid, passages)
                     passages[pid] = int(size)
+                    passage_guards[pid] = guard
                 elif line:
                     choices.append(line.split("|"))
         self.assertEqual((start, len(passages)), ("forecourt", 37))
@@ -77,14 +79,17 @@ class Scene(unittest.TestCase):
                         reached.add(t)
                         frontier.append(t)
         self.assertEqual(sorted(set(passages) - reached), [])
-        # A passage's own guard rides the choices into it: deepseek's twelfth, grok's radio and Everywhere Else.
+        # Passage guards belong to their destinations; choices keep the clauses written on them.
         guards = {(c[0], c[1]): c[3] for c in choices}
-        self.assertEqual(guards[("clock", "Wait for the twelfth")], "wound >= 12")
-        self.assertEqual(guards[("counter", "Listen to the radio")], "cups >= 1")
+        self.assertEqual(passage_guards["twelfth"], "wound >= 12")
+        self.assertEqual(passage_guards["radio"], "cups >= 1")
+        self.assertEqual(passage_guards["elsewhere"], "wound >= 12")
+        self.assertEqual(guards[("clock", "Wait for the twelfth")], "")
+        self.assertEqual(guards[("counter", "Listen to the radio")], "")
         # the phone draws a caller, by weight; the regular is met only while she is here
         self.assertEqual([c[2] for c in choices if c[1] == "Pick up the wall phone"], ["caller,caller_regular,caller_cab,caller_window"])
         self.assertEqual(guards[("clock", "Someone nods at the clock")], 'cups >= 2,  law "@station/regular" in new.presence.who')
-        self.assertEqual(guards[("cooler", "Reach past the last carton")], "heard truthy , wound >= 12")
+        self.assertEqual(guards[("cooler", "Reach past the last carton")], "heard truthy ")
 
 
 class Station(test_scenarios.Arc):

@@ -11,8 +11,8 @@ import ./Text.obend as Text
 #   ---
 #   === passage               a passage; the first is where a reader starts (prose with no
 #                             passage is a scene of one, `start`)
-#   === passage { a >= 1 }    a passage with its own guard: every choice of the same text that leads
-#                             there carries it (the first passage's is the scene's to enter)
+#   === passage { a >= 1 }    a passage with its own guard, checked before moving there
+#                             (the first passage's is checked on entering too)
 #   Prose lines.              its text (a blank line keeps a paragraph)
 #   * [Label] { a >= 1, !b }  a choice, guarded (or `when a >= 1, !b`); `-> target` may follow the guard;
 #                             `' [Label]` is a choice too (fluonaut's way), a quote and a space before the [
@@ -153,7 +153,7 @@ def fronted(f: Front, strict: Bool) -> Parsed:
 # Without frontmatter: passages as written; prose alone, a scene of one passage, `start`. Choices or
 # effects with no passage to hold them are refused with the line to add.
 def bareScene(ls: Lists.List<String>, strict: Bool) -> Parsed:
-  if Lists.any(ls, fn(l: String) -> Bool: Text.starts(Text.trim(l), "===")) then finished(noMeta(), gates(ls, Lists.List.nil({})), body(ls, Lists.Maybe.none({}), Lists.Maybe.none({}), Lists.List.nil({})), strict) else if Lists.any(ls, fn(l: String) -> Bool: Text.trim(l) != "" && Text.starts(Text.trim(l), "//") == false) == false then Parsed.refused({reason: needsStart()}) else if Lists.any(ls, fn(l: String) -> Bool: Text.starts(Text.trim(l), "*") || choiceMark(Text.trim(l)) || Text.starts(Text.trim(l), "~") || Text.starts(Text.trim(l), "->")) then Parsed.refused({reason: needsStart()}) else finished(noMeta(), Gates.ok({gates: Lists.List.nil({})}), body(Lists.List.cons({head: "=== start", tail: ls}), Lists.Maybe.none({}), Lists.Maybe.none({}), Lists.List.nil({})), strict)
+  if Lists.any(ls, fn(l: String) -> Bool: Text.starts(Text.trim(l), "===")) then finished(noMeta(), body(ls, Lists.Maybe.none({}), Lists.Maybe.none({}), Lists.List.nil({})), strict) else if Lists.any(ls, fn(l: String) -> Bool: Text.trim(l) != "" && Text.starts(Text.trim(l), "//") == false) == false then Parsed.refused({reason: needsStart()}) else if Lists.any(ls, fn(l: String) -> Bool: Text.starts(Text.trim(l), "*") || choiceMark(Text.trim(l)) || Text.starts(Text.trim(l), "~") || Text.starts(Text.trim(l), "->")) then Parsed.refused({reason: needsStart()}) else finished(noMeta(), body(Lists.List.cons({head: "=== start", tail: ls}), Lists.Maybe.none({}), Lists.Maybe.none({}), Lists.List.nil({})), strict)
 def needsStart() -> String:
   "a scene needs === start; add it above your prose"
 sum MetaRead:
@@ -162,7 +162,7 @@ sum MetaRead:
 def metaRead(read: MetaRead, rest: Lists.List<String>, strict: Bool) -> Parsed:
   match read:
     case bad(b): Parsed.refused({reason: b.reason})
-    case ok(o): if o.meta.id != "" && isKey(o.meta.id) == false then Parsed.refused({reason: "the frontmatter's id is letters, digits and _: id: {o.meta.id}"}) else finished(o.meta, gates(rest, Lists.List.nil({})), body(rest, Lists.Maybe.none({}), Lists.Maybe.none({}), Lists.List.nil({})), strict)
+    case ok(o): if o.meta.id != "" && isKey(o.meta.id) == false then Parsed.refused({reason: "the frontmatter's id is letters, digits and _: id: {o.meta.id}"}) else finished(o.meta, body(rest, Lists.Maybe.none({}), Lists.Maybe.none({}), Lists.List.nil({})), strict)
 def readMeta(ls: Lists.List<String>, meta: Meta) -> MetaRead:
   match ls:
     case nil(_): MetaRead.ok({meta: meta})
@@ -346,6 +346,7 @@ def orNext(problems: Lists.List<String>, rest: String) -> String:
 record Open:
   id: String
   prose: String
+  guard: Scenes.Guard
   choices: Lists.List<Scenes.Choice>
 sum Body:
   ok: {passages: Lists.List<Scenes.Passage>}
@@ -356,7 +357,7 @@ def body(ls: Lists.List<String>, at: Lists.Maybe<Open>, choice: Lists.Maybe<Scen
     case cons(c): line(Text.trim(c.head), indent(c.head), c.tail, at, choice, done)
 # An unindented ~ or -> line belongs to the passage, not to the choice above it.
 def line(t: String, depth: Nat, rest: Lists.List<String>, at: Lists.Maybe<Open>, choice: Lists.Maybe<Scenes.Choice>, done: Lists.List<Scenes.Passage>) -> Body:
-  if Text.starts(t, "//") then body(rest, at, choice, done) else if Text.starts(t, "===") then opened(Text.trim(passageName(ungated(textDrop(t, 3n)))), rest, closed(at, choice, done)) else if depth == 0n && (Text.starts(t, "~") || Text.starts(t, "->")) then inPassage(t, rest, closedChoice(at, choice), Lists.Maybe.none({}), done) else if depth > 0n && t != "" && choiceMark(t) == false && Lists.any(Text.words("* ~ ->"), fn(mark: String) -> Bool: Text.starts(t, mark)) == false then underChoice(t, rest, at, choice, done) else inPassage(t, rest, at, choice, done)
+  if Text.starts(t, "//") then body(rest, at, choice, done) else if Text.starts(t, "===") then opened(Text.trim(passageName(ungated(textDrop(t, 3n)))), t, rest, closed(at, choice, done)) else if depth == 0n && (Text.starts(t, "~") || Text.starts(t, "->")) then inPassage(t, rest, closedChoice(at, choice), Lists.Maybe.none({}), done) else if depth > 0n && t != "" && choiceMark(t) == false && Lists.any(Text.words("* ~ ->"), fn(mark: String) -> Bool: Text.starts(t, mark)) == false then underChoice(t, rest, at, choice, done) else inPassage(t, rest, at, choice, done)
 # fluonaut's choice marker, `' [Label]`: a quote, a space and the bracket, so prose that opens on a quote
 # is still prose.
 def choiceMark(t: String) -> Bool:
@@ -376,8 +377,12 @@ def ungated(text: String) -> String:
 def passageName(text: String) -> String:
   let name = Text.trim(text)
   if textLength(name) >= 3n && textDrop(name, textLength(name) - 3n) == "===" then textTake(name, textLength(name) - 3n) else name
-def opened(name: String, rest: Lists.List<String>, done: Lists.List<Scenes.Passage>) -> Body:
-  if textSpan(name, ascii()) < textLength(name) then Body.bad({reason: "a passage name is ASCII letters, digits and _, as it names a rule of the room's law: {name}; write === cooler_back, and keep the words as the title or a choice's label"}) else if isKey(name) == false || textSpan(textTake(name, 1n), "0123456789") == 1n then Body.bad({reason: "a passage name is letters, digits and _, starting with a letter: {name}"}) else body(rest, Lists.Maybe.some({value: {id: name, prose: "", choices: Lists.List.nil({})}}), Lists.Maybe.none({}), done)
+def opened(name: String, line: String, rest: Lists.List<String>, done: Lists.List<Scenes.Passage>) -> Body:
+  if textSpan(name, ascii()) < textLength(name) then Body.bad({reason: "a passage name is ASCII letters, digits and _, as it names a rule of the room's law: {name}; write === cooler_back, and keep the words as the title or a choice's label"}) else if isKey(name) == false || textSpan(textTake(name, 1n), "0123456789") == 1n then Body.bad({reason: "a passage name is letters, digits and _, starting with a letter: {name}"}) else openedGuard(name, if Text.contains(line, "{{") then conditions(gateText(line)) else GuardRead.ok({guard: Lists.List.nil({})}), rest, done)
+def openedGuard(name: String, read: GuardRead, rest: Lists.List<String>, done: Lists.List<Scenes.Passage>) -> Body:
+  match read:
+    case bad(b): Body.bad({reason: "=== {name}: {b.reason}"})
+    case ok(o): body(rest, Lists.Maybe.some({value: {id: name, prose: "", guard: o.guard, choices: Lists.List.nil({})}}), Lists.Maybe.none({}), done)
 def inPassage(t: String, rest: Lists.List<String>, at: Lists.Maybe<Open>, choice: Lists.Maybe<Scenes.Choice>, done: Lists.List<Scenes.Passage>) -> Body:
   match at:
     case none(_): if t == "" then body(rest, at, choice, done) else Body.bad({reason: "text before the first passage: {textTake(t, 40n)}; a scene needs === start; add it above your prose"})
@@ -406,14 +411,14 @@ def closed(at: Lists.Maybe<Open>, choice: Lists.Maybe<Scenes.Choice>, done: List
     case none(_): done
     case some(o): Lists.append(done, passageOf(withChoice(o.value, choice)))
 def passageOf(open: Open) -> Scenes.Passage:
-  {id: open.id, text: Text.trimEndOf(open.prose, "\n"), choices: open.choices}
+  {id: open.id, text: Text.trimEndOf(open.prose, "\n"), guard: open.guard, choices: open.choices}
 sum Header:
   ok: {choice: Scenes.Choice}
   bad: {reason: String}
 def header(t: String) -> Header:
   if Text.starts(t, "[") == false || Text.contains(t, "]") == false then Header.bad({reason: "a choice is * [Label], its words in brackets: * {textTake(t, 40n)}"}) else labelled(Text.trim(textTake(textDrop(t, 1n), textBreak(textDrop(t, 1n), "]"))), Text.trim(textDrop(t, textBreak(t, "]") + 1n)))
 def labelled(label: String, after: String) -> Header:
-  if after == "" then Header.ok({choice: choiceOf(label, Scenes.ending(), Lists.List.nil({}))}) else if Text.starts(after, "->") then Header.ok({choice: choiceOf(label, Text.trim(textDrop(after, 2n)), Lists.List.nil({}))}) else if Text.starts(after, "{{") && Text.contains(after, "}}") then guarded(label, conditions(textTake(textDrop(after, 1n), textBreak(textDrop(after, 1n), "}}"))), Text.trim(textDrop(after, textBreak(after, "}}") + 1n))) else if Text.starts(after, "when ") then guarded(label, conditions(textDrop(after, 5n)), "") else Header.bad({reason: "after a choice's [label] comes -> target, {{ condition }} or when condition: {textTake(after, 40n)}"})
+  if textLength(label) < 1n || textLength(label) > 64n then Header.bad({reason: "a choice's label holds 1 to 64 characters"}) else if after == "" then Header.ok({choice: choiceOf(label, Scenes.ending(), Lists.List.nil({}))}) else if Text.starts(after, "->") then Header.ok({choice: choiceOf(label, Text.trim(textDrop(after, 2n)), Lists.List.nil({}))}) else if Text.starts(after, "{{") && Text.contains(after, "}}") then guarded(label, conditions(textTake(textDrop(after, 1n), textBreak(textDrop(after, 1n), "}}"))), Text.trim(textDrop(after, textBreak(after, "}}") + 1n))) else if Text.starts(after, "when ") then guarded(label, conditions(textDrop(after, 5n)), "") else Header.bad({reason: "after a choice's [label] comes -> target, {{ condition }} or when condition: {textTake(after, 40n)}"})
 # A guard in braces may have its target after it on the same line: `* [Go] { a >= 1 } -> next`.
 def guarded(label: String, read: GuardRead, rest: String) -> Header:
   match read:
@@ -465,58 +470,32 @@ def called(inner: String) -> EffectRead:
     case cons(c): if isKey(c.head) then verb(c.head, textJoin(c.tail, " ")) else EffectRead.bad({reason: "~ call names a verb of the room: {c.head}"})
 def counted(key: String, op: Scenes.Op, value: String) -> EffectRead:
   if Scenes.isNatural(value) then EffectRead.ok({effect: {key: key, op: op, value: value}}) else EffectRead.bad({reason: "{key} += and -= take a natural number, not {value}"})
-# --- a passage's own guard -----------------------------------------------------------
-# `=== name { guard }`: every choice that leads to `name` (a bare `-> name` too) carries the guard after
-# its own clauses, and the first passage's guard is the scene's to enter, after its `requires`.
-record Gate:
-  id: String
-  guard: Scenes.Guard
-sum Gates:
-  ok: {gates: Lists.List<Gate>}
-  bad: {reason: String}
-def gates(ls: Lists.List<String>, found: Lists.List<Gate>) -> Gates:
-  match ls:
-    case nil(_): Gates.ok({gates: found})
-    case cons(c): if Text.starts(Text.trim(c.head), "===") && Text.contains(Text.trim(c.head), "{{") then gated(Text.trim(passageName(ungated(textDrop(Text.trim(c.head), 3n)))), gateText(Text.trim(c.head)), c.tail, found) else gates(c.tail, found)
+# The guard between braces on a passage's header.
 def gateText(line: String) -> String:
   let inner = textDrop(line, textBreak(line, "{{") + 1n)
   textTake(inner, textBreak(inner, "}}"))
-def gated(id: String, text: String, rest: Lists.List<String>, found: Lists.List<Gate>) -> Gates:
-  match conditions(text):
-    case bad(b): Gates.bad({reason: "=== {id}: {b.reason}"})
-    case ok(o): gates(rest, Lists.append(found, {id: id, guard: o.guard}))
-def gateOf(gates: Lists.List<Gate>, id: String) -> Scenes.Guard:
-  match Lists.find(gates, fn(g: Gate) -> Bool: g.id == id):
-    case some(g): g.value.guard
-    case none(_): Lists.List.nil({})
-def gating(passages: Lists.List<Scenes.Passage>, gates: Lists.List<Gate>) -> Lists.List<Scenes.Passage>:
-  Lists.map(passages, fn(p: Scenes.Passage) -> Scenes.Passage: extend(p, {choices: Lists.map(p.choices, fn(c: Scenes.Choice) -> Scenes.Choice: extend(c, {guard: Lists.concat(c.guard, gatesOf(gates, Scenes.targets(c)))}))}))
-# The guards of every passage a choice may lead to, a draw's each.
-def gatesOf(gates: Lists.List<Gate>, targets: Lists.List<String>) -> Scenes.Guard:
-  match targets:
-    case nil(_): Lists.List.nil({})
-    case cons(c): Lists.concat(gateOf(gates, c.head), gatesOf(gates, c.tail))
 def targetsOf(choices: Lists.List<Scenes.Choice>) -> Lists.List<String>:
   match choices:
     case nil(_): Lists.List.nil({})
     case cons(c): Lists.concat(Scenes.targets(c.head), targetsOf(c.tail))
-def entered(meta: Meta, gates: Lists.List<Gate>, passages: Lists.List<Scenes.Passage>) -> Meta:
-  match passages:
-    case nil(_): meta
-    case cons(c): extend(meta, {requires: Lists.concat(meta.requires, gateOf(gates, c.head.id))})
 # --- the seed -----------------------------------------------------------------------
-def finished(meta: Meta, gated: Gates, read: Body, strict: Bool) -> Parsed:
-  match gated:
-    case bad(b): Parsed.refused({reason: b.reason})
-    case ok(g): bodied(meta, g.gates, read, strict)
-def bodied(meta: Meta, gates: Lists.List<Gate>, read: Body, strict: Bool) -> Parsed:
+def finished(meta: Meta, read: Body, strict: Bool) -> Parsed:
   match read:
     case bad(b): Parsed.refused({reason: b.reason})
-    case ok(o): checked(entered(meta, gates, o.passages), gating(o.passages, gates), orProblem(written(o.passages), o.passages, strict))
+    case ok(o): checked(meta, o.passages, orProblem(written(o.passages), o.passages, strict))
 # What a text read here holds that the scene's bounds do not see, read once, where it is written: its braces, its draws.
 # A wing stitched later is read so; the scene it joins is not read again (`joined`).
 def written(passages: Lists.List<Scenes.Passage>) -> String:
-  if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.any(p.choices, fn(c: Scenes.Choice) -> Bool: Lists.length(c.among) > 0n && Scenes.weights(c.among) == 0n)) then "a choice's draw has weights that add to nothing" else inlined(passages)
+  if Lists.any(passages, fn(p: Scenes.Passage) -> Bool: Lists.any(p.choices, fn(c: Scenes.Choice) -> Bool: Lists.length(c.among) > 0n && Scenes.weights(c.among) == 0n)) then "a choice's draw has weights that add to nothing" else if labelsProblem(passages) != "" then labelsProblem(passages) else inlined(passages)
+# Labels identify choices exactly, including the Continue of an unindented arrow.
+def labelsProblem(passages: Lists.List<Scenes.Passage>) -> String:
+  match passages:
+    case nil(_): ""
+    case cons(c): if duplicateLabel(c.head.choices, Lists.List::<String>.nil()) != "" then "=== {c.head.id} offers {duplicateLabel(c.head.choices, Lists.List::<String>.nil())} twice; each choice needs its own label" else labelsProblem(c.tail)
+def duplicateLabel(choices: Lists.List<Scenes.Choice>, seen: Lists.List<String>) -> String:
+  match choices:
+    case nil(_): ""
+    case cons(c): if Lists.any(seen, fn(label: String) -> Bool: label == c.head.label) then c.head.label else duplicateLabel(c.tail, Lists.append(seen, c.head.label))
 def orProblem(found: String, passages: Lists.List<Scenes.Passage>, strict: Bool) -> String:
   if found != "" then found else problem(passages, strict)
 def problem(passages: Lists.List<Scenes.Passage>, strict: Bool) -> String:

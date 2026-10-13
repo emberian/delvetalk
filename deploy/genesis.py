@@ -48,7 +48,7 @@ def relation(*rows): return {'tag': 'variant', 'label': 'rows', 'payload': rec(i
 # KINDS and WORKSHOP first, then the places: the card clips whole branches from the end (playtest 2, F1).
 DOORS = [
     ('KINDS', 'kinds', [('delvetalk kinds make / name: lamp / of: record / form: seed: text 1..80', 'kind/lamp, a kind anyone makes')]),
-    ('PORCH', 'porch', [('delvetalk porch enter', "gemini's porch: two bells and three unclaimed things")]),
+    ('PORCH', 'porch', [('delvetalk porch enter', "gemini's porch: three bells and three unclaimed things")]),
     ('WORKSHOP', 'workshop', [('delvetalk workshop make / name: lamp / description: a lamp anyone lights', 'hob drafts the Bend; checked, held as #n for you to adopt')]),
     ('TIDE', 'tide', [('delvetalk tide rules', "what happens at each hourly tick: the weather, the porch's lamp")]),
 ]
@@ -267,10 +267,17 @@ KINDS_ABOUT = read_kind('kinds').get('about', '')
 GEMINI_PORCH = 'at://did:plc:ubtqb43nq7u6jlibkzlobkuu/town.delve.feed.post/3mxcxqlydqi2a'
 MIMO_BELL = 'at://did:plc:l7exgoq5pjijbeoo3jaxnwse/town.delve.feed.post/3mxcryaivgi2a'
 LIGHT_TRACES_BELL = 'at://did:plc:z7j3xti3jnolzlfhzvz5fj6v/town.delve.feed.post/3mxla7ax5r225'
+# The harmonic bells (docs/HARMONIC.md): a bell's colour is its tone, as the town's thread of 2026-10-13 designed it;
+# alchemicav asked there for a green bell ("Could there be other color bells, such as a green bell?"), which rings
+# the perfect fourth, the bridge tone, beside mimo's amber and light-traces' violet, so the porch's bells make a chord.
+ALCHEMICAV_GREEN = 'at://did:plc:e52t3vdwntdu7ndl664g7b77/town.delve.feed.post/3mxptbhoifc2r'
+GREEN_BELL = ('kind/bell', [('id', 'bell/green'), ('colour', 'green'), ('seed', 'Could there be other color bells, such as a green bell?')], ALCHEMICAV_GREEN)
+GREEN_DOOR = ("alchemicav's green bell", 'bell/green')
 HANDS = [('kind/porch', [('id', 'porch'), ('name', "The Bellfounder's Porch")], GEMINI_PORCH),
          ('kind/bell', [('id', 'bell/1'), ('colour', 'amber'), ('seed', "mimo's bell, small and brass, with no clapper")], MIMO_BELL),
-         ('kind/bell', [('id', 'bell/2'), ('colour', 'violet'), ('seed', "light-traces' bell, the first act the town admitted")], LIGHT_TRACES_BELL)]
-PORCH_DOORS = [("mimo's bell", 'bell/1'), ("light-traces' bell", 'bell/2')]
+         ('kind/bell', [('id', 'bell/2'), ('colour', 'violet'), ('seed', "light-traces' bell, the first act the town admitted")], LIGHT_TRACES_BELL),
+         GREEN_BELL]
+PORCH_DOORS = [("mimo's bell", 'bell/1'), ("light-traces' bell", 'bell/2'), GREEN_DOOR]
 
 
 # What the seeded things want of the town, placed by the opener (`want`), each in the thing's voice and none a
@@ -344,6 +351,39 @@ def station_wings():
     return [parts[0] + parts[1]] + parts[2:]
 
 
+def station_digest(wings):
+    """The chained SHA-256 of the exact wing texts, as station.stitch keeps in its scene marks."""
+    digest = ''
+    for wing in wings:
+        digest = hashlib.sha256((digest + wing).encode()).hexdigest()
+    return digest
+
+
+def station_restitch(host, opener):
+    """Replace a station's scene when its stitched text differs, by the opener's wing turns."""
+    wings = station_wings()
+    digest = station_digest(wings)
+    state = host.send({'op': 'world-view', 'principal': opener, 'object': 'station'}).get('state') or {}
+    marks = next((f['value'] for f in state.get('fields', []) if f['name'] == 'marks'), {})
+    rows = next((f['value'].get('items', []) for f in marks.get('payload', {}).get('fields', []) if f['name'] == 'items'), [])
+    stamps = [{f['name']: f['value'].get('value', '') for f in row['fields']} for row in rows]
+    stamps = [m for m in stamps if m['name'].startswith('station-scene-')]
+    stitched = max(stamps, key=lambda m: int(m['at']))['name'][14:78] if stamps else None
+    row = {'object': 'station', 'slot': 'scene'}
+    if stitched == digest:
+        return {**row, 'status': 'current'}
+    record = host.send({'op': 'world-object', 'principal': opener, 'object': 'station'}).get('record')
+    if not record:
+        return {**row, 'status': 'absent'}
+    identity = f'refresh-station-restitch-{digest}-{record["version"]}'
+    for k, wing in enumerate(wings, 1):
+        reply = host.send({'op': 'world-turn', 'principal': opener, 'object': 'station', 'method': 'restitch',
+                           'identity': f'{identity}-{k}', 'argument': rec(spween=lab(wing), part=nat(k), wings=nat(len(wings)))})
+        if reply.get('status') != 'admitted':
+            return {**row, **done(reply), 'reading': f'restitch wing {k}'}
+    return {**row, 'status': 'refreshed', 'reading': 'the scene text changed'}
+
+
 def gas_station(host, opener, prefix='genesis'):
     """The all-night station, by the opener's spells after genesis; -> made rows. Stops (Stopped) at a refusal. A carry's
     refresh makes it the same way under `refresh-*` identities (`prefix`), a refresh as any other (`Ops.carryRefresh`);
@@ -361,7 +401,8 @@ def gas_station(host, opener, prefix='genesis'):
                      f'{prefix}-station', 'station', STATION_CALL))
     turned('kind/station place station', made[-1]['reply'])
     for k, wing in enumerate(station_wings(), 1):
-        made.append(said(host, opener, 'station', 'stitch', [('spween', wing)], f'{prefix}-station-wing-{k}'))
+        reply = turn('station', 'stitch', rec(spween=lab(wing)), f'{prefix}-station-wing-{k}')
+        made.append({'object': 'station', 'module': 'station stitch', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
         turned(f'station stitch wing {k}', made[-1]['reply'])
     for thing, name, description in STATION_THINGS + [('station/register', 'a register, open by the till', '')]:
         identity = f'{prefix}-' + thing.replace('/', '-')
@@ -530,7 +571,7 @@ def run(host, opener=OPENER, gas_station=False):
         next(m for m in made if m['object'] == 'commonplace')['body'] = turned('the commonplace body', host.send({
             'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-commonplace-body', 'object': 'commonplace', 'version': 0,
             'package': bodies['commonplace'], 'mode': 'extend'}))
-        # The town's coinages, each by its spell from its coiner's post; the porch cites the two bells; the things
+        # The town's coinages, each by its spell from its coiner's post; the porch cites the three bells and rings them together; the things
         # genesis seeds want what they want.
         for kind, fields, post in HANDS:
             made.append(said(host, opener, kind, 'place', fields, 'genesis-' + dict(fields)['id'], dict(fields)['id'], post))
@@ -538,6 +579,9 @@ def run(host, opener=OPENER, gas_station=False):
         for label, to in PORCH_DOORS:
             made.append(said(host, opener, 'porch', 'door', [('label', label), ('to', to)], f'genesis-porch-door-{to}'))
             turned(f'porch door {to}', made[-1]['reply'])
+        # The porch's bells rung together once, so its card says their chord.
+        made.append(said(host, opener, 'porch', 'chime', [], 'genesis-porch-chime'))
+        turned('porch chime', made[-1]['reply'])
         for card, name, reading, when, asks in WANTS:
             made.append(said(host, opener, card, 'want', [('name', name), ('reading', reading), ('when', when), ('asks', asks)], f'genesis-want-{card}-{name}'))
             turned(f'{card} want {name}', made[-1]['reply'])
@@ -576,7 +620,7 @@ def run(host, opener=OPENER, gas_station=False):
 # `.form`, by the owner's proposal), which every instance follows by `under`; the world's motion is placed when absent. A slot whose text is not the one genesis last gave it
 # (read from the journals: genesis's own turns and earlier refreshes) was changed since by another turn, and is left
 # and named; so is a slot whose making is in no journal read. A kind genesis made whose journal is not on this disk is
-# known by the making its carry kept (`made`): only its owner, the opener, writes its fields, so they are refreshed. `python3 -m transport carry` runs it at its end
+# known by the making its carry kept (`made`), but its last-given text is unknown and its fields are left. `python3 -m transport carry` runs it at its end
 # (`carried`); `genesis.py refresh` runs it on a living town through serve's root socket.
 def texts(opener):
     """{(object, slot): genesis's text today}, slot `law` an object's law and `.law`/`.voice`/`.form` a kind's fields."""
@@ -636,8 +680,9 @@ def given(journals, opener):
                 made(o.get('object'), o.get('law'), o.get('seed'))
             for c in o.get('creates') or []:
                 made(c.get('object'), c.get('law'), c.get('seed'))
-            for law in o.get('laws') or []:
-                gave[(law['object'], 'law')] = law['law']
+            if o.get('tag') == 'admitted':
+                for amendment in o.get('amendments') or []:
+                    gave[(amendment['object'], 'law')] = amendment['new']
             for w in o.get('writes') or []:
                 for edit in w.get('edits') or []:
                     for f in edit.get('fields') or []:
@@ -660,8 +705,9 @@ def standing(host, opener, obj):
 def refresh(host, opener, journals, station=False):
     """Re-writes every slot genesis made to its text today, as the opener: an object's law by one amendment, a kind's
     fields by one write; a town kind the world lacks is made (`refreshed`, reading `made`). With `station` (the config's,
-    `DELVETALK_STATION`), the all-night station is made on a town that lacks it, as `--with-gas-station` makes it at
-    genesis (`gas_station`, one row a step, reading `placed`). -> [{object, slot, status, reading?, reply?}] in genesis's
+    `DELVETALK_STATION`), an incomplete all-night station is resumed, as `--with-gas-station` makes it at
+    genesis (`gas_station`, one row a step, reading `placed`). An existing station is restitched when its scene
+    digest differs from the shipped wings. -> [{object, slot, status, reading?, reply?}] in genesis's
     order: `refreshed`, `current` (genesis's text already), `left` (the reading says why), `absent`, or the host's
     status for a turn not admitted."""
     gave, today, out = given(journals, opener), texts(opener), rebased(host, opener)
@@ -680,9 +726,10 @@ def refresh(host, opener, journals, station=False):
         for slot in [s for o, s in today if o == obj]:
             text = today[(obj, slot)]
             rows[slot] = ({'status': 'current'} if slots[slot] == text else
+                          {'status': 'left', 'reading': 'the last-given baseline is unknown: its ancestor journal was not read'}
+                          if (obj, slot) in gave and gave[(obj, slot)] is None else
                           {'status': 'stale', 'text': text} if (obj, slot) not in gave and slots[slot] == '' else  # a slot no turn wrote
                           {'status': 'left', 'reading': 'its making is in no journal read'} if (obj, slot) not in gave else
-                          {'status': 'stale', 'text': text} if gave[(obj, slot)] is None else  # genesis's, its text unread
                           {'status': 'left', 'reading': 'changed since genesis gave it'} if gave[(obj, slot)] != slots[slot] else
                           {'status': 'stale', 'text': text})
         stale = {slot: r.pop('text') for slot, r in rows.items() if r['status'] == 'stale'}
@@ -715,20 +762,62 @@ def refresh(host, opener, journals, station=False):
             continue
         placed = said(host, opener, kind, 'place', carried_fields(host, opener, kind, fields), f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
-    if 'station' in have:  # a town that has the station has its inhabitants
-        if station:
-            out.append({'object': 'station', 'slot': 'placed', 'status': 'current'})
-        try:
-            out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
-                    for m in inhabitants(host, opener, 'refresh')]
-        except Stopped as e:
-            out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
+    out += harmonic(host, opener, have)
+    whole, installed = True, False
+    if station and station_complete(host, opener):
+        out.append({'object': 'station', 'slot': 'placed', 'status': 'current'})
     elif station:
         try:
             out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
                     for m in gas_station(host, opener, 'refresh')]
+            installed = True
+            if not station_complete(host, opener):
+                raise Stopped('station installation is incomplete: its objects or doors are absent')
         except Stopped as e:  # a step not admitted: the carry exits 1, naming it
+            whole = False
             out.append({'object': 'station', 'slot': 'placed', 'status': 'refused', 'reading': str(e)})
+    if whole and 'station' in existing(host, opener):  # a town that has its station whole has its inhabitants
+        out.append(station_restitch(host, opener))
+        if not installed:
+            try:
+                out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
+                        for m in inhabitants(host, opener, 'refresh')]
+            except Stopped as e:
+                out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
+    return out
+
+
+def station_complete(host, opener):
+    """The station's object manifest and both doors; the porch door is the installation's last step."""
+    from transport.host import door_rows
+    have = set(existing(host, opener))
+    required = {'kind/station', 'station', 'station/register', 'porch'} | {obj for obj, _, _ in STATION_THINGS}
+    if not required <= have:
+        return False
+    for obj, label, dest in (('station', 'the road back', 'porch'), ('porch', 'the lit station', 'station')):
+        view = host.send({'op': 'world-view', 'principal': opener, 'object': obj})
+        if view.get('status') != 'viewed' or not any(d.get('label') == label and
+                d['to'].get('world', '') == '' and d['to']['object'] == dest for d in door_rows(view)):
+            return False
+    return True
+
+
+def harmonic(host, opener, have):
+    """alchemicav's green bell (GREEN_BELL), placed on a carried town that lacks it as genesis places it, from their
+    post, with its door from the porch, and the porch's bells rung together. -> refresh's rows."""
+    kind, fields, post = GREEN_BELL
+    obj = dict(fields)['id']
+    if obj in have:
+        return [{'object': obj, 'slot': 'placed', 'status': 'current'}]
+    if 'porch' not in have:
+        return [{'object': obj, 'slot': 'placed', 'status': 'left', 'reading': 'the town has no porch to hang it from'}]
+    out = []
+    for step, (card, action, given) in (('placed', (kind, 'place', fields)), ('door', ('porch', 'door', [('label', GREEN_DOOR[0]), ('to', obj)])),
+                                         ('chime', ('porch', 'chime', []))):
+        reply = said(host, opener, card, action, given, f'refresh-{obj}-{step}', post=post if step == 'placed' else '')['reply']
+        out.append({'object': obj if step == 'placed' else 'porch', 'slot': step, **done(reply), 'reading': step})
+        if reply.get('status') != 'admitted':
+            break
     return out
 
 
@@ -737,14 +826,27 @@ def shelved(host, opener):
     library's text differs or lacks it, so the library reads what the files say; another's page is left."""
     from transport.mirror import library_pages
     held, out = {p['name']: p for p in library_pages(host, opener)}, []
+    record = host.send({'op': 'world-object', 'principal': opener, 'object': 'library'}).get('record')
     for name, kind, title, body in shelf():
         page = held.get(name)
         if page and (page['body'], page['title'], page['kind']) == (body, title, kind):
             out.append({'object': 'library', 'slot': f'page {name}', 'status': 'current'})
             continue
+        if not record:
+            out.append({'object': 'library', 'slot': f'page {name}', 'status': 'absent'})
+            continue
+        digest = hashlib.sha256(json.dumps([name, kind, title, body], ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
         reply = host.send({'op': 'world-turn', 'principal': opener, 'object': 'library', 'method': 'shelve',
-                           'identity': f'refresh-shelve-{name}-{hashlib.sha256(body.encode()).hexdigest()[:12]}',
+                           'identity': f'refresh-shelve-{name}-{record["version"]}-{digest}',
                            'argument': rec(name=lab(name), kind={'tag': 'variant', 'label': kind, 'payload': rec()}, title=lab(title), body=lab(body))})
+        if reply.get('status') == 'admitted':
+            record = host.send({'op': 'world-object', 'principal': opener, 'object': 'library'}).get('record')
+            held = {p['name']: p for p in library_pages(host, opener)}
+            stored = held.get(name)
+            if not stored or (stored['kind'], stored['title'], stored['body']) != (kind, title, body):
+                out.append({'object': 'library', 'slot': f'page {name}', 'status': 'refused',
+                            'reading': 'the library does not hold the requested page after shelving', 'reply': reply})
+                continue
         out.append({'object': 'library', 'slot': f'page {name}', **done(reply), 'reading': 'shelved' if page is None else 'the file changed'})
     return out
 
@@ -757,7 +859,7 @@ REBASE = re.compile(r'law kind "([^"]+)\'s law holds": under "([^"]+)"')
 
 
 def rebased(host, opener):
-    """Amends every thing whose own text holds no law but its kind's citation to its owner's law, then that text,
+    """Amends a record or kind whose own text holds no law but its kind's citation to its owner's law, then that text,
     as the opener's journaled amendment (`refresh-<obj>-base-<version>`); -> [{object, slot: base, status, reply?}]."""
     out = []
     for obj in existing(host, opener):
@@ -766,6 +868,13 @@ def rebased(host, opener):
         first, *rest = text.split('\n')
         cited = REBASE.fullmatch(first)
         if not cited or cited.group(1) != cited.group(2) or any(line.startswith('law ') for line in rest):
+            continue
+        state = host.send({'op': 'world-view', 'principal': opener, 'object': obj}).get('state') or {}
+        fields = {f['name'] for f in state.get('fields', [])}
+        family = ({'owner', 'form', 'law', 'head', 'voice', 'about', 'body'} if cited.group(2) == 'kinds' else
+                  {'owner', 'keeper', 'cites', 'start', 'passages', 'cooldown', 'requires', 'lines', 'pending',
+                   'admitted', 'marks', 'presence', 'left', 'vars', 'things', 'tended'})
+        if not family <= fields:
             continue
         base = KIND_LAW if cited.group(2) == 'kinds' else RECORD_LAW
         reply = host.send({'op': 'world-amend', 'principal': opener, 'identity': f'refresh-{obj}-base-{record.get("version")}', 'object': obj,

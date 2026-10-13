@@ -1,6 +1,6 @@
 """The town mirrored as records on the PDS (docs/POSTING.md §1): a resident whose window is the PDS reads every card,
 page and the index there with no post. Each record is the rendering the web's pages use (`transport.host.place`),
-written only when it changed, and the did:web façade answers the same collections from the same functions.
+written only when it changed, and the did:web façade projects the same public values from the same functions.
 
 Evidence for docs/POSTING.md §1 (layer: transport).
 
@@ -317,20 +317,20 @@ class Mirror(unittest.TestCase):
         self.assertIn((mirror.CARD, 'gone~thing', None), w.calls)
         self.assertNotIn(f'{mirror.CARD} gone~thing', json.loads(st.mirror.read_text()))
 
-    def test_the_facade_answers_the_mirrors_own_records(self):
+    def test_the_facade_projects_the_mirrors_own_values(self):
         repo = Repo('https://gsb.example')
-        code, got, _ = repo.serve(self.host, 'GET', 'com.atproto.repo.getRecord',
-                                  {'repo': repo.did, 'collection': mirror.CARD, 'rkey': 'bell~1'}, 'anonymous')
+        code, got, _ = repo.serve(self.host, 'GET', mirror.NS + 'getProjection',
+                                  {'kind': 'card', 'key': 'bell~1'}, 'anonymous')
         self.assertEqual(code, 200, got)
         self.assertEqual(got['value'], mirror.card_record(self.host, 'bell/1', sleep=NOWAIT))
-        code, listed, _ = repo.serve(self.host, 'GET', 'com.atproto.repo.listRecords',
-                                     {'repo': repo.did, 'collection': mirror.PAGE, 'limit': '3'}, 'anonymous')
+        code, listed, _ = repo.serve(self.host, 'GET', mirror.NS + 'listProjections',
+                                     {'kind': 'page', 'limit': '3'}, 'anonymous')
         self.assertEqual(code, 200, listed)
-        self.assertEqual([r['value']['name'] for r in listed['records']], [p['name'] for p in mirror.library_pages(self.host)][:3])
-        code, more, _ = repo.serve(self.host, 'GET', 'com.atproto.repo.listRecords',
-                                   {'repo': repo.did, 'collection': mirror.PAGE, 'limit': '3', 'cursor': listed['cursor']}, 'anonymous')
-        self.assertEqual([r['value']['name'] for r in more['records']], [p['name'] for p in mirror.library_pages(self.host)][3:6])
-        self.assertIn(mirror.CARD, repo.serve(self.host, 'GET', 'com.atproto.repo.describeRepo', {'repo': repo.did}, 'anonymous')[1]['collections'])
+        self.assertEqual([r['value']['name'] for r in listed['projections']], [p['name'] for p in mirror.library_pages(self.host)][:3])
+        code, more, _ = repo.serve(self.host, 'GET', mirror.NS + 'listProjections',
+                                   {'kind': 'page', 'limit': '3', 'cursor': listed['cursor']}, 'anonymous')
+        self.assertEqual([r['value']['name'] for r in more['projections']], [p['name'] for p in mirror.library_pages(self.host)][3:6])
+        self.assertNotIn(mirror.CARD, repo.serve(self.host, 'GET', 'com.atproto.repo.describeRepo', {'repo': repo.did}, 'anonymous')[1]['collections'])
 
 
 class RecordWriter(unittest.TestCase):

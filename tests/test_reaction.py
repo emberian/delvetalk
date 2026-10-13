@@ -221,6 +221,65 @@ class Quest(Reaction):
 
 
 class Errand(Reaction):
+    def test_a_stranger_cannot_squat_pay_before_an_errand_settles(self):
+        bell = self.plant(KIM)
+        errand = self.made(OPENER, "kind/errand", "\nasks: a second rain\non: %s\n"
+                           "done: count(new.lines) >= 2 and count(old.lines) <= 1\n"
+                           "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
+        squatter = self.say(KIM, errand, 'delvetalk %s rule / name: pay / when: request.method == "x" / then: delvetalk porch write / text: squatted' % errand)
+        self.assertEqual((squatter["status"], squatter["receipt"]["outcome"].get("clause")),
+                         ("refused", "nameTaken"), squatter)
+        removal = self.say(KIM, errand, "delvetalk %s unrule / name: pay" % errand)
+        self.assertEqual((removal["status"], removal["receipt"]["outcome"].get("clause")),
+                         ("refused", "notPlacer"), removal)
+        self.assertEqual(self.row(errand, "pay")["owner"], OPENER)
+        self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: first" % bell))
+        self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: second" % bell))
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+        self.assertEqual(self.marks(errand), [("done", GLM)])
+        grants = self.town.send(op="world-grants", principal=GLM)["grants"]
+        self.assertIn(("anthology", "admit", GLM), [(g["object"], g["method"], g["to"]) for g in grants])
+
+    def test_repay_reconstructs_a_missing_pay_rule_for_the_recorded_claimant(self):
+        bell = self.plant(KIM)
+        errand = self.made(OPENER, "kind/errand", "\nasks: a second rain\non: %s\n"
+                           "done: count(new.lines) >= 2 and count(old.lines) <= 1\n"
+                           "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
+        self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: first" % bell))
+        self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: second" % bell))
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+        self.assertEqual(self.marks(errand), [("done", GLM)])
+        self.admitted(self.say(OPENER, errand, "delvetalk %s unrule / name: pay" % errand))
+        self.place(KIM, errand, 'pay / when: request.method == "x" / then: delvetalk porch write / text: squatted')
+        self.admitted(self.say(OPENER, errand, "delvetalk %s unrule / name: pay" % errand))
+        repaid = self.admitted(self.say(OPENER, errand, "delvetalk %s repay" % errand))
+        self.assertEqual([(f["rule"], f["principal"]) for f in self.fired(repaid)], [("pay", OPENER)])
+        pay = self.row(errand, "pay")
+        self.assertIn(GLM, pay["then"])
+        self.assertNotIn(KIM, pay["then"])
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+        receipt = self.town.send(op="world-receipt", principal=OPENER, identity=pay["fired"]["id"])
+        self.assertEqual(receipt["receipt"]["outcome"]["tag"], "admitted", receipt)
+        self.assertEqual(self.marks(errand), [("done", GLM)])
+
+    def test_a_pay_registration_failure_leaves_the_errand_open_and_completion_armed(self):
+        bell = self.plant(KIM)
+        errand = self.made(OPENER, "kind/errand", "\nasks: a second rain\non: %s\n"
+                           "done: count(new.lines) >= 2 and count(old.lines) <= 1\n"
+                           "pays: delvetalk anthology lend / to: {request.subject} / method: admit / until: +1440" % bell)
+        if any(r["name"] == "pay" for r in self.town.send(op="world-rules", principal=OPENER, object=errand)["rows"]):
+            self.admitted(self.say(OPENER, errand, "delvetalk %s unrule / name: pay" % errand))
+        self.admitted(self.say(OPENER, errand, 'delvetalk %s want / name: pay / when: new.owner == "" / asks: delvetalk porch write / text: blocked' % errand))
+        self.admitted(self.say(KIM, bell, "delvetalk %s rain / text: first" % bell))
+        second = self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: second" % bell))
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+        self.assertEqual(self.marks(errand), [])
+        completion = self.row(bell, identifier(errand))
+        self.assertEqual(completion["fired"]["height"], second["receipt"]["height"])
+        receipt = self.town.send(op="world-receipt", principal=OPENER, identity=completion["fired"]["id"])
+        self.assertIn("nameTaken", str(receipt), receipt)
+        self.assertIn("open: a second rain", self.card(self.say(GLM, errand, "")))
+
     def test_an_errand_settles_by_the_hand_that_did_it_and_pays_from_its_maker(self):
         """The opener's errand on kim's bell: done at its second rain, pays a day of the anthology's `admit`. Its `made`
         places one rule on the bell under the opener; glm's rain (the second) fires it, and the errand's `settle`
@@ -286,6 +345,56 @@ class Errand(Reaction):
 
 
 class Front(Tide):
+    def test_a_one_segment_front_refused_by_policy_reports_fills_and_a_delivery_receipt(self):
+        self.admitted(self.say(OPENER, "policy", 'delvetalk policy adopt / law: law frozen "the model stays": unchanged(model)'))
+        front = self.made(OPENER, "kind/front", "\nname: THE REFUSED\nfills: request.method == \"tick\"\nsegments: 1\n"
+                          "move: delvetalk policy set / model: forbidden\ntide: tide")
+        self.advance(100)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+        move = self.row(front, "move")["fired"]
+        receipt = self.town.send(op="world-receipt", principal=OPENER, identity=move["id"])
+        self.assertEqual((receipt["receipt"]["outcome"]["tag"], receipt["receipt"]["outcome"]["class"]),
+                         ("refused", "lawRefused"), receipt)
+        card = self.card(self.say(GLM, front, ""))
+        self.assertIn("Its clock: 0 of 1; it has filled once.", card)
+        self.assertNotIn("it has moved", card)
+        self.assertIn("delvetalk %s rules" % front, card)
+        rules = self.say(GLM, front, "delvetalk %s rules" % front)
+        self.assertIn("receipt %s" % move["receipt"], rules["text"])
+
+    def test_a_queued_front_move_is_a_fill_until_its_delivery_is_admitted(self):
+        front = self.made(KIM, "kind/front", "\nname: THE QUEUED\nfills: request.method == \"tick\"\nsegments: 1\n"
+                          "move: delvetalk me note / text: the queued move\ntide: tide")
+        self.admitted(self.say(KIM, front, "delvetalk %s unrule / name: move" % front))
+        for n in range(8):
+            self.place(KIM, front, 'before%d / when: request.method == "fill" / then: delvetalk me note / text: before the move' % n)
+        self.place(KIM, front, 'move / when: request.method == "fill" / then: delvetalk me note / text: the queued move')
+        self.advance(100)
+        move = self.row(front, "move")["fired"]
+        self.assertEqual(self.town.send(op="world-receipt", principal=KIM, identity=move["id"])["status"], "unknown")
+        card = self.card(self.say(GLM, front, ""))
+        self.assertIn("it has filled once", card)
+        self.assertNotIn("it has moved", card)
+        self.assertNotIn("the queued move", [text for _, text in self.inbox(KIM)])
+        self.town.send(op="world-advance", principal="transport", height=101)
+        self.town.send(op="world-deliver", principal="transport", limit=16)
+        receipt = self.town.send(op="world-receipt", principal=KIM, identity=move["id"])
+        self.assertEqual(receipt["receipt"]["outcome"]["tag"], "admitted", receipt)
+        self.assertIn("the queued move", [text for _, text in self.inbox(KIM)])
+
+    def test_a_front_with_twenty_four_segments_reports_one_fill_after_twenty_four_ticks(self):
+        front = self.made(KIM, "kind/front", "\nname: THE WIDE\nfills: new.ticks >= 0\nsegments: 24\n"
+                          "move: delvetalk me note / text: the wide clock filled\ntide: tide")
+        for n in range(23):
+            self.advance((n + 1) * 100)
+        card = self.card(self.say(GLM, front, ""))
+        self.assertIn("Its clock: 23 of 24; it has not filled yet.", card)
+        self.assertNotIn("the wide clock filled", [text for _, text in self.inbox(KIM)])
+        self.advance(2400)
+        card = self.card(self.say(GLM, front, ""))
+        self.assertIn("Its clock: 0 of 24; it has filled once.", card)
+        self.assertIn("the wide clock filled", [text for _, text in self.inbox(KIM)])
+
     def test_a_front_fills_at_the_ticks_its_condition_holds_and_moves_when_full(self):
         """kim's front on the tide: a segment at every second tick, two to a clock, its move rings kim's bell. The
         tide's rule fills it; the front's own rule casts the move as kim at the second fill, and the clock empties.
@@ -301,15 +410,17 @@ class Front(Tide):
         while ticks() % 2 == 0:  # the next tick is an even one
             self.advance(clock)
             clock += 100
-        self.assertIn("Its clock: 0 of 2; it has not moved yet.", self.card(self.say(GLM, front, "")))
+        self.assertIn("Its clock: 0 of 2; it has not filled yet.", self.card(self.say(GLM, front, "")))
         self.advance(clock)
         self.advance(clock + 100)
-        self.assertIn("Its clock: 1 of 2; it has not moved yet.", self.card(self.say(GLM, front, "")))
+        self.assertIn("Its clock: 1 of 2; it has not filled yet.", self.card(self.say(GLM, front, "")))
         self.assertNotIn("rung", self.names(bell))
         self.advance(clock + 200)
-        self.assertIn("Its clock: 0 of 2; it has moved once.", self.card(self.say(GLM, front, "")))
+        self.assertIn("Its clock: 0 of 2; it has filled once.", self.card(self.say(GLM, front, "")))
         self.assertEqual(self.names(bell), ["rung"])
-        self.assertIsNotNone(self.row(front, "move").get("fired"))
+        move = self.row(front, "move")["fired"]
+        receipt = self.town.send(op="world-receipt", principal=KIM, identity=move["id"])
+        self.assertEqual(receipt["receipt"]["outcome"]["tag"], "admitted", receipt)
 
 
 class Forged(Tide):
@@ -434,15 +545,15 @@ class LongFront(Tide):
         for _ in range(9):
             self.advance(clock)
             clock += 100
-        self.assertIn("Its clock: 1 of 4; it has moved two times.", self.card(self.say(GLM, front, "")))
+        self.assertIn("Its clock: 1 of 4; it has filled two times.", self.card(self.say(GLM, front, "")))
         for n in range(128):
             self.admitted(self.say(GLM, front, "delvetalk %s write / text: line %d" % (front, n)))
         self.assertEqual([t for t in self.texts(front) if t.startswith("segment ")], [])
-        self.assertIn("Its clock: 1 of 4; it has moved two times.", self.card(self.say(GLM, front, "")))
+        self.assertIn("Its clock: 1 of 4; it has filled two times.", self.card(self.say(GLM, front, "")))
         for _ in range(3):
             self.advance(clock)
             clock += 100
-        self.assertIn("Its clock: 0 of 4; it has moved three times.", self.card(self.say(GLM, front, "")))
+        self.assertIn("Its clock: 0 of 4; it has filled three times.", self.card(self.say(GLM, front, "")))
         self.assertEqual(sum(1 for _, text in self.inbox(KIM) if text == "the long front moved"), 3)
 
 

@@ -10,6 +10,7 @@ import ./Plan.obend as Plans
 import ./Relation.obend as Relations
 import ./Rows.obend as Rows
 import ./Text.obend as Text
+import ./Harmony.obend as Harmony
 # The bell's body, over RECORD (docs/CATALOGUE.md §5): a bell is a record whose lines are rains,
 # 768 of them at 1 to 200 characters (within the host's 256 KiB), and whose one mark is `rung`.
 # `kind/bell` makes a record with the fields colour and seed and grafts this on it; what a bell
@@ -22,6 +23,10 @@ import ./Text.obend as Text
 # law reads (never, when made before the clock was set). A rain a thing
 # sends (the weather's) is that thing's line and tends nothing, so a bell nobody visits goes quiet
 # under any weather; a quiet bell takes a thing's rain as nothing.
+#
+# Its colour is its tone (docs/HARMONIC.md): RECORD's `tone`, given at its making from the colour, which its card says
+# beside its sound; its `complement` (a view) is the light that mixes with its own to white, computed on the CIE
+# observer, and the interval that lands on.
 type State = Super.State
 def relations() -> Relations.Decls:
   Super.relationsWith(768n)
@@ -68,7 +73,9 @@ def untended(state: State, context: Abi.Context) -> String:
   let days = (context.clock - state.tended) / 1440n
   if state.tended == 0n then "never tended" else if days == 1n then "untended a day" else "untended {Text.countWord(days)} days"
 def views() -> Lists.List<String>:
-  Text.words("quietSince")
+  Text.words("quietSince complement")
+def complement(state: State) -> String:
+  Harmony.complement(Super.field(state, "colour"))
 def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>:
   Super.tend(state, context)
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
@@ -93,8 +100,8 @@ def entry(state: State, context: Abi.Context, line: Rows.Line) -> Document.Docum
   Document.text("{Card.shown(line.author, line.handle, context)}{Card.mine(line.author, context)}{verb}: {line.text}\n")
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let colour = Super.field(state, "colour")
-  let article = if colour == "amber" then "An" else "A"
+  let article = if colour == "amber" || colour == "orange" then "An" else "A"
   let sound = if quiet(state, context) then "quiet, {untended(state, context)}" else if Super.marked(state, "rung") then "rung" else "silent"
   let seed = Super.field(state, "seed")
   let next = if quiet(state, context) then "Tend it:\n  delvetalk {id} tend\n" else "Rain on it:\n  delvetalk {id} rain / text: <1 to 200 characters>\n"
-  Document.text("{article} {colour} bell, planted by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: “{seed}” — {sound}. {next}")
+  Document.text("{article} {colour} bell, planted by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: “{seed}” — {sound}. {next}{Super.ringing(state)}")

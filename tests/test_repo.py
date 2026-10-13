@@ -584,18 +584,18 @@ class ProjectionBoundary(unittest.TestCase):
         code, body, _ = (endpoint or self.repo).serve(self.world, 'GET', method, q, who)
         return code, body
 
-    def test_six_projection_collections_are_invalid_on_all_repository_record_methods(self):
+    def test_projection_collections_are_invalid_on_all_repository_record_methods(self):
         for repo in (self.repo, Repo(ORIGIN)):
-            for kind in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):
+            for kind in ('receipt', 'object', 'source', 'publication', 'grant', 'law', 'card', 'page', 'index', 'answer'):
                 for method in ('com.atproto.repo.getRecord', 'com.atproto.repo.listRecords', 'com.atproto.sync.getRecord'):
                     with self.subTest(kind=kind, method=method, signed=bool(repo.signed)):
                         code, body = self.call(method, endpoint=repo, **{'repo': REPO, 'did': REPO, 'collection': NS + kind, 'rkey': 'bell~1.0'})
                         self.assertEqual((code, body['error']), (400, 'InvalidRequest'), body)
                         self.assertTrue(body['message'].startswith('collection must be one of '), body)
             code, body = self.call('com.atproto.repo.describeRepo', endpoint=repo, **{'repo': REPO})
-            self.assertEqual(body['collections'], [NS + c for c in ('card', 'page', 'index', 'answer')] + ([NS + 'entry'] if repo.signed else []))
+            self.assertEqual(body['collections'], [NS + 'entry'] if repo.signed else [])
 
-    def test_every_served_collection_hashes_the_listed_and_fetched_value(self):
+    def test_live_mirror_values_are_only_projections_using_the_mirrors_renderer(self):
         from unittest.mock import patch
         from transport import mirror
         from transport.lexicon import record_problems
@@ -606,13 +606,14 @@ class ProjectionBoundary(unittest.TestCase):
                   'outcome': {'status': 'admitted', 'line': 'admitted'}, 'height': 1,
                   'receipt': {'slug': 'babab-babab', 'height': 1, 'entry': {'$link': self.world.entries[0]['hash']}}}
         self.assertEqual(record_problems(answer), [], answer)
-        def card(host, oid, reader='anonymous', **kw):
+        def card(host, oid, reader=mirror.PUBLIC, sleep=mirror.time.sleep, paint=True):
             self.assertEqual(reader, 'anonymous')
             return {'$type': NS + 'card', 'object': oid, 'version': 0, 'card': 'rain', 'wants': [], 'doors': []}
         with patch.object(mirror, 'card_record', card), patch.object(mirror, 'library_pages', return_value=pages), \
              patch.object(mirror, 'height', return_value=3), patch.object(mirror, 'answer_records', return_value={'did:plc:x.r': answer}):
             code, described = self.call('com.atproto.repo.describeRepo', **{'repo': REPO})
             self.assertEqual(code, 200)
+            self.assertEqual(described['collections'], [NS + 'entry'])
             for collection in described['collections']:
                 code, page = self.call('com.atproto.repo.listRecords', **{'repo': REPO, 'collection': collection, 'limit': '100'})
                 self.assertEqual(code, 200, page)
@@ -627,7 +628,49 @@ class ProjectionBoundary(unittest.TestCase):
                         self.assertEqual(got['cid'], str(block(from_json(got['value']))[0]))
                     code, wrong = self.call('com.atproto.repo.getRecord', **{'repo': REPO, 'collection': collection, 'rkey': key, 'cid': 'wrong'})
                     self.assertEqual((code, wrong['error']), (400, 'RecordNotFound'))
-            self.assertEqual(set(described['collections']), {NS + c for c in ('entry', 'card', 'page', 'index', 'answer')})
+            rendered = mirror.records(self.world, answers=self.repo.answers)
+            for kind in ('card', 'page', 'index', 'answer'):
+                expected = [(key, value) for (collection, key), value in rendered.items() if collection == NS + kind]
+                for who in (None, OWNER):
+                    code, page = self.call(NS + 'listProjections', who=who, kind=kind, limit='100')
+                    self.assertEqual(code, 200, page)
+                    self.assertEqual([(row['key'], row['value']) for row in page['projections']], expected)
+                    for row in page['projections']:
+                        self.assertEqual(row['kind'], kind)
+                        self.assertEqual(record_problems(row), [], row)
+                        for field in ('uri', 'cid', 'of', 'signed'):
+                            self.assertNotIn(field, row)
+                        code, got = self.call(NS + 'getProjection', who=who, kind=kind, key=row['key'])
+                        self.assertEqual((code, got), (200, row))
+                        code, wrong = self.call(NS + 'getProjection', who=who, kind=kind, key=row['key'], cid='wrong')
+                        self.assertEqual((code, wrong['error']), (400, 'RecordNotFound'))
+                code, short = self.call(NS + 'listProjections', kind=kind, limit='1')
+                self.assertEqual(code, 200, short)
+                self.assertEqual(short['projections'], page['projections'][:1])
+                code, backward = self.call(NS + 'listProjections', kind=kind, limit='100', reverse='true')
+                self.assertEqual((code, backward['projections']), (200, page['projections'][::-1]))
+                for key in ('absent', '../bell'):
+                    code, wrong = self.call(NS + 'getProjection', kind=kind, key=key)
+                    self.assertEqual((code, wrong['error']), (400, 'RecordNotFound'))
+                code, wrong = self.call(NS + 'listProjections', kind=kind, cursor='absent')
+                self.assertEqual((code, wrong['error']), (400, 'InvalidRequest'))
+
+    def test_live_card_projection_maximum_page_resumes_both_directions(self):
+        from unittest.mock import patch
+        from transport import mirror
+        cards = {(NS + 'card', f'card{i:03}'): {'$type': NS + 'card', 'object': f'card{i:03}',
+                 'version': 0, 'card': 'rain', 'wants': [], 'doors': []} for i in range(103)}
+        with patch.object(mirror, 'records', return_value=cards):
+            for reverse in (False, True):
+                q = {'kind': 'card', 'limit': '100', 'reverse': str(reverse).lower()}
+                code, first = self.call(NS + 'listProjections', **q)
+                self.assertEqual(code, 200, first)
+                self.assertEqual(len(first['projections']), 100)
+                code, rest = self.call(NS + 'listProjections', **q, cursor=first['cursor'])
+                self.assertEqual(code, 200, rest)
+                keys = list(cards)[::-1] if reverse else list(cards)
+                self.assertEqual([row['key'] for row in first['projections'] + rest['projections']], [k for _, k in keys])
+                self.assertNotIn('cursor', rest)
 
     def test_entry_sync_proofs_find_exactly_the_requested_path(self):
         code, page = self.call('com.atproto.repo.listRecords', **{'repo': REPO, 'collection': NS + 'entry'})
@@ -693,7 +736,7 @@ class ProjectionBoundary(unittest.TestCase):
 
     def test_projection_parameters_and_object_law_cursors_refuse_adversarial_inputs(self):
         for method in ('getProjection', 'listProjections'):
-            for bad in ('', 'entry', 'card', 'receipt' * 100):
+            for bad in ('', 'entry', 'checkpoint', 'receipt' * 100):
                 code, body = self.call(NS + method, kind=bad, key='bell~1.0')
                 self.assertEqual((code, body['error']), (400, 'InvalidRequest'))
         for kind in ('receipt', 'object', 'source', 'publication', 'grant', 'law'):
@@ -808,6 +851,137 @@ class CarriedRepository(unittest.TestCase):
         self.assertEqual([r['height'] for r in records], [453])
         code, listed, _ = repo.serve(world, 'GET', 'com.atproto.repo.listRecords', {'repo': REPO, 'collection': NS + 'entry', 'limit': '3'}, 'anonymous')
         self.assertEqual([r['value']['height'] for r in listed['records']], [447, 448, 449], listed)
+
+
+@signs
+class PendingEventCars(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.world, self.key = World(page=100), sign.Key.generate()
+        self.repo = Repo(ORIGIN, self.key, ledger=State(self.tmp.name).repo_ledger)
+
+    def test_disabled_firehose_retains_no_cars_after_repeated_signed_reads(self):
+        from unittest.mock import patch
+        import transport.repo as repository
+        for batch in range(4):
+            for i in range(100):
+                self.world.append(OWNER, f'entry-{batch}-{i}')
+            with patch.object(repository, 'car_of', wraps=repository.car_of) as cars:
+                self.repo.signed.catch_up(self.world)
+                self.assertEqual(cars.call_count, 0)
+            self.assertEqual(sum(len(getattr(h, 'blocks', b'') or b'') for h in self.repo.signed.heights), 0)
+            self.assertEqual(self.repo.signed.pending_bytes, 0)
+            self.assertEqual(self.repo.signed.pending, {})
+        exported = self.repo.signed.repo()
+        twin = Repo(ORIGIN, self.key, ledger=State(self.tmp.name).repo_ledger)
+        twin.signed.catch_up(self.world)
+        self.assertEqual(twin.signed.repo(), exported)
+
+    def hose(self):
+        from transport.firehose import Firehose
+        hose = Firehose(self.repo, self.world, Path(self.tmp.name) / 'events')
+        self.addCleanup(hose.selector.close)
+        self.addCleanup(hose.wake_read.close)
+        self.addCleanup(hose.wake_write.close)
+        hose.produce(initial=True)
+        return hose
+
+    def test_pending_bound_refuses_before_mutation_and_producer_drains_without_loss(self):
+        from unittest.mock import patch
+        from transport.firehose import MAX_BLOCKS
+        from transport.repo import Refusal
+        hose = self.hose()
+        signed = self.repo.signed
+        self.world.append(OWNER, 'first')
+        with patch('transport.repo.MAX_EVENT_PENDING', MAX_BLOCKS):
+            signed.catch_up(self.world)
+            first = signed.pending[1]
+            held = signed.pending_bytes
+            self.assertEqual(held, len(first[1]['blocks']))
+            self.world.append(OWNER, 'second')
+            before = (signed.head, signed.tree.root(), signed.clock, dict(signed.revs))
+            with self.assertRaises(Refusal) as refused:
+                signed.catch_up(self.world)
+            self.assertEqual(refused.exception.body['reply']['class'], 'capacity')
+            self.assertEqual((signed.head, signed.tree.root(), signed.clock, signed.revs), before)
+            self.assertEqual(len(signed.heights), 1)
+            self.assertEqual(signed.pending_bytes, held)
+            self.assertLessEqual(held, MAX_BLOCKS)
+            hose.produce()
+            self.assertEqual(signed.pending_bytes, 0)
+            self.assertEqual(hose.log.retained()[0].body['blocks'], first[1]['blocks'])
+            hose.produce()
+        self.assertEqual([e.height for e in hose.log.retained()], [1, 2])
+        self.assertEqual(signed.pending, {})
+        for event in hose.log.retained():
+            [root], blocks = read_car(event.body['blocks'])
+            commit = decode(blocks[root])
+            self.assertTrue(sign.verify(self.key.private.public_key(),
+                                       encode({k: v for k, v in commit.items() if k != 'sig'}), commit['sig']))
+
+    def test_failed_durable_append_keeps_pending_bytes_for_identical_retry(self):
+        from unittest.mock import patch
+        hose = self.hose()
+        self.world.append(OWNER, 'waiting')
+        self.repo.signed.catch_up(self.world)
+        pending = dict(self.repo.signed.pending)
+        with patch.object(hose.log, 'append', side_effect=OSError('disk full')):
+            with self.assertRaises(OSError):
+                hose.produce()
+        self.assertEqual(self.repo.signed.pending, pending)
+        self.assertGreater(self.repo.signed.pending_bytes, 0)
+        hose.produce()
+        self.assertEqual(hose.log.retained()[0].body['blocks'], pending[1][1]['blocks'])
+        self.assertEqual(self.repo.signed.pending, {})
+        self.assertEqual(self.repo.signed.pending_bytes, 0)
+
+    def test_stopped_producer_keeps_unlogged_pending_until_restart_sync_covers_it(self):
+        hose = self.hose()
+        signed = self.repo.signed
+        self.world.append(OWNER, 'unlogged')
+        signed.catch_up(self.world)
+        pending, held = dict(signed.pending), signed.pending_bytes
+        signed.stop_events()
+        self.assertFalse(signed.events)
+        self.assertEqual(signed.pending, pending)
+        self.assertEqual(signed.pending_bytes, held)
+        self.world.append(OWNER, 'while-stopped')
+        signed.catch_up(self.world)
+        self.assertEqual(signed.pending, pending)
+        hose.produce(initial=True)
+        self.assertEqual([(e.kind, e.height) for e in hose.log.retained()], [('#sync', 2)])
+        self.assertEqual(signed.pending, {})
+        self.assertEqual(signed.pending_bytes, 0)
+
+    def test_existing_ledger_waits_for_journal_reconstruction_without_capturing_historical_cars(self):
+        from unittest.mock import patch
+        import transport.repo as repository
+        from transport.firehose import Firehose
+        for i in range(5):
+            self.world.append(OWNER, f'before-restart-{i}')
+        self.repo.signed.catch_up(self.world)
+        old_car, old_rev = self.repo.signed.repo(), self.repo.signed.head.rev
+        restarted = Repo(ORIGIN, self.key, ledger=State(self.tmp.name).repo_ledger)
+        delayed = World(page=100)
+        hose = Firehose(restarted, delayed, Path(self.tmp.name) / 'events')
+        self.addCleanup(hose.selector.close)
+        self.addCleanup(hose.wake_read.close)
+        self.addCleanup(hose.wake_write.close)
+        hose.produce(initial=True)
+        self.assertEqual(hose.log.tail, 0)
+        delayed.entries = list(self.world.entries)
+        with patch.object(repository, 'car_of', wraps=repository.car_of) as cars:
+            hose.produce()
+            self.assertEqual(cars.call_count, 0)
+        self.assertEqual(restarted.signed.repo(), old_car)
+        self.assertEqual(hose.log.retained()[0].kind, '#sync')
+        self.assertEqual(hose.log.retained()[0].body['rev'], old_rev)
+        self.assertEqual(restarted.signed.pending_bytes, 0)
+        delayed.append(OWNER, 'after-reconstruction')
+        hose.produce()
+        self.assertEqual(hose.log.retained()[-1].kind, '#commit')
+        self.assertEqual(hose.log.retained()[-1].body['since'], old_rev)
 
 
 @signs

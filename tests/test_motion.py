@@ -53,7 +53,7 @@ class Seeded(Motion):
                       "it rains on every bell porch holds or hangs a door to, by its rule on tide:\n  delvetalk tide rules\n", weather)
         lamp = self.say_card("porch/lamp")
         self.assertIn("THE PORCH'S LAMP, a front set by the town: a slow pressure with a clock that fills while its condition "
-                      "holds, and moves when full. Its clock: 0 of 4; it has not moved yet.", lamp)
+                      "holds, and casts its move when full. Its clock: 0 of 4; it has not filled yet.", lamp)
         self.assertIn("When full: delvetalk porch write / text: the porch's lamp has burned down: four days and nobody came", lamp)
 
     def test_bell_1_wants_its_clapper_grown_as_a_verb(self):
@@ -73,7 +73,7 @@ class Day(Motion):
         self.assertIn("weather's rain, clock %d" % clock, self.lines("bell/1"))
         # bell/2 was planted at genesis and nobody has been near it for a day: it takes nothing.
         self.assertEqual(self.lines("bell/2"), [])
-        self.assertEqual(self.lines("weather"), ["rain at clock %d on 2" % clock])
+        self.assertEqual(self.lines("weather"), ["rain at clock %d on 3" % clock])  # the porch's three bells, alchemicav's green among them
         self.assertIn("Its clock: 0 of 4", self.say_card("porch/lamp"))
 
     def test_a_day_nobody_entered_the_porch_burns_the_lamp_lower_and_rains_on_nothing(self):
@@ -81,7 +81,7 @@ class Day(Motion):
         self.advance(clock + 2000)  # one jump past the day: nobody has entered the porch since genesis
         self.assertEqual(self.ticks(), 24)
         self.assertEqual(self.lines("weather"), [])
-        self.assertIn("Its clock: 1 of 4; it has not moved yet.", self.say_card("porch/lamp"))
+        self.assertIn("Its clock: 1 of 4; it has not filled yet.", self.say_card("porch/lamp"))
 
 
 if __name__ == "__main__":

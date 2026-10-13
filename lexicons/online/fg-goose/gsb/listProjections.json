@@ -1,7 +1,7 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.listProjections",
-  "description": "Page the same host projections under the authenticated reader, or PUBLIC when anonymous.",
+  "description": "Per-reader host projections and public live card, page, index and answer values outside the world repository.",
   "defs": {
     "main": {
       "type": "query",
@@ -19,7 +19,11 @@
               "source",
               "publication",
               "grant",
-              "law"
+              "law",
+              "card",
+              "page",
+              "index",
+              "answer"
             ]
           },
           "limit": {
@@ -30,12 +34,12 @@
           },
           "cursor": {
             "type": "string",
-            "description": "Opaque host cursor for receipt/source/publication/grant; object id for object; object id or <id>#<n> for law."
+            "description": "Opaque host cursor for receipt/source/publication/grant; object id for object; object id or <id>#<n> for law; last listed key for live card/page/index/answer."
           },
           "reverse": {
             "type": "boolean",
             "default": false,
-            "description": "Descending host order for receipt/source/publication/grant. true is InvalidRequest for object/law, which page by object id."
+            "description": "Descending listing order for host-paged and live public kinds. true is InvalidRequest for object/law, which page by object id."
           }
         }
       },

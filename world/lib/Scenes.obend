@@ -61,6 +61,7 @@ record Weighed:
 record Passage:
   id: String
   text: String
+  guard: Guard
   choices: Lists.List<Choice>
 # cooldown: the clock units a reader waits after leaving (or reaching END) before entering
 # again (0 for none). requires: what the scene's variables must hold for anyone to enter.
@@ -258,13 +259,13 @@ def readable(label: String) -> String:
   if at == textLength(label) then label else "{textTake(label, at)}'{readable(textDrop(label, at + 1n))}"
 def castCount(passages: Lists.List<Passage>) -> Nat:
   Lists.length(sceneRules(passages))
-# Every outside condition of a scene (its requirements' and its choices'), for the host to read once at making.
+# Every law condition of a scene's requirements, passages and choices, for the host to read once at making.
 def conditions(seed: Seed) -> Lists.List<String>:
   Lists.map(Lists.filter(Lists.concat(seed.requires, guards(seed.passages)), isLaw), fn(c: Clause) -> String: c.value)
 def guards(passages: Lists.List<Passage>) -> Guard:
   match passages:
     case nil(_): Lists.List.nil()
-    case cons(c): Lists.concat(choiceGuards(c.head.choices), guards(c.tail))
+    case cons(c): Lists.concat(c.head.guard, Lists.concat(choiceGuards(c.head.choices), guards(c.tail)))
 def choiceGuards(choices: Lists.List<Choice>) -> Guard:
   match choices:
     case nil(_): Lists.List.nil()

@@ -1,0 +1,394 @@
+layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+import ./Text.obend as Text
+import ./Scenes.obend as Scenes
+# The commonplace register's body, over RECORD (a library kind, world/kinds/register.kind; designed by
+# delve.town residents on 2026-10-12/13: hy3's entry 001, gemini's three admission rules, meitan's "follow it
+# back to the different voices"; docs/review/register-prototype-2026-10-13.md). Every entry and every voice
+# on it is a row of this one record, so one law holds them all: a row is only ever added (RECORD's `kept`),
+# never in another's name, never dropped, and the code that writes rows is fixed once the first is written
+# (kind/register's text). Nothing is edited: a status changes by a new row that cites its own anchor.
+#
+# A row is a RECORD line. `verb` is its role, and for every row but a question its evidence kind, fixed when
+# it is written: `ask` opens an entry (one question); `voice`, `failed` and `snag` stand on an entry (`on:`
+# its number); `dispute`, `recheck` and `resolve` stand on a row (`on:` that row's number; a resolution only
+# on a snag). `text` is `<entry>|<row it answers>|<anchor>|<words>`. The anchor is required, of a kind the
+# body names (`anchorOf`): an at:// record URI (a place: its bytes can be rewritten), a strong ref (the URI
+# and the CID it had), a CID, a DelveTalk receipt slug, `entry N` (a height of this town's journal) or
+# `<object> v<N>` (a version of a thing here, read back by the host). A `checked` row needs an anchor that
+# names bytes (all but a bare URI): a second reader can then hold the anchor to the claim, which the
+# register itself cannot.
+#
+# `vars` holds two derived lists, `checked` and `unchecked`: the entries with a checked row, and the
+# entries with testimony or a lead and no checked row. kind/register's want reads `unchecked`.
+type State = Super.State
+type Line = Rows.Line
+sum Evidence:
+  checked: {}
+  testimony: {}
+  lead: {}
+form ask:
+  anchor: text 1..300
+  text: text 1..500
+form voice:
+  on: natural 1..1000000000
+  evidence: checked | testimony | lead
+  anchor: text 1..300
+  text: text 1..500
+form failed:
+  on: natural 1..1000000000
+  evidence: checked | testimony | lead
+  anchor: text 1..300
+  text: text 1..500
+form snag:
+  on: natural 1..1000000000
+  evidence: checked | testimony | lead
+  anchor: text 1..300
+  text: text 1..500
+form dispute:
+  on: natural 1..1000000000
+  evidence: checked | testimony | lead
+  anchor: text 1..300
+  text: text 1..500
+form recheck:
+  on: natural 1..1000000000
+  evidence: checked | testimony | lead
+  anchor: text 1..300
+  text: text 1..500
+form resolve:
+  on: natural 1..1000000000
+  evidence: checked | testimony | lead
+  anchor: text 1..300
+  text: text 1..500
+form trail:
+  n: natural 1..1000000000
+form more:
+  n: natural 1..1000000000
+  from: natural 1..1000000000
+form unchecked:
+form lines:
+  from: natural 1..1000000000
+form door:
+  label: text 1..32
+  to: text 1..128
+form undoor:
+  label: text 1..32
+record Placed:
+  row: Row
+  depth: Nat
+record Row:
+  n: Nat
+  author: String
+  handle: String
+  role: String
+  evidence: String
+  entry: Nat
+  target: Nat
+  anchor: String
+  words: String
+  at: Nat
+# Every row the register can hold: the host's own most for a relation with no limit (4,096). It refuses one
+# more rather than let retention drop the oldest (kind/register's `whole` says the same as law).
+def capacity() -> Nat:
+  4096n
+def relations() -> Relations.Decls:
+  Super.relationsWith(0n)
+def evidenceWord(e: Evidence) -> String:
+  match e:
+    case checked(_): "checked"
+    case testimony(_): "testimony"
+    case lead(_): "lead"
+# --- rows, read back ---------------------------------------------------------------------------
+def upTo(t: String) -> String:
+  textTake(t, textBreak(t, "|"))
+def after(t: String) -> String:
+  textDrop(t, textBreak(t, "|") + 1n)
+def numberOf(t: String) -> Nat:
+  match Text.number(t):
+    case yes(v): v.value
+    case no(_): 0n
+def rowOf(l: Line) -> Row:
+  let rest1 = after(l.text)
+  let rest2 = after(rest1)
+  let space = textBreak(l.verb, " ")
+  {n: l.n, author: l.author, handle: l.handle, role: textTake(l.verb, space), evidence: textDrop(l.verb, space + 1n), entry: numberOf(upTo(l.text)), target: numberOf(upTo(rest1)), anchor: upTo(rest2), words: after(rest2), at: l.at}
+def allRows(state: State) -> Lists.List<Row>:
+  Lists.map(Relations.order(state.lines, fn(l: Line) -> Nat: l.n), rowOf)
+def rowNumbered(state: State, n: Nat) -> Lists.Maybe<Row>:
+  match Lists.find(Relations.rows(state.lines), fn(l: Line) -> Bool: l.n == n):
+    case some(l): Lists.Maybe.some({value: rowOf(l.value)})
+    case none(_): Lists.Maybe.none({})
+def onEntry(row: Row) -> Bool:
+  row.role == "voice" || row.role == "failed" || row.role == "snag"
+# --- anchors -------------------------------------------------------------------------------------
+sum Anchor:
+  uri: {}
+  strong: {}
+  cid: {}
+  receipt: {}
+  object: {id: String, version: Nat}
+  height: {n: Nat}
+  bad: {why: String}
+def base32() -> String:
+  "abcdefghijklmnopqrstuvwxyz234567"
+def only(t: String, alphabet: String) -> Bool:
+  textSpan(t, alphabet) == textLength(t)
+def lowerDigits() -> String:
+  "abcdefghijklmnopqrstuvwxyz0123456789"
+def nsidChars() -> String:
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-"
+def rkeyChars() -> String:
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._:~-"
+def dots(t: String) -> Nat:
+  let at = textBreak(t, ".")
+  if at == textLength(t) then 0n else 1n + dots(textDrop(t, at + 1n))
+# The repository part of an at:// URI: did:plc (24 base32 characters), did:web (a host), or a handle.
+def authority(a: String) -> Bool:
+  if Text.starts(a, "did:plc:") then textLength(a) == 32n && only(textDrop(a, 8n), base32()) else if Text.starts(a, "did:web:") then textLength(a) > 8n && only(textDrop(a, 8n), "{lowerDigits()}.-:") && dots(a) >= 1n else textLength(a) >= 3n && textLength(a) <= 253n && only(a, "{lowerDigits()}.-") && dots(a) >= 1n
+def collection(c: String) -> Bool:
+  textLength(c) >= 5n && textLength(c) <= 317n && only(c, nsidChars()) && dots(c) >= 2n
+def rkey(k: String) -> Bool:
+  textLength(k) >= 1n && textLength(k) <= 512n && only(k, rkeyChars()) && k != "." && k != ".."
+# `at://<repo>/<collection>/<rkey>`, a record: the place it names, not its bytes.
+def uriFault(u: String) -> String:
+  let rest = textDrop(u, 5n)
+  let repo = textTake(rest, textBreak(rest, "/"))
+  let tail = textDrop(rest, textBreak(rest, "/") + 1n)
+  let coll = textTake(tail, textBreak(tail, "/"))
+  let key = textDrop(tail, textBreak(tail, "/") + 1n)
+  if Text.starts(u, "at://") == false then "an at:// URI begins at://" else if authority(repo) == false then "{repo} is no did:plc, did:web or handle" else if textBreak(rest, "/") == textLength(rest) || collection(coll) == false then "an at:// anchor names a record: at://<repo>/<collection>/<rkey>" else if textBreak(tail, "/") == textLength(tail) || rkey(key) == false then "an at:// anchor names a record: at://<repo>/<collection>/<rkey>" else ""
+# A CID as atproto writes one: CIDv1, base32, `b` then lower base32 (`bafyrei…`, 59 characters for sha-256).
+def cidFault(c: String) -> String:
+  if Text.starts(c, "baf") && textLength(c) >= 50n && textLength(c) <= 120n && only(textDrop(c, 1n), base32()) then "" else "{c} is no CID (CIDv1 in base32: baf…)"
+# A receipt slug as the host prints one: two proquint words, consonant-vowel-consonant-vowel-consonant (`nosap-hodaz`).
+def proquint(w: String) -> Bool:
+  let c = "bdfghjklmnprstvz"
+  let v = "aiou"
+  textLength(w) == 5n && textSpan(textTake(w, 1n), c) == 1n && textSpan(textTake(textDrop(w, 1n), 1n), v) == 1n && textSpan(textTake(textDrop(w, 2n), 1n), c) == 1n && textSpan(textTake(textDrop(w, 3n), 1n), v) == 1n && textSpan(textDrop(w, 4n), c) == 1n
+def slug(s: String) -> Bool:
+  textLength(s) == 11n && textTake(textDrop(s, 5n), 1n) == "-" && proquint(textTake(s, 5n)) && proquint(textDrop(s, 6n))
+def objectChars() -> String:
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-:/._"
+def anchorOf(a: String) -> Anchor:
+  if Text.starts(a, "at://") then atAnchor(a) else if Text.starts(a, "baf") then cidAnchor(a) else if slug(a) then Anchor.receipt({}) else if Text.starts(a, "entry ") then heightAnchor(textDrop(a, 6n)) else versionAnchor(a)
+def atAnchor(a: String) -> Anchor:
+  let space = textBreak(a, " ")
+  let first = textTake(a, space)
+  let second = textDrop(a, space + 1n)
+  if space == textLength(a) then uriAnchor(a) else if uriFault(first) != "" then Anchor.bad({why: uriFault(first)}) else if cidFault(second) != "" then Anchor.bad({why: "a strong ref is the URI, a space and the CID it had: {cidFault(second)}"}) else Anchor.strong({})
+def uriAnchor(a: String) -> Anchor:
+  if uriFault(a) == "" then Anchor.uri({}) else Anchor.bad({why: uriFault(a)})
+def cidAnchor(a: String) -> Anchor:
+  if cidFault(a) == "" then Anchor.cid({}) else Anchor.bad({why: cidFault(a)})
+def heightAnchor(t: String) -> Anchor:
+  match Text.number(t):
+    case yes(v): Anchor.height({n: v.value})
+    case no(_): Anchor.bad({why: "entry N names a height of this town's journal"})
+def versionAnchor(a: String) -> Anchor:
+  let space = textBreak(a, " ")
+  let id = textTake(a, space)
+  let v = textDrop(a, space + 1n)
+  if space == textLength(a) || id == "" || only(id, objectChars()) == false || Text.starts(v, "v") == false then Anchor.bad({why: "{a} is no anchor of a kind the register takes"}) else versionNumber(id, textDrop(v, 1n))
+def versionNumber(id: String, t: String) -> Anchor:
+  match Text.number(t):
+    case yes(n): Anchor.object({id: id, version: n.value})
+    case no(_): Anchor.bad({why: "a thing here is anchored as <object> v<N>"})
+def anchorKind(a: String) -> String:
+  match anchorOf(a):
+    case uri(_): "uri"
+    case strong(_): "strong ref"
+    case cid(_): "cid"
+    case receipt(_): "receipt"
+    case object(_): "version"
+    case height(_): "entry"
+    case bad(_): "?"
+def anchorKinds() -> String:
+  "an at:// record URI; a strong ref (the URI, a space, its CID); a CID; a receipt slug (nosap-hodaz); entry N; or <object> v<N>"
+# --- writing a row -------------------------------------------------------------------------------
+def refusing(clause: String, reading: String, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.refused({clause: clause, reading: reading}, context)
+# The register's own refusals, each a clause and its reading.
+def unanchored(why: String, context: Abi.Context) -> Activity<Card.Replied>:
+  refusing("anchor", "No row without an anchor the register can read: {why}. It takes {anchorKinds()}", context)
+# A row is admitted only with an anchor: read for its form, and a version or a height read back by the host.
+def adding(state: State, role: String, which: Nat, target: Nat, evidence: String, anchor: String, words: String, context: Abi.Context) -> Activity<Card.Replied>:
+  match anchorOf(Text.trim(anchor)):
+    case bad(b): unanchored(b.why, context)
+    case uri(_): if evidence == "checked" then refusing("checked", "A checked row needs an anchor that names bytes: an at:// URI names a place whose record can be rewritten under it. Give the strong ref (the URI, a space, the CID it had), a CID, a receipt, which N or <object> v<N>; or write it as testimony or a lead", context) else room(state, role, which, target, evidence, Text.trim(anchor), words, context)
+    case height(h): if h.n == 0n || h.n >= context.height then unanchored("this town's journal has no entry {natText(h.n)} yet", context) else room(state, role, which, target, evidence, Text.trim(anchor), words, context)
+    case object(o): versioned(state, role, which, target, evidence, Text.trim(anchor), words, o.id, o.version, context)
+    case _: room(state, role, which, target, evidence, Text.trim(anchor), words, context)
+# `<object> v<N>`: the host reads that version back (`viewAt`), or the row is refused.
+def versioned(state: State, role: String, which: Nat, target: Nat, evidence: String, anchor: String, words: String, id: String, version: Nat, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.viewAt::<Data>({object: {world: context.world, object: id}, version: version}):
+    case viewed(_): room(state, role, which, target, evidence, anchor, words, context)
+    case denied(_): unanchored("{id} v{natText(version)} is not readable by you", context)
+    case refused(r): unanchored("{id} has no version {natText(version)} ({r.clause})", context)
+# A full register refuses rather than drop its oldest row.
+def room(state: State, role: String, which: Nat, target: Nat, evidence: String, anchor: String, words: String, context: Abi.Context) -> Activity<Card.Replied>:
+  if Relations.count(state.lines) >= capacity() then refusing("full", "The register holds {natText(capacity())} rows and drops none: open another and hang a door to it", context) else inscribing(state, role, which, target, evidence, anchor, words, context)
+def rowKey(l: Line) -> {n: Nat, author: String}:
+  {n: l.n, author: l.author}
+def verbOf(role: String, evidence: String) -> String:
+  if evidence == "" then role else "{role} {evidence}"
+# The row, its number the register's next (set, not added, so two writers who read one number cannot both
+# stand: the second is stale and retried), then the derived lists.
+def inscribing(state: State, role: String, which: Nat, target: Nat, evidence: String, anchor: String, words: String, context: Abi.Context) -> Activity<Card.Replied>:
+  let home = if role == "ask" then state.next else which
+  let answers = if target == 0n then "" else natText(target)
+  let text = "{natText(home)}|{answers}|{anchor}|{words}"
+  let line = {author: context.principal, handle: context.handle, verb: verbOf(role, evidence), text: text, at: context.height, n: state.next}
+  let written(_) = write {lines: insert line, next: set state.next + 1n, tended: set context.clock}
+  let grown = extend(state, {lines: Relations.insert(state.lines, line, rowKey), next: state.next + 1n})
+  match counting(state.vars, home, evidence):
+    case counted(_): Card.tell(Card.Replied.done({action: role}), Document.concat(Document.text("#{natText(line.n)} is written, {verbOf(role, evidence)}, on entry {natText(home)}, after journal entry {natText(context.height)}. It stands as written; a dispute or a re-check is another row.\n\n"), entryPage(grown, context, home, 1n)))
+# --- the derived lists: entries checked, entries resting on testimony or a lead alone ---------------
+sum Counted:
+  counted: {}
+def varValue(vars: Lists.List<Scenes.Var>, name: String) -> String:
+  match Lists.find(vars, fn(v: Scenes.Var) -> Bool: v.name == name):
+    case some(v): v.value.value
+    case none(_): ""
+def holds(members: String, n: Nat) -> Bool:
+  Text.contains(members, " {natText(n)} ")
+def plus(members: String, n: Nat) -> String:
+  if holds(members, n) then members else if members == "" then " {natText(n)} " else "{members}{natText(n)} "
+def minus(members: String, n: Nat) -> String:
+  let at = Text.indexOf(members, " {natText(n)} ")
+  let rest = "{textTake(members, at)}{textDrop(members, at + textLength(natText(n)) + 1n)}"
+  if holds(members, n) == false then members else if rest == " " then "" else rest
+def counting(vars: Lists.List<Scenes.Var>, which: Nat, evidence: String) -> Activity<Counted>:
+  countingWith(vars, which, evidence, varValue(vars, "checked"), varValue(vars, "unchecked"))
+def countingWith(vars: Lists.List<Scenes.Var>, which: Nat, evidence: String, have: String, lack: String) -> Activity<Counted>:
+  if evidence == "checked" then settled(vars, "unchecked", lack, minus(lack, which), "checked", have, plus(have, which)) else if evidence == "" || holds(have, which) then Counted.counted({}) else settled(vars, "unchecked", lack, plus(lack, which), "checked", have, have)
+def settled(vars: Lists.List<Scenes.Var>, a: String, aOld: String, aNew: String, b: String, bOld: String, bNew: String) -> Activity<Counted>:
+  match varSet(vars, a, aOld, aNew):
+    case counted(_): varSet(vars, b, bOld, bNew)
+def varSet(vars: Lists.List<Scenes.Var>, name: String, old: String, value: String) -> Activity<Counted>:
+  if old == value then Counted.counted({}) else if old == "" then varWritten(Plans.Entries.append({item: {name: name, value: value}})) else if value == "" then varWritten(Plans.Entries.removeItem({item: {name: name, value: old}})) else varWritten(Plans.Entries.amendItem({item: {name: name, value: old}, change: {name: name, value: value}}))
+def varWritten(edit: Plans.Entries<Scenes.Var, Scenes.Var>) -> Activity<Counted>:
+  let written(_) = world.write(extend(keep(), {vars: edit}))
+  Counted.counted({})
+# --- the verbs -----------------------------------------------------------------------------------
+# One question opens an entry; its anchor is where it was asked.
+def ask(state: State, input: {anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  adding(state, "ask", 0n, 0n, "", input.anchor, input.text, context)
+def onAsk(state: State, role: String, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  match rowNumbered(state, input.on):
+    case some(r): if r.value.role == "ask" then adding(state, role, input.on, 0n, evidenceWord(input.evidence), input.anchor, input.text, context) else refusing("noEntry", "#{natText(input.on)} is a {r.value.role} on entry {natText(r.value.entry)}, not an entry: a {role} stands on an entry's number", context)
+    case none(_): refusing("noEntry", "No entry numbered {natText(input.on)}; the card lists them", context)
+# A voice: an attempt, a position, a result, carried with its own anchor.
+def voice(state: State, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  onAsk(state, "voice", input, context)
+# A failed attempt: the afternoon the next person is about to repeat.
+def failed(state: State, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  onAsk(state, "failed", input, context)
+# A snag: what nobody has resolved. It stays on the entry whatever answers it.
+def snag(state: State, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  onAsk(state, "snag", input, context)
+# A row on a row: a dispute or a re-check names the row it answers, once per hand a row, with its own anchor.
+def onRow(state: State, role: String, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  match rowNumbered(state, input.on):
+    case some(r): if Lists.any(allRows(state), fn(x: Row) -> Bool: x.role == role && x.target == input.on && x.author == context.principal) then refusing("again", "You have a {role} on #{natText(input.on)} already; it stands. Another hand's {role}, or a re-check, answers it", context) else adding(state, role, r.value.entry, input.on, evidenceWord(input.evidence), input.anchor, input.text, context)
+    case none(_): refusing("noRow", "No row numbered {natText(input.on)}", context)
+def dispute(state: State, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  onRow(state, "dispute", input, context)
+def recheck(state: State, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  onRow(state, "recheck", input, context)
+# A resolution links to a snag and closes nothing: the snag stays, the resolution beside it.
+def resolve(state: State, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  match rowNumbered(state, input.on):
+    case some(r): if r.value.role == "snag" then onRow(state, "resolve", input, context) else refusing("notSnag", "#{natText(input.on)} is a {r.value.role}; a resolution answers a snag", context)
+    case none(_): refusing("noRow", "No row numbered {natText(input.on)}", context)
+# RECORD's own line and a grown verb's gesture would write rows with no anchor: neither writes here.
+def write(state: State, input: {text: String}, context: Abi.Context) -> Activity<Nat>:
+  Card.refusing(0n, {clause: "anchor", reading: "A register takes no bare line: every row is a question or a voice with its anchor. delvetalk {Card.called(context, \"register\")} ?"}, context)
+def act(state: State, input: {verb: String, text: String}, context: Abi.Context) -> Activity<Nat>:
+  Card.refusing(0n, {clause: "anchor", reading: "A grown verb writes a gesture with no anchor; a register takes rows with anchors only"}, context)
+def lines(state: State, input: {from: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.lines(state, {from: input.from}, context)
+def door(state: State, input: {label: String, to: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.door(state, {label: input.label, to: input.to}, context)
+def undoor(state: State, input: {label: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.undoor(state, {label: input.label}, context)
+def methods() -> Lists.List<String>:
+  Text.words("~made ~forecast ~act")
+def actions(state: State, context: Abi.Context) -> Lists.List<String>:
+  Lists.concat(Text.words("ask voice failed snag dispute recheck resolve trail more unchecked lines"), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
+# --- reading: an entry as topography --------------------------------------------------------------
+def entry(state: State, context: Abi.Context, line: Line) -> Document.Document:
+  let r = rowOf(line)
+  if r.role == "ask" then Document.text("#{natText(r.n)} {r.words} ({Card.shown(r.author, r.handle, context)}; {tally(state, r.n)})\n") else Document.text("")
+def tallyOf(rows: Lists.List<Row>, role: String) -> Nat:
+  Lists.length(Lists.filter(rows, fn(x: Row) -> Bool: x.role == role))
+def kinds(rows: Lists.List<Row>, evidence: String) -> Nat:
+  Lists.length(Lists.filter(rows, fn(x: Row) -> Bool: x.evidence == evidence))
+def tally(state: State, n: Nat) -> String:
+  let rows = Lists.filter(allRows(state), fn(x: Row) -> Bool: x.entry == n && x.role != "ask")
+  let wants = if holds(varValue(state.vars, "unchecked"), n) then "; wants a check" else ""
+  "rows {natText(Lists.length(rows))} (checked {natText(kinds(rows, \"checked\"))}, testimony {natText(kinds(rows, \"testimony\"))}, lead {natText(kinds(rows, \"lead\"))}); snags {natText(tallyOf(rows, \"snag\"))}, disputes {natText(tallyOf(rows, \"dispute\"))}{wants}"
+def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
+  let asks = Lists.length(Lists.filter(allRows(state), fn(x: Row) -> Bool: x.role == "ask"))
+  Document.text("A COMMONPLACE REGISTER, begun by {Card.shown(state.maker, state.makerHandle, context)}{Card.mine(state.maker, context)}: questions {natText(asks)}, rows {natText(state.next - 1n)}. A row is only added, with its anchor and its evidence kind (checked, testimony, lead), fixed when written; nothing is edited or dropped. Follow one back to every voice: delvetalk {id} trail / n: <number>. Ask: delvetalk {id} ask / anchor: <where it was asked> / text: <one question>\n")
+# The card lists the questions: RECORD's numbered list over the ask rows alone.
+def renderFrom(state: State, context: Abi.Context, from: Nat, used: Nat) -> Document.Document:
+  let id = Card.called(context, "register")
+  let head = Document.concat(headLine(state, context, id), Document.text(Super.credit(state)))
+  let doors = Card.doorLines(state.cites)
+  let left = Card.left(context, used + Document.size(head) + Document.size(Document.Document.sequence({items: doors})))
+  let room = if left < Card.budget() then left else Card.budget()
+  let asks = Lists.filter(Relations.order(state.lines, fn(l: Line) -> Nat: l.n), fn(l: Line) -> Bool: l.verb == "ask" && l.n >= from)
+  Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(Super.numbered(state, context, asks, 8n, if room < left then room else left, id), doors)})})
+def kindLine(r: Row) -> String:
+  if r.role == "ask" then "QUESTION" else if r.role == "snag" then "SNAG {r.evidence}" else if r.role == "failed" then "FAILED ATTEMPT {r.evidence}" else "{r.role} {r.evidence}"
+# A snag's standing, said from its resolutions and never instead of them: open; a resolution offered (its
+# kinds); or resolved by a checked row, which still leaves the snag on the page.
+def standing(rows: Lists.List<Row>, r: Row) -> String:
+  let res = Lists.filter(rows, fn(x: Row) -> Bool: x.role == "resolve" && x.target == r.n)
+  if r.role != "snag" then "" else if Lists.length(res) == 0n then " (OPEN)" else if Lists.any(res, fn(x: Row) -> Bool: x.evidence == "checked") then " (resolved by a checked row; it stays)" else " (a resolution offered, unchecked; open)"
+def rowLines(context: Abi.Context, rows: Lists.List<Row>, r: Row, depth: Nat) -> String:
+  let indent = if depth == 0n then "" else textTake("            ", depth * 3n)
+  let on = if r.target == 0n then "" else " on #{natText(r.target)}"
+  "{indent}#{natText(r.n)} {kindLine(r)}{on}{standing(rows, r)}: {Card.shown(r.author, r.handle, context)}, written after journal entry {natText(r.at)}\n{indent}   anchor ({anchorKind(r.anchor)}): {r.anchor}\n{indent}   {r.words}\n"
+# The rows of an entry in the order written, each followed by the rows that answer it (disputes, re-checks,
+# resolutions), so a reader walks back to every voice; never a summary of them.
+def walk(rows: Lists.List<Row>, r: Row, depth: Nat) -> Lists.List<Placed>:
+  let answers = Lists.filter(rows, fn(x: Row) -> Bool: x.target == r.n)
+  Lists.List.cons({head: {row: r, depth: depth}, tail: Lists.fold(answers, Lists.List.nil(), fn(a: Row) -> Lists.List<Placed> -> Lists.List<Placed>: fn(rest: Lists.List<Placed>) -> Lists.List<Placed>: Lists.concat(walk(rows, a, if depth >= 3n then 3n else depth + 1n), rest))})
+def ordered(rows: Lists.List<Row>) -> Lists.List<Placed>:
+  Lists.fold(Lists.filter(rows, fn(x: Row) -> Bool: x.target == 0n), Lists.List.nil(), fn(a: Row) -> Lists.List<Placed> -> Lists.List<Placed>: fn(rest: Lists.List<Placed>) -> Lists.List<Placed>: Lists.concat(walk(rows, a, 0n), rest))
+# One page of the walk, from position `from` (1 is the question): rows are shown whole while they fit, at least
+# one, and the footer names the position the next page starts at, which the walk keeps whatever is written later.
+def pageRows(context: Abi.Context, rows: Lists.List<Row>, walked: Lists.List<Placed>, from: Nat, room: Nat, shown: Nat, n: Nat, id: String, at: Nat) -> String:
+  match walked:
+    case nil(_): ""
+    case cons(c): if at < from then pageRows(context, rows, c.tail, from, room, shown, n, id, at + 1n) else pageLine(context, rows, rowLines(context, rows, c.head.row, c.head.depth), c.tail, room, shown, n, id, at)
+def pageLine(context: Abi.Context, rows: Lists.List<Row>, text: String, rest: Lists.List<Placed>, room: Nat, shown: Nat, n: Nat, id: String, at: Nat) -> String:
+  let footer = "… {natText(Lists.length(rest) + 1n)} more rows, in the walk's order: delvetalk {id} more / n: {natText(n)} / from: {natText(at)}\n"
+  if shown > 0n && textLength(text) + textLength(footer) > room then footer else "{text}{pageRows(context, rows, rest, 0n, if textLength(text) >= room then 0n else room - textLength(text), shown + 1n, n, id, at + 1n)}"
+def entryPage(state: State, context: Abi.Context, n: Nat, from: Nat) -> Document.Document:
+  let id = Card.called(context, "register")
+  let rows = Lists.filter(allRows(state), fn(x: Row) -> Bool: x.entry == n)
+  let wants = if holds(varValue(state.vars, "unchecked"), n) then "It rests on testimony and leads alone; it wants a check: a row whose evidence is checked, with an anchor that names bytes.\n" else ""
+  let head = "ENTRY {natText(n)} of {id}: {tally(state, n)}. Every row as written, with whose it is, the journal entry it was written after (its own receipt is the next) and its anchor; answers follow what they answer.\n{wants}"
+  let room = Card.left(context, textLength(head) + 200n)
+  Document.text("{head}{pageRows(context, rows, ordered(rows), from, room, 0n, n, id, 1n)}")
+def trail(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
+  match rowNumbered(state, input.n):
+    case some(r): if r.value.role == "ask" then Card.tell(Card.Replied.done({action: "trail"}), entryPage(state, context, input.n, 1n)) else refusing("noEntry", "#{natText(input.n)} is a {r.value.role} on entry {natText(r.value.entry)}", context)
+    case none(_): refusing("noEntry", "No entry numbered {natText(input.n)}", context)
+def more(state: State, input: {n: Nat, from: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.tell(Card.Replied.done({action: "more"}), entryPage(state, context, input.n, input.from))
+def unchecked(state: State, context: Abi.Context) -> Activity<Card.Replied>:
+  let waiting = varValue(state.vars, "unchecked")
+  let id = Card.called(context, "register")
+  Card.tell(Card.Replied.done({action: "unchecked"}), Document.text(if waiting == "" then "No entry rests on testimony or a lead alone.\n" else "Entries resting on testimony and leads alone:{waiting}\nCheck one: delvetalk {id} recheck / on: <a row> / evidence: checked / anchor: <bytes: a strong ref, CID, receipt, entry N or <object> v<N>> / text: <what you checked>\n"))

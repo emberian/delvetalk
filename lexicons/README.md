@@ -2,16 +2,17 @@
 
 Public records and per-reader queries for DelveTalk (`docs/REPO.md`), at
 `online/fg-goose/gsb/<name>.json`. Each public record has `$type` and a CID hashing its value.
-Projection values are the host's untagged replies. `getProjection` contains their six definitions and
-one shared envelope; `listProjections` references that envelope. `kind` selects the value's required fields.
+Host projection values are untagged replies. Live card/page/index/answer projections use the mirror's
+tagged posting-record schemas. `getProjection` contains the host definitions, live schema references and
+one shared envelope; `listProjections` references it. `kind` selects the value's required fields.
 
-| Served record | Key | Source |
+| Record schema | Key | Repository or live source |
 | --- | --- | --- |
 | `online.fg-goose.gsb.entry` | rev (TID) | height and entry hash as a link; the signed MST's one collection |
-| `online.fg-goose.gsb.card` | object id, `/` as `~` | `mirror.card_record`: public exact card, wants, doors |
-| `online.fg-goose.gsb.page` | page name | public library pages |
-| `online.fg-goose.gsb.index` | `self` | journal-derived public manifest with height and card versions; never names a head |
-| `online.fg-goose.gsb.answer` | `<did>.<rkey>` or `xrpc.<iss>.<intent hash>` | bridge/front anonymous answer, required tagged request strongRef or XRPC provenance |
+| `online.fg-goose.gsb.card` | object id, `/` as `~` | posting account record; live public projection from `mirror.card_record` |
+| `online.fg-goose.gsb.page` | page name | posting account record; live public library projection |
+| `online.fg-goose.gsb.index` | `self` | posting account record; live manifest projection with height and card versions; never names a head |
+| `online.fg-goose.gsb.answer` | `<did>.<rkey>` or `xrpc.<iss>.<intent hash>` | posting account record; live bridge/front answer projection with request strongRef or XRPC provenance |
 | `online.fg-goose.gsb.checkpoint` | `self` | mirror's `{did, rev, commit, height}` from the signed front before host reads; posting account only, never the did:web façade or signed tree |
 
 | Projection kind | Key | `of` | Host source |
@@ -22,11 +23,16 @@ one shared envelope; `listProjections` references that envelope. `kind` selects 
 | `publication` | publication id | retaining entry hash | world-publications |
 | `grant` | grant id | installing entry hash | world-grants |
 | `law` | `<id, / as ~>.<clause>` | absent | world-object.laws |
+| `card` | object id, `/` as `~` | absent | public mirror renderer |
+| `page` | page name | absent | public library pages, shelf order |
+| `index` | `self` | absent | public mirror manifest |
+| `answer` | answer key | absent | public bridge/front answer files |
 
 `getProjection?kind&key&cid?` returns `{kind, key, of?, value, signed?}`. `of` is the CID of the thing
 projected, not of `value`; `cid` filters it. `listProjections?kind&limit&cursor&reverse` returns
-`{projections: [...], cursor?}`. No `$type` is added to a projection value. Queries read under the front's
-authenticated principal (PUBLIC anonymously). A receipt's `signed` points to the signed `entry/<rev>`
+`{projections: [...], cursor?}`. Host values have no `$type`; live kinds retain their posting-record `$type`.
+Host queries read under the front's authenticated principal (PUBLIC anonymously); live kinds always read
+as PUBLIC and confer no world repository membership. A receipt's `signed` points to the signed `entry/<rev>`
 record when present in the current tree; that is the path `sync.getRecord` proves.
 
 Object ids map to keys by `/` → `~`, then a dot and version or clause. The host creates ids only in
@@ -35,9 +41,9 @@ digests and pending sends appear only inside an entry when the host lets its pri
 they have no collections. CIDs inside host replies are strings, as the journal stores them. The signed
 entry record's `entry` is a DAG-CBOR link; the journal block keeps its own bytes without `$type`.
 
-Journal-derived strongRef targets use the canonical did:web URI (ATPROTO §1). The mirror's checkpoint + index map
-a copy by collection and unchanged rkey; equal CIDs verify the bytes against that repository, without retargeting
-the reference. Book and paint must retain their cited versions under immutable versioned keys when built.
+World strongRef targets use actual signed MST paths (`entry` today). Live card/page/index/answer targets
+must name actual records in the posting account. Checkpoint and index describe source provenance without
+proving world membership. Book and paint must retain cited versions under immutable versioned keys when built.
 
 ## Acting and sessions (docs/ATPROTO.md)
 
@@ -45,8 +51,8 @@ the reference. Book and paint must retain their cited versions under immutable v
 | --- | --- | --- | --- |
 | `online.fg-goose.gsb.defs` | defs | call, planCall, pin, moved, outcome, receipt, version, trace, answerView, previewView | n/a |
 | `online.fg-goose.gsb.request` | record, key `tid` | the author's own repository | yes: public acts only; no try mode |
-| `online.fg-goose.gsb.answer` | record, request or XRPC key | public bridge/front answer files, served by the front and copied by the mirror; signed paths planned in L3 | yes |
-| `online.fg-goose.gsb.paint` | record, key `<object, / as ~>.<version>` | façade and posting account, outside the signed tree | yes |
+| `online.fg-goose.gsb.answer` | record schema, request or XRPC key | public files projected by the front, written as records by the mirror; world signed paths planned in L3 | yes |
+| `online.fg-goose.gsb.paint` | planned record, key `<object, / as ~>.<version>` | posting account, outside the world signed tree | yes |
 | `online.fg-goose.gsb.act`, `.try`, `.plan` | procedure (built, L5) | POST `/xrpc/` under service auth (bare service DID or `#delvetalk` audience) | the response is the caller's; a durable-world act's public projection becomes an `answer`; scratch turns and previews write no answer |
 | `online.fg-goose.gsb.getEntry` | query, CAR out (built, L5) | service auth; the entry's principal only; one entry block rooted at its CID | no |
 | `online.fg-goose.gsb.openSession`, `.getSession`, `.listSessionRecords` | procedure, queries (built, L6) | method-bound service auth; the holder is `iss`, judged by the host | no: returned, never written |

@@ -7,10 +7,16 @@ Real k256/p256 signatures; offline DID documents and a fake host, no Lean proces
 import base64
 import concurrent.futures
 import http.client
+from functools import partial
 import json
+import os
+import stat
 import tempfile
+import threading
 import time
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 import urllib.parse
 
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -25,7 +31,7 @@ from transport.atproto.sign import CURVES, Key
 from transport.config import Config
 from transport.http import Front, RATE
 from transport.repo import NS
-from transport.serviceauth import Verifier, MAX_TOKEN
+from transport.serviceauth import Rejected, Verifier, MAX_TOKEN
 from transport.state import State
 
 METHOD = NS + 'getEntry'
@@ -90,6 +96,10 @@ class Tokens:
             sig = sig[:32] + (order - int.from_bytes(sig[32:], 'big')).to_bytes(32, 'big')
         return message.decode() + '.' + base64.urlsafe_b64encode(sig).decode().rstrip('=')
 
+    def verifier(self, **kwargs):
+        return Verifier(self.front.repo.did, self.front.identity.client, self.front.st.serviceauth_ledger,
+                        clock=lambda: self.now[0], limited=self.front.limited, **kwargs)
+
     def access_lines(self, count):
         """Wait for handle_one_request to append after the response bytes arrive."""
         path = self.front.st.access_log
@@ -98,6 +108,190 @@ class Tokens:
                 break
             time.sleep(0.01)
         return path.read_text().splitlines()
+
+
+class Verification(Tokens, unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.now, self.serial = [1000.0], 0
+        self.documents = Documents()
+        self.keys = {did: Key(self.documents.repo(did)['key']) for did in (DID, OTHER)}
+        self.front = SimpleNamespace(st=State(tmp.name, config=Config()), repo=SimpleNamespace(did='did:web:service.example'),
+                                     identity=SimpleNamespace(client=delve.Client(self.documents)),
+                                     hits={}, hits_lock=threading.Lock(), clock=lambda: self.now[0])
+        self.front.limited = partial(Front.limited, self.front)
+        self.front.serviceauth = self.verifier()
+
+    def test_consumed_nonce_survives_a_second_verifier_and_audience_alias(self):
+        token = self.token({'jti': 'restart'})
+        self.assertEqual(self.front.serviceauth.authenticate(token, METHOD, '127.0.0.1'), DID)
+        self.front.serviceauth = self.verifier()
+        with self.assertRaises(Rejected) as e:
+            self.front.serviceauth.authenticate(token, METHOD, '127.0.0.1')
+        self.assertEqual(e.exception.reason, 'replay')
+        alias = self.token({'jti': 'restart', 'aud': self.front.repo.did})
+        with self.assertRaises(Rejected) as e:
+            self.front.serviceauth.authenticate(alias, METHOD, '127.0.0.1')
+        self.assertEqual(e.exception.reason, 'replay')
+
+    def test_two_verifiers_admit_one_copy_and_compact_only_expired_nonces(self):
+        a, b = self.verifier(capacity=2), self.verifier(capacity=2)
+        token = self.token({'exp': 1001})
+        def authenticate(v):
+            try:
+                return v.authenticate(token, METHOD, '127.0.0.1')
+            except Rejected as e:
+                return e.reason
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            self.assertCountEqual(pool.map(authenticate, (a, b)), (DID, 'replay'))
+        live = self.token({'jti': 'live', 'exp': 1200})
+        self.assertEqual(a.authenticate(live, METHOD, '127.0.0.1'), DID)
+        with self.assertRaises(Rejected) as e:
+            b.authenticate(self.token(), METHOD, '127.0.0.1')
+        self.assertEqual(e.exception.reason, 'nonce_capacity')
+        self.now[0] = 1001
+        self.assertEqual(b.authenticate(self.token(), METHOD, '127.0.0.1'), DID)
+        rows = json.loads(self.front.st.serviceauth_ledger.read_text())
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(row[3] > self.now[0] for row in rows))
+        with self.assertRaises(Rejected) as e:
+            a.authenticate(live, METHOD, '127.0.0.1')
+        self.assertEqual(e.exception.reason, 'replay')
+
+    def test_ledger_failure_never_accepts_and_invalid_signature_never_consumes_nonce(self):
+        v = self.verifier()
+        token = self.token({'jti': 'durable'})
+        with mock.patch.object(State, 'write', side_effect=OSError('disk full')):
+            with self.assertRaises(Rejected) as e:
+                v.authenticate(token, METHOD, '127.0.0.1')
+        self.assertEqual(e.exception.reason, 'nonce_store')
+        with self.assertRaises(Rejected) as e:
+            v.authenticate(self.token({'jti': 'durable'}, key=Key.generate()), METHOD, '127.0.0.1')
+        self.assertEqual(e.exception.reason, 'signature')
+        self.assertEqual(self.verifier().authenticate(token, METHOD, '127.0.0.1'), DID)
+
+    def test_stalled_issuer_does_not_block_cached_issuer_and_one_issuer_shares_a_fetch(self):
+        v = self.verifier()
+        self.assertEqual(v.authenticate(self.token(), METHOD, 'warm'), DID)
+        entered, release = threading.Event(), threading.Event()
+        original = self.documents.__call__
+        def gated(method, url, headers, body):
+            if url == PLC + OTHER:
+                entered.set()
+                release.wait(3)
+            return original(method, url, headers, body)
+        v.client.document_transport = gated
+        tokens = [self.token({'iss': OTHER}) for _ in range(8)]
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=9)
+        try:
+            pending = [pool.submit(v.authenticate, token, METHOD, 'cold') for token in tokens]
+            self.assertTrue(entered.wait(1))
+            warm = pool.submit(v.authenticate, self.token(), METHOD, 'warm')
+            self.assertEqual(warm.result(timeout=0.5), DID)
+        finally:
+            release.set()
+            pool.shutdown(wait=True)
+        self.assertEqual([f.result() for f in pending], [OTHER] * 8)
+        self.assertEqual(self.documents.calls.count(PLC + OTHER), 1)
+        self.assertEqual(v.fetches, {})
+        self.assertEqual(self.front.limited('serviceauth:cold', count=False), 1)
+
+    def test_fetch_deadline_and_bounded_pending_table_do_not_accept_late_documents(self):
+        v = self.verifier(document_timeout=0.05, fetch_capacity=1)
+        entered, release = threading.Event(), threading.Event()
+        original = self.documents.__call__
+        def gated(*args):
+            entered.set()
+            release.wait(3)
+            return original(*args)
+        v.client.document_transport = gated
+        try:
+            start = time.monotonic()
+            with self.assertRaises(Rejected) as e:
+                v.authenticate(self.token(), METHOD, 'cold')
+            self.assertEqual(e.exception.reason, 'document')
+            self.assertTrue(entered.is_set())
+            self.assertLess(time.monotonic() - start, 0.5)
+            self.assertEqual(len(v.fetches), 1)
+            with self.assertRaises(Rejected) as e:
+                v.authenticate(self.token({'iss': OTHER}), METHOD, 'cold')
+            self.assertEqual(e.exception.reason, 'document_capacity')
+        finally:
+            release.set()
+        for _ in range(100):
+            with v.lock:
+                if not v.fetches:
+                    break
+            time.sleep(0.01)
+        self.assertEqual(v.fetches, {})
+        self.assertEqual(v.documents, {})
+        self.assertFalse(self.front.st.serviceauth_ledger.exists())
+
+    def test_uncached_sources_are_limited_before_fetch_and_cached_keys_bypass_that_bucket(self):
+        v = self.verifier()
+        self.assertEqual(v.authenticate(self.token(), METHOD, 'noisy'), DID)
+        calls = len(self.documents.calls)
+        for _ in range(RATE - 1):
+            with self.assertRaises(Rejected) as e:
+                v.authenticate(self.token({'iss': 'did:web:missing.example'}), METHOD, 'noisy')
+            self.assertEqual(e.exception.reason, 'document')
+        self.assertEqual(len(self.documents.calls), calls + RATE - 1)
+        with self.assertRaises(Rejected) as e:
+            v.authenticate(self.token({'iss': OTHER}), METHOD, 'noisy')
+        self.assertEqual((e.exception.reason, e.exception.retry), ('document_rate', 60))
+        self.assertEqual(len(self.documents.calls), calls + RATE - 1)
+        self.assertEqual(v.authenticate(self.token(), METHOD, 'noisy'), DID)
+        self.assertEqual(v.authenticate(self.token({'iss': OTHER}), METHOD, 'other-source'), OTHER)
+        self.now[0] += 60
+        self.assertEqual(v.authenticate(self.token(), METHOD, 'noisy'), DID)
+
+    def test_file_and_directory_fsync_precede_acceptance_and_corrupt_ledgers_fail_closed(self):
+        events = []
+        original_sync, original_replace = os.fsync, os.replace
+        def sync(fd):
+            events.append('directory' if stat.S_ISDIR(os.fstat(fd).st_mode) else 'file')
+            original_sync(fd)
+        def replace(*args):
+            events.append('replace')
+            original_replace(*args)
+        with mock.patch('transport.serviceauth.os.fsync', side_effect=sync), \
+                mock.patch('transport.state.os.replace', side_effect=replace):
+            self.assertEqual(self.verifier().authenticate(self.token(), METHOD, 'source'), DID)
+            events.append('accepted')
+        self.assertEqual(events, ['directory', 'directory', 'file', 'replace', 'directory', 'accepted'])
+        calls = len(self.documents.calls)
+        for bad in ('{', '{}', '[[]]', '[["aud", "iss", "jti", true]]'):
+            with self.subTest(ledger=bad):
+                self.front.st.serviceauth_ledger.write_text(bad)
+                with self.assertRaises(Rejected) as e:
+                    self.verifier().authenticate(self.token(), METHOD, 'source')
+                self.assertEqual(e.exception.reason, 'nonce_store')
+        self.assertEqual(len(self.documents.calls), calls)
+
+    def test_nonce_must_be_utf8_before_resolution_or_ledger_write(self):
+        for nonce in ('\ud800', '\udfff'):
+            with self.subTest(nonce=repr(nonce)), self.assertRaises(Rejected) as e:
+                self.verifier().authenticate(self.token({'jti': nonce}), METHOD, 'source')
+            self.assertEqual(e.exception.reason, 'nonce')
+        self.assertEqual(self.documents.calls, [])
+        self.assertFalse(self.front.st.serviceauth_ledger.exists())
+
+    def test_directory_fsync_failure_refuses_even_after_atomic_replace(self):
+        self.front.st.serviceauth_ledger.parent.mkdir(parents=True)
+        original_sync = os.fsync
+        def sync(fd):
+            if stat.S_ISDIR(os.fstat(fd).st_mode):
+                raise OSError('directory fsync failed')
+            original_sync(fd)
+        token = self.token()
+        with mock.patch('transport.serviceauth.os.fsync', side_effect=sync):
+            with self.assertRaises(Rejected) as e:
+                self.verifier().authenticate(token, METHOD, 'source')
+        self.assertEqual(e.exception.reason, 'nonce_store')
+        with self.assertRaises(Rejected) as e:
+            self.verifier().authenticate(token, METHOD, 'source')
+        self.assertEqual(e.exception.reason, 'replay')
 
 
 class ServiceAuth(Tokens, unittest.TestCase):
@@ -134,6 +328,20 @@ class ServiceAuth(Tokens, unittest.TestCase):
         status, body, _ = self.request(token)
         self.assertEqual((status, body['error']), (401, 'InvalidToken'), body)
         self.assertEqual(self.host.calls, [])
+
+    def test_source_rate_limit_precedes_uncached_resolution_and_leaves_cached_issuer_available(self):
+        self.assertEqual(self.request(self.token())[0], 200)
+        calls = len(self.documents.calls)
+        for _ in range(RATE - 1):
+            self.refused(self.token({'iss': 'did:web:missing.example'}))
+        self.assertEqual(len(self.documents.calls), calls + RATE - 1)
+        status, body, headers = self.request(self.token({'iss': OTHER}))
+        self.assertEqual((status, body['error']), (429, 'RateLimitExceeded'))
+        self.assertIn('Retry-After', headers)
+        self.assertEqual(len(self.documents.calls), calls + RATE - 1)
+        self.assertEqual(self.request(self.token())[0], 200)
+        self.now[0] += 60
+        self.assertEqual(self.request(self.token({'iss': OTHER}))[0], 403)
 
     def test_wrong_audiences_and_methods_claim_types_and_times_never_call_host(self):
         cases = [{'aud': a} for a in (OTHER, self.front.repo.did + '#other', 'did:web:pds.delve.town',
@@ -223,8 +431,8 @@ class ServiceAuth(Tokens, unittest.TestCase):
 
     def test_bare_and_fragment_audiences_accept_the_same_body_and_return_one_hashing_block(self):
         for aud in (self.front.repo.did, self.front.repo.did + '#delvetalk'):
-            self.front.serviceauth = Verifier(self.front.repo.did, self.front.identity.client, clock=lambda: self.now[0])
-            status, data, headers = self.request(self.token({'aud': aud, 'jti': 'same-body', 'exp': 1300, 'iat': 1000}))
+            self.front.serviceauth = self.verifier()
+            status, data, headers = self.request(self.token({'aud': aud, 'jti': 'same-body-' + aud, 'exp': 1300, 'iat': 1000}))
             self.assertEqual(status, 200, data)
             self.assertEqual(headers['Content-Type'], 'application/vnd.ipld.car')
             roots, blocks = read_car(data)
@@ -246,8 +454,7 @@ class ServiceAuth(Tokens, unittest.TestCase):
         self.assertEqual((status, body['error']), (400, 'RecordNotFound'))
 
     def test_replay_is_per_issuer_and_expired_entries_alone_are_pruned_at_capacity(self):
-        self.front.serviceauth = Verifier(self.front.repo.did, self.front.identity.client,
-                                         clock=lambda: self.now[0], capacity=2)
+        self.front.serviceauth = self.verifier(capacity=2)
         first = self.token({'jti': 'shared', 'exp': 1001})
         self.assertEqual(self.request(first)[0], 200)
         self.refused(first)
@@ -290,8 +497,7 @@ class ServiceAuth(Tokens, unittest.TestCase):
         self.refused(self.token({'jti': 'é' * 129}))
 
     def test_document_cache_is_bounded_and_expiry_refetches_without_losing_nonce_custody(self):
-        self.front.serviceauth = Verifier(self.front.repo.did, self.front.identity.client,
-                                         clock=lambda: self.now[0], document_capacity=1)
+        self.front.serviceauth = self.verifier(document_capacity=1)
         first = self.token({'exp': 1200})
         self.assertEqual(self.request(first)[0], 200)
         self.assertEqual(self.request(self.token({'iss': OTHER}))[0], 403)
