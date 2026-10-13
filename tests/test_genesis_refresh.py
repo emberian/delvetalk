@@ -1,5 +1,6 @@
 """Refresh regressions using wire-shaped journals and an in-memory host, without Lean."""
 import copy
+import hashlib
 import json
 import tempfile
 import unittest
@@ -74,11 +75,25 @@ class RefreshHost:
             text = field(request['argument'], 'text')['value'] if request['method'] == 'receive' else ''
             action = text.split('\n', 1)[0].split()[-1] if text else request['method']
             if action == 'make':
-                self.put('kind/station')
+                seed = {f['name']: f['value'] for f in request['argument']['fields']}
+                made = 'kind/' + seed['name']['value']
+                if made in self.objects:
+                    return {'status': 'refused', 'message': 'nameTaken'}
+                self.put(made, **seed)
             elif action == 'place':
-                self.put('station', cites=genesis.lst())
+                fields = dict(line.split(': ', 1) for line in text.splitlines()[1:])
+                if fields['id'] in self.objects:
+                    return {'status': 'refused', 'message': 'nameTaken'}
+                self.put(fields['id'], cites=genesis.lst(), marks=relation())
             elif action == 'stitch':
                 self.wings.add(identity)
+                marks = field(held['state']['marks']['payload'], 'items')['items']
+                previous = field(marks[-1], 'name')['value'][14:78] if marks else ''
+                scene_digest = hashlib.sha256((previous + field(request['argument'], 'spween')['value']).encode()).hexdigest()
+                height = len(self.entries) + 1
+                marks.append(record(name=genesis.lab(f'station-scene-{scene_digest}-{height}'),
+                                    who=genesis.lab(request['principal']), handle=genesis.lab(''), at=genesis.nat(height)))
+                held['version'] += 1
             elif action == 'door':
                 fields = dict(line.split(': ', 1) for line in text.splitlines()[1:])
                 held['state']['cites']['items'].append(genesis.door(fields['label'], fields['to'], []))
@@ -169,14 +184,17 @@ class RefreshRegressions(unittest.TestCase):
                 self.assertIn('station', self.host.objects)
                 self.assertTrue(any(r['status'] == 'refused' for r in first), first)
                 again = self.refresh(station=True)
-                self.assertTrue(all(r['status'] == 'refreshed' for r in again), again)
+                self.assertTrue(all(r['status'] == ('current' if r['slot'] == 'scene' else 'refreshed') for r in again), again)
                 self.assertEqual(self.host.wings, {f'refresh-station-wing-{k}' for k in range(1, len(genesis.station_wings()) + 1)})
                 self.assertTrue({obj for obj, _, _ in genesis.STATION_THINGS} | {'station/register'} <= self.host.objects.keys())
-                for obj, dest in (('station', 'porch'), ('porch', 'station')):
+                inhabitants = [dict(fields)['id'] for _, fields, _ in genesis.STATION_INHABITANTS]
+                self.assertTrue({'station/coin', *inhabitants, *('kind/' + name for name in genesis.STATION_KINDS)} <= self.host.objects.keys())
+                for obj, destinations in [('station', ['porch'] + inhabitants), ('porch', ['station'])] + [(obj, ['station']) for obj in inhabitants]:
                     doors = self.host.objects[obj]['state']['cites']['items']
-                    self.assertEqual([field(field(d, 'to'), 'object')['value'] for d in doors], [dest])
+                    self.assertEqual([field(field(d, 'to'), 'object')['value'] for d in doors], destinations)
                 admitted = len(self.host.entries)
-                self.assertEqual(self.refresh(station=True), [{'object': 'station', 'slot': 'placed', 'status': 'current'}])
+                self.assertEqual(self.refresh(station=True), [{'object': 'station', 'slot': 'placed', 'status': 'current'},
+                                                            {'object': 'station', 'slot': 'scene', 'status': 'current'}])
                 self.assertEqual(len(self.host.entries), admitted)
 
     def station_manifest(self):

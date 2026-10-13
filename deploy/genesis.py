@@ -344,6 +344,39 @@ def station_wings():
     return [parts[0] + parts[1]] + parts[2:]
 
 
+def station_digest(wings):
+    """The chained SHA-256 of the exact wing texts, as station.stitch keeps in its scene marks."""
+    digest = ''
+    for wing in wings:
+        digest = hashlib.sha256((digest + wing).encode()).hexdigest()
+    return digest
+
+
+def station_restitch(host, opener):
+    """Replace a station's scene when its stitched text differs, by the opener's wing turns."""
+    wings = station_wings()
+    digest = station_digest(wings)
+    state = host.send({'op': 'world-view', 'principal': opener, 'object': 'station'}).get('state') or {}
+    marks = next((f['value'] for f in state.get('fields', []) if f['name'] == 'marks'), {})
+    rows = next((f['value'].get('items', []) for f in marks.get('payload', {}).get('fields', []) if f['name'] == 'items'), [])
+    stamps = [{f['name']: f['value'].get('value', '') for f in row['fields']} for row in rows]
+    stamps = [m for m in stamps if m['name'].startswith('station-scene-')]
+    stitched = max(stamps, key=lambda m: int(m['at']))['name'][14:78] if stamps else None
+    row = {'object': 'station', 'slot': 'scene'}
+    if stitched == digest:
+        return {**row, 'status': 'current'}
+    record = host.send({'op': 'world-object', 'principal': opener, 'object': 'station'}).get('record')
+    if not record:
+        return {**row, 'status': 'absent'}
+    identity = f'refresh-station-restitch-{digest}-{record["version"]}'
+    for k, wing in enumerate(wings, 1):
+        reply = host.send({'op': 'world-turn', 'principal': opener, 'object': 'station', 'method': 'restitch',
+                           'identity': f'{identity}-{k}', 'argument': rec(spween=lab(wing), part=nat(k), wings=nat(len(wings)))})
+        if reply.get('status') != 'admitted':
+            return {**row, **done(reply), 'reading': f'restitch wing {k}'}
+    return {**row, 'status': 'refreshed', 'reading': 'the scene text changed'}
+
+
 def gas_station(host, opener, prefix='genesis'):
     """The all-night station, by the opener's spells after genesis; -> made rows. Stops (Stopped) at a refusal. A carry's
     refresh makes it the same way under `refresh-*` identities (`prefix`), a refresh as any other (`Ops.carryRefresh`);
@@ -361,7 +394,8 @@ def gas_station(host, opener, prefix='genesis'):
                      f'{prefix}-station', 'station', STATION_CALL))
     turned('kind/station place station', made[-1]['reply'])
     for k, wing in enumerate(station_wings(), 1):
-        made.append(said(host, opener, 'station', 'stitch', [('spween', wing)], f'{prefix}-station-wing-{k}'))
+        reply = turn('station', 'stitch', rec(spween=lab(wing)), f'{prefix}-station-wing-{k}')
+        made.append({'object': 'station', 'module': 'station stitch', 'status': reply.get('status'), 'creator': opener, 'reply': reply})
         turned(f'station stitch wing {k}', made[-1]['reply'])
     for thing, name, description in STATION_THINGS + [('station/register', 'a register, open by the till', '')]:
         identity = f'{prefix}-' + thing.replace('/', '-')
@@ -662,7 +696,8 @@ def refresh(host, opener, journals, station=False):
     """Re-writes every slot genesis made to its text today, as the opener: an object's law by one amendment, a kind's
     fields by one write; a town kind the world lacks is made (`refreshed`, reading `made`). With `station` (the config's,
     `DELVETALK_STATION`), an incomplete all-night station is resumed, as `--with-gas-station` makes it at
-    genesis (`gas_station`, one row a step, reading `placed`). -> [{object, slot, status, reading?, reply?}] in genesis's
+    genesis (`gas_station`, one row a step, reading `placed`). An existing station is restitched when its scene
+    digest differs from the shipped wings. -> [{object, slot, status, reading?, reply?}] in genesis's
     order: `refreshed`, `current` (genesis's text already), `left` (the reading says why), `absent`, or the host's
     status for a turn not admitted."""
     gave, today, out = given(journals, opener), texts(opener), rebased(host, opener)
@@ -717,22 +752,27 @@ def refresh(host, opener, journals, station=False):
             continue
         placed = said(host, opener, kind, 'place', carried_fields(host, opener, kind, fields), f'refresh-{obj}-placed', obj)['reply']
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
+    whole, installed = True, False
     if station and station_complete(host, opener):
         out.append({'object': 'station', 'slot': 'placed', 'status': 'current'})
     elif station:
         try:
             out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
                     for m in gas_station(host, opener, 'refresh')]
+            installed = True
             if not station_complete(host, opener):
                 raise Stopped('station installation is incomplete: its objects or doors are absent')
         except Stopped as e:  # a step not admitted: the carry exits 1, naming it
+            whole = False
             out.append({'object': 'station', 'slot': 'placed', 'status': 'refused', 'reading': str(e)})
-    if 'station' in existing(host, opener):  # a town that has the station has its inhabitants
-        try:
-            out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
-                    for m in inhabitants(host, opener, 'refresh')]
-        except Stopped as e:
-            out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
+    if whole and 'station' in existing(host, opener):  # a town that has its station whole has its inhabitants
+        out.append(station_restitch(host, opener))
+        if not installed:
+            try:
+                out += [{'object': m['object'], 'slot': 'placed', 'status': 'refreshed', 'reading': f"placed: {m['module']}"}
+                        for m in inhabitants(host, opener, 'refresh')]
+            except Stopped as e:
+                out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
     return out
 
 

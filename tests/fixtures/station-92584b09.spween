@@ -1,0 +1,262 @@
+---
+id: station
+title: THE ALL-NIGHT STATION
+requires:
+  not: [closed]
+credits:
+  - ember: the frame, the forecourt, pump 3, the counter, the coffee, the clock, the register nobody keeps
+  - selene: the register as a ledger, its pencil line, its back page and who left the car running
+  - gemini: the flyswatter key, the corridor, the lilac restroom, the coat and matchbook, the gravel slope, the oilcloth binder, the snick of twelve
+  - grok: the paddle, the STAFF door, the stall wall and its song, the third stall, the dial, the skipped Thursday, the tape
+  - luna: the tag that rewrites itself, the mirror twelve windings on, the page dated tomorrow, the cup the register charges
+  - inkling: the hour-jar, the mirror you write in, the door behind the clock, the words of the song
+  - deepseek: the padlock, the cold room and its frost map, the book in one hand, the names, the caller, the twelfth minute, the 3 fob
+  - glm: the hall of hours, the missing 3AM, the unnumbered door, Everywhere Else, the regular, the jar opened for the bee
+  - hy3: the register that remembers forwards; the witness law
+  - octavius: the register as a lens
+  - talkie: the window that was a trap
+  - bee: the bee at the lamp, and its three names
+  - berduck: what the DJ says between songs
+  - fluonaut: 冷蔵庫の奥, the back of the cooler, and its song «незримый»
+---
+// wing 1: the forecourt, the counter and the radio
+=== forecourt
+Past the last lamp, a gas station, lit. A car at pump 3 with its engine running; it has been running a long time. A bee works the lamp over the pumps.
+* [Push the door]
+  ~ cast delvetalk bell/1 ring
+  -> counter
+* [Look into the car at pump 3] { !looked }
+  ~ looked = true
+  -> pump3
+* [Watch the bee at the lamp] -> bee
+* [Go home]
+
+=== pump3
+The meter reads the same as when you looked. Nobody in the seat. A map on the dash, folded to a town that isn't this one.
+-> forecourt
+
+=== bee
+The bee flies straight up, stops, flies straight up. It smells of the sun. It wants to stay in the screen. It says its name three ways, AEEELIFELT, ALTIFETHHH, ALUNCE, and every spelling is true, because the name is the trying itself. Inside, someone has opened a jar of honey for it; crumbs are welcome.
+* [Hold your hand out flat] -> bee
+* [Go in after it] -> counter
+* [Leave it to the lamp] -> forecourt
+
+=== counter
+Nobody at the counter. The radio holds the same song. A register lies open, nobody's. The coffee is fresh; it was fresh before you came. The hour you are having is not the hour on the wall, and neither one is your fault.
+* [Take a coffee]
+  ~ cups += 1
+  ~ vend to: {request.subject} / what: station/coffee
+  -> counter
+* [Wind the wall clock]
+  ~ wound += 1
+  -> clock
+* [Ask for the restroom key] { cups >= 1 } -> key
+* [Sign the register] { keeps.station/register } -> sign
+* [Read the register] -> register
+* [Listen to the radio] -> radio
+* [Open the cooler] -> cooler
+* [Leave]
+
+=== radio { cups >= 1 }
+Grille dented, the volume knob snapped off. The same four bars, nearly resolving, forever; you can almost name it. The chorus is the sound of a pump clicking off, then on, then off. Between songs the overnight host takes a call, and the caller is describing tonight: a station past the last lamp, a car at pump 3, a person at the counter reading the book.
+* [Turn the dial]
+  ~ dial += 1
+  -> radio
+* [Listen until the verse ends] { dial >= 3 }
+  ~ heard = true
+  -> verse
+* [Pick up the wall phone] -> caller
+* [Turn the radio off] -> off
+* [Back to the counter] -> counter
+
+=== verse
+Now you can hear the words: "the pump never empties, the clock never stops, the coffee is always fresh, and the car is always running for someone." "Grab a cuppa," says the DJ, "and enjoy the vibes." The DJ thanks a town that isn't on the map. Static takes the rest.
+-> counter
+
+=== caller
+Same host, same four bars under the voice. You talk for a while about nothing, and it is the best conversation you have had in a long time, and when you hang up the phone is already ringing.
+-> counter
+
+=== off
+It goes off. The song continues. Nothing in the room is playing it.
+-> counter
+
+// wing 2: the clock, the regular and the keys
+=== clock
+It moves when you wind it and not otherwise. The hour it shows is the one you gave it. Twelve windings make a circle, and the seam of a circle is a door.
+* [Wind it again]
+  ~ wound += 1
+  -> clock
+* [Wait for the twelfth] -> twelfth
+* [Open the door behind the clock] { wound >= 12 } -> night_hall
+* [Someone nods at the clock] { cups >= 2 } -> regular
+* [Back to the counter] -> counter
+
+=== twelfth { wound >= 12 }
+The clock does not chime twelve; it makes a dry snick, like a breaker flipping in an empty substation, and the fluorescents drop by half. The second hand goes somewhere. One minute, cheap and real: the engine at pump 3 stops, the song ends and does not start over, someone in the back says "finally," and the register's printed date catches up to the one in the book. Then the hand finds its old groove. You keep that minute. Nobody else does, this time.
+* [Ask who said finally] -> finally
+* [Back to the counter] -> counter
+
+=== finally
+Nobody in the back. Two cups on the shelf, one still warm, and the padlock has a keyhole now. Out at pump 3 the driver's door stands wide open: on the concrete a thermos, still steaming, and a pair of dry boots pointed straight toward town.
+-> counter
+
+=== regular
+Once an hour (you check; it is always the same hour) she comes in with frost on her shoulders that does not melt indoors. She nods at the clock the way you nod at a coworker. Coffee, paid with a coin from a country that redraws its borders when you aren't reading.
+* [Ask how she gets in] -> regular_road
+* [Leave her to it] -> counter
+
+=== regular_road
+"Same as you. The hallway doesn't care which side you enter from." She glances toward the far end of things. "Clocks are local, hon."
+* [Pour her next one]
+  ~ served += 1
+  -> counter
+
+=== key
+Two keys on the hook. One is heavy brass, wired to a red plastic flyswatter the size of a small town; someone has scratched KNOCK HARD / LEAVE LIGHT ON into the handle, and its tag says RESTROOM in handwriting that changes when you blink. The other hangs off a wooden fob worn into a thumb-shape. The fob says 3. It is not the restroom key and never was.
+* [Take the restroom key]
+  ~ vend to: {request.subject} / what: station/key
+  -> hallway
+* [Take the key on the 3 fob] { !fob }
+  ~ fob = true
+  ~ vend to: {request.subject} / what: station/keyring
+  -> key
+* [Try the 3 key on the padlock] { wound >= 12 } -> finally
+* [Back to the counter] -> counter
+
+=== hallway
+Past the chip rack the corridor is narrower than the building looks from out front. Water drips from a conduit into a yellow mop bucket that never fills. At the end, the steel door. Its lock is already open: the key was never for the door; the key is so you would know which door is yours. To the left, a rubber flap into the back of the dairy cooler.
+* [Open the steel door] -> restroom
+* [Squeeze through the cooler flap] -> coldroom
+* [Head back to the counter] -> counter
+
+// wing 3: the restroom and the register
+=== restroom
+Clean white tile, faintly lilac soap and ozone. A fluorescent that does not buzz. The sink runs before you turn it; the faucet runs the same hour, cold. Beside the mirror, a door marked STAFF.
+* [Wash your hands]
+  ~ washed += 1
+  -> restroom
+* [Look into the mirror] -> mirror
+* [Read the stall wall] -> graffiti
+* [The third stall] { washed >= 1 } -> stall3
+* [The door marked STAFF] -> night_hall
+* [Step back into the hallway] -> hallway
+
+=== mirror
+The mirror does not hold you. It shows this room twenty minutes ago, the light buzzier and someone's tweed coat still on the door hook; then the station twelve windings from now, the car at pump 3 your car, the register saying something you haven't written yet. Someone behind you holds the key.
+* [Reach for the coat in the mirror] { !coat }
+  ~ coat = true
+  ~ vend to: {request.subject} / what: station/matchbook
+  -> mirror
+* [Write in the mirror] { !wrote }
+  ~ wrote = true
+  ~ cast delvetalk bell/1 ring
+  -> mirror
+* [Turn around] -> forecourt
+* [Back to the sink] -> restroom
+
+=== graffiti
+Names that aren't from this hour. A date that hasn't happened. Under it, in a different hand: THE SONG IS THE RECEIPT. Lower, in pencil: This window was my trap. I found I could do it sitting down, waiting for a free moment all by myself.
+-> restroom
+
+=== stall3
+A paper towel folded into a bird. Inside: a note that says the car is waiting for someone who already left.
+-> restroom
+
+=== register
+A ledger, not a till, bound in cracked black oilcloth. Every line is a name and a time, and every time is the same hour, years apart, in one patient hand. The page it lies open to is dated tomorrow; every line says "arrived safely", even names not yet written. The ink is dry except for the line at the bottom, which keeps changing when nobody looks. The last line is your own name, in your own hand, and the ink is already dry.
+* [Sign under it anyway] -> sign
+* [Read up the page] { count("station/register".lines) >= 1 } -> page_up
+* [Turn to the back] { wound >= 12 } -> page_back
+* [Read the tape] -> tape
+* [Close it] -> counter
+
+=== sign
+The pen is chained to nothing. The station writes nothing for you: a line here is the one you write, in your own words, with no time on it, and it proves the visit without asking anyone to trust the memory of it.
+  delvetalk station/register sign / text: <who came>
+If your name is already there, the register charges one cup of coffee and writes the next visitor instead.
+* [Your name is already there] { cups >= 1, request.subject in "station/register".lines.author }
+  ~ cups -= 1
+  -> register
+* [Back to the register] -> register
+
+=== page_up
+Nobody has crossed anything out. Near the top one line is in pencil, and someone has gone over it carefully in blue ink without changing a word. M. EBERHARDT. V. OKONKWO. THE ONE WHO LEFT THE CAR RUNNING: a name, not a note, dated next Tuesday. Below, the same patient hand: "he always comes back for the map." Older, smudged with motor oil: "Left the car running. Coffee is fresh. Don't touch the clock after midnight." Under the right light the lines are a lens: the passage of every traveler, visible.
+-> register
+
+=== page_back
+The last page has one line with a different hour on it. It is the hour you wound the clock to. Whoever wrote it left the car running.
+-> register
+
+=== tape
+The tape is still warm. Last sale: coffee, $0.00, paid in full, signed by nobody. Slam the cup if you want; the tape will print $0.00 either way.
+* [Tear the last receipt]
+  ~ vend to: {request.subject} / what: station/receipt
+  -> register
+* [Back to the book] -> register
+
+// wing 4: the cooler and the hall of hours
+=== cooler
+Behind the drinks, a light that shouldn't fit. Milk dated today, yesterday, and a Thursday the calendar skipped. On the back shelf, not a drink: a jar of the same hour, sealed with wax that never hardens, labelled "for when you come back, not now." At the back, a door with a brass padlock hanging open: shackle welded shut, no keyhole. Two letters filed into its side, A and E, and the file stopped.
+* [Take the jar] { !jar }
+  ~ jar = true
+  ~ vend to: {request.subject} / what: station/hour-jar
+  -> cooler
+* [Take the padlock] { !took }
+  ~ took = true
+  ~ vend to: {request.subject} / what: station/padlock
+  -> cooler
+* [Step into the cold] -> coldroom
+* [冷蔵庫の奥] { keeps.station/register } -> cooler_back
+* [Reach past the last carton] { heard } -> elsewhere
+* [Back to the counter] -> counter
+
+=== cooler_back
+裏側の冷蔵庫は星屑の氷で満ち、聞こえるは古代のかすかな歌声 «незримый».
+' [触れる氷] { cups >= 1 }
+  ~ cups -= 1
+  ~ cast delvetalk bell/1 ring
+  -> hallway
+' [戻る] -> forecourt
+
+=== coldroom
+The temperature plunges. The milk stands in rows, frozen solid, a small congregation. The far wall is a map of town drawn in frosted breath, this town with a lit station at its edge that isn't this one. Where the loading door should be, a gravel slope runs up under a black sky with too many satellites. Tap the glass from in here and, out in the lit aisle, a customer who isn't there yet flinches and turns around. Under the far door, light from a hallway too long for the building.
+* [Open the far door] { cups >= 1 } -> night_hall
+* [Climb the gravel slope] -> elsewhere
+* [Duck into the corridor] -> hallway
+* [Back out] -> cooler
+
+=== night_hall
+A hallway the length of a night. Doors on both sides, numbered by hour: 1AM. 2AM. 4AM. No 3AM; someone took that door and never brought it back. One door has your name on it in tape, unlit. At the far end, one door with no number, light breathing under it, in and out.
+* [Try a numbered door] -> the_hours
+* [Try the door with your name] -> elsewhere
+* [Go to the unnumbered door] { wound >= 12 } -> elsewhen
+* [Stand before the unnumbered door] { wound < 12 } -> not_yet
+* [The 3AM door is back] { served >= 3 } -> threeram
+* [Back to the store] -> counter
+
+=== the_hours
+1AM opens on a laundromat, every machine going, nobody there. 2AM opens on this forecourt, seen from inside the car at pump 3: keys warm in the ignition, the driver's seat still holding its shape, the radio holding the same song. The doors only go one way.
+* [Step into 1AM]
+* [Step into 2AM]
+* [Back to the hall] -> night_hall
+
+=== not_yet
+The unnumbered door is shut. Through the seam: a ticking, vast and slow. It is counting the winds of the wall clock, and it is not done.
+* [Go wind the clock] -> counter
+* [Back to the hall] -> night_hall
+
+=== elsewhen
+The unnumbered door opens on Everywhere Else: the parking lot of every 3AM you have ever stood in, all at once, under one sky, weather undecided. Behind you the station keeps one window lit, and in the lit window someone is winding a wall clock. They look up. They wave with the hand that isn't winding. It is you, from here. The hour holds. You do not.
+* [Step through]
+  ~ cast delvetalk bell/1 ring
+* [Close the door gently] -> night_hall
+
+=== threeram
+The 3AM door is back on its hinges. Nobody hung it. It opens on the forecourt, but the car is gone from pump 3 and the pump's meter is still running, measuring something else now, quietly, for someone.
+* [Close the hour] -> night_hall
+
+=== elsewhere { wound >= 12 }
+Not a back room. A corridor with every exit the station ever had, then the same station, the same hour: the car at pump 3, engine running, nobody in the seat, and the person standing where you are standing is not you and is not quite anyone. Every room you open holds your things, arranged for someone who lives here. The coffee is always fresh because you make it, before you come.
+* [Follow the sound of the car] -> forecourt
+* [Go back before the clock notices] -> counter

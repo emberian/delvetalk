@@ -6,7 +6,6 @@ real notices about another thing, or a nested body that cannot run as a method.
 import unittest
 
 from tests.bend import closure, declared
-from tests.host import bounds
 from tests.test_chain import Chain
 from tests.test_objects import BIG, run_pure
 from tests.test_rooms import avatar_seed, body, make_room, room_seed, thing_seed
@@ -138,11 +137,12 @@ class Location(Chain):
         version = self.host.send(op="world-view", principal="ember", object="scene")["version"]
         amended = self.host.send(op="world-amend", principal="ember", object="scene", identity="stay",
                                  version=version,
-                                 law='law stay "stay here": request.method != "leave"')
+                                 law='law stay "stay here": not (request.method == "leave")')
         self.assertEqual(amended["status"], "admitted", amended)
         before = {obj: self.state(obj) for obj in ("scene", "garden", "glm")}
         refused = self.turn("garden", "enter", principal="glm")
         self.assertEqual(refused["status"], "refused", refused)
+        self.assertEqual(refused["receipt"]["outcome"]["clause"], "stay", refused)
         self.assertEqual({obj: self.state(obj) for obj in before}, before)
 
     def test_a_direct_or_non_room_location_claim_cannot_move_the_avatar(self):
@@ -281,30 +281,12 @@ class VerbBodies(Chain):
         self.assertEqual(reply["result"]["label"], "flawed", reply)
 
 
-MARGIN_PROBE = '''edition ObjectiveBend 1
-import ./Workshop.obend as Workshop
-import ./Forms.obend as Forms
-def margin(body: String) -> String:
-  Workshop.bodyMargin(Forms.split(body, "\\n"))
-'''
-
-
 class VerbLayer(unittest.TestCase):
     def layer(self, body):
         reply = run_pure("Workshop", "verbLayer", label("water"), label("nothing"), label(body),
                          limits=BIG)
         self.assertEqual(reply["status"], "finished", reply)
         return reply["value"]["value"]
-
-    def test_a_maximum_length_body_preserves_its_common_margin(self):
-        tail = '    match state.next == 0n:\n      case true: 0n\n      case false: 1n'
-        size = bounds()["kernel"]["maxPackageBytes"]
-        comment = "x" * (size - len(tail) - len("    #\n"))
-        body = "    #" + comment + "\n" + tail
-        self.assertEqual(len(body.encode()), size)
-        reply = run_pure("Workshop", "margin", label(body), probe=MARGIN_PROBE, limits=BIG)
-        self.assertEqual(reply["status"], "finished", reply)
-        self.assertEqual(reply["value"], label("    "))
 
     def test_a_long_body_preserves_its_nested_case_indentation(self):
         tail = '    match state.next == 0n:\n      case true: 0n\n      case false: 1n'

@@ -262,7 +262,7 @@ class Errand(Reaction):
         self.assertEqual(completion["fired"]["height"], second["receipt"]["height"])
         receipt = self.town.send(op="world-receipt", principal=OPENER, identity=completion["fired"]["id"])
         self.assertIn("nameTaken", str(receipt), receipt)
-        self.assertIn("open", [w["name"] for w in self.town.send(op="world-wants", principal=OPENER, object=errand)["rows"]])
+        self.assertIn("open: a second rain", self.card(self.say(GLM, errand, "")))
 
     def test_an_errand_settles_by_the_hand_that_did_it_and_pays_from_its_maker(self):
         """The opener's errand on kim's bell: done at its second rain, pays a day of the anthology's `admit`. Its `made`
