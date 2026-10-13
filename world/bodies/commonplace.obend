@@ -25,10 +25,10 @@ type Door = Card.Doorway
 def doors(state: State) -> Lists.List<Door>:
   state.cites
 # The card without what changed (a card is pure): what wants a hand, which the host hands it as it
-# hands it the reader (`wanting`, the newest eight the reader may view), then the doors, with the
+# hands it the reader (`wanting`, the daily rotated page this reader may answer), then the doors, with the
 # spell that asks what changed.
-def renderWanting(state: State, context: Abi.Context, wanting: Lists.List<World.Want>) -> Document.Document:
-  Menu.trie(state.cites, Menu.unread("  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n"), Lists.map(wanting, wantLine), context)
+def renderWanting(state: State, context: Abi.Context, wanting: World.WantPage) -> Document.Document:
+  Menu.trie(state.cites, Menu.unread("  delvetalk commonplace since / entry: 0\n  » what changed since that entry, newest first\n"), wantLines(wanting), context)
 # What changed since an entry, over the doors.
 def since(state: State, input: SinceInput, context: Abi.Context) -> Activity<Card.Replied>:
   withChanges(Card.Replied.done({action: "since"}), input.entry, context, state)
@@ -78,13 +78,15 @@ def withChanges(result: Card.Replied, since: Nat, context: Abi.Context, state: S
   match world.changed({since: since, prefix: "", after: ""}):
     case changed(c): wanted(result, Menu.changes(Lists.filter(c.items, fn(i: World.Change) -> Bool: i.object.object != context.object && ownCard(i.object.object) == false)), context, state)
     case denied(_): wanted(result, Menu.changes(Lists.List.nil()), context, state)
-# And what wants a hand (`world.wanting`, the host's index of wants that hold now, newest first),
-# eight at most, each the thing, its want's reading and the spell that answers it: it leads the
-# card, and what changed yields it room (Menu.trie); a world whose host does not answer it shows none.
+# The answerable page rotates daily through the oldest-first wants; held wants for other hands
+# are counted. It leads the card, and what changed yields it room (Menu.trie).
 def wanted(result: Card.Replied, changes: Menu.Changed, context: Abi.Context, state: State) -> Activity<Card.Replied>:
-  match world.wanting({after: 0n, limit: 8n}):
-    case wanting(w): Card.tell(result, Menu.trie(state.cites, changes, Lists.map(w.rows, wantLine), context))
+  match world.wanting({after: 0n, limit: 8n, oldest: true}):
+    case wanting(w): Card.tell(result, Menu.trie(state.cites, changes, wantLines(w), context))
     case refused(_): Card.tell(result, Menu.trie(state.cites, changes, Lists.List.nil(), context))
+def wantLines(page: World.WantPage) -> Lists.List<String>:
+  let held = if page.waiting == 0n then Lists.List::<String>.nil() else Lists.List.cons({head: "{natText(page.waiting)} more wait on other hands\n", tail: Lists.List.nil()})
+  Lists.concat(held, Lists.map(page.rows, wantLine))
 def wantLine(row: World.Want) -> String:
   "{row.object}: {row.reading}\n  {row.asks}\n"
 def doorFor(doors: Lists.List<Door>, word: String) -> Lists.Maybe<Door>:

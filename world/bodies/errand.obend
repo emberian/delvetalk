@@ -24,7 +24,6 @@ import ./Text.obend as Text
 # claim is written; the pay fires at that write as `rule:<errand>:pay:<height>`. A second completion
 # pays nobody. The pay is judged by what it touches; refused, the claim stands and its receipt says
 # why. `repay` replaces or reconstructs the same rule for the recorded claimant.
-# kind/errand's want `open` puts an errand nobody has done on "What wants a hand".
 type State = Super.State
 sum Payment:
   open: {}

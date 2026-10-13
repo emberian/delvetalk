@@ -836,7 +836,7 @@ class Play(InTown):
             self.assertEqual((s, page.count(b'class="paint"')), (200, 0))  # nobody paints: the exact card, unkept, and open
             self.assertIn(b'<details class="card" open><summary>the card</summary>' + frame, page)
         self.host.send({'op': 'world-renders'})  # the worker arrives, and finds both queued
-        paint = 'The night garden lies open under the moon, its beds waiting for a seed.'
+        paint = 'Like moonlight through silk.'
         replied = lambda text: {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {}}
         done = interpret.paint(self.host, lambda req: replied(paint if req['user'].startswith('Strokes:\nWhat it is: garden,') else 'You are welcome here.'))
         self.assertTrue(done['painted'], done)
@@ -844,7 +844,7 @@ class Play(InTown):
                      self.request('GET', '/o/garden')[2]):
             at = page.find(b'<p class="paint">' + html.escape(paint).encode() + b'</p>')
             self.assertTrue(0 <= at < page.find(frame), page[:2000])
-            self.assertIn(b'</p><details class="card"><summary>the card</summary>' + frame, page)  # painted: the card folded, never gone
+            self.assertIn(b'</p><details class="card" open><summary>the card</summary>' + frame, page)  # painted: current status and actions remain visible
         # A card whose paint the host refused (second person, a welcome) shows exact alone.
         s, _, page = self.play('/play/')
         self.assertEqual((s, page.count(b'class="paint"')), (200, 0))
@@ -868,13 +868,13 @@ class Play(InTown):
         self.assertTrue(0 <= told < page.find('<section class="reply">'), page[:3000])
         self.assertIn('<details class="card" open><summary>what it draws on</summary>', page)
         self.assertIn('glm.delve.town (say): the lintel creaked at dusk', page)
-        paint = 'glm.delve.town came in and said “the lintel creaked at dusk”, then left.'
+        paint = 'glm.delve.town said “the lintel creaked at dusk”.'
         replied = lambda text: {'status': 'replied', 'json': None, 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {}}
         done = interpret.paint(self.host, lambda req: replied(paint if 'a telling of porch' in req['user'] else 'A porch.'))
         self.assertTrue(done['painted'], done)
         page = self.request('GET', '/o/porch', headers={'Cookie': self.cookie})[2].decode()
         at = page.find('<section class="telling"><p class="frame">Before you arrived</p><p class="paint">' + html.escape(paint) + '</p>')
-        self.assertTrue(0 <= at < page.find('<details class="card"><summary>the card</summary>'), page[:3000])
+        self.assertTrue(0 <= at < page.find('<details class="card" open><summary>the card</summary>'), page[:3000])
         self.assertIn('<details class="card"><summary>what it draws on</summary>', page)  # painted: the lines folded, never gone
         self.assertNotIn('class="telling"', self.request('GET', '/o/porch')[2].decode())  # nobody signed in: nobody to tell
         self.assertNotIn('class="telling"', self.play('/play/porch')[2].decode())  # a look is not an arrival

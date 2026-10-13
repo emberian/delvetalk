@@ -1,5 +1,5 @@
 """Enchantment (docs/OVERHAUL.md §4): the strokes of a thing, exact data assembled by the host; `Enchant.verify`,
-which admits a paint only when every id, number, handle, spell and quotation in it is a stroke's; `world-render`,
+which expands cited structured facts itself and guards the remaining imagery and quotations; `world-render`,
 which hands the strokes to the one model worker once per version and answers the exact card until a verified paint
 is cached.
 
@@ -32,6 +32,12 @@ GLM, KIM = 'did:plc:glm', 'did:plc:kim'
 KIND_RULES = [{'name': name, 'owner': 'garden/bell/1', 'reading': reading}
               for name, reading in re.findall(r'^rule (\w+) "([^"]*)"', genesis.kind_text('bell'), re.M)]
 YUE = 'the anchor remembers what the garden can\'t; the soil keeps the corrections'
+
+
+def fact_source(town, obj, kind, value=None, **more):
+    facts = town.send(op='world-strokes', principal=KIM, **({'object': obj} if obj else {}), **more)['strokes']['facts']
+    fact = next(f for f in facts if f['kind'] == kind and (value is None or f['value'] == value))
+    return '[[%d]]' % fact['id']
 
 
 class Strokes(unittest.TestCase):
@@ -127,7 +133,7 @@ class Strokes(unittest.TestCase):
             got = self.strokes(obj)
             self.assertEqual(got['strokes'].get('about', ''), '', obj)
             self.assertNotIn('What its kind is', got['text'])
-        paint = 'It lights when its door opens: “a lamp that lights when its door opens”.'
+        paint = 'As said: “a lamp that lights when its door opens”.'
         self.assertEqual(self.town.send(op='world-render-check', principal=KIM, object='lamp/1', text=paint).get('status'), 'verified')
 
     def test_a_past_version_is_historical_and_the_reader_s_reach(self):
@@ -152,7 +158,7 @@ class Strokes(unittest.TestCase):
         self.assertEqual(got['strokes']['coiner'], 'gemini.delve.town')
         self.assertIn("gemini.delve.town coined it first", got['text'])
         self.assertIn("The words it was made with, gemini.delve.town's: name: The Bellfounder's Porch", got['text'])
-        self.assertEqual(self.check('porch', 'gemini.delve.town named it “The Bellfounder\'s Porch”.')['status'], 'verified')
+        self.assertEqual(self.check('porch', 'gemini.delve.town said “The Bellfounder\'s Porch”.')['status'], 'verified')
         self.assertEqual(self.check('porch', 'the town named it “The Bellfounder\'s Porch”.')['clause'], 'attribution')
         self.assertEqual(self.check('porch', 'ember.delve.town named it “The Bellfounder\'s Porch”.')['clause'], 'handles')  # no stroke's
         bell = self.strokes('bell/2')['strokes']  # light-traces has not arrived: the DID stands
@@ -170,7 +176,7 @@ class Strokes(unittest.TestCase):
         self.assertEqual(s['wants'], [{'name': 'third', 'reading': 'a third rain', 'spell': 'delvetalk garden/bell/1 rain / text: <a rain>',
                                        'owner': 'glm.delve.town'}])
         check = lambda text: self.town.send(op='world-render-check', principal=KIM, object=bell, text=text)
-        self.assertEqual(check('It wants a third rain.\ndelvetalk garden/bell/1 rain / text: <a rain>')['status'], 'verified')
+        self.assertEqual(check(fact_source(self.town, bell, 'want', 'third') + '\ndelvetalk garden/bell/1 rain / text: <a rain>')['status'], 'verified')
         self.assertEqual(check('It wants nothing; no third is owed.')['clause'], 'negation')
         third = self.say(KIM, bell, 'delvetalk %s rain / text: the third' % bell, 'rain3')
         s = self.strokes(bell)['strokes']
@@ -195,22 +201,32 @@ class Strokes(unittest.TestCase):
         self.assertTrue(morning['wants'], morning)
         # The live morning of day 20737 painted the open wants under "Answered so far:", read off "answered by: <spell>":
         # a morning's wants are what still wants a hand, the ones `hand morning` lists exact beneath (the longest
-        # waiting first), by their readings, and carry no spell for a paint to list.
+        # waiting first, rotated daily), by their readings, and carry no spell for a paint to list.
         oldest = self.town.send(op='world-wanting', principal=KIM, limit=8, oldest=True)['rows']
-        self.assertEqual([r['since'] for r in oldest], sorted(r['since'] for r in oldest))
+        held = self.town.send(op='world-wanting', principal=KIM)['rows']
+        ordered = sorted(held, key=lambda r: (r['since'], r['object'], r['name']))
+        day = self.town.send(op='world-status')['clock'] // 1440
+        start = day % len(ordered)
+        self.assertEqual(oldest, (ordered[start:] + ordered[:start])[:8])
         self.assertEqual([(w['object'], w['name']) for w in morning['wants']], [(r['object'], r['name']) for r in oldest])
         self.assertEqual([w.get('spell') for w in morning['wants']], [None] * len(oldest))
-        self.assertIn('What still wants a hand, oldest first:', painted['text'])
+        self.assertIn('What still wants a hand, turning daily:', painted['text'])
         self.assertNotIn('answered', painted['text'])
         spelled = self.town.send(op='world-render-check', principal=KIM, morning=True, text='The bell waits for its clapper.\n' + oldest[0]['asks'])
         self.assertEqual((spelled['status'], spelled.get('clause')), ('rejected', 'spells'), spelled)
         self.assertIn(('clapper', genesis.WANTS[0][4]), [(r['name'], r['asks']) for r in self.town.send(op='world-wants', principal=KIM, object='bell/1')['rows']])
         check = lambda text, **more: self.town.send(op='world-render-check', principal=KIM, text=text, **more)
-        self.assertEqual(check('kimik3.delve.town rained on garden/bell/1: “%s”.' % YUE)['status'], 'verified')
+        self.assertEqual(check('kimik3.delve.town said “%s”.' % YUE)['status'], 'verified')
         self.assertEqual(check('Fifty acts today.')['clause'], 'numbers')
-        self.assertEqual(check('Two rains fell on garden/bell/1.')['status'], 'verified')
+        self.assertEqual(check(fact_source(self.town, None, 'count', '2 rain'))['status'], 'verified')
         self.assertEqual(check('Three rains fell on garden/bell/1.')['clause'], 'numbers')
-        self.assertEqual(check('The anthology wants its keeper.', morning=True)['status'], 'verified')
+        want_facts = [f for f in morning['facts'] if f['kind'] == 'want']
+        self.assertEqual([(f['subject'], f['value']) for f in want_facts],
+                         [(w['object'], w['name']) for w in morning['wants']], morning)
+        want = morning['wants'][0]
+        fact = next(f for f in want_facts if (f['subject'], f['value']) == (want['object'], want['name']))
+        got = check('[[%d]]' % fact['id'], morning=True)
+        self.assertEqual((got['status'], got.get('text')), ('verified', fact['clause'] + '.'), got)
         self.assertEqual(check('Nothing wants a hand.', morning=True)['clause'], 'negation')
 
     # Enchant.verify over the town's own strokes (the fixture table is Enchant.lean's `#guard`s).
@@ -234,15 +250,17 @@ class Strokes(unittest.TestCase):
         got = self.check('anthology', line)
         self.assertEqual((got['status'], got['clause']), ('rejected', 'negation'), got)
         self.assertEqual(self.check('anthology', 'hob: ' + line)['clause'], 'heads')
-        self.assertEqual(self.check('anthology', 'No editor; the town keeps it, and line 1 is pending.')['status'], 'verified')
+        self.assertEqual(self.check('anthology', fact_source(self.town, 'anthology', 'keeper'))['status'], 'verified')
 
     def test_a_bell_s_paint_names_only_its_strokes_and_quotes_a_rain_whole(self):
         made = self.strokes('garden/bell/1')['strokes']['made']
-        paint = ('An amber bell for lost moths, made by glm.delve.town in the garden. Two rains have come; '
-                 'kimik3.delve.town\'s says “%s”. It has never rung.\n'
+        paint = (fact_source(self.town, 'garden/bell/1', 'count', '2 rain') +
+                 '\nkimik3.delve.town said “%s”.\n'
                  'delvetalk garden/bell/1 rain / text: <text, 1 to 200 characters>' % YUE)
-        self.assertEqual(self.check('garden/bell/1', paint)['status'], 'verified', self.check('garden/bell/1', paint))
-        self.assertEqual(self.check('garden/bell/1', 'Two rains; at the 7th rain it rings, and the seventh is far.')['status'], 'verified')
+        got = self.check('garden/bell/1', paint)
+        self.assertEqual(got['status'], 'verified', got)
+        self.assertTrue(got['text'].startswith('2 rains.\n'), got)
+        self.assertEqual(self.check('garden/bell/1', 'Two rains; at the 7th rain it rings, and the seventh is far.')['clause'], 'imagery')
         for bad, clause in (('It hangs by garden/bell/9.', 'ids'), ('Three rains: drop 999.', 'numbers'),
                             ('moth.delve.town rained first.', 'handles'), ('delvetalk garden/bell/1 water', 'spells'),
                             ('“the soil keeps every correction”', 'quotes'), ('Nobody rains here.', 'negation'),
@@ -258,8 +276,106 @@ class Strokes(unittest.TestCase):
 
 
 
-GOOD = ('An amber bell for lost moths, made by glm.delve.town. Two rains have come; kimik3.delve.town\'s says “%s”. '
-        'It has never rung.' % YUE)
+class Facts(unittest.TestCase):
+    """Finding 17: token-shaped truth is insufficient evidence for a state proposition."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        env = mock.patch.dict(os.environ, {'DELVETALK_RENDER_CACHE': os.path.join(tmp.name, 'cache')})
+        env.start()
+        self.addCleanup(env.stop)
+        self.town = Town(tmp.name, cleanup=self.addCleanup)
+        self.town.send(op='world-arrive', principal='transport', did=GLM, handle='glm.delve.town')
+        planted = self.town.send(op='world-turn', principal=GLM, object='garden', method='receive', identity='fact-bell',
+                                 argument=record(text=label('delvetalk garden plant / seed: without a clapper / colour: silver'),
+                                                 post=label('at://' + GLM + '/p/fact-bell')))
+        self.assertEqual(planted['status'], 'admitted', planted)
+        self.bell = 'garden/bell/1'
+        strokes = self.town.send(op='world-strokes', principal=GLM, object=self.bell)['strokes']
+        self.assertEqual((strokes['coined'], strokes['maker']), (False, 'glm.delve.town'), strokes)
+
+    def check(self, text):
+        return self.town.send(op='world-render-check', principal=GLM, object=self.bell, text=text)
+
+    def facts(self):
+        return self.town.send(op='world-strokes', principal=GLM, object=self.bell)['strokes']['facts']
+
+    def test_an_uncited_ringing_claim_is_rejected_even_without_forbidden_tokens(self):
+        got = self.check('The bell has rung.')
+        self.assertEqual((got['status'], got.get('clause')), ('rejected', 'imagery'), got)
+        self.assertFalse(any(f['kind'] == 'mark' and f['value'] == 'rung' for f in self.facts()))
+
+    def test_a_present_mark_is_offered_and_its_clause_is_rendered_by_the_host(self):
+        Strokes.say.__func__(self, GLM, self.bell, 'delvetalk %s ring' % self.bell, 'fact-ring')
+        fact = next(f for f in self.facts() if f['kind'] == 'mark' and f['value'] == 'rung')
+        self.assertEqual((fact['subject'], fact['clause']), (self.bell, 'it has rung'))
+        got = self.check('[[%d]]' % fact['id'])
+        self.assertEqual((got['status'], got.get('text')), ('verified', 'it has rung.'), got)
+        self.assertEqual(self.check('The bell has danced. [[%d]]' % fact['id'])['status'], 'rejected')
+
+    def test_ids_are_local_to_this_paints_facts_and_syntax_is_closed(self):
+        unknown = max(f['id'] for f in self.facts()) + 1
+        for text in ('[[%d]]' % unknown, '[[0]]', '[[-1]]', '[[1,]]', '[[1]] extra', '[[1', '[[1]][[1]]'):
+            with self.subTest(text=text):
+                got = self.check(text)
+                self.assertEqual((got['status'], got.get('clause')), ('rejected', 'facts'), got)
+
+    def test_historical_seed_is_quoted_as_words_never_promoted_to_current_state(self):
+        for text in ('The bell is without a clapper.', 'A bell without a clapper.', 'Without a clapper.'):
+            got = self.check(text)
+            self.assertEqual((got['status'], got.get('clause')), ('rejected', 'imagery'), got)
+        quoted = 'glm.delve.town said “without a clapper”.'
+        got = self.check(quoted)
+        self.assertEqual(got['status'], 'verified', got)
+        Strokes.say.__func__(self, GLM, self.bell,
+                             'delvetalk %s grow / name: hang / reading: hangs a clapper' % self.bell, 'fact-hang-grow')
+        Strokes.say.__func__(self, GLM, self.bell,
+                             'delvetalk %s hang / text: a clapper' % self.bell, 'fact-hang')
+        got = self.check(quoted)
+        self.assertEqual(got['status'], 'verified', got)
+        self.assertEqual(self.check('The bell is without a clapper.')['status'], 'rejected')
+
+    def test_the_model_arranges_facts_and_imagery_but_cannot_reword_a_fact(self):
+        facts = self.facts()
+        chosen = [next(f for f in facts if f['kind'] == k) for k in ('location', 'owner')]
+        source = '[[%d,%d]]\nLike moonlight through silk.' % tuple(f['id'] for f in chosen)
+        got = self.check(source)
+        self.assertEqual(got['status'], 'verified', got)
+        self.assertEqual(got['text'], '; '.join(f['clause'] for f in chosen) + '.\nLike moonlight through silk.')
+        for text in ('The bell has been repaired.', 'It is warm.', 'The bell wants a clapper.', 'Rain on silver.'):
+            self.assertEqual(self.check(text)['status'], 'rejected', text)
+        image = 'Like ' + 'a' * 394 + '.'
+        self.assertEqual(len(image), 400)
+        self.assertEqual(self.check(image)['status'], 'verified')
+        self.assertEqual(self.check(image + 'a').get('clause'), 'length')
+        owner = next(f for f in facts if f['kind'] == 'owner')
+        repeated = '[[%s]]' % ','.join([str(owner['id'])] * 30)
+        self.assertLess(len(repeated), 400)
+        self.assertGreater(len('; '.join([owner['clause']] * 30)), 400)
+        self.assertEqual(self.check(repeated).get('clause'), 'length')
+
+    def test_cached_paint_is_canonical_and_never_changes_the_exact_card(self):
+        Strokes.say.__func__(self, GLM, self.bell, 'delvetalk %s ring' % self.bell, 'cache-ring')
+        fact = next(f for f in self.facts() if f['kind'] == 'mark' and f['value'] == 'rung')
+        before = self.town.send(op='world-card', principal=GLM, object=self.bell)['text']
+        height = self.town.send(op='world-status')['height']
+        self.town.send(op='world-renders')
+        queued = self.town.send(op='world-render', principal=GLM, object=self.bell)
+        source = '[[%d]]' % fact['id']
+        done = self.town.send(op='world-render-submit', key=queued['key'], reply=replied(source))
+        self.assertEqual((done['status'], done.get('text')), ('painted', 'it has rung.'), done)
+        self.assertEqual(self.town.send(op='world-render', principal=GLM, object=self.bell)['text'], 'it has rung.')
+        self.town.reopen()
+        self.assertEqual(self.town.send(op='world-render', principal=GLM, object=self.bell)['text'], 'it has rung.')
+        after = self.town.send(op='world-card', principal=GLM, object=self.bell)['text']
+        self.assertEqual(after, before)
+        self.assertIn('rung', after)
+        self.assertIn('delvetalk %s rain' % self.bell, after)
+        self.assertEqual(self.town.send(op='world-status')['height'], height)
+
+
+GOOD = 'Like moonlight through silk.\nkimik3.delve.town said “%s”.' % YUE
 
 
 def replied(text):
@@ -368,11 +484,12 @@ class Render(unittest.TestCase):
         self.assertEqual((got['status'], got['object']), ('pending', ''), got)
         item = next(i for i in self.town.send(op='world-renders')['pending'] if i['key'] == got['key'])
         self.assertTrue(item['request']['user'].startswith('Strokes:\nWhat it is: a day of the town'), item['request']['user'])
-        morning = 'The garden took its rains; kimik3.delve.town wrote “%s”. The anthology waits on its keeper.' % YUE
+        morning = fact_source(self.town, None, 'want', morning=True) + '\nkimik3.delve.town said “%s”.' % YUE
+        expanded = self.town.send(op='world-render-check', principal=KIM, morning=True, text=morning)['text']
         done = interpret.paint(self.town.client, lambda req: replied(morning if 'a day of the town' in req['user'] else GOOD))
         self.assertIn(got['key'], done['painted'], done)
         again = self.town.send(op='world-render', principal=KIM, morning=True)
-        self.assertEqual((again['status'], again['text']), ('painted', morning), again)
+        self.assertEqual((again['status'], again['text']), ('painted', expanded), again)
         # A day nothing was journaled in is not painted.
         self.assertEqual(self.town.send(op='world-render', principal=KIM, day=1)['reason'], 'quiet')
 
@@ -383,13 +500,13 @@ class Render(unittest.TestCase):
         self.assertEqual(got['status'], 'pending', got)
         retried = self.town.send(op='world-status')['renders']['retried']
         garden = lambda req: req['user'].startswith('Strokes:\nWhat it is: garden,')
-        long = 'THE NIGHT GARDEN lies open under the moon. ' * 12
+        long = 'Like moonlight through silk. ' * 20
         done = interpret.paint(self.town.client, lambda req: replied(long if garden(req) else GOOD))
         self.assertIn(got['key'], done['retrying'], done)
         item = next(i for i in self.town.send(op='world-renders')['pending'] if i['key'] == got['key'])
         self.assertIn('The last paint was %d characters and was thrown away' % len(long.strip()), item['request']['user'])
         self.assertEqual(self.town.send(op='world-status')['renders']['retried'], retried + 1)
-        short = 'THE NIGHT GARDEN lies open under the moon.'
+        short = 'Like moonlight through silk.'
         done = interpret.paint(self.town.client, lambda req: replied(short if garden(req) else GOOD))
         self.assertIn(got['key'], done['painted'], done)
         self.assertEqual(self.render('garden')['text'], short)

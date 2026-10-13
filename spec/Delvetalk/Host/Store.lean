@@ -19,6 +19,7 @@ open Delvetalk.Compiler.ObjectiveBendLaw (LawExpr)
 namespace Limits
 -- Shared kernel bounds (ticks, heap, stack, nodes, bytes, data depth, documents, offers) live in Delvetalk/Limits.lean; this host will read them from there.
 def maxObjects : Nat := 10000
+def objectsPerPrincipal : Nat := 128
 def maxObjectIdBytes : Nat := 128
 /-- Spells one interpretation answers as `proposals` (MENU §2.2: the prompt asks for at most three). -/
 def spellsPerReply : Nat := 3
@@ -56,8 +57,10 @@ def cardWanting : Nat := 8
     carried clauses own, inherited, placed; a firing past `rulesPerCommit` is queued, never dropped; rules and
     wants judged after the commit within `clauseTicks`, no roots of the write; a want is journaled when it
     flips by the clock, `advanced` entries carry `wanted`/`unwanted`, or by a write of an object it cites,
-    re-judged for the first `wantReviewed` readers of each written object, `Ops.wantReview`). -/
-def replayEdition : Nat := 13
+    re-judged for the first `wantReviewed` readers of each written object, `Ops.wantReview`); 14:
+    lane/cx-world (a kind's component bodies, source pins, receipts and layer positions in `madeFrom`;
+    reprogram replay replaces those layers through `componentInputs`, retaining unrelated layers). -/
+def replayEdition : Nat := 14
 /-- Model calls one world starts per clock day (1440 units), opener included (docs/OPERATIONS.md §b,
     "Spend caps"): interpretations started plus attempts. `world-settings {modelQuota}` moves it. -/
 def modelQuota : Nat := 2000
@@ -119,10 +122,11 @@ def sendsPerTurn : Nat := 32
     its kind's `under` carries are bounded by `maxLawClauses` in each text. -/
 def rulesPerObject : Nat := 32
 def wantsPerObject : Nat := 32
-/-- Of `rulesPerObject` (and `wantsPerObject`), what one hand other than the thing's owner may hold on it, and
-    what all such hands together may (the rest the owner's alone): a stranger's lines never take the owner's room
-    (docs/review/astra-2026-10-12 world 6). -/
+/-- Rules, wants or grown verbs one hand other than the thing's owner (or the opener) may hold, each separately. -/
 def placedPerHand : Nat := 4
+/-- Of `rulesPerObject` (and `wantsPerObject`), what all other hands together may hold (the rest the owner's
+    alone): a stranger's lines never take the owner's room
+    (docs/review/astra-2026-10-12 world 6). -/
 def placedByOthers : Nat := 24
 /-- What judging one rule's or want's condition may read (`Law.work`), after the commit: past it the rule is
     `unfired budget`, the want does not pose; nothing of it is charged to the write (world 6). -/
@@ -132,6 +136,8 @@ def clauseTicks : Nat := Delvetalk.Bounds.lawTicks / 8
 def wantReviewed : Nat := 64
 /-- Verbs grown on one object (docs/FOUNDATION.md §10: sixteen a thing; `ungrow` makes room). -/
 def verbsPerObject : Nat := 16
+/-- Grown verbs all other hands together may hold: three quarters of the sixteen, leaving four for the owner. -/
+def verbsByOthers : Nat := 12
 /-- A grown verb's reading, in characters: what the verb does, as the grower says it. -/
 def verbReadingMax : Nat := 200
 def verbNameMax : Nat := 32
@@ -208,9 +214,11 @@ def maxOffersBytes : Nat := 65536
 def maxReplyBytes : Nat := 262144
 /-- Nesting of the plain JSON argument of a proposal. -/
 def plainDepth : Nat := 64
-/-- Grants one turn may make, and grants (live or revoked) a world holds. -/
+/-- Grants one turn may make, live grants a world holds, and a resident's share. -/
 def grantsPerTurn : Nat := 8
 def maxGrants : Nat := 4096
+def grantsPerPrincipal : Nat := 64
+def maxGrantTombstones : Nat := 256
 def genesis : String := "".pushn '0' 64
 /-- `publish` Plans one turn may make; bytes of a page title and a section name. -/
 def publishesPerTurn : Nat := 4
@@ -370,6 +378,8 @@ structure Program where
   declares : List String := []
 
 structure Object where
+  /-- The allocation principal at creation, independent of the package's mutable state. -/
+  maker : String := ""
   /-- The object's pin: the CID of its sealed source closure (the artifact's `sourcesSha256`, the
       Canonical CID of its modules in order, library modules included). What the journal binds. -/
   pin : String
@@ -377,6 +387,8 @@ structure Object where
   /-- The law as text, the form it is amended in; `law` is its parse. -/
   lawText : String := ""
   version : Nat
+  /-- The revision of its offers: each placing, reprogram or amendment advances it. -/
+  behaviour : Nat := 0
   /-- Its state as cells (`Turn.StateCells`): the scalar part and each declared relation's rows in
       key order, with the state's CID; `state` is the whole value they make. -/
   cells : Delvetalk.Turn.StateCells
@@ -425,8 +437,8 @@ structure Object where
       declares, each run by its `act`. -/
   verbs : List Verb := []
   /-- Where its code came from (docs/AUTHORING.md §4 credit): the journaled `madeFrom {object, pin,
-      receipt}` of the `make` that made it or the reprogram (`become`) that last laid a kind's body on
-      it; none for code given whole. -/
+      receipt, components?}` of its making or installation. Component rows record each kind's
+      source object, pin, receipt, body and layer position (`at`); none for code given whole. -/
   madeFrom : Option Json := none
 
 /-- The object's whole state, made from its cells when first read. -/
@@ -481,6 +493,35 @@ def Grant.ofJson (j : Json) : Except String Grant := do
            object := ← j.getObjValAs? String "object", method := ← j.getObjValAs? String "method",
            expires := ← j.getObjValAs? Nat "until", fixed := (j.getObjVal? "fixed").toOption,
            uses := (j.getObjValAs? Nat "uses").toOption, reading := (j.getObjValAs? String "reading").toOption.getD "" }
+
+/-- An ended delegation. Its full terms remain in the journal. -/
+structure GrantTombstone where
+  id : String
+  grantor : String
+  holder : String
+  to : String
+  object : String
+  method : String
+  ended : String
+  endedAt : Nat
+  deriving BEq
+
+def GrantTombstone.ofGrant (g : Grant) (ended : String) (height : Nat) : GrantTombstone :=
+  { id := g.id, grantor := g.grantor, holder := g.holder, to := g.to,
+    object := g.object, method := g.method, ended, endedAt := height }
+
+def GrantTombstone.json (g : GrantTombstone) : Json :=
+  Json.mkObj [("id", toJson g.id), ("grantor", toJson g.grantor), ("holder", toJson g.holder),
+    ("to", toJson g.to), ("object", toJson g.object), ("method", toJson g.method),
+    ("ended", toJson g.ended), ("endedAt", toJson g.endedAt)]
+
+def GrantTombstone.ofJson (j : Json) : Except String GrantTombstone := do
+  let ended ← j.getObjValAs? String "ended"
+  unless ["revoked", "expired"].contains ended do throw "unknown grant ending"
+  return { id := ← j.getObjValAs? String "id", grantor := ← j.getObjValAs? String "grantor",
+           holder := ← j.getObjValAs? String "holder", to := ← j.getObjValAs? String "to",
+           object := ← j.getObjValAs? String "object", method := ← j.getObjValAs? String "method",
+           ended, endedAt := ← j.getObjValAs? Nat "endedAt" }
 
 /-- A post transport confirmed (a `posted` entry at `height`): the object it speaks for; when it
     was made for an awaited slot, that slot as `{principal, intent}`; when it carried one of the
@@ -550,10 +591,12 @@ structure Anchor where
   version : Nat := 0
   pin : Nat := 0
   law : Nat := 0
-  /-- The entry naming the CID of its placed rules, wants and verbs (`Ops.placedIn`), 0 for none. -/
+  /-- The entry naming the CID of its placed rules, wants, verbs and behaviour revision (`Ops.placedIn`), 0 for none. -/
   placed : Nat := 0
   /-- The entry setting its read policy (`Ops.readPolicyIn`). -/
   read : Nat := 0
+  /-- The entry that creates or carries its allocation principal. -/
+  maker : Nat := 0
   deriving Inhabited, BEq
 
 /-- The clock hour's counts (`world-status.hour`, docs/ROOT.md §2.3): turns journaled (admitted,
@@ -634,6 +677,7 @@ structure World where
   /-- Memory only: the objects this world may hold (`Limits.maxObjects`, or lower for this process:
       `world-open {maxObjects}`, a scratch world's `Limits.scratchObjects`). -/
   objectBound : Nat := Limits.maxObjects
+  grantBound : Nat := Limits.maxGrants
   /-- Memory only, set per request by `serve`: the other worlds it serves, for reads (`Foreign`). -/
   foreign : Foreign := {}
   /-- Per object, each rule's last firing or refusal to fire, by rule name: `{height, id}` (fired: the
@@ -669,8 +713,10 @@ structure World where
   clock : Nat := 0
   /-- Suspension entries still waiting, in journal order. -/
   suspended : Array Json := #[]
-  /-- Every grant an admitted turn made, by id; a revocation marks it. -/
+  /-- Standing grants, by id; journal recording compacts revoked and expired ones. -/
   grants : Std.HashMap String Grant := {}
+  /-- Oldest first, ordered by ending height then id. Earlier endings live only in the journal. -/
+  grantTombstones : Array GrantTombstone := #[]
   /-- Posts transport confirmed, by AT URI. -/
   posts : Std.HashMap String Post := {}
   /-- The principal that alone moves the clock and confirms posts ("" = anyone), and the

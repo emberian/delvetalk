@@ -49,23 +49,31 @@ Loop for the host's tests; `examples/automatafl/` keeps the table game. Neither 
 A thing is its Bend fixed when written, versioned state, and one text of `law`, `rule` and `want` lines. What every
 card affords without a line of Bend per object is the host's: `?`, and the host spells on any card (`Ops.hostSpells`):
 `rule`, `unrule`, `want`, `unwant`, `grow`, `ungrow` (placings, judged by the card's law as `request.kind == rule`),
-`become` (a kind's body laid over a live thing by `extend`), `adopt` (law, rule and want lines added to a thing's law
+`become` (a kind's stack installed and its followable text cited on a live thing in one turn), `adopt` (law, rule and want lines added to a thing's law
 by `amend`), `lend` (a method lent as a grant, with a reading the holder's card shows), `retire`, `unretire`, `hide`,
 `show`; and the reads `rules`, `wants`, `verbs`. Every package's default law admits `request.kind == rule`, so anyone
-places on anything its law does not close.
+places on anything its law does not close. On a kind, `rule` and `want` with `for: things` amend its `law` state
+text, judged as kind 2 by the kind's own law; `unrule` and `unwant` take the same selector to remove from that
+text. Absent `for:` affects the object itself. `rules` and `wants` name both targets; the owner's `?`
+shows `for:` before `then` or `asks`. A non-kind is refused for `for: things`.
 
 | How | The smallest spell | What it composes |
 | --- | --- | --- |
 | a kind of anything | `delvetalk kinds make / name: lamp / of: record / form: light: text 1..80` | a form, a head, a voice, a law and a body; each instance `under` it |
 | a kind whose instances are kinds | `delvetalk kinds make / name: bells / of: kind` | the registry is itself a kind |
 | a verb nobody gave it | `delvetalk bell/1 grow / name: hang / reading: … / takes: text` | a row in the thing's verb table, credited; using it is `act`, a line with that verb |
-| a reaction on another's thing | `delvetalk tide rule / name: n / when: request.method == "tick" / then: delvetalk me note / text: …` | fires under its writer at the commit that makes it true |
+| a reaction on another's thing | `delvetalk tide rule / name: n / when: request.method == "tick" / then: delvetalk me note / text: …` | fires under its writer at every commit while true |
 | a condition the thing prints | `delvetalk lamp/1 want / name: lit / when: count(new.lines) == 0 / asks: delvetalk lamp/1 write` | the card's wants, the commonplace's "What wants a hand" |
-| a kind laid over an existing thing | `delvetalk <thing> become / kind: bell` | `extend`, judged by its law |
+| a kind laid over an existing thing | `delvetalk <thing> become / kind: kind/bell` | its stack and lineage, and a citation when its state holds followable law text; changed bodies replace their layers, judged by the thing's law |
 | a law mixin | `delvetalk <thing> adopt / law: <text or the id of what holds one>` | `amend`, under the metarule |
 | a behaviour lent | `delvetalk <thing> lend / to: <handle> / method: ring / until: +<n>` | `grant` |
 | a rule with a pay | `delvetalk kind/errand make / asks / on / done / pays` | two rules on `on`, the pay the maker's turn |
 | a clock on the tide | `delvetalk kind/front make / name / fills / segments / move / tide` | a rule on the tide and one on itself |
+
+A rule's `when` is a level condition. `when: changed(count(new.lines where verb == "rain"))` is
+a transition trigger, firing when that count differs between old and new. Its term reads no request facts;
+missing readings are false. Wants read no old state and refuse it. `changed(new.F.COL) by TERM` retains its
+row-column meaning (LAW §8).
 
 A Bend body stays the kind maker's way to give a verb a method; a resident needs none. A grown verb's consequence is
 any rule naming it (`when: request.verb == "water"`), so a declared method and a grown verb are judged the same way.
