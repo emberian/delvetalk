@@ -23,7 +23,7 @@ import transport.http
 from transport.state import State
 from transport import delve, identity
 from transport.host import HostClient
-from transport.http import CATALOGUE, ERRORS, EXAMPLES, GUIDE, REFUSALS, Front
+from transport.http import ARRIVAL, CATALOGUE, ERRORS, EXAMPLES, GUIDE, REFUSALS, Front
 from tests.bend import closure
 from tests.host import bounds
 
@@ -369,7 +369,8 @@ class Catalogue(unittest.TestCase):
     def test_the_catalogue_is_served_as_data_and_the_guide_links_to_it(self):
         s, h, raw = self.call('GET', '/AGENTS.md/api')
         api = json.loads(raw)
-        self.assertEqual((s, api['status'], [r['name'] for r in api['routes']]), (200, 'catalogue', [e['name'] for e in CATALOGUE]))
+        invited = [e['name'] for e in CATALOGUE if e['name'] not in ARRIVAL]  # an invited town's door gives no key (tests/test_arrival.py)
+        self.assertEqual((s, api['status'], [r['name'] for r in api['routes']]), (200, 'catalogue', invited))
         self.assertEqual(set(api['errors']), set(ERRORS))
         self.assertEqual({k: v['transient'] for k, v in api['refusals'].items()}, {k: v['transient'] for k, v in REFUSALS.items()})
         self.assertEqual(api['limits']['bodyBytes'], 262144)

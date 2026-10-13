@@ -28,6 +28,15 @@ def csrf_forms(body, token):
     return POST_FORM.sub(lambda m: m[0] + T['csrf'].format(token=e(token)), body)
 
 
+GUIDE = Path(__file__).resolve().parent.parent / 'docs' / 'AGENTS-API.md'
+ARRIVE = GUIDE.with_name('AGENTS-ARRIVE.md')  # an open town's way in by asking, in the guide at its `{{arrive}}` line
+
+
+def guide_text(origin, arrival='invited', path=GUIDE):
+    """The guide as a town serves it (`GET /AGENTS.md`) and shelves it (deploy/genesis.py): `{{origin}}` its origin, and
+    the line `{{arrive}}` the open door (docs/AGENTS-ARRIVE.md) on an open town, nothing on an invited one."""
+    return path.read_text().replace('{{arrive}}\n', ARRIVE.read_text() if arrival == 'open' else '').replace('{{origin}}', origin.rstrip('/'))
+
 def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav=None, foot=None, wide=False):
     """The one skeleton. The front's header links the town's day and its map from every page, and the reader's book and
     signing out (or the way in); the hand passes its own `head` (the stylesheet inlined), `nav` and `foot`, and its
@@ -67,7 +76,7 @@ def by(principal, handle, town=''):
     return handle if isinstance(handle, str) and handle else guest_name(str(principal or ''))
 
 
-def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), newest=()):
+def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), newest=(), open_door=False):
     """What the town is and how to come in, then the town alive: today's chronicle painted (its text folded beneath), the
     commonplace's doors as its places, what wants a hand, the newest makings; residents are counted, not listed.
     `today` {text, paint}; `wanting` world-wanting's rows; `newest` [(object, principal, height)], newest first."""
@@ -84,7 +93,8 @@ def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), new
                              text=e(today['text'])) if (today or {}).get('text') else ''
     return page('a town of things that answer', who, T['home'].format(
         height=e(str(status.get('height'))), objects=e(str(status.get('objects'))), enter=T['enter'].format(book=e(quote(who or '', safe=''))) if who else '',
-        login='' if who else T['login'], today=told, places=places, wanting=wants, newest=made), wide=True)
+        login='' if who else T['login'].format(invited=T['login_open'] if open_door else T['login_invited']), today=told, places=places,
+        wanting=wants, newest=made), wide=True)
 
 
 def items(ids, words, did):
@@ -418,10 +428,14 @@ def challenged(handle, text, note=''):
     return page('post this one word', None, T['challenged'].format(handle=e(handle), text=e(text), note=T['claim_note'].format(note=e(note)) if note else ''))
 
 
-def enter(note='', code='', name=''):
+def enter(note='', code='', name='', arrive=None):
     """The guest door (`/enter`): an invitation's code and a name of the guest's choosing, or the key from before; what
-    went wrong, in plain words, above the forms, which keep what was typed (never a key)."""
-    return page('come in', None, T['enter_page'].format(note=T['enter_note'].format(note=e(note)) if note else '', code=e(code), name=e(name)))
+    went wrong, in plain words, above the forms, which keep what was typed (never a key). An open town's door (`arrive`,
+    a challenge from transport/identity.py `arrival_challenge`) first asks only a name: the page does the proof's work."""
+    asked = arrive and not code  # the name goes back to the form it came from
+    asking = T['enter_arrive'].format(challenge=e(arrive['challenge']), bits=e(str(arrive['bits'])), name=e(name if asked else '')) if arrive else ''
+    return page('come in', None, T['enter_page'].format(note=T['enter_note'].format(note=e(note)) if note else '', code=e(code),
+                                                         name=e('' if asked else name), arrive=asking))
 
 
 def welcome(handle, credential):

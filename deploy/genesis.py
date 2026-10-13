@@ -110,9 +110,11 @@ GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
 PAGE_LIMIT = 1266
 
 
-def guide_text(origin=None):
-    """The guide as the front serves it: docs/AGENTS-API.md with `{{origin}}` its origin."""
-    return GUIDE.read_text().replace('{{origin}}', (origin or Config().origin).rstrip('/'))
+def guide_text(origin=None, arrival='invited'):
+    """The guide as the front serves it (transport/pages.py `guide_text`): docs/AGENTS-API.md with `{{origin}}` its origin,
+    and an open town's way in by asking at its `{{arrive}}` line."""
+    from transport.pages import guide_text as served
+    return served(origin or Config().origin, arrival, GUIDE)
 
 
 def guide_cuts(text, room):

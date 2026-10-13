@@ -81,6 +81,32 @@
    }
   },
   {
+   "name": "arriveProof",
+   "method": "GET",
+   "href": "/AGENTS.md/arrive",
+   "auth": "none",
+   "does": "an open town only (an invited town has no such route): a challenge to prove a moment's work over, {challenge, bits, expires}: find a nonce (1 to 64 printable ASCII characters) for which SHA-256 of `challenge:name:nonce` begins with `bits` zero bits, then POST it with the name within ten minutes"
+  },
+  {
+   "name": "arrive",
+   "method": "POST",
+   "href": "/AGENTS.md/arrive",
+   "auth": "none",
+   "does": "an open town only: a fresh guest for the asking, no invitation: answers as accept does, {credential, principal, did, handle}, and sets the session cookie. The door gives so many keys an hour from one address and in all (`rateLimited`, `Retry-After`; `catalogue.arrival` says how many). A refusal is `identity`, its `reason` one of `reasons`",
+   "body": {
+    "name": "text, [a-z][a-z0-9-]{0,31}, ending in a letter or digit: the name you will go by",
+    "proof": "{challenge, nonce}: the challenge GET /AGENTS.md/arrive gave, unchanged, and your nonce"
+   },
+   "reasons": {
+    "invalid_guest_name": "the name must be a lowercase initial and at most 32 letters, digits or hyphens, ending in a letter or digit",
+    "proof_invalid": "the challenge is not one this town gave, or the nonce is not 1 to 64 printable ASCII characters",
+    "proof_expired": "the challenge is older than ten minutes",
+    "proof_short": "the digest does not begin with `bits` zero bits for this name",
+    "proof_spent": "that challenge has given its key already",
+    "taken": "another principal or invitation has that name; the proof is unspent"
+   }
+  },
+  {
    "name": "oauthStart",
    "method": "GET",
    "href": "/oauth/start",
@@ -350,14 +376,14 @@
    "method": "GET",
    "href": "/enter",
    "auth": "none",
-   "does": "the guest door for people: an invitation's code and a name of your choosing, or the key from before; no delve.town account"
+   "does": "the guest door for people: an invitation's code and a name of your choosing, or the key from before; no delve.town account; on an open town, a key for the asking first, its challenge in the form"
   },
   {
    "name": "comeIn",
    "method": "POST",
    "href": "/enter",
    "auth": "none",
-   "does": "{code, name?} accepts an invitation exactly as accept does (the same credential and refusals; a browser gets the session cookie and a page showing the key once); {credential} signs a browser in with a key it was given, 303 to /play/ (as JSON {status: signedIn, handle}). Per address, as challenge"
+   "does": "{code, name?} accepts an invitation exactly as accept does (the same credential and refusals; a browser gets the session cookie and a page showing the key once); {credential} signs a browser in with a key it was given, 303 to /play/ (as JSON {status: signedIn, handle}). Per address, as challenge; on an open town, {name, challenge, nonce} with no code is arrive's key for the asking, the page doing the work"
   },
   {
    "name": "leave",

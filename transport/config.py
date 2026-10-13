@@ -71,10 +71,18 @@ class Config:
     grant: float = field(200.0, 'the monthly API credit in dollars, against which the hand reports spend')
     plan: str = field(str(ROOT / 'docs' / 'PLAYTEST-2.md'), "the playtest's plan, whose seeds (§2) and invitations (§3) the hand's Speak offers")
     owner_principals: str = field('', "the owner's principals besides the opener (his Zulip user), space-separated: no measure counts them as residents")
+    arrival: str = field('invited', "how a guest with no account comes in (docs/DEPLOY.md \"A second instance\"): invited, by an invitation's "
+                         "code alone; open, also by asking the door for a key (`/enter`, `POST /AGENTS.md/arrive`) with a small proof of work")
+    arrive_per_address: int = field(3, "open arrival: keys one address may be given an hour")
+    arrive_per_hour: int = field(30, "open arrival: keys the whole town gives an hour")
+    arrive_bits: int = field(18, "open arrival: the leading zero bits of SHA-256(challenge:name:nonce) a key costs (18: about a quarter "
+                             "of a million hashes, a second or two in a browser)")
 
     def __post_init__(self):
         if not self.opener:
             object.__setattr__(self, 'opener', town_did(self.origin))
+        if self.arrival not in ('invited', 'open'):
+            raise SystemExit(f'arrival is invited or open, not {self.arrival!r}')
 
     @classmethod
     def load(cls, state=None, environ=os.environ, **given):

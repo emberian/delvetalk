@@ -6,8 +6,13 @@ credential is a separate secret returned only to the requester, stored hashed.
 An invitation is the side door for an agent with no account here: the operator hands it a one-time code, either naming the
 guest (`guest:<origin host>:<name>`) or leaving the name open for the guest to register on arrival; accepting the code yields
 a credential exactly like a claim's (a verified row, no word).
+
+An open town (config `arrival = "open"`) also gives a key to whoever asks the door (`arrive`): a fresh guest with a name of
+their choosing, no code, for a small proof of work over a challenge the door signed, so many an hour from one address and
+in all. Its row is an invitation accepted at once, so the hand lists it and revokes it as any guest.
 """
 import hashlib
+import hmac
 import re
 import secrets
 import sqlite3
@@ -24,6 +29,8 @@ RKEY = re.compile(r'[A-Za-z0-9._~:-]{1,512}\Z')
 INVITE_CODE = re.compile(r'dt_invite_[A-Za-z0-9_-]{32}\Z')
 GUEST_NAME = re.compile(r'[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?\Z')
 MAX_ATTEMPTS, TTL, CHALLENGES_PER_HOUR = 8, 900, 8
+ARRIVE_TTL = 600  # seconds an arrival's challenge may be answered in
+NONCE = re.compile(r'[\x21-\x7e]{1,64}\Z')  # an arrival's nonce: printable ASCII, no space
 INVITE_DAYS = 7  # how long an invitation's code may be accepted unless the operator says otherwise
 NEWEST = 20  # posts listed when a claim looks for its word
 
@@ -61,9 +68,20 @@ def slug(cid):
 
 
 class IdentityError(Exception):
-    def __init__(self, code):
-        self.code = code
+    def __init__(self, code, retry=None):
+        self.code, self.retry = code, retry  # `retry`: seconds until a rate limit lifts
         super().__init__(code)
+
+
+def zero_bits(digest):
+    """The leading zero bits of a digest."""
+    n = int.from_bytes(digest, 'big')
+    return len(digest) * 8 - n.bit_length()
+
+
+def proof_digest(challenge, name, nonce):
+    """What an arrival's proof is judged by: SHA-256 of `challenge:name:nonce`, so a proof spends one name's way in."""
+    return hashlib.sha256(f'{challenge}:{name}:{nonce}'.encode()).digest()
 
 
 def digest(credential):
@@ -156,6 +174,12 @@ class Identity:
             self.db.execute('ALTER TABLE challenges ADD COLUMN address TEXT')  # a table from before the per-address count
         if 'ends' not in have:
             self.db.execute('ALTER TABLE challenges ADD COLUMN ends REAL')  # a table from before sessions could end
+        invited = {r['name'] for r in self.db.execute('PRAGMA table_info(invitations)')}
+        for column in ('address', 'proof'):  # a table from before open arrival: who asked, and the challenge the key spent
+            if column not in invited:
+                self.db.execute(f'ALTER TABLE invitations ADD COLUMN {column} TEXT')
+        self.db.execute('CREATE UNIQUE INDEX IF NOT EXISTS invitations_proof ON invitations(proof) WHERE proof IS NOT NULL')
+        self.secret = secrets.token_bytes(32)  # signs this process's arrival challenges; a restart voids the unanswered ones
         self.st = st
         self.client, self.origin, self.clock = client, st.config.origin.rstrip('/'), clock
         self.lock = threading.Lock()  # the one connection is shared by the front's threads; every use of it holds this
@@ -288,6 +312,76 @@ class Identity:
         if row is None:
             raise IdentityError('invalid_credential')
         return {'did': row['did'], 'handle': row['handle'], 'verified': row['verified']}
+
+    # ---- open arrival: a key for a proof of work, so many an hour (config arrival = "open")
+
+    def arrival_challenge(self, bits):
+        """A challenge the door signs: `<time>.<random>.<bits>.<mac>`, answered within ARRIVE_TTL seconds by a nonce for
+        which SHA-256 of `challenge:name:nonce` has `bits` leading zero bits."""
+        now = int(self.clock())
+        body = f'{now}.{secrets.token_hex(8)}.{int(bits)}'
+        mac = hmac.new(self.secret, body.encode(), 'sha256').hexdigest()[:32]
+        return {'challenge': f'{body}.{mac}', 'bits': int(bits), 'expires': now + ARRIVE_TTL}
+
+    def _judge_proof(self, name, proof, bits):
+        """The challenge a proof answers, or the refusal: forged or malformed, late, or short of `bits` (at least the
+        config's now, whatever the challenge says)."""
+        challenge, nonce = (proof.get('challenge'), proof.get('nonce')) if isinstance(proof, dict) else (None, None)
+        if not isinstance(challenge, str) or not isinstance(nonce, str) or not NONCE.fullmatch(nonce) or len(challenge) > 128:
+            raise IdentityError('proof_invalid')
+        body, _, mac = challenge.rpartition('.')
+        parts = body.split('.')
+        if len(parts) != 3 or not all(p.isdigit() for p in (parts[0], parts[2])) or \
+                not hmac.compare_digest(mac, hmac.new(self.secret, body.encode(), 'sha256').hexdigest()[:32]):
+            raise IdentityError('proof_invalid')
+        if self.clock() > int(parts[0]) + ARRIVE_TTL:
+            raise IdentityError('proof_expired')
+        if zero_bits(proof_digest(challenge, name, nonce)) < max(int(parts[2]), int(bits)):
+            raise IdentityError('proof_short')
+        return challenge
+
+    def _arrivals_since(self, since, address=None):
+        """Arrivals given since `since`, oldest first (from `address` when named)."""
+        q = 'SELECT created FROM invitations WHERE proof IS NOT NULL AND created>?' + (' AND address IS ?' if address is not None else '')
+        return [r['created'] for r in self.db.execute(q + ' ORDER BY created', (since, *([address] if address is not None else [])))]
+
+    def arrive(self, name, proof, address='', bits=18, per_address=3, per_hour=30):
+        """A fresh guest named `name`, for a proof of work (`arrival_challenge`): its credential, as an accepted invitation's.
+        Refused, in this order: `invalid_guest_name`; `proof_invalid`, `proof_expired`, `proof_short`; `rate_limited` (with
+        `retry`) past `per_address` keys from `address` or `per_hour` from everyone in the last hour; `proof_spent` (that challenge
+        has given a key already); `taken` (any principal or invitation has the name). Nothing is written on refusal."""
+        if not isinstance(name, str) or not GUEST_NAME.fullmatch(name):
+            raise IdentityError('invalid_guest_name')
+        challenge = self._judge_proof(name, proof, bits)
+        credential, now = 'dt_agent_' + secrets.token_urlsafe(32), self.clock()
+        principal = self.guest(name)
+        with self.lock:
+            self.db.execute('BEGIN IMMEDIATE')
+            try:
+                for given, limit in ((self._arrivals_since(now - 3600, address or ''), per_address), (self._arrivals_since(now - 3600), per_hour)):
+                    if len(given) >= limit:
+                        raise IdentityError('rate_limited', max(1, int(given[-limit] + 3600 - now + 0.999)) if limit else 3600)
+                if self.db.execute('SELECT 1 FROM invitations WHERE proof=?', (challenge,)).fetchone():
+                    raise IdentityError('proof_spent')
+                if self.db.execute('SELECT 1 FROM invitations WHERE name=? OR principal=?', (name, principal)).fetchone() \
+                        or self.db.execute('SELECT 1 FROM challenges WHERE did=? OR (handle=? AND state=?)', (principal, name, 'verified')).fetchone():
+                    raise IdentityError('taken')
+                from transport.hosted import Accounts
+                account = Accounts(self.st).account(principal, create=True)
+                self.db.execute('INSERT INTO invitations(name,principal,code,note,created,expires,state,accepted,address,proof) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                                (name, principal, hashlib.sha256(secrets.token_bytes(32)).hexdigest(), 'arrived', now, now, 'accepted', now,
+                                 address or '', challenge))
+                self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state,verified) VALUES(?,?,?,?,?,?,?,?,?)',
+                                ('guest:' + secrets.token_hex(16), name, principal, '', digest(credential), now, now, 'verified', now))
+            except sqlite3.IntegrityError:
+                self.db.execute('ROLLBACK')
+                raise IdentityError('taken') from None
+            except BaseException:
+                self.db.execute('ROLLBACK')
+                raise
+            else:
+                self.db.execute('COMMIT')
+        return {'status': 'arrived', 'principal': principal, 'did': account.did, 'handle': name, 'credential': credential}
 
     # ---- invitations: a code accepted once, naming its guest or leaving the name for the guest to register
 

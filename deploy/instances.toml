@@ -29,5 +29,6 @@ watch_zuliprc = "/etc/delvetalk/watch.zuliprc"
 
 # <state>/delvetalk.toml of this instance (transport/config.py names every field), written by `render`.
 [open.config]
+arrival = "open"  # a key for the asking at /enter and POST /AGENTS.md/arrive, beside invitations
 hand_find = false  # nothing of this town is posted on delve.town, so the hand reads no posting account
 watch_topic = "watch-open"

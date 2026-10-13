@@ -794,6 +794,9 @@ What assumed one instance a box, and what holds each apart now:
   join `DELVETALK-FRONT` (anchor only) and its hand's `DELVETALK-LOCAL`, or the private net reaches it and chooses its
   own `X-Forwarded-For` key ("Bringing up obend" below).
 - the anchor's Caddy: one site block per origin.
+- arrival: `arrival = "open"` in the open instance's `delvetalk.toml` gives a key for the asking (docs/WEB.md "The
+  guest door"; `arrive_per_address`, `arrive_per_hour`, `arrive_bits`); the live town's is `invited`, the default, and
+  its front answers as before.
 - the config's delve.town defaults (`summon_handle`, `poster`, `lexicon_authority`, `requests`): inert on an
   instance whose bridge row is the town's own feed (`transport open --transport feed`), which observes no Delve.
   Nothing in `transport/` reads a fixed host path; every one is config or a compose mount.
