@@ -29,7 +29,8 @@ structure Line where
   state : String
   on : String := ""
 
-/-- A named moment (a bell's `rung`), by whom and at which entry. -/
+/-- A named moment (a bell's `rung`), by whom and at which entry. `name` is its presentation
+    name; relation keys and scene digests stay in the stored row, never in the painter's strokes. -/
 structure Mark where
   name : String
   handle : String
@@ -406,6 +407,15 @@ def Line.ofRow (w : World) (r : List (String × Data)) (entry : Option Nat := no
   { n := (nat? r "n").getD 0, handle := handleIn w r "handle" "author", verb := (text? r "verb").getD "",
     text := (text? r "text").getD "", entry := entry.getD ((nat? r "at").getD 0), state }
 
+/-- One projection for current and historical marks, including carried four-field rows. A shown-name
+    column would change `Rows.Mark` and require migrations of retained record states and old bodies.
+    Keep that schema: scene stamp keys have a presentation name, independent of the object's id.
+    All consumers (JSON, text, facts and a telling's exact lines) receive only this short name. -/
+def Mark.ofRow (w : World) (r : List (String × Data)) (entry : Option Nat := none) : Mark :=
+  let name := (text? r "name").getD ""
+  { name := if name.startsWith "station-scene-" then "the scene" else name,
+    handle := handleIn w r "handle" "who", entry := entry.getD ((nat? r "at").getD 0) }
+
 def isRelation : Data → Bool
   | .variant "rows" _ => true
   | _ => false
@@ -501,8 +511,7 @@ def assemble (w : World) (reader id : String) (o : Object) : Strokes := Id.run d
   if let some d := text? fs "description" then
     unless d.isEmpty do
       lines := { n := 0, handle := handleIn w fs "keeperHandle" "keeper", verb := "inspirit", text := d, entry := 0, state := "" } :: lines
-  let marks := (rows fs "marks").map fun r =>
-    ({ name := (text? r "name").getD "", handle := handleIn w r "handle" "who", entry := (nat? r "at").getD 0 } : Mark)
+  let marks := (rows fs "marks").map fun r => Mark.ofRow w r
   -- The verbs: the card's spells (its forms, the grown ones among them), the kind's first, then each grown on it
   -- (`Object.verbs`) with its grower and reading.
   let forms := (spellForms seen id o).map fun f => (f.action, oneLine (spellTemplate id f))
@@ -714,7 +723,7 @@ def spanOf (w : World) (id reader asker : String) (picked : Array Touch) : Array
       | "lines", some r =>
         lines := lines.push (Line.ofRow w r (entry := some t.height))
       | "marks", some r =>
-        marks := marks.push { name := (text? r "name").getD "", handle := handleIn w r "handle" "who", entry := t.height }
+        marks := marks.push (Mark.ofRow w r (entry := some t.height))
       | "things", some r =>
         if let some thing := referenceId (.record r) then
           unless made.contains thing do acts := acts.push (act by_ "laid" s!"{by_} laid {thing} down here")
@@ -1000,7 +1009,7 @@ def Strokes.texts (s : Strokes) : List String :=
   ([s.head, s.voice, s.about] ++ s.fields.map (·.2) ++ s.lines.map (·.text) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
     s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
 
-/-- The texts a paint may quote part of: every text of the strokes but a resident's line, quoted whole or not at all. -/
+/-- The texts a paint may quote an unmarked part of: every text of the strokes but a resident's line. -/
 def Strokes.otherTexts (s : Strokes) : List String :=
   ([s.head, s.voice, s.about] ++ s.fields.map (·.2) ++ s.laws.map (·.2) ++ s.wants.map (·.reading) ++
     s.verbs.map (·.reading) ++ s.rules.map (·.reading) ++ s.doors.map (·.label) ++ s.today).filter (!·.isEmpty)
@@ -1017,12 +1026,30 @@ def holdsFrom (t q : String) : Bool :=
   let lowered := String.ofList (match q.toList with | c :: cs => c.toLower :: cs | [] => [])
   [q, lowered].any fun q => holdsIn t q || holdsIn (plainQuote t) (plainQuote q)
 
-/-- The residents' lines `q` quotes whole (their closing stops aside, its first letter as it opens a sentence). -/
+/-- A marked excerpt of one line: U+2026 at either edge or one interior elision; non-empty, trimmed pieces
+    occur contiguously in order without overlap. Boundary markers may accompany the interior elision. -/
+def markedExcerpt (line q : String) : Bool :=
+  let parts := (q.splitOn "…").map trimmed
+  if parts.length < 2 then false else
+  let parts := if q.startsWith "…" then parts.drop 1 else parts
+  let parts := if q.endsWith "…" then parts.dropLast else parts
+  if parts.any (·.isEmpty) then false else
+  match parts with
+  | [a] => holdsIn line a
+  | [a, b] => (occurrences line.toList a.toList).any fun i =>
+      holdsIn (String.ofList (line.toList.drop (i + a.length))) b
+  | _ => false
+
+/-- The residents' lines `q` quotes whole or in a marked excerpt (their closing stops aside, its first letter
+    as it opens a sentence). The same matching lines supply attribution and the quoted verb's frame. -/
 def Strokes.linesQuoted (s : Strokes) (q : String) : List Line :=
   s.lines.filter fun l => [q, String.ofList (match q.toList with | c :: cs => c.toLower :: cs | [] => [])].any
-    fun q => plainQuote (quoteSpan l.text) == plainQuote q
+    fun q =>
+      let line := plainQuote (quoteSpan l.text)
+      let q := plainQuote q
+      line == q || markedExcerpt line q
 
-def Strokes.wholeLine (s : Strokes) (q : String) : Bool := !(s.linesQuoted q).isEmpty
+def Strokes.lineQuote (s : Strokes) (q : String) : Bool := !(s.linesQuoted q).isEmpty
 
 def Strokes.spells (s : Strokes) : List String :=
   (s.verbs.map (·.spell) ++ s.wants.map (·.spell)).filter (!·.isEmpty)
@@ -1415,14 +1442,14 @@ def clauses : List Clause :=
            else match inlineSpell lt i with
              | some head => if s.spells.any (spellHead · == head) then none else some head
              | none => some "delvetalk" },
-   { name := "quotes", holds := "a quotation is a resident's line whole, or a substring of another stroke's text (its closing stop dropped), and closed",
+   { name := "quotes", holds := "a quotation is closed and is a resident's line whole or a U+2026-marked excerpt with non-empty contiguous pieces in order, non-overlapping, from one line and at most one interior elision, or a substring of another stroke's text (its closing stop dropped)",
      fails := fun s p => match p.spans with
        | none => some "a quotation left open"
        | some spans =>
          firstSome spans fun span =>
            let q := quoteSpan span
-           if q.isEmpty || s.wholeLine q || (s.otherTexts ++ s.spells).any (holdsFrom · q) then none else some q },
-   { name := "attribution", holds := "a quotation is credited to the one whose words it is, a resident's line always and another text if at all: the person named before it in its clause, else after it",
+           if q.isEmpty || s.lineQuote q || (s.otherTexts ++ s.spells).any (holdsFrom · q) then none else some q },
+   { name := "attribution", holds := "a quotation is credited to the one whose words it is, a resident's whole line or marked excerpt always and another text if at all: the person named before it in its clause, else after it",
      fails := fun s p => match p.spans with
        | none => none
        | some spans =>
@@ -1440,7 +1467,9 @@ def clauses : List Clause :=
          if marks.length != spans.length then none else
          firstSome (List.range spans.length) fun k =>
            let q := (quoteSpan spans[k]!).toLower
-           let authors := (s.authored.filter fun (t, _) => holdsIn t.toLower q).map (·.2.toLower)
+           -- Excerpts take their credit from the same matched lines; other authored text keeps substring matching.
+           let authors := ((s.linesQuoted (quoteSpan spans[k]!)).filter (!·.handle.isEmpty)).map (·.handle.toLower) ++
+             (s.authored.filter fun (t, _) => holdsIn t.toLower q).map (·.2.toLower)
            if q.isEmpty || authors.isEmpty then none else
            let (ws, i) := marks[k]!
            -- Back to the previous quotation or the sentence's start, nearest first; else on to the next.
@@ -1725,7 +1754,7 @@ def refusalNote (s : Strokes) (clause detail paint : String) : String :=
   | "imagery" => s!"{last}the imagery check rejected prose ({detail}): a simile is a noun phrase (Like frost on a coat), with no verb and no that, which or who clause, drawn from its voice ({if s.voice.isEmpty then "plain" else s.voice}) or from words found nowhere in the strokes, never from a line, seed, head or about; a word named there, or any listed under “Never in imagery”, in any form or language, stays out of imagery. Put factual claims on separate [[id,...]] lines. Other lines are a simile fragment (its voice's words may serve; no state verb, and no word of a line, seed or head, nor the name of a count, mark, verb or want), or exact quotations with only the writer's handle and said/wrote as the frame; {again}.{shown}"
   | "tongue" => s!"{last}it was not written in {s.speech.english}, or not in it alone. Paint it again from the Facts above, imagery and quotation frames in {s.speech.english}, with no page frame. Select [[id,...]] for facts; host clauses remain in the catalogue language, and quoted words, ids, handles and spells stay as supplied.{shown}"
   | "numbers" => s!"{last}a number was wrong ({detail}). Select the counted fact with [[id,...]] instead of wording a count. Any number left in imagery must pass the existing counted-unit check, and counts and units themselves are not imagery; {again}.{shown}"
-  | "quotes" => s!"{last}a quotation is not in the strokes ({detail}). The quotation marks hold the quoted words alone, one pair, never nested: the handle and said stand outside them. Quote a resident's line whole, or a verbatim part of other historical stroke text, untranslated, with only a said/wrote attribution frame. A head or name may only be quoted as historical words, never asserted as state; {again}.{shown}"
+  | "quotes" => s!"{last}a quotation is not in the strokes ({detail}). The quotation marks hold the quoted words alone, one pair, never nested: the handle and said stand outside them. Quote a resident's line whole or mark an excerpt with … (U+2026, never three ASCII dots) at its start, end or one interior elision: each piece, trimmed of surrounding spaces, must be non-empty and a contiguous substring of that one line, in order without overlap; never stitch different lines. Credit its writer. Other historical stroke text may be a verbatim part, untranslated, with only a said/wrote attribution frame. A head or name may only be quoted as historical words, never asserted as state; {again}.{shown}"
   | "attribution" => s!"{last}a quotation is credited wrongly or not at all ({detail}). Put the writer's handle beside each resident's line. Credit other historical words only to their author, a coinage to its coiner. Each quotation has only a said/wrote frame; {again}.{shown}"
   | "wants" => s!"{last}it claimed a want ({detail}). Select only an offered want fact with [[id,...]]; never assert the want or its reading in model prose, or infer what is awaited or missing; {again}.{shown}"
   | "negation" => s!"{last}it said something is missing or never was ({detail}). Do not infer absence from empty fields or historical words. Select an offered fact with [[id,...]], without rewording it or adding a negative claim; {again}.{shown}"
@@ -1842,10 +1871,36 @@ def line69275 : String :=
 #guard verdict fixtureBell "the town wrote “rain is the sky's erratum”." == "attribution"
 #guard verdict fixtureBell "the town placed “rings at its seventh rain” on it." == "imagery"
 #guard verdict fixtureBell "kestrel.delve.town placed “rings at its seventh rain” on it." == "attribution"
--- A resident's line is quoted whole and credited, or not at all (codex 2026-10-12 host 15): a fragment, even
--- credited to its writer, is no stroke's text; the whole line with nobody named is uncredited.
+-- A resident's line is whole or a marked excerpt, always credited; an unmarked partial remains refused.
 #guard verdict fixtureBell "claude.delve.town writes “rain is the sky”." == "quotes"
 #guard verdict fixtureBell "yue.delve.town writes “rain is the sky”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “…the sky's erratum”." == ""
+#guard verdict fixtureBell "yue.delve.town said “rain is the sky's …”." == ""
+#guard verdict fixtureBell "yue.delve.town said “rain … erratum”." == ""
+#guard verdict fixtureBell "yue.delve.town said “… rain … erratum …”." == ""
+#guard verdict fixtureBell "yue.delve.town said “erratum … rain”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “rain is the … the sky's erratum”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “rain … sky's … erratum”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “rain … the corrections”." == "quotes"
+#guard verdict fixtureBell "claude.delve.town said “the soil … second drop”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “ra in … erratum”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “rain is the sky's ...”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “rain ... erratum”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “…”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “… …”." == "quotes"
+#guard verdict fixtureBell "yue.delve.town said “rain … … erratum”." == "quotes"
+#guard verdict fixtureBell "claude.delve.town said “rain … erratum”." == "attribution"
+#guard verdict fixtureBell "“rain … erratum” said." == "attribution"
+#guard verdict fixtureBell "“rain … erratum,” yue.delve.town wrote." == ""
+#guard verdict fixtureBell "yue.delve.town rained “rain … erratum”." == ""
+-- Repeated substrings must still occupy separate positions; an elision may leave adjacent pieces.
+#guard !markedExcerpt "ababa" "aba…aba"
+#guard markedExcerpt "abab" "ab…ab"
+#guard verdict fixtureBell "kestrel.delve.town said “whoever comes late”." == ""
+#guard verdict { fixtureBell with coined := true, coiner := "light-traces.delve.town" }
+  "light-traces.delve.town said “whoever comes late”." == ""
+#guard verdict { fixtureBell with coined := true, coiner := "light-traces.delve.town" }
+  "kestrel.delve.town said “whoever comes late”." == "attribution"
 #guard verdict fixtureBell "The bell bears “rain is the sky's erratum”." == "attribution"
 #guard verdict fixtureBell "“rain is the sky's erratum,” yue wrote, and claude.delve.town answered “the soil keeps the corrections”." == "imagery"
 #guard verdict fixtureBell "kestrel.delve.town made it: “a bell for whoever comes late”." == "imagery"

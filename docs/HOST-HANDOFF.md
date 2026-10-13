@@ -3153,10 +3153,38 @@ replaces in the same commit, and this file describes only what is. A merge touch
      `lineQuantities`); check: the regular's facts say what a reader would. (c) The painter copies the contract's
      example handles (kimik3, glm) as credits on cards they never wrote (Spanish regular, live): give the examples
      handles no fixture uses and rebind test_tongues/test_telling; check: no live credit to an example handle.
-     (d) A resident's line is quoted whole or not at all (codex host 15), and the station's 200-character emote keeps
-     tellings near their 500 and tempts excerpts, which are refused: Ember to decide whether a marked excerpt may
-     stand. (e) A translated source word passes imagery (escarcha for a line's frost): the guard compares the
-     strokes' own words; decide whether the tongue's lexicon should carry them. (f) The station's scene marks are
-     named by a 64-hex digest (`station-scene-<digest>-119`) and offered as facts, so a paint citing one shows a hash
-     on a card: the spween lane's marks want a reader's name, or `Strokes.facts` leaves such marks out; check: no
-     fact clause matches test_properties' HASH.
+     (d) **Marked excerpts: decided and implemented (Task 4, Codex, lane/cx-tidy; built and tested on hbox).**
+     Ember allows a resident's whole line or an excerpt marked with U+2026 (never ASCII dots), at either edge or
+     one interior elision: non-empty, space-trimmed pieces must be contiguous substrings of one line, in order
+     without overlap. `Enchant.markedExcerpt` extends `Strokes.linesQuoted`; `Strokes.lineQuote` is the quote
+     clause's predicate, and attribution uses the matching lines' authors. The same matcher supplies a quoted
+     verb's imagery frame; quotations retain the existing token and length checks. `clauses`, `refusalNote`, the
+     contract's one added sentence, Lean guards and `test_tongues.ExcerptPaint` cover the rule and stitched refusals.
+     Queued (owner: next paint lane; check: `kimik3.delve.town dijo «a line»` alone passes the `tongue` clause): in Spanish a
+     paint of one quotation frame and nothing else fails `tongueFault` (`Tongue.detect` wants two Spanish indicators);
+     real paints carry a simile or fact lines, and the excerpt tests carry the simile.
+     (e) A translated source word passes imagery (escarcha for a line's frost): the guard compares the
+     strokes' own words; decide whether the tongue's lexicon should carry them. (f) **Scene mark digests: done
+     (Task 5, Codex, lane/cx-tidy; build/test pending with Ember).** `Enchant.Mark.ofRow` projects every
+     `station-scene-*` row to `the scene`, shared by `assemble` and `spanOf`. Strokes JSON, `Strokes.text`, facts,
+     telling exact lines and paints all use that name; the relation key, station's digest chain and genesis refresh
+     keep their real names. No object-id check or second display mechanism. A shown-name field would change the
+     fixed `Rows.Mark` schema shared by retained states and old bodies, requiring carry/replay migrations; the
+     prefix projection preserves that schema and works on old carried rows. The Bend card renderers (`Card`,
+     `Record`, room and bodies) do not print raw scene mark names, so need no parallel replacement. Regressions
+     written first in `tests/test_scene_marks.py`: genesis after stitch, carry/refresh preserving old rows, current
+     and telling strokes, fact expansion, painter request and cached card all checked against test_properties' HASH;
+     an 8,192-character wing, expanded length boundary and adversarial/ordinary mark names on another object.
+     Found while testing, queued (owner: next host lane; check: a bare telling of the station lists its scene marks): a
+     telling's `spanOf` sees no edits of a write holding a kind-2 step (`Ops.writeEdits` returns none for the whole
+     write), so the station's stitch, which amends its law and inserts the mark in one write, tells no mark.
+   - Early v15 paint fallbacks: **found for the station, fixed by the scene-mark names (f)**. Queue waiting, reader
+     patience and a carry's refresh do not spend a paint's attempts (`submitOp` counts only submitted transport and
+     rate failures; a carry enqueues no paint). The `retrying` then `exact` sequence is a verifier refusal asked once
+     more. Reproduced on the pre-(f) binary: a paint citing the station's five digest-named marks expands to 519
+     characters against the 500 limit and is refused by `length` twice, so the card falls back to exact
+     (`tests.test_scene_marks.test_a_paint_citing_every_scene_mark_is_not_refused_for_length`, failing before (f)).
+     Not shown to be the whole story: porch, station/dj and station/bee carry no scene marks, so a fallback seen
+     there is not explained by this. `interpret.paint` now also reports `verdicts` (object, version, reason, clause,
+     detail, attempts, next) for each retry and exact submission, so the next fallback names its clause in the
+     worker's output; `tests.test_carry_paint` runs a carried, refreshed station through the real worker path.

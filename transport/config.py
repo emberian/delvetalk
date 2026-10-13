@@ -43,6 +43,8 @@ class Config:
     summon_handle: str = field('livedelvetalk.delve.town', "the town's address on delve.town, whose mention summons it: fictional, matched as the post's text, never resolved; its replies go out through `credentials`, the owner's account")
     requests: bool = field(False, "poll residents' `online.fg-goose.gsb.request` records from the PDS (transport/requests.py): "
                            "reads participant DIDs at their current PDS; off until the owner turns it on")
+    hosted_accounts: bool = field(False, "provision and serve guest/Zulip did:web request repositories; off for want of wildcard DNS; "
+                                 "requires wildcard DNS, HTTPS routing and the town repository key; guest principals stay unchanged")
     participants: str = field('', "explicit participant DIDs, space-separated: did:plc or hostname-level did:web; unioned with "
                               "pds.delve.town's repos and verified claims; at most 256 non-delve-PDS participants per poll")
     station: bool = field(False, "a carry's refresh makes the all-night station on a town that lacks it, as genesis "

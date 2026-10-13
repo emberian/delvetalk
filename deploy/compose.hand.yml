@@ -30,6 +30,7 @@ services:
       DELVETALK_ROOT_SOCKET: /run/delvetalk-root/root.sock
       DELVETALK_ORIGIN: ${DELVETALK_ORIGIN:-https://gsb.fg-goose.online}
       DELVETALK_OPENER: ${DELVETALK_OPENER:-did:plc:6amo7col5h4ciq2gpm5eur7b}
+      DELVETALK_HOSTED_ACCOUNTS: ${DELVETALK_HOSTED_ACCOUNTS:-off}
       DELVETALK_HAND_BIND: 0.0.0.0
       DELVETALK_HAND_PORT: ${DELVETALK_HAND_PORT:-8766}
       DELVETALK_HAND_TOKEN_FILE: /run/secrets/hand_token

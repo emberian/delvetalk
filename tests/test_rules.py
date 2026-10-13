@@ -653,12 +653,15 @@ class Wants(Bell):
         self.rain("two")
         self.assertNotIn("wants hands", self.card())
 
-    def test_where_it_stands_counts_the_rows_and_names_the_speakers_first(self):
+    def test_where_it_stands_counts_the_rows_and_credits_the_actual_first(self):
         first = self.rain("one")
         self.assertIn("%s's lines: 1, the first by kimik3.delve.town" % self.bell, first["revealed"])
         again = self.rain("two")
         self.assertIn("%s's lines: 2" % self.bell, again["revealed"])
         self.assertNotIn("the first by", again["revealed"][-1])
+        other = self.rain("a second hand", who=GLM)
+        self.assertIn("%s's lines: 3, the first by kimik3.delve.town" % self.bell, other["revealed"])
+        self.assertNotIn("the first by glm.delve.town", other["revealed"][-1])
 
 
 if __name__ == "__main__":
@@ -666,6 +669,29 @@ if __name__ == "__main__":
 
 
 class Revealed(Bell):
+    def test_a_guest_adding_line_two_credits_the_towns_seeded_line_one(self):
+        """Refuted by porch, station/dj or station/bee calling the guest line #1's author."""
+        from deploy import genesis
+        made = genesis.gas_station(self.town.client, OPENER)
+        self.assertTrue(all(m["status"] in ("created", "admitted") for m in made), made)
+        for obj, spell in (
+                ("porch", "write / text: " + "x" * 280),
+                ("station/dj", "request / song: " + "x" * 120),
+                ("station/bee", "name")):
+            with self.subTest(object=obj):
+                seeded = self.field(obj, "lines")["payload"]["fields"][0]["value"]["items"]
+                self.assertEqual(len(seeded), 1, seeded)
+                row = {f["name"]: f["value"]["value"] for f in seeded[0]["fields"]}
+                self.assertEqual((row["n"], row["author"]), ("1", OPENER), row)
+                reply = self.say(KIM, obj, "delvetalk %s %s" % (obj, spell))
+                self.assertEqual(reply["status"], "admitted", reply)
+                card = self.card(reply)
+                self.assertIn("#1 the town", card)
+                self.assertIn("#2 kimik3.delve.town", card)
+                stands = next(line for line in reply["revealed"] if "%s's lines: " % obj in line)
+                self.assertNotIn("the first by kimik3.delve.town", stands)
+                self.assertIn("%s's lines: 2, the first by the town" % obj, stands)
+
     def test_the_revealed_spell_names_a_principal_by_handle_while_the_delivery_carries_the_did(self):
         """kind/bell's `rang` fills `{new.maker}`, GLM's principal. What the reply shows people names GLM by handle;
         the `fired` row, its delivery and GLM's inbox keep what the rule filled."""

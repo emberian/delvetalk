@@ -126,7 +126,7 @@ class LegacyGuests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.st = State(tmp.name, config=Config(origin=ORIGIN, repo_keys=str(Path(tmp.name) / 'repo')))
+        self.st = State(tmp.name, config=Config(origin=ORIGIN, hosted_accounts=True, repo_keys=str(Path(tmp.name) / 'repo')))
         self.st.repo_key.parent.mkdir()
         self.st.repo_key.write_bytes(Key.generate().pem())
         self.ident = identity.Identity(self.st, delve.Client(mock.Mock(side_effect=AssertionError('network'))))
@@ -188,7 +188,7 @@ class Hosted(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.st = State(tmp.name, config=Config(origin=ORIGIN, requests=True, repo_keys=str(Path(tmp.name) / 'repo')))
+        self.st = State(tmp.name, config=Config(origin=ORIGIN, requests=True, hosted_accounts=True, repo_keys=str(Path(tmp.name) / 'repo')))
         self.st.repo_key.parent.mkdir()
         self.st.repo_key.write_bytes(Key.generate().pem())
         self.now = [1000.0]
@@ -310,7 +310,7 @@ class Hosted(unittest.TestCase):
         self.assertEqual(snapshot.read_bytes(), old)
 
     def test_two_origins_use_separate_snapshot_stores(self):
-        other = State(self.st.root, config=Config(origin='https://other.example', repo_keys=self.st.config.repo_keys))
+        other = State(self.st.root, config=Config(origin='https://other.example', hosted_accounts=True, repo_keys=self.st.config.repo_keys))
         self.assertNotEqual(other.hosted, self.st.hosted)
         account = Accounts(other).account('guest:other.example:robin', create=True)
         self.assertEqual(account.stored()['records'], {})
@@ -347,10 +347,11 @@ class Hosted(unittest.TestCase):
         before = self.exported_head()
         self.assertEqual(set(p.suffix for p in self.st.hosted.iterdir()), {'.json'})
         with tempfile.TemporaryDirectory() as tmp:
-            restored = State(tmp, config=Config(origin=ORIGIN, repo_keys=str(Path(tmp) / 'repo')))
+            restored = State(tmp, config=Config(origin=ORIGIN, hosted_accounts=True, repo_keys=str(Path(tmp) / 'repo')))
             restored.repo_key.parent.mkdir()
             restored.repo_key.write_bytes(Key.load(self.st.repo_key).pem())
             shutil.copytree(self.st.hosted, restored.hosted)
+            shutil.copy2(self.st.identity, restored.identity)  # accepted guests are part of state restoration too
             accounts = Accounts(restored)
             accounts.reconcile()
             self.assertEqual({did: accounts.did_document(did) for did in accounts.dids()}, docs)
@@ -514,6 +515,23 @@ class Hosted(unittest.TestCase):
         self.assertEqual(set(p.suffix for p in self.st.hosted.iterdir()), {'.json'})
         self.assertEqual(self.ident.authenticate(credential)['did'], principal)
         self.assertNotIn('did:web:' + HOST, self.accounts.dids())
+
+    def test_revoking_invitation_or_credential_removes_only_that_guest_snapshot(self):
+        self.accounts.account('zulip:chat.example:42', create=True)
+        before = self.files()
+        self.ident.revoke_invitation('robin')
+        self.assertFalse((self.st.hosted / 'robin.json').exists())
+        self.assertEqual(self.files(), {k: v for k, v in before.items() if not k.endswith('/robin.json')})
+        self.ident.revoke(self.wren['credential'])
+        self.assertFalse((self.st.hosted / 'wren.json').exists())
+        self.assertTrue((self.st.hosted / '42.chat.example.zulip.json').exists())
+
+    def test_enabled_keyless_reconciliation_removes_guest_revoked_while_front_was_down(self):
+        before = self.files()
+        self.ident.db.execute("UPDATE challenges SET state='revoked' WHERE did=?", (self.robin['principal'],))
+        self.st.repo_key.unlink()
+        self.accounts.reconcile()
+        self.assertEqual(self.files(), {k: v for k, v in before.items() if not k.endswith('/robin.json')})
 
     def test_document_is_host_selected_only_and_account_key_proves_the_record(self):
         status, doc = self.call('/.well-known/did.json')
@@ -681,8 +699,8 @@ class Hosted(unittest.TestCase):
             self.assertEqual(status, 400, out)
             self.assertEqual(self.files(), baseline)
         self.ident.revoke(self.robin['credential'])
-        self.assertEqual(self.call('/xrpc/com.atproto.repo.createRecord', body, self.robin['credential'])[0], 401)
-        self.assertEqual(self.files(), baseline)
+        self.assertEqual(self.call('/xrpc/com.atproto.repo.createRecord', body, self.robin['credential'])[0], 400)
+        self.assertEqual(self.files(), {k: v for k, v in baseline.items() if not k.endswith('/robin.json')})
 
     def test_replace_delete_revision_chain_and_restart_are_deterministic(self):
         self.assertEqual(self.create()[0], 200)
@@ -795,3 +813,152 @@ class Hosted(unittest.TestCase):
         self.assertEqual(self.call('/xrpc/com.atproto.repo.applyWrites', {}, self.robin['credential'])[0], 501)
         self.assertEqual(self.rpc('repo.getRecord', repo='did:web:' + HOST, collection=COLLECTION, rkey=self.rkey)[0], 400)
         self.assertFalse(Config().requests)
+
+
+@signs
+class HostingOff(unittest.TestCase):
+    """Refuted by a default front writing a repo, changing a guest principal, or serving a retained snapshot."""
+    call, network = Hosted.call, Hosted.network
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.st = State(tmp.name, config=Config(origin=ORIGIN, repo_keys=str(Path(tmp.name) / 'repo')))
+        self.now, self.host = [1000.0], HostedWorld()
+        self.ident = identity.Identity(self.st, delve.Client(self.network), clock=lambda: self.now[0])
+        self.addCleanup(self.ident.db.close)
+        self.hostname = 'robin.guest.' + HOST
+        self.did = 'did:web:' + self.hostname
+
+    def start(self):
+        self.front = serve(Front(self.st, self.host, self.ident, ('127.0.0.1', 0), clock=lambda: self.now[0]))
+        self.addCleanup(self.front.server_close)
+        self.addCleanup(self.front.shutdown)
+
+    def test_default_acceptance_and_actions_keep_guest_identity_without_key_or_store(self):
+        self.start()
+        for name in ('robin', 'a' * 32):
+            with self.subTest(name=name):
+                code = self.ident.invite(name)['code']
+                status, guest = self.call('/AGENTS.md/accept', {'code': code}, hostname=HOST)
+                self.assertEqual(status, 200, guest)
+                principal = f'guest:{HOST}:{name}'
+                self.assertEqual((guest['principal'], guest['did']), (principal, identity.hosted_identity(principal, HOST)))
+                self.assertEqual(self.ident.authenticate(guest['credential'])['did'], principal)
+                status, me = self.call('/AGENTS.md/me', token=guest['credential'], hostname=HOST)
+                self.assertEqual((status, me['did']), (200, principal))
+                self.call('/AGENTS.md/world', token=guest['credential'], hostname=HOST)
+                self.assertEqual(self.host.calls[-1]['principal'], principal)
+        self.assertFalse(self.st.hosted.parent.exists())
+
+    def test_default_front_refuses_all_hosted_reads_and_writes_without_provisioning(self):
+        self.st.repo_key.parent.mkdir()
+        self.st.repo_key.write_bytes(Key.generate().pem())
+        principal = self.ident.guest('robin')
+        self.ident.db.execute("INSERT INTO challenges(nonce,did,state) VALUES(?,?,?)", ('old', principal, 'verified'))
+        self.start()
+        for nsid, q in [('repo.describeRepo', {'repo': self.hostname}),
+                        ('sync.getRepo', {'did': self.did}),
+                        ('repo.listRecords', {'repo': self.did, 'collection': COLLECTION}),
+                        ('sync.subscribeRepos', {})]:
+            for hostname in (self.hostname, 'unknown.guest.' + HOST, 'a' * 32 + '.guest.' + HOST):
+                with self.subTest(nsid=nsid, hostname=hostname):
+                    status, out = self.call('/xrpc/com.atproto.' + nsid + '?' + urllib.parse.urlencode(q), hostname=hostname)
+                    self.assertEqual((status, out['error']), (400, 'RepoNotFound'))
+            if q:
+                self.assertEqual(self.call('/xrpc/com.atproto.' + nsid + '?' + urllib.parse.urlencode(q), hostname=HOST)[0], 400)
+        self.assertEqual(self.call('/.well-known/did.json')[0], 400)
+        self.assertEqual(self.call('/xrpc/com.atproto.repo.createRecord', {'repo': self.did})[0], 400)
+        accounts = Accounts(self.st)
+        self.assertEqual(accounts.provision_guests(), [])
+        self.assertEqual(accounts.dids(), set())
+        self.assertEqual(Poller(self.st, delve.Client(self.network)).registry([])[0], set())
+        with self.assertRaises(Refusal):
+            accounts.account(principal, create=True)
+        self.assertFalse(self.st.hosted.parent.exists())
+
+    def test_off_reconciliation_removes_only_inactive_canonical_guest_snapshots(self):
+        self.st.repo_key.parent.mkdir()
+        self.st.repo_key.write_bytes(Key.generate().pem())
+        principal = self.ident.guest('robin')
+        self.ident.db.execute("INSERT INTO challenges(nonce,did,state) VALUES(?,?,?)", ('old', principal, 'verified'))
+        self.st.hosted.mkdir(parents=True)
+        values = {'robin.json': {'principal': principal},
+                  'wren.json': {'principal': self.ident.guest('wren')},
+                  '42.chat.example.zulip.json': {'principal': 'zulip:chat.example:42'},
+                  'operator.json': {'principal': self.ident.guest('wren')},
+                  'foreign.json': {'principal': 'guest:other.example:foreign'}}
+        for name, value in values.items():
+            State.write(self.st.hosted / name, value)
+        (self.st.hosted / 'notes.json').write_text('operator notes')
+        (self.st.hosted / 'wren.key').write_text('operator key')
+        before = {p.name: p.read_bytes() for p in self.st.hosted.iterdir()}
+        self.start()
+        self.assertEqual({p.name: p.read_bytes() for p in self.st.hosted.iterdir()},
+                         {k: v for k, v in before.items() if k != 'wren.json'})
+        self.assertEqual(self.call('/.well-known/did.json')[0], 400)
+        self.assertEqual(Accounts(self.st).dids(), set())
+        self.ident.db.execute("UPDATE challenges SET state='revoked' WHERE did=?", (principal,))
+        Accounts(self.st).reconcile()
+        self.assertFalse((self.st.hosted / 'robin.json').exists())
+
+    def test_zulip_observation_off_needs_no_key_and_keeps_its_principal(self):
+        from transport.zulip import ZulipObserver
+        ob = ZulipObserver(self.st, SimpleNamespace(realm='chat.example'), 'town')
+        self.addCleanup(ob.db.close)
+        message = {'id': 1, 'subject': 'topic', 'sender_id': 42, 'sender_full_name': 'Robin',
+                   'timestamp': 1791800000, 'content': 'delvetalk diary write\ntext: rain'}
+        self.assertTrue(ob.store(message, {'user_id': 99, 'full_name': 'Delve Bot'}))
+        obs = json.loads(ob.db.execute('SELECT json FROM observations').fetchone()[0])
+        self.assertEqual(obs['author']['did'], 'zulip:chat.example:42')
+        self.assertFalse(self.st.hosted.parent.exists())
+
+    def test_off_revocation_removes_guest_snapshot_in_both_stores_without_touching_keys(self):
+        for revoke in ('credential', 'invitation'):
+            name = 'robin' if revoke == 'credential' else 'wren'
+            guest = self.ident.accept(self.ident.invite(name)['code'])
+            for directory in (self.st.hosted, self.st.legacy_hosted):
+                State.write(directory / (name + '.json'), {'principal': guest['principal']})
+                (directory / (name + '.key')).write_bytes(b'operator key')
+            if revoke == 'credential':
+                self.ident.revoke(guest['credential'])
+            else:
+                self.ident.revoke_invitation(name)
+            for directory in (self.st.hosted, self.st.legacy_hosted):
+                self.assertFalse((directory / (name + '.json')).exists())
+                self.assertEqual((directory / (name + '.key')).read_bytes(), b'operator key')
+
+    def test_dedicated_firehose_refuses_hosted_hosts_before_websocket_upgrade(self):
+        import selectors
+        import socket
+        from transport.firehose import Firehose, Subscriber, ROUTE
+        hose = Firehose(SimpleNamespace(signed=True, origin=ORIGIN), None, self.st.firehose)
+        self.addCleanup(hose.selector.close)
+        self.addCleanup(hose.wake_read.close)
+        self.addCleanup(hose.wake_write.close)
+        for host in (self.hostname, self.hostname + '.:443', 'a' * 32 + '.guest.' + HOST,
+                     '42.chat.example.zulip.' + HOST):
+            with self.subTest(host=host):
+                server, client = socket.socketpair()
+                self.addCleanup(server.close)
+                self.addCleanup(client.close)
+                sub = Subscriber()
+                hose.selector.register(server, selectors.EVENT_READ, sub)
+                raw = (f'GET {ROUTE} HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\n'
+                       'Connection: Upgrade\r\nSec-WebSocket-Version: 13\r\n'
+                       'Sec-WebSocket-Key: YWJjZGVmZ2hpamtsbW5vcA==')
+                hose.handshake(server, sub, raw.encode())
+                self.assertTrue(bytes(sub.output).startswith(b'HTTP/1.1 400'))
+                self.assertFalse(sub.upgraded)
+
+    def test_config_uses_the_existing_toml_and_environment_boolean_rules(self):
+        self.assertFalse(Config.load(environ={}).hosted_accounts)
+        (self.st.root / 'delvetalk.toml').write_text('hosted_accounts = true\n')
+        self.assertTrue(Config.load(self.st.root, environ={}).hosted_accounts)
+        self.assertFalse(Config.load(self.st.root, environ={'DELVETALK_HOSTED_ACCOUNTS': 'off'}).hosted_accounts)
+        self.assertTrue(Config.load(environ={'DELVETALK_HOSTED_ACCOUNTS': 'on'}).hosted_accounts)
+        with self.assertRaises(SystemExit):
+            Config.load(environ={'DELVETALK_HOSTED_ACCOUNTS': 'maybe'})
+        (self.st.root / 'delvetalk.toml').write_text('hosted_accounts = "true"\n')
+        with self.assertRaises(SystemExit):
+            Config.load(self.st.root, environ={})

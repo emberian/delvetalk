@@ -351,7 +351,9 @@ class Identity:
                 if not GUEST_NAME.fullmatch(chosen):
                     raise IdentityError('invalid_guest_name')
                 from transport.hosted import Accounts
-                account = Accounts(self.st).account(principal, create=True)
+                did = hosted_identity(principal, urllib.parse.urlsplit(self.origin).hostname)
+                if self.st.config.hosted_accounts:
+                    Accounts(self.st).account(principal, create=True)
                 self.db.execute("UPDATE invitations SET state='accepted',accepted=?,name=?,principal=? WHERE id=?", (now, chosen, principal, row['id']))
                 self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state,verified) VALUES(?,?,?,?,?,?,?,?,?)',
                                 ('guest:' + secrets.token_hex(16), chosen, principal, '', digest(credential), now, now, 'verified', now))
@@ -363,7 +365,7 @@ class Identity:
                 raise
             else:
                 self.db.execute('COMMIT')
-        return {'status': 'accepted', 'principal': principal, 'did': account.did, 'handle': chosen, 'credential': credential}
+        return {'status': 'accepted', 'principal': principal, 'did': did, 'handle': chosen, 'credential': credential}
 
     def invitations(self):
         """Every invitation, newest first, with its state and the time its credential was last used; never a code. A code
@@ -388,6 +390,8 @@ class Identity:
                 ended = self.db.execute("UPDATE challenges SET state='revoked',revoked=? WHERE did=? AND state='verified'", (now, row['principal'])).rowcount
             finally:
                 self.db.execute('COMMIT')
+        from transport.hosted import Accounts
+        Accounts(self.st).prune_guests()
         return {'status': 'revoked', 'id': row['id'], 'name': row['name'] or '(open)', 'principal': row['principal'], 'credentials': ended}
 
     def revoke(self, credential):
@@ -396,4 +400,6 @@ class Identity:
                                   (self.clock(), digest(credential)))
         if cur.rowcount != 1:
             raise IdentityError('invalid_credential')
+        from transport.hosted import Accounts
+        Accounts(self.st).prune_guests()
         return {'status': 'revoked'}

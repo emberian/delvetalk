@@ -158,10 +158,11 @@ class ZulipObserver(Observer):
                 obs = self.observation(m, me['full_name'].strip().lower())
                 from transport.hosted import Accounts
                 from transport.repo import Refusal
-                try:
-                    Accounts(self.st).account(obs['author']['did'], create=True)
-                except Refusal as r:
-                    raise Failure(r.body['error'], r.body['message']) from None
+                if self.st.config.hosted_accounts:
+                    try:
+                        Accounts(self.st).account(obs['author']['did'], create=True)
+                    except Refusal as r:
+                        raise Failure(r.body['error'], r.body['message']) from None
                 self.db.execute('INSERT INTO posts VALUES(?,?,?,?)', (uri, obs['cid'], '', canonical(obs)))
                 self.db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (uri, canonical(obs)))
                 fresh = True
