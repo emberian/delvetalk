@@ -8,6 +8,7 @@
    card with no definition of `chronicle` or `map` of its own is read by the commonplace's, from that card. -/
 import Delvetalk.Host.Ops
 import Delvetalk.Document
+import Std.Data.HashSet
 
 namespace Delvetalk.Host.Surfaces
 open Lean (Json toJson)
@@ -310,30 +311,104 @@ def ways (w : World) (reader : String) : List Way × List (String × Nat) := Id.
     if n > 0 then lying := lying.push (id, n)
   return (out.toList, lying.toList)
 
-/-- The shortest way from the square to `root` through doors (`[square, …, root]`), or none. -/
-def pathTo (ways : List Way) (root : String) : List String := Id.run do
+/-- Doors indexed by their source, retaining their positions in the ordered map. -/
+def adjacency (ways : Array Way) : Std.HashMap String (Array (Nat × Way)) := Id.run do
+  let mut out : Std.HashMap String (Array (Nat × Way)) := {}
+  for i in [0:ways.size] do
+    let some x := ways[i]? | continue
+    out := out.insert x.from_ ((out.getD x.from_ #[]).push (i, x))
+  return out
+
+/-- The shortest way from the square to `root` through indexed doors (`[square, …, root]`), or none. -/
+def pathTo (doors : Std.HashMap String (Array (Nat × Way))) (root : String) : List String := Id.run do
   if root == square then return [square]
-  let mut frontier : List (List String) := [[square]]
-  let mut visited : List String := [square]
-  for _ in [0:ways.length + 1] do
-    let mut next : List (List String) := []
-    for path in frontier do
-      let here := path.head!
-      for x in ways do
-        if x.from_ == here && !visited.contains x.to then
-          if x.to == root then return (x.to :: path).reverse
-          visited := x.to :: visited
-          next := next ++ [x.to :: path]
-    if next.isEmpty then return []
-    frontier := next
+  let mut queue : Array String := #[square]
+  let mut cursor := 0
+  let mut visited : Std.HashSet String := ({} : Std.HashSet String).insert square
+  let mut parents : Std.HashMap String String := {}
+  while cursor < queue.size do
+    let here := queue[cursor]!
+    cursor := cursor + 1
+    for (_, x) in doors.getD here #[] do
+      if visited.contains x.to then continue
+      visited := visited.insert x.to
+      parents := parents.insert x.to here
+      if x.to == root then
+        let mut path := [root]
+        let mut at_ := root
+        for _ in [0:visited.size] do
+          let some parent := parents[at_]? | break
+          path := parent :: path
+          if parent == square then return path
+          at_ := parent
+        return []
+      queue := queue.push x.to
   return []
 
-/-- `World.Ways`: the card the map starts at, the way to it from the square, every door, what lies where, the page. -/
+/-- Doors handed to one map renderer, across its three drawn levels and the next level's counts. -/
+def mapDoors : Nat := 64
+
+/-- A path fitting in a map's header; a long path keeps its square and final steps with an ellipsis between. -/
+def mapPath (path : List String) : List String := Id.run do
+  let bound := Limits.cardShownChars / 3
+  if (path.foldl (fun n id => n + id.length + 3) 0) ≤ bound then return path
+  let mut suffix : List String := []
+  let mut length := square.length + 6
+  for id in path.reverse do
+    if id == square || length + id.length + 3 > bound then break
+    suffix := id :: suffix
+    length := length + id.length + 3
+  return square :: "…" :: suffix
+
+/-- The bounded neighborhood a map renders: incoming doors and outgoing doors through four levels, in map order.
+    Each unbroken label and the incoming-door footer fit within the reply's clip. -/
+def mapWays (all : Array Way) (doors : Std.HashMap String (Array (Nat × Way))) (root : String) : List Way := Id.run do
+  let mut candidates : Array (Nat × Way) := #[]
+  if all.size ≤ mapDoors then
+    for i in [0:all.size] do
+      if let some x := all[i]? then candidates := candidates.push (i, x)
+  else
+    for i in [0:all.size] do
+      if let some x := all[i]? then
+        if x.to == root then candidates := candidates.push (i, x)
+    let mut queue : Array (String × Nat) := #[(root, 0)]
+    let mut cursor := 0
+    let mut visited : Std.HashSet String := ({} : Std.HashSet String).insert root
+    while cursor < queue.size && cursor < mapDoors do
+      let (here, depth) := queue[cursor]!
+      cursor := cursor + 1
+      for item in doors.getD here #[] do
+        candidates := candidates.push item
+        let x := item.2
+        if depth < 3 && !visited.contains x.to then
+          visited := visited.insert x.to
+          queue := queue.push (x.to, depth + 1)
+  let mut selected : Std.HashSet Nat := {}
+  let mut incoming := 0
+  for (i, x) in candidates do
+    if selected.size ≥ mapDoors then break
+    if selected.contains i || x.label.length + x.to.length + 8 > Limits.cardShownChars / 2 then continue
+    if x.to == root && root != square then
+      let length := x.from_.length + x.label.length + 5
+      if incoming + length > Limits.cardShownChars / 3 then continue
+      incoming := incoming + length
+    selected := selected.insert i
+  let mut out : Array Way := #[]
+  for i in [0:all.size] do
+    if selected.contains i then
+      if let some x := all[i]? then out := out.push x
+  return out.toList
+
+/-- `World.Ways`: the map's root, bounded path and neighborhood, counts at their endpoints, and page;
+    the full readable door list accompanies it for a drawing. -/
 def waysData (w : World) (reader root : String) (page : Nat) : Data × List Way :=
   let (all, lying) := ways w reader
-  (.record [("root", .label root), ("path", listOfData ((pathTo all root).map Data.label)),
-    ("ways", listOfData (all.map Way.data)),
-    ("lying", listOfData (lying.map fun (id, n) => .record [("object", .label id), ("count", .natural n)])),
+  let doors := adjacency all.toArray
+  let shown := mapWays all.toArray doors root
+  let endpoints : Std.HashSet String := shown.foldl (fun s x => (s.insert x.from_).insert x.to) (({} : Std.HashSet String).insert root)
+  (.record [("root", .label root), ("path", listOfData ((mapPath (pathTo doors root)).map Data.label)),
+    ("ways", listOfData (shown.map Way.data)),
+    ("lying", listOfData ((lying.filter fun (id, _) => endpoints.contains id).map fun (id, n) => .record [("object", .label id), ("count", .natural n)])),
     ("page", .natural page)], all)
 
 /-! ## Rendering by the card's own definition -/

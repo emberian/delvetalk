@@ -269,6 +269,62 @@ class Map(Surfaces):
         mine = self.read(KIM, self.hanger, "delvetalk %s map" % self.hanger)["text"]
         self.assertIn("\n  lone → %s\n" % self.lone, mine)
 
+    def test_a_small_unreachable_cards_map_keeps_its_exact_text(self):
+        got = self.read(GLM, self.lone, 'delvetalk %s map' % self.lone)
+        self.assertEqual(got['text'],
+                         'THE DOOR MAP · from %s\n'
+                         'No door leads here from the commonplace.\n'
+                         '%s\n  It opens onto no card yet.\n'
+                         'Doors onto it: %s (lone)\n'
+                         "A card's own map: delvetalk <card> map\n" % (self.lone, self.lone, self.hanger))
+
+
+class LongMap(Surfaces):
+    def test_a_long_door_chain_answers_promptly_within_the_clip_and_only_through_readable_cards(self):
+        import json
+        import time
+        from deploy import genesis
+        from deploy.seed import closure, modules_on_disk
+        from tests.wire import listing
+        from transport.host import HostClient
+
+        modules = closure('Record', modules_on_disk())
+        root = 'chain/' + 'z' * 122
+        chain = ['chain/%04d' % i for i in range(2999)] + [root]
+        secret, leaf = 'chain/secret', 'chain/leaf'
+
+        def create(obj, doors=(), read=None):
+            more = {'read': read} if read is not None else {}
+            got = self.town.send(op='world-create', principal=OPENER, identity='mk-' + obj, object=obj,
+                                 entry='initial', modules=modules, law=genesis.RECORD_LAW,
+                                 seed=record(owner=label(OPENER), cites=listing(
+                                     genesis.door(name, to, []) for name, to in doors)), **more)
+            self.assertEqual(got['status'], 'created', got)
+
+        create(secret, read={'principals': [OPENER]})
+        create(leaf)
+        create(root, [('leaf', leaf), ('private door', secret), ('back', chain[-2])])
+        for i in range(len(chain) - 2, -1, -1):
+            create(chain[i], [('next', chain[i + 1])])
+        self.admitted(OPENER, 'garden', 'delvetalk garden door / label: chain / to: ' + chain[0])
+        height = self.town.send(op='world-status')['height']
+        client = HostClient(self.town.process.root, timeout=5)
+        self.addCleanup(client.close)
+        started = time.monotonic()
+        got = client.send({'op': 'world-surface', 'principal': GLM, 'object': root, 'read': 'map'})
+        self.assertLess(time.monotonic() - started, 5, got)
+        self.assertEqual(got['status'], 'surface', got)
+        self.assertLessEqual(len(got['text']), CLIP, got['text'])
+        self.assertIn('The way here: commonplace › … › ', got['text'])
+        self.assertIn(' › ' + root + '\n', got['text'])
+        self.assertIn('leaf → ' + leaf, got['text'])
+        self.assertIn('Doors onto it: ' + chain[-2] + ' (next)', got['text'])
+        self.assertIn({'from': root, 'label': 'leaf', 'to': leaf}, got['ways'])
+        self.assertIn({'from': chain[0], 'label': 'next', 'to': chain[1]}, got['ways'])
+        self.assertNotIn(secret, json.dumps(got))
+        self.assertNotIn('private door', json.dumps(got))
+        self.assertEqual(self.town.send(op='world-status')['height'], height)
+
 
 class Linked(Surfaces):
     def test_the_commonplace_and_an_avatar_each_open_the_reads_in_one_line_and_the_library_names_them(self):
