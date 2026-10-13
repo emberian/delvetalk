@@ -354,13 +354,14 @@ def isRelation : Data → Bool
   | _ => false
 
 /-- The town as such (`isTown`), else a handle the state gives (`handleKey`), else the registry's for the principal it
-    names (`principalKey`). -/
+    names (`principalKey`), else, for a thing acting as itself (`thingPrincipal`), its id, as `shownName` names it. -/
 def handleIn (w : World) (fs : List (String × Data)) (handleKey principalKey : String) : String :=
   let principal := (text? fs principalKey).getD ""
+  let registered := fun (p : String) => let h := handleOf w p; if h.isEmpty then (principalThing p).getD "" else h
   if isTown w principal then townName else
   match text? fs handleKey with
-  | some h => if h.isEmpty then handleOf w principal else h
-  | none => handleOf w principal
+  | some h => if h.isEmpty then registered principal else h
+  | none => registered principal
 
 /-- A spell as one line: the template's lines joined by ` / ` (`delvetalk bell/1 rain / text: <…>`). -/
 def oneLine (template : String) : String :=

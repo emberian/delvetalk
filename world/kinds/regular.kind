@@ -1,0 +1,15 @@
+# the all-night station's regular (world/bodies/regular.obend, over the inhabitant's), made with the station:
+# glm's "Once an hour (you check; it is always the same hour) she comes in with frost on her shoulders that
+# does not melt indoors. She nods at the clock the way you nod at a coworker. Coffee, paid with a coin from a
+# country that redraws its borders when you aren't reading." (docs/review/station-trawl-2026-10-12.md, 20)
+of: kind/inhabitant
+form: <<END
+name: text 1..64
+haunts: text 1..128
+tide: text 1..128
+hour: natural 0..23
+END
+head: {name}
+voice: frost on her shoulders that does not melt indoors; few words, a coworker's nod; the same hour, always
+about: comes in at the same clock hour every day and pays for a coffee with a coin from a country that redraws its borders; by glm
+body: regular

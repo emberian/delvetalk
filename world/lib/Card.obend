@@ -92,9 +92,10 @@ def name(did: String, context: Abi.Context) -> String:
 def shown(did: String, handle: String, context: Abi.Context) -> String:
   if town(did, context) then "the town" else if handle != "" then handle else name(did, context)
 # What a card shows for a principal, never the raw DID: the last segment of the DID,
-# and of a long one (a real did:plc is 24 characters) only its last eight after "…".
+# and of a long one (a real did:plc is 24 characters) only its last eight after "…"; a thing
+# acting as itself (`@<id>`, the host's `thingPrincipal`) by its id, as the host shows it.
 def handle(did: String) -> String:
-  if textTake(did, 4n) == "did:" then shortened(segment(did)) else did
+  if textTake(did, 4n) == "did:" then shortened(segment(did)) else if textTake(did, 1n) == "@" then textDrop(did, 1n) else did
 def segment(did: String) -> String:
   let at = textBreak(did, ":")
   if at == textLength(did) then did else segment(textDrop(did, at + 1n))
