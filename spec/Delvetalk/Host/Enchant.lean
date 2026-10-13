@@ -225,6 +225,9 @@ def Strokes.text (s : Strokes) : String := Id.run do
            else ": its past, before the reader's first arrival, in the third person")]
       | none, none => [s!"What it is: {s.object}" ++ (if s.kind.isEmpty then "" else s!", a {kindName} ({s.kind})")]) ++
     line (s.speech.code != "en") s!"Paint in: {s.speech.name} ({s.speech.english}), quoting in {s.speech.quotes}; residents' lines, ids, handles and spells exactly as written here; each count with the {s.speech.english} unit word given beside it" ++
+    (match s.telling with
+      | some t => line (s.speech.code != "en") s!"Frame: the page prints {t.frame s.tongue} above the paint, so the paint begins with what happened and never writes a frame, in this language or another"
+      | none => []) ++
     line (!s.head.isEmpty) s!"Called: {s.head}" ++
     [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
     line (!s.about.isEmpty) s!"What its kind is: {s.about}" ++
@@ -1322,7 +1325,7 @@ structure Render where
   strokes : Strokes
   request : Json
   fate : Fate
-  /-- Asked again once already, after a paint refused for its length alone. -/
+  /-- Asked again once already, after a refusal (its length in any tongue, any clause in another than English). -/
   retried : Bool := false
 
 /-- How long after the worker last listed `world-renders` the host still counts on it (ms): past it a reader is
@@ -1333,7 +1336,7 @@ def workerGraceMs : Nat := 10000
 structure Cache where
   entries : Std.HashMap String Render := {}
   polled : Option Nat := none
-  /-- Paints asked for again after a refusal for length alone (`world-status.renders.retried`). -/
+  /-- Paints asked for again after a refusal (`world-status.renders.retried`). -/
   retried : Nat := 0
 
 def Cache.attended (c : Cache) (now : Nat) : Bool := match c.polled with
@@ -1478,9 +1481,27 @@ def rendersOp (c : Cache) (now : Nat) : Json :=
     | _ => acc) #[]
   Json.mkObj [("status", toJson "renders"), ("pending", Json.arr (pending.qsort fun a b => a.compress < b.compress))]
 
+/-- What the painter is told after a refusal, in plain words: the clause that refused its paint and what failed it, and
+    what to do instead. The one retry for every refusal, the length's included. -/
+def refusalNote (s : Strokes) (clause detail paint : String) : String :=
+  let again := s!"paint it again from the strokes above, in {s.speech.english}, correcting only that"
+  let last := s!"The last paint was thrown away whole: "
+  let shown := s!" (the paint was: {paint})"
+  match clause with
+  | "length" => s!"The last paint was {detail} characters and was thrown away: paint it again, under {s.limit} characters, the spell included."
+  | "tongue" => s!"{last}it was not written in {s.speech.english}, or not in it alone. Paint it again from the strokes above, every word of it in {s.speech.english} (no frame, no English), apart from a resident's line, ids and handles as the strokes write them.{shown}"
+  | "numbers" => s!"{last}a number was wrong ({detail}). A number may stand only beside the unit word the Counts give, as they count it; \"twice\", \"two of them\", a sum or a time is not allowed. Leave the number out if unsure; {again}.{shown}"
+  | "quotes" => s!"{last}a quotation is not in the strokes ({detail}). Quote only a resident's line or another stroke's words, whole, as written and untranslated; a name, head or label is written plain, never in quotation marks, and never translated; {again}.{shown}"
+  | "attribution" => s!"{last}a quotation is credited wrongly or not at all ({detail}). Put the writer's handle right beside each resident's line, as the strokes give it; a place's name or head is not a quotation, so write it with no quotation marks; {again}.{shown}"
+  | "wants" => s!"{last}it claimed a want ({detail}). Say a thing wants, needs or lacks something only when the strokes hold a want, and what a thing waits for is only awaited; {again}.{shown}"
+  | "negation" => s!"{last}it said something is missing or never was ({detail}). Say nothing of what a thing lacks or has not had unless the strokes hold it empty; {again}.{shown}"
+  | "secondPerson" | "forbidden" => s!"{last}it spoke to the reader or as a speaker ({detail}). Nobody is addressed (no you, your, I, my, thanks, sorry, welcome, please) in {s.speech.english} either; {again}.{shown}"
+  | _ => s!"{last}the check {clause} failed ({detail}). Copy ids, handles and spells exactly as the strokes write them, in prose with no heading or list; {again}.{shown}"
+
 /-- `world-render-submit {key, reply}`: settle a pending render with the model's reply verbatim (model.py's
     result object). A reply is verified and cached, painted or refused by its clause; a paint refused for its
-    length alone is asked for once more with its length (`retrying`, counted in `renders.retried`); a network
+    length, or for any clause in a tongue other than English, is asked for once more, told the clause and why in plain
+    words (`refusalNote`; `retrying`, counted in `renders.retried`); a network
     or rate failure is asked again after `renderBackoffMs`, `renderAttempts` in all; any other failure shows
     the thing exact (`model`). -/
 def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Json)) := do
@@ -1498,14 +1519,15 @@ def submitOp (c : Cache) (j : Json) (now : Nat) : IO (Except String (Cache × Js
       | .error (cl, d) => .rejected cl d
     else if ["transport", "rate"].contains reason && tried + 1 < renderAttempts then .pending (tried + 1) (now + renderBackoffMs)
     else .rejected "model" (if reason.isEmpty then "no reply" else reason)
-  -- A paint refused for its length alone is asked for once more, told its length (every other clause held).
-  if let .rejected "length" d := fate then
-    unless r.retried do
+  -- A paint refused is asked for once more, told in plain words what was refused and why: for its length in any
+  -- tongue, for any clause in a tongue other than English (every other paint is shown exact).
+  if let .rejected cl d := fate then
+    if !r.retried && cl != "model" && (cl == "length" || r.strokes.tongue != "en") then
       let user := (r.request.getObjValAs? String "user").toOption.getD ""
-      let again := s!"{user}\n\nThe last paint was {d} characters and was thrown away: paint it again, under {r.strokes.limit} characters, the spell included."
+      let again := s!"{user}\n\n{refusalNote r.strokes cl d (trimmed ((reply.getObjValAs? String "raw").toOption.getD ""))}"
       let r := { r with fate := .pending 0 now, retried := true, request := r.request.setObjVal! "user" (toJson again) }
       return .ok ({ c.insert key r with retried := c.retried + 1 },
-        answer "retrying" r.object [("key", toJson key), ("clause", toJson "length"), ("detail", toJson d), ("next", toJson now)])
+        answer "retrying" r.object [("key", toJson key), ("clause", toJson cl), ("detail", toJson d), ("next", toJson now)])
   let r := { r with fate }
   toDisk key r
   let c := c.insert key r

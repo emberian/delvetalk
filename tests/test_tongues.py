@@ -12,6 +12,7 @@ invented want or a false negation passing in any of the five tongues; hob answer
     python3 -W error -m unittest tests.test_tongues -v
 """
 import os
+import re
 import tempfile
 import unittest
 from unittest import mock
@@ -29,6 +30,21 @@ YUE = 'the anchor remembers what the garden can\'t; the soil keeps the correctio
 
 def replied(text):
     return {'status': 'replied', 'raw': text, 'model': 'claude-haiku-5-5', 'usage': {'input_tokens': 900, 'output_tokens': 60}}
+
+
+CODES = {'Japanese': 'ja', 'Chinese': 'zh', 'Spanish': 'es', 'Russian': 'ru', 'Arabic': 'ar'}
+PAINT_OBEND = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'world', 'lib', 'Paint.obend')
+
+
+def contract_examples(kind):
+    """The worked examples of the painter's contract (world/lib/Paint.obend) of that kind: [(tongue code, paint)], one per tongue."""
+    out = []
+    with open(PAINT_OBEND, encoding='utf-8') as f:
+        for part in f.read().split('\\n'):  # the contract's own line breaks, written as escapes in the source
+            m = re.match(r'(%s), a %s\. Strokes: .*? Paint: (.+)$' % ('|'.join(CODES), kind), part)
+            if m:
+                out.append((CODES[m.group(1)], m.group(2)))
+    return out
 
 
 class Tongued(unittest.TestCase):
@@ -111,6 +127,7 @@ class Hob(Tongued):
         self.assertTrue(usage['text'].rstrip().endswith('hob: how a spell is read: delvetalk library read / page: spells'), usage['text'])
 
 
+AR_PAINT = 'جرس صغير من النحاس، مضبوط النغمة لا مضروب، ينتظر المطر. عليه مطران؛ كتب kimik3.delve.town «%s».' % YUE
 JA_PAINT = '琥珀の鐘に二つの雨。kimik3.delve.townの「%s」が残る。' % YUE
 ES_PAINT = 'Una campana de ámbar con dos lluvias; kimik3.delve.town escribió «%s».' % YUE
 EN_PAINT = 'An amber bell for lost moths. Two rains have come; kimik3.delve.town\'s says “%s”.' % YUE
@@ -171,6 +188,8 @@ class Paint(Tongued):
     def test_3_a_paint_in_another_tongue_than_asked_is_shown_exact(self):
         self.town.send(op='world-renders')
         ru = self.render(GLM, words='пусть на колокол прольётся дождь')
+        # A refusal in another tongue is asked once more; the painter, still in English, is refused for good.
+        self.assertEqual(interpret.paint(self.town.client, self.model({'русский': EN_PAINT}))['retrying'], [ru['key']])
         interpret.paint(self.town.client, self.model({'русский': EN_PAINT}))
         got = self.render(GLM, words='пусть на колокол прольётся дождь')
         self.assertEqual((got['status'], got['reason'], got['clause']), ('exact', 'rejected', 'tongue'), got)
@@ -211,6 +230,57 @@ class Paint(Tongued):
         self.assertEqual(self.check('fr', 'Une cloche ambrée, deux pluies.'), 'tongue')
 
 
+    def test_6_the_contracts_thing_examples_are_true_paints_of_the_real_strokes(self):
+        examples = contract_examples('thing')
+        self.assertEqual(sorted(t for t, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
+        for tongue, paint in examples:
+            with self.subTest(tongue=tongue):
+                self.assertEqual(self.check(tongue, paint), 'verified')
+
+    def test_7_a_refusal_in_another_tongue_is_asked_once_more_with_its_reason(self):
+        self.town.send(op='world-renders')
+        ar = self.render(GLM, tongue='ar')
+        asked = []
+        replies = [replied('الجرس يريد زائرا.'), replied(AR_PAINT)]
+
+        def ask(req):
+            asked.append(req)
+            return replies[len(asked) - 1]
+        before = self.town.send(op='world-status')['renders']['retried']
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [], 'retrying': [ar['key']]})
+        self.assertEqual(self.town.send(op='world-status')['renders']['retried'], before + 1)
+        self.assertEqual(self.render(GLM, tongue='ar')['status'], 'pending')
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [ar['key']]})
+        # The second ask is the first with the refused clause, its reason and the refused paint, in plain words.
+        first, second = asked
+        self.assertEqual(first['system'], second['system'])
+        self.assertTrue(second['user'].startswith(first['user'] + '\n\nThe last paint was thrown away whole: it claimed a want ('), second['user'])
+        self.assertIn('the strokes hold no want', second['user'])
+        self.assertIn('in Arabic', second['user'])
+        self.assertTrue(second['user'].endswith('(the paint was: الجرس يريد زائرا.)'), second['user'])
+        self.assertEqual(self.render(GLM, tongue='ar')['text'], AR_PAINT)
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': []})  # painted: no third ask
+        self.assertEqual(len(asked), 2)
+
+    def test_8_a_second_refusal_is_final_and_asks_no_more(self):
+        self.town.send(op='world-renders')
+        zh = self.render(GLM, tongue='zh')
+        asked = []
+        replies = [replied('这口钟下过五场雨。'), replied('这口钟想要访客。')]
+
+        def ask(req):
+            asked.append(req)
+            return replies[len(asked) - 1]
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [], 'retrying': [zh['key']]})
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [], 'exact': [zh['key']]})
+        self.assertIn('a number was wrong (', asked[1]['user'])
+        self.assertIn('in Chinese', asked[1]['user'])
+        got = self.render(GLM, tongue='zh')
+        self.assertEqual((got['status'], got['reason'], got['clause']), ('exact', 'rejected', 'wants'), got)
+        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': []})
+        self.assertEqual(len(asked), 2)
+
+
 class Telling(unittest.TestCase):
     """The porch told in Japanese to one who arrives stating it."""
 
@@ -230,6 +300,21 @@ class Telling(unittest.TestCase):
             got = cls.town.send(op='world-turn', principal=who, object=obj, method='receive',
                                 argument=record(text=label(text), post=label('')), identity='t%d' % cls.n)
             assert got['status'] == 'admitted', got
+
+    def test_the_contracts_before_arrival_examples_are_true_paints_of_the_real_strokes(self):
+        examples = contract_examples('telling before arrival')
+        self.assertEqual(sorted(t for t, _ in examples), ['ar', 'es', 'ja', 'ru', 'zh'])
+        for tongue, paint in examples:
+            with self.subTest(tongue=tongue):
+                got = self.town.send(op='world-render-check', principal=MOO, object='porch', telling={}, tongue=tongue, text=paint)
+                self.assertEqual(got['status'], 'verified', got)
+
+    def test_a_spanish_plural_in_e_is_its_unit(self):
+        # visitantes is visitante (the stem keeps clase/clases, carácter/caracteres meeting too), so the count beside it is read.
+        for count, status in (('dos', 'verified'), ('tres', 'rejected')):
+            got = self.town.send(op='world-render-check', principal=MOO, object='porch', telling={}, tongue='es',
+                                 text='El pueblo dejó porch/goblet sobre la pizarra. %s visitantes llegaron al umbral.' % count.capitalize())
+            self.assertEqual((got['status'], got.get('clause', 'verified' if status == 'verified' else '')), (status, 'verified' if status == 'verified' else 'numbers'), got)
 
     def test_a_japanese_telling(self):
         self.town.send(op='world-renders')

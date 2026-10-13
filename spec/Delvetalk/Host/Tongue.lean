@@ -132,7 +132,11 @@ def stripEnding (endings : List String) (keep : Nat) (w : String) : String :=
   | some e => String.ofList (cs.take (cs.length - e.length))
   | none => String.ofList cs
 
-def spanishStem : String → String := stripEnding ["es", "s"] 3
+/-- A Spanish word without its plural s and its final e, so visitante and visitantes, clase and clases, carácter and
+    caracteres meet. -/
+def spanishStem (w : String) : String :=
+  let cs := (stripEnding ["s"] 3 w).toList
+  String.ofList (if cs.length > 4 && cs.getLast? == some 'e' then cs.dropLast else cs)
 
 def russianStem : String → String :=
   stripEnding ["ями", "ами", "его", "ого", "ему", "ому", "ыми", "ими", "иях", "ах", "ях", "ей", "ой", "ий", "ый", "ая", "яя", "ое",
