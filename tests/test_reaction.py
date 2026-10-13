@@ -135,6 +135,22 @@ class Bell(Reaction):
         self.assertFired(third, bell, "twice", "delvetalk %s ring" % bell)
         self.assertEqual(self.names(bell), ["rung"])
 
+    def test_a_private_bell_runs_its_inherited_rule_as_itself(self):
+        bell = self.plant(GLM)
+        hidden = self.town.send(op="world-root", principal=OPENER, reason="make the bell private",
+                                act={"kind": "set", "object": bell, "field": "read",
+                                     "value": {"principals": [GLM]}})
+        self.assertEqual(hidden["status"], "root", hidden)
+        for i in range(7):
+            reply = self.admitted(self.say(GLM, bell, "delvetalk %s rain / text: drop %d" % (bell, i)))
+        fired = [f for f in self.fired(reply) if f["rule"] == "seven"]
+        self.assertEqual([(f["principal"], f["to"]) for f in fired], [("@" + bell, bell)])
+        view = self.town.send(op="world-view", principal=GLM, object=bell)
+        marks = next(f["value"] for f in view["state"]["fields"] if f["name"] == "marks")
+        self.assertIn("rung", str(marks))
+        self.assertIn(("@" + bell, "%s rang" % bell), self.inbox(GLM))
+        self.assertEqual(self.town.send(op="world-view", principal=KIM, object=bell)["status"], "denied")
+
 
 class Record(Reaction):
     def test_a_record_seals_itself_at_its_seventh_line(self):

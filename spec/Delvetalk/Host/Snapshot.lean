@@ -31,8 +31,9 @@ def edition : String := "delvetalk.snapshot.v5"
     deleted with the next. -/
 def previousEdition : String := "delvetalk.snapshot.v4"
 
-/-- The index keys `previousEdition` may not write: a carry from it starts them empty. -/
-def addedKeys : List String := ["refusedBy"]
+/-- The index keys an older binary's body may not write: a carry from it starts them empty (`wantFlips`: a
+    binary before replay edition 15 queued no want transitions). -/
+def addedKeys : List String := ["refusedBy", "wantFlips"]
 
 /-! ## Writing -/
 
@@ -95,6 +96,7 @@ def indexJson (w : World) : Json :=
     ("changes", Json.arr (w.changes.map fun c => Json.arr #[toJson c.height, toJson c.object, toJson c.version, toJson c.principal])),
     ("ruleLog", mapJson w.ruleLog fun xs => Json.mkObj xs),
     ("wanting", mapJson w.wanting fun xs => Json.mkObj (xs.map fun (n, h) => (n, toJson h))),
+    ("wantFlips", Json.arr (w.wantFlips.map (·.json))),
     ("wantCites", mapJson w.wantCites fun xs => toJson xs),
     ("wantReaders", mapJson w.wantReaders fun xs => toJson xs),
     ("wantClock", mapJson w.wantClock toJson),
@@ -145,6 +147,7 @@ def installIndex (w : World) (j : Json) : Except String World := do
     changes := ← arrOf (← field "changes") change
     ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
     wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
+    wantFlips := ← arrOf ((field "wantFlips").toOption.getD (Json.arr #[])) WantFlip.ofJson
     wantCites := ← mapOf (← field "wantCites") fun x => (Lean.fromJson? x : Except String (List String))
     wantReaders := ← mapOf (← field "wantReaders") fun x => (Lean.fromJson? x : Except String (List String))
     wantClock := ← mapOf (← field "wantClock") (·.getBool?)
@@ -433,7 +436,7 @@ def suspendedObject (e : Json) : String :=
     last firings, the wants that hold, the refusals each law made, posting reservations, model attempts, the quotas' counts, the root acts'
     count, the moderation: cards, quiets, hidden). Every other index names entries of the old chain. -/
 def carriedKeys : List String :=
-  ["ruleLog", "wanting", "refusedBy", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
+  ["ruleLog", "wanting", "wantFlips", "refusedBy", "reservations", "attempts", "interpretsStarted", "rootActs", "cards", "quiets",
    "hidden", "modelDay", "hour"]
 
 /-- A genesis entry chained to `cid`: `tag` and its origin, the store of `shown` with every source its
@@ -744,6 +747,39 @@ def reopen (journal : String) (src : Entries) (caches : Caches := {}) : IO (Exce
     | .error e => report := { report with refused := report.refused ++ [(height, e)] }
   return (replayAll src caches).map (·, report)
 
+/-- Local journals of a carry's origins. Every link must match the hashes and heights the carry retained;
+    unavailable or changed journals leave a history boundary. -/
+partial def ancestryOf (journal : String) (origin : Json) : IO (Array Entries) := do
+  let world := (origin.getObjValAs? String "world").toOption.getD ""
+  let beside := ((journal : System.FilePath).parent.getD ".") / world
+  let path ← [(world : System.FilePath), beside].findM? (·.pathExists)
+  let mine ← try
+    match path with
+    | none => pure #[]
+    | some p =>
+      let .ok src ← openEntries p.toString | return #[]
+      let height := (origin.getObjValAs? Nat "height").toOption.getD 0
+      let expected := (origin.getObjVal? "entries").toOption.getD Json.null
+      if height > src.count || height ≤ src.base then return #[]
+      let src := src.upTo height
+      let linksMatch := (List.range (src.count - src.base)).all fun k =>
+        let i := src.base + k
+        ((src.hashAt? i).bind fun cid => (expected.getObjValAs? Nat cid).toOption) == some (i + 1) &&
+          (checkedEntry src i).isOk
+      pure (if linksMatch then #[src] else #[])
+    catch _ => pure #[]
+  let earlier ← match (origin.getObjVal? "carriedFrom").toOption with
+    | some o => ancestryOf ((path.map (·.toString)).getD journal) o
+    | none => pure #[]
+  return mine ++ earlier
+
+/-- Attach the local history a carried genesis authenticates, without changing snapshot or replay state. -/
+def withAncestry (journal : String) (w : World) : IO World := do
+  let ancestry ← match w.entries.genesis?.bind genesisOrigin with
+    | some ("carriedFrom", origin) => ancestryOf journal origin
+    | _ => pure #[]
+  return { w with ancestry }
+
 /-- Open a journal: the newest snapshot that passes every check, else full replay. With `verify`,
     replay everything and compare every snapshot with the replayed world at its height; a snapshot
     that disagrees is refused by name. A journal of another replay edition is refused first. -/
@@ -759,7 +795,10 @@ def openJournal (journal : String) (verify : Bool := false) (caches : Caches := 
     let edition := (first.getObjValAs? Nat "replay").toOption.getD 1
     if edition != Limits.replayEdition then
       return .error s!"journal replay edition {edition}; this host is {Limits.replayEdition}; a world from another host's edition does not reopen here: carry it (`delvetalk-obend carry --from {journal} --out NEW`, over a snapshot at its head written by the binary of its edition)"
-  unless verify do return ← reopen journal src caches
+  unless verify do
+    match ← reopen journal src caches with
+    | .error e => return .error e
+    | .ok (w, report) => return .ok (← withAncestry journal w, report)
   let snaps ← files journal
   let heights := snaps.map (·.1)
   let mut report : Report := {}
@@ -790,6 +829,6 @@ def openJournal (journal : String) (verify : Bool := false) (caches : Caches := 
           report := { report with refused := report.refused ++ [(w.height, "it disagrees with replay at its height")] }
       | .error e, _ | _, .error e =>
         report := { report with refused := report.refused ++ [(w.height, e)] }
-  return .ok (w, report)
+  return .ok (← withAncestry journal w, report)
 
 end Delvetalk.Host.Snapshot

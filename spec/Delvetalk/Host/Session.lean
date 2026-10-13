@@ -148,12 +148,17 @@ def appendJournal (s : Open) (w : World) (records : Array ByteArray) : IO (Excep
     see them (`settledFor`). What `durableIO` makes durable and `world-try` drops. -/
 def settledStep (s : Open) (reader : String) (step : World → IO (Except String (World × Json))) : IO (Except String (World × Json × Json)) := do
   let settled := fun (w : World) => w.suspended.isEmpty && w.pending.isEmpty
-  let stepped ← step s.world
+  let start := drainWants s.world
+  let stepped ← match start with
+    | .error e => pure (.error e)
+    | .ok w => step w
   return do
     let (w', r0) ← stepped
+    let w' ← drainWants w'
     -- What the settling pass runs is no request's: no turn of it is the public socket's.
     let w' := { w' with resident := false }
     let (w', resumed, delivered) ← if settled w' then pure (w', #[], #[]) else settleAll w'
+    let w' ← drainWants w'
     -- Turns the settling pass ran belong to their own principals: whoever caused the pass sees
     -- another's only as its projection, and nobody's offers (`world-offers` reads them).
     let quiet := fun (rs : Array Json) => rs.map (settledFor w' reader)
@@ -202,8 +207,8 @@ def durableIO (s : Open) (reader : String) (step : World → IO (Except String (
     let (o, note) ← snapshotNow s
     return (some o, .ok (r.setObjVal! "snapshot" note))
 
-/-- `if: [{object, version}]` on a turn or a try: the versions the asker last read (a try's `roots`). Each
-    that moved, `{object, was, now}`, `now` null when the object is gone or the principal may not view it. -/
+/-- A turn or try's guards compare state and any behaviour revision explicitly supplied.
+    A moved root has `now` null when the object is gone or the principal may not view it. -/
 def movedRoots (w : World) (j : Json) : Except String (List Json) := do
   let some given := (j.getObjVal? "if").toOption | return []
   let .ok roots := given.getArr? | throw "the if: line does not read: it is `if: <card> v<n>, <card> v<n>`, as a try ends"
@@ -212,29 +217,44 @@ def movedRoots (w : World) (j : Json) : Except String (List Json) := do
   roots.toList.filterMapM fun a => do
     let id ← a.getObjValAs? String "object"
     let was ← a.getObjValAs? Nat "version"
-    let now := (w.objects[id]?).bind fun o => if o.read.permits principal then some o.version else none
-    return if now == some was then none else
-      some (Json.mkObj [("object", toJson id), ("was", toJson was), ("now", match now with | some v => toJson v | none => Json.null)])
+    let behaviour ← optNat a "behaviour"
+    let current := (w.objects[id]?).filter fun o => o.read.permits principal
+    let now := current.map (·.version)
+    let revision := current.map (·.behaviour)
+    let movedBehaviour := behaviour.isSome && revision != behaviour
+    return if now == some was && !movedBehaviour then none else
+      some (Json.mkObj ([("object", toJson id), ("was", toJson was),
+        ("now", match now with | some v => toJson v | none => Json.null)] ++
+        (if !movedBehaviour || current.isNone then [] else
+          [("behaviour", Json.mkObj [("was", toJson (behaviour.getD 0)),
+            ("now", toJson (revision.getD 0))])])))
 
 /-- The answer to an act whose `if` no longer holds: nothing ran and nothing is journaled; read again and resend. -/
 def movedReply (moved : List Json) : Json :=
   let said := moved.map fun m =>
     let id := (m.getObjValAs? String "object").toOption.getD ""
     let was := (m.getObjValAs? Nat "was").toOption.getD 0
-    match (m.getObjValAs? Nat "now").toOption with
-    | some now => s!"{id} is at v{now}, not v{was}"
-    | none => s!"{id} is gone, not at v{was}"
+    let state := match (m.getObjValAs? Nat "now").toOption with
+      | some now => if now == was then "" else s!"{id} is at v{now}, not v{was}"
+      | none => s!"{id} is gone, not at v{was}"
+    let changed := match (m.getObjVal? "behaviour").toOption with
+      | some b =>
+        let before := (b.getObjValAs? Nat "was").toOption.getD 0
+        let after := (b.getObjValAs? Nat "now").toOption.getD 0
+        s!"{id}'s behaviour changed from revision {before} to {after}; read its offers again"
+      | none => ""
+    "; ".intercalate ([state, changed].filter (!·.isEmpty))
   Json.mkObj [("status", toJson "refused"), ("class", toJson "moved"), ("moved", Json.arr moved.toArray),
     ("line", toJson s!"refused moved: {"; ".intercalate said}")]
 
 /-- `world-try`: a turn exactly as `world-turn` runs it, with its settling pass, and the world it leaves dropped:
     the commit with the write switched off (docs/POSTING.md §2). The reply is the turn's own, its receipt the entry
-    that would be journaled (its writes' state CIDs, its roots with their versions), its offers the exact cards,
+    that would be journaled (its writes' state CIDs, its guard roots with state and behaviour revisions), its offers the exact cards,
     `tried: true`, `against {height, hash}`, the head it ran on, and `unresolved {pending, suspended, answered}`: what
     the settling pass left for later (sends not yet delivered, turns waiting on hob), which a preview does not foresee,
     and the sends it never runs because their receipt is bound already (`Ops.answered`). Nothing is journaled. -/
 def tryTurn (s : Open) (reader : String) (request : Json) : IO (Session × Except String Json) := do
-  match ← settledStep s reader (fun w => pure (do runTurn w (← parseTurn request))) with
+  match ← settledStep s reader (fun w => pure (do runTurn { w with preview := true } (← parseTurn request))) with
   | .error e => return (some s, .error e)
   | .ok (w', _, r) =>
     let head := (s.world.entries.hashAt? (s.world.height - 1)).getD ""
@@ -460,7 +480,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
             | .error e => return .error e
             | .ok (w3, _) =>
               let w3 := w3.withCachesOf w2
-              return .ok ({ w3 with entries := w2.entries, objectBound := w2.objectBound, grantBound := w2.grantBound }, if w3.shadowed.isEmpty then r else r.setObjVal! "shadowed" (Json.arr w3.shadowed)))
+              return .ok ({ w3 with entries := w2.entries, ancestry := w2.ancestry, objectBound := w2.objectBound, grantBound := w2.grantBound }, if w3.shadowed.isEmpty then r else r.setObjVal! "shadowed" (Json.arr w3.shadowed)))
       | "world-settings" => durable s reader (fun w => worldSettingsOp w request)
       | "world-advance" => durable s reader (fun w => advance w request)
       | "world-propose" => durable s reader (fun w => do return commit w (← parseProposal request))

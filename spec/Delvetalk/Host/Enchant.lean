@@ -88,16 +88,19 @@ structure Telling where
   since : Nat
   upto : Nat
   exact : List String := []
+  history : String := ""
 
 /-- The words the page sets above a telling, in the reader's tongue: the host's frame, never the paint's. -/
 def Telling.frame (t : Telling) (tongue : String := "en") : String := Tongue.say tongue (if t.form == "away" then "away" else "before")
 
 def Telling.json (t : Telling) : Json :=
-  Json.mkObj [("form", toJson t.form), ("since", toJson t.since), ("until", toJson t.upto), ("exact", toJson t.exact)]
+  Json.mkObj ([("form", toJson t.form), ("since", toJson t.since), ("until", toJson t.upto), ("exact", toJson t.exact)] ++
+    if t.history.isEmpty then [] else [("history", toJson t.history)])
 
 /-- What a render answer carries of a telling, painted or not: its form, its frame and its exact lines. -/
 def Telling.answer (t : Telling) (tongue : String := "en") : Json :=
-  Json.mkObj [("form", toJson t.form), ("frame", toJson (t.frame tongue)), ("since", toJson t.since), ("exact", toJson t.exact)]
+  Json.mkObj ([("form", toJson t.form), ("frame", toJson (t.frame tongue)), ("since", toJson t.since), ("exact", toJson t.exact)] ++
+    if t.history.isEmpty then [] else [("history", toJson t.history)])
 
 structure Strokes where
   object : String
@@ -261,6 +264,9 @@ def Strokes.facts (s : Strokes) : List Fact := Id.run do
   -- What it rings (a bell's colour, a place's bells together), with its unit: the host's words, as its body wrote them.
   unless s.tone.isEmpty do
     out := out.push { id := out.size + 1, kind := "tone", subject, value := s.tone, clause := "it rings " ++ s.tone }
+  if let some t := s.telling then
+    unless t.history.isEmpty do
+      out := out.push { id := out.size + 1, kind := "history", subject, value := t.history, clause := t.history }
   return out.toList
 
 /-- The strokes as the painter reads them: what the thing is, then its maker's words, its life (lines,
@@ -281,7 +287,8 @@ def Strokes.text (s : Strokes) : String := Id.run do
       | none, none => [s!"What it is: {s.object}" ++ (if s.kind.isEmpty then "" else s!", a {kindName} ({s.kind})")]) ++
     line (s.speech.code != "en") s!"Paint in: {s.speech.name} ({s.speech.english}), quoting in {s.speech.quotes}; residents' lines, ids, handles and spells exactly as written here; each count with the {s.speech.english} unit word given beside it" ++
     (match s.telling with
-      | some t => line (s.speech.code != "en") s!"Frame: the page prints {t.frame s.tongue} above the paint, so the paint begins with what happened and never writes a frame, in this language or another"
+      | some t => line (!t.history.isEmpty) t.history ++
+          line (s.speech.code != "en") s!"Frame: the page prints {t.frame s.tongue} above the paint, so the paint begins with what happened and never writes a frame, in this language or another"
       | none => []) ++
     line (!s.head.isEmpty) s!"Called: {s.head}" ++
     [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
@@ -335,41 +342,18 @@ def Strokes.json (s : Strokes) : Json :=
 
 /-! ### Reading the store -/
 
-def fieldsOf : Data → List (String × Data)
-  | .record f => f
-  | _ => []
+/-- The objects a reader may use to assemble strokes. -/
+def readableWorld (w : World) (reader : String) : World :=
+  { w with objects := w.objects.filter fun id _ => viewable w reader id }
 
-def text? (fs : List (String × Data)) (k : String) : Option String :=
-  match fs.lookup k with
-  | some (.label s) => some s
-  | _ => none
-
-def nat? (fs : List (String × Data)) (k : String) : Option Nat :=
-  match fs.lookup k with
-  | some (.natural n) => some n
-  | _ => none
-
-/-- A relation's rows (`rows {items}`), or a list's items, as field lists. -/
-def rowsOf : Data → Option (List (List (String × Data)))
-  | .variant "rows" (.record f) => ((f.lookup "items").bind listOf).map (·.map fieldsOf)
-  | d => (listOf d).map (·.map fieldsOf)
-
-def rows (fs : List (String × Data)) (k : String) : List (List (String × Data)) :=
-  ((fs.lookup k).bind rowsOf).getD []
+/-- A retained line row, with its recorded entry or the entry of the edit inserting it. -/
+def Line.ofRow (w : World) (r : List (String × Data)) (entry : Option Nat := none) (state : String := "") : Line :=
+  { n := (nat? r "n").getD 0, handle := handleIn w r "handle" "author", verb := (text? r "verb").getD "",
+    text := (text? r "text").getD "", entry := entry.getD ((nat? r "at").getD 0), state }
 
 def isRelation : Data → Bool
   | .variant "rows" _ => true
   | _ => false
-
-/-- The town as such (`isTown`), else a handle the state gives (`handleKey`), else the registry's for the principal it
-    names (`principalKey`), else, for a thing acting as itself (`thingPrincipal`), its id, as `shownName` names it. -/
-def handleIn (w : World) (fs : List (String × Data)) (handleKey principalKey : String) : String :=
-  let principal := (text? fs principalKey).getD ""
-  let registered := fun (p : String) => let h := handleOf w p; if h.isEmpty then (principalThing p).getD "" else h
-  if isTown w principal then townName else
-  match text? fs handleKey with
-  | some h => if h.isEmpty then registered principal else h
-  | none => registered principal
 
 /-- A spell as one line: the template's lines joined by ` / ` (`delvetalk bell/1 rain / text: <…>`). -/
 def oneLine (template : String) : String :=
@@ -446,7 +430,8 @@ def lineQuantities (verbs : List String) (note : String := "") : List Quantity :
     (if byVerb.length > 1 || byVerb.any (·.1 != "line") then [{ n := verbs.length, unit := "line", note }] else [])
 
 /-- The strokes of object `id` with `state` and `lawText` (its own at `version`). -/
-def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
+def assemble (w : World) (reader id : String) (o : Object) : Strokes := Id.run do
+  let seen := readableWorld w reader
   let (version, state, lawText) := (o.version, o.state, o.lawText)
   let fs := fieldsOf state
   let kind := (text? fs "kind").getD ""
@@ -454,9 +439,7 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
   let admitted := (rows fs "admitted").filterMap (nat? · "n")
   let lineOf := fun (r : List (String × Data)) =>
     let n := (nat? r "n").getD 0
-    ({ n, handle := handleIn w r "handle" "author", verb := (text? r "verb").getD "", text := (text? r "text").getD "",
-       entry := (nat? r "at").getD 0,
-       state := if keeperP.isEmpty then "" else if admitted.contains n then "admitted" else "pending" } : Line)
+    Line.ofRow w r (state := if keeperP.isEmpty then "" else if admitted.contains n then "admitted" else "pending")
   let all := ((rows fs "lines").map lineOf).toArray.qsort (fun a b => a.n < b.n) |>.toList
   let mut lines := all.drop (all.length - newestLines)
   -- A thing's surrounding is the line its keeper wrote when it was inspirited.
@@ -467,29 +450,29 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
     ({ name := (text? r "name").getD "", handle := handleIn w r "handle" "who", entry := (nat? r "at").getD 0 } : Mark)
   -- The verbs: the card's spells (its forms, the grown ones among them), the kind's first, then each grown on it
   -- (`Object.verbs`) with its grower and reading.
-  let forms := (spellForms w id o).map fun f => (f.action, oneLine (spellTemplate id f))
+  let forms := (spellForms seen id o).map fun f => (f.action, oneLine (spellTemplate id f))
   let grown := o.verbs.map fun v =>
     ({ name := v.name, grower := shownName w v.grower, reading := v.reading,
        spell := (forms.lookup v.name).getD s!"delvetalk {id} {v.name}" } : Verb)
   let verbs := (forms.filter fun (n, _) => !grown.any (·.name == n)).map (fun (name, spell) =>
     ({ name, grower := "", reading := "", spell } : Verb)) ++ grown
   -- The law its kind adds: each clause `under "K"` stands as K's clauses, the frame's left out.
-  let frame := frameLaws w
+  let frame := frameLaws seen
   let lawsOf := fun (t : String) => (textClauses t).filter (·.1 == "law")
   let laws := ((lawsOf lawText).flatMap fun (_, _, _, body) =>
     match underOf body with
-    | some k => ((w.objects[k]?).bind fun ko => text? (fieldsOf ko.state) "law").map (fun t =>
+    | some k => ((seen.objects[k]?).bind fun ko => text? (fieldsOf ko.state) "law").map (fun t =>
         (lawsOf t).map fun (_, n, r, _) => (n, r.getD "")) |>.getD []
     | none => []).filter fun (n, _) => !frame.contains n
   -- The rules it carries (placed, its text's, its kind's), each with its owner and its last firing; the wants
   -- that hold of it now, each with the spell that answers it as filled at this read (`world-rules`, `world-wants`).
-  let carried := carriedRules w id o
+  let carried := carriedRules seen id o
   let rules := carried.map fun c =>
     let last := (w.ruleLog[id]?).bind (·.lookup c.clause.name)
     let fired := if (last.bind fun l => (l.getObjVal? "why").toOption).isSome then 0
       else (last.bind fun l => (l.getObjValAs? Nat "height").toOption).getD 0
     ({ name := c.clause.name, owner := (principalThing c.owner).getD (handleShown w c.owner), reading := c.clause.reading, fired } : Rule)
-  let wants := (wantRows w "" id o).map fun r =>
+  let wants := (wantRows w reader id o).map fun r =>
     ({ name := (r.getObjValAs? String "name").toOption.getD "", reading := (r.getObjValAs? String "reading").toOption.getD "",
        spell := (r.getObjValAs? String "asks").toOption.getD "",
        owner := handleShown w ((r.getObjValAs? String "owner").toOption.getD "") } : Want)
@@ -498,7 +481,7 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
     pure ({ label := (text? r "label").getD "", target := ← (r.lookup "to").bind referenceId } : Door)
   let around := match (fs.lookup "location").bind referenceId with
     | some place => place
-    | none => madeUnder w id
+    | none => madeUnder seen id
   let present := (rows fs "presence").map fun r => handleIn w r "handle" "who"
   -- Each number with its unit: the lines by the verb that wrote them (a bell's rains), the count a rule
   -- fires at as the nth, what lies here by what it is called, who is here, its doors, any other relation.
@@ -520,18 +503,15 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
     (if doors.isEmpty then [] else [{ n := doors.length, unit := "door" }]) ++
     (others.filter (·.2 > 0)).map fun (k, n) => ({ n, unit := k } : Quantity)
   let fields := (rows fs "fields").filterMap fun r => do pure (← text? r "name", ← text? r "value")
-  let made := (nat? fs "made").getD (((w.touched[id]?).bind (·[0]?)).map (· + 1) |>.getD 0)
+  let made := ((Surfaces.madeEntry w id).map (·.1)).getD 0
   let tended := (nat? fs "tended").getD 0
   let tendedAgo := if tended == 0 then "" else ago (w.clock - tended)
-  let maker := handleIn w fs "makerHandle" "maker"
-  -- A coinage: made after a post that is not its maker's own (`Record.credit`), crediting its coiner.
-  let post := (text? fs "post").getD ""
-  let coined := post.startsWith "at://" && !post.startsWith s!"at://{(text? fs "maker").getD ""}/"
-  -- The coiner is the post's author: their handle when the host knows it, else the at:// authority itself.
-  let author := (((post.drop 5).toString).splitOn "/").head?.getD ""
-  let coiner := if !coined then "" else if (handleShown w author).isEmpty then author else handleShown w author
-  let kindHere := if kind.isEmpty then kindOf w around else kind
-  return { object := id, version, kind, voice := kindText w kindHere "voice", about := kindText w kindHere "about",
+  let makerFields := ("maker", Data.label (Surfaces.makerOf w id o)) :: fs.filter (·.1 != "maker")
+  let maker := handleIn w makerFields "makerHandle" "maker" true
+  let coiner := coinerOf w o
+  let coined := !coiner.isEmpty
+  let kindHere := if kind.isEmpty then kindOf seen around else kind
+  return { object := id, version, kind, voice := kindText seen kindHere "voice", about := kindText seen kindHere "about",
            head := (text? fs "head").getD ((text? fs "name").getD ""), fields, tone := (text? fs "tone").getD "",
            maker, coined, coiner, made, tended, tendedAgo,
            keeper := handleIn w fs "keeperHandle" "keeper", owner := handleIn w fs "ownerHandle" "owner",
@@ -542,24 +522,25 @@ def assemble (w : World) (id : String) (o : Object) : Strokes := Id.run do
     (the store keeps no past wants, verbs or firings, so no strokes of one are assembled). -/
 def strokesAt (w : World) (reader id : String) (version : Option Nat) : Except String Strokes := do
   let some o := w.objects[id]? | throw "unknown"
-  unless o.read.permits reader do throw "denied"
+  unless viewable w reader id do throw "denied"
   if let some v := version then
     if v > o.version then throw "unknown"
     if v < o.version then throw "historical"
-  return assemble w id o
+  return assemble w reader id o
 
 /-! ### A day of the town -/
 
 /-- The reading of `name` among the rules (or wants) `id` carries now, "" for none. -/
-def readingOf (w : World) (id name : String) (wants : Bool) : String :=
+def readingOf (w : World) (reader id name : String) (wants : Bool) : String :=
+  let w := readableWorld w reader
   match w.objects[id]? with
   | some o => (((if wants then carriedWants w id o else carriedRules w id o).find? (·.clause.name == name)).map (·.clause.reading)).getD ""
   | none => ""
 
 /-- A day event as a sentence of the day's strokes: who did what to which thing, a rule or want by its
     reading; no entry number. -/
-def eventSentence (w : World) (e : DayEvent) : String :=
-  let r := fun (wants : Bool) => let t := readingOf w e.object e.name wants; if t.isEmpty then "" else ", " ++ quoted t
+def eventSentence (w : World) (reader : String) (e : DayEvent) : String :=
+  let r := fun (wants : Bool) => let t := readingOf w reader e.object e.name wants; if t.isEmpty then "" else ", " ++ quoted t
   match e.what with
   | "made" => s!"{e.who} made {e.object}"
   | "grew" => s!"{e.who} grew the verb {e.name} on {e.object}"
@@ -585,7 +566,7 @@ def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Stro
     | return { object := "", version := day, day := some day, wants := if morning then wantsOfDay w reader else [], limit := maxDay }
   let mut written : Array Line := #[]
   for (id, o) in w.objects.toList do
-    unless o.read.permits reader do continue
+    unless viewable w reader id do continue
     for r in rows (fieldsOf o.state) "lines" do
       let at_ := (nat? r "at").getD 0
       if d.start ≤ at_ && at_ < d.stop then
@@ -599,7 +580,7 @@ def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Stro
   let made := (events.filter (·.what == "made")).map (·.object)
   -- What was made, by what each is called: two bells, a goblet, twelve kinds.
   let byKind := tally (made.map fun id => if id.startsWith "kind/" then "kind" else calledBy id)
-  return { object := "", version := day, day := some day, today := (events.drop (events.length - dayEvents)).map (eventSentence w), hands := d.hands,
+  return { object := "", version := day, day := some day, today := (events.drop (events.length - dayEvents)).map (eventSentence w reader), hands := d.hands,
            lines := lines.drop (lines.length - newestLines),
            quantities := [{ n := d.admitted, unit := "act", note := "admitted" }] ++
              (if refused == 0 then [] else [{ n := refused, unit := "refusal" }]) ++
@@ -611,7 +592,7 @@ def dayStrokes (w : World) (reader : String) (day : Nat) (morning : Bool) : Stro
 
 /-! ### A telling of a place -/
 
-/-- How many of a place's newest changes a telling reads back through, and how many of its acts and lines it
+/-- How many of a place's changes before the telling's endpoint it reads back through, and how many of its acts and lines it
     hands the painter: the span's first lines and its newest, and its newest acts. -/
 def tellingSpan : Nat := 512
 def tellingActs : Nat := 12
@@ -625,14 +606,24 @@ def insertedRow : Data → Option (List (String × Data))
   | .variant "insert" (.record f) => (f.lookup "row").map fieldsOf
   | _ => none
 
-/-- The newest change of `id` (within `tellingSpan`) that brought `who` in: the edit inserting their presence row. -/
-def arrivalOf (w : World) (id who : String) : Option Touch := Id.run do
-  let ts := w.touches.getD id #[]
-  for k in [0:min ts.size tellingSpan] do
+/-- Changes of a place across available carry origins, then this chain, in height order. -/
+def placeChanges (w : World) (id : String) : Array Touch :=
+  let before : Array Touch := w.ancestry.toList.reverse.foldl (fun acc src =>
+    src.foldl (fun acc i e => acc ++ ((touchesOf (i + 1) e).filter (·.1 == id)).toArray.map (·.2)) acc) #[]
+  (before.filter fun t => historyStart w ≤ t.height) ++ w.touches.getD id #[]
+
+/-- The newest retained presence insertion for `who`, independent of the telling's span bound. -/
+def arrivalOf (w : World) (id who : String) (ts : Array Touch) : Option Touch := Id.run do
+  for k in [0:ts.size] do
     let t := ts[ts.size - 1 - k]!
     if ((touchEdits w id t).getD []).any (fun (f, d) => f == "presence" && ((insertedRow d).bind (text? · "who")) == some who) then
       return some t
   return none
+
+/-- The newest bounded changes inside the closed telling span, oldest first, and whether older changes were omitted. -/
+def tellingChanges (changes : Array Touch) (since upto : Nat) : Array Touch × Bool :=
+  let eligible := changes.filter fun t => since < t.height && t.height < upto
+  (eligible.extract (eligible.size - tellingSpan) eligible.size, eligible.size > tellingSpan)
 
 /-- One act in a place's span, as the painter reads it (no entry) and as the exact line shows it (with it). -/
 structure Act where
@@ -641,21 +632,15 @@ structure Act where
   what : String
   sentence : String
 
-/-- What the journal holds of `id` between entries `since` and `upto`, `reader`'s own comings and goings left out:
+/-- What the selected journal changes hold of `id`, `reader`'s own comings and goings left out:
     the acts in order (came, left, took, laid down, hung or took down a door, made here, a rule fired), the lines
     written there and the marks made. -/
-def spanOf (w : World) (id reader : String) (since upto : Nat) : Array Act × Array Line × Array Mark := Id.run do
-  let ts := w.touches.getD id #[]
+def spanOf (w : World) (id reader asker : String) (picked : Array Touch) : Array Act × Array Line × Array Mark := Id.run do
   let mut acts : Array Act := #[]
   let mut lines : Array Line := #[]
   let mut marks : Array Mark := #[]
-  let mut picked : List Touch := []
-  for k in [0:min ts.size tellingSpan] do
-    let t := ts[ts.size - 1 - k]!
-    if t.height ≤ since then break
-    if t.height < upto then picked := t :: picked
   for t in picked do
-    let some e := w.entries.get? (t.height - 1) | continue
+    let some e := historyEntry w t.height | continue
     let p := ((e.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
     let by_ := shownName w p
     let act := fun (who what sentence : String) => ({ entry := t.height, who, what, sentence } : Act)
@@ -672,8 +657,7 @@ def spanOf (w : World) (id reader : String) (since upto : Nat) : Array Act × Ar
         let who := (text? r "who").getD ""
         unless who == reader do acts := acts.push (act (shownName w who) "left" s!"{shownName w who} left")
       | "lines", some r =>
-        lines := lines.push { n := (nat? r "n").getD 0, handle := handleIn w r "handle" "author", verb := (text? r "verb").getD "",
-                              text := (text? r "text").getD "", entry := t.height, state := "" }
+        lines := lines.push (Line.ofRow w r (entry := some t.height))
       | "marks", some r =>
         marks := marks.push { name := (text? r "name").getD "", handle := handleIn w r "handle" "who", entry := t.height }
       | "things", some r =>
@@ -688,8 +672,8 @@ def spanOf (w : World) (id reader : String) (since upto : Nat) : Array Act × Ar
         | .variant "append" (.record x) =>
           let door := fieldsOf ((x.lookup "item").getD (.record []))
           let label := (text? door "label").getD ""
-          let to := ((door.lookup "to").bind referenceId).getD ""
-          acts := acts.push (act by_ "hung" (if label == to || label.isEmpty then s!"{by_} hung a door to {to}" else s!"{by_} hung the door {label}, to {to}"))
+          let targetId := ((door.lookup "to").bind referenceId).getD ""
+          acts := acts.push (act by_ "hung" (if label == targetId || label.isEmpty then s!"{by_} hung a door to {targetId}" else s!"{by_} hung the door {label}, to {targetId}"))
         | .variant "removeItem" (.record x) =>
           let label := (text? (fieldsOf ((x.lookup "item").getD (.record []))) "label").getD ""
           acts := acts.push (act by_ "unhung" s!"{by_} took down the door {label}")
@@ -700,9 +684,26 @@ def spanOf (w : World) (id reader : String) (since upto : Nat) : Array Act × Ar
       if (f.getObjValAs? String "sender").toOption == some id then
         let name := (f.getObjValAs? String "rule").toOption.getD ""
         let owner := shownName w ((f.getObjValAs? String "principal").toOption.getD "")
-        let reading := readingOf w id name false
+        let reading := readingOf w asker id name false
         acts := acts.push (act owner "fired" (s!"its rule {name}, {owner}'s, fired" ++ (if reading.isEmpty then "" else ": " ++ quoted reading)))
   return (acts, lines, marks)
+
+/-- Lines retained in the carry's state before the available event history, in the telling's span.
+    Their `at` is the height the writing turn read, so their insertion's entry is one later. -/
+def carriedLines (w : World) (id : String) (since upto : Nat) : Array Line :=
+  let kept : Option (List Line) := do
+    let g ← w.entries.genesis?
+    guard (tagOf g == "carried")
+    let outcome ← (g.getObjVal? "outcome").toOption
+    let row ← genesisRow outcome id
+    let state ← (row.getObjVal? "state").toOption
+    let data ← (Delvetalk.Compiler.ObjectiveBendDataWire.decodeData Limits.dataDepth state).toOption
+    return (rows (fieldsOf data) "lines").filterMap fun r => do
+      let atHeight ← nat? r "at"
+      let h := atHeight + 1
+      guard (since < h && h < upto && h < historyStart w)
+      return Line.ofRow w r (entry := some h)
+  (kept.getD []).toArray
 
 /-- The departure entry of `who` from the place (`left`'s newest row of theirs), 0 when they never left it. -/
 def departedAt (fs : List (String × Data)) (who : String) : Nat :=
@@ -711,8 +712,9 @@ def departedAt (fs : List (String × Data)) (who : String) : Nat :=
 /-- The strokes of a telling of place `id` for `reader` (`telling {reader?, since?}`; `reader` defaults to the one
     asking, `since` to the entry they last left it at): what happened there after `since` and before they arrived
     (or, not in it, up to its newest change), the acts, lines and marks each by whose hand, counted with their units;
-    for one arriving first (`since` 0) its whole past compressed: the making and its credit, the first lines and the
-    newest, who came, what was hung, left and taken, what it still wants. The version is the one the reader found.
+    for one arriving first (`since` 0) its retained past compressed, with any history boundary: the making and
+    its credit, the first lines and the newest, who came, what was hung, left and taken, what it still wants.
+    The version is the one the reader found.
     Never the reader's own comings and goings, no spell, no rule or law, and nothing that moves after the arrival
     with every act (who is here now, when it was tended): a telling is of what happened. -/
 def tellingOf (w : World) (asker id : String) (o : Object) (j : Json) : Except String Strokes := do
@@ -720,13 +722,21 @@ def tellingOf (w : World) (asker id : String) (o : Object) (j : Json) : Except S
   let reader := (j.getObjValAs? String "reader").toOption.getD asker
   let since := (← optNat j "since").getD (departedAt fs reader)
   let here := (rows fs "presence").any (text? · "who" == some reader)
-  let arrival := if here then arrivalOf w id reader else none
+  let changes := placeChanges w id
+  let arrival := if here then arrivalOf w id reader changes else none
   let newest := (((w.touches.getD id #[]).back?).map (·.height)).getD 0
-  let upto := (arrival.map (·.height)).getD (newest + 1)
+  let upto := (arrival.map (·.height)).getD (if here then historyStart w else newest + 1)
   let version := (arrival.map (·.version - 1)).getD o.version
-  let (acts, lines, marks) := spanOf w id reader since upto
+  let (picked, omitted) := tellingChanges changes since upto
+  let (acts, lines, marks) := spanOf w id reader asker picked
+  let kept := if here && arrival.isNone then #[] else carriedLines w id since upto
+  let lines := (kept.qsort (fun a b => a.entry < b.entry)) ++ lines
+  let history := if here && arrival.isNone then "arrival unknown; history begins at the carry or the first available record"
+    else if omitted then "history begins at the retained span; earlier changes are omitted"
+    else if !historyComplete w && since + 1 ≤ historyStart w then "event history begins at the carry; only retained lines are available from before it"
+    else ""
   let away := since > 0
-  let base := assemble w id o
+  let base := assemble w asker id o
   let visitors := ((acts.toList.filter (·.what == "came")).map (·.who)).eraseDups
   let all := lines.toList
   -- The lines the painter reads: while away all of them up to the newest eight; a past, its first two and its newest four.
@@ -749,10 +759,10 @@ def tellingOf (w : World) (asker id : String) (o : Object) (j : Json) : Except S
   let made := if away || base.maker.isEmpty then [] else
     [s!"made by {base.maker}" ++ (if base.coined then s!", after a post by {base.coiner}" else "")]
   let earlier := rows'.length - min rows'.length tellingExact
-  let exact := made ++ (if earlier == 0 then [] else [s!"… and {earlier} earlier"]) ++
+  let exact := made ++ (if history.isEmpty then [] else [history]) ++ (if earlier == 0 then [] else [s!"… and {earlier} earlier"]) ++
     (rows'.drop earlier).map (fun (h, t) => s!"entry {h}: {t}") ++ base.wants.map (fun x => s!"wants {x.name}: {x.reading}")
   let wants := base.wants.map fun x => { x with spell := "" }
-  let telling : Telling := { form := if away then "away" else "before", since := since, upto := upto, exact := exact }
+  let telling : Telling := { form := if away then "away" else "before", since, upto, exact, history }
   return { base with
            version := version, lines := shownLines, marks := marks.toList, quantities := quantities,
            today := sentences, hands := visitors, present := [], tended := 0, tendedAgo := "", verbs := [], rules := [], laws := [],
@@ -763,7 +773,7 @@ def tellingOf (w : World) (asker id : String) (o : Object) (j : Json) : Except S
     `historical` for a past version named, `notAPlace` for a thing nobody enters. -/
 def tellingAt (w : World) (reader id : String) (version : Option Nat) (j : Json) : Except String (Except String Strokes) := do
   let some o := w.objects[id]? | return .error "unknown"
-  unless o.read.permits reader do return .error "denied"
+  unless viewable w reader id do return .error "denied"
   if let some v := version then
     if v > o.version then return .error "unknown"
     if v < o.version then return .error "historical"
@@ -831,9 +841,13 @@ def edgeMark (c : Char) : Bool := ",.;:!?()[]{}\"“”‘’'«»„—–…*_
 def stripEdges (cs : List Char) : List Char :=
   ((cs.dropWhile edgeMark).reverse.dropWhile edgeMark).reverse
 
-/-- A token as compared: edges stripped, `’` as `'`, a possessive `'s` dropped. -/
+/-- A token as compared: edges stripped except a leading numeric separator, `’` as `'`, a possessive `'s` dropped. -/
 def normal (t : String) : String :=
-  let cs := stripEdges (t.toList.map fun c => if c == '’' then '\'' else c)
+  let cs := t.toList.map fun c => if c == '’' then '\'' else c
+  let leading := cs.takeWhile edgeMark
+  let numericPrefix := leading.getLast?.any (fun c => ".,．，".toList.contains c) &&
+    (cs.drop leading.length).head?.any (fun c => (Tongue.digitOf c).isSome)
+  let cs := (if numericPrefix then leading.drop (leading.length - 1) else []) ++ stripEdges cs
   let cs := if cs.length > 2 && cs.drop (cs.length - 2) == ['\'', 's'] then stripEdges (cs.take (cs.length - 2)) else cs
   String.ofList cs
 
@@ -1143,27 +1157,37 @@ def numberFault (t : Tongue) (s : Strokes) (ws : List String) : Option String :=
     let w := ws[i]!
     if unread w || t.free.contains w then none else
     match t.number w with
-    | none => none
+    | none => if (Tongue.asciiDigits w).any Char.isDigit then some s!"{w}: beside no unit the strokes count" else none
     | some (n, o) =>
-      let near := ((List.range ws.length).filter fun j => j != i && j + 3 ≥ i && j ≤ i + 3).flatMap fun j => unitsNear t ws[j]!
-      if near.any (fun u => pairs.contains (n, o, u)) then none
-      else match near.find? units.contains with
-        | some u => some s!"{w} {u}: the strokes do not count it so"
-        | none => if o then none else some s!"{w}: beside no unit the strokes count"
+      if (Tongue.asciiDigits w).any Char.isDigit &&
+          ((ws[i + 1]?).any fun next => (Tongue.asciiDigits next).toList.head?.any Char.isDigit) then
+        some s!"{w}: beside no unit the strokes count"
+      else
+        let near := ((List.range ws.length).filter fun j => j != i && j + 3 ≥ i && j ≤ i + 3).flatMap fun j => unitsNear t ws[j]!
+        if near.any (fun u => pairs.contains (n, o, u)) then none
+        else match near.find? units.contains with
+          | some u => some s!"{w} {u}: the strokes do not count it so"
+          | none => if o then none else some s!"{w}: beside no unit the strokes count"
 
-/-- The numerals of an unspaced sentence: where each run of digits or han numerals, or a tongue's number word
-    (ふたつ), stands, how long it is and what it counts. -/
-def numeralRuns (t : Tongue) (cs : List Char) : List (Nat × Nat × Nat) := Id.run do
-  let mut out : Array (Nat × Nat × Nat) := #[]
+/-- The numerals of an unspaced sentence: their position, length and value; a malformed numeric token has no value. -/
+def numeralRuns (t : Tongue) (cs : List Char) : List (Nat × Nat × Option Nat) := Id.run do
+  let mut out : Array (Nat × Nat × Option Nat) := #[]
   let mut next := 0
   for i in [0:cs.length] do
     if i < next then continue
     if Tongue.numeralChar cs[i]! then
       let run := (cs.drop i).takeWhile Tongue.numeralChar
-      out := out.push (i, run.length, Tongue.numeralValue run)
-      next := i + run.length
+      let after := cs.drop (i + run.length)
+      let attached := after.takeWhile fun c => Tongue.numeralChar c || Tongue.scriptOf c == .latin || ".,٫٬．，".toList.contains c
+      let invalid := (attached.dropWhile edgeMark).any fun c => !edgeMark c
+      let separated := (after.dropWhile Char.isWhitespace).head?.any Tongue.numeralChar
+      let prefixed := i > 0 && (Tongue.scriptOf cs[i - 1]! == .latin || ".,٫٬．，".toList.contains cs[i - 1]!)
+      let len := run.length + if invalid then attached.length else 0
+      out := out.push (i, len,
+        if invalid || separated || prefixed then none else some (Tongue.numeralValue run))
+      next := i + len
     else if let some (w, n) := t.cardinals.find? fun (w, _) => (cs.drop i).take w.length == w.toList then
-      out := out.push (i, w.length, n)
+      out := out.push (i, w.length, some n)
       next := i + w.length
   return out.toList
 
@@ -1175,16 +1199,19 @@ def unspacedNumberFault (t : Tongue) (s : Strokes) (raw : String) : Option Strin
   let cs := raw.toList
   firstSome (numeralRuns t cs) fun (at_, len, n) =>
     let run := String.ofList ((cs.drop at_).take len)
-    if t.free.contains run then none else
-    let before := String.ofList ((cs.take at_).drop (at_ - min at_ 6))
-    let after := String.ofList ((cs.drop (at_ + len)).take 6)
-    let o := before.endsWith "第" || holdsIn (String.ofList (after.toList.take 3)) "目"
-    let near := (t.lexicon.filter fun (_, forms) => forms.any fun f => holdsIn after f || holdsIn before f).map (englishStem ·.1) ++
-      (((words after).take 1).flatMap fun w => unitsNear Tongue.english (normal w).toLower)
-    if near.any (fun u => pairs.contains (n, o, u)) then none
-    else match near.find? units.contains with
-      | some u => some s!"{run} {u}: the strokes do not count it so"
-      | none => if o then none else some s!"{run}: beside no unit the strokes count"
+    match n with
+    | none => some s!"{run}: beside no unit the strokes count"
+    | some n =>
+      if t.free.contains run then none else
+      let before := String.ofList ((cs.take at_).drop (at_ - min at_ 6))
+      let after := String.ofList ((cs.drop (at_ + len)).take 6)
+      let o := before.endsWith "第" || holdsIn (String.ofList (after.toList.take 3)) "目"
+      let near := (t.lexicon.filter fun (_, forms) => forms.any fun f => holdsIn after f || holdsIn before f).map (englishStem ·.1) ++
+        (((words after).take 1).flatMap fun w => unitsNear Tongue.english (normal w).toLower)
+      if near.any (fun u => pairs.contains (n, o, u)) then none
+      else match near.find? units.contains with
+        | some u => some s!"{run} {u}: the strokes do not count it so"
+        | none => if o then none else some s!"{run}: beside no unit the strokes count"
 
 /-- A negation in a spaced tongue's phrase within three words of a field the strokes hold: the field after an
     ordinal ("its seventh rain has not come") is that one, not the field. -/

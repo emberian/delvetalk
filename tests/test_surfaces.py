@@ -177,6 +177,85 @@ if __name__ == "__main__":
 from tests import test_http  # noqa: E402  (the front's fixtures; the module, so its classes are not collected here)
 
 
+class RuleFirsts(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.town = Town(self.tmp.name, cleanup=self.addCleanup)
+        for did, handle in STRANGERS.items():
+            self.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
+        clock = self.town.send(op='world-status')['clock']
+        advanced = self.town.send(op='world-advance', principal='transport', height=(clock // 1440 + 1) * 1440 + 5)
+        self.assertEqual(advanced['status'], 'advanced', advanced)
+        self.n = 0
+        made = self.admitted(GLM, 'kind/bell', 'delvetalk kind/bell make / colour: amber / seed: first firing')
+        self.bell = made['receipt']['outcome']['creates'][0]['object']
+
+    def admitted(self, who, obj, text):
+        return Surfaces.admitted.__func__(self, who, obj, text)
+
+    def say(self, who, obj, text, author=None):
+        return Surfaces.say.__func__(self, who, obj, text, author)
+
+    def rain(self):
+        self.n += 1
+        got = self.town.send(op='world-turn', principal=GLM, object=self.bell, method='rain',
+                             identity='first-rain-%d' % self.n, argument=record(text=label('a rain')))
+        self.assertEqual(got['status'], 'admitted', got)
+        return got
+
+    def carry(self):
+        from tests import test_telling
+        test_telling.HistoryBounds.carry(self)
+
+    def first_rule(self):
+        got = self.town.send(op='world-surface', principal=GLM, read='chronicle')
+        self.assertEqual(got['status'], 'surface', got)
+        text = got.get('whole') or got['text']
+        return next((line for line in text.splitlines() if 'the first rule fired:' in line), ''), text
+
+    def assert_first_crosses_carry(self, name, who):
+        first = self.rain()
+        self.assertTrue(any(f['rule'] == name for f in first['receipt']['fired']), first)
+        self.rain()
+        expected = '  the first rule fired: %s on %s, written by %s, entry %d' % (
+            name, self.bell, who, first['receipt']['height'])
+        self.assertEqual(self.first_rule()[0], expected)
+        self.carry()
+        self.assertEqual(self.first_rule()[0], expected)
+        self.rain()
+        self.assertEqual(self.first_rule()[0], expected)
+
+    def test_a_placed_rules_first_firing_and_recorded_principal_survive_a_carry_between_firings(self):
+        self.admitted(KIM, self.bell, 'delvetalk %s rule / name: echo / when: request.method == "rain" / then: delvetalk me note / text: ping' % self.bell)
+        self.assert_first_crosses_carry('echo', STRANGERS[KIM])
+
+    def test_an_inherited_rules_first_firing_keeps_the_thing_as_its_principal_after_carry(self):
+        self.admitted(OPENER, 'kind/bell', 'delvetalk kind/bell rule / for: things / name: echo / when: request.method == "rain" / then: delvetalk {new.maker} note / text: ping')
+        self.assert_first_crosses_carry('echo', self.bell)
+
+    def test_an_own_text_rules_first_firing_keeps_its_owner_after_carry(self):
+        self.admitted(GLM, self.bell, 'delvetalk %s adopt / law: rule echo: request.method == "rain" then delvetalk me note / text: ping' % self.bell)
+        self.assert_first_crosses_carry('echo', STRANGERS[GLM])
+
+    def test_a_missing_ancestor_makes_the_first_firing_unknown_instead_of_using_the_last_firing(self):
+        from tests.host import binary
+        from transport.host import HostProcess
+        self.admitted(KIM, self.bell, 'delvetalk %s rule / name: echo / when: request.method == "rain" / then: delvetalk me note / text: ping' % self.bell)
+        self.rain()
+        self.rain()
+        journal = self.town.journal
+        self.carry()
+        self.town.close()
+        os.rename(journal, journal + '.unavailable')
+        self.town = HostProcess(binary(), os.path.join(self.tmp.name, 'carried.journal'))
+        self.addCleanup(self.town.close)
+        self.rain()
+        first, text = self.first_rule()
+        self.assertEqual(first, '')
+        self.assertIn('first rule firing unknown; history before the carry is unavailable', text)
+
+
 class History(Surfaces):
     @classmethod
     def setUpClass(cls):
@@ -272,6 +351,62 @@ class Map(Surfaces):
         self.assertIn("Doors onto it: %s (lone)\n" % self.hanger, lone)
         mine = self.read(KIM, self.hanger, "delvetalk %s map" % self.hanger)["text"]
         self.assertIn("\n  lone → %s\n" % self.lone, mine)
+
+    def test_a_small_unreachable_cards_map_keeps_its_exact_text(self):
+        got = self.read(GLM, self.lone, 'delvetalk %s map' % self.lone)
+        self.assertEqual(got['text'],
+                         'THE DOOR MAP · from %s\n'
+                         'No door leads here from the commonplace.\n'
+                         '%s\n  It opens onto no card yet.\n'
+                         'Doors onto it: %s (lone)\n'
+                         "A card's own map: delvetalk <card> map\n" % (self.lone, self.lone, self.hanger))
+
+
+class LongMap(Surfaces):
+    def test_a_long_door_chain_answers_promptly_within_the_clip_and_only_through_readable_cards(self):
+        import json
+        import time
+        from deploy import genesis
+        from deploy.seed import closure, modules_on_disk
+        from tests.wire import listing
+        from transport.host import HostClient
+
+        modules = closure('Record', modules_on_disk())
+        root = 'chain/' + 'z' * 122
+        chain = ['chain/%04d' % i for i in range(2999)] + [root]
+        secret, leaf = 'chain/secret', 'chain/leaf'
+
+        def create(obj, doors=(), read=None):
+            more = {'read': read} if read is not None else {}
+            got = self.town.send(op='world-create', principal=OPENER, identity='mk-' + obj, object=obj,
+                                 entry='initial', modules=modules, law=genesis.RECORD_LAW,
+                                 seed=record(owner=label(OPENER), cites=listing(
+                                     genesis.door(name, to, []) for name, to in doors)), **more)
+            self.assertEqual(got['status'], 'created', got)
+
+        create(secret, read={'principals': [OPENER]})
+        create(leaf)
+        create(root, [('leaf', leaf), ('private door', secret), ('back', chain[-2])])
+        for i in range(len(chain) - 2, -1, -1):
+            create(chain[i], [('next', chain[i + 1])])
+        self.admitted(OPENER, 'garden', 'delvetalk garden door / label: chain / to: ' + chain[0])
+        height = self.town.send(op='world-status')['height']
+        client = HostClient(self.town.process.root, timeout=5)
+        self.addCleanup(client.close)
+        started = time.monotonic()
+        got = client.send({'op': 'world-surface', 'principal': GLM, 'object': root, 'read': 'map'})
+        self.assertLess(time.monotonic() - started, 5, got)
+        self.assertEqual(got['status'], 'surface', got)
+        self.assertLessEqual(len(got['text']), CLIP, got['text'])
+        self.assertIn('The way here: commonplace › … › ', got['text'])
+        self.assertIn(' › ' + root + '\n', got['text'])
+        self.assertIn('leaf → ' + leaf, got['text'])
+        self.assertIn('Doors onto it: ' + chain[-2] + ' (next)', got['text'])
+        self.assertIn({'from': root, 'label': 'leaf', 'to': leaf}, got['ways'])
+        self.assertIn({'from': chain[0], 'label': 'next', 'to': chain[1]}, got['ways'])
+        self.assertNotIn(secret, json.dumps(got))
+        self.assertNotIn('private door', json.dumps(got))
+        self.assertEqual(self.town.send(op='world-status')['height'], height)
 
 
 class Linked(Surfaces):

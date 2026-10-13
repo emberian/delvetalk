@@ -11,15 +11,19 @@ telling of a thing nobody enters; a telling that addresses its reader.
     python3 -W error -m unittest tests.test_telling -v
 """
 import json
+import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 from tests.town import Town
+from tests.host import binary
 from tests.wire import label, record
 from transport import bridge, delve, hand, interpret, observe
 from transport.state import State
+from transport.host import HostProcess
 
 GLM, KIM, MOO, OWL = 'did:plc:glm', 'did:plc:kim', 'did:plc:moo', 'did:plc:owl'
 HANDLES = {GLM: 'glm.delve.town', KIM: 'kimik3.delve.town', MOO: 'moth.delve.town', OWL: 'owl.delve.town'}
@@ -152,6 +156,99 @@ class Place(unittest.TestCase):
 BEFORE = ('glm.delve.town said “the lintel creaked at dusk”.\n'
           'kimik3.delve.town said “it was empty after all”.')
 AWAY = 'kimik3.delve.town said “it was empty after all”.'
+
+
+class HistoryBounds(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.town = Town(self.tmp.name, cleanup=self.addCleanup)
+        for did, handle in HANDLES.items():
+            self.town.send(op='world-arrive', principal='transport', did=did, handle=handle)
+        self.n = 0
+        self.act(GLM, 'porch', 'delvetalk porch enter')
+        self.act(GLM, 'porch', 'delvetalk porch say / line: before the carry')
+
+    def act(self, who, obj, text):
+        return Place.act.__func__(self, who, obj, text)
+
+    telling = Place.telling
+
+    def carry(self):
+        self.assertEqual(self.town.send(op='world-snapshot')['status'], 'snapshot')
+        journal = self.town.journal
+        self.town.close()
+        out = os.path.join(self.tmp.name, 'carried.journal')
+        p = subprocess.run([binary(), 'carry', '--from', journal, '--out', out, '--reason', 'a newer host'],
+                           capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.town = HostProcess(binary(), out)
+        self.addCleanup(self.town.close)
+
+    def test_an_arrival_after_a_carry_reads_the_lines_from_before_the_carry(self):
+        self.carry()
+        self.act(MOO, 'porch', 'delvetalk porch enter')
+        got = self.telling(MOO)
+        self.assertEqual(got['status'], 'strokes', got)
+        self.assertIn('before the carry', [l['text'] for l in got['strokes']['lines']])
+        self.assertTrue(any('before the carry' in line for line in got['strokes']['telling']['exact']))
+
+    def test_a_residents_arrival_stays_fixed_after_more_than_512_changes(self):
+        self.act(MOO, 'porch', 'delvetalk porch enter')
+        before = self.telling(MOO)['strokes']
+        for n in range(513):
+            self.act(GLM, 'porch', 'delvetalk porch say / line: after arrival %d' % n)
+        after = self.telling(MOO)['strokes']
+        self.assertEqual((after['version'], after['telling']), (before['version'], before['telling']))
+        self.assertEqual(after['lines'], before['lines'])
+
+    def test_a_carry_preserves_a_present_residents_arrival_before_new_lines(self):
+        self.act(MOO, 'porch', 'delvetalk porch enter')
+        before = self.telling(MOO)['strokes']
+        self.carry()
+        self.act(GLM, 'porch', 'delvetalk porch say / line: after the carry and arrival')
+        after = self.telling(MOO)['strokes']
+        self.assertEqual((after['version'], after['telling']), (before['version'], before['telling']))
+        self.assertEqual(after['lines'], before['lines'])
+
+    def test_a_telling_names_the_boundary_when_an_ancestor_journal_is_unavailable(self):
+        journal = self.town.journal
+        self.carry()
+        self.town.close()
+        os.rename(journal, journal + '.unavailable')
+        self.town = HostProcess(binary(), os.path.join(self.tmp.name, 'carried.journal'))
+        self.addCleanup(self.town.close)
+        self.act(MOO, 'porch', 'delvetalk porch enter')
+        got = self.telling(MOO)
+        boundary = got['strokes']['telling']['history']
+        self.assertIn('carry', boundary)
+        self.assertIn(boundary, got['text'])
+        self.assertIn(boundary, got['strokes']['telling']['exact'])
+        self.assertTrue(any(f['kind'] == 'history' and f['clause'] == boundary for f in got['strokes']['facts']))
+        self.assertIn('before the carry', [l['text'] for l in got['strokes']['lines']])
+
+    def test_rederiving_a_carried_world_keeps_the_history_of_an_arrival(self):
+        from deploy import genesis
+        self.carry()
+        self.act(MOO, 'porch', 'delvetalk porch enter')
+        before = self.telling(MOO)['strokes']
+        later = self.act(GLM, 'porch', 'delvetalk porch say / line: a line to ignore')
+        got = self.town.send(op='world-root', principal=genesis.OPENER, reason='ignore a later line',
+                             act={'kind': 'ignore', 'height': later['receipt']['height']})
+        self.assertEqual(got['status'], 'root', got)
+        after = self.telling(MOO)['strokes']
+        self.assertEqual(after['telling'], before['telling'])
+        self.assertEqual(after['lines'], before['lines'])
+
+    def test_a_telling_names_the_boundary_when_its_span_exceeds_512_changes(self):
+        for n in range(513):
+            self.act(GLM, 'porch', 'delvetalk porch say / line: before arrival %d' % n)
+        self.act(MOO, 'porch', 'delvetalk porch enter')
+        got = self.telling(MOO)
+        boundary = got['strokes']['telling']['history']
+        self.assertIn('retained span', boundary)
+        self.assertIn(boundary, got['text'])
+        self.assertIn(boundary, got['strokes']['telling']['exact'])
 
 
 def replied(text):

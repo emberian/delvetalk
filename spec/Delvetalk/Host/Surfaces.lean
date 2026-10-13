@@ -8,6 +8,7 @@
    card with no definition of `chronicle` or `map` of its own is read by the commonplace's, from that card. -/
 import Delvetalk.Host.Ops
 import Delvetalk.Document
+import Std.Data.HashSet
 
 namespace Delvetalk.Host.Surfaces
 open Lean (Json toJson)
@@ -26,48 +27,8 @@ def square : String := Spell.townCard
 
 /-! ## Reading the store -/
 
-def fieldsOf : Data → List (String × Data)
-  | .record f => f
-  | _ => []
-
-def text? (fs : List (String × Data)) (k : String) : Option String :=
-  match fs.lookup k with
-  | some (.label s) => some s
-  | _ => none
-
-def nat? (fs : List (String × Data)) (k : String) : Option Nat :=
-  match fs.lookup k with
-  | some (.natural n) => some n
-  | _ => none
-
-/-- A relation's rows (`rows {items}`), or a list's items, as field lists. -/
-def rows (fs : List (String × Data)) (k : String) : List (List (String × Data)) :=
-  match fs.lookup k with
-  | some (.variant "rows" (.record f)) => (((f.lookup "items").bind listOf).getD []).map fieldsOf
-  | some d => ((listOf d).getD []).map fieldsOf
-  | none => []
-
-/-- A Reference naming this world's object. -/
-def referenceOf : Data → Option String
-  | .record f => match f.lookup "world", f.lookup "object" with
-      | some (.label ""), some (.label id) => some id
-      | _, _ => none
-  | _ => none
-
-/-- A `List<T>` value on the wire: `nil {} | cons {head, tail}`. -/
-def listOfData (items : List Data) : Data :=
-  items.foldr (fun x tail => .variant "cons" (.record [("head", x), ("tail", tail)])) (.variant "nil" (.record []))
-
 /-- A principal's own avatar (its id holds a DID), which no surface names as a thing. -/
 def avatarId (id : String) : Bool := ((id.splitOn "/").head?.getD "").contains ':'
-
-/-- A principal as a surface names them: the town as such, else the handle a row kept, else the registry's, else
-    the principal. -/
-def named (w : World) (fs : List (String × Data)) (handleKey principalKey : String) : String :=
-  if isTown w ((text? fs principalKey).getD "") then townName else
-  match text? fs handleKey with
-  | some h => if h.isEmpty then shownName w ((text? fs principalKey).getD "") else h
-  | none => shownName w ((text? fs principalKey).getD "")
 
 /-- The entry that made `id` and its principal: the entry of this chain that made it, else the making a carried
     genesis kept (`made`, at the height of the world it was made in); none for a store that came whole from a fork,
@@ -192,12 +153,12 @@ def earliest (firsts : List First) : Option First :=
     | some a => if f.height < a.height then some f else acc
     | none => some f) none
 
-/-- The town's firsts as `reader` may view them: the first rain, room, grown verb, rule fired and coinage. A rule's
-    first firing is the journal's first `fired` row, or the firing a carry kept (`World.ruleLog`) when earlier. -/
+/-- The town's firsts as `reader` may view them: the first rain, room, grown verb, rule fired and coinage.
+    A first firing requires continuous durable history and names the principal recorded with the firing. -/
 def firsts (w : World) (reader : String) : List First := Id.run do
   let seen := w.objects.toList.filter fun (id, o) => o.read.permits reader && !avatarId id
   let rains := seen.flatMap fun (id, o) => (rows (fieldsOf o.state) "lines").filterMap fun r =>
-    if text? r "verb" == some "rain" then some ({ what := "rain", object := id, who := named w r "handle" "author", height := (nat? r "at").getD 0 } : First)
+    if text? r "verb" == some "rain" then some ({ what := "rain", object := id, who := handleIn w r "handle" "author" true, height := (nat? r "at").getD 0 } : First)
     else none
   -- A room or a coinage is a first only by a making the world holds (`madeEntry`): never a carry's refresh.
   let rooms := seen.filterMap fun (id, o) => do
@@ -212,26 +173,18 @@ def firsts (w : World) (reader : String) : List First := Id.run do
     guard (!coiner.isEmpty)
     let (h, _) ← madeEntry w id
     return ({ what := "coinage", object := id, who := coiner, height := h } : First)
-  -- The journal's first firing, read from its start until one is found.
   let mut fired : Option First := none
-  for i in [0:w.height] do
-    let some e := w.entries.get? i | continue
-    if refreshEntry w e then continue
+  for h in [historyStart w:w.height + 1] do
+    unless historyComplete w do break
+    let some e := historyEntry w h | break
+    if historyRefresh w e then continue
     let rows := (((e.getObjVal? "fired").toOption.bind (·.getArr?.toOption)).getD #[]).toList
     let row := rows.find? fun f => viewable w reader ((f.getObjValAs? String "sender").toOption.getD "")
     if let some f := row then
       let text := fun (k : String) => (f.getObjValAs? String k).toOption.getD ""
-      fired := some { what := "rule", object := text "sender", who := shownName w (text "principal"), name := text "rule", height := i + 1 }
+      fired := some { what := "rule", object := text "sender", who := shownName w (text "principal"), name := text "rule", height := h }
       break
-  -- A carried world's journal begins at the carry: what fired before it is the newest firing of each rule.
-  let kept := w.ruleLog.toList.flatMap fun (id, log) => if !viewable w reader id then [] else
-    log.filterMap fun (name, j) => do
-      guard (j.getObjVal? "why").toOption.isNone
-      let h ← (j.getObjValAs? Nat "height").toOption
-      let owner := ((w.objects[id]?).bind fun o => (o.rules.find? (·.name == name)).map (·.owner)).getD ""
-      return ({ what := "rule", object := id, who := if owner.isEmpty then "" else shownName w owner, name, height := h } : First)
-  let rule := earliest (fired.toList ++ kept.filter fun f => !f.who.isEmpty)
-  return [earliest rains, earliest rooms, earliest verbs, rule, earliest coinages].filterMap id
+  return [earliest rains, earliest rooms, earliest verbs, fired, earliest coinages].filterMap id
 
 /-- The day a chronicle read shows and the range it walks: `day` alone, or `from` through `to` (a page a day,
     each the next one's spell), the current day by default; `page` of the day's lines. -/
@@ -278,8 +231,9 @@ def annal (w : World) (reader : String) (a : Asked) : Data :=
   .record [("day", .natural a.day), ("date", .label (civil a.day)), ("today", .natural (w.clock / Limits.clockDay)),
     ("first", .natural ((w.days[0]?.map (·.1)).getD (w.clock / Limits.clockDay))),
     ("from", .natural a.from_), ("to", .natural a.to), ("page", .natural a.page),
-    ("lines", listOfData ((chronicle w reader a.day).map Data.label)),
-    ("firsts", listOfData ((firsts w reader).map First.data))]
+    ("lines", ofList (((chronicle w reader a.day) ++
+      if !historyComplete w then ["first rule firing unknown; history before the carry is unavailable"] else []).map Data.label)),
+    ("firsts", ofList ((firsts w reader).map First.data))]
 
 /-! ## The map: which cards open onto which -/
 
@@ -303,37 +257,111 @@ def ways (w : World) (reader : String) : List Way × List (String × Nat) := Id.
     let fs := fieldsOf o.state
     for d in ((fs.lookup "cites").bind listOf).getD [] do
       let r := fieldsOf d
-      let some to := (r.lookup "to").bind referenceOf | continue
-      if to.isEmpty || !viewable w reader to then continue
-      out := out.push { from_ := id, label := (text? r "label").getD to, to }
+      let some targetId := (r.lookup "to").bind referenceId | continue
+      if targetId.isEmpty || !viewable w reader targetId then continue
+      out := out.push { from_ := id, label := (text? r "label").getD targetId, to := targetId }
     let n := (rows fs "things").length
     if n > 0 then lying := lying.push (id, n)
   return (out.toList, lying.toList)
 
-/-- The shortest way from the square to `root` through doors (`[square, …, root]`), or none. -/
-def pathTo (ways : List Way) (root : String) : List String := Id.run do
+/-- Doors indexed by their source, retaining their positions in the ordered map. -/
+def adjacency (ways : Array Way) : Std.HashMap String (Array (Nat × Way)) := Id.run do
+  let mut out : Std.HashMap String (Array (Nat × Way)) := {}
+  for i in [0:ways.size] do
+    let some x := ways[i]? | continue
+    out := out.insert x.from_ ((out.getD x.from_ #[]).push (i, x))
+  return out
+
+/-- The shortest way from the square to `root` through indexed doors (`[square, …, root]`), or none. -/
+def pathTo (doors : Std.HashMap String (Array (Nat × Way))) (root : String) : List String := Id.run do
   if root == square then return [square]
-  let mut frontier : List (List String) := [[square]]
-  let mut visited : List String := [square]
-  for _ in [0:ways.length + 1] do
-    let mut next : List (List String) := []
-    for path in frontier do
-      let here := path.head!
-      for x in ways do
-        if x.from_ == here && !visited.contains x.to then
-          if x.to == root then return (x.to :: path).reverse
-          visited := x.to :: visited
-          next := next ++ [x.to :: path]
-    if next.isEmpty then return []
-    frontier := next
+  let mut queue : Array String := #[square]
+  let mut cursor := 0
+  let mut visited : Std.HashSet String := ({} : Std.HashSet String).insert square
+  let mut parents : Std.HashMap String String := {}
+  while cursor < queue.size do
+    let here := queue[cursor]!
+    cursor := cursor + 1
+    for (_, x) in doors.getD here #[] do
+      if visited.contains x.to then continue
+      visited := visited.insert x.to
+      parents := parents.insert x.to here
+      if x.to == root then
+        let mut path := [root]
+        let mut at_ := root
+        for _ in [0:visited.size] do
+          let some parent := parents[at_]? | break
+          path := parent :: path
+          if parent == square then return path
+          at_ := parent
+        return []
+      queue := queue.push x.to
   return []
 
-/-- `World.Ways`: the card the map starts at, the way to it from the square, every door, what lies where, the page. -/
+/-- Doors handed to one map renderer, across its three drawn levels and the next level's counts. -/
+def mapDoors : Nat := 64
+
+/-- A path fitting in a map's header; a long path keeps its square and final steps with an ellipsis between. -/
+def mapPath (path : List String) : List String := Id.run do
+  let bound := Limits.cardShownChars / 3
+  if (path.foldl (fun n id => n + id.length + 3) 0) ≤ bound then return path
+  let mut suffix : List String := []
+  let mut length := square.length + 6
+  for id in path.reverse do
+    if id == square || length + id.length + 3 > bound then break
+    suffix := id :: suffix
+    length := length + id.length + 3
+  return square :: "…" :: suffix
+
+/-- The bounded neighborhood a map renders: incoming doors and outgoing doors through four levels, in map order.
+    Each unbroken label and the incoming-door footer fit within the reply's clip. -/
+def mapWays (all : Array Way) (doors : Std.HashMap String (Array (Nat × Way))) (root : String) : List Way := Id.run do
+  let mut candidates : Array (Nat × Way) := #[]
+  if all.size ≤ mapDoors then
+    for i in [0:all.size] do
+      if let some x := all[i]? then candidates := candidates.push (i, x)
+  else
+    for i in [0:all.size] do
+      if let some x := all[i]? then
+        if x.to == root then candidates := candidates.push (i, x)
+    let mut queue : Array (String × Nat) := #[(root, 0)]
+    let mut cursor := 0
+    let mut visited : Std.HashSet String := ({} : Std.HashSet String).insert root
+    while cursor < queue.size && cursor < mapDoors do
+      let (here, depth) := queue[cursor]!
+      cursor := cursor + 1
+      for item in doors.getD here #[] do
+        candidates := candidates.push item
+        let x := item.2
+        if depth < 3 && !visited.contains x.to then
+          visited := visited.insert x.to
+          queue := queue.push (x.to, depth + 1)
+  let mut selected : Std.HashSet Nat := {}
+  let mut incoming := 0
+  for (i, x) in candidates do
+    if selected.size ≥ mapDoors then break
+    if selected.contains i || x.label.length + x.to.length + 8 > Limits.cardShownChars / 2 then continue
+    if x.to == root && root != square then
+      let length := x.from_.length + x.label.length + 5
+      if incoming + length > Limits.cardShownChars / 3 then continue
+      incoming := incoming + length
+    selected := selected.insert i
+  let mut out : Array Way := #[]
+  for i in [0:all.size] do
+    if selected.contains i then
+      if let some x := all[i]? then out := out.push x
+  return out.toList
+
+/-- `World.Ways`: the map's root, bounded path and neighborhood, counts at their endpoints, and page;
+    the full readable door list accompanies it for a drawing. -/
 def waysData (w : World) (reader root : String) (page : Nat) : Data × List Way :=
   let (all, lying) := ways w reader
-  (.record [("root", .label root), ("path", listOfData ((pathTo all root).map Data.label)),
-    ("ways", listOfData (all.map Way.data)),
-    ("lying", listOfData (lying.map fun (id, n) => .record [("object", .label id), ("count", .natural n)])),
+  let doors := adjacency all.toArray
+  let shown := mapWays all.toArray doors root
+  let endpoints : Std.HashSet String := shown.foldl (fun s x => (s.insert x.from_).insert x.to) (({} : Std.HashSet String).insert root)
+  (.record [("root", .label root), ("path", ofList ((mapPath (pathTo doors root)).map Data.label)),
+    ("ways", ofList (shown.map Way.data)),
+    ("lying", ofList ((lying.filter fun (id, _) => endpoints.contains id).map fun (id, n) => .record [("object", .label id), ("count", .natural n)])),
     ("page", .natural page)], all)
 
 /-! ## Rendering by the card's own definition -/
@@ -413,7 +441,7 @@ def answer (w : World) (reader id : String) (target : Object) (read : String) (f
         | d => d) p [("ways", Json.arr (all.map Way.json).toArray), ("root", toJson id)]
     | _ => do
       let p ← page ()
-      let rows := listOfData ((deeds w reader id).map Deed.data)
+      let rows := ofList ((deeds w reader id).map Deed.data)
       rendered (fun page => .record [("page", .natural page), ("rows", rows)]) p []
 
 /-- The spells of a read, as `?` lists them: the first page, then the fields it takes. -/
