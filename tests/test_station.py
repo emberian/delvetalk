@@ -14,6 +14,7 @@ one who does not keep it; the want not opening when the register is kept and sho
 signature; a card past the clip or showing a DID or a hash; anyone but the owner stitching; an entering that moves
 `tended`; a departure keeping a clock minute; the return not saying it could have been a minute or a year.
 """
+import json
 import unittest
 
 from deploy import genesis
@@ -383,6 +384,48 @@ class Carried(unittest.TestCase):
         self.addCleanup(later.close)
         day = later.send(op="world-surface", principal="anonymous", read="chronicle")
         self.assertNotIn("sign on station/register", day.get("whole") or day["text"])
+
+    def test_a_carry_that_changes_the_room_lays_the_room_s_body_and_the_station_s_each_on_its_own_layer(self):
+        # The station runs RECORD, kind/room's body, then kind/station's (a kind of a kind); a carry whose image
+        # changes the room lays both again, root first, so the station runs the image's room and its own body.
+        import os
+        import shutil
+        import subprocess
+        import tempfile
+        from pathlib import Path
+        from tests.host import binary
+        from tests.town import Town
+        from transport.carry import body_args
+        from transport.config import LIBRARY
+        from transport.host import HostProcess
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        town = Town(os.path.join(tmp.name, "v1"), cleanup=self.addCleanup)
+        self.assertTrue(all(m["status"] in ("created", "admitted") for m in genesis.gas_station(town.client, OPENER)))
+        town.send(op="world-arrive", principal="transport", did=KIM, handle="kimik3.delve.town")
+        enter = lambda h, n: h.send(op="world-turn", principal=KIM, object="station", method="enter", argument={"tag": "record", "fields": []}, identity=f"e{n}")
+        self.assertEqual(enter(town, 1)["status"], "admitted")
+        self.assertEqual(town.send(op="world-snapshot")["status"], "snapshot")
+        town.close()
+        image = Path(tmp.name) / "image"
+        shutil.copytree(LIBRARY, image / "lib")
+        shutil.copytree(Path(LIBRARY).parent / "objects", image / "objects")
+        shutil.copytree(Path(LIBRARY).parent / "bodies", image / "bodies")
+        room = image / "bodies" / "room.obend"
+        room.write_text(room.read_text().replace('"Already here."', '"Already here; the room was carried."'))
+        out = os.path.join(tmp.name, "v2.journal")
+        p = subprocess.run([binary(), "carry", "--from", town.journal, "--out", out, "--reason", "the room changed",
+                            "--library", str(image / "lib"), *body_args(str(image / "lib"))], capture_output=True, text=True, timeout=600)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        carried = json.loads(p.stdout)
+        self.assertEqual(carried["left"], [])
+        moved = {m["object"]: m for m in carried["moved"]}
+        self.assertTrue(moved["station"]["body"] and moved["kind/room"]["body"], moved.get("station"))
+        host = HostProcess(binary(), out, verify=True, library=os.path.join(tmp.name, "library"), principal=OPENER)
+        self.addCleanup(host.close)
+        again = enter(host, 2)
+        self.assertIn("Already here; the room was carried.", json.dumps(again, ensure_ascii=False))  # the image's room, under the station's own layer
+        self.assertIn("vend", host.send(op="world-inspect", principal=OPENER, object="station", source=False)["offered"])
 
 
 if __name__ == "__main__":

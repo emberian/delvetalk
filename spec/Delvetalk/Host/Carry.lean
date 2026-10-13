@@ -37,9 +37,10 @@
    object that does not rebuild under its own pin refuses the carry, by name.
 
    A thing's body is a layer, and the image's bodies are genesis's (`--body OBJ=FILE`, which
-   transport/carry.py derives from `deploy/genesis.py`'s KINDS): a kind takes FILE as its `body`, and each
-   thing whose `kind` names it takes FILE as its first layer, as the commonplace takes its own; each such
-   change is a move (`body: true`). Without `--library` the
+   transport/carry.py derives from `deploy/genesis.py`'s KINDS and the station's): a kind takes FILE as its `body`,
+   and each thing whose `kind` names it takes FILE as its first layer, as the commonplace takes its own; a thing
+   of a kind of a kind takes each kind's FILE on its own layer, root first (`kindStack`); each such change is a
+   move (`body: true`). Without `--library` the
    world's library and every pin are carried as they were.
 
    A world of an edition that names states otherwise (before 10, by their wire JSON; from 10, by their cells:
@@ -206,19 +207,24 @@ def dependsOn (source : String) : List String :=
   importsOf source ++ ((source.splitOn "\n").head?.bind fun l =>
     (l.trimAscii.toString.dropPrefix? "layer over ./").bind fun r => (r.toString.splitOn ".obend").head?).toList
 
-/-- `inputs` as the image ships them: the library its new pin, each own module the image names its source, the
-    first layer `body` when one is given, and before each the image's modules it newly needs (neither the
-    library's nor already its own). Inputs naming no library are as they were. -/
-def movedInputs (s : Shipped) (inputs : Json) (body : Option String := none) : Except String Json := do
+/-- `inputs` as the image ships them: the library its new pin, each own module the image names its source, its
+    layers `bodies` when given (`Layer1` the first, root first, as `Kind.stackOf` lays them), and before each the
+    image's modules it newly needs (neither the library's nor already its own). Inputs naming no library are as
+    they were. -/
+def movedInputs (s : Shipped) (inputs : Json) (bodies : List String := []) : Except String Json := do
   unless (inputs.getObjValAs? String "library").toOption.isSome do return inputs
   let .ok m := inputs.getObjVal? "modules" | return inputs.setObjVal! "library" (toJson s.library.pin)
   let image := fun (n : String) => (s.library.modules.lookup n).orElse fun _ => s.objects.lookup n
   let modules ← parseModules m
-  -- A body laid again is laid as extend lays one: over the module below it (`Ops.layerLine`).
-  let laid := fun (below src : String) =>
-    if (src.splitOn "\n").head?.map (·.trimAscii.toString) == some (layerLine below) then src else layerLine below ++ "\n" ++ src
+  -- A body laid again is laid as extend lays one (`Ops.extendInputs`): over the module below it, whatever module its
+  -- own first line names (the station's body, written over RECORD, goes over the room's).
+  let laid := fun (below src : String) => match src.splitOn "\n" with
+    | first :: rest => if first.trimAscii.toString.startsWith "layer over " then "\n".intercalate (layerLine below :: rest) else layerLine below ++ "\n" ++ src
+    | [] => layerLine below
   let own := (modules.zip (("" :: modules.map (·.1)).take modules.length)).map fun ((n, src), below) =>
-    (n, if n == "Layer1" then ((body.map (laid below)).getD src) else (image n).getD src)
+    (n, match (bodies.zip ((List.range bodies.length).map (s!"Layer{· + 1}"))).find? (·.2 == n) with
+      | some (body, _) => laid below body
+      | none => (image n).getD src)
   let mut out : Array (String × String) := #[]
   for (n, src) in own do
     -- What the image's source newly imports, depth first, each once.
@@ -277,19 +283,39 @@ def placedUnder (w : World) (o : Object) (old new : Built) (state : Delvetalk.Th
     ({ name := c.name, owner, since := 1, line := c.render, clause := c } : Placed)
   return (rules ++ fresh.filter (Law.isRule ·.clause), wants ++ fresh.filter (Law.isWant ·.clause), fresh.map (·.name), gone)
 
+/-- The kinds a thing of kind `k` runs, root first: `k` under the kind its `of` names, and so on while that is a
+    kind of the world (`Kind.stackOf`, four deep at most). -/
+def kindStack (w : World) (k : String) : List String := Id.run do
+  let mut out := [k]
+  let mut here := k
+  for _ in [0:4] do
+    let some o := w.objects[here]? | break
+    let some (.label below) := Law.rawField "of" o.state | break
+    unless below.startsWith "kind/" && w.objects.contains below do break
+    out := below :: out
+    here := below
+  return out
+
 /-- `o` (built as `old` under its own pin) moved to the image's packages, or none when its closure there is
     its pin's; else why it cannot move. -/
 def moved (w : World) (s : Shipped) (id : String) (o : Object) (old : Built) :
     Except String (Option (Object × Built × Moved × Bool)) := do
   -- Its body: a kind (holding a `body`) takes its own as that field; a thing of a kind takes its kind's, and
-  -- the commonplace its own, laid as its first layer.
+  -- the commonplace its own, laid as its first layer. A thing of a kind of a kind (the station, of kind/room) runs
+  -- a layer each, root first: each takes its kind's body when the image ships every one of them.
   let kind := match Law.rawField "kind" o.state with
     | some (.label k) => some k
     | _ => none
   let held := (s.bodies.lookup id).filter fun _ => (Law.rawField "body" o.state).isSome
-  let layer := if layersOf o.inputs == 0 || held.isSome then none
-    else (s.bodies.lookup id).orElse fun _ => kind.bind fun k => s.bodies.lookup k
-  let inputs ← movedInputs s o.inputs layer
+  let stacked := (kind.map (kindStack w)).getD []
+  let own := (kind.bind fun k => s.bodies.lookup k).toList
+  let layers : List String := if layersOf o.inputs == 0 || held.isSome then []
+    else match s.bodies.lookup id with
+      | some b => [b]
+      | none => match stacked.mapM (fun k => s.bodies.lookup k) with
+        | some bs => if bs.length == layersOf o.inputs then bs else own
+        | none => own
+  let inputs ← movedInputs s o.inputs layers
   let b ← compileObject w inputs |>.mapError (s!"its package does not compile against the library this host ships: " ++ ·)
   let pin ← b.artifact.getObjValAs? String "sourcesSha256"
   let relaid := held.any fun src => match Law.rawField "body" o.state with
@@ -325,7 +351,7 @@ def moved (w : World) (s : Shipped) (id : String) (o : Object) (old : Built) :
                      law, lawText, readings, rules, wants }
   return some (o', b, { object := id, before := o.pin, after := pin, migration,
                         stateBefore := o.stateCid, stateAfter := cells.cid,
-                        body := layer.isSome || relaid,
+                        body := !layers.isEmpty || relaid,
                         law := if lawText == o.lawText then none else some (o.lawText, lawText), placed, unplaced }, amended)
 
 /-- Every object rebuilt and, with the image's packages, moved to them; every suspension checked. An
