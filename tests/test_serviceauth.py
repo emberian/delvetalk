@@ -68,24 +68,8 @@ class Host(World):
         return super().send(q)
 
 
-class ServiceAuth(unittest.TestCase):
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.now, self.serial = [1000.0], 0
-        self.documents = Documents()
-        self.keys = {did: Key(self.documents.repo(did)['key']) for did in (DID, OTHER, 'did:web:resident.example')}
-        self.p256 = Key(ec.generate_private_key(ec.SECP256R1()))
-        self.documents.repos[OTHER]['key'] = self.p256.private
-        self.keys[OTHER] = self.p256
-        self.host = Host()
-        st = State(tmp.name, config=Config())
-        ident = identity.Identity(st, delve.Client(self.documents), clock=lambda: self.now[0])
-        self.front = serve(Front(st, self.host, ident, ('127.0.0.1', 0), clock=lambda: self.now[0]))
-        self.addCleanup(self.front.server_close)
-        self.addCleanup(self.front.shutdown)
-        self.host.calls.clear()
-        self.entry = self.host.entries[0]
+class Tokens:
+    """Real method-bound service JWTs shared by the offline front tests."""
 
     def token(self, claims=None, header=None, key=None, high_s=False, omit=()):
         self.serial += 1
@@ -105,6 +89,35 @@ class ServiceAuth(unittest.TestCase):
             order = CURVES[key.private.curve.name][2]
             sig = sig[:32] + (order - int.from_bytes(sig[32:], 'big')).to_bytes(32, 'big')
         return message.decode() + '.' + base64.urlsafe_b64encode(sig).decode().rstrip('=')
+
+    def access_lines(self, count):
+        """Wait for handle_one_request to append after the response bytes arrive."""
+        path = self.front.st.access_log
+        for _ in range(100):
+            if path.exists() and len(path.read_text().splitlines()) >= count:
+                break
+            time.sleep(0.01)
+        return path.read_text().splitlines()
+
+
+class ServiceAuth(Tokens, unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.now, self.serial = [1000.0], 0
+        self.documents = Documents()
+        self.keys = {did: Key(self.documents.repo(did)['key']) for did in (DID, OTHER, 'did:web:resident.example')}
+        self.p256 = Key(ec.generate_private_key(ec.SECP256R1()))
+        self.documents.repos[OTHER]['key'] = self.p256.private
+        self.keys[OTHER] = self.p256
+        self.host = Host()
+        st = State(tmp.name, config=Config())
+        ident = identity.Identity(st, delve.Client(self.documents), clock=lambda: self.now[0])
+        self.front = serve(Front(st, self.host, ident, ('127.0.0.1', 0), clock=lambda: self.now[0]))
+        self.addCleanup(self.front.server_close)
+        self.addCleanup(self.front.shutdown)
+        self.host.calls.clear()
+        self.entry = self.host.entries[0]
 
     def request(self, token=None, nsid=METHOD, method='GET', **params):
         params = {'entry': self.entry['hash'], **params} if nsid == METHOD else params
@@ -292,7 +305,7 @@ class ServiceAuth(unittest.TestCase):
         self.assertEqual(len(self.documents.calls), 4)
         self.refused(first)
 
-    def test_missing_token_world_parameter_and_only_get_entry_accepts_service_auth(self):
+    def test_missing_token_world_parameter_and_projection_queries_require_credentials(self):
         status, body, _ = self.request()
         self.assertEqual((status, body['error']), (401, 'AuthRequired'))
         self.assertEqual(self.host.calls, [])
@@ -336,13 +349,8 @@ class ServiceAuth(unittest.TestCase):
         token = self.token({'aud': OTHER})
         self.refused(token)
         self.assertEqual(self.request(self.token())[0], 200)
-        path = self.front.st.access_log
-        for _ in range(100):
-            if path.exists() and len(path.read_text().splitlines()) == 2:
-                break
-            time.sleep(0.01)
-        text = path.read_text()
-        lines = text.splitlines()
+        lines = self.access_lines(2)
+        text = '\n'.join(lines)
         self.assertEqual(len(lines), 2)
         self.assertTrue(any(line.endswith('auth=audience') for line in lines))
         self.assertTrue(any(line.split()[5] == DID and line.split()[3] == '200' for line in lines))

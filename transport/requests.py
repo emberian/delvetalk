@@ -22,11 +22,11 @@ from transport.atproto.mst import find
 from transport.atproto.sign import public_key, verify
 from transport.delve import DID, PDS, Failure
 from transport.identity import verified_dids
+from transport.acts import judge_call
 from transport.repo import NS, json_of, world_did
 
 COLLECTION = NS + 'request'
 MODES = ('act', 'plan')
-PLAN_CALLS = 8  # the request lexicon's calls.maxLength
 PAGES = 10  # a repository's request collection read per poll, 100 records a page
 PARTICIPANT_CAP = 256  # non-delve-PDS participants read per poll; overflow is a problem, with its DID
 DOCUMENT_TTL = 600  # seconds; the current DID document is refreshed again on proof verification failure
@@ -84,20 +84,8 @@ def judged(value, service, world, before_start):
         return False, 'created before this world began observing', None
     if value.get('mode') not in MODES:
         return False, f"mode {str(value.get('mode'))[:20]} is never run by record", None
-    calls, plan = value.get('calls'), value['mode'] == 'plan'
-    if 'if' in value and not isinstance(value['if'], list):
-        return True, 'if is a list of {object, version}', None
-    if not isinstance(calls, list) or not calls or len(calls) > (PLAN_CALLS if plan else 1) or not all(isinstance(c, dict) for c in calls):
-        return True, f'a plan has 1 to {PLAN_CALLS} calls' if plan else 'an act has exactly one call', None
-    if plan:
-        if not all(isinstance(c.get('spell'), str) and set(c) == {'spell'} for c in calls):
-            return True, 'a plan is spells only', None
-        return True, None, {'spell': 'delvetalk plan\n' + '\n'.join(c['spell'].strip('\n') for c in calls)}
-    call = calls[0]
-    if isinstance(call.get('spell'), str) == isinstance(call.get('object'), str) or \
-            (isinstance(call.get('object'), str) and not isinstance(call.get('verb'), str)):
-        return True, 'a call is a spell, or an object with a verb (and fields), not both', None
-    return True, None, call
+    why, call = judge_call(value['mode'], value.get('calls'), value.get('if', []))
+    return True, why, call
 
 
 class Poller:

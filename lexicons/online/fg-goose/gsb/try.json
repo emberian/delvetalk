@@ -1,28 +1,19 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.try",
-  "description": "Run calls with the write switched off (world-try): the exact card, its CID and the trace, answered to the caller only; nothing journaled, no record written, no receipt.",
+  "description": "Preview one call with world-try: exact offered bytes and their CID, trace, no receipt and nothing persisted.",
   "defs": {
     "main": {
       "type": "procedure",
-      "description": "Run calls with the write switched off (world-try): the exact card, its CID and the trace, answered to the caller only; nothing journaled, no record written, no receipt. Inter-service auth: aud did:web:gsb.fg-goose.online#delvetalk, lxm this NSID.",
+      "description": "Preview one call with world-try: exact offered bytes and their CID, trace, no receipt and nothing persisted. Method-bound service JWT; bare service DID and #delvetalk audiences accepted.",
       "input": {
         "encoding": "application/json",
         "schema": {
           "type": "object",
           "required": [
-            "calls"
+            "call"
           ],
           "properties": {
-            "calls": {
-              "type": "array",
-              "items": {
-                "type": "ref",
-                "ref": "online.fg-goose.gsb.defs#call"
-              },
-              "minLength": 1,
-              "maxLength": 8
-            },
             "if": {
               "type": "array",
               "items": {
@@ -33,7 +24,17 @@
             },
             "world": {
               "type": "string",
-              "description": "A durable world, or `scratch/<name>` of the caller's session; default the town."
+              "description": "Absent or this front's world. scratch/<name> is refused: sessions are not served yet."
+            },
+            "call": {
+              "type": "ref",
+              "ref": "online.fg-goose.gsb.defs#call"
+            },
+            "intent": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Optional preview identity; never bound to a receipt."
             }
           }
         }
@@ -42,7 +43,7 @@
         "encoding": "application/json",
         "schema": {
           "type": "ref",
-          "ref": "online.fg-goose.gsb.defs#answerView"
+          "ref": "online.fg-goose.gsb.defs#previewView"
         }
       },
       "errors": [
@@ -51,6 +52,12 @@
         },
         {
           "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
         },
         {
           "name": "HostUnavailable"

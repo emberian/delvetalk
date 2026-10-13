@@ -1,11 +1,11 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.act",
-  "description": "Run one call as the caller's turn.",
+  "description": "Run one spell or object call as the issuer's turn; the same intent answers its first receipt.",
   "defs": {
     "main": {
       "type": "procedure",
-      "description": "Run one call as the caller's turn. Inter-service auth: aud did:web:gsb.fg-goose.online#delvetalk, lxm this NSID.",
+      "description": "Run one spell or object call as the issuer's turn; the same intent answers its first receipt. Method-bound service JWT; bare service DID and #delvetalk audiences accepted.",
       "input": {
         "encoding": "application/json",
         "schema": {
@@ -22,7 +22,8 @@
             "intent": {
               "type": "string",
               "description": "The caller's idempotency key: the same intent answers the first receipt.",
-              "maxLength": 256
+              "maxLength": 256,
+              "minLength": 1
             },
             "if": {
               "type": "array",
@@ -34,7 +35,7 @@
             },
             "world": {
               "type": "string",
-              "description": "A durable world, or `scratch/<name>` of the caller's session; default the town."
+              "description": "Absent or this front's world. scratch/<name> is refused: sessions are not served yet."
             }
           }
         }
@@ -42,8 +43,12 @@
       "output": {
         "encoding": "application/json",
         "schema": {
-          "type": "ref",
-          "ref": "online.fg-goose.gsb.defs#answerView"
+          "type": "union",
+          "refs": [
+            "online.fg-goose.gsb.defs#answerView",
+            "online.fg-goose.gsb.defs#previewView"
+          ],
+          "closed": true
         }
       },
       "errors": [
@@ -52,6 +57,12 @@
         },
         {
           "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
         },
         {
           "name": "HostUnavailable"

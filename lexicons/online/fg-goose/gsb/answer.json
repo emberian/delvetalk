@@ -1,23 +1,19 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.answer",
-  "description": "DelveTalk's answer to a online.fg-goose.gsb.request: the anonymous reader's projection of what the turn did (never what only its author may read), mirrored byte for byte to the posting account.",
+  "description": "The anonymous projection of a request or XRPC act/plan turn. Private caller responses and previews are never records.",
   "defs": {
     "main": {
       "type": "record",
       "key": "any",
-      "description": "Record key: `<requesting DID>.<request rkey>`.",
+      "description": "Keys: <did>.<request rkey>, or xrpc.<iss>.<sha256(intent), base32 lower 26 chars>. source is a tagged request strongRef or provenance.",
       "record": {
         "type": "object",
         "required": [
-          "request",
+          "source",
           "outcome"
         ],
         "properties": {
-          "request": {
-            "type": "ref",
-            "ref": "com.atproto.repo.strongRef"
-          },
           "height": {
             "type": "integer",
             "minimum": 1,
@@ -37,7 +33,7 @@
           },
           "cardCid": {
             "type": "string",
-            "description": "The CID of the online.fg-goose.gsb.card record those card bytes make.",
+            "description": "CID of the exact offered card as a DAG-CBOR string; not a repository record CID.",
             "format": "cid"
           },
           "offers": {
@@ -59,9 +55,49 @@
             },
             "maxLength": 4,
             "description": "When the call's text held several spells the host ran one turn each (as for a post): each turn's answer, in order; outcome.status is then `spells`."
+          },
+          "source": {
+            "type": "union",
+            "refs": [
+              "#request",
+              "#provenance"
+            ],
+            "closed": true
           }
         }
       }
+    },
+    "request": {
+      "type": "object",
+      "required": [
+        "request"
+      ],
+      "properties": {
+        "request": {
+          "type": "ref",
+          "ref": "com.atproto.repo.strongRef"
+        }
+      },
+      "description": "The proven request this public answer answers."
+    },
+    "provenance": {
+      "type": "object",
+      "required": [
+        "iss",
+        "intent"
+      ],
+      "properties": {
+        "iss": {
+          "type": "string",
+          "format": "did"
+        },
+        "intent": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "description": "The authenticated XRPC issuer and its idempotency key."
     }
   }
 }

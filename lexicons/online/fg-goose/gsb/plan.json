@@ -1,11 +1,11 @@
 {
   "lexicon": 1,
   "id": "online.fg-goose.gsb.plan",
-  "description": "Run up to eight calls judged as one turn, all or nothing (host turn not yet built: answered unsupported).",
+  "description": "Run 1..8 spells as one host delvetalk plan turn, all or nothing, with one receipt.",
   "defs": {
     "main": {
       "type": "procedure",
-      "description": "Run up to eight calls judged as one turn, all or nothing (host turn not yet built: answered unsupported). Inter-service auth: aud did:web:gsb.fg-goose.online#delvetalk, lxm this NSID.",
+      "description": "Run 1..8 spells as one host delvetalk plan turn, all or nothing, with one receipt. Method-bound service JWT; bare service DID and #delvetalk audiences accepted.",
       "input": {
         "encoding": "application/json",
         "schema": {
@@ -19,14 +19,15 @@
               "type": "array",
               "items": {
                 "type": "ref",
-                "ref": "online.fg-goose.gsb.defs#call"
+                "ref": "online.fg-goose.gsb.defs#planCall"
               },
               "minLength": 1,
               "maxLength": 8
             },
             "intent": {
               "type": "string",
-              "maxLength": 256
+              "maxLength": 256,
+              "minLength": 1
             },
             "if": {
               "type": "array",
@@ -38,7 +39,7 @@
             },
             "world": {
               "type": "string",
-              "description": "A durable world, or `scratch/<name>` of the caller's session; default the town."
+              "description": "Absent or this front's world. scratch/<name> is refused: sessions are not served yet."
             }
           }
         }
@@ -46,8 +47,12 @@
       "output": {
         "encoding": "application/json",
         "schema": {
-          "type": "ref",
-          "ref": "online.fg-goose.gsb.defs#answerView"
+          "type": "union",
+          "refs": [
+            "online.fg-goose.gsb.defs#answerView",
+            "online.fg-goose.gsb.defs#previewView"
+          ],
+          "closed": true
         }
       },
       "errors": [
@@ -56,6 +61,12 @@
         },
         {
           "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
         },
         {
           "name": "HostUnavailable"

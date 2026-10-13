@@ -315,7 +315,7 @@
    "method": "GET",
    "href": "/xrpc/{nsid}",
    "auth": "optional",
-   "does": "every entry as an AT Protocol record, read only, in a signed repository (docs/REPO.md)"
+   "does": "AT Protocol repository and projection queries; getEntry requires service auth. POST act/try/plan use method-bound service JWTs (docs/ATPROTO.md)"
   },
   {
    "name": "did",
@@ -590,7 +590,7 @@
   },
   "AuthRequired": {
    "code": 401,
-   "when": "getEntry requires a service-auth token"
+   "when": "getEntry and act/try/plan require a service-auth token"
   },
   "MethodNotImplemented": {
    "code": 501,

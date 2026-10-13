@@ -241,7 +241,7 @@ class Requests(unittest.TestCase):
         got = self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': uri})
         self.assertEqual(got['receipt']['outcome']['tag'], 'admitted')
         a = self.answer('3aaaaaaaaaaa2')
-        self.assertEqual(a['request']['uri'], uri)
+        self.assertEqual(a['source']['request']['uri'], uri)
         self.assertEqual(a['receipt'], {'slug': got['receipt']['slug'], 'height': got['receipt']['height'], 'entry': {'$link': got['receipt']['hash']}})
         self.assertIn('Planted', a['offers'][0])
         self.assertIn({'object': 'garden-1', 'version': 1, 'stateCid': a['trace']['writes'][-1]['stateCid']}, a['trace']['writes'])
@@ -324,7 +324,7 @@ class Requests(unittest.TestCase):
         self.pds.put(DID, '3aaaaaaaaaaa2', request('delvetalk diary plant\nseed: a\ncolour: amber'))
         self.step()
         a = self.answer('3aaaaaaaaaaa2')
-        self.assertEqual(set(a), {'$type', 'request', 'outcome', 'receipt', 'height'})
+        self.assertEqual(set(a), {'$type', 'source', 'outcome', 'receipt', 'height'})
         self.assertNotIn('secret', canonical(a))
         self.assertNotIn('diary', canonical(a))
 
@@ -404,14 +404,14 @@ class Requests(unittest.TestCase):
         after = self.acts(principal=DID)
         self.assert_plant_entries([e for e in after if e['height'] > before[-1]['height']],
                                   '3aaaaaaaaaaa3', 'garden-1/bell/2')
-        identity = {'principal': DID, 'intent': first['request']['uri']}
+        identity = {'principal': DID, 'intent': first['source']['request']['uri']}
         consumed = [e for e in after if e.get('identity') == identity]
         self.assertEqual(len(consumed), 1)
         self.assertEqual(consumed, [e for e in before if e.get('identity') == identity])
         observations = {o['uri']: o['cid'] for o in self.st.observations()}
-        self.assertEqual(observations, {first['request']['uri']: first['request']['cid'],
-                                       self.answer('3aaaaaaaaaaa3')['request']['uri']:
-                                       self.answer('3aaaaaaaaaaa3')['request']['cid']})
+        self.assertEqual(observations, {first['source']['request']['uri']: first['source']['request']['cid'],
+                                       self.answer('3aaaaaaaaaaa3')['source']['request']['uri']:
+                                       self.answer('3aaaaaaaaaaa3')['source']['request']['cid']})
         self.assertEqual(self.pair.count(delve.PDS, 'com.atproto.repo.listRecords'), old_reads)
         self.assertEqual(self.pair.count(delve.PDS, 'com.atproto.sync.getRecord'), old_proofs)
         self.assertEqual(json.loads(self.st.requests.read_text())['refused'], refused)
@@ -471,7 +471,7 @@ class Requests(unittest.TestCase):
         self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.repo.listRecords'), 1)
         self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.sync.getLatestCommit'), 1)
         self.assertEqual(self.answer('3aaaaaaaaaaa2')['outcome']['status'], 'admitted')
-        self.assertEqual(self.answer('3aaaaaaaaaaa2')['request']['cid'],
+        self.assertEqual(self.answer('3aaaaaaaaaaa2')['source']['request']['cid'],
                          str(block(from_json(request(PLANT)))[0]))
         after = self.acts(principal=DID)
         self.assert_plant_entries([e for e in after if e['height'] > before[-1]['height']],
@@ -588,14 +588,14 @@ class Held(unittest.TestCase):
             finally:
                 ob.db.close()
         step()
-        self.assertFalse(bridge.answer_path(st, uri).exists())
+        self.assertFalse(bridge.answer_path(st, bridge.request_source({'uri': uri, 'cid': 'unused'})).exists())
         turns = sum(o['op'] == 'world-turn' for o in host.ops)
         step()
         self.assertEqual(sum(o['op'] == 'world-turn' for o in host.ops), turns)
         host.offers[DID] = [{'height': 9, 'ordinal': 0, 'identity': {'principal': DID, 'intent': uri}, 'text': 'Planted.'},
                             {'height': 9, 'ordinal': 1, 'identity': {'principal': DID, 'intent': 'someone-else'}, 'text': 'not mine'}]
         self.assertEqual(step()['offered'], [uri])
-        a = json.loads(bridge.answer_path(st, uri).read_text())
+        a = json.loads(bridge.answer_path(st, bridge.request_source({'uri': uri, 'cid': 'unused'})).read_text())
         self.assertEqual(record_problems(a), [])
         self.assertEqual((a['outcome']['status'], a['offers'], a['receipt']['slug']), ('admitted', ['Planted.'], 'lodif-rukuz'))
         self.assertNotIn('offered', step())

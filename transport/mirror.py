@@ -71,7 +71,7 @@ def ids(host, reader=PUBLIC):
 
 
 def answer_records(directory):
-    """{rkey: value}: the answers the bridge wrote to requests (transport/bridge.py), each the public's projection."""
+    """{rkey: value}: public request and XRPC answers written through bridge.write_answer."""
     if not directory or not Path(directory).is_dir():
         return {}
     return {p.stem: json.loads(p.read_text()) for p in sorted(Path(directory).glob('*.json'))}

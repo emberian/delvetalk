@@ -34,6 +34,15 @@ def validate(value, schema, doc, at='$'):
     if kind == 'ref':
         target, owner = resolve(schema['ref'], doc)
         return validate(value, target, owner or doc, at)
+    if kind == 'union':
+        if not isinstance(value, dict):
+            return [f'{at}: not a tagged union object']
+        tag = value.get('$type')
+        refs = [doc['id'] + r if r.startswith('#') else r for r in schema['refs']]
+        if tag not in refs:
+            return [f'{at}.$type: not a union variant']
+        target, owner = resolve(tag, doc)
+        return validate(value, target, owner or doc, at)
     if kind == 'record':
         return validate(value, schema['record'], doc, at)
     if kind == 'unknown':
@@ -57,6 +66,14 @@ def validate(value, schema, doc, at='$'):
         return [f'{at}: not a {kind}']
     if kind == 'integer' and value < schema.get('minimum', value):
         return [f'{at}: below {schema["minimum"]}']
+    if 'const' in schema and value != schema['const']:
+        return [f'{at}: not {schema["const"]}']
+    if 'enum' in schema and value not in schema['enum']:
+        return [f'{at}: not an enum value']
+    if kind == 'string':
+        n = len(value.encode('utf-8'))
+        if n < schema.get('minLength', n) or n > schema.get('maxLength', n):
+            return [f'{at}: string outside byte bounds']
     return []
 
 
@@ -113,6 +130,12 @@ class Lexicons(unittest.TestCase):
                     resolve(node['ref'], doc)
                 except KeyError:
                     problems.append(f"{path}: ref {node['ref']} names nothing")
+            if node.get('type') == 'union':
+                for ref in node['refs']:
+                    try:
+                        resolve(ref, doc)
+                    except KeyError:
+                        problems.append(f'{path}: union ref {ref} names nothing')
             for k, v in node.items():
                 if k == 'properties':
                     for name, sub in v.items():
@@ -144,12 +167,34 @@ class Lexicons(unittest.TestCase):
         self.assertEqual(record_problems({**good, 'value': {'height': '1', 'hash': 'bafy'}}), ['$.value.height: not a integer'])
 
     def test_the_validator_refuses_a_missing_field_and_a_wrong_type(self):
-        good = {'$type': 'online.fg-goose.gsb.answer', 'request': {'uri': 'at://did:plc:x/online.fg-goose.gsb.request/3a', 'cid': 'bafy'},
+        good = {'$type': 'online.fg-goose.gsb.answer', 'source': {'$type': 'online.fg-goose.gsb.answer#request',
+                'request': {'uri': 'at://did:plc:x/online.fg-goose.gsb.request/3a', 'cid': 'bafy'}},
                 'outcome': {'status': 'admitted', 'line': 'admitted'}, 'height': 3, 'receipt': {'slug': 'a-b', 'height': 3, 'entry': {'$link': 'bafy'}}}
         self.assertEqual(record_problems(good), [])
         self.assertEqual(record_problems({**good, 'outcome': {'status': 'admitted'}}), ['$.outcome.line: required'])
         self.assertEqual(record_problems({**good, 'receipt': {**good['receipt'], 'entry': 'bafy'}}), ['$.receipt.entry: not a cid-link'])
         self.assertEqual(record_problems({**good, 'height': 0}), ['$.height: below 1'])
+
+    def test_answer_source_requires_either_a_request_ref_or_xrpc_provenance(self):
+        good = {'$type': 'online.fg-goose.gsb.answer', 'source': {'$type': 'online.fg-goose.gsb.answer#provenance',
+                'iss': 'did:plc:x', 'intent': 'one'}, 'outcome': {'status': 'admitted', 'line': 'admitted'}}
+        self.assertEqual(record_problems(good), [])
+        for key in ('iss', 'intent'):
+            value = {**good, 'source': {k: v for k, v in good['source'].items() if k != key}}
+            self.assertEqual(record_problems(value), [f'$.source.{key}: required'])
+        self.assertEqual(record_problems({k: v for k, v in good.items() if k != 'source'}), ['$.source: required'])
+        self.assertTrue(record_problems({**good, 'source': {'iss': 'did:plc:x', 'intent': 'one'}}))
+
+    def test_previews_and_turn_answers_have_separate_discriminants_and_schemas(self):
+        doc = DOCS['online.fg-goose.gsb.defs']
+        preview = doc['defs']['previewView']
+        self.assertNotIn('receipt', preview['properties'])
+        self.assertEqual(preview['properties']['$type']['const'], doc['id'] + '#previewView')
+        self.assertEqual(preview['properties']['outcome']['ref'], '#previewOutcome')
+        self.assertEqual(doc['defs']['previewOutcome']['properties']['status']['const'], 'previewed')
+        self.assertNotIn('previewed', doc['defs']['outcome']['properties']['status']['enum'])
+        self.assertTrue(validate({'$type': doc['id'] + '#previewView', 'outcome': {'status': 'previewed', 'line': 'preview'}},
+                                 doc['defs']['answerView'], doc))
 
     def test_checkpoint_built_by_mirror_requires_source_did_rev_commit_and_positive_entry_height(self):
         from transport import mirror

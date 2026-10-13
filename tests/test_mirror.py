@@ -222,7 +222,7 @@ class MirrorCheckpoint(unittest.TestCase):
         self.assertNotIn('createdAt', w.calls[-1][2])
 
     def test_a_partial_manifest_or_failed_index_never_advances_checkpoint(self):
-        answer = {'$type': mirror.ANSWER, 'request': {'uri': 'at://did:plc:x/online.fg-goose.gsb.request/3a', 'cid': 'bafy'},
+        answer = {'$type': mirror.ANSWER, 'source': {'$type': mirror.ANSWER + '#request', 'request': {'uri': 'at://did:plc:x/online.fg-goose.gsb.request/3a', 'cid': 'bafy'}},
                   'outcome': {'status': 'admitted', 'line': 'admitted'}, 'height': 7}
         self.st.write(self.st.answers / 'request.json', answer)
         w = Writer()

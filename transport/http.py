@@ -17,11 +17,12 @@ from pathlib import Path
 from transport import bridge, oauth, pages
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
-from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, TOWN, door_rows, handles, painted, place, plain, typed
+from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, TOWN, door_rows, handles, paged, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
 from transport.identity import SLUG, Identity, IdentityError
 from transport.repo import Repo
-from transport.serviceauth import Rejected, Verifier, shaped
+from transport.acts import INTENT_BYTES, judge_call, text
+from transport.serviceauth import Rejected, Verifier
 from transport.firehose import Firehose
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -33,6 +34,7 @@ WAIT_MAX, WAIT_STEP = 30, 1  # seconds an offers long poll may hold a request, a
 RATE, OPEN_RATE, WINDOW = 32, 16, 60
 PREFIX, COOKIE = '/AGENTS.md', 'dt_credential'
 CREATE_KEYS = ('object', 'modules', 'source', 'package', 'entry', 'seed', 'law')
+PROCEDURES = {f'online.fg-goose.gsb.{name}': name for name in ('act', 'try', 'plan')}
 EXAMPLES = ROOT / 'docs' / 'AGENTS-EXAMPLES.md'
 REQUEST_TIMEOUT, MAX_REPLY, MAX_DEPTH = 30, 8 * 1024 * 1024, 256  # seconds to send a request; bytes of a reply; JSON nesting of a body
 WORKERS = 48  # requests served at once (the container allows 64 tasks); one more is told `busy`
@@ -72,7 +74,7 @@ def resolve(method, path):
         name = {'start': 'oauthStart', 'callback': 'oauthCallback', 'client-metadata.json': 'oauthClient'}.get(parts[1])
         return (name, {}) if name else (None, None)
     if parts[:1] == ['xrpc'] and len(parts) == 2:
-        return 'xrpc', {'nsid': parts[1]}  # the repository answers every method (405 for a write)
+        return 'xrpc', {'nsid': parts[1]}
     get = {('',): 'home', ('.well-known', 'did.json'): 'did', ('style', ''): 'specimen', ('style',): 'specimen'}.get(tuple(parts))
     if method == 'GET' and get:
         return get, {}
@@ -333,6 +335,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.firehose = None
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
+        self.turn_lock = threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
         info = host.send({'op': 'serve-status'})
@@ -394,6 +397,47 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
             self.st.write(path, {'http': {'intent': intent}, 'replyTo': None, 'principal': principal, 'principalVerified': True,
                                  'object': writes[0], 'slot': None, 'receipt': receipt, 'posted': False,
                                  'text': bridge.draft_text(reply, self.origin) or bridge.receipt_line(receipt, self.origin)})
+
+    def turn(self, host, principal, obj, method, data, scratch=False, first_receipt=False):
+        """The agent and procedure act/try path: one host call, then town drafting.
+
+        XRPC intents answer their first bound receipt even when the retry changes
+        the call. The host remains the authority for receipt lookup and offers.
+        """
+        reply = None
+        if first_receipt:
+            source = bridge.xrpc_source(principal, data['intent'])
+            path = bridge.answer_path(self.st, source)
+            saved = json.loads(path.read_text()) if path.exists() else {}
+            entry = (saved.get('receipt') or {}).get('entry', {}).get('$link')
+            got = host.send({'op': 'world-entry', 'principal': principal, 'hash': entry}) if entry else \
+                host.send({'op': 'world-receipt', 'principal': principal, 'identity': data['intent']})
+            if got.get('class') in ('hostUnavailable', 'hostTimeout'):
+                return got
+            rc = got.get('receipt') or {}
+            if rc:
+                reply = {**got, 'status': (rc.get('outcome') or {}).get('tag', 'refused'),
+                         'object': (rc.get('roots') or [{}])[0].get('object')}
+                offers = paged(host, {'op': 'world-offers', 'principal': principal, 'after': rc['height'] - 1}, 'offers')
+                reply['offers'] = [o for o in offers
+                                   if (o.get('from') or o.get('identity') or {}).get('intent') == data['intent']]
+        if reply is None:
+            if obj is None:  # a spell's destination is read by the host, as for a record request
+                reached = host.send({'op': 'world-reach', 'principal': principal, 'author': principal, 'kind': 'request',
+                                     'uri': '', 'text': data['spell'], 'chain': [], 'mentions': 0})
+                if reached.get('class') in ('hostUnavailable', 'hostTimeout'):
+                    return reached
+                if reached.get('status') != 'reached':
+                    return {'status': 'unreached', 'message': 'no card reached: a spell names its card'}
+                obj = reached['object']
+            reply = host.send({'op': 'world-try' if data.get('try') is True else 'world-turn', 'principal': principal,
+                               'object': obj, 'method': method, 'argument': argument(data), 'identity': data.get('intent'),
+                               'reach': 'direct', **({'if': data['if']} if 'if' in data else {})})
+        if not scratch and not reply.get('tried') and reply.get('class') != 'moved':
+            turns = reply.get('turns') if reply.get('status') == 'spells' else [reply]
+            for t in turns:
+                self.draft_turn(principal, (t.get('receipt') or {}).get('identity', {}).get('intent', data.get('intent')), t)
+        return reply
 
     @property
     def feed(self):
@@ -540,32 +584,51 @@ class Handler(BaseHTTPRequestHandler):
             self.request_version = 'HTTP/1.0'
         self.fail(cls, message)
 
-    def body(self, limit=MAX_BODY):
+    def body(self, limit=MAX_BODY, xrpc=False):
         """-> dict, or None after replying with the refusal. JSON, or a urlencoded form."""
+        fail = (lambda cls, reason=None: self.xrpc_reply(400, {'error': 'InvalidRequest', 'message': reason or ERRORS[cls]['when']})) if xrpc else self.fail
+        if xrpc and (self.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower() != 'application/json':
+            return fail('badJson', 'Content-Type must be application/json')
         try:
             n = int(self.headers.get('Content-Length') or 0)
         except ValueError:
             n = -1
         if n < 0:
-            return self.fail('badRequest', 'Content-Length is not a number')
+            return fail('badRequest', 'Content-Length is not a number')
         if n > limit:
-            return self.fail('bodyTooLarge')
+            return fail('bodyTooLarge')
         try:
             raw = self.rfile.read(n)
         except TimeoutError:
             raw = b''
         if len(raw) < n:  # stalled, or cut at the deadline
-            return self.fail('requestTimeout')
+            return fail('requestTimeout')
         # curl -d labels JSON as a form; a browser's form body never starts with '{'
         if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded') and not raw.lstrip().startswith(b'{'):
             return {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace'), keep_blank_values=True).items()}  # a blank field is a value
         try:
-            data = json.loads(raw or b'{}')
+            def constant(_):
+                raise ValueError('non-JSON number')
+            def unique(pairs):
+                out = {}
+                for k, v in pairs:
+                    if k in out:
+                        raise ValueError('duplicate JSON field')
+                    out[k] = v
+                return out
+            data = json.loads(raw or b'{}', **({'parse_constant': constant, 'object_pairs_hook': unique} if xrpc else {}))
         except (ValueError, RecursionError):
-            return self.fail('badJson', 'the body is not JSON')
+            return fail('badJson', 'the body is not JSON')
         if not isinstance(data, dict):
-            return self.fail('badJson', 'the body must be a JSON object')
-        return data if depth(data) <= MAX_DEPTH else self.fail('badJson', f'the body nests deeper than {MAX_DEPTH}')
+            return fail('badJson', 'the body must be a JSON object')
+        if depth(data) > MAX_DEPTH:
+            return fail('badJson', f'the body nests deeper than {MAX_DEPTH}')
+        if xrpc:
+            try:
+                canonical(data).encode('utf-8')
+            except UnicodeEncodeError:
+                return fail('badJson', 'the body must contain Unicode text without lone surrogates')
+        return data
 
     def answer(self, reply, keep=(), links=None, acts=None):
         """The host's reply, rendered, with its controls: a diagnostic carried as JSON text in `message` is lifted, its `hint`
@@ -793,14 +856,10 @@ class Handler(BaseHTTPRequestHandler):
             reply = host.send({'op': 'world-create', 'principal': principal, 'identity': data.get('intent'), **made})
             return self.answer(reply, links=receipt_links(base, reply))
         # `try: true` is the act with the write switched off (docs/POSTING.md §2); `if` the roots a try read, else `moved`.
-        reply = host.send({'op': 'world-try' if data.get('try') is True else 'world-turn', 'principal': principal, 'object': obj, 'method': tail,
-                           'argument': argument(data), 'identity': data.get('intent'), 'reach': 'direct', **({'if': data['if']} if 'if' in data else {})})
+        reply = self.server.turn(host, principal, obj, tail, data, scratch=bool(scratch))
         if reply.get('tried') or reply.get('class') == 'moved':  # nothing journaled: the whole answer, nothing drafted
             return self.answer(reply, links=at(obj))
         turns = reply.get('turns') if reply.get('status') == 'spells' else [reply]  # several spells: a turn each
-        if not scratch:  # a scratch turn drafts nothing for the town
-            for t in turns:
-                self.server.draft_turn(principal, (t.get('receipt') or {}).get('identity', {}).get('intent', data.get('intent')), t)
         links, acts = {**at(obj), **receipt_links(base, reply, data.get('intent'))}, None
         if reply.get('status') in ('refused', 'error'):  # the usage action: the method as the host's table shows it
             seen = host.send({'op': 'world-inspect', 'principal': principal, 'object': obj})
@@ -812,11 +871,13 @@ class Handler(BaseHTTPRequestHandler):
         self.answer(reply, links=links, acts=acts)
 
     def xrpc(self, method, nsid):
-        """getEntry alone accepts method-bound JWTs; other bearers use the credential path."""
+        """Method-bound service reads and procedures; repository queries use credentials."""
+        if (nsid in PROCEDURES and method != 'POST') or (nsid in Repo.METHODS and method != 'GET'):
+            return self.xrpc_reply(405, {'error': 'InvalidRequest', 'message': 'a procedure uses POST; a query uses GET'})
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else ''
-        service = nsid == 'online.fg-goose.gsb.getEntry'
-        if service and (not credential or shaped(credential)):
+        service = nsid == 'online.fg-goose.gsb.getEntry' or nsid in PROCEDURES
+        if service:
             try:
                 self.did = self.server.serviceauth.authenticate(credential, nsid)
             except Rejected as r:
@@ -825,8 +886,6 @@ class Handler(BaseHTTPRequestHandler):
             who = {'did': self.did}
         else:
             who = self.principal(credential) if credential else {}
-            if service and who is not None:
-                who = None  # this query requires the resident's service JWT
         if who is None:
             self.auth_reason = 'credential'
             return self.xrpc_reply(401, {'error': 'InvalidToken', 'message': 'unverified or revoked credential'})
@@ -836,11 +895,42 @@ class Handler(BaseHTTPRequestHandler):
                                    [('Retry-After', str(wait))])
         if nsid == 'did.json':
             return self.reply(200, canonical(self.server.repo.did_document()), 'application/did+json')
+        if nsid in PROCEDURES:
+            return self.procedure(PROCEDURES[nsid], self.did)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query, keep_blank_values=True).items()}
         code, body, ctype = self.server.repo.serve(self.server.host, method, nsid, q, who.get('did'))
         if code == 426:
             return self.xrpc_reply(code, body, [('Upgrade', 'websocket')])
         self.reply(code, body if isinstance(body, bytes) else canonical(body), ctype) if code < 400 else self.xrpc_reply(code, body)
+
+    def procedure(self, mode, principal):
+        """Authenticated JSON framing; law refusals are caller answers with HTTP 200."""
+        data = self.body(xrpc=True)
+        if data is None:
+            return
+        why = None
+        allowed = {'intent', 'if', 'world', 'calls' if mode == 'plan' else 'call'}
+        if set(data) - allowed:
+            why = 'unexpected fields: ' + ', '.join(sorted(set(data) - allowed))
+        elif data.get('world', self.server.st.world) != self.server.st.world:
+            why = 'sessions are not served yet' if isinstance(data.get('world'), str) and data['world'].startswith('scratch/') else 'world must equal ' + self.server.st.world
+        elif (mode != 'try' or 'intent' in data) and not text(data.get('intent'), INTENT_BYTES):
+            why = f'intent must be nonempty Unicode text of at most {INTENT_BYTES} UTF-8 bytes'
+        else:
+            why, call = judge_call(mode, data.get('calls') if mode == 'plan' else [data.get('call')], data.get('if', []))
+        if why:
+            return self.xrpc_reply(400, {'error': 'InvalidRequest', 'message': why})
+        turn = {**call, **{k: data[k] for k in ('intent', 'if') if k in data}, 'try': mode == 'try'}
+        with self.server.turn_lock:
+            reply = self.server.turn(self.server.host, principal, call.get('object'), call.get('verb', 'receive'),
+                                     turn, first_receipt=mode != 'try')
+            if reply.get('class') in ('hostUnavailable', 'hostTimeout'):
+                return self.xrpc_reply(503, {'error': 'HostUnavailable', 'message': reply.get('message', 'host unavailable')})
+            preview = mode == 'try' or bool(reply.get('tried'))
+            if not preview:
+                source = bridge.xrpc_source(principal, data['intent'])
+                bridge.write_answer(self.server.st, source, bridge.public_view(self.server.host, reply))
+        return self.reply(200, canonical(bridge.caller_view(reply, preview)))
 
     def xrpc_reply(self, code, body, headers=()):
         """XRPC's {error, message}, with the envelope's status, class and links beside it. A record or a page is the

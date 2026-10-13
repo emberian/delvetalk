@@ -106,6 +106,9 @@ data, prev, sig, bytes}`, the host's own commit for that height under the key th
 | Method | Answers |
 | --- | --- |
 | `GET /.well-known/did.json` | `{id, alsoKnownAs: [at://<host>], verificationMethod: [#atproto, Multikey, publicKeyMultibase], service: [#atproto_pds → origin, #delvetalk (DelvetalkWorld) → origin]}`; the service entries are present even without a signing key |
+| `POST online.fg-goose.gsb.act` | `{call, intent, if?, world?}` under method-bound service auth; caller answerView, public answer keyed by issuer and hashed intent |
+| `POST online.fg-goose.gsb.try` | `{call, intent?, if?, world?}` under service auth; previewView with exact card/CID/trace, no receipt or persisted record |
+| `POST online.fg-goose.gsb.plan` | `{calls, intent, if?, world?}` under service auth; 1..8 spells in one all-or-nothing host turn, caller answerView and anonymous answer |
 | `online.fg-goose.gsb.getEntry?entry&world?` | service-auth query: the entry's identity principal receives a CARv1 rooted at the entry CID holding its one canonical block; another reader 403 `Denied`, unknown 400 `RecordNotFound`. Optional world must equal this front's world, else 400 `InvalidRequest`. No signing key required; authentication policy is ATPROTO §2(b) |
 | `com.atproto.sync.getRepo?did&since?` | a CARv1 rooted at the head commit: the commit, every MST node, every record; with `since` (a rev here, else 400) the head commit, the nodes made after it and the newer records |
 | `com.atproto.sync.getLatestCommit?did` | `{cid, rev}` |
@@ -180,7 +183,7 @@ high-S and DER refused).
 
 `com.atproto.repo.getRecord` and `listRecords` serve only public records. Their `cid` is always
 `str(block(from_json(value))[0])`, including `$type` and DAG-CBOR links. The signed `entry` record is in the
-MST. `card`, `page`, `index` and `answer` are rendered by `transport/mirror.py`, exactly the values the mirror
+MST. `card`, `page`, `index` and `answer` are read by `transport/mirror.py`, exactly the values the mirror
 writes to the posting account. These four are read as PUBLIC even with a credential; they have no signed
 paths yet, so `sync.getRecord` accepts only `entry/<rev>`. `describeRepo.collections` lists the four and, on a
 signing box, `entry`. No projection kind is accepted as a repository collection.
@@ -228,7 +231,7 @@ dot and `~` to `/`. Replayed ids outside the host's creation alphabet may have n
 
 Host statuses become XRPC errors carrying the reply: `unknown` → 400 `RecordNotFound`, `denied` → 403
 `Denied`, `ambiguous` → 400 `AmbiguousSlug`; unavailable/mute host → 503 `HostUnavailable`/504 `HostTimeout`;
-other failures → 400 `InvalidRequest`. The front adds 401 `AuthRequired` (getEntry without a token),
+other failures → 400 `InvalidRequest`. The front adds 401 `AuthRequired` (getEntry or a procedure without a token),
 401 `InvalidToken` (bad credential or service JWT) and 429 `RateLimitExceeded`
 (`Retry-After`). The catalogue's `xrpcErrors` is the error source.
 
@@ -249,7 +252,7 @@ of the returned JSON. Public card/page/index/answer at-uris name actual records 
 
 - **Writes.** No `createRecord`, `putRecord`, `deleteRecord`, `applyWrites`, `uploadBlob`: the journal is
   written by turns at the host, never through this façade. Unknown methods are 501
-  `MethodNotImplemented`; a non-GET answers 405 `InvalidRequest`.
+  `MethodNotImplemented`; POST on a query and GET on a procedure answer 405 `InvalidRequest`. The three world procedures above use POST; repository writes remain unserved.
 - **`getBlocks`, `getBlob`, `getRepo` of another DID.** One repository, no blobs.
 - **Checkpoints and pending sends.** `blocks[].cid`, `activity.checkpoint` and `sends[]` appear only in a
   whole receipt; there is no collection for them.

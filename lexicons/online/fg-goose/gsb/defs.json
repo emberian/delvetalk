@@ -5,20 +5,25 @@
   "defs": {
     "call": {
       "type": "object",
-      "description": "One call: a spell's exact text, or a verb on an object with its fields (the front's _actions form). Exactly one of spell or object+verb.",
+      "description": "One untagged call: exactly {spell}, or {object, verb, fields?}. Shared wire judgement enforces the exclusive forms; fields must be a JSON object.",
       "properties": {
         "spell": {
           "type": "string",
           "description": "A spell: the delvetalk line and its field lines.",
-          "maxLength": 4096
+          "maxLength": 4096,
+          "minLength": 1
         },
         "object": {
           "type": "string",
-          "description": "The object id."
+          "description": "The object id.",
+          "minLength": 1,
+          "maxLength": 128
         },
         "verb": {
           "type": "string",
-          "description": "The verb or method name."
+          "description": "The verb or method name.",
+          "minLength": 1,
+          "maxLength": 128
         },
         "fields": {
           "type": "unknown",
@@ -80,17 +85,21 @@
       "properties": {
         "status": {
           "type": "string",
-          "knownValues": [
+          "enum": [
             "admitted",
             "refused",
             "suspended",
-            "previewed",
             "moved",
             "unsupported",
             "spells",
             "usage",
             "unreached",
-            "invalid"
+            "invalid",
+            "error",
+            "unknown",
+            "denied",
+            "looked",
+            "receipt"
           ]
         },
         "line": {
@@ -189,14 +198,16 @@
         "wanted": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "ref",
+            "ref": "#wantChange"
           },
           "description": "Wants opened."
         },
         "unwanted": {
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "ref",
+            "ref": "#wantChange"
           },
           "description": "Wants closed."
         },
@@ -229,7 +240,7 @@
         },
         "cardCid": {
           "type": "string",
-          "description": "The CID of the online.fg-goose.gsb.card record those card bytes make.",
+          "description": "CID of the exact offered card encoded as a DAG-CBOR string, including its trailing newline; not a repository record CID.",
           "format": "cid"
         },
         "offers": {
@@ -242,6 +253,129 @@
         "trace": {
           "type": "ref",
           "ref": "online.fg-goose.gsb.defs#trace"
+        },
+        "$type": {
+          "type": "string",
+          "const": "online.fg-goose.gsb.defs#answerView"
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#answerView"
+          },
+          "maxLength": 4
+        }
+      },
+      "description": "The caller's projected turn answer. Preview outcomes use previewView, whose schema has no receipt."
+    },
+    "previewOutcome": {
+      "type": "object",
+      "required": [
+        "status",
+        "line"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "previewed"
+        },
+        "line": {
+          "type": "string",
+          "description": "The host's stamp line as the public reads it: a refusal's only when the host gives it a public projection."
+        },
+        "class": {
+          "type": "string",
+          "description": "A refusal's class."
+        },
+        "clause": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "moved": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#moved"
+          }
+        }
+      }
+    },
+    "previewView": {
+      "type": "object",
+      "required": [
+        "$type",
+        "outcome"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "ref",
+          "ref": "#previewOutcome"
+        },
+        "card": {
+          "type": "string",
+          "description": "The exact card the turn offered (or, for a try, would offer), as the caller may read it."
+        },
+        "cardCid": {
+          "type": "string",
+          "description": "CID of the exact offered card encoded as a DAG-CBOR string, including its trailing newline; not a repository record CID.",
+          "format": "cid"
+        },
+        "offers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Cards offered to the caller, verbatim."
+        },
+        "trace": {
+          "type": "ref",
+          "ref": "online.fg-goose.gsb.defs#trace"
+        },
+        "$type": {
+          "type": "string",
+          "const": "online.fg-goose.gsb.defs#previewView"
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#previewView"
+          },
+          "maxLength": 4
+        }
+      },
+      "description": "A projected world-try reply, returned only. No receipt, slug, entry or record is claimed."
+    },
+    "planCall": {
+      "type": "object",
+      "required": [
+        "spell"
+      ],
+      "properties": {
+        "spell": {
+          "type": "string",
+          "description": "A spell: the delvetalk line and its field lines.",
+          "maxLength": 4096,
+          "minLength": 1
+        }
+      },
+      "description": "One spell only; a plan never contains object calls."
+    },
+    "wantChange": {
+      "type": "object",
+      "required": [
+        "object",
+        "want"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "want": {
+          "type": "string"
         }
       }
     }
