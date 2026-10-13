@@ -174,7 +174,7 @@ also has a non-delve.town human who I'm trying to get involved a bit." Screensho
   `{status: signedIn}`); the catalogue lists `door`, `comeIn`, `leave` and `signOut`, and the guide names `/enter`.
 - **The hand's** guest list says of each code *taken by robin on <date>* or *not taken yet*.
 - **An open town** (config `arrival = "open"`; docs/DEPLOY.md "A second instance") offers first *No invitation? Ask for
-  a key*: a name, and *Give me a key*. The page does a moment's work before it sends (`static/arrive.js`: a nonce for
+  a key*: a name, and *Give me a key*. The page does a moment's work before it sends (`static/say.js`, its `arrive` form: a nonce for
   which SHA-256 of `challenge:name:nonce` begins with `arrive_bits` zero bits, over a challenge the front signed, good ten
   minutes; no third-party captcha), so asking costs a second and a flood costs a great deal. The key comes back as an
   invitation's does, shown once; a taken name or a stale page is said in a line, the name kept. The door gives

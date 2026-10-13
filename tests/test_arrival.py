@@ -152,7 +152,7 @@ class OpenDoor(FrontCase):
         text = page.decode()
         self.assertEqual(s, 200)
         self.assertIn('No invitation? Ask for a key', text)
-        self.assertIn('<script src="/static/arrive.js" defer></script>', text)
+        self.assertIn('id="arrive"', text)
         self.assertIn('I have an invitation', text)  # invitations still come in at the same door
         self.assertIn("This town's door is open: ask it for a key", text)
         challenge = html.unescape(re.search(r'data-challenge="([^"]+)"', text)[1])
@@ -167,7 +167,7 @@ class OpenDoor(FrontCase):
         self.assertIn(f'Welcome, {name}'.encode(), page)
         key = next(v for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential=')).split(';')[0].split('=', 1)[1]
         self.assertIn(f'<pre class="key">{key}</pre>'.encode(), page)
-        self.assertEqual(self.request('GET', '/static/arrive.js')[0], 200)
+        self.assertIn(b"getElementById('arrive')", self.request('GET', '/static/say.js')[2])
         s, _, page = self.request('GET', '/', headers={'Accept': 'text/html'})
         self.assertIn(b'Ask the door for a key', page)
 
@@ -196,7 +196,7 @@ class InvitedDoor(FrontCase):
         self.assertEqual(s, 404)
         s, _, page = self.request('GET', '/enter', headers={'Accept': 'text/html'})
         self.assertNotIn(b'Ask for a key', page)
-        self.assertNotIn(b'arrive.js', page)
+        self.assertNotIn(b'id="arrive"', page)
         s, _, page = self.request('GET', '/', headers={'Accept': 'text/html'})
         self.assertIn(b'Come in with your invitation', page)
         self.assertNotIn(b'Ask the door', page)
