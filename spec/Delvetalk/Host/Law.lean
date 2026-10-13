@@ -290,6 +290,9 @@ def Reading.render : Reading → String
   | .num n => toString n
   | .text s => s
 
+/-- Equality of term readings, including a numeric reading and its decimal text. -/
+def Reading.same (left right : Reading) : Bool := left == right || left.render == right.render
+
 /-- The rows of `F` in `rows`'s column `C`, as `.column` reads them. -/
 def columnHas (rows : List Data) (col : String) (w : Data) : Bool :=
   let cw := canon w
@@ -334,7 +337,7 @@ def standingRefusal (e : LawExpr) : Option String :=
   let rec go : LawExpr → Option String
     | .eq l r | .le l r | .ge l r => if oldTerm l || oldTerm r then some (LawExpr.eq l r).render else none
     | .member t p => if oldTerm t || p.atRead.isSome then some (LawExpr.member t p).render else none
-    | e@(.rule _ _) | e@(.changed _ _ _) | e@(.under _) => some e.render
+    | e@(.rule _ _) | e@(.changed _ _ _) | e@(.changedTerm _) | e@(.under _) => some e.render
     | .wants _ _ => none
     | .not b => go b
     | .and l r | .or l r | .implies l r => go l <|> go r
@@ -357,7 +360,7 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
     | other, .text text | .text text, other => textOf facts old new other == some text
     | other, .int value | .int value, other => number (read facts old new other) == some value
     | _, _ => match read facts old new left, read facts old new right with
-      | some x, some y => x == y || x.render == y.render
+      | some x, some y => x.same y
       | _, _ => false
   | .le left right => match number (read facts old new left), number (read facts old new right) with
     | some x, some y => decide (x ≤ y)
@@ -413,6 +416,11 @@ partial def denote (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr
   | .changed field col who => match changedRows facts old new field, memberData facts old new who with
     | some rows, some w => rows.all fun r => (rawField col r).map canon == some (canon w)
     | _, _ => false
+  | .changedTerm term => match old with
+    | none => false
+    | some before => match read facts old before term, read facts old new term with
+      | some a, some b => !(a.same b)
+      | _, _ => false
   -- The cited object's law text judges this write too (§4 F).
   | .under object => depth > 0 && (ownerAmends facts new || match (facts.reads.lookup object).bind (rawField "law") with
     | some (.label text) => match parseLawText text with
@@ -456,6 +464,7 @@ partial def work (facts : Facts) (old : Option Data) (new : Data) (e : LawExpr) 
   | .member t _ => 1 + termWork facts old new t
   | .rule _ field => 1 + both field
   | .changed field _ who => 1 + both field + termWork facts old new who
+  | .changedTerm term => 1 + termWork facts old (old.getD new) term + termWork facts old new term
   | .under object => if depth == 0 then 1 else 1 + match (facts.reads.lookup object).bind (rawField "law") with
     | some (.label text) => match parseLawText text with
       | .ok law => law.foldl (fun n (_, c) => n + work facts old new c (depth - 1)) 0
@@ -496,7 +505,7 @@ def refusedBy (law : Law) (facts : Facts) (old : Option Data) (new : Data) : Opt
   (refusal law facts old new).map Prod.fst
 
 /-! Rules and wants: the same conditions, the same `denote`. A law refuses at commit; the host fires
-a rule's spell when a write makes its condition hold, and poses a want while it holds of the thing
+a rule's spell when its condition holds at a write, and poses a want while it holds of the thing
 as it stands (docs/OVERHAUL.md §2; KERNEL-HANDOFF §27 is the host's step). -/
 
 /-- The rules among `clauses` whose condition holds of this write, in order. How many it casts, under
@@ -714,6 +723,40 @@ private def limited : Facts := { facts with evicted := [("rains", rain "ann" 1 "
 #guard !denote ⟨"bob", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.author")
 #guard !denote ⟨"kim", "", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (rel [rain "ann" 1 "a", rain "kim" 2 "b"]) (parsed "request.subject in new.rains.text")
 #guard denote ⟨"a", "forge", 1, 0, "", 0, "", [], 0, "", [], "", [], []⟩ none (rel [rain "forge" 1 "a"]) (parsed "request.caller in new.rains.author")
+
+#guard denote facts (some (rec1 3)) (rec1 4) (parsed "changed(new.count)")
+#guard denote facts (some (rec1 4)) (rec1 3) (parsed "changed(new.count)")
+#guard !denote facts (some (rec1 3)) (rec1 3) (parsed "changed(new.count)")
+#guard !denote facts (some (.record [])) (rec1 3) (parsed "changed(new.count)")
+#guard !denote facts (some (rec1 3)) (.record []) (parsed "changed(new.count)")
+#guard !denote facts none (rec1 3) (parsed "changed(new.count)")
+#guard !denote facts (some (.record [("count", .boolean true)])) (rec1 1) (parsed "changed(new.count)")
+#guard denote facts (some (rec1 3)) (rec1 4) (parsed "changed(new.count + -10)")
+#guard !denote facts (some (rec1 3)) (rec1 5) (parsed "changed(new.count % 2)")
+#guard denote facts (some (withList [] "ann")) (withList [] "kim") (parsed "changed(new.lastBy)")
+#guard !denote facts (some (withList [] "ann")) (withList [] "ann") (parsed "changed(new.lastBy)")
+#guard denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"])
+  (parsed "changed(count(new.rains))")
+#guard denote facts (some (rel [rain "ann" 1 "a", rain "kim" 2 "b"])) (rel [rain "ann" 1 "a"])
+  (parsed "changed(count(new.rains))")
+#guard !denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "kim" 2 "b"])
+  (parsed "changed(count(new.rains))")
+#guard denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"])
+  (parsed "changed(count(new.rains where author == \"kim\"))")
+#guard !denote facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"])
+  (parsed "changed(count(new.rains where author == \"ann\"))")
+#guard !denote facts (some (.record [])) (rel []) (parsed "changed(count(new.rains))")
+#guard !denote facts (some (rel [])) (.record []) (parsed "changed(count(new.rains))")
+private def selected (who : String) : Data :=
+  match rel [rain "ann" 1 "a", rain "kim" 2 "b", rain "kim" 3 "c"] with
+  | .record fields => .record (("selected", .label who) :: fields)
+  | _ => .record []
+#guard denote facts (some (selected "ann")) (selected "kim")
+  (parsed "changed(count(new.rains where author == new.selected))")
+#guard work facts (some (rel [rain "ann" 1 "a"])) (rel [rain "ann" 1 "a", rain "kim" 2 "b"])
+  (parsed "changed(count(new.rains))") == 6
+#guard work facts (some (rec1 3)) (rec1 4) (parsed "changed(new.count + 1)") == 7
+#guard standingRefusal (parsed "changed(new.count)") == some "changed(new.count)"
 
 -- The clock, the written object and `old.F` (LAW §4 A, E, H): METAPHYSICS's `alive` clause, admitted
 -- for a tend or within 1440 minutes of the last tending, refused past it; `old.F` at creation is the

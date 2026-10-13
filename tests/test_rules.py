@@ -254,6 +254,95 @@ class Firing(Bell):
         self.assertEqual([(u["rule"], u["why"]) for u in self.rain("two")["receipt"]["unfired"]], [("hush", "quiet")])
 
 
+class Transitions(Bell):
+    CHANGE = 'changed(count(new.lines where verb == "rain"))'
+    LEVEL = 'count(new.lines where verb == "rain") >= 1'
+
+    def brush(self, text):
+        reply = self.say(KIM, self.bell, "delvetalk %s brush / text: %s" % (self.bell, text))
+        self.assertEqual(reply["status"], "admitted", reply)
+        return reply
+
+    def test_changed_counts_each_rain_and_the_level_holds_across_consecutive_writes_and_reopen(self):
+        self.assertEqual(self.place("grow / name: brush / reading: brushed")["status"], "admitted")
+        for name, condition in [("changedrain", self.CHANGE), ("rainlevel", self.LEVEL)]:
+            placed = self.place("rule / name: %s / when: %s / then: delvetalk me note / text: %s" %
+                                (name, condition, name))
+            self.assertEqual(placed["status"], "admitted", placed)
+        self.assertEqual(self.rules()["changedrain"]["when"], self.CHANGE)
+        line = 'rule changedrain: %s then delvetalk me note / text: changedrain' % self.CHANGE
+        self.assertEqual(self.rules()["changedrain"]["line"], line)
+        self.assertNotIn("fired", self.brush("before rain")["receipt"])
+        first = self.rain("one")
+        self.assertEqual([f["rule"] for f in first["receipt"]["fired"]], ["changedrain", "rainlevel"])
+        second = self.rain("two")
+        self.assertEqual([f["rule"] for f in second["receipt"]["fired"]], ["changedrain", "rainlevel"])
+        brushed = self.brush("after rain")
+        self.assertEqual([f["rule"] for f in brushed["receipt"]["fired"]], ["rainlevel"])
+        self.assertEqual(self.rules()["changedrain"]["fired"]["height"], second["receipt"]["height"])
+        self.town.reopen()
+        self.assertEqual(self.rules()["changedrain"]["line"], line)
+        self.assertEqual(self.rules()["changedrain"]["fired"]["height"], second["receipt"]["height"])
+        self.assertEqual([f["rule"] for f in self.brush("after reopen")["receipt"]["fired"]], ["rainlevel"])
+        third = self.rain("three")
+        self.assertEqual([f["rule"] for f in third["receipt"]["fired"]], ["changedrain", "rainlevel"])
+        self.assertEqual(self.town.send(op="world-snapshot")["status"], "snapshot")
+        self.town.reopen()
+        self.assertEqual(self.rules()["changedrain"]["line"], line)
+        self.assertEqual(self.rules()["changedrain"]["fired"]["height"], third["receipt"]["height"])
+        self.assertEqual([f["rule"] for f in self.brush("after snapshot")["receipt"]["fired"]], ["rainlevel"])
+        self.assertEqual([f["rule"] for f in self.rain("four")["receipt"]["fired"]], ["changedrain", "rainlevel"])
+        notes = [t for _, t in self.inbox(GLM)]
+        self.assertEqual(notes.count("changedrain"), 4)
+        self.assertEqual(notes.count("rainlevel"), 7)
+
+    def test_changed_keeps_the_kind_text_byte_bound_and_refuses_a_clause_beyond_it(self):
+        owner = self.field("kind/bell", "owner")["value"]
+        before = self.field("kind/bell", "law")["value"]
+        line = 'rule fullchange: %s then delvetalk {new.maker} note / text: ' % self.CHANGE
+        size = bounds()["host"]["maxLawBytes"]
+        payload = "x" * (size - len((before + "\n" + line).encode()))
+        placed = self.say(owner, "kind/bell", 'delvetalk kind/bell rule / name: fullchange / for: things / when: %s / then: delvetalk {new.maker} note / text: %s' %
+                          (self.CHANGE, payload))
+        self.assertEqual(placed["status"], "admitted", placed)
+        text = self.field("kind/bell", "law")["value"]
+        self.assertEqual(len(text.encode()), size)
+        self.assertIn(line + payload, text)
+        over = self.say(owner, "kind/bell", 'delvetalk kind/bell rule / name: overchange / for: things / when: %s / then: delvetalk me note / text: x' %
+                        self.CHANGE)
+        self.assertEqual(over["status"], "refused", over)
+        self.assertIn("byte capacity", over["receipt"]["outcome"]["reason"])
+        self.assertEqual(self.field("kind/bell", "law")["value"], text)
+        self.town.reopen()
+        self.assertEqual(self.field("kind/bell", "law")["value"], text)
+
+    def test_changed_is_refused_in_a_want_because_a_want_has_no_old_and_places_nothing(self):
+        wanted = self.place("want / name: changes / when: %s / asks: delvetalk %s rain / text: more" %
+                            (self.CHANGE, self.bell))
+        self.assertEqual(wanted["status"], "refused", wanted)
+        reason = wanted["receipt"]["outcome"]["reason"]
+        self.assertIn("`%s` in a want" % self.CHANGE, reason)
+        self.assertIn("a want reads the thing as it stands", reason)
+        self.assertNotIn("changes", [r["name"] for r in
+                                    self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]])
+        self.town.reopen()
+        self.assertNotIn("changes", [r["name"] for r in
+                                    self.town.send(op="world-wants", principal=KIM, object=self.bell)["rows"]])
+
+    def test_changed_with_a_missing_field_never_fires_and_request_facts_are_refused(self):
+        placed = self.place('rule / name: absent / when: changed(new.missing) / then: delvetalk me note / text: absent')
+        self.assertEqual(placed["status"], "admitted", placed)
+        for condition in ['changed(request.clock)', 'changed(count(new.lines where author == request.subject))',
+                          'changed(new.next + request.height)', 'changed(new.lines.author)']:
+            bad = self.place('rule / name: bad / when: %s / then: delvetalk me note / text: bad' % condition)
+            self.assertEqual(bad["status"], "refused", bad)
+            self.assertIn("law outside the enforced fragment", bad["receipt"]["outcome"]["reason"])
+        self.assertEqual(set(self.rules()), {"absent"})
+        self.assertNotIn("fired", self.rain("unreadable")["receipt"])
+        self.town.reopen()
+        self.assertNotIn("fired", self.rain("still unreadable")["receipt"])
+
+
 class Share(Bell):
     """Astra 2026-10-12 world 6: a stranger's rules on another's thing hold a bounded share of it, and judging them is
     theirs: what they cite is no root of the owner's write and their conditions are no part of its law's budget, so

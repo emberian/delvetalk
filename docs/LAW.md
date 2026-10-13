@@ -350,3 +350,36 @@ one-step cases first; the test suite's properties (replay equals first
 execution; every refusal classed) are that layer checked from outside.
 **Decision:** not before launch; recorded so the one-step atoms are chosen
 with it in view.
+
+
+## 8. Level conditions and transition triggers
+
+A rule's `when` is a level condition, judged at each commit. It fires on every write while true.
+A bell can say either:
+
+```
+when: count(new.lines where verb == "rain") >= 1
+when: changed(count(new.lines where verb == "rain"))
+```
+
+The first fires on each write after the first rain, including a non-rain line. The second fires
+when the retained rain count changes, up or down. On an existing bell, written with the existing
+comparisons, the second is `not (count(new.lines where verb == "rain") == count(old.lines where verb == "rain"))`.
+A count at its retention limit can stay equal despite another rain. Neither form replaces the
+shipped bell's seventh-rain crossing: `count(new.lines where verb == "rain")
+>= 7 and count(old.lines where verb == "rain") <= 6`.
+
+`changed(EXPR)` takes a term, not a condition: `new.F`, a filtered count, or arithmetic with `+`
+and `%`. It evaluates the same term against the old and new state, including state references in
+count filters, using the same equality of readings as `==`. The term reads no `request.*` facts,
+even in filters; those refuse at parse. Explicit `old` references and cited objects retain their
+ordinary readings; cited objects are the commit's roots, not historical reads. Both evaluations
+are charged and all their fields and citations are recorded by the existing names walk. Missing
+or mistyped readings on either side make the atom false for a rule; no old state also makes it
+false. A want has no old state: `changed(…)` in a want refuses at parse/placing with the reason
+that a want reads the thing as it stands.
+
+`changed(new.F.COL) by TERM` keeps its row-column meaning (§4 B). The `by` after the closing
+parenthesis selects that atom; without `by`, the parser reads a term, so `new.F.COL` still
+refuses as a nested path. Both forms print and parse back exactly. Level rules and transition
+rules use the same firing, queue and replay path (HOST-HANDOFF 5.160, 5.210, 5.224).

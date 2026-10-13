@@ -180,7 +180,7 @@ previous}`), and the block store `J.blocks`, each entry's canonical record at `a
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
 Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 14: component bodies
-replaced at their journaled positions, bounded grown-verb shares, behaviour revisions and answerable want reads, HOST-HANDOFF 5.219–5.223), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads and transition terms, HOST-HANDOFF 5.219–5.224), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -371,12 +371,18 @@ want NAME "reading": EXPR asks SPELL      poses while it holds, judged at read a
 EXPR  ::= EXPR implies|or|and EXPR | not EXPR | ( EXPR ) | ATOM
 ATOM  ::= REF == TERM | REF <= TERM | REF + TERM <= TERM | TERM in [INT, …] | TERM in new.F | TERM in new.F.COL
         | TERM in "OBJECT".F.COL | TERM in old.F.COL | monotone(F) | writeOnce(F) | appendOnly(F)
-        | unchanged(F) | insertOnly(F) | changed(new.F.COL) by TERM | under "OBJECT" | "OBJECT" wants NAME
+        | unchanged(F) | insertOnly(F) | changed(TERM) | changed(new.F.COL) by TERM | under "OBJECT" | "OBJECT" wants NAME
 TERM  ::= REF | INT | "TEXT" | TERM + TERM | TERM % INT
 REF   ::= new.F | old.F | "OBJECT".F | request.subject | request.caller | request.height | request.turn
         | request.pin | request.kind | request.method | request.verb | request.clock | request.object
         | count(new.F) | count(old.F) | count(new.F where COL == TERM [and COL == TERM …]) | count(old.F where COL == TERM [and COL == TERM …])
 ```
+
+A rule's `when` is a level condition: every commit while it holds fires it. `changed(TERM)` is
+true only when a state term's reading differs between old and new, with the same equality as `==`;
+its term reads no request facts, and unreadable terms make it false. Wants read no old state and
+refuse this atom. `by` after `changed(new.F.COL)` selects the existing row-column atom instead
+(LAW §8). Threshold crossings remain explicit old/new comparisons.
 
 A SPELL's holes are terms (`{request.subject}`, `{request.object}`, `{new.F}`, `{"card".F}`), filled at the write, a
 hole naming nothing refused when placed; a hole fills one field's value as data, never syntax (the filled spell is
@@ -804,7 +810,7 @@ deleting a closed sum or a convention:
   alone, and `receive` exists for prose and bare field lines. A spell missing a field is asked for
   and kept nowhere; the speaker sends it whole again.
 - **Things react by rules.** A thing's text and its placed rows hold `rule` and `want` lines in the law's grammar
-  (§4). At commit, after the law admits, each written object's rules whose condition the write made true stage
+  (§4). At commit, after the law admits, each written object's rules whose condition holds of the write stage
   `receive {text: SPELL}` to the spell's card under the rule's writer, or as the thing for a line it inherits (§4
   Tenure) (`fired`, identity
   `rule:<object>:<name>:<height>`; 4 down a chain; past 8 a commit a firing is queued, never dropped, each next
@@ -821,7 +827,8 @@ deleting a closed sum or a convention:
   spells under their name and spends nothing of yours. The follow-on turn is a delivery under
   the triggering turn's ledger. `delvetalk CARD rules` reads each rule back: name, owner, reading, condition, spell,
   and its last firing (entry and receipt) or why it did not fire. Conditions are state, never counters: "two
-  rains" is `count(new.lines) >= 2 and count(old.lines) <= 1`, true once, at the crossing.
+  rains" is `count(new.lines) >= 2 and count(old.lines) <= 1`, true once, at the crossing;
+  `changed(count(new.lines))` instead fires each time that count changes (§4, LAW §8).
 - **The clock is a condition, never the cause.** Nothing is evaluated in a silence. A condition on `request.clock`
   fires at the first write after the clock passes it, and whoever writes next pays. The tide is the one thing
   that writes on the clock, ticking itself every `gap` minutes, for ever: a thing's wait on the clock in its own
@@ -956,7 +963,7 @@ inspirit and the porch's things; tending; several spells in a post; a card's own
 verbs and the chronicle with Wake's host support deleted (5.161), reach as a host op (5.162), words a card heard as
 hob's (5.163), Wake, Env, Event, Mentions and subscriptions deleted from `world/`, errands and fronts, the minimal
 genesis with its coinages and wants, the web front (docs/WEB.md); answerable wants with daily rotation and derived blocked/cancelled states (world.md 16, 5.223); the astra world review's medium 14: explicit
-kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221); finding 15's behaviour revisions in offered-card roots and action receipts (5.222).
+kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221); finding 15's behaviour revisions in offered-card roots and action receipts (5.222); finding 7's transition terms alongside level conditions (5.224).
 
 Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDOFF §16, OBJECTS-HANDOFF "Open");
 each handoff keeps the detail, this table the order across lanes:
@@ -987,7 +994,6 @@ each handoff keeps the detail, this table the order across lanes:
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
 | 5.223's remaining deployment text: the hand's morning title, clapper's next ask after grow, station register's sign evidence | transport, root | title says turning daily; after grow the clapper asks hang; an unrelated register gesture never answers its sign want |
 | the astra world review's 11 (archival and reclamation of objects, grants and journal), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
-| rules: a transition trigger and a level condition said apart in the grammar (world.md 7's remainder) | kernel | a level rule fires at its crossing alone unless written as a level |
 
 After the fourth playtest, in the order the town will feel them: fronts and `relay` as seeded or cut back to the
 season (OVERHAUL §6's week row); a `Conversation` object per thread; Workshop `try {target, package, examples}` on

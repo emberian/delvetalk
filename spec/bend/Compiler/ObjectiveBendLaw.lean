@@ -21,7 +21,7 @@ naming what it found and the rule it breaks.
     EXPR     ::= EXPR implies EXPR | EXPR or EXPR | EXPR and EXPR | not EXPR | ( EXPR ) | ATOM
     ATOM     ::= TERM == TERM | TERM <= TERM | TERM >= TERM
                | TERM in [INT, …] | TERM in SIDE.FIELD | TERM in SIDE.FIELD.COLUMN
-               | RULE(FIELD) | changed(new.FIELD.COLUMN) by TERM
+               | RULE(FIELD) | changed(TERM) | changed(new.FIELD.COLUMN) by TERM
                | under "OBJECT" | "OBJECT" wants NAME
     RULE     ::= monotone | writeOnce | appendOnly | unchanged | insertOnly
     TERM     ::= TERM + TERM | TERM % INT | REF | INT | "TEXT"
@@ -59,7 +59,12 @@ What each form means (the host's `denote` is the definition):
   column of a relation's rows, of either side or of another object.
 - `monotone`, `writeOnce`, `appendOnly`, `unchanged`, `insertOnly` compare one field's old and new;
   `changed(new.F.C) by TERM`: every row of F the write inserted, replaced or retracted has C equal to
-  the term.
+  the term. The `by` after the closing parenthesis selects this row-column atom.
+- `changed(TERM)` compares the term's readings with `==` before and after the write: `new`
+  reads the old state for the first evaluation, including inside count filters. Explicit `old`
+  and cited roots keep their readings. The term reads no request facts. Missing readings, or no
+  old state, make it false; work charges both evaluations. A rule without this atom remains a
+  level condition, holding on every write while true.
 - `under "OBJECT"` is law by reference: the cited object's `law` text holds of this write as if its
   law clauses were written here; its rules and wants follow too (`Host.Law.followed`), owned by the
   cited object's owner. A root.
@@ -155,6 +160,8 @@ inductive LawExpr where
   | rule (rule : LawRule) (field : String)
   /-- `changed(new.FIELD.COLUMN) by WHO`. -/
   | changed (field column : String) (who : LawTerm)
+  /-- `changed(TERM)`: the state term differs before and after the write. -/
+  | changedTerm (term : LawTerm)
   /-- `under "OBJECT"`: the cited object's `law` text holds of this write. -/
   | under (object : String)
   /-- `"OBJECT" wants NAME`: the cited object's want NAME holds of it as it stands. -/
@@ -176,8 +183,8 @@ structure Spell where
   parts : List SpellPart
   deriving DecidableEq, Repr, Inhabited
 
-/-- What a clause does with its condition: refuses without it, casts a spell when a write makes it
-hold, or poses it with the spell that answers it. -/
+/-- What a clause does with its condition: refuses without it, casts a spell when it holds at
+commit, or poses it with the spell that answers it. -/
 inductive Modality where
   | law
   | rule (spell : Spell)
@@ -244,6 +251,7 @@ def LawExpr.facts : LawExpr → List LawFact
   | .eq left right | .le left right | .ge left right => left.facts ++ right.facts
   | .member term _ => term.facts
   | .changed _ _ who => who.facts
+  | .changedTerm term => term.facts
   | .rule .. | .under _ | .wants .. => []
   | .not body => body.facts
   | .and left right | .or left right | .implies left right => left.facts ++ right.facts
@@ -262,6 +270,7 @@ def LawExpr.names : LawExpr → List LawName
   | .member term place => term.names ++ place.names
   | .rule _ field => [.field field]
   | .changed field column who => .field field :: .column column :: who.names
+  | .changedTerm term => term.names
   | .under object => [.law object]
   | .wants object name => [.want object name]
   | .not body => body.names
@@ -373,6 +382,7 @@ def LawExpr.render : LawExpr → String
   | .member term place => s!"{term.render} in {place.render}"
   | .rule r field => s!"{r.name}({field})"
   | .changed field column who => s!"changed(new.{field}.{column}) by {who.render}"
+  | .changedTerm term => s!"changed({term.render})"
   | .under object => s!"under \"{object}\""
   | .wants object name => s!"\"{object}\" wants {name}"
   | .not body => s!"not ({body.render})"
@@ -428,7 +438,7 @@ def LawPlace.atRead : LawPlace → Option String
 def LawExpr.atRead : LawExpr → Option String
   | .eq left right | .le left right | .ge left right => left.atRead <|> right.atRead
   | .member term place => term.atRead <|> place.atRead
-  | e@(.rule _ _) | e@(.changed _ _ _) | e@(.under _) => some e.render
+  | e@(.rule _ _) | e@(.changed _ _ _) | e@(.changedTerm _) | e@(.under _) => some e.render
   | .wants _ _ => none
   | .not body => body.atRead
   | .and left right | .or left right | .implies left right => left.atRead <|> right.atRead
@@ -458,7 +468,7 @@ def factRule : String :=
 def pathRule : String := "a clause reads top-level fields only: new.FIELD, old.FIELD, \"OBJECT\".FIELD"
 def countRule : String := "a count is count(SIDE.FIELD), optionally with where COLUMN == TERM joined by and; SIDE is new, old or \"OBJECT\""
 def atomRule : String := "an atom is TERM == TERM, TERM <= TERM, TERM >= TERM, TERM in …, RULE(FIELD), \
-  changed(new.FIELD.COLUMN) by TERM, under \"OBJECT\" or \"OBJECT\" wants NAME"
+  changed(TERM), changed(new.FIELD.COLUMN) by TERM, under \"OBJECT\" or \"OBJECT\" wants NAME"
 def compareRule : String := "a comparison reads the write: one side is new.FIELD, old.FIELD, \"OBJECT\".FIELD, \
   request.FACT or count(…)"
 def underRule : String := "law by reference is under \"OBJECT\", the object's id in quotes"
@@ -468,6 +478,7 @@ def objectRule : String := "a cited object is 1..128 bytes of letters, digits an
 def ruleRule : String := "a rule takes one top-level field: " ++ ", ".intercalate (LawRule.all.map fun r => r.name ++ "(FIELD)")
 def changedRule : String := "changed reads one column of a relation: changed(new.FIELD.COLUMN) by a field, \
   request.subject, request.caller, request.pin, request.method, request.verb, request.object or a text constant"
+def changedTermRule : String := "changed(TERM) compares a state term before and after the write; its term reads no request facts"
 def kindRule : String := "a kind is write, reprogram, amend, proposed, rule, or its number"
 def textRule : String := "a text constant compares with ==, against a field, request.subject, request.caller, \
   request.pin, request.method, request.verb or request.object"
@@ -807,6 +818,13 @@ def parseUnary : Nat → List Tok → Except String (LawExpr × List Tok)
       let (who, after) ← parseTerm fuel more
       if who.textual then return (.changed field column who, after)
       else refuse ("`changed(new." ++ field ++ "." ++ column ++ ") by " ++ who.render ++ "`") changedRule
+    | .ident "changed" :: .sym "(" :: more => do
+      let (term, after) ← parseTerm fuel more
+      let rest ← expectSym ")" after
+      if !term.facts.isEmpty then refuse ("`changed(" ++ term.render ++ ")`") changedTermRule
+      match rest with
+      | .ident "by" :: _ => refuse ("`changed(" ++ term.render ++ ") by`") changedRule
+      | _ => return (.changedTerm term, rest)
     | .ident "changed" :: _ => refuse (found toks) changedRule
     | .ident "under" :: .str object :: after =>
       if plainObject object then .ok (.under object, after) else refuse ("\"" ++ object ++ "\"") objectRule
@@ -1348,6 +1366,31 @@ theorem names_walk :
     (rule' "r" (.eq (.fact .verb) (.text "water")) [.text "delvetalk ", .hole (.field (.cited "garden") "tended"),
       .text " x ", .hole (.field .new "maker")]).fields = ["maker"] := by
   native_decide
+
+#guard (parse "changed(new.a)").toOption == some (.changedTerm (.field .new "a"))
+#guard (parse "changed(count(new.lines where verb == \"rain\"))").toOption ==
+  some (.changedTerm (.count .new "lines" (.eq "verb" (.text "rain"))))
+#guard (parse "changed(new.a + count(new.lines) % 2)").toOption ==
+  some (.changedTerm (.sum (.field .new "a") (.mod (.count .new "lines" .all) 2)))
+#guard (parse "changed(new.lines.author) by request.subject").toOption ==
+  some (.changed "lines" "author" (.fact .subject))
+#guard ["changed(new.a)", "changed(count(new.lines where verb == \"rain\"))",
+    "changed(new.a + count(new.lines) % 2)", "changed(new.lines.author) by request.subject"].all
+  (fun text => (parse text).toOption.map LawExpr.render == some text)
+#guard ["changed(new.a", "changed()", "changed(new.a == 1)", "changed(request.clock)",
+    "changed(new.a + request.height)", "changed(count(new.lines where author == request.subject))",
+    "changed(new.lines.author)", "changed(new.a) by request.subject"].all
+  (fun text => (parse text).toBool == false)
+#guard (clauseRefusalOf "want w: changed(new.a) asks delvetalk x y") ==
+  some (refusal "`changed(new.a)` in a want" wantRule)
+#guard (clauseRefusalOf "want w: not changed(new.a) asks delvetalk x y") ==
+  some (refusal "`changed(new.a)` in a want" wantRule)
+#guard (parseClause "rule r: changed(count(new.lines)) then delvetalk x y").toOption.map Clause.render ==
+  some "rule r: changed(count(new.lines)) then delvetalk x y"
+#guard (LawExpr.changedTerm (.sum (.field .new "a") (.count .new "lines" (.eq "verb" (.field (.cited "garden") "verb"))))).fields ==
+  ["a", "lines"]
+#guard (LawExpr.changedTerm (.count .new "lines" (.eq "verb" (.field (.cited "garden") "verb")))).reads == ["garden"]
+#guard (LawExpr.changedTerm (.field .new "a/b")).fieldsPlain == false
 
 end Delvetalk.Compiler.ObjectiveBendLaw
 

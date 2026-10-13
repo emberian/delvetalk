@@ -34,6 +34,10 @@ spell
 A text holds at most 16 lines: `law NAME "reading": EXPR` refuses at commit, `rule … then SPELL` fires at commit under
 its writer, `want … asks SPELL` poses while it holds; EXPR reads `new.F`, `old.F`, `"card".F`, `request.*` (`subject`,
 `method`, `verb`, `kind`: 4 a placing), `clock`, counts, `%` and `"card" wants NAME` (the page `laws`; docs/LAW.md).
+A rule's `when` holds at every commit while true; `when: changed(count(new.lines where verb == "rain"))`
+fires only when the count differs between old and new. `changed(TERM)` takes a state term with no request
+facts; missing readings are false, and wants refuse it because they read no old state. The existing
+`changed(new.F.COL) by TERM` still judges changed rows (LAW §8).
 `verbs`, `rules` and `wants` read them back with who placed each and when it last fired; `ungrow`, `unrule` and `unwant`
 take one off. On a kind, its owner writes `delvetalk kind/lamp rule / name: heard / for: things / when: request.method == "write" / then: delvetalk {new.maker} note / text: {request.object} heard`: every lamp carries it and acts as itself. `want` takes the same `for: things`, before `asks`; `unrule / name: heard / for: things` and `unwant / name: … / for: things` remove from that text. Leaving `for:` out places or removes on the kind itself. `rules` and `wants` on a kind name both targets, "for its things" and "on the kind"; the owner's `?` shows the field. A want is a thing's condition, never a request of anyone: `delvetalk <card> wants` is what needs a hand
 there, and `delvetalk commonplace since / entry: 0` is what changed. Walks show it in order: `delvetalk library read /

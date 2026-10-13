@@ -49,7 +49,13 @@ Held by all: the law judges every write a resident's code makes; a turn runs und
 
 Written by spell, or by prose to hob (a `rule` spell is a spell hob may answer); computes linear conditions and filled spells; bounded by the grammar (it has no loop) and `rulesPerObject` × rows; shared as lines (`adopt / law:` copies, `under` follows live); credited to the line's owner. It is Inform 7's rulebook ("After …") and the spreadsheet's formula: declarative and total, the end-user programming that worked (Nardi, *A Small Matter of Programming*, 1993).
 
-**Decision:** yes, as tier one: form fields readable in clauses; no `set` effect; nothing else added to the grammar.
+A rule's `when` is a level condition: it fires on every write while true. `when: changed(count(new.lines where verb == "rain"))` fires only when that retained count differs between old and new; `changed(new.F)`
+and arithmetic terms use the same readings as `==`. The term reads no request facts, and unreadable terms
+are false. A want reads no old state and refuses `changed(…)`. A seventh-rain crossing still needs its
+explicit threshold on each side (LAW §8); a change of count alone also fires on the eighth rain.
+
+**Decision:** yes, as tier one: form fields readable in clauses and transition terms beside level conditions;
+no `set` effect.
 
 ### (b) Verbs with bodies
 

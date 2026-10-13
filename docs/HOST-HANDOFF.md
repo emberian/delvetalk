@@ -2746,6 +2746,42 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    Genesis's clapper ask still names grow after hang exists, and the optional station register condition counts
    all register lines rather than sign lines; both are deploy-owned text outside this lane's edit scope.
 
+224. **A transition term beside a level condition (lane/cx-world; astra 2026-10-12 world.md 7's remainder;
+   pending replay edition 14).** A rule's `when` remains a level condition: `Ops.reactions` calls `Law.fires`
+   on each write's facts, without a previous-truth latch, so it fires on consecutive writes while true.
+   `ObjectiveBendLaw.LawExpr.changedTerm` is the atom `changed(TERM)`: `parseUnary` reads it with `parseTerm`
+   and refuses every request fact, including those inside count filters. The longer
+   `changed(new.FIELD.COLUMN) by TERM` arm still selects the existing changed-row atom, with its original
+   AST, denotation and rendering. `Law.denote` reads the new term once against the old state and once
+   against the new, with the existing `read` and `Reading.same` equality also used by `==`. Count filters
+   read their state terms on the same side as their count. Explicit `old` and cited roots keep their
+   ordinary readings. A missing or mistyped reading, or absent old state, makes it false. `LawExpr.atRead`
+   and `Law.standingRefusal` refuse it wherever there is no old state: a want's parse/placing names the
+   atom and says a want reads the thing as it stands. Names and facts walk the term once in source
+   order; `fields`, `reads` and `citesOf` feed both states through the existing `viewFor`. `Law.work` charges both `termWork` evaluations,
+   including both row walks. No firing latch, additional delivery path or stored state is added.
+   Shipped rules are unchanged: bell's `seven` and cistern's example are threshold crossings; `rang`,
+   lantern's `open` and front's `full` are one-way membership additions, not arbitrary changes. Tide's
+   old/new comparison is an admission law. No plain change of a term is equivalent to those conditions.
+   Existing clause rendering is unchanged, so sources, pins and previews without the new form retain
+   their bytes. `Placement.ofJson` carries the line; `Placed.ofJson` parses snapshot rows with the same
+   parser; replay re-judges with the same `reactions`. New-form parsing and firing extend replay derivation
+   inside pending edition 14, with no bump; clauses without `changed(` keep their semantics.
+   Tests written first: `test_rules.Transitions` places a changed rain count and a level count together,
+   checks each rain fires both and each subsequent non-rain write only the level, exact line rendering,
+   last firing and delivered note counts, reopen through replay and snapshot, a want's plain refusal
+   with no row placed, missing fields, nested paths and request facts in terms and filters, and the
+   4,096-byte kind text with the next clause refused. They are red before because the parser recognizes
+   only the `by` form; the level contrast records the existing firing decision. Parser guards cover ASTs,
+   exact readback, malformed terms, old-atom preservation, want refusal and citations; denotation guards
+   cover increase/decrease, equal values, text, numeric readings, missing sides, filtered counts on both
+   states, arithmetic and both work charges. Existing tests and expectations are retained.
+   LAW §8 states the one grammar; FOUNDATION §4, AUTHORING, AGENTS-API and CATALOGUE name both forms;
+   FOUNDATION §12's completed row is removed. Python syntax and diff checks pass. Lean compilation,
+   guards and runtime/replay/snapshot tests remain with the supervisor; this lane has no toolchain.
+   Adjacent: retained counts can plateau at RECORD's 128-line cap, so a changed rain count is a value
+   transition, not evidence of every future rain event (LAW §8).
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -2766,7 +2802,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
   anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
-  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219; grown verbs admitted within a stranger's share, 5.221; behaviour revisions on offered-card roots and placed commitments, 5.222; answerable want queries and compound count filters, 5.223). Test: `tests/test_replay_edition.py`.
+  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219; grown verbs admitted within a stranger's share, 5.221; behaviour revisions on offered-card roots and placed commitments, 5.222; answerable want queries and compound count filters, 5.223; transition terms beside level conditions, 5.224). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.
