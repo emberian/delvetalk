@@ -141,6 +141,17 @@ class FrontCase(ServeCase):
         if token:
             headers['Authorization'] = 'Bearer ' + token
         payload = raw if raw is not None else (json.dumps(body) if body is not None else None)
+        if method == 'POST' and headers.get('Content-Type') == 'application/x-www-form-urlencoded' and not (payload or '').lstrip().startswith('{'):
+            _, fields, page = self.request('GET', '/enter', headers={'Accept': 'text/html', 'Cookie': headers.get('Cookie', '')})
+            csrf = re.search(rb'name="csrf" value="([^"]+)"', page)[1].decode()
+            cookies = dict(part.strip().split('=', 1) for part in headers.get('Cookie', '').split(';') if '=' in part)
+            for name, value in fields:
+                if name == 'Set-Cookie':
+                    key, value = value.split(';', 1)[0].split('=', 1)
+                    cookies[key] = value
+            headers['Cookie'] = '; '.join(key + '=' + value for key, value in cookies.items())
+            headers.setdefault('Origin', self.front.origin)
+            payload = (payload + '&' if payload else '') + urllib.parse.urlencode({'csrf': csrf})
         c.request(method, path, payload, headers)
         r = c.getresponse()
         data = r.read()
@@ -238,7 +249,7 @@ class Claim(FrontCase):
     def word_page(self):
         s, headers, page = self.request('POST', '/AGENTS.md/challenge', raw='handle=' + HANDLE, headers={'Content-Type': FORM, 'Accept': 'text/html'})
         self.assertEqual(s, 200)
-        return [v for k, v in headers if k == 'Set-Cookie'][0].split(';')[0], page.decode()
+        return next(v for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential=')).split(';')[0], page.decode()
 
     def press(self, cookie):
         return self.request('POST', '/AGENTS.md/verify', raw='handle=' + HANDLE, headers={'Content-Type': FORM, 'Cookie': cookie, 'Accept': 'text/html'})
@@ -703,13 +714,13 @@ FORM = 'application/x-www-form-urlencoded'
 def browser_login(case, handle=HANDLE):
     """The login page's two forms, as a browser sends them: the challenge sets the session cookie, verify keeps it."""
     s, headers, _ = case.request('POST', '/AGENTS.md/challenge', raw='handle=' + handle, headers={'Content-Type': FORM})
-    cookie = [v for k, v in headers if k == 'Set-Cookie'][0].split(';')[0]
+    cookie = next(v for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential=')).split(';')[0]
     case.assertTrue(cookie.startswith('dt_credential=dt_agent_'))
     did = PEOPLE[handle]
     case.provider.texts[did] = case.front.identity.db.execute('SELECT text FROM challenges WHERE handle = ? ORDER BY created DESC', (handle,)).fetchone()['text']
     s, headers, _ = case.request('POST', '/AGENTS.md/verify', raw=f'handle={handle}', headers={'Content-Type': FORM, 'Cookie': cookie})
     case.assertEqual(s, 200)
-    case.assertIn(cookie, [v for k, v in headers if k == 'Set-Cookie'][0])
+    case.assertIn(cookie, next(v for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential=')))
     return cookie
 
 
@@ -962,12 +973,12 @@ class GuestDoor(InTown):
         robin = f'robin-{self.c}'
         s, headers, page = self.door({'code': code, 'name': robin})
         self.assertEqual(s, 200, page[:500])
-        cookie = next(v for k, v in headers if k == 'Set-Cookie')
+        cookie = next(v for k, v in headers if k == 'Set-Cookie' and v.startswith('dt_credential='))
         self.assertIn('HttpOnly', cookie)
         key = cookie.split(';')[0].split('=', 1)[1]
         self.assertTrue(key.startswith('dt_agent_'))
         self.assertIn(f'<pre class="key">{key}</pre>'.encode(), page)  # shown once, to keep
-        self.assertEqual(dict(headers)['Cache-Control'], 'no-store')
+        self.assertEqual(dict(headers)['Cache-Control'], 'private, no-store')
         self.assertIn(f'Welcome, {robin}'.encode(), page)
         jar = 'dt_credential=' + key
         # Playing every place as a resident does: the avatar, `me`, the book, trying first, acting.
@@ -988,8 +999,9 @@ class GuestDoor(InTown):
         # Signing out forgets the cookie; the key is not revoked.
         s, _, page = self.request('GET', '/leave', headers={'Cookie': jar, 'Accept': 'text/html'})
         self.assertIn(b'<form method="post" action="/leave">', page)
-        s, headers, _ = self.request('POST', '/leave', headers={'Cookie': jar, 'Content-Type': FORM})
-        self.assertEqual((s, dict(headers)['Location']), (303, '/leave'))
+        s, headers, page = self.request('POST', '/leave', headers={'Cookie': jar, 'Content-Type': FORM})
+        self.assertEqual(s, 200)
+        self.assertIn(b'Signed out', page)
         self.assertIn('Max-Age=0', dict(headers)['Set-Cookie'])
         self.assertEqual(self.request('GET', '/play/')[1] and dict(self.request('GET', '/play/')[1])['Location'], '/enter')
         # A returning guest signs in with the key.

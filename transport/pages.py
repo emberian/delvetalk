@@ -19,7 +19,12 @@ def sections(name):
 
 
 T = sections('pages.html')
+POST_FORM = re.compile(r'<form\b[^>]*\bmethod="post"[^>]*>', re.I)
 SUGGESTIONS = 6  # spells offered under the box, at most
+
+
+def csrf_forms(body, token):
+    return POST_FORM.sub(lambda m: m[0] + T['csrf'].format(token=e(token)), body)
 
 
 def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav=None, foot=None, wide=False):
@@ -409,9 +414,9 @@ def welcome(handle, credential):
     return page('welcome', handle, T['welcome'].format(handle=e(handle), credential=e(credential), book=e(quote(handle, safe=''))))
 
 
-def leave(handle):
-    """Signing out, or (nobody signed in) that this browser speaks for nobody."""
-    return page('sign out', handle, T['leave_page'].format(handle=e(handle)) if handle else T['left'])
+def leave(handle, done=False):
+    """The sign-out confirmation, or completion after clearing the browser's credential."""
+    return page('sign out', handle, T['left'] if done else T['leave_page'].format(who=', ' + e(handle) if handle else ''))
 
 
 def anchor(uri):

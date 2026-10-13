@@ -3,6 +3,7 @@ Carries bytes and a verified principal; it validates nothing but size and JSON
 well-formedness. Host replies pass through verbatim.
 """
 import html
+import hmac
 import json
 import os
 import secrets
@@ -343,6 +344,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.firehose = None
         self.oauth = oauth.OAuth(c.origin)  # log in with delve.town (transport/oauth.py)
         self.hits, self.nonce, self.hits_lock = {}, secrets.token_hex(4), threading.Lock()
+        self.csrf_secret = secrets.token_bytes(32)
         self.turn_lock = threading.Lock()
         self.request_timeout = REQUEST_TIMEOUT
         # The bytes this front runs as its host, so an operator can compare them with the build's pin.
@@ -560,7 +562,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', ctype + ('; charset=utf-8' if ctype.startswith(('text/', 'application/json')) else ''))
         self.send_header('Content-Length', str(len(raw)))
         self.send_header('Connection', 'close')
+        private = getattr(self, 'private', False) or self.cookie() or any(k.lower() == 'set-cookie' for k, _ in headers)
+        if private:
+            self.send_header('Cache-Control', 'private, no-store')
         for k, v in headers:
+            if private and k.lower() == 'cache-control':
+                continue
             self.send_header(k, v)
         self.end_headers()
         if not getattr(self, 'head', False):
@@ -594,7 +601,7 @@ class Handler(BaseHTTPRequestHandler):
             self.request_version = 'HTTP/1.0'
         self.fail(cls, message)
 
-    def body(self, limit=MAX_BODY, xrpc=False):
+    def body(self, limit=MAX_BODY, xrpc=False, browser_write=False, installing=False):
         """-> dict, or None after replying with the refusal. JSON, or a urlencoded form."""
         fail = (lambda cls, reason=None: self.xrpc_reply(400, {'error': 'InvalidRequest', 'message': reason or ERRORS[cls]['when']})) if xrpc else self.fail
         if xrpc and (self.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower() != 'application/json':
@@ -613,26 +620,34 @@ class Handler(BaseHTTPRequestHandler):
             raw = b''
         if len(raw) < n:  # stalled, or cut at the deadline
             return fail('requestTimeout')
+        form = (self.headers.get('Content-Type') or '').split(';', 1)[0].strip().lower() == 'application/x-www-form-urlencoded' and not raw.lstrip().startswith(b'{')
+        auth = self.headers.get('Authorization') or ''
+        browser = self.browser() or form or any(self.headers.get(k) is not None for k in ('Origin', 'Referer', 'Sec-Fetch-Site'))
+        gated = (browser_write or installing and browser) and not (auth.startswith('Bearer ') and self.principal(auth[7:]))
         # curl -d labels JSON as a form; a browser's form body never starts with '{'
-        if (self.headers.get('Content-Type') or '').startswith('application/x-www-form-urlencoded') and not raw.lstrip().startswith(b'{'):
-            return {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace'), keep_blank_values=True).items()}  # a blank field is a value
-        try:
-            def constant(_):
-                raise ValueError('non-JSON number')
-            def unique(pairs):
-                out = {}
-                for k, v in pairs:
-                    if k in out:
-                        raise ValueError('duplicate JSON field')
-                    out[k] = v
-                return out
-            data = json.loads(raw or b'{}', **({'parse_constant': constant, 'object_pairs_hook': unique} if xrpc else {}))
-        except (ValueError, RecursionError):
-            return fail('badJson', 'the body is not JSON')
+        if form:
+            data = {k: v[0] for k, v in urllib.parse.parse_qs(raw.decode(errors='replace'), keep_blank_values=True).items()}
+        else:
+            try:
+                def constant(_):
+                    raise ValueError('non-JSON number')
+                def unique(pairs):
+                    out = {}
+                    for k, v in pairs:
+                        if k in out:
+                            raise ValueError('duplicate JSON field')
+                        out[k] = v
+                    return out
+                data = json.loads(raw or b'{}', **({'parse_constant': constant, 'object_pairs_hook': unique} if xrpc else {}))
+            except (ValueError, RecursionError):
+                return fail('badJson', 'the body is not JSON')
         if not isinstance(data, dict):
             return fail('badJson', 'the body must be a JSON object')
         if depth(data) > MAX_DEPTH:
             return fail('badJson', f'the body nests deeper than {MAX_DEPTH}')
+        token = data.pop('csrf', '') if form else None
+        if gated and not self.browser_write(token):
+            return None
         if xrpc:
             try:
                 canonical(data).encode('utf-8')
@@ -662,22 +677,53 @@ class Handler(BaseHTTPRequestHandler):
             return self.html(200, pages.rendered(getattr(self, 'kind', 'reply'), body, links or {}, *((self.who['handle'], self.who['did']) if getattr(self, 'who', None) else (None,))))
         self.reply(200, canonical({**body, '_links': {'self': link(self.path), **(links or {})}, **({'_actions': acts} if acts else {})}))
 
-    def cookie(self):
-        for part in (self.headers.get('Cookie') or '').split(';'):
+    def cookie(self, name=COOKIE):
+        for part in ((getattr(self, 'headers', None) or {}).get('Cookie') or '').split(';'):
             k, _, v = part.strip().partition('=')
-            if k == COOKIE:
+            if k == name:
                 return v
         return ''
 
-    def login_cookie(self, credential):
+    def credential(self):
+        auth = self.headers.get('Authorization') or ''
+        return auth[7:] if auth.startswith('Bearer ') else self.cookie()
+
+    def login_cookie(self, credential, name=COOKIE):
         secure = '; Secure' if self.server.origin.startswith('https:') else ''  # never sent over plain http to a public origin
-        return [('Set-Cookie', f'{COOKIE}={credential}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000{secure}')]
+        cookies = [(name, credential)]
+        if name == COOKIE:
+            self.browser_nonce = secrets.token_urlsafe(32)
+            cookies.insert(0, ('dt_browser', self.browser_nonce))
+        return [('Set-Cookie', f'{key}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={2592000 if value else 0}{secure}')
+                for key, value in cookies]
+
+    def browser_write(self, token=None):
+        origin = self.headers.get('Origin')
+        if origin is None:
+            try:
+                ref = urllib.parse.urlsplit(self.headers.get('Referer') or '')
+                origin = f'{ref.scheme}://{ref.netloc}' if ref.netloc and ref.username is None else ''
+            except ValueError:
+                origin = ''
+        if origin != self.server.origin or self.headers.get('Sec-Fetch-Site') == 'cross-site':
+            self.fail('denied', 'browser writes require the exact town origin')
+            return False
+        if token is not None and (len(token) != 64 or not token.isascii() or not hmac.compare_digest(token, self.csrf_token())):
+            self.fail('denied', 'the form does not belong to this browser session; reload the page')
+            return False
+        return True
+
+    def csrf_token(self):
+        binding = getattr(self, 'browser_nonce', self.cookie('dt_browser'))
+        return hmac.digest(self.server.csrf_secret, binding.encode(), 'sha256').hex()
 
     def principal(self, credential):
         try:
             who = self.server.identity.authenticate(credential)
         except IdentityError:
             return None
+        if who:
+            self.private = True
         self.did = (who or {}).get('did') or self.did
         return who
 
@@ -788,7 +834,7 @@ class Handler(BaseHTTPRequestHandler):
         if kind == 'revoke':
             self.server.identity.revoke(credential)
             return self.reply(200, canonical({'status': 'revoked', '_links': {'self': link(self.path), 'challenge': link(PREFIX + '/challenge')}}),
-                              headers=[('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0')])
+                              headers=self.login_cookie(''))
         principal = who['did']  # the principal the host sees; the handle is display only
         if kind == 'scratch':
             return self.open_scratch(principal)
@@ -1051,7 +1097,7 @@ class Handler(BaseHTTPRequestHandler):
         wait = self.server.limited('ip:' + self.client_ip(), OPEN_RATE)
         if wait:
             return self.fail('rateLimited', f'more than {OPEN_RATE} requests per {WINDOW} seconds from one address', headers=[('Retry-After', str(wait))])
-        data = self.body(OPEN_BODY)
+        data = self.body(OPEN_BODY, installing=True)
         if data is None:
             return
         auth = self.headers.get('Authorization') or ''  # the challenge answered is the requester's own when it holds its credential
@@ -1083,18 +1129,25 @@ class Handler(BaseHTTPRequestHandler):
             return self.html(200, pages.page('claimed', out['handle'], pages.T['verified'].format(handle=html.escape(out['handle']))), keep)
         self.reply(200, canonical({**terse(out), '_links': links}), headers=keep)
 
-    def accept(self, code, name=None):
+    def accept(self, code, name=None, door=False):
         """An invitation's code (and, for an open one, the name the guest registers) -> its guest's credential, once
         (transport/identity.py): the front maps a code to a principal and tells the host it has arrived, as a claim does;
         everything after is the host's, as for anyone."""
+        self.private = True
         try:
             out = self.server.identity.accept(code, name)
         except Refusal as r:
+            if self.browser():
+                return self.html(r.code, pages.enter(r.body['message'], code, name or ''))
             return self.reply(r.code, canonical(r.body))
         except IdentityError as err:
+            if self.browser():
+                return self.html(400, pages.enter(DOOR_LINES.get(err.code, err.code), code, name or ''))
             return self.fail('identity', f'{err.code}: {ACCEPT_LINES[err.code]}', more={'reason': err.code})
         self.server.record_handle(out['principal'], out['handle'])
         if self.browser():
+            if door:
+                return self.html(200, pages.welcome(out['handle'], out['credential']), self.login_cookie(out['credential']))
             return self.html(200, pages.page('claimed', out['handle'], pages.T['verified'].format(handle=html.escape(out['handle']))),
                              self.login_cookie(out['credential']))
         links = {'self': link(self.path), 'world': link(PREFIX + '/world'), 'me': link(PREFIX + '/me'), 'api': link(PREFIX + '/api')}
@@ -1111,17 +1164,18 @@ class Handler(BaseHTTPRequestHandler):
             who = self.principal(self.cookie())
             return self.html(200, pages.leave(who and who['handle']))
         if name == 'signOut':
-            return self.reply(303, '', 'text/plain', [('Location', '/leave'), ('Set-Cookie', f'{COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict')])
+            if self.body(browser_write=True) is None:
+                return
+            return self.html(200, pages.leave(None, done=True), self.login_cookie(''))
         wait = self.server.limited('ip:' + self.client_ip(), OPEN_RATE)
         if wait:
             return self.fail('rateLimited', f'more than {OPEN_RATE} requests per {WINDOW} seconds from one address', headers=[('Retry-After', str(wait))])
-        data = self.body(OPEN_BODY)
+        self.private = True
+        data = self.body(OPEN_BODY, installing=True)
         if data is None:
             return
         text = lambda k: data.get(k).strip() if isinstance(data.get(k), str) else ''
         code, chosen, key = text('code'), text('name'), text('credential')
-        if not self.browser() and not key:
-            return self.accept(code, chosen or None)
         if key:
             who = self.principal(key)
             if who is None:
@@ -1131,14 +1185,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, canonical({'status': 'signedIn', 'handle': who['handle'], 'principal': who['did'],
                                                   '_links': {'self': link(self.path), 'me': link(PREFIX + '/me')}}), headers=self.login_cookie(key))
             return self.reply(303, '', 'text/plain', [('Location', '/play/'), *self.login_cookie(key)])
-        if not code:
+        if not code and self.browser():
             return self.html(400, pages.enter(DOOR_LINES['empty'], code, chosen))
-        try:
-            out = self.server.identity.accept(code, chosen or None)
-        except IdentityError as err:
-            return self.html(400, pages.enter(DOOR_LINES.get(err.code, err.code), code, chosen))
-        self.server.record_handle(out['principal'], out['handle'])
-        self.html(200, pages.welcome(out['handle'], out['credential']), [*self.login_cookie(out['credential']), ('Cache-Control', 'no-store')])
+        return self.accept(code, chosen or None, door=True)
 
     # ---- the town's own feed (transport/feed.py): residents post, the bridge answers in it
 
@@ -1175,21 +1224,22 @@ class Handler(BaseHTTPRequestHandler):
     def feed_page(self, posting):
         """`/feed`: the newest threads, newest activity first, and (signed in) the box: a post to the town, or with
         `?reply=` a reply under one post. A post sent goes back to the feed, which looks again until the town answers."""
-        who = self.principal(self.cookie())
+        credential = self.credential()
+        who = self.principal(credential)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).items()}
+        if self.server.limited(credential if who else 'page:' + self.client_ip()):
+            return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds')
         if posting:
-            if who is None:
-                return self.reply(303, '', 'text/plain', [('Location', '/enter')])
-            data = self.body()
+            data = self.body(browser_write=True)
             if data is None:
                 return
+            if who is None:
+                return self.reply(303, '', 'text/plain', [('Location', '/enter')])
             row, err = self.feed_say(who, data.get('text'), data.get('reply_to'))
             if err:
                 return self.html(429 if err[0] == 'rateLimited' else 400, pages.feed(self.server.feed.threads()[0], who['handle'], note=err[1],
                                                                                          said=str(data.get('text') or ''), reply=self.server.feed.get(data.get('reply_to') or '')))
             return self.reply(303, '', 'text/plain', [('Location', '/feed?posted=' + urllib.parse.quote(row['uri'], safe='') + '#' + pages.anchor(row['uri']))])
-        if self.server.limited(self.cookie() if who else 'page:' + self.client_ip()):
-            return self.fail('rateLimited', f'more than {RATE} pages per {WINDOW} seconds')
         threads, more = self.server.feed.threads(q.get('before'))
         posted = self.server.feed.get(q.get('posted') or '')
         waiting = posted is not None and not any(r['town'] and r['parent'] == posted['uri'] for _, rs in threads for r in rs)
@@ -1247,7 +1297,7 @@ class Handler(BaseHTTPRequestHandler):
     def play(self, name, spoke):
         """The world in a browser as a verified principal (the session cookie verify sets): the card world-card renders, the
         doors in the object's state, a reply box whose text goes to `receive` as a Delve reply would."""
-        credential = self.cookie()
+        credential = self.credential()
         who, answer, offered = self.principal(credential), '', ()
         if who is None:
             return self.reply(303, '', 'text/plain', [('Location', '/enter')])
@@ -1255,15 +1305,14 @@ class Handler(BaseHTTPRequestHandler):
             return self.html(429, pages.page('slow down', who['handle'], '<h1>Too many requests</h1>'))
         host, did = self.server.host, who['did']
         if spoke:
-            data = self.body()
+            data = self.body(browser_write=True)
             if data is None:
                 return
             intent = f'play:{self.server.nonce}:{int(self.server.clock() * 1000)}:{secrets.token_hex(3)}'
             text = str(data.get('text', ''))
             if data.get('try'):  # "Try it first": the same words under `delvetalk try`, which writes nothing (docs/POSTING.md §2)
                 text = 'delvetalk try\n' + '\n'.join('  ' + line for line in text.strip().split('\n'))
-            r = host.send({'op': 'world-turn', 'principal': did, 'object': name, 'method': 'receive', 'identity': intent, 'reach': 'direct',
-                           'argument': typed({'text': text, 'post': ''})})
+            r = self.server.turn(host, did, name, 'receive', {'intent': intent, 'argument': typed({'text': text, 'post': ''})})
             turns = r.get('turns') if r.get('status') == 'spells' else [r]  # several spells: a turn each
             if r.get('tried'):  # a try journaled nothing: its preview is what came back, and doing it is one suggestion away
                 preview = bridge.preview_text(r, self.server.handles(pages.A_DID.findall(json.dumps(r))))
@@ -1271,8 +1320,6 @@ class Handler(BaseHTTPRequestHandler):
                 answer, offered = pages.reply([], [preview])
                 offered = [('Do it', (last + '\n' if last.startswith('if: ') else '') + str(data.get('text', '')).strip()), *offered]
                 turns = []
-            for t in turns:
-                self.server.draft_turn(did, (t.get('receipt') or {}).get('identity', {}).get('intent', intent), t)
             if not r.get('tried'):
                 revealed = [line for t in turns for line in t.get('revealed') or []]  # what the act fired, opened, closed: said first
                 offers = ['\n'.join(revealed)] * bool(revealed) + \
@@ -1294,6 +1341,12 @@ class Handler(BaseHTTPRequestHandler):
                                   said=say, told=told, did=did, town=self.server.town()))
 
     def html(self, code, body, headers=()):
+        if not self.server.hand and pages.POST_FORM.search(body):
+            self.private = True
+            if not getattr(self, 'browser_nonce', self.cookie('dt_browser')):
+                self.browser_nonce = secrets.token_urlsafe(32)
+                headers = [*headers, *self.login_cookie(self.browser_nonce, 'dt_browser')]
+            body = pages.csrf_forms(body, self.csrf_token())
         body = body if self.server.hand else pages.named(body, self.server.handles(pages.A_DID.findall(body)))  # the owner's console keeps DIDs
         self.reply(code, *((pages.text(body), 'text/plain') if self.textual() else (body, 'text/html')), headers)
 

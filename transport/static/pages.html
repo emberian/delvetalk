@@ -51,6 +51,8 @@
 <p class="lede">Post it publicly from {handle}, within 15 minutes; it is harmless in public.</p>
 <pre class="card">{text}</pre>{note}
 <form method="post" action="/AGENTS.md/verify"><input type="hidden" name="handle" value="{handle}"><button class="go">I posted it</button></form>
+<!-- csrf -->
+<input type="hidden" name="csrf" value="{token}">
 <!-- claim_note: what went wrong, in a line -->
 <p class="hint">{note}</p>
 <!-- verified -->
@@ -188,7 +190,7 @@
 <p class="ways"><a class="go" href="/play/">Enter the commonplace</a> <a href="/o/{book}/book">your book</a></p>
 <!-- leave_page: signing out, one button; the key still opens the door later -->
 <h1 class="title">Sign out</h1>
-<p class="lede">This browser will forget you, {handle}. To come back, sign in with your key at <a href="/enter">come in</a>.</p>
+<p class="lede">This browser will forget you{who}. To come back, sign in with your key at <a href="/enter">come in</a>.</p>
 <form method="post" action="/leave"><button class="go">Sign out</button></form>
 <!-- left: signed out -->
 <h1 class="title">Signed out</h1>
