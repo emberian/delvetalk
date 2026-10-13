@@ -2,22 +2,27 @@
 
 A resident whose window is the PDS reads, walks doors and counts from a mirror of it, with no post. So the world's
 readable state is written as records in the posting account's own repository: every card as the public reads it
-(`town.delvetalk.card`), the library's pages and walks and the guide's parts (`town.delvetalk.page`), an index
-(`town.delvetalk.index/self`) and the answers to residents' requests (`town.delvetalk.answer`, the bridge's). Each
-card and page is what `place` renders (transport/host.py), the rendering the web's pages and a reply's draft share;
-the did:web façade (transport/repo.py) answers the same collections from these functions. Only the public reader's projection is written. Without the authorizing flag the run prints what it would write and
-touches nothing; with it, `post.put_records` writes what changed since the last run and deletes what is gone.
+(`online.fg-goose.gsb.card`), the library's pages and walks and the guide's parts (`online.fg-goose.gsb.page`), an index
+(`online.fg-goose.gsb.index/self`) and the answers to residents' requests (`online.fg-goose.gsb.answer`, the bridge's).
+The posting account alone holds `online.fg-goose.gsb.checkpoint/self`, naming the signed head observed before reading
+the host. The index names no head. Each card and page is what `place` renders (transport/host.py), the rendering
+the web's pages and a reply's draft share;
+the did:web façade (transport/repo.py) answers the journal-derived collections from these functions. Only the public
+reader's projection is written. Without the authorizing flag the run reads and prints what it would write;
+with it, `post.record_writer` writes what changed since the last run and deletes what is gone.
 """
-import hashlib
 import json
 import time
+import urllib.parse
 from pathlib import Path
 
-from transport.delve import canonical
+from transport.delve import Client, Failure, canonical, http_transport
 from transport.host import PUBLIC, place, plain
+from transport import records as record_plan
 
-NS = 'town.delvetalk.'
+NS = 'online.fg-goose.gsb.'
 CARD, PAGE, INDEX, ANSWER = NS + 'card', NS + 'page', NS + 'index', NS + 'answer'
+CHECKPOINT = NS + 'checkpoint'
 LIBRARY = 'library'
 
 
@@ -66,7 +71,7 @@ def ids(host, reader=PUBLIC):
 
 
 def answer_records(directory):
-    """{rkey: value}: the answers the bridge wrote to requests (transport/bridge.py), each the public's projection."""
+    """{rkey: value}: public request and XRPC answers written through bridge.write_answer."""
     if not directory or not Path(directory).is_dir():
         return {}
     return {p.stem: json.loads(p.read_text()) for p in sorted(Path(directory).glob('*.json'))}
@@ -99,64 +104,81 @@ def records(host, sleep=time.sleep, paint=True, tries=3, answers=None):
 
 def index_record(cards, pages, before, after=None):
     """The manifest: the height the records were read at, each card's version (a reader holding a card of another
-    version holds another generation) and the pages by name. Written last, only when every record it lists landed."""
+    version holds another generation) and the pages by name. Names no head; written after every record it lists."""
     after = before if after is None else after
     return {'$type': INDEX, 'height': before, 'coherent': before == after, **({} if before == after else {'heights': {'from': before, 'to': after}}),
             'cards': cards, 'pages': [p['name'] for p in pages],
-            'read': 'each card is town.delvetalk.card/<id, / as ~>, at the version listed here; each page town.delvetalk.page/<name>'}
+            'read': f'each card is {CARD}/<id, / as ~>, at the version listed here; each page {PAGE}/<name>'}
 
 
-def digest(value):
-    return hashlib.sha256(canonical(value).encode()).hexdigest()
+def checkpoint_record(did, rev, commit, height):
+    """The posting account's source checkpoint: bytes depend only on the commit it names."""
+    return {'$type': CHECKPOINT, 'did': did, 'rev': rev, 'commit': commit, 'height': height}
+
+
+def signed_checkpoint(st, fetch):
+    """-> (checkpoint, why unavailable): read the world's front before reading any host records.
+    This is a lower bound on the reads, not a snapshot of the named commit."""
+    from transport.repo import world_did, world_origin
+    origin = world_origin(st.config.origin, st.world)
+    did, _ = world_did(st.config.origin, st.world)
+    client = Client(fetch)
+
+    def get(nsid, **params):
+        return client._send('GET', f'{origin}/xrpc/{nsid}?{urllib.parse.urlencode(params)}')
+
+    try:
+        head = get('com.atproto.sync.getLatestCommit', did=did)
+        rev, commit = head.get('rev'), head.get('cid')
+        if not all(isinstance(v, str) and v for v in (rev, commit)):
+            raise Failure('checkpoint_invalid', 'head needs rev and cid strings')
+        entry = get('com.atproto.repo.getRecord', repo=did, collection=NS + 'entry', rkey=rev).get('value')
+        h = entry.get('height') if isinstance(entry, dict) else None
+        if type(h) is not int or h < 1:
+            raise Failure('checkpoint_invalid', 'entry needs a positive height')
+        return checkpoint_record(did, rev, commit, h), None
+    except (Failure, OSError) as error:
+        return None, str(error)
+
+
+def fingerprint(value):
+    """The index's height alone moving is no change."""
+    return record_plan.digest({**value, 'height': None} if value.get('$type') == INDEX else value)
 
 
 def plan(st, now):
-    """-> (writes, deletes, ledger): the records whose value changed since the ledger's last write, and the keys
-    the ledger holds that the world no longer shows. The index's height alone moving is no change."""
-    ledger = json.loads(st.mirror.read_text()) if st.mirror.exists() else {}
-    held = {f'{c} {k}': v for (c, k), v in now.items()}
-    same = lambda key, v: ledger.get(key) == digest({**v, 'height': None} if v.get('$type') == INDEX else v)
-    writes = {key: v for key, v in held.items() if not same(key, v)}
-    deletes = [key for key in ledger if key not in held]
+    """-> (writes, deletes, ledger): the mirror's shared digest plan. An unavailable checkpoint
+    stays held; an available one also follows every changed index."""
+    checkpoint = f'{CHECKPOINT} self'
+    writes, deletes, ledger = record_plan.plan(st.mirror, now, fingerprint, retain=(checkpoint,))
+    if f'{INDEX} self' in writes and (CHECKPOINT, 'self') in now:
+        writes[checkpoint] = now[CHECKPOINT, 'self']
     return writes, deletes, ledger
 
 
-def run(st, host, writer=None, sleep=lambda _: None, limit=200):
-    """One mirror step: the plan, and with a `writer` (post.record_writer) at most `limit` writes of it, the ledger
-    saved after each record that landed. A paint not ready is not waited for (`sleep`): asking starts it, and the
-    next step writes it."""
-    writes, deletes, ledger = plan(st, records(host, sleep, answers=st.answers))
+def run(st, host, writer=None, sleep=lambda _: None, limit=200, fetch=http_transport):
+    """One mirror step: the plan, and with a `writer` (post.record_writer) at most `limit` ordinary writes/deletes, the ledger
+    saved after each record that landed. The index and checkpoint follow only once that plan is complete,
+    outside the batch limit. A paint not ready is not waited for (`sleep`): asking starts it, and the
+    next step writes it. Without a writer, only reads occur, including the source head lookup."""
+    checkpoint, why = signed_checkpoint(st, fetch)
+    now = records(host, sleep, answers=st.answers)
+    if checkpoint is not None:
+        now[CHECKPOINT, 'self'] = checkpoint
+    writes, deletes, ledger = plan(st, now)
+    status = {'checkpoint': why} if checkpoint is None else {}
     if writer is None:
-        return {'dry_run': True, 'writes': sorted(writes), 'deletes': sorted(deletes)}
-    index = f'{INDEX} self'
-    manifest = writes.pop(index, None)
-    done = []
-
-    def put(key, value):
-        collection, rkey = key.split(' ', 1)
-        writer(collection, rkey, value)
-        if value is None:
-            ledger.pop(key, None)
-        else:
-            ledger[key] = digest({**value, 'height': None} if collection == INDEX else value)
-        st.write(st.mirror, ledger)
-        done.append(key)
-    for key, value in list(writes.items())[:limit]:
-        put(key, value)
-    for key in deletes[:max(0, limit - len(done))]:
-        put(key, None)
-    left = len(writes) + len(deletes) - len(done)
-    if manifest is not None and left == 0:  # the manifest moves only once everything it lists is there
-        put(index, manifest)
-    return {'written': done, 'left': left + (manifest is not None and left > 0)}
+        return {'dry_run': True, 'writes': sorted(writes), 'deletes': sorted(deletes), **status}
+    return {**record_plan.put_records(st, st.mirror, writes, deletes, ledger, writer, fingerprint,
+                                      limit=limit, final=(f'{INDEX} self', f'{CHECKPOINT} self')), **status}
 
 
-def command(st, a, out, client=None):
+def command(st, a, out, client=None, fetch=http_transport):
     """`mirror`: one step with `--once`, else a step every `poll` seconds; a dry run without the authorizing flag."""
     from transport import post
     host = st.host()
     writer = post.record_writer(st, client) if a.authorized else None
-    step = lambda: out.write(canonical(run(st, host, writer, limit=a.limit)) + '\n') and out.flush()
+    step = lambda: out.write(canonical(run(st, host, writer, limit=a.limit, fetch=fetch)) + '\n') and out.flush()
     try:
         step() if a.once or not a.authorized else st.daemon('mirror', step)
     finally:

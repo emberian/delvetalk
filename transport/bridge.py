@@ -1,20 +1,23 @@
 """Observed posts -> host turns -> reply drafts for a human to post (`python3 -m transport bridge`); observed request
-records (transport/requests.py) -> the same turns -> `town.delvetalk.answer` records, which the façade serves (the
+records (transport/requests.py) -> the same turns -> `online.fg-goose.gsb.answer` records, which the façade serves (the
 mirror would copy them; it is built and not running).
 
 Never posts to delve.town: `post` is the only writer there. A world whose bridge row is a Zulip channel, the owner's own,
 has its drafts posted by transport/zulip.py. Principals here are the observed authors' DIDs, which are UNVERIFIED.
 """
+import base64
 import hashlib
 import ipaddress
 import json
 import urllib.parse
 import time
 
-from transport.delve import Client, FixtureTransport, canonical, http_transport
+from transport.delve import Client, FixtureTransport, canonical
 from transport.host import CLOCK, PUBLIC, paged, painted, typed
 from transport import observe
 from transport.observe import Observer
+from transport.mirror import ANSWER, NS
+from transport.atproto.cbor import block
 
 DELIVER_ROUNDS = 8
 TELLING_LINES = 8  # the exact lines an unpainted telling before arrival leads a post with, the newest
@@ -240,19 +243,74 @@ def draft_text(reply, origin=None, addressed=None, handles=None):
     return ''  # nothing changed and nothing offered: silence
 
 
-ANSWER = 'town.delvetalk.answer'
+def request_source(obs):
+    """The proven strongRef that an answer names as its source."""
+    return {'$type': ANSWER + '#request', 'request': {'uri': obs['uri'], 'cid': obs['cid']}}
 
 
-def answer_path(st, uri):
-    """`<did>.<rkey>.json`: the answer's record key, DIDs and TIDs being record-key characters."""
-    did, _, rkey = uri.removeprefix('at://').partition('/')
-    return st.answers / f"{did}.{rkey.rsplit('/', 1)[-1]}.json"
+def xrpc_source(principal, intent):
+    """The service-auth issuer and idempotency key that an answer names."""
+    return {'$type': ANSWER + '#provenance', 'iss': principal, 'intent': intent}
+
+
+def answer_path(st, source):
+    """One key per request URI or (issuer, intent), shared by bridge and front."""
+    if source['$type'] == ANSWER + '#provenance':
+        digest = base64.b32encode(hashlib.sha256(source['intent'].encode()).digest()).decode().lower()[:26]
+        key = f"xrpc.{source['iss']}.{digest}"
+    else:
+        did, _, rkey = source['request']['uri'].removeprefix('at://').partition('/')
+        key = f"{did}.{rkey.rsplit('/', 1)[-1]}"
+    return st.answers / f'{key}.json'
+
+
+def turn_content(reply):
+    """The host-projected offered bytes and trace, without a receipt stamp.
+
+    cardCid hashes the exact card as a DAG-CBOR string; it needs no reread of
+    the live world, which would describe the wrong state for a preview.
+    """
+    rc = reply.get('receipt') or {}
+    out = rc.get('outcome') or {}
+    keep = lambda rows, *keys: [{k: r[k] for k in keys if k in r} for r in rows]
+    writes = [{**{k: w[k] for k in ('object', 'version') if k in w}, **({'stateCid': w['cid']} if 'cid' in w else {})}
+              for w in out.get('writes') or []]
+    offers = [o['text'] for o in reply.get('offers') or []]
+    return {**({'offers': offers, 'card': offers[0], 'cardCid': str(block(offers[0])[0])} if offers else {}),
+            'trace': {'roots': keep(rc.get('roots') or [], 'object', 'version'), 'writes': writes,
+                      'revealed': reply.get('revealed') or [],
+                      **{k: reply.get(k, rc.get(k, out.get(k))) for k in ('fired', 'wanted', 'unwanted')
+                         if reply.get(k, rc.get(k, out.get(k))) is not None}}}
+
+
+def caller_view(reply, preview=False):
+    """The caller's host projection. A preview carries no entry or receipt identity."""
+    if reply.get('status') == 'spells':
+        turns = [caller_view(t, preview) for t in reply.get('turns') or []]
+        return {'$type': NS + 'defs#' + ('previewView' if preview else 'answerView'),
+                'outcome': {'status': 'previewed' if preview else 'spells',
+                            'line': '\n'.join(t['outcome']['line'] for t in turns)}, 'turns': turns}
+    rc = reply.get('receipt') or {}
+    out = rc.get('outcome') or {}
+    status = 'previewed' if preview else reply.get('status', out.get('tag', 'refused'))
+    line = ('would be ' + (reply.get('line') or 'refused moved') if reply.get('class') == 'moved' else
+            would_line(reply) if rc else str(reply.get('message') or reply.get('status'))) if preview else reply.get('line') or turn_line(reply)
+    outcome = {'status': status, 'line': line,
+               **{k: out[k] for k in ('class', 'clause', 'reason') if isinstance(out.get(k), str)},
+               **({'class': reply['class']} if reply.get('class') else {}),
+               **({'moved': reply['moved']} if 'moved' in reply else {})}
+    receipt = {'slug': rc['slug'], 'height': rc['height'], 'entry': {'$link': rc['hash']}} if not preview and {'slug', 'height', 'hash'} <= set(rc) else None
+    return {'$type': NS + 'defs#' + ('previewView' if preview else 'answerView'), 'outcome': outcome,
+            **({'receipt': receipt} if receipt else {}), **turn_content(reply)}
 
 
 def public_view(host, reply):
-    """What the anonymous reader may read of a turn reply (an answerView, lexicons/town/delvetalk/defs.json): the line,
+    """What the anonymous reader may read of a turn reply (an answerView, lexicons/online/fg-goose/gsb/defs.json): the line,
     receipt and, only when everything the turn read and wrote is public (the host's `inPublic`), its offers and trace; a
     refusal's words only from the host's `public` projection; a `moved` object's versions only when the public views it."""
+    if reply.get('status') == 'spells':
+        views = [public_view(host, t) for t in reply.get('turns') or []]
+        return {'outcome': {'status': 'spells', 'line': '\n'.join(v['outcome']['line'] for v in views)}, 'turns': views}
     if reply.get('class') == 'moved':
         public = [m for m in reply.get('moved') or []
                   if host.send({'op': 'world-view', 'principal': PUBLIC, 'object': m.get('object')}).get('status') == 'viewed']
@@ -260,7 +318,7 @@ def public_view(host, reply):
         return {'outcome': {'status': 'moved', 'line': line, 'moved': public}}
     if reply.get('status') == 'usage':
         return {'outcome': {'status': 'usage', 'line': "a `?` or a read is its reader's, not by request: a card's spells are its own record's "
-                                                       "(town.delvetalk.card); a book, the chronicle and the map are the web's"}}
+                                                       f"({NS}card); a book, the chronicle and the map are the web's"}}
     rc = reply.get('receipt') or {}
     tag = (rc.get('outcome') or {}).get('tag') or reply.get('status')
     receipt = {'slug': rc['slug'], 'height': rc['height'], 'entry': {'$link': rc['hash']}} if {'hash', 'slug', 'height'} <= set(rc) else None
@@ -272,20 +330,21 @@ def public_view(host, reply):
                 {'status': 'refused', 'line': 'refused'}, **view}
     if tag == 'suspended':
         return {'outcome': {'status': 'suspended', 'line': f"suspended, entry {rc.get('height')}"}, **view}
+    if not rc:
+        return {'outcome': {'status': tag, 'line': tag}}
     if not reply.get('inPublic'):
         return {'outcome': {'status': tag, 'line': f"{tag}, entry {rc.get('height')}, receipt {rc.get('slug')}"}, **view}
-    keep = lambda rows, *keys: [{k: r[k] for k in keys if k in r} for r in rows]
-    writes = [{**{k: w[k] for k in ('object', 'version') if k in w}, **({'stateCid': w['cid']} if 'cid' in w else {})}
-              for w in (rc.get('outcome') or {}).get('writes') or []]
     return {'outcome': {'status': tag, 'line': turn_line({**reply, 'status': 'admitted'} if tag == 'admitted' else reply)}, **view,
-            **({'offers': [o['text'] for o in reply['offers']]} if reply.get('offers') else {}),
-            'trace': {'roots': keep(rc.get('roots') or [], 'object', 'version'), 'writes': writes, 'revealed': reply.get('revealed') or []}}
+            **turn_content(reply)}
 
 
-def write_answer(st, obs, view):
-    """The answer record of a request observation: `view` with the request it answers and the height that answered."""
+def write_answer(st, source, view):
+    """One public answer writer for proven request references and XRPC provenance."""
+    path = answer_path(st, source)
+    if source['$type'] == ANSWER + '#provenance' and path.exists() and json.loads(path.read_text()).get('receipt'):
+        return  # the intent's first receipt keeps its first public projection
     height = ((view.get('receipt') or {}).get('height') or max([(t.get('receipt') or {}).get('height') or 0 for t in view.get('turns') or []] + [0]))
-    st.write(answer_path(st, obs['uri']), {'$type': ANSWER, 'request': {'uri': obs['uri'], 'cid': obs['cid']}, **view,
+    st.write(path, {'source': source, **view, '$type': ANSWER,
                                            **({'height': height} if height else {})})
 
 
@@ -295,17 +354,16 @@ def answer_turn(st, host, obs, reply):
         turns = reply.get('turns') or []
         if not turns or any('receipt' not in t and t.get('status') != 'usage' for t in turns):
             return 'a spell of it has no receipt'
-        views = [public_view(host, t) for t in turns]
-        return write_answer(st, obs, {'outcome': {'status': 'spells', 'line': '\n'.join(v['outcome']['line'] for v in views)}, 'turns': views})
+        return write_answer(st, request_source(obs), public_view(host, reply))
     if reply.get('status') == 'looked':  # `delvetalk receipt / of:`: whose receipt is the caller's, not the public's
-        return write_answer(st, obs, {'outcome': {'status': 'invalid', 'line': 'a receipt is read from the repository (town.delvetalk.receipt), not by request'}})
+        return write_answer(st, request_source(obs), {'outcome': {'status': 'invalid', 'line': f'a receipt is read from the repository ({NS}receipt), not by request'}})
     if 'receipt' not in reply and reply.get('class') != 'moved' and reply.get('status') != 'usage':
         return reply.get('message', reply.get('status'))  # the host gave no answer: read again next run
     if reply.get('status') == 'suspended' or (reply.get('receipt', {}).get('outcome') or {}).get('tag') == 'suspended':
         st.write(awaiting_path(st, obs['uri']), {'uri': obs['uri'], 'principal': obs['author']['did'], 'request': obs,
                                                  'height': reply['receipt']['height'], 'suspended': True})
         return None
-    return write_answer(st, obs, public_view(host, reply))
+    return write_answer(st, request_source(obs), public_view(host, reply))
 
 
 def would_line(t, handles=None):
@@ -410,7 +468,7 @@ def offer_drafts(st, host):
                 continue
             offers = [o for o in paged(host, {'op': 'world-offers', 'principal': principal, 'after': w['height'] - 1}, 'offers')
                       if (o.get('from') or o.get('identity') or {}).get('intent') == w['uri']] if got.get('inPublic') else []
-            write_answer(st, w['request'], public_view(host, {**got, 'offers': offers}))
+            write_answer(st, request_source(w['request']), public_view(host, {**got, 'offers': offers}))
             st.write(awaiting_path(st, w['uri']), {**w, 'settled': True})
             drafted.append(w['uri'])
         mine = {(w['principal'], w['uri']): w for w in waiting if w['principal'] == principal and not w.get('request')}
@@ -576,11 +634,11 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
     mentioned = [obs['uri'] for obs in observed if obs['mentions'] and mention_turns(st, host, obs, authors, handles, addressed)]
     for obs in observed:
         if obs['uri'] in skip or draft_exists(st.outbox, obs['uri']) or awaiting_path(st, obs['uri']).exists() or \
-                (obs['kind'] == 'request' and answer_path(st, obs['uri']).exists()):
+                (obs['kind'] == 'request' and answer_path(st, request_source(obs)).exists()):
             continue
         asked = obs.get('request')  # a proven request record: the same turn as a post's spell, answered by a record
         if asked and asked.get('invalid'):
-            write_answer(st, obs, {'outcome': {'status': 'invalid', 'line': asked['invalid']}})
+            write_answer(st, request_source(obs), {'outcome': {'status': 'invalid', 'line': asked['invalid']}})
             done.append(obs['uri'])
             continue
         try:
@@ -589,7 +647,7 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
             failed.append({'uri': obs['uri'], 'message': str(e)})
             continue
         if target is None and asked:
-            write_answer(st, obs, {'outcome': {'status': 'unreached', 'line': 'no card reached: a call is a spell, `delvetalk <card> <verb>` '
+            write_answer(st, request_source(obs), {'outcome': {'status': 'unreached', 'line': 'no card reached: a call is a spell, `delvetalk <card> <verb>` '
                                                                              'and its field lines, or {object, verb, fields}'}})
             done.append(obs['uri'])
             continue
@@ -705,9 +763,9 @@ def run(st, host, observer=None, rounds=DELIVER_ROUNDS, now=None):
 
 def delve_observer(st, since):
     """The observer of a delve.town world: its posts, and residents' request records only when the config's `requests`
-    is on (the poller reads every repository the PDS lists; it is the owner's to start) and the posts are not fixtures."""
+    is on (participant DIDs at their current PDS; it is the owner's to start) and the posts are not fixtures."""
     from transport.requests import Poller
-    client = Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else http_transport)
+    client = Client(FixtureTransport(st.config.delve_mock) if st.config.delve_mock else None)
     return Observer(st, client, since, Poller(st, client) if st.config.requests and not st.config.delve_mock else None)
 
 

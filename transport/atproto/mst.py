@@ -37,6 +37,7 @@ class Tree:
         self.keys, self.values, self.layers = [], [], []
         self.at = {}  # layer -> the positions of the keys at that layer, ascending
         self.nodes = {}  # (L, i, j) -> (cid, bytes, child (L, i, j)s, the key count when it was made)
+        self.by_cid = {}  # the same cached blocks, addressed for inversion's partial-tree reads
         self.live = 0
 
     def append(self, key, value):
@@ -57,6 +58,7 @@ class Tree:
         if len(self.nodes) > 2 * self.live + 64:
             keep = set(self._walk(self.top()))
             self.nodes = {k: v for k, v in self.nodes.items() if k in keep}
+            self.by_cid = {v[0]: v[1] for v in self.nodes.values()}
             self.live = len(self.nodes)
         return cid
 
@@ -85,6 +87,7 @@ class Tree:
             prev = key
         cid, data = block({'l': left, 'e': entries})
         self.nodes[(L, i, j)] = (cid, data, children, len(self.keys))
+        self.by_cid[cid] = data
         return cid
 
     def _walk(self, start):
@@ -130,3 +133,112 @@ def find(blocks, root, key):
             below, prev = e['t'], full
         node = below
     return None
+
+
+class _Inverse:
+    """Persistent edits on a partial MST. Reading a CID records the original node needed by a consumer;
+    new nodes are local calculations. Opaque branches are only opened along edits, splits and merges.
+    """
+    def __init__(self, read):
+        self.read, self.used, self.made = read, {}, {}
+
+    def node(self, cid):
+        if cid is None:
+            return [], [None]
+        data = self.made.get(cid)
+        if data is None:
+            data = self.used.setdefault(cid, self.read(cid))
+        node, keys, previous = decode(data), [], b''
+        for e in node['e']:
+            previous = previous[:e['p']] + e['k']
+            keys.append((previous, e['v']))
+        return keys, [node['l'], *(e['t'] for e in node['e'])]
+
+    def write(self, keys, children):
+        if not keys and children[0] is None:
+            return None
+        entries, previous = [], b''
+        for (key, value), child in zip(keys, children[1:]):
+            p = common_prefix(previous, key)
+            entries.append({'p': p, 'k': key[p:], 'v': value, 't': child})
+            previous = key
+        cid, data = block({'l': children[0], 'e': entries})
+        self.made[cid] = data
+        return cid
+
+    def split(self, cid, key):
+        if cid is None:
+            return None, None
+        keys, children = self.node(cid)
+        i = bisect.bisect_left([k for k, _ in keys], key)
+        left, right = self.split(children[i], key)
+        return (self.write(keys[:i], [*children[:i], left]),
+                self.write(keys[i:], [right, *children[i + 1:]]))
+
+    def merge(self, left, right):
+        if left is None or right is None:
+            return right if left is None else left
+        a, ac = self.node(left)
+        b, bc = self.node(right)
+        middle = self.merge(ac[-1], bc[0])
+        return self.write(a + b, [*ac[:-1], middle, *bc[1:]])
+
+    def edit(self, cid, key, value, level):
+        keys, children = self.node(cid)
+        i = bisect.bisect_left([k for k, _ in keys], key)
+        if i < len(keys) and keys[i][0] == key:
+            if value is None:
+                middle = self.merge(children[i], children[i + 1])
+                return self.write(keys[:i] + keys[i + 1:], [*children[:i], middle, *children[i + 2:]])
+            keys[i] = key, value
+        elif value is not None and layer(key) == level:
+            a, b = self.split(children[i], key)
+            keys.insert(i, (key, value))
+            children[i:i + 1] = [a, b]
+        else:
+            if level < 0:
+                raise ValueError('inverse operation does not reach its key')
+            children[i] = self.edit(children[i], key, value, level - 1)
+        return self.write(keys, children)
+
+    def top(self, cid):
+        keys, children = self.node(cid)
+        return layer(keys[0][0]) if keys else (1 + self.top(children[0]) if children[0] else 0)
+
+    def apply(self, root, op):
+        key = op['path'].encode()
+        value = None if op['action'] == 'create' else op['prev']
+        level, target = self.top(root), layer(key)
+        if value is not None and target > level:
+            a, b = self.split(root, key)
+            for _ in range(level + 1, target):
+                a = self.write([], [a]) if a else None
+                b = self.write([], [b]) if b else None
+            root = self.write([(key, value)], [a, b])
+        else:
+            root = self.edit(root, key, value, level)
+        while root:
+            keys, children = self.node(root)
+            if keys:
+                break
+            root = children[0]
+        return root
+
+
+def invert(tree, ops):
+    """Undo ops against Tree's new root, returning (previous root or None, exactly the original node
+    blocks read). Includes the new paths and neighbours touched by a merge or root collapse. Records
+    for creates/updates are added by the event builder; inversion needs only their links, including `prev`.
+    The journal Tree still only appends; general inverse edits are confined to this partial-tree walk.
+    """
+    root = tree.root()
+    inverse = _Inverse(tree.by_cid.__getitem__)
+    if not ops:
+        keys, children = inverse.node(root)
+        if not keys and children[0] is None:
+            root = None
+    for op in reversed(ops):
+        if op['action'] not in ('create', 'update', 'delete'):
+            raise ValueError('unknown record operation')
+        root = inverse.apply(root, op)
+    return root, list(inverse.used.items())

@@ -1,7 +1,7 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.request",
-  "description": "A public act on a DelveTalk world, written by its author in their own repository. Public from the moment it is written: never a draft, never a preview (use town.delvetalk.try).",
+  "id": "online.fg-goose.gsb.request",
+  "description": "A public act on a DelveTalk world, written by its author in their own repository. Public from the moment it is written: never a draft, never a preview (use online.fg-goose.gsb.try).",
   "defs": {
     "main": {
       "type": "record",
@@ -33,7 +33,7 @@
             "type": "array",
             "items": {
               "type": "ref",
-              "ref": "town.delvetalk.defs#call"
+              "ref": "online.fg-goose.gsb.defs#call"
             },
             "minLength": 1,
             "maxLength": 8
@@ -42,7 +42,7 @@
             "type": "array",
             "items": {
               "type": "ref",
-              "ref": "town.delvetalk.defs#pin"
+              "ref": "online.fg-goose.gsb.defs#pin"
             },
             "maxLength": 16,
             "description": "Commit only if every object stands where named."

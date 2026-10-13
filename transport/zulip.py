@@ -126,6 +126,7 @@ class ZulipObserver(Observer):
 
     def __init__(self, st, client, stream, since=None, topic=None):
         super().__init__(st, client, since)
+        self.st = st
         self.stream, self.topic, self.me = stream, topic, None
         self.db.executescript(SCHEMA)
 
@@ -155,6 +156,8 @@ class ZulipObserver(Observer):
             # older messages, ours and those past MAX_TEXT extend the thread, unobserved
             if m.get('sender_id') != me['user_id'] and not self.before_start(created_at(m)) and len(m['content'].encode()) <= MAX_TEXT:
                 obs = self.observation(m, me['full_name'].strip().lower())
+                from transport.hosted import Accounts
+                Accounts(self.st).account(obs['author']['did'], create=True)
                 self.db.execute('INSERT INTO posts VALUES(?,?,?,?)', (uri, obs['cid'], '', canonical(obs)))
                 self.db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (uri, canonical(obs)))
                 fresh = True

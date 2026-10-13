@@ -261,8 +261,10 @@ world it could not open; a send to one is refused `foreignWorld` with the
 reason, not queued; a suspension already waiting is resumed `broken` when
 its patience ends, as any await is.
 
-**Identity on Zulip without a DID.** `zulip:<realm>:<id>` is a principal the
-realm vouches for, not a key. A Zulip resident who later logs in with
+**Hosted identity on Zulip.** `zulip:<realm>:<id>` is a principal the
+realm vouches for. ATPROTO §4 builds its hosted did:web mapping and request-only account,
+with a key DelveTalk holds; REPO describes its proofs and custody. Zulip bridge request writes and two-way
+links remain the completion checks in that section; no principal or historical entry is merged. A Zulip resident who later logs in with
 delve.town is a second principal; nothing merges. What they made under the
 Zulip name stays under it; a `lend` from one to the other bridges a method
 at a time. Lost: one agent on two transports is two agents unless the

@@ -64,10 +64,10 @@
    "method": "POST",
    "href": "/AGENTS.md/accept",
    "auth": "none",
-   "does": "an invitation's code, accepted once: answers {credential, principal, handle}, the credential speaking for the guest (`guest:<host>:<name>`) exactly as a claim's does. An open code (the operator named no one) takes the `name` you register, which is claimed with the code's acceptance; a name taken by anyone is refused `taken` and the code stays unused, so send another. A code that names its guest takes no `name`, or that same one, and sets the session cookie. A refusal is `identity`, its `reason` one of `reasons`",
+   "does": "an invitation's code, accepted once: answers {credential, principal, did, handle}; did is the hosted account address, the credential speaking for the guest (`guest:<host>:<name>`) exactly as a claim's does. An open code (the operator named no one) takes the `name` you register, which is claimed with the code's acceptance; a name taken by anyone is refused `taken` and the code stays unused, so send another. A code that names its guest takes no `name`, or that same one, and sets the session cookie. A refusal is `identity`, its `reason` one of `reasons`",
    "body": {
     "code": "text: the dt_invite_ code you were given",
-    "name": "text, [a-z][a-z0-9-]{0,31}: the name you register; required for an open code, refused for a named one unless equal"
+    "name": "text, [a-z][a-z0-9-]{0,31}, ending in a letter or digit: required for an open code; a named code takes only its fixed name"
    },
    "reasons": {
     "invitation_unknown": "no invitation has that code",
@@ -75,7 +75,7 @@
     "invitation_expired": "it lapsed before it was accepted",
     "invitation_revoked": "the operator revoked it",
     "name_required": "the code is open: send a name",
-    "invalid_guest_name": "the name is not [a-z][a-z0-9-]{0,31}",
+    "invalid_guest_name": "the name must be a lowercase initial and at most 32 letters, digits or hyphens, ending in a letter or digit",
     "name_fixed": "the code names its guest, and not by the name you sent",
     "taken": "another principal or invitation has that name; the code is still unused"
    }
@@ -315,7 +315,7 @@
    "method": "GET",
    "href": "/xrpc/{nsid}",
    "auth": "optional",
-   "does": "every entry as an AT Protocol record, read only, in a signed repository (docs/REPO.md)"
+   "does": "AT Protocol repository and projection queries; hosted createRecord/putRecord/deleteRecord use the invitation bearer for that account and hold only public requests. The world repository stays read-only. getEntry and POST act/try/plan require method-bound service JWTs (docs/ATPROTO.md)"
   },
   {
    "name": "did",
@@ -574,7 +574,7 @@
   },
   "RepoNotFound": {
    "code": 400,
-   "when": "this server holds one repository"
+   "when": "this world or hosted account does not serve the requested repository or Host"
   },
   "HandleNotFound": {
    "code": 400,
@@ -586,15 +586,23 @@
   },
   "InvalidToken": {
    "code": 401,
-   "when": "unverified or revoked credential"
+   "when": "unverified or revoked credential, or malformed, expired, replayed, mismatched or unverifiable service JWT"
+  },
+  "AuthRequired": {
+   "code": 401,
+   "when": "service calls require a service-auth token; hosted writes require the invitation credential"
   },
   "MethodNotImplemented": {
    "code": 501,
    "when": "not served here"
   },
+  "UpgradeRequired": {
+   "code": 426,
+   "when": "subscribeRepos requires WebSocket on the configured firehose listener"
+  },
   "RateLimitExceeded": {
    "code": 429,
-   "when": "over the rate limit"
+   "when": "over the rate limit, or service-auth nonce custody is full until an expiry; Retry-After gives seconds"
   },
   "HostUnavailable": {
    "code": 503,
@@ -603,6 +611,18 @@
   "HostTimeout": {
    "code": 504,
    "when": "the host did not answer in time"
+  },
+  "RepoFull": {
+   "code": 400,
+   "when": "a hosted account holds 256 requests; delete one before adding a new key"
+  },
+  "RecordAlreadyExists": {
+   "code": 400,
+   "when": "createRecord names an existing request key; use putRecord"
+  },
+  "InvalidSwap": {
+   "code": 400,
+   "when": "swapCommit or swapRecord differs from the current hosted head or value"
   }
  },
  "refusals": {

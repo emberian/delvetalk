@@ -240,7 +240,7 @@ tokens, not stored (HOST-HANDOFF 5.72). Snapshots store `stateCid` per object
 and no binary pin.
 
 **The signed repository.** Each world's journal is also an AT Protocol repository, `did:web:<origin host>` (another world's `<world>.<origin host>`): one
-record per entry (`town.delvetalk.entry`, its `entry` a link to the entry's CID) in an MST signed by the world's
+record per entry (`online.fg-goose.gsb.entry`, its `entry` a link to the entry's CID) in an MST signed by the world's
 key, served at `/xrpc/<nsid>` by `transport/repo.py` over `transport/atproto/` (CBOR, CAR, the MST, commits); the
 transport renders bytes the host produced and decides nothing (`docs/REPO.md`).
 

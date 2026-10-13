@@ -1,6 +1,6 @@
 {
   "lexicon": 1,
-  "id": "town.delvetalk.paint",
+  "id": "online.fg-goose.gsb.paint",
   "description": "A card's verified paint (docs/OVERHAUL.md section 4): model prose, cached and never journaled, so outside the signed tree; the exact card is its strongRef.",
   "defs": {
     "main": {
@@ -25,7 +25,8 @@
           },
           "card": {
             "type": "ref",
-            "ref": "com.atproto.repo.strongRef"
+            "ref": "com.atproto.repo.strongRef",
+            "description": "Canonical did:web URI and CID of the immutable card version painted. Equal mirror CIDs verify bytes; they do not retarget this URI. Requires retained versioned card keys when paint is built."
           },
           "text": {
             "type": "string",

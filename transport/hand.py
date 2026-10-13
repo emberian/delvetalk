@@ -1088,7 +1088,7 @@ def parser(p, common):
                       ('--to', dict(metavar='CARD', help='words that are no spell go to this card, as direct prose (default commonplace)'))],
             'morning': [('--day', dict(type=int, help='the clock day (default today)')), ('--topic', {}), ('--reply-to', dict(metavar='AT_URI'))],
             'plan': [], 'watch': [('--object', dict(help="one object's history")), ('--limit', dict(type=int, default=30))], 'worlds': [],
-            'invite': [('name', dict(nargs='?', help='the guest: [a-z][a-z0-9-]{0,31}, its handle on cards; without it the code is open and the guest registers its own name')),
+            'invite': [('name', dict(nargs='?', help='the guest: [a-z][a-z0-9-]{0,31}, ending in a letter or digit, its handle on cards; without it the code is open and the guest registers its own name')),
                        ('--count', dict(type=int, metavar='N', help='mint N open codes at once, one per line')), ('--note', dict(default='', metavar='TEXT')),
                        ('--expires', dict(type=float, default=INVITE_DAYS, metavar='DAYS', help=f'the code may be accepted for DAYS (default {INVITE_DAYS})'))],
             'invites': [], 'revoke-invite': [('name', dict(help='the guest, or for an open code its id from `invites`'))],

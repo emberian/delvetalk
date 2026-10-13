@@ -12,16 +12,18 @@ import hashlib
 import html
 import json
 import secrets
+import socket
 import threading
 import time
 import urllib.parse
+from functools import partial
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
 from transport import pages
-from transport.delve import MAX_RESPONSE, Failure, http_transport
+from transport.delve import MAX_RESPONSE, Failure, public_destination, public_transport
 from transport.identity import DID, HANDLE, digest
 
 PLC = 'https://plc.directory'
@@ -43,10 +45,15 @@ def b64(raw):
     return base64.urlsafe_b64encode(raw).rstrip(b'=').decode()
 
 
-def fetch(method, url, headers=None, body=None):
+def fetch(method, url, headers=None, body=None, *, transport=public_transport):
     """-> (status, lower-cased headers, bytes). No redirects; size-capped; the transport's timeout."""
-    status, raw, got = http_transport(method, url, {'User-Agent': 'DelveTalk/2 oauth', 'Accept': 'application/json', **(headers or {})}, body)
-    return status, {k.lower(): v for k, v in got.items()}, raw[:MAX_RESPONSE]
+    try:
+        status, raw, got = transport(method, url, {'User-Agent': 'DelveTalk/2 oauth', 'Accept': 'application/json', **(headers or {})}, body)
+    except Failure as error:
+        raise Refused('unvouched', error.code) from None
+    if 300 <= status < 400 or len(raw) > MAX_RESPONSE:
+        raise Refused('unvouched', 'redirect' if 300 <= status < 400 else 'response too large')
+    return status, {k.lower(): v for k, v in got.items()}, raw
 
 
 def as_json(status, raw, want=200):
@@ -61,7 +68,8 @@ def as_json(status, raw, want=200):
 
 class DPoP:
     """One ES256 key per login (RFC 9449): a fresh proof per request, the server's nonce tracked and retried once."""
-    def __init__(self):
+    def __init__(self, fetch=fetch):
+        self.fetch = fetch
         self.key, self.nonce = ec.generate_private_key(ec.SECP256R1()), None
         n = self.key.public_key().public_numbers()
         self.jwk = {'kty': 'EC', 'crv': 'P-256', 'x': b64(n.x.to_bytes(32, 'big')), 'y': b64(n.y.to_bytes(32, 'big'))}
@@ -78,7 +86,7 @@ class DPoP:
     def post(self, url, form):
         """A form POST with DPoP; a `use_dpop_nonce` refusal is answered once with the nonce it carried."""
         for _ in range(2):
-            status, headers, raw = fetch('POST', url, {'Content-Type': 'application/x-www-form-urlencoded', 'DPoP': self.proof('POST', url)},
+            status, headers, raw = self.fetch('POST', url, {'Content-Type': 'application/x-www-form-urlencoded', 'DPoP': self.proof('POST', url)},
                                          urllib.parse.urlencode(form).encode())
             fresh = headers.get('dpop-nonce')
             if not fresh:
@@ -95,8 +103,9 @@ class DPoP:
 
 
 class OAuth:
-    def __init__(self, origin, plc=PLC, secure=True, clock=time.time):
-        self.origin, self.plc, self.secure, self.clock = origin.rstrip('/'), plc.rstrip('/'), secure, clock
+    def __init__(self, origin, plc=PLC, clock=time.time, *, transport=public_transport, resolve=socket.getaddrinfo):
+        self.origin, self.plc, self.clock = origin.rstrip('/'), plc.rstrip('/'), clock
+        self.fetch, self.resolve = partial(fetch, transport=transport), resolve
         self.client_id, self.redirect = self.origin + '/oauth/client-metadata.json', self.origin + '/oauth/callback'
         self.pending, self.lock = {}, threading.Lock()
 
@@ -106,10 +115,13 @@ class OAuth:
                 'scope': 'atproto', 'token_endpoint_auth_method': 'none', 'dpop_bound_access_tokens': True}
 
     def url(self, value, root=False):
-        """An https URL (http on loopback only in tests); with root, a bare origin, as the spec requires of servers."""
-        p = urllib.parse.urlsplit(value) if isinstance(value, str) else None
-        if not p or p.scheme not in (('https',) if self.secure else ('https', 'http')) or not p.hostname or p.username or \
-                (root and (p.path not in ('', '/') or p.query or p.fragment)):
+        """A public HTTPS destination; with root, a bare origin, as the spec requires of servers.
+        Metadata is checked before PAR; each actual request resolves and pins anew, including nonce retries."""
+        try:
+            p, *_ = public_destination(value, resolve=self.resolve)
+        except Failure as error:
+            raise Refused('unvouched', error.code) from None
+        if root and (p.path not in ('', '/') or p.query or p.fragment):
             raise Refused('unvouched', 'bad url')
         return value.rstrip('/') if root else value
 
@@ -123,29 +135,31 @@ class OAuth:
             raise Refused('unknown') from None
         if not isinstance(did, str) or not DID.fullmatch(did):
             raise Refused('unknown')
-        doc = as_json(*fetch('GET', f'{self.plc}/{did}')[::2])
+        doc = as_json(*self.fetch('GET', f'{self.plc}/{did}')[::2])
         if doc.get('id') != did or 'at://' + handle not in (doc.get('alsoKnownAs') or []):
             raise Refused('unvouched', 'handle not in DID document')
         pds = [s.get('serviceEndpoint') for s in doc.get('service') or [] if isinstance(s, dict) and s.get('id') in ('#atproto_pds', did + '#atproto_pds')]
         pds = self.url(pds[0] if pds else None, root=True)
         try:
-            servers = as_json(*fetch('GET', pds + '/.well-known/oauth-protected-resource')[::2]).get('authorization_servers')
+            servers = as_json(*self.fetch('GET', pds + '/.well-known/oauth-protected-resource')[::2]).get('authorization_servers')
         except Refused:
             raise Refused('no_oauth') from None
         issuer = self.url(servers[0] if isinstance(servers, list) and len(servers) == 1 else None, root=True)
-        meta = as_json(*fetch('GET', issuer + '/.well-known/oauth-authorization-server')[::2])
+        meta = as_json(*self.fetch('GET', issuer + '/.well-known/oauth-authorization-server')[::2])
         if meta.get('issuer') != issuer or 'atproto' not in (meta.get('scopes_supported') or []) or \
                 'S256' not in (meta.get('code_challenge_methods_supported') or []) or 'ES256' not in (meta.get('dpop_signing_alg_values_supported') or []) or \
                 meta.get('client_id_metadata_document_supported') is not True or meta.get('authorization_response_iss_parameter_supported') is not True:
             raise Refused('no_oauth', 'authorization server outside the atproto profile')
         for k in ('pushed_authorization_request_endpoint', 'authorization_endpoint', 'token_endpoint'):
             self.url(meta.get(k))
+        if 'revocation_endpoint' in meta:
+            self.url(meta['revocation_endpoint'])
         return did, meta
 
     def start(self, handle, resolve):
         """-> (state, the authorization URL to send the browser to)."""
         did, meta = self.discover(handle, resolve)
-        dpop, verifier, state = DPoP(), secrets.token_urlsafe(48), secrets.token_urlsafe(24)
+        dpop, verifier, state = DPoP(self.fetch), secrets.token_urlsafe(48), secrets.token_urlsafe(24)
         status, raw = dpop.post(meta['pushed_authorization_request_endpoint'], {
             'client_id': self.client_id, 'response_type': 'code', 'redirect_uri': self.redirect, 'scope': 'atproto', 'state': state,
             'code_challenge': b64(hashlib.sha256(verifier.encode()).digest()), 'code_challenge_method': 'S256', 'login_hint': handle})

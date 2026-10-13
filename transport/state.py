@@ -8,6 +8,7 @@ import re
 import signal
 import sqlite3
 import threading
+import urllib.parse
 from pathlib import Path
 
 from transport.config import Config
@@ -31,6 +32,7 @@ class State:
         self.root_socket = Path(c.root_socket) if c.root_socket else r / 'root' / 'root.sock'
         # every world's
         self.identity, self.access_log, self.hand_log = r / 'identity.sqlite', r / 'access.log', r / 'hand-log.jsonl'
+        self.lexicon_ledger = r / 'lexicons' / (urllib.parse.quote(c.lexicon_authority, safe='') + '.json')  # account-wide schema digests
         self.spend, self.row = r / 'model-spend.jsonl', r / 'bridges' / f'{world}.json'
         self.repo_key = Path(c.repo_keys) / f'{world}.key'
         # this world's
@@ -42,9 +44,17 @@ class State:
         self.posting, self.interpretations = h / 'posting', h / 'interpretations'  # the posting ledger; model replies by request
         self.watch_log, self.alerted = h / 'watch.jsonl', h / 'alerted.json'
         self.mirror = h / 'mirror.json'  # what the mirror last wrote to the PDS: {collection rkey: digest}
+        self.repo_ledger = h / 'repo.json'  # signing key, journal base, chain epochs and last served head
+        self.firehose = h / 'events'  # length-prefixed DAG-CBOR records: seq, kind, epoch, height, exact event frame bytes;
+        # fsynced before delivery, newest 10,000 retained, atomic rewrite at 20,000; copied by carry and state backups
         self.taught = h / 'taught.txt'  # the residents whose first admitted reply carried the next move
-        self.requests = h / 'requests.json'  # the request poller's ledger: each repo's rev read, each record refused
-        self.answers = h / 'answers'  # town.delvetalk.answer records, <did>.<rkey>.json: the façade and the mirror serve them
+        self.requests = h / 'requests.json'  # {revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}; consumed URIs stay in observe.sqlite
+        self.hosted = h / 'hosted'  # public request snapshots and separate per-account signing keys
+        self.answers = h / 'answers'  # online.fg-goose.gsb.answer records, <did>.<rkey>.json: the façade and the mirror serve them
+
+    def hosted_paths(self, name):
+        """An Accounts-validated file stem -> (key, public snapshot, process lock)."""
+        return tuple(self.hosted / (name + suffix) for suffix in ('.key', '.json', '.lock'))
 
     def host(self, **more):
         return HostClient(self.host_socket, **{'world': self.world, **more})
