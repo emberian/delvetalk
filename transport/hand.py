@@ -21,7 +21,7 @@ from transport import bridge, byhand, measure, model, post, pages, root
 from transport.bridge import awaiting_path, uri_hash
 from transport import observe
 from transport.delve import Failure, canonical
-from transport.host import CLOCK, fell_back, handles, history_limit, painted, typed
+from transport.host import CLOCK, PUBLIC, fell_back, handles, history_limit, painted, typed
 from transport.http import WAIT_MAX, trace
 from transport.identity import INVITE_DAYS, Identity, IdentityError
 from transport.measure import counted
@@ -340,7 +340,7 @@ class Hand:
         tag = (receipt.get('outcome') or {}).get('tag')
         made = [c['object'] for c in (receipt.get('outcome') or {}).get('creates') or [] if c.get('object')]
         obj = (made or [reply.get('object') or card])[0]
-        text = bridge.draft_public(reply, self.st.config.origin, reply.get('object'))
+        text = bridge.draft_text(reply, self.st.config.origin, reply.get('object'))
         if tag == 'admitted' and reply.get('offers') and reply.get('inPublic') is not False:
             text = bridge.with_paint(self.host, bridge.offered_object(reply, card), text, self.sleep)
         text = bridge.with_telling(self.host, self.owner, reply, reply.get('object') or card, text, self.sleep)[0]
@@ -404,7 +404,7 @@ class Hand:
         if line.get('outcome') in ('preview', 'moved'):  # a try or a moved `if:`: the text the host answered then
             text = line.get('text') or ''
         if line.get('outcome') == 'usage':  # asked again: a `?` journals nothing, so the log keeps the spell, not the answer
-            text = bridge.draft_text(self.receive(line['object'], line['spell'], intent))
+            text = bridge.read_text(self.host, self.owner, self.receive(line['object'], line['spell'], intent), self.sleep)
         if line['what'] == 'ask':
             rc = self.host.send({'op': 'world-receipt', 'principal': self.owner, 'identity': intent}).get('receipt') or {}
             said, waiting = trace(self.host, self.owner, intent, {'status': outcome_of(rc), 'receipt': rc}, wait=0) if rc else ([], True)
@@ -433,16 +433,16 @@ class Hand:
         """The morning card (docs/OVERHAUL.md section 4 (c)): the town's day painted from its strokes, what wants a hand
         exact beneath, drafted once a day for Post; never posted by itself. Unpainted (no worker, refused, past the host's
         patience), the chronicle's exact lines stand in the paint's place."""
-        chronicled = self.host.send({'op': 'world-chronicle', 'principal': self.owner, **({'day': int(day)} if day is not None else {})})
+        chronicled = self.host.send({'op': 'world-chronicle', 'principal': PUBLIC, **({'day': int(day)} if day is not None else {})})
         if chronicled.get('status') != 'chronicled':
             raise HandError(f"the chronicle: {chronicled.get('message') or chronicled.get('status')}")
         day = chronicled['day']
         for i, _, d in self.drafts():
             if (d.get('speak') or {}).get('morning') == day:
                 raise HandError(f'the morning card of day {day} is drafted already: {i}')
-        paint = painted(self.host, self.owner, None, self.sleep, day=day, morning=True)
+        paint = painted(self.host, PUBLIC, None, self.sleep, day=day, morning=True)
         why = fell_back(paint)
-        rows = self.host.send({'op': 'world-wanting', 'principal': self.owner, 'limit': 8, 'oldest': True}).get('rows') or []
+        rows = self.host.send({'op': 'world-wanting', 'principal': PUBLIC, 'limit': 8, 'oldest': True}).get('rows') or []
         wants = ''.join(f"{r['object']}: {r.get('reading') or r['name']}\n  {r['asks']}\n" for r in rows)
         text = (paint.get('text') or '\n'.join(chronicled['lines'])) + ('\n\nWhat wants a hand, oldest first:\n' + wants if wants else '')
         where, name = self.where(topic, reply_to), f'{int(self.clock())}-morning-{day}'

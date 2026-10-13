@@ -54,6 +54,36 @@ class StubHost:
         return self
 
 
+class PublicMorning(unittest.TestCase):
+    def test_a_morning_draft_reads_the_chronicle_paint_and_eight_wants_as_the_public(self):
+        from transport.config import Config
+        from transport.host import PUBLIC
+        with tempfile.TemporaryDirectory() as directory:
+            st = State(directory, config=Config(opener='alice', hand_find=False))
+            calls = []
+            secret = 'Alice alone reads this wanting diary.'
+            rows = [{'object': f'bell/{n}', 'name': 'rain', 'reading': 'r' * 200, 'asks': f'delvetalk bell/{n} rain'} for n in range(8)]
+            class Host:
+                def send(self, req):
+                    calls.append(req)
+                    private = req.get('principal') != PUBLIC
+                    if req['op'] == 'world-chronicle':
+                        return {'status': 'chronicled', 'day': 1, 'lines': [secret if private else 'A public day.']}
+                    if req['op'] == 'world-render':
+                        return {'status': 'painted', 'text': secret if private else 'A public painting.'}
+                    if req['op'] == 'world-wanting':
+                        return {'rows': [{'object': 'diary', 'name': 'secret', 'reading': secret, 'asks': 'delvetalk diary reveal'}] if private else rows}
+                    return {'status': 'ok'}
+            h = hand.Hand(st, Host(), sleep=lambda _: None)
+            got = h.morning()
+            text = h.draft(got['drafted'])[1]['text']
+            self.assertNotIn(secret, text)
+            self.assertNotIn('diary', text)
+            self.assertTrue(text.startswith('A public painting.'))
+            self.assertTrue(all(r['asks'] in text for r in rows))
+            self.assertEqual([c['principal'] for c in calls], [PUBLIC] * 3)
+
+
 class HistoryBound(unittest.TestCase):
     """§7 seen in passing: the transport restated `Limits.maxHistoryLimit` as `HISTORY_LIMIT`; a page of history asks for
     as many as the host's `bounds` allows."""
@@ -681,12 +711,30 @@ class Speak(unittest.TestCase):
         self.assertTrue(fell_back(got).startswith(f"the paint fell back: rejected at its {got['clause']} clause"), fell_back(got))
         self.assertIsNone(fell_back({'text': 'a paint'}))
 
+    def test_an_owner_private_want_never_enters_a_public_morning_draft(self):
+        from deploy import genesis
+        from deploy.seed import closure, modules_on_disk
+        owner, obj = self.hand.owner, 'morning-private-diary'
+        created = self.town.send(op='world-create', principal=owner, identity=obj, object=obj, entry='initial',
+                                 modules=closure('Record', modules_on_disk()), law=genesis.RECORD_LAW, read={'principals': [owner]},
+                                 seed=genesis.rec(owner=genesis.lab(owner), maker=genesis.lab(owner)))
+        self.assertEqual(created['status'], 'created', created)
+        spell = f'delvetalk {obj} want\nname: secret\nreading: the owner alone knows\nwhen: count(new.lines) == 0\nasks: delvetalk kind/bell make / seed: a bell / colour: silver'
+        wanted = cast(self.town, owner, spell, 'morning-private-want')
+        self.assertEqual(wanted['status'], 'admitted', wanted)
+        rows = self.town.send(op='world-wanting', principal=owner)['rows']
+        self.assertTrue(any(r['object'] == obj for r in rows), rows)
+        h = hand.Hand(self.st, self.town.client, sleep=lambda _: None)
+        got = h.morning(day=137)
+        self.assertNotIn(obj, got['text'])
+        self.assertNotIn('the owner alone knows', got['text'])
+
     def test_the_morning_card_is_painted_shown_and_drafted_once_a_day_never_posted(self):
         """`hand morning` (OVERHAUL §4 (c)): the day painted from its strokes with what wants a hand exact beneath, drafted
         once a day for Post; a day with no paint stands as the chronicle's exact lines."""
         from transport import interpret
         self.town.send(op='world-renders')  # the worker attends
-        queued = self.town.send(op='world-render', principal=self.hand.owner, morning=True)
+        queued = self.town.send(op='world-render', principal='anonymous', morning=True)
         self.assertEqual(queued['status'], 'pending', queued)
         paint = 'Like moonlight through silk.'
         reply = {'status': 'replied', 'json': None, 'raw': paint, 'model': 'claude-haiku-5-5', 'usage': {}}
@@ -696,7 +744,7 @@ class Speak(unittest.TestCase):
         _, d = self.hand.draft(got['drafted'])
         self.assertTrue(got['painted'])
         self.assertTrue(d['text'].startswith(paint + '\n\nWhat wants a hand, oldest first:\n'), d['text'])
-        first = self.town.send(op='world-wanting', principal=self.hand.owner, limit=8, oldest=True)['rows'][0]  # the longest waiting
+        first = self.town.send(op='world-wanting', principal='anonymous', limit=8, oldest=True)['rows'][0]  # the longest waiting
         self.assertIn('%s: %s\n  %s' % (first['object'], first.get('reading') or first['name'], first['asks']), d['text'])
         self.assertEqual((d['speak'], d['posted'], d['topic']), ({'morning': got['day']}, False, 'welcome'))
         with self.assertRaises(hand.HandError):

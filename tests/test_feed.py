@@ -60,6 +60,18 @@ class Feed(unittest.TestCase):
         self.assertEqual(s, 200, body)
         return json.loads(body)['credential']
 
+    def browser_post(self, path, data, cookie=''):
+        status, headers, page = self.request('GET', '/enter', headers={'Accept': 'text/html', 'Cookie': cookie})
+        self.assertEqual(status, 200)
+        csrf = re.search(rb'name="csrf" value="([^"]+)"', page)[1].decode()
+        cookies = dict(part.strip().split('=', 1) for part in cookie.split(';') if '=' in part)
+        if headers.get('Set-Cookie'):
+            name, value = headers['Set-Cookie'].split(';', 1)[0].split('=', 1)
+            cookies[name] = value
+        return self.request('POST', path, urllib.parse.urlencode({**data, 'csrf': csrf}),
+                            headers={'Cookie': '; '.join(k + '=' + v for k, v in cookies.items()),
+                                     'Content-Type': 'application/x-www-form-urlencoded', 'Origin': self.front.origin})
+
     def say(self, token, text, reply_to=None):
         """Post on the feed, run the bridge's step, -> (the post, the town's replies under it, in order)."""
         s, _, body = self.request('POST', '/AGENTS.md/feed', {'text': text, **({'reply_to': reply_to} if reply_to else {})}, token)
@@ -86,7 +98,14 @@ class Feed(unittest.TestCase):
     def test_a_guest_who_only_uses_the_feed_learns_makes_grows_rules_and_sees_the_rule_fire(self):
         t = self.guest('wren')
         text = lambda s: self.said(t, s)[0]  # noqa: E731
-        self.assertIn('hob: the guide, in', text('delvetalk guide'))
+        from transport.host import PUBLIC, typed
+        height = self.town.send(op='world-status')['height']
+        guide = self.town.client.send({'op': 'world-try', 'principal': PUBLIC, 'object': 'commonplace', 'method': 'receive',
+                                       'identity': 'public-feed-guide', 'argument': typed({'text': 'delvetalk guide', 'post': ''})})
+        self.assertTrue(guide.get('tried'), guide)
+        self.assertIn(guide['status'], ('usage', 'admitted'), guide)
+        self.assertEqual(self.town.send(op='world-status')['height'], height)
+        self.assertTrue(text('delvetalk guide').startswith('\n'.join(post.parts(bridge.read_text(self.town.client, PUBLIC, guide)))))
         self.assertIn('KINDS', text('delvetalk commonplace since / entry: 0'))
         make = 'delvetalk kinds make / name: wick / of: record / form: light: text 1..80'
         preview = text('delvetalk try\n  ' + make)
@@ -116,6 +135,26 @@ class Feed(unittest.TestCase):
         self.assertTrue(mine and all(r['uri'] in observed for r in mine))
         self.assertEqual(observed[mine[0]['uri']]['author']['handle'], 'wren')
 
+    def test_alices_book_of_a_diary_only_she_reads_is_never_published_in_the_feed(self):
+        from deploy import genesis
+        from deploy.seed import closure, modules_on_disk
+        from transport.host import typed
+        token = self.guest('alice')
+        principal = self.ident.authenticate(token)['did']
+        created = self.town.send(op='world-create', principal=principal, identity='feed-alice-diary', object='feed-alice-diary',
+                                 modules=closure('Record', modules_on_disk()), entry='initial', law=genesis.RECORD_LAW,
+                                 read={'principals': [principal]}, seed=genesis.rec(owner=genesis.lab(principal), maker=genesis.lab(principal), makerHandle=genesis.lab('alice')))
+        self.assertEqual(created['status'], 'created', created)
+        caller = self.town.send(op='world-turn', principal=principal, object='me', method='receive', identity='feed-read-diary',
+                                argument=typed({'text': 'delvetalk me book', 'post': ''}))
+        self.assertEqual(caller['status'], 'usage', caller)
+        self.assertIn('feed-alice-diary', caller.get('whole') or caller['text'])
+        _, chain = self.say(token, 'delvetalk me book')
+        self.assertTrue(chain)
+        text = '\n'.join(p['text'] for p in chain)
+        self.assertNotIn('feed-alice-diary', text)
+        self.assertIn("its reader's", text)
+
     def test_the_feed_page_shows_the_thread_its_receipt_and_takes_a_post_from_a_signed_in_browser(self):
         t = self.guest('robin')
         mine, chain = self.say(t, 'delvetalk library read / page: laws')
@@ -127,13 +166,12 @@ class Feed(unittest.TestCase):
         self.assertRegex(page, r'class="post reply town"[^>]*>.*?the town.*?receipt [a-z]+-[a-z]+')
         s, _, page = self.request('GET', '/feed', headers={'Accept': 'text/html', 'Cookie': 'dt_credential=' + t})
         self.assertIn('<form class="say" method="post" action="/feed">', page.decode())
-        s, headers, _ = self.request('POST', '/feed', 'text=' + urllib.parse.quote('delvetalk bell/1 ?'),
-                                     headers={'Cookie': 'dt_credential=' + t, 'Content-Type': 'application/x-www-form-urlencoded'})
+        s, headers, _ = self.browser_post('/feed', {'text': 'delvetalk bell/1 ?'}, 'dt_credential=' + t)
         self.assertEqual(s, 303)
         self.assertTrue(headers['Location'].startswith('/feed?posted='))
         s, _, page = self.request('GET', headers['Location'].split('#')[0], headers={'Accept': 'text/html', 'Cookie': 'dt_credential=' + t})
         self.assertIn('http-equiv="refresh"', page.decode())  # waiting for the town, the page looks again
-        s, headers, _ = self.request('POST', '/feed', 'text=hello', headers={'Content-Type': 'application/x-www-form-urlencoded'})
+        s, headers, _ = self.browser_post('/feed', {'text': 'hello'})
         self.assertEqual((s, headers['Location']), (303, '/enter'))  # nobody signed in: the door
 
     def test_a_guests_name_is_a_mention_and_a_top_level_post_is_said_to_the_town(self):

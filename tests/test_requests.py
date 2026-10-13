@@ -571,6 +571,33 @@ class Requests(unittest.TestCase):
 class Held(unittest.TestCase):
     """A request hob must read first (a misfit spell) is answered when its turn settles, once, never run again meanwhile."""
 
+    def test_a_request_with_two_suspended_children_waits_for_both_and_keeps_the_settled_offer_and_refusal(self):
+        from tests.test_bridge import Spells
+        with tempfile.TemporaryDirectory() as directory:
+            st, host = State(directory, config=LOOPBACK), Spells(['admitted', 'suspended', 'suspended'])
+            uri = f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa2'
+            obs = {'uri': uri, 'cid': str(block('request')[0]), 'author': {'did': DID}}
+            reply = host.send({'op': 'world-turn', 'principal': DID, 'identity': uri, 'object': 'bell-1'})
+            self.assertIsNone(bridge.answer_turn(st, host, obs, reply))
+            path = bridge.answer_path(st, bridge.request_source(obs))
+            self.assertFalse(path.exists())
+            send, settled = host.send, {}
+            host.send = lambda req: settled.get(req.get('identity'), {'status': 'receipt', 'receipt': {'outcome': {'tag': 'suspended'}}}) if req['op'] == 'world-receipt' else send(req)
+            settled[uri + '#2'] = {'status': 'receipt', 'receipt': Stub.RESUMED, 'inPublic': True}
+            host.offers[DID] = [{'height': 20, 'identity': {'principal': DID, 'intent': uri + '#2'}, 'text': 'Tended.'},
+                                {'height': 21, 'identity': {'principal': DID, 'intent': 'another-request'}, 'text': 'not mine'}]
+            self.assertEqual(bridge.offer_drafts(st, host), [])
+            self.assertFalse(path.exists())
+            out = {'tag': 'refused', 'class': 'lawRefused', 'reason': 'refused owner: another hand'}
+            settled[uri + '#3'] = {'status': 'receipt', 'receipt': {**Stub.RESUMED, 'outcome': out}, 'public': out}
+            self.assertEqual(bridge.offer_drafts(st, host), [uri])
+            answer = json.loads(path.read_text())
+            self.assertEqual(record_problems(answer), [])
+            self.assertEqual(answer['turns'][1]['offers'], ['Tended.'])
+            self.assertEqual(answer['turns'][2]['outcome']['status'], 'refused')
+            self.assertNotIn('not mine', json.dumps(answer))
+            self.assertEqual(bridge.offer_drafts(st, host), [])
+
     def test_a_suspended_request_is_answered_when_it_settles_and_not_turned_again_while_it_waits(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

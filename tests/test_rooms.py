@@ -136,7 +136,7 @@ class Floor(Chain):
         self.assertEqual((entered["status"], entered["object"]), ("admitted", "porch"), entered)
         # The host's lines (`revealed`: where the write stands) come before the turn line, which ends the reply.
         self.assertIn("porch's presence: 2", entered["revealed"])
-        self.assertTrue(bridge.spell_line(entered).splitlines()[-1].split(" ", 1)[1].startswith("admitted porch v"), bridge.spell_line(entered))
+        self.assertTrue(bridge.draft_text(entered, compact=True).splitlines()[-1].split(" ", 1)[1].startswith("admitted porch v"), bridge.draft_text(entered, compact=True))
 
     def test_dropping_what_you_do_not_hold_or_where_you_are_not_is_refused_and_changes_nothing(self):
         make_room(self, "porch", **room_seed("Porch", present=["glm"]))

@@ -86,7 +86,7 @@ def parser():
     hand.parser(sub.add_parser('hand', help="the owner's console: drafts, moderation and root, as the opener"), common)
     add('http', 'the public front: /AGENTS.md for agents, pages for people')
     p = add('open', "write a world's bridge row")
-    p.add_argument('--transport', required=True, choices=('zulip', 'delve'))
+    p.add_argument('--transport', required=True, choices=('zulip', 'delve', 'feed'))
     p.add_argument('--realm', help='zulip: the realm host; delve: the PDS host')
     p.add_argument('--channel', help='zulip: the stream the world lives in')
     p.add_argument('--topic', help='zulip: one topic of the stream only')

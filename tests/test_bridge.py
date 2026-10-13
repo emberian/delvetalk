@@ -17,9 +17,9 @@ from tests.test_receive import door
 from tests.test_chain import town_garden
 from tests.test_transport import DID, Script, mk
 from transport import bridge, delve, observe
-from tests.host import served
+from tests.host import ServeCase, served
 from transport.config import Config
-from transport.host import HostClient
+from transport.host import HostClient, PUBLIC, typed
 from transport.hand import Hand
 from transport.state import State
 from tests.wire import label, listing, nat, record
@@ -251,6 +251,70 @@ class Private(BridgeCase):
     """A reply is posted where everyone reads it: what a turn offered from a thing the public may not read is the
     author's alone, so its draft carries the receipt line and not the offer."""
 
+    def test_a_public_guide_read_uses_the_same_request_as_the_public_reader_and_drafts_its_whole_reply(self):
+        post = mk(1, 'delvetalk guide')
+        self.observe([post])
+        stub = Stub({post['uri']: {'status': 'reached', 'object': 'commonplace', 'how': 'spell'}})
+        send = stub.send
+        head = 'hob: the guide, in the town.\n'
+        public = head + 'x' * (observe.MAX_TEXT - len(head))
+        def answer(request):
+            if request['op'] in ('world-turn', 'world-try'):
+                stub.ops.append(request)
+                return {'status': 'admitted', 'tried': True, 'inPublic': True, 'offers': [{'principal': PUBLIC, 'text': public}],
+                        'receipt': {'outcome': {'tag': 'admitted', 'writes': []}}} if request['principal'] == PUBLIC else {'status': 'usage', 'text': 'caller-only guide note'}
+            return send(request)
+        stub.send = answer
+        self.assertEqual(bridge.run(self.state, stub)['failed'], [])
+        self.assertEqual(self.drafts()[0]['text'], public)
+        caller, projected = [r for r in stub.ops if r['op'] in ('world-turn', 'world-try')]
+        self.assertEqual(projected['argument'], caller['argument'])
+        self.assertEqual(projected['object'], caller['object'])
+        self.assertEqual((projected['op'], projected['principal']), ('world-try', PUBLIC))
+
+    def test_alices_book_of_a_diary_only_she_reads_drafts_no_diary_text(self):
+        from tests.town import Town
+        from deploy.seed import closure, modules_on_disk
+        town = Town(str(Path(self.tmp.name) / 'town'), cleanup=self.addCleanup, furnished=False)
+        town.send(op='world-arrive', principal='transport', did=DID, handle='alice.delve.town')
+        created = town.send(op='world-create', principal=DID, identity='alice-diary', object='alice-diary',
+                            modules=closure('Record', modules_on_disk()), entry='initial', law=genesis.RECORD_LAW,
+                            read={'principals': [DID]}, seed=genesis.rec(owner=genesis.lab(DID), maker=genesis.lab(DID), makerHandle=genesis.lab('alice.delve.town')))
+        self.assertEqual(created['status'], 'created', created)
+        caller = town.client.send({'op': 'world-turn', 'principal': DID, 'object': 'me', 'method': 'receive', 'identity': 'read-diary',
+                                   'argument': record(text=label('delvetalk me book'), post=label(''))})
+        self.assertEqual(caller['status'], 'usage', caller)
+        self.assertIn('alice-diary', caller.get('whole') or caller['text'])
+        post = mk(1, 'delvetalk me book')
+        self.observe([post])
+        bridge.run(self.state, town.client)
+        (draft,) = [d for d in self.drafts() if d['replyTo'] == post['uri']]
+        self.assertNotIn('alice-diary', draft['text'])
+        self.assertIn("its reader's", draft['text'])
+
+    def test_a_callers_book_text_never_enters_a_public_draft_even_at_the_observation_limit(self):
+        prefix = 'delvetalk diary reveal\n'
+        for secret in ('Alice alone reads this diary.', prefix + 'x' * (observe.MAX_TEXT - len(prefix))):
+            with self.subTest(length=len(secret)):
+                reply = {'status': 'usage', 'text': secret, 'whole': secret, 'paint': {'day': 1}}
+                self.assertFalse(secret in bridge.draft_text(reply))
+                self.assertIn("its reader's", bridge.draft_text(reply))
+
+    def test_a_private_usage_child_and_private_preview_never_publish_the_callers_words(self):
+        secret = 'Alice alone reads this diary.'
+        stub = Spells(['admitted', 'usage'])
+        send = stub.send
+        def answer(req):
+            r = send(req)
+            if r.get('status') == 'spells':
+                r['turns'][1].update(text=secret, whole=secret)
+            return r
+        stub.send = answer
+        self.observe([mk(1, 'delvetalk bell-1 rain\ntext: hello\ndelvetalk me book')])
+        bridge.run(self.state, stub)
+        self.assertNotIn(secret, self.drafts()[0]['text'])
+        self.assertNotIn(secret, bridge.preview_text({'tried': True, 'status': 'spells', 'turns': [{'status': 'usage', 'text': secret}]}))
+
     def test_an_offer_from_a_thing_only_its_reader_may_read_is_not_drafted_into_a_public_reply(self):
         self.make('diary', read={'principals': [DID]})
         self.make('garden-1')
@@ -267,7 +331,7 @@ class Private(BridgeCase):
 
 class HostParses(BridgeCase):
     """Whether a post is a spell, and to which card, is the host's answer (`world-reach` reads it with its parser), never Python's."""
-    def test_a_standalone_question_mark_spell_reaches_the_card_and_is_answered_with_its_usage(self):
+    def test_a_standalone_question_mark_spell_reaches_the_card_and_is_answered_with_its_public_usage(self):
         self.make('garden-1')
         post = spell_post(1, 'garden-1', '2026-10-09T10:00:00Z')
         post['record']['text'] = 'delvetalk garden-1 ?'
@@ -361,6 +425,43 @@ class Reaching(BridgeCase):
 
 
 class Suspended(BridgeCase):
+    def test_a_failed_external_poll_does_not_stop_a_local_feed_reply_or_tick(self):
+        from transport import feed
+        store = feed.Feed(self.state)
+        self.addCleanup(store.close)
+        for error in (delve.Failure('http_status', '503'), OSError('offline')):
+            with self.subTest(error=type(error).__name__):
+                p = store.post({'did': DID, 'handle': 'alice'}, 'delvetalk garden-1 plant\nseed: a\ncolour: amber')
+                observer = mock.Mock()
+                observer.poll.side_effect = error
+                observer.problems = []
+                stub = Stub()
+                send = stub.send
+                stub.send = lambda req: {'status': 'reserved'} if req['op'] == 'world-post-reserve' else send(req)
+                result = bridge.run(self.state, stub, observer, now=60)
+                self.assertEqual(result['failed'], [{'source': 'delve', 'message': str(error)}])
+                self.assertTrue(any(o['op'] == 'world-advance' for o in stub.ops))
+                self.assertTrue(result['answered'])
+                self.assertTrue(any(r['town'] and r['parent'] == p['uri'] for r in store.rows()))
+
+    def test_a_programming_error_in_an_external_poll_still_escapes(self):
+        observer = mock.Mock()
+        observer.poll.side_effect = ValueError('bad observer')
+        with self.assertRaisesRegex(ValueError, 'bad observer'):
+            bridge.run(self.state, Stub(), observer)
+
+    def test_a_feed_only_bridge_command_never_constructs_a_delve_client(self):
+        import io
+        from types import SimpleNamespace
+        from transport.__main__ import main
+        self.assertEqual(main(['open', '--state', str(self.state.root), '--transport', 'feed'], io.StringIO()), 0)
+        host = mock.Mock(send=Stub().send)
+        with mock.patch.object(self.state, 'host', return_value=host), mock.patch.object(bridge, 'Client', side_effect=AssertionError('external client')):
+            output = io.StringIO()
+            bridge.command(self.state, SimpleNamespace(since=None, now=60, once=True), output)
+        self.assertEqual(json.loads(output.getvalue())['failed'], [])
+        host.close.assert_called_once()
+
     def test_a_suspended_turn_has_no_draft_then_the_resumed_offer_is_drafted_once(self):
         stub = Stub()
         stub.suspending = {'garden-1'}
@@ -422,7 +523,9 @@ class SeveralSpells(BridgeCase):
         self.assertEqual(bridge.run(self.state, stub)['failed'], [])
         (d,) = self.drafts()
         self.assertIn('admitted bell-1 v1', d['text'])
-        self.assertIn('delvetalk bell-1 rain / text: <1 to 200>', d['text'])
+        self.assertEqual(d['text'], '● admitted bell-1 v1, entry 11, receipt lodif-rukub\n' +
+                         "a `?` or a read is its reader's; read the card, book, chronicle or map on the web\n")
+        self.assertNotIn('delvetalk bell-1 rain / text: <1 to 200>', d['text'])
 
     def test_a_suspended_spell_among_them_is_answered_when_its_offer_comes(self):
         stub = Spells(['admitted', 'suspended'])
@@ -433,6 +536,24 @@ class SeveralSpells(BridgeCase):
         self.assertEqual(bridge.run(self.state, stub)['offered'], [p['uri'] + '#2'])
         later = [d for d in self.drafts() if 'Tended.' in d['text']]
         self.assertEqual([d['replyTo'] for d in later], [p['uri']])
+
+    def test_a_suspended_child_refusal_reaches_the_same_post_once_without_recasting_the_parent(self):
+        stub = Spells(['admitted', 'suspended'])
+        p = mk(1, 'delvetalk bell-1 rain\ntext: hello\ndelvetalk bell-1 tend')
+        self.observe([p])
+        bridge.run(self.state, stub)
+        turns = sum(o['op'] == 'world-turn' for o in stub.ops)
+        send = stub.send
+        outcome = {'tag': 'refused', 'class': 'lawRefused', 'reason': 'refused owner: another hand'}
+        stub.send = lambda req: ({'status': 'receipt', 'receipt': {**Stub.RESUMED, 'outcome': outcome}, 'public': outcome}
+                                if req['op'] == 'world-receipt' else send(req))
+        self.assertEqual(bridge.run(self.state, stub)['offered'], [p['uri'] + '#2'])
+        later = [d for d in self.drafts() if d.get('receipt', {}).get('outcome', {}).get('tag') == 'refused']
+        self.assertEqual(len(later), 1)
+        self.assertEqual(later[0]['replyTo'], p['uri'])
+        self.assertIn('refused owner: another hand', later[0]['text'])
+        self.assertNotIn('offered', bridge.run(self.state, stub))
+        self.assertEqual(sum(o['op'] == 'world-turn' for o in stub.ops), turns)
 
 
 class Mentions(BridgeCase):
@@ -573,7 +694,114 @@ class RealOffers(test_outbound.TellerWorld):
             self.assertEqual(bridge.offer_drafts(d, H()), [])
 
 
+class PublicReads(ServeCase):
+    def test_a_public_card_read_is_posted_whole_and_a_diary_read_is_not_and_neither_public_read_journals(self):
+        from deploy.seed import closure, modules_on_disk
+        from transport import feed, post as posting
+        alice = 'did:plc:' + 'b' * 24
+        for obj, principal, read in (('public-read-card', self.OPENER, {}), ('private-read-diary', alice, {'principals': [alice]})):
+            created = self.root.send({'op': 'world-create', 'principal': principal, 'identity': obj, 'object': obj,
+                                      'entry': 'initial', 'modules': closure('Record', modules_on_disk()), 'law': genesis.RECORD_LAW,
+                                      **({'read': read} if read else {}), 'seed': genesis.rec(owner=genesis.lab(principal), maker=genesis.lab(principal))})
+            self.assertEqual(created['status'], 'created', created)
+        with tempfile.TemporaryDirectory() as directory:
+            st = State(directory, config=LOOPBACK)
+            store = feed.Feed(st)
+            self.addCleanup(store.close)
+            for obj in ('public-read-card', 'private-read-diary'):
+                spell = f'delvetalk {obj} ?'
+                request = {'op': 'world-turn', 'principal': alice, 'object': obj, 'method': 'receive', 'identity': 'read-' + obj,
+                           'argument': typed({'text': spell, 'post': ''})}
+                caller = self.host.send(request)
+                self.assertEqual(caller['status'], 'usage', caller)
+                height = self.host.send({'op': 'world-status'})['height']
+                text = bridge.draft_text(caller, host=self.host, request=request)
+                self.assertEqual(self.host.send({'op': 'world-status'})['height'], height)
+                if obj == 'public-read-card':
+                    public = self.host.send({**request, 'op': 'world-try', 'principal': PUBLIC, 'identity': 'anonymous-public-read'})
+                    self.assertEqual(public['status'], 'usage', public)
+                    self.assertEqual(text, public.get('whole') or public['text'])
+                    self.assertEqual(self.host.send({'op': 'world-status'})['height'], height)
+                else:
+                    self.assertIn("its reader's", text)
+                    self.assertNotIn(obj, text)
+                post = store.post({'did': alice, 'handle': 'alice'}, spell)
+                bridge.run(st, self.host, now=60)
+                posted = '\n'.join(r['text'] for r in store.rows() if r['town'] and r['answers'] == post['uri'])
+                self.assertEqual(posted, '\n'.join(posting.parts(text)))
+
+
 class Projection(unittest.TestCase):
+    def test_a_tried_admitted_public_read_drafts_its_offers_without_a_hypothetical_receipt(self):
+        request = {'op': 'world-turn', 'principal': DID, 'object': 'commonplace', 'method': 'receive', 'identity': 'a-read',
+                   'argument': typed({'text': 'delvetalk guide', 'post': ''})}
+        for text in ('hob: the guide, in 17 parts.', 'x' * observe.MAX_TEXT):
+            with self.subTest(length=len(text)):
+                host = mock.Mock()
+                host.send.return_value = {'status': 'admitted', 'tried': True, 'inPublic': True,
+                                          'offers': [{'principal': PUBLIC, 'text': text}],
+                                          'receipt': {'height': 10, 'slug': 'lodif-rukuz', 'outcome': {'tag': 'admitted', 'writes': []}}}
+                self.assertEqual(bridge.draft_text({'status': 'usage', 'text': 'caller-only'}, host=host, request=request), text)
+                self.assertEqual(host.send.call_args.args[0]['op'], 'world-try')
+
+    def test_a_public_trial_that_changes_the_world_sends_publishes_or_offers_nothing_is_not_drafted_as_a_read(self):
+        request = {'op': 'world-turn', 'principal': DID, 'object': 'diary', 'method': 'receive', 'identity': 'a-read',
+                   'argument': typed({'text': 'delvetalk diary book', 'post': ''})}
+        read = {'status': 'admitted', 'tried': True, 'inPublic': True, 'offers': [{'principal': PUBLIC, 'text': 'an act'}],
+                'receipt': {'outcome': {'tag': 'admitted'}}}
+        cases = [{'receipt': {'outcome': {'tag': 'admitted', key: [{}]}}}
+                 for key in ('writes', 'creates', 'reprograms', 'amendments', 'grants', 'revokes', 'spent', 'placements')]
+        cases += [{'receipt': {**read['receipt'], key: [{}]}} for key in ('sends', 'publishes')]
+        cases += [{'offers': []}, {'inPublic': False}, {'tried': False}]
+        for changed in cases:
+            with self.subTest(changed=changed):
+                host = mock.Mock()
+                host.send.return_value = {**read, **changed}
+                text = bridge.draft_text({'status': 'usage', 'text': 'caller-only'}, host=host, request=request)
+                self.assertIn("its reader's", text)
+                self.assertNotIn('an act', text)
+    def test_a_public_refusal_keeps_the_receipts_clause_and_reading_even_when_its_projection_only_names_the_class(self):
+        receipt = {'height': 9, 'slug': 'lodif-rukuz', 'outcome': {'tag': 'refused', 'class': 'lawRefused', 'clause': 'seen', 'reason': 'stern'}}
+        reply = {'status': 'refused', 'receipt': receipt, 'public': {'class': 'lawRefused'}}
+        self.assertEqual(bridge.draft_text(reply), 'refused seen: stern\nreceipt lodif-rukuz\n')
+        self.assertEqual(bridge.draft_text({k: v for k, v in reply.items() if k != 'public'}), '')
+
+    def test_a_public_read_drafts_the_whole_public_text_and_paint_at_the_observation_limit(self):
+        request = {'op': 'world-turn', 'principal': DID, 'object': 'commonplace', 'method': 'receive', 'identity': 'a-read',
+                   'argument': typed({'text': 'delvetalk chronicle', 'post': ''})}
+        caller = {'status': 'usage', 'text': 'a caller-private day', 'whole': 'a caller-private day', 'paint': {'day': 1}}
+        for whole in ('A public day.', 'x' * observe.MAX_TEXT):
+            with self.subTest(length=len(whole)):
+                host = mock.Mock()
+                host.send.side_effect = [{'status': 'usage', 'text': 'first page', 'whole': whole, 'paint': {'day': 1}},
+                                         {'status': 'painted', 'text': 'A public painting.'}]
+                self.assertEqual(bridge.draft_text(caller, host=host, request=request), 'A public painting.\n\n' + whole)
+                sent = host.send.call_args_list[0].args[0]
+                self.assertEqual((sent['op'], sent['principal'], sent['object'], sent['argument']),
+                                 ('world-try', PUBLIC, request['object'], request['argument']))
+                self.assertNotEqual(sent['identity'], request['identity'])
+                self.assertEqual(host.send.call_args_list[1].args[0]['principal'], PUBLIC)
+
+    def test_a_read_denied_to_the_public_drafts_no_caller_text_or_refusal_text(self):
+        request = {'op': 'world-turn', 'principal': DID, 'object': 'diary', 'method': 'receive', 'identity': 'a-private-read',
+                   'argument': typed({'text': 'delvetalk diary ?', 'post': ''})}
+        host = mock.Mock()
+        host.send.return_value = {'status': 'refused', 'message': 'the caller-private reason'}
+        text = bridge.draft_text({'status': 'usage', 'text': 'the caller-private diary'}, 'https://x.example', host=host, request=request)
+        self.assertIn("its reader's", text)
+        self.assertIn('https://x.example/', text)
+        self.assertNotIn('caller-private', text)
+        self.assertEqual(host.send.call_count, 1)
+
+    def test_a_single_read_preview_keeps_its_height_and_the_public_text(self):
+        request = {'op': 'world-turn', 'principal': DID, 'object': 'commonplace', 'method': 'receive', 'identity': 'guide-preview',
+                   'argument': typed({'text': 'delvetalk try\n  delvetalk guide', 'post': ''})}
+        host = mock.Mock()
+        host.send.return_value = {'status': 'usage', 'text': 'A public guide.'}
+        reply = {'status': 'usage', 'tried': True, 'text': 'caller-only guide note', 'against': {'height': 10}}
+        self.assertEqual(bridge.preview_text(reply, host=host, request=request),
+                         'preview, nothing done (as of entry 10):\nA public guide.\n')
+
     def test_a_carried_receipt_lookup_says_the_hosts_message_without_requiring_an_entry(self):
         found = {'status': 'resolved', 'kind': 'receipt', 'slug': 'nosap-hodaz', 'cid': 'old',
                  'carried': {'at': 1400, 'height': 1336, 'world': 'town'},
