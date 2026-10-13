@@ -18,7 +18,7 @@ import ./Spween.obend as Spween
 # record's: its scene (start, passages, cooldown, requires) is its owner's, and everyone else
 # changes it only by these spells.
 #
-# Entering needs the scene's `requires` to hold (its outside clauses judged by the host, Scenes.obend) and, with a cooldown, that the reader left at
+# Entering needs the scene's `requires` and start passage's guard to hold (their outside clauses judged by the host, Scenes.obend) and, with a cooldown, that the reader left at
 # least `cooldown` clock minutes ago (folkway 10); an entering is the room's attention, and tends it
 # (a weather over the room rains while someone has been there that day). A choice offers itself only while its guard
 # holds (the inside over the variables, the outside by the host with the reader as `request.subject`);
@@ -42,6 +42,23 @@ def here(context: Abi.Context, state: State) -> Lists.Maybe<Presence>:
   Rows.presentAs(state.presence, context.principal)
 def isHere(context: Abi.Context, state: State) -> Bool:
   Rows.isPresent(state.presence, context.principal)
+# A call reads the room with the calling turn's staged entry or departure applied.
+def present(state: State, context: Abi.Context) -> Activity<Bool>:
+  isHere(context, state)
+# Principals with avatars index presence in the room's transaction; a principal without an
+# avatar still enters and leaves. A failed index refuses the presence write with it.
+sum Indexed:
+  indexed: {}
+def indexPresence(context: Abi.Context) -> Activity<Indexed>:
+  match world.viewField::<Plans.Reference>({object: {world: context.world, object: context.principal}, field: "at"}):
+    case viewed(_): indexAvatar(context)
+    case denied(_): Indexed.indexed({})
+    case refused(_): Indexed.indexed({})
+def indexAvatar(context: Abi.Context) -> Activity<Indexed>:
+  match world.call::<Bool>({object: {world: context.world, object: context.principal}, method: "locate", argument: Plans.nothing()}):
+    case returned(r): if r.result then Indexed.indexed({}) else refuse("refused location: The avatar did not index presence.")
+    case refused(r): refuse("refused {r.clause}: {r.reading}")
+    case denied(_): refuse("refused location: The avatar did not admit its room.")
 # The reader's own variables here (`my.<name>`, Record's `mine`), and what a guard reads for them: the room's and theirs.
 def ownOf(who: String, state: State) -> Lists.List<Var>:
   Lists.map(Lists.filter(Relations.rows(state.mine), fn(m: Mine) -> Bool: m.who == who), fn(m: Mine) -> Var: {name: m.name, value: m.value})
@@ -57,6 +74,20 @@ def readerDraw(context: Abi.Context, state: State) -> Nat:
     case none(_): turnDraw(context)
 def passageAt(id: String, state: State) -> Lists.Maybe<Passage>:
   Lists.find(state.passages, fn(p: Passage) -> Bool: p.id == id)
+# A passage's guard belongs to the destination, including one stitched after its incoming choices.
+def passageGuard(id: String, state: State) -> Scenes.Guard:
+  if id == Scenes.ending() then Lists.List.nil() else guardAt(passageAt(id, state))
+def guardAt(found: Lists.Maybe<Passage>) -> Scenes.Guard:
+  match found:
+    case none(_): Lists.List.nil()
+    case some(p): p.value.guard
+def entryGuard(state: State) -> Scenes.Guard:
+  Lists.concat(state.requires, passageGuard(state.start, state))
+# A draw's destination is judged after drawing; its card offers the choice's own guard until then.
+def choiceGuard(c: Choice, state: State) -> Scenes.Guard:
+  match c.among:
+    case nil(_): Lists.concat(c.guard, passageGuard(c.to, state))
+    case cons(_): c.guard
 def lastLeft(who: String, state: State) -> Lists.Maybe<Departure>:
   Lists.find(Relations.rows(state.left), fn(l: Departure) -> Bool: l.who == who)
 def cooling(who: String, clock: Nat, state: State) -> Bool:
@@ -82,7 +113,7 @@ def enterVerdict(context: Abi.Context, state: State) -> Verdict:
     case some(_): no("alreadyHere", "Already here.")
     case none(_): if Relations.count(state.presence) >= Super.presenceMax() then no("roomFull", "{natText(Super.presenceMax())} are already here.") else met(context, state)
 def met(context: Abi.Context, state: State) -> Verdict:
-  match Scenes.failing(state.requires, readerVars(context.principal, state)):
+  match Scenes.failing(entryGuard(state), readerVars(context.principal, state)):
     case some(c): no("unmet", "The room requires {Scenes.clauseText(c.value)}.")
     case none(_): if cooling(context.principal, context.clock, state) then no("cooldown", "One who left enters again only after the cooldown: from clock {natText(leftAt(context.principal, state) + state.cooldown)}.") else roomy(context, state)
 # `left` keeps Super.leftMax() departures, and one still cooling must never be dropped for a newer
@@ -115,16 +146,16 @@ def placeOf(choices: Lists.List<Choice>, label: String, n: Nat) -> Nat:
 def offered(me: Presence, found: Lists.Maybe<Choice>, chose: String, choice: String, state: State, draw: Nat) -> Verdict:
   match found:
     case none(_): no("notOffered", "{me.at} does not offer {choice}")
-    case some(c): guarded(me, c.value, chose, Scenes.failing(c.value.guard, readerVars(me.who, state)), state, draw)
-def guarded(me: Presence, c: Choice, chose: String, failed: Lists.Maybe<Scenes.Clause>, state: State, draw: Nat) -> Verdict:
-  match failed:
+    case some(c): guarded(me, drawnTo(c.value, chose, draw), chose, state)
+def guarded(me: Presence, c: Choice, chose: String, state: State) -> Verdict:
+  match Scenes.failing(choiceGuard(c, state), readerVars(me.who, state)):
     case some(f): no("guarded", "{c.label} needs {Scenes.clauseText(f.value)}.")
-    case none(_): arriving(me, drawnTo(c, chose, draw), chose, state)
+    case none(_): arriving(me, c, chose, state)
 # A choice that draws between targets goes to the one this turn's draw lands on for it (Scenes.drawFor its `chose`).
 def drawnTo(c: Choice, chose: String, draw: Nat) -> Choice:
   match c.among:
     case nil(_): c
-    case cons(_): extend(c, {to: Scenes.drawn(c.among, Scenes.drawFor(draw, chose))})
+    case cons(_): extend(c, {to: Scenes.drawn(c.among, Scenes.drawFor(draw, chose)), among: Lists.List.nil()})
 def arriving(me: Presence, c: Choice, chose: String, state: State) -> Verdict:
   if c.to == Scenes.ending() then effected(me, c, chose, effectsOf(c, me.who, state), true) else reached(me, c, chose, state)
 def reached(me: Presence, c: Choice, chose: String, state: State) -> Verdict:
@@ -182,8 +213,8 @@ def failedReading(c: Scenes.Clause, why: String) -> String:
 # is written: a clause that fails refuses it by name.
 def outward(verdict: Verdict, context: Abi.Context, state: State) -> Activity<Verdict>:
   match verdict:
-    case enter(_): outwardBy(verdict, Scenes.outside(state.requires), "unmet", "The room requires ", context)
-    case move(m): outwardBy(verdict, Scenes.outside(m.choice.guard), "guarded", "{m.choice.label} needs ", context)
+    case enter(_): outwardBy(verdict, Scenes.outside(entryGuard(state)), "unmet", "The room requires ", context)
+    case move(m): outwardBy(verdict, Scenes.outside(choiceGuard(m.choice, state)), "guarded", "{m.choice.label} needs ", context)
     case leave(l): if l.chose == "" then verdict else outwardBy(verdict, Scenes.outside(choiceAt(l.me.at, l.chose, state).guard), "guarded", "{choiceAt(l.me.at, l.chose, state).label} needs ", context)
     case no(_): verdict
 def outwardBy(verdict: Verdict, guard: Scenes.Guard, clause: String, lead: String, context: Abi.Context) -> Activity<Verdict>:
@@ -245,6 +276,9 @@ def performed(verdict: Verdict, context: Abi.Context, state: State) -> Activity<
     case leave(l): departing(l.me, l.chose, l.vars, extend(state, {presence: Relations.retract(state.presence, {who: l.me.who}, Rows.presenceKey), vars: l.after, mine: ownAfter(state.mine, l.me.who, l.own), chose: if l.chose == "" then state.chose else l.chose}), context, state)
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at, draw: turnDraw(context)}, tended: set context.clock}
+  match indexPresence(context):
+    case indexed(_): entryTold(at, after, context)
+def entryTold(at: String, after: State, context: Abi.Context) -> Activity<Done>:
   match lastLeft(context.principal, after):
     case some(l): if l.value.entry == 0n then welcomed(at, after, Document.text(""), context) else away(at, after, l.value.entry, context)
     case none(_): welcomed(at, after, Document.text(""), context)
@@ -297,20 +331,20 @@ def seenAt(found: Lists.Maybe<Passage>, state: State, context: Abi.Context) -> A
     case none(_): Seen.seen({state: state})
     case some(ps): seenSifted(ps.value, state, context)
 def seenSifted(ps: Passage, state: State, context: Abi.Context) -> Activity<Seen>:
-  match sifted(ps.choices, context):
-    case sifted(k): Seen.seen({state: extend(state, {passages: Lists.map(state.passages, fn(p: Passage) -> Passage: if p.id == ps.id then extend(p, {choices: k.choices}) else p)})})
+  match sifted(ps.choices, state, context):
+    case sifted(k): Seen.seen({state: extend(state, {passages: Lists.map(state.passages, fn(p: Passage) -> Passage: extend(p, {guard: Lists.filter(p.guard, Scenes.inside), choices: if p.id == ps.id then k.choices else p.choices}))})})
 sum Sifted:
   sifted: {choices: Lists.List<Choice>}
-def sifted(choices: Lists.List<Choice>, context: Abi.Context) -> Activity<Sifted>:
+def sifted(choices: Lists.List<Choice>, state: State, context: Abi.Context) -> Activity<Sifted>:
   match choices:
     case nil(_): Sifted.sifted({choices: Lists.List.nil()})
-    case cons(c): siftedOne(c.head, c.tail, context)
-def siftedOne(c: Choice, rest: Lists.List<Choice>, context: Abi.Context) -> Activity<Sifted>:
-  match judging(Scenes.outside(c.guard), context):
-    case held(_): keptBefore(extend(c, {guard: Lists.filter(c.guard, Scenes.inside)}), rest, context)
-    case failed(_): sifted(rest, context)
-def keptBefore(c: Choice, rest: Lists.List<Choice>, context: Abi.Context) -> Activity<Sifted>:
-  match sifted(rest, context):
+    case cons(c): siftedOne(c.head, c.tail, state, context)
+def siftedOne(c: Choice, rest: Lists.List<Choice>, state: State, context: Abi.Context) -> Activity<Sifted>:
+  match judging(Scenes.outside(choiceGuard(c, state)), context):
+    case held(_): keptBefore(extend(c, {guard: Lists.filter(c.guard, Scenes.inside)}), rest, state, context)
+    case failed(_): sifted(rest, state, context)
+def keptBefore(c: Choice, rest: Lists.List<Choice>, state: State, context: Abi.Context) -> Activity<Sifted>:
+  match sifted(rest, state, context):
     case sifted(r): Sifted.sifted({choices: Lists.List.cons({head: c, tail: r.choices})})
 def wroteVar(edit: Edit, rest: Lists.List<Edit>, result: Done, said: String, after: State, context: Abi.Context) -> Activity<Done>:
   match edit:
@@ -326,6 +360,9 @@ def wroteOwn(row: Mine, rest: Lists.List<Edit>, result: Done, said: String, afte
 # retracted and this one inserted.
 def departing(me: Presence, chose: String, vars: Lists.List<Edit>, after: State, context: Abi.Context, state: State) -> Activity<Done>:
   let written(_) = write {presence: retract {who: me.who}, chose: set if chose == "" then state.chose else chose}
+  match indexPresence(context):
+    case indexed(_): departureRecorded(me, chose, vars, after, context, state)
+def departureRecorded(me: Presence, chose: String, vars: Lists.List<Edit>, after: State, context: Abi.Context, state: State) -> Activity<Done>:
   match lastLeft(me.who, state):
     case some(l): forgotten(l.value, vars, choiceAt(me.at, chose, state).text, after, context)
     case none(_): recorded(vars, choiceAt(me.at, chose, state).text, after, context)
@@ -429,7 +466,7 @@ def laid(context: Abi.Context) -> Activity<Done>:
   let written(_) = write {things: insert {world: context.world, object: context.caller}}
   Done.done({})
 def methods() -> Lists.List<String>:
-  Text.words("take put inspirited")
+  Text.words("take put inspirited ~present")
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Text.words("enter choose leave say emote whisper write chime lines"), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
 # A ```spween block makes a room under this one, by this room's kind (its `makeUnder`, which reads
@@ -512,7 +549,7 @@ def choicesHead(ps: Passage, state: State, context: Abi.Context) -> String:
     case cons(_): "Choices:\n"
     case nil(_): if context.principal == state.owner && Lists.length(state.passages) == 1n then "No choices: a reader stays here. A choice is * [Label] -> passage under the prose; the shape: delvetalk library read / page: spween\n" else "No choice is open here now; leave when you will.\n"
 def passageWith(ps: Passage, state: State, context: Abi.Context, head: String) -> String:
-  let choices = fitting(Lists.map(Lists.take(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(c.guard, readerVars(context.principal, state))), 8n), choiceLine), less(Card.limit(context), textLength(head) + 300n))
+  let choices = fitting(Lists.map(Lists.take(Lists.filter(ps.choices, fn(c: Choice) -> Bool: Scenes.holds(choiceGuard(c, state), readerVars(context.principal, state))), 8n), fn(c: Choice) -> String: choiceLine(extend(c, {guard: choiceGuard(c, state)}))), less(Card.limit(context), textLength(head) + 300n))
   let shown = Lists.concat(Lists.take(state.vars, 4n), Lists.take(Scenes.readerVars(Lists.List.nil(), ownOf(context.principal, state)), 4n))
   "{head}{choices}{fitting(Lists.map(shown, varLine), less(Card.limit(context), textLength(head) + textLength(choices) + 300n))}"
 def less(room: Nat, used: Nat) -> Nat:

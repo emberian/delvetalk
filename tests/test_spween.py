@@ -121,8 +121,12 @@ def among(ws: Lists.List<Scenes.Weighed>) -> String:
     case cons(_): " among {textJoin(Lists.map(ws, weighed), \\", \\")}"
 def choice(c: Scenes.Choice) -> String:
   "  * {c.label} [{clauses(c.guard)}] ({effects(c.effects)}) -> {c.to}{among(c.among)}{said(c.text)}"
+def passageGuard(p: Scenes.Passage) -> String:
+  match p.guard:
+    case nil(_): ""
+    case cons(_): " [{clauses(p.guard)}]"
 def passage(p: Scenes.Passage) -> String:
-  "=== {p.id}: {p.text}\\n{textJoin(Lists.map(p.choices, choice), \\"\\\\n\\")}"
+  "=== {p.id}{passageGuard(p)}: {p.text}\\n{textJoin(Lists.map(p.choices, choice), \\"\\\\n\\")}"
 def rules(text: String) -> String:
   match Spween.parse(text):
     case refused(r): "refused: {r.reason}"
@@ -328,7 +332,8 @@ class Parse(unittest.TestCase):
     def test_a_draw_is_weighed_as_spween_weighs_and_hashed_from_what_the_journal_holds(self):
         # two or more -> under a choice draw one; spween's weight, 10 where none is written
         text, _ = summary("=== a\nA.\n* [Pick up the phone]\n  -> b weight: 3\n  -> c\n  -> END weight: 1\n* [Go] -> b\n=== b { cups >= 1 }\nB.\n=== c\nC.\n")
-        self.assertIn("  * Pick up the phone [cups >= 1] () -> b among b 3, c 10, END 1\n  * Go [cups >= 1] () -> b\n", text)
+        self.assertIn("  * Pick up the phone [] () -> b among b 3, c 10, END 1\n  * Go [] () -> b\n", text)
+        self.assertIn("=== b [cups >= 1]: B.", text)
         self.assertEqual(summary("=== a\n* [Go]\n  -> a weight: 0\n  -> b weight: 0\n=== b\n")[0], "refused: a choice's draw has weights that add to nothing")
         self.assertEqual(summary("=== a\n* [Go]\n  -> a\n  -> nowhere\n")[0], "refused: -> nowhere: no passage of that name; add === nowhere, or point it at one that is")
         self.assertTrue(summary("=== a\n{~ a weight: 0 | b weight: 0 }\n")[0].startswith("refused: {~ a weight: 0 | b weight: 0 }: a draw's weights add to nothing"))
@@ -371,14 +376,14 @@ class Parse(unittest.TestCase):
                          "write === cooler_back, and keep the words as the title or a choice's label")
         self.assertTrue(summary("---\nid: 井戸\n---\n=== a\n")[0].startswith("refused: the frontmatter's id is letters, digits and _"))
 
-    def test_a_passage_s_guard_rides_every_choice_into_it(self):
+    def test_a_passage_keeps_its_guard_apart_from_incoming_choices_and_requires(self):
         # deepseek's `=== twelfth { wound >= 12 }` and grok's `=== radio { cups >= 1 }`, under the station's call
         gated = "---\nid: s\n---\n=== a\nA.\n* [In] { cups >= 1 } -> b\n-> b\n=== b { wound >= 12, keeps.porch/goblet }\nB.\n* [Back] -> a\n"
         text, _ = summary(gated)
-        self.assertIn("  * In [cups >= 1, wound >= 12, keeps holding porch/goblet] () -> b", text)
-        self.assertIn("  * Continue [wound >= 12, keeps holding porch/goblet] () -> b", text)
-        self.assertIn("=== b: B.\n  * Back [] () -> a", text)
-        self.assertTrue(summary("=== a { wound >= 12 }\nA.\n")[0].startswith(" / A. / start a / cooldown 0 / requires wound >= 12\n"), summary("=== a { wound >= 12 }\nA.\n")[0])
+        self.assertIn("  * In [cups >= 1] () -> b", text)
+        self.assertIn("  * Continue [] () -> b", text)
+        self.assertIn("=== b [wound >= 12, keeps holding porch/goblet]: B.\n  * Back [] () -> a", text)
+        self.assertTrue(summary("=== a { wound >= 12 }\nA.\n")[0].startswith(" / A. / start a / cooldown 0 / requires \n=== a [wound >= 12]:"), summary("=== a { wound >= 12 }\nA.\n")[0])
         self.assertEqual(summary("=== a { 1a b }\nA.\n")[0], "refused: === a: not a condition: 1a b; a variable (gold >= 2, !rang, my.cups), keeps.<thing> or holds.<thing>, or a law's condition (\"bell/1\".tended >= 5)")
 
     def test_prose_under_a_choice_is_what_taking_it_says(self):
