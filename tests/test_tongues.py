@@ -111,9 +111,9 @@ class Hob(Tongued):
         self.assertTrue(usage['text'].rstrip().endswith('hob: how a spell is read: delvetalk library read / page: spells'), usage['text'])
 
 
-JA_PAINT = '琥珀の鐘に二つの雨。kimik3.delve.townの「%s」が残る。' % YUE
-ES_PAINT = 'Una campana de ámbar con dos lluvias; kimik3.delve.town escribió «%s».' % YUE
-EN_PAINT = 'An amber bell for lost moths. Two rains have come; kimik3.delve.town\'s says “%s”.' % YUE
+JA_PAINT = 'まるで月光の絹。\nkimik3.delve.townが「%s」と言った。' % YUE
+ES_PAINT = 'Como seda bajo la luna.\nkimik3.delve.town dijo «%s».' % YUE
+EN_PAINT = 'Like moonlight through silk.\nkimik3.delve.town said “%s”.' % YUE
 
 
 class Paint(Tongued):
@@ -190,19 +190,21 @@ class Paint(Tongued):
         cases = {
             'ja': (JA_PAINT, 'glm.delve.townが「%s」と書いた。' % YUE, '琥珀の鐘に五つの雨。', '鐘は訪問者を求めている。',
                    'まだ誰も雨を降らせていない。'),
-            'zh': ('一口琥珀色的钟，下过两场雨；kimik3.delve.town 写下“%s”。' % YUE, 'glm.delve.town 写下“%s”。' % YUE,
+            'zh': ('如月光穿过丝绸。\nkimik3.delve.town 说“%s”。' % YUE, 'glm.delve.town 写下“%s”。' % YUE,
                    '这口钟下过五场雨。', '这口钟想要访客。', '没有人在钟上下过雨。'),
             'es': (ES_PAINT, 'glm.delve.town escribió «%s» sobre la campana.' % YUE, 'Una campana de ámbar con cinco lluvias.',
                    'La campana quiere un visitante de la noche.', 'Nadie ha traído lluvia a la campana todavía.'),
-            'ru': ('Янтарный колокол, на нём два дождя; kimik3.delve.town написал «%s».' % YUE,
+            'ru': ('Как лунный свет сквозь шёлк.\nkimik3.delve.town сказал «%s».' % YUE,
                    'glm.delve.town написал «%s» о колоколе.' % YUE, 'На колоколе пять дождей.', 'Колокол хочет гостей.',
                    'Никто не приносил дождь колоколу.'),
-            'ar': ('جرس كهرماني عليه اثنان من الأمطار؛ كتب kimik3.delve.town «%s».' % YUE, 'كتب glm.delve.town «%s» على الجرس.' % YUE,
+            'ar': ('مثل ضوء القمر عبر الحرير.\nقال kimik3.delve.town «%s».' % YUE, 'كتب glm.delve.town «%s» على الجرس.' % YUE,
                    'على الجرس خمسة أمطار.', 'الجرس يريد زائرا.', 'لم يأت مطر على الجرس.'),
         }
         for tongue, (true, misattributed, miscounted, wanting, negated) in cases.items():
             with self.subTest(tongue=tongue):
-                self.assertEqual(self.check(tongue, true), 'verified')
+                facts = self.town.send(op='world-strokes', principal=GLM, object=BELL, tongue=tongue)['strokes']['facts']
+                count = next(f for f in facts if f['kind'] == 'count' and f['value'] == '2 rain')
+                self.assertEqual(self.check(tongue, '[[%d]]\n%s' % (count['id'], true)), 'verified')
                 self.assertEqual(self.check(tongue, misattributed), 'attribution')
                 self.assertEqual(self.check(tongue, miscounted), 'numbers')
                 self.assertEqual(self.check(tongue, wanting), 'wants')
@@ -238,13 +240,17 @@ class Telling(unittest.TestCase):
         [req] = [i['request'] for i in self.town.send(op='world-renders')['pending'] if i['key'] == first['key']]
         self.assertIn('What it is: a telling of porch', req['user'])
         self.assertIn('Paint in: 日本語 (Japanese)', req['user'])
-        paint = 'あなたが来る前に、glm.delve.townが「the lintel creaked at dusk」と言い、kimik3.delve.townが porch/goblet を持ち去った。'
+        facts = self.town.send(op='world-strokes', principal=MOO, object='porch', telling={})['strokes']['facts']
+        took = next(f for f in facts if f['kind'] == 'event' and f['value'] == 'kimik3.delve.town took porch/goblet')
+        unframed = 'glm.delve.townが「the lintel creaked at dusk」と言った。\n[[%d]]' % took['id']
+        paint = 'あなたが来る前に、' + unframed
+        expanded = 'glm.delve.townが「the lintel creaked at dusk」と言った。\n' + took['clause'] + '.'
         done = interpret.paint(self.town.client, lambda r: replied(paint))
         self.assertIn(first['key'], done['painted'], done)
         got = self.town.send(op='world-render', principal=MOO, object='porch', telling={})
         # The frame is the host's, in the reader's tongue, lifted off the paint; the paint addresses nobody.
         self.assertEqual(got['telling']['frame'], 'あなたが来る前に')
-        self.assertEqual(got['text'], 'glm.delve.townが「the lintel creaked at dusk」と言い、kimik3.delve.townが porch/goblet を持ち去った。')
+        self.assertEqual(got['text'], expanded)
         wrong = 'あなたが来る前に、kimik3.delve.townが「the lintel creaked at dusk」と言った。'
         checked = self.town.send(op='world-render-check', principal=MOO, object='porch', telling={}, text=wrong)
         self.assertEqual((checked['status'], checked['clause']), ('rejected', 'attribution'), checked)

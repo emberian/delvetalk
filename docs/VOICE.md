@@ -116,13 +116,13 @@ a rule.
 
 ## The paint
 
-OVERHAUL §4, as built (`spec/Delvetalk/Host/Enchant.lean`, `world/lib/Paint.obend`; HOST-HANDOFF 5.161). A card a
-resident reads may stand under a paint: two or three sentences of the place as it stands, written by the world's model
-from the thing's **strokes** and checked by the host before anyone reads it. The paint is the thing's voice, not a
+OVERHAUL §4, as built (`spec/Delvetalk/Host/Enchant.lean`, `world/lib/Paint.obend`; HOST-HANDOFF 5.225). A card a
+resident reads may stand under a paint: host-rendered fact clauses selected and ordered by the model, with guarded
+simile fragments and quoted words from the thing's **strokes**, checked before anyone reads it. The paint is the thing's voice, not a
 fourth: third person, present tense, concrete, one image, in the register its kind's `voice` gives (a thing of no kind
 speaks in the register of the place it lies in: the porch's goblet in the porch's), under 400 characters. It has no
-`hob:` head. The exact card stands beneath it, always, and is the only text the law, rules, wants, hob's reading and
-the check read: no model reads a model's prose.
+`hob:` head. The exact card stands visible beneath it, with current status and actions. Law, rules, wants and hob read the
+world and the exact card; the paint check reads strokes. No model reads a model's prose as evidence.
 
 **Strokes** (`Enchant.assemble`; what the painter reads is `Strokes.text`): what it is and its kind, its head, its
 voice, its maker's words (the form values: a bell's colour and seed), a coinage's credit (made after another
@@ -161,13 +161,32 @@ how most residents come in, at the head of the `enter` reply's post (`bridge.wit
 draft, and so Zulip's, for one spell or the first of several that entered; the hand's Speak): the frame above the
 paint, or unpainted before arrival the frame above the exact lines (its making, the newest eight, how many earlier;
 each at most 120 characters, the whole at most 700, half a post, so a draft past the clip threads with the telling
-whole in its first part and the reply beginning there), then a blank line and the reply's exact text; unpainted while
-away, the reply's own lead alone. The draft notes `told: <characters>`. Never in a receipt or a refusal, nor above a
+whole in its first part and the reply beginning there), then one blank line and the reply's exact text. With
+paint, the complete current reply and admission lines are followed by "What it draws on" and all the host's
+`telling.exact` lines, including events the model did not select; long histories use the existing post threading.
+Unpainted while away, the reply's own lead stands alone. The draft notes `told: <characters>` for the prefix.
+Never in a receipt or a refusal, nor above a
 reply drafted as its receipt line alone (one that read what the public may not).
 
-**The prompt** is `Paint.contract()`, the one prompt file. **The check** is `Enchant.verify`, the table
-`Enchant.clauses` in order, the first failed refusing; the paint's tongue (`Tongue.tongues`, below) holds every word a
-clause reads in it, English's the ones named here:
+**The prompt** is `Paint.contract()`, the one prompt file. The host offers numbered facts selected from the
+same strokes it hashes: roles and location, tending, counts, marks, present hands, holding wants and host-derived
+events. Each has `{id, kind, subject, value, clause}`. A factual line is `[[id,...]]` alone: the host substitutes
+its clauses with semicolons, preserving the model's selection and order. There is no model wording of a fact.
+`rung` offers "it has rung" only when that mark is present. Counts measure the retained rows or stated day;
+a rule threshold is not an accomplished event. A holding want names a condition, not the truth of its reading.
+
+Heads, `about`, seeds and heard lines are historical words: quote them as said/written, never assert them as
+current state. A quotation line has only its attribution frame, such as `yue.delve.town said “…”` or
+`As said: “…”`; a resident's line remains whole and credited. Between fact lines the model may add an explicitly
+nonfactual simile fragment (`Like moonlight through silk.`), with the guard below. Host clauses stay in the host's
+catalogue language; imagery and quoted-word frames use the requested tongue. These restrictions replace the claim
+that token checks prove all prose factual: the host guarantees the selected clauses, while the imagery guard
+checks listed syntax and vocabulary and cannot prove that every metaphor is free of a state implication.
+
+**The check** is `Enchant.verify`. Closed reference syntax and local fact ids are checked first; the table
+`Enchant.clauses` then guards the model-authored lines in order, the first failure refusing. A references-only
+paint has no model prose whose language needs checking, but still requires a supported tongue. English's checks
+are named here; each supported tongue's existing table supplies its token checks:
 
 | clause | what it holds |
 | --- | --- |
@@ -176,22 +195,24 @@ clause reads in it, English's the ones named here:
 | `numbers` | a number, in digits or in words (two, twice, seventh, 7th, forty-one), stands beside the unit the strokes count it in, and as they count it: "two rains" over `rains: 2`, "the 7th rain" over the rule's 7th; a stroke's own text pairs a number with the word beside it ("1440 minutes"); an ordinal beside no unit, and one, first and once, are free. "made 41 times", "entry 172", "version 4", "seven rains" over two, "two rains of seven" are refused. In any numerals (full-width `４`, han `四` `二十一`, Arabic-Indic `٤`, a tongue's number words): Japanese and Chinese are read as characters, the tongue's unit word within six characters after (四つの雨) or before (雨が四回), `第` before or `目` after making it the nth |
 | `handles` | every handle is a stroke's |
 | `spells` | a `delvetalk` line equals a stroke's spell byte for byte, on its own line |
-| `quotes` | a quotation is a substring of a stroke's text (its closing stop dropped, its first letter raised or not) |
+| `quotes` | a resident's line is quoted whole; another stroke text may be a substring (closing stop dropped, first letter raised or not); every quote is closed |
 | `attribution` | a quotation is credited, if at all, to the one whose words it is (`Strokes.authored`: a line its writer's, the made-with words and head its coiner's or maker's, a reading its placer's or grower's): the person named nearest before it back to the previous quotation, else after it, by handle, the handle's first label, or "maker"/"coiner". The bell/2 paint that gave light-traces' seed to its maker is refused |
 | `heads` | no line begins `●`, `§`, `refused`, `law `, `rule `, `want `, `hob:` |
 | `forbidden` | none of I, I'm, I've, I'll, I'd, me, my, myself, thanks, thank, sorry, welcome, please (a quotation may hold any) |
 | `secondPerson` | no you, your, yours, you're, you've, you'll, you'd, yourself, yourselves, y'all |
 | `negation` | no "no", "not", "never" or "…n't" in the same phrase (cut at commas, colons, dashes, and, but, while, yet) and within three words of a field's name (`keeper`, `maker`, `owner`, `rung`, `tended`, `lines`, `doors`, `wants`, `came`, a verb) the strokes hold filled: 69275's "Ember's keeping of it isn't something this card records" over a card with a keeper. A want's own name is a lack, so "no clapper yet" over a held `clapper` is true; a field after an ordinal ("its seventh rain has not come") is that one. In another tongue its own negators and its words for each field (まだ誰も雨を降らせていない, "Nadie ha traído lluvia", "Никто не приносил дождь", "لم يأت مطر", 没有人…下过雨 over a bell rained on are refused); Japanese and Chinese within ten characters |
 | `wants` | a want claimed ("wants", "still wants", "needs", "lacks", "asks for", unnegated) only when the strokes hold one (a want now, or one a day's events name), and only of what one is for: a word after it beside a held want's name, reading or thing (filler like "a hand", "someone" aside). The live porch telling "the porch still wants a hand to keep what lies unclaimed", over a porch wanting nothing, is refused; so is the nook's "still wants someone to listen from it" over its `door` want |
-| `length` | 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival |
+| `imagery` | quoted words have only a said/wrote attribution frame; unquoted prose starts with an explicit simile marker (`Like`, `As if`, `Como`, `Как`, `مثل`, `まるで`, `如`). No listed copula, auxiliary, perfect/state verb or subject pronoun; no named field, mark, verb, counted unit, want words, identifier, handle, or meaningful head/about/seed/heard-line word. This is a syntactic guard, not a semantic proof about arbitrary imagery |
+| `length` | both source and expanded text: 1 to 400 characters, a day 600, a telling 300 while away and 500 before arrival |
 
 A paint refused for its length alone is asked for once more, told its length; any other refused paint, or a second
 long one, shows the card exact until its next version and is not asked again for that one; `world-status.renders`
 counts `cached`, `rejected`, `pending` and `retried`. `world-render-check` judges any text against a thing's (or a day's) strokes
-without caching it.
+without caching it and returns the host-expanded text when verified. The cache stores the verified source, expands
+it on read and reverifies it on disk load; fact clauses participate in the strokes hash. Nothing is journaled.
 
 **Where.** Painted, above the exact card and never inside it: `/play/<id>` after a reply or a look, the public
-`/o/<id>` (the exact card folded beneath under "the card", open when nothing is painted), a post's reply and the
+`/o/<id>` (the exact card open beneath under "the card", with current status and actions visible independently), a post's reply and the
 hand's Speak (`bridge.with_paint`: the card a reply offers, as the public reads it, when the two fit one post); the
 morning card and the chronicle's day by `world-render {day?, morning?}`; `hand morning` (CLI, and Speak's "The
 morning card") paints it, shows it and drafts it once a day for Post, what wants a hand exact beneath and the
@@ -217,8 +238,8 @@ every language and answers each resident in theirs (`spec/Delvetalk/Host/Tongue.
   Cyrillic Russian, Arabic Arabic, Latin Spanish by ñ ¿ ¡, accents and its small words, else English), else English.
   A post's paint and telling take the author's (`bridge.with_paint`/`with_telling` pass `speaker` and `words`); a
   page takes the signed-in reader's; `world-render` takes `tongue` outright.
-- **The paint and the telling** are painted in it: the strokes are the same facts, each count given the tongue's unit
-  word (`rains: 2 [in Japanese: 雨]`), keyed with the tongue, so a paint is cached per (thing, version, tongue). The
+- **The paint and the telling** use it for imagery and quoted-word frames; factual references expand to the host's
+  catalogue clauses. The strokes are the same facts, each count given the tongue's unit word (`rains: 2 [in Japanese: 雨]`), keyed with the tongue, so a paint is cached per (thing, version, tongue). The
   exact card is never translated, nor a resident's line, an id, a handle or a spell. The telling's frame is the
   host's in the tongue (`あなたが来る前に`, `Antes de que llegaras`).
 - **The check in every script** (`Tongue.Tongue`: each tongue's forbidden and second-person words, negators, want

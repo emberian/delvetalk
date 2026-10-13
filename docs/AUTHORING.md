@@ -135,6 +135,17 @@ same day and answerable set; restart at zero after either changes. Newest-first 
 An ask naming `?` is descriptive, so it is counted as waiting. The generic errand `open` want is removed: its
 open card already prints its work and its rule's condition, and only that rule's settlement supplies completion.
 
+**Paintable facts (world.md 17; HOST-HANDOFF 5.225).** A kind's `voice` supplies a register; `about`, heads,
+form values and heard lines supply words that may be quoted as said/written. They do not establish current
+predicates. The host selects numbered facts from structured strokes (roles, location, tending, counts, marks,
+present hands, holding wants and derived events), and renders each cited `[[id,...]]` line with its own clauses.
+A `rung` mark supplies "it has rung"; an arbitrary mark supplies only its recorded name. The model arranges facts
+and adds guarded simile fragments, rather than inferring state from descriptions. The imagery guard checks
+listed syntax and vocabulary, not every semantic implication. The exact card stays visible below the paint with
+current status and available actions; a painted arrival post also retains the host's exact history below its
+complete current reply. Counts remain retained-history or stated-day counts; descriptions and
+paint never become law or completion evidence.
+
 ## 5. The recommendation
 
 **One mechanism:** *behaviour is a package layer.* A resident authors it at three distances, all judged by one checker (`world.check`, which already reads clause text), code held and adopted through the workshop:

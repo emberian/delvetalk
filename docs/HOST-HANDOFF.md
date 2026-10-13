@@ -1,6 +1,6 @@
 # Host handoff
 
-State on 2026-10-12 (lane/cx-world: 5.219–5.222, replay edition 14; lane/authority: 5.209–5.214, replay edition 13; lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no state version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
+State on 2026-10-12 (lane/cx-world: 5.219–5.225, replay edition 14; lane/authority: 5.209–5.214, replay edition 13; lane/plan: 5.203, a plan is one turn, no edition change; host32: 5.200 to 5.202, no edition change; host31: 5.182 on, replay edition 12; host30: 5.179 to 5.181, replay edition 11; lane/host29: the second codex review's host findings, 5.175, merged with lane/kernel18's state as cells, replay edition 10 and snapshot `v5`; lane/host28: calls and sends across worlds, 5.173, the scratch REPL, 5.174; lane/host23 continued by host27: what wants a hand, what a thing stands at, a post read once, frames read their turn's writes, mentions filled, a question answered by its card, root's field set (5.164 to 5.172); host26: words a card heard are hob's (5.163); host25: the carry's moves whole (re-arm, package law and lines, the refresh call), reach as a host op (5.162); host24: carry moves with migrations and bodies, placings move no state version; lane/enchant 5.161, enchantment, no replay edition change; lane/host22 5.160, rules fire and wants pose, replay edition 9, snapshot v4; lane/host21 5.159, the carry and the no-wipe gate, replay edition 8; lane/kernel16 5.157, a card's own refusal, replay edition 8; lane/host19 from 5.153 to 5.156, replay edition 7; lane/host18 from 5.142 to 5.152, the serve status and bounds in 5.125 and section 2; lane/host17 from 5.137 to 5.141; lane/host16 5.136; lane/host14, continued by host15 through 5.128 to 5.135, on top of host14's 5.126 and 5.127, host13's 5.118 to 5.125 and host12's 5.87 to 5.117; the codex review's findings and their commits are `docs/review/codex-2026-10-10/ROUTING.md`). The queue is section 7, in order.
 
 ## Summary
 
@@ -2781,6 +2781,81 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    guards and runtime/replay/snapshot tests remain with the supervisor; this lane has no toolchain.
    Adjacent: retained counts can plateau at RECORD's 128-line cap, so a changed rain count is a value
    transition, not evidence of every future rain event (LAW §8).
+
+225. **The paint's propositions are host clauses (lane/cx-world; astra 2026-10-12 world.md 17; no journal
+   derivation or replay edition change).** `Enchant.Strokes.facts` selects numbered `Fact {id, kind, subject,
+   value, clause}` rows from the strokes already assembled and hashed: maker/owner/keeper/location, last
+   tending, nonordinal counts with their meaning, recorded marks, present hands, hands in the day/span,
+   holding wants and host-derived events. A `rung` mark alone offers "it has rung"; other marks offer only
+   their recorded names. Counts measure retained rows or the stated day, never lifetime history or a rule's
+   future result. A want offers its holding name, not its reading as a current predicate. Heads, `about`,
+   seeds and heard lines remain authored words, not selected facts.
+   `Strokes.json` and `Strokes.text` offer these rows, including canonical clauses, so the existing cache
+   key commits to their content. `Enchant.part` parses a factual line consisting solely of `[[id,...]]`,
+   requires each positive decimal id in this paint's facts, and substitutes host clauses with semicolons
+   and a closing stop. The model chooses selection and order, never factual wording, predicates or inference.
+   `verify` returns the expanded text; `world-render-check` returns it as `text` when verified. The existing
+   `Fate.painted` and disk cache keep the verified source, expand it in `fateAnswer` and reverify on disk load.
+   No new render or fallback path, journal field, snapshot field or stored semantic fact is added.
+   Existing token checks remain on model-authored lines, with reference ids removed from prose. The new
+   `imagery` clause permits quotation lines only with a said/wrote attribution frame, preserving whole-line
+   and author checks, or unquoted fragments starting with an explicit simile marker. It blocks listed
+   copulas, auxiliaries, perfect/state verbs and subject pronouns, and stroke field/mark/verb/unit/want names,
+   identifiers, handles and meaningful head/about/seed/heard-line words. This is a syntax/vocabulary guard;
+   it does not establish that every possible metaphor or predicate in every tongue is harmless. The factual
+   guarantee is the host-selected clauses. Source and expanded text both satisfy the existing length bound;
+   only length retries once, all other failures use the existing exact fallback. Host clauses remain in the
+   host catalogue language; imagery and quotation frames use the requested tongue, with existing language
+   checks. A reference-only paint still requires a supported tongue.
+   `world/lib/Paint.obend` is the one updated contract. The one catalogue string in
+   `transport/static/pages.html` keeps the scene's exact card open beneath every paint, so status and actions
+   stay visible independently on `/play` and `/o`; the additional transport exception below is rendering
+   only, and no lexicon logic is changed.
+   Tests written first: `test_enchant.Facts` rejects an unmarked "The bell has rung", offers and canonically
+   renders a real rung mark, refuses nonexistent/zero/negative/malformed/inline ids, refuses a historical
+   "without a clapper" as present prose before and after a hang gesture but accepts it as credited said
+   words, preserves fact order with imagery, covers exactly 400 characters and short references whose
+   expansion exceeds the limit, and reads a cached structured paint after reopening without changing the
+   exact card or journal height. `test_previews` requires the painted bell's current silent status and rain
+   action in the open exact card. Before implementation the raw ringing claim is accepted, numbered facts
+   and canonical check text are absent, the seed is accepted as a present description, and the card folds.
+   Existing fixtures are recut by the contract: lamp/about and coinage/name use said-word frames; bell/day
+   counts, placed wants, anthology keeper and morning wants use fact ids; the bell's uncited seventh-rain
+   sentence now refuses `imagery` because a threshold does not establish a future result. Existing Lean
+   guards for formerly admitted uncited propositions now expect `imagery`; accepted structured count,
+   mark, keeper, event and want guards replace their valid factual forms. Token-rejection expectations
+   remain unchanged. HTTP/posting/hand fixtures use simile fragments, with the HTTP card-open expectation
+   changed; telling fixtures cite taking, visitors and hands with the same exact quotations and cache/frame
+   assertions; tongue fixtures retain each wrong-count/attribution/want/negation rejection and pair the
+   accepted quote/simile with a true count reference. `test_town_principal` cites the town's keeper fact,
+   retaining the private owner's handle rejection. No test is removed or loosened.
+   OVERHAUL §4, VOICE, FOUNDATION and AUTHORING state this contract; FOUNDATION §12 removes finding 17
+   from its open row. Paints remain derived reads/cached artifacts; edition 14 stays pending and unchanged.
+   The supervisor's Lean build is green; `test_previews`, `test_genesis`, `test_chronicle` and
+   `test_hypermedia` pass. Three reported reds were fixtures: morning want facts now match the complete
+   reader-eligible `(object, name)` rows rather than assuming anthology; the historical seed's source post
+   now belongs to GLM, so the said-word quote credits its actual author rather than the synthetic `x`;
+   posting cites a real telling event and checks the canonical paint above the complete exact offered reply
+   and admission line. The hand's length-only fallback fixture now starts with a simile and requires the
+   length clause, preserving its retry case under the imagery guard. The other touched telling, tongue,
+   hand, HTTP, town-principal and preview assertions were reviewed against expansion, attribution, frames,
+   clause order, caches and the open exact card. The supervisor subsequently reports `test_enchant` and
+   every other touched module green except the posting telling lead: its pre-arrival reference id selected
+   a different event in the model's later facts. The posting model now selects its event from the actual
+   request and asserts that one canonical clause, imagery, one blank line and the complete exact offered
+   reply. New assertions require the host's full `telling.exact` below that reply, including uncited events;
+   `transport/bridge.py::with_telling` appends those host lines as "What it draws on" after the complete
+   current reply, with no new world predicate, clipping or fallback. Before/away
+   maximum-paint cases cover intact long histories through the existing threading and literal historical
+   `[[999]]` text without interpreting it; receipt contents and the prefix's `told` count stay unchanged.
+   Ember explicitly authorized this rendering-only exception on 2026-10-12, confined to `with_telling`
+   and nothing else in `transport/bridge.py`; no other transport file was touched for this correction.
+   Python syntax and diff checks pass; new runtime assertions and real-model validation remain with the
+   supervisor. Least certain: the rejection rate/cost of the stricter prompt. Adjacent: retained marks
+   and counts still have the lifecycle issue in world.md 9; this paint exposes recorded facts and does not
+   turn them into durable semantic evidence. The lexical imagery guard cannot prove semantic harmlessness.
+   Transport's `pages.place` docstring and scene catalogue comment still describe folding the card; their
+   cleanup belongs to the transport lane under this lane's single catalogue-string exception.
 
 ## 6. Gotchas
 

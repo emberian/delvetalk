@@ -164,11 +164,16 @@ def with_telling(host, principal, reply, obj, text, sleep=None, words=None):
     draft is the reply itself, not its receipt line alone (`inPublic`), for `principal` who entered (`world-render
     {telling}`, waiting the host's patience for the paint), as `telling_lead` sets it; else `text`. -> (the text, the
     telling's characters at its head, 0 for none), which a draft notes as `told` for whoever posts or threads it. A
-    receipt never carries it. Told in the tongue the host chooses for `principal` and their `words`."""
+    receipt never carries it. A painted telling's exact history follows the complete reply as "What it draws on".
+    Told in the tongue the host chooses for `principal` and their `words`."""
     obj = reply.get('object') or obj
     if reply.get('status') != 'admitted' or (reply.get('result') or {}).get('label') != 'entered' or not reply.get('inPublic') or not obj or not text:
         return text, 0
-    lead = telling_lead(painted(host, principal, obj, sleep or time.sleep, telling={}, words=words))
+    told = painted(host, principal, obj, sleep or time.sleep, telling={}, words=words)
+    lead = telling_lead(told)
+    exact = (told.get('telling') or {}).get('exact') or []
+    if (told.get('text') or '').strip() and exact:
+        text += ('\n' if text.endswith('\n') else '\n\n') + 'What it draws on:\n' + '\n'.join(exact) + '\n'
     return lead + text, len(lead)
 
 

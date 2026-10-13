@@ -265,12 +265,17 @@ and writes 64, call depth 8, sends 32 a turn, rules and wants 32 an object, verb
 down a chain, relation rows 4,096 by default, chain ledger `{depth 100, work 10,000,000, storage 1 MiB}`, suspended
 turns 4,096). One name per bound.
 
-**The paint** (`Host/Enchant.lean`, HOST-HANDOFF 5.161, OVERHAUL §4). The host assembles a thing's strokes at a
-version (head, fields, kind and its `voice`, maker, keeper, counts, the eight newest lines, marks, verbs, laws, rules,
-wants, doors, who is present), the model worker renders them under `Paint.contract()`, and `Enchant.verify` admits
-the prose only when every id, number, handle, spell and quotation is a stroke's and no clause it forbids is broken;
-an admitted paint is cached per (strokes, library pin, model), never journaled, so replay needs no model. The exact
-card stands beneath it on every surface; a refusal, a receipt and a law line are never painted.
+**The paint** (`Host/Enchant.lean`, HOST-HANDOFF 5.225, OVERHAUL §4). The host assembles strokes at a version
+and selects numbered structured facts from their roles, location, tending, counts, marks, present hands, holding
+wants and host-derived events. The model selects and orders `[[id,...]]` lines; the host substitutes its canonical
+clauses. Historical heads, `about`, seeds and heard lines appear only quoted as said/written, never as current
+truth. Other model prose is explicit simile fragments checked by the existing token rules and a syntax/vocabulary
+imagery guard. That guard does not prove arbitrary metaphor free of factual implications; the factual guarantee
+belongs to the host clauses. Source and expanded text share the existing length bounds. Verified source is cached
+per (strokes including facts, library pin, model), reverified on disk load and expanded on read, never journaled;
+replay needs no model and its derivation is unchanged. The exact card, current status and available actions stand
+visible beneath the paint; a painted arrival post retains all the host's exact history after the complete
+current reply, independently of the model's selected events. A refusal, a receipt and a law line are never painted.
 
 ## 3. Plans: the world protocol
 
@@ -659,7 +664,7 @@ Each adopted because it is general and deletes bespoke machinery.
 | the furniture is fiction, and fiction is kinds | METAPHYSICS §7 | a garden, a room, the weather, a bell are kinds anyone instantiates; each made thing's law, rules and wants are `under` its kind's |
 | free play, owned creations | | a refused `propose` is held for the target's owner to `adopt` |
 | the spell is the free, exact form; everything else reaches hob | `docs/FLEX.md` | a well-formed spell costs no model and waits for nothing; words a card leaves silent go to hob, whose answer is held to the same grammar and fitted by the same `Spell.fit` |
-| paint from strokes | OVERHAUL §4 | the card a resident reads is prose the model renders from the thing's exact strokes, verified token by token, the exact card beneath |
+| paint from strokes | OVERHAUL §4 | the host selects and renders factual clauses from structured strokes; the model orders references and adds guarded simile fragments or quoted words; the exact card remains visible beneath |
 | making is the first move | `docs/GROUND.md` | `make` creates from a resident's own source under the maker's authority, its lineage journaled (`madeFrom`) |
 
 **The invariants.** What every lane keeps and a reviewer should try to break:
@@ -700,8 +705,7 @@ answer. A card says, in the third person and the present, what the thing is
 now, what it takes, and the law line that says who may change it; it ends on
 the spell to type, whole, blanks in angle brackets, and a `»` line says what
 comes back. Three voices, and a reader can tell which: the thing (its
-`render`, and above it the paint, the thing in its kind's voice, nothing in it
-the strokes do not hold), the host (the receipt line, `refused <clause>:
+`render`, and above it the paint: selected host facts, guarded simile imagery and quoted words in the kind's voice), the host (the receipt line, `refused <clause>:
 <reading>`, the `?` usage, the revealed lines: never a character, the clause
 never translated), and hob, the creature at the membrane, who reads words that
 are not a spell and answers with a spell, a grown verb, a question or nothing,
@@ -963,7 +967,7 @@ inspirit and the porch's things; tending; several spells in a post; a card's own
 verbs and the chronicle with Wake's host support deleted (5.161), reach as a host op (5.162), words a card heard as
 hob's (5.163), Wake, Env, Event, Mentions and subscriptions deleted from `world/`, errands and fronts, the minimal
 genesis with its coinages and wants, the web front (docs/WEB.md); answerable wants with daily rotation and derived blocked/cancelled states (world.md 16, 5.223); the astra world review's medium 14: explicit
-kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221); finding 15's behaviour revisions in offered-card roots and action receipts (5.222); finding 7's transition terms alongside level conditions (5.224).
+kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221); finding 15's behaviour revisions in offered-card roots and action receipts (5.222); finding 7's transition terms alongside level conditions (5.224); finding 17's structured paint facts and visible exact card (5.225).
 
 Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDOFF §16, OBJECTS-HANDOFF "Open");
 each handoff keeps the detail, this table the order across lanes:
@@ -993,7 +997,7 @@ each handoff keeps the detail, this table the order across lanes:
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
 | 5.223's remaining deployment text: the hand's morning title, clapper's next ask after grow, station register's sign evidence | transport, root | title says turning daily; after grow the clapper asks hang; an unrelated register gesture never answers its sign want |
-| the astra world review's 11 (archival and reclamation of objects, grants and journal), 17 (the paint's facts rendered from host-selected structured facts) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
+| the astra world review's 11 (archival and reclamation of objects, grants and journal) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
 
 After the fourth playtest, in the order the town will feel them: fronts and `relay` as seeded or cut back to the
 season (OVERHAUL §6's week row); a `Conversation` object per thread; Workshop `try {target, package, examples}` on
