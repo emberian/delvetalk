@@ -205,7 +205,7 @@ def firsts (w : World) (reader : String) : List First := Id.run do
     let (h, _) ← madeEntry w id
     return ({ what := "room", object := id, who := shownName w (makerOf w id o), height := h } : First)
   -- A verb a carry's refresh grew (the station's `sign`, placed by the v13 carry) is no first either.
-  let verbs := seen.flatMap fun (id, o) => (o.verbs.filter fun v => !refreshEntry w ((w.entries.get? (v.height - 1)).getD Json.null)).map fun v =>
+  let verbs := seen.flatMap fun (id, o) => (o.verbs.filter fun v => !refreshAt w v.height).map fun v =>
     ({ what := "verb", object := id, who := shownName w v.grower, name := v.name, height := v.height } : First)
   let coinages := seen.filterMap fun (id, o) => do
     let coiner := coinerOf w o
