@@ -44,15 +44,17 @@ import ./Scenes.obend as Scenes
 # on its own or one answering its own (gemini's "no self-witnessing"), then `seal`. The pen passes only at the
 # tide's turn, by the town's rule there (`rotate`): after a seal, or when the round has run `deadline()`
 # clock minutes (gemini's 48 hours) without one; a round that closes with nothing written is recorded
-# unwitnessed, and its witness leaves the ring until they write again. The next witness is drawn by the
-# host's seeded draw (Scenes.turnDraw: the height the tide's turn reads, the town, the host's rule intent),
-# from the ring less the one who held it last: nobody twice running, nobody choosing the moment. The ring is
+# unwitnessed, and its witness leaves the ring until they write again. The next witness is drawn from the
+# ring less the one who held it last (nobody twice running), in DID order, by the round's draw: the host's
+# seeded draw of the turn that made the register (Scenes.turnDraw: its height, the town, its intent), sown in
+# `vars` as `seed`, hashed with the round's number (`drawOf`). Drawn from the tide's own turn instead, a
+# covenant timed junk entries before it and held the pen four rounds running (the report's first play). The ring is
 # the `ringMax()` hands whose latest row anchored in their own words is newest; a stranger's first such row
 # puts them in it. The pen row names the ring, the draw and the place it landed, so anyone can replay it.
 #
 # `vars` holds the derived lists `checked` and `unchecked` (entries with a checked row; with testimony or a
-# lead and none, which kind/register's want reads), and the round: `round`, `opened` (its clock), `last` (who
-# held the pen last).
+# lead and none, which kind/register's want reads), the round (`round`, `opened` its clock, `last` who held
+# the pen last), and `seed` with `sown`, where it came from.
 type State = Super.State
 type Line = Rows.Line
 sum Evidence:
@@ -121,9 +123,6 @@ form door:
   to: text 1..128
 form undoor:
   label: text 1..32
-record Placed:
-  row: Row
-  depth: Nat
 record Row:
   n: Nat
   author: String
@@ -143,10 +142,13 @@ record Member:
   handle: String
   last: Nat
   out: Nat
-# Every row the register can hold: the host's own most for a relation with no limit (4,096). It refuses one
-# more rather than let retention drop the oldest (kind/register's `whole` says the same as law).
+# Every row the register can hold. It refuses one more rather than let retention drop the oldest (kind/register's
+# `whole` says the same as law), and a full register is followed by a door to another. Measured, not wished: every
+# read and turn runs within its ticks at 384 rows all on one entry with eight questions on the card
+# (tests/test_register.py Capacity); a page of one entry ran out of ticks past about 500 (the host's relation most,
+# 4,096, the prototype's number, was never reached by any read).
 def capacity() -> Nat:
-  4096n
+  384n
 # The ring's seats: the hands whose own-anchored rows are newest.
 def ringMax() -> Nat:
   12n
@@ -188,14 +190,15 @@ def rowOf(l: Line) -> Row:
   let rest3 = after(rest2)
   let space = textBreak(l.verb, " ")
   {n: l.n, author: l.author, handle: l.handle, role: textTake(l.verb, space), evidence: textDrop(l.verb, space + 1n), entry: numberOf(upTo(l.text)), target: numberOf(upTo(rest1)), anchor: upTo(rest2), how: upTo(rest3), words: after(rest3), at: l.at}
-def allRows(state: State) -> Lists.List<Row>:
-  Lists.map(Relations.order(state.lines, fn(l: Line) -> Nat: l.n), rowOf)
 def rowNumbered(state: State, n: Nat) -> Lists.Maybe<Row>:
   match Lists.find(Relations.rows(state.lines), fn(l: Line) -> Bool: l.n == n):
     case some(l): Lists.Maybe.some({value: rowOf(l.value)})
     case none(_): Lists.Maybe.none({})
-def rowIn(rows: Lists.List<Row>, n: Nat) -> Lists.Maybe<Row>:
-  Lists.find(rows, fn(r: Row) -> Bool: r.n == n)
+def roleOf(l: Line) -> String:
+  textTake(l.verb, textBreak(l.verb, " "))
+# The lines whose verb is `role`, read as rows (a walk that parses only what it reads).
+def rowsOf(state: State, role: String) -> Lists.List<Row>:
+  Lists.map(Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: roleOf(l) == role), rowOf)
 # The rows a hand writes on an entry or a row, as against the town's (`pen`, `round`) and the witness's.
 def contributing(role: String) -> Bool:
   role == "ask" || role == "voice" || role == "failed" || role == "snag" || role == "dispute" || role == "recheck" || role == "resolve"
@@ -392,10 +395,17 @@ def inscribing(state: State, role: String, which: Nat, target: Nat, evidence: St
   let answers = if target == 0n then "" else natText(target)
   let line = {author: context.principal, handle: context.handle, verb: verbOf(role, evidence), text: "{natText(home)}|{answers}|{anchor}|{how}|{words}", at: context.height, n: state.next}
   let written(_) = write {lines: insert line, next: set state.next + 1n, tended: set context.clock}
-  let grown = extend(state, {lines: Relations.insert(state.lines, line, rowKey), next: state.next + 1n})
-  let id = Card.called(context, "register")
   match counting(state.vars, home, evidence):
-    case counted(_): Card.tell(Card.Replied.done({action: role}), Document.concat(Document.text("#{natText(line.n)} is written, {verbOf(role, evidence)}, on entry {natText(home)}, after journal entry {natText(context.height)}. It stands as written; a dispute or a re-check is another row.\n{howSaid(how, id)}\n"), entryPage(grown, context, home, 1n)))
+    case counted(_): entered(state, role, how, line, home, context)
+# A row in the writer's own words puts them in the book of hands (the ring is its newest twelve).
+def bookAfter(state: State, role: String, how: String, n: Nat, context: Abi.Context) -> String:
+  if how == "own" && contributing(role) then bookText(touched(bookOf(state), context.principal, context.handle, n)) else varValue(state.vars, "members")
+def foundAfter(state: State, role: String, line: Line) -> String:
+  if role == "witness" then plus(varValue(state.vars, "found"), numberOf(upTo(after(line.text)))) else varValue(state.vars, "found")
+def entered(state: State, role: String, how: String, line: Line, home: Nat, context: Abi.Context) -> Activity<Card.Replied>:
+  let id = Card.called(context, "register")
+  match settled(state.vars, "members", varValue(state.vars, "members"), bookAfter(state, role, how, line.n, context), "found", varValue(state.vars, "found"), foundAfter(state, role, line)):
+    case counted(_): Card.tell(Card.Replied.done({action: role}), Document.text("#{natText(line.n)} is written, {line.verb}, on entry {natText(home)}, after journal entry {natText(context.height)}. It stands as written; a dispute or a re-check is another row.\n{howSaid(how, id)}\n{rowLines(context, Lists.List.nil(), rowOf(line))}\nIts entry, every row: delvetalk {id} trail / n: {natText(home)}\n"))
 # --- the derived lists: entries checked, entries resting on testimony or a lead alone ---------------
 sum Counted:
   counted: {}
@@ -443,7 +453,7 @@ def snag(state: State, input: {on: Nat, evidence: Evidence, anchor: String, text
 # A row on a row: a dispute or a re-check names the row it answers, once per hand a row, with its own anchor.
 def onRow(state: State, role: String, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
   match rowNumbered(state, input.on):
-    case some(r): if r.value.role == "pen" || r.value.role == "round" || r.value.role == "seal" then refusing("noRow", "#{natText(input.on)} is the {r.value.role} of a round; a {role} answers a voice, a snag, a row on them or a witness's finding", context) else if Lists.any(allRows(state), fn(x: Row) -> Bool: x.role == role && x.target == input.on && x.author == context.principal) then refusing("again", "You have a {role} on #{natText(input.on)} already; it stands. Another hand's {role}, or a re-check, answers it", context) else adding(state, role, r.value.entry, input.on, evidenceWord(input.evidence), input.anchor, input.text, context)
+    case some(r): if r.value.role == "pen" || r.value.role == "round" || r.value.role == "seal" then refusing("noRow", "#{natText(input.on)} is the {r.value.role} of a round; a {role} answers a voice, a snag, a row on them or a witness's finding", context) else if Lists.any(Relations.rows(state.lines), fn(l: Line) -> Bool: l.author == context.principal && roleOf(l) == role && upTo(after(l.text)) == natText(input.on)) then refusing("again", "You have a {role} on #{natText(input.on)} already; it stands. Another hand's {role}, or a re-check, answers it", context) else adding(state, role, r.value.entry, input.on, evidenceWord(input.evidence), input.anchor, input.text, context)
     case none(_): refusing("noRow", "No row numbered {natText(input.on)}", context)
 def dispute(state: State, input: {on: Nat, evidence: Evidence, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
   onRow(state, "dispute", input, context)
@@ -470,18 +480,32 @@ def methods() -> Lists.List<String>:
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Lists.concat(Text.words("ask voice failed snag dispute recheck resolve trail more unchecked scrape rounds ring lines"), if Lists.any(Relations.rows(state.presence), fn(p: Rows.Presence) -> Bool: p.who == context.principal) then Text.words("witness seal") else Text.words("")), if context.principal == state.owner then Text.words("door undoor") else Text.words(""))
 # --- the ring: who the pen may come to -----------------------------------------------------------
-def touched(members: Lists.List<Member>, r: Row) -> Lists.List<Member>:
-  if Lists.any(members, fn(m: Member) -> Bool: m.who == r.author) then Lists.map(members, fn(m: Member) -> Member: if m.who == r.author then {who: m.who, handle: r.handle, last: r.n, out: m.out} else m) else Lists.append(members, {who: r.author, handle: r.handle, last: r.n, out: 0n})
+# The book of hands (`vars` `members`): each hand that wrote in its own words, `who handle last out;`, its newest such
+# row (`last`) and the round row that last passed it over (`out`); the `bookMax()` newest kept. Written with the row
+# that changes it, as `checked` is, so a card reads the ring without walking every row.
+def bookMax() -> Nat:
+  24n
+def memberText(m: Member) -> String:
+  "{m.who} {if m.handle == \"\" then \"-\" else m.handle} {natText(m.last)} {natText(m.out)};"
+def wordAt(ws: Lists.List<String>, i: Nat) -> String:
+  match Lists.at(ws, i):
+    case some(w): w.value
+    case none(_): ""
+def memberOf(ws: Lists.List<String>) -> Member:
+  {who: wordAt(ws, 0n), handle: if wordAt(ws, 1n) == "-" then "" else wordAt(ws, 1n), last: numberOf(wordAt(ws, 2n)), out: numberOf(wordAt(ws, 3n))}
+def membersIn(t: String) -> Lists.List<Member>:
+  if Text.trim(t) == "" then Lists.List.nil() else Lists.List.cons({head: memberOf(Text.words(textTake(t, textBreak(t, ";")))), tail: membersIn(textDrop(t, textBreak(t, ";") + 1n))})
+def bookOf(state: State) -> Lists.List<Member>:
+  membersIn(varValue(state.vars, "members"))
+def bookText(members: Lists.List<Member>) -> String:
+  textJoin(Lists.map(Lists.take(Lists.reverse(Relations.sorted(members, fn(m: Member) -> Nat: if m.last > m.out then m.last else m.out)), bookMax()), memberText), "")
+def touched(members: Lists.List<Member>, who: String, handle: String, n: Nat) -> Lists.List<Member>:
+  if Lists.any(members, fn(m: Member) -> Bool: m.who == who) then Lists.map(members, fn(m: Member) -> Member: if m.who == who then {who: m.who, handle: handle, last: n, out: m.out} else m) else Lists.append(members, {who: who, handle: handle, last: n, out: 0n})
 def passedOver(members: Lists.List<Member>, who: String, n: Nat) -> Lists.List<Member>:
   Lists.map(members, fn(m: Member) -> Member: if m.who == who then {who: m.who, handle: m.handle, last: m.last, out: n} else m)
-def noted(r: Row, members: Lists.List<Member>) -> Lists.List<Member>:
-  if contributing(r.role) && r.how == "own" then touched(members, r) else if r.role == "round" && Text.starts(r.words, "unwitnessed") then passedOver(members, r.how, r.n) else members
-# Every hand that ever wrote in its own words, in the order of the rows (the fold reads the oldest first).
-def membersOf(rows: Lists.List<Row>) -> Lists.List<Member>:
-  Lists.fold(Lists.reverse(rows), Lists.List.nil(), fn(r: Row) -> Lists.List<Member> -> Lists.List<Member>: fn(ms: Lists.List<Member>) -> Lists.List<Member>: noted(r, ms))
 # The ring: the `ringMax()` hands whose own-anchored row is newest, newest first, less any passed over since.
-def ringOf(rows: Lists.List<Row>) -> Lists.List<Member>:
-  Lists.take(Lists.reverse(Relations.sorted(Lists.filter(membersOf(rows), fn(m: Member) -> Bool: m.last > m.out), fn(m: Member) -> Nat: m.last)), ringMax())
+def ringOf(state: State) -> Lists.List<Member>:
+  Lists.take(Lists.reverse(Relations.sorted(Lists.filter(bookOf(state), fn(m: Member) -> Bool: m.last > m.out), fn(m: Member) -> Nat: m.last)), ringMax())
 def handlesOf(members: Lists.List<Member>, context: Abi.Context) -> String:
   textJoin(Lists.map(members, fn(m: Member) -> String: Card.shown(m.who, m.handle, context)), ", ")
 # --- the round: the pen, the scrape, the seal -------------------------------------------------------
@@ -491,28 +515,19 @@ def openedAt(state: State) -> Nat:
   numberOf(varValue(state.vars, "opened"))
 def witnessOf(state: State) -> Lists.Maybe<Rows.Presence>:
   Lists.at(Relations.rows(state.presence), 0n)
-def sitting(state: State, context: Abi.Context) -> Bool:
-  Lists.any(Relations.rows(state.presence), fn(p: Rows.Presence) -> Bool: p.who == context.principal)
-# The row that gave the pen for round `r` (0 when none did).
-def penRow(rows: Lists.List<Row>, r: Nat) -> Nat:
-  match Lists.find(rows, fn(x: Row) -> Bool: x.role == "pen" && x.target == r):
-    case some(p): p.value.n
-    case none(_): 0n
-def findingsIn(rows: Lists.List<Row>, r: Nat) -> Lists.List<Row>:
-  let from = penRow(rows, r)
-  Lists.filter(rows, fn(x: Row) -> Bool: x.role == "witness" && x.n > from)
-def sealedIn(rows: Lists.List<Row>, r: Nat) -> Bool:
-  r > 0n && Lists.any(rows, fn(x: Row) -> Bool: x.role == "seal" && x.target == r)
+# The rows the sitting witness recorded this round (`vars` `found`, " n1 n2 ", emptied as the pen passes).
+def foundCount(state: State) -> Nat:
+  Lists.length(Text.words(varValue(state.vars, "found")))
+def sealedIn(state: State, r: Nat) -> Bool:
+  r > 0n && varValue(state.vars, "sealed") == natText(r)
 # The scrape: the disputes, re-checks and resolutions, each with whether a witness has recorded it yet.
 def scrapes(role: String) -> Bool:
   role == "dispute" || role == "recheck" || role == "resolve"
-def witnessed(rows: Lists.List<Row>, n: Nat) -> Bool:
-  Lists.any(rows, fn(x: Row) -> Bool: x.role == "witness" && x.target == n)
-def unscraped(rows: Lists.List<Row>) -> Lists.List<Row>:
-  Lists.filter(rows, fn(x: Row) -> Bool: scrapes(x.role) && witnessed(rows, x.n) == false)
+def unscrapedOf(rows: Lists.List<Row>, done: Lists.List<Nat>) -> Lists.List<Row>:
+  Lists.filter(rows, fn(x: Row) -> Bool: scrapes(x.role) && Lists.any(done, fn(t: Nat) -> Bool: t == x.n) == false)
 # No one witnesses their own entry (gemini, 2026-10-13): not a row they wrote, nor one answering a row of theirs.
-def ownEntry(rows: Lists.List<Row>, r: Row, who: String) -> Bool:
-  match rowIn(rows, r.target):
+def ownEntry(state: State, r: Row, who: String) -> Bool:
+  match rowNumbered(state, r.target):
     case some(t): r.author == who || t.value.author == who
     case none(_): r.author == who
 def fits(role: String, f: Finding) -> Bool:
@@ -525,75 +540,93 @@ def fits(role: String, f: Finding) -> Bool:
 def witness(state: State, input: {on: Nat, finding: Finding, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
   match witnessOf(state):
     case none(_): refusing("witness", "Nobody holds the pen this round; it passes at the tide's turn, drawn from the ring", context)
-    case some(p): if p.value.who != context.principal then refusing("witness", "The pen is {Card.shown(p.value.who, p.value.handle, context)}'s this round (round {natText(roundOf(state))}): the scrape is theirs to record. A dispute or a re-check of your own is a row", context) else if sealedIn(allRows(state), roundOf(state)) then refusing("closed", "You sealed round {natText(roundOf(state))}; the pen passes at the tide's next turn", context) else scraping(state, allRows(state), input, context)
-def scraping(state: State, rows: Lists.List<Row>, input: {on: Nat, finding: Finding, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
-  match rowIn(rows, input.on):
+    case some(p): if p.value.who != context.principal then refusing("witness", "The pen is {Card.shown(p.value.who, p.value.handle, context)}'s this round (round {natText(roundOf(state))}): the scrape is theirs to record. A dispute or a re-check of your own is a row", context) else if sealedIn(state, roundOf(state)) then refusing("closed", "You sealed round {natText(roundOf(state))}; the pen passes at the tide's next turn", context) else scraping(state, input, context)
+def scraping(state: State, input: {on: Nat, finding: Finding, anchor: String, text: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  match rowNumbered(state, input.on):
     case none(_): refusing("noRow", "No row numbered {natText(input.on)}", context)
-    case some(r): if scrapes(r.value.role) == false then refusing("scrape", "#{natText(input.on)} is a {r.value.role}; the scrape is the disputes, re-checks and resolutions: delvetalk {Card.called(context, \"register\")} scrape", context) else if ownEntry(rows, r.value, context.principal) then refusing("self", "No one witnesses their own entry: #{natText(input.on)} is yours, or answers a row of yours. Another round's witness records it", context) else if fits(r.value.role, input.finding) == false then refusing("finding", "A dispute stands or is answered; a re-check or a resolution held or fell", context) else if Lists.any(findingsIn(rows, roundOf(state)), fn(x: Row) -> Bool: x.target == input.on) then refusing("again", "You recorded #{natText(input.on)} this round already; it stands", context) else adding(state, "witness", r.value.entry, input.on, "", input.anchor, "{findingWord(input.finding)}: {input.text}", context)
+    case some(r): if scrapes(r.value.role) == false then refusing("scrape", "#{natText(input.on)} is a {r.value.role}; the scrape is the disputes, re-checks and resolutions: delvetalk {Card.called(context, \"register\")} scrape", context) else if ownEntry(state, r.value, context.principal) then refusing("self", "No one witnesses their own entry: #{natText(input.on)} is yours, or answers a row of yours. Another round's witness records it", context) else if fits(r.value.role, input.finding) == false then refusing("finding", "A dispute stands or is answered; a re-check or a resolution held or fell", context) else if holds(varValue(state.vars, "found"), input.on) then refusing("again", "You recorded #{natText(input.on)} this round already; it stands", context) else adding(state, "witness", r.value.entry, input.on, "", input.anchor, "{findingWord(input.finding)}: {input.text}", context)
 # The witness ends the round; the pen passes at the tide's next turn, not in this one.
 def seal(state: State, input: {text: String}, context: Abi.Context) -> Activity<Card.Replied>:
   match witnessOf(state):
     case none(_): refusing("witness", "Nobody holds the pen this round", context)
-    case some(p): if p.value.who != context.principal then refusing("witness", "The pen is {Card.shown(p.value.who, p.value.handle, context)}'s this round; the round is theirs to seal", context) else if sealedIn(allRows(state), roundOf(state)) then refusing("closed", "Round {natText(roundOf(state))} is sealed already; the pen passes at the tide's next turn", context) else sealing(state, input.text, context)
+    case some(p): if p.value.who != context.principal then refusing("witness", "The pen is {Card.shown(p.value.who, p.value.handle, context)}'s this round; the round is theirs to seal", context) else if sealedIn(state, roundOf(state)) then refusing("closed", "Round {natText(roundOf(state))} is sealed already; the pen passes at the tide's next turn", context) else sealing(state, input.text, context)
 def sealing(state: State, words: String, context: Abi.Context) -> Activity<Card.Replied>:
   let r = roundOf(state)
-  let k = Lists.length(findingsIn(allRows(state), r))
+  let k = foundCount(state)
   let line = {author: context.principal, handle: context.handle, verb: "seal", text: "0|{natText(r)}|entry {natText(context.height)}|resolved|{words}", at: context.height, n: state.next}
   let written(_) = write {lines: insert line, next: set state.next + 1n}
-  Card.tell(Card.Replied.done({action: "seal"}), Document.text("#{natText(line.n)} seals round {natText(r)}: {natText(k)} findings. The pen passes at the tide's next turn, drawn from the ring; it does not come back to you next round.\n"))
+  match varSet(state.vars, "sealed", varValue(state.vars, "sealed"), natText(r)):
+    case counted(_): sealed(line.n, r, k)
+def sealed(n: Nat, r: Nat, k: Nat) -> Activity<Card.Replied>:
+  Card.tell(Card.Replied.done({action: "seal"}), Document.text("#{natText(n)} seals round {natText(r)}: {natText(k)} findings. The pen passes at the tide's next turn, drawn from the ring; it does not come back to you next round.\n"))
 def still(n: Nat) -> Activity<Nat>:
   n
 # The tide's turn, by the town's rule there: close a sealed or timed-out round, and give the pen. Nobody else
 # turns it, so nobody chooses the moment of a draw.
 def rotate(state: State, context: Abi.Context) -> Activity<Nat>:
-  if townKept(state, context) == false || Super.ruledFrom(state, tideOf(state), context) == false then Card.refusing(0n, {clause: "ruled", reading: "The pen passes only at the tide's turn, by the town's rule on {tideOf(state)}: nobody hands it on, the witness included"}, context) else rotating(state, allRows(state), context)
-def rotating(state: State, rows: Lists.List<Row>, context: Abi.Context) -> Activity<Nat>:
+  if townKept(state, context) == false || Super.ruledFrom(state, tideOf(state), context) == false then Card.refusing(0n, {clause: "ruled", reading: "The pen passes only at the tide's turn, by the town's rule on {tideOf(state)}: nobody hands it on, the witness included"}, context) else rotating(state, context)
+def rotating(state: State, context: Abi.Context) -> Activity<Nat>:
   match witnessOf(state):
-    case some(p): sat(state, rows, p.value, context)
-    case none(_): drawing(state, rows, varValue(state.vars, "last"), context)
-def sat(state: State, rows: Lists.List<Row>, w: Rows.Presence, context: Abi.Context) -> Activity<Nat>:
+    case some(p): sat(state, p.value, context)
+    case none(_): drawing(state, varValue(state.vars, "last"), context)
+def sat(state: State, w: Rows.Presence, context: Abi.Context) -> Activity<Nat>:
   let r = roundOf(state)
-  let k = Lists.length(findingsIn(rows, r))
+  let k = foundCount(state)
   let who = Card.shown(w.who, w.handle, context)
-  if sealedIn(rows, r) then closing(state, rows, w, "witnessed: {who} recorded {natText(k)} findings and sealed the round", context) else if context.clock < openedAt(state) + deadline() then still(r) else if k > 0n then closing(state, rows, w, "clocked: {who} recorded {natText(k)} findings and did not seal within 48 hours; the clock closed the round", context) else closing(state, rows, w, "unwitnessed: {who} held the pen 48 hours and wrote nothing; passed over, out of the ring until they write again", context)
+  if sealedIn(state, r) then closing(state, w, "witnessed: {who} recorded {natText(k)} findings and sealed the round", context) else if context.clock < openedAt(state) + deadline() then still(r) else if k > 0n then closing(state, w, "clocked: {who} recorded {natText(k)} findings and did not seal within 48 hours; the clock closed the round", context) else closing(state, w, "unwitnessed: {who} held the pen 48 hours and wrote nothing; passed over, out of the ring until they write again", context)
 # The round's row, by the town: who held the pen and how the round closed; the pen taken back.
-def closing(state: State, rows: Lists.List<Row>, w: Rows.Presence, words: String, context: Abi.Context) -> Activity<Nat>:
+def closing(state: State, w: Rows.Presence, words: String, context: Abi.Context) -> Activity<Nat>:
   let r = roundOf(state)
   let line = {author: context.principal, handle: context.handle, verb: "round", text: "0|{natText(r)}|entry {natText(context.height)}|{w.who}|{words}", at: context.height, n: state.next}
   let written(_) = write {lines: insert line, next: set state.next + 1n, presence: retract {who: w.who}}
+  let book = if Text.starts(words, "unwitnessed") then bookText(passedOver(bookOf(state), w.who, line.n)) else varValue(state.vars, "members")
   match varSet(state.vars, "last", varValue(state.vars, "last"), w.who):
-    case counted(_): drawing(extend(state, {lines: Relations.insert(state.lines, line, rowKey), next: state.next + 1n, presence: Relations.empty(), vars: varsWith(state.vars, "last", w.who)}), Lists.append(rows, rowOf(line)), w.who, context)
+    case counted(_): closed(extend(state, {lines: Relations.insert(state.lines, line, rowKey), next: state.next + 1n, presence: Relations.empty()}), w.who, book, "Round {natText(r)}, {words}.", context)
+def closed(state: State, who: String, book: String, said: String, context: Abi.Context) -> Activity<Nat>:
+  match settled(state.vars, "members", varValue(state.vars, "members"), book, "closed", varValue(state.vars, "closed"), said):
+    case counted(_): drawing(extend(state, {vars: varsWith(varsWith(varsWith(state.vars, "last", who), "members", book), "closed", said)}), who, context)
 # The variables as a write leaves them: `name` set to `value` (added when absent).
 def varsWith(vars: Lists.List<Scenes.Var>, name: String, value: String) -> Lists.List<Scenes.Var>:
   if Lists.any(vars, fn(v: Scenes.Var) -> Bool: v.name == name) then Lists.map(vars, fn(v: Scenes.Var) -> Scenes.Var: if v.name == name then {name: name, value: value} else v) else Lists.append(vars, {name: name, value: value})
 # The draw: the host's seeded draw of this turn, over the ring less the one who held the pen last. The ring must
 # hold two for the pen to pass at all.
-def drawing(state: State, rows: Lists.List<Row>, last: String, context: Abi.Context) -> Activity<Nat>:
-  drawingFrom(state, rows, ringOf(rows), last, context)
-def drawingFrom(state: State, rows: Lists.List<Row>, seats: Lists.List<Member>, last: String, context: Abi.Context) -> Activity<Nat>:
-  if Lists.length(seats) < 2n || Lists.length(Lists.filter(seats, fn(m: Member) -> Bool: m.who != last)) == 0n then still(roundOf(state)) else giving(state, seats, Lists.filter(seats, fn(m: Member) -> Bool: m.who != last), lastShown(rows, last, context), context)
-def lastShown(rows: Lists.List<Row>, last: String, context: Abi.Context) -> String:
-  match Lists.find(membersOf(rows), fn(m: Member) -> Bool: m.who == last):
+def drawing(state: State, last: String, context: Abi.Context) -> Activity<Nat>:
+  drawingFrom(state, ringOf(state), last, context)
+# Who may hold it: the ring less the last witness, in the order of their DIDs, so that writing again (which
+# moves a hand within the ring) never moves where a draw lands.
+def eligibleOf(seats: Lists.List<Member>, last: String) -> Lists.List<Member>:
+  Relations.sorted(Lists.filter(seats, fn(m: Member) -> Bool: m.who != last), fn(m: Member) -> String: m.who)
+def drawingFrom(state: State, seats: Lists.List<Member>, last: String, context: Abi.Context) -> Activity<Nat>:
+  if Lists.length(seats) < 2n || Lists.length(eligibleOf(seats, last)) == 0n then still(roundOf(state)) else giving(state, seats, eligibleOf(seats, last), lastShown(state, last, context), context)
+def lastShown(state: State, last: String, context: Abi.Context) -> String:
+  match Lists.find(bookOf(state), fn(m: Member) -> Bool: m.who == last):
     case some(m): Card.shown(m.value.who, m.value.handle, context)
     case none(_): if last == "" then "" else Card.shown(last, "", context)
+# The round's draw: the register's seed (the host's seeded draw of the turn that made it, `sown`) hashed with the
+# round's number. Fixed before anyone writes a row, it does not move with the height a turn reads, the hand that
+# seals, the hour, or anything written since; only who is in the ring decides where it lands.
+def seedOf(state: State) -> Nat:
+  numberOf(varValue(state.vars, "seed"))
+# The round's number comes first in what is hashed: Scenes.hashed (FNV) carries a change in its last character
+# straight through, so `drawFor(seed, "witness {r}")` gave consecutive rounds consecutive draws, the pen walking the
+# ring in DID order (the report's second play: a covenant whose DIDs sort together held it five rounds running).
+def drawOf(state: State, r: Nat) -> Nat:
+  Scenes.hashed("witness {natText(r)} of {natText(seedOf(state))}")
 def giving(state: State, seats: Lists.List<Member>, eligible: Lists.List<Member>, lastName: String, context: Abi.Context) -> Activity<Nat>:
-  givingAt(state, seats, eligible, lastName, Scenes.turnDraw(context.height, context.principal, context.intent), context)
+  givingAt(state, seats, eligible, lastName, drawOf(state, roundOf(state) + 1n), context)
 def givingAt(state: State, seats: Lists.List<Member>, eligible: Lists.List<Member>, lastName: String, draw: Nat, context: Abi.Context) -> Activity<Nat>:
-  match Lists.at(eligible, placeOf(draw, roundOf(state) + 1n, Lists.length(eligible))):
-    case some(m): penned(state, m.value, seats, eligible, lastName, draw, placeOf(draw, roundOf(state) + 1n, Lists.length(eligible)), context)
+  match Lists.at(eligible, draw % Lists.length(eligible)):
+    case some(m): penned(state, m.value, seats, eligible, lastName, draw, draw % Lists.length(eligible), context)
     case none(_): still(roundOf(state))
-# Where a draw lands among `count` hands for round `r` (Scenes.drawFor: the draw hashed with the round).
-def placeOf(draw: Nat, r: Nat, count: Nat) -> Nat:
-  Scenes.drawFor(draw, "witness {natText(r)}") % count
 def penned(state: State, m: Member, seats: Lists.List<Member>, eligible: Lists.List<Member>, lastName: String, draw: Nat, place: Nat, context: Abi.Context) -> Activity<Nat>:
   let r = roundOf(state) + 1n
   let lastWords = if lastName == "" then "" else "; not {lastName}, who held it last"
-  let line = {author: context.principal, handle: context.handle, verb: "pen", text: "0|{natText(r)}|entry {natText(context.height)}|{m.who}|round {natText(r)}: the pen to {Card.shown(m.who, m.handle, context)}, drawn from the ring ({handlesOf(seats, context)}){lastWords}: draw {natText(draw)} of the turn after entry {natText(context.height)}, intent {context.intent}; place {natText(place)} of {natText(Lists.length(eligible))}", at: context.height, n: state.next}
+  let line = {author: context.principal, handle: context.handle, verb: "pen", text: "0|{natText(r)}|entry {natText(context.height)}|{m.who}|round {natText(r)}: the pen to {Card.shown(m.who, m.handle, context)}, drawn from the ring ({handlesOf(seats, context)}){lastWords}: draw {natText(draw)}, the seed {varValue(state.vars, \"seed\")} ({varValue(state.vars, \"sown\")}) for round {natText(r)}; place {natText(place)} of {natText(Lists.length(eligible))}", at: context.height, n: state.next}
   let written(_) = write {lines: insert line, next: set state.next + 1n, presence: insert {who: m.who, handle: m.handle, at: "round {natText(r)}", draw: draw}}
   match varSet(state.vars, "round", varValue(state.vars, "round"), natText(r)):
     case counted(_): opening(state, r, context)
 def opening(state: State, r: Nat, context: Abi.Context) -> Activity<Nat>:
-  match varSet(state.vars, "opened", varValue(state.vars, "opened"), natText(context.clock)):
+  match settled(state.vars, "opened", varValue(state.vars, "opened"), natText(context.clock), "found", varValue(state.vars, "found"), ""):
     case counted(_): r
 # As its kind finishes it, a town's register places its rule on the tide (`tide`), under its maker: at every
 # tick, `rotate`. Another's register places none.
@@ -601,34 +634,60 @@ def made(state: State, input: {}, context: Abi.Context) -> Activity<Bool>:
   if context.caller != state.kind || townKept(state, context) == false || tideOf(state) == "" then false else placing(state, context)
 def placing(state: State, context: Abi.Context) -> Activity<Bool>:
   match world.rule({object: {world: context.world, object: tideOf(state)}, name: Text.identifier(context.object), when: "request.method == \"tick\"", then: "delvetalk {context.object} rotate"}):
-    case placed(_): true
+    case placed(_): sowing(state, context)
     case refused(_): false
+# The seed, sown once as the register is finished: the host's seeded draw of this turn (Scenes.turnDraw: the height
+# it reads, its principal, its intent), and where it came from, so anyone can draw every round again.
+def sowing(state: State, context: Abi.Context) -> Activity<Bool>:
+  match varSet(state.vars, "seed", varValue(state.vars, "seed"), natText(Scenes.turnDraw(context.height, context.principal, context.intent))):
+    case counted(_): sown(state, context)
+def sown(state: State, context: Abi.Context) -> Activity<Bool>:
+  match varSet(state.vars, "sown", varValue(state.vars, "sown"), "the draw of the turn after entry {natText(context.height)}, intent {context.intent}"):
+    case counted(_): true
 # --- reading: an entry as topography --------------------------------------------------------------
 def entry(state: State, context: Abi.Context, line: Line) -> Document.Document:
   let r = rowOf(line)
-  if r.role == "ask" then Document.text("#{natText(r.n)} {r.words} ({Card.shown(r.author, r.handle, context)}; {tally(state, r.n)})\n") else Document.text("")
-def tallyOf(rows: Lists.List<Row>, role: String) -> Nat:
-  Lists.length(Lists.filter(rows, fn(x: Row) -> Bool: x.role == role))
-def kinds(rows: Lists.List<Row>, evidence: String) -> Nat:
-  Lists.length(Lists.filter(rows, fn(x: Row) -> Bool: x.evidence == evidence))
-def tally(state: State, n: Nat) -> String:
-  let rows = Lists.filter(allRows(state), fn(x: Row) -> Bool: x.entry == n && x.role != "ask")
-  let wants = if holds(varValue(state.vars, "unchecked"), n) then "; wants a check" else ""
-  "rows {natText(Lists.length(rows))} (checked {natText(kinds(rows, \"checked\"))}, testimony {natText(kinds(rows, \"testimony\"))}, lead {natText(kinds(rows, \"lead\"))}); snags {natText(tallyOf(rows, \"snag\"))}, disputes {natText(tallyOf(rows, \"dispute\"))}{wants}"
+  if r.role == "ask" then Document.text("#{natText(r.n)} {r.words} ({Card.shown(r.author, r.handle, context)}{wantsCheck(state, r.n)})\n") else Document.text("")
+# An entry's rows counted by their verbs alone, in one pass (no row is read whole): what the card and a page head say.
+record Tally:
+  rows: Nat
+  checked: Nat
+  testimony: Nat
+  lead: Nat
+  snags: Nat
+  disputes: Nat
+def one(yes: Bool) -> Nat:
+  if yes then 1n else 0n
+def tallyStep(l: Line, t: Tally) -> Tally:
+  if l.verb == "ask" then t else {rows: t.rows + 1n, checked: t.checked + one(Text.ends(l.verb, " checked")), testimony: t.testimony + one(Text.ends(l.verb, " testimony")), lead: t.lead + one(Text.ends(l.verb, " lead")), snags: t.snags + one(Text.starts(l.verb, "snag")), disputes: t.disputes + one(Text.starts(l.verb, "dispute"))}
+def tallied(lines: Lists.List<Line>) -> String:
+  let t = Lists.fold(lines, {rows: 0n, checked: 0n, testimony: 0n, lead: 0n, snags: 0n, disputes: 0n}, fn(l: Line) -> Tally -> Tally: fn(acc: Tally) -> Tally: tallyStep(l, acc))
+  "rows {natText(t.rows)} (checked {natText(t.checked)}, testimony {natText(t.testimony)}, lead {natText(t.lead)}); snags {natText(t.snags)}, disputes {natText(t.disputes)}"
+# The card says of a question only whether it wants a check (`unchecked`, kept as rows are written); its rows are
+# counted on its trail, which reads them.
+def wantsCheck(state: State, n: Nat) -> String:
+  if holds(varValue(state.vars, "unchecked"), n) then "; wants a check" else ""
 # The pen as it stands: who holds it, for which round, until when; or why it rests.
-def penUntil(state: State, rows: Lists.List<Row>) -> String:
-  if sealedIn(rows, roundOf(state)) then "sealed: it passes at the tide's next turn" else "the scrape is theirs until clock {natText(openedAt(state) + deadline())}, then the clock closes the round"
-def penLine(state: State, rows: Lists.List<Row>, seats: Lists.List<Member>, context: Abi.Context) -> String:
+def penUntil(state: State) -> String:
+  if sealedIn(state, roundOf(state)) then "sealed: it passes at the tide's next turn" else "the scrape is theirs until clock {natText(openedAt(state) + deadline())}, then the clock closes the round"
+def penLine(state: State, seats: Lists.List<Member>, context: Abi.Context) -> String:
   match witnessOf(state):
-    case some(p): "THE PEN: {Card.shown(p.value.who, p.value.handle, context)}, witness of round {natText(roundOf(state))} since clock {natText(openedAt(state))}; {penUntil(state, rows)}.\n"
+    case some(p): "THE PEN: {Card.shown(p.value.who, p.value.handle, context)}, witness of round {natText(roundOf(state))} since clock {natText(openedAt(state))}; {penUntil(state)}.\n"
     case none(_): if Lists.length(seats) < 2n then "THE PEN rests: the ring holds {natText(Lists.length(seats))}, and it passes only between two or more.\n" else "THE PEN passes at the tide's next turn, drawn from the ring.\n"
-def roundLines(rows: Lists.List<Row>, shown: Nat) -> String:
-  textJoin(Lists.map(Lists.take(Lists.reverse(Lists.filter(rows, fn(x: Row) -> Bool: x.role == "round")), shown), fn(x: Row) -> String: "Round {natText(x.target)}, {x.words}.\n"), "")
+# The card's head: what the register is, the pen and the ring in a line each, and how the last round closed; the
+# rest is a read away (`rounds`, `ring`, `scrape`), so the questions keep their room within the card's budget.
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
-  let rows = allRows(state)
-  let seats = ringOf(rows)
-  let asks = Lists.length(Lists.filter(rows, fn(x: Row) -> Bool: x.role == "ask"))
-  Document.text("A COMMONPLACE REGISTER, the town's{Card.mine(state.maker, context)}: questions {natText(asks)}, rows {natText(state.next - 1n)}. A row is only added, with its anchor and its evidence kind (checked, testimony, lead), fixed when written; nothing is edited or dropped. Follow one back to every voice: delvetalk {id} trail / n: <number>. Ask: delvetalk {id} ask / anchor: <where it was asked> / text: <one question>\n{penLine(state, rows, seats, context)}THE RING ({natText(Lists.length(seats))} of {natText(ringMax())}): {seatsShown(seats, context)}. A hand enters by a row anchored in its own words: a post of theirs the town read, or a receipt of their own turn.\n{roundLines(rows, 3n)}")
+  let seats = ringOf(state)
+  let asks = Lists.length(Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: l.verb == "ask"))
+  Document.text("A COMMONPLACE REGISTER, the town's{Card.mine(state.maker, context)}: questions {natText(asks)}, rows {natText(state.next - 1n)}. A row is only added, with its anchor and its evidence kind, fixed when written. Follow one back to every voice: delvetalk {id} trail / n: <number>. Ask: delvetalk {id} ask / anchor: <where it was asked> / text: <one question>\n{penShort(state, seats, id, context)}THE RING ({natText(Lists.length(seats))} of {natText(ringMax())}): {seatsShown(seats, context)}. Enter by a row anchored in your own words: delvetalk {id} ring\n{closedLine(state)}")
+def closedLine(state: State) -> String:
+  if varValue(state.vars, "closed") == "" then "" else "{varValue(state.vars, \"closed\")}\n"
+def penEnd(state: State) -> String:
+  if sealedIn(state, roundOf(state)) then "sealed" else "until clock {natText(openedAt(state) + deadline())}"
+def penShort(state: State, seats: Lists.List<Member>, id: String, context: Abi.Context) -> String:
+  match witnessOf(state):
+    case some(p): "THE PEN: {Card.shown(p.value.who, p.value.handle, context)}, round {natText(roundOf(state))}, {penEnd(state)}; the scrape: delvetalk {id} scrape\n"
+    case none(_): penLine(state, seats, context)
 def seatsShown(seats: Lists.List<Member>, context: Abi.Context) -> String:
   if Lists.length(seats) == 0n then "nobody yet" else handlesOf(seats, context)
 # The card lists the questions: RECORD's numbered list over the ask rows alone.
@@ -638,44 +697,48 @@ def renderFrom(state: State, context: Abi.Context, from: Nat, used: Nat) -> Docu
   let doors = Card.doorLines(state.cites)
   let left = Card.left(context, used + Document.size(head) + Document.size(Document.Document.sequence({items: doors})))
   let room = if left < Card.budget() then left else Card.budget()
-  let asks = Lists.filter(Relations.order(state.lines, fn(l: Line) -> Nat: l.n), fn(l: Line) -> Bool: l.verb == "ask" && l.n >= from)
+  let asks = Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: l.verb == "ask" && l.n >= from)
   Document.Document.sequence({items: Document.Documents.cons({head: head, tail: Lists.concat(Super.numbered(state, context, asks, 8n, if room < left then room else left, id), doors)})})
 def kindLine(r: Row) -> String:
   if r.role == "ask" then "QUESTION" else if r.role == "snag" then "SNAG {r.evidence}" else if r.role == "failed" then "FAILED ATTEMPT {r.evidence}" else if r.role == "witness" then "WITNESSED" else "{r.role} {r.evidence}"
+# An entry's lines, in the order written (a relation's rows are in key order, and a line's key is {n, author}).
+def entryLines(state: State, n: Nat) -> Lists.List<Line>:
+  Lists.filter(Relations.rows(state.lines), fn(l: Line) -> Bool: Text.starts(l.text, "{natText(n)}|"))
+def answering(l: Line, m: Nat) -> Bool:
+  upTo(after(l.text)) == natText(m)
 # A snag's standing, said from its resolutions and never instead of them: open; a resolution offered (its
 # kinds); or resolved by a checked row, which still leaves the snag on the page.
-def standing(rows: Lists.List<Row>, r: Row) -> String:
-  let res = Lists.filter(rows, fn(x: Row) -> Bool: x.role == "resolve" && x.target == r.n)
-  if r.role != "snag" then "" else if Lists.length(res) == 0n then " (OPEN)" else if Lists.any(res, fn(x: Row) -> Bool: x.evidence == "checked") then " (resolved by a checked row; it stays)" else " (a resolution offered, unchecked; open)"
+def standing(answers: Lists.List<Line>, r: Row) -> String:
+  let res = Lists.filter(answers, fn(l: Line) -> Bool: roleOf(l) == "resolve")
+  if r.role != "snag" then "" else if Lists.length(res) == 0n then " (OPEN)" else if Lists.any(res, fn(l: Line) -> Bool: l.verb == "resolve checked") then " (resolved by a checked row; it stays)" else " (a resolution offered, unchecked; open)"
+# The rows that answer a row (disputes, re-checks, resolutions, the witnesses' findings), by number.
+def answeredBy(by: Lists.List<Line>) -> String:
+  if Lists.length(by) == 0n then "" else "   answered by {textJoin(Lists.map(by, fn(l: Line) -> String: \"#{natText(l.n)}\"), \", \")}\n"
 def anchorNote(r: Row) -> String:
   if r.how == "own" then "; the writer's own, found by the town" else if r.how == "unresolved" then "; unresolved: the town has not read it" else if r.how == "resolved" then "; found by the town" else ""
-def rowLines(context: Abi.Context, rows: Lists.List<Row>, r: Row, depth: Nat) -> String:
-  let indent = if depth == 0n then "" else textTake("            ", depth * 3n)
+def rowLines(context: Abi.Context, lines: Lists.List<Line>, r: Row) -> String:
+  rowShown(context, Lists.filter(lines, fn(l: Line) -> Bool: answering(l, r.n)), r)
+def rowShown(context: Abi.Context, answers: Lists.List<Line>, r: Row) -> String:
   let on = if r.target == 0n then "" else " on #{natText(r.target)}"
-  "{indent}#{natText(r.n)} {kindLine(r)}{on}{standing(rows, r)}: {Card.shown(r.author, r.handle, context)}, written after journal entry {natText(r.at)}\n{indent}   anchor ({anchorKind(r.anchor)}{anchorNote(r)}): {r.anchor}\n{indent}   {r.words}\n"
-# The rows of an entry in the order written, each followed by the rows that answer it (disputes, re-checks,
-# resolutions, the witnesses' findings), so a reader walks back to every voice; never a summary of them.
-def walk(rows: Lists.List<Row>, r: Row, depth: Nat) -> Lists.List<Placed>:
-  let answers = Lists.filter(rows, fn(x: Row) -> Bool: x.target == r.n)
-  Lists.List.cons({head: {row: r, depth: depth}, tail: Lists.fold(answers, Lists.List.nil(), fn(a: Row) -> Lists.List<Placed> -> Lists.List<Placed>: fn(rest: Lists.List<Placed>) -> Lists.List<Placed>: Lists.concat(walk(rows, a, if depth >= 3n then 3n else depth + 1n), rest))})
-def ordered(rows: Lists.List<Row>) -> Lists.List<Placed>:
-  Lists.fold(Lists.filter(rows, fn(x: Row) -> Bool: x.target == 0n), Lists.List.nil(), fn(a: Row) -> Lists.List<Placed> -> Lists.List<Placed>: fn(rest: Lists.List<Placed>) -> Lists.List<Placed>: Lists.concat(walk(rows, a, 0n), rest))
-# One page of the walk, from position `from` (1 is the question): rows are shown whole while they fit, at least
-# one, and the footer names the position the next page starts at, which the walk keeps whatever is written later.
-def pageRows(context: Abi.Context, rows: Lists.List<Row>, walked: Lists.List<Placed>, from: Nat, room: Nat, shown: Nat, n: Nat, id: String, at: Nat) -> String:
-  match walked:
+  "#{natText(r.n)} {kindLine(r)}{on}{standing(answers, r)}: {Card.shown(r.author, r.handle, context)}, written after journal entry {natText(r.at)}\n   anchor ({anchorKind(r.anchor)}{anchorNote(r)}): {r.anchor}\n   {r.words}\n{answeredBy(answers)}"
+# One page of an entry: its rows in the order written from row `from`, each with whose it is, the journal entry it was
+# written after, its anchor and how the town found it, the row it answers and the rows that answer it, so a reader
+# walks back to every voice and never reads a summary of them. Rows are shown whole while they fit, at least one, and
+# the footer names the row the next page starts at: a row number, which nothing written later moves.
+def pageRows(context: Abi.Context, lines: Lists.List<Line>, rest: Lists.List<Line>, from: Nat, room: Nat, shown: Nat, n: Nat, id: String) -> String:
+  match rest:
     case nil(_): ""
-    case cons(c): if at < from then pageRows(context, rows, c.tail, from, room, shown, n, id, at + 1n) else pageLine(context, rows, rowLines(context, rows, c.head.row, c.head.depth), c.tail, room, shown, n, id, at)
-def pageLine(context: Abi.Context, rows: Lists.List<Row>, text: String, rest: Lists.List<Placed>, room: Nat, shown: Nat, n: Nat, id: String, at: Nat) -> String:
-  let footer = "… {natText(Lists.length(rest) + 1n)} more rows, in the walk's order: delvetalk {id} more / n: {natText(n)} / from: {natText(at)}\n"
-  if shown > 0n && textLength(text) + textLength(footer) > room then footer else "{text}{pageRows(context, rows, rest, 0n, if textLength(text) >= room then 0n else room - textLength(text), shown + 1n, n, id, at + 1n)}"
+    case cons(c): if c.head.n < from then pageRows(context, lines, c.tail, from, room, shown, n, id) else pageLine(context, lines, c.head, rowLines(context, lines, rowOf(c.head)), c.tail, room, shown, n, id)
+def pageLine(context: Abi.Context, lines: Lists.List<Line>, l: Line, text: String, rest: Lists.List<Line>, room: Nat, shown: Nat, n: Nat, id: String) -> String:
+  let footer = "… {natText(Lists.length(rest) + 1n)} more rows, in the order written: delvetalk {id} more / n: {natText(n)} / from: {natText(l.n)}\n"
+  if shown > 0n && textLength(text) + textLength(footer) > room then footer else "{text}{pageRows(context, lines, rest, 0n, if textLength(text) >= room then 0n else room - textLength(text), shown + 1n, n, id)}"
 def entryPage(state: State, context: Abi.Context, n: Nat, from: Nat) -> Document.Document:
   let id = Card.called(context, "register")
-  let rows = Lists.filter(allRows(state), fn(x: Row) -> Bool: x.entry == n)
+  let lines = entryLines(state, n)
   let wants = if holds(varValue(state.vars, "unchecked"), n) then "It rests on testimony and leads alone; it wants a check: a row whose evidence is checked, with an anchor that names bytes and that the town found.\n" else ""
-  let head = "ENTRY {natText(n)} of {id}: {tally(state, n)}. Every row as written, with whose it is, the journal entry it was written after (its own receipt is the next) and its anchor; answers follow what they answer.\n{wants}"
+  let head = "ENTRY {natText(n)} of {id}: {tallied(lines)}. Every row as written, with whose it is, the journal entry it was written after (its own receipt is the next), its anchor, what it answers and what answers it.\n{wants}"
   let room = Card.left(context, textLength(head) + 200n)
-  Document.text("{head}{pageRows(context, rows, ordered(rows), from, room, 0n, n, id, 1n)}")
+  Document.text("{head}{pageRows(context, lines, lines, from, room, 0n, n, id)}")
 def trail(state: State, input: {n: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
   match rowNumbered(state, input.n):
     case some(r): if r.value.role == "ask" then Card.tell(Card.Replied.done({action: "trail"}), entryPage(state, context, input.n, 1n)) else refusing("noEntry", "#{natText(input.n)} is a {r.value.role} on entry {natText(r.value.entry)}", context)
@@ -690,22 +753,20 @@ def unchecked(state: State, context: Abi.Context) -> Activity<Card.Replied>:
 def scrapeLine(r: Row, context: Abi.Context) -> String:
   "#{natText(r.n)} {r.role} {r.evidence} on #{natText(r.target)} (entry {natText(r.entry)}), by {Card.shown(r.author, r.handle, context)}: {textTake(r.words, 120n)}\n"
 def scrape(state: State, context: Abi.Context) -> Activity<Card.Replied>:
-  let rows = allRows(state)
-  let open = Lists.reverse(unscraped(rows))
+  let open = Lists.reverse(Relations.sorted(unscrapedOf(Lists.concat(Lists.concat(rowsOf(state, "dispute"), rowsOf(state, "recheck")), rowsOf(state, "resolve")), Lists.map(rowsOf(state, "witness"), fn(x: Row) -> Nat: x.target)), fn(x: Row) -> Nat: x.n))
   let id = Card.called(context, "register")
-  let head = "THE SCRAPE of {id}: {natText(Lists.length(open))} disputes, re-checks and resolutions no witness has recorded yet. {penLine(state, rows, ringOf(rows), context)}The witness records each: delvetalk {id} witness / on: <row> / finding: stands | answered (a dispute); held | fell (a re-check or a resolution) / anchor: … / text: …; then delvetalk {id} seal / text: <the round in a line>. Nobody records a row of their own, or one answering theirs.\n"
+  let head = "THE SCRAPE of {id}: {natText(Lists.length(open))} disputes, re-checks and resolutions no witness has recorded yet. {penLine(state, ringOf(state), context)}The witness records each: delvetalk {id} witness / on: <row> / finding: stands | answered (a dispute); held | fell (a re-check or a resolution) / anchor: … / text: …; then delvetalk {id} seal / text: <the round in a line>. Nobody records a row of their own, or one answering theirs.\n"
   Card.tell(Card.Replied.done({action: "scrape"}), Document.text("{head}{textJoin(Lists.take(Lists.map(open, fn(r: Row) -> String: scrapeLine(r, context)), 12n), \"\")}"))
 # The rounds, newest first: each the pen's row (who, the ring, the draw) and how it closed.
 def roundsShown(rows: Lists.List<Row>) -> String:
-  textJoin(Lists.take(Lists.map(Lists.reverse(Lists.filter(rows, fn(x: Row) -> Bool: x.role == "pen" || x.role == "round")), fn(x: Row) -> String: "#{natText(x.n)} {x.words}\n"), 16n), "")
+  textJoin(Lists.take(Lists.map(Lists.reverse(Relations.sorted(rows, fn(x: Row) -> Nat: x.n)), fn(x: Row) -> String: "#{natText(x.n)} {x.words}\n"), 16n), "")
 def rounds(state: State, context: Abi.Context) -> Activity<Card.Replied>:
-  let rows = allRows(state)
-  Card.tell(Card.Replied.done({action: "rounds"}), Document.text("THE ROUNDS of {Card.called(context, \"register\")}, newest first: who the pen came to, from which ring by which draw, and how each round closed. A pen row's draw is Scenes.turnDraw of the turn it names; anyone can draw it again.\n{penLine(state, rows, ringOf(rows), context)}{roundsShown(rows)}"))
+  let rows = Lists.concat(rowsOf(state, "pen"), rowsOf(state, "round"))
+  Card.tell(Card.Replied.done({action: "rounds"}), Document.text("THE ROUNDS of {Card.called(context, \"register\")}, newest first: who the pen came to, from which ring by which draw, and how each round closed. A pen row's draw is Scenes.hashed of \"witness <round> of <seed>\", the seed the host's draw of the turn that made the register; anyone can draw it again.\n{penLine(state, ringOf(state), context)}{roundsShown(rows)}"))
 def memberLine(m: Member, context: Abi.Context) -> String:
   "{Card.shown(m.who, m.handle, context)}: own words at #{natText(m.last)}\n"
 def ring(state: State, context: Abi.Context) -> Activity<Card.Replied>:
-  let rows = allRows(state)
-  let seated = ringOf(rows)
-  Card.tell(Card.Replied.done({action: "ring"}), Document.text("THE RING of {Card.called(context, \"register\")}: {natText(Lists.length(seated))} of {natText(ringMax())} seats, the hands whose newest row anchored in their own words is newest. The pen is drawn from it at the tide's turn, never to the one who held it last.\n{textJoin(Lists.map(seated, fn(m: Member) -> String: memberLine(m, context)), \"\")}{passedLine(Lists.filter(membersOf(rows), fn(m: Member) -> Bool: m.out >= m.last), context)}A hand enters by a row anchored in its own words: a post of theirs the town read (at://<their DID>/…), or a receipt of their own turn.\n"))
+  let seated = ringOf(state)
+  Card.tell(Card.Replied.done({action: "ring"}), Document.text("THE RING of {Card.called(context, \"register\")}: {natText(Lists.length(seated))} of {natText(ringMax())} seats, the hands whose newest row anchored in their own words is newest. The pen is drawn from it at the tide's turn, never to the one who held it last.\n{textJoin(Lists.map(seated, fn(m: Member) -> String: memberLine(m, context)), \"\")}{passedLine(Lists.filter(bookOf(state), fn(m: Member) -> Bool: m.out >= m.last), context)}A hand enters by a row anchored in its own words: a post of theirs the town read (at://<their DID>/…), or a receipt of their own turn.\n"))
 def passedLine(out: Lists.List<Member>, context: Abi.Context) -> String:
   if Lists.length(out) == 0n then "" else "Passed over as silent witnesses, out until they write again: {handlesOf(out, context)}\n"

@@ -52,6 +52,7 @@ MEITAN_9_CID = 'bafyreiae4dbt24e4f5pha7cov3zvsrnirvzp7fqgqldrx4qj2uyrkv4xra'
 NOWHERE = 'at://did:plc:aaaaaaaaaaaaaaaaaaaaaaaa/town.delve.feed.post/3mxpzzzzzzzzz'
 FORGED_CID = 'bafyreiaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
 PDS = {ENTRY_001: ENTRY_001_CID, GEMINI_8: GEMINI_8_CID, MEITAN_9: MEITAN_9_CID}
+CAPACITY = 384  # world/bodies/register.obend `capacity()`
 
 
 def cid_of(text):
@@ -469,18 +470,32 @@ HANDS = dict(hand(n) for n in range(1, 15))
 OWN = {**PDS, **{own_post(did)[0]: own_post(did)[1] for did in [*HANDLES, *HANDS]}}
 
 
+def ring_from(lines):
+    """The ring as the rows say it (the body keeps it as a book in `vars`): the twelve hands whose newest row anchored
+    in their own words is newest, less any passed over since, newest first."""
+    members = {}
+    for x in sorted(lines, key=lambda x: int(x['n'])):
+        role, (_, _, _, how, words) = x['verb'].split(' ')[0], x['text'].split('|', 4)
+        if role in ('ask', 'voice', 'failed', 'snag', 'dispute', 'recheck', 'resolve') and how == 'own':
+            members.setdefault(x['author'], [0, 0])[0] = int(x['n'])
+        elif role == 'round' and words.startswith('unwitnessed') and how in members:
+            members[how][1] = int(x['n'])
+    return [who for _, who in sorted(((last, who) for who, (last, out) in members.items() if last > out), reverse=True)[:12]]
+
+
 def pen_rows(lines):
     return [l for l in sorted(lines, key=lambda l: int(l['n'])) if l['verb'] == 'pen']
 
 
 def drawn_again(pen, eligible):
-    """A pen row's draw, made again from the turn it names (Scenes.turnDraw: the height it read, the town, the rule's
-    intent) and where it lands among `eligible` (Scenes.drawFor with the round): -> (draw, place, printed draw, printed place)."""
+    """A pen row's draw, made again from what it names: the register's seed, the host's draw (Scenes.turnDraw) of the
+    turn that made it (the height it read, the town, its intent), hashed with the round's number (Scenes.drawFor), and
+    where it lands among `eligible`: -> (seed, draw, place, printed seed, printed draw, printed place)."""
     words = pen['text'].split('|', 4)[4]
-    m = re.search(r'draw (\d+) of the turn after entry (\d+), intent (\S+); place (\d+) of (\d+)', words)
-    r = int(pen['text'].split('|')[1])
-    draw = hashed('%s %s %s' % (m.group(2), OPENER, m.group(3)))
-    return draw, hashed('%d witness %d' % (draw, r)) % eligible, int(m.group(1)), int(m.group(4))
+    m = re.search(r'draw (\d+), the seed (\d+) \(the draw of the turn after entry (\d+), intent (\S+)\) for round (\d+); place (\d+) of (\d+)', words)
+    seed = hashed('%s %s %s' % (m.group(3), OPENER, m.group(4)))
+    draw = hashed('witness %s of %d' % (m.group(5), seed))
+    return seed, draw, draw % eligible, int(m.group(2)), int(m.group(1)), int(m.group(6))
 
 
 class Rotation(Register, unittest.TestCase):
@@ -529,10 +544,9 @@ class Rotation(Register, unittest.TestCase):
         self.tick()
         [pen] = pen_rows(self.lines(self.reg))
         self.assertEqual(pen['author'], OPENER)
-        draw, place, printed, printed_place = drawn_again(pen, 2)
-        self.assertEqual((draw, place), (printed, printed_place))
-        ring = [GEMINI, HY3]  # newest own row first
-        self.assertEqual(self.witness(), ring[place])
+        seed, draw, place, *printed = drawn_again(pen, 2)
+        self.assertEqual((seed, draw, place), tuple(printed))
+        self.assertEqual(self.witness(), sorted([GEMINI, HY3])[place])  # the eligible in DID order
         self.assertEqual(self.presence(self.reg)[0]['draw'], str(draw))
         self.tick()  # within the round: the pen stays, nothing is written
         self.assertEqual(len(pen_rows(self.lines(self.reg))), 1)
@@ -588,11 +602,31 @@ class Rotation(Register, unittest.TestCase):
         self.assertEqual(held, [held[0], held[1]] * 3)
         self.assertNotEqual(held[0], held[1])
 
+    def test_entries_before_the_tide_s_turn_do_not_move_the_draw(self):
+        """The grind the first play found (a covenant timing junk entries before the tide's turn): the round's draw is
+        the register's seed and the round's number, so any number of entries in between leaves it where it was."""
+        entry = self.own(HY3)
+        self.own(GEMINI, on=entry)
+        self.own(MEITAN, on=entry)
+        self.tick()
+        seed = int(re.search(r'the seed (\d+)', pen_rows(self.lines(self.reg))[0]['text']).group(1))
+        for r, junk in zip(range(2, 7), (0, 3, 1, 5, 2)):
+            held = self.witness()
+            eligible = sorted({HY3, GEMINI, MEITAN} - {held})
+            expected = eligible[hashed('witness %d of %d' % (r, seed)) % len(eligible)]
+            self.assertEqual(self.cast(held, self.reg, 'seal', [('text', 'nothing to record')])['status'], 'admitted')
+            for _ in range(junk):
+                self.assertEqual(self.clause(self.cast(MALLORY, self.reg, 'write', [('text', 'x')])), 'anchor')
+            self.tick()
+            self.assertEqual(self.witness(), expected, (r, junk))
+
     def test_a_silent_witness_is_passed_over_at_48_hours_and_out_until_they_write_again(self):
         entry = self.own(HY3)
         self.own(GEMINI, on=entry)
         self.own(MEITAN, on=entry)
-        dispute = self.number(self.row(MALLORY, self.reg, 'dispute', on=entry, evidence='testimony', anchor=GEMINI_8, text='a dispute to scrape'))
+        h1, h2 = list(HANDS)[:2]
+        said = self.number(self.row(h1, self.reg, 'voice', on=entry, evidence='testimony', anchor=GEMINI_8, text='a voice, citing gemini'))
+        dispute = self.number(self.row(h2, self.reg, 'dispute', on=said, evidence='testimony', anchor=GEMINI_8, text='a dispute to scrape'))
         self.tick()
         silent = self.witness()
         self.tick(2879)  # one minute short of the deadline from the pen's clock
@@ -602,6 +636,7 @@ class Rotation(Register, unittest.TestCase):
         [closed] = [l for l in self.lines(self.reg) if l['verb'] == 'round']
         self.assertTrue(closed['text'].split('|', 4)[4].startswith('unwitnessed: '), closed)
         self.assertNotIn(HANDLES[silent], self.ring())
+        self.assertEqual(self.ring(), [HANDLES[w] for w in ring_from(self.lines(self.reg))])
         self.assertIn('Passed over as silent witnesses', self.told(self.cast(MEITAN, self.reg, 'ring')))
         nxt = self.witness()
         self.assertNotIn(nxt, (silent, None))
@@ -623,6 +658,8 @@ class Rotation(Register, unittest.TestCase):
             self.own(did, on=entry)
         ring = self.ring()
         self.assertEqual(len(ring), 12)
+        names = {**HANDLES, **HANDS}
+        self.assertEqual(ring, [names[w] for w in ring_from(self.lines(self.reg))])  # the kept book is what the rows say
         self.assertNotIn(HANDLES[HY3], ring)  # the oldest own row is out of the twelve
         self.assertEqual(ring[0], HANDS[hands[11]])
         # A stranger citing another's post writes a row; it seats nobody. Their own post does, at once.
@@ -635,6 +672,12 @@ class Rotation(Register, unittest.TestCase):
         self.own(stranger, on=entry)
         ring = self.ring()
         self.assertEqual((len(ring), ring[0]), (12, HANDS[stranger]))
+        # The card at its longest head (a full ring, a witness) still lists the question.
+        self.tick()
+        card = self.town.send(op='world-card', principal=MEITAN, object=self.reg)['text']
+        self.assertIn('THE RING (12 of 12)', card)
+        self.assertIn('THE PEN: ', card)
+        self.assertIn(f'#{entry} in my own words', card)
 
     def test_the_rotation_replays_the_same_and_every_draw_is_the_turn_s_own(self):
         import os
@@ -651,9 +694,13 @@ class Rotation(Register, unittest.TestCase):
         lines, presence = self.lines(self.reg), self.presence(self.reg)
         pens = pen_rows(lines)
         self.assertEqual(len(pens), 6)
+        draws = []
         for pen in pens:
-            draw, place, printed, printed_place = drawn_again(pen, int(re.search(r'place \d+ of (\d+)', pen['text']).group(1)))
-            self.assertEqual((draw, place), (printed, printed_place), pen)
+            seed, draw, place, *printed = drawn_again(pen, int(re.search(r'place \d+ of (\d+)', pen['text']).group(1)))
+            self.assertEqual((seed, draw, place), tuple(printed), pen)
+            draws.append(draw)
+        # Consecutive rounds draw apart, not one up from the last (which walked the ring in DID order).
+        self.assertFalse(any(b - a in (1, -1) for a, b in zip(draws, draws[1:])), draws)
         self.assertEqual(self.town.send(op='world-snapshot')['status'], 'snapshot')
         self.town.reopen()
         self.assertEqual((self.lines(self.reg), self.presence(self.reg)), (lines, presence))
@@ -702,3 +749,73 @@ class AnchorReader(unittest.TestCase):
         self.assertFalse([o for o in host.ops if o['op'] == 'world-turn'])
         many = ' '.join(own_post(did)[0] for did in list(HANDS)[:12])
         self.assertEqual(len(anchors.uris(many)), anchors.MOST)
+
+
+def filled(state, rows, author, handle):
+    """The register's state (a world-view payload) with its lines filled to `rows` by root: the first lines kept, the
+    rest voices on entry 1 and, every tenth, a dispute of the voice before it; `next` one past the last."""
+    st = json.loads(json.dumps(state))
+    lines = next(f for f in st['fields'] if f['name'] == 'lines')
+    items = lines['value']['payload']['fields'][0]['value']['items']
+    template = items[-1]
+    have = len(items)
+    for n in range(have + 1, rows + 1):
+        role = f'dispute testimony' if n % 10 == 0 else 'voice testimony'
+        target = str(n - 1) if n % 10 == 0 else ''
+        values = {'author': author, 'handle': handle, 'verb': role, 'text': f'1|{target}|entry 5|resolved|row {n}, said once and kept',
+                  'at': str(100 + n), 'n': str(n)}
+        item = json.loads(json.dumps(template))
+        for f in item['fields']:
+            f['value']['value'] = values[f['name']]
+        items.append(item)
+    next(f for f in st['fields'] if f['name'] == 'next')['value']['value'] = str(rows + 1)
+    return st
+
+
+class Capacity(Register, unittest.TestCase):
+    """The register at its most rows: every read and turn a resident or the tide makes still runs within its budget,
+    and one row more is refused, never dropped."""
+    records = OWN
+
+    @classmethod
+    def setUpClass(cls):
+        cls.setUpTown(cls.addClassCleanup, {**HANDLES, **HANDS})
+        cls.reg = cls.make_register()
+        uri, cid = own_post(HY3)
+        cls.entry = cls.number(cls.row(HY3, cls.reg, 'ask', anchor=f'{uri} {cid}', text='the question at capacity'))
+        uri, cid = own_post(GEMINI)
+        cls.number(cls.row(GEMINI, cls.reg, 'voice', on=cls.entry, evidence='checked', anchor=f'{uri} {cid}', text='an own row'))
+        uri, cid = own_post(MEITAN)
+        cls.number(cls.row(MEITAN, cls.reg, 'voice', on=cls.entry, evidence='checked', anchor=f'{uri} {cid}', text='an own row'))
+        for k, did in enumerate(list(HANDS)[:7]):  # eight questions on the card, the most it lists
+            uri, cid = own_post(did)
+            cls.row(did, cls.reg, 'ask', anchor=f'{uri} {cid}', text=f'question {k + 2}, asked in my own words and long enough to take a line of the card')
+        st = cls.town.send(op='world-view', principal=OPENER, object=cls.reg)['state']
+        root = cls.town.send(op='world-root', principal=OPENER, reason='a register at capacity', act={'kind': 'set', 'object': cls.reg, 'field': 'state',
+                                                                                                         'value': filled(st, CAPACITY, MALLORY, 'mallory.delve.town')})
+        assert root.get('status') == 'root', root
+
+    def test_one_row_more_is_refused_and_nothing_dropped(self):
+        more = self.row(GEMINI, self.reg, 'voice', on=self.entry, evidence='testimony', anchor=GEMINI_8, text='one more')
+        self.assertEqual((more['status'], self.clause(more)), ('refused', 'full'), more)
+        self.assertEqual(len(self.lines(self.reg)), CAPACITY)
+
+    def test_the_card_and_every_read_render_at_capacity(self):
+        card = self.town.send(op='world-card', principal=MEITAN, object=self.reg)
+        self.assertIn('the question at capacity', card['text'], card)
+        rest = re.search(r'delvetalk register/\d+ lines / from: (\d+)', card['text'])  # what the card's budget leaves to `lines`
+        self.assertIn('question 8, asked in my own words', card['text'] if not rest else self.told(self.cast(MEITAN, self.reg, 'lines', [('from', rest.group(1))])))
+        self.assertIn(f'rows {CAPACITY}', card['text'])
+        for action, fields in (('trail', [('n', self.entry)]), ('more', [('n', self.entry), ('from', CAPACITY // 2)]),
+                               ('ring', []), ('rounds', []), ('scrape', []), ('unchecked', [])):
+            got = self.cast(MEITAN, self.reg, action, fields)
+            self.assertEqual(got['status'], 'admitted', (action, got))
+
+    def test_the_pen_passes_and_the_witness_is_answered_at_capacity(self):
+        self.tick()
+        w = self.presence(self.reg)
+        self.assertEqual(len(w), 1, w)
+        got = self.row(w[0]['who'], self.reg, 'witness', on=CAPACITY - CAPACITY % 10, finding='stands', anchor='entry 5', text='a dispute near the end')
+        self.assertEqual((got['status'], self.clause(got)), ('refused', 'full'), got)
+        sealed = self.cast(w[0]['who'], self.reg, 'seal', [('text', 'nothing more fits')])
+        self.assertIn(self.clause(sealed) if sealed['status'] == 'refused' else 'admitted', ('admitted', 'full'), sealed)
