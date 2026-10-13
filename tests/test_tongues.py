@@ -291,7 +291,9 @@ class Paint(Tongued):
             asked.append(req)
             return replies[len(asked) - 1]
         before = self.town.send(op='world-status')['renders']['retried']
-        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [], 'retrying': [ar['key']]})
+        done = interpret.paint(self.town.client, ask)
+        self.assertEqual({k: v for k, v in done.items() if k != 'verdicts'}, {'painted': [], 'retrying': [ar['key']]})
+        self.assertEqual([v['clause'] for v in done['verdicts']], ['wants'], done)
         self.assertEqual(self.town.send(op='world-status')['renders']['retried'], before + 1)
         self.assertEqual(self.render(GLM, tongue='ar')['status'], 'pending')
         self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [ar['key']]})
@@ -315,8 +317,11 @@ class Paint(Tongued):
         def ask(req):
             asked.append(req)
             return replies[len(asked) - 1]
-        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [], 'retrying': [zh['key']]})
-        self.assertEqual(interpret.paint(self.town.client, ask), {'painted': [], 'exact': [zh['key']]})
+        done = interpret.paint(self.town.client, ask)
+        self.assertEqual({k: v for k, v in done.items() if k != 'verdicts'}, {'painted': [], 'retrying': [zh['key']]})
+        done = interpret.paint(self.town.client, ask)
+        self.assertEqual({k: v for k, v in done.items() if k != 'verdicts'}, {'painted': [], 'exact': [zh['key']]})
+        self.assertEqual([(v['status'], v['clause']) for v in done['verdicts']], [('exact', 'wants')], done)
         self.assertIn('a number was wrong (', asked[1]['user'])
         self.assertIn('in Chinese', asked[1]['user'])
         got = self.render(GLM, tongue='zh')
