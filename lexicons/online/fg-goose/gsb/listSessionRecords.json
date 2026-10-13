@@ -1,0 +1,101 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.listSessionRecords",
+  "description": "The issuer's scratch cards (including REPL objects with cards) and entry links in record shape, response only. No URI, repository or signed membership. No REPL checkpoint collection is served.",
+  "defs": {
+    "main": {
+      "type": "query",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "session",
+          "collection"
+        ],
+        "properties": {
+          "session": {
+            "type": "string"
+          },
+          "collection": {
+            "type": "string",
+            "format": "nsid",
+            "enum": [
+              "online.fg-goose.gsb.card",
+              "online.fg-goose.gsb.entry"
+            ]
+          },
+          "cursor": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 50
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "records"
+          ],
+          "properties": {
+            "records": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "#sessionRecord"
+              }
+            },
+            "cursor": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "AuthRequired"
+        },
+        {
+          "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "RecordNotFound"
+        },
+        {
+          "name": "HostUnavailable"
+        }
+      ],
+      "description": "The issuer's scratch cards (including REPL objects with cards) and entry links in record shape, response only. No URI, repository or signed membership. No REPL checkpoint collection is served."
+    },
+    "sessionRecord": {
+      "type": "object",
+      "required": [
+        "key",
+        "cid",
+        "value"
+      ],
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "cid": {
+          "type": "string",
+          "format": "cid"
+        },
+        "value": {
+          "type": "unknown"
+        }
+      }
+    }
+  }
+}

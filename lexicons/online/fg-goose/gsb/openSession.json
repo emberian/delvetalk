@@ -1,0 +1,84 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.openSession",
+  "description": "Open the issuer's scratch world through world-scratch. Method-bound service auth; response only, never a repository record.",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Open the issuer's scratch world through world-scratch. Method-bound service auth; response only, never a repository record.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 32,
+              "minLength": 1
+            },
+            "from": {
+              "type": "ref",
+              "ref": "#fork"
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "session",
+            "expires"
+          ],
+          "properties": {
+            "session": {
+              "type": "string",
+              "description": "`scratch/<name>`."
+            },
+            "expires": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Home-world clock minute at which it is discarded if idle."
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "AuthRequired"
+        },
+        {
+          "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "RecordNotFound"
+        },
+        {
+          "name": "HostUnavailable"
+        }
+      ]
+    },
+    "fork": {
+      "type": "object",
+      "properties": {
+        "world": {
+          "type": "string"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.index",
+  "description": "The journal-derived manifest (transport/mirror.py): the height its records were read at and each card's version; identical bytes in both repositories at the same projection, never a did, rev, commit or head. Written after every record it lists has landed and before the posting-only checkpoint.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "any",
+      "description": "Record key: `self`.",
+      "record": {
+        "type": "object",
+        "required": [
+          "height",
+          "coherent",
+          "cards",
+          "pages"
+        ],
+        "properties": {
+          "height": {
+            "type": "integer"
+          },
+          "coherent": {
+            "type": "boolean",
+            "description": "false when the world moved while the records were read; `heights` then says from and to"
+          },
+          "heights": {
+            "type": "ref",
+            "ref": "#heights"
+          },
+          "cards": {
+            "type": "unknown",
+            "description": "{object id: version}"
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "read": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "heights": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "integer"
+        },
+        "to": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

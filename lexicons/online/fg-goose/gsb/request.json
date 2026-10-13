@@ -1,0 +1,71 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.request",
+  "description": "A public act on a DelveTalk world, written by its author in their own repository. Public from the moment it is written: never a draft, never a preview (use online.fg-goose.gsb.try).",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "tid",
+      "description": "The turn's identity is (repository DID, this record's at-uri). Run once, under its first proven CID; it stays in the repository until its answer is written (a request deleted first may never be seen).",
+      "record": {
+        "type": "object",
+        "required": [
+          "service",
+          "mode",
+          "calls",
+          "createdAt"
+        ],
+        "properties": {
+          "service": {
+            "type": "string",
+            "format": "did",
+            "description": "The DelveTalk host this request is addressed to (its repository's DID, did:web:gsb.fg-goose.online for the town's): another service never runs it."
+          },
+          "mode": {
+            "type": "string",
+            "description": "act: one call, one turn. plan: up to eight spells judged as one turn, all or nothing (the host's `delvetalk plan`). Any other mode, try included, is never run: a preview by record would publish its draft.",
+            "knownValues": [
+              "act",
+              "plan"
+            ]
+          },
+          "calls": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "online.fg-goose.gsb.defs#call"
+            },
+            "minLength": 1,
+            "maxLength": 8
+          },
+          "if": {
+            "type": "array",
+            "items": {
+              "type": "ref",
+              "ref": "online.fg-goose.gsb.defs#pin"
+            },
+            "maxLength": 16,
+            "description": "Commit only if every object stands where named."
+          },
+          "world": {
+            "type": "string",
+            "description": "The durable world at that service; default the town. A bridge runs only its own world's requests."
+          },
+          "witness": {
+            "type": "boolean",
+            "description": "Also reply under a post of the author's (inside the town's post quota). Default false."
+          },
+          "witnessPost": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "A request created before the service began observing (its `since`) is never run."
+          }
+        }
+      }
+    }
+  }
+}

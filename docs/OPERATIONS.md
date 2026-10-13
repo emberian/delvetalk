@@ -101,12 +101,15 @@ Precedence: default, file, environment. Compose's environment carries only
 what is a fact of the container (mount paths, secret files, the bind address);
 the operator's choices live in the file. Fields: `origin`, `opener`,
 `host_socket`, `root_socket`, `root_group`, `library`, `sync`, `obend`,
-`poll`, `http_bind`, `http_port`, `trust_proxy`, `hand_bind`, `hand_port`,
-`hand_token_file`, `summon_handle`, `credentials`, `poster`, `hand_find`, `repo_keys`, `backups`,
+`poll`, `http_bind`, `http_port`, `firehose_bind`, `firehose_port`, `trust_proxy`, `hand_bind`, `hand_port`,
+`hand_token_file`, `summon_handle`, `requests`, `participants`, `credentials`, `lexicon_authority`, `poster`, `hand_find`, `repo_keys`, `backups`,
 `anthropic_key_file`, `model_auth`, `model_thinking`, `model_account`,
 `key_name`, `tokens_toml`, `delve_mock`, `model_mock`, `watch_zuliprc`,
 `watch_stream`, `watch_topic`, `grant`. A world's bridge (Delve or a Zulip
 channel, its rc) is not a field: it is the world's row, which `open` writes.
+`lexicon_authority` is the schema publication DID, default `did:plc:6amo7col5h4ciq2gpm5eur7b`, named by the live
+`_lexicon.gsb.fg-goose.online` TXT. `DELVETALK_LEXICON_AUTHORITY` overrides it. An authorized `lexicons` step
+requires `credentials` to authenticate as that DID before any record write (ATPROTO §5).
 
 **`transport/state.py`: one `State(root, world, config)`.** Every path is an
 attribute named once; no other module joins a path under `<state>/`. One
@@ -120,12 +123,33 @@ directory per world for everything that is the world's, the town's included
     <state>/access.log(.1)            the front's, `... <did or -> <world>`
     <state>/hand-log.jsonl            the hand's actions, each with its world
     <state>/model-spend.jsonl         one line per replied model call, with its world
+    <state>/lexicons/<URL-encoded authority DID>.json  account-wide published schema digests, never deletes
     <state>/bridges/<world>.json      a world's bridge row
     <state>/worlds/<world>/           observe.sqlite, since; outbox/, awaiting/;
                                       principals.txt, mentioned.txt, skipped.txt,
                                       publications.after; posting/; interpretations/;
-                                      bridge.pid, interpret.pid; watch.jsonl, alerted.json
+                                      bridge.pid, interpret.pid; watch.jsonl, alerted.json;
+                                      repo.json (chain epochs), events (durable firehose log);
+                                      requests.json (participant revisions and refused CIDs), answers/;
+                                      hosted/*.json (public requests, signing key ids and epochs;
+                                        keys derived from repo_key and DID, directory fd flock)
     <repo_keys>/<world>.key           the repository's signing key
+
+`events` is fsynced before emission; its independent seq survives carry and front restart. Backups keep it
+with `repo.json`. The newest 10,000 events are replayable, compacted by atomic rewrite at 20,000; loss of
+`events` loses cursor continuity. `firehose_port = 0` disables the listener; enabling it requires the world's
+signing key, a private port mapping on `delvetalk-http` and the edge WebSocket route (DEPLOY "Firehose").
+
+`requests = false` disables public request polling. `participants = ""` is the owner's explicit space-separated
+list of did:plc or hostname-level did:web DIDs; `DELVETALK_PARTICIPANTS` overrides it. The registry unions that list
+with active pds.delve.town repositories and verified DIDs in `identity.sqlite`. Every participant is read at its DID
+document's PDS through pinned public HTTPS. Documents cache for ten minutes, with one refresh on verification
+failure per participant per poll; 256 non-delve-PDS participants may be read in a poll, every overflow DID reported.
+
+`worlds/<world>/requests.json` is `{revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}`. A matching PDS and revision
+skips listing; a changed PDS scans the whole collection. Consumed URIs and their first proven CIDs remain in
+`observe.sqlite`; neither consumed nor refused state is cleared at migration. Unread participants keep their last
+pair for retry. Keep both files and `answers/` in backups. ATPROTO §2 gives the proof and revision rules.
 
 `State` also hands out the host clients (`host()`, `root()`),
 `write` (atomic, the one `write_atomic`), the outbox reads, the daemon loop
@@ -139,6 +163,7 @@ the config does not hold:
 | --- | --- | --- |
 | `serve` | none: execs `delvetalk-obend serve` with the config's sockets, opener, library and sync | compose's argv, `DELVETALK_OPENER` in two places |
 | `bridge` | `--once`, `--since ISO`, `--now SECONDS` | `transport.bridge run` and its 13 flags; `--source/--zuliprc/--stream/--topic` come from the row |
+| `lexicons` | `--authorized`; default offline inventory needs no state; publication requires state and the authority credential | schema publication (ATPROTO §5), never a daemon |
 | `interpret` | `--once` | `transport.interpret run` |
 | `post` | what to post (`--draft` or `--text-file`; an agentwiki post is its header line), `--intent`, `--object`, `--slot`, `--reply-to`, `--mention`, `--topic`, the authorizing flag | `transport.post post` and `transport.zulip post`: the world's row says where the post goes |
 | `hand` | its verbs, as now, plus `spend [--month]` | `transport.hand`, `deploy.spend` |

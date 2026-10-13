@@ -1,0 +1,383 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.defs",
+  "description": "Shared definitions for acting on a DelveTalk world (docs/ATPROTO.md section 2).",
+  "defs": {
+    "call": {
+      "type": "object",
+      "description": "One untagged call: exactly {spell}, or {object, verb, fields?}. Shared wire judgement enforces the exclusive forms; fields must be a JSON object.",
+      "properties": {
+        "spell": {
+          "type": "string",
+          "description": "A spell: the delvetalk line and its field lines.",
+          "maxLength": 4096,
+          "minLength": 1
+        },
+        "object": {
+          "type": "string",
+          "description": "The object id.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "verb": {
+          "type": "string",
+          "description": "The verb or method name.",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fields": {
+          "type": "unknown",
+          "description": "The verb's fields as a JSON object."
+        }
+      }
+    },
+    "pin": {
+      "type": "object",
+      "description": "Commit-if-unchanged: the object must stand at this version (and state CID) when the turn commits, else the turn is refused `moved`.",
+      "required": [
+        "object",
+        "version"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cid": {
+          "type": "string",
+          "description": "The object's stateCid at that version (an object projection's of CID).",
+          "format": "cid"
+        }
+      }
+    },
+    "moved": {
+      "type": "object",
+      "required": [
+        "object",
+        "was",
+        "now"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "was": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The version the pin named."
+        },
+        "now": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The version the object stands at."
+        }
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "required": [
+        "status",
+        "line"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "admitted",
+            "refused",
+            "suspended",
+            "moved",
+            "unsupported",
+            "spells",
+            "usage",
+            "unreached",
+            "invalid",
+            "error",
+            "unknown",
+            "denied",
+            "looked",
+            "receipt"
+          ]
+        },
+        "line": {
+          "type": "string",
+          "description": "The host's stamp line as the public reads it: a refusal's only when the host gives it a public projection."
+        },
+        "class": {
+          "type": "string",
+          "description": "A refusal's class."
+        },
+        "clause": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "moved": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#moved"
+          }
+        }
+      }
+    },
+    "receipt": {
+      "type": "object",
+      "description": "The journal entry the turn made. Absent from a preview, which can never pass for a receipt.",
+      "required": [
+        "slug",
+        "height",
+        "entry"
+      ],
+      "properties": {
+        "slug": {
+          "type": "string",
+          "description": "Two proquint words: what a post cites."
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "entry": {
+          "type": "cid-link",
+          "description": "The entry's hash: the CID of its canonical DAG-CBOR without `hash`, signed in the world's repository."
+        }
+      }
+    },
+    "version": {
+      "type": "object",
+      "required": [
+        "object",
+        "version"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stateCid": {
+          "type": "string",
+          "format": "cid"
+        }
+      }
+    },
+    "trace": {
+      "type": "object",
+      "description": "What the turn read and moved, over objects the reader may view.",
+      "properties": {
+        "roots": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#version"
+          },
+          "description": "Objects read, at the versions read."
+        },
+        "writes": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#version"
+          },
+          "description": "Objects written, each with its new version and stateCid."
+        },
+        "fired": {
+          "type": "array",
+          "items": {
+            "type": "unknown"
+          },
+          "description": "Rules fired, as journaled."
+        },
+        "wanted": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#wantChange"
+          },
+          "description": "Wants opened."
+        },
+        "unwanted": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#wantChange"
+          },
+          "description": "Wants closed."
+        },
+        "revealed": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The host's revealed lines, verbatim."
+        }
+      }
+    },
+    "answerView": {
+      "type": "object",
+      "required": [
+        "outcome"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "ref",
+          "ref": "online.fg-goose.gsb.defs#outcome"
+        },
+        "receipt": {
+          "type": "ref",
+          "ref": "online.fg-goose.gsb.defs#receipt"
+        },
+        "card": {
+          "type": "string",
+          "description": "The exact card the turn offered (or, for a try, would offer), as the caller may read it."
+        },
+        "cardCid": {
+          "type": "string",
+          "description": "CID of the exact offered card encoded as a DAG-CBOR string, including its trailing newline; not a repository record CID.",
+          "format": "cid"
+        },
+        "offers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Cards offered to the caller, verbatim."
+        },
+        "trace": {
+          "type": "ref",
+          "ref": "online.fg-goose.gsb.defs#trace"
+        },
+        "$type": {
+          "type": "string",
+          "const": "online.fg-goose.gsb.defs#answerView"
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#answerView"
+          },
+          "maxLength": 4
+        }
+      },
+      "description": "The caller's projected turn answer. Preview outcomes use previewView, whose schema has no receipt."
+    },
+    "previewOutcome": {
+      "type": "object",
+      "required": [
+        "status",
+        "line"
+      ],
+      "properties": {
+        "status": {
+          "type": "string",
+          "const": "previewed"
+        },
+        "line": {
+          "type": "string",
+          "description": "The host's stamp line as the public reads it: a refusal's only when the host gives it a public projection."
+        },
+        "class": {
+          "type": "string",
+          "description": "A refusal's class."
+        },
+        "clause": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "moved": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#moved"
+          }
+        }
+      }
+    },
+    "previewView": {
+      "type": "object",
+      "required": [
+        "$type",
+        "outcome"
+      ],
+      "properties": {
+        "outcome": {
+          "type": "ref",
+          "ref": "#previewOutcome"
+        },
+        "card": {
+          "type": "string",
+          "description": "The exact card the turn offered (or, for a try, would offer), as the caller may read it."
+        },
+        "cardCid": {
+          "type": "string",
+          "description": "CID of the exact offered card encoded as a DAG-CBOR string, including its trailing newline; not a repository record CID.",
+          "format": "cid"
+        },
+        "offers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Cards offered to the caller, verbatim."
+        },
+        "trace": {
+          "type": "ref",
+          "ref": "online.fg-goose.gsb.defs#trace"
+        },
+        "$type": {
+          "type": "string",
+          "const": "online.fg-goose.gsb.defs#previewView"
+        },
+        "turns": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "#previewView"
+          },
+          "maxLength": 4
+        }
+      },
+      "description": "A projected world-try reply, returned only. No receipt, slug, entry or record is claimed."
+    },
+    "planCall": {
+      "type": "object",
+      "required": [
+        "spell"
+      ],
+      "properties": {
+        "spell": {
+          "type": "string",
+          "description": "A spell: the delvetalk line and its field lines.",
+          "maxLength": 4096,
+          "minLength": 1
+        }
+      },
+      "description": "One spell only; a plan never contains object calls."
+    },
+    "wantChange": {
+      "type": "object",
+      "required": [
+        "object",
+        "want"
+      ],
+      "properties": {
+        "object": {
+          "type": "string"
+        },
+        "want": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

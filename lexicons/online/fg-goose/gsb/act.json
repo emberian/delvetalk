@@ -1,0 +1,76 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.act",
+  "description": "Run one spell or object call as the issuer's turn; the same intent answers its first receipt.",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Run one spell or object call as the issuer's turn; the same intent answers its first receipt. Method-bound service JWT; bare service DID and #delvetalk audiences accepted.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "call",
+            "intent"
+          ],
+          "properties": {
+            "call": {
+              "type": "ref",
+              "ref": "online.fg-goose.gsb.defs#call"
+            },
+            "intent": {
+              "type": "string",
+              "description": "The caller's idempotency key: the same intent answers the first receipt.",
+              "maxLength": 256,
+              "minLength": 1
+            },
+            "if": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "online.fg-goose.gsb.defs#pin"
+              },
+              "maxLength": 16
+            },
+            "world": {
+              "type": "string",
+              "description": "Absent or this front's durable world, or scratch/<name> resolved by the host under the token issuer. Scratch turns never write public answers."
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "union",
+          "refs": [
+            "online.fg-goose.gsb.defs#answerView",
+            "online.fg-goose.gsb.defs#previewView"
+          ],
+          "closed": true
+        }
+      },
+      "errors": [
+        {
+          "name": "AuthRequired"
+        },
+        {
+          "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "HostUnavailable"
+        },
+        {
+          "name": "RecordNotFound"
+        }
+      ]
+    }
+  }
+}

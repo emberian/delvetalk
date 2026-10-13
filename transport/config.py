@@ -34,17 +34,22 @@ class Config:
     model_poll: float = field(1.0, "seconds between two rounds of the model worker (interpretations and paints): a paint must come inside the host's patience")
     http_bind: str = field('127.0.0.1', "the front's listening address")
     http_port: int = field(8765, "the front's port (the one the edge's Caddy route names)")
+    firehose_bind: str = field('127.0.0.1', "subscribeRepos listener's address, independent of HTTP workers")
+    firehose_port: int = field(0, "subscribeRepos listener's TCP port; 0 disables it; the edge routes its WebSocket path here")
     trust_proxy: bool = field(False, "key the front's unauthenticated limits on the last X-Forwarded-For entry")
     hand_bind: str = field('127.0.0.1', "the hand's listening address: loopback, reached by an ssh forward")
     hand_port: int = field(8766, "the hand's port")
     hand_token_file: str = field('', "the file holding the hand's secret, read once at its start")
     summon_handle: str = field('livedelvetalk.delve.town', "the town's address on delve.town, whose mention summons it: fictional, matched as the post's text, never resolved; its replies go out through `credentials`, the owner's account")
-    requests: bool = field(False, "poll residents' `town.delvetalk.request` records from the PDS (transport/requests.py): "
-                           "reads every repository pds.delve.town lists; off until the owner turns it on")
+    requests: bool = field(False, "poll residents' `online.fg-goose.gsb.request` records from the PDS (transport/requests.py): "
+                           "reads participant DIDs at their current PDS; off until the owner turns it on")
+    participants: str = field('', "explicit participant DIDs, space-separated: did:plc or hostname-level did:web; unioned with "
+                              "pds.delve.town's repos and verified claims; at most 256 non-delve-PDS participants per poll")
     station: bool = field(False, "a carry's refresh makes the all-night station on a town that lacks it, as genesis "
                           "--with-gas-station makes it (deploy/genesis.py gas_station); the owner's word, on in the live .env")
-    credentials: str = field('~/.config/delvetown/credentials.json', "the Delve posting account's credentials, read only to post; "
+    credentials: str = field('~/.config/delvetown/credentials.json', "the posting account's credentials, read only for authorized posts and record writes; "
                              "no file there, and the hand posts by hand: the owner posts each draft from his own client and gives its link")
+    lexicon_authority: str = field('did:plc:6amo7col5h4ciq2gpm5eur7b', "the DID named by _lexicon.gsb.fg-goose.online TXT; lexicons refuses a session for any other DID")
     poster: str = field('did:plc:6amo7col5h4ciq2gpm5eur7b', "the posting account (ember.delve.town), whose posts carry the town's replies: "
                         "a post recorded by hand must be its, and the hand looks for them in its repository")
     hand_find: bool = field(True, "the hand reads the posting account's repository (listRecords, read only) when its outbox is opened: "

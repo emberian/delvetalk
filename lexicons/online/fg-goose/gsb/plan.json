@@ -1,0 +1,80 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.plan",
+  "description": "Run 1..8 spells as one host delvetalk plan turn, all or nothing, with one receipt.",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Run 1..8 spells as one host delvetalk plan turn, all or nothing, with one receipt. Method-bound service JWT; bare service DID and #delvetalk audiences accepted.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "calls",
+            "intent"
+          ],
+          "properties": {
+            "calls": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "online.fg-goose.gsb.defs#planCall"
+              },
+              "minLength": 1,
+              "maxLength": 8
+            },
+            "intent": {
+              "type": "string",
+              "maxLength": 256,
+              "minLength": 1
+            },
+            "if": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "online.fg-goose.gsb.defs#pin"
+              },
+              "maxLength": 16
+            },
+            "world": {
+              "type": "string",
+              "description": "Absent or this front's durable world, or scratch/<name> resolved by the host under the token issuer. Scratch turns never write public answers."
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "union",
+          "refs": [
+            "online.fg-goose.gsb.defs#answerView",
+            "online.fg-goose.gsb.defs#previewView"
+          ],
+          "closed": true
+        }
+      },
+      "errors": [
+        {
+          "name": "AuthRequired"
+        },
+        {
+          "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "HostUnavailable"
+        },
+        {
+          "name": "RecordNotFound"
+        }
+      ]
+    }
+  }
+}

@@ -16,6 +16,7 @@ import urllib.parse
 from pathlib import Path
 
 from tests.host import serve
+from tests.keys import write_repo_key
 from tests.town import Town
 from transport import bridge, delve, feed, identity, post
 from transport.config import Config
@@ -36,7 +37,9 @@ class Feed(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
         cls.town = Town(cls.tmp.name, cleanup=cls.addClassCleanup, furnished=False)
-        cls.st = State(Path(cls.tmp.name) / 'front', config=Config(origin='http://127.0.0.1:8765'))
+        cls.st = State(Path(cls.tmp.name) / 'front', config=Config(origin='http://127.0.0.1:8765',
+                       repo_keys=str(Path(cls.tmp.name) / 'front' / 'repo')))
+        write_repo_key(cls.st)
         cls.ident = identity.Identity(cls.st, delve.Client(Nobody()))
         cls.front = serve(Front(cls.st, HostClient(cls.town.process.sock), cls.ident, ('127.0.0.1', 0)))
         cls.addClassCleanup(cls.front.server_close)

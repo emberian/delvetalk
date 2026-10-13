@@ -1,0 +1,21 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.checkpoint",
+  "description": "Posting-account-only checkpoint of the world's signed head observed before the mirror read its records. Never in the did:web facade or signed tree. No timestamp: its bytes depend only on what it names.",
+  "defs": {
+    "main": {
+      "type": "record",
+      "key": "literal:self",
+      "record": {
+        "type": "object",
+        "required": ["did", "rev", "commit", "height"],
+        "properties": {
+          "did": {"type": "string", "format": "did", "description": "The canonical world repository's DID."},
+          "rev": {"type": "string", "format": "tid", "description": "The signed commit's revision."},
+          "commit": {"type": "string", "format": "cid", "description": "The signed commit CID as a string."},
+          "height": {"type": "integer", "minimum": 1, "description": "Journal height from online.fg-goose.gsb.entry/<rev>."}
+        }
+      }
+    }
+  }
+}

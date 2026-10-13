@@ -1,0 +1,71 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.try",
+  "description": "Preview one call with world-try: exact offered bytes and their CID, trace, no receipt and nothing persisted.",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Preview one call with world-try: exact offered bytes and their CID, trace, no receipt and nothing persisted. Method-bound service JWT; bare service DID and #delvetalk audiences accepted.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "call"
+          ],
+          "properties": {
+            "if": {
+              "type": "array",
+              "items": {
+                "type": "ref",
+                "ref": "online.fg-goose.gsb.defs#pin"
+              },
+              "maxLength": 16
+            },
+            "world": {
+              "type": "string",
+              "description": "Absent or this front's durable world, or scratch/<name> resolved by the host under the token issuer. Scratch turns never write public answers."
+            },
+            "call": {
+              "type": "ref",
+              "ref": "online.fg-goose.gsb.defs#call"
+            },
+            "intent": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "description": "Optional preview identity; never bound to a receipt."
+            }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "ref",
+          "ref": "online.fg-goose.gsb.defs#previewView"
+        }
+      },
+      "errors": [
+        {
+          "name": "AuthRequired"
+        },
+        {
+          "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "HostUnavailable"
+        },
+        {
+          "name": "RecordNotFound"
+        }
+      ]
+    }
+  }
+}

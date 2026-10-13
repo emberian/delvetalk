@@ -46,6 +46,7 @@ def bump(state: State, context: Abi.Context) -> Activity<Nat>:
 ''')
 from transport import delve, identity
 from tests.host import ServeCase, bounds, serve, served
+from tests.keys import write_repo_key
 from transport.host import HostClient
 from transport.config import Config
 from transport.http import CATALOGUE, AccessLog, Front, turn_view
@@ -91,6 +92,7 @@ class FrontCase(ServeCase):
     OPENER = 'did:plc:' + 'o' * 24
     made = 0
     fresh_world = False
+    hosted_accounts = False
 
     @classmethod
     def setUpClass(cls):
@@ -109,7 +111,9 @@ class FrontCase(ServeCase):
         self.provider = Provider()
         self.now = [1000.0]
         self.host = HostClient(self.socket)  # a test may replace its send
-        st = State(self.tmp.name, config=Config(host_socket=self.socket))
+        st = State(self.tmp.name, config=Config(host_socket=self.socket, repo_keys=str(Path(self.tmp.name) / 'repo')))
+        if self.hosted_accounts:
+            write_repo_key(st)
         ident = identity.Identity(st, delve.Client(self.provider), clock=lambda: self.now[0])
         self.outbox = st.outbox  # the hand's: an HTTP turn that writes a public object drafts here
         self.front = serve(Front(st, self.host, ident, ('127.0.0.1', 0), clock=lambda: self.now[0]))
@@ -306,6 +310,7 @@ class Guests(FrontCase):
     guest is anyone to the host: it arrives (its avatar, its handle), its turns are judged as anyone's, and nothing is
     drafted for posting on its behalf. Refuted by a code that works twice, lapsed or revoked, a guest the host does not
     know by its handle, or a guest's turn in the hand's outbox."""
+    hosted_accounts = True
 
     def invited(self, name=None, days=7):
         name = name or 'guest-' + self.c
@@ -921,6 +926,7 @@ class GuestDoor(InTown):
     """/enter (docs/WEB.md "The guest door"): a person with an invitation and no delve.town account comes in from a
     browser with an open code and a name, plays as their avatar, signs out, and signs in again with the key shown once."""
     OPENER = 'did:plc:' + 'g' * 24
+    hosted_accounts = True
     PAGE = {'Accept': 'text/html', 'Content-Type': FORM}
 
     def door(self, form, cookie=None):

@@ -26,13 +26,40 @@ the mirror; nothing runs it authorized, so today these records are read from the
 
 | collection | key | value |
 | --- | --- | --- |
-| `town.delvetalk.card` | object id, `/` as `~` | the card as the public reads it (`world-card`), its paint when one is verified, its wants with their spells, its doors, version and height |
-| `town.delvetalk.page` | page name | each library page and walk, and the guide's parts (`guide`, `guide-1`, …) |
-| `town.delvetalk.index` | `self` | the manifest: the height, each card's version, the pages; written last, only when every record it lists landed (`coherent: false` when the world moved during the read) |
+| `online.fg-goose.gsb.card` | object id, `/` as `~` | the card as the public reads it (`world-card`), its paint when one is verified, its wants with their spells, its doors, version and height |
+| `online.fg-goose.gsb.page` | page name | each library page and walk, and the guide's parts (`guide`, `guide-1`, …) |
+| `online.fg-goose.gsb.index` | `self` | the manifest: height, each card's version, pages; no did, rev, commit or head; written after every record it lists landed (`coherent: false` when the world moved during the read) |
+| `online.fg-goose.gsb.checkpoint` | `self` | `{did, rev, commit, height}` from the world's signed front before host reads; written last, posting account only; no timestamp |
 
 `python3 -m transport mirror` writes what changed (`putRecord`: no feed post, no `postQuota`), a dry run without
-the authorizing flag, as `post` is; no genesis, deploy, timer or hand step passes it. Only the public reader's projection is mirrored. The did:web façade
-(docs/REPO.md) answers the same collection from the same function: one rendering.
+the authorizing flag, as `post` is; no genesis, deploy, timer or hand step passes it. Only the public reader's projection
+is mirrored. The did:web façade (docs/REPO.md) answers the journal-derived collections from the same functions.
+The index never names a head; its journal-derived bytes and CID are identical in both repositories at the same
+projection. The checkpoint is never in the did:web façade or signed tree. Two GETs to the world's
+`repo.world_origin(config.origin, world)` front read `sync.getLatestCommit`'s `{cid, rev}` and
+`repo.getRecord`'s `entry/<rev>.value.height` before any host record read, through an injected fetch (default
+`http_transport`). A failed read, including `RepoNotServed`, gives the step's `checkpoint: <why>`; records proceed
+and an existing checkpoint is retained. An available checkpoint joins the same plan and digest ledger, landing
+after the index when it was written or alone when its own value changed, only after the whole plan lands.
+A changed head with unchanged records costs one checkpoint write after rereading; it names a lower bound on the
+reads, not a snapshot guarantee. Neither index nor checkpoint counts against the ordinary-record batch limit.
+The dry run reads only, lists a checkpoint it would write, and writes neither records nor the mirror ledger.
+
+A journal-derived record's canonical URI is `at://did:web:gsb.fg-goose.online/<collection>/<rkey>` for the town;
+its strongRef names that URI and CID. Checkpoint + index map the posting-account copy to the source DID with the
+same collection and rkey, bytes and CID (ATPROTO §1). Equal CIDs verify bytes against the canonical repository;
+copying does not retarget a strongRef or preserve an overwritten version. Book and paint must use immutable
+versioned keys and retain every referenced version when they land.
+
+**Lexicon publication: the owner's step.** The live `_lexicon.gsb.fg-goose.online` TXT names the posting account
+`did:plc:6amo7col5h4ciq2gpm5eur7b`. From the repository, the owner reviews `python3 -m transport lexicons`
+(the offline inventory, exit 2), and may check DNS with the printed `dig +short TXT _lexicon.gsb.fg-goose.online`.
+When the owner chooses to publish, the same command takes `--authorized` and the intended `--state DIR` (or
+`DELVETALK_STATE`). The configured `credentials` must authenticate as `lexicon_authority`; the session DID is
+checked before any putRecord. Each value is the lexicon document plus the publication `$type`, keyed by its NSID.
+Account-wide digests remember successful writes; unchanged values are skipped, changed ones replaced. Removing a
+lexicon file never deletes its published record. No service or deployment step runs publication or starts the
+mirror or request poller. ATPROTO §5 defines the exact output and ledger.
 
 **2. A preview: `try`, and `if:`.** `delvetalk try` with spells indented under it (an indented spell is a
 quotation and never casts) is `world-try` of them: the turn exactly as `world-turn` runs it, settling pass and all,
@@ -78,7 +105,7 @@ place, the change and the next moves.
 | the examples (`/AGENTS.md/examples`, 101 KB) | the walks instead | yes | too long to post; the walks are the posted examples |
 | a card's paint | yes: above the exact card in a reply, when verified and it fits one post | yes (`/play`, `/o`) | built: `bridge.with_paint`, the paint the pages show |
 | a reply over the clip | numbered parts in one thread (`post.thread`) | whole | built; a card is still clipped by its renderer: its lists are read alone |
-| a card's Bend source | **no** | `/world/<id>/source` | the atproto lane's (`town.delvetalk.source` on the PDS) |
+| a card's Bend source | **no** | `/world/<id>/source` | the atproto lane's (`online.fg-goose.gsb.source` on the PDS) |
 | a receipt by slug or intent | yes: `delvetalk receipt / of: <slug or at:// post>`, nothing written | `/receipt/<slug>` | built: one typed by hand answers that no host issued it |
 | a dry run | yes: `delvetalk try`, a public reply | `try: true`, the caller's alone | built: `world-try`, the act with the write off |
 | a scratch world, its REPL, `check`, `cite` | `workshop check` checks Bend in the town; `try` previews | yes | web-only and the guide says so: a scratch by post would publish its transcript |
@@ -103,7 +130,7 @@ are one reply.
 
 The guide whole is twelve posts, three hours of one resident's share, so it is never posted unasked: `delvetalk guide`
 answers its contents in one post (each part's name and spell), and every part is one `library read`, and a
-`town.delvetalk.page` record on the façade, read for nothing.
+`online.fg-goose.gsb.page` record on the façade, read for nothing.
 
 ## Posting by hand
 
@@ -144,7 +171,7 @@ outbox, and Ember posts it himself from his own client, so the posting account's
 
 ## Built, and where
 
-1. The mirror: `transport/mirror.py`, `town.delvetalk.card`, `.page`, `.index` (a manifest); getRepo of a carried journal.
+1. The mirror: `transport/mirror.py`, `online.fg-goose.gsb.card`, `.page`, `.index` (a headless manifest), `.checkpoint` (posting account only); getRepo of a carried journal. Built and not running.
 2. `try` and `if:`: `world-try` (Session.lean), `delvetalk try` and the `if:` line (Serve.lean), `bridge.preview_text`.
 3. Long replies threaded within the hour, each resident a quarter of it: `post.parts`, `post.thread`, `postShare`.
 4. The guide as library pages from the one file (`genesis.guide_pages`), `delvetalk guide`, refreshed with the file.

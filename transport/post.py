@@ -167,18 +167,27 @@ def unsend(uri, credentials, client=None):
     client.write('com.atproto.repo.deleteRecord', {'repo': repo, 'collection': COLLECTION, 'rkey': rkey}, token=session['accessJwt'])
 
 
-def record_writer(st, client=None):
-    """-> write(collection, rkey, value): the mirror's writer (transport/mirror.py), a record in the posting account's own
-    repository put (`value`) or deleted (None); never a feed post, never counted against the host's post quota. One
-    session, made at the first write; credentials go only to the fixed PDS via Client."""
+def record_writer(st, client=None, expected_did=None):
+    """-> write(collection, rkey, value): put a record or delete it (None) in the session's own repo;
+    never a feed post or host post quota. One session, made at the first write unless `expected_did`
+    requires an immediate authority check. Credentials go only to the fixed PDS via Client."""
     client, session = client or Client(http_transport, allow_write=True), {}
+
+    def authenticate():
+        if not session:
+            cred = json.loads(Path(st.config.credentials).expanduser().read_text())
+            got = client.write('com.atproto.server.createSession', {'identifier': cred['identifier'], 'password': cred['password']})
+            if expected_did is not None and got.get('did') != expected_did:
+                raise Failure('lexicon_authority', f"session DID {got.get('did')!r} is not {expected_did}")
+            session.update(got)
+
+    if expected_did is not None:
+        authenticate()
 
     def write(collection, rkey, value):
         if collection == COLLECTION:
             raise Failure('not_a_mirror_record', 'a feed post is posted, never mirrored')
-        if not session:
-            cred = json.loads(Path(st.config.credentials).expanduser().read_text())
-            session.update(client.write('com.atproto.server.createSession', {'identifier': cred['identifier'], 'password': cred['password']}))
+        authenticate()
         where = {'repo': session['did'], 'collection': collection, 'rkey': rkey}
         if value is None:
             return client.write('com.atproto.repo.deleteRecord', where, token=session['accessJwt'])

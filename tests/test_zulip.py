@@ -17,12 +17,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from tests.host import addressed, serve, served
+from tests.keys import write_repo_key
 from tests.test_bridge import CARD, OFFERING
 from transport import zulip
 from transport.__main__ import main
 from transport.host import HostClient
 from transport.state import State
-from transport.config import LIBRARY
+from transport.config import Config, LIBRARY
 from tests.wire import nat, record
 
 OPENER = 'did:plc:' + 'o' * 24
@@ -124,8 +125,9 @@ class ZulipCase(unittest.TestCase):
         self.server = served(str(root / 'serve'), cleanup=self.addCleanup, opener=OPENER, library=LIBRARY)
         self.sock = self.server.sock
         (root / 'state').mkdir()
-        (root / 'state' / 'delvetalk.toml').write_text(f'host_socket = "{self.sock}"\n')
+        (root / 'state' / 'delvetalk.toml').write_text(f'host_socket = "{self.sock}"\nrepo_keys = "{root / "state" / "repo"}"\n')
         self.state = State(root / 'state')
+        write_repo_key(self.state)
         self.host, self.root = HostClient(self.sock), HostClient(self.server.root)
         for name in ('garden-1', 'commonplace'):
             body = OFFERING.replace('"hello "', f'"{name} says "')
@@ -155,7 +157,10 @@ class Observing(ZulipCase):
         here = self.observed()[0]['author']['did']
         other = Path(self.tmp.name) / 'other-rc'
         other.write_text(self.rc.read_text().replace('http://127.0.0.1', 'http://localhost'))
-        there = zulip.ZulipObserver(State(Path(self.tmp.name) / 'other-state'), zulip.Client(other), 'delvetalk', since='1970-01-01T00:00:00Z')
+        other_state = Path(self.tmp.name) / 'other-state'
+        st = State(other_state, config=Config(repo_keys=str(other_state / 'repo')))
+        write_repo_key(st)
+        there = zulip.ZulipObserver(st, zulip.Client(other), 'delvetalk', since='1970-01-01T00:00:00Z')
         there.poll()
         them = json.loads(there.db.execute('SELECT json FROM observations').fetchone()[0])['author']['did']
         self.assertEqual((here, them), ('zulip:127.0.0.1:1000', 'zulip:localhost:1000'))  # the same user id, two realms

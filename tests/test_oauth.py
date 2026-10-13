@@ -11,10 +11,12 @@ import html
 import http.client
 import json
 import secrets
+import socket
 import tempfile
 import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
@@ -53,9 +55,20 @@ class Town(ThreadingHTTPServer):
 
     def __init__(self):
         super().__init__(('127.0.0.1', 0), TownHandler)
-        self.base = f'http://127.0.0.1:{self.server_address[1]}'
+        self.base = f'https://oauth.example:{self.server_address[1]}'
+        self.wire_base = f'http://127.0.0.1:{self.server_address[1]}'
+        self.calls, self.endpoints, self.pds = [], {}, self.base
         self.nonce, self.jtis, self.requests, self.codes, self.revoked, self.challenged = 'n0', set(), {}, {}, [], []
         self.sub, self.aka, self.oauth = DID, ['at://' + HANDLE], True
+
+    def resolve(self, host, port, **kwargs):
+        ip = '10.0.0.5' if host == 'private.example' else '8.8.8.8'
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', (ip, port))]
+
+    def transport(self, method, url, headers, body):
+        self.calls.append((method, url))
+        assert url.startswith(self.base + '/'), url
+        return delve.http_transport(method, self.wire_base + url[len(self.base):], headers, body)
 
     def proof(self, h, method):
         """-> the proof key's thumbprint, or None after answering the nonce challenge."""
@@ -98,7 +111,7 @@ class TownHandler(BaseHTTPRequestHandler):
         t, path = self.server, urllib.parse.urlsplit(self.path)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(path.query).items()}
         if path.path == '/plc/' + DID:
-            return self.send(200, {'id': DID, 'alsoKnownAs': t.aka, 'service': [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer', 'serviceEndpoint': t.base}]})
+            return self.send(200, {'id': DID, 'alsoKnownAs': t.aka, 'service': [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer', 'serviceEndpoint': t.pds}]})
         if path.path == '/.well-known/oauth-protected-resource' and t.oauth:
             return self.send(200, {'resource': t.base, 'authorization_servers': [t.base]})
         if path.path == '/.well-known/oauth-authorization-server':
@@ -107,7 +120,7 @@ class TownHandler(BaseHTTPRequestHandler):
                                    'require_pushed_authorization_requests': True, 'scopes_supported': ['atproto'], 'response_types_supported': ['code'],
                                    'code_challenge_methods_supported': ['S256'], 'dpop_signing_alg_values_supported': ['ES256'],
                                    'grant_types_supported': ['authorization_code', 'refresh_token'], 'token_endpoint_auth_methods_supported': ['none', 'private_key_jwt'],
-                                   'authorization_response_iss_parameter_supported': True, 'client_id_metadata_document_supported': True})
+                                   'authorization_response_iss_parameter_supported': True, 'client_id_metadata_document_supported': True, **t.endpoints})
         if path.path == '/oauth/authorize':  # the person approves at once
             req = t.requests[q['request_uri']]
             assert q['client_id'] == req['client_id']
@@ -163,9 +176,10 @@ class Login(unittest.TestCase):
         self.addCleanup(self.front.shutdown)
         self.port = self.front.server_address[1]
         self.origin = f'http://127.0.0.1:{self.port}'
-        self.front.oauth = oauth.OAuth(self.origin, plc=self.town.base + '/plc', secure=False, clock=lambda: self.now[0])
+        self.front.oauth = oauth.OAuth(self.origin, plc=self.town.base + '/plc', transport=self.town.transport, resolve=self.town.resolve, clock=lambda: self.now[0])
 
     def get(self, url, cookie=''):
+        url = url.replace(self.town.base, self.town.wire_base, 1) if url.startswith(self.town.base + '/') else url
         p = urllib.parse.urlsplit(url)
         c = http.client.HTTPConnection(p.hostname, p.port, timeout=30)
         c.request('GET', p.path + ('?' + p.query if p.query else ''), headers={'Accept': 'text/html', **({'Cookie': cookie} if cookie else {})})
@@ -250,3 +264,53 @@ class Login(unittest.TestCase):
         self.refused(self.get(f'{self.origin}/oauth/start?handle=nobody.example.com'), 'is not a handle this town knows')
         self.assertEqual(self.town.requests, {})
 
+
+    def test_a_private_pds_in_the_did_document_is_refused_before_any_request_to_it(self):
+        for private in ('https://10.0.0.5', 'https://private.example'):
+            with self.subTest(private=private):
+                self.town.pds, self.town.calls = private, []
+                with self.assertRaises(oauth.Refused):
+                    self.front.oauth.start(HANDLE, lambda _: {'did': DID})
+                self.assertEqual(self.town.calls, [('GET', self.town.base + '/plc/' + DID)])
+                self.assertEqual(self.town.requests, {})
+                self.assertEqual(self.front.oauth.pending, {})
+
+    def test_private_par_token_revocation_and_browser_endpoints_refuse_start_before_par(self):
+        for endpoint in ('pushed_authorization_request_endpoint', 'token_endpoint', 'revocation_endpoint', 'authorization_endpoint'):
+            for private in ('https://10.0.0.5/endpoint', 'https://private.example/endpoint'):
+                with self.subTest(endpoint=endpoint, private=private):
+                    self.town.endpoints, self.town.calls = {endpoint: private}, []
+                    with self.assertRaises(oauth.Refused):
+                        self.front.oauth.start(HANDLE, lambda _: {'did': DID})
+                    self.assertEqual(self.town.calls, [('GET', self.town.base + '/plc/' + DID),
+                                                      ('GET', self.town.base + '/.well-known/oauth-protected-resource'),
+                                                      ('GET', self.town.base + '/.well-known/oauth-authorization-server')])
+                    self.assertEqual(self.town.requests, {})
+                    self.assertEqual(self.front.oauth.pending, {})
+
+    def test_http_and_userinfo_endpoints_are_refused_with_an_injected_transport(self):
+        for endpoint in ('pushed_authorization_request_endpoint', 'token_endpoint', 'revocation_endpoint', 'authorization_endpoint'):
+            for bad in ('http://oauth.example/endpoint', 'https://user:pass@oauth.example/endpoint'):
+                with self.subTest(endpoint=endpoint, bad=bad):
+                    self.town.endpoints, self.town.calls = {endpoint: bad}, []
+                    with self.assertRaises(oauth.Refused):
+                        self.front.oauth.start(HANDLE, lambda _: {'did': DID})
+                    self.assertEqual(len(self.town.calls), 3)
+                    self.assertEqual(self.town.requests, {})
+
+    def test_oauth_rechecks_a_token_host_that_rebinds_after_discovery_without_connecting(self):
+        from tests.test_netsafe import answers
+        from functools import partial
+        cookie, callback = self.start()
+        connect = mock.Mock()
+        self.front.oauth.pending[cookie.split('=', 1)[1]]['dpop'].fetch = partial(
+            oauth.fetch, transport=partial(delve.public_transport, resolve=lambda *a, **k: answers('127.0.0.1'), socket_factory=connect))
+        self.refused(self.get(callback, cookie), 'delve.town did not vouch for that handle.')
+        connect.assert_not_called()
+        self.assertEqual(self.front.oauth.pending, {})
+
+    def test_fetch_refuses_a_redirect_and_a_body_past_its_limit(self):
+        for response in ((302, b'{}', {'Location': 'https://10.0.0.5/secret'}),
+                         (200, b' ' * (delve.MAX_RESPONSE + 1), {})):
+            with self.subTest(status=response[0]), self.assertRaises(oauth.Refused):
+                oauth.fetch('GET', 'https://oauth.example/doc', transport=lambda *a: response)

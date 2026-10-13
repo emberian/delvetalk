@@ -45,6 +45,102 @@ The lock holds where one kernel sees the file: a local Linux
 filesystem (measured on ext4). Docker Desktop's file sharing on a Mac does not
 enforce it across containers (measured), so test the stack there on a named volume.
 
+## Firehose
+
+`transport http` runs `com.atproto.sync.subscribeRepos` on a separate TCP listener in the same
+`delvetalk-http` process, with one selector thread for all sockets and production. `firehose_bind` defaults to
+`127.0.0.1`, `firehose_port` to `0` (off). Enable it only with the world's signing key in `repo_keys`.
+The listener is public through the edge; it requires no subscriber credential. Its durable log is
+`/data/state/worlds/<world>/events`, kept in state backups and copied by carry alongside `repo.json` (REPO).
+
+`deploy/compose.yml` publishes `delvetalk-http`'s HTTP port 8765 on the private address 10.10.1.10, and uses
+Docker's default service network. The hand uses 8766. To enable the firehose, add this overlay for
+`delvetalk-http` (its inherited HTTP settings, state/key mounts and HTTP port remain):
+
+```yaml
+services:
+  delvetalk-http:
+    environment:
+      DELVETALK_FIREHOSE_BIND: 0.0.0.0
+      DELVETALK_FIREHOSE_PORT: "8767"
+    ports:
+      - "10.10.1.10:8767:8767/tcp"
+```
+
+Compose merges the environment mapping and port list. The 0.0.0.0 bind is inside the container; the
+published port is on the workhorse's private network, reached by Caddy on the anchor. For a drill, change
+both the setting and mapping to the same unused port. Add this route in the gsb site's Caddy block before
+the general `reverse_proxy 10.10.1.10:8765` (the Caddyfile is outside this repository):
+
+    reverse_proxy /xrpc/com.atproto.sync.subscribeRepos 10.10.1.10:8767
+
+Caddy forwards the WebSocket upgrade. The HTTP front's same XRPC path answers 426 `UpgradeRequired`
+with `Upgrade: websocket` when enabled, or 501 with `firehose_port` named when off. Do not send the
+WebSocket route to port 8765: subscribers use 8767 and take no HTTP worker. Stop the front before carry
+or state restoration so the event log is quiescent; restart reconciles missed heights with a head-only sync,
+and a key rotation emits identity before sync. An unchanged restart adds no event.
+
+## Public request participants
+
+`requests` defaults to `false`; the bridge polls public request records only when the operator enables it.
+`participants` defaults to the empty string and names explicit participant DIDs, space-separated, in
+`<state>/delvetalk.toml` (`DELVETALK_PARTICIPANTS` overrides it). Both did:plc and hostname-level did:web are supported.
+The registry unions this list with active repositories discovered at pds.delve.town and verified identity-table
+claims, plus this world's hosted accounts in `State.hosted`. Hosted accounts supply documents and proof CARs
+locally to the ordinary `requests.proven` verifier and do not consume the external-participant cap. Each external DID is read at its current document's `#atproto_pds`, through public-address-checked, pinned HTTPS.
+No PDS write is made by the poller. The mirror has its own authorization and remains off.
+
+Documents cache ten minutes; a proof verification failure refreshes once per participant per poll before refusal.
+The poll reads at most 256 non-delve-PDS participants in sorted DID order and reports every overflow DID; unsupported
+DIDs and unsafe PDS destinations are problems in the bridge step's `failed` output.
+
+`<state>/worlds/<world>/requests.json` holds `{revs: {did: {pds, rev}}, refused: {uri: {cid, why}}}`. The revision skip
+requires both PDS and revision to match. A migrated participant is scanned in full; consumed URIs and first proven
+CIDs in `observe.sqlite`, refused records in `requests.json` and `answers/` remain intact. Backups retain all three.
+Identity changes are observed at the next document refresh, at most ten minutes after the last fetch. Requests must
+remain in the resident's repository until answered. ATPROTO §2 describes verification and discovery.
+
+## Hosted account origins
+
+The mapping and request repositories are built (ATPROTO §4, REPO); DNS and certificates are the owner's
+ops step. Hosted account hosts route to the world's existing front, preserving Host, with no second Front
+or listener. The account DID document's PDS endpoint is the same configured front origin. The front and
+bridge share `<state>/worlds/<world>/hosted/`; neither provisions a second copy of an account elsewhere.
+The request poller remains off unless `requests = true`; the mirror keeps its separate authorization.
+
+For the deployed origin, add wildcard A/AAAA records pointing to the front's existing edge:
+
+    *.guest.gsb.fg-goose.online.
+    *.zulip.gsb.fg-goose.online.
+
+For each configured Zulip realm, also publish its explicit account zone, for example:
+
+    *.chat.example.zulip.gsb.fg-goose.online.
+
+Caddy must obtain certificates by DNS-01 in the owner's Google Cloud DNS zone `fg-goose.online` and route
+these hosts to the existing HTTP upstream. A TLS wildcard covers exactly one label: `*.zulip.gsb.fg-goose.online`
+does **not** cover `42.chat.example.zulip.gsb.fg-goose.online`. Each realm needs its corresponding
+`*.<realm>.zulip.gsb.fg-goose.online` certificate (or explicit account SANs); guests need
+`*.guest.gsb.fg-goose.online`. Keep DNS credentials out of Git. Completion: HTTPS on each chosen account
+hostname serves its matching DID document, and sync.getRecord verifies under its #atproto key. This lane
+installs no records or certificates and starts no process.
+
+Account k256 keys derive with HKDF-SHA256 from the world's town-key scalar and each hosted DID (ATPROTO §4).
+Only public `<state>/worlds/<world>/hosted/<stem>.json` snapshots are written, including signing key identifiers
+and rotation/migration epochs; the 0700 directory itself carries the flock. Guest stems are names and Zulip
+stems are `<id>.<realm>.zulip`. `deploy/backup.sh` keeps hosted snapshots in
+`/var/backups/delvetalk/mirror/` and `/var/backups/delvetalk/delvetalk-<stamp>.tar.gz`, then the pulled
+`/tank/delvetalk-backups/` copies. Restore snapshots with the same operator-custodied
+`/etc/delvetalk/repo/<world>.key` to reproduce every hosted key and signed head. Loss of that town key loses
+every hosted key too. A box without it starts, but hosted routes and invitation acceptance refuse with
+503 `RepoNotServed`; the invitation stays open. Legacy account keys/locks are removed after durable migration.
+Migrate legacy state with the town key available before running the updated backup script: it no longer
+filters legacy files, and a keyless front cannot migrate them.
+
+Remaining transport completion checks are in ATPROTO §4: a Zulip message written once as a public request
+and consumed once, and reciprocal link records/document claims. Neither is built. Existing Zulip messages
+remain observations under their Zulip principals; feed posts remain feed posts.
+
 ## Costs
 
 The boundary between the Python programs and the host process, measured on hbox with `deploy/bench-boundary.py` (median
@@ -205,13 +301,36 @@ and refuses an unknown key by name); `DELVETALK_<FIELD>` overrides a field. Comp
 containers: mount paths, secret files, listening addresses and the `.env` values above.
 
 The repository key, once (`transport repokey` refuses an existing file; it prints the `did:key`, which
-`/.well-known/did.json` then names as `#atproto`; the front does not start without the file, so a box deployed
-before the signed repository makes it the same way before its next `up`):
+`/.well-known/did.json` then names as `#atproto`; without it the front serves projections but refuses signed
+repositories, so a box deployed before the signed repository makes it the same way before its next `up`):
 
     install -d -m 0700 -o 10425 -g 10425 /etc/delvetalk/repo
     docker compose run --rm delvetalk-ops python3 -m transport repokey
 
 It writes `<repo_keys>/town.key` (`--world W` another world's `W.key`; `--curve secp256r1` the other curve).
+
+To rotate the town's key, in `/opt/delvetalk` on the workhorse, generate into a fresh staging directory,
+then move that file into place and restart the front (`repokey` refuses an existing `<world>.key`):
+
+    install -d -m 0700 -o 10425 -g 10425 /etc/delvetalk/repo/next
+    docker compose run --rm -e DELVETALK_REPO_KEYS=/etc/delvetalk/repo/next delvetalk-ops python3 -m transport repokey --world town
+    mv /etc/delvetalk/repo/next/town.key /etc/delvetalk/repo/town.key
+    docker compose restart delvetalk-http
+
+For another world replace `town` with its name; for a configured key directory replace `/etc/delvetalk/repo`
+in all three paths. The new file retains owner 10425 and mode 0400. The front loads the key at start, publishes
+it in did.json, and its first signed read records the rotation epoch and serves a higher-rev sync commit over
+the same MST. The key directory is read-only in the front; the epoch ledger belongs to its read-write state at
+`/data/state/worlds/<world>/repo.json`, and must be included in backups of the state directory. Keep this ledger
+when replacing a lost key. If the ledger is lost, the next signed read writes a new one; followers must re-sync.
+
+A town-key rotation also rotates every hosted account's derived k256 key and DID document. Front startup
+reconciles existing snapshots; first access also reconciles any changed key. Each snapshot records a
+`rotation` epoch, advances its counter to `max(counter + 1, wall microseconds)`, and serves a sync head over
+the same tree with `prev` null; the next write chains from that head. Records and rkeys stay unchanged,
+old commits are never re-signed, and an unchanged second access changes no bytes. Keep hosted `.json`
+snapshots with their epochs in state backups. Legacy snapshots record `migration` instead; old key and
+lock files are deleted only after the snapshot and directory have been synced.
 
 The root socket's directory, owner 10425, mode 0700, outside the data directory so that no container mounting
 `/data` reaches it:
@@ -835,10 +954,16 @@ reads the world from the snapshot at its head, rebuilds every object from its so
 seals the image's library as serve will, and writes the carried genesis, at the old head's height + 1 (heights go on
 from the world before's, HOST-HANDOFF 5.182) and keeping every object's making (`made`, read from the journals the
 carry cites, which `/towns` holds: 5.185). Then the transport's files move (the bridge rows, `identity.sqlite`, each
-world's observations, outbox, posting ledger, `since`; the height cursors `publications.after` and each `awaiting` turn
+world's observations, outbox, posting ledger, repository epoch ledger `repo.json`, `since`; the height cursors `publications.after` and each `awaiting` turn
 name entries of the same sequence), and each carried world is checked in a throwaway copy as carry-check checks it. It prints one JSON line per world and, last, the hand's one line for the channel (FOUNDATION §2), posted once by the owner:
 
     hob: the world was carried to a newer host at entry 73; everything is where it was, and the carry is receipt <slug>.
+
+The carry that first runs this edition's repository names changes the collections to `online.fg-goose.gsb.*`
+and re-derives every MST key and commit CID from the journal. The façade then serves only the new names,
+and residents' mirror readers must list `online.fg-goose.gsb.*`. Nothing follows the firehose yet
+(`com.atproto.sync.subscribeRepos` is 501). The posting account's orphaned records under the old authority
+segments `town`, `delvetalk` are deleted by the owner's authorized mirror run.
 
 An object the new binary cannot rebuild, a suspension it cannot decode, and a suspension the carry would drop (its
 object moved, unless its package offers `carried`, or left unnamed) refuse the carry by name. Only the owner

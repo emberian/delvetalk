@@ -19,6 +19,7 @@ from pathlib import Path
 
 from transport.journal import records, size
 from tests.host import addressed
+from tests.keys import write_repo_key
 from tests.test_bridge import spell_post
 from tests.wire import write_journal
 from transport import delve, hand, identity, observe, post, watch
@@ -77,13 +78,17 @@ class Poster:
 
 
 class HandCase(unittest.TestCase):
+    hosted_accounts = False
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         # A world posting automatically: its credential file is there (tests/test_byhand.py is the world without one).
-        (Path(self.tmp.name) / 'delvetalk.toml').write_text(f'credentials = "{self.tmp.name}/creds.json"\nbackups = "{self.tmp.name}/backups"\nhand_find = false\n')
+        (Path(self.tmp.name) / 'delvetalk.toml').write_text(f'credentials = "{self.tmp.name}/creds.json"\nbackups = "{self.tmp.name}/backups"\nhand_find = false\nrepo_keys = "{self.tmp.name}/repo"\n')
         (Path(self.tmp.name) / 'creds.json').write_text('{"identifier": "a", "password": "b"}')
         self.state = State(self.tmp.name)
+        if self.hosted_accounts:
+            write_repo_key(self.state)
         posts = [spell_post(1, 'garden-1', '2026-10-09T10:00:01Z'), spell_post(2, 'garden-1', '2026-10-09T10:00:02Z')]
         from tests.test_transport import Script
         ob = observe.Observer(self.state, delve.Client(Script(**{'town.delve.feed.searchPosts': lambda p: (200, {'posts': posts}),
@@ -190,6 +195,8 @@ class Listener(unittest.TestCase):
             self.addCleanup(f.shutdown)
         at = {f.server_address[0]: f for f in made}
         self.assertEqual(set(at), {'127.0.0.2', '127.0.0.1'})
+        self.assertTrue(hasattr(at['127.0.0.2'], 'serviceauth'))
+        self.assertFalse(hasattr(at['127.0.0.1'], 'serviceauth'))
         get = lambda f, path: (lambda c: (c.request('GET', path), c.getresponse().status)[1])(http.client.HTTPConnection(*f.server_address[:2]))
         self.assertEqual(get(at['127.0.0.2'], '/hand/?token=' + TOKEN), 404)  # the public port has no hand
         self.assertEqual(get(at['127.0.0.1'], '/hand/?token=' + TOKEN), 302)
@@ -362,6 +369,7 @@ class Guests(HandCase):
     and hands it a code accepted once; `invites` lists them with their last use, `revoke-invite` ends code and credential.
     Refuted by a code listed or put in a URL, a second live invitation of one name, or a revoked guest still authenticated."""
     cmd, js = Cli.cmd, Cli.js
+    hosted_accounts = True
 
     def ident(self):
         return identity.Identity(self.state, None)

@@ -1,0 +1,69 @@
+{
+  "lexicon": 1,
+  "id": "online.fg-goose.gsb.getSession",
+  "description": "The issuer's scratch world status and home-clock expiry. Method-bound service auth; unknown or expired scratch: RecordNotFound.",
+  "defs": {
+    "main": {
+      "type": "query",
+      "parameters": {
+        "type": "params",
+        "required": [
+          "session"
+        ],
+        "properties": {
+          "session": {
+            "type": "string"
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": [
+            "session",
+            "status",
+            "expires"
+          ],
+          "properties": {
+            "session": {
+              "type": "string",
+              "description": "`scratch/<name>`."
+            },
+            "expires": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Home-world clock minute at which it is discarded if idle."
+            },
+            "status": {
+              "type": "string",
+              "const": "world",
+              "description": "world-status verdict."
+            }
+          }
+        }
+      },
+      "errors": [
+        {
+          "name": "AuthRequired"
+        },
+        {
+          "name": "InvalidToken"
+        },
+        {
+          "name": "InvalidRequest"
+        },
+        {
+          "name": "RateLimitExceeded"
+        },
+        {
+          "name": "RecordNotFound"
+        },
+        {
+          "name": "HostUnavailable"
+        }
+      ],
+      "description": "The issuer's scratch world status and home-clock expiry. Method-bound service auth; unknown or expired scratch: RecordNotFound."
+    }
+  }
+}

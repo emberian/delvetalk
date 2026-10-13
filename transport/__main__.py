@@ -47,7 +47,8 @@ def repokey(st, a, out):
 COMMANDS = {'serve': (__name__, 'serve'), 'bridge': ('transport.bridge', 'command'), 'interpret': ('transport.interpret', 'command'),
             'post': ('transport.post', 'command'), 'hand': ('transport.hand', 'command'), 'http': ('transport.http', 'command'),
             'open': (__name__, 'open_world'), 'watch': ('transport.watch', 'watch'), 'repokey': (__name__, 'repokey'),
-            'status': ('transport.watch', 'status'), 'tables': ('transport.tables', 'command'), 'mirror': ('transport.mirror', 'command')}
+            'status': ('transport.watch', 'status'), 'tables': ('transport.tables', 'command'), 'mirror': ('transport.mirror', 'command'),
+            'lexicons': ('transport.lexicons', 'command')}
 # Commands over two state directories, not one world of one: they take their own arguments.
 WHOLE = {'carry': ('transport.carry', 'command')}
 
@@ -79,6 +80,8 @@ def parser():
     p.add_argument('--once', action='store_true', help='one step, not a step every `poll` seconds')
     p.add_argument('--limit', type=int, default=200, help='at most this many record writes a step')
     p.add_argument('--i-am-ember-and-authorize-posting', dest='authorized', action='store_true', default=False)
+    p = add('lexicons', "prepare every lexicon for its authority's repository; local dry run without --authorized")
+    p.add_argument('--authorized', action='store_true', default=False, help='publish changed schemas using the authority account credential')
     from transport import hand
     hand.parser(sub.add_parser('hand', help="the owner's console: drafts, moderation and root, as the opener"), common)
     add('http', 'the public front: /AGENTS.md for agents, pages for people')
@@ -116,10 +119,10 @@ def main(argv=None, out=None, **seams):
     if a.command in WHOLE:
         module, name = WHOLE[a.command]
         return getattr(importlib.import_module(module), name)(a, out or sys.stdout) or 0
-    if not a.state:
+    if not a.state and not (a.command == 'lexicons' and not a.authorized):
         ap.error('--state (or DELVETALK_STATE) is required')
     module, name = COMMANDS[a.command]
-    return getattr(importlib.import_module(module), name)(State(a.state, a.world), a, out or sys.stdout, **seams) or 0
+    return getattr(importlib.import_module(module), name)(State(a.state, a.world) if a.state else None, a, out or sys.stdout, **seams) or 0
 
 
 if __name__ == '__main__':

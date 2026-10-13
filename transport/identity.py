@@ -15,13 +15,14 @@ import threading
 import time
 import urllib.parse
 from transport.delve import POST, Failure
+from transport.state import NAME
 
 HANDLE = re.compile(r'(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+delve\.town\Z')
 DID = re.compile(r'did:plc:[a-z2-7]{24}\Z')
 CREDENTIAL = re.compile(r'dt_agent_[A-Za-z0-9_-]{43}\Z')
 RKEY = re.compile(r'[A-Za-z0-9._~:-]{1,512}\Z')
 INVITE_CODE = re.compile(r'dt_invite_[A-Za-z0-9_-]{32}\Z')
-GUEST_NAME = re.compile(r'[a-z][a-z0-9-]{0,31}\Z')
+GUEST_NAME = re.compile(r'[a-z](?:[a-z0-9-]{0,30}[a-z0-9])?\Z')
 MAX_ATTEMPTS, TTL, CHALLENGES_PER_HOUR = 8, 900, 8
 INVITE_DAYS = 7  # how long an invitation's code may be accepted unless the operator says otherwise
 NEWEST = 20  # posts listed when a claim looks for its word
@@ -71,6 +72,73 @@ def digest(credential):
     return hashlib.sha256(credential.encode()).hexdigest()
 
 
+DNS_LABEL = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z')
+
+
+def hosted_identity(value, host):
+    """Principal <-> hostname-level DID at this front's origin host, one canonical spelling.
+
+    Only guest:<host>:<NAME> and zulip:<realm DNS host>:<positive decimal id> map.
+    Guest names obey NAME and end in a letter/digit so the address is a DNS label.
+    Realm labels are lowercase ASCII DNS labels; leading-zero IDs are refused.
+    Claimed feed participants keep their own DID, never a hosted identity.
+    """
+    def dns(name):
+        return (isinstance(name, str) and len(name) <= 253 and
+                all(DNS_LABEL.fullmatch(p) for p in name.split('.')))
+    if not dns(host) or not isinstance(value, str):
+        raise ValueError('not a hosted identity')
+    if value.startswith('did:web:'):
+        address = value[8:]
+        if address.endswith('.guest.' + host):
+            value = f'guest:{host}:' + address[:-len('.guest.' + host)]
+        elif address.endswith('.zulip.' + host):
+            user, dot, realm = address[:-len('.zulip.' + host)].partition('.')
+            if not dot:
+                raise ValueError('not a hosted identity')
+            value = f'zulip:{realm}:{user}'
+        else:
+            raise ValueError('not a hosted identity')
+        reverse = True
+    else:
+        reverse = False
+    parts = value.split(':')
+    if len(parts) == 3 and parts[0] == 'guest' and parts[1] == host and NAME.fullmatch(parts[2]) and GUEST_NAME.fullmatch(parts[2]):
+        address = f'{parts[2]}.guest.{host}'
+    elif (len(parts) == 3 and parts[0] == 'zulip' and dns(parts[1]) and
+          re.fullmatch(r'[1-9][0-9]{0,19}', parts[2])):
+        address = f'{parts[2]}.{parts[1]}.zulip.{host}'
+    else:
+        raise ValueError('not a hosted identity')
+    if not dns(address):
+        raise ValueError('hosted hostname exceeds DNS bounds')
+    return value if reverse else 'did:web:' + address
+
+
+def verified_principals(st):
+    """Distinct verified principals, read without creating or migrating identity.sqlite.
+
+    Credential expiry does not erase a verified claim.
+    """
+    if not st.identity.exists():
+        return set()
+    try:
+        db = sqlite3.connect(st.identity.resolve().as_uri() + '?mode=ro', uri=True)
+        try:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='challenges'").fetchone():
+                return set()
+            return {did for (did,) in db.execute("SELECT DISTINCT did FROM challenges WHERE state='verified'")}
+        finally:
+            db.close()
+    except sqlite3.Error as error:
+        raise Failure('identity_unavailable', type(error).__name__) from None
+
+
+def verified_dids(st):
+    """Verified external claim DIDs; hosted accounts are the registry's separate local source."""
+    return {p for p in verified_principals(st) if p.startswith('did:')}
+
+
 class Identity:
     def __init__(self, st, client, clock=time.time):
         st.root.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -88,6 +156,7 @@ class Identity:
             self.db.execute('ALTER TABLE challenges ADD COLUMN address TEXT')  # a table from before the per-address count
         if 'ends' not in have:
             self.db.execute('ALTER TABLE challenges ADD COLUMN ends REAL')  # a table from before sessions could end
+        self.st = st
         self.client, self.origin, self.clock = client, st.config.origin.rstrip('/'), clock
         self.lock = threading.Lock()  # the one connection is shared by the front's threads; every use of it holds this
 
@@ -279,14 +348,22 @@ class Identity:
                     if self.db.execute('SELECT 1 FROM invitations WHERE name=? OR principal=?', (name, principal)).fetchone() \
                             or self.db.execute('SELECT 1 FROM challenges WHERE did=? OR (handle=? AND state=?)', (principal, name, 'verified')).fetchone():
                         raise IdentityError('taken')
+                if not GUEST_NAME.fullmatch(chosen):
+                    raise IdentityError('invalid_guest_name')
+                from transport.hosted import Accounts
+                account = Accounts(self.st).account(principal, create=True)
                 self.db.execute("UPDATE invitations SET state='accepted',accepted=?,name=?,principal=? WHERE id=?", (now, chosen, principal, row['id']))
                 self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state,verified) VALUES(?,?,?,?,?,?,?,?,?)',
                                 ('guest:' + secrets.token_hex(16), chosen, principal, '', digest(credential), now, now, 'verified', now))
             except sqlite3.IntegrityError:
+                self.db.execute('ROLLBACK')
                 raise IdentityError('taken') from None
-            finally:
+            except BaseException:
+                self.db.execute('ROLLBACK')
+                raise
+            else:
                 self.db.execute('COMMIT')
-        return {'status': 'accepted', 'principal': principal, 'did': principal, 'handle': chosen, 'credential': credential}
+        return {'status': 'accepted', 'principal': principal, 'did': account.did, 'handle': chosen, 'credential': credential}
 
     def invitations(self):
         """Every invitation, newest first, with its state and the time its credential was last used; never a code. A code

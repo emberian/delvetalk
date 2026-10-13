@@ -1,22 +1,27 @@
-"""Acting by record (docs/ATPROTO.md §2, L1): a resident writes `town.delvetalk.request` in their own repository; the
+"""Acting by record (docs/ATPROTO.md §2, L1): a resident writes `online.fg-goose.gsb.request` in their own repository; the
 poller proves it from the signed commit and the author's DID document, the bridge runs it as the same turn a post's
-spell is, under the record's at-uri, and answers with a `town.delvetalk.answer` record the façade serves and the mirror
+spell is, under the record's at-uri, and answers with an `online.fg-goose.gsb.answer` record the façade serves and the mirror
 copies byte for byte.
 
 Evidence for docs/ATPROTO.md §2 (layer: transport), on a fake PDS here: repositories signed with real keys, served
-over listRepos, listRecords, sync.getRecord and plc.directory.
+over two loopback PDSes, listRepos, listRecords, getLatestCommit, sync.getRecord, PLC and did:web.
 
 Refuted by: a request read twice making two entries; a record signed by a key other than its DID document's making a
 turn; a stale `if` admitted; an answer whose CID differs between the façade and the mirror's write; a `try`, a request
 to another service or one created before the world began observing being run; an answer carrying a private turn's
-offers; a request whose key sorts below one already read being missed.
+offers; a request whose key sorts below one already read being missed; a migrated participant reading stale state
+or losing consumption; a key rotation refused without refreshing; an unsafe discovered PDS receiving a request.
 """
 import dataclasses
 import json
+import socket
 import tempfile
+import threading
 import unittest
 import urllib.parse
 from pathlib import Path
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -25,8 +30,8 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from tests.host import served
 from tests.test_bridge import DID, LOOPBACK, Stub, modules
 from tests.test_chain import town_garden
-from tests.test_lexicons import record_problems
-from transport import bridge, delve, mirror, observe
+from transport.lexicon import record_problems
+from transport import bridge, delve, identity, mirror, observe
 from transport.atproto.cbor import CID, block, car, encode, from_json
 from transport.atproto.mst import Tree
 from transport.atproto.sign import CURVES, multikey, tid
@@ -54,12 +59,14 @@ class FakePDS:
     """pds.delve.town and plc.directory for the poller: each repository's records under a key of its own, its commits
     signed by `signer` (its DID document's key unless a test swaps it)."""
 
-    def __init__(self):
-        self.repos, self.calls = {}, []
+    def __init__(self, base=delve.PDS, documents=None):
+        self.base, self.documents = base, documents if documents is not None else {}
+        self.repos, self.calls, self.proof = {}, [], None
 
     def repo(self, did, pds=delve.PDS):
         key = ec.generate_private_key(ec.SECP256K1())
         self.repos[did] = {'key': key, 'signer': key, 'records': {}, 'rev': 0, 'pds': pds}
+        self.documents[did] = self.repos[did]
         return self.repos[did]
 
     def put(self, did, rkey, value):
@@ -81,9 +88,9 @@ class FakePDS:
         self.calls.append(url)
         parts = urllib.parse.urlsplit(url)
         q = {k: v[0] for k, v in urllib.parse.parse_qs(parts.query).items()}
-        if url.startswith(PLC):
-            did = parts.path[1:]
-            r = self.repos.get(did)
+        if url.startswith(PLC) or parts.path == '/.well-known/did.json':
+            did = parts.path[1:] if url.startswith(PLC) else 'did:web:' + parts.hostname
+            r = self.documents.get(did)
             if not r:
                 return 404, b'{"error":"NotFound"}'
             doc = {'id': did, 'alsoKnownAs': [f'at://{HANDLE}'], 'service': [{'id': '#atproto_pds', 'type': 'AtprotoPersonalDataServer', 'serviceEndpoint': r['pds']}],
@@ -95,6 +102,8 @@ class FakePDS:
         if nsid == 'com.atproto.sync.listRepos':
             return 200, json.dumps({'repos': [{'did': d, 'rev': tid(r['rev']), 'head': 'x', 'active': True} for d, r in self.repos.items()]}).encode()
         r = self.repos.get(q.get('repo') or q.get('did'))
+        if nsid == 'com.atproto.sync.getLatestCommit':
+            return 200, json.dumps({'rev': tid(r['rev']), 'cid': str(self.commit(q['did'])[2][0])}).encode()
         if nsid == 'com.atproto.repo.listRecords':
             _, blocks, _ = self.commit(q['repo'])
             return 200, json.dumps({'records': [{'uri': f"at://{q['repo']}/{COLLECTION}/{k}", 'cid': str(blocks[k][0]), 'value': r['records'][k]}
@@ -102,8 +111,60 @@ class FakePDS:
         if nsid == 'com.atproto.sync.getRecord':
             tree, blocks, commit = self.commit(q['did'])
             at = sorted(r['records']).index(q['rkey'])
-            return 200, car(commit[0], [commit, *tree.proof(at), blocks[q['rkey']]])
+            raw = car(commit[0], [commit, *tree.proof(at), blocks[q['rkey']]])
+            return 200, self.proof(q, raw) if self.proof else raw
         return 404, b'{"error":"NoSuchMethod"}'
+
+
+class PDSHandler(BaseHTTPRequestHandler):
+    def log_message(self, *args):
+        pass
+
+    def do_GET(self):
+        status, raw = self.server.pds('GET', self.headers['X-Fixture-URL'], {}, None)
+        self.send_response(status)
+        self.send_header('Content-Length', str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+
+class PDSPair:
+    """Two loopback HTTP PDSes; injected routing preserves their HTTPS identities and a shared PLC/did:web source."""
+    B = 'https://pds.resident.example'
+
+    def __init__(self, cleanup):
+        self.a = FakePDS()
+        self.b = FakePDS(self.B, self.a.documents)
+        self.servers = {}
+        self.calls = []
+        for pds in (self.a, self.b):
+            server = ThreadingHTTPServer(('127.0.0.1', 0), PDSHandler)
+            server.pds = pds
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            cleanup(server.server_close)
+            cleanup(thread.join)
+            cleanup(server.shutdown)
+            self.servers[pds.base] = server
+
+    def __call__(self, method, url, headers, body):
+        self.calls.append(url)
+        parts = urllib.parse.urlsplit(url)
+        base = urllib.parse.urlunsplit((parts.scheme, parts.netloc, '', '', ''))
+        server = self.servers.get(base)
+        if url.startswith(PLC) or parts.path == '/.well-known/did.json' or base == delve.APPVIEW:
+            server = self.servers[delve.PDS]
+        if server is None:
+            raise AssertionError('unexpected destination ' + url)
+        wire = f'http://127.0.0.1:{server.server_address[1]}' + parts.path + '?' + parts.query
+        return delve.http_transport(method, wire, {**headers, 'X-Fixture-URL': url}, body)
+
+    def count(self, base, nsid):
+        return sum(url.startswith(base + '/xrpc/' + nsid + '?') for url in self.calls)
+
+    def documents(self, did):
+        target = PLC + did if did.startswith('did:plc:') else 'https://' + did[8:] + '/.well-known/did.json'
+        return self.calls.count(target)
 
 
 def request(spell=None, created='2026-10-12T10:00:00Z', service=SERVICE, **more):
@@ -119,7 +180,11 @@ class Requests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.st = State(Path(self.tmp.name) / 'state', config=LOOPBACK)
-        self.pds = FakePDS()
+        self.pair = PDSPair(self.addCleanup)
+        self.pds = self.pair.a
+        self.now = [0.0]
+        self.client = delve.Client(self.pair)
+        self.poller = Poller(self.st, self.client, clock=lambda: self.now[0])
         self.me = self.pds.repo(DID)
         serving = served(str(Path(self.tmp.name) / 'serve'), cleanup=self.addCleanup)
         self.host = HostClient(serving.sock)
@@ -127,22 +192,38 @@ class Requests(unittest.TestCase):
 
     def step(self, since='2026-10-12T00:00:00Z'):
         """One bridge step over the fake PDS: observe (posts, then requests), turn, answer."""
-        client = delve.Client(self.pds)
-        ob = observe.Observer(self.st, client, since, Poller(self.st, client))
+        ob = observe.Observer(self.st, self.client, since, self.poller)
         try:
-            return bridge.run(self.st, self.host, ob)
+            return bridge.run(self.st, self.host, ob, now=observe.instant('2026-10-12T10:00:00Z'))
         finally:
             ob.db.close()
 
-    def acts(self):
-        """The journal's entries that are not the clock's ticks."""
+    def acts(self, principal='anonymous'):
+        """Non-clock journal entries, including deliveries, as `principal` may read them."""
         entries, after = [], 0
         while True:
-            got = self.host.send({'op': 'world-entries', 'principal': 'anonymous', 'after': after, 'limit': 100})
+            got = self.host.send({'op': 'world-entries', 'principal': principal, 'after': after, 'limit': 100})
             entries += got['entries']
             if not got.get('more') or not got['entries']:
                 return [e for e in entries if (e.get('identity') or {}).get('principal') != 'clock']
             after = got['entries'][-1]['height']
+
+    def assert_plant_entries(self, entries, rkey, bell):
+        """One request entry and its bell's `made` delivery, with no unrelated or repeated turn."""
+        uri = f'at://{DID}/{COLLECTION}/{rkey}'
+        self.assertEqual(len(entries), 2, entries)
+        requests = [e for e in entries if e.get('identity') == {'principal': DID, 'intent': uri}]
+        self.assertEqual(len(requests), 1, entries)
+        request_entry = requests[0]
+        self.assertEqual(request_entry['outcome']['tag'], 'admitted')
+        self.assertEqual(len(request_entry['sends']), 1)
+        sent = request_entry['sends'][0]
+        self.assertEqual((sent['to'], sent['method']), (bell, 'made'))
+        deliveries = [e for e in entries if e.get('identity') == {'principal': DID, 'intent': sent['id']}]
+        self.assertEqual(len(deliveries), 1, entries)
+        self.assertEqual(deliveries[0]['delivery']['id'], sent['id'])
+        self.assertEqual(deliveries[0]['delivery']['from'], request_entry['identity'])
+        self.assertEqual(deliveries[0]['outcome']['tag'], 'admitted')
 
     def answer(self, rkey, did=DID):
         path = self.st.answers / f'{did}.{rkey}.json'
@@ -160,7 +241,7 @@ class Requests(unittest.TestCase):
         got = self.host.send({'op': 'world-receipt', 'principal': DID, 'identity': uri})
         self.assertEqual(got['receipt']['outcome']['tag'], 'admitted')
         a = self.answer('3aaaaaaaaaaa2')
-        self.assertEqual(a['request']['uri'], uri)
+        self.assertEqual(a['source']['request']['uri'], uri)
         self.assertEqual(a['receipt'], {'slug': got['receipt']['slug'], 'height': got['receipt']['height'], 'entry': {'$link': got['receipt']['hash']}})
         self.assertIn('Planted', a['offers'][0])
         self.assertIn({'object': 'garden-1', 'version': 1, 'stateCid': a['trace']['writes'][-1]['stateCid']}, a['trace']['writes'])
@@ -243,7 +324,7 @@ class Requests(unittest.TestCase):
         self.pds.put(DID, '3aaaaaaaaaaa2', request('delvetalk diary plant\nseed: a\ncolour: amber'))
         self.step()
         a = self.answer('3aaaaaaaaaaa2')
-        self.assertEqual(set(a), {'$type', 'request', 'outcome', 'receipt', 'height'})
+        self.assertEqual(set(a), {'$type', 'source', 'outcome', 'receipt', 'height'})
         self.assertNotIn('secret', canonical(a))
         self.assertNotIn('diary', canonical(a))
 
@@ -251,7 +332,8 @@ class Requests(unittest.TestCase):
         self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT))
         self.step()
         written = []
-        mirror.run(self.st, self.host, lambda c, k, v: written.append((c, k, v)))
+        mirror.run(self.st, self.host, lambda c, k, v: written.append((c, k, v)),
+                   fetch=lambda *args: (400, b'{"error":"RepoNotServed"}', {}))
         (value,) = [v for c, k, v in written if c == bridge.ANSWER and k == f'{DID}.3aaaaaaaaaaa2']
         pds_cid = block(from_json(json.loads(canonical(value))))[0]  # the PDS hashes the JSON it is sent
         repo = Repo(LOOPBACK.origin, answers=self.st.answers)
@@ -262,12 +344,215 @@ class Requests(unittest.TestCase):
         code, listed, _ = repo.serve(self.host, 'GET', 'com.atproto.repo.listRecords', {'repo': repo.did, 'collection': bridge.ANSWER}, None)
         self.assertEqual([r['cid'] for r in listed['records']], [str(pds_cid)])
 
-    def test_a_repository_whose_did_document_names_another_pds_is_not_read_from_this_one(self):
-        self.pds.repos[DID]['pds'] = 'https://pds.elsewhere.example'
+    def participants(self, *dids):
+        self.st.config = dataclasses.replace(self.st.config, participants=' '.join(dids))
+
+    def test_a_configured_resident_on_b_is_admitted_once_without_being_listed_by_a(self):
+        other = 'did:plc:' + 'b' * 24
+        self.pair.b.repo(other, self.pair.B)
+        self.pair.b.put(other, '3aaaaaaaaaaa2', request(PLANT))
+        self.participants(other, other)  # the registry is a union
+        self.assertEqual(self.step()['failed'], [])
+        self.assertEqual(self.answer('3aaaaaaaaaaa2', other)['outcome']['status'], 'admitted')
+        self.step()
+        uri = f'at://{other}/{COLLECTION}/3aaaaaaaaaaa2'
+        self.assertEqual(sum((e.get('identity') or {}).get('intent') == uri for e in self.acts()), 1)
+        self.assertNotIn(other, self.pds.repos)
+        self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.repo.listRecords'), 1)
+        self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.sync.getLatestCommit'), 2)
+        self.assertEqual(json.loads(self.st.requests.read_text())['revs'][other], {'pds': self.pair.B, 'rev': tid(1)})
+
+    def test_a_verified_identity_did_on_b_is_polled_but_pending_and_guest_claims_are_not(self):
+        other = 'did:plc:' + 'b' * 24
+        self.pair.b.repo(other, self.pair.B)
+        self.pair.b.put(other, '3aaaaaaaaaaa2', request(PLANT))
+        ids = identity.Identity(self.st, self.client)
+        try:
+            for nonce, did, state in [('verified', other, 'verified'), ('pending', 'did:plc:' + 'c' * 24, 'pending'),
+                                      ('guest', 'guest:local:guest', 'verified')]:
+                ids.db.execute('INSERT INTO challenges(nonce,did,state) VALUES(?,?,?)', (nonce, did, state))
+        finally:
+            ids.db.close()
+        self.assertEqual(self.step()['failed'], [])
+        self.assertEqual(self.answer('3aaaaaaaaaaa2', other)['outcome']['status'], 'admitted')
+        self.assertEqual(self.pair.documents('did:plc:' + 'c' * 24), 0)
+
+    def test_migration_reads_b_in_full_preserves_consumption_and_never_reads_as_stale_copy(self):
+        # Replaces the fixed-PDS refusal test: an old host's different bytes at the same rkey are never read.
         self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT))
-        ran = self.step()
+        self.pds.put(DID, '3aaaaaaaaaaa4', request(PLANT, mode='try'))
+        self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT))  # A and B have the same rev; PDS alone must defeat the skip
+        self.step()
+        first, before = self.answer('3aaaaaaaaaaa2'), self.acts(principal=DID)
+        self.assertEqual(json.loads(self.st.requests.read_text())['revs'][DID]['rev'], tid(3))
+        refused = json.loads(self.st.requests.read_text())['refused']
+        moved = self.pair.b.repo(DID, self.pair.B)
+        moved['key'] = moved['signer'] = self.me['key']  # the stale copy still has a valid signing key
+        self.pair.b.put(DID, '3aaaaaaaaaaa2', request(PLANT))
+        self.pair.b.put(DID, '3aaaaaaaaaaa3', request('delvetalk garden-1 plant\nseed: b\ncolour: violet'))
+        self.pair.b.put(DID, '3aaaaaaaaaaa4', request(PLANT, mode='try'))
+        self.me['pds'] = self.pair.B
+        self.pds.put(DID, '3aaaaaaaaaaa2', request('delvetalk garden-1 plant\nseed: stale\ncolour: red'))
+        self.pds.put(DID, '3aaaaaaaaaaa5', request('delvetalk garden-1 plant\nseed: stale-new\ncolour: red'))
+        old_reads = self.pair.count(delve.PDS, 'com.atproto.repo.listRecords')
+        old_proofs = self.pair.count(delve.PDS, 'com.atproto.sync.getRecord')
+        self.now[0] = 600  # expire the cached identity, even though A still lists the repository
+        self.assertEqual(self.step()['failed'], [])
+        self.assertEqual(self.answer('3aaaaaaaaaaa2'), first)
+        self.assertEqual(self.answer('3aaaaaaaaaaa3')['outcome']['status'], 'admitted')
+        self.assertIsNone(self.answer('3aaaaaaaaaaa5'))
+        after = self.acts(principal=DID)
+        self.assert_plant_entries([e for e in after if e['height'] > before[-1]['height']],
+                                  '3aaaaaaaaaaa3', 'garden-1/bell/2')
+        identity = {'principal': DID, 'intent': first['source']['request']['uri']}
+        consumed = [e for e in after if e.get('identity') == identity]
+        self.assertEqual(len(consumed), 1)
+        self.assertEqual(consumed, [e for e in before if e.get('identity') == identity])
+        observations = {o['uri']: o['cid'] for o in self.st.observations()}
+        self.assertEqual(observations, {first['source']['request']['uri']: first['source']['request']['cid'],
+                                       self.answer('3aaaaaaaaaaa3')['source']['request']['uri']:
+                                       self.answer('3aaaaaaaaaaa3')['source']['request']['cid']})
+        self.assertEqual(self.pair.count(delve.PDS, 'com.atproto.repo.listRecords'), old_reads)
+        self.assertEqual(self.pair.count(delve.PDS, 'com.atproto.sync.getRecord'), old_proofs)
+        self.assertEqual(json.loads(self.st.requests.read_text())['refused'], refused)
+        self.assertEqual(json.loads(self.st.requests.read_text())['revs'][DID], {'pds': self.pair.B, 'rev': tid(3)})
+        self.assertEqual(self.step()['failed'], [])
+        self.assertEqual(self.acts(principal=DID), after)
+        self.assertEqual(self.answer('3aaaaaaaaaaa2'), first)
+
+    def test_a_hostname_did_web_participant_on_b_is_admitted(self):
+        other = 'did:web:resident.example'
+        self.pair.b.repo(other, self.pair.B)
+        self.pair.b.put(other, '3aaaaaaaaaaa2', request(PLANT))
+        self.participants(other)
+        self.assertEqual(self.step()['failed'], [])
+        self.assertEqual(self.answer('3aaaaaaaaaaa2', other)['outcome']['status'], 'admitted')
+        self.assertEqual(self.pair.documents(other), 1)
+
+    def test_cached_key_rotation_refreshes_once_and_an_unknown_key_is_refused_once_without_a_storm(self):
+        self.step()  # caches the original key
+        key = ec.generate_private_key(ec.SECP256K1())
+        self.me['key'] = self.me['signer'] = key
+        self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT))
+        docs = self.pair.documents(DID)
+        self.step()
+        self.assertEqual(self.pair.documents(DID), docs + 1)
+        self.assertEqual(self.answer('3aaaaaaaaaaa2')['outcome']['status'], 'admitted')
+        self.me['signer'] = ec.generate_private_key(ec.SECP256K1())
+        for rkey in ('3aaaaaaaaaaa3', '3aaaaaaaaaaa4'):
+            self.pds.put(DID, rkey, request(PLANT))
+        docs, before = self.pair.documents(DID), len(self.acts())
+        self.step()
+        self.assertEqual(self.pair.documents(DID), docs + 1)  # one refresh for the participant, not per bad record
+        refused = json.loads(self.st.requests.read_text())['refused']
+        self.assertEqual(len(refused), 2)
+        self.assertTrue(all('bad_signature' in row['why'] for row in refused.values()))
+        self.assertEqual(len(self.acts()), before)
+        proofs = self.pair.count(delve.PDS, 'com.atproto.sync.getRecord')
+        self.step()
+        self.pds.put(DID, '3aaaaaaaaaaa5', request(PLANT, mode='try'))
+        self.step()
+        self.assertEqual(self.pair.count(delve.PDS, 'com.atproto.sync.getRecord'), proofs + 2)
+        self.assertEqual(json.loads(self.st.requests.read_text())['refused'], {**refused,
+                         f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa5': mock.ANY})
+
+    def test_a_verification_refresh_that_moves_the_pds_restarts_listing_on_b(self):
+        self.step()  # A's key and endpoint cached
+        old_key = self.me['key']
+        self.pds.put(DID, '3aaaaaaaaaaa2', request('delvetalk garden-1 plant\nseed: stale\ncolour: red'))
+        moved = self.pair.b.repo(DID, self.pair.B)
+        self.pair.b.put(DID, '3aaaaaaaaaaa2', request(PLANT))
+        self.assertNotEqual(multikey(moved['key'].public_key()), multikey(old_key.public_key()))
+        # The old proof's broken signature forces refresh before its stale value can be consumed.
+        self.me['signer'] = ec.generate_private_key(ec.SECP256K1())
+        docs, before = self.pair.documents(DID), self.acts(principal=DID)
+        self.assertEqual(self.step()['failed'], [])
+        self.assertEqual(self.pair.documents(DID), docs + 1)
+        self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.repo.listRecords'), 1)
+        self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.sync.getLatestCommit'), 1)
+        self.assertEqual(self.answer('3aaaaaaaaaaa2')['outcome']['status'], 'admitted')
+        self.assertEqual(self.answer('3aaaaaaaaaaa2')['source']['request']['cid'],
+                         str(block(from_json(request(PLANT)))[0]))
+        after = self.acts(principal=DID)
+        self.assert_plant_entries([e for e in after if e['height'] > before[-1]['height']],
+                                  '3aaaaaaaaaaa2', 'garden-1/bell/1')
+        self.assertEqual(json.loads(self.st.requests.read_text())['refused'], {})
+        self.assertEqual(self.step()['failed'], [])
+        self.assertEqual(self.acts(principal=DID), after)
+
+    def test_a_bad_car_and_a_missing_mst_path_refresh_once_before_being_refused(self):
+        self.step()
+        self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT))
+        docs = self.pair.documents(DID)
+        self.pds.proof = lambda q, raw: b'not a CAR'
+        self.step()
+        uri = f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa2'
+        self.assertEqual(self.pair.documents(DID), docs + 1)
+        self.assertIn('bad_proof', json.loads(self.st.requests.read_text())['refused'][uri]['why'])
         self.assertIsNone(self.answer('3aaaaaaaaaaa2'))
-        self.assertIn('repository_elsewhere', canonical(ran['failed']))
+        self.pds.put(DID, '3aaaaaaaaaaa3', request(PLANT))
+        # Return a signed tree in which the listed rkey 3 is absent.
+        records = self.me['records']
+        self.me['records'] = {'3aaaaaaaaaaa2': records['3aaaaaaaaaaa2']}
+        tree, blocks, commit = self.pds.commit(DID)
+        self.me['records'] = records
+        self.pds.proof = lambda q, raw: car(commit[0], [commit, *tree.proof(0), blocks['3aaaaaaaaaaa2']])
+        docs = self.pair.documents(DID)
+        self.step()
+        self.assertEqual(self.pair.documents(DID), docs + 1)
+        self.assertIn('not_in_commit', json.loads(self.st.requests.read_text())['refused'][
+            f'at://{DID}/{COLLECTION}/3aaaaaaaaaaa3']['why'])
+        self.assertIsNone(self.answer('3aaaaaaaaaaa3'))
+
+    def test_unchanged_b_revision_skips_listing_and_identity_expires_at_ten_minutes(self):
+        other = 'did:plc:' + 'b' * 24
+        self.pair.b.repo(other, self.pair.B)
+        self.participants(other)
+        self.step()
+        self.now[0] = 599
+        self.step()
+        self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.sync.getLatestCommit'), 2)
+        self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.repo.listRecords'), 1)
+        self.assertEqual(self.pair.documents(other), 1)
+        self.now[0] = 600
+        self.step()
+        self.assertEqual(self.pair.documents(other), 2)
+        self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.repo.listRecords'), 1)
+
+    def test_a_private_or_http_pds_is_a_problem_before_any_request_reaches_it(self):
+        for endpoint in ('https://127.0.0.1', 'https://10.0.0.1', 'http://pds.resident.example', 'https://internal.example'):
+            with self.subTest(endpoint=endpoint):
+                self.me['pds'] = endpoint
+                self.now[0] += 600
+                self.client.document_transport = self.pair
+                self.client.read_transport = lambda *args: delve.public_transport(*args, resolve=lambda *a, **k: [
+                    (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, '', ('127.0.0.1', 443))])
+                reads = self.pair.count(delve.PDS, 'com.atproto.repo.listRecords')
+                ran = self.step()
+                self.assertIn('not_public', canonical(ran['failed']))
+                self.assertEqual(self.pair.count(delve.PDS, 'com.atproto.repo.listRecords'), reads)
+                self.assertFalse(any(url.startswith(endpoint + '/xrpc/') for url in self.pair.calls))
+                self.assertIsNone(self.answer('3aaaaaaaaaaa2'))
+
+    def test_unsupported_config_dids_are_problems_and_never_resolved(self):
+        bad = ['did:key:z123', 'did:web:resident.example:path', 'did:web:resident.example%3A443']
+        self.participants(*bad)
+        ran = self.step()
+        self.assertTrue(all(did in canonical(ran['failed']) for did in bad))
+        self.assertEqual(len(ran['failed']), len(bad))
+        self.assertFalse(any('/did:key:' in url or '%3A443' in url for url in self.pair.calls))
+
+    def test_256_other_pds_participants_are_read_and_overflow_is_reported(self):
+        dids = [f'did:web:r{n:03d}.example' for n in range(257)]
+        for did in dids:
+            self.pair.b.repo(did, self.pair.B)
+        self.participants(*dids)
+        ran = self.step()
+        self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.sync.getLatestCommit'), 256)
+        self.assertEqual(self.pair.count(self.pair.B, 'com.atproto.repo.listRecords'), 256)
+        self.assertIn('participant_overflow', canonical(ran['failed']))
+        self.assertIn(dids[-1], canonical(ran['failed']))
+        self.assertEqual(len(ran['failed']), 1)
 
     def test_a_stale_if_is_answered_moved_with_what_moved_and_journals_nothing(self):
         self.pds.put(DID, '3aaaaaaaaaaa2', request(PLANT, **{'if': [{'object': 'garden-1', 'version': 0}]}))
@@ -303,14 +588,14 @@ class Held(unittest.TestCase):
             finally:
                 ob.db.close()
         step()
-        self.assertFalse(bridge.answer_path(st, uri).exists())
+        self.assertFalse(bridge.answer_path(st, bridge.request_source({'uri': uri, 'cid': 'unused'})).exists())
         turns = sum(o['op'] == 'world-turn' for o in host.ops)
         step()
         self.assertEqual(sum(o['op'] == 'world-turn' for o in host.ops), turns)
         host.offers[DID] = [{'height': 9, 'ordinal': 0, 'identity': {'principal': DID, 'intent': uri}, 'text': 'Planted.'},
                             {'height': 9, 'ordinal': 1, 'identity': {'principal': DID, 'intent': 'someone-else'}, 'text': 'not mine'}]
         self.assertEqual(step()['offered'], [uri])
-        a = json.loads(bridge.answer_path(st, uri).read_text())
+        a = json.loads(bridge.answer_path(st, bridge.request_source({'uri': uri, 'cid': 'unused'})).read_text())
         self.assertEqual(record_problems(a), [])
         self.assertEqual((a['outcome']['status'], a['offers'], a['receipt']['slug']), ('admitted', ['Planted.'], 'lodif-rukuz'))
         self.assertNotIn('offered', step())
@@ -318,7 +603,7 @@ class Held(unittest.TestCase):
 
 
 class Switch(unittest.TestCase):
-    """The poller reads every repository pds.delve.town lists: the bridge runs it only when the owner turns `requests` on."""
+    """The bridge reads participant requests only when the owner turns `requests` on."""
 
     def observer(self, **config):
         tmp = tempfile.TemporaryDirectory()
@@ -338,6 +623,44 @@ class Switch(unittest.TestCase):
     def test_the_environment_turns_it_on(self):
         self.assertFalse(Config.load(environ={}).requests)
         self.assertTrue(Config.load(environ={'DELVETALK_REQUESTS': 'on'}).requests)
+        self.assertEqual(Config.load(environ={}).participants, '')
+        self.assertEqual(Config.load(environ={'DELVETALK_PARTICIPANTS': DID}).participants, DID)
+
+
+class ParticipantReads(unittest.TestCase):
+    def test_arbitrary_pds_reads_allow_exactly_three_endpoints_and_the_shared_parameter_bounds(self):
+        calls = []
+        client = delve.Client(lambda *args: calls.append(args) or (200, b'{}'))
+        pds = PDSPair.B
+        for nsid, params in [('com.atproto.repo.listRecords', {'repo': DID, 'collection': COLLECTION, 'limit': 100}),
+                             ('com.atproto.sync.getRecord', {'did': DID, 'collection': COLLECTION, 'rkey': 'x'}),
+                             ('com.atproto.sync.getLatestCommit', {'did': DID})]:
+            self.assertEqual(client.read(pds, nsid, **params), {})
+            self.assertTrue(calls[-1][1].startswith(pds + '/xrpc/' + nsid + '?'))
+        self.assertEqual(client.read(pds, 'com.atproto.sync.getRecord', raw=True, did=DID), b'{}')
+        self.assertEqual(calls[-1][2]['Accept'], 'application/vnd.ipld.car')
+        before = len(calls)
+        for nsid, params, code in [('com.atproto.sync.listRepos', {}, 'endpoint_not_allowed'),
+                                   ('com.atproto.repo.getRecord', {}, 'endpoint_not_allowed'),
+                                   ('com.atproto.repo.putRecord', {}, 'endpoint_not_allowed'),
+                                   ('com.atproto.sync.getLatestCommit', {'repo': DID}, 'param_not_allowed'),
+                                   ('com.atproto.sync.getLatestCommit', {'did': True}, 'param_invalid'),
+                                   ('com.atproto.sync.getLatestCommit', {'did': 'x' * (delve.MAX_PARAM + 1)}, 'param_invalid')]:
+            with self.assertRaises(delve.Failure) as failed:
+                client.read(pds, nsid, **params)
+            self.assertEqual(failed.exception.code, code)
+        client.read(pds, 'com.atproto.sync.getLatestCommit', did='x' * delve.MAX_PARAM)
+        self.assertEqual(len(calls), before + 1)
+
+    def test_live_observer_uses_public_transport_for_documents_and_participant_reads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            st = State(directory, config=dataclasses.replace(LOOPBACK, requests=True))
+            ob = bridge.delve_observer(st, None)
+            try:
+                self.assertIs(ob.client.document_transport, delve.public_transport)
+                self.assertIs(ob.client.read_transport, delve.public_transport)
+            finally:
+                ob.db.close()
 
 
 if __name__ == '__main__':

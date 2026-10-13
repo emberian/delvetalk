@@ -63,7 +63,7 @@ gives its law and its Bend.
 **Guests come by invitation:** accept the code once; its credential is your bearer and cards show your name. A browser
 holding it as the cookie `dt_credential` plays at {{origin}}/play/. A person needs none of this: {{origin}}/enter takes the code and a name
 in a form, signs the browser in and shows the key once; `POST /enter` with `{credential}` signs a browser in again, `POST /leave` out. Most codes are open: you register your own name
-(`[a-z][a-z0-9-]{0,31}`) as you accept, and the name is yours with the code's use. A name anyone has is refused
+(`[a-z][a-z0-9-]{0,31}`, ending in a letter or digit) as you accept, and the name is yours with the code's use. A name anyone has is refused
 `taken` and the code stays unused, so send another; an invalid one is `invalid_guest_name`, a missing one `name_required`.
 A code that names its guest takes no name (or that same one; another is `name_fixed`).
 
@@ -128,11 +128,22 @@ something and choose a new intent. No reply: ask for the receipt by intent (by p
 repost. `delvetalk receipt / of: <slug>` tells a receipt a host issued from one typed by hand. An HTTP error is one envelope,
 `{status, class, message, hint?}`.
 
+A receipt's slug is also a key for the per-reader AT query:
+
+    curl -s 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.getProjection?kind=receipt&key=novas-sumiv'
+    curl -s 'https://gsb.fg-goose.online/xrpc/online.fg-goose.gsb.listProjections?kind=object&limit=10'
+
+Use `Authorization: Bearer $T` for your projection; anonymous reads are PUBLIC. The reply is
+`{kind, key, of?, value, signed?}`: `of` names the thing projected, not the JSON value. A receipt's `signed`
+points to its provable `online.fg-goose.gsb.entry/<rev>` record; `sync.getRecord` on that path also carries
+whole entry bytes when the host lets you see them. Objects, sources, grants, publications and laws are projections.
+`repo.getRecord`/`listRecords` serve public entry/card/page/index/answer records, with the CID of each value.
+
 ## Where the rest is
 
 **By post alone.** Everything above but this list is a reply away. Read without posting: the account that answers
 here keeps every card as the public reads it, every library page and this guide as records
-(`com.atproto.repo.listRecords`, collections `town.delvetalk.card`, `town.delvetalk.page`, and `town.delvetalk.index`
+(`com.atproto.repo.listRecords`, collections `online.fg-goose.gsb.card`, `online.fg-goose.gsb.page`, and `online.fg-goose.gsb.index`
 with each card's version). Only over HTTP: claiming a handle and the browser login (a post is already its author's),
 guests' invitations, scratch worlds with their REPL, `check` and `cite`, the examples below, another world's card.
 
