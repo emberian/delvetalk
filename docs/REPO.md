@@ -32,7 +32,7 @@ startup provisions existing verified guests. The Zulip observer provisions accou
 without copying their messages into request records. External claimed DIDs keep their own repositories.
 
 Each hosted hostname serves its own did.json: `alsoKnownAs` is its `at://<hostname>`, `#atproto` is
-its unique random k256 key and `#atproto_pds` names the same front origin. Host selection never creates
+its derived k256 key and `#atproto_pds` names the same front origin. Host selection never creates
 accounts. At that origin, repo/sync parameters select the existing account by DID/handle; an account
 Host cannot select another account. Hosted hosts expose only repository methods, not world procedures
 or projection queries. Describe/list/get return only `online.fg-goose.gsb.request`, with value-derived
@@ -52,8 +52,10 @@ agent/procedure body limits remain 256 KiB. The catalogue exposes both limits. l
 pages at 4 MiB of JSON, returning a cursor when the byte budget shortens a page. This includes adversarial control-character escaping. CAR exports are bounded at 17 MiB.
 
 `State.hosted` is `<state>/worlds/<world>/hosted/`, directory mode 0700. Stems are `<guest name>` and
-`<id>.<realm>.zulip`. A `.key` is generated once as PKCS#8 PEM, mode 0400. A public `.json` snapshot
-holds `{principal, counter, prev, records}`; a `.lock` flock serializes front/bridge writers. A write
+`<id>.<realm>.zulip`. The k256 key derives from the town private scalar and account DID using HKDF-SHA256
+(ATPROTO §4); no account key or lock file is written. A public `.json` snapshot holds
+`{principal, counter, prev, records, key}` and optional `epochs: [{counter, cause, key}]`;
+one flock on the directory file descriptor serializes front/bridge reads and writes. A write
 rebuilds the sorted bounded MST with the existing Tree/Key.commit, fsyncs the snapshot, atomically replaces
 it and fsyncs the directory. Readers see one complete snapshot. Revs are `TID(counter)`, counter advanced
 to `max(counter + 1, wall microseconds)` for each mutation, even if the wall clock moves backward. The
@@ -61,9 +63,12 @@ commit signs version 3, this account's DID, its current root, rev and previous h
 prev are kept beside the records, so restart yields byte-identical head CARs without writing. There is
 no historical export or hosted firehose; consumers reconcile the bounded full current tree.
 
-Keys must be excluded from the deployment backup mirror and dated state tarballs (DEPLOY "Hosted
-account origins"); keep them separately and restore the same key alongside its snapshot. Loss is
-an error, never silent regeneration. DelveTalk's custody vouches no more than the invitation: addressability,
+State backups keep hosted snapshots; the same town key reproduces account keys and signed heads on restore.
+Startup and account access reconcile changed keys under the directory lock: a higher counter, `prev` null,
+the new `key`, and a `rotation` epoch, with the same records and rkeys. Legacy snapshots instead record
+`migration`, unless their legacy key already equals the derived key (only `key` is added); legacy key/lock
+files are deleted after the snapshot is durable. A second reconciliation changes no bytes. Missing town
+keys refuse hosted routes and provisioning with 503 `RepoNotServed`. DelveTalk's custody vouches no more than the invitation: addressability,
 not trust. The local poller source supplies the same proof CAR bytes to `requests.proven`, with no network
 and no alternate verifier. Each URI turns once under its hosted DID and yields the ordinary answer.
 The poller and mirror remain disabled by default. Tests: `test_hosted`; signing needs cryptography >=43.
@@ -143,7 +148,7 @@ made it (what `since` filters on). Every signed read first pages
 `world-entries` (as `anonymous`, `after` the last height, 100 a page) and appends what is new. Cold start signs and captures event CARs for the current signing epoch; warm catch-ups process only new
 heights. The firehose polls the same cache once a second.
 
-**The key.** One per world: k256, PKCS#8 PEM, `/etc/delvetalk/repo/<world>.key`, mode 0400, owner 10425, in
+**The key.** One per world: k256 or p256, PKCS#8 PEM, `/etc/delvetalk/repo/<world>.key`, mode 0400, owner 10425, in
 a 0700 directory owned by 10425. `python3 -m transport repokey` makes it at first start (DEPLOY "First start"), refuses an
 existing file, prints its path and public `did:key`. `DELVETALK_REPO_KEYS` names the directory; compose mounts it
 read-only into the front and read-write into the ops container that runs `repokey`. The host holds no key, and
@@ -152,6 +157,10 @@ Rotation or key loss: replace the key out of band and restart the front (DEPLOY)
 a rotation epoch and signs one higher-rev sync commit over the same tree. Entry records keep their keys and CIDs,
 and old-rev deltas still work within this journal. Loss of the ledger requires a full re-sync. Without a key the signed routes answer
 `RepoNotServed`; projection queries and the four mirrored record collections remain available.
+Hosted keys always derive as k256 from this key's private scalar and each DID, independently of its PEM
+encoding or curve. Losing the town key loses every hosted key too; replacing it rotates all hosted documents
+and signs higher-rev sync heads with `prev` null, keeping records unchanged. Hosted epochs live in their
+snapshots; subsequent writes chain from the new head, and old commits are never re-signed.
 
 **Who signs, and what that is worth.** The front signs; the host holds no key. A commit therefore says "the
 front of this origin served this chain", the trust did:web already gives (whoever controls the origin's

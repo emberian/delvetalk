@@ -7,15 +7,20 @@ No external network or Lean process is used.
 """
 import concurrent.futures
 import copy
+import hashlib
+import hmac
 import http.client
 import json
-import stat
+import shutil
 import tempfile
 import unittest
 import urllib.parse
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
 
 from tests.host import serve
 from tests.test_repo import signs
@@ -24,6 +29,7 @@ from transport import bridge, delve, identity, observe
 from transport.atproto.cbor import block, decode, from_json, read_car
 from transport.atproto.mst import find
 from transport.atproto.sign import Key, tid
+from transport.atproto import sign
 from transport.config import Config
 from transport.hosted import Accounts, MAX_REQUESTS, MAX_RECORD_BYTES, MAX_PAGE_BYTES, MAX_WRITE_BODY
 from transport.http import Front
@@ -58,6 +64,50 @@ class Mapping(unittest.TestCase):
                 identity.hosted_identity(bad, HOST)
 
 
+@signs
+class Derivation(unittest.TestCase):
+    def test_scalar_survives_pem_reencoding_and_p256_derives_k256(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for curve in ('secp256k1', 'secp256r1'):
+                town = Key.generate(curve)
+                first = sign.derive_key(town, 'did:web:robin.guest.' + HOST)
+                self.assertEqual(first.private.curve.name, 'secp256k1')
+                self.assertEqual(first.pem(), sign.derive_key(town, 'did:web:robin.guest.' + HOST).pem())
+                path = Path(tmp) / 'town.pem'
+                path.write_bytes(town.private.private_bytes(serialization.Encoding.PEM,
+                    serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()))
+                self.assertEqual(first.pem(), sign.derive_key(Key.load(path), 'did:web:robin.guest.' + HOST).pem())
+
+    def test_did_and_town_scalar_separate_keys(self):
+        town = Key.generate()
+        did = 'did:web:robin.guest.' + HOST
+        key = sign.derive_key(town, did)
+        self.assertNotEqual(key.did_key, sign.derive_key(town, 'did:web:wren.guest.' + HOST).did_key)
+        self.assertNotEqual(key.did_key, sign.derive_key(Key.generate(), did).did_key)
+
+    def test_rfc5869_known_answer(self):
+        town = Key(ec.derive_private_key(1, ec.SECP256K1()))
+        did = 'did:web:robin.guest.' + HOST
+        info = b'delvetalk hosted key v1\0' + did.encode() + b'\0' + bytes(4)
+        prk = hmac.new(bytes(32), (1).to_bytes(32, 'big'), hashlib.sha256).digest()
+        expected = hmac.new(prk, info + b'\1', hashlib.sha256).digest()
+        self.assertEqual(expected.hex(), '32b66c1741412eda4275679d690c62b12af461c8d5e7ef687f345ae34f896fa4')
+        self.assertEqual(sign.derive_key(town, did).private.private_numbers().private_value,
+                         int.from_bytes(expected, 'big'))
+        p256 = Key(ec.derive_private_key(1, ec.SECP256R1()))
+        self.assertEqual(sign.derive_key(town, did).pem(), sign.derive_key(p256, did).pem())
+
+    def test_zero_and_order_candidates_retry_with_counter_one(self):
+        for invalid in (0, sign.CURVES['secp256k1'][2]):
+            with self.subTest(invalid=invalid), mock.patch('transport.atproto.sign.HKDF') as hkdf:
+                hkdf.return_value.derive.side_effect = [invalid.to_bytes(32, 'big'), (7).to_bytes(32, 'big')]
+                town = Key.generate()
+                did = 'did:web:robin.guest.' + HOST
+                self.assertEqual(sign.derive_key(town, did).private.private_numbers().private_value, 7)
+                self.assertEqual([c.kwargs['info'] for c in hkdf.call_args_list],
+                    [b'delvetalk hosted key v1\0' + did.encode() + b'\0' + n.to_bytes(4, 'big') for n in (0, 1)])
+
+
 class HostedWorld(ActsWorld):
     def send(self, q):
         if q['op'] == 'bounds':
@@ -74,6 +124,8 @@ class Hosted(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.st = State(tmp.name, config=Config(origin=ORIGIN, requests=True, repo_keys=str(Path(tmp.name) / 'repo')))
+        self.st.repo_key.parent.mkdir()
+        self.st.repo_key.write_bytes(Key.generate().pem())
         self.now = [1000.0]
         self.host = HostedWorld()
         self.client = delve.Client(self.network)
@@ -127,6 +179,171 @@ class Hosted(unittest.TestCase):
     def files(self):
         return {str(p.relative_to(self.st.home)): p.read_bytes() for p in self.st.hosted.rglob('*') if p.is_file()}
 
+    def exported_head(self, accounts=None):
+        raw = (accounts or self.accounts).read(ORIGIN, 'com.atproto.sync.getRepo', raw=True, did=self.did)
+        roots, blocks = read_car(raw)
+        return raw, blocks[roots[0]], decode(blocks[roots[0]])
+
+    def test_json_only_backup_restores_documents_car_and_commit_and_can_write(self):
+        self.assertEqual(self.create()[0], 200)
+        self.accounts.account('zulip:chat.example:42', create=True)
+        docs = {did: self.accounts.did_document(did) for did in self.accounts.dids()}
+        before = self.exported_head()
+        self.assertEqual(set(p.suffix for p in self.st.hosted.iterdir()), {'.json'})
+        with tempfile.TemporaryDirectory() as tmp:
+            restored = State(tmp, config=Config(origin=ORIGIN, repo_keys=str(Path(tmp) / 'repo')))
+            restored.repo_key.parent.mkdir()
+            restored.repo_key.write_bytes(Key.load(self.st.repo_key).pem())
+            shutil.copytree(self.st.hosted, restored.hosted)
+            accounts = Accounts(restored)
+            accounts.reconcile()
+            self.assertEqual({did: accounts.did_document(did) for did in accounts.dids()}, docs)
+            self.assertEqual(self.exported_head(accounts), before)
+            account = accounts.account(self.robin['principal'])
+            status, out, _ = account.serve(None, 'POST', 'com.atproto.repo.createRecord',
+                {'repo': self.did, 'collection': COLLECTION, 'rkey': tid(2), 'record': request()}, self.robin['principal'])
+            self.assertEqual(status, 200, out)
+            self.assertEqual(proven(accounts, self.did, tid(2), docs[self.did])[1], request())
+            self.assertEqual(set(p.suffix for p in restored.hosted.iterdir()), {'.json'})
+
+    def test_town_rotation_syncs_same_records_higher_rev_once_then_chains(self):
+        self.assertEqual(self.create()[0], 200)
+        old_doc = self.accounts.did_document(self.did)
+        before = self.exported_head()[2]
+        records = self.accounts.account(self.robin['principal']).stored()['records']
+        self.st.repo_key.write_bytes(Key.generate('secp256r1').pem())
+        # First access must reconcile even without a front restart or explicit startup reconciliation.
+        with mock.patch('transport.hosted.time.time_ns', return_value=0):
+            new_doc = self.call('/.well-known/did.json')[1]
+        self.assertNotEqual(new_doc['verificationMethod'], old_doc['verificationMethod'])
+        self.assertEqual(new_doc, self.accounts.did_document(self.did))
+        head = self.exported_head()[2]
+        self.assertGreater(head['rev'], before['rev'])
+        self.assertIsNone(head['prev'])
+        account = self.accounts.account(self.robin['principal'])
+        self.assertEqual(account.stored()['records'], records)
+        self.assertEqual(account.stored()['epochs'][-1]['cause'], 'rotation')
+        self.assertEqual(proven(self.accounts, self.did, self.rkey, new_doc)[1], request())
+        with self.assertRaises(delve.Failure) as failure:
+            proven(self.accounts, self.did, self.rkey, old_doc)
+        self.assertEqual(failure.exception.code, 'bad_signature')
+        # Startup must reconcile the other, untouched account too.
+        front = Front(self.st, self.host, self.ident, ('127.0.0.1', 0))
+        front.server_close()
+        self.assertEqual(json.loads((self.st.hosted / 'wren.json').read_text())['epochs'][-1]['cause'], 'rotation')
+        baseline, exported = self.files(), self.exported_head()
+        self.accounts.reconcile()
+        self.accounts.account(self.robin['principal'])
+        self.assertEqual(self.files(), baseline)
+        self.assertEqual(self.exported_head(), exported)
+        self.assertEqual(self.create(tid(2))[0], 200)
+        after = self.exported_head()[2]
+        self.assertEqual(after['prev'], block(head)[0])
+        self.assertGreater(after['rev'], head['rev'])
+
+    def test_legacy_random_missing_and_matching_keys_migrate_idempotently(self):
+        self.assertEqual(self.create()[0], 200)
+        snapshot = self.st.hosted / 'robin.json'
+        original = json.loads(snapshot.read_text())
+        derived = sign.derive_key(Key.load(self.st.repo_key), self.did)
+        for kind in ('random', 'missing', 'matching'):
+            with self.subTest(kind=kind):
+                legacy = {k: v for k, v in original.items() if k not in ('key', 'epochs')}
+                State.write(snapshot, legacy)
+                old_key, old_lock = snapshot.with_suffix('.key'), snapshot.with_suffix('.lock')
+                if kind != 'missing':
+                    old_key.write_bytes((derived if kind == 'matching' else Key.generate()).pem())
+                old_lock.touch()
+                with mock.patch('transport.hosted.time.time_ns', return_value=0):
+                    self.accounts.reconcile()
+                stored = json.loads(snapshot.read_text())
+                self.assertEqual(stored['key'], derived.did_key)
+                self.assertEqual(stored['records'], original['records'])
+                self.assertFalse(old_key.exists())
+                self.assertFalse(old_lock.exists())
+                if kind == 'matching':
+                    self.assertEqual(stored['counter'], original['counter'])
+                    self.assertEqual(stored['prev'], original['prev'])
+                else:
+                    self.assertGreater(tid(stored['counter']), tid(original['counter']))
+                    self.assertIsNone(stored['prev'])
+                    self.assertEqual(stored['epochs'][-1],
+                        {'counter': stored['counter'], 'cause': 'migration', 'key': derived.did_key})
+                doc = self.accounts.did_document(self.did)
+                self.assertEqual(doc['verificationMethod'][0]['publicKeyMultibase'], derived.did_key[8:])
+                self.assertEqual(proven(self.accounts, self.did, self.rkey, doc)[1], request())
+                baseline = self.files()
+                self.accounts.reconcile()
+                self.assertEqual(self.files(), baseline)
+
+    def test_keyless_routes_and_invitation_accept_leave_rows_and_snapshots_unchanged(self):
+        invitation = self.ident.invite('finch')
+        self.st.repo_key.unlink()
+        baseline = self.files()
+        rows = list(self.ident.db.execute('SELECT * FROM challenges'))
+        for hostname, path, body in [
+            (self.hostname, '/.well-known/did.json', None),
+            (self.hostname, '/xrpc/com.atproto.sync.getRepo?did=' + self.did, None),
+            (HOST, '/xrpc/com.atproto.repo.getRecord?' + urllib.parse.urlencode(
+                {'repo': self.did, 'collection': COLLECTION, 'rkey': self.rkey}), None),
+            (HOST, '/AGENTS.md/accept', {'code': invitation['code']})]:
+            status, out = self.call(path, body, hostname=hostname)
+            self.assertEqual((status, out['error']), (503, 'RepoNotServed'))
+        self.assertEqual(self.files(), baseline)
+        self.assertEqual(list(self.ident.db.execute('SELECT * FROM challenges')), rows)
+        self.assertEqual(self.ident.db.execute('SELECT state FROM invitations WHERE name=?', ('finch',)).fetchone()[0], 'open')
+        front = Front(self.st, self.host, self.ident, ('127.0.0.1', 0))
+        front.server_close()
+        self.assertEqual(self.files(), baseline)
+        self.st.repo_key.write_bytes(Key.generate().pem())
+        self.assertEqual(self.call('/AGENTS.md/accept', {'code': invitation['code']}, hostname=HOST)[0], 200)
+
+    def test_migration_cleanup_waits_for_durability_and_retries_without_another_epoch(self):
+        self.assertEqual(self.create()[0], 200)
+        snapshot = self.st.hosted / 'robin.json'
+        legacy = json.loads(snapshot.read_text())
+        del legacy['key']
+        State.write(snapshot, legacy)
+        old_key, old_lock = snapshot.with_suffix('.key'), snapshot.with_suffix('.lock')
+        old_key.write_bytes(Key.generate().pem())
+        old_lock.touch()
+        baseline = self.files()
+        with mock.patch.object(State, 'write', side_effect=OSError('write failed')):
+            with self.assertRaises(OSError):
+                self.accounts.reconcile()
+        self.assertEqual(self.files(), baseline)
+        from transport.hosted import HostedRepo
+        with mock.patch.object(HostedRepo, 'sync_directory', side_effect=OSError('directory sync failed')):
+            with self.assertRaises(OSError):
+                self.accounts.reconcile()
+        self.assertTrue(old_key.exists())
+        self.assertTrue(old_lock.exists())
+        written = snapshot.read_bytes()
+        self.accounts.reconcile()
+        self.assertEqual(snapshot.read_bytes(), written)
+        self.assertFalse(old_key.exists())
+        self.assertFalse(old_lock.exists())
+        self.assertEqual(len(json.loads(written)['epochs']), 1)
+
+    def test_keyless_zulip_observation_rolls_back_and_retries_after_key_returns(self):
+        from transport.zulip import ZulipObserver
+        ob = ZulipObserver(self.st, SimpleNamespace(realm='chat.example'), 'town')
+        self.addCleanup(ob.db.close)
+        message = {'id': 1, 'subject': 'a topic', 'sender_id': 42, 'sender_full_name': 'Robin',
+                   'timestamp': 1791800000, 'content': 'delvetalk diary write\ntext: rain'}
+        me = {'user_id': 99, 'full_name': 'Delve Bot'}
+        pem = self.st.repo_key.read_bytes()
+        self.st.repo_key.unlink()
+        baseline = self.files()
+        with self.assertRaises(delve.Failure) as failure:
+            ob.store(message, me)
+        self.assertEqual(failure.exception.code, 'RepoNotServed')
+        for table in ('posts', 'observations', 'zulip_topics'):
+            self.assertEqual(ob.db.execute('SELECT count(*) FROM ' + table).fetchone()[0], 0)
+        self.assertEqual(self.files(), baseline)
+        self.st.repo_key.write_bytes(pem)
+        self.assertTrue(ob.store(message, me))
+
     def test_existing_verified_guest_gets_one_key_and_no_claimed_did_is_rehosted(self):
         principal = f'guest:{HOST}:existing'
         credential = 'dt_agent_' + 'a' * 43
@@ -135,10 +352,10 @@ class Hosted(unittest.TestCase):
         self.accounts.provision_guests()
         did = identity.hosted_identity(principal, HOST)
         self.assertIn(did, self.accounts.dids())
-        key = self.st.hosted / 'existing.key'
-        raw = key.read_bytes()
+        raw = self.files()
         self.accounts.provision_guests()
-        self.assertEqual(key.read_bytes(), raw)
+        self.assertEqual(self.files(), raw)
+        self.assertEqual(set(p.suffix for p in self.st.hosted.iterdir()), {'.json'})
         self.assertEqual(self.ident.authenticate(credential)['did'], principal)
         self.assertNotIn('did:web:' + HOST, self.accounts.dids())
 
@@ -146,9 +363,10 @@ class Hosted(unittest.TestCase):
         status, doc = self.call('/.well-known/did.json')
         self.assertEqual((status, doc['id'], doc['alsoKnownAs']), (200, self.did, ['at://' + self.hostname]))
         self.assertEqual(doc['service'][0]['serviceEndpoint'], ORIGIN)
-        key = self.st.hosted / 'robin.key'
-        self.assertEqual(stat.S_IMODE(key.stat().st_mode), 0o400)
-        self.assertNotEqual(Key.load(key).did_key, Key.load(self.st.hosted / 'wren.key').did_key)
+        town = Key.load(self.st.repo_key)
+        self.assertNotEqual(sign.derive_key(town, self.did).did_key,
+                            sign.derive_key(town, identity.hosted_identity(self.wren['principal'], HOST)).did_key)
+        self.assertEqual(set(p.suffix for p in self.st.hosted.iterdir()), {'.json'})
         for hostname in ('nobody.guest.' + HOST, self.hostname + '.evil', 'robin.guest.elsewhere.example'):
             self.assertEqual(self.call('/.well-known/did.json', hostname=hostname)[0], 400)
         self.assertEqual(self.call('/.well-known/did.json', hostname=HOST)[1]['id'], 'did:web:' + HOST)

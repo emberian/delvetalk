@@ -356,8 +356,12 @@ class Identity:
                 self.db.execute('INSERT INTO challenges(nonce,handle,did,text,credential,created,expires,state,verified) VALUES(?,?,?,?,?,?,?,?,?)',
                                 ('guest:' + secrets.token_hex(16), chosen, principal, '', digest(credential), now, now, 'verified', now))
             except sqlite3.IntegrityError:
+                self.db.execute('ROLLBACK')
                 raise IdentityError('taken') from None
-            finally:
+            except BaseException:
+                self.db.execute('ROLLBACK')
+                raise
+            else:
                 self.db.execute('COMMIT')
         return {'status': 'accepted', 'principal': principal, 'did': account.did, 'handle': chosen, 'credential': credential}
 

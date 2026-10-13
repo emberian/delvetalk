@@ -1,11 +1,12 @@
 """Signing keys, did:key, TIDs and commits (atproto.com/specs/cryptography, /repository "Commit Objects").
 
-A key is k256 (secp256k1) or p256, held as a PKCS#8 PEM file. Signatures are ECDSA over sha-256, deterministic
+A key is k256 (secp256k1) or p256. Signatures are ECDSA over sha-256, deterministic
 (RFC 6979, so a commit is a function of its content and the key), as 64 raw bytes r||s with s in the low half.
 """
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature, encode_dss_signature
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from transport.atproto.cbor import block, encode, varint
 
@@ -98,3 +99,16 @@ class Key:
         """-> (CID, bytes) of the signed commit {did, version: 3, data, rev, prev, sig}; sig over the unsigned one."""
         unsigned = {'did': did, 'version': 3, 'data': data, 'rev': rev, 'prev': prev}
         return block({**unsigned, 'sig': self.sign(encode(unsigned))})
+
+
+def derive_key(town_key, did):
+    """Derive a hosted k256 key from the town scalar and DID with HKDF-SHA256 and rejection sampling."""
+    material = town_key.private.private_numbers().private_value.to_bytes(32, 'big')
+    counter = 0
+    while True:
+        info = b'delvetalk hosted key v1\0' + did.encode() + b'\0' + counter.to_bytes(4, 'big')
+        raw = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info).derive(material)
+        scalar = int.from_bytes(raw, 'big')
+        if 0 < scalar < CURVES['secp256k1'][2]:
+            return Key(ec.derive_private_key(scalar, ec.SECP256K1()))
+        counter += 1
