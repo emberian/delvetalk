@@ -902,6 +902,51 @@ class CarriedTwice(unittest.TestCase):
             journal = out
 
 
+class SqliteCustody(unittest.TestCase):
+    """The transport's SQLite files cross a carry from a read-only old state (the ops container mounts every data
+    directory read-only at /towns): a WAL database whose writer closed cleanly has no -shm there and cannot be opened
+    even to read in place (v14's feed.sqlite and observe.sqlite after `down`, 2026-10-13); one whose writer was
+    stopped holds committed rows in its -wal alone; neither side file is laid beside the new database."""
+
+    def wal_db(self, path, rows):
+        import sqlite3
+        db = sqlite3.connect(path)
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA wal_autocheckpoint=0")
+        db.execute("CREATE TABLE t (n INTEGER)")
+        db.executemany("INSERT INTO t VALUES (?)", [(n,) for n in range(rows)])
+        db.commit()
+        return db
+
+    def test_wal_databases_cross_from_a_read_only_state_with_what_their_logs_hold(self):
+        import sqlite3
+        from pathlib import Path
+        from transport.carry import copy_transport
+        if os.geteuid() == 0:
+            self.skipTest("root writes a read-only directory")
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        old, new = Path(tmp.name, "old"), Path(tmp.name, "new")
+        town = old / "worlds" / "town"
+        town.mkdir(parents=True)
+        self.wal_db(town / "feed.sqlite", 3).close()  # a clean close checkpoints and removes -wal and -shm
+        self.assertFalse((town / "feed.sqlite-shm").exists())
+        live = self.wal_db(Path(tmp.name, "observe.sqlite"), 5)  # a stopped writer: the rows are in its -wal alone
+        for name in ("observe.sqlite", "observe.sqlite-wal", "observe.sqlite-shm"):
+            shutil.copy2(Path(tmp.name, name), town / name)
+        live.close()
+        self.assertGreater((town / "observe.sqlite-wal").stat().st_size, 0)
+        for d in (town, town.parent, old):
+            d.chmod(0o555)
+        self.addCleanup(lambda: [d.chmod(0o755) for d in (old, town.parent, town)])
+        copy_transport(old, new)
+        self.assertEqual(sorted(p.name for p in (new / "worlds" / "town").iterdir()), ["feed.sqlite", "observe.sqlite"])
+        for name, rows in (("feed.sqlite", 3), ("observe.sqlite", 5)):
+            db = sqlite3.connect(f"file:{new / 'worlds' / 'town' / name}?mode=ro", uri=True)
+            self.assertEqual(db.execute("SELECT count(*) FROM t").fetchone(), (rows,), name)
+            db.close()
+
+
 class StateDirectory(unittest.TestCase):
     """`python3 -m transport carry` over a served town: the state directory moves, the cursors that named old heights
     are set to the genesis, the check passes, and serve opens the carried town and takes a turn."""
