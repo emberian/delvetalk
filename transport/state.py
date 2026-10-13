@@ -39,6 +39,7 @@ class State:
         self.root_socket = Path(c.root_socket) if c.root_socket else r / 'root' / 'root.sock'
         # every world's
         self.identity, self.access_log, self.hand_log = r / 'identity.sqlite', r / 'access.log', r / 'hand-log.jsonl'
+        self.flagged = r / 'arrive-flagged.txt'  # addresses the hand flagged: an open town holds their arrivals for the owner
         self.lexicon_ledger = r / 'lexicons' / (urllib.parse.quote(c.lexicon_authority, safe='') + '.json')  # account-wide schema digests
         self.spend, self.row = r / 'model-spend.jsonl', r / 'bridges' / f'{world}.json'
         self.repo_key = Path(c.repo_keys) / f'{world}.key'
@@ -73,11 +74,13 @@ class State:
         return HostClient(self.root_socket, self.world)
 
     def serve_argv(self):
-        """`delvetalk-obend serve` as the config has it; an empty opener, library or group is left to serve's default."""
+        """`delvetalk-obend serve` as the config has it; an empty opener, library or group is left to serve's default, and an
+        invited town's scratch worlds to serve's own limit."""
         c = self.config
         given = {'--opener': c.opener, '--library': c.library, '--root-group': c.root_group}
+        newcomers = ['--scratch-quota', str(c.scratch_quota)] if c.arrival == 'open' else []  # an open town's limit; else serve's own
         return [c.obend, 'serve', '--state', str(self.root), '--socket', str(self.host_socket), '--root-socket', str(self.root_socket),
-                '--sync', c.sync, *(x for k, v in given.items() if v for x in (k, v))]
+                '--sync', c.sync, *(x for k, v in given.items() if v for x in (k, v)), *newcomers]
 
     # ---- files
 

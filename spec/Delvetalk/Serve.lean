@@ -46,6 +46,9 @@ structure Config where
   clock : String := "transport"
   /-- The world an envelope without `world` addresses. -/
   home : String := "town"
+  /-- Scratch worlds one principal may hold open at once (`--scratch-quota`; `Limits.scratchPerPrincipal`, or fewer
+      on an open town: docs/DEPLOY.md "A second instance"). -/
+  scratchQuota : Nat := Host.Limits.scratchPerPrincipal
 
 structure Server where
   config : Config
@@ -211,7 +214,7 @@ def scratchRow (key : String) (last : Nat) : Json :=
 /-- `world-scratch {principal, name, from?: {world, height?}}`: a world of the principal's own (docs/FEDERATION.md
     §3): empty with the sealed library, its opener, clock and librarian the principal; or `from` a world it may
     read, forked at `height` (default its head) with what the principal may view (`world-fork`). At most
-    `Limits.scratchPerPrincipal` at once; it expires `Limits.scratchMinutes` home clock minutes after its last op. -/
+    `Config.scratchQuota` at once; it expires `Limits.scratchMinutes` home clock minutes after its last op. -/
 def scratchOp (srv : Server) (request : Json) : IO (Server × Json) := do
   let principal := (request.getObjValAs? String "principal").toOption.getD ""
   let name := (request.getObjValAs? String "name").toOption.getD ""
@@ -221,10 +224,13 @@ def scratchOp (srv : Server) (request : Json) : IO (Server × Json) := do
   let path := journalOf srv key
   if ← path.pathExists then return (srv, errorJson s!"scratch/{name} exists; its turns name world scratch/{name}")
   let mine := srv.scratches.toList.filter (·.1.startsWith s!"scratch/{principal}/")
-  if mine.length ≥ Host.Limits.scratchPerPrincipal then
+  if mine.length ≥ srv.config.scratchQuota then
+    if mine.isEmpty then
+      return (srv, Json.mkObj [("status", toJson "refused"), ("class", toJson "capacity"),
+        ("reason", toJson "this town opens no scratch worlds")])
     let oldest := (mine.toArray.qsort (·.2 < ·.2))[0]!
     return (srv, Json.mkObj [("status", toJson "refused"), ("class", toJson "capacity"),
-      ("reason", toJson s!"a principal holds at most {Host.Limits.scratchPerPrincipal} scratch worlds; the oldest is {(scratchRow oldest.1 oldest.2).getObjValAs? String "world" |>.toOption.getD ""}"),
+      ("reason", toJson s!"a principal holds at most {srv.config.scratchQuota} scratch worlds; the oldest is {(scratchRow oldest.1 oldest.2).getObjValAs? String "world" |>.toOption.getD ""}"),
       ("oldest", scratchRow oldest.1 oldest.2)])
   if let some parent := path.parent then IO.FS.createDirAll parent
   let (srv, clock) ← homeClock srv
@@ -604,7 +610,7 @@ def answer (srv : Server) (request : Json) (root : Bool) : IO (Server × Json) :
       return (srv, out)
 
 def usage : String :=
-  "usage: delvetalk-obend serve --state DIR [--socket PATH] [--root-socket PATH] [--root-group GROUP] [--opener DID] [--library DIR] [--sync none|fsync|full] [--clock P] [--home NAME]"
+  "usage: delvetalk-obend serve --state DIR [--socket PATH] [--root-socket PATH] [--root-group GROUP] [--opener DID] [--library DIR] [--sync none|fsync|full] [--clock P] [--home NAME] [--scratch-quota N]"
 
 def parseArgs (args : List String) (c : Config) : Except String Config :=
   match args with
@@ -619,6 +625,9 @@ def parseArgs (args : List String) (c : Config) : Except String Config :=
     if ["none", "fsync", "full"].contains v then parseArgs rest { c with sync := v } else throw usage
   | "--clock" :: v :: rest => parseArgs rest { c with clock := v }
   | "--home" :: v :: rest => if Host.validWorldName v then parseArgs rest { c with home := v } else throw "--home must be a world name"
+  | "--scratch-quota" :: v :: rest => match v.toNat? with
+    | some n => parseArgs rest { c with scratchQuota := n }
+    | none => throw "--scratch-quota must be a natural number"
   | _ => throw usage
 
 /-- `serve`: 0 when told to stop, 75 when another process holds the directory, 64 on bad arguments. -/

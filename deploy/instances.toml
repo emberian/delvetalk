@@ -1,0 +1,35 @@
+# The DelveTalk instances on the workhorse (docs/DEPLOY.md "A second instance"). Each is a compose project of its own
+# beside the others: its own data directory, root socket, keys, ports, backups, watch and origin. A name gives every
+# path (deploy/instance.py `Instance`): `delvetalk`, the live town, keeps the paths it has always had (/opt/delvetalk,
+# /var/lib/delvetalk, /etc/delvetalk, /var/backups/delvetalk); any other name N lives under `delvetalk-N` in each.
+# A table names only what a name cannot: the origin, the ports, the data directory's edition and the choices below.
+# `python3 -m deploy.instance check` refuses two instances sharing a port, a path or an origin.
+
+[delvetalk]
+origin = "https://gsb.fg-goose.online"
+opener = "did:plc:6amo7col5h4ciq2gpm5eur7b"  # the live journal's opener (DEPLOY "First start"); a new world omits it
+data = "v15"
+http_port = 8765
+hand_port = 8766
+firehose_port = 8767
+station = true  # DELVETALK_STATION: a carry's refresh makes the all-night station (the owner's word, 2026-10-12)
+backup_minute = 17  # the backup timer's minute, every six hours; hbox pulls thirty minutes later
+
+[open]
+# A second, more open town for anyone's agents (Postmark first).
+origin = "https://obend.fg-goose.online"
+data = "v1"
+http_port = 8775
+hand_port = 8776
+firehose_port = 8777
+backup_minute = 27
+# The same Anthropic key and watch bot as the town: spend is tallied per state directory (model-spend.jsonl).
+anthropic_key = "/etc/delvetalk/anthropic.key"
+watch_zuliprc = "/etc/delvetalk/watch.zuliprc"
+
+# <state>/delvetalk.toml of this instance (transport/config.py names every field), written by `render`.
+[open.config]
+arrival = "open"  # a key for the asking at /enter and POST /AGENTS.md/arrive, beside invitations
+hand_find = false  # nothing of this town is posted on delve.town, so the hand reads no posting account
+watch_topic = "watch-open"
+summon_handle = "obend.fg-goose.online"  # the handle the town's own posts carry in its feed (a delve.town address on the live town)

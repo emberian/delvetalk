@@ -73,12 +73,11 @@ def rootFieldsOf (w : World) (kind : String) (act : Json) (reason : String) : Ex
   | "settings" =>
     let some given := act.getObj?.toOption | throw "settings names its values"
     let values := given.toList.filter (·.1 != "kind")
-    if values.isEmpty then throw "settings names none of clock, clockPrincipal, postQuota, interpretQuota, modelQuota, opener, libraryLaw"
+    if values.isEmpty then throw s!"settings names none of clock, clockPrincipal, {", ".intercalate quotaKeys}, opener, libraryLaw"
     for (k, v) in values do
-      match k with
-      | "clock" | "postQuota" | "interpretQuota" | "modelQuota" => discard <| natOf v
-      | "clockPrincipal" | "opener" | "libraryLaw" => discard <| v.getStr?
-      | _ => throw s!"no setting {k}"
+      if k == "clock" || quotaKeys.contains k then discard <| natOf v
+      else if k == "clockPrincipal" || k == "opener" || k == "libraryLaw" then discard <| v.getStr?
+      else throw s!"no setting {k}"
     return [("after", Json.mkObj values)]
   | "library" =>
     let lib ← sealLibrary (← parseModules (← act.getObjVal? "modules"))
@@ -169,12 +168,12 @@ def rootOp (w : World) (j : Json) : Except String (World × Json) := do
      else [])
   return (w2, Json.mkObj ([("status", toJson "root"), ("kind", toJson kind), ("receipt", slugged entry)] ++ extra))
 
-/-- `world-settings {principal, reading, identity?, postQuota?, interpretQuota?, modelQuota?}`: the
-    opener replaces quotas without a genesis (docs/ROOT.md §2.2). -/
+/-- `world-settings {principal, reading, identity?, postQuota?, interpretQuota?, modelQuota?, turnQuota?, objectQuota?,
+    paintQuota?}` (`quotaKeys`): the opener replaces quotas without a genesis (docs/ROOT.md §2.2). -/
 def worldSettingsOp (w : World) (j : Json) : Except String (World × Json) := do
   let principal ← boundedText "principal" Limits.maxPrincipalBytes (← j.getObjValAs? String "principal")
   let reading ← boundedText "reading" Limits.maxReasonBytes (← j.getObjValAs? String "reading")
-  let values ← ["postQuota", "interpretQuota", "modelQuota"].filterMapM fun k => do
+  let values ← quotaKeys.filterMapM fun k => do
     return (← optNat j k).map (k, ·)
   let intent := (← optText j "identity").getD s!"settings:{w.height + 1}"
   let digest := Journal.bodyHash (Json.mkObj (values.map (fun (k, n) => (k, toJson n)) ++ [("reading", toJson reading)]))

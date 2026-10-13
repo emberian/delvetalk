@@ -17,11 +17,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from transport import bridge, oauth, pages, sessions
+from transport.pages import guide_text
 from transport.atproto.sign import Key
 from transport.bridge import turn_line
 from transport.host import CLOCK, HOST_TIMEOUT, PUBLIC, TOWN, door_rows, handles, paged, painted, place, plain, typed
 from transport.delve import Client, canonical, http_transport
-from transport.identity import SLUG, Identity, IdentityError
+from transport.identity import SLUG, Identity, IdentityError, flagged
 from transport.repo import Repo, Refusal, WRITES
 from transport.hosted import Accounts, MAX_CAR_BYTES, MAX_WRITE_BODY
 from transport.acts import INTENT_BYTES, judge_call, text
@@ -29,7 +30,7 @@ from transport.serviceauth import Rejected, Verifier
 from transport.firehose import Firehose
 
 ROOT = Path(__file__).resolve().parent.parent
-GUIDE = ROOT / 'docs' / 'AGENTS-API.md'
+GUIDE = pages.GUIDE
 STATIC = Path(__file__).resolve().parent / 'static'
 MAX_BODY = 256 * 1024
 OPEN_BODY = 64 * 1024  # what an unauthenticated request (the challenge, verify) may send
@@ -48,7 +49,9 @@ ROUTES = {('GET', 'receipt', True): 'receipt', ('GET', 'receipt', False): 'inten
 TOP_ONLY, SCRATCH_ONLY = ('me', 'revoke', 'feedRead', 'feedPost'), ('create', 'repl', 'check', 'cite')
 ROUTE_HINT = 'GET /AGENTS.md/api lists every route; OPTIONS on a path answers its entries'
 FIXED = {('GET', ()): 'guide', ('GET', ('api',)): 'api', ('GET', ('examples',)): 'examples',
-         ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify', ('POST', ('accept',)): 'accept'}
+         ('POST', ('challenge',)): 'challenge', ('POST', ('verify',)): 'verify', ('POST', ('accept',)): 'accept',
+         ('GET', ('arrive',)): 'arriveProof', ('POST', ('arrive',)): 'arrive'}
+ARRIVAL = ('arriveProof', 'arrive')  # an open town's door (config `arrival`); an invited town has no such route
 
 
 def resolve(method, path):
@@ -203,7 +206,12 @@ DOOR_LINES = {'invitation_unknown': 'That code does not match any invitation. Ch
               'name_fixed': 'This invitation already has a name on it. Leave the name empty and press Come in.',
               'taken': 'Someone here already goes by that name. Choose another; your code still works.',
               'invalid_credential': 'That key does not open anything here. Check it was copied whole; it begins dt_agent_.',
-              'empty': 'Type the code from your invitation, or your key if you have been here before.'}  # the guest door's words (`/enter`)
+              'empty': 'Type the code from your invitation, or your key if you have been here before.',
+              'proof_invalid': 'The door did not know that page. Reload it and ask again.',
+              'proof_expired': 'That page waited more than ten minutes. Reload it and ask again.',
+              'proof_short': 'The page\'s work did not come out right. Reload it and ask again.',
+              'proof_spent': 'That page has given its key already. If it was you, sign in below with the key you were shown.',
+              'rate_limited': 'The door has given all the keys it gives for now. Come back in {minutes} minutes, or ask for an invitation.'}  # the guest door's words (`/enter`)
 ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever invited you',
                 'invitation_spent': 'that invitation was accepted already; the credential it gave speaks for you, and the operator can invite you again',
                 'invitation_expired': 'that invitation lapsed before it was accepted; ask for a new one',
@@ -212,6 +220,15 @@ ACCEPT_LINES = {'invitation_unknown': 'no invitation has that code; ask whoever 
                 'invalid_guest_name': 'a name is a lowercase letter, then up to 31 lowercase letters, digits or hyphens, ending in a letter or digit',
                 'name_fixed': 'that invitation already names its guest; send that name, or none',
                 'taken': 'that name is taken; the code is still unused, so choose another'}
+ARRIVE_DOOR = {'taken': 'Someone here already goes by that name. Choose another and ask again.'}  # where the open door's words differ
+HELD = "the door holds arrivals from your address for the town's owner: keep this key; it opens when you are let in"
+ARRIVE_LINES = {'invalid_guest_name': ACCEPT_LINES['invalid_guest_name'],
+                'proof_invalid': 'proof is {challenge, nonce}: a challenge GET /AGENTS.md/arrive gave this process, unchanged, and a nonce of 1 to 64 printable ASCII characters',
+                'proof_expired': 'that challenge is older than ten minutes; GET /AGENTS.md/arrive for another',
+                'proof_short': 'SHA-256 of `challenge:name:nonce` must begin with `bits` zero bits; the name is part of it, so a proof is for one name',
+                'proof_spent': 'that challenge has given its key already; GET /AGENTS.md/arrive for another',
+                'rate_limited': 'the door gives so many keys an hour, from one address and in all; come back after Retry-After seconds',
+                'taken': 'that name is taken; the proof is unspent, so a new one for another name'}
 
 
 def digits(text):
@@ -329,6 +346,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         self.st, self.access, self.known = st, None if hand else AccessLog(st.access_log, st.world), {}
         self.host, self.identity, self.origin, self.clock = host, identity, c.origin, clock
         self.trust_proxy, self.sleep, self.hand = c.trust_proxy, sleep, hand
+        self.open = c.arrival == 'open'  # the door gives a key to whoever asks (`arrive`), beside invitations
         self.play_wait = WAIT_MAX  # seconds a play page's turn may wait on what it handed on (`trace`); a test may look once
         self.made, self.made_lock = {}, threading.Lock()
         self._feed = None  # object -> (height, principal) of the first entry touching it: it never changes
@@ -481,8 +499,12 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
         return self.host.send({'op': 'world-arrive', 'principal': CLOCK, 'did': did, 'handle': handle})
 
     def catalogue(self, here):
-        """Every route, the error envelope, the error and refusal classes (static/catalogue.json) and the limits, as data."""
+        """Every route, the error envelope, the error and refusal classes (static/catalogue.json) and the limits, as data:
+        an invited town's without the open door's routes."""
+        c = self.st.config
         return {'status': 'catalogue', 'origin': self.origin, **API,
+                'routes': [r for r in CATALOGUE if self.open or r['name'] not in ARRIVAL],
+                **({'arrival': {'bits': c.arrive_bits, 'perAddressPerHour': c.arrive_per_address, 'perHour': c.arrive_per_hour}} if self.open else {}),
                 'limits': {'bodyBytes': MAX_BODY, 'hostedWriteBodyBytes': MAX_WRITE_BODY, 'moduleBytes': self.bounds['kernel']['maxPackageBytes'], 'modules': self.bounds['kernel']['maxModules'], 'bodyDepth': MAX_DEPTH,
                            'replyBytes': MAX_REPLY, 'requestSeconds': REQUEST_TIMEOUT, 'workers': WORKERS, 'hostSeconds': self.host_timeout,
                            'requestLineBytes': 65536, 'headerLineBytes': 65536, 'headers': 100, 'offersWaitSeconds': WAIT_MAX,
@@ -492,7 +514,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                            'challenge': link(PREFIX + '/challenge')}}
 
     def guide(self, path=GUIDE):
-        return path.read_text().replace('{{origin}}', self.origin)
+        return guide_text(self.origin, self.st.config.arrival, path)
 
 
 class Counted:
@@ -744,8 +766,10 @@ class Handler(BaseHTTPRequestHandler):
         if path.split('/')[1:2] == ['oauth']:
             return oauth.route(self, method, path)
         name, p = resolve(method, path)
+        if name in ARRIVAL and not self.server.open:  # an invited town's door gives no key: no route, as before there was one
+            name = None
         if name is None:
-            allow = [m for m in ('GET', 'POST') if resolve(m, path)[0]]
+            allow = [m for m in ('GET', 'POST') if (n := resolve(m, path)[0]) and (self.server.open or n not in ARRIVAL)]
             if allow:
                 return self.fail('methodNotAllowed', f'{path} takes {" and ".join(allow)}', headers=[('Allow', ', '.join(allow + ['OPTIONS']))])
             return self.fail('unknownRoute', f'no route at {path}', ROUTE_HINT)
@@ -759,6 +783,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.server.guide(EXAMPLES), 'text/plain')
         if name in ('challenge', 'verify', 'accept'):
             return self.identify(name)
+        if name in ARRIVAL:
+            return self.arrive_route(name)
         if name == 'static':
             return self.reply(200, (STATIC / p['file']).read_bytes(), 'text/css' if p['file'].endswith('css') else 'text/javascript')
         if name in ('xrpc', 'did'):
@@ -791,7 +817,7 @@ class Handler(BaseHTTPRequestHandler):
     def options(self):
         """The catalogue entries of the routes at this path, one per method."""
         path = urllib.parse.urlsplit(self.path).path
-        names = [n for n in (resolve(m, path)[0] for m in ('GET', 'POST')) if n]
+        names = [n for n in (resolve(m, path)[0] for m in ('GET', 'POST')) if n and (self.server.open or n not in ARRIVAL)]
         if not names:
             return self.fail('unknownRoute', f'no route at {path}', ROUTE_HINT)
         entries = [e for n in names for e in CATALOGUE if e['name'] == n]
@@ -807,6 +833,8 @@ class Handler(BaseHTTPRequestHandler):
         auth = self.headers.get('Authorization') or ''
         credential = auth[7:] if auth.startswith('Bearer ') else self.cookie() if self.browser() and self.command == 'GET' else ''
         who = self.principal(credential)
+        if who is None and self.server.open and self.server.identity.held(credential):
+            return self.fail('denied', "your key is held at the door for the town's owner; it opens when you are let in")
         if who is None:
             return self.fail('unauthenticated', hint='POST /AGENTS.md/challenge, post its text, POST /AGENTS.md/verify; then send Authorization: Bearer <credential>',
                              links={'hint': link(PREFIX + '/challenge')})
@@ -1129,11 +1157,11 @@ class Handler(BaseHTTPRequestHandler):
             out = self.server.identity.accept(code, name)
         except Refusal as r:
             if self.browser():
-                return self.html(r.code, pages.enter(r.body['message'], code, name or ''))
+                return self.html(r.code, self.enter_page(r.body['message'], code, name or ''))
             return self.reply(r.code, canonical(r.body))
         except IdentityError as err:
             if self.browser():
-                return self.html(400, pages.enter(DOOR_LINES.get(err.code, err.code), code, name or ''))
+                return self.html(400, self.enter_page(DOOR_LINES.get(err.code, err.code), code, name or ''))
             return self.fail('identity', f'{err.code}: {ACCEPT_LINES[err.code]}', more={'reason': err.code})
         self.server.record_handle(out['principal'], out['handle'])
         if self.browser():
@@ -1150,7 +1178,7 @@ class Handler(BaseHTTPRequestHandler):
         signs in with a key from before; `GET /leave` asks, `POST /leave` forgets the cookie (the key still opens the door).
         Without HTML the answer is JSON, as `accept`'s."""
         if name == 'door':
-            return self.html(200, pages.enter())
+            return self.html(200, self.enter_page())
         if name == 'leave':
             who = self.principal(self.cookie())
             return self.html(200, pages.leave(who and who['handle']))
@@ -1170,15 +1198,70 @@ class Handler(BaseHTTPRequestHandler):
         if key:
             who = self.principal(key)
             if who is None:
-                return self.html(401, pages.enter(DOOR_LINES['invalid_credential'])) if self.browser() else \
+                return self.html(401, self.enter_page(DOOR_LINES['invalid_credential'])) if self.browser() else \
                     self.fail('unauthenticated', DOOR_LINES['invalid_credential'])
             if not self.browser():
                 return self.reply(200, canonical({'status': 'signedIn', 'handle': who['handle'], 'principal': who['did'],
                                                   '_links': {'self': link(self.path), 'me': link(PREFIX + '/me')}}), headers=self.login_cookie(key))
             return self.reply(303, '', 'text/plain', [('Location', '/play/'), *self.login_cookie(key)])
+        if not code and self.server.open and isinstance(data.get('challenge'), str):  # no code: the open door's key, for its proof
+            return self.arrived(chosen, {'challenge': text('challenge'), 'nonce': text('nonce')})
         if not code and self.browser():
-            return self.html(400, pages.enter(DOOR_LINES['empty'], code, chosen))
+            return self.html(400, self.enter_page(DOOR_LINES['empty'], code, chosen))
         return self.accept(code, chosen or None, door=True)
+
+    def enter_page(self, note='', code='', name=''):
+        """The guest door's page; an open town's with its way in by asking, a fresh challenge in its form."""
+        open_door = self.server.open and self.server.identity.arrival_challenge(self.server.st.config.arrive_bits)
+        return pages.enter(note, code, name, arrive=open_door or None)
+
+    def arrive_route(self, name):
+        """`GET /AGENTS.md/arrive`: a challenge to prove work over; `POST /AGENTS.md/arrive {name, proof: {challenge, nonce}}`:
+        a fresh guest's credential, as `accept` answers it. Per address as the challenge (OPEN_RATE a minute), and the door's
+        own limits an hour (transport/identity.py `arrive`)."""
+        wait = self.server.limited('ip:' + self.client_ip(), OPEN_RATE)
+        if wait:
+            return self.fail('rateLimited', f'more than {OPEN_RATE} requests per {WINDOW} seconds from one address', headers=[('Retry-After', str(wait))])
+        c = self.server.st.config
+        if name == 'arriveProof':
+            out = self.server.identity.arrival_challenge(c.arrive_bits)
+            return self.reply(200, canonical({'status': 'proof', **out, 'how': "a nonce (1 to 64 printable ASCII characters) for which SHA-256 of "
+                                              "`challenge:name:nonce` begins with `bits` zero bits; then POST {name, proof: {challenge, nonce}} here",
+                                              '_links': {'self': link(self.path), 'arrive': link(PREFIX + '/arrive', method='POST'), 'guide': link(PREFIX)}}))
+        data = self.body(OPEN_BODY, installing=True)
+        if data is None:
+            return
+        return self.arrived(data.get('name') if isinstance(data.get('name'), str) else '', data.get('proof'))
+
+    def arrived(self, name, proof):
+        """A fresh guest let in by the open door (transport/identity.py `arrive`), told to the host as an accepted invitation
+        is; a browser keeps the key as its session and is shown it once."""
+        self.private = True
+        st = self.server.st
+        c, address = st.config, self.client_ip()
+        held = flagged(address, c.arrive_flagged + '\n' + (st.flagged.read_text() if st.flagged.exists() else ''))  # held for the owner
+        try:
+            out = self.server.identity.arrive(name, proof, address, c.arrive_bits, c.arrive_per_address, c.arrive_per_hour, held=held)
+        except Refusal as r:
+            return self.html(r.code, self.enter_page(r.body['message'], '', name)) if self.browser() else self.reply(r.code, canonical(r.body))
+        except IdentityError as err:
+            retry = [('Retry-After', str(err.retry))] if err.retry else []
+            if self.browser():
+                note = (ARRIVE_DOOR.get(err.code) or DOOR_LINES.get(err.code, err.code)).format(minutes=max(1, (err.retry or 60) // 60))
+                return self.html(429 if err.code == 'rate_limited' else 400, self.enter_page(note, '', name), retry)
+            if err.code == 'rate_limited':
+                return self.fail('rateLimited', ARRIVE_LINES[err.code], more={'reason': err.code}, headers=retry)
+            return self.fail('identity', f'{err.code}: {ARRIVE_LINES[err.code]}', more={'reason': err.code})
+        if out['status'] == 'held':  # the key is given and opens nothing until the owner lets the guest in; the host is told then
+            if self.browser():
+                return self.html(202, pages.held(out['handle'], out['credential']))
+            return self.reply(202, canonical({**out, 'message': HELD, '_links': {'self': link(self.path), 'me': link(PREFIX + '/me')}}))
+        self.server.record_handle(out['principal'], out['handle'])
+        if self.browser():
+            return self.html(200, pages.welcome(out['handle'], out['credential']), self.login_cookie(out['credential']))
+        links = {'self': link(self.path), 'world': link(PREFIX + '/world'), 'me': link(PREFIX + '/me'), 'feed': link(PREFIX + '/feed'),
+                 'guide': link(PREFIX)}
+        self.reply(200, canonical({**out, '_links': links}), headers=self.login_cookie(out['credential']))
 
     # ---- the town's own feed (transport/feed.py): residents post, the bridge answers in it
 
@@ -1270,8 +1353,10 @@ class Handler(BaseHTTPRequestHandler):
     def me(self, credential, who):
         rows = self.server.host.send({'op': 'serve-status'}).get('scratches') or []
         mine = [r for r in rows if r.get('principal') == who['did']]
+        status = self.server.host.send({'op': 'world-status', 'principal': who['did']})
+        turns = {'turns': status['turns']} if isinstance(status.get('turns'), dict) else {}  # an open town's hour of turns (`turnQuota`)
         self.answer({'principal': who['did'], 'handle': who['handle'], 'did': who['did'], 'verified': who['verified'], 'scratches': mine,
-                     'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - self.server.limited(credential, count=False))}},
+                     'rateLimit': {'limit': RATE, 'windowSeconds': WINDOW, 'remaining': max(0, RATE - self.server.limited(credential, count=False))}, **turns},
                     links={'world': link(PREFIX + '/world'), 'scratch': link(PREFIX + '/scratch'), 'offers': link(PREFIX + '/offers'), 'revoke': link(PREFIX + '/revoke')})
 
     def open_scratch(self, principal):
@@ -1358,7 +1443,7 @@ class Handler(BaseHTTPRequestHandler):
         say = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('say', [''])[0]  # a suggestion chosen with no script
         self.html(200, pages.play(name, who['handle'], oid(name), here['card'], answer=answer, offered=offered, paint=here['paint'], wants=here['wants'],
                                   view=here['view'], ways=self.ways(host, did, name), entries=self.history(host, name, did, pages.LATELY),
-                                  said=say, told=told, did=did, town=self.server.town()))
+                                  said=say, told=told, did=did, town=self.server.town(), spent=here.get('spent')))
 
     def html(self, code, body, headers=()):
         if not self.server.hand and pages.POST_FORM.search(body):
@@ -1386,7 +1471,7 @@ class Handler(BaseHTTPRequestHandler):
         today = {'text': day.get('text'), 'paint': painted(host, reader, None, self.server.sleep, **day['paint']).get('text')
                  if isinstance(day.get('paint'), dict) else None} if day.get('status') == 'surface' else None
         wanting = host.send({'op': 'world-wanting', 'principal': reader})
-        self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did'],
+        self.html(200, pages.home(host.send({'op': 'world-status'}), who and who['handle'], ids, who and who['did'], open_door=self.server.open,
                                   doors=[{**d, 'head': self.called(host, reader, d['to']['object'])} for d in door_rows(host.send({'op': 'world-view', 'principal': reader, 'object': 'commonplace'}))], today=today,
                                   wanting=(wanting.get('rows') or [])[:5] if wanting.get('status') == 'wanting' else [], newest=self.server.newest(ids)))
 
@@ -1415,7 +1500,7 @@ class Handler(BaseHTTPRequestHandler):
         told = painted(host, principal, name, self.server.sleep, telling={}) if here['card'] is not None and principal else None  # a place, to a signed-in reader
         self.html(200, pages.obj(name, handle, here['view'], here['card'], self.history(host, name, principal), principal,
                                  self.ways(host, principal, name) if here['card'] is not None else (), seen, here['wants'], brief, here['paint'], told,
-                                 town=self.server.town()))
+                                 town=self.server.town(), spent=here.get('spent')))
 
     SURFACE_FIELDS = ('page', 'day', 'from', 'to')
     TITLES = {'chronicle': "the town's history", 'map': 'the door map'}

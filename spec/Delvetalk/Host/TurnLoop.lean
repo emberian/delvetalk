@@ -3317,7 +3317,7 @@ def hobTail (w : World) (principal text line : String) : String :=
 
 /-- The opener's powers (docs/ROOT.md §2.2), each a receipted turn under the opener's identity with a
     required reading: on `world`, `quiet`/`unquiet {who, hours}` (their turns refused `quiet` until
-    the clock), `settings {postQuota, interpretQuota, modelQuota}`, `revoke {grant}`; on a card,
+    the clock), `settings {postQuota, interpretQuota, modelQuota, turnQuota, objectQuota, paintQuota}`, `revoke {grant}`; on a card,
     `retire`/`unretire` (an amendment adding or removing the `retired` clause, which admits only the
     opener's amendments), `hide`/`show` (the read policy narrowed to its owner and the opener, and
     restored). Anyone else is refused `badSpell`, clause `opener`. -/
@@ -3325,7 +3325,7 @@ def moderate (w : World) (req : TurnRequest) (id action : String) (value : Strin
     Except String (World × Json) := do
   let template := s!"delvetalk {id} {action}\n" ++ (match action with
     | "quiet" => "who: <a handle>\nhours: <n>\n" | "unquiet" => "who: <a handle>\n"
-    | "settings" => "postQuota: <n>\ninterpretQuota: <n>\nmodelQuota: <n>\n"
+    | "settings" => String.join (quotaKeys.map (s!"{·}: <n>\n"))
     | "revoke" => "grant: <a grant id>\n" | _ => "") ++ "reading: <why, for the receipt>\n"
   if !openerActs w req.principal then
     return ← refuseSpell w req id "opener" s!"only the hand that opened the world casts {action}, on the root socket." template
@@ -3368,7 +3368,7 @@ def moderate (w : World) (req : TurnRequest) (id action : String) (value : Strin
     moderated [("principal", toJson who),
       ("after", Json.mkObj [("until", toJson (w.clock + hours * 60)), ("reading", toJson reading)])]
   | "settings" =>
-    let named := ["postQuota", "interpretQuota", "modelQuota"].filterMap fun k => (value k).map (k, ·)
+    let named := quotaKeys.filterMap fun k => (value k).map (k, ·)
     let some values := named.mapM (fun (k, v) => v.toNat?.map (k, ·))
       | refuseSpell w req id "badValue" "a quota is a number." template
     if values.isEmpty then return ← refuseSpell w req id "missingField" "settings names a quota." template
@@ -3889,9 +3889,12 @@ def heardTurn (w : World) (req : TurnRequest) (ids : List String) (text : String
     let p : Proposal := { principal := req.principal, intent := req.intent, roots := cardRoot w id, writes := [], turn := w.height + 1 }
     let (w', e) := commit w p (entryBase ctx 0) (some r)
     Except.ok (w', turnReply w' e)
+  -- Readings spent (the hand's for the hour, the world's for the day): the words wait, and the card's own spells, which
+  -- need no reading, are the refusal's hint (docs/DEPLOY.md "A second instance": hob answers with the card's spells).
   if let some (reading, next) := interpretGate w req.principal then
     guard misfit.isNone
-    return refused { cls := "quota", reason := some reading, next := some next }
+    let spells := ((w.objects[id]?).map fun o => spellUsage id (spellForms w id o)).getD ""
+    return refused { cls := "quota", reason := some reading, next := some next, hint := if spells.isEmpty then none else some spells }
   if let some limit := waitFull w id true then
     guard misfit.isNone
     return refused { cls := "capacity", reason := some limit, object := some id }
@@ -4055,7 +4058,7 @@ def spellTurn (w : World) (req : TurnRequest) (routed : Option SpellRoute := non
   | .host object action fields => some (hostSpell w req object action fields)
 
 /-- A quieted principal's turn, journaled as refused `quiet` (transient: the same identity runs again
-    once the clock passes `until`). -/
+    once the clock passes `until`), or a hand's past its hour's `turnQuota`, refused `quota` (`turnGate`) the same way. -/
 def quietRefusal (w : World) (req : TurnRequest) (quiet : Refusal) : Except String (World × Json) := do
   let ctx : Ctx := { principal := req.principal, intent := req.intent, object := req.object, method := req.method,
                      argument := req.argument, digest := req.digest, ledger := Ledger.start, delivery := none,
@@ -4094,16 +4097,17 @@ def runOne (w : World) (req : TurnRequest) (routed : Option SpellRoute := none) 
   -- A retry is answered from the identity before its spell is read again: new code may route the
   -- same words elsewhere (codex host 13).
   if let some r := retainedTurn w req then .ok (w, r) else
-  -- A quieted principal's turn is refused before it runs (`quietOf`; judge refuses every other entry of theirs).
-  match quietOf w req.principal req.object with
-  | some quiet => quietRefusal w req quiet
+  -- A quieted principal's turn is refused before it runs (`quietOf`; judge refuses every other entry of theirs), and
+  -- so is a hand's past this hour's `turnQuota` (`turnGate`).
+  match quietOf w req.principal req.object <|> turnGate w req.principal req.object with
+  | some held => quietRefusal w req held
   | none => runTurnHeard w req routed
 
 /-- How `runOne` would route a direct turn's spell on `w` (`spellTurn`'s `routeSpell`): none for a quieted
-    speaker or a mention. Handed to `runOne`, the spell is not read twice. -/
+    speaker, one past its hour's turns, or a mention. Handed to `runOne`, the spell is not read twice. -/
 def routedOf (w : World) (req : TurnRequest) : Option SpellRoute := do
   let req := { req with object := namedCard w req.principal req.object }
-  guard (quietOf w req.principal "").isNone
+  guard ((quietOf w req.principal "").isNone && (turnGate w req.principal "").isNone)
   let req := { req with reach := reachOf w req }
   guard (req.reach != "mentioned")
   return routeSpell w req.principal req.object req.method req.argument true (req.reach == "direct" || req.reach == "reply")
@@ -4191,8 +4195,8 @@ def runPlanTurn (w : World) (req : TurnRequest) (acts : List String) : Except St
       s!"A plan carries at most {Limits.planActs} acts; this one has {acts.length}, and none was done. Make two plans." "" else
   if acts.isEmpty then
     refuseSpell w req req.object "noAction" "A plan with no act: under delvetalk plan, one spell a line at the margin." "" else
-  match quietOf w req.principal req.object with
-  | some quiet => quietRefusal w req quiet
+  match quietOf w req.principal req.object <|> turnGate w req.principal req.object with
+  | some held => quietRefusal w req held
   | none =>
     let answers := match w.posts[req.replyTo]? with
       | some p => if p.object == req.object then req.replyTo else ""

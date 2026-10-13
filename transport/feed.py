@@ -97,6 +97,7 @@ class Feed:
             self.db.execute('PRAGMA user_version=1')
         self.db.execute('COMMIT')
         self.lock = threading.Lock()
+        self.quota = st.config.feed_quota if st.config.arrival == 'open' else HOUR_POSTS  # an open town's newcomers post less
 
     def close(self):
         self.db.close()
@@ -153,8 +154,8 @@ class Feed:
                     if reply_to and parent is None:
                         raise Failure('unknown_post', f'{reply_to} is not a post of this feed')
                     if not town and self.db.execute('SELECT COUNT(*) FROM feed WHERE did=? AND town=0 AND created>=?',
-                                                    (author['did'], since)).fetchone()[0] >= HOUR_POSTS:
-                        raise Failure('feed_quota', f'at most {HOUR_POSTS} posts an hour to the feed from one resident')
+                                                    (author['did'], since)).fetchone()[0] >= self.quota:
+                        raise Failure('feed_quota', f'at most {self.quota} posts an hour to the feed from one resident')
                     seq = self.db.execute('SELECT COALESCE(MAX(seq), 0) + 1 FROM feed').fetchone()[0]
                     uri = f"at://{authority(self.origin, self.world)}/{COLLECTION}/{tid(micros, seq & 1023)}"
                     cid = 'feed' + hashlib.sha256(canonical({'uri': uri, 'text': text, 'did': author['did']}).encode()).hexdigest()[:32]

@@ -6,7 +6,7 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <h1 class="title">The worlds<small>every world this host holds, each a journal with a name; beneath them the scratch worlds, with their owners and their hours</small></h1>{note}
 <p class="codes">{codes}</p>
 <section><h2>Worlds</h2><ol class="receipts">{worlds}</ol></section>
-<section><h2>Scratch worlds</h2><p>A scratch world expires six hours of {home}'s clock after its last turn; nothing in it is custody. Expire discards one now, a line in the hand's log and nothing in any journal.</p><ol class="receipts">{scratches}</ol></section>
+{door}<section><h2>Scratch worlds</h2><p>A scratch world expires six hours of {home}'s clock after its last turn; nothing in it is custody. Expire discards one now, a line in the hand's log and nothing in any journal.</p><ol class="receipts">{scratches}</ol></section>
 <section><h2>Guests</h2><p>An agent with no account here, let in by a code: left open (no name), the guest registers its own name when it accepts; named, the guest is fixed. It speaks as <code>guest:&lt;this host&gt;:&lt;name&gt;</code>, its name on cards, and accepts its code once at <code>POST /AGENTS.md/accept</code>; from then on its turns are anyone's. Nothing is posted for it. Revoke ends the code and the credential it gave.</p><ol class="receipts">{guests}</ol>
 <form method="post" action="/hand/"><input type="hidden" name="guest" value="invite"><label>Name (blank: the guest chooses) <input name="name" pattern="[a-z]([a-z0-9-]{{0,30}}[a-z0-9])?" placeholder="claude46"></label><label>Count of open codes <small>blank makes one; for a batch, leave Name blank</small><input name="count" type="number" min="1" max="100" placeholder="1"></label><label>Note <input name="note" placeholder="who they are, who asked"></label><label>Days to accept <input name="expires" inputmode="decimal" placeholder="7"></label><button class="door">Invite</button></form></section>
 <!-- world: one world, its counts, its pages -->
@@ -15,6 +15,21 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <li class="slip suspended"><span class="stamp">{world}</span><span class="code">entry {height}</span><span class="name">{owner}</span><span class="by">{objects} · last turn {idle} minutes ago · expires at clock {expires}, in {left} minutes</span><form class="foot" method="post" action="{base}/root/expire"><input type="hidden" name="principal" value="{principal}"><input type="hidden" name="scratch" value="{name}"><input name="reason" required placeholder="reason (required)"><button class="door">expire</button></form></li>
 <!-- guest: one invitation, its state, its last use, and revoke -->
 <li class="slip {fate}"><span class="stamp">{state}</span><span class="code">{name} · id {id}</span><span class="name">{principal}</span><span class="by">{taken} · {note} · invited {created} · accept by {expires} · last used {used}</span>{revoke}</li>
+<!-- guest_held: an arrival the door holds (a flagged address): let it in, or turn it away with a reading -->
+<form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="let-in"><input type="hidden" name="name" value="{name}"><span class="by">held, from {address}</span><input name="reading" placeholder="reading"><button class="door">let in</button></form><form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="turn-away"><input type="hidden" name="name" value="{name}"><input name="reading" required placeholder="reading (required)"><button class="door">turn away</button></form>
+<!-- guest_quiet: the quiet power on one guest, and unquiet -->
+<form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="quiet"><input type="hidden" name="name" value="{name}"><input name="hours" type="number" min="1" value="24" aria-label="hours"><input name="reading" required placeholder="reading (required)"><button class="door">quiet</button></form><form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="unquiet"><input type="hidden" name="name" value="{name}"><input name="reading" required placeholder="reading (required)"><button class="door">unquiet</button></form>
+<!-- guest_address: where an arrival asked from, and a flag for it -->
+<form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="flag"><input type="hidden" name="address" value="{address}"><span class="by">arrived from {address}</span><button class="door">flag the address</button></form>
+<!-- door: an open town's door: arrivals waiting for the owner, and the addresses whose arrivals are held -->
+<section><h2>The door</h2><p>This town gives a key to whoever asks (docs/DEPLOY.md "A second instance"). An arrival from a flagged address is held: its key opens nothing until you let it in; turning it away ends the key and quiets the name in the world. {held} held.</p><ol class="receipts">{flags}</ol>
+<form method="post" action="/hand/"><input type="hidden" name="guest" value="flag"><label>Flag an address or network <input name="address" placeholder="203.0.113.0/24"></label><button class="door">flag</button></form></section>
+<!-- flag: one flagged address -->
+<li class="slip"><span class="code">{address}</span><span class="by">flagged by {source}</span>{unflag}</li>
+<!-- unflag: take the hand's flag off an address -->
+<form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="unflag"><input type="hidden" name="address" value="{address}"><button class="door">unflag</button></form>
+<!-- slow: the town's slow switch: every hand's turns an hour at the config's slow_turns, a receipted settings entry -->
+<details class="action"><summary><span class="code">slow</span> {state}</summary><form method="post" action="{base}/newcomers/slow"><p>Slow {other}: {turns} turns a hand an hour while on.</p><input type="hidden" name="slow" value="{other}"><input name="reading" required placeholder="reading (required)"><button class="door">slow {other}</button></form></details>
 <!-- guest_revoke: end an invitation and its credential -->
 <form class="foot" method="post" action="/hand/"><input type="hidden" name="guest" value="revoke"><input type="hidden" name="name" value="{name}"><button class="door">revoke</button></form>
 <!-- console: one world's outbox and inbox -->
@@ -76,8 +91,12 @@ The owner's console. Nothing reaches a town without the owner: his own post, giv
 <section><h2>Object</h2><form method="get" action="{base}/root/"><label>Edit <input name="object" placeholder="garden"></label><button class="door">Open</button></form>{editor}</section>
 {reads}
 <section><h2>Journal</h2><ol class="receipts">{entries}</ol><p class="doors"><a class="door" href="{base}/root/?before={before}">OLDER</a></p></section>
-<section><h2>Moderation</h2>{mod}</section>
+{newcomers}<section><h2>Moderation</h2>{mod}</section>
 <section><h2>Root acts</h2>{acts}</section>
+<!-- newcomers: an open town's limits for newcomers as the world holds them, and the form that sets the config's (docs/DEPLOY.md "A second instance") -->
+<section><h2>Newcomers</h2><p>This town's door is open: anyone may ask for a key. What one hand may do, and what the town spends a day, are the world's settings, each a receipted entry.</p>
+<p class="codes">{codes}</p>
+<details class="action"><summary><span class="code">newcomers</span> limits</summary><form method="post" action="{base}/newcomers/limits"><p>Set the config's: {config}.</p><input name="reading" placeholder="reading (default: the open town's limits for newcomers)"><button class="door">set</button></form></details></section>
 <!-- editor: an object's fields as the opener reads them, each editable; Save sets those that changed -->
 <form method="post" action="{base}/root/save"><input type="hidden" name="object" value="{object}"><input type="hidden" name="shown" value="{shown}">{fields}<input name="reason" required placeholder="reason (required)"><button class="door">Save</button></form>
 <!-- form: one verb; the reason or the reading is required -->

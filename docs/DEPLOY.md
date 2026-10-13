@@ -11,6 +11,8 @@ artifact the owner runs; nothing here deploys itself.
 | `deploy/build.sh` | builds both, prints the binary's SHA-256, writes `deploy/out/host.sha256` |
 | `deploy/compose.yml` | `delvetalk-host` (`delvetalk-obend serve`), `delvetalk-http`, `delvetalk-bridge`; `delvetalk-interpret` (profile `town`); `delvetalk-ops` |
 | `deploy/compose.hand.yml` | laid over compose.yml: `delvetalk-hand`, the owner's console on its own loopback port, with the root socket and the Delve credentials directory |
+| `deploy/compose.firehose.yml` | laid over compose.yml when an instance publishes its firehose ("Firehose") |
+| `deploy/instances.toml`, `deploy/instance.py` | each instance on the box, and its kit rendered from its name ("A second instance") |
 | `deploy/seed.py` | `world-create` of one object from `world/` |
 | `deploy/backup.sh`, `restore.sh`, `verify.sh` | journal custody |
 | `deploy/smoke.sh` | the newcomer's journey against an origin |
@@ -55,7 +57,9 @@ The listener is public through the edge; it requires no subscriber credential. I
 
 `deploy/compose.yml` publishes `delvetalk-http`'s HTTP port 8765 on the private address 10.10.1.10, and uses
 Docker's default service network. The hand uses 8766. To enable the firehose, add this overlay for
-`delvetalk-http` (its inherited HTTP settings, state/key mounts and HTTP port remain):
+`delvetalk-http` (its inherited HTTP settings, state/key mounts and HTTP port remain); it is
+`deploy/compose.firehose.yml`, its port `DELVETALK_FIREHOSE_PORT` (8767), which an instance whose table says
+`firehose = true` names in `COMPOSE_FILE` ("A second instance"):
 
 ```yaml
 services:
@@ -758,6 +762,191 @@ world's journal is serve's `<state>/ring.journal`, opened at the first op naming
 interpreter, `python3 -m transport bridge --world ring` and `python3 -m transport interpret --world ring`, keep their own state under `<state>/worlds/ring/`. A world name is `[a-z][a-z0-9-]{0,31}`, never `did`, `zulip`, `guest`, `at`, `world`, `me` or `scratch`; a second open of the
 same name is refused. Genesis and the welcome follow as for the town.
 
+## A second instance
+
+The owner, 2026-10-13: "a separate instance on a different domain". One box holds several DelveTalk instances side by
+side, each a compose project of its own: its own data directory and journals, root socket, repository and hand keys,
+ports, backups, watch and origin, and nothing of another's. `deploy/instances.toml` lists them; a name gives every
+path (`deploy/instance.py` `Instance`): `delvetalk`, the live town, keeps the paths it has always had, and any other
+name N lives under `delvetalk-N`:
+
+| what | `delvetalk` (gsb) | `open` (obend) |
+| --- | --- | --- |
+| compose project, `/opt/<project>` | `delvetalk` | `delvetalk-open` |
+| data directory (`DELVETALK_DATA`), the genesis guard's `/towns` | `/var/lib/delvetalk/v15`, `/var/lib/delvetalk` | `/var/lib/delvetalk-open/v1`, `/var/lib/delvetalk-open` |
+| root socket's directory | `/var/lib/delvetalk/root` | `/var/lib/delvetalk-open/root` |
+| repository keys, hand token, Delve credentials | `/etc/delvetalk/{repo,hand.token,delve}` | `/etc/delvetalk-open/{repo,hand.token,delve}` |
+| front, hand, firehose ports (10.10.1.10, 127.0.0.1, 10.10.1.10) | 8765, 8766, 8767 | 8775, 8776, 8777 |
+| origin, opener | `https://gsb.fg-goose.online`, ember's DID | `https://obend.fg-goose.online`, its did:web |
+| backups, their timer, hbox's pull | `/var/backups/delvetalk`, :17, `/tank/delvetalk-backups` | `/var/backups/delvetalk-open`, :27, `/tank/delvetalk-open-backups` |
+| watch | `delvetalk-watch.timer`, topic `watch` | `delvetalk-open-watch.timer`, topic `watch-open` |
+| shared on purpose | the Anthropic key `/etc/delvetalk/anthropic.key` and the watch bot's rc; spend is tallied per state |
+
+    python3 -m deploy.instance check                   # no two instances share a port, a path, an origin or a backup minute
+    python3 -m deploy.instance render open --out kit --image delvetalk:<sha12> --host-image delvetalk-host:<sha12>
+
+`render` writes the instance's kit: `env` (its `/opt/<project>/.env`), the watch and backup units for the workhorse,
+the pull units for hbox, `Caddyfile.site` (its block for the anchor) and `delvetalk.toml` (its state's config, from the
+table's `config`). `compose.yml` and `compose.hand.yml` are one pair of files for every instance and are unchanged by
+this: what differs enters through `.env` alone (`COMPOSE_PROJECT_NAME` outranks the files' `name: delvetalk`), and
+every variable the compose files read is named in every rendered `.env`, so none falls through to a compose default,
+which are the live town's (`tests/test_instances.py`). The proof that the live town is unchanged: `render delvetalk`
+gives byte for byte `deploy/delvetalk-watch.{service,timer}`, the backup units under "Durability and backups",
+the installed gsb Caddy block above and dregg-infra's `hbox/delvetalk-backups/delvetalk-pull-backups.{service,timer}`;
+its `.env` differs from compose's own defaults in `DELVETALK_DATA` (v15, which the carries moved and `.env` names)
+and `DELVETALK_STATION` (on, the owner's word) only, as the workhorse's `.env` does today.
+
+What assumed one instance a box, and what holds each apart now:
+
+- compose's project name and its defaults (the live paths): `COMPOSE_PROJECT_NAME` and a whole `.env` per instance.
+- the genesis guard's `/towns` (`DELVETALK_TOWNS`, default `/var/lib/delvetalk`): each instance's own root, so a
+  second town's genesis neither sees nor is refused by the first's journals; neither can write the other's directory.
+- the watch unit (`DELVETALK_HOME=/opt/delvetalk`), the backup units and the pull: rendered per project; the pull
+  key's `rrsync -ro` pins one directory, so each instance has its own key line on the workhorse and its own pull.
+- the firehose overlay's port: `deploy/compose.firehose.yml` and `DELVETALK_FIREHOSE_PORT`.
+- the firewall (dregg-infra `edge/delvetalk/delvetalk-firewall`) names 8765 and 8766 only: a second front's port must
+  join `DELVETALK-FRONT` (anchor only) and its hand's `DELVETALK-LOCAL`, or the private net reaches it and chooses its
+  own `X-Forwarded-For` key ("Bringing up obend" below).
+- the anchor's Caddy: one site block per origin.
+- arrival: `arrival = "open"` in the open instance's `delvetalk.toml` gives a key for the asking (docs/WEB.md "The
+  guest door"; `arrive_per_address`, `arrive_per_hour`, `arrive_bits`); the live town's is `invited`, the default, and
+  its front answers as before.
+- limits for newcomers, on an open town only (an invited town keeps the host's own): a hand's turns a clock hour
+  (`turn_quota`, 60), the objects it keeps (`object_quota`, 24), its scratch worlds (`scratch_quota`, 1; serve's
+  `--scratch-quota`, which `transport serve` passes on an open town alone), its feed posts an hour (`feed_quota`, 20;
+  60 elsewhere), and the town's day of hob's readings (`hob_budget`, 300) and paints (`paint_budget`, 400). The first
+  two and the budgets are the world's journaled settings (`turnQuota`, `objectQuota`, `modelQuota`, `paintQuota`;
+  docs/ROOT.md), set from the config by `hand limits` (the root page's "Newcomers"), which `genesis --profile open`
+  runs; `world-status` and `GET /AGENTS.md/me` say a hand's turns left. When hob's day is spent, words are refused
+  `quota` with the card's spells as the hint; when the paints are, a card is read exact (`world-render` `exact
+  {reason: budget}`) and the page says "the town's N paints for the day are spent; the card as it stands". A world
+  that sets none counts none, and its snapshot keeps its bytes (tests/test_newcomers.py).
+- moderation for an open door (tests/test_moderation.py): **slow** (`hand slow on|off --reading R`, the root page's
+  Moderation, any town) sets the world's `turnQuota` to `slow_turns` (6) and back to `turn_quota` (an invited town's
+  none), a receipted settings entry whose reading says `slow: R`; **quiet** a guest from the worlds page's guest list
+  (the `quiet` power, hours and a reading; unquiet is root's `quiet` of zero hours, as playbook E); an arrival from a
+  **flagged** address (`arrive_flagged` in the config, or flagged by the hand into `<state>/arrive-flagged.txt` from a
+  guest's row or the door's form; `hand flag|unflag ADDRESS`) is **held**: its key is given and answered 202 `held`,
+  and opens nothing (403 `denied`, "held at the door") until the owner **lets it in** (`hand let-in NAME`: the key
+  opens and the host is told it arrived, journaled) or **turns it away** (`hand turn-away NAME --reading R`: the key
+  ends and the world quiets the name for ten years of the clock, the reading on the receipt). Every act is a line in
+  `hand-log.jsonl`; the journal holds every one that changes the world: slow and the limits (settings), a quiet (a
+  moderated or root entry), an arrival let in, a name turned away. A flag and a hold change no world, so they are
+  the hand's log and `identity.sqlite`'s alone.
+- the config's delve.town defaults (`summon_handle`, `poster`, `lexicon_authority`, `requests`): inert on an
+  instance whose bridge row is the town's own feed (`transport open --transport feed`), which observes no Delve.
+  Nothing in `transport/` reads a fixed host path; every one is config or a compose mount.
+
+## Bringing up obend
+
+The open instance `open` at `https://obend.fg-goose.online`, prepared 2026-10-13 and not yet run: the owner does steps
+1 to 3 (DNS, the anchor's Caddy, the workhorse's firewall), then a deploy lane does 4 and 5. The workhorse has room for
+it (4 cores, 7 GB, 41 GB free; the live town uses about 450 MB and no CPU to speak of): the second stack's limits in
+compose total about 4.5 GB, as the first's.
+
+**1. DNS (the owner).** In the Google Cloud DNS zone of `fg-goose.online`, beside gsb's record (read 2026-10-13 from
+`ns-cloud-c1.googledomains.com`: `gsb.fg-goose.online. 1800 IN A 88.99.126.35`, and no AAAA):
+
+    obend.fg-goose.online.  1800  IN  A  88.99.126.35
+
+    gcloud dns record-sets create obend.fg-goose.online. --zone=<the fg-goose.online zone> --type=A --ttl=1800 --rrdatas=88.99.126.35
+    dig +short A obend.fg-goose.online @ns-cloud-c1.googledomains.com     # 88.99.126.35
+
+No AAAA (gsb has none) and no wildcard: nothing routes `*.guest.obend.fg-goose.online` (hosted guest accounts are
+off, `DELVETALK_HOSTED_ACCOUNTS=off` in the rendered `.env`, as cx-tidy made the default), and `fg-goose.online` has no CAA record, so Caddy's pinned Let's Encrypt issues for it.
+
+**2. The anchor's Caddy (the owner).** Add this block after the gsb block in dregg-infra `edge/anchor/Caddyfile`
+(it is `python3 -m deploy.instance render open`'s `Caddyfile.site`, and `render delvetalk` gives the installed gsb
+block byte for byte). Validated 2026-10-13 with `caddy validate` (v2.11.4) on dregg-infra's Caddyfile with the block
+appended: "Valid configuration"; `caddy fmt` leaves it as it is.
+
+    obend.fg-goose.online {
+    	import baseline_headers
+    	encode zstd gzip
+    	@hand path /hand /hand/*
+    	respond @hand 404
+    	request_body {
+    		max_size 262144
+    	}
+    	reverse_proxy 10.10.1.10:8775 {
+    		transport http {
+    			dial_timeout 3s
+    			response_header_timeout 60s
+    		}
+    	}
+    }
+
+Install as the Caddyfile's header says (`Caddyfile.new`, `caddy validate`, `mv`, `systemctl reload caddy`), after
+step 1 resolves, so the certificate is obtained at the first reload. Until the stack is up the name answers 502.
+
+**3. The workhorse's firewall (the owner).** dregg-infra `edge/delvetalk/delvetalk-firewall` names 8765 and 8766 only,
+so without this the private net reaches 8775 directly and chooses its own `X-Forwarded-For` (the front trusts the last
+entry). Replace its `PORT=8765` / `HAND=8766` and the rule lines that use them with one loop over every instance's ports
+(deploy/instances.toml), and rerun it (`systemctl restart delvetalk-firewall.service`):
+
+    FRONTS="8765 8775"   # each instance's front, deploy/instances.toml http_port
+    HANDS="8766 8776"    # each instance's hand, hand_port
+    nr="-m owner ! --uid-owner 0"
+    for PORT in $FRONTS; do
+      m="-p tcp -m conntrack --ctstate NEW --ctorigdst $FRONT --ctorigdstport $PORT"
+      iptables -A DELVETALK-FRONT $m -s $ANCHOR -j RETURN
+      iptables -A DELVETALK-FRONT $m -j DROP
+      iptables -A DELVETALK-LOCAL $m $nr -j REJECT --reject-with tcp-reset
+    done
+    iptables -A DELVETALK-LOCAL -p tcp -d 172.16.0.0/12 -m multiport --dports "$(echo $FRONTS $HANDS | tr ' ' ,)" $nr -j REJECT --reject-with tcp-reset
+    for HAND in $HANDS; do iptables -A DELVETALK-LOCAL -p tcp -d 127.0.0.0/8 --dport $HAND $nr -j REJECT --reject-with tcp-reset; done
+
+Check after step 4: from the anchor `curl -s -o /dev/null -w '%{http_code}' http://10.10.1.10:8775/AGENTS.md` is 200;
+from hbox, nothing.
+
+**4. Up (a deploy lane, on the workhorse, as root, from the deployed commit's `git archive`).** The image is the
+deploy's (`deploy/build.sh`); this lane's host changes (HOST-HANDOFF 5.229) are in it, and its carry-check against the
+newest town backup (`delvetalk-20261013T181847Z`, on hbox) said the backup replays under the lane's binary; its
+"breaking" came from foundation's `world/lib` since the deployed commit (register2, parlour), not from this lane.
+
+    python3 -m deploy.instance check
+    python3 -m deploy.instance render open --out /tmp/obend-kit --image delvetalk:<sha12> --host-image delvetalk-host:<sha12>
+    install -d -m 0755 /opt/delvetalk-open /opt/delvetalk-open/deploy
+    cp deploy/compose.yml deploy/compose.hand.yml deploy/compose.firehose.yml deploy/watch.sh /opt/delvetalk-open/
+    cp deploy/backup.sh deploy/verify.sh deploy/restore.sh /opt/delvetalk-open/deploy/
+    install -m 0600 /tmp/obend-kit/env /opt/delvetalk-open/.env
+    install -d -o 10425 -g 10425 -m 0750 /var/lib/delvetalk-open        # the genesis guard's /towns: 10425 lists it
+    install -d -o 10425 -g 10425 -m 0700 /var/lib/delvetalk-open/v1 /var/lib/delvetalk-open/v1/state /var/lib/delvetalk-open/root
+    install -o 10425 -g 10425 -m 0400 /tmp/obend-kit/delvetalk.toml /var/lib/delvetalk-open/v1/state/delvetalk.toml
+    install -d -o 10425 -g 10425 -m 0700 /etc/delvetalk-open /etc/delvetalk-open/repo /etc/delvetalk-open/delve
+    (umask 0277; openssl rand -hex 32 > /etc/delvetalk-open/hand.token) && chown 10425:10425 /etc/delvetalk-open/hand.token
+    install -d -g 10425 -m 0750 /var/backups/delvetalk-open
+    cd /opt/delvetalk-open
+    docker compose run --rm delvetalk-ops python3 -m transport repokey                 # prints the did:key
+    docker compose run --rm delvetalk-ops python3 -m transport open --transport feed   # the town's own feed: no Delve observed
+    docker compose up -d --wait delvetalk-host
+    docker compose run --rm delvetalk-ops python3 -m deploy.genesis --root-socket /run/delvetalk-root/root.sock --profile open
+    docker compose --profile town up -d --wait --remove-orphans
+    docker compose ps                                                                   # five (healthy)
+
+The `.env` names the shared Anthropic key and watch rc; the opener is obend's did:web (`DELVETALK_OPENER`). Genesis
+prints about sixty lines (the station, its inhabitants and the parlour, the register, the first line, the settings).
+
+**5. Smoke, custody, the watch.**
+
+    deploy/smoke.sh https://obend.fg-goose.online --pin <sha256> --open    # from anywhere once 1-4 are done
+    cp /tmp/obend-kit/delvetalk-open-{backup,watch}.{service,timer} /etc/systemd/system/ && systemctl daemon-reload
+    systemctl start delvetalk-open-backup.service && cat /var/backups/delvetalk-open/last-verify     # ok <stamp>
+    systemctl enable --now delvetalk-open-backup.timer delvetalk-open-watch.timer
+    # the pull: a second key line in /root/.ssh/authorized_keys, pinned to its own directory
+    restrict,command="/usr/bin/rrsync -ro /var/backups/delvetalk-open" ssh-ed25519 AAAA... delvetalk-open-backups-pull@hbox
+    # on hbox: ssh-keygen -t ed25519 -N '' -f ~/.ssh/delvetalk-open-backups; ~/delvetalk-open-backups/ holds pull-backups.sh,
+    # verify.sh and pull.env; the kit's delvetalk-open-pull-backups.{service,timer} go to ~/.config/systemd/user/ (at :57)
+
+Rehearsed 2026-10-13 on hbox without docker, on this lane's binary (`2d79299e…13a5`): the kit rendered, `repokey`,
+`open --transport feed`, serve, `genesis --profile open` (exit 0, 61 lines), the front on a local port, and
+`smoke.sh https://obend.fg-goose.online --via http://127.0.0.1:18775 --pin … --open`: all nine passed. Then an agent
+by the guide's own three commands: a challenge, the guide's one-line nonce finder (18 bits, 0.6 s), `POST /arrive
+{name: wren}`; `GET /me` said 60 turns left this hour; its feed post `delvetalk library read / page: arrive` was answered
+under it by the town (`bridge --once`). In Chromium (Playwright) at 1280 and 390 px: `/enter` asks a name, the page's
+work took a quarter of a second, "Welcome, robin" showed the key once and the home page was signed in; asking again
+for `robin` said the name is taken and kept the form.
+
 ## Rotating the Anthropic key
 
 Write the new key to a temporary file beside the old one (owner 10425, mode
@@ -1260,7 +1449,12 @@ words for now; a spell needs no reading. The cards still answer.` Record: the ho
 - interpretations per principal (48 an hour, `quota` refusals with `next`): the resident is told by the host; nothing
   to do unless it is a loop, which is B.
 - the model cap per day: the world's words wait for the clock day to turn, or `hand settings --modelQuota N --reading
-  R`. Channel: `hob: my readings for today are spent; spells run as they always do.`
+  R`. Channel: `hob: my readings for today are spent; spells run as they always do.` Since lane/open-town the refusal's
+  hint is the card's own spells, so the resident has the spell to send instead.
+- an open town's (docs/DEPLOY.md "A second instance"): a hand's turns this hour (`turnQuota`, `quota` refusals with
+  `next` at the hour), its objects (`objectQuota`, `capacity`), the town's paints today (`paintQuota`: cards read
+  exact, the page saying so). `hand settings --turnQuota N --objectQuota N --paintQuota N --reading R`, or `hand limits`
+  for the config's again.
 
 Record: which quota, and whether it was a loop.
 
@@ -1271,7 +1465,9 @@ the bot already said on Zulip:
 
     hand unpost DRAFT --reason 'abuse'
 
-Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on the receipt.
+Channel: hob's quiet line (ROOT section 3), once. Record: the reading; it is on the receipt. On an open town the guest
+list on `/hand/` quiets a guest in one click; a flood from one address is flagged there (`hand flag ADDRESS`), its next
+arrivals held for you, and `hand slow on --reading R` holds every hand to `slow_turns` an hour until `slow off`.
 
 **F. The box is full.**
 

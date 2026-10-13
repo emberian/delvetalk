@@ -304,6 +304,12 @@ def forkWorld (s : Open) (j : Json) : IO (Except String Json) := do
     the clock principal). -/
 def interpretStatus (w : World) (r : Json) (principal : Option String) : Json :=
   let r := r.setObjVal! "interpretQuota" (toJson w.interpretQuota)
+  -- A hand's turns this hour (`turnQuota`, 0 when none is counted) and the objects each hand may keep.
+  let r := (r.setObjVal! "turnQuota" (toJson w.turnQuota)).setObjVal! "objectQuota" (toJson w.objectQuota)
+  let r := match principal with
+    | some p => if w.turnQuota > 0 && turnCounted w p then r.setObjVal! "turns" (Json.mkObj [
+        ("remaining", toJson (w.turnQuota - turnsThisHour w p)), ("next", toJson ((w.clock / 60 + 1) * 60))]) else r
+    | none => r
   match principal with
   | none => r
   | some p =>
@@ -510,6 +516,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
           ("postQuota", toJson s.world.postQuota), ("posts", postsStatus s.world),
           ("modelQuota", Json.mkObj [("quota", toJson s.world.modelQuota), ("used", toJson
             (if s.world.modelDay.1 == s.world.clock / Limits.clockDay then s.world.modelDay.2 else 0)), ("next", toJson ((s.world.clock / Limits.clockDay + 1) * Limits.clockDay))]),
+          ("paintQuota", Json.mkObj [("quota", toJson s.world.paintQuota), ("used", toJson (s.renders.paintsOn (s.world.clock / Limits.clockDay)))]),
           ("hour", (if s.world.hourCounts.hour == s.world.clock / 60 then s.world.hourCounts else { hour := s.world.clock / 60 }).json),
           ("shadowed", Json.arr s.world.shadowed), ("ignored", toJson s.world.ignored), ("replay", toJson Limits.replayEdition), ("locked", toJson true), ("sync", toJson s.sync.name),
           ("recompiledDifferently", toJson s.world.recompiledDifferently), ("renders", s.renders.counts),

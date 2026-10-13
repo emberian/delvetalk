@@ -30,7 +30,7 @@ class BrowserSecurity(unittest.TestCase):
         self.front.clock, self.front.sleep = lambda: 1000, lambda _: None
         self.front.hits, self.front.hits_lock = {}, threading.Lock()
         self.front.csrf_secret = b's' * 32
-        self.front.nonce, self.front.play_wait, self.front.trust_proxy = 'test', 0, False
+        self.front.nonce, self.front.play_wait, self.front.trust_proxy, self.front.open = 'test', 0, False, False
         self.front.identity = mock.Mock()
         self.front.identity.authenticate.side_effect = lambda key: WHO if key == KEY else None
         self.front.identity.accept.return_value = {'status': 'accepted', 'principal': WHO['did'],

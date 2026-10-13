@@ -28,6 +28,15 @@ def csrf_forms(body, token):
     return POST_FORM.sub(lambda m: m[0] + T['csrf'].format(token=e(token)), body)
 
 
+GUIDE = Path(__file__).resolve().parent.parent / 'docs' / 'AGENTS-API.md'
+ARRIVE = GUIDE.with_name('AGENTS-ARRIVE.md')  # an open town's way in by asking, in the guide at its `{{arrive}}` line
+
+
+def guide_text(origin, arrival='invited', path=GUIDE):
+    """The guide as a town serves it (`GET /AGENTS.md`) and shelves it (deploy/genesis.py): `{{origin}}` its origin, and
+    the line `{{arrive}}` the open door (docs/AGENTS-ARRIVE.md) on an open town, nothing on an invited one."""
+    return path.read_text().replace('{{arrive}}\n', ARRIVE.read_text() if arrival == 'open' else '').replace('{{origin}}', origin.rstrip('/'))
+
 def page(title, who, body, *, site='DelveTalk', home='/', head=None, nav=None, foot=None, wide=False):
     """The one skeleton. The front's header links the town's day and its map from every page, and the reader's book and
     signing out (or the way in); the hand passes its own `head` (the stylesheet inlined), `nav` and `foot`, and its
@@ -67,7 +76,7 @@ def by(principal, handle, town=''):
     return handle if isinstance(handle, str) and handle else guest_name(str(principal or ''))
 
 
-def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), newest=()):
+def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), newest=(), open_door=False):
     """What the town is and how to come in, then the town alive: today's chronicle painted (its text folded beneath), the
     commonplace's doors as its places, what wants a hand, the newest makings; residents are counted, not listed.
     `today` {text, paint}; `wanting` world-wanting's rows; `newest` [(object, principal, height)], newest first."""
@@ -84,7 +93,8 @@ def home(status, who, ids=(), did=None, *, doors=(), today=None, wanting=(), new
                              text=e(today['text'])) if (today or {}).get('text') else ''
     return page('a town of things that answer', who, T['home'].format(
         height=e(str(status.get('height'))), objects=e(str(status.get('objects'))), enter=T['enter'].format(book=e(quote(who or '', safe=''))) if who else '',
-        login='' if who else T['login'], today=told, places=places, wanting=wants, newest=made), wide=True)
+        login='' if who else T['login'].format(invited=T['login_open'] if open_door else T['login_invited']), today=told, places=places,
+        wanting=wants, newest=made), wide=True)
 
 
 def items(ids, words, did):
@@ -181,9 +191,10 @@ def telling(told):
                                lines=e('\n'.join(t.get('exact') or [])))
 
 
-def place(card, paint=None, wants=()):
-    """A card as the place speaking: the paint first; the exact card folded beneath it, open when nothing is painted."""
-    return T['place'].format(paint=painting(paint), open='' if paint else ' open', card=e(card),
+def place(card, paint=None, wants=(), spent=None):
+    """A card as the place speaking: the paint first; the exact card folded beneath it, open when nothing is painted. With
+    `spent`, the host's word that the town's paints for the day are spent, said where the paint would be."""
+    return T['place'].format(paint=painting(paint) or (T['spent'].format(text=e(spent)) if spent else ''), open='' if paint else ' open', card=e(card),
                              wants=''.join(T['wants'].format(reading=e(w.get('reading') or w.get('name', ''))) for w in wants))
 
 
@@ -310,12 +321,13 @@ def reply(turns, offers=(), usage=None):
     return T['reply'].format(lines=answers, offers=body + receipts), spells
 
 
-def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), view=None, ways=(), entries=(), said='', told=None, did=None, town=''):
+def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), view=None, ways=(), entries=(), said='', told=None, did=None, town='',
+         spent=None):
     """An object to play: its name, a place's telling when the reply just sent entered it, what came back, the place, the
     one box and its suggestions (the reply's spells, then what the thing wants, then the card's own), then what is around it."""
     wanted = [(' '.join(w['asks'].split()[1:3]), w['asks']) for w in wants if w.get('asks')]
     return page(name, who, T['play'].format(heading=heading(name, view, did, town), name=e(name), path=e(path), reply=telling(told) + answer, said=e(said),
-                                            place=(place(card, paint, wants) + ring(view)) if card is not None else '',
+                                            place=(place(card, paint, wants, spent) + ring(view)) if card is not None else '',
                                             suggestions=suggestions(path, [*offered, *wanted, *(speech(card)[1] if card else [])], f'delvetalk {name} ?'),
                                             around=around(name, view, ways, entries, town=town) if card is not None else ''))
 
@@ -323,12 +335,12 @@ def play(name, who, path, card, *, answer='', offered=(), paint=None, wants=(), 
 BRIEF = 5  # receipts the brief text view keeps
 
 
-def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), brief=None, paint=None, told=None, town=''):
+def obj(name, who, view, card, entries, did=None, ways=(), seen=None, wants=(), brief=None, paint=None, told=None, town='', spent=None):
     """An object as anyone may read it: its name, a place's telling for a signed-in reader, the place (paint, exact card,
     wants), a way to speak to it (or in), what is around it, then its law, source and journal on demand. `brief` (the text
     view's default, the href of the whole page): the place, the doors and the newest BRIEF entries; the law and the source
     are a link away."""
-    shown = telling(told) + (place(card, paint, wants) + ring(view) if card else T['state'].format(state=dl(view.get('state'))))
+    shown = telling(told) + (place(card, paint, wants, spent) + ring(view) if card else T['state'].format(state=dl(view.get('state'))))
     play = T['playlink'].format(href=e(quote(name, safe='/:'))) if who else T['comein'] if card else ''
     seen = seen if (seen or {}).get('status') == 'inspected' else None
     source = T['source'].format(law=e(seen.get('law') or ''), pin=e(str(seen.get('pinSlug') or '')), source=e(seen.get('source') or ''),
@@ -418,15 +430,26 @@ def challenged(handle, text, note=''):
     return page('post this one word', None, T['challenged'].format(handle=e(handle), text=e(text), note=T['claim_note'].format(note=e(note)) if note else ''))
 
 
-def enter(note='', code='', name=''):
+def enter(note='', code='', name='', arrive=None):
     """The guest door (`/enter`): an invitation's code and a name of the guest's choosing, or the key from before; what
-    went wrong, in plain words, above the forms, which keep what was typed (never a key)."""
-    return page('come in', None, T['enter_page'].format(note=T['enter_note'].format(note=e(note)) if note else '', code=e(code), name=e(name)))
+    went wrong, in plain words, above the forms, which keep what was typed (never a key). An open town's door (`arrive`,
+    a challenge from transport/identity.py `arrival_challenge`) first asks only a name: the page does the proof's work."""
+    asked = arrive and not code  # the name goes back to the form it came from
+    asking = T['enter_arrive'].format(challenge=e(arrive['challenge']), bits=e(str(arrive['bits'])), name=e(name if asked else '')) if arrive else ''
+    return page('come in', None, T['enter_page'].format(note=T['enter_note'].format(note=e(note)) if note else '', code=e(code),
+                                                         name=e('' if asked else name), arrive=asking,
+                                                         lede=T['enter_lede_open'] if arrive else T['enter_lede'],
+                                                         agents=' (or, with no code, <code>/AGENTS.md/arrive</code>)' if arrive else ''))
 
 
 def welcome(handle, credential):
     """A guest just in: their key shown this once, and the way on."""
     return page('welcome', handle, T['welcome'].format(handle=e(handle), credential=e(credential), book=e(quote(handle, safe=''))))
+
+
+def held(handle, credential):
+    """An arrival held at the door (an open town, a flagged address): the key shown once, and what it waits for."""
+    return page('held at the door', None, T['held'].format(handle=e(handle), credential=e(credential)))
 
 
 def leave(handle, done=False):
