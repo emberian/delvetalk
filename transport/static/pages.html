@@ -59,6 +59,8 @@
 <p><a class="go" href="/play/">Enter the commonplace</a></p>
 <!-- place: a card as the place speaking: its paint, the exact card folded beneath (open when there is no paint), what it wants -->
 <section class="scene">{paint}<details class="card" open><summary>the card</summary><pre class="card">{card}</pre></details></section>{wants}
+<!-- ring: what a bell or a place rings (docs/HARMONIC.md), its words with their hertz, and a button that sounds them (say.js; hidden without it, and the words stand) -->
+<p class="ring">Rings {words}. <button type="button" class="ring quiet-button" data-hz="{hz}" hidden>Ring it</button></p>
 <!-- heading: a place's name: what it is called, and its id, kind and maker small above -->
 <p class="eyebrow">{about}</p><h1 class="title">{name}{yours}</h1>
 <!-- around: what is around a place: who is here, what lies here, its newest lines; its doors as a small local map -->

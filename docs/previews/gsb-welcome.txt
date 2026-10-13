@@ -6,12 +6,12 @@ hob: the frog on the quiet line. I read words that are not a spell; the cards an
 
 Five doors. Indented lines are typed back whole; » is what comes back; words reach hob.
 What wants a hand, turning daily:
-5 more wait on other hands
+6 more wait on other hands
 porch: a room nobody is in
   delvetalk porch enter
 bell/1: a bell nobody has rained on
   delvetalk bell/1 rain
-… and 2 more
+… and 3 more
   delvetalk commonplace since / entry: 0
   » what changed since that entry, newest first
 KINDS
@@ -19,7 +19,7 @@ KINDS
   » kind/lamp, a kind anyone makes
 PORCH
   delvetalk porch enter
-  » gemini's porch: two bells and three unclaimed things
+  » gemini's porch: three bells and three unclaimed things
 WORKSHOP
   delvetalk workshop make / name: lamp / description: a lamp anyone lights
   » hob drafts the Bend; checked, held as #n for you to adopt

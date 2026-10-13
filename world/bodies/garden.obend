@@ -25,6 +25,7 @@ form dig:
   name: text 0..120
 form write:
   text: text 1..280
+form chime:
 form lines:
   from: natural 1..1000000000
 form door:
@@ -36,9 +37,21 @@ def makes(state: State) -> Lists.List<String>:
   Text.words("kind/bell kind/cistern")
 def colourName(c: Rows.Colour) -> String:
   match c:
-    case amber(_): "amber"
+    case red(_): "red"
+    case orange(_): "orange"
+    case yellow(_): "yellow"
+    case green(_): "green"
+    case cyan(_): "cyan"
+    case blue(_): "blue"
     case violet(_): "violet"
+    case amber(_): "amber"
     case silver(_): "silver"
+    case magenta(_): "magenta"
+    case purple(_): "purple"
+    case pink(_): "pink"
+# "an amber bell", "a green bell".
+def article(colour: String) -> String:
+  if colour == "amber" || colour == "orange" then "an" else "a"
 def fieldOf(name: String, value: String) -> Rows.Field:
   {name: name, value: value}
 # The planter is the turn's principal (the kind seeds it as the bell's maker); a planting tends the
@@ -48,13 +61,16 @@ def plant(state: State, input: PlantInput, context: Abi.Context) -> Activity<Sup
 def dig(state: State, input: DigInput, context: Abi.Context) -> Activity<Super.Made>:
   Super.making(state, "kind/cistern", Lists.List.nil(), context, dug, fn(m: Super.Made) -> Super.Made: m)
 def planted(object: String, colour: String, seed: String, count: Nat, context: Abi.Context) -> Document.Document:
-  Document.text("Planted, {Card.name(context.principal, context)}: {if colour == \"amber\" then \"an\" else \"a\"} {colour} bell, “{seed}”, at {object}; {natText(count)} planted.\nRain on it:\n\n    delvetalk {object} rain\n    text: <1 to 200 characters>\n\nAnother:\n\n{plantSpell(Card.called(context, \"garden\"))}")
+  Document.text("Planted, {Card.name(context.principal, context)}: {article(colour)} {colour} bell, “{seed}”, at {object}; {natText(count)} planted.\nRain on it:\n\n    delvetalk {object} rain\n    text: <1 to 200 characters>\n\nAnother:\n\n{plantSpell(Card.called(context, \"garden\"))}")
 def dug(object: String) -> Document.Document:
   Document.text("The cistern is dug at {object}; it takes refusals.\n")
 def plantSpell(id: String) -> String:
-  "    delvetalk {id} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <amber, violet or silver>\n"
+  "    delvetalk {id} plant\n    seed: <what might grow here, 1 to 80 characters>\n    colour: <red to violet, silver, magenta, purple or pink>\n"
 def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat>:
   Super.write(state, {text: input.text}, context)
+# Its bells rung together (RECORD's `ringTogether`): every bell it planted, the first sixteen.
+def chime(state: State, context: Abi.Context) -> Activity<Nat>:
+  Super.ringTogether(state, context)
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.lines(state, {from: input.from}, context)
 def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:
@@ -62,7 +78,7 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  if context.principal == state.owner then Text.words("plant dig lines door undoor") else Text.words("plant dig lines")
+  if context.principal == state.owner then Text.words("plant dig chime lines door undoor") else Text.words("plant dig chime lines")
 # Derived views (`viewDerived {object, view}`): what grows here, by kind, one row a kind.
 def views() -> Lists.List<String>:
   Text.words("byKind")
@@ -80,7 +96,7 @@ def kindIn(id: String) -> String:
 def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
   let title = if state.head == "" then "A GARDEN" else state.head
   let weather = if state.weather == "" then "" else "Weather: {state.weather}\n"
-  Document.text("✾ {title}\n\n{weather}{natText(Relations.count(state.things))} planted. Plant one:\n\n{plantSpell(id)}\n» a bell, {id}/bell/N. Or words; what is read is planted.\n\nNewest first:\n")
+  Document.text("✾ {title}\n\n{weather}{natText(Relations.count(state.things))} planted. Plant one:\n\n{plantSpell(id)}\n» a bell, {id}/bell/N; its colour is its tone. Or words; what is read is planted.\n{Super.chimed(state, id)}\nNewest first:\n")
 def thingLine(t: Plans.Reference) -> Document.Document:
   Document.text("- {t.object}\n")
 def render(state: State, context: Abi.Context) -> Document.Document:

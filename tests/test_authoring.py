@@ -156,7 +156,7 @@ class Authoring(unittest.TestCase):
     def test_a_kind_over_a_kind_runs_every_body_below_it_and_carries_every_text(self):
         self.admitted(YUE, "kinds", "delvetalk kinds make / name: rainbell / of: kind/bell")
         usage = told(self.say(KES, "kind/rainbell", "delvetalk kind/rainbell ?"))
-        self.assertIn("delvetalk kind/rainbell make\ncolour: <amber, violet, silver>\nseed: <text, 1 to 80 characters>", usage)
+        self.assertIn("delvetalk kind/rainbell make\ncolour: <red, orange, yellow, green, cyan, blue, violet, amber, silver, magenta, purple, pink>\nseed: <text, 1 to 80 characters>", usage)
         self.admitted(KES, "kind/rainbell", "delvetalk kind/rainbell make / colour: silver / seed: a bell over a bell")
         for i in range(6):
             self.assertEqual(outcome(self.admitted(YUE if i % 2 else KES, "rainbell/1", "delvetalk rainbell/1 rain / text: drop %d" % i)).get("fired"), None)
