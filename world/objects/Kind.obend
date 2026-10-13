@@ -13,6 +13,7 @@ import ./Record.obend as Record
 import ./Scenes.obend as Scenes
 import ./Spween.obend as Spween
 import ./Forms.obend as Forms
+import ./Harmony.obend as Harmony
 # KIND (docs/CATALOGUE.md §3): a thing whose instances are things. It holds the form its `make`
 # takes (field lines, `colour: amber | violet | silver` / `seed: text 1..80`), the law its
 # instances are created under (each cites it: `under "<kind>"`), the card head they start with
@@ -113,7 +114,7 @@ def captures(fields: Lists.List<Rows.Field>, context: Abi.Context) -> Card.Captu
 # made under a record cites it home, labelled by its last segment. A `spween` field (a room's,
 # handed by the room a block was posted to) is the instance's scene: its passages, start,
 # cooldown and requirements, and not kept among the fields. A thing is made tended, at the clock of
-# its making.
+# its making. A colour that names a hue is its tone from its making (docs/HARMONIC.md): a bell's colour rings.
 def seedOf(state: State, fields: Lists.List<Rows.Field>, under: String, stack: Stack, scene: Spween.Parsed, context: Abi.Context) -> Data:
   if state.of == "kind" then kindSeed(fields, stack, context) else instanceSeed(state, fields, under, scene, context)
 def instanceSeed(state: State, fields: Lists.List<Rows.Field>, under: String, scene: Spween.Parsed, context: Abi.Context) -> Data:
@@ -123,9 +124,9 @@ def sceneSeed(state: State, kept: Lists.List<Rows.Field>, under: String, context
     case parsed(p): withScene(state, kept, under, context, p.seed)
     case refused(_): plainSeed(state, kept, under, context)
 def plainSeed(state: State, kept: Lists.List<Rows.Field>, under: String, context: Abi.Context) -> Data:
-  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock}
+  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock, tone: Harmony.toneText(valueOf(kept, "colour")), oddLimit: Harmony.oddLimit(Harmony.tones(valueOf(kept, "colour")))}
 def withScene(state: State, kept: Lists.List<Rows.Field>, under: String, context: Abi.Context, scene: Scenes.Seed) -> Data:
-  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock, start: scene.start, passages: scene.passages, cooldown: scene.cooldown, requires: scene.requires}
+  {owner: context.principal, head: Card.filled(state.head, captures(kept, context)), kind: context.object, fields: kept, maker: context.principal, makerHandle: context.handle, post: context.inputOrigin.post, cites: homeDoor(under, context), tended: context.clock, tone: Harmony.toneText(valueOf(kept, "colour")), oddLimit: Harmony.oddLimit(Harmony.tones(valueOf(kept, "colour"))), start: scene.start, passages: scene.passages, cooldown: scene.cooldown, requires: scene.requires}
 def homeDoor(under: String, context: Abi.Context) -> Card.Doorways:
   if under == "" then Card.Doorways.nil() else Card.Doorways.cons({head: {label: lastSegment(under), to: {world: context.world, object: under}, description: "", examples: Lists.List.nil()}, tail: Card.Doorways.nil()})
 def lastSegment(id: String) -> String:

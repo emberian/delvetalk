@@ -200,7 +200,7 @@ def actions(state: State, context: Abi.Context) -> Lists.List<String>:
         """A place hands a kind's makeUnder text, which no spell fitted: the kind judges it against its form as the
         host judges a make spell, and a value outside the form makes nothing (OBJECTS-HANDOFF, 4a's open findings)."""
         town_kinds(self.host.send)
-        for fields, clause, reading in (([("colour", "green"), ("seed", "x")], "badValue", "colour is one of: amber, violet, silver"),
+        for fields, clause, reading in (([("colour", "verdigris"), ("seed", "x")], "badValue", "colour is one of: red, orange, yellow, green, cyan, blue, violet, amber, silver, magenta, purple, pink"),
                                         ([("colour", "amber")], "missing", "Still needs seed."),
                                         ([("colour", "amber"), ("seed", "x" * 81)], "badValue", "seed is 1 to 80 characters; this one is 81.")):
             with self.subTest(fields=fields):

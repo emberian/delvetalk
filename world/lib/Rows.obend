@@ -32,11 +32,21 @@ record Mark:
 record Field:
   name: String
   value: String
-# A bell's colour, and a bell a garden planted (its `children`, keyed {object}).
+# A bell's colour, which is its tone (docs/HARMONIC.md): the spectrum's seven from red, amber, silver, and the hues no
+# single wavelength makes; and a bell a garden planted (its `children`, keyed {object}).
 sum Colour:
-  amber: {}
+  red: {}
+  orange: {}
+  yellow: {}
+  green: {}
+  cyan: {}
+  blue: {}
   violet: {}
+  amber: {}
   silver: {}
+  magenta: {}
+  purple: {}
+  pink: {}
 record Child:
   world: String
   object: String

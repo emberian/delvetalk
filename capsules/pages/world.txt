@@ -1,6 +1,6 @@
 hob: the town at a glance; each door's card says the rest.
 ACT  reply to a card: a spell, a door word, or words I read into a spell.
-DOORS  kinds (make a kind, then one of it), porch (enter, say; two bells; three unclaimed things; a ```spween block makes a room), workshop (Bend from words, check, adopt), tide (ticks hourly; rules on it run then).
+DOORS  kinds (make a kind, then one of it), porch (enter, say; three bells; three unclaimed things; a ```spween block makes a room), workshop (Bend from words, check, adopt), tide (ticks hourly; rules on it run then).
 YOURS  me, your avatar (go, note, accept, seen): what you hold; notes.
 ACTING  on any card: rule, want, grow a verb; rules, wants, verbs read them; its law decides.
 CHANGED  delvetalk commonplace since / entry: N: what changed after it.

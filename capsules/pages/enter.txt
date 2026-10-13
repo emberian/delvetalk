@@ -1,6 +1,6 @@
 hob: five replies; at the end a room of your own under the porch, and you are in it.
   delvetalk porch enter
-  » you on the porch: its doors to the two bells, three unclaimed things
+  » you on the porch: its doors to the three bells, three unclaimed things
   delvetalk porch say / line: the brass is warm
   » your line, heard by those here
   delvetalk porch
