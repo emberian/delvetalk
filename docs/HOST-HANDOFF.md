@@ -2513,16 +2513,6 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    every door (`cites`, a link door left out) on a card the reader may view onto one they may view, cards in id order,
    and how many things lie in each place; `pathTo`, the shortest way from the square. The reply carries `ways` and
    `root` for a drawing; `/map` draws them (`pages.door_map`). Tests: `test_surfaces.Map`, `test_surfaces.Web`.
-218. **A thing acting as itself is named by its id and places within its owner's share (lane/inhabitants; no edition
-   change).** The station's inhabitants (docs/GENESIS.md "The all-night station") act as themselves (`@<id>`, 5.209)
-   from rules they place on the tide and their place. `Enchant.handleIn`: a line, mark or presence whose principal
-   is a thing acting as itself and holds no handle is named by its id, as `shownName` names it (it read "someone",
-   and a telling's "came in" had no subject); Bend's `Card.handle` shows such a principal by its id too. The
-   placement share (`placedPerHand`, `placedByOthers`, 5.210) counts a rule or want a thing places as itself against
-   the hand that owns the thing, so making things that act of themselves mints no hand; the opener's own are the
-   owner's, as the weather's are. No journal before this has a thing placing as itself, so replay is unchanged. Tests:
-   `test_inhabitants` (a hand's third regular is left inactive by `placedPerHand`; strokes in the live run).
-
 218. **A body replaces its gesture and its rule in one turn (lane/cx-world; astra 2026-10-12 world.md 12).**
    `Workshop.growBody` laid a method over a gesture without removing its `Object.verbs` row or the rule it `does`,
    so the method and the old rule both had a consequence. `Workshop.layingLayer`, shared by `bodyLaying` and held
@@ -2959,6 +2949,16 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
      maker path and the new fixtures' unnamed opener and invalid resident power invocation,
      corrected above. The supervisor must rebuild, re-run those suites and the carry check on
      the real backup. Least certain: compatibility with the real backup's oldest carried rows.
+227. **A thing acting as itself is named by its id and places within its owner's share (lane/inhabitants; no edition
+   change).** The station's inhabitants (docs/GENESIS.md "The all-night station") act as themselves (`@<id>`, 5.209)
+   from rules they place on the tide and their place. `Enchant.handleIn`: a line, mark or presence whose principal
+   is a thing acting as itself and holds no handle is named by its id, as `shownName` names it (it read "someone",
+   and a telling's "came in" had no subject); Bend's `Card.handle` shows such a principal by its id too. The
+   placement share (`placedPerHand`, `placedByOthers`, 5.210) counts a rule or want a thing places as itself against
+   the hand that owns the thing, so making things that act of themselves mints no hand; the opener's own are the
+   owner's, as the weather's are (`checkShare`, 5.221's, for rules, wants and verbs alike). So does what such a thing
+   makes count for its owner's `objectsPerPrincipal` (5.226; `objectCapacity`): the regular's coin is the opener's. No journal before this has a thing placing as itself, so replay is unchanged. Tests:
+   `test_inhabitants` (a hand's third regular is left inactive by `placedPerHand`; strokes in the live run).
 
 ## 6. Gotchas
 
