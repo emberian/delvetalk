@@ -779,6 +779,35 @@ partial def listOf : Data → Option (List Data)
     return head :: (← listOf (← f.lookup "tail"))
   | _ => none
 
+def fieldsOf : Data → List (String × Data)
+  | .record f => f
+  | _ => []
+
+def text? (fs : List (String × Data)) (k : String) : Option String :=
+  match fs.lookup k with
+  | some (.label s) => some s
+  | _ => none
+
+def nat? (fs : List (String × Data)) (k : String) : Option Nat :=
+  match fs.lookup k with
+  | some (.natural n) => some n
+  | _ => none
+
+/-- A relation's rows (`rows {items}`), or a list's items, as field lists. -/
+def rowsOf : Data → Option (List (List (String × Data)))
+  | .variant "rows" (.record f) => ((f.lookup "items").bind listOf).map (·.map fieldsOf)
+  | d => (listOf d).map (·.map fieldsOf)
+
+def rows (fs : List (String × Data)) (k : String) : List (List (String × Data)) :=
+  ((fs.lookup k).bind rowsOf).getD []
+
+/-- A Reference naming this world's object. -/
+def referenceId : Data → Option String
+  | .record f => match f.lookup "world", f.lookup "object" with
+      | some (.label ""), some (.label id) => some id
+      | _, _ => none
+  | _ => none
+
 def ofList (items : List Data) : Data :=
   items.foldr (fun x t => .variant "cons" (.record [("head", x), ("tail", t)])) (.variant "nil" (.record []))
 
@@ -2603,6 +2632,18 @@ def shownName (w : World) (principal : String) : String :=
   let h := handleShown w principal
   if h.isEmpty then (principalThing principal).getD principal else h
 
+/-- A row's principal: the town as such, else its kept handle, else the registry's or the thing's id.
+    `unregistered` includes an unknown principal when the surface names one rather than leaving it blank. -/
+def handleIn (w : World) (fs : List (String × Data)) (handleKey principalKey : String)
+    (unregistered : Bool := false) : String :=
+  let principal := (text? fs principalKey).getD ""
+  let registered := handleOf w principal
+  let fallback := if registered.isEmpty then (principalThing principal).getD (if unregistered then principal else "") else registered
+  if isTown w principal then townName else
+  match text? fs handleKey with
+  | some h => if h.isEmpty then fallback else h
+  | none => fallback
+
 /-- A spell as people are shown it: each principal the registry names, written out in full in the text a
     rule filled, shown by its handle (`shownName`). A principal is a whole `did:` token (a post's `at://did:…`
     URI cites it and stays); any other text is left as filled. -/
@@ -2765,10 +2806,19 @@ def writeEdits (entry : Json) : List (String × Nat × Option (List (String × D
 def touchesOf (height : Nat) (entry : Json) : List (String × Touch) :=
   (writeEdits entry).map fun (id, version, _) => (id, { version, height })
 
+/-- An entry of this chain or an authenticated local ancestor, at its original height. -/
+def historyEntry (w : World) (height : Nat) : Option Json :=
+  w.entries.get? (height - 1) <|>
+    ((w.ancestry.find? fun src => src.base < height && height ≤ src.count).bind fun src => src.get? (height - 1))
+
+/-- The beginning of the continuous history ending at this world's head. -/
+def historyStart (w : World) : Nat :=
+  w.ancestry.foldl (fun first src => if src.count == first then src.base else first) w.entries.base + 1
+
 /-- The edits of the change `t` of `id`, read from its entry (`writeEdits`): none for a change not of
     edits (a reprogram, an amendment, a root `set`, whose entry writes none of them). -/
 def touchEdits (w : World) (id : String) (t : Touch) : Option (List (String × Data)) := do
-  let entry ← w.entries.get? (t.height - 1)
+  let entry ← historyEntry w t.height
   let (_, _, edits) ← (writeEdits entry).find? fun (x, v, _) => x == id && v == t.version
   edits
 
@@ -3384,6 +3434,10 @@ def rowsNaming (outcome : Json) (k id : String) : Array Json :=
 /-- Whether an entry is a genesis that installs a store (`Snapshot.installGenesis`): a fork's of a
     principal's view, a carry's of a whole world. -/
 def installsStore (entry : Json) : Bool := tagOf entry == "forked" || tagOf entry == "carried"
+
+/-- Whether available history reaches a world's original opening rather than a store-installing barrier. -/
+def historyComplete (w : World) : Bool :=
+  historyStart w == 1 && (historyEntry w 1 |>.map installsStore) == some false
 
 /-- A store-installing genesis's origin, under the name its tag gives it: `forkedFrom {world, height, cid}`
     or `carriedFrom {world, height, cid, replay, reason, entries, carriedFrom?}`. The entry's `previous`
@@ -5927,10 +5981,19 @@ def carryRefresh (w : World) (identity : Json) (inCarried : Bool) : Bool :=
 
 /-- Whether entry `e` of this chain is a carry's refresh (`carryRefresh`), or a delivery of a send one made (its
     `delivery.from`: the station's refresh hands its sends on, each its own entry under a hash of the refresh's intent). -/
-def refreshEntry (w : World) (e : Json) : Bool :=
-  let carried := (w.entries.genesis?.map tagOf) == some "carried"
+def refreshEntryIn (w : World) (e : Json) (carried : Bool) : Bool :=
   carryRefresh w ((e.getObjVal? "identity").toOption.getD Json.null) carried ||
     (((e.getObjVal? "delivery").toOption.bind (·.getObjVal? "from" |>.toOption)).map (carryRefresh w · carried)).getD false
+
+/-- A refresh of this chain, using its genesis to distinguish original makings from carried upkeep. -/
+def refreshEntry (w : World) (e : Json) : Bool :=
+  refreshEntryIn w e ((w.entries.genesis?.map tagOf) == some "carried")
+
+/-- A refresh in the chain an historical entry belongs to. -/
+def historyRefresh (w : World) (e : Json) : Bool :=
+  let height := (e.getObjValAs? Nat "height").toOption.getD 0
+  let src := (w.ancestry.find? fun src => src.base < height && height ≤ src.count).getD w.entries
+  refreshEntryIn w e ((src.genesis?.map tagOf) == some "carried")
 
 /-- Whether the entry at height `h` was a carry's refresh: this chain's (`refreshEntry`), or, for a height of a world
     before the carry, the identity its carried genesis kept for that height (`identities`, read as `carriedIds`): the

@@ -480,7 +480,7 @@ def stepWorldCore (session : Session) (request : Json) (foreign : Foreign := {})
             | .error e => return .error e
             | .ok (w3, _) =>
               let w3 := w3.withCachesOf w2
-              return .ok ({ w3 with entries := w2.entries, objectBound := w2.objectBound, grantBound := w2.grantBound }, if w3.shadowed.isEmpty then r else r.setObjVal! "shadowed" (Json.arr w3.shadowed)))
+              return .ok ({ w3 with entries := w2.entries, ancestry := w2.ancestry, objectBound := w2.objectBound, grantBound := w2.grantBound }, if w3.shadowed.isEmpty then r else r.setObjVal! "shadowed" (Json.arr w3.shadowed)))
       | "world-settings" => durable s reader (fun w => worldSettingsOp w request)
       | "world-advance" => durable s reader (fun w => advance w request)
       | "world-propose" => durable s reader (fun w => do return commit w (← parseProposal request))

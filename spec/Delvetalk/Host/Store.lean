@@ -673,6 +673,9 @@ structure World where
   head : String := Limits.genesis
   /-- The journal: the chain in memory, each entry read from the block store when asked (`Blocks`). -/
   entries : Entries := {}
+  /-- Local ancestor journals authenticated by the carried genesis's entry hashes, newest generation first.
+      Read-only handles, loaded at open; absent ancestors contribute no history. -/
+  ancestry : Array Entries := #[]
   /-- Identity key (principal, intent) to entry index. The first entry wins. -/
   receipts : Std.HashMap String Nat := {}
   /-- Identity key to the binding a carry kept from the chains before (`Ops.identityRow`: the identity, its

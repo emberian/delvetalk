@@ -326,13 +326,6 @@ def labelOf : Data → Option String
   | .label s => some s
   | _ => none
 
-/-- A Reference naming this world's object. -/
-def referenceId : Data → Option String
-  | .record f => match (f.lookup "world").bind labelOf, (f.lookup "object").bind labelOf with
-      | some "", some id => some id
-      | _, _ => none
-  | _ => none
-
 def emptyRecord : Data := .record []
 
 /-- A `Reference` to another world's object: `(world, object)` when `world` is not "". -/
