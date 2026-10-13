@@ -125,7 +125,7 @@ class RefreshRegressions(unittest.TestCase):
         return [str(self.path)]
 
     def refresh(self, today=None, journals=(), station=False):
-        with patch.multiple(genesis, texts=lambda _: today or {}, MOTION=[], listed=lambda *_: [], shelved=lambda *_: []):
+        with patch.multiple(genesis, texts=lambda _: today or {}, MOTION=[], listed=lambda *_: [], shelved=lambda *_: [], harmonic=lambda *_: []):
             return genesis.refresh(self.host, genesis.OPENER, journals, station=station)
 
     def test_unknown_carried_baseline_preserves_kind_law_form_voice_and_about(self):
