@@ -12,7 +12,7 @@ import unittest
 from deploy import genesis
 from tests.host import ROOT
 from tests.test_chain import Chain, town_kinds
-from tests.wire import cast_refusal, field, label, listing, record, reference, relation
+from tests.wire import cast_refusal, field, label, listing, nat, record, reference, relation
 from tests.bend import closure
 
 KIM, GLM = "did:plc:kimik3", "did:plc:glm"
@@ -269,7 +269,7 @@ class Kinds(Chain):
         people = ["did:plc:" + ("%02d" % i) * 12 for i in range(32)]
         things = ["thing-%02d-" % i + "x" * 100 for i in range(64)]
         doors = [record(label=label(("door%d-" % i).ljust(32, "d")), to=reference("elsewhere/" + "y" * 100), description=label(""), examples=listing([])) for i in range(8)]
-        make_room(self, "yard", head=label("N" * 120), cites=listing(doors), presence=relation(*[record(who=label(p), handle=label(""), at=label("")) for p in sorted(people, key=lambda i: (len(i), i))]),
+        make_room(self, "yard", head=label("N" * 120), cites=listing(doors), presence=relation(*[record(who=label(p), handle=label(""), at=label(""), draw=nat(0)) for p in sorted(people, key=lambda i: (len(i), i))]),
                   things=relation(*[reference(t) for t in sorted(things, key=lambda i: (len(i), i))]))
         for i in range(8):
             self.turn("yard", "write", record(text=label("w" * 280)), principal=people[i])

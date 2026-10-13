@@ -45,13 +45,19 @@ record Clause:
   value: String
 type Guard = Lists.List<Clause>
 # A choice's `text` is shown to the reader who takes it, before the passage it leads to (spween's prose indented
-# under a choice; "" for none).
+# under a choice; "" for none). `among`: the targets a choice draws between, each with its weight (spween's
+# `weight`), two or more, `to` the first of them; none for a choice with one target.
 record Choice:
   label: String
   to: String
   effects: Lists.List<Effect>
   guard: Guard
   text: String
+  among: Lists.List<Weighed>
+# An alternative of a draw, a target or a text, and its weight (spween's default, 10).
+record Weighed:
+  value: String
+  weight: Nat
 record Passage:
   id: String
   text: String
@@ -87,6 +93,39 @@ def mine(name: String) -> String:
 # The variables a guard reads for one reader: the room's, then the reader's own as `my.<name>`.
 def readerVars(vars: Vars, own: Vars) -> Vars:
   Lists.concat(vars, Lists.map(own, fn(v: Var) -> Var: {name: mine(v.name), value: v.value}))
+# A draw (docs: world/lib/Spween.obend) is made from the turn's own entry, never a clock or a generator the
+# journal does not hold: `turnDraw` hashes the turn's own identity, the height it read (its entry's less one), its
+# principal and its intent (`Plans.Slot`, unique in the journal), which replay and a carry
+# reproduce, and each draw of the turn hashes that with the choice it is for (`chose`) or the place of the text's
+# alternatives, so one turn's draws differ and the same turn draws the same again.
+def turnDraw(height: Nat, principal: String, intent: String) -> Nat:
+  hashed("{natText(height)} {principal} {intent}")
+def drawFor(draw: Nat, what: String) -> Nat:
+  hashed("{natText(draw)} {what}")
+# FNV-1a over the text's printable ASCII (any other character counts alike), modulo the largest prime below 2^32.
+def hashed(text: String) -> Nat:
+  hashFrom(text, 2166136261n)
+def hashFrom(text: String, h: Nat) -> Nat:
+  if text == "" then h else hashFrom(textDrop(text, 1n), (h * 16777619n + textBreak(printable(), textTake(text, 1n)) + 1n) % 4294967291n)
+def printable() -> String:
+  " !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{{|}}~"
+# The alternative a draw `n` lands on, by weight: alternative k for n modulo the total within its share.
+def drawn(alternatives: Lists.List<Weighed>, n: Nat) -> String:
+  let total = weights(alternatives)
+  if total == 0n then "" else picked(alternatives, n % total)
+def weights(alternatives: Lists.List<Weighed>) -> Nat:
+  match alternatives:
+    case nil(_): 0n
+    case cons(c): c.head.weight + weights(c.tail)
+def picked(alternatives: Lists.List<Weighed>, r: Nat) -> String:
+  match alternatives:
+    case nil(_): ""
+    case cons(c): if r < c.head.weight then c.head.value else picked(c.tail, r - c.head.weight)
+# The passages a choice may lead to: its target, or each it draws between.
+def targets(c: Choice) -> Lists.List<String>:
+  match c.among:
+    case nil(_): Lists.List.cons({head: c.to, tail: Lists.List.nil()})
+    case cons(_): Lists.map(c.among, fn(w: Weighed) -> String: w.value)
 # A choice whose target is END ends the reader's visit.
 def ending() -> String:
   "END"

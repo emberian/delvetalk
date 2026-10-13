@@ -19,7 +19,7 @@ import unittest
 
 from tests import test_chain
 from tests.test_rooms import make_room
-from tests.wire import cast_refusal, label, record
+from tests.wire import cast_refusal, label, nat, record
 
 GLM, KIM = "did:plc:glm", "did:plc:kimik3"
 
@@ -35,7 +35,7 @@ def listing(items):
 def choice(text, to, key="", value=""):
     """A choice; a key sets that variable to value when it is taken (one `set` effect)."""
     effects = [record(key=label(key), op={"tag": "variant", "label": "set", "payload": record()}, value=label(value))] if key else []
-    return record(label=label(text), to=label(to), effects=listing(effects), guard=listing([]), text=label(""))
+    return record(label=label(text), to=label(to), effects=listing(effects), guard=listing([]), text=label(""), among=listing([]))
 
 
 def passage(pid, text, choices):
@@ -52,6 +52,11 @@ GATE = [
     passage("gate", "A moss gate, ajar.", [choice("Open", "yard", "gate", "open"), choice("Wait", "gate")]),
     passage("yard", "A quiet yard.", [choice("Back", "gate"), choice("Knock", "yard", "knock", "twice")]),
 ]
+
+
+def placed(presence):
+    """Presence rows without the draw each arrival made (Rows.Presence `draw`, test_spween's)."""
+    return [{k: v for k, v in p.items() if k != "draw"} for p in presence]
 
 
 def why(reply):
@@ -138,7 +143,7 @@ class Scenes(test_chain.Chain):
         self.say("delvetalk scene enter", KIM)
         self.say("delvetalk scene choose\nchoice: Open", GLM)
         _, state = self.view()
-        self.assertEqual(state["presence"], [{"who": GLM, "handle": "", "at": "yard"}, {"who": KIM, "handle": "", "at": "gate"}])
+        self.assertEqual(placed(state["presence"]), [{"who": GLM, "handle": "", "at": "yard"}, {"who": KIM, "handle": "", "at": "gate"}])
         self.assertIn("you are at gate", self.card(KIM))
         self.assertIn("you are at yard", self.card(GLM))
         self.assertIn("(2 here)", self.card(KIM))
@@ -146,7 +151,7 @@ class Scenes(test_chain.Chain):
         r = self.say("delvetalk scene choose\nchoice: Knock", KIM)
         self.assertTrue(why(r).startswith("notOffered"), why(r))
         self.say("delvetalk scene leave", GLM)
-        self.assertEqual(self.view()[1]["presence"], [{"who": KIM, "handle": "", "at": "gate"}])
+        self.assertEqual(placed(self.view()[1]["presence"]), [{"who": KIM, "handle": "", "at": "gate"}])
 
 
     def test_the_largest_scene_fills_every_bound_and_the_next_is_refused(self):
@@ -198,7 +203,7 @@ class Scenes(test_chain.Chain):
         self.scene([], start="")
         entered = self.say("delvetalk scene enter")
         self.assertEqual(entered["result"]["label"], "entered")
-        self.assertEqual(self.view()[1]["presence"], [{"who": GLM, "handle": "", "at": ""}])
+        self.assertEqual(placed(self.view()[1]["presence"]), [{"who": GLM, "handle": "", "at": ""}])
         self.assertIn("The Moss Gate (1 here), you are here.\nSay: delvetalk scene say / line: <text>. Leave: delvetalk scene leave.\n", self.card(GLM))
         before = self.view()
         self.assertEqual(why(self.say("delvetalk scene choose\nchoice: Open")), "noPassage: This room has no passage to choose from.")
@@ -212,7 +217,7 @@ class Scenes(test_chain.Chain):
         self.scene(cooldown=1000)
         self.say("delvetalk scene enter", GLM)
         before = self.view()
-        forged = {"presence": {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(KIM), handle=label(""), at=label("yard")))}}
+        forged = {"presence": {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(KIM), handle=label(""), at=label("yard"), draw=nat(0)))}}
         for field, edit in (("presence", forged["presence"]), ("cooldown", {"tag": "variant", "label": "set", "payload": record(value={"tag": "natural", "value": "0"})})):
             reply = self.host.send(op="world-propose", principal=KIM, identity="forged-" + field, roots=[{"object": "scene", "version": before[0]}],
                                    writes=[{"object": "scene", "edits": [record(**{field: edit})]}])

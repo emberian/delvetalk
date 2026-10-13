@@ -22,7 +22,7 @@ from tests import test_chain, test_scenarios
 from tests.test_objects import run_pure
 from tests.test_scene import GATE, GLM, KIM, heard, plain, scene_fields
 from tests.test_rooms import body as room_body, make_room
-from tests.wire import cast_refusal, label, record
+from tests.wire import cast_refusal, label, nat, record
 
 # The README's running example, verbatim.
 TAVERN = """---
@@ -113,8 +113,14 @@ def effects(list: Lists.List<Scenes.Effect>) -> String:
   textJoin(Lists.map(list, fn(e: Scenes.Effect) -> String: "{e.key} {op(e.op)} {e.value}"), "; ")
 def said(text: String) -> String:
   if text == "" then "" else " / {text}"
+def weighed(w: Scenes.Weighed) -> String:
+  "{w.value} {natText(w.weight)}"
+def among(ws: Lists.List<Scenes.Weighed>) -> String:
+  match ws:
+    case nil(_): ""
+    case cons(_): " among {textJoin(Lists.map(ws, weighed), \\", \\")}"
 def choice(c: Scenes.Choice) -> String:
-  "  * {c.label} [{clauses(c.guard)}] ({effects(c.effects)}) -> {c.to}{said(c.text)}"
+  "  * {c.label} [{clauses(c.guard)}] ({effects(c.effects)}) -> {c.to}{among(c.among)}{said(c.text)}"
 def passage(p: Scenes.Passage) -> String:
   "=== {p.id}: {p.text}\\n{textJoin(Lists.map(p.choices, choice), \\"\\\\n\\")}"
 def rules(text: String) -> String:
@@ -128,7 +134,13 @@ def summary(text: String) -> String:
 def vars() -> Scenes.Vars:
   Scenes.readerVars(Lists.append(Lists.append(Lists.List.nil({}), {name: "cups", value: "2"}), {name: "wound", value: "12"}), Lists.append(Lists.List.nil({}), {name: "wound", value: "1"}))
 def render(text: String) -> String:
-  Spween.rendered(text, vars())
+  Spween.rendered(text, vars(), 0n)
+def drawnWith(text: String, n: Nat) -> String:
+  Spween.rendered(text, vars(), n)
+def hashed(text: String) -> Nat:
+  Scenes.hashed(text)
+def pick(n: Nat) -> String:
+  Scenes.drawn(Lists.append(Lists.append(Lists.List.nil({}), {value: "a", weight: 1n}), {value: "b", weight: 3n}), n)
 def wing(text: String) -> String:
   match Spween.wing(text):
     case refused(r): "refused: {r.reason}"
@@ -136,10 +148,37 @@ def wing(text: String) -> String:
 """
 
 
-def summary(text, what="summary"):
-    out = run_pure("Spween", what, label(text), probe=PROBE, limits={"ticks": "1000000"})
+def summary(text, what="summary", *more):
+    out = run_pure("Spween", what, label(text), *more, probe=PROBE, limits={"ticks": "1000000"})
     assert out["status"] == "finished", out
     return out["value"]["value"], out["ticksUsed"]
+
+
+# Scenes.hashed, written again: FNV-1a over printable ASCII (any other character counts as 95), modulo 2^32 - 5.
+PRINTABLE = "".join(chr(c) for c in range(32, 127))
+
+
+def hashed(text):
+    h = 2166136261
+    for ch in text:
+        h = (h * 16777619 + (PRINTABLE.index(ch) if ch in PRINTABLE else 95) + 1) % 4294967291
+    return h
+
+
+def drawn(alternatives, n):
+    """Scenes.drawn: (value, weight) pairs, the one n modulo the total lands in."""
+    r = n % sum(w for _, w in alternatives)
+    for value, weight in alternatives:
+        if r < weight:
+            return value
+        r -= weight
+
+
+def turn_draw(reply):
+    """The draw a turn makes (Scenes.turnDraw), from its receipt: the height it read (its entry's, less one), its
+    principal and its intent."""
+    receipt = reply["receipt"]
+    return hashed("%d %s %s" % (receipt["height"] - 1, receipt["identity"]["principal"], receipt["identity"]["intent"]))
 
 
 # The braid, as a resident types it (docs/OVERHAUL.md section 2): guards that read the outside (a thing's field, a
@@ -176,7 +215,7 @@ class Parse(unittest.TestCase):
     def test_refusals_name_the_missing_piece_with_the_line_to_add_and_prose_alone_is_a_scene(self):
         body = "---\nid: s\n---\n=== a\nText.\n* [Go]\n  %s\n  -> END\n"
         long = "---\nid: s\n---\n=== a\n%s\n* [Go]\n  -> END\n"
-        for text, refusal in ((TAVERN, "refused: weight: a scene is entered by name here, never drawn by weight"),
+        for text, refusal in ((TAVERN, "refused: weight: a scene is entered by name here, never drawn; weight weighs a draw inside one"),
                               ("---\nid: s\n---\n=== a\n* [Go] { inventory.sword }\n  -> END\n",
                                "refused: inventory.sword: a room reads what the reader keeps or holds as keeps.<thing>, holds.<thing> or has.<thing>"),
                               ("---\nid: s\nrequires:\n  has: [inventory.sword]\n---\n=== a\n", "refused: inventory.sword: a room reads"),
@@ -278,13 +317,37 @@ class Parse(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertEqual(summary(text, "render")[0], shown)
         for text, refusal in (("=== a\nThe { door.\n", "refused: { door.: a { opens text read at reading; close it with }"),
-                              ("=== a\n{1a b}\n", "refused: {1a b}: in braces goes a variable ({cups}, {my.cups}) or a guard and its text ({ cups >= 1: … | … })"),
+                              ("=== a\n{1a b}\n", "refused: {1a b}: in braces goes a variable ({cups}, {my.cups}), a guard and its text ({ cups >= 1: … | … }) or a draw ({~ … | … })"),
                               ('=== a\n{ "bell/1".tended >= 1: rung }\n', 'refused: { "bell/1".tended >= 1: rung }: text reads the room\'s variables and yours (my.), not the town\'s'),
                               ("=== a\n{ cups: one | two | three }\n", "refused: { cups: one | two | three }: a guard's text is one, or two after |"),
                               ("=== a\n{ cups: one {a b} }\n", "refused: {a b}: in braces goes"),
                               ("=== a\nA.\n* [Go]\n  {cups\n", "refused: {cups: a { opens text read at reading")):
             with self.subTest(text=text):
                 self.assertTrue(summary(text)[0].startswith(refusal), summary(text)[0])
+
+    def test_a_draw_is_weighed_as_spween_weighs_and_hashed_from_what_the_journal_holds(self):
+        # two or more -> under a choice draw one; spween's weight, 10 where none is written
+        text, _ = summary("=== a\nA.\n* [Pick up the phone]\n  -> b weight: 3\n  -> c\n  -> END weight: 1\n* [Go] -> b\n=== b { cups >= 1 }\nB.\n=== c\nC.\n")
+        self.assertIn("  * Pick up the phone [cups >= 1] () -> b among b 3, c 10, END 1\n  * Go [cups >= 1] () -> b\n", text)
+        self.assertEqual(summary("=== a\n* [Go]\n  -> a weight: 0\n  -> b weight: 0\n=== b\n")[0], "refused: a choice's draw has weights that add to nothing")
+        self.assertEqual(summary("=== a\n* [Go]\n  -> a\n  -> nowhere\n")[0], "refused: -> nowhere: no passage of that name; add === nowhere, or point it at one that is")
+        self.assertTrue(summary("=== a\n{~ a weight: 0 | b weight: 0 }\n")[0].startswith("refused: {~ a weight: 0 | b weight: 0 }: a draw's weights add to nothing"))
+        # the hash and the weighed pick, against this file's own reckoning of them
+        for text in ("", "12 did:plc:glm t3", "井戸 «чашка»"):
+            self.assertEqual(int(summary(text, "hashed")[0]), hashed(text), text)
+        self.assertEqual([run_pure("Spween", "pick", nat(n), probe=PROBE)["value"]["value"] for n in range(6)],
+                         [drawn([("a", 1), ("b", 3)], n) for n in range(6)])
+        # a text's draws: each brace its own, by weight, the same for the same draw
+        text = "{~ the trucker | the regular weight: 3 | static weight: 0 }, then {~ rain | snow}."
+        seen = set()
+        for n in (0, 1, 2, 7, 99, 4294967290):
+            got = summary(text, "drawnWith", nat(n))[0]
+            self.assertEqual(got, summary(text, "drawnWith", nat(n))[0])
+            first = drawn([("the trucker", 10), ("the regular", 3), ("static", 0)], hashed("%d 0" % n))
+            second = drawn([("rain", 10), ("snow", 10)], hashed("%d 1" % n))
+            self.assertEqual(got, "%s, then %s." % (first, second), n)
+            seen.add(got)
+        self.assertGreater(len(seen), 1)
 
     def test_a_verb_stays_ascii_and_a_cast_is_read_as_before(self):
         text, _ = summary("=== a\n* [Go]\n  ~ ring bell/1\n  ~ call(\"ring\", \"bell/1\")\n")
@@ -374,7 +437,7 @@ class Made(test_chain.Chain):
         again = self.say("scene", "```spween\n" + WELL + "```\n", identity="post-well-2")
         self.assertEqual(again["offers"][0]["text"], "ROOM The Wishing Well is at scene/room/2. Enter: delvetalk scene/room/2 enter\n")
         bad = self.say("scene", "```spween\n" + TAVERN + "```\n", identity="post-tavern")
-        self.assertEqual(self.refusal(bad), ("spween", "weight: a scene is entered by name here, never drawn by weight"))
+        self.assertTrue(self.refusal(bad)[1].startswith("weight: a scene is entered by name here, never drawn;"), self.refusal(bad))
 
     def test_guards_effects_end_and_the_cooldown(self):
         self.made()
@@ -400,7 +463,7 @@ class Made(test_chain.Chain):
         # record's law to refuse (no method made it).
         early = self.say(well, "delvetalk %s enter" % well)
         self.assertEqual(self.refusal(early), ("cooldown", "One who left enters again only after the cooldown: from clock %d." % (at + 3)))
-        append = {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(GLM), handle=label(""), at=label("intro")))}
+        append = {"tag": "variant", "label": "insert", "payload": record(row=record(who=label(GLM), handle=label(""), at=label("intro"), draw=nat(0)))}
         keep = {"tag": "variant", "label": "keep", "payload": record()}
         forged = self.host.send(op="world-propose", principal="did:plc:kimik3", identity="forged", roots=[{"object": well, "version": version}],
                                 writes=[{"object": well, "edits": [record(presence=append, vars=keep, left=keep)]}])
@@ -481,6 +544,34 @@ class Made(test_chain.Chain):
         twice = self.say(room, "delvetalk %s choose / choice: Wind it" % room)["offers"][0]["text"]
         self.assertIn("you are at clock:\nIt turns for you, 2 times now.\n\nThe clock shows 2. You wound it twice; the hand knows you.\n", twice)
         self.assertIn("you are at clock:\nThe clock shows 2. The hand points nowhere.\n", self.card(room, KIM))
+
+    def test_a_choice_draws_its_passage_and_a_text_its_words_from_the_turn_and_replay_draws_the_same(self):
+        phone = ("---\nid: phone\n---\n=== hall\nA wall phone.\n* [Pick up the phone]\n  -> trucker weight: 3\n  -> regular\n  -> static weight: 1\n"
+                 "=== trucker\nA trucker, {~ hauling milk | hauling nothing | hauling the night}.\n-> hall\n=== regular\nShe says clocks are local.\n-> hall\n"
+                 "=== static\nStatic.\n-> hall\n")
+        self.assertEqual(self.say("scene", "```spween\n" + phone + "```\n", identity="post-phone")["result"]["label"], "done")
+        self.deliver_all()
+        room = self.WELL_ID
+        self.say(room, "delvetalk %s enter" % room)
+        cards = []
+        for n in range(8):
+            picked = self.say(room, "delvetalk %s choose / choice: Pick up the phone" % room, identity="phone-%d" % n)
+            draw = turn_draw(picked)
+            want = drawn([("trucker", 3), ("regular", 10), ("static", 1)], hashed("%d hall.1" % draw))
+            self.assertEqual((picked["result"]["label"], plain(picked["result"]["payload"])), ("moved", {"to": want}), n)
+            card = picked["offers"][0]["text"]
+            if want == "trucker":
+                hauling = drawn([("hauling milk", 10), ("hauling nothing", 10), ("hauling the night", 10)], hashed("%d 0" % draw))
+                self.assertIn("A trucker, %s.\n" % hauling, card)
+            self.assertEqual(self.card(room).split("Choices:")[0], card.split("Choices:")[0])  # the same at every reading
+            cards.append(self.card(room))
+            self.say(room, "delvetalk %s choose / choice: Continue" % room, identity="back-%d" % n)
+        self.assertGreater(len({c.split(":\n")[1].split("\n")[0] for c in cards}), 1)  # more than one caller in eight
+        # a replay of the journal draws every one again: the same state and the same card
+        self.say(room, "delvetalk %s choose / choice: Pick up the phone" % room, identity="phone-last")
+        before = (self.view(room), self.card(room))
+        self.reopen()
+        self.assertEqual((self.view(room), self.card(room)), before)
 
     def test_an_unmet_requirement_keeps_everyone_out(self):
         sealed = WELL.replace("wishing_well", "sealed_well").replace("not: [well_sealed]", "flags: [well_open]")

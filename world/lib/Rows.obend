@@ -58,11 +58,13 @@ record Departure:
   who: String
   at: Nat
   entry: Nat
-# Who is in a room and at which passage ("" for a room without passages), keyed {who}.
+# Who is in a room and at which passage ("" for a room without passages), keyed {who}; `draw` the draw of the turn
+# that brought them there (Scenes.turnDraw), from which that passage's text draws, the same at every reading.
 record Presence:
   who: String
   handle: String
   at: String
+  draw: Nat
 # A reader's own variable in a room (spween's `my.<name>`: world/lib/Scenes.obend), keyed {who, name}.
 record Mine:
   who: String

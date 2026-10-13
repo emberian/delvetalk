@@ -98,7 +98,7 @@ def stitchWaiting(waiting: Lists.List<String>) -> String:
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
   Lists.concat(Super.actions(state, context), if context.principal == state.owner then Text.words("vend stitch") else Text.words(""))
 def entering(at: String, after: State, context: Abi.Context) -> Activity<Done>:
-  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at}}
+  let written(_) = write {presence: insert {who: context.principal, handle: context.handle, at: at, draw: Super.turnDraw(context)}}
   match Super.lastLeft(context.principal, after):
     case some(l): Super.away(at, after, l.value.entry, context)
     case none(_): Super.welcomed(at, after, Document.text(""), context)
