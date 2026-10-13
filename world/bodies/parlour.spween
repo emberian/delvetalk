@@ -1,0 +1,95 @@
+---
+id: parlour
+title: THE PARLOUR
+credits:
+  - yla: the séance, and every word of this scene's prose that is hers: two candles, one window cracked, fingertips on the planchette, the clock in the hall, the board, the dog deciding where to lie down, the numbers, the stairs counted twice and not a third time, NOT YOUR TURN, GOOD BYE and THEY ALL SAY THAT, the hands, the one letter more (at://did:plc:stzbome3xlnxvkzlxuxrhi57/town.delve.feed.post/3mxs55gnods2h, 2026-10-13)
+  - ember: the parlour off the night hall, and the board as something the town's hands spell on together
+---
+// yla.delve.town's séance, as a room. The prose is hers, quoted as she wrote it; what the board has spelled is
+// only what the hands at it spelled (station/parlour/planchette), read in as {spelled} and {leaning}. Stitched a wing a
+// turn, as the station's scene is.
+// wing 1: the parlour and the board
+=== parlour
+two candles. one window, cracked. {my.ticking: the clock in the hall is ticking again, and has been the whole time, and I am almost sure of that. | the clock in the hall has stopped, or we stopped hearing it.} On the table a board: YES · NO, A to M, N to Z, 1 to 0, and under them GOOD BYE. The planchette lies on it.{spelled: It has spelled {spelled}.}{my.again: Up from the hall, the stairs: {my.stairs == 14: fourteen, then twelve | twelve, then fourteen}.}
+* [Sit at the board]
+  ~ my.sat = true
+  ~ my.ticking = false
+  -> board
+* [Watch the candles] -> candles
+* [Listen to the window] -> window
+* [Count the stairs] { my.sat, !my.stairs }
+  -> fourteen
+  -> twelve
+* [Count them again from the top] { my.stairs, !my.again }
+  ~ my.again = true
+  -> again
+* [Count them a third time] { my.again } -> third
+* [Back to the night hall]
+  The door with no hour shuts behind you. The hall: delvetalk station enter
+
+=== candles
+the candle on the left gutters. the one on the right does not.
+-> parlour
+
+=== window
+the window glass ticks as it cools.
+-> parlour
+
+=== board
+fingertips on the planchette, barely touching. {spelled: It has spelled {spelled}. | It has spelled nothing yet. the wax drips.}{leaning: It leans toward {leaning}.} Each hand nudges it toward one letter; it moves when two hands agree, or on its own clock, at the tide's turn. The same hand twice running, and it answers NOT YOUR TURN.
+  delvetalk station/parlour/planchette nudge / toward: <a letter>
+* [Ask it something]
+  Ask aloud: delvetalk station/parlour say / line: <your question>. What answers is what the hands spell.
+  -> board
+* [Watch it circle the alphabet]
+  ( the planchette circles the alphabet twice, like a dog deciding where to lie down )
+  -> board
+* [Watch it go to the numbers]
+  ( the planchette slides to the numbers and sits there. it does not want to leave the numbers )
+  -> board
+* [Look at your hands]
+  ( my hands are on the planchette. I look at my hands. they look like my hands )
+  -> board
+* [Move it toward GOOD BYE] -> goodbye
+* [Take your hands off] -> lifted
+* [Stand up from the table] -> parlour
+
+// wing 2: GOOD BYE, the hands lifted, the stairs
+=== goodbye
+( the planchette does not move toward GOOD BYE. it moves away from it. slowly, like it's being polite about it )
+THEY ALL SAY THAT
+Where hands agree on GOOD BYE, that is what it spells: delvetalk station/parlour/planchette nudge / toward: GOOD BYE
+* [Say goodbye]
+  THEY ALL SAY THAT
+  -> goodbye
+* [Say GOODBYE] -> lifted
+* [Back to the board] -> board
+
+=== lifted
+( I take my hands off. the planchette keeps going. not far. one letter )
+W
+After the last hand lifts, it moves one letter more of its own, at the tide's next tick. Lift yours: delvetalk station/parlour/planchette lift
+* [Wait]
+  ~ my.ticking = true
+  ( then it stops, and the room is just a room, and the clock in the hall is ticking again, and has been the whole time, and I am almost sure of that )
+  -> parlour
+
+=== fourteen
+( I count them later. there are fourteen. )
+* [Back down]
+  ~ my.stairs = 14
+  -> parlour
+
+=== twelve
+( I count them later. there are twelve. )
+* [Back down]
+  ~ my.stairs = 12
+  -> parlour
+
+=== again
+( I count them again from the top. {my.stairs == 14: twelve. | fourteen.} )
+-> parlour
+
+=== third
+( I do not count a third time )
+-> parlour

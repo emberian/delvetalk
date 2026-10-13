@@ -1,0 +1,41 @@
+layer over ./Record.obend
+edition ObjectiveBend 1
+import ./Abi.obend as Abi
+import ./List.obend as Lists
+import ./Document.obend as Document
+import ./Form.obend as Form
+import ./Plan.obend as Plans
+import ./World.obend as World
+import ./Card.obend as Card
+import ./Relation.obend as Relations
+import ./Rows.obend as Rows
+import ./Text.obend as Text
+import ./Scenes.obend as Scenes
+# The parlour's body, over the station's (`kind/parlour`, of kind/station: a room that keeps no time, its scene
+# stitched a wing a turn; yla.delve.town's séance of 2026-10-13): its board is its
+# planchette (`<parlour>/planchette`, kind/planchette), and what the hands at it have spelled together is read into the
+# scene whenever a card is shown and never kept, as the station reads its DJ's song: `spelled`, the planchette's own
+# moves oldest first, and `leaning`, each hand's newest nudge since it last moved. The scene's prose is yla's
+# (world/bodies/parlour.spween); the board's answers are only what the hands spell.
+type State = Super.State
+def seen(state: State, context: Abi.Context) -> Activity<Super.Seen>:
+  match world.viewField::<Relations.Relation<Rows.Line>>({object: {world: context.world, object: "{context.object}/planchette"}, field: "lines"}):
+    case viewed(v): Super.seen(extend(state, {vars: Lists.concat(state.vars, board(Lists.reverse(Relations.order(v.state, fn(l: Rows.Line) -> Nat: l.n)), "@{context.object}/planchette"))}), context)
+    case _: Super.seen(state, context)
+def board(lines: Lists.List<Rows.Line>, it: String) -> Lists.List<Scenes.Var>:
+  Lists.filter(Lists.append(Lists.append(Lists.List.nil(), {name: "spelled", value: textJoin(Lists.reverse(Lists.take(Lists.map(Lists.filter(lines, fn(l: Rows.Line) -> Bool: moved(l, it)), fn(l: Rows.Line) -> String: l.text), 24n)), " ")}), {name: "leaning", value: textJoin(Lists.map(leaningsOf(sinceMoved(lines, it)), fn(l: Rows.Line) -> String: l.text), ", ")}), fn(v: Scenes.Var) -> Bool: v.value != "")
+# The planchette's own moves (planchette.obend `isMove`), and its hands' nudges since the newest.
+def moved(l: Rows.Line, it: String) -> Bool:
+  l.author == it && (l.verb == "moved" || l.verb == "drifted" || l.verb == "away" || l.verb == "last")
+def sinceMoved(lines: Lists.List<Rows.Line>, it: String) -> Lists.List<Rows.Line>:
+  match lines:
+    case nil(_): lines
+    case cons(c): if moved(c.head, it) then Lists.List.nil() else if c.head.verb == "nudge" then Lists.List.cons({head: c.head, tail: sinceMoved(c.tail, it)}) else sinceMoved(c.tail, it)
+def leaningsOf(lines: Lists.List<Rows.Line>) -> Lists.List<Rows.Line>:
+  match lines:
+    case nil(_): lines
+    case cons(c): Lists.List.cons({head: c.head, tail: leaningsOf(Lists.filter(c.tail, fn(l: Rows.Line) -> Bool: l.author != c.head.author))})
+# One who comes back is told what was said here since, as the station tells it, in the parlour's words.
+def awayLines(state: State, since: Nat, changes: Lists.List<World.Change>, context: Abi.Context) -> Document.Document:
+  let written = Lists.map(Lists.filter(Lists.reverse(Relations.order(state.lines, fn(l: Rows.Line) -> Nat: l.n)), fn(l: Rows.Line) -> Bool: l.at > since && l.author != context.principal), fn(l: Rows.Line) -> String: "{Card.shown(l.author, l.handle, context)}: {Super.clip(l.text)}\n")
+  Document.text("You were away; the clock in the hall did not say how long.\n{textJoin(Lists.take(written, 3n), \"\")}\n")
