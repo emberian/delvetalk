@@ -446,15 +446,19 @@ The document has `id`, `alsoKnownAs: ["at://<hostname>"]`, `#atproto` Multikey a
 front origin. Repo methods at that origin select the account by `repo`/`did`; the hosted hostname selects only
 its own account. The world document alone advertises `#delvetalk`.
 
-A k256 key is generated once per account, never derived from its name, and stored as PKCS#8 PEM, mode 0400,
-under `<state>/worlds/<world>/hosted/<name>.key`. Guest file stems are their name; Zulip stems are
-`<id>.<realm>.zulip`. The directory is 0700. Beside it, `<name>.json` holds only `{principal, counter, prev,
-records}` and `<name>.lock` serializes writes across front and bridge processes. Keys are never repository
-records or Git files; deployment must exclude `state/worlds/*/hosted/*.key` from both the backup mirror and
-`/var/backups/delvetalk/delvetalk-<stamp>.tar.gz` before these accounts run (DEPLOY "Hosted account origins").
-Keep keys separately under operator custody; restore the same keys beside restored snapshots. A missing key
-is an error, never an implicit replacement. DelveTalk holds the key: the DID vouches no more than the
-invitation. It makes the guest addressable, not trusted.
+Each account's k256 key derives from the world's repository private scalar (32 big-endian bytes, including
+for a p256 town key) with HKDF-SHA256, no salt, 32 output bytes. Info is `delvetalk hosted key v1`, NUL,
+the UTF-8 DID, NUL, and a four-byte big-endian counter starting at zero; zero or a scalar at least the
+secp256k1 order retries with the next counter. No account key or lock file is written.
+`<state>/worlds/<world>/hosted/<name>.json` holds `{principal, counter, prev, records, key}` and optional
+`epochs: [{counter, cause, key}]`. Guest stems are names; Zulip stems are `<id>.<realm>.zulip`.
+The 0700 directory's file descriptor carries one flock across front and bridge reads/writes. Backups keep
+snapshots; restoring them with the same town key reproduces documents and signed heads exactly.
+Startup and first access reconcile a changed key with one higher-rev sync head, `prev` null, records unchanged.
+Legacy snapshots migrate once, recording cause `migration`; legacy key/lock files are deleted only after
+the snapshot is durable. Missing town keys refuse provisioning and hosted reads with 503 `RepoNotServed`;
+invitation acceptance leaves the code open, and Zulip observations roll back for retry. Loss of the town
+key loses every hosted key too. DelveTalk's custody vouches no more than the invitation: addressability, not trust.
 
 **Request repositories are built.** The sole collection is `online.fg-goose.gsb.request`. Public describeRepo,
 listRecords/getRecord, getRepo/getRecord/getLatestCommit, getRepoStatus/listBlobs, and hostname-selected
@@ -586,7 +590,7 @@ public is a record; every act is a record or an XRPC call.
 | L4 | transport | **Built**: subscribeRepos, durable event seq/log, bounded cursor replay, rotation `#identity` and epoch/downtime `#sync` | a consumer inverting over `prevData` follows 1,000 heights, resumes from a cursor; workers free under ten subscribers |
 | L5 | transport | **Built**: service-auth verifier, `#delvetalk` in did.json, `getEntry`, POST `act`, `try`, `plan`, caller projections, anonymous provenance-keyed answers and private previews | `tests/test_serviceauth.py`: wrong audience/method/time/header/curve, high-S and replay: 401 with no host call; bare and fragment audiences accepted; rotation refresh once; bounded nonce custody, issuer rate limit and one-block CAR. `tests/test_xrpc_acts.py`: retries, private/public projections, no-write exact previews, atomic plans, malformed bodies, HTTP methods and issuer rate limits; real-host composition. getServiceAuth/proxy untested live |
 | L6 | transport; host remainder | **Built:** holder-only `openSession`, `getSession`, `listSessionRecords`, scratch act/try/plan; **remainder:** named readers and separate read/write/share/publish permissions require a host-owned `world-scratch` readers op | `tests/test_xrpc_sessions.py`: changed scratch card, identical town journal/answers/mirror plan/getRepo, unknown-holder and nonexistent response bytes equal, invalid tokens call no host, preview writes nothing, expiry refuses every scratch read/turn, response content absent from access log; existing `/scratch` controls retained. Host remainder completion: the host admits a named reader, distinguishes each permission and refuses unnamed principals; transport forwards that host judgement with no reader custody |
-| L7 | transport; ops owner | **Built:** bidirectional guest/Zulip mapping, hosted documents and per-account keys, request-only signed repos, invitation writes and local verified polling. **Remainder:** wildcard DNS/certificates and backup key exclusions (owner), Zulip bridge request write, two-way links | `tests/test_hosted.py`: Host isolation, real-key proofs, credential isolation, replace/delete/restart, bounds and one answered turn per URI. §4 records the remaining completion checks |
+| L7 | transport; ops owner | **Built:** bidirectional guest/Zulip mapping, hosted documents and derived k256 keys, request-only signed repos, invitation writes, local verified polling, backup restoration, rotation and legacy migration. **Remainder:** wildcard DNS/certificates (owner), Zulip bridge request write, two-way links | `tests/test_hosted.py`: derivation vectors/rejection, JSON-only restore, rotation/migration epochs, keyless refusals, Host/proof/credential isolation, replace/delete/restart, bounds, concurrent writers and one answered turn per URI. §4 records the remaining completion checks |
 | L8 | host | `plan` as one turn (built, lane/plan; by record since L1) | three calls, the third refused: nothing written, one receipt |
 
 L1 ∥ L2 ∥ L5 (L5 is what gives a PDS-only resident `try`); L3 after L1; L4 serves the signed entry tree today; L6 after L5; L7 after L5; L8 any

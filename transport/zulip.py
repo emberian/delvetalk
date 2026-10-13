@@ -157,7 +157,11 @@ class ZulipObserver(Observer):
             if m.get('sender_id') != me['user_id'] and not self.before_start(created_at(m)) and len(m['content'].encode()) <= MAX_TEXT:
                 obs = self.observation(m, me['full_name'].strip().lower())
                 from transport.hosted import Accounts
-                Accounts(self.st).account(obs['author']['did'], create=True)
+                from transport.repo import Refusal
+                try:
+                    Accounts(self.st).account(obs['author']['did'], create=True)
+                except Refusal as r:
+                    raise Failure(r.body['error'], r.body['message']) from None
                 self.db.execute('INSERT INTO posts VALUES(?,?,?,?)', (uri, obs['cid'], '', canonical(obs)))
                 self.db.execute('INSERT INTO observations(uri,json) VALUES(?,?)', (uri, canonical(obs)))
                 fresh = True

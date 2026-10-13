@@ -334,6 +334,7 @@ class Front(ThreadingHTTPServer):  # threaded so a long poll holds one thread, n
                          st.world, st.answers, st.repo_ledger, c.firehose_port if not hand else 0)  # the journal as AT Protocol records, read only
         self.accounts = Accounts(st)
         if not hand:
+            self.accounts.reconcile()
             self.accounts.provision_guests()
             self.serviceauth = Verifier(self.repo.did, identity.client, clock=clock)
         self.firehose = None
@@ -908,7 +909,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.xrpc_reply(429, {'error': 'RateLimitExceeded', 'message': f'more than {RATE} requests per {WINDOW} seconds'},
                                    [('Retry-After', str(wait))])
         if nsid == 'did.json':
-            return self.reply(200, canonical(repo.did_document()), 'application/did+json')
+            try:
+                return self.reply(200, canonical(repo.did_document()), 'application/did+json')
+            except Refusal as r:
+                return self.xrpc_reply(r.code, r.body)
         if nsid == sessions.OPEN or nsid in sessions.QUERIES:
             return self.session(nsid, self.did)
         if nsid in PROCEDURES:
@@ -928,7 +932,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     repo = self.server.accounts.by_did(target if target.startswith('did:') else 'did:web:' + target)
                 except Refusal as r:
-                    if nsid in WRITES:
+                    if nsid in WRITES or r.body['error'] == 'RepoNotServed':
                         return self.xrpc_reply(r.code, r.body)
             if nsid in WRITES and repo is self.server.repo:
                 return self.xrpc_reply(405, {'error': 'InvalidRequest', 'message': 'the world repository is read-only'})
@@ -1082,6 +1086,8 @@ class Handler(BaseHTTPRequestHandler):
         everything after is the host's, as for anyone."""
         try:
             out = self.server.identity.accept(code, name)
+        except Refusal as r:
+            return self.reply(r.code, canonical(r.body))
         except IdentityError as err:
             return self.fail('identity', f'{err.code}: {ACCEPT_LINES[err.code]}', more={'reason': err.code})
         self.server.record_handle(out['principal'], out['handle'])

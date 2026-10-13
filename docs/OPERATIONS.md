@@ -130,7 +130,9 @@ directory per world for everything that is the world's, the town's included
                                       publications.after; posting/; interpretations/;
                                       bridge.pid, interpret.pid; watch.jsonl, alerted.json;
                                       repo.json (chain epochs), events (durable firehose log);
-                                      requests.json (participant revisions and refused CIDs), answers/
+                                      requests.json (participant revisions and refused CIDs), answers/;
+                                      hosted/*.json (public requests, signing key ids and epochs;
+                                        keys derived from repo_key and DID, directory fd flock)
     <repo_keys>/<world>.key           the repository's signing key
 
 `events` is fsynced before emission; its independent seq survives carry and front restart. Backups keep it

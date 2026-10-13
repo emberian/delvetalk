@@ -1,9 +1,10 @@
 """DelveTalk-custodied public request repositories (ATPROTO §4).
 
 The front and bridge share State.hosted. Each write atomically replaces one
-public snapshot under an account flock; reads rebuild its bounded sorted MST
+public snapshot under a hosted-directory flock; reads rebuild its bounded sorted MST
 and deterministic signed head. No journal, feed, private projection or secret
-is a record. The per-account key is separate from its public snapshot.
+is a record. Account k256 keys derive from the town repository scalar and DID;
+snapshots retain the signing key's did:key and rotation/migration epochs.
 """
 from contextlib import contextmanager
 import fcntl
@@ -14,7 +15,7 @@ import urllib.parse
 
 from transport.atproto.cbor import CID, block, car, from_json
 from transport.atproto.mst import Tree
-from transport.atproto.sign import Key, tid
+from transport.atproto.sign import Key, derive_key, tid
 from transport.delve import Failure, canonical
 from transport.acts import judge_call
 from transport.identity import hosted_identity, verified_principals
@@ -40,9 +41,18 @@ class Accounts:
 
     def provision_guests(self):
         """Accepted guests already in identity.sqlite have the same hosted address as new arrivals."""
+        if not self.st.repo_key.exists():
+            return
         for principal in sorted(verified_principals(self.st)):
             if principal.startswith('guest:' + self.host + ':'):
                 self.account(principal, create=True)
+
+    def reconcile(self):
+        """Reconcile every existing hosted snapshot with the current town key, including legacy custody."""
+        if not self.st.repo_key.exists():
+            return
+        for path in sorted(self.st.hosted.glob('*.json')):
+            self.account(json.loads(path.read_text())['principal'])
 
     def account(self, principal, create=False):
         did = hosted_identity(principal, self.host)
@@ -51,10 +61,8 @@ class Accounts:
         if name.endswith('.guest'):
             name = name[:-6]
         account = HostedRepo(self.st, principal, did, name)
-        if create:
-            account.provision()
-        elif not account.snapshot.exists():
-            raise Refusal(400, 'RepoNotFound', 'no such hosted account')
+        with account.locked():
+            account.prepare(create)
         return account
 
     def by_did(self, did):
@@ -102,31 +110,53 @@ class HostedRepo(Repo):
     def __init__(self, st, principal, did, name):
         self.st, self.principal, self.did, self.handle = st, principal, did, did[8:]
         self.origin = st.config.origin.rstrip('/')
-        self.key_path, self.snapshot, self.lock_path = st.hosted_paths(name)
+        self.snapshot = st.hosted_paths(name)
 
     @contextmanager
     def locked(self):
         self.st.hosted.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with open(self.lock_path, 'a+b') as lock:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        fd = os.open(self.st.hosted, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
             try:
                 yield
             finally:
-                fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
-    def provision(self):
-        with self.locked():
-            if self.snapshot.exists():
-                Key.load(self.key_path)  # lost keys are never silently replaced
-                return
-            if not self.key_path.exists():
-                key = Key.generate()
-                fd = os.open(self.key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
-                with os.fdopen(fd, 'wb') as f:
-                    f.write(key.pem())
-                    f.flush()
-                    os.fsync(f.fileno())
-            State.write(self.snapshot, {'principal': self.principal, 'counter': 0, 'prev': None, 'records': {}})
+    def prepare(self, create=False):
+        """Under the directory lock, derive the key and durably reconcile its signing epoch."""
+        try:
+            self.key = derive_key(Key.load(self.st.repo_key), self.did)
+        except FileNotFoundError:
+            raise Refusal(503, 'RepoNotServed', 'hosted accounts require the town repository key') from None
+        if not self.snapshot.exists():
+            if not create:
+                raise Refusal(400, 'RepoNotFound', 'no such hosted account')
+            State.write(self.snapshot, {'principal': self.principal, 'counter': 0, 'prev': None,
+                                       'records': {}, 'key': self.key.did_key})
+            self.sync_directory()
+        stored = self.stored()
+        legacy_key, legacy_lock = self.snapshot.with_suffix('.key'), self.snapshot.with_suffix('.lock')
+        if stored.get('key') != self.key.did_key:
+            migration = 'key' not in stored
+            old_key = Key.load(legacy_key).did_key if migration and legacy_key.exists() else stored.get('key')
+            if old_key != self.key.did_key:
+                counter = max(stored['counter'] + 1, time.time_ns() // 1000)
+                if counter >= 1 << 53:
+                    raise Refusal(503, 'RepoNotServed', 'repository revision counter exhausted')
+                stored.update(counter=counter, prev=None)
+                stored.setdefault('epochs', []).append({'counter': counter,
+                    'cause': 'migration' if migration else 'rotation', 'key': self.key.did_key})
+            stored['key'] = self.key.did_key
+            State.write(self.snapshot, stored)
+            self.sync_directory()
+        # Cleanup follows the durable snapshot, including retry after an interrupted migration.
+        if legacy_key.exists() or legacy_lock.exists():
+            self.sync_directory()
+            legacy_key.unlink(missing_ok=True)
+            legacy_lock.unlink(missing_ok=True)
             self.sync_directory()
 
     def sync_directory(self):
@@ -143,7 +173,9 @@ class HostedRepo(Repo):
         return value
 
     def did_document(self):
-        return repository_document(self.did, self.handle, self.origin, Key.load(self.key_path))
+        with self.locked():
+            self.prepare()
+            return repository_document(self.did, self.handle, self.origin, self.key)
 
     def collection(self, q):
         if q.get('collection') != COLLECTION:
@@ -156,23 +188,24 @@ class HostedRepo(Repo):
         for rkey, value in sorted(stored['records'].items()):
             records[rkey] = block(from_json(value))
             tree.append(f'{COLLECTION}/{rkey}'.encode(), records[rkey][0])
-        commit = Key.load(self.key_path).commit(self.did, tree.root(), tid(stored['counter']),
-                                              CID.parse(stored['prev']) if stored['prev'] else None)
+        commit = self.key.commit(self.did, tree.root(), tid(stored['counter']),
+                                 CID.parse(stored['prev']) if stored['prev'] else None)
         return tree, records, commit
 
     def serve(self, host, method, nsid, query, principal):
         try:
-            if nsid in WRITES:
-                if method != 'POST':
-                    raise Refusal(405, 'InvalidRequest', 'a repository write uses POST')
-                if not principal:
-                    raise Refusal(401, 'AuthRequired', 'hosted writes require an invitation credential')
-                if principal != self.principal:
-                    raise Refusal(403, 'Denied', 'credential belongs to another principal')
-                with self.locked():
+            with self.locked():
+                self.prepare()
+                if nsid in WRITES:
+                    if method != 'POST':
+                        raise Refusal(405, 'InvalidRequest', 'a repository write uses POST')
+                    if not principal:
+                        raise Refusal(401, 'AuthRequired', 'hosted writes require an invitation credential')
+                    if principal != self.principal:
+                        raise Refusal(403, 'Denied', 'credential belongs to another principal')
                     out = self.write_record(WRITES[nsid], query)
-                return 200, out, 'application/json'
-            return super().serve(host, method, nsid, query, principal)
+                    return 200, out, 'application/json'
+                return super().serve(host, method, nsid, query, principal)
         except Refusal as r:
             return r.code, r.body, 'application/json'
 
@@ -233,7 +266,8 @@ class HostedRepo(Repo):
 
     def describe(self, host, q, who):
         self.repo(q)
-        return {'did': self.did, 'handle': self.handle, 'didDoc': self.did_document(),
+        return {'did': self.did, 'handle': self.handle,
+                'didDoc': repository_document(self.did, self.handle, self.origin, self.key),
                 'collections': [COLLECTION], 'handleIsCorrect': True}
 
     def listing(self, rkey, value):

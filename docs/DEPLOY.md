@@ -125,15 +125,17 @@ does **not** cover `42.chat.example.zulip.gsb.fg-goose.online`. Each realm needs
 hostname serves its matching DID document, and sync.getRecord verifies under its #atproto key. This lane
 installs no records or certificates and starts no process.
 
-Account keys live at `<state>/worlds/<world>/hosted/<stem>.key`, mode 0400, directory 0700;
-guest stems are names and Zulip stems are `<id>.<realm>.zulip`. They are generated randomly once, not derived.
-`deploy/backup.sh` excludes `hosted/*.key` and `hosted/*.lock` from the mirror rsync and from the tarball, so no backup holds an account key. Its named paths are
+Account k256 keys derive with HKDF-SHA256 from the world's town-key scalar and each hosted DID (ATPROTO §4).
+Only public `<state>/worlds/<world>/hosted/<stem>.json` snapshots are written, including signing key identifiers
+and rotation/migration epochs; the 0700 directory itself carries the flock. Guest stems are names and Zulip
+stems are `<id>.<realm>.zulip`. `deploy/backup.sh` keeps hosted snapshots in
 `/var/backups/delvetalk/mirror/` and `/var/backups/delvetalk/delvetalk-<stamp>.tar.gz`, then the pulled
-`/tank/delvetalk-backups/` copies. Keep public `.json` snapshots, counters, request consumption and answers
-in the state backup; custody keys belong in a separate operator-managed secret store. Restore the same
-keys to the same stems; a missing key must fail, not produce a new identity key. Account keys must be
-carried separately when restoring from a key-free state tarball. Do not remove an existing staging copy
-or backup here; the owner decides its custody.
+`/tank/delvetalk-backups/` copies. Restore snapshots with the same operator-custodied
+`/etc/delvetalk/repo/<world>.key` to reproduce every hosted key and signed head. Loss of that town key loses
+every hosted key too. A box without it starts, but hosted routes and invitation acceptance refuse with
+503 `RepoNotServed`; the invitation stays open. Legacy account keys/locks are removed after durable migration.
+Migrate legacy state with the town key available before running the updated backup script: it no longer
+filters legacy files, and a keyless front cannot migrate them.
 
 Remaining transport completion checks are in ATPROTO §4: a Zulip message written once as a public request
 and consumed once, and reciprocal link records/document claims. Neither is built. Existing Zulip messages
@@ -299,8 +301,8 @@ and refuses an unknown key by name); `DELVETALK_<FIELD>` overrides a field. Comp
 containers: mount paths, secret files, listening addresses and the `.env` values above.
 
 The repository key, once (`transport repokey` refuses an existing file; it prints the `did:key`, which
-`/.well-known/did.json` then names as `#atproto`; the front does not start without the file, so a box deployed
-before the signed repository makes it the same way before its next `up`):
+`/.well-known/did.json` then names as `#atproto`; without it the front serves projections but refuses signed
+repositories, so a box deployed before the signed repository makes it the same way before its next `up`):
 
     install -d -m 0700 -o 10425 -g 10425 /etc/delvetalk/repo
     docker compose run --rm delvetalk-ops python3 -m transport repokey
@@ -321,6 +323,14 @@ it in did.json, and its first signed read records the rotation epoch and serves 
 the same MST. The key directory is read-only in the front; the epoch ledger belongs to its read-write state at
 `/data/state/worlds/<world>/repo.json`, and must be included in backups of the state directory. Keep this ledger
 when replacing a lost key. If the ledger is lost, the next signed read writes a new one; followers must re-sync.
+
+A town-key rotation also rotates every hosted account's derived k256 key and DID document. Front startup
+reconciles existing snapshots; first access also reconciles any changed key. Each snapshot records a
+`rotation` epoch, advances its counter to `max(counter + 1, wall microseconds)`, and serves a sync head over
+the same tree with `prev` null; the next write chains from that head. Records and rkeys stay unchanged,
+old commits are never re-signed, and an unchanged second access changes no bytes. Keep hosted `.json`
+snapshots with their epochs in state backups. Legacy snapshots record `migration` instead; old key and
+lock files are deleted only after the snapshot and directory have been synced.
 
 The root socket's directory, owner 10425, mode 0700, outside the data directory so that no container mounting
 `/data` reaches it:
