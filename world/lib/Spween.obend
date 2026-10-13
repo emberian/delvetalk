@@ -23,6 +23,11 @@ import ./Text.obend as Text
 #   -> target                 unindented, outside a choice: a "Continue" choice to there
 #   // comment                skipped
 #
+# Names: a variable (`gold`, `杯`, `чашки`) is written in one alphabet: ASCII letters, digits and _, or
+# no ASCII letter at all. A passage name (`=== cooler_back`), the frontmatter id and a `-> target` are
+# ASCII letters, digits and _ (a passage names a rule in the room's law text); words in any script go in
+# the title, a choice's label or the prose.
+#
 # A guard's clause is the room's own variable (`a >= 1`, `!b`), what the reader keeps or holds
 # (`keeps.<thing>`, `holds.<thing>`, `has.<thing>` for either; spween's `category.key`), or any
 # condition in the law's grammar (`"bell/1".tended >= 5`, `count(new.presence) >= 2`, `"garden/1"
@@ -69,6 +74,25 @@ def keyChars() -> String:
   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_"
 def isKey(text: String) -> Bool:
   text != "" && textSpan(text, keyChars()) == textLength(text)
+# Every printable ASCII character: a name holding any other is written in another script.
+def ascii() -> String:
+  "{keyChars()} !\"#$%&'()*+,-./:;<=>?@[\\]^`{{|}}~"
+def letters() -> String:
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+# Whitespace (the ideographic space and the no-break space too) and the grammar's marks: ASCII
+# punctuation but _, the CJK and full-width marks, and quotation marks.
+def marks() -> String:
+  " \t\n　 !\"#$%&'()*+,-./:;<=>?@[\\]^`{{|}}~、。，．：；！？「」『』（）［］｛｝【】《》〈〉・＝＋－＜＞«»„“”‘’"
+# A variable is the room's own data, compared as strings by Bend and never read by the law grammar,
+# so a resident's own alphabet costs nothing. What must not happen is two names that look alike and
+# differ (a Cyrillic с before `ups`): Bend has no normalisation or script table, so the line it can
+# hold is one alphabet per name, ASCII or none of it.
+def isVariable(text: String) -> Bool:
+  unmarked(text) && (isKey(text) || textBreak(text, letters()) == textLength(text))
+def unmarked(text: String) -> Bool:
+  text != "" && textBreak(text, marks()) == textLength(text)
+def mixed(text: String) -> Bool:
+  unmarked(text) && isKey(text) == false && textBreak(text, letters()) < textLength(text)
 def unquoted(text: String) -> String:
   if textLength(text) >= 2n && Text.starts(text, "\"") && textDrop(text, textLength(text) - 1n) == "\"" then textTake(textDrop(text, 1n), textLength(text) - 2n) else text
 def keyOf(line: String) -> String:
@@ -161,11 +185,11 @@ def pieces(text: String) -> Lists.List<String>:
 def bounded(test: Scenes.Test, entries: Lists.List<String>, rest: Lists.List<String>, guard: Scenes.Guard) -> GuardRead:
   match entries:
     case nil(_): requirements(rest, guard)
-    case cons(c): if isKey(keyOf(c.head)) then bounded(test, c.tail, rest, Lists.append(guard, {key: keyOf(c.head), test: test, value: unquoted(valueOf(c.head))})) else keyRefused(keyOf(c.head))
+    case cons(c): if isVariable(keyOf(c.head)) then bounded(test, c.tail, rest, Lists.append(guard, {key: keyOf(c.head), test: test, value: unquoted(valueOf(c.head))})) else keyRefused(keyOf(c.head))
 def flagged(test: Scenes.Test, names: Lists.List<String>, rest: Lists.List<String>, guard: Scenes.Guard) -> GuardRead:
   match names:
     case nil(_): requirements(rest, guard)
-    case cons(c): if isKey(c.head) then flagged(test, c.tail, rest, Lists.append(guard, {key: c.head, test: test, value: ""})) else keyRefused(c.head)
+    case cons(c): if isVariable(c.head) then flagged(test, c.tail, rest, Lists.append(guard, {key: c.head, test: test, value: ""})) else keyRefused(c.head)
 def thingsHad(names: Lists.List<String>, rest: Lists.List<String>, guard: Scenes.Guard) -> GuardRead:
   match names:
     case nil(_): requirements(rest, guard)
@@ -175,7 +199,9 @@ def hadRead(read: ClauseRead, names: Lists.List<String>, rest: Lists.List<String
     case bad(b): GuardRead.bad({reason: b.reason})
     case ok(o): thingsHad(names, rest, Lists.append(guard, o.clause))
 def keyRefused(key: String) -> GuardRead:
-  GuardRead.bad({reason: "not a variable: {key}"})
+  GuardRead.bad({reason: if mixed(key) then mixedReason(key) else "not a variable: {key}"})
+def mixedReason(key: String) -> String:
+  "not a variable: {key}; a name is in one alphabet, ASCII letters or none"
 # --- conditions ---------------------------------------------------------------------
 def conditions(text: String) -> GuardRead:
   conditionsFrom(topPieces(text), Lists.List.nil({}))
@@ -222,11 +248,11 @@ def had(text: String, negative: Bool) -> ClauseRead:
   let thing = textDrop(text, at + 1n)
   if category != "keeps" && category != "holds" && category != "has" then ClauseRead.bad({reason: "{text}: a room reads what the reader keeps or holds as keeps.<thing>, holds.<thing> or has.<thing> (either), a thing by its id, as has.porch/goblet"}) else if thing == "" then ClauseRead.bad({reason: "{text}: name the thing by its id, as {category}.porch/goblet"}) else ClauseRead.ok({clause: {key: category, test: if negative then Scenes.Test.lacking({}) else Scenes.Test.holding({}), value: thing}})
 def compared(key: String, test: Scenes.Test, value: String) -> ClauseRead:
-  if isKey(key) then ClauseRead.ok({clause: {key: key, test: test, value: unquoted(value)}}) else clauseRefused(key)
+  if isVariable(key) then ClauseRead.ok({clause: {key: key, test: test, value: unquoted(value)}}) else clauseRefused(key)
 def bare(key: String, test: Scenes.Test) -> ClauseRead:
-  if isKey(key) then ClauseRead.ok({clause: {key: key, test: test, value: ""}}) else clauseRefused(key)
+  if isVariable(key) then ClauseRead.ok({clause: {key: key, test: test, value: ""}}) else clauseRefused(key)
 def clauseRefused(key: String) -> ClauseRead:
-  ClauseRead.bad({reason: "not a condition: {key}; a variable (gold >= 2, !rang), keeps.<thing> or holds.<thing>, or a law's condition (\"bell/1\".tended >= 5)"})
+  if mixed(key) then ClauseRead.bad({reason: mixedReason(key)}) else ClauseRead.bad({reason: "not a condition: {key}; a variable (gold >= 2, !rang), keeps.<thing> or holds.<thing>, or a law's condition (\"bell/1\".tended >= 5)"})
 # --- passages -----------------------------------------------------------------------
 record Open:
   id: String
@@ -261,7 +287,7 @@ def passageName(text: String) -> String:
   let name = Text.trim(text)
   if textLength(name) >= 3n && textDrop(name, textLength(name) - 3n) == "===" then textTake(name, textLength(name) - 3n) else name
 def opened(name: String, rest: Lists.List<String>, done: Lists.List<Scenes.Passage>) -> Body:
-  if isKey(name) == false || textSpan(textTake(name, 1n), "0123456789") == 1n then Body.bad({reason: "a passage name is letters, digits and _, starting with a letter: {name}"}) else body(rest, Lists.Maybe.some({value: {id: name, prose: "", choices: Lists.List.nil({})}}), Lists.Maybe.none({}), done)
+  if textSpan(name, ascii()) < textLength(name) then Body.bad({reason: "a passage name is ASCII letters, digits and _, as it names a rule of the room's law: {name}; write === cooler_back, and keep the words as the title or a choice's label"}) else if isKey(name) == false || textSpan(textTake(name, 1n), "0123456789") == 1n then Body.bad({reason: "a passage name is letters, digits and _, starting with a letter: {name}"}) else body(rest, Lists.Maybe.some({value: {id: name, prose: "", choices: Lists.List.nil({})}}), Lists.Maybe.none({}), done)
 def inPassage(t: String, rest: Lists.List<String>, at: Lists.Maybe<Open>, choice: Lists.Maybe<Scenes.Choice>, done: Lists.List<Scenes.Passage>) -> Body:
   match at:
     case none(_): if t == "" then body(rest, at, choice, done) else Body.bad({reason: "text before the first passage: {textTake(t, 40n)}; a scene needs === start; add it above your prose"})
@@ -319,9 +345,16 @@ def withEffect(read: EffectRead, rest: Lists.List<String>, open: Open, choice: S
 # An effect: a variable of the room set, added to or subtracted from (the inside); a spell cast, or the
 # room's own verb called (the outside).
 def effect(t: String) -> EffectRead:
-  if Text.starts(t, "call(") then called(textTake(textDrop(t, 5n), Text.indexOf(textDrop(t, 5n), ")"))) else assigned(textTake(t, textSpan(t, keyChars())), Text.trim(textDrop(t, textSpan(t, keyChars()))), t)
+  if Text.starts(t, "call(") then called(textTake(textDrop(t, 5n), Text.indexOf(textDrop(t, 5n), ")"))) else assigned(textTake(t, effectKey(t)), Text.trim(textDrop(t, effectKey(t))), t)
+# An effect's key: the text before the first space or operator; whether it is a variable or a verb is decided after.
+def effectKey(t: String) -> Nat:
+  textBreak(t, " \t=+-.(")
 def assigned(key: String, rest: String, t: String) -> EffectRead:
-  if key == "" || Text.starts(rest, ".") then EffectRead.bad({reason: "an effect sets a variable (~ gold += 1), casts a spell (~ cast delvetalk bell/1 ring) or calls the room's verb (~ ring bell/1): {textTake(t, 40n)}"}) else if Text.starts(rest, "+=") then counted(key, Scenes.Op.add({}), unquoted(Text.trim(textDrop(rest, 2n)))) else if Text.starts(rest, "-=") then counted(key, Scenes.Op.sub({}), unquoted(Text.trim(textDrop(rest, 2n)))) else if Text.starts(rest, "=") && Text.starts(rest, "==") == false then EffectRead.ok({effect: {key: key, op: Scenes.Op.set({}), value: unquoted(Text.trim(textDrop(rest, 1n)))}}) else if key == "cast" then cast(rest) else verb(key, rest)
+  if key == "" || Text.starts(rest, ".") then effectRefused(t) else if Text.starts(rest, "+=") || Text.starts(rest, "-=") || (Text.starts(rest, "=") && Text.starts(rest, "==") == false) then assignment(key, rest, t) else if key == "cast" then cast(rest) else if isKey(key) then verb(key, rest) else effectRefused(t)
+def effectRefused(t: String) -> EffectRead:
+  EffectRead.bad({reason: "an effect sets a variable (~ gold += 1), casts a spell (~ cast delvetalk bell/1 ring) or calls the room's verb (~ ring bell/1): {textTake(t, 40n)}"})
+def assignment(key: String, rest: String, t: String) -> EffectRead:
+  if mixed(key) then EffectRead.bad({reason: mixedReason(key)}) else if isVariable(key) == false then effectRefused(t) else if Text.starts(rest, "+=") then counted(key, Scenes.Op.add({}), unquoted(Text.trim(textDrop(rest, 2n)))) else if Text.starts(rest, "-=") then counted(key, Scenes.Op.sub({}), unquoted(Text.trim(textDrop(rest, 2n)))) else EffectRead.ok({effect: {key: key, op: Scenes.Op.set({}), value: unquoted(Text.trim(textDrop(rest, 1n)))}})
 def cast(spell: String) -> EffectRead:
   if Text.starts(spell, "delvetalk ") && Text.trim(textDrop(spell, 10n)) != "" then EffectRead.ok({effect: {key: "", op: Scenes.Op.cast({}), value: spell}}) else EffectRead.bad({reason: "~ cast takes a spell, as a rule's then does: ~ cast delvetalk bell/1 ring"})
 # `~ ring`, `~ ring bell/1` (its text), `~ ring to: x / what: y` (its fields): the room's own verb, on itself.

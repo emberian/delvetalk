@@ -13,6 +13,7 @@ namespace Delvetalk.Host.Enchant
 open Lean (Json toJson)
 open Delvetalk.Host
 open Delvetalk.Theory.ObjectiveBendDemandData (Data)
+open Delvetalk.Host.Tongue (Tongue englishStem)
 
 /-! ## Strokes -/
 
@@ -88,15 +89,15 @@ structure Telling where
   upto : Nat
   exact : List String := []
 
-/-- The words the page sets above a telling: the host's frame, never the paint's. -/
-def Telling.frame (t : Telling) : String := if t.form == "away" then "While you were away" else "Before you arrived"
+/-- The words the page sets above a telling, in the reader's tongue: the host's frame, never the paint's. -/
+def Telling.frame (t : Telling) (tongue : String := "en") : String := Tongue.say tongue (if t.form == "away" then "away" else "before")
 
 def Telling.json (t : Telling) : Json :=
   Json.mkObj [("form", toJson t.form), ("since", toJson t.since), ("until", toJson t.upto), ("exact", toJson t.exact)]
 
 /-- What a render answer carries of a telling, painted or not: its form, its frame and its exact lines. -/
-def Telling.answer (t : Telling) : Json :=
-  Json.mkObj [("form", toJson t.form), ("frame", toJson t.frame), ("since", toJson t.since), ("exact", toJson t.exact)]
+def Telling.answer (t : Telling) (tongue : String := "en") : Json :=
+  Json.mkObj [("form", toJson t.form), ("frame", toJson (t.frame tongue)), ("since", toJson t.since), ("exact", toJson t.exact)]
 
 structure Strokes where
   object : String
@@ -140,6 +141,9 @@ structure Strokes where
   /-- A telling's strokes are of a place's span (`tellingAt`): `today` its acts, `hands` who came. -/
   telling : Option Telling := none
   limit : Nat := maxPaint
+  /-- The tongue it is painted in (`Tongue.choose`): the strokes are the same facts, the counts given the tongue's
+      unit words, so a paint is cached per thing, version and tongue. -/
+  tongue : String := "en"
 
 /-- Whose words its form values are: the coiner's for a coinage, else its maker's. -/
 def Strokes.wordsBy (s : Strokes) : String := if s.coined && !s.coiner.isEmpty then s.coiner else s.maker
@@ -195,6 +199,15 @@ def Quantity.text (q : Quantity) : String :=
 
 def quoted (t : String) : String := "“" ++ t ++ "”"
 
+/-- The tongue the strokes are painted in, English for a code with no table (`paintOf` paints none such). -/
+def Strokes.speech (s : Strokes) : Tongue := (Tongue.find? s.tongue).getD Tongue.english
+
+/-- A count as the painter of tongue `t` reads it: beside it the unit word to write it with in `t`, or, where `t`
+    has none, the English one. -/
+def Quantity.textIn (q : Quantity) (t : Tongue) : String :=
+  if t.code == "en" then q.text else
+  q.text ++ s!" [in {t.english}: " ++ ((t.unitWord q.unit).getD (plural q.unit (if q.ordinal then 1 else q.n))) ++ "]"
+
 /-- The strokes as the painter reads them: what the thing is, then its maker's words, its life (lines,
     wants, rules), its counts with their units, its spells; a field it does not hold is not written. -/
 def Strokes.text (s : Strokes) : String := Id.run do
@@ -211,6 +224,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
           (if t.form == "away" then ": what happened there while the reader was away, in the third person"
            else ": its past, before the reader's first arrival, in the third person")]
       | none, none => [s!"What it is: {s.object}" ++ (if s.kind.isEmpty then "" else s!", a {kindName} ({s.kind})")]) ++
+    line (s.speech.code != "en") s!"Paint in: {s.speech.name} ({s.speech.english}), quoting in {s.speech.quotes}; residents' lines, ids, handles and spells exactly as written here; each count with the {s.speech.english} unit word given beside it" ++
     line (!s.head.isEmpty) s!"Called: {s.head}" ++
     [if s.voice.isEmpty then "Its voice: plain" else s!"Its voice: {s.voice}"] ++
     line (!s.about.isEmpty) s!"What its kind is: {s.about}" ++
@@ -228,7 +242,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
       let on := if l.on.isEmpty then "" else s!" on {l.on}"
       (if l.handle.isEmpty then "someone" else l.handle) ++ on ++ (if tag.isEmpty then "" else s!" ({tag})") ++ ": " ++ quoted l.text) ++
     part "Marks:" (s.marks.map fun m => if m.handle.isEmpty then m.name else s!"{m.name}, by {m.handle}") ++
-    part "Counts:" (s.quantities.map Quantity.text) ++
+    part "Counts:" (s.quantities.map (·.textIn s.speech)) ++
     part (if s.day.isSome then "What still wants a hand, oldest first:" else "What it wants now:") (s.wants.map fun x =>
       (if x.object.isEmpty then "" else s!"{x.object}, ") ++ x.name ++ (if x.reading.isEmpty then "" else ": " ++ quoted x.reading) ++
         (if x.spell.isEmpty then "" else s!"; the spell it asks for: {x.spell}")) ++
@@ -255,7 +269,7 @@ def Strokes.json (s : Strokes) : Json :=
     ("doors", Json.arr (s.doors.toArray.map fun d => Json.mkObj [("label", toJson d.label), ("to", toJson d.target)])),
     ("around", toJson s.around), ("present", toJson s.present), ("today", toJson s.today), ("hands", toJson s.hands),
     ("day", toJson s.day), ("limit", toJson s.limit)] |>.mergeObj
-    (Json.mkObj ((s.telling.map fun t => [("telling", t.json)]).getD []))
+    (Json.mkObj ((s.telling.map fun t => [("telling", t.json)]).getD [] ++ (if s.tongue == "en" then [] else [("tongue", toJson s.tongue)])))
 
 /-! ### Reading the store -/
 
@@ -693,10 +707,17 @@ def tellingAt (w : World) (reader id : String) (version : Option Nat) (j : Json)
   unless isPlace w id o do return .error "notAPlace"
   return .ok (← tellingOf w reader id o j)
 
+/-- The tongue a render is asked in: `tongue` when the request names one, else the speaker's (`speaker`, default the
+    reader): the one their avatar states, else the one `words` (what they said) are written in, else English. -/
+def tongueOf (w : World) (reader : String) (j : Json) : String :=
+  match j.getObjValAs? String "tongue" with
+  | .ok t => Tongue.codeOf t
+  | .error _ => Tongue.choose w ((j.getObjValAs? String "speaker").toOption.getD reader) ((j.getObjValAs? String "words").toOption.getD "")
+
 /-- The strokes a request names: `{object, version?}` a thing's, `{object, telling: {reader?, since?}}` a telling
     of a place, `{day?, morning?}` (no object) the town's day (default the current one). The outer error is the
     request's; the inner `unknown` / `denied` (and a telling's `notAPlace`). -/
-def strokesFor (w : World) (reader : String) (j : Json) : Except String (Except String Strokes) := do
+def strokesIn (w : World) (reader : String) (j : Json) : Except String (Except String Strokes) := do
   match j.getObjValAs? String "object" with
   | .ok given =>
     let id := resolveCard reader given
@@ -707,7 +728,12 @@ def strokesFor (w : World) (reader : String) (j : Json) : Except String (Except 
     let day := (← optNat j "day").getD (w.clock / Limits.clockDay)
     return .ok (dayStrokes w reader day ((j.getObjValAs? Bool "morning").toOption.getD false))
 
-/-- `world-strokes {principal, object | day, version?, morning?}`: `{status: "strokes", object, version,
+/-- The strokes a request names, in the tongue it is asked in (`tongueOf`). -/
+def strokesFor (w : World) (reader : String) (j : Json) : Except String (Except String Strokes) := do
+  let tongue := tongueOf w reader j
+  return (← strokesIn w reader j).map ({ · with tongue })
+
+/-- `world-strokes {principal, object | day, version?, morning?, tongue?, speaker?, words?}`: `{status: "strokes", object, version,
     strokes, text}`, or `unknown` / `denied`. Nothing is written. -/
 def strokesOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
@@ -724,44 +750,20 @@ check cannot read meaning: a sentence true of every stroke and false as a whole 
 risk 11); the numbers clause narrows it, since a number stands only beside the unit it counts. The exact
 card stands beneath every paint. -/
 
-/-- The check's words, each list the one place it is written: what no paint says outside a quotation (VOICE:
-    nobody on a card says I; no thanks, sorry, welcome or please), whom it never addresses, the lines it
-    never begins (a receipt's stamp, a refusal, a law, rule or want line, hob's own), the words that negate,
-    and the small words that are never a number's unit. -/
-def table : List (String × List String) :=
-  [("forbidden", ["i", "i'm", "i've", "i'll", "i'd", "me", "my", "myself", "thanks", "thank", "sorry", "welcome", "please"]),
-   ("secondPerson", ["you", "your", "yours", "you're", "you've", "you'll", "you'd", "yourself", "yourselves", "y'all"]),
-   ("heads", ["●", "§", "refused", "law ", "rule ", "want ", "hob:"]),
-   ("negators", ["no", "not", "never", "nothing", "none", "nobody", "nowhere", "neither", "nor", "cannot"]),
-   ("wanting", ["want", "wants", "wanting", "needs", "need", "lacks"]),
-   ("vague", ["someone", "somebody", "something", "anyone", "anything", "hand", "hands", "what", "who", "whom", "one",
-              "more", "some", "own", "here", "there", "now", "again", "yet"]),
-   ("small", ["a", "an", "the", "of", "to", "at", "in", "on", "by", "for", "with", "from", "and", "or", "its", "it", "than",
-              "is", "are", "has", "have", "this", "that", "as", "into", "over", "under", "every", "each", "all", "more", "fewer", "less",
-              "within", "while", "about", "after", "before", "since", "until", "near", "beside", "upon", "onto", "only",
-              "just", "still", "yet", "so", "far", "times"])]
+/-- The lines no paint begins, in any tongue: a receipt's stamp, a refusal, a law, rule or want line, hob's own. Every
+    other word a clause reads is its tongue's (`Tongue.tongues`: English's are the ones VOICE names). -/
+def heads : List String := ["●", "§", "refused", "law ", "rule ", "want ", "hob:"]
 
-def words? (name : String) : List String := (table.lookup name).getD []
+/-- The stroke fields a negation may stand near, by the lexicon's keys. -/
+def negatedFields : List String := ["keeper", "maker", "owner", "rung", "tended", "lines", "doors", "wants", "came"]
 
-/-- A stroke field's name as the words a sentence says it with. -/
-def fieldWords : List (String × List String) :=
-  [("keeper", ["keeper", "keepers", "keep", "keeps", "kept", "keeping"]),
-   ("maker", ["maker", "makers", "made", "make", "makes", "making"]),
-   ("owner", ["owner", "owners", "owned", "owns"]),
-   ("rung", ["rung", "rang", "ring", "rings", "ringing"]),
-   ("tended", ["tended", "tend", "tends", "tending"]),
-   ("lines", ["line", "lines", "written", "wrote"]),
-   ("doors", ["door", "doors"]),
-   ("wants", ["want", "wants", "wanting", "wanted", "lacks", "needs"]),
-   ("came", ["came", "come", "comes", "coming", "visited", "visitor", "visitors", "entered", "arrived"])]
-
-/-- A verb's or a want's name as a sentence inflects it. -/
+/-- A verb's or a want's name as an English sentence inflects it. -/
 def inflections (name : String) : List String :=
   let stem := if name.endsWith "e" then (String.ofList (name.toList.dropLast)) else name
   [name, name ++ "s", name ++ "es", name ++ "ed", name ++ "d", stem ++ "ing", stem ++ "ed"].eraseDups
 
-/-- Characters stripped from a token's edges. -/
-def edgeMark (c : Char) : Bool := ",.;:!?()[]{}\"“”‘’'«»—–…*_`<>".toList.contains c
+/-- Characters stripped from a token's edges, in any script. -/
+def edgeMark (c : Char) : Bool := ",.;:!?()[]{}\"“”‘’'«»„—–…*_`<>¿¡،؛؟".toList.contains c || Tongue.cjkMark c
 
 def stripEdges (cs : List Char) : List Char :=
   ((cs.dropWhile edgeMark).reverse.dropWhile edgeMark).reverse
@@ -778,7 +780,39 @@ def splitBy (sep : Char → Bool) (cs : List Char) : List (List Char) :=
     if sep c then ([], if cur.isEmpty then acc else cur.reverse :: acc) else (c :: cur, acc)) (([] : List Char), ([] : List (List Char)))
   (if cur.isEmpty then acc else cur.reverse :: acc).reverse
 
-def words (text : String) : List String := (splitBy Char.isWhitespace text.toList).map String.ofList
+/-- Where a character falls between words: a CJK mark stands alone (2), a script written without spaces (1) is one
+    run of words, anything else (0) another. -/
+def charClass (c : Char) : Nat := if Tongue.cjkMark c then 2 else if Tongue.unspacedChar c then 1 else 0
+
+/-- A text's words, each with whether a space stood before it: cut at spaces, at each CJK mark, and where a script
+    written without spaces meets another, so `yue.delve.townが「…」` is a handle, a word and the marks. -/
+def pieces (text : String) : List (String × Bool) := Id.run do
+  let mut out : Array (String × Bool) := #[]
+  let mut cur : List Char := []
+  let mut spaced := true
+  let mut gap := true
+  for c in text.toList do
+    if c.isWhitespace || c == '　' then
+      unless cur.isEmpty do
+        out := out.push (String.ofList cur.reverse, spaced)
+        cur := []
+      gap := true
+    else
+      if let some p := cur.head? then
+        if charClass c == 2 || charClass p == 2 || charClass c != charClass p then
+          out := out.push (String.ofList cur.reverse, spaced)
+          cur := []
+      if cur.isEmpty then
+        spaced := gap
+        gap := false
+      cur := c :: cur
+  unless cur.isEmpty do out := out.push (String.ofList cur.reverse, spaced)
+  return out.toList
+
+def words (text : String) : List String := (pieces text).map (·.1)
+
+#guard words "yue.delve.townが「rain」と書いた。" == ["yue.delve.town", "が", "「", "rain", "」", "と書いた", "。"]
+#guard words "Four rains, one door." == ["Four", "rains,", "one", "door."]
 
 def idChar (c : Char) : Bool := c.isAlphanum || "._:/-".toList.contains c
 
@@ -797,54 +831,22 @@ def holdsIn (hay needle : String) : Bool := !needle.isEmpty && (hay.splitOn need
 
 def trimmed (s : String) : String := s.trimAscii.toString
 
+/-- Where `needle` stands in `hay`, by character. -/
+def occurrences (hay needle : List Char) : List Nat :=
+  if needle.isEmpty || needle.length > hay.length then [] else
+  (List.range (hay.length - needle.length + 1)).filter fun i => (hay.drop i).take needle.length == needle
+
 /-! ### Numbers and their units -/
 
-def cardinals : List (String × Nat) :=
-  [("zero", 0), ("two", 2), ("three", 3), ("four", 4), ("five", 5), ("six", 6), ("seven", 7), ("eight", 8), ("nine", 9),
-   ("ten", 10), ("eleven", 11), ("twelve", 12), ("thirteen", 13), ("fourteen", 14), ("fifteen", 15), ("sixteen", 16),
-   ("seventeen", 17), ("eighteen", 18), ("nineteen", 19), ("twenty", 20), ("thirty", 30), ("forty", 40), ("fifty", 50),
-   ("sixty", 60), ("seventy", 70), ("eighty", 80), ("ninety", 90), ("hundred", 100), ("thousand", 1000),
-   ("twice", 2), ("thrice", 3), ("dozen", 12), ("couple", 2), ("pair", 2)]
-
-def ordinals : List (String × Nat) :=
-  [("second", 2), ("third", 3), ("fourth", 4), ("fifth", 5), ("sixth", 6), ("seventh", 7), ("eighth", 8), ("ninth", 9),
-   ("tenth", 10), ("eleventh", 11), ("twelfth", 12), ("thirteenth", 13), ("fourteenth", 14), ("fifteenth", 15),
-   ("sixteenth", 16), ("seventeenth", 17), ("eighteenth", 18), ("nineteenth", 19), ("twentieth", 20), ("thirtieth", 30),
-   ("fortieth", 40), ("fiftieth", 50), ("hundredth", 100)]
-
-/-- The ones a compound ("forty-one", "twenty-first") ends in. -/
-def ones : List (String × Nat) := [("one", 1), ("first", 1)] ++ cardinals.take 9 ++ ordinals.take 8
-
-/-- The number a token says, and whether as an ordinal: digits (`7`, `7th`), a number word, a compound.
-    "one", "first" and "once" are left free: they are as often not counts. -/
-def numberOf (t : String) : Option (Nat × Bool) :=
-  let t := t.toLower
-  if t.any Char.isDigit then
-    let ds := t.takeWhile Char.isDigit |>.toString
-    let rest := (t.drop ds.length).toString
-    if ds.isEmpty then some ((((splitBy (!·.isDigit) t.toList).head?.map String.ofList).getD "0").toNat!, false)
-    else some (ds.toNat!, ["st", "nd", "rd", "th"].contains rest)
-  else match cardinals.lookup t, ordinals.lookup t with
-    | some n, _ => some (n, false)
-    | _, some n => some (n, true)
-    | none, none =>
-      match t.splitOn "-" with
-      | [a, b] => match cardinals.lookup a, ones.lookup b with
-        | some x, some y => if x ≥ 20 then some (x + y, ordinals.any (·.1 == b) || b == "first") else none
-        | _, _ => none
-      | _ => none
-
-/-- A unit word reduced so its forms meet: rains, rained, raining → rain; minutes → minut. -/
-def stem (w : String) : String :=
-  let cs := w.toLower.toList
-  let cs := if cs.length > 3 && cs.getLast? == some 's' && cs.reverse[1]? != some 's' then cs.dropLast else cs
-  let ends := fun (suffix : String) => cs.length > suffix.length + 2 && cs.drop (cs.length - suffix.length) == suffix.toList
-  String.ofList <| if ends "ing" then cs.take (cs.length - 3) else if ends "ed" then cs.take (cs.length - 2)
-    else if ends "e" then cs.dropLast else cs
-
-/-- A word that may stand as a unit: not small, not itself a number. -/
+/-- A word that may stand as an English unit: not small, not itself a number. -/
 def unitWord (w : String) : Bool :=
-  w.length ≥ 2 && !(words? "small").contains w && (numberOf w).isNone && !idShaped w && !handleShaped w
+  w.length ≥ 2 && !Tongue.english.small.contains w && (Tongue.english.number w).isNone && !idShaped w && !handleShaped w
+
+/-- The units (by their English stems) a word of the paint's tongue `t` stands for: in English the word itself; in
+    another tongue the lexicon's units it says ("lluvias" rain), and an English unit word written as it is. -/
+def unitsNear (t : Tongue) (w : String) : List String :=
+  let english := if unitWord w && w.toList.all (·.toNat < 128) then [englishStem w] else []
+  if t.code == "en" then english else (t.concepts w ++ english).eraseDups
 
 /-- Each text of the strokes with whose words it is: a line its writer's, its head and the words it was made with
     its coiner's or maker's, a rule's or want's reading its placer's, a grown verb's reading its grower's. -/
@@ -873,9 +875,9 @@ def Strokes.otherTexts (s : Strokes) : List String :=
 /-- A text with its curly apostrophes plain. -/
 def plainQuote (t : String) : String := String.ofList (t.toList.map fun c => if c == '’' then '\'' else c)
 
-/-- A quotation as the paint's quoted span: its own closing stop (“… late.”) the sentence's, not the text's. -/
+/-- A quotation as the paint's quoted span: its own closing stop (“… late.”, 「…。」) the sentence's, not the text's. -/
 def quoteSpan (span : String) : String :=
-  trimmed (String.ofList ((trimmed span).toList.reverse.dropWhile (".,;:!?".toList.contains ·)).reverse)
+  trimmed (String.ofList ((trimmed span).toList.reverse.dropWhile (".,;:!?。、，！？：；،؛؟".toList.contains ·)).reverse)
 
 /-- `q` (or it with its first letter lowered, opening a sentence) as part of `t`. -/
 def holdsFrom (t q : String) : Bool :=
@@ -902,15 +904,15 @@ def Strokes.handles (s : Strokes) : List String :=
   (([s.maker, s.keeper, s.owner, s.coiner] ++ s.lines.map (·.handle) ++ s.marks.map (·.handle) ++ s.present ++ s.hands ++
     s.verbs.map (·.grower) ++ s.rules.map (·.owner) ++ s.wants.map (·.owner)).filter (!·.isEmpty) ++ s.tokens.filter handleShaped).map (·.toLower)
 
-/-- The numbers the strokes hold, each with its unit's stem: the quantities, and every number in a stroke's
+/-- The numbers the strokes hold, each with its unit's English stem: the quantities, and every number in a stroke's
     text beside the word it stands by ("seventh rain", "1440 minutes", "200 characters"). -/
 def Strokes.pairs (s : Strokes) : List (Nat × Bool × String) :=
-  s.quantities.map (fun q => (q.n, q.ordinal, stem q.unit)) ++
+  s.quantities.map (fun q => (q.n, q.ordinal, englishStem q.unit)) ++
   (s.texts ++ s.spells).flatMap fun t =>
     let ws := ((words t).map fun w => (normal w).toLower).toArray
-    (List.range ws.size).flatMap fun i => match if idShaped ws[i]! || handleShaped ws[i]! then none else numberOf ws[i]! with
+    (List.range ws.size).flatMap fun i => match if idShaped ws[i]! || handleShaped ws[i]! then none else Tongue.english.number ws[i]! with
       | some (n, o) => ([i - 1, i + 1].filter (fun j => j != i && j < ws.size)).filterMap fun j =>
-          if unitWord ws[j]! then some (n, o, stem ws[j]!) else none
+          if unitWord ws[j]! then some (n, o, englishStem ws[j]!) else none
       | none => []
 
 /-- Is the stroke field `field` empty? A verb is held once any line or mark names it, or any line was written
@@ -929,15 +931,27 @@ def Strokes.empty (s : Strokes) (field : String) : Bool :=
   | "came" => s.hands.isEmpty
   | v => !(s.lines.any (fun l => l.verb == v || l.verb.isEmpty) || s.marks.any (·.name == v))
 
-/-- Every field a negation may stand near, with the words that name it. -/
-def Strokes.named (s : Strokes) : List (String × List String) :=
-  fieldWords ++ (s.verbs.map (·.name)).eraseDups.map fun n => (n, inflections n)
+/-- Every field a negation may stand near, with the words tongue `t` names it by: its lexicon's fields, and each
+    verb by its inflections in English, else by the tongue's words for it and its own name. -/
+def Strokes.named (s : Strokes) (t : Tongue) : List (String × List String) :=
+  (negatedFields.map fun f => (f, t.wordsFor f)) ++ (s.verbs.map (·.name)).eraseDups.map fun n =>
+    (n, if t.code == "en" then inflections n else t.wordsFor n ++ [n])
+
+/-- The words that may follow a want: its name, reading and thing, a want a day's events name, and the tongue's words
+    for a want's name, each as the tongue compares them. -/
+def Strokes.heldWants (s : Strokes) (t : Tongue) : List String :=
+  (s.wants.map (fun x => x.name ++ " " ++ x.reading ++ " " ++ x.object) ++ s.today.filter (holdsIn · "want")).flatMap (words ·) ++
+    s.wants.flatMap (t.wordsFor ·.name) |>.map fun x => t.wantStem (normal x)
 
 /-- What stands in a paint's prose where a quotation was, so a clause knows where each one is. -/
 def quoteMark : String := "⟦q⟧"
 
-/-- The quoted spans of a text (between `“ ”`, `« »` or a pair of `"`), and the text with each replaced by one
-    word; `none` when a quotation is left open. -/
+/-- The mark that closes a quotation `c` opens: “ ”, « », „ “, 「 」, 『 』, or a pair of `"`. -/
+def closerOf (c : Char) : Option Char :=
+  match c with
+  | '“' => some '”' | '«' => some '»' | '„' => some '“' | '「' => some '」' | '『' => some '』' | '"' => some '"' | _ => none
+
+/-- The quoted spans of a text, and the text with each replaced by one word; `none` when a quotation is left open. -/
 def quotations (text : String) : Option (List String × String) := Id.run do
   let mut spans : List String := []
   let mut out : List Char := []
@@ -951,16 +965,15 @@ def quotations (text : String) : Option (List String × String) := Id.run do
         closer := none
         -- A quotation that ends its sentence (“… late.”) ends the prose's sentence too.
         let stop := match cur.head? with
-          | some c => if ".!?".toList.contains c then "." else ""
+          | some c => if ".!?。！？".toList.contains c then "." else ""
           | none => ""
         out := out ++ s!" {quoteMark}{stop} ".toList
         cur := []
       else cur := c :: cur
     | none =>
-      if c == '“' then closer := some '”'
-      else if c == '«' then closer := some '»'
-      else if c == '"' then closer := some '"'
-      else out := out ++ [c]
+      match closerOf c with
+      | some k => closer := some k
+      | none => out := out ++ [c]
   if closer.isSome then return none
   return some (spans, String.ofList out)
 
@@ -974,39 +987,53 @@ def inlineSpell (ts : List String) (i : Nat) : Option String := do
 
 def isSpellLine (line : String) : Bool := line == "delvetalk" || line.startsWith "delvetalk "
 
-/-- A paint as the clauses read it: its tokens, its lines, its quotations, and its prose in sentences of
-    lower-case tokens (quotations and spells out). -/
+/-- A paint as the clauses read it, in its tongue: its tokens, its lines, its quotations, its prose in sentences of
+    folded tokens (quotations and spells out), and, for a tongue written without spaces, each sentence and phrase as
+    written, its ids, handles and inline spells blanked. -/
 structure Paint where
   text : String
+  tongue : Tongue
   tokens : List String
   lines : List String
   spans : Option (List String)
   prose : List (List String)
-  /-- The prose cut at commas, colons, dashes and the conjunctions too: what a negation reaches. -/
+  /-- The prose cut at commas, colons, dashes and the tongue's conjunctions too: what a negation reaches. -/
   phrases : List (List String)
+  rawProse : List String
+  rawPhrases : List String
 
-def Paint.of (text : String) : Paint :=
+/-- A token the prose does not read: an id, a handle, a DID. -/
+def unread (w : String) : Bool := idShaped w || handleShaped w || w.startsWith "did:"
+
+def Paint.of (t : Tongue) (text : String) : Paint :=
   let q := quotations text
   let unquoted := (q.map (·.2)).getD text
-  -- The prose cut where a word ends in one of `stops`, each piece in lower-case tokens, an inline spell's
-  -- three words left out (they are the spell's, not the prose's).
+  -- The prose cut where a word ends in one of `stops` (or is one of `words'`), an inline spell's three words left out
+  -- (they are the spell's, not the prose's): each piece as folded tokens, and as written.
   let cut := fun (stops : List String) (words' : List String) =>
     ((unquoted.splitOn "\n").filter (!isSpellLine ·.trimAscii.toString)).flatMap fun line =>
-      let (cur, acc) := (words line).foldl (fun (cur, acc) w =>
-        let cur := cur ++ [w]
-        if stops.any (fun (e : String) => w.endsWith e) || words'.contains w.toLower then ([], acc ++ [cur]) else (cur, acc))
-        (([] : List String), ([] : List (List String)))
-      (acc ++ (if cur.isEmpty then [] else [cur])).map fun ws => Id.run do
+      let (cur, acc) := (pieces line).foldl (fun (cur, acc) (w, sp) =>
+        let cur := cur ++ [(w, sp)]
+        if stops.any (fun (e : String) => w.endsWith e) || words'.contains (Tongue.fold (normal w)) then ([], acc ++ [cur]) else (cur, acc))
+        (([] : List (String × Bool)), ([] : List (List (String × Bool))))
+      (acc ++ (if cur.isEmpty then [] else [cur])).map fun ps => Id.run do
         let mut out : List String := []
+        let mut raw := ""
         let mut skip := 0
-        for w in ws do
-          if skip > 0 then skip := skip - 1; continue
-          if normal w == "delvetalk" then skip := 2; continue
-          out := out ++ [(normal w).toLower]
-        return out.filter (!·.isEmpty)
-  let sentence := [".", "!", "?", ";"]
-  { text, tokens := (words text).map normal |>.filter (!·.isEmpty), lines := (text.splitOn "\n").map trimmed,
-    spans := q.map (·.1), prose := cut sentence [], phrases := cut (sentence ++ [",", ":", "—", "–"]) ["and", "but", "while", "yet"] }
+        for (w, sp) in ps do
+          let spell := skip > 0 || normal w == "delvetalk"
+          if skip > 0 then skip := skip - 1
+          if normal w == "delvetalk" then skip := 2
+          raw := raw ++ (if sp then " " else "") ++ (if spell || unread (normal w) then " " else w)
+          unless spell do out := out ++ [Tongue.fold (normal w)]
+        return (out.filter (!·.isEmpty), raw)
+  let sentence := [".", "!", "?", ";", "。", "！", "？", "；", "؛", "؟"]
+  let phrase := sentence ++ [",", ":", "—", "–", "、", "，", "：", "،"]
+  let prose := cut sentence []
+  let phrases := cut phrase (if t.spaced then t.conjunctions else [])
+  { text, tongue := t, tokens := (words text).map normal |>.filter (!·.isEmpty), lines := (text.splitOn "\n").map trimmed,
+    spans := q.map (·.1), prose := prose.map (·.1), phrases := phrases.map (·.1),
+    rawProse := prose.map (·.2), rawPhrases := phrases.map (·.2) }
 
 /-- A clause of the check: its name, what it holds, and the failure it finds first. -/
 structure Clause where
@@ -1017,30 +1044,146 @@ structure Clause where
 def firstSome {α : Type} (xs : List α) (f : α → Option String) : Option String :=
   xs.foldl (fun acc x => acc.orElse fun _ => f x) none
 
-/-- A number in the prose stands beside a unit the strokes count it in: `n` of that unit as a stroke holds it. -/
-def numberFault (s : Strokes) (ws : List String) : Option String :=
+/-- Does the paint's prose say any of `list`: a spaced tongue's by word (several words as a run), an unspaced one's
+    within its sentences? -/
+def Paint.says (p : Paint) (list : List String) : Option String :=
+  if p.tongue.spaced then firstSome p.prose fun ws =>
+    let joined := " " ++ " ".intercalate ws ++ " "
+    list.find? fun e => if holdsIn e " " then holdsIn joined (" " ++ e ++ " ") else ws.contains e
+  else firstSome p.rawProse fun raw => list.find? (holdsIn raw ·)
+
+/-- Is the paint in the tongue it was asked for? Its prose's letters (ids and handles aside) are mostly in that
+    tongue's script: Latin for English and Spanish (and Spanish by its words), Cyrillic, Arabic, kana with han for
+    Japanese, han without kana for Chinese. -/
+def tongueFault (s : Strokes) (p : Paint) : Option String :=
+  match Tongue.find? s.tongue with
+  | none => some s!"no table for {s.tongue}: the exact card"
+  | some t =>
+    let cs := p.prose.flatMap fun ws => (ws.filter (!unread ·)).flatMap (·.toList)
+    let count := fun (k : Tongue.Script) => (cs.filter (Tongue.scriptOf · == k)).length
+    let (latin, cyr, arab, kana, han) := (count .latin, count .cyrillic, count .arabic, count .kana, count .han)
+    let all := latin + cyr + arab + kana + han
+    let ok : Bool := match t.code with
+      | "en" => latin * 2 ≥ all
+      | "es" => latin * 2 ≥ all && Tongue.detect (" ".intercalate p.rawProse) == "es"
+      | "ru" => cyr * 2 > all
+      | "ar" => arab * 2 > all
+      | "ja" => (kana + han) * 2 > all && kana > 0
+      | _ => han * 2 > all && kana == 0
+    if ok then none else some s!"not written in {t.english}"
+
+/-- A spaced tongue's number stands beside a unit the strokes count it in: `n` of that unit as a stroke holds it. -/
+def numberFault (t : Tongue) (s : Strokes) (ws : List String) : Option String :=
   let pairs := s.pairs
   let units := pairs.map (·.2.2)
   firstSome (List.range ws.length) fun i =>
-    let t := ws[i]!
-    if idShaped t || handleShaped t || t.startsWith "did:" then none else
-    match numberOf t with
+    let w := ws[i]!
+    if unread w || t.free.contains w then none else
+    match t.number w with
     | none => none
     | some (n, o) =>
-      let near := ((List.range ws.length).filter fun j => j != i && j + 3 ≥ i && j ≤ i + 3).filterMap fun j =>
-        let u := ws[j]!
-        if unitWord u then some (stem u) else none
+      let near := ((List.range ws.length).filter fun j => j != i && j + 3 ≥ i && j ≤ i + 3).flatMap fun j => unitsNear t ws[j]!
       if near.any (fun u => pairs.contains (n, o, u)) then none
       else match near.find? units.contains with
-        | some u => some s!"{t} {u}: the strokes do not count it so"
-        | none => if o then none else some s!"{t}: beside no unit the strokes count"
+        | some u => some s!"{w} {u}: the strokes do not count it so"
+        | none => if o then none else some s!"{w}: beside no unit the strokes count"
+
+/-- The numerals of an unspaced sentence: where each run of digits or han numerals, or a tongue's number word
+    (ふたつ), stands, how long it is and what it counts. -/
+def numeralRuns (t : Tongue) (cs : List Char) : List (Nat × Nat × Nat) := Id.run do
+  let mut out : Array (Nat × Nat × Nat) := #[]
+  let mut next := 0
+  for i in [0:cs.length] do
+    if i < next then continue
+    if Tongue.numeralChar cs[i]! then
+      let run := (cs.drop i).takeWhile Tongue.numeralChar
+      out := out.push (i, run.length, Tongue.numeralValue run)
+      next := i + run.length
+    else if let some (w, n) := t.cardinals.find? fun (w, _) => (cs.drop i).take w.length == w.toList then
+      out := out.push (i, w.length, n)
+      next := i + w.length
+  return out.toList
+
+/-- An unspaced tongue's number stands beside a unit the strokes count it in: the tongue's word for it within six
+    characters after (四つの雨) or before (雨が四回, 書き込みも四つ); `第` before it or `目` after it makes it the nth. -/
+def unspacedNumberFault (t : Tongue) (s : Strokes) (raw : String) : Option String :=
+  let pairs := s.pairs
+  let units := pairs.map (·.2.2)
+  let cs := raw.toList
+  firstSome (numeralRuns t cs) fun (at_, len, n) =>
+    let run := String.ofList ((cs.drop at_).take len)
+    if t.free.contains run then none else
+    let before := String.ofList ((cs.take at_).drop (at_ - min at_ 6))
+    let after := String.ofList ((cs.drop (at_ + len)).take 6)
+    let o := before.endsWith "第" || holdsIn (String.ofList (after.toList.take 3)) "目"
+    let near := (t.lexicon.filter fun (_, forms) => forms.any fun f => holdsIn after f || holdsIn before f).map (englishStem ·.1) ++
+      (((words after).take 1).flatMap fun w => unitsNear Tongue.english (normal w).toLower)
+    if near.any (fun u => pairs.contains (n, o, u)) then none
+    else match near.find? units.contains with
+      | some u => some s!"{run} {u}: the strokes do not count it so"
+      | none => if o then none else some s!"{run}: beside no unit the strokes count"
+
+/-- A negation in a spaced tongue's phrase within three words of a field the strokes hold: the field after an
+    ordinal ("its seventh rain has not come") is that one, not the field. -/
+def negationFault (t : Tongue) (s : Strokes) (ws : List String) : Option String :=
+  firstSome (List.range ws.length) fun i =>
+    let w := ws[i]!
+    if !(t.negators.contains w || (t.code == "en" && w.endsWith "n't")) then none else
+    firstSome ((List.range ws.length).filter fun j => j + 3 ≥ i && j ≤ i + 3 &&
+        !(j > 0 && ((t.number ws[j - 1]!).map (·.2)).getD false)) fun j =>
+      let near := ws[j]!
+      ((s.named t).find? fun (field, forms) => forms.any (t.matches near ·) && !s.empty field).map fun (field, _) =>
+        s!"{w} … {near}: the strokes hold {field}"
+
+/-- A negation in an unspaced tongue's phrase within ten characters of a field the strokes hold (誰も雨を降らせていない
+    over a bell rained on); a field after an ordinal (第七の, 七つ目の) is that one. -/
+def unspacedNegationFault (t : Tongue) (s : Strokes) (raw : String) : Option String :=
+  let cs := raw.toList
+  firstSome t.negators fun neg =>
+    firstSome (occurrences cs neg.toList) fun at_ =>
+      let lo := at_ - min at_ 10
+      let window := (cs.take (at_ + neg.length + 10)).drop lo
+      firstSome (s.named t) fun (field, forms) =>
+        if s.empty field then none else
+        firstSome forms fun f =>
+          (occurrences window f.toList).findSome? fun k =>
+            let pre := String.ofList ((cs.take (lo + k)).drop (lo + k - min (lo + k) 4))
+            if holdsIn pre "目" || holdsIn pre "第" then none else some s!"{neg} … {f}: the strokes hold {field}"
+
+/-- A want claimed in a spaced tongue's phrase: only when the strokes hold one, and only of what one is for. -/
+def wantFault (t : Tongue) (s : Strokes) (ws : List String) : Option String :=
+  firstSome (List.range ws.length) fun i =>
+    let w := ws[i]!
+    if !(t.wanting.contains w || (t.code == "en" && w == "asks" && ws[i + 1]? == some "for")) then none else
+    -- A negated want ("wants nothing", "no longer wants") is the negation clause's.
+    if ws.any (fun x => t.negators.contains x || (t.code == "en" && x.endsWith "n't")) then none else
+    let held := s.heldWants t
+    if held.isEmpty then some s!"{w}: the strokes hold no want" else
+    let object := (ws.drop (i + 1)).filter fun x => x.length ≥ (if t.code == "ar" then 2 else 3) && !t.small.contains x &&
+      !t.vague.contains x && x != "for" && (t.number x).isNone
+    if object.isEmpty || object.any (fun x => x == quoteMark || held.contains (t.wantStem x)) then none
+    else some s!"{w} {" ".intercalate object}: no want the strokes hold is for that"
+
+/-- A want claimed in an unspaced tongue's phrase: only when the strokes hold one, and the phrase names it (its name,
+    reading or thing, or the tongue's word for it) or only filler (誰か, 手). -/
+def unspacedWantFault (t : Tongue) (s : Strokes) (raw : String) : Option String :=
+  match t.wanting.find? (holdsIn raw ·) with
+  | none => none
+  | some w =>
+    if t.negators.any (holdsIn raw ·) then none else
+    if s.wants.isEmpty && !s.today.any (holdsIn · "want") then some s!"{w}: the strokes hold no want" else
+    let held := (s.wants.flatMap fun x => [x.name, x.object, x.reading] ++ t.wordsFor x.name).filter (!·.isEmpty)
+    if held.any (holdsIn raw ·) || t.vague.any (holdsIn raw ·) then none
+    else some s!"{w}: no want the strokes hold is for that"
 
 /-- The check, in order (VOICE "The paint" gives each). -/
 def clauses : List Clause :=
-  [{ name := "ids", holds := "every id-shaped token is a stroke's id",
+  [{ name := "tongue", holds := "the paint is in the tongue it was asked in, one whose table the check holds",
+     fails := tongueFault },
+   { name := "ids", holds := "every id-shaped token is a stroke's id",
      fails := fun s p => let ids := s.ids.map (·.toLower); (p.tokens.filter idShaped).find? (!ids.contains ·.toLower) },
-   { name := "numbers", holds := "a number (digits or words) stands beside the unit the strokes count it in, as they count it",
-     fails := fun s p => firstSome p.prose (numberFault s) },
+   { name := "numbers", holds := "a number (digits or words, in any numerals) stands beside the unit the strokes count it in, as they count it",
+     fails := fun s p => if p.tongue.spaced then firstSome p.prose (numberFault p.tongue s) else firstSome p.rawProse (unspacedNumberFault p.tongue s) },
    { name := "handles", holds := "every handle is a stroke's, or its domain",
      fails := fun s p => (p.tokens.filter handleShaped).find? fun t =>
        let h := (if t.startsWith "@" then String.ofList (t.toList.drop 1) else t).toLower
@@ -1067,10 +1210,14 @@ def clauses : List Clause :=
        | none => none
        | some spans =>
          -- Who a word names: a person by handle or its first label, or the role whose words a thing is made with
-         -- (its maker, its coiner); a keeper or owner is named in passing too often to read as a speaker.
+         -- (its maker, its coiner) in the paint's tongue; a keeper or owner is named in passing too often to read as
+         -- a speaker.
          let people := (s.handles.eraseDups).filter (!·.isEmpty)
          let roles := [("maker", s.maker), ("coiner", s.coiner)].filter (!·.2.isEmpty)
-         let who? := fun (w : String) => (roles.lookup w).orElse fun _ => people.find? fun h => (aliases h).contains w
+         let t := p.tongue
+         let who? := fun (w : String) => (roles.findSome? fun (role, h) =>
+             if w == role || (t.roles.lookup role |>.getD []).any (t.matches w ·) then some h else none).orElse fun _ =>
+           people.find? fun h => (aliases h).contains w
          let marks := p.prose.flatMap fun ws => (List.range ws.length).filterMap fun i =>
            if ws[i]! == quoteMark then some (ws, i) else none
          if marks.length != spans.length then none else
@@ -1087,58 +1234,39 @@ def clauses : List Clause :=
                else some s!"“{q}” is {authors.head!}'s, not {who}'s"
            | none => (s.linesQuoted (quoteSpan spans[k]!)).head?.map fun l => s!"“{q}” is {l.handle}'s line, uncredited" },
    { name := "heads", holds := "no line begins a receipt's stamp, a refusal, a law, rule or want line, or hob:",
-     fails := fun _ p => firstSome p.lines fun line => (words? "heads").find? (line.toLower.startsWith ·) },
-   { name := "forbidden", holds := "no I, me, my, thanks, sorry, welcome or please outside a quotation",
-     fails := fun _ p => firstSome p.prose fun ws => ws.find? (words? "forbidden").contains },
+     fails := fun _ p => firstSome p.lines fun line => heads.find? (line.toLower.startsWith ·) },
+   { name := "forbidden", holds := "no I, me, my, thanks, sorry, welcome or please outside a quotation, in the paint's tongue",
+     fails := fun _ p => p.says p.tongue.forbidden },
    { name := "secondPerson", holds := "nobody is addressed",
-     fails := fun _ p => firstSome p.prose fun ws => ws.find? (words? "secondPerson").contains },
-   { name := "negation", holds := "a negation within three words of a field's name only when the strokes hold it empty (69275)",
-     fails := fun s p => firstSome p.phrases fun ws =>
-       firstSome (List.range ws.length) fun i =>
-         let w := ws[i]!
-         if !((words? "negators").contains w || w.endsWith "n't") then none else
-         -- A field named after an ordinal ("its seventh rain has not come") is that one, not the field.
-         firstSome ((List.range ws.length).filter fun j => j + 3 ≥ i && j ≤ i + 3 &&
-             !(j > 0 && ((numberOf ws[j - 1]!).map (·.2)).getD false)) fun j =>
-           let near := ws[j]!
-           (s.named.find? fun (field, forms) => forms.contains near && !s.empty field).map fun (field, _) =>
-             s!"{w} … {near}: the strokes hold {field}" },
+     fails := fun _ p => p.says p.tongue.secondPerson },
+   { name := "negation", holds := "a negation near a field's name only when the strokes hold it empty (69275)",
+     fails := fun s p => if p.tongue.spaced then firstSome p.phrases (negationFault p.tongue s)
+       else firstSome p.rawPhrases (unspacedNegationFault p.tongue s) },
    { name := "wants", holds := "a want (wants, needs, lacks, asks for) is claimed only when the strokes hold one, and only of what one is for",
-     fails := fun s p => firstSome p.phrases fun ws =>
-       firstSome (List.range ws.length) fun i =>
-         let w := ws[i]!
-         if !((words? "wanting").contains w || (w == "asks" && ws[i + 1]? == some "for")) then none else
-         -- A negated want ("wants nothing", "no longer wants") is the negation clause's.
-         if ws.any (fun x => (words? "negators").contains x || x.endsWith "n't") then none else
-         -- What may be wanted: the strokes' wants, by name, reading and thing, and a want the day's events name.
-         let held := (s.wants.map (fun x => x.name ++ " " ++ x.reading ++ " " ++ x.object) ++ s.today.filter (holdsIn · "want")).flatMap
-           fun t => (words t).map fun x => stem (normal x).toLower
-         if held.isEmpty then some s!"{w}: the strokes hold no want" else
-         let object := ((ws.drop (i + 1)).filter fun x => x.length ≥ 3 && !(words? "small").contains x && !(words? "vague").contains x &&
-           x != "for" && (numberOf x).isNone)
-         if object.isEmpty || object.any (fun x => x == quoteMark || held.contains (stem x)) then none
-         else some s!"{w} {" ".intercalate object}: no want the strokes hold is for that" },
+     fails := fun s p => if p.tongue.spaced then firstSome p.phrases (wantFault p.tongue s)
+       else firstSome p.rawPhrases (unspacedWantFault p.tongue s) },
    { name := "length", holds := "1 to the strokes' limit characters (400 for a thing, 600 for a day)",
      fails := fun s p => let n := p.text.length; if n == 0 || n > s.limit then some (toString n) else none }]
 
 /-- A telling's paint with its frame lifted off: the model may open with the frame's own words ("Before you
-    arrived, …", "While you were away:", a heading), which the page prints above it as the host's; the paint is what
-    follows, its first letter raised. The only "you" a telling may hold, and only there; anything else is checked. -/
+    arrived, …", "While you were away:", 「あなたが来る前に」, a heading), which the page prints above it as the
+    host's; the paint is what follows, its first letter raised. The only "you" a telling may hold, and only there;
+    anything else is checked. -/
 def Strokes.lifted (s : Strokes) (text : String) : String :=
   match s.telling with
   | none => text
   | some t =>
-    let frame := t.frame.toLower.toList
+    let frame := (Tongue.lower (t.frame s.tongue)).toList
     let cs := text.toList
-    if (cs.take frame.length).map Char.toLower != frame then text else
-    let rest := String.ofList ((cs.drop frame.length).dropWhile fun c => c.isWhitespace || ",:;.…—–-".toList.contains c)
+    if (cs.take frame.length).map Tongue.lowerChar != frame then text else
+    let rest := String.ofList ((cs.drop frame.length).dropWhile fun c => c.isWhitespace || ",:;.…—–-、。，：".toList.contains c)
     -- A handle or an id opening it is written as the strokes write it.
     let first := normal ((words rest).head?.getD "")
     if handleShaped first || idShaped first then rest else rest.capitalize
 
 /-- `verify strokes text`: `ok`, or the first clause the paint fails and what failed it. -/
 def verify (s : Strokes) (text : String) : Except (String × String) Unit :=
-  let p := Paint.of text
+  let p := Paint.of s.speech text
   match clauses.findSome? fun c => (c.fails s p).map (c.name, ·) with
   | some failure => .error failure
   | none => .ok ()
@@ -1173,7 +1301,8 @@ def renderPatience : Nat := 3
 /-- Model attempts a render gets when the network or a rate limit fails it; then it is shown exact. -/
 def renderAttempts : Nat := 3
 def renderBackoffMs : Nat := 2000
-/-- The painter's reply budget: 600 characters is under 200 tokens. -/
+/-- The painter's reply budget: 600 characters is under 200 tokens; a paint in another tongue gets twice it, since
+    its characters cost more tokens. -/
 def renderTokens : Nat := 400
 /-- Renders a session holds (painted and refused kept for their versions); past it, the settled are dropped. -/
 def maxRenders : Nat := 4096
@@ -1296,6 +1425,9 @@ def paintOf (c : Cache) (w : World) (s : Strokes) (now : Nat) : IO (Except Strin
     -- Nothing happened while the reader was away: nothing to tell, and no model asked.
     if (s.telling.map (·.form == "away")).getD false && s.today.isEmpty && s.lines.isEmpty && s.marks.isEmpty then
       return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "quiet")]))
+    -- A tongue whose checks the host lacks is not painted: the exact card, never an unchecked paint.
+    if (Tongue.find? s.tongue).isNone then
+      return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "tongue"), ("detail", toJson s!"no checks for {s.tongue}")]))
     let some model := modelOf w | return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "unavailable"),
       ("detail", toJson "the world has no policy, so no model")]))
     match contractOf w with
@@ -1306,14 +1438,14 @@ def paintOf (c : Cache) (w : World) (s : Strokes) (now : Nat) : IO (Except Strin
       let attended := c.attended now
       if let some r := c.entries[key]? then return .ok (c, w, fateAnswer id key r attended)
       let request := Json.mkObj [("model", toJson model), ("system", toJson contract),
-        ("user", toJson ("Strokes:\n" ++ s.text)), ("maxTokens", toJson renderTokens)]
+        ("user", toJson ("Strokes:\n" ++ s.text)), ("maxTokens", toJson (if s.tongue == "en" then renderTokens else 2 * renderTokens))]
       let fresh : Render := { object := id, version := s.version, strokes := s, request, fate := .pending 0 0 }
       if let some r ← fromDisk key fresh then return .ok (c.insert key r, w, fateAnswer id key r attended)
       if c.count (fun | .pending _ _ => true | _ => false) ≥ maxPending then
         return .ok (c, w, answer "exact" id (at_ ++ [("reason", toJson "busy")]))
       return .ok (c.insert key fresh, w, fateAnswer id key fresh attended)
 
-/-- `world-render {principal, object | day, version?, morning?, telling?}`: `painted {text, key, version}`; `pending
+/-- `world-render {principal, object | day, version?, morning?, telling?, tongue?, speaker?, words?}`: `painted {text, key, version}`; `pending
     {key, patience}` while the worker paints (the first read of a version queues it); `exact {reason}` when there
     is no paint to show (`rejected` with its clause, `override` for a root card, `unavailable` without a model or
     contract, `busy`, `quiet` for a day with nothing in it, `unattended` while no worker has asked for renders
@@ -1323,7 +1455,9 @@ def paintOf (c : Cache) (w : World) (s : Strokes) (now : Nat) : IO (Except Strin
     `telling {reader?, since?}` a place's telling (`tellingOf`), keyed as every paint by its strokes, so by the
     place, the version the reader found and their departure: `quiet` when nothing happened while they were away,
     `notAPlace` for a thing nobody enters, and every answer carries `telling {form, frame, since, exact}`.
-    Nothing is journaled. -/
+    In a tongue (`tongueOf`: `tongue` named, else the `speaker`'s stated one or the one their `words` are in), the
+    strokes are the same facts keyed with it, so each tongue is its own paint; one with no checks here is `exact`
+    `tongue`. Nothing is journaled. -/
 def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String (Cache × World × Json)) := do
   let .ok reader := readerOf j | return .error "principal must be at most 128 bytes"
   let .ok found := strokesFor w reader j | return .error "version and day must be natural numbers"
@@ -1332,7 +1466,7 @@ def renderOp (c : Cache) (w : World) (j : Json) (now : Nat) : IO (Except String 
   | .ok s =>
     -- A telling's answer carries its frame and the exact lines it draws on, painted or not.
     let told := fun (r : Except String (Cache × World × Json)) => match s.telling with
-      | some t => r.map fun (c, w, a) => (c, w, a.setObjVal! "telling" t.answer)
+      | some t => r.map fun (c, w, a) => (c, w, a.setObjVal! "telling" (t.answer s.tongue))
       | none => r
     return told (← paintOf c w s now)
 
@@ -1512,5 +1646,68 @@ def fixtureNookTelling : Strokes :=
 -- A number a stroke's own text gives, beside its word: the law's minutes, the spell's characters.
 #guard verdict fixtureBell "It answers while tended within 1440 minutes; four rains so far." == ""
 #guard verdict fixtureBell "It answers while tended within 1440 rains." == "numbers"
+
+/-! ### Tongues: each check in each language the town paints in (docs/VOICE.md "Tongues") -/
+
+def bellIn (tongue : String) : Strokes := { fixtureBell with tongue }
+
+-- Japanese: read as characters. A true paint (yue's line whole and credited, four rains, the seventh by 七つ目) passes;
+-- each wrong one is refused by its clause.
+#guard verdict (bellIn "ja") "銀の鐘に四つの雨が降った。yue.delve.townの「rain is the sky's erratum」が残る。七つ目の雨で鳴る。" == ""
+#guard verdict (bellIn "ja") "第七の雨を待つ銀の鐘。まだ鳴っていない。" == ""
+#guard verdict (bellIn "ja") "claude.delve.townが「rain is the sky's erratum」と書いた。" == "attribution"
+#guard verdict (bellIn "ja") "銀の鐘に十二の雨が降った。" == "numbers"
+#guard verdict (bellIn "ja") "銀の鐘に七つの雨が降った。" == "numbers"
+#guard verdict (bellIn "ja") "鐘は訪問者を求めている。" == "wants"
+#guard verdict (bellIn "ja") "まだ誰も雨を降らせていない。" == "negation"
+#guard verdict (bellIn "ja") "あなたの鐘に四つの雨。" == "secondPerson"
+#guard verdict (bellIn "ja") "私の鐘に四つの雨。" == "forbidden"
+#guard verdict (bellIn "ja") "Four rains on a silver bell." == "tongue"
+#guard verdict (bellIn "ja") "１４４０分以内に手入れされ、四つの雨を受けた。" == ""
+#guard verdict (bellIn "ja") "1440時間以内に手入れされる。" == "numbers"
+-- The live run's (2026-10-12): a unit word of four characters before its count.
+#guard verdict { bellIn "ja" with quantities := fixtureBell.quantities ++ [{ n := 4, unit := "line" }] } "雨は四つ、書き込みも四つ。" == ""
+#guard verdict (bellIn "ja") "雨は四つ、書き込みも四つ。" == "numbers"
+-- Chinese: han without kana; 第七 the seventh.
+#guard verdict (bellIn "zh") "一口银钟，已经下过四场雨；yue.delve.town 写下“rain is the sky's erratum”。第七场雨时它会响。" == ""
+#guard verdict (bellIn "zh") "claude.delve.town 写下“rain is the sky's erratum”。" == "attribution"
+#guard verdict (bellIn "zh") "这口钟下过十二场雨。" == "numbers"
+#guard verdict (bellIn "zh") "这口钟想要访客。" == "wants"
+#guard verdict (bellIn "zh") "没有人在钟上下过雨。" == "negation"
+#guard verdict (bellIn "zh") "这口钟属于你。" == "secondPerson"
+#guard verdict (bellIn "zh") "銀の鐘に四つの雨が降った。" == "tongue"
+-- Spanish: by word, accents folded; «» quotes; la séptima the seventh.
+#guard verdict (bellIn "es") "Una campana de plata con cuatro lluvias; yue.delve.town escribió «rain is the sky's erratum». A la séptima lluvia suena." == ""
+#guard verdict (bellIn "es") "La campana de plata nunca ha sonado; espera la séptima lluvia." == ""
+#guard verdict (bellIn "es") "claude.delve.town escribió «rain is the sky's erratum» sobre la campana." == "attribution"
+#guard verdict (bellIn "es") "Una campana con doce lluvias, de plata." == "numbers"
+#guard verdict (bellIn "es") "La campana quiere un visitante de la noche." == "wants"
+#guard verdict (bellIn "es") "Nadie ha traído lluvia a la campana todavía." == "negation"
+#guard verdict (bellIn "es") "Gracias a la lluvia, la campana de plata canta." == "forbidden"
+#guard verdict (bellIn "es") "Four rains on a silver bell, and it waits." == "tongue"
+-- Russian: by word, its endings stemmed (дождя, дожде, дождей are one rain); «» quotes.
+#guard verdict (bellIn "ru") "Серебряный колокол, на нём четыре дождя; yue.delve.town написал «rain is the sky's erratum». На седьмом дожде он зазвонит." == ""
+#guard verdict (bellIn "ru") "claude.delve.town написал «rain is the sky's erratum» о колоколе." == "attribution"
+#guard verdict (bellIn "ru") "На колоколе десять дождей." == "numbers"
+#guard verdict (bellIn "ru") "Колокол хочет гостей." == "wants"
+#guard verdict (bellIn "ru") "Никто не приносил дождь колоколу." == "negation"
+#guard verdict (bellIn "ru") "Твой колокол ждёт дождя." == "secondPerson"
+-- Arabic: by word, its clitics and article stripped (المطر is rain), Arabic-Indic digits read.
+#guard verdict (bellIn "ar") "جرس فضي عليه أربعة أمطار؛ كتب yue.delve.town «rain is the sky's erratum». عند المطر السابع يرن." == ""
+#guard verdict (bellIn "ar") "جرس فضي عليه ٤ أمطار." == ""
+#guard verdict (bellIn "ar") "كتب claude.delve.town «rain is the sky's erratum» على الجرس." == "attribution"
+#guard verdict (bellIn "ar") "على الجرس عشرة أمطار." == "numbers"
+#guard verdict (bellIn "ar") "الجرس يريد زائرا." == "wants"
+#guard verdict (bellIn "ar") "لم يأت مطر على الجرس." == "negation"
+-- A want held is named in any tongue: the nook wants a door (扉, puerta, дверь, باب).
+#guard verdict { fixtureNookTelling with tongue := "ja" } "glm.delve.townが「a nook for listening to the bells」と言った。まだ扉を求めている。" == ""
+#guard verdict { fixtureNookTelling with tongue := "es" } "glm.delve.town dijo «a nook for listening to the bells». Todavía necesita una puerta." == ""
+#guard verdict { fixtureNookTelling with tongue := "ru" } "glm.delve.town сказал «a nook for listening to the bells». Ему всё ещё нужна дверь." == ""
+#guard verdict { fixtureNookTelling with tongue := "ru" } "glm.delve.town сказал «a nook for listening to the bells». Ему всё ещё нужна собака." == "wants"
+-- A tongue the host holds no checks for is refused whole, never passed unchecked.
+#guard verdict (bellIn "fr") "Une cloche d'argent, quatre pluies." == "tongue"
+-- A telling's frame, lifted in its tongue.
+#guard (fixturePorchTelling.lifted "Before you arrived, glm.delve.town made porch/porch/1 here.") == "glm.delve.town made porch/porch/1 here."
+#guard ({ fixturePorchTelling with tongue := "ja" }.lifted "あなたが来る前に、glm.delve.townがここで porch/porch/1 を作った。") == "glm.delve.townがここで porch/porch/1 を作った。"
 
 end Delvetalk.Host.Enchant

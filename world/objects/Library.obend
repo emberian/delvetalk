@@ -28,10 +28,10 @@ record State:
 law owner "only the owner shelves a page; anyone reads, and places rules, wants and verbs on it": request.subject == new.owner or ((request.kind == 0 or request.kind == rule) and unchanged(owner) and unchanged(pages))
 def initial() -> State:
   {owner: "", ownerHandle: "", pages: Relations.empty()}
-# 32 pages of at most 1,266 characters (what a reply leaves after the library's receipt line,
-# Card.limit): about 44 KB.
+# 48 pages of at most 1,266 characters (what a reply leaves after the library's receipt line,
+# Card.limit): about 61 KB.
 def relations() -> Relations.Decls:
-  Lists.append(Relations.Decls.nil(), {field: "pages", key: Text.words("name"), limit: 32n})
+  Lists.append(Relations.Decls.nil(), {field: "pages", key: Text.words("name"), limit: 48n})
 form read:
   page: text 1..120
 form laws:
@@ -43,10 +43,13 @@ form shelve:
   body: text 1..1266
 def ordered(state: State) -> Lists.List<Page>:
   Relations.order(state.pages, fn(p: Page) -> Nat: p.place)
-# A page that continues another (`guide-3` continues `guide`: its name before the first `-` is a page here) is read by
+# A page that continues another (`guide-3` continues `guide`: its name before the first `-` is a page here) or
+# translates it (`guide.ja` is `guide` in the tongue `ja`: its name before the first `.` is a page here) is read by
 # name and left off the index and the shelf line, where its first page stands for it.
 def continued(state: State, page: Page) -> Bool:
-  let at = textBreak(page.name, "-")
+  derived(state, page, "-") || derived(state, page, ".")
+def derived(state: State, page: Page, mark: String) -> Bool:
+  let at = textBreak(page.name, mark)
   if at >= textLength(page.name) then false else shelvedName(state, textTake(page.name, at))
 def shelvedName(state: State, name: String) -> Bool:
   match Relations.lookup(state.pages, {name: name}):
@@ -64,11 +67,23 @@ def found(state: State, said: String) -> Lists.Maybe<Page>:
   match Relations.lookup(state.pages, {name: Text.trim(said)}):
     case some(p): Lists.Maybe.some({value: p.value})
     case none(_): Lists.find(ordered(state), fn(p: Page) -> Bool: Lists.any(Text.words(said), fn(w: String) -> Bool: textLength(w) > 0n && Card.stripped(w, textLength(w)) == p.name))
-# Reading writes nothing and asks no model.
+# Reading writes nothing and asks no model. A reader whose avatar states a tongue (`delvetalk me set / tongue: ja`)
+# is read the page's translation (`guide.ja`) where one is shelved; no avatar, no tongue, `en`, or a view refused
+# read the page as shelved.
 def read(state: State, input: {page: String}, context: Abi.Context) -> Activity<Card.Replied>:
+  match world.viewField::<String>({object: {world: context.world, object: context.principal}, field: "tongue"}):
+    case viewed(v): readIn(state, input, v.state, context)
+    case _: readIn(state, input, "", context)
+def readIn(state: State, input: {page: String}, tongue: String, context: Abi.Context) -> Activity<Card.Replied>:
   match found(state, input.page):
-    case some(p): Card.tell(Card.Replied.done({action: "read"}), Document.text(p.value.body))
+    case some(p): Card.tell(Card.Replied.done({action: "read"}), Document.text(translated(state, p.value, tongue).body))
     case none(_): refused({clause: "noPage", reading: "No page called {input.page}. {shelfLine(state)}"}, context)
+def translated(state: State, page: Page, tongue: String) -> Page:
+  if tongue == "" || tongue == "en" then page else inTongue(state, page, tongue)
+def inTongue(state: State, page: Page, tongue: String) -> Page:
+  match Relations.lookup(state.pages, {name: "{page.name}.{tongue}"}):
+    case some(t): t.value
+    case none(_): page
 def names(pages: Lists.List<Page>) -> String:
   textJoin(Lists.map(pages, fn(p: Page) -> String: p.name), " ")
 def shelfLine(state: State) -> String:

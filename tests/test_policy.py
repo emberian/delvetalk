@@ -75,7 +75,7 @@ def run(entry, *arguments, limits=None):
 
 HOB_ANSWERS = (
     "\nAnswer with exactly one of these, and nothing else:\n"
-    "- the spell they meant, up to three one after another; every value from their words, never invented, a choice never widened;\n"
+    "- the spell they meant, up to three one after another; every value from their words, in the language they wrote it in, never translated and never invented, a choice never widened; the card, the action and the field names stay the town's, exactly as the card writes them, whatever language the words are in;\n"
     "- delvetalk plan, then on the lines after it up to eight spells, when the words mean several acts that stand or fall together (make a kind, then one of it, then a rule on it); a later spell names what an earlier one made as {made N}, N that spell's number; the acts are judged as one;\n"
     "- grow: NAME \"reading\", then on the next line the spell that uses the new verb, when their words name an act the card's verbs do not have; a grown verb is a gesture: one line on the thing, tagged with the verb, and the thing tended;\n"
     "- ask: <one short question> when a value is missing or does not fit: name the field and what it takes; no thanks, sorry or please;\n"
@@ -336,7 +336,7 @@ class PolicyObject(Chain):
         [item] = self.host.send(op="world-interpretations")["pending"]
         system = item["policy"]["system"]
         self.assertTrue(item["card"].startswith("✾ DELVETALK · THE COMMONPLACE\n"), item["card"])
-        self.assertTrue(system.startswith("hob reads for a town of cards. A participant answered a card in words."), system)
+        self.assertTrue(system.startswith("hob reads for a town of cards. A participant answered a card in words, in whatever language they write"), system)
         # What residents wrote (the card, the forms) is in the user turn, every line marked and none in the system text.
         user = item["user"]
         self.assertIn("The card they answered:\n" + "".join("| " + l + "\n" for l in item["card"].splitlines()), user)
