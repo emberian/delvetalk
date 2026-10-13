@@ -838,7 +838,7 @@ def declaredMisfit (method : String) (argument : Data) (declared : List (String 
       | some (.variant l _) => some l
       | _ => none
     let (_, reason) ← Spell.judge f shown
-    return (if reason.endsWith "." then reason.dropRight 1 else reason)
+    return (if reason.endsWith "." then (reason.dropEnd 1).toString else reason)
 
 /-- A form's action, on the Data wire. -/
 def formAction : Data → String
@@ -1423,7 +1423,7 @@ def rulesText (w : World) (id : String) (o : Object) (shown : String) : String :
 /-- `delvetalk <card> verbs` (docs/FOUNDATION.md §10): the verbs the card takes, the ones its kind
     declares first, then each grown one with its grower, the entry that grew it, its reading, what it
     takes and the rule it does. -/
-def verbsText (w : World) (id : String) (o : Object) (shown : String) (declared : List Spell.Form) : String :=
+def verbsText (w : World) (o : Object) (shown : String) (declared : List Spell.Form) : String :=
   let given := if declared.isEmpty then "" else
     s!"Declared by its kind: {", ".intercalate (declared.map (·.action))}.\n"
   let grown := o.verbs.map fun v =>
@@ -1758,7 +1758,7 @@ def castSpell (w : World) (principal self : String) (argument : Data) (o : Objec
     return .usage id (match action with
       | "rules" => rulesText w id target shown
       | "wants" => wantsText w principal id target shown
-      | _ => verbsText w id target shown ((usage ()).1.filter fun f => !target.verbs.any (·.name == f.action)))
+      | _ => verbsText w target shown ((usage ()).1.filter fun f => !target.verbs.any (·.name == f.action)))
   -- A verb grown with a body (docs/AUTHORING.md §3 (b)) is a one-method layer the workshop writes, checks
   -- and lays (or holds for the card's owner): its `growBody`, the speaker's turn.
   if action == "grow" && speaker && !forms.any (·.action == action) && w.objects.contains workshopId &&
@@ -4808,6 +4808,15 @@ def openerRow (w : World) (rows : Json) : Json :=
     shows a reader its read policy permits (`source: false` leaves the source out), and its method
     table with each turnable method's `admits` for the reader. -/
 def inspectOp (w : World) (j : Json) : Except String Json := do
+  if let some asked := ← optText j "grant" then
+    let grant ← boundedText "grant" Limits.maxIntentBytes asked
+    let principal ← readerOf j
+    match grantRead w grant with
+    | some row =>
+      if viewable w principal ((row.getObjValAs? String "object").toOption.getD "") then
+        return Json.mkObj [("status", toJson "inspected"), ("grant", row)]
+      return Json.mkObj [("status", toJson "denied")]
+    | none => return Json.mkObj [("status", toJson "unknown"), ("grant", toJson grant)]
   let id ← j.getObjValAs? String "object"
   let principal ← readerOf j
   match w.objects[id]? with
@@ -4827,7 +4836,7 @@ def inspectOp (w : World) (j : Json) : Except String Json := do
       -- The law's clauses with their readings, and whether a Bend `law(old, new, request)` judges after it.
       ("laws", openerRow w (lawRows o)), ("cites", toJson (lawCitations w o.law)), ("bendLaw", toJson o.predicate)] ++
       (if withSource then [("source", toJson (entrySource o))] else []) ++ [("methods", methodsFor w o principal),
-      ("supervisor", toJson o.supervisor),
+      ("supervisor", toJson o.supervisor), ("maker", toJson o.maker), ("retired", toJson (objectRetired o)),
       -- Its canonical bytes, and its scalar part's, which `Bounds.maxCellBytes` bounds as it bounds each row.
       ("stateBytes", toJson (stateBytes o.state)),
       ("scalarBytes", toJson (Delvetalk.Canonical.encode o.cells.scalar).size),

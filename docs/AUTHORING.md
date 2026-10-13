@@ -103,6 +103,25 @@ A spell already is a typed block (`?` prints it), as Scratch's are, and hob is t
 
 **Grown gestures.** `grow` without a body places a verb on the thing, whoever its law admits. Of its sixteen slots, a hand other than its owner (or the opener) holds at most `Limits.placedPerHand` (4); all other hands together hold `verbsByOthers` (12), reserving four for the owner. The same local `checkShare` in `judge` admits rules and wants, each in its own collection: a gesture with `does` takes one verb slot and one rule slot, so four such gestures use four of each allowance. A refusal names `capacity placedPerHand`, `verbsByOthers` or the full table's `verbsPerObject`. `ungrow` by its grower, the thing's owner or the opener frees both the verb and its rule, including when a share is full; the owner and opener are exempt from shares, within the table's sixteen.
 
+**Keeping room** (HOST-HANDOFF 5.226). Each resident may make 128 non-retired things and grant
+64 unrevoked delegations whose `until` has not passed; the opener is exempt within the town's
+10,000 objects and 4,096 live grants. A kind making a thing charges the resident whose turn made
+it. Changing a Bend state's `owner` or `maker` does not transfer that allocation. `capacity`
+names `objectsPerPrincipal` or `grantsPerPrincipal` when a share is full. The opener's
+`delvetalk <thing> retire / reading: <why it is finished>` releases the maker's object share,
+preserving its name and state. A resident may also amend an owned thing's law with
+`law retired "finished": request.kind == 2 and request.subject == "<their principal>"`, when its
+law admits their amendment; the thing stops activity and they can still amend it. The `retire`
+power itself remains the opener's. Any removal of retirement, including the opener's `unretire`,
+must fit the maker's share. Retirement still occupies the global object table until the inactive-object
+archive is built (FOUNDATION §2, §12). `ungrow` frees a placing, not an object allocation.
+Revoking a grant or advancing past its `until` frees its live slot. A receipt citing its id can
+read a compact ending through `world-inspect {grant}` or `world-grants {grant}`; its free-text
+reading and full terms remain in the original receipt. The world retains 256 endings; earlier
+ones require the journal, and those evicted before a carry require the retained old journal.
+Neither a snapshot nor a carry reclaims journal bytes. Segmented journals and object archival
+are specified, assigned follow-ups in FOUNDATION §12, not authoring facilities shipped here.
+
 **Decision:** `of:` any kind as a layer stack; clauses live, code pinned and pulled by the downstream owner; the verb library is single-verb kinds laid by `become`; forks by `draft / from:`; lineage on the card.
 
 **The astra world review's four medium findings (2026-10-12, world.md 12, 13, 14, 15), decided.**

@@ -2172,6 +2172,15 @@ def applyGrants (w : World) (grants : List Grant) (revokes : List String) (spent
     | some g => { w with grants := w.grants.insert id { g with revoked := true } }
     | none => w) w
 
+/-- Endings are derived after recording the entry that revokes a grant or advances past its expiry. -/
+def compactGrants (w : World) (endings : List (String × GrantTombstone) := []) : World := Id.run do
+  let ended := (w.grants.toList.filter fun (_, g) => g.revoked || w.clock > g.expires).toArray
+  if ended.isEmpty then return w
+  let added := ended.map fun (_, g) => (endings.lookup g.id).getD (GrantTombstone.ofGrant g (if g.revoked then "revoked" else "expired") w.height)
+  let stones := (w.grantTombstones ++ added).qsort fun a b => a.endedAt < b.endedAt || (a.endedAt == b.endedAt && a.id < b.id)
+  return { w with grants := ended.foldl (fun gs (id, _) => gs.erase id) w.grants,
+                  grantTombstones := stones.extract (stones.size - Limits.maxGrantTombstones) stones.size }
+
 /-- The argument a use of grant `g` runs with: the caller's, with the grant's fixed part merged
     in. A fixed record field the caller gives with other bytes is a conflict; a fixed value that is
     not a record must be the whole argument (or the caller gives `{}`). -/
@@ -2426,6 +2435,25 @@ def ownerOf (state : Data) : String :=
     | some (.label t) => t
     | _ => ""
   | _ => ""
+
+/-- A retirement allows only an amendment by its named principal; its name alone releases nothing. -/
+def objectRetired (o : Object) : Bool :=
+  match o.law.lookup "retired" with
+  | some (.and (.eq (.fact .kind) (.int k)) (.eq (.fact .subject) (.text _))) => k == 2
+  | _ => false
+
+/-- Admit the final objects a commit would install, counting each maker's non-retired objects. -/
+def objectCapacity (w : World) (updates : List (String × Object)) : Option Refusal := Id.run do
+  let objects := updates.foldl (fun (os : Std.HashMap String Object) (id, o) => os.insert id o) w.objects
+  if objects.size > w.objects.size && objects.size > w.objectBound then
+    return some { cls := "capacity", object := some "objects", reason := some "maxObjects" }
+  let principals := (updates.map (·.2.maker)).eraseDups
+  for principal in principals do
+    if principal == w.opener then continue
+    let count := fun (os : Std.HashMap String Object) => os.toList.filter (fun (_, o) => o.maker == principal && !objectRetired o) |>.length
+    if count objects > Limits.objectsPerPrincipal && count objects > count w.objects then
+      return some { cls := "capacity", object := some "objects", reason := some "objectsPerPrincipal" }
+  return none
 
 mutual
 /-- `Cites` of some names (see the structure). -/
@@ -2929,11 +2957,17 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
   -- An absence is a root too: something appearing since the turn looked makes it stale.
   for id in p.absent do
     if w.objects.contains id then throw { cls := "staleRoot", object := id }
-  if w.objects.size + p.creates.length > w.objectBound then
-    throw { cls := "evaluation", reason := some "object capacity reached" }
-  if w.grants.size + p.grants.length > Limits.maxGrants then throw { cls := "capacity", object := some "grants", reason := some "maxGrants" }
+  let live := fun (g : Grant) => !g.revoked && w.clock ≤ g.expires && !p.revokes.contains g.id
+  let existing := w.grants.toList.map (·.2) |>.filter live
+  let incoming := p.grants.filter live
+  if !incoming.isEmpty && existing.length + incoming.length > w.grantBound then
+    throw { cls := "capacity", object := some "grants", reason := some "maxGrants" }
+  for principal in (incoming.map (·.grantor)).eraseDups do
+    if principal == w.opener then continue
+    if (existing.filter (·.grantor == principal)).length + (incoming.filter (·.grantor == principal)).length > Limits.grantsPerPrincipal then
+      throw { cls := "capacity", object := some "grants", reason := some "grantsPerPrincipal" }
   for g in p.grants do
-    if w.grants.contains g.id then throw { cls := "evaluation", reason := some "a grant id is already taken" }
+    if w.grants.contains g.id || w.grantTombstones.any (·.id == g.id) then throw { cls := "evaluation", reason := some "a grant id is already taken" }
   -- A limited grant must have the uses the turn spends left when it commits.
   for (id, n) in p.spent do
     match w.grants[id]? with
@@ -2941,7 +2975,8 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
       if let some left := g.uses then
         if left < n then throw { cls := "lawRefused", clause := some "grantSpent", object := some g.object,
                                   reading := some s!"the grant has {left} of its uses left, and the turn spends {n}." }
-    | none => throw { cls := "evaluation", reason := some "a turn spends an unknown grant" }
+    | none => throw { cls := "lawRefused", clause := some "noGrant",
+                      reading := some s!"no standing grant {id} lets this turn spend its uses." }
   -- A revocation needs the grantor's turn, or a turn that read the object holding the grant.
   for id in p.revokes do
     match w.grants[id]? with
@@ -3186,9 +3221,11 @@ def judge (w : World) (height : Nat) (p : Proposal) : Except Refusal Judged := d
     out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version,
                                     behaviour := o.behaviour + p.behaviourMoves id, cells })]
     factsOf := factsOf ++ [(id, judgedBy)]
+  let creations := (p.creates.filter fun (id, _) => !out.any (·.1 == id)).map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom })
+  if let some refusal := objectCapacity w (out ++ creations) then throw refusal
   return { updates := out, reprograms, amendments, evicted := evictions, facts := factsOf,
            -- A creation the turn also wrote or placed on is its update, made at the state the turn leaves it in.
-           creations := (p.creates.filter fun (id, _) => !out.any (·.1 == id)).map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom }),
+           creations,
            creates := p.creates.map fun (id, c) => createRecJson id c }
 
 /-! ## Entries -/
@@ -3495,6 +3532,27 @@ def objectsNamed (entry : Json) : List String :=
   (((outcome.getObjValAs? String "object").toOption.toList ++ ids "writes" ++ ids "creates" ++ ids "reprograms" ++
     ids "amendments" ++ ids "placed" ++ installed)).eraseDups
 
+/-- The immutable allocation principal an entry creates or carries for an object. -/
+def makerIn (entry : Json) (id : String) : Option String := do
+  let outcome ← (entry.getObjVal? "outcome").toOption
+  let principal := ((entry.getObjVal? "identity").toOption.bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+  match tagOf entry with
+  | "created" =>
+    if (outcome.getObjValAs? String "object").toOption != some id then none
+    else some ((outcome.getObjValAs? String "owner").toOption.getD principal)
+  | "admitted" =>
+    let rows ← (outcome.getObjVal? "creates").toOption.bind (·.getArr?.toOption)
+    if rows.any (fun r => (r.getObjValAs? String "object").toOption == some id) then some principal else none
+  | "carried" | "forked" =>
+    let row ← genesisRow outcome id
+    if let some maker := (row.getObjValAs? String "maker").toOption then return maker
+    let state ← (row.getObjVal? "state").toOption
+    let owner := ownerOf (← (decodeData Limits.dataDepth state).toOption)
+    let opener := ((outcome.getObjVal? "state").toOption.bind (·.getObjVal? "settings" |>.toOption)
+      |>.bind (·.getObjValAs? String "opener" |>.toOption)).getD ""
+    return if owner.isEmpty then opener else owner
+  | _ => none
+
 /-- `World.anchors` after the entry at `height`: each object it gives a version, a pin or a law is
     anchored there for that; a root `delete` forgets the object. -/
 def anchorsAfter (w : World) (height : Nat) (entry : Json) : Std.HashMap String Anchor :=
@@ -3508,6 +3566,7 @@ def anchorsAfter (w : World) (height : Nat) (entry : Json) : Std.HashMap String 
     let a := if (lawIn entry id).isSome then { a with law := height } else a
     let a := if (placedIn entry id).isSome then { a with placed := height } else a
     let a := if (readPolicyIn entry id).isSome then { a with read := height } else a
+    let a := if (makerIn entry id).isSome then { a with maker := height } else a
     if a == m.getD id {} then m else m.insert id a) w.anchors
 
 /-- The indexes a root or moderation entry moves (docs/ROOT.md §1.3: rebuilt as `record` rebuilds
@@ -3749,7 +3808,7 @@ def recordCore (w : World) (entry : Json) (key : String) (touch : List String) :
 def record (w : World) (entry : Json) (key : String) (touch : List String) : World :=
   -- The want index follows what the entry wrote and the readers it re-judged (`wantReview`).
   let indexed := if touch.isEmpty then w else reindexWants w (touch ++ wantReview w touch)
-  recordActs (recordCore indexed entry key touch) entry
+  compactGrants (recordActs (recordCore indexed entry key touch) entry)
 
 /-- The facts a want of `o` (`id`) is judged and filled by, as `w` holds it at `height`: the clock, the
     thing, the states its lines cite and the wants they name (`Law.asItStands` keeps only these). -/
@@ -4201,7 +4260,7 @@ def makeObject (w : World) (b : Built) (inputs : Json) (state : Data) (read : Op
   -- A package's rules and wants are placed on what is made of it, by its creator, when no text is given.
   let placed := if lawText.isSome then [] else b.lines.map fun c =>
     ({ name := c.name, owner := creator, since := height, line := c.render, clause := c } : Placed)
-  return ({ pin, law := laws, lawText := lawText.getD (renderLaw laws), version := 0, cells, stateType := b.ty, readings,
+  return ({ maker := creator, pin, law := laws, lawText := lawText.getD (renderLaw laws), version := 0, cells, stateType := b.ty, readings,
             rules := placed.filter (Law.isRule ·.clause), wants := placed.filter (Law.isWant ·.clause),
             bounds := b.assumptions.bounds, read := ← parseRead read, chain := ← parseChain chain,
             inputs, inputsKey := inputsKeyOf inputs, methods, predicate, predicateReads, packet,
@@ -4278,7 +4337,6 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
     if !openerActs w principal then
       throw s!"only the opener of the world{if w.resident && principal == w.opener then ", on the root socket," else ""} may name an owner{if w.opener.isEmpty then "; this world names no opener" else s!"; that is {w.opener}"}"
   if w.objects.contains id then throw s!"object {id} already exists"
-  if w.objects.size ≥ w.objectBound then throw "object capacity reached"
   let inputs ← attachLibrary w (← compileInputs j)
   -- The seed is laid over initial(), as the create Plan does: a record of some of the state's
   -- fields ({} is initial() itself). The journal keeps the whole state, so replay needs no merge.
@@ -4302,6 +4360,8 @@ def create (w : World) (j : Json) : Except String (World × Json) := do
   unless supervisor.isEmpty || ((w.objects[supervisor]?).map (·.offers "ended")).getD false do
     throw s!"supervisor {supervisor} does not take ended: a supervisor's package declares it"
   let o := { o with supervisor }
+  if let some refusal := objectCapacity w [(id, o)] then
+    return commit w { principal, intent, roots := [], writes := [] } [("request", toJson digest)] (some refusal)
   -- An `artifact` claim is only a claim: the journal keeps the inputs, never the claim.
   discard <| pure sources
   let outcome := createOutcome id o (compactInputs inputs) seed
@@ -4901,7 +4961,7 @@ def readingsJson (rs : List (String × String)) : Json :=
 
 /-- An object's whole record, as `delete`'s `before` names it. -/
 def objectRecord (o : Object) : Json :=
-  Json.mkObj ([("pin", toJson o.pin), ("law", toJson o.lawText), ("version", toJson o.version),
+  Json.mkObj ([("maker", toJson o.maker), ("pin", toJson o.pin), ("law", toJson o.lawText), ("version", toJson o.version),
     ("state", dataJson o.state), ("read", o.read.json), ("chain", o.chain.json), ("compile", o.inputs),
     ("supervisor", toJson o.supervisor), ("fixed", toJson o.fixed), ("readings", readingsJson o.readings)] ++
     (if o.behaviour == 0 then [] else [("behaviour", toJson o.behaviour)]) ++
@@ -5265,6 +5325,7 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
       unless cid == placedCid o do throw s!"object {id} is not made with the rows its creation journaled"
     let w := noteRecompiled w o
     let o := { o with supervisor := (outcome.getObjValAs? String "supervisor").toOption.getD "" }
+    if let some refusal := objectCapacity w [(id, o)] then throw (refusal.reason.getD refusal.cls)
     return record (noteMinted { w with objects := w.objects.insert id o } id) entry key [id]
   | "refused" =>
     let cls ← outcome.getObjValAs? String "class"
@@ -6039,23 +6100,83 @@ def sourcesOp (w : World) (j : Json) : Except String Json := do
   let (shown, more, cursor) ← pageByHeight j ((sourceRecords w).filterMap fun (h, cid, r) => if readable.contains cid then some (h, r) else none)
   return Json.mkObj ([("status", toJson "sources"), ("sources", Json.arr shown)] ++ pageFields more cursor)
 
-/-- `world-grants {principal, after?, before?, reverse?, limit?}`: every grant an admitted entry made whose
-    object the reader may view, as it stands now (`revoked`, `uses` left), with the `height` and `hash` of
-    the entry that made it, paged by that height. -/
+/-- Resolve an ended id outside the tombstone ring from the journal, including a genesis's held grants. -/
+def grantHistory (w : World) (id : String) : Option Json := Id.run do
+  let mut found : Option Json := none
+  let mut terms : Option Grant := none
+  let mut clock := 0
+  for i in [w.entries.base:w.entries.count] do
+    let some entry := w.entries.get? i | continue
+    if w.ignoring.contains (i + 1) || w.shadowed.any (fun (e : Json) => (e.getObjValAs? Nat "height").toOption == some (i + 1)) then continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let held := if ["carried", "forked"].contains (tagOf entry) then (outcome.getObjVal? "state").toOption.getD Json.null else outcome
+    if tagOf entry == "advanced" then clock := (outcome.getObjValAs? Nat "to").toOption.getD clock
+    if ["carried", "forked"].contains (tagOf entry) then clock := (held.getObjValAs? Nat "clock").toOption.getD clock
+    if ["root", "moderated"].contains (tagOf entry) && actOf outcome == "settings" then
+      clock := ((outcome.getObjVal? "after").toOption.bind (·.getObjValAs? Nat "clock" |>.toOption)).getD clock
+    let arr := fun (key : String) => ((held.getObjVal? key).toOption.bind (·.getArr?.toOption)).getD #[]
+    if ["admitted", "carried", "forked"].contains (tagOf entry) then
+      for raw in arr "grants" do
+        if (raw.getObjValAs? String "id").toOption != some id then continue
+        if let .ok g := Grant.ofJson raw then
+          terms := some { g with revoked := (raw.getObjValAs? Bool "revoked").toOption.getD false }
+          found := some ((g.json.setObjVal! "revoked" (toJson false)).setObjVal! "height" (toJson (i + 1))
+            |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null))
+      for raw in arr "grantTombstones" do
+        if (raw.getObjValAs? String "id").toOption == some id then
+          let row := raw.setObjVal! "revoked" (toJson ((raw.getObjValAs? String "ended").toOption == some "revoked"))
+          found := some ((row.setObjVal! "height" (toJson (i + 1))).setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null))
+          terms := none
+    let some g := terms | continue
+    let revoked := g.revoked || (arr "revokes").any (fun (r : Json) => r.getStr?.toOption == some id) ||
+      (["root", "moderated"].contains (tagOf entry) && actOf outcome == "revoke" &&
+        (outcome.getObjValAs? String "grant").toOption == some id)
+    let next := compactGrants (applyGrants { clock, height := i + 1 } [g] (if revoked then [id] else []))
+    if let some stone := next.grantTombstones[0]? then
+      let ended := stone.json.setObjVal! "revoked" (toJson (stone.ended == "revoked"))
+      let origin := found.getD Json.null
+      found := some ((ended.setObjVal! "height" ((origin.getObjVal? "height").toOption.getD Json.null))
+        |>.setObjVal! "hash" ((origin.getObjVal? "hash").toOption.getD Json.null))
+      terms := none
+  return found
+
+/-- The live index, the bounded tombstones, then the journal; reads never compact. -/
+def grantRead (w : World) (id : String) (origin : Option Json := none) : Option Json :=
+  let history := origin.orElse fun _ => grantHistory w id
+  let now : Option Json := match w.grants[id]? with
+    | some g => some (g.json.setObjVal! "revoked" (toJson g.revoked))
+    | none => (w.grantTombstones.find? (fun (g : GrantTombstone) => g.id == id)).map
+        (fun (g : GrantTombstone) => g.json.setObjVal! "revoked" (toJson (g.ended == "revoked")))
+  match now, history with
+  | some row, some old => some ((row.setObjVal! "height" ((old.getObjVal? "height").toOption.getD Json.null))
+      |>.setObjVal! "hash" ((old.getObjVal? "hash").toOption.getD Json.null))
+  | some row, none => some row
+  | none, _ => grantHistory w id
+
+/-- `world-grants {principal, grant?, after?, before?, reverse?, limit?}`: live terms or a compact ending,
+    with the entry that made or carried it, for objects the reader may view. -/
 def grantsOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
+  if let some asked := ← optText j "grant" then
+    let id ← boundedText "grant" Limits.maxIntentBytes asked
+    let row : Option Json := (grantRead w id).filter fun (g : Json) => viewable w reader ((g.getObjValAs? String "object").toOption.getD "")
+    return Json.mkObj [("status", toJson "grants"), ("grants", Json.arr ((row.map (#[·])).getD #[]))]
   let mut items : Array (Nat × Json) := #[]
   for i in [w.entries.base:w.entries.count] do
     let some entry := w.entries.get? i | continue
-    if tagOf entry != "admitted" then continue
-    let made := ((entry.getObjVal? "outcome").toOption.bind (·.getObjVal? "grants" |>.toOption) |>.bind (·.getArr?.toOption)).getD #[]
-    for g in made do
+    if !["admitted", "carried", "forked"].contains (tagOf entry) then continue
+    if w.ignoring.contains (i + 1) || w.shadowed.any (fun (e : Json) => (e.getObjValAs? Nat "height").toOption == some (i + 1)) then continue
+    let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
+    let held := if ["carried", "forked"].contains (tagOf entry) then (outcome.getObjVal? "state").toOption.getD Json.null else outcome
+    let arr := fun (key : String) => ((held.getObjVal? key).toOption.bind (·.getArr?.toOption)).getD #[]
+    for g in arr "grants" ++ arr "grantTombstones" do
       let some id := (g.getObjValAs? String "id").toOption | continue
-      let some now := w.grants[id]? | continue
-      unless viewable w reader now.object do continue
-      items := items.push (i + 1, (now.json.setObjVal! "revoked" (toJson now.revoked)).setObjVal! "height" (toJson (i + 1))
-        |>.setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null))
-  let (shown, more, cursor) ← pageByHeight j items
+      unless viewable w reader ((g.getObjValAs? String "object").toOption.getD "") do continue
+      let origin := (g.setObjVal! "height" (toJson (i + 1))).setObjVal! "hash" ((entry.getObjVal? "hash").toOption.getD Json.null)
+      items := items.push (i + 1, origin)
+  let (page, more, cursor) ← pageByHeight j items
+  let shown : Array Json := page.filterMap fun (origin : Json) =>
+    ((origin.getObjValAs? String "id").toOption.bind fun (id : String) => grantRead w id (some origin))
   return Json.mkObj ([("status", toJson "grants"), ("grants", Json.arr shown)] ++ pageFields more cursor)
 
 /-- `world-entry {principal, hash, bytes?}`: the entry whose hash it is, as the reader may see it

@@ -2880,6 +2880,71 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    Transport's `pages.place` docstring and scene catalogue comment still describe folding the card; their
    cleanup belongs to the transport lane under this lane's single catalogue-string exception.
 
+226. **Ended grants release live capacity; makers and grantors hold bounded shares (lane/cx-world;
+   astra 2026-10-12 world.md 11; pending replay edition 14).** `record` runs `compactGrants` after
+   the entry's clock and revocations: `until` inclusive, a revocation or first clock past it ends
+   the grant at that entry's height. `World.grants` holds only unrevoked, unexpired grants;
+   zero-use limited grants still stand until revoked or expired. The newest 256 endings, ordered
+   by height then id, are `GrantTombstone {id, grantor, holder, to, object, method, ended, endedAt}`;
+   no reading, fixed argument or uses. The ring releases live grant slots, never journal bytes.
+   `grantRead`, shared by `world-grants {grant?}` and `world-inspect {grant}`, reads live terms,
+   the ring, then the journal. Journal lookup uses the same compaction function, not a mutation
+   on read. `revoked` is a read projection. Paged listing resolves only the selected page's ids.
+   Snapshot/store-installing genesis hold the ring, and a carry normalizes older full grants
+   from their journal endings. Ring eviction before a carry leaves the id only in the retained
+   old journal; this binary does not traverse an archived earlier edition on a grant read.
+   A listing's `height`/`hash` names the making, or the carrying genesis when that is the available
+   origin. The full creation receipt retains its reading and terms.
+   - *Allocation.* `grantsPerPrincipal = 64`, `objectsPerPrincipal = 128`: 1/64 and about 1/78
+     of their global tables, opener exempt. Grant admission subtracts the commit's revocations
+     and excludes already-expired incoming grants. `world-open {maxGrants}` only lowers the
+     process's bound; it never changes the journal or snapshot. `Object.maker` is the allocation
+     principal at creation, not a mutable Bend state field: the turn principal even through a
+     kind, or a direct opener-named owner. `objectCapacity` checks the final objects installed
+     by direct creation and by `judge`, including restorations, as transient `capacity` with the
+     bound's name. Retirement releases the maker's share, not the global object count. `retire`
+     remains the opener's power and `--leave` the carry's. A maker may use ordinary amendment
+     to add the same guarded `retired` shape with themselves as the amendment principal; the
+     metarule still applies. A false clause merely named `retired` releases nothing. Any ordinary
+     removal, including the opener's `unretire`, is checked against the maker's share.
+     Maker provenance joins the existing anchors (sixth height), snapshots and carried objects;
+     it survives layers and reprogramming. Genesis readers use `genesisRow`, the actual
+     `outcome.state.objects` store path, including old rows without `maker`. Old three/five-height
+     anchors are filled from the journal's creation or genesis before checking; no height zero
+     is read and no maker check is skipped based on an unrelated grant field. Snapshot installation
+     normalizes old full grants, shared by open and carry; `verify` compares normalized store and
+     indexes against replay. Older carries without a creation derive the maker from the genesis's
+     state owner or opener, then seal that attribution. An imported
+     over-share allocation may shrink or stand but not grow.
+   - *Tests* (initial lifecycle and share cases written first). `test_grants.GrantLifecycle`: cap lowered to one, refusal while
+     live, revoke/expiry freeing it, inclusive expiry, expiry at creation, cited id/ending,
+     replay and snapshot, the 65th resident grant and opener exemption, dropped lent reading,
+     257 endings with oldest lookup from the journal, bounded unknown ids, private tombstone
+     reads and lowering-only. `test_grants.Attenuation` checks fixed arguments and uses disappear
+     from the compact record while remaining in its making. `test_make.ObjectShares`:
+     129th resident object refused through both routes, maker attribution through a kind,
+     opener exemption, opener retirement freeing only the resident share, resident amendment
+     retirement, a misleading retired clause, reopen and over-share restoration refusal. `test_budgets.AllocationBudgets` reads the named host constants.
+     `test_carry` keeps endings, normalizes an older full-grant snapshot, retains the maker's
+     share, opens and verifies a pre-metadata edition-14 snapshot, carries it twice, carries the
+     same old layout at edition 13, and resolves a carried live grant after ring eviction.
+     The new share/privacy fixtures explicitly name their opener; the original fixtures and
+     existing carry/fork assertions remain unchanged. Before the change ended grants occupied capacity, compacted inspections and the knob
+     did not exist, and principal shares were unchecked. Existing assertions are not weakened;
+     the grant fixtures are shared without repeating their original test methods.
+   - *Remaining lifecycle.* FOUNDATION §2 specifies segmented journals (host/block-store) and
+     the 30-clock-day inactive-object archive (host/objects), with the capacity each releases
+     and crash/reopen/receipt completion checks in §12. Neither is implemented. Snapshots still
+     reclaim no journal or object capacity, carries still preserve it, and retired names still
+     occupy the global object table. Old ancestry lookup for evicted grants and ownerless legacy
+     allocations is named separately in §12. This changes replay's grant/object derivation and
+     maker anchors inside pending edition 14; the number is unchanged. Python syntax and diff
+     checks only here. The supervisor's first build elaborated; budgets, snapshot, reaction,
+     journal bounds and durability passed. Its carry/fork failures exposed the wrong genesis
+     maker path and the new fixtures' unnamed opener and invalid resident power invocation,
+     corrected above. The supervisor must rebuild, re-run those suites and the carry check on
+     the real backup. Least certain: compatibility with the real backup's oldest carried rows.
+
 ## 6. Gotchas
 
 - **Replay edition (a rule).** `Limits.replayEdition` (Store.lean) is the edition of what replay
@@ -2900,7 +2965,7 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
   KERNEL-HANDOFF §15; a carry reads an earlier world by `Ops.Naming.ofEdition`) with host29's rows and read policy
   anchored and identities carried (5.175, snapshot `v5`, whose `previousEdition` `v4` a carry checks by its three
   anchors alone); 11 is host30 (an inherited rule's firing names its holder, a carried genesis's touch
-  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219; grown verbs admitted within a stranger's share, 5.221; behaviour revisions on offered-card roots and placed commitments, 5.222; answerable want queries and compound count filters, 5.223; transition terms beside level conditions, 5.224). Test: `tests/test_replay_edition.py`.
+  barriers, law work metered, 5.179), never deployed; 12 is host31 (a carried genesis continues the old heights, 5.182); 13 is lane/authority (tenure, queued rules and wants reviewed independently of the write, 5.209–5.214); 14 is lane/cx-world (component bodies replaced at their journaled positions, 5.219; grown verbs admitted within a stranger's share, 5.221; behaviour revisions on offered-card roots and placed commitments, 5.222; answerable want queries and compound count filters, 5.223; transition terms beside level conditions, 5.224; live-grant endings and immutable maker allocations with anchors, 5.226). Test: `tests/test_replay_edition.py`.
 - **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through
   `Carry.readKeys` and `install`: a lane that changes what those read (`storeJson`, or an index key in
   `readKeys`) keeps the reader of the edition before it in the same commit, deleted when the next lands.

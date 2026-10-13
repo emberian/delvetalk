@@ -117,7 +117,8 @@ moderation (quiet a principal until a clock, hide, shadow) is the opener's recei
 quieted principal's turns are refused `quiet` until the clock passes (`docs/ROOT.md`; HOST-HANDOFF 5.126).
 `delvetalk-obend root-edit` and `migrate` are the offline tools (`RootEdit.lean`).
 
-**Store.** Objects by id: `{pin, law, version, behaviour, state, activities}`. `pin` is the
+**Store.** Objects by id: `{maker, pin, law, version, behaviour, state, activities}`.
+`maker` is the immutable allocation principal; a Bend state's fields do not replace it. `pin` is the
 CID of the sealed source closure. `state` is typed data against the package's
 state type. `activities` are suspended turns, as checkpoints bound to object,
 principal, intent and roots. Ids are 1 to 128 bytes of `[A-Za-z0-9._:/-]` at
@@ -180,7 +181,7 @@ previous}`), and the block store `J.blocks`, each entry's canonical record at `a
 records, then the links, and a reader takes one record by `pread`, checked against its CID (`Blocks.lean`;
 HOST-HANDOFF 5.137). The bound is 4 GiB (`maxJournalBytes`); an append within 1 MiB of it is refused `capacity`.
 Every journal's first entry carries its **replay edition** (`Limits.replayEdition`, now 14: component bodies
-replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads and transition terms, HOST-HANDOFF 5.219–5.224), bumped with any change to what replay derives or checks; a journal of another edition is refused on
+replaced at their journaled positions, bounded grown-verb shares, behaviour revisions, answerable want reads, transition terms, grant endings and maker allocations, HOST-HANDOFF 5.219–5.226), bumped with any change to what replay derives or checks; a journal of another edition is refused on
 open by name, and a deploy across an edition carries the world (below). Every `Data` value and every entry has one canonical byte form, DAG-CBOR
 as the AT Protocol uses it; its identity is that form's CIDv1. An entry is
 therefore a PDS record by construction, citable as `at://did/collection/rkey`
@@ -193,7 +194,7 @@ replayed; the new binary reads the world from the snapshot the old one took at i
 a journal with a `carried` genesis chained to the old head, holding the store, grants, pending deliveries,
 suspensions, posts, handles, settings and the old chain's entries by hash, so a receipt of the world before resolves
 by its slug as "entry N of the world before the carry"; `carriedFrom {world, height, cid, replay, hostSha256,
-reason}` names the origin and height 2 continues. Old entries are not re-judged (they were judged under their own
+reason}` names the origin; the carrying genesis takes the old height plus one and heights continue. Old entries are not re-judged (they were judged under their own
 edition), and the old journal is kept, read-only. Every object is rebuilt from its sources (pins are source CIDs, so
 none moves): its sources seal to its pin, its state conforms to the type this host compiles and its rows are
 canonical, and every suspended checkpoint decodes. `--library DIR` seals the image's library into the carried world
@@ -214,6 +215,78 @@ everything is where it was, and the carry is receipt X.` A genesis over a living
 `--towns`) is refused, naming each journal and its height, unless `--wipe-with-the-owners-word R`; R is then the
 town's first line, written on the commonplace, admitted by the opener and the first line of the welcome. A commit
 that touches the host ships `deploy/carry-check.sh` green on the newest backup, or it does not merge.
+
+**Active allocations** (HOST-HANDOFF 5.226). `maxGrants` (4,096) counts unrevoked grants whose
+`until` has not passed, including a limited grant with no uses left until it is revoked or expires.
+The clock equals `until` while the grant still stands. Recording a revocation or the first entry
+whose clock passes `until` removes its full terms from the live grant index and derives a tombstone:
+`{id, grantor, holder, to, object, method, ended, endedAt}`. `ended` is `revoked` or `expired`,
+`endedAt` is that entry's height; its reading, fixed argument and uses are kept only in its creation
+receipt. The newest 256 endings (`maxGrantTombstones`), ordered by ending height then id, remain
+in the world, snapshots and carries. An older tombstone's id is resolvable only through the journal;
+`world-grants {grant}` and `world-inspect {grant}` read the current chain when the ring no longer
+holds it. After a carry, an eviction predating that carry is in the retained old journal, not the new
+live index; the current host does not open another edition's archived chain on a grant read.
+Receipt hashes and slugs still identify that old chain. Grant reads obey the target object's read
+policy and report the ending, with `revoked` derived for readers of the earlier grant shape.
+Snapshotting alone releases no grant capacity; the journal-derived ending does. No journal bytes
+are reclaimed by compaction.
+
+A principal other than the opener holds at most 64 such grants (`grantsPerPrincipal`) and makes
+at most 128 non-retired objects (`objectsPerPrincipal`): 1/64 of the 4,096 grants and about 1/78
+of the 10,000 objects, leaving space shared among many residents. These are upper shares, not
+reservations or protection against multiple identities. The opener and the town's own makings
+are exempt from shares, within the global bounds. An object's allocation principal is immutable:
+the creating turn's principal, including when a kind makes it for that resident; a direct creation
+with an opener-named `owner` is allocated to that owner. Mutable `owner`/`maker` fields in Bend
+state do not move this allocation. Both creation routes and the ordinary restoration spell use
+one `objectCapacity` check on the final store; unrestricted root overrides bypass admission. Refusals are transient `capacity` naming
+`objectsPerPrincipal`, `grantsPerPrincipal`, `maxObjects` or `maxGrants`.
+The opener's `retire / reading:` or a carry's `--leave` releases the maker's share. A resident
+whose law permits amendment can also append `law retired "finished": request.kind == 2 and
+request.subject == "<resident>"` through the existing amendment mechanism: activity stops while
+the resident retains amendment permission. Only that guarded retirement shape releases a share;
+a clause merely named `retired` does not. The named principal is retained across forks and carries,
+so a different opener does not make the object live again. Its name and state stay available,
+and it still counts toward `maxObjects`. Any ordinary removal of the retirement clause, including
+the opener's `unretire`, needs room in the maker's share. Revocation and expiry release grant shares even when an allocation is already full.
+`world-open {maxGrants}` may lower the process's grant bound, never raise it, as `maxObjects` does.
+Old snapshots carried without allocation metadata recover the creation's principal from its
+journal when available, otherwise the state's owner, or the opener for an ownerless old carried
+object; these legacy attributions are sealed in the carried genesis. A snapshot without maker
+fields or a sixth anchor height reconstructs those from the available creation or genesis row
+under `outcome.state.objects`; grant normalization uses the same store contract. Verification
+compares the normalized store and indexes against replay, preserving all anchor checks. An existing allocation over
+its share can shrink or stay unchanged, but cannot grow.
+
+**Archival contracts, queued in §12; not implemented.** Preservation of names and receipts does
+not require keeping every representation in a live index. The remaining lifecycle work is:
+
+- **Segmented journal** (owner: host/block-store). Seal an active segment before its byte or entry
+  bound, take a snapshot at that seal, and begin the next segment with the sealed head's hash-chain
+  link. A checked manifest maps height ranges and receipt CIDs to sealed segments. Move each old
+  segment's chain and canonical records into the block-store archive; retain its seal, snapshot CID
+  and chain link. A receipt hash continues to resolve to the exact canonical record and its chain
+  proof, including across carries, without loading every segment. `maxJournalBytes` then bounds
+  the active segment's chain plus record bytes; `maxJournalEntries` bounds its entries. Sealing
+  releases those active append capacities and replay/index memory, not archive disk space or
+  object/grant allocations. Completion: lower both bounds, append through two seals, restart at
+  each crash boundary, verify both chain links and snapshots, and resolve the earliest receipt by
+  hash with its bytes unchanged, including an evicted pre-carry grant id through its archive.
+- **Inactive-object archive** (owner: host/objects). After 30 days of the journaled world clock
+  (`K = 30`, 43,200 minutes) without a touch, and with no live grant or suspension referencing
+  it (as target, holder, grantee, frame or checkpoint root), seal the complete object to an archive
+  CID and remove it from the live object index. Keep a bounded name-to-CID directory, law/read
+  policy and allocation metadata; names remain reserved. A touch, including an authorized read,
+  faults the same object back in, journals its access clock at most once per clock day, and admits
+  it against the live global and principal bounds, archiving another eligible object first when
+  possible. If none can move, return the named capacity without changing the archived object or
+  losing its name. Retirement is not required. This releases live-object memory and `maxObjects`
+  live count (and its live principal share), never journal bytes. Completion: lower the live cap,
+  archive an eligible object, make another, reopen and fault the old name back with identical pin,
+  version and state CID; a live grant or suspended root prevents archival; a denied read reveals
+  no archived state; receipts resolve before and after faulting. The directory must be disk-paged,
+  not another ever-growing in-memory object collection.
 
 An object's pin is the CID of its sealed source closure, not of a compiled
 packet. A compiler or library change never moves the pin of an object whose
@@ -969,7 +1042,7 @@ inspirit and the porch's things; tending; several spells in a post; a card's own
 verbs and the chronicle with Wake's host support deleted (5.161), reach as a host op (5.162), words a card heard as
 hob's (5.163), Wake, Env, Event, Mentions and subscriptions deleted from `world/`, errands and fronts, the minimal
 genesis with its coinages and wants, the web front (docs/WEB.md); answerable wants with daily rotation and derived blocked/cancelled states (world.md 16, 5.223); the astra world review's medium 14: explicit
-kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221); finding 15's behaviour revisions in offered-card roots and action receipts (5.222); finding 7's transition terms alongside level conditions (5.224); finding 17's structured paint facts and visible exact card (5.225).
+kind-text and kind-object targets for clauses (HOST-HANDOFF 5.220); finding 6's grown-verb share (5.221); finding 15's behaviour revisions in offered-card roots and action receipts (5.222); finding 7's transition terms alongside level conditions (5.224); finding 17's structured paint facts and visible exact card (5.225); finding 11's live-grant compaction and principal shares (5.226), with archival still queued below.
 
 Open, reconciled with the three handoffs' queues (HOST-HANDOFF §7, KERNEL-HANDOFF §16, OBJECTS-HANDOFF "Open");
 each handoff keeps the detail, this table the order across lanes:
@@ -999,7 +1072,9 @@ each handoff keeps the detail, this table the order across lanes:
 | the transport ceiling: 6,014 lines (6,407 with `atproto`) against §7's 5,000 | root | cut back, or the ceiling restated |
 | run 12, and the fourth playtest on the carried third world (OVERHAUL §6) | root | §11's table has both rows |
 | 5.223's remaining deployment text: the hand's morning title, clapper's next ask after grow, station register's sign evidence | transport, root | title says turning daily; after grow the clapper asks hang; an unrelated register gesture never answers its sign want |
-| the astra world review's 11 (archival and reclamation of objects, grants and journal) | host, objects | each by its failing scenario in docs/review/astra-2026-10-12/world.md |
+| segmented journal (world.md 11; §2 archival contract) | host/block-store | two seals under lowered byte/entry bounds, crash-safe restart, exact oldest receipt bytes and evicted pre-carry grant lookup through the archive |
+| inactive-object archive, K = 30 clock days (world.md 11; §2 archival contract) | host/objects | lower live cap, archive/make/reopen/fault with unchanged name, pin, version and state CID; grants/suspended references prevent archival; denied reads stay private |
+| legacy allocation and receipt origins across older carries (5.226) | host | recover ownerless makers and original grant creation hashes from retained ancestry, replacing the documented genesis/owner fallback |
 
 After the fourth playtest, in the order the town will feel them: fronts and `relay` as seeded or cut back to the
 season (OVERHAUL §6's week row); a `Conversation` object per thread; Workshop `try {target, package, examples}` on
