@@ -2988,11 +2988,12 @@ Items 5.43 to 5.117 follow, numbered by the lane that wrote them (5.9 to 5.42 we
    Finding 17's protection is unchanged: propositions are host clauses; uncited prose is a guarded simile or a framed
    quotation; history stays quoted. A source word translated (escarcha for a line's frost) is not caught: the guard
    compares the strokes' own words. Live after, on the merged tree (10 reps per card and tongue, the first try and
-   its retry): 219 of 240 painted, 137 on the first try; bell 53/60, porch 58/60, station 55/60, regular 53/60; en
-   34/40, ja 39, zh 38, es 35, ru 35, ar 38; 22 of 24 cells at 8/10 or more, bell es and regular ru 7/10, each
-   remaining refusal a paint that breaks the contract (rain in a Spanish simile, the town's line given to the
-   regular, an uncredited or translated quotation). 343 calls, 2.13M tokens in, 23K out: $0.22, under a tenth of a
-   cent a paint with its retry. Tests: `test_enchant.LivePaints` holds each refused-but-true live paint (verified now) and finding 17's
+   its retry): 222 of 240 painted, 145 on the first try; bell 54/60, porch 58/60, station 54/60, regular 56/60; en
+   36/40, ja 38, zh 39, es 38, ru 35, ar 36; every card and tongue at 8/10 or more. Each remaining refusal is a paint
+   that breaks the contract (14 imagery: rain or ringing in a simile, a scene word, a verb; 2 quotes, 1 length, 1
+   tongue). 335 calls, 2.09M tokens in, 22K out: $0.22 the run, under a tenth of a cent a paint with its retry.
+   Run-to-run the cells move by one or two (Haiku samples; a 24-cell run before the last merge had two at 7/10).
+   Tests: `test_enchant.LivePaints` holds each refused-but-true live paint (verified now) and finding 17's
    false paints beside the live ones that stay refused (an unmarked "has rung", the seed's "no clapper" as present,
    rain and ringing in imagery in any tongue, a deed in a frame, the town's line given to the regular, a nested
    frame, a DID credit); the English retry and the expanded-length note; the anthology and telling refusals retry
@@ -3155,4 +3156,7 @@ replaces in the same commit, and this file describes only what is. A merge touch
      (d) A resident's line is quoted whole or not at all (codex host 15), and the station's 200-character emote keeps
      tellings near their 500 and tempts excerpts, which are refused: Ember to decide whether a marked excerpt may
      stand. (e) A translated source word passes imagery (escarcha for a line's frost): the guard compares the
-     strokes' own words; decide whether the tongue's lexicon should carry them.
+     strokes' own words; decide whether the tongue's lexicon should carry them. (f) The station's scene marks are
+     named by a 64-hex digest (`station-scene-<digest>-119`) and offered as facts, so a paint citing one shows a hash
+     on a card: the spween lane's marks want a reader's name, or `Strokes.facts` leaves such marks out; check: no
+     fact clause matches test_properties' HASH.

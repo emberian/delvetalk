@@ -222,6 +222,18 @@ def Strokes.quote (s : Strokes) (t : String) : String :=
   | [o, c] => o ++ t ++ c
   | _ => quoted t
 
+/-- What stands in a paint's prose where a quotation was, so a clause knows where each one is. -/
+def quoteMark : String := "⟦q⟧"
+
+/-- The words of a quotation's frame: said or wrote in each tongue the town paints in, as the painter writes them (a
+    Russian speaker's gender, the Japanese particle joined to its verb: `「…」とthe townが言った`). -/
+def frameWords : List String :=
+  [quoteMark, "said", "says", "wrote", "writes", "called", "named", "saying", "as", "it", "its", "the", "town",
+   "maker", "coiner", "words", "in", "that", "and", "y", "и", "و", "el", "la",
+   "dijo", "escribió", "dice", "escribe", "сказал", "сказала", "сказало", "написал", "написала", "написало", "пишет", "говорит",
+   "كتب", "كتبت", "قال", "قالت", "قاله", "يقول", "يكتب", "كما",
+   "が", "は", "を", "と", "と言った", "と書いた", "と書き込んだ", "が言った", "が書いた", "が書き込んだ", "说", "说过", "写下", "写下过", "写道", "由"]
+
 /-- The words imagery may not use, as the painter is told them: its kind, what it records (marks), does (verbs), counts
     (units) and wants, in English and in the tongue it is painted in, and the words of its lines, seed, head and about
     its voice does not hold. The check (`imageryFault`) blocks these and more (state verbs, handles, ids). -/
@@ -235,7 +247,9 @@ def Strokes.notImagery (s : Strokes) : List String :=
   let voice := plain s.voice
   let source := (([s.head, s.about] ++ s.fields.map (·.2) ++ s.lines.map (·.text)).flatMap plain).filter fun w =>
     w.length ≥ 2 && !voice.contains w && !Tongue.english.small.contains w && !w.all Char.isDigit
-  (names ++ (if t.code == "en" then [] else names.flatMap t.wordsFor) ++ source).filter (fun w => !w.isEmpty && !w.contains ' ') |>.eraseDups
+  -- A word a quotation's frame is written with (書いた, wrote) is the frame's, not imagery's: it is not listed.
+  let framing := fun (w : String) => frameWords.any (fun f => (f.splitOn w).length > 1)
+  (names ++ (if t.code == "en" then [] else names.flatMap t.wordsFor) ++ source).filter (fun w => !w.isEmpty && w.length ≤ 32 && !w.contains ' ' && !framing w) |>.eraseDups
 
 /-- A count as the painter of tongue `t` reads it: beside it the unit word to write it with in `t`, or, where `t`
     has none, the English one. -/
@@ -334,7 +348,7 @@ def Strokes.text (s : Strokes) : String := Id.run do
     line (!s.fields.isEmpty) (s!"The words it was made with, {s.wordsByShown}: " ++ "; ".intercalate (s.fields.map fun (k, v) => s!"{k}: {v}")) ++
     line (!s.tone.isEmpty) s!"It rings: {s.tone}" ++
     line s.coined (if unnamed s.coiner then
-      s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it, and its words are its coiner's (the town holds no handle for them: credit them to its coiner, never by an id or an address)"
+      s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it, and its words are its coiner's (the town holds no handle for them: a quotation of these words is credited to its coiner)"
       else s!"A coinage of the town's: {s.coiner} coined it first, in a post on delve.town that its card links; its maker here only placed it, and its words are {s.coiner}'s") ++
     line (!who.isEmpty) ("Who: " ++ ", ".intercalate who) ++
     line (!s.around.isEmpty) s!"It lies in: {s.around}" ++
@@ -1062,8 +1076,6 @@ def Strokes.heldWants (s : Strokes) (t : Tongue) : List String :=
   (s.wants.map (fun x => x.name ++ " " ++ x.reading ++ " " ++ x.object) ++ s.today.filter (holdsIn · "want")).flatMap (words ·) ++
     s.wants.flatMap (t.wordsFor ·.name) |>.map fun x => t.wantStem (normal x)
 
-/-- What stands in a paint's prose where a quotation was, so a clause knows where each one is. -/
-def quoteMark : String := "⟦q⟧"
 
 /-- The mark that closes a quotation `c` opens: “ ”, « », „ “, 「 」, 『 』, or a pair of `"`. -/
 def closerOf (c : Char) : Option Char :=
@@ -1334,15 +1346,6 @@ def part (s : Strokes) (text : String) : Except (String × String) (String × St
       rendered := rendered ++ [raw]
       imagery := imagery ++ [raw]
   return ("\n".intercalate rendered, "\n".intercalate imagery)
-
-/-- The words of a quotation's frame: said or wrote in each tongue the town paints in, as the painter writes them (a
-    Russian speaker's gender, the Japanese particle joined to its verb: `「…」とthe townが言った`). -/
-def frameWords : List String :=
-  [quoteMark, "said", "says", "wrote", "writes", "called", "named", "saying", "as", "it", "its", "the", "town",
-   "maker", "coiner", "words", "in", "that", "and", "y", "и", "و", "el", "la",
-   "dijo", "escribió", "dice", "escribe", "сказал", "сказала", "сказало", "написал", "написала", "написало", "пишет", "говорит",
-   "كتب", "كتبت", "قال", "قالت", "قاله", "يقول", "يكتب", "كما",
-   "が", "は", "を", "と", "と言った", "と書いた", "と書き込んだ", "が言った", "が書いた", "が書き込んだ", "说", "说过", "写下", "写下过", "写道", "由"]
 
 /-- Quoted words have only an attribution frame; imagery is explicitly a simile fragment. This is a
     syntactic guard, not a semantic proof that arbitrary imagery cannot suggest a condition. A simile may use its

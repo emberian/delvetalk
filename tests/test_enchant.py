@@ -539,7 +539,7 @@ class LivePaints(unittest.TestCase):
         told = self.town.send(op='world-strokes', principal=GLM, object='station')
         self.assertTrue(told['strokes']['coined'] and told['strokes']['coiner'].startswith('the author of at://did:'), told['strokes'])
         self.assertIn("The words it was made with, its coiner's: name: THE ALL-NIGHT STATION", told['text'])
-        self.assertIn('credit them to its coiner, never by an id or an address', told['text'])
+        self.assertIn('a quotation of these words is credited to its coiner', told['text'])
         # The painter is told which names imagery may not use: its kind, verbs, marks, units and wants.
         bell = self.town.send(op='world-strokes', principal=GLM, object='bell/1')['text']
         self.assertIn('Never in imagery, in any form or language: bell, rain,', bell)
