@@ -25,6 +25,8 @@ import ./Spween.obend as Spween
 # choice winds, the cups poured, the one song.
 type State = Super.State
 type Done = Scenes.Done
+# The room's, named here for a kind of the station's (the parlour's `seen`).
+type Seen = Super.Seen
 form vend:
   to: text 1..128
   what: text 1..128

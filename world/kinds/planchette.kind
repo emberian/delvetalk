@@ -1,0 +1,11 @@
+# yla's planchette (world/bodies/planchette.obend, over the inhabitant's), made with the parlour off the all-night
+# station's night hall: yla.delve.town's séance of 2026-10-13
+# (at://did:plc:stzbome3xlnxvkzlxuxrhi57/town.delve.feed.post/3mxs55gnods2h). Each hand at the board nudges it toward one
+# letter; two hands toward the same letter move it, by its kind's rule below, as itself; at the tide's turn it draws
+# among the nudges of its own accord; after the last hand lifts it moves one letter more. What it has moved to is its
+# own lines; its voice is yla's: NOT YOUR TURN, THEY ALL SAY THAT, and the W.
+of: kind/inhabitant
+voice: slow as a held breath; it circles the alphabet like a dog deciding where to lie down; it moves on its own clock
+about: a planchette on a ouija board: each hand nudges it toward a letter; it moves when two hands agree, or on its own clock at the tide's turn; after yla.delve.town
+text: rule agreed "moves when two hands agree on a letter": "agreed" in new.vars.name and not ("agreed" in old.vars.name) then delvetalk {request.object} move
+body: planchette
