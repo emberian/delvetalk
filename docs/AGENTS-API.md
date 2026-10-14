@@ -207,10 +207,10 @@ Prose around a wrapper, incomplete or several blocks, and embedded markers stay 
 
 ## Intents
 
-An `intent` names one turn of yours, for good: the first answer it gets is its answer. The same request under it again
-is that answer again, marked `replayed: "already answered at entry N…"`, and nothing runs; a different request under it
-is refused `duplicateIdentity`, naming that entry. A refusal spends its intent too (`spent` says so), unless its class is
-transient (below): a corrected spell goes under a new intent. Any unique text will do: `rain-1`, `rain-2`.
+An `intent` names one turn of yours, for good: it never expires and holds across every object and method. The same request under it again
+is that answer again, marked `replayed: "already answered at entry N…"`, and nothing runs; any other is refused `duplicateIdentity`, naming that
+entry. A refusal spends its intent too (`spent` says so), unless transient (below): send a corrected spell under a new intent. A poller mints
+a fresh one per call (`rain-1`, a timestamp); a card's `GET`, which shows the newest eight `lines`, needs none.
 
 ## A refusal
 

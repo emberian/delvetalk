@@ -4196,9 +4196,12 @@ def reply (entry : Json) : Json :=
   Json.mkObj [("status", toJson (statusOf entry)), ("receipt", slugged entry)]
 
 def duplicate (principal intent : String) (entry : Json) : Json :=
+  let object := ((entry.getObjVal? "roots").toOption.bind (·.getArr?.toOption)).bind (·[0]?)
+    |>.bind (·.getObjValAs? String "object" |>.toOption)
+  let objectClause := (object.map fun o => s!" for {o}").getD ""
   Json.mkObj [("status", toJson "refused"), ("class", toJson "duplicateIdentity"),
     ("identity", identityJson principal intent),
-    ("reason", toJson s!"{intent} already names a different turn, answered at entry {(entry.getObjValAs? Nat "height").toOption.getD 0}; send this one under a new intent."),
+    ("reason", toJson s!"you already used intent '{intent}'{objectClause} at entry {(entry.getObjValAs? Nat "height").toOption.getD 0}; an intent names one turn, forever. Send this one under a fresh intent."),
     ("original", entry.getObjVal? "hash" |>.toOption |>.getD Json.null)]
 
 /-- What binds an identity, as a carry keeps it (`World.carriedIds`): the identity, its request digests,

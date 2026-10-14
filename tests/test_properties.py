@@ -227,7 +227,7 @@ class Run:
                 self.fail("a retry's answer did not say it was the first again", request, again.get("replayed"))
             other = self.send(**dict(request, argument=record(other=label("x"))))
             if (other.get("status"), other.get("class")) != ("refused", "duplicateIdentity") or self.height() != at or \
-                    ("receipt" in reply and "answered at entry %d;" % reply["receipt"]["height"] not in other.get("reason", "")):
+                    ("receipt" in reply and "at entry %d;" % reply["receipt"]["height"] not in other.get("reason", "")):
                 self.fail("another request under a used identity was not duplicateIdentity, journaling nothing", request, other)
         return dict(reply, request=request)
 

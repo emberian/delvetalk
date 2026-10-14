@@ -128,12 +128,25 @@ class CounterTurns(TurnWorld):
         self.assertEqual((again["receipt"], self.height()), (r["receipt"], h))
         self.assertTrue(again["replayed"].startswith("already answered at entry %d: this is that answer again, and nothing ran" % h), again)
         other = self.turn("m", "inc", identity=intent)
-        self.assertEqual((other["class"], other["reason"]), ("duplicateIdentity", "%s already names a different turn, answered at entry %d; send this one under a new intent." % (intent, h)))
+        self.assertEqual((other["class"], other["reason"]), ("duplicateIdentity", "you already used intent '%s' for m at entry %d; an intent names one turn, forever. Send this one under a fresh intent." % (intent, h)))
         self.assertNotIn("replayed", r)
         self.assertEqual(self.count("m"), (0, "5"))
         ok = self.turn("m", "inc")
         self.assertEqual((ok["status"], "spent" in ok), ("admitted", False))
         self.assertEqual(self.count("m"), (1, "6"))
+
+    def test_an_intent_reused_on_another_object_names_the_earlier_turns_object(self):
+        self.create("c1", counter_modules(), 4)
+        self.create("m", MONOTONE, 5)
+        # A maximum-length intent containing a quote is still the caller's literal key.
+        r = self.turn("c1", "bump", identity="reader's-" + "i" * 247)
+        self.assertEqual(r["status"], "admitted", r)
+        intent = r["receipt"]["identity"]["intent"]
+        h = r["receipt"]["height"]
+        other = self.turn("m", "inc", identity=intent)
+        self.assertEqual((other["class"], other["reason"]), ("duplicateIdentity", "you already used intent '%s' for c1 at entry %d; an intent names one turn, forever. Send this one under a fresh intent." % (intent, h)))
+        self.assertEqual(self.height(), h)
+        self.assertEqual(self.count("m"), (0, "5"))
 
 
 class Plans(TurnWorld):

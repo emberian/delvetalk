@@ -123,10 +123,12 @@ class Unposted(Chain):
                            unposted=True, reason="the wrong card")
         self.assertEqual((r["status"], r["receipt"]["outcome"]["tag"], r["receipt"]["outcome"]["reason"]),
                          ("unposted", "unposted", "the wrong card"), r)
+        self.assertEqual(r["receipt"]["roots"], [])
         self.reopen()
         again = self.host.send(op="world-posted", principal=CLOCK, uri=uri, cid="c1", object="hub", intent="a",
                                unposted=True, reason="twice")
         self.assertEqual((again["status"], again["class"]), ("refused", "duplicateIdentity"), again)
+        self.assertEqual(again["reason"], "you already used intent '%s' at entry %d; an intent names one turn, forever. Send this one under a fresh intent." % ("unposted:" + uri, r["receipt"]["height"]))
         # The reservation stays settled: posted, never released.
         self.assertEqual(self.host.send(op="world-post-release", principal=CLOCK, intent="a", reason="x")["status"], "error")
         self.assertEqual(addressed(self.host, uri)["unposted"], "the wrong card")
