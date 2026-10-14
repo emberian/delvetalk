@@ -64,7 +64,7 @@ Screen; `Snapshot`, `Surfaces` ← Ops; `TurnLoop` ← Ops, Spell, Surfaces, Ton
 - `Session.lean`: `Open {world, path, handle, store, report, sync, snapshotAt, every, bound, renders}`, `openWorld`,
   `durableIO`/`durable`, `settledStep`, `appendJournal`, `stepWorld` (every op), `syncHandle` (extern,
   `spec/native/sync.c`).
-- `RootEdit.lean`: `delvetalk-obend root-edit` and `migrate` (namespace `Migrate`). `Carry.lean`: `delvetalk-obend carry`.
+- `RootEdit.lean`: `delvetalk-obend root-edit`. `Carry.lean`: `delvetalk-obend carry`.
 - `spec/Delvetalk/Serve.lean` and `spec/native/serve.c`: the directory of worlds and its two sockets.
   `PackageSession.lean`: the per-process session above Session (`world-repl`, the stateless kernel ops).
 
@@ -211,9 +211,8 @@ The journal bound: `durable` measures the chain and the store (`journalBytes`, e
 (`Limits.maxJournalBytes`; `maxJournalEntries` binds first for small entries). An append that would come within
 `journalHeadroom` of the bound is not written: a turn is refused `capacity` ("the host's maxJournalBytes is full; try
 later."), journaled into the headroom; an op with no identity, or a refusal that would itself pass the bound, is a
-request error "journal is full: …". Open refuses a journal past its bound. A line-format journal is refused on open;
-`delvetalk-obend migrate --journal OLD --out NEW` is the one reader of it. Tests: `test_journal_bound`,
-`test_block_store`.
+request error "journal is full: …". Open refuses a journal past its bound. A line-format journal is refused on open.
+Tests: `test_journal_bound`, `test_block_store`.
 
 ## 4. Turn state and limits
 
@@ -254,7 +253,7 @@ Limits (`Store.lean`, `Limits`; kernel bounds are `Delvetalk.Bounds`, KERNEL-HAN
 | --- | --- |
 | ids, text | `maxObjectIdBytes` 128, `maxPrincipalBytes` 128, `maxIntentBytes` 256, `maxMethodBytes` 128, `maxHandleBytes` 256, `maxTitleBytes` 256, `maxUriBytes` 512, `maxReasonBytes` 256, `maxRefusalBytes` 4096, `askLine` 160 |
 | per turn | `maxRoots` 64, `maxWrites` 64, `maxEditsPerWrite` 256, `maxPlansPerTurn` 1024, `maxCallDepth` 8, `sendsPerTurn` 32, `createsPerTurn` 8, `awaitsPerTurn` 8, `checksPerTurn` 8, `grantsPerTurn` 8, `publishesPerTurn` 4, `crossingsPerTurn` 1, `planActs` 8, `spellsPerReply` 3, `listPage` 64 |
-| data | `dataDepth` 8192, `plainDepth` 64, `Bounds.maxCellBytes` 262144 (the scalar part and each relation row), `maxRelationRows` 4096 (a relation's `limit` 0), `maxObjects` 10000, `objectsPerPrincipal` 128 |
+| data | `dataDepth` 8192, `Bounds.maxCellBytes` 262144 (the scalar part and each relation row), `maxRelationRows` 4096 (a relation's `limit` 0), `maxObjects` 10000, `objectsPerPrincipal` 128 |
 | journal | `maxEntryBytes` 1 MiB (a record), `maxJournalEntries` 1,000,000, `maxJournalBytes` 4 GiB, `journalHeadroom` 1 MiB, `maxHistoryLimit` 100, `maxCheckpointBytes` 512 KiB, `snapshotEvery` 1000, `maxSnapshotBytes` 256 MiB |
 | ledger | `maxDepth` 100, `chainWork` 10,000,000, `chainStorage` 1 MiB (creation may lower, never raise) |
 | time | `maxTurnTicks` 1,000,000, `maxPatience` 1,000,000, `interpretationPatience` 64, `crossingPatience` 60, `clockDay` 1440, `interpretBackoffMax` 60 |
@@ -797,8 +796,9 @@ the one process over a directory of worlds.
 
 - **Carry.** `delvetalk-obend carry --from J --out J2 --reason R [--library DIR] [--body OBJ=FILE]... [--leave OBJ]...`
   (`Carry.lean`): J only read (verified, flock free), J2 must not exist. The world is read from J's head snapshot
-  (`verifiedBody`, `readWorld`: the `readKeys` laid over an empty world's, so an older binary's body is a contract on
-  those keys alone; `previousEdition` `v4` checked by its three anchors), never from J's entries. `carryWorld` rebuilds
+  (`verifiedBody` accepts only `delvetalk.snapshot.v5`; `readWorld` requires every `readKeys` key and checks every
+  object's anchors). The next carry's input is an edition-20 journal and its edition-20 binary's head body;
+  the old entries are not replayed. `carryWorld` rebuilds
   every object under this binary (`rebuilt`: sources seal to the pin, state conforms, rows canonical; then this host's
   type, bounds, method table, law shape, packet, relations, fixed and declared fields) and checks every suspension
   (`resumable`). Each failure refuses the carry, all listed by name.
@@ -1012,9 +1012,11 @@ refused `badSpell noAvatar`. A card is also named by a resident's handle (`named
   `deploy/carry-check.sh` green on the newest town backup (the deploy then carries) or does not merge; a world is never
   begun again for one. The editions and what each derives are listed in the doc comment on `replayEdition`
   (1 through 20). Test: `tests/test_replay_edition.py`.
-- **The snapshot body is the carry's contract.** `carry` reads an older binary's head snapshot through `Carry.readKeys`
-  and `install`: a change to what those read (`storeJson`, or an index key in `readKeys`) keeps the reader of the
-  edition before it in the same commit, deleted when the next lands.
+- **The snapshot body is the carry's contract.** The next carry reads only edition-20 journals and
+  `delvetalk.snapshot.v5` head bodies written by an edition-20 binary, through `Carry.readKeys` and `install`.
+  All index keys in `readKeys` must be present; the state CID, pin, law, maker, read policy and placed rows are checked
+  against their journal anchors. Readers for the prior snapshot edition and absent index keys are removed. Future body changes must
+  preserve the reader for the bodies the next carry will actually consume.
 - **A world whose rows predate `placed` anchors replays whole at every open until it is carried.** An object carried
   from before rules were placeable keeps its old default law (no `or request.kind == rule`).
 - A placing moves no state version, so `version` alone never says a card's behaviour changed: read `behaviour`.
@@ -1081,7 +1083,7 @@ Each item: what, owner, the check that closes it. A merge touching the host runs
    (the `refused` and `inspected` ladders); H4 `reprogram {mode: "extend"}`; H5/H6 dispatch on `(method, argument)` and
    the `plan` wire names (with the kernel); H7/H8 root acts and powers as one table, settings through `settingsChange`;
    H10 `sealLibrary` reading `Ops.arrivals`; H11 `serve.c` saying root and the frame bound checked once; H12 `Limits`
-   referencing `Bounds` (`maxTurnTicks` = `ticksMax`, `plainDepth` = `plainJsonDepth`, the 1400s); H13
+   referencing `Bounds` (`maxTurnTicks` = `ticksMax`, the 1400s); H13
    `compressedSize`; H14 the duplicates; H15 one list codec (`DataWire`); H16 reads of older journals; H18 a host `fit
    {form, fields}` that `Kind.makeUnder` calls.
 7. **FEDERATION remainder** (host). `world-history` across worlds; the hand's SCRATCHES page (transport); a `Returned`

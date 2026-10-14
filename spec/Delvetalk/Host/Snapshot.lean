@@ -26,15 +26,6 @@ open Delvetalk.Compiler.ObjectiveBendDataWire (dataJson decodeData)
 
 def edition : String := "delvetalk.snapshot.v5"
 
-/-- The edition before (`v4`: anchors of a version, a pin and a law only; no `refusedBy` from the binary that
-    wrote the first), which a carry still reads (HOST-HANDOFF §6, "The snapshot body is the carry's contract");
-    deleted with the next. -/
-def previousEdition : String := "delvetalk.snapshot.v4"
-
-/-- The index keys an older binary's body may not write: a carry from it starts them empty (`wantFlips`: a
-    binary before replay edition 15 queued no want transitions; `screened`: one before 16 screened nothing). -/
-def addedKeys : List String := ["refusedBy", "wantFlips", "screened"]
-
 /-! ## Writing -/
 
 def tyJson (t : Ty) : Json := Delvetalk.Theory.ObjectiveBendTyping.typeJson t
@@ -167,13 +158,11 @@ def installIndex (w : World) (j : Json) : Except String World := do
       match ← x.getArr? with
       | #[v, p, l, d, r, m] => return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat?, placed := ← d.getNat?, read := ← r.getNat?, maker := ← m.getNat? } : Anchor)
       | #[v, p, l, d, r] => return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat?, placed := ← d.getNat?, read := ← r.getNat? } : Anchor)
-      -- `previousEdition`'s, read by a carry alone (`checkAnchors` without `whole`).
-      | #[v, p, l] => return ({ version := ← v.getNat?, pin := ← p.getNat?, law := ← l.getNat? } : Anchor)
       | _ => throw "an anchor is not six heights"
     changes := ← arrOf (← field "changes") change
     ruleLog := ← mapOf (← field "ruleLog") fun x => do return (← x.getObj?).toList
     wanting := ← mapOf (← field "wanting") fun x => do (← x.getObj?).toList.mapM fun (n, h) => do return (n, ← h.getNat?)
-    wantFlips := ← arrOf ((field "wantFlips").toOption.getD (Json.arr #[])) WantFlip.ofJson
+    wantFlips := ← arrOf (← field "wantFlips") WantFlip.ofJson
     wantCites := ← mapOf (← field "wantCites") fun x => (Lean.fromJson? x : Except String (List String))
     wantReaders := ← mapOf (← field "wantReaders") fun x => (Lean.fromJson? x : Except String (List String))
     wantClock := ← mapOf (← field "wantClock") (·.getBool?)
@@ -194,8 +183,7 @@ def installIndex (w : World) (j : Json) : Except String World := do
     cards := ← mapOf (← field "cards") (·.getStr?)
     quiets := ← mapOf (← field "quiets") quiet
     hidden := ← mapOf (← field "hidden") pure
-    -- A snapshot from before edition 16 screened nothing.
-    screened := ← mapOf ((field "screened").toOption.getD (Json.mkObj [])) pure
+    screened := ← mapOf (← field "screened") pure
     ignored := ← nats (← field "ignored")
     ignoring := ← nats (← field "ignoring")
     ignoreNamed := ← nats (← field "ignoreNamed")
@@ -335,7 +323,7 @@ def write (journal : String) (w : World) : IO (Except String Nat) := do
 
 /-- `base` with the store a snapshot body (or a fork's genesis) holds: objects, types, libraries,
     grants, posts, settings, the clock. Compile inputs name sources through `base`'s journal. -/
-def install (b : Json) (base : World) (naming : Naming := .cells) : Except String World := do
+def install (b : Json) (base : World) : Except String World := do
   let mut w := base
   let mut libraries : Std.HashMap String Library := {}
   for l in ← (← b.getObjVal? "libraries").getArr? do
@@ -429,7 +417,7 @@ def install (b : Json) (base : World) (naming : Naming := .cells) : Except Strin
         wants := ← placedOf "wants"
         verbs := ← (((o.getObjVal? "verbs").toOption.bind (·.getArr?.toOption)).getD #[]).toList.mapM Verb.ofJson
         madeFrom := ← ((o.getObjVal? "madeFrom").toOption.mapM (wholeLineage w)) }
-    unless cid == naming.state obj do throw s!"the state of {id} is not its CID's"
+    unless cid == obj.stateCid do throw s!"the state of {id} is not its CID's"
     objects := objects.insert id obj
   let mut grants : Std.HashMap String Grant := {}
   for g in ← (← b.getObjVal? "grants").getArr? do
@@ -465,8 +453,7 @@ def wholeSuspension (w : World) (e : Json) : Except String Json := do
   let outcome ← e.getObjVal? "outcome"
   let activity ← outcome.getObjVal? "activity"
   let activity ← if hostResumed e then pure activity else pure (activity.setObjVal! "checkpoint" (← expandSuspended w e))
-  let activity := Json.mkObj ((((activity.getObj?.toOption.map (·.toList)).getD []).filter (·.1 != "argumentBlock")) ++
-    [("argument", ← activityArgument w activity)])
+  let activity := activity.setObjVal! "argument" (← activityArgument w activity)
   let outcome := outcome.setObjVal! "activity" activity
   let outcome := match expandInterpretation w outcome with
     | some i => outcome.setObjVal! "interpretation" i
@@ -581,18 +568,17 @@ def installBody (b : Json) (entries : Entries) (caches : Caches) : Except String
     cachedPackets := w.objects.fold (fun m _ o => if o.packet.isEmpty then m else m.insert o.inputsKey o.packet) {} }
 
 /-- Each object against the entries its anchors name (`World.anchors`): the version, the state's CID
-    where that entry names one (by `naming`, the journal's edition's), the pin, the law text, the read policy,
+    where that entry names one (`Object.stateCid`), the pin, the law text, the read policy,
     and its behaviour revision with the rules, wants and verbs placed on it (their CID, `placedIn`; an object with rows no entry commits to
     is not the journal's, and a world whose rows predate their CIDs is replayed whole). A forger who recomputes
-    a snapshot's CIDs moves no entry. A carry reading `previousEdition`, whose anchors hold the first three
-    alone, checks those (`whole` false). -/
-def checkAnchors (w : World) (naming : Naming := .cells) (whole : Bool := true) : Except String Unit := do
+    a snapshot's CIDs moves no entry. -/
+def checkAnchors (w : World) : Except String Unit := do
   let mut read : Std.HashMap Nat Json := {}
   for (id, o) in w.objects.toList do
     let some a := w.anchors[id]? | throw s!"object {id} is not the journal's"
     unless a.maker != 0 do throw s!"the maker of {id} has no journal anchor"
     let mut entries : List (Nat × Json) := []
-    for h in ([a.version, a.pin, a.law, a.maker] ++ (if whole then [a.placed, a.read].filter (· != 0) else [])).eraseDups do
+    for h in ([a.version, a.pin, a.law, a.maker] ++ [a.placed, a.read].filter (· != 0)).eraseDups do
       match read[h]? with
       | some e => entries := (h, e) :: entries
       | none =>
@@ -601,26 +587,24 @@ def checkAnchors (w : World) (naming : Naming := .cells) (whole : Bool := true) 
         entries := (h, e) :: entries
     let at_ := fun (h : Nat) => (entries.lookup h).getD Json.null
     unless versionIn (at_ a.version) id == some o.version do throw s!"object {id} is not at the journal's version and pin"
-    if let some cid := stateCidIn (at_ a.version) id o.version naming then
-      unless cid == naming.state o do throw s!"the state of {id} is not the one the journal commits to at version {o.version}"
+    if let some cid := stateCidIn (at_ a.version) id o.version then
+      unless cid == o.stateCid do throw s!"the state of {id} is not the one the journal commits to at version {o.version}"
     unless pinIn (at_ a.pin) id == some o.pin do throw s!"object {id} is not at the journal's version and pin"
     if let some law := lawIn (at_ a.law) id then
       unless law == o.lawText do throw s!"the law of {id} is not the journal's"
     unless makerIn (at_ a.maker) id == some o.maker do
       throw s!"the maker of {id} is not the journal's"
-    if whole then
-      unless (if a.read == 0 then none else readPolicyIn (at_ a.read) id) == some o.read.json do
-        throw s!"the read policy of {id} is not the journal's"
-      unless (if a.placed == 0 then o.unplaced else placedIn (at_ a.placed) id == some (placedCid o)) do
-        throw s!"the rules, wants and verbs on {id} are not the journal's"
+    unless (if a.read == 0 then none else readPolicyIn (at_ a.read) id) == some o.read.json do
+      throw s!"the read policy of {id} is not the journal's"
+    unless (if a.placed == 0 then o.unplaced else placedIn (at_ a.placed) id == some (placedCid o)) do
+      throw s!"the rules, wants and verbs on {id} are not the journal's"
 
-/-- The height a journal's first entry takes: 1, or for a `carried` genesis (of edition 12 on) the height
+/-- The height a journal's first entry takes: 1, or for a `carried` genesis the height
     after the head it was carried from, whose heights it continues. -/
 def firstHeight (entry : Json) : Nat :=
   match tagOf entry, genesisOrigin entry with
   | "carried", some (_, origin) =>
-    if (entry.getObjValAs? Nat "replay").toOption.getD 1 < 12 then 1
-    else (origin.getObjValAs? Nat "height").toOption.getD 0 + 1
+    (origin.getObjValAs? Nat "height").toOption.getD 0 + 1
   | _, _ => 1
 
 /-- The entry at index `i` of `src`, checked against the chain: its record is its CID's (`Entries.get?`
@@ -712,7 +696,7 @@ def chainOf (journal content : String) : Except String (Array Link) := do
     -- The first link's height is the journal's first (`firstHeight`, checked against its entry).
     let height := match out.back? with | some prev => prev.height + 1 | none => 1
     if out.isEmpty && (line.splitOn "\"outcome\"").length > 1 then
-      throw s!"{journal} holds whole entries, one per line (the format before the block store): `delvetalk-obend migrate --journal {journal} --out NEW` writes it as a chain and a block store"
+      throw s!"{journal} uses the old line format (whole entries, one per line, before the block store), which this host cannot open"
     let some link := Link.ofLine line | throw s!"journal broken at height {height}: unparsable line"
     unless link.height == height || (out.isEmpty && link.height > 0) do throw s!"journal broken at height {height}: height out of sequence"
     if let some prev := out.back? then

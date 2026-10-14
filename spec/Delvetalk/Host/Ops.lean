@@ -1619,13 +1619,6 @@ def markHelpers (methods : Json) (exposed : List String) : Json :=
       else m.setObjVal! "helper" (toJson true)
     | none => m)
 
-/-- The names a marked method table declares public (rows neither helper nor protocol). -/
-def declaredRows (methods : Json) : List String :=
-  ((methods.getArr?.toOption).getD #[]).toList.filterMap fun m =>
-    if (m.getObjValAs? Bool "helper").toOption == some true || (m.getObjValAs? Bool "protocol").toOption == some true then none
-    else if (m.getObjValAs? Bool "unoffered").toOption == some true then ("~" ++ ·) <$> (m.getObjValAs? String "name").toOption
-    else (m.getObjValAs? String "name").toOption
-
 /-- Is a method table row a helper (not callable from outside the object)? -/
 def isHelperRow (m : Json) : Bool := (m.getObjValAs? Bool "helper").toOption == some true
 
@@ -2163,12 +2156,9 @@ partial def lowerLabels (w : World) (j : Json) : Except String Json :=
   | .arr items => return .arr (← items.mapM (lowerLabels w))
   | other => return other
 
-/-- A suspended activity's `argument`, its long texts restored from the world's blocks (`hoistLabels`;
-    an older entry's whole `argumentBlock` too). -/
+/-- A suspended activity's `argument`, its long texts restored from the world's blocks (`hoistLabels`). -/
 def activityArgument (w : World) (act : Json) : Except String Json := do
-  match unblockField w act "argument" with
-  | some a => lowerLabels w (← a.getObjVal? "argument")
-  | none => throw "a suspended activity's argument block is not journaled"
+  lowerLabels w (← act.getObjVal? "argument")
 
 /-- An interpretation as journaled: its `offers` (the same forms in every reading of one card) are a
     one-item block (`offersBlock`), and so is a long `utterance` (`utteranceBlock`; the commonplace reads
@@ -3742,27 +3732,12 @@ def readPolicyIn (entry : Json) (id : String) : Option Json :=
   | "forked" | "carried" => (genesisRow outcome id).bind (·.getObjVal? "read" |>.toOption)
   | _ => none
 
-/-- How a journal names an object's state. From replay edition 10, the CID of its cells' block
-    (`Object.stateCid`), journaled as `cid` on every creation, write and root `set`, and as a genesis
-    row's `stateCid`; before it, the CID of the state's wire JSON, a creation named by its seed's. A
-    carry reads a world of an earlier edition by that edition's naming (`Naming.ofEdition`). -/
-structure Naming where
-  state : Object → String
-  seed : Json → Option String
-
-def Naming.cells : Naming := ⟨Object.stateCid, fun _ => none⟩
-
-def Naming.ofEdition (edition : Nat) : Naming :=
-  if edition < 10 then ⟨fun o => Journal.bodyHash (dataJson o.state), fun seed => some (Journal.bodyHash seed)⟩
-  else Naming.cells
-
-/-- The state CID the entry names for `id` at `version`: a creation's `cid` (an earlier edition's
-    seed's, by `naming`), a write's `cid`, a root `set`'s, a store-installing genesis's `stateCid`; none
-    when it names none. -/
-def stateCidIn (entry : Json) (id : String) (version : Nat) (naming : Naming := .cells) : Option String :=
+/-- The state CID the entry names for `id` at `version`: a creation's `cid`, a write's `cid`, a root
+    `set`'s, a store-installing genesis's `stateCid`; none when it names none. All use `Object.stateCid`. -/
+def stateCidIn (entry : Json) (id : String) (version : Nat) : Option String :=
   let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
   let named := (outcome.getObjValAs? String "object").toOption == some id
-  let created := fun (j : Json) => (j.getObjValAs? String "cid").toOption <|> ((j.getObjVal? "seed").toOption.bind naming.seed)
+  let created := fun (j : Json) => (j.getObjValAs? String "cid").toOption
   match tagOf entry with
   | "created" => if version == 0 && named then created outcome else none
   | "admitted" =>
@@ -5766,9 +5741,8 @@ def replayEntry (w : World) (entry : Json) : Except String World := do
         let id ← raw.getObjValAs? String "object"
         let some (_, o) := updates.find? (·.1 == id) | throw "write missing"
         unless (← natField raw "version") == o.version do throw "write version out of sequence"
-        -- The state an admitted write commits to (host7; earlier entries name none).
-        if let some cid := (raw.getObjValAs? String "cid").toOption then
-          unless cid == o.stateCid do throw s!"the state of {id} does not replay to the CID its write recorded"
+        unless (raw.getObjValAs? String "cid").toOption == some o.stateCid do
+          throw s!"the state of {id} does not replay to the CID its write recorded"
       let entryLedger ← match entry.getObjVal? "ledger" with
         | .ok l => ledgerOf l
         | .error _ => pure Ledger.start
@@ -5862,12 +5836,12 @@ def view (w : World) (j : Json) : Except String Json := do
       ("version", toJson o.version), ("state", dataJson o.state), ("pin", toJson o.pin)]
 
 /-- Every version of `id` the journal names a state CID for, by version (see `stateCidAt`), from one
-    walk of the entries that touched it: a created or child seed's at version 0, each admitted
-    write's `cid` at its version (a write journaled before host7 names none). -/
-def stateCidsCold (w : World) (id : String) : Std.HashMap Nat (Option String) := Id.run do
+    walk of the entries that touched it: a creation's at version 0, each admitted write's `cid`
+    at its version. -/
+def stateCidsCold (w : World) (id : String) : Std.HashMap Nat String := Id.run do
   -- The first entry (in order) that answers for a version answers: a created seed with its CID, a write
-  -- naming the version (with its CID or, from before host7, none), a creating turn's child with its CID.
-  let mut out : Std.HashMap Nat (Option String) := {}
+  -- naming the version with its CID, a creating turn's child with its CID.
+  let mut out : Std.HashMap Nat String := {}
   for i in (w.touched[id]?).getD #[] do
     let some entry := w.entries.get? i | continue
     let outcome := (entry.getObjVal? "outcome").toOption.getD Json.null
@@ -5876,24 +5850,25 @@ def stateCidsCold (w : World) (id : String) : Std.HashMap Nat (Option String) :=
     match tagOf entry with
     | "created" =>
       if named outcome && !out.contains 0 then
-        if let .ok cid := outcome.getObjValAs? String "cid" then out := out.insert 0 (some cid)
+        if let .ok cid := outcome.getObjValAs? String "cid" then out := out.insert 0 cid
     | "admitted" =>
       for x in arr "writes" do
         if named x then
           if let some v := (x.getObjValAs? Nat "version").toOption then
-            unless out.contains v do out := out.insert v (x.getObjValAs? String "cid").toOption
+            unless out.contains v do
+              if let .ok cid := x.getObjValAs? String "cid" then out := out.insert v cid
       for c in arr "creates" do
         if named c && !out.contains 0 then
-          if let .ok cid := c.getObjValAs? String "cid" then out := out.insert 0 (some cid)
+          if let .ok cid := c.getObjValAs? String "cid" then out := out.insert 0 cid
     | _ => pure ()
   return out
 
 /-- This process's `stateCidsCold` by object and the CID of the last entry that touched it: a journal
     is a hash chain, so that entry names every entry before it, and a later write is a new key. -/
-@[noinline] unsafe def stateCidsMemo : IO.Ref (Std.HashMap String (Std.HashMap Nat (Option String))) :=
+@[noinline] unsafe def stateCidsMemo : IO.Ref (Std.HashMap String (Std.HashMap Nat String)) :=
   unsafeBaseIO (IO.mkRef {})
 
-unsafe def stateCidsImpl (w : World) (id : String) : Std.HashMap Nat (Option String) :=
+unsafe def stateCidsImpl (w : World) (id : String) : Std.HashMap Nat String :=
   unsafeBaseIO do
     let touched := (w.touched[id]?).getD #[]
     let some last := touched.back? | return {}
@@ -5905,15 +5880,14 @@ unsafe def stateCidsImpl (w : World) (id : String) : Std.HashMap Nat (Option Str
     return m
 
 @[implemented_by stateCidsImpl]
-def stateCids (w : World) (id : String) : Std.HashMap Nat (Option String) := stateCidsCold w id
+def stateCids (w : World) (id : String) : Std.HashMap Nat String := stateCidsCold w id
 
-/-- The CID of `id`'s state at `version`, as the journal names it: the current state's, a created
-    or child seed's (version 0), or the `cid` of the admitted write that made the version (host7; a
-    write journaled before names none). -/
+/-- The CID of `id`'s state at `version`, as the journal names it: the current state's, a creation's
+    (version 0), or the `cid` of the admitted write that made the version. -/
 def stateCidAt (w : World) (id : String) (version : Nat) : Option String := do
   let o ← w.objects[id]?
   if o.version == version then return o.stateCid
-  (stateCids w id)[version]?.join
+  (stateCids w id)[version]?
 
 /-- The object's state at `version`, rebuilt from the journal: its created seed (or a creating turn's
     seed), then each admitted write of it in order, re-applying its edits under the object's relations
@@ -5953,8 +5927,7 @@ def stateAt (w : World) (id : String) (version : Nat) : Option Data := Id.run do
           | none => ((x.getObjVal? "edits").toOption.bind (parseSteps · |>.toOption)).bind fun steps =>
             (applyEdits o.relations before steps).toOption.map (·.cells)
         let some next := next? | return none
-        if let .ok cid := x.getObjValAs? String "cid" then
-          if cid != next.cid then return none
+        unless (x.getObjValAs? String "cid").toOption == some next.cid do return none
         state := some next
     | _ => pure ()
     if version == 0 && state.isSome then return state.map (·.state)
@@ -5962,8 +5935,7 @@ def stateAt (w : World) (id : String) (version : Nat) : Option Data := Id.run do
 
 /-- `world-state-cid {principal, object, version}`: the CID of the object's state at that version, for
     a reader who may view it (a CID of a state the reader may not see would let it test guesses):
-    `{status: "stateCid", object, version, cid}`, `denied`, or `unknown` (no such object, version, or
-    a version only a write from before host7 made). -/
+    `{status: "stateCid", object, version, cid}`, `denied`, or `unknown` (no such object or retained version). -/
 def stateCidOp (w : World) (j : Json) : Except String Json := do
   let reader ← readerOf j
   let id ← j.getObjValAs? String "object"
