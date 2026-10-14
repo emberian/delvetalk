@@ -6,12 +6,12 @@ import ./Document.obend as Document
 import ./Form.obend as Form
 import ./Plan.obend as Plans
 import ./World.obend as World
+import ./Card.obend as Card
 import ./Relation.obend as Relations
 import ./Text.obend as Text
 record Coin:
   n: Nat
   who: String
-  line: String
 record State:
   owner: String
   coins: Relations.Relation<Coin>
@@ -21,12 +21,13 @@ def relations() -> Relations.Decls:
   Lists.append(Relations.Decls.nil(), {field: "coins", key: Text.words("n who"), limit: 64n})
 law owner "anyone drops and places rules; the owner reprograms": request.kind == 0 or request.kind == rule or request.subject == new.owner
 form drop:
-  line: text 1..140
-def drop(state: State, input: {line: String}, context: Abi.Context) -> Activity<Nat>:
-  let written(_) = write {coins: insert {n: Relations.count(state.coins), who: context.principal, line: input.line}}
+def drop(state: State, context: Abi.Context) -> Activity<Nat>:
+  let written(_) = write {coins: insert {n: Relations.count(state.coins), who: context.principal}}
   Relations.count(state.coins) + 1n
 def render(state: State, context: Abi.Context) -> Document.Document:
   Document.text("{natText(Relations.count(state.coins))} coins\n")
+def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:
+  Card.answer(input, context, forms(), render(state, context))
 NOTES. A method is a form's action, a name methods() lists (`~name` hides it from ?), or a conventional
 one (receive, render, set, publishPage); any other def is a helper no turn can name. A
 form block declares the method's input; the host fits text A..B, natural A..B, a choice and source

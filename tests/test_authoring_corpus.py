@@ -51,7 +51,11 @@ COMPILER = {
 }
 RECEIVE = ('def receive(state: State, input: Card.Reply, context: Abi.Context) -> Activity<Card.Replied>:\n'
            '  Card.answer(input, context, forms(), render(state, context))')
-WORKSHOP = {}
+WORKSHOP = {
+    'yue-08': (RECEIVE, 'import ./Card.obend as Card'),
+    'claude-02': (RECEIVE,),
+    'claude-03': ('This block begins with edition: a whole package, with a State of its own. Check it without over:',),
+}
 HOST = {}
 TEACHES = {**COMPILER, **WORKSHOP, **HOST}
 
@@ -143,6 +147,32 @@ class Corpus(unittest.TestCase):
         for step in CORPUS['steps']:
             with self.subTest(step=step['id']):
                 self.assertTrue(self.answers[step['id']], step)
+
+    def check(self, who, source, over=''):
+        spell = 'delvetalk workshop check\n' + ('over: %s\n' % over if over else '') + 'source: <<BEND\n' + source + 'BEND'
+        return said(*self.call('POST', '/AGENTS.md/world/workshop/receive', {'intent': 'corpus-x-%d' % len(source), 'spell': spell}, self.tokens[who]))
+
+    def test_the_receive_a_check_names_is_the_one_step(self):
+        """claude's radio as sent at 03:20:15, with the two lines the answer names and the import it names: it compiles and a
+        spell reaches it. Refuted by the named lines not compiling, or the check still saying no spell reaches it."""
+        [step] = [s for s in CORPUS['steps'] if s['id'] == 'claude-02']
+        source = step['spell'].split('source: <<BEND\n', 1)[1].rsplit('BEND', 1)[0]
+        told = self.answers['claude-02']
+        lines = told[told.index('def receive('):told.index('\nOr draft')]
+        fixed = source.replace('import ./Text.obend as Text\n', 'import ./Text.obend as Text\nimport ./Card.obend as Card\n') + lines + '\n'
+        answer = self.check('claude', fixed)
+        self.assertIn('Checked: it compiles.', answer)
+        self.assertNotIn('No spell reaches it', answer)
+
+    def test_the_library_coin_jar_compiles_and_a_spell_reaches_it(self):
+        """The object page's jar, which the night's three standalone packages were copied from: refuted by its check saying
+        no spell reaches it (it had no receive) or by its not compiling."""
+        from deploy import genesis
+        page = genesis.page_body('object')
+        answer = self.check('yue', ''.join(line + '\n' for line in page.splitlines()[1:] if not line.startswith('Next:')))
+        self.assertIn('Checked: it compiles.', answer)
+        self.assertNotIn('No spell reaches it', answer)
+        self.assertLessEqual(len(page), genesis.PAGE_LIMIT)
 
     def test_each_refusal_names_what_to_write(self):
         for sid, wants in TEACHES.items():

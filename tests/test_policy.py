@@ -87,7 +87,7 @@ SPELL = "delvetalk garden plant\nseed: a fern that remembers\ncolour: silver"
 
 class ObjectPackages(unittest.TestCase):
     def compiles(self, package):
-        modules = closure("Abi", "List", "Document", "Form", "Relation", "Text", "Plan", "World") + [{"name": "Jar", "source": package}]
+        modules = closure("Abi", "List", "Document", "Form", "Relation", "Text", "Plan", "World", "Card") + [{"name": "Jar", "source": package}]
         return compile_job(modules, "initial")
 
     def test_the_library_pages_jar_compiles_as_an_entry_module_over_the_world_library(self):
