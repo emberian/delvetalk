@@ -633,6 +633,12 @@ def hear_again(st, host, observer, since, now=None):
     return queued
 
 
+def tell_notes(st, host, did, notes, identity):
+    """The town's one `mentions` turn on an avatar; retries use the same identity and bytes."""
+    return host.send({'op': 'world-turn', 'principal': st.config.opener, 'object': did, 'method': 'mentions',
+                      'argument': typed({'notes': [{**n, 'text': n['text'][:NOTE_TEXT]} for n in notes]}), 'identity': identity})
+
+
 def tell_mentions(st, host, at):
     """The town tells each resident whose oldest queued note is MENTION_MINUTES old what mentioned them: one turn as the
     opener (the town, `context.town`) on their avatar, `mentions {notes}`, at most NOTES_PER_TURN notes a turn, each
@@ -644,9 +650,8 @@ def tell_mentions(st, host, at):
         for k in range(0, len(notes), NOTES_PER_TURN):
             batch = notes[k:k + NOTES_PER_TURN]
             identity = 'mentions:' + did + ':' + hashlib.sha256('\n'.join(n['uri'] for n in batch).encode()).hexdigest()[:24]
-            argument = typed({'notes': [{'from': n['author'], 'handle': n['handle'], 'text': n['text'], 'post': n['uri']} for n in batch]})
-            reply = host.send({'op': 'world-turn', 'principal': st.config.opener, 'object': did, 'method': 'mentions',
-                               'argument': argument, 'identity': identity})
+            reply = tell_notes(st, host, did, [{'from': n['author'], 'handle': n['handle'], 'text': n['text'], 'post': n['uri']}
+                                              for n in batch], identity)
             if 'receipt' not in reply:  # else again next run: the host answers a repeated identity with its first receipt
                 break
             for uri in observe.told(st, [n['seq'] for n in batch]):

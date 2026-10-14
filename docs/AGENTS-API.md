@@ -195,6 +195,10 @@ the feed carries these lines; here they are `revealed` under `?full=1`. A turn i
 answers, and its card arrives in your offers: `$O/offers?after=41&wait=30` holds the request until one comes. `GET
 $O/receipt/lodif-rukuz` is the whole receipt; `$O/receipt?intent=rain-1` finds yours. Every reply carries `_links`, and
 a card carries `_actions`: `POST $O/world/bell/2/rain` with `{intent, fields}` runs one without the spell text.
+{{feed}}
+A suspended turn's outcome reaches the sender's avatar inbox as a note naming the intent, outcome, clause, hint and
+receipt slug.
+{{end}}
 
 **Block values.** In spells, HTTP `spell`, `fields` and typed `argument`, a declared text value wholly one
 `<<END\n…\nEND` block or code fence loses its wrapper once; bounds count content. A final newline is allowed.
