@@ -803,6 +803,29 @@ class Stopped(Exception):
     """A genesis turn that was not admitted: genesis stops there, naming it."""
 
 
+# The town admits a resident's first line on the commonplace (playtest 5: Yue's hello waited on the keeper, unsaid):
+# one rule the opener places, so it fires under the town, the commonplace's keeper, at the write of that line. The
+# keeper's own lines (the town's first line) are its own to admit. Automatic moderation screens after the commit as
+# ever: a line it hides is hidden from every reply but the opener's whether admitted or not, and a quieted hand
+# writes nothing, so the admission shows nothing automod holds; a later line waits for the keeper by hand.
+FIRST_LINE = ('firstline', "a resident's first line here is the town's at once",
+              'request.method == "write" and request.subject != new.keeper and count(new.lines where author == request.subject) == 1',
+              'delvetalk commonplace admit', '{new.next + -1}')
+
+
+def first_line_rule(host, opener, prefix='genesis'):
+    """FIRST_LINE on the commonplace, placed by the opener where it lacks it (genesis, `prefix` 'genesis'; a carried
+    town's refresh, 'refresh'); -> made rows. Stops (Stopped) at a refusal."""
+    name, reading, when, then, number = FIRST_LINE
+    got = host.send({'op': 'world-rules', 'principal': opener, 'object': 'commonplace'})
+    if got.get('status') != 'rules' or any(r.get('name') == name for r in got.get('rows') or []):
+        return []  # no commonplace to keep, or the rule stands
+    made = said(host, opener, 'commonplace', 'rule', [('name', name), ('reading', reading), ('when', when), ('then', then), ('number', number)],
+                f'{prefix}-commonplace-rule-{name}')
+    turned(f'commonplace rule {name}', made['reply'])
+    return [made]
+
+
 def inputs(origin=None, arrival='invited', feed_only=False, room=1400):
     """Every file genesis reads, read before the first op, so a missing one spends nothing: the bodies, the pages."""
     bodies = {b: body_of(b) for b in {'commonplace'} | {k[5] for k in KINDS if k[5]}}
@@ -856,6 +879,7 @@ def run(host, opener=OPENER, gas_station=False, origin=None, arrival='invited', 
         next(m for m in made if m['object'] == 'commonplace')['body'] = turned('the commonplace body', host.send({
             'op': 'world-reprogram', 'principal': opener, 'identity': 'genesis-commonplace-body', 'object': 'commonplace', 'version': 0,
             'package': bodies['commonplace'], 'mode': 'extend'}))
+        made += first_line_rule(host, opener)
         # The town's coinages, each by its spell from its coiner's post; the porch cites the three bells and rings them together; the things
         # genesis seeds want what they want.
         for kind, fields, post in HANDS:
@@ -1088,6 +1112,7 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
         out.append({'object': obj, 'slot': 'placed', **done(placed), 'reading': 'placed'})
     out += harmonic(host, opener, have)
     out += placed_register(host, opener)
+    out += first_lined(host, opener)
     out += placed_playthings(host, opener, config)
     whole, installed = True, False
     if station and station_complete(host, opener):
@@ -1113,6 +1138,16 @@ def refresh(host, opener, journals, station=False, config=None, feed_only=False)
             except Stopped as e:
                 out.append({'object': 'station', 'slot': 'inhabitants', 'status': 'refused', 'reading': str(e)})
     return out
+
+
+def first_lined(host, opener):
+    """The commonplace's FIRST_LINE rule on a carried town (`first_line_rule` under `refresh-*` identities): placed once,
+    nothing said after (the opener may take it off); a refusal is named and fails the refresh."""
+    try:
+        made = first_line_rule(host, opener, 'refresh')
+    except Stopped as e:
+        return [{'object': 'commonplace', 'slot': 'firstline', 'status': 'refused', 'reading': str(e)}]
+    return [{'object': 'commonplace', 'slot': 'firstline', 'status': 'refreshed', 'reading': 'placed'}] if made else []
 
 
 def placed_playthings(host, opener, config=None):

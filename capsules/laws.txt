@@ -1,15 +1,17 @@
 LAWS, RULES, WANTS: one grammar, three keywords, one line each, in the source or given at creation;
 at most 16 lines and 4,096 bytes a text; top-level fields only.
   law NAME "reading": EXPR              refuses at commit; every law must admit the write
-  rule NAME "reading": EXPR then SPELL  fires at commit when a write makes EXPR true, under its writer
+  rule NAME "reading": EXPR then SPELL  fires at every commit while EXPR holds, under its placer: a level
   want NAME "reading": EXPR asks SPELL  poses while EXPR holds now, judged at read and at commit; no old
 A thing also carries placed lines (delvetalk CARD rule / name / when / then; want / name / when / asks;
 32 of each), judged by its law as a request of kind rule; unrule, unwant take one off (placer or owner).
 EXPR: A implies B (loosest, right) | A or B | A and B | not A | (A) | ATOM.
-ATOMS. TERM == TERM, <=, >=; TERM ::= TERM + TERM | TERM % INT | REF | INT | "TEXT". TERM in [INT,..],
+ATOMS. TERM == TERM, !=, <, <=, >, >= (!= false when a side reads nothing); TERM ::= TERM + TERM | TERM % INT | REF | INT | "TEXT". TERM in [INT,..],
 in new.F (a list), in SIDE.F.COL (SIDE new, old, or "OBJECT": another card's rows, a root).
 monotone writeOnce appendOnly unchanged insertOnly (F). COUNTS count(new.F [where COL == TERM]).
-changed(new.marks.who) by request.subject. under "kind/lamp": that kind's law, rules and wants hold here
+changed(TERM): differs across this write, so count(new.lines) == 3 and
+changed(count(new.lines)) fires once at the third line where >= 3 fires at every line after;
+% 3 == 0 and changed(..) each third. changed(new.marks.who) by request.subject. under "kind/lamp": that kind's law, rules and wants hold here
 (every made thing is under its kind, so its owner changes them once for all). "OBJECT" wants NAME.
 REF: new.F | old.F (empty at creation) | "OBJECT".F | count(..) | request.subject | caller | height |
 turn | pin | method | verb (a grown verb's name; grow on a placing) | kind | clock (world minutes) |

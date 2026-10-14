@@ -579,6 +579,10 @@ def creationInputs (creator : Object) (package : String) : Except (String × Str
     over the library (`checkSource`). -/
 def checkStack (w : World) (creator : Object) (package : String) (layers : List String) : List String × Bool :=
   if layers.isEmpty && package.startsWith "edition" then checkSource w package else
+  -- A layer alone lays on nothing (playtest 5: "no module layer over ./Kind.obend … in the creator's package", the
+  -- whole source quoted back): it is checked over what it would be laid on.
+  if layers.isEmpty && package.startsWith "layer over" then
+    ([s!"Checked:1: package-request: a layer is checked over what it lays on: delvetalk workshop check / over: <a kind, or a thing>, with this block (kind/record for a body over a record)"], false) else
   match (creationInputs creator package).mapError (·.2) >>= (layeredInputs · layers) with
   | .ok inputs => checkInputs w inputs
   | .error e => ([s!"Checked:0: package-request: {e}"], false)
@@ -1406,6 +1410,10 @@ def withFence (w : World) (o : Object) (action : String) (argument : Data) (fiel
   | some name, some code => fields ++ [{ name, value := code }]
   | _, _ => fields
 
+/-- What a rule's condition is, where a hand writes one: a level, held at every write; a crossing or a period by `changed`. -/
+def levelLine : String :=
+  "A rule fires at every write while its condition holds: count(new.lines) >= 3 fires at the third line and every one after. Once, as it crosses: count(new.lines) == 3 and changed(count(new.lines)); at each third: count(new.lines) % 3 == 0 and changed(count(new.lines))."
+
 /-- A spell's fields, as parsed, with a block fenced with the name of a form field it does not name as that field's
     value (```spween under `delvetalk kind/room make / name: jar`), before the values without a name are bound, so
     words around the fence never take the field the fence names. -/
@@ -1435,7 +1443,8 @@ def rulesText (w : World) (id : String) (o : Object) (shown : String) : String :
     let held := if c.holder == id then "" else s!", carried from {c.holder}"
     let reading := if c.clause.reading.isEmpty then "" else s!" {Delvetalk.Compiler.ObjectiveBendLaw.quoteReading c.clause.reading}"
     let owner := if things then "the thing" else shownName w c.owner
-    s!"» {c.clause.name} ({owner}{held}){reading}: when {c.clause.condition.render} then {(c.clause.modality.spell?.map (·.render)).getD ""}\n" ++ history
+    let level := (c.clause.levelHint.map fun h => s!"  {h}\n").getD ""
+    s!"» {c.clause.name} ({owner}{held}){reading}: when {c.clause.condition.render} then {(c.clause.modality.spell?.map (·.render)).getD ""}\n" ++ history ++ level
   match thingsText o with
   | some text =>
     let things := (clausesForThings w id o text).filter (Law.isRule ·.clause)
@@ -1443,7 +1452,7 @@ def rulesText (w : World) (id : String) (o : Object) (shown : String) : String :
       (if things.isEmpty then "No rules.\n" else String.join (things.map (line true))) ++
       "\non the kind:\n" ++ (if rules.isEmpty then "No rules.\n" else String.join (rules.map (line false)))
   | none =>
-    if rules.isEmpty then s!"{shown} carries no rules.\nTo place one: delvetalk {shown} rule / name: <name> / when: <condition> / then: <spell>\n" else
+    if rules.isEmpty then s!"{shown} carries no rules.\nTo place one: delvetalk {shown} rule / name: <name> / when: <condition> / then: <spell>\n{levelLine}\n" else
     s!"The rules {shown} carries:\n\n" ++ String.join (rules.map (line false))
 
 /-- `delvetalk <card> verbs` (docs/FOUNDATION.md §10): the verbs the card takes, the ones its kind
@@ -1477,6 +1486,7 @@ def kindAdmits (w : World) (o : Object) (principal : String) (kind : Nat) (id : 
 
 /-- `rule`'s and `want`'s fields as the usage prints them: the spell last, since its own fields follow it. -/
 def ruleLine (target : String := "") : String := "name: <a name>\n" ++ target ++ "when: <a condition>\nthen: <a spell, holes {new.F} and {request.subject}>"
+
 def wantLine (target : String := "") : String := s!"name: <a name>\n{target}when: <a condition on the thing as it stands>\nasks: <the spell that answers it>"
 def forThingsLine : String := "for: <things, or leave it out for the kind itself>\n"
 def growLine : String := "name: <one word>\nreading: <what it does>\ntakes: <text, or nothing>\ndoes: <a spell its use casts, or leave it out>\nbody: <a few lines of Bend in a <<BEND block, or leave it out>"
@@ -1859,7 +1869,8 @@ def placementsOf (o : Object) (id action : String) (value spell : String → Opt
     let want := action == "want"
     let key := if want then "asks" else "then"
     let name ← need "name" s!"a name new to {id}"
-    let cond ← need "when" "a condition"
+    let cond ← need "when" (if want then "a condition" else
+      "a condition; a rule fires at every write while it holds, so once at a crossing is T == 3 and changed(T)")
     let some given := (spell key).filter (!·.isEmpty) | throw ("missingField", s!"{action} takes {key}: the spell, last.")
     let reading := ((value "reading").map fun r => " " ++ Delvetalk.Compiler.ObjectiveBendLaw.quoteReading r).getD ""
     let line := s!"{action} {name}{reading}: {cond} {key} {given}"
@@ -2983,6 +2994,46 @@ def teaching (w : World) (entry : Json) : Option String := do
   let yours := if kind.isEmpty then "" else s!"delvetalk {kind} make (a {kind.drop 5} of your own, under the same law), or "
   return s!"It is {whose}. To have it your way: {yours}delvetalk kinds make / name: <yours> / of: {over} / law: <your law>; its law read whole: delvetalk library laws / card: {id}"
 
+/-- Where a resident's words stand while hob reads them (playtest 5: a ghost's words sat suspended at entry 809, unsaid):
+    for a suspended entry still waiting on an interpretation, the line that says hob is reading, by when it answers
+    (the suspension's deadline: past it the turn resumes `timedOut`, never hangs), and how many readings wait before
+    it in the town and on the card. Said in the reply and the receipt, never journaled. -/
+def waitingLine (w : World) (entry : Json) : Option String := do
+  guard (tagOf entry == "suspended")
+  let hash ← (entry.getObjValAs? String "hash").toOption
+  let outcome ← (entry.getObjVal? "outcome").toOption
+  let slot ← (outcome.getObjVal? "slot").toOption
+  guard ((slot.getObjValAs? String "principal").toOption == some interpretationPrincipal)
+  guard (w.suspended.any fun s => (s.getObjValAs? String "hash").toOption == some hash)
+  let deadline := (outcome.getObjValAs? Nat "deadline").toOption.getD w.clock
+  let height := (entry.getObjValAs? Nat "height").toOption.getD 0
+  let objectOf := fun (s : Json) => (((s.getObjVal? "outcome").toOption.bind (·.getObjVal? "activity" |>.toOption)).bind
+    (·.getObjValAs? String "object" |>.toOption)).getD ""
+  let reading := w.suspended.toList.filter fun s => ((s.getObjVal? "outcome").toOption.bind (·.getObjVal? "slot" |>.toOption)).bind
+    (·.getObjValAs? String "principal" |>.toOption) == some interpretationPrincipal
+  let ahead := (reading.filter fun s => (s.getObjValAs? Nat "height").toOption.getD 0 < height).length
+  let object := objectOf entry
+  let here := (reading.filter fun s => objectOf s == object).length
+  return s!"hob is reading these words for {object}: it answers by clock {deadline}, within {deadline - w.clock} minutes, " ++
+    s!"else the turn ends timed out; {ahead} reading{if ahead == 1 then "" else "s"} wait before it in the town, " ++
+    s!"{here} on {object} with it. Its receipt says how it ended."
+
+/-- A rule an admitted entry placed that holds as a level over what grows (`Clause.levelHint`): the one line that says
+    so and what to write instead, for each rule the entry placed on a thing (`placed`) or wrote into a text (an amendment:
+    `for: things`, `adopt`), the first. Said in the reply, never journaled. -/
+def ruleTeaching (w : World) (entry : Json) : Option String := do
+  guard (tagOf entry == "admitted")
+  let outcome ← (entry.getObjVal? "outcome").toOption
+  let height := (entry.getObjValAs? Nat "height").toOption.getD 0
+  let rows := fun (k : String) => (((outcome.getObjVal? k).toOption.bind (·.getArr?.toOption)).getD #[]).toList
+  let placed := (rows "placed").filterMap (·.getObjValAs? String "object" |>.toOption) |>.flatMap fun id =>
+    (((w.objects[id]?).map (·.rules)).getD []).filter (·.since == height) |>.map (·.clause)
+  let written := (rows "amendments").flatMap fun a =>
+    let text := fun (k : String) => (a.getObjValAs? String k).toOption.getD ""
+    let before := ((parseClauses (text "old")).toOption.getD []).map (·.render)
+    ((parseClauses (text "new")).toOption.getD []).filter (!before.contains ·.render)
+  (placed ++ written).findSome? (·.levelHint)
+
 /-- Lift `result`, `ticksUsed` and, for a suspension, `slot` and `deadline` to the reply, and the
     offers the entry retains for the turn's own principal (others are read with `world-offers`), and an
     admitted entry's three lines (`revealed`) and whether they may be posted (`inPublic`). -/
@@ -3006,7 +3057,8 @@ def turnReply (w : World) (r : Json) : Json :=
         | none => p)]).getD [] ++
       -- What a refusal may say in public, for transport to draft from; a law's, on a roomy world, how to have it otherwise.
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
-      ((teaching w entry).map fun t => [("hint", toJson t)]).getD [])
+      (((teaching w entry).orElse fun _ => ruleTeaching w entry).map fun t => [("hint", toJson t)]).getD [] ++
+      ((waitingLine w entry).map fun t => [("waiting", toJson t)]).getD [])
 
 /-- `world-receipt {principal, identity, of?}`: the receipt of identity (`of`, default the
     reader, `identity`), projected under the reader's authority; a refusal with its `public` projection.
@@ -3022,6 +3074,7 @@ def receipt (w : World) (j : Json) : Except String Json := do
     if owner != reader && tagOf entry == "refused" then return publicRefusal entry
     -- A refusal's owner also gets what may be said of it in public, which a draft of it carries.
     return Json.mkObj ([("status", toJson "receipt"), ("receipt", shown)] ++ inPublic w entry ++
+      (if owner == reader then ((waitingLine w entry).map fun t => [("waiting", toJson t)]).getD [] else []) ++
       (if tagOf entry == "refused" then [("public", publicRefusal entry)] else []) ++
       (if owner == reader && !reader.isEmpty then revealedField w entry else []))
 
@@ -4244,9 +4297,25 @@ def runPlanTurn (w : World) (req : TurnRequest) (acts : List String) : Except St
       | other => other
     runPlan w ctx ((heardPost req.method req.argument).getD req.post) "spell" "spell" req.object (acts.map .spell) argOf
 
+/-- One table for a card's actions (playtest 5: `delvetalk register sign` ran, `POST …/register/sign` answered
+    `noMethod`): a direct turn naming an action the card offers as a spell but not as a method of its table (a grown
+    verb, a placing or a host read) is that spell, cast through `receive` from its fields as a typed spell is, so a spell
+    and its action route reach the same act. A field with no spell form leaves the turn as it was asked. -/
+def spellOfAction (w : World) (req : TurnRequest) : TurnRequest :=
+  if req.method == "receive" then req else
+  match w.objects[namedCard w req.principal req.object]? with
+  | none => req
+  | some o =>
+    let spelled := o.verbs.any (·.name == req.method) || placingSpells.contains req.method || hostReads.contains req.method
+    if o.offers req.method || !o.offers "receive" || !spelled then req else
+    match proposalSpell req.object req.method req.argument with
+    | "" => req
+    | spell => { req with method := "receive", argument := .record [("text", .label spell), ("post", .label "")] }
+
 /-- A direct turn; a plan is one turn (`runPlanTurn`); a post with several spells at a line's start is one turn a
     spell (`runSpells`). -/
 def runTurn (w : World) (req : TurnRequest) : Except String (World × Json) :=
+  let req := spellOfAction w req
   let text := heardText req.method req.argument
   match (if req.method == "receive" && req.reach != "mentioned" && (Spell.quotes text).isNone then Spell.plan text else none) with
   | some acts => runPlanTurn w req acts

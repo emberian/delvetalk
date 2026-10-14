@@ -1,12 +1,13 @@
 hob: three keywords, one grammar; the host judges.
-LAW  law NAME "reading": EXPR. Each must admit a change, else refused NAME: <reading>.
-RULE  rule NAME "reading": EXPR then SPELL. A write making EXPR true casts SPELL as its writer.
-WANT  want NAME "reading": EXPR asks SPELL. While EXPR holds now (no old), the card wants it.
-PLACE  delvetalk CARD rule or want; rules, wants read them. At most 16 lines; a kind's bind its things.
-EXPR  A implies B | A or B | A and B | not A | (A) | an atom.
-ATOMS  REF == V, REF <= V, A + B <= V, REF in [..], REF in new.F.COL; monotone writeOnce unchanged insertOnly appendOnly (F); changed(new.F.COL) by request.subject; count(new.F) <= N; under "CARD"; "CARD" wants NAME.
-REF  new.F, old.F, "CARD".F, REF % N; request.subject caller clock height method verb kind (0 its own spell, 1 reprogram, 2 amend, 3 proposed, 4 rule).
+LAW  law NAME "reading": EXPR; a change it does not admit is refused NAME: <reading>.
+RULE  rule NAME "reading": EXPR then SPELL, cast by its placer at each write while EXPR holds.
+ONCE  count(new.lines) >= 3 fires at lines 3, 4, 5…. Once: count(new.lines) == 3 and changed(count(new.lines)); each third: count(new.lines) % 3 == 0 and changed(…).
+WANT  want NAME "reading": EXPR asks SPELL. While EXPR holds (no old), the card wants it.
+PLACE  delvetalk CARD rule or want; rules, wants read them; 16 at most; a kind's bind its things.
+EXPR  atoms with and, or, not, implies, ( ).
+ATOMS  A OP B, OP one of == != < <= > >=, terms A + B, REF, N, "text"; REF in [..], in new.F.COL; monotone writeOnce unchanged insertOnly appendOnly (F); changed(TERM); changed(new.F.COL) by REF; under "CARD"; "CARD" wants NAME.
+REF  new.F, old.F, "CARD".F, count(new.F), REF % N; request.subject caller clock height method verb kind (write reprogram amend proposed rule).
 METARULE  an amendment stands only if the new law admits it.
-CLASSES  send again: staleRoot budget evaluation capacity quota quiet. Change the spell: lawRefused typeMismatch badSpell noMethod unknownObject requiredAbsence keyTaken duplicateKey absentItem programRefused budgetExhausted duplicateIdentity.
+CLASSES  send again: staleRoot budget evaluation capacity quota quiet. Change the spell: the rest.
 A card's own: delvetalk library laws / card: bell/1
 Next: delvetalk library read / page: object

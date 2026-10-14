@@ -105,8 +105,9 @@ def turn_line(r, addressed=None, handles=None):
 
 def revealed_lines(reply):
     """The host's lines an admitted reply carries (`revealed`: what it moved, what it opened or closed, where it
-    stands), each on its own line; the host renders them, the transport only places them."""
-    return ''.join(f'{line}\n' for line in reply.get('revealed') or [])
+    stands), each on its own line, then its `hint` (a rule placed as a level: what to write instead); the host renders
+    them, the transport only places them."""
+    return ''.join(f'{line}\n' for line in (reply.get('revealed') or []) + ([reply['hint']] if reply.get('hint') else []))
 
 
 def offered_object(reply, addressed=None):
@@ -234,7 +235,7 @@ def public_reply(reply, host=None, request=None, sleep=time.sleep):
     if tag == 'refused':
         return reply
     if not reply.get('inPublic'):
-        return {**reply, 'offers': [], 'revealed': [], 'receiptOnly': True}
+        return {**reply, 'offers': [], 'revealed': [], 'hint': '', 'receiptOnly': True}
     return reply
 
 

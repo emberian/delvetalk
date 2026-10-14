@@ -1,6 +1,7 @@
 """The hand's overview of a town (`/hand/<world>/overview`, `hand overview`): who arrived in the last day and how they
 stand, the busiest hands by turns, the refusals by class in the last hour and day, what the day's budgets have spent,
-the moderation as it stands (slow, quiets, flags, held arrivals, the hand's last acts) and the newest feed posts.
+the moderation as it stands (slow, quiets, flags, held arrivals, the hand's last acts), what waits for the town's own
+hand (`Hand.requests`: lines pending on the records it keeps, proposals held for its things) and the newest feed posts.
 
 Read only. Its sources are the journal (a turn's wall time is the world's clock at it: the bridge advances the clock to
 unix minutes, so an entry is placed by the `advanced` entry before it), the identity store (how each guest came in and
@@ -18,7 +19,7 @@ from transport.host import CLOCK
 from transport.measure import counted
 
 HOUR, DAY = 60, 1440  # clock minutes
-BUSIEST, FEED, ACTS = 10, 10, 12  # rows shown
+BUSIEST, FEED, ACTS, REQUESTS = 10, 10, 12, 12  # rows shown
 
 
 class Ledger:
@@ -175,6 +176,7 @@ def overview(h):
                   'about': l.get('name') or l.get('address') or l.get('reason') or l.get('draft') or ''} for l in acts[-ACTS:]][::-1],
         'feed': feed_posts(st),
         'automod': automod_of(h),
+        'requests': h.requests(),
     }
 
 
@@ -188,7 +190,10 @@ def automod_of(h, n=8):
     elif s['stale']:
         state = f"stopped: no step since {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(s['at']))}"
     else:
-        state = {'ok': 'the classifier answers', 'idle': 'idle', 'down': f"the classifier is down ({s.get('lastError')}); texts wait, the wordlist still acts",
+        last = time.strftime('%H:%M UTC', time.gmtime(s['lastCall']['at'])) if (s.get('lastCall') or {}).get('at') else None
+        state = {'ok': 'working: the classifier answered its last batch' + (f' at {last}' if last else ''),
+                 'idle': ('idle and healthy: nothing has needed the classifier since the worker started' if not s.get('pending')
+                          else f"starting: {s['pending']} waiting for the first batch"), 'down': f"the classifier is down ({s.get('lastError')}); texts wait, the wordlist still acts",
                  'budget': "the day's calls are spent; texts wait, the wordlist still acts", 'no key': 'no key: only the wordlist acts'}.get(s['glm'], s['glm'])
     return {'state': state, 'status': s, 'counts': screened.get('counts') or {}, 'newest': screened.get('items') or []}
 
@@ -208,4 +213,5 @@ def summary(o):
             'slow on' if m['slow'] else 'slow off', counted(len(m['quiets']), 'quiet'), counted(len(m['flagged']), 'flag'),
             counted(len(m['held']), 'held arrival'),
             f"automod: {o['automod']['state']}" + (f", {o['automod']['status']['pending']} waiting" if o['automod']['status'] else ''),
-            f"{o['automod']['counts'].get('hidden', 0)} hidden, {o['automod']['counts'].get('review', 0)} for review"]
+            f"{o['automod']['counts'].get('hidden', 0)} hidden, {o['automod']['counts'].get('review', 0)} for review",
+            counted(len(o['requests']), 'request') + ' waiting for the town']

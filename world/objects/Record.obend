@@ -231,6 +231,18 @@ def admitting(state: State, number: Nat, context: Abi.Context) -> Activity<Card.
 def admitted(state: State, line: Line, context: Abi.Context) -> Activity<Card.Replied>:
   let written(_) = write {admitted: insert {n: line.n, at: context.height}, pending: retract {n: line.n}, keeperHandle: set context.handle}
   Card.tell(Card.Replied.done({action: "admit"}), Document.text("#{natText(line.n)} admitted: {line.text}\n"))
+# decline {number}: the keeper's alone; the line stays as written (lines are only added), no longer waiting and
+# never admitted, shown [not admitted] (the hand's requests page offers it beside admit). A body offers it as a form
+# (the commonplace's); the record's own card does not, so a kept card's usage is no longer.
+def decline(state: State, input: {number: Nat}, context: Abi.Context) -> Activity<Card.Replied>:
+  if state.keeper == "" || context.principal != state.keeper then refused({clause: "notKeeper", reading: keeperReading(state, context)}, context) else declining(state, input.number, context)
+def declining(state: State, number: Nat, context: Abi.Context) -> Activity<Card.Replied>:
+  match lineNumbered(state, number):
+    case none(_): refused({clause: "noLine", reading: "No line numbered {natText(number)}; the card numbers them"}, context)
+    case some(l): if Relations.has(state.pending, {n: number}) then declined(l.value, context) else refused({clause: "notPending", reading: "#{natText(number)} waits for nobody"}, context)
+def declined(line: Line, context: Abi.Context) -> Activity<Card.Replied>:
+  let written(_) = write {pending: retract {n: line.n}, keeperHandle: set context.handle}
+  Card.tell(Card.Replied.done({action: "decline"}), Document.text("#{natText(line.n)} not admitted: {line.text}\n"))
 def keeperReading(state: State, context: Abi.Context) -> String:
   if state.keeper == "" then "Nobody keeps this record; every line stands as written" else "Only the keeper, {Card.shown(state.keeper, state.keeperHandle, context)}, admits"
 def refused(refusal: Card.Refusal, context: Abi.Context) -> Activity<Card.Replied>:
@@ -405,7 +417,7 @@ def forecastWritten(line: String) -> Activity<Bool>:
   let written(_) = write {weather: set textTake(line, 120n)}
   true
 def methods() -> Lists.List<String>:
-  Text.words("~made ~forecast ~act ~cited")
+  Text.words("~made ~forecast ~act ~cited ~decline")
 form write:
   text: text 1..280
 form admit:
@@ -437,7 +449,7 @@ def numberedLine(state: State, context: Abi.Context, line: Document.Document, ro
 def moreLine(from: Nat, left: Nat, id: String) -> Document.Document:
   Document.text("… and {natText(left)} more: delvetalk {id} lines / from: {natText(from)}\n")
 def status(state: State, n: Nat) -> String:
-  if state.keeper == "" then "" else if isAdmitted(state, n) then "[admitted] " else if Relations.has(state.pending, {n: n}) then "[pending] " else ""
+  if state.keeper == "" then "" else if isAdmitted(state, n) then "[admitted] " else if Relations.has(state.pending, {n: n}) then "[pending] " else "[not admitted] "
 def entry(state: State, context: Abi.Context, line: Line) -> Document.Document:
   Document.text("#{natText(line.n)} {status(state, line.n)}{Card.shown(line.author, line.handle, context)}{Card.mine(line.author, context)}: {line.text}\n")
 # The head: the record's own first line, who keeps it, and the spell that writes in it.

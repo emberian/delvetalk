@@ -169,10 +169,15 @@ def openerOnly (w : World) (j : Json) (op : String) : Except String Unit := do
 /-- `world-screen {principal, after, limit?, external?, quietHours?}` (the opener): the texts written by entries after
     height `after` (at most `scanEntries` entries, until `limit` texts), with `external [{source, author, text}]` the
     transport offers (feed posts), less any already screened; the wordlist acts on each at once (hidden, its author
-    quieted `quietHours`, default 24). Answers `{status: "screen", through, items, acted, policy}`: `through` the
-    height the worker's cursor may move to once `items` have their verdicts. -/
+    quieted `quietHours`, default 24). Answers `{status: "screen", through, items, acted, policy, start, base}`: `through`
+    the height the worker's cursor may move to once `items` have their verdicts; `start` the first height of the history
+    the host reads (an ancestor journal the carried genesis cites, when it was given it) and `base` the last height
+    before this journal's own. `until` stops the scan at that height (a backfill of the past: `start` to `base`);
+    `dryRun: true` journals nothing and answers what the wordlist would hide (`acted`, each `would: true`). -/
 def screenOp (w : World) (j : Json) : Except String (World × Json) := do
   openerOnly w j "world-screen"
+  let dry := (j.getObjValAs? Bool "dryRun").toOption.getD false
+  let w0 := w
   let after := (← optNat j "after").getD 0
   let limit := min maxItems ((← optNat j "limit").getD 64)
   let quietHours := (← optNat j "quietHours").getD 24
@@ -183,7 +188,7 @@ def screenOp (w : World) (j : Json) : Except String (World × Json) := do
     return ({ key := Screen.textKey text, text, source, author := (x.getObjValAs? String "author").toOption.getD "", height := 0 } : Item)
   let mut items : Array Item := #[]
   let mut through := after
-  let last := min w.height (after + scanEntries)
+  let last := min (((← optNat j "until").filter (· > 0)).getD w.height) (min w.height (after + scanEntries))
   let mut h := after + 1
   while h ≤ last && items.size < limit do
     if let some e := historyEntry w h then
@@ -204,10 +209,11 @@ def screenOp (w : World) (j : Json) : Except String (World × Json) := do
     | some category =>
       let (w', a) ← flag w i "hidden" category "high" "wordlist" "the wordlist names it" quietHours
       w := w'
-      acted := acted.push a
+      acted := acted.push (if dry then (a.setObjVal! "would" (toJson true)).setObjVal! "text" (toJson i.text) else a)
     | none => left := left.push i
-  return (w, Json.mkObj [("status", toJson "screen"), ("through", toJson through), ("height", toJson w.height),
-    ("items", Json.arr (left.map Item.json)), ("acted", Json.arr acted), ("policy", toJson policy)])
+  return (if dry then w0 else w, Json.mkObj [("status", toJson "screen"), ("through", toJson through), ("height", toJson w0.height),
+    ("items", Json.arr (left.map Item.json)), ("acted", Json.arr acted), ("policy", toJson policy),
+    ("start", toJson (historyStart w0)), ("base", toJson w0.entries.base)])
 
 /-- The JSON object a model's text holds: from its first `{` to its last `}` (a fenced answer included). -/
 def jsonIn (raw : String) : Except String Json := do
@@ -221,9 +227,14 @@ def jsonIn (raw : String) : Except String Json := do
     reads one verdict per item by index: a flag of high confidence hides the text and quiets its author, medium hides
     it, low sends it to the owner's review; `sexual-minors` is always high. Answers `{status: "verdicts", acted,
     passed, unanswered}` (`unanswered`: the keys the reply gave no verdict for, to ask again), `{status: "failed"}` or
-    `{status: "unreadable", why}`. -/
-def verdictsOp (w : World) (j : Json) : Except String (World × Json) := do
+    `{status: "unreadable", why}`. `dryRun: true` journals nothing and answers what it would do, each act `would: true`. -/
+partial def verdictsOp (w : World) (j : Json) : Except String (World × Json) := do
   openerOnly w j "world-screen-verdicts"
+  let dry := (j.getObjValAs? Bool "dryRun").toOption.getD false
+  if dry then
+    let (_, r) ← verdictsOp w (j.setObjVal! "dryRun" (toJson false))
+    let acted := ((r.getObjVal? "acted").toOption.bind (·.getArr?.toOption)).getD #[]
+    return (w, r.setObjVal! "acted" (Json.arr (acted.map (·.setObjVal! "would" (toJson true)))))
   let items ← (((j.getObjVal? "items").toOption.bind (·.getArr?.toOption)).getD #[]).mapM Item.ofJson
   let quietHours := (← optNat j "quietHours").getD 24
   let model := (j.getObjValAs? String "model").toOption.getD "the classifier"

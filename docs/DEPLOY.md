@@ -1127,7 +1127,9 @@ glm-5 and glm-4.6; glm-5.3-flashx answers code 1311 (not in the plan) though the
 setting it as `automod_model`. `automod = false` turns it off (the
 service then idles, healthy, and the overview says "off in the config").
 
-**4. Check.** The overview's "Automatic moderation" line reads "the classifier answers" after the first batch, and
+**4. Check.** The overview's "Automatic moderation" line reads "idle and healthy" while nothing has needed the classifier
+since the worker started, "working: the classifier answered its last batch at HH:MM" after a batch, "the classifier is
+down (…)" or "the day's calls are spent" otherwise, and
 `hand automod` lists what it flagged. The worker's cursor starts at entry 0 and the feed's at its first post, so the
 first minutes screen every resident's text the host's history holds (a chain the host does not read, such as an
 earlier carry's journal it was not given, is not screened) in full batches, in order (at most 512 texts held; past
@@ -1138,8 +1140,17 @@ touching its state: `docker compose logs delvetalk-automod` and `<state>/worlds/
 Measured at the first rollout (2026-10-14, both towns carried just before): the host's history is the carried journal
 alone, so a carry's genesis is where screening begins: gsb's 4,633 entries of v16 and obend's 845 of v1 (and every chain
 before) were not screened; obend's feed, a transport file the carry copies, was screened whole (10 posts). Nothing was
-hidden or flagged on either town. To screen a town's past, the host would have to read the journals its carried genesis
-cites (not built). The service's healthcheck (`status --health automod`) shipped as a choice the command refused, so the
+hidden or flagged on either town. lane/playtest5 screens the past: the host container mounts every data directory read
+only at `/towns` (compose.yml), the path a carried genesis cites its ancestors by, so the host reads them; then a backfill,
+a dry run first, reports what it would hide and changes nothing:
+
+    docker compose exec delvetalk-automod python3 -m transport automod --backfill            # dry run, resumable, 4,096 entries a pass
+    cat /var/lib/delvetalk/v17/state/worlds/town/automod-backfill.jsonl                    # each text it would hide, its verdict
+    docker compose exec delvetalk-automod python3 -m transport automod --backfill --act      # on the owner's word: hide them, quiet nobody
+
+A pass shares the day's calls (`automod_daily_calls`) and keeps its cursor in `automod-backfill.json` (delete it to
+start over, as an `--act` pass after a dry run must). `nothing` with "the host reads no journal before its own" means the
+mount is missing. The service's healthcheck (`status --health automod`) shipped as a choice the command refused, so the
 worker screened while compose said unhealthy; lane/deploy17 admits it (tests/test_instances.py `Healthchecks`).
 
 **Off, or broken.** Stopping the service (`docker compose stop delvetalk-automod`) stops screening and nothing else;

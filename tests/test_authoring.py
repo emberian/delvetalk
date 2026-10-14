@@ -9,10 +9,14 @@ things do not run every body below it or are not judged by every text below it.
     python3 -W error -m unittest tests.test_authoring -v
 """
 import contextlib
+import re
 import tempfile
 import unittest
+from pathlib import Path
 
 from tests.town import Town
+
+ROOT = Path(__file__).resolve().parent.parent
 
 YUE, KES = "did:plc:yueyueyueyueyueyueyueyue", "did:plc:kestrelkestrelkestrelkes"
 
@@ -130,6 +134,55 @@ class Authoring(unittest.TestCase):
 
     def check_over(self, over, source):
         return told(self.admitted(YUE, "workshop", "delvetalk workshop check\nover: %s\n```obend\n%s```\n" % (over, source)))
+
+    # Playtest 5 (2026-10-14): "view x: = unsupported declaration", "def view x(...) = not a method signature", "def views()
+    # compiles but I can't confirm the host reads it". The bend page's five lines draw a bar and a button; a view of any
+    # other shape is refused with the shape to write.
+    def test_a_view_is_checked_and_drawn_and_a_wrong_one_names_the_shape(self):
+        page = (ROOT / "capsules" / "pages" / "bend.txt").read_text()
+        five = re.search(r"Five lines, a bar of ten lines and a button that writes one:\n```obend\n(.*?)```", page, re.S)[1]
+        self.assertEqual(len(five.strip().splitlines()), 5)
+        self.assertIn("  " + five.rstrip("\n").replace("\n", "\n  "), (ROOT / "capsules" / "pages" / "workshop.txt").read_text())  # the walk has the same five
+        self.assertIn("Checked: it compiles.", self.check_over("kind/record", five))
+        shape = "a view is a def named in views(): def view(state: State, context: Abi.Context) -> View.View:"
+        wrong_view = 'def views() -> Lists.List<String>:\n  Text.words("view")\ndef view(state: State, context: Abi.Context) -> String:\n  "a jar"\n'
+        for wrong, why in [(wrong_view, "it returns something other than View.View"),
+                           ("view x:\n  1n\n", ""), ("def view x(state: State) -> String:\n  \"x\"\n", "")]:
+            told_ = self.check_over("kind/record", wrong)
+            self.assertIn("refused (view): " + (why + "; " if why else "") + shape, told_)
+        self.admitted(YUE, "kinds", "delvetalk kinds make / name: jar / of: record / head: a jar\nbody: <<BEND\n%sBEND\n" % five)
+        self.admitted(KES, "kind/jar", "delvetalk kind/jar make")
+        from transport.host import plain
+        drawn = lambda: plain(self.town.send(op="world-derived", principal=KES, object="jar/1", view="view")["value"])["items"]
+        bar, button = drawn()
+        self.assertEqual((bar["tag"], bar["max"], button["tag"], button["act"]["action"]), ("progress", 10, "button", "write"))
+        self.admitted(KES, "jar/1", "delvetalk jar/1 write / text: a drop")
+        self.assertEqual(drawn()[0]["value"], bar["value"] + 1)
+
+    # Playtest 5: Yue's Bend frictions, each refusal naming what to write, all at once where it can, and none of them
+    # running the workshop's turn out of ticks.
+    def test_the_checkers_refusals_name_what_to_write(self):
+        cases = [
+            ("form tend:\ndef tend(state: State, context: Abi.Context) -> Activity<Nat>:\n  Super.inscribe(state, \"tend\", \"x\", context)\n",
+             "overrides Record.tend, which is def tend(state: State, context: Abi.Context) -> Activity<Card.Replied>; an override keeps that signature"),
+            ("form hum:\ndef hum(state: State, context: Abi.Context) -> Activity<Nat>:\n  let written(_) = write {warmth: add 1n}\n  state.warmth + 1n\n",
+             "write names no field of the State (Record's): warmth; its fields: owner, keeper"),
+            ("form hum:\ndef hum(state: State, context: Abi.Context) -> Activity<Super.Done>:\n  Super.inscribe(state, \"hum\", \"x\", context)\n",
+             "Super.Done; Super (Record) declares no type Done; its types: "),
+            ("def warm() -> Nat:\n  let e = Plans.Edit.set({value: \"warm\"})\n  1n\n",
+             "cannot infer the type argument D of Plans.Edit.set (line 17) from its arguments or the type its position expects; write Plans.Edit::<String, {}>.set(...); in a write the field names them: let written(_) = write {field: set value}")]
+        for body, said in cases:
+            r = self.admitted(YUE, "workshop", "delvetalk workshop check\nover: kind/record\n```obend\n%s```\n" % body)
+            self.assertIn(said, told(r))
+        self.assertIn("vars (Scenes.Var, as kind/counter keeps its count)", told(self.admitted(YUE, "workshop", "delvetalk workshop check\nover: kind/record\n```obend\n%s```\n" % cases[1][0])))
+        lacking = ("layer over ./Record.obend\nedition ObjectiveBend 1\nimport ./Abi.obend as Abi\nimport ./List.obend as Lists\nimport ./Form.obend as Form\n"
+                   "import ./Plan.obend as Plans\ntype State = Super.State\nform hum:\ndef hum(state: State, context: Abi.Context) -> Activity<Nat>:\n"
+                   "  let written(_) = write {next: add 1n}\n  1n\n")
+        once = told(self.admitted(YUE, "workshop", "delvetalk workshop check\nover: kind/record\n```obend\n%s```\n" % lacking))
+        self.assertIn("Checked: 1 problem.", once)
+        self.assertRegex(once, r"the State's fields hold types from modules Layer1 does not import: .*State\.cites.*State\.passages.*; add .*import \./Card\.obend as Card.*import \./Scenes\.obend as Scenes")
+        bare = told(self.admitted(YUE, "workshop", "delvetalk workshop check\n```obend\n%s```\n" % lacking))
+        self.assertIn("a layer is checked over what it lays on: delvetalk workshop check / over: <a kind, or a thing>", bare)
 
     # §5 step 2: a layer checked over what it would be laid on.
     def test_a_layer_is_checked_over_a_kinds_things_or_over_a_thing(self):

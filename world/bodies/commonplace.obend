@@ -15,7 +15,9 @@ import ./Scenes.obend as Scenes
 # What changed in the town, newest first (World.changed, read when the card is asked for, so
 # nothing is kept to say it), then the doors the hand named (the record's `cites`, each with
 # the spells the card prints under it), then the tail. The opener keeps it: a line written
-# here is [pending] until admitted, as in any kept record.
+# here is [pending] until admitted, as in any kept record; a resident's first line is admitted at
+# once by the town's rule `firstline` (deploy/genesis.py `FIRST_LINE`), the rest by its keeper's
+# hand from the hand's requests page, which declines a line as easily.
 #
 # A door's word gets that door's card. Any other words are the host's: hob reads them against
 # the commonplace's forms and its doors' (OVERHAUL §2.7), and runs what it reads as the speaker's
@@ -41,6 +43,8 @@ form write:
   text: text 1..280
 form admit:
   number: natural 1..1000000000
+form decline:
+  number: natural 1..1000000000
 form lines:
   from: natural 1..1000000000
 form door:
@@ -52,6 +56,13 @@ def write(state: State, input: WriteInput, context: Abi.Context) -> Activity<Nat
   Super.write(state, {text: input.text}, context)
 def admit(state: State, input: AdmitInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.admit(state, {number: input.number}, context)
+def decline(state: State, input: DeclineInput, context: Abi.Context) -> Activity<Card.Replied>:
+  Super.decline(state, {number: input.number}, context)
+def headName(state: State) -> String:
+  if state.head == "" then "THE COMMONPLACE" else state.head
+# The lines' head says who admits a line here and when (playtest 5: a newcomer's hello waited, unsaid, for the keeper).
+def headLine(state: State, context: Abi.Context, id: String) -> Document.Document:
+  Document.text("{headName(state)}, kept by {Card.shown(state.keeper, state.keeperHandle, context)}. Write: delvetalk {id} write / text: <1 to 280 characters>; numbered. A resident's first line here is admitted at once, by the town's rule firstline; a later one is [pending] until the town's keeper admits it by hand (or declines it: [not admitted]).\n")
 def lines(state: State, input: LinesInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.lines(state, {from: input.from}, context)
 def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.Replied>:
@@ -59,7 +70,7 @@ def door(state: State, input: DoorInput, context: Abi.Context) -> Activity<Card.
 def undoor(state: State, input: UndoorInput, context: Abi.Context) -> Activity<Card.Replied>:
   Super.undoor(state, {label: input.label}, context)
 def actions(state: State, context: Abi.Context) -> Lists.List<String>:
-  Lists.concat(Text.words("since write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words("")))
+  Lists.concat(Text.words("since write lines"), Lists.concat(if state.keeper != "" && context.principal == state.keeper then Text.words("admit decline") else Text.words(""), if context.principal == state.owner then Text.words("door undoor") else Text.words("")))
 def methods() -> Lists.List<String>:
   Text.words("")
 def refusing(clause: String, reading: String, context: Abi.Context) -> Activity<Card.Replied>:

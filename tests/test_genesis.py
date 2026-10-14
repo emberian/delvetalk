@@ -42,7 +42,8 @@ class Genesis(unittest.TestCase):
         # doors to the three bells and their chord rung once (docs/HARMONIC.md), the seeded wants after; then the porch's
         # things are created and laid there
         self.assertEqual((refusal, [(m['object'], m['status']) for m in made]),
-                         (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [(id, 'admitted') for id in hands]
+                         (None, [(n, 'created') for n, _, _ in genesis.seeds(genesis.OPENER)] + [('commonplace', 'admitted')]  # its rule firstline
+                          + [(id, 'admitted') for id in hands]
                           + [('porch', 'admitted')] * (len(genesis.PORCH_DOORS) + 1) + [(w[0], 'admitted') for w in genesis.WANTS]
                           + [(t, 'created') for t, _ in genesis.THINGS] + [(dict(f)['id'], 'admitted') for _, f in genesis.MOTION]
                           + [('kind/register', 'created'), (genesis.REGISTER_DESK, 'created'), (genesis.REGISTER, 'admitted'),

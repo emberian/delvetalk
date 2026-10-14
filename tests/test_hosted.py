@@ -843,7 +843,8 @@ class HostingOff(unittest.TestCase):
                 status, guest = self.call('/AGENTS.md/accept', {'code': code}, hostname=HOST)
                 self.assertEqual(status, 200, guest)
                 principal = f'guest:{HOST}:{name}'
-                self.assertEqual((guest['principal'], guest['did']), (principal, identity.hosted_identity(principal, HOST)))
+                self.assertEqual(guest['principal'], principal)
+                self.assertNotIn('did', guest)  # hosting off: no hosted did:web is named
                 self.assertEqual(self.ident.authenticate(guest['credential'])['did'], principal)
                 status, me = self.call('/AGENTS.md/me', token=guest['credential'], hostname=HOST)
                 self.assertEqual((status, me['did']), (200, principal))

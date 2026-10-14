@@ -182,6 +182,7 @@ def turn_view(reply):
     return {'status': reply.get('status'), **({'class': cls} if cls and reply.get('status') == 'refused' else {}),
             'line': f"{pages.stamp(reply.get('status'), word=False)} {line}",
             **({'revealed': reply['revealed']} if reply.get('revealed') else {}),
+            **({'waiting': reply['waiting']} if reply.get('waiting') else {}),  # hob reading the words: by when, behind how many
             **({'hint': reply.get('hint') or outcome['hint']} if reply.get('hint') or outcome.get('hint') else {}),  # a refusal's fix, as the host wrote it or says it
             'offers': [o['text'] for o in reply.get('offers') or []],
             'receipt': {'slug': rc.get('slug'), 'height': rc.get('height')}}
@@ -282,6 +283,16 @@ def actions(base, obj, inspected, only=None):
             continue
         out.append({**act, 'fields': fields, 'body': {'intent': 'text', 'fields': {f['name']: f['kind']['tag'] for f in form['fields']}},
                     'spell': (inspected.get('templates') or {}).get(m['name'])})
+    # One table: every spell the card offers that is no method of its table (a grown verb, a host spell) is an action too,
+    # its route the host casts as that spell (`spellOfAction`).
+    methods = {m['name'] for m in inspected.get('methods') or []}
+    for name, form in forms.items():
+        if name in methods or (only and name != only) or name not in (inspected.get('offered') or forms):
+            continue
+        fields = [{'name': f['name'], 'kind': f['kind']['tag'], 'bounds': {k: v for k, v in f['kind'].items() if k != 'tag'}} for f in form['fields']]
+        out.append({'name': name, 'method': 'POST', 'href': f"{base}/world/{oid(obj)}/{urllib.parse.quote(name, safe='')}", 'fields': fields,
+                    'body': {'intent': 'text', 'fields': {f['name']: f['kind']['tag'] for f in form['fields']}},
+                    'spell': (inspected.get('templates') or {}).get(name)})
     return out
 
 

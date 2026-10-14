@@ -22,3 +22,12 @@ hob: a sentence to a running body, five replies; the door and the station are bo
   » #1 is written: struck
 A body is forms and defs over its kind: `Super.` reaches the record beneath (inscribe a line, mark, door). For a kind of them, the same body under kinds make: delvetalk kinds make / name: wren-gongs / of: record, then body: <<BEND, the body, BEND.
 Changed: wren-gong runs your Bend; delvetalk wren-gong source reads it.
+{{feed}}
+A VIEW: add to the body a def view(state: State, context: Abi.Context) -> View.View named in views(), and the card's page draws it, live; these five lines draw a bar of ten lines and a button that writes one:
+  def views() -> Lists.List<String>:
+    Text.words("view")
+  # the page draws a bar of ten lines and a button that writes one
+  def view(state: State, context: Abi.Context) -> View.View:
+    View.stack(View.two(View.progress(Relations.count(state.lines), 10n, "lines"), View.button("add a line", View.act("write", View.given("text", "a drop")))))
+The View's words: delvetalk library read / page: bend
+{{end}}

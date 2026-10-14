@@ -343,6 +343,59 @@ class Transitions(Bell):
         self.assertNotIn("fired", self.rain("still unreadable")["receipt"])
 
 
+class Thresholds(Bell):
+    """Playtest 5 (2026-10-14): "no != in the grammar", "no <, only ==, <=, >= -- refused as badValue"; and a rule
+    `>= 3` fired at the third rain, the fourth and the fifth ("a rule holds at every commit while true"). Refuted by a
+    strict comparison or `!=` refused or judged otherwise than its words, by a level threshold placed without the line
+    that teaches `changed`, or by that line on a rule that already tells writes apart."""
+
+    RAINS = 'count(new.lines where verb == "rain")'
+
+    def told(self, reply):
+        return "".join(o.get("text", "") for o in reply.get("offers") or []) or reply.get("text", "")
+
+    def fired(self, reply):
+        return [f["rule"] for f in reply["receipt"].get("fired", [])]
+
+    def test_strict_comparisons_and_inequality_are_placed_and_judged_by_their_words(self):
+        for name, when in [("past", self.RAINS + " > 1 and count(old.lines where verb == \"rain\") < 2"),
+                           ("stranger", "request.subject != new.maker and request.method == \"rain\""),
+                           ("under", self.RAINS + " < 2 and request.method == \"rain\"")]:
+            placed = self.place("rule / name: %s / when: %s / then: delvetalk me note / text: %s" % (name, when, name))
+            self.assertEqual(placed["status"], "admitted", placed)
+            self.assertNotIn("hint", placed)  # each tells one write from the next
+        self.assertEqual(self.rules()["past"]["line"],
+                         'rule past: (%s > 1) and (count(old.lines where verb == "rain") < 2) then delvetalk me note / text: past' % self.RAINS)
+        self.assertEqual(self.fired(self.rain("one")), ["stranger", "under"])
+        self.assertEqual(self.fired(self.rain("two")), ["past", "stranger"])
+        self.assertEqual(self.fired(self.rain("three")), ["stranger"])
+        self.assertEqual(self.fired(self.rain("four", who=GLM)), [])  # the maker's own rain is not a stranger's
+        self.town.reopen()
+        self.assertEqual(self.fired(self.rain("five")), ["stranger"])
+        for bad in ["new.next ! 1", "new.next <> 1", "new.next < \"x\""]:
+            refused = self.place("rule / name: bad / when: %s / then: delvetalk me note / text: bad" % bad)
+            self.assertEqual(refused["status"], "refused", refused)
+            self.assertIn("law outside the enforced fragment", refused["receipt"]["outcome"]["reason"])
+
+    def test_a_level_threshold_is_answered_with_the_crossing_and_the_period_and_its_card_says_so(self):
+        level = self.place("rule / name: thirds / when: %s >= 3 / then: delvetalk me note / text: thirds" % self.RAINS)
+        self.assertEqual(level["status"], "admitted", level)
+        once = "%s == 3 and changed(%s)" % (self.RAINS, self.RAINS)
+        self.assertEqual(level["hint"], "rule thirds holds at every write while %s >= 3, so it fires at each one past it. "
+                         "To fire once, as it crosses, write in its place: %s; at each multiple of 3: %s %% 3 == 0 and changed(%s)"
+                         % (self.RAINS, once, self.RAINS, self.RAINS))
+        crossing = self.place("rule / name: third / when: %s / then: delvetalk me note / text: third" % once)
+        self.assertEqual(crossing["status"], "admitted", crossing)
+        self.assertNotIn("hint", crossing)
+        fired = [self.fired(self.rain(str(k))) for k in range(1, 6)]
+        self.assertEqual(fired, [[], [], ["thirds", "third"], ["thirds"], ["thirds"]])  # Yue's three, against one
+        card = self.told(self.say(GLM, self.bell, "delvetalk %s rules" % self.bell))
+        self.assertIn("rule thirds holds at every write while", card)
+        self.assertEqual(card.count("holds at every write while"), 1, card)  # the crossing carries no hint
+        usage = self.place("rule / name: half / then: delvetalk me note / text: half")  # begun without its condition
+        self.assertIn("a rule fires at every write while it holds, so once at a crossing is T == 3 and changed(T)", str(usage))
+
+
 class Share(Bell):
     """Astra 2026-10-12 world 6: a stranger's rules on another's thing hold a bounded share of it, and judging them is
     theirs: what they cite is no root of the owner's write and their conditions are no part of its law's budget, so

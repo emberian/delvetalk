@@ -2716,6 +2716,17 @@ def Elaborated.reachable (e : Elaborated) (entryKey : String) : List (String × 
     | _ => false
   return e.fields.filter fun (key, _) => seen.contains key || claimed key
 
+/-- A type as `m` writes it: each `__generic_N.Name` the generics pass made of it is `Alias.Name` again, by the import
+of `m` whose module declares `Name` (else `Name` alone). -/
+def unGeneric (c : Ctx) (m : Module) (text : String) : String :=
+  match text.splitOn "__generic_" with
+  | [] => text
+  | first :: rest => first ++ String.join (rest.map fun part =>
+      let after := (part.toList.dropWhile Char.isDigit).drop 1
+      let name := String.ofList (after.takeWhile fun ch => ch.isAlphanum || ch == '_')
+      let alias := (m.imports.find? fun (_, mod) => c.recordIndex.contains (mod ++ "." ++ name) || c.sumIndex.contains (mod ++ "." ++ name)).map (·.1)
+      ((alias.map (· ++ ".")).getD "") ++ String.ofList after)
+
 /-- An override keeps the declared type of what it overrides; refused by name, at the override. -/
 def checkOverrides (c : Ctx) (fuel : Nat) : M Unit := do
   for (below, over) in c.overrides.toList do
@@ -2728,9 +2739,19 @@ def checkOverrides (c : Ctx) (fuel : Nat) : M Unit := do
       let loc : Option Loc := match declOf c over with
         | some (.function _ _ _ body, m) => some ⟨m.name, over, body.span⟩
         | _ => none
-      failAt loc ("refused (layer-override): " ++ over ++ " is " ++ shown theirs ++ ", but it overrides " ++ below ++
-        ", which is " ++ shown mine ++ "; an override keeps the type it overrides")
-        (some ("give " ++ over ++ " the signature of " ++ below ++ ", or name it differently to add a method"))
+      -- As its author wrote it (playtest 5: a body's `form tend:` over a record answered with both types spelled
+      -- structurally, thousands of characters a reply could not hold); the structural types stay in the diagnostic.
+      let written : Option String := match declOf c below with
+        | some (.function name params resultType _, m) => some (unGeneric c m ("def " ++ (name.splitOn ".").getLast! ++ "(" ++
+            ", ".intercalate (params.map fun p => p.name ++ ": " ++ p.type) ++ ") -> " ++ resultType))
+        | _ => none
+      let said := match written with
+        | some w => "refused (layer-override): " ++ over ++ " overrides " ++ below ++ ", which is " ++ w ++
+            "; an override keeps that signature"
+        | none => "refused (layer-override): " ++ over ++ " is " ++ shown theirs ++ ", but it overrides " ++ below ++
+            ", which is " ++ shown mine ++ "; an override keeps the type it overrides"
+      failAt loc said
+        (some ("write " ++ (written.getD ("the signature of " ++ below)) ++ ", or name it differently to add a method"))
         (shown mine) (shown theirs)
 
 /-! ## Protocols
