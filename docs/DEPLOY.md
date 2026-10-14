@@ -1735,6 +1735,34 @@ Old receipts resolve (`sijap-buhaz` 4762 of v18 and `solag-tunon` 4634 of v17; o
 `delvetalk-host:4894c8ff4519` and their pulls replayed them. Memory under the new limits (3,200 MiB a stack): each host
 about 550 MiB of 2 GiB, every other service under 60 MiB.
 
+Carried 2026-10-14 (15:52 UTC), both towns, edition 19 to 20 (`4894c8ff4519` to foundation 1d8dea67's (lane/morningfix)
+`df7dbad45567bafa381b9b03e8c239f3ed7421107025ee4318702830b1c88339`, transport image `66069249…1df1`: morningfix's images,
+rebuilt on hbox from `git archive` to the same whole-image hash; lane/deploy20 renders v20 and v5). The rendered kits differ
+from the live `.env` in the images and data directory only, and the kit's `compose.hand.yml` mounts `DELVETALK_TOWNS` at
+`/towns` into the hand (its overview reads the day across the carry: gsb's "58 arrivals in a day" after it). carry-check
+(`/root/deploy20-scripts/carrycheck20.sh`): gsb exit 0, 116 s, `check {objects: 314, problems: []}`, refresh 98 `current`, 16
+`refreshed` (`kind/weather`, `kind/front` and `kind/inhabitant` `.law`, library pages), `kinds repair` `current`; obend exit 0,
+88 s, `check {objects: 149, rendered: 148, cardless: [beacon-jar], problems: []}`, 106 and 14. Lines in obend's feed
+`deploy20-before` (15:52:06) and `deploy20-back` (16:04:28). obend: stopped 15:52:08, v4 at 2324 with 149 objects (twice),
+closing backup `delvetalk-20261014T155218Z` (also in hbox's open `closing/`), carry 84 s, receipt `lofim-vutim`, up 15:54:15
+(down 2 m 07 s). gsb: stopped 15:57:20, v19 at 5785 with 314 objects (twice), closing backup `delvetalk-20261014T155731Z`
+(also in `closing/`), carry 120 s, receipt `mipus-rofad`, up 16:00:01 (down 2 m 41 s). Each census after: the same ids,
+owners and law, want and rule lines (obend 149, gsb 314). `genesis refresh` all `current` (obend 120, gsb 114), `kinds
+repair` among them; the requests pages say "0 stranded things"; every card renders as the opener (gsb 314, obend 148 and
+`beacon-jar`). `hand limits` on obend (`vusur-tabor`). `smoke.sh` passes on both; `/town`, `/inspect/<room>`, the hand's
+overview, reports and requests 200 behind the password (401 without), `reports.json?since=0` empty on both. Old receipts
+resolve (`padil-fuduj` 5291 of v19, `lodah-jamot` 1802 of v4, and those before). Backups and `verify.sh --full` ok (gsb 5876,
+obend 2352); both of hbox's `pull.env` name `delvetalk-host:df7dbad45567` and their pulls replayed them.
+
+gsb's mentions skipped since its edition-19 carry, heard again with the bridge stopped (16:00:10 to 16:01:07; `bridge
+--hear-again 2026-10-14T09:07:00Z`, run through `/root/deploy20-scripts/hearagain.py`, which counts the feed's pages):
+the feed paged 33 pages, 1,650 posts, back to 09:00:55Z, past the cut with a cursor left, so the whole window was read;
+290 posts queued, 389 notes to 59 residents. The bridge's first runs told every one: 69 `mentions` turns after the carry,
+all admitted, nothing left queued. New mentions queue again and are told on the hour (`MENTION_MINUTES`): at 17:13, 2 more
+`mentions` turns admitted and 56 notes to 24 residents waiting their hour. Before the carry the host had logged 354 `error
+op=world-posted` in six hours; none in the 75 minutes after. `transport hand requests` and `hand reports` with no verb raise
+`KeyError: None` on the CLI (each subparser's positional `verb` overwrites the command's `verb`); their pages work.
+
 A data directory from before the per-world layout moves the town's transport files once, with the stack down:
 
     cd /var/lib/delvetalk/v7/state && mkdir -p worlds/town && mv observe.sqlite* since outbox awaiting principals.txt \
