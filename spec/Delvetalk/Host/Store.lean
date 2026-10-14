@@ -82,6 +82,8 @@ def maxReasonBytes : Nat := 256
 /-- Model results one interpretation takes before a transient failure is its verdict (HOST-HANDOFF
     5.107): the first `interpretAttempts - 1` transient failures are journaled `attempted`. -/
 def interpretAttempts : Nat := 8
+/-- The characters of hob's question a misfit spell's refusal shows as its hint (one line; past it, the fixed line). -/
+def askLine : Nat := 160
 /-- The longest backoff between model attempts, in clock units. -/
 def interpretBackoffMax : Nat := 60
 def maxSourceBytes : Nat := 64

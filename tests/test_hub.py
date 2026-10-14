@@ -143,6 +143,10 @@ class Hub(test_chain.Chain):
         card = self.host.send(op="world-card", principal=KIMI, object="commonplace")["text"]
         for n, (question, raw) in enumerate((("is there a map of the town?", "card"), ("is the garden open on the wiki today?", "none"))):
             self.assertEqual(self.say(question, KIMI, uri="at://x/post/%d" % (4 - n))["status"], "suspended")
+            if raw == "card":  # prose in none of hob's forms is asked again once (the live review's finding 5)
+                [pending] = self.host.send(op="world-interpretations")["pending"]
+                retried = self.host.send(op="world-interpretation", id=pending["id"], reply={"status": "replied", "json": None, "raw": raw, "model": "m"})
+                self.assertEqual(retried["status"], "retrying", retried)
             answered = self.interpret(raw)
             self.assertEqual(answered["receipt"]["outcome"], {"tag": "admitted", "writes": []}, answered)
             self.assertTrue(answered["receipt"]["offers"][0]["text"].startswith(card), answered)
@@ -158,7 +162,51 @@ class Hub(test_chain.Chain):
         self.assertEqual(chatter["status"], "suspended", chatter)
         self.heard(self.interpret("none"))
         self.assertEqual(self.say("hello town, I am new here", GLM, uri="at://x/post/3")["status"], "suspended")
-        self.heard(self.interpret("none"))
+        self.heard(self.interpret("The speaker greets the town; nothing here is a spell, so the answer is none.\nnone"))  # reasoning stripped
+
+    def test_prose_in_none_of_hobs_forms_is_asked_again_once_and_never_shown(self):
+        """The live review's finding 5: six replies were the model's reasoning in the answer slot ("The transactional shape
+        is real…"), read as silence. Prose that is no spell, `ask:`, `grow:` or `none` is asked again once (journaled
+        `attempted`, reason `prose`); a second is read as nothing. Refuted by the prose in any offer, or by a third ask."""
+        self.policy()
+        self.commonplace()
+        self.assertEqual(self.say("please plant something amber for moths", GLM)["status"], "suspended")
+        prose = "The transactional shape is real, but the speaker has not named a seed."
+        [first] = self.host.send(op="world-interpretations")["pending"]
+        again = self.host.send(op="world-interpretation", id=first["id"], reply={"status": "replied", "json": None, "raw": prose, "model": "m"})
+        self.assertEqual((again["status"], again["attempt"]), ("retrying", 1), again)
+        self.assertEqual(again["receipt"]["outcome"]["reason"], "prose")
+        [second] = self.host.send(op="world-interpretations")["pending"]
+        self.assertEqual(second["id"], first["id"])
+        settled = self.host.send(op="world-interpretation", id=second["id"], reply={"status": "replied", "json": None, "raw": prose, "model": "m"})
+        self.assertEqual(settled["status"], "interpreted", settled)
+        [resumed] = [as_owner(self.host, r) for r in settled["resumed"]]
+        self.heard(resumed)
+        self.assertNotIn("transactional", json.dumps(resumed))
+        self.assertEqual(self.host.send(op="world-interpretations")["pending"], [])
+
+    def test_hobs_question_on_a_misfit_spell_is_the_refusals_hint(self):
+        """The live review's finding 5: on obend, hob's `ask:` after a misfit spell (564 to 567 and five more) never reached
+        the resident; the receipt carried the host's original hint. Now the refusal stands and its hint is hob's question,
+        when it is one short line; a long one is the fixed line naming what the spell still needs. Refuted by the original
+        hint after an `ask:`."""
+        self.policy()
+        self.commonplace()
+        misfit = lambda uri: self.turn("garden", "receive", record(text=label("delvetalk garden plant\ncolour: gold\nseed: a fern"), post=label(uri)),
+                                       principal=KIMI, reach="direct")
+        self.assertEqual(misfit("at://x/m/1")["status"], "suspended")
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        settled = self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": "ask: amber, violet or silver?", "model": "m"})
+        [resumed] = settled["resumed"]
+        out = resumed["receipt"]
+        self.assertEqual((out["status"], out["class"], out["clause"], out["hint"]), ("refused", "badSpell", "badValue", "hob asks: amber, violet or silver?"), resumed)
+        self.assertEqual(misfit("at://x/m/2")["status"], "suspended")
+        [item] = self.host.send(op="world-interpretations")["pending"]
+        long = "ask: " + "which of the colours the garden takes would suit a fern, given that " * 4 + "?"
+        settled = self.host.send(op="world-interpretation", id=item["id"], reply={"status": "replied", "json": None, "raw": long, "model": "m"})
+        [resumed] = settled["resumed"]
+        self.assertNotIn("given that", resumed["receipt"].get("hint", ""))
+        self.assertEqual(resumed["receipt"]["class"], "badSpell", resumed)
 
     def test_an_archived_rain_line_runs_at_once_and_a_spell_missing_a_value_is_hobs_question(self):
         """Field lines that fit a form a door's card offers (the bell under the garden) run at once,

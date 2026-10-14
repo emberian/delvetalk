@@ -321,7 +321,10 @@ class PolicyObject(Chain):
         refused = self.interpret(self.hob_says("ask: Which card: the garden?"))
         out = refused["receipt"]["outcome"]
         self.assertEqual((out["tag"], out["clause"]), ("refused", "otherCard"), refused)
-        self.assertNotIn("Which card", json.dumps(refused))  # the model's words never reach the card
+        # hob's question, one short line, is the refusal's hint the resident reads (the live review's finding 5), and
+        # never a line of the card.
+        self.assertEqual(out["hint"], "hob asks: Which card: the garden?", refused)
+        self.assertNotIn("Which card", self.host.send(op="world-card", principal="glm", object="commonplace")["text"])
 
     def test_prose_with_no_stated_reach_is_not_addressed_at_once(self):
         # HOST-HANDOFF 118: no reach, no model, no suspension, no quota.
