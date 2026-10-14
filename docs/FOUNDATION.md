@@ -686,7 +686,8 @@ were read; a valid host reading starts its cast on current state, recording thos
 read behaviour revisions, and `resumes` names the original reading. `behaviour` advances for each placed or removed rule, want or
 verb and for each reprogram or amendment; any such edit on an offered card is relevant, including a rule for
 another verb, while an edit on an unoffered card is not. `resumeHeard` refuses an obsolete reading before any
-spell runs, as `staleRoot`, naming the card and its changed revision. A Bend `interpret` follows `resumeOne`'s
+spell runs, as `staleRoot`, naming the card and its changed revision; a revision only the reading's speaker moved since
+(they grew the verb, placed the rule: `Object.mover`, `moverFrom`) leaves it current. A Bend `interpret` follows `resumeOne`'s
 one re-run on a moved root, re-offering from current state. `interpretationSlot` keeps the turn's await numbering
 and binds only nonzero behaviour revisions: a behaviour edit renews the reading's slot, while ordinary state
 moves reuse its settled answer, so a batch settles without further model calls. `placedCid` commits to the counter beside the placed rows, and

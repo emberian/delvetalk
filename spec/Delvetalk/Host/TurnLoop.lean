@@ -4479,7 +4479,7 @@ def resumeSegment (w : World) (sus : Json) (kind : Resume) : Except String (Worl
       | some now => now != v && !(v < now && ((staged.lookup id).isNone || rootAdmits w staged id v (cells.lookup id) (id == object)))
       | none => true).map (·.1)
     <|> (absent.find? fun id => w.objects.contains id)
-  let refusal := (staleBehaviour w behaviours).orElse fun _ =>
+  let refusal := (staleBehaviour w behaviours principal).orElse fun _ =>
     stale?.map fun id => ({ cls := "staleRoot", object := some id } : Refusal)
   if let some refusal := refusal then
     let stalled : Proposal :=
@@ -4657,7 +4657,7 @@ def resumeHeard (w : World) (sus : Json) (kind : Resume) : Except String (World 
   let i := (expandInterpretation w outcome).getD Json.null
   let (roots, _) ← parseRoots (← sus.getObjVal? "roots")
   let behaviours ← parseBehaviours (← sus.getObjVal? "roots")
-  let stale := staleBehaviour w behaviours
+  let stale := staleBehaviour w behaviours principal
   let roots := if stale.isSome then roots else roots.map fun (id, seen) =>
     (id, ((w.objects[id]?).map (·.version)).getD seen)
   let tongue := Tongue.choose w principal ((i.getObjValAs? String "utterance").toOption.getD "")
@@ -5313,7 +5313,8 @@ def interpretVerdict (w : World) (s : Json) (reply : Json) : Except String (Worl
     return (w, unclearVerdict [s!"model: {reason}"])
   | _ => throw "reply must have status replied or failed"
   let some text := (reply.getObjValAs? String "raw").toOption | throw "a replied interpretation carries the model's text, raw"
-  if let some r := staleBehaviour w (← parseBehaviours (← s.getObjVal? "roots")) then
+  let speaker := (((s.getObjVal? "identity").toOption).bind (·.getObjValAs? String "principal" |>.toOption)).getD ""
+  if let some r := staleBehaviour w (← parseBehaviours (← s.getObjVal? "roots")) speaker then
     return (w, unclearVerdict [r.voiced.reason.getD ""])
   let some obj := w.objects[object]? | throw s!"unknown object {object}"
   -- What the answer must fit: the suspended activity's response type; the host's own reading of words a

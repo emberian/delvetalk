@@ -757,12 +757,27 @@ def Refusal.voiced (r : Refusal) : Refusal :=
     | _ => given
   { r with reason }
 
-/-- A changed offer uses the same stale-root refusal as a changed state read. -/
-def staleBehaviour (w : World) (behaviours : List (String × Nat)) : Option Refusal := do
-  let (id, seen) ← behaviours.find? fun (id, seen) => (w.objects[id]?).map (·.behaviour) != some seen
+/-- An object's offers moved `moves` revisions by `principal`'s turn: `mover` and `moverFrom` keep where the
+    trailing run of that principal's own moves began. -/
+def Object.movedBy (o : Object) (before : Object) (principal : String) (moves : Nat) : Object :=
+  if moves == 0 then { o with behaviour := before.behaviour, mover := before.mover, moverFrom := before.moverFrom }
+  else { o with behaviour := before.behaviour + moves, mover := principal,
+                moverFrom := if before.mover == principal then before.moverFrom else before.behaviour }
+
+/-- Did only `principal`'s own placings, reprograms or amendments move `o`'s offers since revision `seen`? -/
+def Object.ownMovesSince (o : Object) (principal : String) (seen : Nat) : Bool :=
+  !principal.isEmpty && o.mover == principal && o.moverFrom ≤ seen && seen ≤ o.behaviour
+
+/-- A changed offer uses the same stale-root refusal as a changed state read. A reading `principal` asked is not
+    stale for a card only their own later moves revised (they grew the verb, placed the rule): what hob read for
+    them still means what they meant. -/
+def staleBehaviour (w : World) (behaviours : List (String × Nat)) (principal : String := "") : Option Refusal := do
+  let (id, seen) ← behaviours.find? fun (id, seen) => match w.objects[id]? with
+    | some o => o.behaviour != seen && !o.ownMovesSince principal seen
+    | none => true
   let now := ((w.objects[id]?).map (·.behaviour)).getD seen
   pure { cls := "staleRoot", object := some id,
-         reason := some s!"{id}'s behaviour changed from revision {seen} to {now}; read its offers again." }
+         reason := some s!"{id}'s behaviour changed from revision {seen} to {now} under another hand after it was read; nothing was written: read its offers and send the spell again." }
 
 /-- Why an edit does not apply: `typeMismatch` (the field or value is not of the kind the
     edit needs), `absentItem`, `keyTaken`, `duplicateKey`. -/
@@ -3112,7 +3127,7 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
     { c with objects := c.objects.insert id { x.object with madeFrom := x.madeFrom } }) w
   for id in p.roots.map (·.1) ++ writes.map (·.1) do
     unless made.objects.contains id do throw { cls := "unknownObject", object := id }
-  if let some r := staleBehaviour w p.behaviours then throw r
+  if let some r := staleBehaviour w p.behaviours p.principal then throw r
   -- A root the turn only changes by `add`/`append` (FOUNDATION section 13, row 1) need only be a
   -- version the object had: its changes re-apply on the state as it is now and are judged there.
   for (id, seen) in p.roots do
@@ -3229,9 +3244,9 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
             | none => j]
     staged := staged ++ [(id, changes, o, next, cells, applied.evicted)]
   let cand := staged.foldl (fun (c : World) (id, changes, o, next, cells, _) =>
-      let updated : Object := { next with cells,
-                                          version := if changes.any (·.kind != 4) then o.version + 1 else o.version,
-                                          behaviour := o.behaviour + p.behaviourMoves id }
+      let written : Object := { next with cells := cells,
+                                          version := if changes.any (·.kind != 4) then o.version + 1 else o.version }
+      let updated := written.movedBy o p.principal (p.behaviourMoves id)
       { c with objects := c.objects.insert id updated })
     made
   for (id, changes, o, next, cells, evicted) in staged do
@@ -3400,8 +3415,8 @@ def stageProposal (w : World) (height : Nat) (p : Proposal) (admit : Bool) : Exc
           let row : Placed := { name := x.name, owner := p.principal, since := height, line := clause.render, clause }
           next := if want then { next with wants := next.wants ++ [row] } else { next with rules := next.rules ++ [row] }
     let moves := changes.any (·.kind != 4)
-    out := out ++ [(id, { next with version := if moves then o.version + 1 else o.version,
-                                    behaviour := o.behaviour + p.behaviourMoves id, cells })]
+    let written : Object := { next with version := if moves then o.version + 1 else o.version, cells := cells }
+    out := out ++ [(id, written.movedBy o p.principal (p.behaviourMoves id))]
     factsOf := factsOf ++ [(id, judgedBy)]
   let creations := (p.creates.filter fun (id, _) => !out.any (·.1 == id)).map fun (id, c) => (id, { c.object with madeFrom := c.madeFrom })
   if let some refusal := objectCapacity w (out ++ creations) then throw refusal
